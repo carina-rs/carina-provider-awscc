@@ -1,0 +1,47 @@
+name: Update docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "scripts/**"
+      - "cfn-schema-cache/**"
+  workflow_dispatch:
+
+jobs:
+  update-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Generate markdown docs
+        run: ./scripts/generate-docs.sh
+
+      - uses: actions/checkout@v4
+        with:
+          repository: carina-rs/carina
+          token: ${{ secrets.DOCS_PR_TOKEN }}
+          path: carina-main
+
+      - name: Copy generated docs
+        run: |
+          rm -rf carina-main/docs/src/content/docs/reference/providers/awscc/
+          mkdir -p carina-main/docs/src/content/docs/reference/providers/awscc/
+          cp -r generated-docs/awscc/* carina-main/docs/src/content/docs/reference/providers/awscc/
+
+      - name: Create PR
+        uses: peter-evans/create-pull-request@v7
+        with:
+          path: carina-main
+          token: ${{ secrets.DOCS_PR_TOKEN }}
+          branch: docs/update-awscc-reference
+          title: "docs: update awscc provider reference"
+          body: |
+            Auto-generated from carina-provider-awscc.
+
+            Triggered by ${{ github.event.head_commit.url }}
+          commit-message: "docs: update awscc provider reference"
