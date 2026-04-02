@@ -61,15 +61,30 @@ pub struct AwsccProvider {
 impl AwsccProvider {
     /// Create a new AwsccProvider for the specified region
     pub async fn new(region: &str) -> Self {
-        let config = aws_config::defaults(aws_config::BehaviorVersion::latest())
-            .region(Region::new(region.to_string()))
-            .load()
-            .await;
+        let config = Self::build_config(region).await;
 
         Self {
             cloudcontrol_client: CloudControlClient::new(&config),
             aws_config: config,
         }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    async fn build_config(region: &str) -> aws_config::SdkConfig {
+        aws_config::defaults(aws_config::BehaviorVersion::latest())
+            .region(Region::new(region.to_string()))
+            .load()
+            .await
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    async fn build_config(region: &str) -> aws_config::SdkConfig {
+        use carina_plugin_sdk::wasi_http::WasiHttpClient;
+        aws_config::defaults(aws_config::BehaviorVersion::latest())
+            .region(Region::new(region.to_string()))
+            .http_client(WasiHttpClient::new())
+            .load()
+            .await
     }
 }
 

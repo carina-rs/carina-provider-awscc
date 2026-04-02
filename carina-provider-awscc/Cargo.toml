@@ -1,0 +1,52 @@
+[package]
+name = "carina-provider-awscc"
+version.workspace = true
+edition = "2024"
+license = "MIT"
+description = "AWS Cloud Control provider for Carina infrastructure management tool"
+repository = "https://github.com/carina-rs/carina-provider-awscc"
+homepage = "https://github.com/carina-rs/carina-provider-awscc"
+
+[lib]
+doctest = false
+
+[[bin]]
+name = "carina-provider-awscc"
+path = "src/main.rs"
+
+[[bin]]
+name = "codegen"
+path = "src/bin/codegen.rs"
+
+[features]
+default = ["native"]
+native = []
+
+[dependencies]
+carina-core = { git = "https://github.com/carina-rs/carina" }
+carina-aws-types = { git = "https://github.com/carina-rs/carina" }
+carina-plugin-sdk = { git = "https://github.com/carina-rs/carina" }
+carina-provider-protocol = { git = "https://github.com/carina-rs/carina" }
+aws-config = { version = "1", default-features = false, features = ["behavior-version-latest", "rt-tokio"] }
+aws-smithy-async = { version = "1", features = ["rt-tokio"] }
+aws-sdk-cloudcontrol = { version = "1", default-features = false, features = ["behavior-version-latest"] }
+aws-sdk-s3 = { version = "1", default-features = false, features = ["behavior-version-latest"] }
+aws-smithy-runtime-api = "1"
+aws-smithy-types = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+heck = "0.5"
+regex = "1"
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+log = "0.4"
+http = "1"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { version = "1", features = ["full"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+tokio = { version = "1", default-features = false, features = ["rt", "macros", "time"] }
+wit-bindgen = { version = "0.51", default-features = false, features = ["macros"] }
+wasi = "0.14"
