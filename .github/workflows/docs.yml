@@ -4,9 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - "src/**"
-      - "scripts/**"
-      - "cfn-schema-cache/**"
+      - "generated-docs/**"
   workflow_dispatch:
 
 jobs:
@@ -14,12 +12,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Generate markdown docs
-        run: ./scripts/generate-docs.sh
 
       - uses: actions/checkout@v4
         with:

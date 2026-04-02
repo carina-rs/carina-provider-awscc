@@ -1,37 +1,105 @@
 #!/bin/bash
 # Generate awscc provider documentation from CloudFormation schemas
+#
+# Usage (from project root):
+#   aws-vault exec <profile> -- ./scripts/generate-docs.sh
+#   aws-vault exec <profile> -- ./scripts/generate-docs.sh --refresh-cache
+#
+# Options:
+#   --refresh-cache  Force re-download of all CloudFormation schemas
+#
+# Downloaded schemas are cached in cfn-schema-cache/.
+# Subsequent runs use cached schemas unless --refresh-cache is specified.
 set -e
+
+# Parse flags
+REFRESH_CACHE=false
+for arg in "$@"; do
+    case "$arg" in
+        --refresh-cache) REFRESH_CACHE=true ;;
+    esac
+done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+CACHE_DIR="$PROJECT_ROOT/cfn-schema-cache"
 DOCS_DIR="$PROJECT_ROOT/generated-docs/awscc"
-SCHEMA_DIR="$PROJECT_ROOT/cfn-schema-cache"
+mkdir -p "$CACHE_DIR"
 rm -rf "$DOCS_DIR"
 mkdir -p "$DOCS_DIR"
 
 cd "$PROJECT_ROOT"
 
-# Generate docs for each schema file
-for SCHEMA_FILE in "$SCHEMA_DIR"/*.json; do
-    [ -f "$SCHEMA_FILE" ] || continue
-    FILENAME=$(basename "$SCHEMA_FILE" .json)
+# Same resource types as generate-schemas.sh
+RESOURCE_TYPES=(
+    "AWS::EC2::VPC"
+    "AWS::EC2::Subnet"
+    "AWS::EC2::InternetGateway"
+    "AWS::EC2::RouteTable"
+    "AWS::EC2::Route"
+    "AWS::EC2::SubnetRouteTableAssociation"
+    "AWS::EC2::EIP"
+    "AWS::EC2::NatGateway"
+    "AWS::EC2::SecurityGroup"
+    "AWS::EC2::SecurityGroupIngress"
+    "AWS::EC2::SecurityGroupEgress"
+    "AWS::EC2::VPCEndpoint"
+    "AWS::EC2::VPCGatewayAttachment"
+    "AWS::EC2::FlowLog"
+    "AWS::EC2::IPAM"
+    "AWS::EC2::IPAMPool"
+    "AWS::EC2::VPNGateway"
+    "AWS::EC2::TransitGateway"
+    "AWS::EC2::VPCPeeringConnection"
+    "AWS::EC2::EgressOnlyInternetGateway"
+    "AWS::EC2::TransitGatewayAttachment"
+    "AWS::S3::Bucket"
+    "AWS::IAM::Role"
+    "AWS::Logs::LogGroup"
+)
 
-    # Convert filename to CloudFormation type name
-    # AWS__EC2__VPC.json → AWS::EC2::VPC
-    TYPE_NAME=$(echo "$FILENAME" | sed 's/__/::/g')
+echo "Generating awscc provider documentation..."
+echo "Output directory: $DOCS_DIR"
+echo ""
 
-    # Derive output path using codegen's print-dsl-resource-name
-    # AWS::EC2::VPC → ec2.vpc → ec2/vpc
-    DSL_NAME=$(cargo run --bin codegen -- --type-name "$TYPE_NAME" --print-dsl-resource-name 2>/dev/null)
+# Build codegen tool first
+cargo build --bin codegen --quiet 2>/dev/null || true
+
+CODEGEN_BIN="target/debug/codegen"
+if [ ! -f "$CODEGEN_BIN" ]; then
+    echo "Trying to build with cargo..."
+    cargo build --bin codegen
+    if [ ! -f "$CODEGEN_BIN" ]; then
+        echo "ERROR: Could not build codegen binary"
+        exit 1
+    fi
+fi
+
+for TYPE_NAME in "${RESOURCE_TYPES[@]}"; do
+    DSL_NAME=$("$CODEGEN_BIN" --type-name "$TYPE_NAME" --print-dsl-resource-name)
     SERVICE=$(echo "$DSL_NAME" | cut -d'.' -f1)
     RESOURCE=$(echo "$DSL_NAME" | cut -d'.' -f2-)
     mkdir -p "$DOCS_DIR/$SERVICE"
     OUTPUT_FILE="$DOCS_DIR/$SERVICE/$RESOURCE.md"
 
     echo "Generating: $TYPE_NAME → $OUTPUT_FILE"
-    cargo run --bin codegen -- \
-        --file "$SCHEMA_FILE" \
+
+    # Cache CloudFormation schema to avoid redundant API calls
+    CACHE_FILE="$CACHE_DIR/${TYPE_NAME//::/__}.json"
+    if [ "$REFRESH_CACHE" = true ] || [ ! -f "$CACHE_FILE" ]; then
+        aws cloudformation describe-type \
+            --type RESOURCE \
+            --type-name "$TYPE_NAME" \
+            --query 'Schema' \
+            --output text > "$CACHE_FILE"
+    else
+        echo "  Using cached schema"
+    fi
+
+    # Generate documentation
+    "$CODEGEN_BIN" \
+        --file "$CACHE_FILE" \
         --type-name "$TYPE_NAME" \
         --format markdown \
         --output "$OUTPUT_FILE" 2>/dev/null || {
