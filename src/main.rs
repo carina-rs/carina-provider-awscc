@@ -52,6 +52,7 @@ impl CarinaProvider for AwsccProcessProvider {
         proto::ProviderInfo {
             name: "awscc".into(),
             display_name: "AWS Cloud Control provider".into(),
+            capabilities: vec![],
         }
     }
 
