@@ -53,9 +53,32 @@ jobs:
           name: carina-provider-awscc-${{ matrix.target }}
           path: carina-provider-awscc-${{ github.ref_name }}-${{ matrix.target }}.tar.gz
 
+  build-wasm:
+    name: Build WASM
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip2
+
+      - name: Build
+        run: cargo build --release --target wasm32-wasip2 --bin carina-provider-awscc
+
+      - name: Package
+        run: |
+          cp target/wasm32-wasip2/release/carina-provider-awscc.wasm carina-provider-awscc-${{ github.ref_name }}.wasm
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: carina-provider-awscc-wasm
+          path: carina-provider-awscc-${{ github.ref_name }}.wasm
+
   release:
     name: Create Release
-    needs: build
+    needs: [build, build-wasm]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -65,5 +88,7 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: carina-provider-awscc-*.tar.gz
+          files: |
+            carina-provider-awscc-*.tar.gz
+            carina-provider-awscc-*.wasm
           generate_release_notes: true

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use carina_plugin_host::convert;
+mod convert;
 use carina_plugin_sdk::CarinaProvider;
 use carina_provider_protocol::types as proto;
 
@@ -19,9 +19,21 @@ struct AwsccProcessProvider {
     normalizer: AwsccNormalizer,
 }
 
+impl Default for AwsccProcessProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AwsccProcessProvider {
     fn new() -> Self {
+        #[cfg(not(target_arch = "wasm32"))]
         let runtime = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
+        #[cfg(target_arch = "wasm32")]
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .expect("Failed to create tokio runtime");
         Self {
             runtime,
             provider: None,
@@ -242,6 +254,13 @@ impl CarinaProvider for AwsccProcessProvider {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn main() {
     carina_plugin_sdk::run(AwsccProcessProvider::new());
 }
+
+#[cfg(target_arch = "wasm32")]
+carina_plugin_sdk::export_provider!(AwsccProcessProvider, http);
+
+#[cfg(target_arch = "wasm32")]
+fn main() {}
