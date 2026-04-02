@@ -12,7 +12,7 @@ HELPERS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ -z "$SCRIPT_DIR" ]; then
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[1]}")/.." && pwd)"
 fi
-PROJECT_ROOT="$(cd "$HELPERS_DIR/../../.." && pwd)"
+PROJECT_ROOT="$(cd "$HELPERS_DIR/../.." && pwd)"
 
 # CARINA_BIN can be set externally. If not, try common locations.
 if [ -z "$CARINA_BIN" ]; then
