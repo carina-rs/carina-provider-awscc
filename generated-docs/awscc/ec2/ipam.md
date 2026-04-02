@@ -8,6 +8,23 @@ CloudFormation Type: `AWS::EC2::IPAM`
 
 Resource Schema of AWS::EC2::IPAM Type
 
+## Example
+
+```crn
+awscc.ec2.ipam {
+  description = "Example IPAM"
+  tier        = free
+
+  operating_region {
+    region_name = "ap-northeast-1"
+  }
+
+  tags = {
+    Environment = "example"
+  }
+}
+```
+
 ## Argument Reference
 
 ### `default_resource_discovery_organizational_unit_exclusions`
