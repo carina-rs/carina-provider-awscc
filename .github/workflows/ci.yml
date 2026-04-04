@@ -54,3 +54,7 @@ jobs:
         with:
           targets: wasm32-wasip2
       - run: cargo build -p carina-provider-awscc --target wasm32-wasip2 --release
+      - name: Optimize WASM with vela
+        run: |
+          cargo install --git https://github.com/mizzy/vela vela-cli --quiet
+          vela optimize target/wasm32-wasip2/release/carina-provider-awscc.wasm -o target/wasm32-wasip2/release/carina-provider-awscc.wasm
