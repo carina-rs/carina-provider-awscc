@@ -23,10 +23,10 @@ default = ["native"]
 native = []
 
 [dependencies]
-carina-core = { git = "https://github.com/carina-rs/carina" }
-carina-aws-types = { git = "https://github.com/carina-rs/carina" }
-carina-plugin-sdk = { git = "https://github.com/carina-rs/carina" }
-carina-provider-protocol = { git = "https://github.com/carina-rs/carina" }
+carina-core = { git = "https://github.com/carina-rs/carina", branch = "fix/sdk-macro-wit-structured-types" }
+carina-aws-types = { git = "https://github.com/carina-rs/carina", branch = "fix/sdk-macro-wit-structured-types" }
+carina-plugin-sdk = { git = "https://github.com/carina-rs/carina", branch = "fix/sdk-macro-wit-structured-types" }
+carina-provider-protocol = { git = "https://github.com/carina-rs/carina", branch = "fix/sdk-macro-wit-structured-types" }
 aws-config = { version = "1", default-features = false, features = ["behavior-version-latest", "rt-tokio"] }
 aws-smithy-async = { version = "1", features = ["rt-tokio"] }
 aws-sdk-cloudcontrol = { version = "1", default-features = false, features = ["behavior-version-latest"] }
