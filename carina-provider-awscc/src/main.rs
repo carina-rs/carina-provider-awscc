@@ -65,6 +65,7 @@ impl CarinaProvider for AwsccProcessProvider {
             name: "awscc".into(),
             display_name: "AWS Cloud Control provider".into(),
             capabilities: vec![],
+            version: env!("CARGO_PKG_VERSION").into(),
         }
     }
 
