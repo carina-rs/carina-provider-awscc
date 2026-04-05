@@ -21,7 +21,7 @@ source "$SCRIPT_DIR/../shared/_helpers.sh"
 
 STEP1=$(inject_provider_source "$SCRIPT_DIR/step1.crn")
 STEP2=$(inject_provider_source "$SCRIPT_DIR/step2.crn")
-trap "rm -f $STEP1 $STEP2" EXIT
+trap "rm -rf $STEP1 $STEP2" EXIT
 
 PASS=0
 FAIL=0

@@ -32,13 +32,14 @@ fi
 AWSCC_PROVIDER_BIN="${AWSCC_PROVIDER_BIN:-$PROJECT_ROOT/target/wasm32-wasip2/release/carina-provider-awscc.wasm}"
 AWS_PROVIDER_BIN="${AWS_PROVIDER_BIN:-$PROJECT_ROOT/target/wasm32-wasip2/release/carina-provider-aws.wasm}"
 
-# inject_provider_source: Create a temp copy of a .crn file with source/version
-# injected into provider blocks. Prints the temp file path.
+# inject_provider_source: Create a temp directory containing a .crn file with
+# source/version injected into provider blocks. Prints the temp directory path.
+# carina CLI expects a directory path, not a file path.
 # Args: original_crn_file
 inject_provider_source() {
     local original="$1"
-    local tmp_file
-    tmp_file=$(mktemp).crn
+    local tmp_dir
+    tmp_dir=$(mktemp -d)
 
     sed \
         -e '/^provider awscc {/a\
@@ -47,9 +48,9 @@ inject_provider_source() {
         -e '/^provider aws {/a\
   source = "file://'"$AWS_PROVIDER_BIN"'"\
   version = "0.1.0"' \
-        "$original" > "$tmp_file"
+        "$original" > "$tmp_dir/main.crn"
 
-    echo "$tmp_file"
+    echo "$tmp_dir"
 }
 
 # inject_provider_source_dir: Inject source/version into all .crn files in a directory (in-place).
