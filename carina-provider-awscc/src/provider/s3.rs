@@ -137,9 +137,7 @@ where
 /// In that case, there's nothing to empty and we can proceed.
 fn is_no_such_bucket<E: ProvideErrorMetadata>(error: &SdkError<E>) -> bool {
     match error {
-        SdkError::ServiceError(service_error) => {
-            service_error.err().code() == Some("NoSuchBucket")
-        }
+        SdkError::ServiceError(service_error) => service_error.err().code() == Some("NoSuchBucket"),
         _ => false,
     }
 }
