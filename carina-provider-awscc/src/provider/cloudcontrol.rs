@@ -359,12 +359,26 @@ impl AwsccProvider {
             "ClientTokenConflictException",
         ];
 
+        /// Error message patterns that indicate retryable conditions regardless of error code.
+        /// These are checked against the error message when the error code alone is not
+        /// sufficient to determine retryability.
+        const RETRYABLE_MESSAGE_PATTERNS: &[&str] = &[
+            "non-deleted VPC Attachments",
+        ];
+
         match error {
             SdkError::TimeoutError(_) | SdkError::DispatchFailure(_) => true,
             SdkError::ServiceError(service_error) => {
                 let err = service_error.err();
                 if let Some(code) = err.code() {
-                    RETRYABLE_ERROR_CODES.contains(&code)
+                    if RETRYABLE_ERROR_CODES.contains(&code) {
+                        return true;
+                    }
+                }
+                if let Some(message) = err.message() {
+                    RETRYABLE_MESSAGE_PATTERNS
+                        .iter()
+                        .any(|pattern| message.contains(pattern))
                 } else {
                     false
                 }
@@ -390,9 +404,13 @@ impl AwsccProvider {
     ///   throttling reported through CloudControl operation status.
     /// - `"ServiceUnavailable"` / `"InternalError"`: Transient downstream service errors
     ///   reported through CloudControl operation status.
+    /// - `"non-deleted VPC Attachments"`: Transit Gateway deletion fails while VPC
+    ///   attachments are still being detached asynchronously (e.g., during
+    ///   `create_before_destroy` replacement).
     pub(crate) fn is_retryable_status_message(status_message: &str) -> bool {
         const RETRYABLE_STATUS_PATTERNS: &[&str] = &[
             "missing a source resource",
+            "non-deleted VPC Attachments",
             "Throttling",
             "Rate exceeded",
             "RequestLimitExceeded",
@@ -490,6 +508,13 @@ mod tests {
     fn test_is_retryable_status_message_internal_error() {
         assert!(AwsccProvider::is_retryable_status_message(
             "InternalError: something went wrong"
+        ));
+    }
+
+    #[test]
+    fn test_is_retryable_status_message_non_deleted_vpc_attachments() {
+        assert!(AwsccProvider::is_retryable_status_message(
+            "tgw-0abc123def456 has non-deleted VPC Attachments: tgw-attach-0abc123def456"
         ));
     }
 
@@ -712,6 +737,26 @@ mod tests {
             ClientTokenConflictException::builder()
                 .message("ClientToken is already associated with an existing operation")
                 .meta(error_meta("ClientTokenConflictException"))
+                .build(),
+        );
+        let sdk_err = SdkError::service_error(err, http::Response::new(""));
+        assert!(AwsccProvider::is_retryable_sdk_error(&sdk_err));
+    }
+
+    #[test]
+    fn test_is_retryable_sdk_error_non_deleted_vpc_attachments() {
+        use aws_sdk_cloudcontrol::operation::delete_resource::DeleteResourceError;
+        use aws_sdk_cloudcontrol::types::error::GeneralServiceException;
+        use aws_smithy_runtime_api::client::result::SdkError;
+
+        let meta = aws_smithy_types::error::ErrorMetadata::builder()
+            .code("GeneralServiceException")
+            .message("tgw-0abc123def456 has non-deleted VPC Attachments: tgw-attach-0abc123def456")
+            .build();
+        let err = DeleteResourceError::GeneralServiceException(
+            GeneralServiceException::builder()
+                .message("tgw-0abc123def456 has non-deleted VPC Attachments: tgw-attach-0abc123def456")
+                .meta(meta)
                 .build(),
         );
         let sdk_err = SdkError::service_error(err, http::Response::new(""));
