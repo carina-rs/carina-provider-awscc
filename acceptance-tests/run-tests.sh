@@ -429,6 +429,9 @@ fi
 AWSCC_PROVIDER_BIN="${AWSCC_PROVIDER_BIN:-$PROJECT_ROOT/target/wasm32-wasip2/release/carina-provider-awscc.wasm}"
 AWS_PROVIDER_BIN="${AWS_PROVIDER_BIN:-$PROJECT_ROOT/target/wasm32-wasip2/release/carina-provider-aws.wasm}"
 
+# Read provider version from workspace Cargo.toml to avoid hardcoding
+PROVIDER_VERSION=$(grep '^version = ' "$PROJECT_ROOT/Cargo.toml" | head -1 | sed 's/version = "\(.*\)"/\1/')
+
 # Validate that provider binaries are WASM components, not native binaries.
 # Native binaries are no longer supported and will cause cryptic linker errors.
 for bin_var in AWSCC_PROVIDER_BIN AWS_PROVIDER_BIN; do
@@ -452,10 +455,10 @@ inject_provider_source() {
     sed \
         -e '/^provider awscc {/a\
   source = "file://'"$AWSCC_PROVIDER_BIN"'"\
-  version = "0.1.0"' \
+  version = "'"$PROVIDER_VERSION"'"' \
         -e '/^provider aws {/a\
   source = "file://'"$AWS_PROVIDER_BIN"'"\
-  version = "0.1.0"' \
+  version = "'"$PROVIDER_VERSION"'"' \
         "$original" > "$tmp_file"
 
     echo "$tmp_file"

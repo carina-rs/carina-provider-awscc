@@ -31,6 +31,7 @@ fi
 # Build with: cargo build -p carina-provider-awscc --target wasm32-wasip2 --release
 AWSCC_PROVIDER_BIN="${AWSCC_PROVIDER_BIN:-$PROJECT_ROOT/target/wasm32-wasip2/release/carina-provider-awscc.wasm}"
 AWS_PROVIDER_BIN="${AWS_PROVIDER_BIN:-$PROJECT_ROOT/target/wasm32-wasip2/release/carina-provider-aws.wasm}"
+PROVIDER_VERSION=$(grep '^version = ' "$PROJECT_ROOT/Cargo.toml" | head -1 | sed 's/version = "\(.*\)"/\1/')
 
 # inject_provider_source: Create a temp directory containing a .crn file with
 # source/version injected into provider blocks. Prints the temp directory path.
@@ -44,10 +45,10 @@ inject_provider_source() {
     sed \
         -e '/^provider awscc {/a\
   source = "file://'"$AWSCC_PROVIDER_BIN"'"\
-  version = "0.1.0"' \
+  version = "'"$PROVIDER_VERSION"'"' \
         -e '/^provider aws {/a\
   source = "file://'"$AWS_PROVIDER_BIN"'"\
-  version = "0.1.0"' \
+  version = "'"$PROVIDER_VERSION"'"' \
         "$original" > "$tmp_dir/main.crn"
 
     echo "$tmp_dir"
@@ -65,10 +66,10 @@ inject_provider_source_dir() {
         sed -i '' \
             -e '/^provider awscc {/a\
   source = "file://'"$AWSCC_PROVIDER_BIN"'"\
-  version = "0.1.0"' \
+  version = "'"$PROVIDER_VERSION"'"' \
             -e '/^provider aws {/a\
   source = "file://'"$AWS_PROVIDER_BIN"'"\
-  version = "0.1.0"' \
+  version = "'"$PROVIDER_VERSION"'"' \
             "$crn_file"
     done
 }
