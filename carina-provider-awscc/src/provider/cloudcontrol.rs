@@ -362,18 +362,17 @@ impl AwsccProvider {
         /// Error message patterns that indicate retryable conditions regardless of error code.
         /// These are checked against the error message when the error code alone is not
         /// sufficient to determine retryability.
-        const RETRYABLE_MESSAGE_PATTERNS: &[&str] = &[
-            "non-deleted VPC Attachments",
-        ];
+        const RETRYABLE_MESSAGE_PATTERNS: &[&str] = &["non-deleted VPC Attachments"];
 
         match error {
             SdkError::TimeoutError(_) | SdkError::DispatchFailure(_) => true,
             SdkError::ServiceError(service_error) => {
                 let err = service_error.err();
-                if let Some(code) = err.code() {
-                    if RETRYABLE_ERROR_CODES.contains(&code) {
-                        return true;
-                    }
+                if err
+                    .code()
+                    .is_some_and(|code| RETRYABLE_ERROR_CODES.contains(&code))
+                {
+                    return true;
                 }
                 if let Some(message) = err.message() {
                     RETRYABLE_MESSAGE_PATTERNS
@@ -755,7 +754,9 @@ mod tests {
             .build();
         let err = DeleteResourceError::GeneralServiceException(
             GeneralServiceException::builder()
-                .message("tgw-0abc123def456 has non-deleted VPC Attachments: tgw-attach-0abc123def456")
+                .message(
+                    "tgw-0abc123def456 has non-deleted VPC Attachments: tgw-attach-0abc123def456",
+                )
                 .meta(meta)
                 .build(),
         );
