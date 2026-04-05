@@ -356,6 +356,7 @@ impl AwsccProvider {
             "NetworkFailureException",
             "ConcurrentOperationException",
             "NotStabilizedException",
+            "ClientTokenConflictException",
         ];
 
         match error {
@@ -699,6 +700,22 @@ mod tests {
         );
         let sdk_err = SdkError::service_error(err, http::Response::new(""));
         assert!(!AwsccProvider::is_retryable_sdk_error(&sdk_err));
+    }
+
+    #[test]
+    fn test_is_retryable_sdk_error_client_token_conflict() {
+        use aws_sdk_cloudcontrol::operation::delete_resource::DeleteResourceError;
+        use aws_sdk_cloudcontrol::types::error::ClientTokenConflictException;
+        use aws_smithy_runtime_api::client::result::SdkError;
+
+        let err = DeleteResourceError::ClientTokenConflictException(
+            ClientTokenConflictException::builder()
+                .message("ClientToken is already associated with an existing operation")
+                .meta(error_meta("ClientTokenConflictException"))
+                .build(),
+        );
+        let sdk_err = SdkError::service_error(err, http::Response::new(""));
+        assert!(AwsccProvider::is_retryable_sdk_error(&sdk_err));
     }
 
     // =========================================================================
