@@ -910,10 +910,7 @@ mod tests {
     #[test]
     fn test_max_polling_attempts_transit_gateway_attachment_delete() {
         assert_eq!(
-            AwsccProvider::max_polling_attempts(
-                "AWS::EC2::TransitGatewayAttachment",
-                "delete"
-            ),
+            AwsccProvider::max_polling_attempts("AWS::EC2::TransitGatewayAttachment", "delete"),
             360
         );
     }
