@@ -3,6 +3,9 @@
 //! Handles S3 bucket operations that go beyond the Cloud Control API,
 //! such as emptying a bucket before deletion (force_delete).
 
+use aws_sdk_s3::error::SdkError;
+use aws_smithy_types::error::metadata::ProvideErrorMetadata;
+
 use carina_core::provider::{ProviderError, ProviderResult};
 
 use super::AwsccProvider;
@@ -30,10 +33,19 @@ impl AwsccProvider {
                 req = req.version_id_marker(vim);
             }
 
-            let response = req
-                .send()
-                .await
-                .map_err(|e| ProviderError::new("Failed to list object versions").with_cause(e))?;
+            let response = match req.send().await {
+                Ok(resp) => resp,
+                Err(e) => {
+                    // If the bucket no longer exists, there's nothing to empty
+                    if is_no_such_bucket(&e) {
+                        return Ok(());
+                    }
+                    return Err(ProviderError::new(format!(
+                        "Failed to list object versions: {}",
+                        format_s3_error(&e)
+                    )));
+                }
+            };
 
             let mut objects_to_delete = Vec::new();
 
@@ -78,7 +90,12 @@ impl AwsccProvider {
                     .delete(delete)
                     .send()
                     .await
-                    .map_err(|e| ProviderError::new("Failed to delete objects").with_cause(e))?;
+                    .map_err(|e| {
+                        ProviderError::new(format!(
+                            "Failed to delete objects: {}",
+                            format_s3_error(&e)
+                        ))
+                    })?;
             }
 
             if response.is_truncated() == Some(true) {
@@ -90,5 +107,37 @@ impl AwsccProvider {
         }
 
         Ok(())
+    }
+}
+
+/// Format an S3 SDK error into a human-readable message with error code and details.
+///
+/// The `SdkError::Display` implementation only outputs generic labels like "service error"
+/// without including the actual error code or message. This function extracts the structured
+/// error metadata to provide actionable error messages.
+fn format_s3_error<E, R>(error: &SdkError<E, R>) -> String
+where
+    E: ProvideErrorMetadata + std::fmt::Display,
+{
+    match error {
+        SdkError::ServiceError(service_error) => {
+            let err = service_error.err();
+            let code = err.code().unwrap_or("Unknown");
+            let message = err.message().unwrap_or("no details");
+            format!("{}: {}", code, message)
+        }
+        other => format!("{}", other),
+    }
+}
+
+/// Check if an S3 SDK error is a NoSuchBucket error.
+///
+/// When force_delete runs during destroy, the bucket may have already been
+/// deleted (e.g., by a concurrent operation or CloudFormation cleanup).
+/// In that case, there's nothing to empty and we can proceed.
+fn is_no_such_bucket<E: ProvideErrorMetadata>(error: &SdkError<E>) -> bool {
+    match error {
+        SdkError::ServiceError(service_error) => service_error.err().code() == Some("NoSuchBucket"),
+        _ => false,
     }
 }
