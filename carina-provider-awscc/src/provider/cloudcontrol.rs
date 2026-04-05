@@ -184,8 +184,9 @@ impl AwsccProvider {
     ) -> ProviderResult<()> {
         let mut delay_secs = DELETE_RETRY_INITIAL_DELAY_SECS;
         let max_polling_attempts = Self::max_polling_attempts(type_name, "delete");
+        let max_retry_attempts = Self::max_delete_retry_attempts(type_name);
 
-        for attempt in 0..=DELETE_RETRY_MAX_ATTEMPTS {
+        for attempt in 0..=max_retry_attempts {
             let result = self
                 .cloudcontrol_client
                 .delete_resource()
@@ -206,13 +207,13 @@ impl AwsccProvider {
                             Ok(_) => return Ok(()),
                             Err(e)
                                 if Self::is_retryable_status_message(&e.message)
-                                    && attempt < DELETE_RETRY_MAX_ATTEMPTS =>
+                                    && attempt < max_retry_attempts =>
                             {
                                 log::warn!(
                                     "Retryable error deleting {} (attempt {}/{}): {}. Retrying in {}s...",
                                     type_name,
                                     attempt + 1,
-                                    DELETE_RETRY_MAX_ATTEMPTS,
+                                    max_retry_attempts,
                                     e.message,
                                     delay_secs,
                                 );
@@ -226,12 +227,12 @@ impl AwsccProvider {
                     return Ok(());
                 }
                 Err(e) => {
-                    if Self::is_retryable_sdk_error(&e) && attempt < DELETE_RETRY_MAX_ATTEMPTS {
+                    if Self::is_retryable_sdk_error(&e) && attempt < max_retry_attempts {
                         log::warn!(
                             "Retryable error deleting {} (attempt {}/{}): {:?}. Retrying in {}s...",
                             type_name,
                             attempt + 1,
-                            DELETE_RETRY_MAX_ATTEMPTS,
+                            max_retry_attempts,
                             e,
                             delay_secs,
                         );
@@ -250,7 +251,7 @@ impl AwsccProvider {
 
         Err(ProviderError::new(format!(
             "Failed to delete resource {} after {} retry attempts",
-            type_name, DELETE_RETRY_MAX_ATTEMPTS
+            type_name, max_retry_attempts
         )))
     }
 
@@ -275,8 +276,26 @@ impl AwsccProvider {
             if type_name == "AWS::EC2::NatGateway" {
                 return 240; // 20 minutes (240 * 5s)
             }
+            // TransitGateway deletion can take 10-20 minutes, especially during
+            // create_before_destroy when VPC attachments are still being detached.
+            if type_name.contains("TransitGateway") {
+                return 360; // 30 minutes (360 * 5s)
+            }
         }
         120 // Default: 10 minutes (120 * 5s)
+    }
+
+    /// Returns the maximum number of delete retry attempts for a given resource type.
+    ///
+    /// Transit Gateway deletion during create_before_destroy can fail with
+    /// "non-deleted VPC Attachments" for 15-30 minutes while attachments are
+    /// being detached asynchronously. The default 12 retries (~18 min with
+    /// exponential backoff) is insufficient. (issue #47)
+    pub(crate) fn max_delete_retry_attempts(type_name: &str) -> u32 {
+        if type_name.contains("TransitGateway") {
+            return 24; // ~35 minutes with exponential backoff (max 120s delay)
+        }
+        DELETE_RETRY_MAX_ATTEMPTS
     }
 
     /// Formats an SDK error into a human-readable message.
@@ -875,6 +894,58 @@ mod tests {
         assert_eq!(
             AwsccProvider::max_polling_attempts("AWS::EC2::VPCGatewayAttachment", "create"),
             120
+        );
+    }
+
+    #[test]
+    fn test_max_polling_attempts_transit_gateway_delete() {
+        // TransitGateway deletion can take 10-20 minutes during
+        // create_before_destroy while VPC attachments are being detached.
+        assert_eq!(
+            AwsccProvider::max_polling_attempts("AWS::EC2::TransitGateway", "delete"),
+            360
+        );
+    }
+
+    #[test]
+    fn test_max_polling_attempts_transit_gateway_attachment_delete() {
+        assert_eq!(
+            AwsccProvider::max_polling_attempts("AWS::EC2::TransitGatewayAttachment", "delete"),
+            360
+        );
+    }
+
+    #[test]
+    fn test_max_polling_attempts_transit_gateway_create() {
+        // Create operations use the default timeout
+        assert_eq!(
+            AwsccProvider::max_polling_attempts("AWS::EC2::TransitGateway", "create"),
+            120
+        );
+    }
+
+    #[test]
+    fn test_max_delete_retry_attempts_transit_gateway() {
+        // TransitGateway gets extended retries for "non-deleted VPC Attachments"
+        assert_eq!(
+            AwsccProvider::max_delete_retry_attempts("AWS::EC2::TransitGateway"),
+            24
+        );
+    }
+
+    #[test]
+    fn test_max_delete_retry_attempts_transit_gateway_attachment() {
+        assert_eq!(
+            AwsccProvider::max_delete_retry_attempts("AWS::EC2::TransitGatewayAttachment"),
+            24
+        );
+    }
+
+    #[test]
+    fn test_max_delete_retry_attempts_default() {
+        assert_eq!(
+            AwsccProvider::max_delete_retry_attempts("AWS::EC2::VPC"),
+            12
         );
     }
 
