@@ -7,27 +7,27 @@ provider awscc {
 }
 
 let vpc = awscc.ec2.vpc {
-  cidr_block = "10.104.0.0/16"
+  cidr_block = '10.104.0.0/16'
 }
 
 let log_group = awscc.logs.log_group {
-  log_group_name    = "/carina/acc-test-update-flow-log"
+  log_group_name    = '/carina/acc-test-update-flow-log'
   retention_in_days = 1
 }
 
 let flow_log_role = awscc.iam.role {
-  role_name = "carina-acc-test-update-flow-log-role"
+  role_name = 'carina-acc-test-update-flow-log-role'
 
   assume_role_policy_document = {
-    version = "2012-10-17"
+    version = '2012-10-17'
     statement {
-      effect = "Allow"
+      effect = 'Allow'
 
       principal = {
-        service = "vpc-flow-logs.amazonaws.com"
+        service = 'vpc-flow-logs.amazonaws.com'
       }
 
-      action = "sts:AssumeRole"
+      action = 'sts:AssumeRole'
     }
   }
 }
@@ -41,6 +41,6 @@ awscc.ec2.flow_log {
   deliver_logs_permission_arn = flow_log_role.arn
 
   tags = {
-    Environment = "acceptance-test"
+    Environment = 'acceptance-test'
   }
 }

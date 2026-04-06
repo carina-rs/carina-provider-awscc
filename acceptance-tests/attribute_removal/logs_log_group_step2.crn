@@ -7,5 +7,5 @@ provider awscc {
 }
 
 awscc.logs.log_group {
-  log_group_name = "/carina/acc-test-attr-removal"
+  log_group_name = '/carina/acc-test-attr-removal'
 }

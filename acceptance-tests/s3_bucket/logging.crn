@@ -10,7 +10,7 @@ provider awscc {
 }
 
 let log_bucket = awscc.s3.bucket {
-  bucket_name_prefix = "carina-acc-test-log-"
+  bucket_name_prefix = 'carina-acc-test-log-'
 
   lifecycle {
     force_delete = true
@@ -18,11 +18,11 @@ let log_bucket = awscc.s3.bucket {
 }
 
 awscc.s3.bucket {
-  bucket_name_prefix = "carina-acc-test-src-"
+  bucket_name_prefix = 'carina-acc-test-src-'
 
   logging_configuration = {
     destination_bucket_name = log_bucket.bucket_name
-    log_file_prefix         = "access-logs/"
+    log_file_prefix         = 'access-logs/'
   }
 
   lifecycle {

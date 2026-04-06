@@ -9,7 +9,7 @@ provider awscc {
 }
 
 awscc.s3.bucket {
-  bucket_name_prefix = "carina-acc-test-tag-del-"
+  bucket_name_prefix = 'carina-acc-test-tag-del-'
 
   lifecycle {
     force_delete = true

@@ -11,15 +11,15 @@ provider awscc {
 }
 
 awscc.s3.bucket {
-  bucket_name_prefix = "carina-acc-test-"
+  bucket_name_prefix = 'carina-acc-test-'
 
   bucket_encryption = {
     server_side_encryption_configuration {
       bucket_key_enabled = true
 
       server_side_encryption_by_default = {
-        sse_algorithm     = "aws:kms"
-        kms_master_key_id = "alias/aws/s3"
+        sse_algorithm     = 'aws:kms'
+        kms_master_key_id = 'alias/aws/s3'
       }
     }
   }

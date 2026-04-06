@@ -8,10 +8,10 @@ provider awscc {
 }
 
 awscc.ec2.eip {
-  domain = "vpc"
+  domain = 'vpc'
 
   tags = {
-    Environment = "staging"
-    Purpose     = "simhash-test"
+    Environment = 'staging'
+    Purpose     = 'simhash-test'
   }
 }

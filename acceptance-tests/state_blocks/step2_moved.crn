@@ -3,14 +3,14 @@ provider awscc {
 }
 
 moved {
-  from = awscc.ec2.vpc "vpc"
-  to   = awscc.ec2.vpc "main_vpc"
+  from = awscc.ec2.vpc 'vpc'
+  to   = awscc.ec2.vpc 'main_vpc'
 }
 
 awscc.ec2.vpc {
-  cidr_block = "10.0.0.0/16"
+  cidr_block = '10.0.0.0/16'
 
   tags = {
-    Name = "state-blocks-test"
+    Name = 'state-blocks-test'
   }
 }

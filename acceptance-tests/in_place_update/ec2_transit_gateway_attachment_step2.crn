@@ -7,17 +7,17 @@ provider awscc {
 }
 
 let vpc = awscc.ec2.vpc {
-  cidr_block = "10.0.0.0/16"
+  cidr_block = '10.0.0.0/16'
 }
 
 let subnet = awscc.ec2.subnet {
   vpc_id            = vpc.vpc_id
-  cidr_block        = "10.0.1.0/24"
-  availability_zone = "ap-northeast-1a"
+  cidr_block        = '10.0.1.0/24'
+  availability_zone = 'ap-northeast-1a'
 }
 
 let tgw = awscc.ec2.transit_gateway {
-  description = "carina acceptance test - tgw attachment update"
+  description = 'carina acceptance test - tgw attachment update'
 }
 
 awscc.ec2.transit_gateway_attachment {
@@ -26,7 +26,7 @@ awscc.ec2.transit_gateway_attachment {
   vpc_id             = vpc.vpc_id
 
   tags = {
-    Environment = "acceptance-test"
-    UpdatedBy   = "carina"
+    Environment = 'acceptance-test'
+    UpdatedBy   = 'carina'
   }
 }

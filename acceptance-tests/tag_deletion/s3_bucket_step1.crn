@@ -8,11 +8,11 @@ provider awscc {
 }
 
 awscc.s3.bucket {
-  bucket_name_prefix = "carina-acc-test-tag-del-"
+  bucket_name_prefix = 'carina-acc-test-tag-del-'
 
   tags = {
-    Environment = "acceptance-test"
-    ToBeRemoved = "this-tag-will-be-deleted"
+    Environment = 'acceptance-test'
+    ToBeRemoved = 'this-tag-will-be-deleted'
   }
 
   lifecycle {

@@ -7,21 +7,21 @@ provider awscc {
 }
 
 let vpc = awscc.ec2.vpc {
-  cidr_block = "10.0.0.0/16"
+  cidr_block = '10.0.0.0/16'
 }
 
 let private_subnet = awscc.ec2.subnet {
   vpc_id            = vpc.vpc_id
-  cidr_block        = "10.0.1.0/24"
-  availability_zone = "ap-northeast-1a"
+  cidr_block        = '10.0.1.0/24'
+  availability_zone = 'ap-northeast-1a'
 }
 
 awscc.ec2.nat_gateway {
   subnet_id          = private_subnet.subnet_id
   connectivity_type  = private
-  private_ip_address = "10.0.1.100"
+  private_ip_address = '10.0.1.100'
 
   tags = {
-    Environment = "acceptance-test"
+    Environment = 'acceptance-test'
   }
 }

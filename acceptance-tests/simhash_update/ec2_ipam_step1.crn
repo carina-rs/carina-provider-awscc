@@ -8,11 +8,11 @@ provider awscc {
 }
 
 awscc.ec2.ipam {
-  description = "simhash acceptance test"
+  description = 'simhash acceptance test'
   tier        = awscc.ec2.ipam.Tier.free
 
   tags = {
-    Environment = "acceptance-test"
-    Purpose     = "simhash-test"
+    Environment = 'acceptance-test'
+    Purpose     = 'simhash-test'
   }
 }

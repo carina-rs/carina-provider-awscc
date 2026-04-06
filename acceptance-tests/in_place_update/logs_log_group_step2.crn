@@ -7,10 +7,10 @@ provider awscc {
 }
 
 awscc.logs.log_group {
-  log_group_name_prefix = "/carina/acc-test-update-"
+  log_group_name_prefix = '/carina/acc-test-update-'
   retention_in_days     = 14
 
   tags = {
-    Environment = "acceptance-test"
+    Environment = 'acceptance-test'
   }
 }
