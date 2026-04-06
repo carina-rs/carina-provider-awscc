@@ -6,10 +6,10 @@ provider awscc {
   region = awscc.Region.ap_northeast_1
 }
 
-let network = import "./modules/network"
+let network = import './modules/network'
 
 network {
-  cidr_block  = "10.0.0.0/16"
-  subnet_cidr = "10.0.1.0/24"
-  az          = "ap-northeast-1a"
+  cidr_block  = '10.0.0.0/16'
+  subnet_cidr = '10.0.1.0/24'
+  az          = 'ap-northeast-1a'
 }

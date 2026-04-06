@@ -3,8 +3,8 @@ provider awscc {
 }
 
 let cidrs = {
-  dev = "10.0.0.0/16"
-  stg = "10.1.0.0/16"
+  dev = '10.0.0.0/16'
+  stg = '10.1.0.0/16'
 }
 
 let vpcs = for name, cidr in cidrs {

@@ -11,16 +11,16 @@ provider awscc {
 }
 
 awscc.s3.bucket {
-  bucket_name_prefix = "carina-acc-test-"
+  bucket_name_prefix = 'carina-acc-test-'
 
   lifecycle_configuration = {
     rule {
-      id                 = "expire-old-objects"
+      id                 = 'expire-old-objects'
       status             = awscc.s3.bucket.RuleStatus.Enabled
       expiration_in_days = 90
     }
     rule {
-      id     = "transition-to-glacier"
+      id     = 'transition-to-glacier'
       status = awscc.s3.bucket.RuleStatus.Enabled
       transition {
         storage_class      = awscc.s3.bucket.TransitionStorageClass.GLACIER

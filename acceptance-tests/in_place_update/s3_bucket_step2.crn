@@ -7,7 +7,7 @@ provider awscc {
 }
 
 awscc.s3.bucket {
-  bucket_name_prefix = "carina-acc-test-update-"
+  bucket_name_prefix = 'carina-acc-test-update-'
 
   versioning_configuration = {
     status = awscc.s3.bucket.VersioningConfigurationStatus.Suspended

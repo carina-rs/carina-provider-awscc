@@ -9,21 +9,21 @@ provider awscc {
 }
 
 let vpc = awscc.ec2.vpc {
-  cidr_block = "10.220.0.0/16"
+  cidr_block = '10.220.0.0/16'
 
   tags = {
-    Name        = "carina-acc-test-cascade-vpc"
-    Environment = "acceptance-test"
+    Name        = 'carina-acc-test-cascade-vpc'
+    Environment = 'acceptance-test'
   }
 }
 
 awscc.ec2.subnet {
   vpc_id            = vpc.vpc_id
-  cidr_block        = "10.220.1.0/24"
-  availability_zone = "ap-northeast-1a"
+  cidr_block        = '10.220.1.0/24'
+  availability_zone = 'ap-northeast-1a'
 
   tags = {
-    Name        = "carina-acc-test-cascade-subnet"
-    Environment = "acceptance-test"
+    Name        = 'carina-acc-test-cascade-subnet'
+    Environment = 'acceptance-test'
   }
 }
