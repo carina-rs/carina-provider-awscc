@@ -7,7 +7,9 @@
 use super::AwsccSchemaConfig;
 use super::tags_type;
 use carina_core::resource::Value;
-use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField, types};
+use carina_core::schema::{
+    AttributeSchema, AttributeType, OperationConfig, ResourceSchema, StructField, types,
+};
 
 const VALID_AVAILABILITY_MODE: &[&str] = &["zonal", "regional"];
 
@@ -154,6 +156,12 @@ pub fn ec2_nat_gateway_config() -> AwsccSchemaConfig {
                 .with_description("The ID of the VPC in which the NAT gateway is located.")
                 .with_provider_name("VpcId"),
         )
+        .with_operation_config(OperationConfig {
+            delete_timeout_secs: Some(1200),
+            delete_max_retries: None,
+            create_timeout_secs: None,
+            create_max_retries: None,
+        }),
     }
 }
 

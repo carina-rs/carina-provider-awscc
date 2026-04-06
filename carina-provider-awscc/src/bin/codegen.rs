@@ -1571,6 +1571,18 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
     if has_exclusive_fields {
         schema_imports.push("validators");
     }
+    // Resources with custom operation config need the OperationConfig import
+    const OPERATION_CONFIG_TYPES: &[&str] = &[
+        "AWS::EC2::TransitGateway",
+        "AWS::EC2::TransitGatewayAttachment",
+        "AWS::EC2::IPAM",
+        "AWS::EC2::IPAMPool",
+        "AWS::EC2::NatGateway",
+        "AWS::EC2::VPCGatewayAttachment",
+    ];
+    if OPERATION_CONFIG_TYPES.contains(&type_name) {
+        schema_imports.push("OperationConfig");
+    }
     let schema_imports_str = schema_imports.join(", ");
     code.push_str(&format!(
         r#"//! {} schema definition for AWS Cloud Control
@@ -2073,6 +2085,17 @@ pub fn {}() -> AwsccSchemaConfig {{
         code.push_str("        .force_replace()\n");
     }
 
+    // Per-resource operational config for resources with slow CloudControl operations.
+    let op_config = operation_config_for_type(type_name);
+    if let Some(cfg) = op_config {
+        code.push_str("        .with_operation_config(OperationConfig {\n");
+        emit_option_field(&mut code, "delete_timeout_secs", cfg.delete_timeout_secs);
+        emit_option_field(&mut code, "delete_max_retries", cfg.delete_max_retries);
+        emit_option_field(&mut code, "create_timeout_secs", cfg.create_timeout_secs);
+        emit_option_field(&mut code, "create_max_retries", cfg.create_max_retries);
+        code.push_str("        })\n");
+    }
+
     // Generate validator for mutually exclusive field groups.
     if !exclusive_groups.is_empty() {
         code.push_str("        .with_validator(|attrs| {\n");
@@ -2169,6 +2192,49 @@ pub fn {}() -> AwsccSchemaConfig {{
     }
 
     Ok(code)
+}
+
+/// Codegen-time representation of per-resource operational config.
+#[derive(Default)]
+struct CodegenOperationConfig {
+    delete_timeout_secs: Option<u64>,
+    delete_max_retries: Option<u32>,
+    create_timeout_secs: Option<u64>,
+    create_max_retries: Option<u32>,
+}
+
+/// Returns operational config overrides for resource types with slow CloudControl operations.
+fn operation_config_for_type(type_name: &str) -> Option<CodegenOperationConfig> {
+    match type_name {
+        "AWS::EC2::TransitGateway" | "AWS::EC2::TransitGatewayAttachment" => {
+            Some(CodegenOperationConfig {
+                delete_timeout_secs: Some(1800),
+                delete_max_retries: Some(24),
+                ..Default::default()
+            })
+        }
+        "AWS::EC2::IPAM" | "AWS::EC2::IPAMPool" => Some(CodegenOperationConfig {
+            delete_timeout_secs: Some(1800),
+            ..Default::default()
+        }),
+        "AWS::EC2::NatGateway" => Some(CodegenOperationConfig {
+            delete_timeout_secs: Some(1200),
+            ..Default::default()
+        }),
+        "AWS::EC2::VPCGatewayAttachment" => Some(CodegenOperationConfig {
+            delete_timeout_secs: Some(1800),
+            ..Default::default()
+        }),
+        _ => None,
+    }
+}
+
+/// Emit a single `Option<T>` field for generated OperationConfig code.
+fn emit_option_field<T: std::fmt::Display>(code: &mut String, name: &str, value: Option<T>) {
+    match value {
+        Some(v) => code.push_str(&format!("            {name}: Some({v}),\n")),
+        None => code.push_str(&format!("            {name}: None,\n")),
+    }
 }
 
 /// Check if a string looks like a property name (CamelCase or PascalCase)

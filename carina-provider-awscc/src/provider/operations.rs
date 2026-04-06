@@ -128,6 +128,7 @@ impl AwsccProvider {
             .cc_create_resource(
                 config.aws_type_name,
                 serde_json::Value::Object(desired_state),
+                config.schema.operation_config.as_ref(),
             )
             .await
             .map_err(|e| e.for_resource(resource.id.clone()))?;
@@ -225,8 +226,12 @@ impl AwsccProvider {
             })?;
         }
 
-        self.cc_delete_resource(config.aws_type_name, identifier)
-            .await
-            .map_err(|e| e.for_resource(id.clone()))
+        self.cc_delete_resource(
+            config.aws_type_name,
+            identifier,
+            config.schema.operation_config.as_ref(),
+        )
+        .await
+        .map_err(|e| e.for_resource(id.clone()))
     }
 }

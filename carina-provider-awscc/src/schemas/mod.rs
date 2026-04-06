@@ -5,8 +5,8 @@ pub mod generated;
 
 use carina_core::schema::ResourceSchema;
 
-/// Returns all AWS Cloud Control schemas
-/// Auto-generated from CloudFormation schemas
+/// Returns all AWS Cloud Control schemas.
+/// Auto-generated from CloudFormation schemas with per-resource operational config.
 pub fn all_schemas() -> Vec<ResourceSchema> {
     generated::configs()
         .iter()
