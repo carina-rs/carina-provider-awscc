@@ -67,10 +67,18 @@ impl AwsccProvider {
         &self,
         type_name: &str,
         desired_state: serde_json::Value,
+        operation_config: Option<&carina_core::schema::OperationConfig>,
     ) -> ProviderResult<String> {
         let mut delay_secs = CREATE_RETRY_INITIAL_DELAY_SECS;
+        let max_retry_attempts = operation_config
+            .and_then(|c| c.create_max_retries)
+            .unwrap_or(CREATE_RETRY_MAX_ATTEMPTS);
+        let max_polling_attempts = operation_config
+            .and_then(|c| c.create_timeout_secs)
+            .map(|secs| (secs / 5) as u32)
+            .unwrap_or(Self::default_polling_attempts(type_name, "create"));
 
-        for attempt in 0..=CREATE_RETRY_MAX_ATTEMPTS {
+        for attempt in 0..=max_retry_attempts {
             let result = self
                 .cloudcontrol_client
                 .create_resource()
@@ -87,17 +95,20 @@ impl AwsccProvider {
                             .and_then(|p| p.request_token())
                             .ok_or_else(|| ProviderError::new("No request token returned"))?;
 
-                    match self.wait_for_operation(request_token).await {
+                    match self
+                        .wait_for_operation_with_attempts(request_token, max_polling_attempts)
+                        .await
+                    {
                         Ok(identifier) => return Ok(identifier),
                         Err(e)
                             if Self::is_retryable_status_message(&e.message)
-                                && attempt < CREATE_RETRY_MAX_ATTEMPTS =>
+                                && attempt < max_retry_attempts =>
                         {
                             log::warn!(
                                 "Retryable error creating {} (attempt {}/{}): {}. Retrying in {}s...",
                                 type_name,
                                 attempt + 1,
-                                CREATE_RETRY_MAX_ATTEMPTS,
+                                max_retry_attempts,
                                 e.message,
                                 delay_secs,
                             );
@@ -109,12 +120,12 @@ impl AwsccProvider {
                     }
                 }
                 Err(e) => {
-                    if Self::is_retryable_sdk_error(&e) && attempt < CREATE_RETRY_MAX_ATTEMPTS {
+                    if Self::is_retryable_sdk_error(&e) && attempt < max_retry_attempts {
                         log::warn!(
                             "Retryable error creating {} (attempt {}/{}): {:?}. Retrying in {}s...",
                             type_name,
                             attempt + 1,
-                            CREATE_RETRY_MAX_ATTEMPTS,
+                            max_retry_attempts,
                             e,
                             delay_secs,
                         );
@@ -133,7 +144,7 @@ impl AwsccProvider {
 
         Err(ProviderError::new(format!(
             "Failed to create resource {} after {} retry attempts",
-            type_name, CREATE_RETRY_MAX_ATTEMPTS
+            type_name, max_retry_attempts
         )))
     }
 
@@ -181,10 +192,16 @@ impl AwsccProvider {
         &self,
         type_name: &str,
         identifier: &str,
+        operation_config: Option<&carina_core::schema::OperationConfig>,
     ) -> ProviderResult<()> {
         let mut delay_secs = DELETE_RETRY_INITIAL_DELAY_SECS;
-        let max_polling_attempts = Self::max_polling_attempts(type_name, "delete");
-        let max_retry_attempts = Self::max_delete_retry_attempts(type_name);
+        let max_polling_attempts = operation_config
+            .and_then(|c| c.delete_timeout_secs)
+            .map(|secs| (secs / 5) as u32)
+            .unwrap_or(Self::default_polling_attempts(type_name, "delete"));
+        let max_retry_attempts = operation_config
+            .and_then(|c| c.delete_max_retries)
+            .unwrap_or(DELETE_RETRY_MAX_ATTEMPTS);
 
         for attempt in 0..=max_retry_attempts {
             let result = self
@@ -259,7 +276,7 @@ impl AwsccProvider {
     ///
     /// Some resource types (e.g., IPAM Pool, VPCGatewayAttachment, NatGateway) take
     /// significantly longer to delete via the CloudControl API than the default timeout allows.
-    pub(crate) fn max_polling_attempts(type_name: &str, operation: &str) -> u32 {
+    pub(crate) fn default_polling_attempts(type_name: &str, operation: &str) -> u32 {
         if operation == "delete" {
             // IPAM Pool deletions can take 15-30 minutes via CloudControl API
             if type_name.contains("IPAMPool") || type_name.contains("IPAM") {
@@ -283,19 +300,6 @@ impl AwsccProvider {
             }
         }
         120 // Default: 10 minutes (120 * 5s)
-    }
-
-    /// Returns the maximum number of delete retry attempts for a given resource type.
-    ///
-    /// Transit Gateway deletion during create_before_destroy can fail with
-    /// "non-deleted VPC Attachments" for 15-30 minutes while attachments are
-    /// being detached asynchronously. The default 12 retries (~18 min with
-    /// exponential backoff) is insufficient. (issue #47)
-    pub(crate) fn max_delete_retry_attempts(type_name: &str) -> u32 {
-        if type_name.contains("TransitGateway") {
-            return 24; // ~35 minutes with exponential backoff (max 120s delay)
-        }
-        DELETE_RETRY_MAX_ATTEMPTS
     }
 
     /// Formats an SDK error into a human-readable message.
@@ -847,7 +851,7 @@ mod tests {
     #[test]
     fn test_max_polling_attempts_ipam_pool_delete() {
         assert_eq!(
-            AwsccProvider::max_polling_attempts("AWS::EC2::IPAMPool", "delete"),
+            AwsccProvider::default_polling_attempts("AWS::EC2::IPAMPool", "delete"),
             360
         );
     }
@@ -855,7 +859,7 @@ mod tests {
     #[test]
     fn test_max_polling_attempts_ipam_delete() {
         assert_eq!(
-            AwsccProvider::max_polling_attempts("AWS::EC2::IPAM", "delete"),
+            AwsccProvider::default_polling_attempts("AWS::EC2::IPAM", "delete"),
             360
         );
     }
@@ -863,7 +867,7 @@ mod tests {
     #[test]
     fn test_max_polling_attempts_default_delete() {
         assert_eq!(
-            AwsccProvider::max_polling_attempts("AWS::EC2::VPC", "delete"),
+            AwsccProvider::default_polling_attempts("AWS::EC2::VPC", "delete"),
             120
         );
     }
@@ -871,7 +875,7 @@ mod tests {
     #[test]
     fn test_max_polling_attempts_ipam_create() {
         assert_eq!(
-            AwsccProvider::max_polling_attempts("AWS::EC2::IPAMPool", "create"),
+            AwsccProvider::default_polling_attempts("AWS::EC2::IPAMPool", "create"),
             120
         );
     }
@@ -883,7 +887,7 @@ mod tests {
         // being cleaned up. Extended timeout prevents premature timeout
         // failures. (issue #1066)
         assert_eq!(
-            AwsccProvider::max_polling_attempts("AWS::EC2::VPCGatewayAttachment", "delete"),
+            AwsccProvider::default_polling_attempts("AWS::EC2::VPCGatewayAttachment", "delete"),
             360
         );
     }
@@ -892,7 +896,7 @@ mod tests {
     fn test_max_polling_attempts_vpc_gateway_attachment_create() {
         // Create operations use the default timeout
         assert_eq!(
-            AwsccProvider::max_polling_attempts("AWS::EC2::VPCGatewayAttachment", "create"),
+            AwsccProvider::default_polling_attempts("AWS::EC2::VPCGatewayAttachment", "create"),
             120
         );
     }
@@ -902,7 +906,7 @@ mod tests {
         // TransitGateway deletion can take 10-20 minutes during
         // create_before_destroy while VPC attachments are being detached.
         assert_eq!(
-            AwsccProvider::max_polling_attempts("AWS::EC2::TransitGateway", "delete"),
+            AwsccProvider::default_polling_attempts("AWS::EC2::TransitGateway", "delete"),
             360
         );
     }
@@ -910,7 +914,7 @@ mod tests {
     #[test]
     fn test_max_polling_attempts_transit_gateway_attachment_delete() {
         assert_eq!(
-            AwsccProvider::max_polling_attempts("AWS::EC2::TransitGatewayAttachment", "delete"),
+            AwsccProvider::default_polling_attempts("AWS::EC2::TransitGatewayAttachment", "delete"),
             360
         );
     }
@@ -919,33 +923,8 @@ mod tests {
     fn test_max_polling_attempts_transit_gateway_create() {
         // Create operations use the default timeout
         assert_eq!(
-            AwsccProvider::max_polling_attempts("AWS::EC2::TransitGateway", "create"),
+            AwsccProvider::default_polling_attempts("AWS::EC2::TransitGateway", "create"),
             120
-        );
-    }
-
-    #[test]
-    fn test_max_delete_retry_attempts_transit_gateway() {
-        // TransitGateway gets extended retries for "non-deleted VPC Attachments"
-        assert_eq!(
-            AwsccProvider::max_delete_retry_attempts("AWS::EC2::TransitGateway"),
-            24
-        );
-    }
-
-    #[test]
-    fn test_max_delete_retry_attempts_transit_gateway_attachment() {
-        assert_eq!(
-            AwsccProvider::max_delete_retry_attempts("AWS::EC2::TransitGatewayAttachment"),
-            24
-        );
-    }
-
-    #[test]
-    fn test_max_delete_retry_attempts_default() {
-        assert_eq!(
-            AwsccProvider::max_delete_retry_attempts("AWS::EC2::VPC"),
-            12
         );
     }
 
@@ -954,7 +933,7 @@ mod tests {
         // NatGateway deletion via CloudControl API can take 10-15 minutes.
         // Extended timeout prevents premature timeout failures. (issue #1443)
         assert_eq!(
-            AwsccProvider::max_polling_attempts("AWS::EC2::NatGateway", "delete"),
+            AwsccProvider::default_polling_attempts("AWS::EC2::NatGateway", "delete"),
             240
         );
     }
@@ -963,7 +942,7 @@ mod tests {
     fn test_max_polling_attempts_nat_gateway_create() {
         // Create operations use the default timeout
         assert_eq!(
-            AwsccProvider::max_polling_attempts("AWS::EC2::NatGateway", "create"),
+            AwsccProvider::default_polling_attempts("AWS::EC2::NatGateway", "create"),
             120
         );
     }

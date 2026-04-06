@@ -216,6 +216,14 @@ pub fn proto_to_core_schema(s: &ProtoResourceSchema) -> CoreResourceSchema {
         data_source: s.data_source,
         name_attribute: s.name_attribute.clone(),
         force_replace: s.force_replace,
+        operation_config: s.operation_config.as_ref().map(|c| {
+            carina_core::schema::OperationConfig {
+                delete_timeout_secs: c.delete_timeout_secs,
+                delete_max_retries: c.delete_max_retries,
+                create_timeout_secs: c.create_timeout_secs,
+                create_max_retries: c.create_max_retries,
+            }
+        }),
     }
 }
 
@@ -286,5 +294,13 @@ pub fn core_to_proto_schema(s: &CoreResourceSchema) -> ProtoResourceSchema {
         data_source: s.data_source,
         name_attribute: s.name_attribute.clone(),
         force_replace: s.force_replace,
+        operation_config: s.operation_config.as_ref().map(|c| {
+            carina_provider_protocol::OperationConfig {
+                delete_timeout_secs: c.delete_timeout_secs,
+                delete_max_retries: c.delete_max_retries,
+                create_timeout_secs: c.create_timeout_secs,
+                create_max_retries: c.create_max_retries,
+            }
+        }),
     }
 }
