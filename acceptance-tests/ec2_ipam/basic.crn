@@ -8,13 +8,13 @@ provider awscc {
 
 awscc.ec2.ipam {
   tier        = advanced
-  description = "Acceptance test IPAM"
+  description = 'Acceptance test IPAM'
 
   operating_region {
-    region_name = "ap-northeast-1"
+    region_name = 'ap-northeast-1'
   }
 
   tags = {
-    Environment = "acceptance-test"
+    Environment = 'acceptance-test'
   }
 }

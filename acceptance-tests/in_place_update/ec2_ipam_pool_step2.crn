@@ -10,17 +10,17 @@ let ipam = awscc.ec2.ipam {
   tier = advanced
 
   operating_region {
-    region_name = "ap-northeast-1"
+    region_name = 'ap-northeast-1'
   }
 }
 
 awscc.ec2.ipam_pool {
   ipam_scope_id  = ipam.private_default_scope_id
-  address_family = "IPv4"
-  locale         = "ap-northeast-1"
-  description    = "in-place update test (updated)"
+  address_family = 'IPv4'
+  locale         = 'ap-northeast-1'
+  description    = 'in-place update test (updated)'
 
   tags = {
-    Environment = "acceptance-test"
+    Environment = 'acceptance-test'
   }
 }

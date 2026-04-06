@@ -28,17 +28,17 @@ let ipam = awscc.ec2.ipam {
   tier = advanced
 
   operating_region {
-    region_name = "ap-northeast-1"
+    region_name = 'ap-northeast-1'
   }
 }
 
 let top_pool = awscc.ec2.ipam_pool {
   ipam_scope_id  = ipam.private_default_scope_id
-  address_family = "IPv4"
-  locale         = "ap-northeast-1"
+  address_family = 'IPv4'
+  locale         = 'ap-northeast-1'
 
   provisioned_cidr {
-    cidr = "10.0.0.0/8"
+    cidr = '10.0.0.0/8'
   }
 }
 
@@ -49,15 +49,15 @@ let vpc = awscc.ec2.vpc {
 
 let vpc_pool = awscc.ec2.ipam_pool {
   ipam_scope_id       = ipam.private_default_scope_id
-  address_family      = "IPv4"
-  locale              = "ap-northeast-1"
+  address_family      = 'IPv4'
+  locale              = 'ap-northeast-1'
   source_ipam_pool_id = top_pool.ipam_pool_id
 
   source_resource = {
     resource_id     = vpc.vpc_id
     resource_owner  = identity.account_id
-    resource_region = "ap-northeast-1"
-    resource_type   = "vpc"
+    resource_region = 'ap-northeast-1'
+    resource_type   = 'vpc'
   }
 
   provisioned_cidr {
@@ -69,9 +69,9 @@ awscc.ec2.subnet {
   vpc_id              = vpc.vpc_id
   ipv4_ipam_pool_id   = vpc_pool.ipam_pool_id
   ipv4_netmask_length = 24
-  availability_zone   = "ap-northeast-1a"
+  availability_zone   = 'ap-northeast-1a'
 
   tags = {
-    Environment = "acceptance-test"
+    Environment = 'acceptance-test'
   }
 }

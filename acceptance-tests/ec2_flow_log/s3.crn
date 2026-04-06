@@ -8,7 +8,7 @@ provider awscc {
 }
 
 let vpc = awscc.ec2.vpc {
-  cidr_block = "10.0.0.0/16"
+  cidr_block = '10.0.0.0/16'
 }
 
 let bucket = awscc.s3.bucket {
@@ -25,12 +25,12 @@ awscc.ec2.flow_log {
   log_destination      = bucket.arn
 
   destination_options = {
-    file_format                = "plain-text"
+    file_format                = 'plain-text'
     hive_compatible_partitions = false
     per_hour_partition         = false
   }
 
   tags = {
-    Environment = "acceptance-test"
+    Environment = 'acceptance-test'
   }
 }

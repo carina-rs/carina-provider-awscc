@@ -3,15 +3,15 @@ provider awscc {
 }
 
 let env_names = {
-  prod = "production"
-  stg  = "staging"
-  dev  = "development"
+  prod = 'production'
+  stg  = 'staging'
+  dev  = 'development'
 }
 
 awscc.ec2.vpc {
-  cidr_block = "10.0.0.0/16"
+  cidr_block = '10.0.0.0/16'
 
   tags = {
-    Name = lookup(env_names, "prod", "unknown")
+    Name = lookup(env_names, 'prod', 'unknown')
   }
 }

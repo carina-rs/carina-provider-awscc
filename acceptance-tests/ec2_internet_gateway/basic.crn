@@ -8,6 +8,6 @@ provider awscc {
 
 awscc.ec2.internet_gateway {
   tags = {
-    Environment = "acceptance-test"
+    Environment = 'acceptance-test'
   }
 }

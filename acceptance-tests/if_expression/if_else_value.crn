@@ -5,9 +5,9 @@ provider awscc {
 let is_production = true
 
 awscc.ec2.vpc {
-  cidr_block = if is_production { "10.0.0.0/16" } else { "172.16.0.0/16" }
+  cidr_block = if is_production { '10.0.0.0/16' } else { '172.16.0.0/16' }
 
   tags = {
-    Name = if is_production { "prod-vpc" } else { "dev-vpc" }
+    Name = if is_production { 'prod-vpc' } else { 'dev-vpc' }
   }
 }

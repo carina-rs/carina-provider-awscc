@@ -12,7 +12,7 @@ let vpc = awscc.ec2.vpc {
   cidr_block = cidr_block
 
   tags = {
-    Name = "module-test"
+    Name = 'module-test'
   }
 }
 
@@ -22,7 +22,7 @@ let subnet = awscc.ec2.subnet {
   availability_zone = az
 
   tags = {
-    Name = "module-test-subnet"
+    Name = 'module-test-subnet'
   }
 }
 

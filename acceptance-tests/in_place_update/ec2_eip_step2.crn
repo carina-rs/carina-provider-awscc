@@ -7,10 +7,10 @@ provider awscc {
 }
 
 awscc.ec2.eip {
-  domain = "vpc"
+  domain = 'vpc'
 
   tags = {
-    Environment = "acceptance-test"
-    UpdatedBy   = "carina"
+    Environment = 'acceptance-test'
+    UpdatedBy   = 'carina'
   }
 }

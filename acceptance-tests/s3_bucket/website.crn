@@ -9,11 +9,11 @@ provider awscc {
 }
 
 awscc.s3.bucket {
-  bucket_name_prefix = "carina-acc-test-"
+  bucket_name_prefix = 'carina-acc-test-'
 
   website_configuration = {
-    index_document = "index.html"
-    error_document = "error.html"
+    index_document = 'index.html'
+    error_document = 'error.html'
   }
 
   lifecycle {

@@ -7,9 +7,9 @@ provider awscc {
 }
 
 awscc.ec2.transit_gateway {
-  description = "carina acceptance test - step 2 updated"
+  description = 'carina acceptance test - step 2 updated'
 
   tags = {
-    Environment = "acceptance-test"
+    Environment = 'acceptance-test'
   }
 }

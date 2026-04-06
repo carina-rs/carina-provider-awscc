@@ -8,32 +8,32 @@ provider awscc {
 }
 
 awscc.iam.role {
-  role_name_prefix     = "carina-acc-test-"
-  description          = "Carina acceptance test role with inline policy"
+  role_name_prefix     = 'carina-acc-test-'
+  description          = 'Carina acceptance test role with inline policy'
   max_session_duration = 7200
 
   assume_role_policy_document = {
-    version = "2012-10-17"
+    version = '2012-10-17'
     statement {
-      effect = "Allow"
+      effect = 'Allow'
 
       principal = {
-        service = "lambda.amazonaws.com"
+        service = 'lambda.amazonaws.com'
       }
 
-      action = "sts:AssumeRole"
+      action = 'sts:AssumeRole'
     }
   }
 
   policy {
-    policy_name = "test-policy"
+    policy_name = 'test-policy'
 
     policy_document = {
-      version = "2012-10-17"
+      version = '2012-10-17'
       statement {
-        effect   = "Allow"
-        action   = "logs:CreateLogGroup"
-        resource = "*"
+        effect   = 'Allow'
+        action   = 'logs:CreateLogGroup'
+        resource = '*'
       }
     }
   }

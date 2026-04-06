@@ -3,5 +3,5 @@ provider awscc {
 }
 
 removed {
-  from = awscc.ec2.vpc "main_vpc"
+  from = awscc.ec2.vpc 'main_vpc'
 }

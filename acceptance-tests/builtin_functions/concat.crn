@@ -2,14 +2,14 @@ provider awscc {
   region = awscc.Region.ap_northeast_1
 }
 
-let parts1 = ["web", "test"]
+let parts1 = ['web', 'test']
 
-let parts2 = ["vpc"]
+let parts2 = ['vpc']
 
 awscc.ec2.vpc {
-  cidr_block = "10.0.0.0/16"
+  cidr_block = '10.0.0.0/16'
 
   tags = {
-    Name = join("-", concat(parts2, parts1))
+    Name = join('-', concat(parts2, parts1))
   }
 }

@@ -9,7 +9,7 @@ provider awscc {
 }
 
 awscc.s3.bucket {
-  bucket_name_prefix = "carina-acc-test-"
+  bucket_name_prefix = 'carina-acc-test-'
 
   public_access_block_configuration = {
     block_public_acls       = true
