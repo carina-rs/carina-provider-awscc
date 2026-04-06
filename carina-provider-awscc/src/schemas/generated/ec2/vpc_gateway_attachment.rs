@@ -5,7 +5,9 @@
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
 use super::AwsccSchemaConfig;
-use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, validators};
+use carina_core::schema::{
+    AttributeSchema, AttributeType, OperationConfig, ResourceSchema, validators,
+};
 
 /// Returns the schema config for ec2_vpc_gateway_attachment (AWS::EC2::VPCGatewayAttachment)
 pub fn ec2_vpc_gateway_attachment_config() -> AwsccSchemaConfig {
@@ -45,6 +47,12 @@ pub fn ec2_vpc_gateway_attachment_config() -> AwsccSchemaConfig {
             }
             if errors.is_empty() { Ok(()) } else { Err(errors) }
         })
+        .with_operation_config(OperationConfig {
+            delete_timeout_secs: Some(1800),
+            delete_max_retries: None,
+            create_timeout_secs: None,
+            create_max_retries: None,
+        }),
     }
 }
 

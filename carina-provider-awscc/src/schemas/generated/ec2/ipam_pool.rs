@@ -6,7 +6,9 @@
 
 use super::AwsccSchemaConfig;
 use super::tags_type;
-use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField, types};
+use carina_core::schema::{
+    AttributeSchema, AttributeType, OperationConfig, ResourceSchema, StructField, types,
+};
 
 const VALID_ADDRESS_FAMILY: &[&str] = &["IPv4", "IPv6"];
 
@@ -208,6 +210,12 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
                 .with_description("An array of key-value pairs to apply to this resource.")
                 .with_provider_name("Tags"),
         )
+        .with_operation_config(OperationConfig {
+            delete_timeout_secs: Some(1800),
+            delete_max_retries: None,
+            create_timeout_secs: None,
+            create_max_retries: None,
+        }),
     }
 }
 

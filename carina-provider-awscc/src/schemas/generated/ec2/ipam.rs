@@ -7,7 +7,9 @@
 use super::AwsccSchemaConfig;
 use super::tags_type;
 use carina_core::resource::Value;
-use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField};
+use carina_core::schema::{
+    AttributeSchema, AttributeType, OperationConfig, ResourceSchema, StructField,
+};
 
 const VALID_METERED_ACCOUNT: &[&str] = &["ipam-owner", "resource-owner"];
 
@@ -164,6 +166,12 @@ pub fn ec2_ipam_config() -> AwsccSchemaConfig {
                 .with_provider_name("Tier"),
         )
         .force_replace()
+        .with_operation_config(OperationConfig {
+            delete_timeout_secs: Some(1800),
+            delete_max_retries: None,
+            create_timeout_secs: None,
+            create_max_retries: None,
+        }),
     }
 }
 

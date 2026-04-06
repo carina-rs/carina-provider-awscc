@@ -7,7 +7,7 @@
 use super::AwsccSchemaConfig;
 use super::tags_type;
 use carina_core::resource::Value;
-use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, types};
+use carina_core::schema::{AttributeSchema, AttributeType, OperationConfig, ResourceSchema, types};
 
 const VALID_AUTO_ACCEPT_SHARED_ATTACHMENTS: &[&str] = &["enable", "disable"];
 
@@ -207,7 +207,13 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
                     },
                 )
                 .with_provider_name("VpnEcmpSupport"),
-            ),
+            )
+            .with_operation_config(OperationConfig {
+                delete_timeout_secs: Some(1800),
+                delete_max_retries: Some(24),
+                create_timeout_secs: None,
+                create_max_retries: None,
+            }),
     }
 }
 
