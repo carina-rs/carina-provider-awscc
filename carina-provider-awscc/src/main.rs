@@ -99,6 +99,26 @@ impl CarinaProvider for AwsccProcessProvider {
         Ok(())
     }
 
+    fn config_completions(&self) -> HashMap<String, Vec<proto::CompletionValue>> {
+        let core_completions = carina_aws_types::region_completions("awscc");
+        let mut map = HashMap::new();
+        map.insert(
+            "region".to_string(),
+            core_completions
+                .into_iter()
+                .map(|c| proto::CompletionValue {
+                    value: c.value,
+                    description: c.description,
+                })
+                .collect(),
+        );
+        map
+    }
+
+    fn identity_attributes(&self) -> Vec<String> {
+        vec!["region".to_string()]
+    }
+
     fn read(
         &self,
         id: &proto::ResourceId,
