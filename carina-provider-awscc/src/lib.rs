@@ -109,8 +109,13 @@ impl ProviderFactory for AwsccProviderFactory {
         vec!["region"]
     }
 
-    fn region_completions(&self) -> Vec<carina_core::schema::CompletionValue> {
-        carina_aws_types::region_completions("awscc")
+    fn config_completions(
+        &self,
+    ) -> std::collections::HashMap<String, Vec<carina_core::schema::CompletionValue>> {
+        std::collections::HashMap::from([(
+            "region".to_string(),
+            carina_aws_types::region_completions("awscc"),
+        )])
     }
 
     fn get_enum_alias_reverse(
@@ -118,8 +123,9 @@ impl ProviderFactory for AwsccProviderFactory {
         resource_type: &str,
         attr_name: &str,
         value: &str,
-    ) -> Option<&'static str> {
+    ) -> Option<String> {
         schemas::generated::get_enum_alias_reverse(resource_type, attr_name, value)
+            .map(|s| s.to_string())
     }
 }
 
