@@ -134,7 +134,7 @@ impl ProviderFactory for AwsccProviderFactory {
 // =============================================================================
 
 impl Provider for AwsccProvider {
-    fn name(&self) -> &'static str {
+    fn name(&self) -> &str {
         "awscc"
     }
 
