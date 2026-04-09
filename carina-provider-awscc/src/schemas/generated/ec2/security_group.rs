@@ -9,9 +9,9 @@ use super::tags_type;
 use carina_core::resource::Value;
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField, types};
 
-const VALID_EGRESS_IP_PROTOCOL: &[&str] = &["tcp", "udp", "icmp", "icmpv6", "-1", "all", "all"];
+const VALID_EGRESS_IP_PROTOCOL: &[&str] = &["tcp", "udp", "icmp", "icmpv6", "-1", "all"];
 
-const VALID_INGRESS_IP_PROTOCOL: &[&str] = &["tcp", "udp", "icmp", "icmpv6", "-1", "all", "all"];
+const VALID_INGRESS_IP_PROTOCOL: &[&str] = &["tcp", "udp", "icmp", "icmpv6", "-1", "all"];
 
 fn validate_from_port_range(value: &Value) -> Result<(), String> {
     if let Value::Int(n) = value {
