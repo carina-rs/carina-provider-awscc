@@ -6,6 +6,7 @@
 
 use super::AwsccSchemaConfig;
 use super::tags_type;
+use super::validate_tags_map;
 use carina_core::resource::Value;
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema};
 use regex::Regex;
@@ -256,6 +257,13 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
                 .with_description("A list of tags that you want to attach to the newly created account. For each tag in the list, you must specify both a tag key and a value.")
                 .with_provider_name("Tags"),
         )
+        .with_validator(|attrs| {
+            let mut errors = Vec::new();
+            if let Err(mut e) = validate_tags_map(attrs) {
+                errors.append(&mut e);
+            }
+            if errors.is_empty() { Ok(()) } else { Err(errors) }
+        })
     }
 }
 

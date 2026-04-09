@@ -6,6 +6,7 @@
 
 use super::AwsccSchemaConfig;
 use super::tags_type;
+use super::validate_tags_map;
 use carina_core::resource::Value;
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, types, validators};
 
@@ -115,6 +116,9 @@ pub fn ec2_vpc_config() -> AwsccSchemaConfig {
         .with_validator(|attrs| {
             let mut errors = Vec::new();
             if let Err(mut e) = validators::validate_exclusive_required(attrs, &["cidr_block", "ipv4_ipam_pool_id"]) {
+                errors.append(&mut e);
+            }
+            if let Err(mut e) = validate_tags_map(attrs) {
                 errors.append(&mut e);
             }
             if errors.is_empty() { Ok(()) } else { Err(errors) }

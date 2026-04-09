@@ -6,6 +6,7 @@
 
 use super::AwsccSchemaConfig;
 use super::tags_type;
+use super::validate_tags_map;
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, types};
 
 const VALID_DOMAIN: &[&str] = &["vpc", "standard"];
@@ -82,6 +83,13 @@ pub fn ec2_eip_config() -> AwsccSchemaConfig {
                 .with_description("The Elastic IP address you are accepting for transfer. You can only accept one transferred address. For more information on Elastic IP address transfers, see [Transfer Elastic IP addresses](https://docs.aws.amazon.com/vpc/latest/userguide/vpc-eips.html#transfer-EIPs-intro) in the *Amazon Virtual Private Cloud User Guide*.")
                 .with_provider_name("TransferAddress"),
         )
+        .with_validator(|attrs| {
+            let mut errors = Vec::new();
+            if let Err(mut e) = validate_tags_map(attrs) {
+                errors.append(&mut e);
+            }
+            if errors.is_empty() { Ok(()) } else { Err(errors) }
+        })
     }
 }
 

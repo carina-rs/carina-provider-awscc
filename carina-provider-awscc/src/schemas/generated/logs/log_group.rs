@@ -6,6 +6,7 @@
 
 use super::AwsccSchemaConfig;
 use super::tags_type;
+use super::validate_tags_map;
 use carina_core::resource::Value;
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema};
 use regex::Regex;
@@ -64,12 +65,6 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
                 .read_only()
                 .with_description(" (read-only)")
                 .with_provider_name("Arn"),
-        )
-        .attribute(
-            AttributeSchema::new("bearer_token_authentication_enabled", AttributeType::Bool)
-                .with_description("")
-                .with_provider_name("BearerTokenAuthenticationEnabled")
-                .with_default(Value::Bool(false)),
         )
         .attribute(
             AttributeSchema::new("data_protection_policy", AttributeType::Map(Box::new(AttributeType::String)))
@@ -137,6 +132,13 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
                 .with_provider_name("Tags"),
         )
         .with_name_attribute("log_group_name")
+        .with_validator(|attrs| {
+            let mut errors = Vec::new();
+            if let Err(mut e) = validate_tags_map(attrs) {
+                errors.append(&mut e);
+            }
+            if errors.is_empty() { Ok(()) } else { Err(errors) }
+        })
     }
 }
 

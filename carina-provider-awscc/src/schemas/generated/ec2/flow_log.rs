@@ -6,6 +6,7 @@
 
 use super::AwsccSchemaConfig;
 use super::tags_type;
+use super::validate_tags_map;
 use carina_core::resource::Value;
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField};
 
@@ -155,6 +156,13 @@ pub fn ec2_flow_log_config() -> AwsccSchemaConfig {
                 .with_description("The type of traffic to log. You can log traffic that the resource accepts or rejects, or all traffic.")
                 .with_provider_name("TrafficType"),
         )
+        .with_validator(|attrs| {
+            let mut errors = Vec::new();
+            if let Err(mut e) = validate_tags_map(attrs) {
+                errors.append(&mut e);
+            }
+            if errors.is_empty() { Ok(()) } else { Err(errors) }
+        })
     }
 }
 
