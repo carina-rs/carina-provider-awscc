@@ -1618,6 +1618,9 @@ use super::AwsccSchemaConfig;
     if needs_tags_type {
         code.push_str("use super::tags_type;\n");
     }
+    if has_tags {
+        code.push_str("use super::validate_tags_map;\n");
+    }
     code.push('\n');
 
     // Aliases are used for to_dsl closure and enum_alias_reverse generation below.
@@ -2096,8 +2099,9 @@ pub fn {}() -> AwsccSchemaConfig {{
         code.push_str("        })\n");
     }
 
-    // Generate validator for mutually exclusive field groups.
-    if !exclusive_groups.is_empty() {
+    // Generate validator for mutually exclusive field groups and/or tags validation.
+    let needs_validator = !exclusive_groups.is_empty() || has_tags;
+    if needs_validator {
         code.push_str("        .with_validator(|attrs| {\n");
         code.push_str("            let mut errors = Vec::new();\n");
         for group in &exclusive_groups {
@@ -2110,6 +2114,9 @@ pub fn {}() -> AwsccSchemaConfig {{
                 "            if let Err(mut e) = validators::validate_exclusive_required(attrs, &[{}]) {{\n                errors.append(&mut e);\n            }}\n",
                 fields_str
             ));
+        }
+        if has_tags {
+            code.push_str("            if let Err(mut e) = validate_tags_map(attrs) {\n                errors.append(&mut e);\n            }\n");
         }
         code.push_str(
             "            if errors.is_empty() { Ok(()) } else { Err(errors) }\n        })\n",

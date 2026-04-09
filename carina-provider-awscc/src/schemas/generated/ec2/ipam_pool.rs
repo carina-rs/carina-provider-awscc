@@ -6,6 +6,7 @@
 
 use super::AwsccSchemaConfig;
 use super::tags_type;
+use super::validate_tags_map;
 use carina_core::schema::{
     AttributeSchema, AttributeType, OperationConfig, ResourceSchema, StructField, types,
 };
@@ -215,6 +216,13 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
             delete_max_retries: None,
             create_timeout_secs: None,
             create_max_retries: None,
+        })
+        .with_validator(|attrs| {
+            let mut errors = Vec::new();
+            if let Err(mut e) = validate_tags_map(attrs) {
+                errors.append(&mut e);
+            }
+            if errors.is_empty() { Ok(()) } else { Err(errors) }
         })
     }
 }

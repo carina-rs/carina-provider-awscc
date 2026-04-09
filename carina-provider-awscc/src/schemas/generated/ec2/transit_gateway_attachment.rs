@@ -6,6 +6,7 @@
 
 use super::AwsccSchemaConfig;
 use super::tags_type;
+use super::validate_tags_map;
 use carina_core::schema::{
     AttributeSchema, AttributeType, OperationConfig, ResourceSchema, StructField,
 };
@@ -82,6 +83,13 @@ pub fn ec2_transit_gateway_attachment_config() -> AwsccSchemaConfig {
             delete_max_retries: Some(24),
             create_timeout_secs: None,
             create_max_retries: None,
+        })
+        .with_validator(|attrs| {
+            let mut errors = Vec::new();
+            if let Err(mut e) = validate_tags_map(attrs) {
+                errors.append(&mut e);
+            }
+            if errors.is_empty() { Ok(()) } else { Err(errors) }
         })
     }
 }

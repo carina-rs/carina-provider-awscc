@@ -6,6 +6,7 @@
 
 use super::AwsccSchemaConfig;
 use super::tags_type;
+use super::validate_tags_map;
 use carina_core::schema::{AttributeSchema, ResourceSchema};
 
 /// Returns the schema config for ec2_route_table (AWS::EC2::RouteTable)
@@ -34,6 +35,13 @@ pub fn ec2_route_table_config() -> AwsccSchemaConfig {
                 .with_description("The ID of the VPC.")
                 .with_provider_name("VpcId"),
         )
+        .with_validator(|attrs| {
+            let mut errors = Vec::new();
+            if let Err(mut e) = validate_tags_map(attrs) {
+                errors.append(&mut e);
+            }
+            if errors.is_empty() { Ok(()) } else { Err(errors) }
+        })
     }
 }
 

@@ -6,6 +6,7 @@
 
 use super::AwsccSchemaConfig;
 use super::tags_type;
+use super::validate_tags_map;
 use carina_core::schema::{AttributeSchema, ResourceSchema};
 
 /// Returns the schema config for ec2_egress_only_internet_gateway (AWS::EC2::EgressOnlyInternetGateway)
@@ -37,7 +38,18 @@ pub fn ec2_egress_only_internet_gateway_config() -> AwsccSchemaConfig {
                         "The ID of the VPC for which to create the egress-only internet gateway.",
                     )
                     .with_provider_name("VpcId"),
-            ),
+            )
+            .with_validator(|attrs| {
+                let mut errors = Vec::new();
+                if let Err(mut e) = validate_tags_map(attrs) {
+                    errors.append(&mut e);
+                }
+                if errors.is_empty() {
+                    Ok(())
+                } else {
+                    Err(errors)
+                }
+            }),
     }
 }
 

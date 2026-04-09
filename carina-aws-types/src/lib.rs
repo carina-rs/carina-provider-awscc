@@ -132,6 +132,27 @@ pub fn tags_type() -> AttributeType {
     AttributeType::Map(Box::new(AttributeType::String))
 }
 
+/// Validate that a tags map does not use Key/Value pair list structure.
+///
+/// Detects when a tags map contains both `key` and `value` as keys (case-insensitive),
+/// which indicates the user wrote a Key/Value pair list instead of a flat map:
+///   Wrong: `tags = { key = 'Name', value = '...' }`
+///   Right: `tags = { Name = '...' }`
+pub fn validate_tags_map(
+    attributes: &std::collections::HashMap<String, Value>,
+) -> Result<(), Vec<carina_core::schema::TypeError>> {
+    if let Some(Value::Map(map)) = attributes.get("tags") {
+        let has_key = map.keys().any(|k| k.eq_ignore_ascii_case("key"));
+        let has_value = map.keys().any(|k| k.eq_ignore_ascii_case("value"));
+        if has_key && has_value {
+            return Err(vec![carina_core::schema::TypeError::ResourceValidationFailed {
+                message: "tags map contains both 'key' and 'value' as keys, which looks like a Key/Value pair list. Use flat map syntax instead: tags = { Name = '...' }".to_string(),
+            }]);
+        }
+    }
+    Ok(())
+}
+
 // ========== Resource ID validators ==========
 
 /// Validate a generic AWS resource ID format: `{prefix}-{hex}` where hex is 8+ hex digits.
@@ -1828,5 +1849,62 @@ mod tests {
         let awscc = region_completions("awscc");
         assert!(aws[0].value.starts_with("aws.Region."));
         assert!(awscc[0].value.starts_with("awscc.Region."));
+    }
+
+    #[test]
+    fn validate_tags_map_detects_key_value_pattern() {
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert(
+            "tags".to_string(),
+            Value::Map(
+                [
+                    ("key".to_string(), Value::String("Project".to_string())),
+                    ("value".to_string(), Value::String("carina".to_string())),
+                ]
+                .into_iter()
+                .collect(),
+            ),
+        );
+        assert!(validate_tags_map(&attrs).is_err());
+    }
+
+    #[test]
+    fn validate_tags_map_case_insensitive() {
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert(
+            "tags".to_string(),
+            Value::Map(
+                [
+                    ("Key".to_string(), Value::String("Project".to_string())),
+                    ("Value".to_string(), Value::String("carina".to_string())),
+                ]
+                .into_iter()
+                .collect(),
+            ),
+        );
+        assert!(validate_tags_map(&attrs).is_err());
+    }
+
+    #[test]
+    fn validate_tags_map_normal_tags_ok() {
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert(
+            "tags".to_string(),
+            Value::Map(
+                [
+                    ("Project".to_string(), Value::String("carina".to_string())),
+                    ("ManagedBy".to_string(), Value::String("carina".to_string())),
+                ]
+                .into_iter()
+                .collect(),
+            ),
+        );
+        assert!(validate_tags_map(&attrs).is_ok());
+    }
+
+    #[test]
+    fn validate_tags_map_no_tags_ok() {
+        let attrs = std::collections::HashMap::new();
+        assert!(validate_tags_map(&attrs).is_ok());
     }
 }
