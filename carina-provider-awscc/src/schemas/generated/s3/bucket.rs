@@ -163,6 +163,7 @@ fn validate_max_age_range(value: &Value) -> Result<(), String> {
     }
 }
 
+#[allow(dead_code)]
 fn validate_string_pattern_cc806c69dc4cdaf7(value: &Value) -> Result<(), String> {
     if let Value::String(s) = value {
         static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
@@ -207,6 +208,7 @@ fn validate_string_length_max_1024(value: &Value) -> Result<(), String> {
     }
 }
 
+#[allow(dead_code)]
 fn validate_string_pattern_3ee03875337c12ab_len_max_20(value: &Value) -> Result<(), String> {
     if let Value::String(s) = value {
         static RE: std::sync::LazyLock<Regex> =

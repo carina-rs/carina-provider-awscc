@@ -29,6 +29,7 @@ fn validate_retention_in_days_int_enum(value: &Value) -> Result<(), String> {
     }
 }
 
+#[allow(dead_code)]
 fn validate_string_pattern_b6dfbc56753dfe38_len_1_512(value: &Value) -> Result<(), String> {
     if let Value::String(s) = value {
         static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
