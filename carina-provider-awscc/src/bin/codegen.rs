@@ -1620,34 +1620,22 @@ use super::AwsccSchemaConfig;
     }
     code.push('\n');
 
+    // Aliases are used for to_dsl closure and enum_alias_reverse generation below.
+    let aliases = known_enum_aliases();
+
     // Generate enum constants.
     // Constants are always emitted (referenced by enum_valid_values()).
-    let aliases = known_enum_aliases();
     for (prop_name, enum_info) in &enums {
-        // For composite keys like "DefName.FieldName", extract just "FieldName" for alias lookup
-        let field_name = prop_name
-            .split('.')
-            .next_back()
-            .unwrap_or(prop_name.as_str());
         let const_name = format!("VALID_{}", prop_name.to_snake_case().to_uppercase());
 
-        // Generate constant (including alias values) - always emitted.
-        // Alias values may already be present in enum_info.values (e.g., via
-        // known_enum_overrides), so deduplicate to avoid repeated entries.
-        let mut all_values: Vec<String> = enum_info
+        // Generate constant from enum_info.values (which already includes alias
+        // DSL values injected during EnumInfo construction).
+        let values_str = enum_info
             .values
             .iter()
             .map(|v| format!("\"{}\"", v))
-            .collect();
-        if let Some(prop_aliases) = aliases.get(field_name) {
-            for (_, alias) in prop_aliases {
-                let quoted = format!("\"{}\"", alias);
-                if !all_values.contains(&quoted) {
-                    all_values.push(quoted);
-                }
-            }
-        }
-        let values_str = all_values.join(", ");
+            .collect::<Vec<_>>()
+            .join(", ");
         code.push_str(&format!(
             "const {}: &[&str] = &[{}];\n\n",
             const_name, values_str
@@ -2610,10 +2598,7 @@ fn generate_struct_type(
 fn known_enum_overrides() -> &'static HashMap<&'static str, Vec<&'static str>> {
     static OVERRIDES: LazyLock<HashMap<&'static str, Vec<&'static str>>> = LazyLock::new(|| {
         let mut m = HashMap::new();
-        m.insert(
-            "IpProtocol",
-            vec!["tcp", "udp", "icmp", "icmpv6", "-1", "all"],
-        );
+        m.insert("IpProtocol", vec!["tcp", "udp", "icmp", "icmpv6", "-1"]);
         m.insert("ConnectivityType", vec!["public", "private"]);
         m.insert("AvailabilityMode", vec!["zonal", "regional"]);
         m.insert("AddressFamily", vec!["IPv4", "IPv6"]);
@@ -3522,9 +3507,21 @@ fn cfn_type_to_carina_type_with_enum(
     let overrides = known_enum_overrides();
     if let Some(values) = overrides.get(prop_name) {
         let type_name = prop_name.to_pascal_case();
+        // Start with canonical AWS values from overrides
+        let mut enum_values: Vec<String> = values.iter().map(|s| s.to_string()).collect();
+        // Inject DSL alias values from known_enum_aliases so that users can write
+        // e.g., IpProtocol.all instead of IpProtocol.-1
+        let aliases = known_enum_aliases();
+        if let Some(alias_list) = aliases.get(prop_name) {
+            for (_, alias) in alias_list {
+                if !enum_values.iter().any(|v| v == alias) {
+                    enum_values.push(alias.to_string());
+                }
+            }
+        }
         let enum_info = EnumInfo {
             type_name,
-            values: values.iter().map(|s| s.to_string()).collect(),
+            values: enum_values,
         };
         return ("/* enum */".to_string(), Some(enum_info));
     }
@@ -4165,12 +4162,13 @@ mod tests {
     fn test_known_enum_overrides() {
         let overrides = known_enum_overrides();
 
-        // IpProtocol should be overridden
+        // IpProtocol should be overridden (canonical AWS values only; alias
+        // "all" for "-1" is injected separately via known_enum_aliases)
         let ip_protocol = overrides.get("IpProtocol");
         assert!(ip_protocol.is_some(), "IpProtocol should be in overrides");
         assert_eq!(
             ip_protocol.unwrap(),
-            &vec!["tcp", "udp", "icmp", "icmpv6", "-1", "all"]
+            &vec!["tcp", "udp", "icmp", "icmpv6", "-1"]
         );
 
         // ConnectivityType should be overridden
