@@ -54,6 +54,7 @@ RESOURCE_TYPES=(
     "AWS::IAM::Role"
     "AWS::Logs::LogGroup"
     "AWS::Organizations::Organization"
+    "AWS::Organizations::Account"
 )
 
 echo "Generating awscc provider schemas..."

@@ -11,6 +11,7 @@ use regex::Regex;
 
 const VALID_FEATURE_SET: &[&str] = &["ALL", "CONSOLIDATED_BILLING"];
 
+#[allow(dead_code)]
 fn validate_string_pattern_2fd01fd52b67fc75(value: &Value) -> Result<(), String> {
     if let Value::String(s) = value {
         static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
@@ -29,6 +30,7 @@ fn validate_string_pattern_2fd01fd52b67fc75(value: &Value) -> Result<(), String>
     }
 }
 
+#[allow(dead_code)]
 fn validate_string_pattern_ec4d9bee0dcd262b_len_6_64(value: &Value) -> Result<(), String> {
     if let Value::String(s) = value {
         static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
@@ -50,6 +52,7 @@ fn validate_string_pattern_ec4d9bee0dcd262b_len_6_64(value: &Value) -> Result<()
     }
 }
 
+#[allow(dead_code)]
 fn validate_string_pattern_0cb01cbc89d38ae3_len_max_64(value: &Value) -> Result<(), String> {
     if let Value::String(s) = value {
         static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {

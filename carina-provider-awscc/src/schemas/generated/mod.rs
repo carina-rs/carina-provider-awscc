@@ -59,6 +59,7 @@ static ENUM_VALID_VALUES: LazyLock<
         iam::role::enum_valid_values(),
         logs::log_group::enum_valid_values(),
         organizations::organization::enum_valid_values(),
+        organizations::account::enum_valid_values(),
     ];
     let mut map: HashMap<&str, HashMap<&str, &[&str]>> = HashMap::new();
     for (rt, attrs) in modules {
@@ -135,6 +136,10 @@ static ENUM_ALIAS_DISPATCH: LazyLock<HashMap<&'static str, EnumAliasReverseFn>> 
                 "organizations.organization",
                 organizations::organization::enum_alias_reverse,
             ),
+            (
+                "organizations.account",
+                organizations::account::enum_alias_reverse,
+            ),
         ];
         entries.into_iter().collect()
     });
@@ -167,6 +172,7 @@ fn build_configs() -> Vec<AwsccSchemaConfig> {
         iam::role::iam_role_config(),
         logs::log_group::logs_log_group_config(),
         organizations::organization::organizations_organization_config(),
+        organizations::account::organizations_account_config(),
     ]
 }
 

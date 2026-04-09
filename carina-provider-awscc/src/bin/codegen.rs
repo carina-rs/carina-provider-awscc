@@ -1318,15 +1318,20 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
             }
             _ => {}
         }
-        // Collect pattern constraints for string properties
+        // Collect pattern constraints for string properties (or array items with patterns)
         if attr_type.contains("validate_") && attr_type.contains("_pattern") {
-            // Pattern can come from the property directly or from a $ref definition
-            let pattern = prop.pattern.clone().or_else(|| {
-                prop.ref_path
-                    .as_ref()
-                    .and_then(|ref_path| resolve_ref(schema, ref_path))
-                    .and_then(|def| def.pattern.clone())
-            });
+            // Pattern can come from the property directly, from a $ref definition,
+            // or from array items (e.g., type: array, items: { pattern: ... })
+            let pattern = prop
+                .pattern
+                .clone()
+                .or_else(|| {
+                    prop.ref_path
+                        .as_ref()
+                        .and_then(|ref_path| resolve_ref(schema, ref_path))
+                        .and_then(|def| def.pattern.clone())
+                })
+                .or_else(|| prop.items.as_ref().and_then(|items| items.pattern.clone()));
             if let Some(pattern) = pattern {
                 // Check if this pattern also has length constraints
                 let effective_min = prop.min_length.filter(|&m| m > 0);
@@ -1748,6 +1753,7 @@ fn {}(value: &Value) -> Result<(), String> {{
             let escaped_for_rust = rust_pattern.replace('\\', "\\\\").replace('"', "\\\"");
             // For the error message, also escape { and } for the inner format!() macro
             let escaped_for_msg = escaped_for_rust.replace('{', "{{").replace('}', "}}");
+            code.push_str("#[allow(dead_code)]\n");
             code.push_str("fn ");
             code.push_str(&fn_name);
             code.push_str("(value: &Value) -> Result<(), String> {\n");
@@ -1853,7 +1859,8 @@ fn {}(value: &Value) -> Result<(), String> {{
             let escaped_for_msg = escaped_for_rust.replace('{', "{{").replace('}', "}}");
             let (len_condition, range_display) = string_length_condition_and_display(*min, *max);
             code.push_str(&format!(
-                r#"fn {fn_name}(value: &Value) -> Result<(), String> {{
+                r#"#[allow(dead_code)]
+fn {fn_name}(value: &Value) -> Result<(), String> {{
     if let Value::String(s) = value {{
         static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {{
             Regex::new("{escaped_for_rust}").expect("invalid pattern regex")
