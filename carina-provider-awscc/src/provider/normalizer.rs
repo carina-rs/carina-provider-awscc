@@ -122,8 +122,10 @@ fn resolve_struct_enum_values(value: &Value, fields: &[StructField]) -> Value {
                         _ => None,
                     };
                     if let Some(nested) = nested_fields {
-                        resolved_map
-                            .insert(field_key.clone(), resolve_struct_enum_values(field_value, nested));
+                        resolved_map.insert(
+                            field_key.clone(),
+                            resolve_struct_enum_values(field_value, nested),
+                        );
                         continue;
                     }
                 }
