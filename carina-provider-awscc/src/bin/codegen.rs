@@ -1626,7 +1626,9 @@ use super::AwsccSchemaConfig;
             .unwrap_or(prop_name.as_str());
         let const_name = format!("VALID_{}", prop_name.to_snake_case().to_uppercase());
 
-        // Generate constant (including alias values) - always emitted
+        // Generate constant (including alias values) - always emitted.
+        // Alias values may already be present in enum_info.values (e.g., via
+        // known_enum_overrides), so deduplicate to avoid repeated entries.
         let mut all_values: Vec<String> = enum_info
             .values
             .iter()
@@ -1634,7 +1636,10 @@ use super::AwsccSchemaConfig;
             .collect();
         if let Some(prop_aliases) = aliases.get(field_name) {
             for (_, alias) in prop_aliases {
-                all_values.push(format!("\"{}\"", alias));
+                let quoted = format!("\"{}\"", alias);
+                if !all_values.contains(&quoted) {
+                    all_values.push(quoted);
+                }
             }
         }
         let values_str = all_values.join(", ");

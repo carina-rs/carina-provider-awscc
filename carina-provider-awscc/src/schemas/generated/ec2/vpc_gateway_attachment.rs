@@ -40,6 +40,12 @@ pub fn ec2_vpc_gateway_attachment_config() -> AwsccSchemaConfig {
                 .with_description("The ID of the virtual private gateway. You must specify either InternetGatewayId or VpnGatewayId, but not both.")
                 .with_provider_name("VpnGatewayId"),
         )
+        .with_operation_config(OperationConfig {
+            delete_timeout_secs: Some(1800),
+            delete_max_retries: None,
+            create_timeout_secs: None,
+            create_max_retries: None,
+        })
         .with_validator(|attrs| {
             let mut errors = Vec::new();
             if let Err(mut e) = validators::validate_exclusive_required(attrs, &["internet_gateway_id", "vpn_gateway_id"]) {
@@ -47,12 +53,6 @@ pub fn ec2_vpc_gateway_attachment_config() -> AwsccSchemaConfig {
             }
             if errors.is_empty() { Ok(()) } else { Err(errors) }
         })
-        .with_operation_config(OperationConfig {
-            delete_timeout_secs: Some(1800),
-            delete_max_retries: None,
-            create_timeout_secs: None,
-            create_max_retries: None,
-        }),
     }
 }
 

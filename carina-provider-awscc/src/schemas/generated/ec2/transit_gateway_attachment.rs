@@ -82,7 +82,7 @@ pub fn ec2_transit_gateway_attachment_config() -> AwsccSchemaConfig {
             delete_max_retries: Some(24),
             create_timeout_secs: None,
             create_max_retries: None,
-        }),
+        })
     }
 }
 
