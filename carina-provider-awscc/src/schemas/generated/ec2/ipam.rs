@@ -171,7 +171,7 @@ pub fn ec2_ipam_config() -> AwsccSchemaConfig {
             delete_max_retries: None,
             create_timeout_secs: None,
             create_max_retries: None,
-        }),
+        })
     }
 }
 

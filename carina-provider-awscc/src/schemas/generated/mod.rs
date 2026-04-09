@@ -13,6 +13,7 @@ pub use super::awscc_types::*;
 pub mod ec2;
 pub mod iam;
 pub mod logs;
+pub mod organizations;
 pub mod s3;
 
 /// Cached schema configs, initialized once on first access.
@@ -57,6 +58,7 @@ static ENUM_VALID_VALUES: LazyLock<
         s3::bucket::enum_valid_values(),
         iam::role::enum_valid_values(),
         logs::log_group::enum_valid_values(),
+        organizations::organization::enum_valid_values(),
     ];
     let mut map: HashMap<&str, HashMap<&str, &[&str]>> = HashMap::new();
     for (rt, attrs) in modules {
@@ -129,6 +131,10 @@ static ENUM_ALIAS_DISPATCH: LazyLock<HashMap<&'static str, EnumAliasReverseFn>> 
             ("s3.bucket", s3::bucket::enum_alias_reverse),
             ("iam.role", iam::role::enum_alias_reverse),
             ("logs.log_group", logs::log_group::enum_alias_reverse),
+            (
+                "organizations.organization",
+                organizations::organization::enum_alias_reverse,
+            ),
         ];
         entries.into_iter().collect()
     });
@@ -160,6 +166,7 @@ fn build_configs() -> Vec<AwsccSchemaConfig> {
         s3::bucket::s3_bucket_config(),
         iam::role::iam_role_config(),
         logs::log_group::logs_log_group_config(),
+        organizations::organization::organizations_organization_config(),
     ]
 }
 

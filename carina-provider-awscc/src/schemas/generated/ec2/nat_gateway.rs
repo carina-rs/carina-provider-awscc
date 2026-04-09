@@ -161,7 +161,7 @@ pub fn ec2_nat_gateway_config() -> AwsccSchemaConfig {
             delete_max_retries: None,
             create_timeout_secs: None,
             create_max_retries: None,
-        }),
+        })
     }
 }
 
