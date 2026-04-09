@@ -85,13 +85,49 @@ fn resolve_struct_enum_values(value: &Value, fields: &[StructField]) -> Value {
         Value::Map(map) => {
             let mut resolved_map = HashMap::new();
             for (field_key, field_value) in map {
-                if let Some(field) = fields.iter().find(|f| f.name == *field_key)
-                    && let Some(parts) = field.field_type.namespaced_enum_parts()
-                    && let Some(resolved) =
-                        carina_core::utils::resolve_enum_value(field_value, &parts)
-                {
-                    resolved_map.insert(field_key.clone(), resolved);
-                    continue;
+                if let Some(field) = fields.iter().find(|f| f.name == *field_key) {
+                    // Direct enum field (String value)
+                    if let Some(parts) = field.field_type.namespaced_enum_parts()
+                        && let Some(resolved) =
+                            carina_core::utils::resolve_enum_value(field_value, &parts)
+                    {
+                        resolved_map.insert(field_key.clone(), resolved);
+                        continue;
+                    }
+                    // List(StringEnum): resolve each element
+                    if let AttributeType::List { inner, .. } = &field.field_type
+                        && let Some(parts) = inner.namespaced_enum_parts()
+                        && let Value::List(items) = field_value
+                    {
+                        let resolved_items: Vec<Value> = items
+                            .iter()
+                            .map(|item| {
+                                carina_core::utils::resolve_enum_value(item, &parts)
+                                    .unwrap_or_else(|| item.clone())
+                            })
+                            .collect();
+                        resolved_map.insert(field_key.clone(), Value::List(resolved_items));
+                        continue;
+                    }
+                    // Recurse into nested Struct or List(Struct) fields
+                    let nested_fields = match &field.field_type {
+                        AttributeType::Struct { fields, .. } => Some(fields.as_slice()),
+                        AttributeType::List { inner, .. } => {
+                            if let AttributeType::Struct { fields, .. } = inner.as_ref() {
+                                Some(fields.as_slice())
+                            } else {
+                                None
+                            }
+                        }
+                        _ => None,
+                    };
+                    if let Some(nested) = nested_fields {
+                        resolved_map.insert(
+                            field_key.clone(),
+                            resolve_struct_enum_values(field_value, nested),
+                        );
+                        continue;
+                    }
                 }
                 resolved_map.insert(field_key.clone(), field_value.clone());
             }
@@ -695,6 +731,105 @@ mod tests {
             }
         } else {
             panic!("Expected List for security_group_ingress");
+        }
+    }
+
+    /// Nested struct: a Struct field containing another Struct with a StringEnum.
+    /// Reproduces the S3 bucket_encryption issue where
+    /// blocked_encryption_types.encryption_type is a List(StringEnum) inside a nested Struct.
+    #[test]
+    fn test_resolve_struct_enum_values_nested_struct() {
+        let inner_fields = vec![StructField::new(
+            "encryption_type",
+            AttributeType::list(AttributeType::StringEnum {
+                name: "EncryptionType".to_string(),
+                values: vec!["NONE".to_string(), "SSE-C".to_string()],
+                namespace: Some("awscc.s3.bucket".to_string()),
+                to_dsl: Some(|s: &str| s.replace('-', "_")),
+            }),
+        )];
+
+        let fields = vec![
+            StructField::new(
+                "blocked_encryption_types",
+                AttributeType::Struct {
+                    name: "BlockedEncryptionTypes".to_string(),
+                    fields: inner_fields,
+                },
+            ),
+            StructField::new("bucket_key_enabled", AttributeType::Bool),
+            StructField::new(
+                "server_side_encryption_by_default",
+                AttributeType::Struct {
+                    name: "ServerSideEncryptionByDefault".to_string(),
+                    fields: vec![StructField::new(
+                        "sse_algorithm",
+                        AttributeType::StringEnum {
+                            name: "SseAlgorithm".to_string(),
+                            values: vec!["AES256".to_string()],
+                            namespace: Some("awscc.s3.bucket".to_string()),
+                            to_dsl: None,
+                        },
+                    )],
+                },
+            ),
+        ];
+
+        let mut inner_map = HashMap::new();
+        inner_map.insert(
+            "encryption_type".to_string(),
+            Value::List(vec![Value::String("SSE-C".to_string())]),
+        );
+        let mut map = HashMap::new();
+        map.insert(
+            "blocked_encryption_types".to_string(),
+            Value::Map(inner_map),
+        );
+        map.insert("bucket_key_enabled".to_string(), Value::Bool(false));
+        let mut sse_map = HashMap::new();
+        sse_map.insert(
+            "sse_algorithm".to_string(),
+            Value::String("AES256".to_string()),
+        );
+        map.insert(
+            "server_side_encryption_by_default".to_string(),
+            Value::Map(sse_map),
+        );
+
+        let value = Value::List(vec![Value::Map(map)]);
+        let resolved = resolve_struct_enum_values(&value, &fields);
+
+        // Verify the nested enum was resolved
+        if let Value::List(items) = &resolved {
+            if let Value::Map(m) = &items[0] {
+                if let Value::Map(blocked) = &m["blocked_encryption_types"] {
+                    if let Value::List(types) = &blocked["encryption_type"] {
+                        assert_eq!(
+                            types[0],
+                            Value::String("awscc.s3.bucket.EncryptionType.SSE_C".to_string()),
+                            "Nested struct enum should be resolved to DSL format"
+                        );
+                    } else {
+                        panic!("Expected List for encryption_type");
+                    }
+                } else {
+                    panic!("Expected Map for blocked_encryption_types");
+                }
+                // Also verify sse_algorithm in sibling struct
+                if let Value::Map(sse) = &m["server_side_encryption_by_default"] {
+                    assert_eq!(
+                        sse["sse_algorithm"],
+                        Value::String("awscc.s3.bucket.SseAlgorithm.AES256".to_string()),
+                        "Sibling struct enum should also be resolved"
+                    );
+                } else {
+                    panic!("Expected Map for server_side_encryption_by_default");
+                }
+            } else {
+                panic!("Expected Map");
+            }
+        } else {
+            panic!("Expected List");
         }
     }
 }
