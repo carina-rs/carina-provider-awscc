@@ -70,9 +70,17 @@ impl CarinaProvider for AwsccProcessProvider {
     }
 
     fn schemas(&self) -> Vec<proto::ResourceSchema> {
-        schemas::all_schemas()
+        schemas::generated::configs()
             .iter()
-            .map(convert::core_to_proto_schema)
+            .map(|config| {
+                let mut schema = convert::core_to_proto_schema(&config.schema);
+                if config.has_tags {
+                    schema
+                        .validators
+                        .push(proto::ValidatorType::TagsKeyValueCheck);
+                }
+                schema
+            })
             .collect()
     }
 
@@ -283,3 +291,44 @@ carina_plugin_sdk::export_provider!(AwsccProcessProvider, http);
 
 #[cfg(target_arch = "wasm32")]
 fn main() {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use carina_plugin_sdk::types::ValidatorType;
+
+    #[test]
+    fn schemas_include_tags_validator_for_tagged_resources() {
+        let provider = AwsccProcessProvider::new();
+        let schemas = provider.schemas();
+        let bucket = schemas
+            .iter()
+            .find(|s| s.resource_type == "awscc.s3.bucket")
+            .expect("s3.bucket schema should exist");
+        assert!(
+            bucket
+                .validators
+                .contains(&ValidatorType::TagsKeyValueCheck),
+            "s3.bucket should have TagsKeyValueCheck validator"
+        );
+    }
+
+    #[test]
+    fn schemas_exclude_tags_validator_for_untagged_resources() {
+        let provider = AwsccProcessProvider::new();
+        let schemas = provider.schemas();
+        let configs = schemas::generated::configs();
+        if let Some(untagged) = configs.iter().find(|c| !c.has_tags) {
+            let schema = schemas
+                .iter()
+                .find(|s| s.resource_type == format!("awscc.{}", untagged.resource_type_name))
+                .expect("untagged schema should exist");
+            assert!(
+                !schema
+                    .validators
+                    .contains(&ValidatorType::TagsKeyValueCheck),
+                "untagged resource should not have TagsKeyValueCheck"
+            );
+        }
+    }
+}

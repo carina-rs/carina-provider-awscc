@@ -303,6 +303,7 @@ pub fn core_to_proto_schema(s: &CoreResourceSchema) -> ProtoResourceSchema {
                 create_max_retries: c.create_max_retries,
             }
         }),
+        validators: vec![],
     }
 }
 
@@ -339,5 +340,12 @@ mod tests {
             }
             _ => panic!("Expected StringEnum"),
         }
+    }
+
+    #[test]
+    fn core_to_proto_schema_initializes_empty_validators() {
+        let schema = CoreResourceSchema::new("awscc.s3.bucket");
+        let proto = core_to_proto_schema(&schema);
+        assert!(proto.validators.is_empty());
     }
 }
