@@ -38,6 +38,7 @@ const VALID_VPC_ENDPOINT_TYPE: &[&str] = &[
     "Resource",
 ];
 
+#[allow(dead_code)]
 fn validate_list_items_1_10(value: &Value) -> Result<(), String> {
     if let Value::List(items) = value {
         let len = items.len();
