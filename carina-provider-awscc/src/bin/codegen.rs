@@ -1739,7 +1739,8 @@ fn {}(value: &Value) -> Result<(), String> {{
             generated_patterns.insert(pattern.clone());
             let fn_name = pattern_fn_name(pattern);
             // Convert PCRE-specific constructs to Rust regex equivalents
-            let rust_pattern = pattern.replace("\\Z", "\\z");
+            // (falling back to `.*` if the pattern uses unsupported features).
+            let rust_pattern = rust_compatible_pattern(pattern);
             // Escape for Rust string literal (double the backslashes, escape quotes)
             let escaped_for_rust = rust_pattern.replace('\\', "\\\\").replace('"', "\\\"");
             // For the error message, also escape { and } for the inner format!() macro
@@ -1785,7 +1786,8 @@ fn {}(value: &Value) -> Result<(), String> {{
             let fn_name = list_items_fn_name(*min, *max);
             let (condition, range_display) = list_items_condition_and_display(*min, *max);
             code.push_str(&format!(
-                r#"fn {}(value: &Value) -> Result<(), String> {{
+                r#"#[allow(dead_code)]
+fn {}(value: &Value) -> Result<(), String> {{
     if let Value::List(items) = value {{
         let len = items.len();
         if {} {{
@@ -1845,7 +1847,7 @@ fn {}(value: &Value) -> Result<(), String> {{
                 continue;
             }
             generated_combined.insert(fn_name.clone());
-            let rust_pattern = pattern.replace("\\Z", "\\z");
+            let rust_pattern = rust_compatible_pattern(pattern);
             let escaped_for_rust = rust_pattern.replace('\\', "\\\\").replace('"', "\\\"");
             let escaped_for_msg = escaped_for_rust.replace('{', "{{").replace('}', "}}");
             let (len_condition, range_display) = string_length_condition_and_display(*min, *max);
@@ -2764,6 +2766,22 @@ fn pattern_fn_name(pattern: &str) -> String {
     pattern.hash(&mut hasher);
     let hash = hasher.finish();
     format!("validate_string_pattern_{:016x}", hash)
+}
+
+/// Convert a CloudFormation regex pattern into one that Rust's `regex` crate can
+/// compile. Rust's regex does not support PCRE lookaround (`(?=`, `(?!`, `(?<=`,
+/// `(?<!`) or the `\Z` end-of-string anchor. Patterns that cannot be converted
+/// fall back to the permissive `.*` so the generated validator still compiles
+/// and the length constraint (if any) still runs.
+fn rust_compatible_pattern(pattern: &str) -> String {
+    // Cheap fixups first: convert PCRE-only anchors that have Rust equivalents.
+    let candidate = pattern.replace("\\Z", "\\z");
+    if regex::Regex::new(&candidate).is_ok() {
+        return candidate;
+    }
+    // Pattern uses a feature Rust's regex crate doesn't support (typically
+    // lookaround). Fall back to match-anything so the generated code compiles.
+    ".*".to_string()
 }
 
 /// Generate a constraint-based function name for combined pattern + length validation.

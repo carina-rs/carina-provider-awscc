@@ -55,6 +55,11 @@ RESOURCE_TYPES=(
     "AWS::Logs::LogGroup"
     "AWS::Organizations::Organization"
     "AWS::Organizations::Account"
+    "AWS::SSO::Instance"
+    "AWS::SSO::PermissionSet"
+    "AWS::SSO::Assignment"
+    "AWS::IdentityStore::Group"
+    "AWS::IdentityStore::GroupMembership"
 )
 
 echo "Generating awscc provider schemas..."

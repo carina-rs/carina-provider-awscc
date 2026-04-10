@@ -12,9 +12,11 @@ pub use super::awscc_types::*;
 
 pub mod ec2;
 pub mod iam;
+pub mod identitystore;
 pub mod logs;
 pub mod organizations;
 pub mod s3;
+pub mod sso;
 
 /// Cached schema configs, initialized once on first access.
 static SCHEMA_CONFIGS: LazyLock<Vec<AwsccSchemaConfig>> = LazyLock::new(build_configs);
@@ -60,6 +62,11 @@ static ENUM_VALID_VALUES: LazyLock<
         logs::log_group::enum_valid_values(),
         organizations::organization::enum_valid_values(),
         organizations::account::enum_valid_values(),
+        sso::instance::enum_valid_values(),
+        sso::permission_set::enum_valid_values(),
+        sso::assignment::enum_valid_values(),
+        identitystore::group::enum_valid_values(),
+        identitystore::group_membership::enum_valid_values(),
     ];
     let mut map: HashMap<&str, HashMap<&str, &[&str]>> = HashMap::new();
     for (rt, attrs) in modules {
@@ -140,6 +147,20 @@ static ENUM_ALIAS_DISPATCH: LazyLock<HashMap<&'static str, EnumAliasReverseFn>> 
                 "organizations.account",
                 organizations::account::enum_alias_reverse,
             ),
+            ("sso.instance", sso::instance::enum_alias_reverse),
+            (
+                "sso.permission_set",
+                sso::permission_set::enum_alias_reverse,
+            ),
+            ("sso.assignment", sso::assignment::enum_alias_reverse),
+            (
+                "identitystore.group",
+                identitystore::group::enum_alias_reverse,
+            ),
+            (
+                "identitystore.group_membership",
+                identitystore::group_membership::enum_alias_reverse,
+            ),
         ];
         entries.into_iter().collect()
     });
@@ -173,6 +194,11 @@ fn build_configs() -> Vec<AwsccSchemaConfig> {
         logs::log_group::logs_log_group_config(),
         organizations::organization::organizations_organization_config(),
         organizations::account::organizations_account_config(),
+        sso::instance::sso_instance_config(),
+        sso::permission_set::sso_permission_set_config(),
+        sso::assignment::sso_assignment_config(),
+        identitystore::group::identitystore_group_config(),
+        identitystore::group_membership::identitystore_group_membership_config(),
     ]
 }
 

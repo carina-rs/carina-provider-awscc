@@ -58,6 +58,11 @@ RESOURCE_TYPES=(
     "AWS::S3::Bucket"
     "AWS::IAM::Role"
     "AWS::Logs::LogGroup"
+    "AWS::SSO::Instance"
+    "AWS::SSO::PermissionSet"
+    "AWS::SSO::Assignment"
+    "AWS::IdentityStore::Group"
+    "AWS::IdentityStore::GroupMembership"
 )
 
 echo "Generating awscc provider documentation..."
