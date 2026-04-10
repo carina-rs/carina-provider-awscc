@@ -152,10 +152,14 @@ fn proto_to_core_attribute_type(t: &ProtoAttributeType) -> CoreAttributeType {
         ProtoAttributeType::Int => CoreAttributeType::Int,
         ProtoAttributeType::Float => CoreAttributeType::Float,
         ProtoAttributeType::Bool => CoreAttributeType::Bool,
-        ProtoAttributeType::StringEnum { name, values } => CoreAttributeType::StringEnum {
+        ProtoAttributeType::StringEnum {
+            name,
+            values,
+            namespace,
+        } => CoreAttributeType::StringEnum {
             name: name.clone(),
             values: values.clone(),
-            namespace: None,
+            namespace: namespace.clone(),
             to_dsl: None,
         },
         ProtoAttributeType::List { inner, ordered } => CoreAttributeType::List {
@@ -233,9 +237,15 @@ fn core_to_proto_attribute_type(t: &CoreAttributeType) -> ProtoAttributeType {
         CoreAttributeType::Int => ProtoAttributeType::Int,
         CoreAttributeType::Float => ProtoAttributeType::Float,
         CoreAttributeType::Bool => ProtoAttributeType::Bool,
-        CoreAttributeType::StringEnum { name, values, .. } => ProtoAttributeType::StringEnum {
+        CoreAttributeType::StringEnum {
+            name,
+            values,
+            namespace,
+            ..
+        } => ProtoAttributeType::StringEnum {
             name: name.clone(),
             values: values.clone(),
+            namespace: namespace.clone(),
         },
         CoreAttributeType::List { inner, ordered } => ProtoAttributeType::List {
             inner: Box::new(core_to_proto_attribute_type(inner)),
@@ -324,9 +334,14 @@ mod tests {
 
         // Proto should preserve the name
         match &proto_type {
-            ProtoAttributeType::StringEnum { name, values } => {
+            ProtoAttributeType::StringEnum {
+                name,
+                values,
+                namespace,
+            } => {
                 assert_eq!(name, "VersioningStatus");
                 assert_eq!(values.len(), 2);
+                assert_eq!(namespace.as_deref(), Some("awscc.s3.bucket"));
             }
             _ => panic!("Expected StringEnum"),
         }
