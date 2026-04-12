@@ -45,6 +45,21 @@ jobs:
           components: rustfmt
       - run: cargo fmt --check
 
+  wit-check:
+    name: WIT Drift Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check vendored WIT against upstream carina
+        run: |
+          for f in provider.wit types.wit world.wit; do
+            curl -fsSL "https://raw.githubusercontent.com/carina-rs/carina/main/carina-plugin-wit/wit/$f" -o "/tmp/upstream-$f"
+            diff "carina-plugin-wit/wit/$f" "/tmp/upstream-$f" || {
+              echo "::error::vendored $f is out of sync with carina main — copy the upstream file and commit"
+              exit 1
+            }
+          done
+
   wasm-build:
     name: WASM Build
     runs-on: ubuntu-latest
