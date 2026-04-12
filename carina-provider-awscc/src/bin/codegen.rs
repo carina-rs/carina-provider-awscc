@@ -1322,22 +1322,35 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
         if attr_type.contains("validate_") && attr_type.contains("_pattern") {
             // Pattern can come from the property directly, from a $ref definition,
             // or from array items (e.g., type: array, items: { pattern: ... })
-            let pattern = prop
+            // Track which source provided the pattern so we use the correct length constraints.
+            let pattern_source: Option<(String, Option<u64>, Option<u64>)> = prop
                 .pattern
-                .clone()
+                .as_ref()
+                .map(|p| (p.clone(), prop.min_length, prop.max_length))
                 .or_else(|| {
                     prop.ref_path
                         .as_ref()
                         .and_then(|ref_path| resolve_ref(schema, ref_path))
-                        .and_then(|def| def.pattern.clone())
+                        .and_then(|def| {
+                            def.pattern
+                                .as_ref()
+                                .map(|p| (p.clone(), def.min_length, def.max_length))
+                        })
                 })
-                .or_else(|| prop.items.as_ref().and_then(|items| items.pattern.clone()));
-            if let Some(pattern) = pattern {
+                .or_else(|| {
+                    prop.items.as_ref().and_then(|items| {
+                        items
+                            .pattern
+                            .as_ref()
+                            .map(|p| (p.clone(), items.min_length, items.max_length))
+                    })
+                });
+            if let Some((pattern, min_length, max_length)) = pattern_source {
                 // Check if this pattern also has length constraints
-                let effective_min = prop.min_length.filter(|&m| m > 0);
-                let has_length = effective_min.is_some() || prop.max_length.is_some();
+                let effective_min = min_length.filter(|&m| m > 0);
+                let has_length = effective_min.is_some() || max_length.is_some();
                 if has_length {
-                    pattern_with_lengths.insert((pattern.clone(), effective_min, prop.max_length));
+                    pattern_with_lengths.insert((pattern.clone(), effective_min, max_length));
                 } else {
                     patterns_used_standalone.insert(pattern.clone());
                 }
@@ -9059,6 +9072,61 @@ mod tests {
         assert!(
             type_str.contains("len:"),
             "Should have length constraint: {type_str}"
+        );
+    }
+
+    #[test]
+    fn test_array_items_pattern_with_length_generates_combined_validator() {
+        // When an array property has items with both pattern and length constraints,
+        // the generated code must emit a combined pattern+length validator function.
+        // Regression test: previously the codegen used the array container's (empty)
+        // length constraints instead of the items' constraints.
+        let schema = CfnSchema {
+            type_name: "AWS::Test::ArrayPattern".to_string(),
+            description: None,
+            properties: {
+                let mut props = BTreeMap::new();
+                props.insert(
+                    "ThumbprintList".to_string(),
+                    CfnProperty {
+                        prop_type: Some(TypeValue::Single("array".to_string())),
+                        items: Some(Box::new(CfnProperty {
+                            prop_type: Some(TypeValue::Single("string".to_string())),
+                            pattern: Some("[0-9A-Fa-f]{40}".to_string()),
+                            min_length: Some(40),
+                            max_length: Some(40),
+                            ..CfnProperty::default()
+                        })),
+                        max_items: Some(5),
+                        ..CfnProperty::default()
+                    },
+                );
+                props
+            },
+            required: vec![],
+            read_only_properties: vec![],
+            create_only_properties: vec![],
+            write_only_properties: vec![],
+            primary_identifier: None,
+            definitions: None,
+            tagging: None,
+            one_of: vec![],
+            any_of: vec![],
+        };
+
+        let code = generate_schema_code(&schema, "AWS::Test::ArrayPattern")
+            .expect("codegen should succeed");
+
+        // The combined validator function must be defined
+        assert!(
+            code.contains("fn validate_string_pattern_") && code.contains("_len_40_40"),
+            "Should generate combined pattern+length validator function, got:\n{code}"
+        );
+
+        // The validator should check both pattern and length
+        assert!(
+            code.contains("[0-9A-Fa-f]{40}") && code.contains("40..=40"),
+            "Validator should check both pattern and length range"
         );
     }
 
