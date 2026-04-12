@@ -122,6 +122,14 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_iam_oidc_provider_config() {
+        let config =
+            get_config("iam.oidc_provider").expect("iam.oidc_provider config should exist");
+        assert_eq!(config.aws_type_name, "AWS::IAM::OIDCProvider");
+        assert!(config.has_tags, "OIDCProvider should support tags");
+    }
+
     /// VPCGatewayAttachment requires exactly one of internet_gateway_id or vpn_gateway_id.
     /// Specifying both should be rejected by the schema validator.
     /// See: https://github.com/carina-rs/carina/issues/925

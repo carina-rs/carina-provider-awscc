@@ -52,6 +52,7 @@ RESOURCE_TYPES=(
     "AWS::EC2::TransitGatewayAttachment"
     "AWS::S3::Bucket"
     "AWS::IAM::Role"
+    "AWS::IAM::OIDCProvider"
     "AWS::Logs::LogGroup"
     "AWS::Organizations::Organization"
     "AWS::Organizations::Account"

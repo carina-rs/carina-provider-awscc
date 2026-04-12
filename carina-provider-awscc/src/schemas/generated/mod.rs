@@ -59,6 +59,7 @@ static ENUM_VALID_VALUES: LazyLock<
         ec2::transit_gateway_attachment::enum_valid_values(),
         s3::bucket::enum_valid_values(),
         iam::role::enum_valid_values(),
+        iam::oidc_provider::enum_valid_values(),
         logs::log_group::enum_valid_values(),
         organizations::organization::enum_valid_values(),
         organizations::account::enum_valid_values(),
@@ -138,6 +139,7 @@ static ENUM_ALIAS_DISPATCH: LazyLock<HashMap<&'static str, EnumAliasReverseFn>> 
             ),
             ("s3.bucket", s3::bucket::enum_alias_reverse),
             ("iam.role", iam::role::enum_alias_reverse),
+            ("iam.oidc_provider", iam::oidc_provider::enum_alias_reverse),
             ("logs.log_group", logs::log_group::enum_alias_reverse),
             (
                 "organizations.organization",
@@ -191,6 +193,7 @@ fn build_configs() -> Vec<AwsccSchemaConfig> {
         ec2::transit_gateway_attachment::ec2_transit_gateway_attachment_config(),
         s3::bucket::s3_bucket_config(),
         iam::role::iam_role_config(),
+        iam::oidc_provider::iam_oidc_provider_config(),
         logs::log_group::logs_log_group_config(),
         organizations::organization::organizations_organization_config(),
         organizations::account::organizations_account_config(),
@@ -401,6 +404,13 @@ pub fn build_enum_aliases_map() -> HashMap<String, HashMap<String, HashMap<Strin
     }
     for (attr, alias, canonical) in iam::role::enum_alias_entries() {
         map.entry("iam.role".to_string())
+            .or_default()
+            .entry(attr.to_string())
+            .or_default()
+            .insert(alias.to_string(), canonical.to_string());
+    }
+    for (attr, alias, canonical) in iam::oidc_provider::enum_alias_entries() {
+        map.entry("iam.oidc_provider".to_string())
             .or_default()
             .entry(attr.to_string())
             .or_default()
