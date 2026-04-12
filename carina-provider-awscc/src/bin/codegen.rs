@@ -2160,42 +2160,83 @@ pub fn {}() -> AwsccSchemaConfig {{
         }
     ));
 
-    // Generate enum_alias_reverse() function that maps DSL alias -> canonical AWS value
+    // Generate enum_alias_reverse() and enum_alias_entries() functions.
+    // Both share the same alias data: (attr_name, alias, canonical).
     {
-        let mut match_arms: Vec<String> = Vec::new();
-        let mut seen_arms: HashSet<String> = HashSet::new();
-        for prop_name in enums.keys() {
-            // For composite keys "DefName.FieldName", use just "FieldName" for alias lookup
+        // Collect alias entries as (attr_name, alias, canonical) tuples.
+        let mut alias_entries: Vec<(String, String, String)> = Vec::new();
+        let mut seen: HashSet<(String, String)> = HashSet::new();
+        for (prop_name, enum_info) in &enums {
             let field_name = prop_name
                 .split('.')
                 .next_back()
                 .unwrap_or(prop_name.as_str());
+            let attr_name = field_name.to_snake_case();
+
+            // Add explicit aliases from known_enum_aliases()
             if let Some(prop_aliases) = aliases.get(field_name) {
-                let attr_name = field_name.to_snake_case();
                 for (canonical, alias) in prop_aliases {
-                    let arm = format!(
-                        "        (\"{}\", \"{}\") => Some(\"{}\")",
-                        attr_name, alias, canonical
-                    );
-                    if seen_arms.insert(arm.clone()) {
-                        match_arms.push(arm);
+                    if seen.insert((attr_name.clone(), alias.to_string())) {
+                        alias_entries.push((
+                            attr_name.clone(),
+                            alias.to_string(),
+                            canonical.to_string(),
+                        ));
+                    }
+                }
+            }
+
+            // Add to_dsl reverse mappings for values containing hyphens.
+            for value in &enum_info.values {
+                if value.contains('-') {
+                    let dsl_form = value.replace('-', "_");
+                    if dsl_form != *value && seen.insert((attr_name.clone(), dsl_form.clone())) {
+                        alias_entries.push((attr_name.clone(), dsl_form, value.clone()));
                     }
                 }
             }
         }
+
+        // enum_alias_reverse(): match-based lookup
         code.push_str(
             "\n/// Maps DSL alias values back to canonical AWS values for this module.\n\
              /// e.g., (\"ip_protocol\", \"all\") -> Some(\"-1\")\n\
              pub fn enum_alias_reverse(attr_name: &str, value: &str) -> Option<&'static str> {\n",
         );
-        if match_arms.is_empty() {
+        if alias_entries.is_empty() {
             code.push_str("    let _ = (attr_name, value);\n    None\n");
         } else {
-            match_arms.push("        _ => None".to_string());
+            let match_arms: Vec<String> = alias_entries
+                .iter()
+                .map(|(attr, alias, canonical)| {
+                    format!(
+                        "        (\"{}\", \"{}\") => Some(\"{}\")",
+                        attr, alias, canonical
+                    )
+                })
+                .collect();
             code.push_str(&format!(
-                "    match (attr_name, value) {{\n{}\n    }}\n",
+                "    match (attr_name, value) {{\n{},\n        _ => None\n    }}\n",
                 match_arms.join(",\n")
             ));
+        }
+        code.push_str("}\n");
+
+        // enum_alias_entries(): static slice of all entries
+        code.push_str(
+            "\n/// Returns all enum alias entries as (attr_name, alias, canonical) tuples.\n\
+             pub fn enum_alias_entries() -> &'static [(&'static str, &'static str, &'static str)] {\n",
+        );
+        if alias_entries.is_empty() {
+            code.push_str("    &[]\n");
+        } else {
+            let entry_strs: Vec<String> = alias_entries
+                .iter()
+                .map(|(attr, alias, canonical)| {
+                    format!("        (\"{}\", \"{}\", \"{}\")", attr, alias, canonical)
+                })
+                .collect();
+            code.push_str(&format!("    &[\n{}\n    ]\n", entry_strs.join(",\n")));
         }
         code.push_str("}\n");
     }

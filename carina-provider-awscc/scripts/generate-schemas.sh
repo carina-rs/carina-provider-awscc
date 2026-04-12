@@ -304,6 +304,33 @@ pub fn get_enum_alias_reverse(resource_type: &str, attr_name: &str, value: &str)
         .get(resource_type)
         .and_then(|f| f(attr_name, value))
 }
+
+/// Build a complete enum aliases map for all resource types.
+/// Returns: resource_type -> attr_name -> alias -> canonical_value.
+/// Used by CarinaProvider::enum_aliases() for the WASM host cache.
+pub fn build_enum_aliases_map() -> HashMap<String, HashMap<String, HashMap<String, String>>> {
+    let mut map: HashMap<String, HashMap<String, HashMap<String, String>>> = HashMap::new();
+EOF
+
+# Add enum_alias_entries calls dynamically
+for TYPE_NAME in "${RESOURCE_TYPES[@]}"; do
+    SVC=$(service_name "$TYPE_NAME")
+    RESOURCE=$(resource_module_name "$TYPE_NAME")
+    DSL_NAME=$("$CODEGEN_BIN" --type-name "$TYPE_NAME" --print-dsl-resource-name)
+    cat >> "$OUTPUT_DIR/mod.rs" << INNER_EOF
+    for (attr, alias, canonical) in ${SVC}::${RESOURCE}::enum_alias_entries() {
+        map.entry("${DSL_NAME}".to_string())
+            .or_default()
+            .entry(attr.to_string())
+            .or_default()
+            .insert(alias.to_string(), canonical.to_string());
+    }
+INNER_EOF
+done
+
+cat >> "$OUTPUT_DIR/mod.rs" << 'EOF'
+    map
+}
 EOF
 
 echo ""
