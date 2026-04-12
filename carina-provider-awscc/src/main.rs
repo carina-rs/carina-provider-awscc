@@ -136,6 +136,10 @@ impl CarinaProvider for AwsccProcessProvider {
         vec!["region".to_string()]
     }
 
+    fn enum_aliases(&self) -> HashMap<String, HashMap<String, HashMap<String, String>>> {
+        schemas::generated::build_enum_aliases_map()
+    }
+
     fn read(
         &self,
         id: &proto::ResourceId,

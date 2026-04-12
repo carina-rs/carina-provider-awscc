@@ -247,6 +247,27 @@ pub fn enum_valid_values() -> (
 /// Maps DSL alias values back to canonical AWS values for this module.
 /// e.g., ("ip_protocol", "all") -> Some("-1")
 pub fn enum_alias_reverse(attr_name: &str, value: &str) -> Option<&'static str> {
-    let _ = (attr_name, value);
-    None
+    match (attr_name, value) {
+        ("aws_service", "global_services") => Some("global-services"),
+        ("state", "create_in_progress") => Some("create-in-progress"),
+        ("state", "create_complete") => Some("create-complete"),
+        ("state", "modify_in_progress") => Some("modify-in-progress"),
+        ("state", "modify_complete") => Some("modify-complete"),
+        ("state", "delete_in_progress") => Some("delete-in-progress"),
+        ("state", "delete_complete") => Some("delete-complete"),
+        _ => None,
+    }
+}
+
+/// Returns all enum alias entries as (attr_name, alias, canonical) tuples.
+pub fn enum_alias_entries() -> &'static [(&'static str, &'static str, &'static str)] {
+    &[
+        ("aws_service", "global_services", "global-services"),
+        ("state", "create_in_progress", "create-in-progress"),
+        ("state", "create_complete", "create-complete"),
+        ("state", "modify_in_progress", "modify-in-progress"),
+        ("state", "modify_complete", "modify-complete"),
+        ("state", "delete_in_progress", "delete-in-progress"),
+        ("state", "delete_complete", "delete-complete"),
+    ]
 }

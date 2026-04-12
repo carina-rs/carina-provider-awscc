@@ -259,6 +259,19 @@ pub fn enum_valid_values() -> (
 /// Maps DSL alias values back to canonical AWS values for this module.
 /// e.g., ("ip_protocol", "all") -> Some("-1")
 pub fn enum_alias_reverse(attr_name: &str, value: &str) -> Option<&'static str> {
-    let _ = (attr_name, value);
-    None
+    match (attr_name, value) {
+        ("dns_record_ip_type", "service_defined") => Some("service-defined"),
+        ("dns_record_ip_type", "not_specified") => Some("not-specified"),
+        ("ip_address_type", "not_specified") => Some("not-specified"),
+        _ => None,
+    }
+}
+
+/// Returns all enum alias entries as (attr_name, alias, canonical) tuples.
+pub fn enum_alias_entries() -> &'static [(&'static str, &'static str, &'static str)] {
+    &[
+        ("dns_record_ip_type", "service_defined", "service-defined"),
+        ("dns_record_ip_type", "not_specified", "not-specified"),
+        ("ip_address_type", "not_specified", "not-specified"),
+    ]
 }

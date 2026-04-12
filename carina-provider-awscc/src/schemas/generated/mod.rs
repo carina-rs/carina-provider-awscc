@@ -239,3 +239,228 @@ pub fn get_enum_alias_reverse(
         .get(resource_type)
         .and_then(|f| f(attr_name, value))
 }
+
+/// Build a complete enum aliases map for all resource types.
+/// Returns: resource_type -> attr_name -> alias -> canonical_value.
+/// Used by CarinaProvider::enum_aliases() for the WASM host cache.
+pub fn build_enum_aliases_map() -> HashMap<String, HashMap<String, HashMap<String, String>>> {
+    let mut map: HashMap<String, HashMap<String, HashMap<String, String>>> = HashMap::new();
+    for (attr, alias, canonical) in ec2::vpc::enum_alias_entries() {
+        map.entry("ec2.vpc".to_string())
+            .or_default()
+            .entry(attr.to_string())
+            .or_default()
+            .insert(alias.to_string(), canonical.to_string());
+    }
+    for (attr, alias, canonical) in ec2::subnet::enum_alias_entries() {
+        map.entry("ec2.subnet".to_string())
+            .or_default()
+            .entry(attr.to_string())
+            .or_default()
+            .insert(alias.to_string(), canonical.to_string());
+    }
+    for (attr, alias, canonical) in ec2::internet_gateway::enum_alias_entries() {
+        map.entry("ec2.internet_gateway".to_string())
+            .or_default()
+            .entry(attr.to_string())
+            .or_default()
+            .insert(alias.to_string(), canonical.to_string());
+    }
+    for (attr, alias, canonical) in ec2::route_table::enum_alias_entries() {
+        map.entry("ec2.route_table".to_string())
+            .or_default()
+            .entry(attr.to_string())
+            .or_default()
+            .insert(alias.to_string(), canonical.to_string());
+    }
+    for (attr, alias, canonical) in ec2::route::enum_alias_entries() {
+        map.entry("ec2.route".to_string())
+            .or_default()
+            .entry(attr.to_string())
+            .or_default()
+            .insert(alias.to_string(), canonical.to_string());
+    }
+    for (attr, alias, canonical) in ec2::subnet_route_table_association::enum_alias_entries() {
+        map.entry("ec2.subnet_route_table_association".to_string())
+            .or_default()
+            .entry(attr.to_string())
+            .or_default()
+            .insert(alias.to_string(), canonical.to_string());
+    }
+    for (attr, alias, canonical) in ec2::eip::enum_alias_entries() {
+        map.entry("ec2.eip".to_string())
+            .or_default()
+            .entry(attr.to_string())
+            .or_default()
+            .insert(alias.to_string(), canonical.to_string());
+    }
+    for (attr, alias, canonical) in ec2::nat_gateway::enum_alias_entries() {
+        map.entry("ec2.nat_gateway".to_string())
+            .or_default()
+            .entry(attr.to_string())
+            .or_default()
+            .insert(alias.to_string(), canonical.to_string());
+    }
+    for (attr, alias, canonical) in ec2::security_group::enum_alias_entries() {
+        map.entry("ec2.security_group".to_string())
+            .or_default()
+            .entry(attr.to_string())
+            .or_default()
+            .insert(alias.to_string(), canonical.to_string());
+    }
+    for (attr, alias, canonical) in ec2::security_group_ingress::enum_alias_entries() {
+        map.entry("ec2.security_group_ingress".to_string())
+            .or_default()
+            .entry(attr.to_string())
+            .or_default()
+            .insert(alias.to_string(), canonical.to_string());
+    }
+    for (attr, alias, canonical) in ec2::security_group_egress::enum_alias_entries() {
+        map.entry("ec2.security_group_egress".to_string())
+            .or_default()
+            .entry(attr.to_string())
+            .or_default()
+            .insert(alias.to_string(), canonical.to_string());
+    }
+    for (attr, alias, canonical) in ec2::vpc_endpoint::enum_alias_entries() {
+        map.entry("ec2.vpc_endpoint".to_string())
+            .or_default()
+            .entry(attr.to_string())
+            .or_default()
+            .insert(alias.to_string(), canonical.to_string());
+    }
+    for (attr, alias, canonical) in ec2::vpc_gateway_attachment::enum_alias_entries() {
+        map.entry("ec2.vpc_gateway_attachment".to_string())
+            .or_default()
+            .entry(attr.to_string())
+            .or_default()
+            .insert(alias.to_string(), canonical.to_string());
+    }
+    for (attr, alias, canonical) in ec2::flow_log::enum_alias_entries() {
+        map.entry("ec2.flow_log".to_string())
+            .or_default()
+            .entry(attr.to_string())
+            .or_default()
+            .insert(alias.to_string(), canonical.to_string());
+    }
+    for (attr, alias, canonical) in ec2::ipam::enum_alias_entries() {
+        map.entry("ec2.ipam".to_string())
+            .or_default()
+            .entry(attr.to_string())
+            .or_default()
+            .insert(alias.to_string(), canonical.to_string());
+    }
+    for (attr, alias, canonical) in ec2::ipam_pool::enum_alias_entries() {
+        map.entry("ec2.ipam_pool".to_string())
+            .or_default()
+            .entry(attr.to_string())
+            .or_default()
+            .insert(alias.to_string(), canonical.to_string());
+    }
+    for (attr, alias, canonical) in ec2::vpn_gateway::enum_alias_entries() {
+        map.entry("ec2.vpn_gateway".to_string())
+            .or_default()
+            .entry(attr.to_string())
+            .or_default()
+            .insert(alias.to_string(), canonical.to_string());
+    }
+    for (attr, alias, canonical) in ec2::transit_gateway::enum_alias_entries() {
+        map.entry("ec2.transit_gateway".to_string())
+            .or_default()
+            .entry(attr.to_string())
+            .or_default()
+            .insert(alias.to_string(), canonical.to_string());
+    }
+    for (attr, alias, canonical) in ec2::vpc_peering_connection::enum_alias_entries() {
+        map.entry("ec2.vpc_peering_connection".to_string())
+            .or_default()
+            .entry(attr.to_string())
+            .or_default()
+            .insert(alias.to_string(), canonical.to_string());
+    }
+    for (attr, alias, canonical) in ec2::egress_only_internet_gateway::enum_alias_entries() {
+        map.entry("ec2.egress_only_internet_gateway".to_string())
+            .or_default()
+            .entry(attr.to_string())
+            .or_default()
+            .insert(alias.to_string(), canonical.to_string());
+    }
+    for (attr, alias, canonical) in ec2::transit_gateway_attachment::enum_alias_entries() {
+        map.entry("ec2.transit_gateway_attachment".to_string())
+            .or_default()
+            .entry(attr.to_string())
+            .or_default()
+            .insert(alias.to_string(), canonical.to_string());
+    }
+    for (attr, alias, canonical) in s3::bucket::enum_alias_entries() {
+        map.entry("s3.bucket".to_string())
+            .or_default()
+            .entry(attr.to_string())
+            .or_default()
+            .insert(alias.to_string(), canonical.to_string());
+    }
+    for (attr, alias, canonical) in iam::role::enum_alias_entries() {
+        map.entry("iam.role".to_string())
+            .or_default()
+            .entry(attr.to_string())
+            .or_default()
+            .insert(alias.to_string(), canonical.to_string());
+    }
+    for (attr, alias, canonical) in logs::log_group::enum_alias_entries() {
+        map.entry("logs.log_group".to_string())
+            .or_default()
+            .entry(attr.to_string())
+            .or_default()
+            .insert(alias.to_string(), canonical.to_string());
+    }
+    for (attr, alias, canonical) in organizations::organization::enum_alias_entries() {
+        map.entry("organizations.organization".to_string())
+            .or_default()
+            .entry(attr.to_string())
+            .or_default()
+            .insert(alias.to_string(), canonical.to_string());
+    }
+    for (attr, alias, canonical) in organizations::account::enum_alias_entries() {
+        map.entry("organizations.account".to_string())
+            .or_default()
+            .entry(attr.to_string())
+            .or_default()
+            .insert(alias.to_string(), canonical.to_string());
+    }
+    for (attr, alias, canonical) in sso::instance::enum_alias_entries() {
+        map.entry("sso.instance".to_string())
+            .or_default()
+            .entry(attr.to_string())
+            .or_default()
+            .insert(alias.to_string(), canonical.to_string());
+    }
+    for (attr, alias, canonical) in sso::permission_set::enum_alias_entries() {
+        map.entry("sso.permission_set".to_string())
+            .or_default()
+            .entry(attr.to_string())
+            .or_default()
+            .insert(alias.to_string(), canonical.to_string());
+    }
+    for (attr, alias, canonical) in sso::assignment::enum_alias_entries() {
+        map.entry("sso.assignment".to_string())
+            .or_default()
+            .entry(attr.to_string())
+            .or_default()
+            .insert(alias.to_string(), canonical.to_string());
+    }
+    for (attr, alias, canonical) in identitystore::group::enum_alias_entries() {
+        map.entry("identitystore.group".to_string())
+            .or_default()
+            .entry(attr.to_string())
+            .or_default()
+            .insert(alias.to_string(), canonical.to_string());
+    }
+    for (attr, alias, canonical) in identitystore::group_membership::enum_alias_entries() {
+        map.entry("identitystore.group_membership".to_string())
+            .or_default()
+            .entry(attr.to_string())
+            .or_default()
+            .insert(alias.to_string(), canonical.to_string());
+    }
+    map
+}
