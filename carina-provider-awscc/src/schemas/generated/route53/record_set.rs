@@ -154,6 +154,7 @@ pub fn route53_record_set_config() -> AwsccSchemaConfig {
             .attribute(
                 AttributeSchema::new("type", AttributeType::String)
                     .required()
+                    .identity()
                     .with_provider_name("Type"),
             )
             .attribute(
