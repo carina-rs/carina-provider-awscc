@@ -816,23 +816,47 @@ pub fn validate_service_arn(
 /// - Resource name after `resource_prefix` must be non-empty and contain only
 ///   valid IAM path/name characters
 pub fn validate_iam_arn(arn: &str, resource_prefix: &str) -> Result<(), String> {
-    validate_service_arn(arn, "iam", Some(resource_prefix))?;
+    // Derive type label from prefix: "policy/" -> "IAM Policy ARN", "role/" -> "IAM Role ARN"
+    let resource_type = resource_prefix.trim_end_matches('/');
+    let label = format!(
+        "IAM {} ARN",
+        resource_type
+            .chars()
+            .next()
+            .map(|c| c.to_uppercase().to_string() + &resource_type[1..])
+            .unwrap_or_default()
+    );
+
+    validate_arn(arn)?;
     let parts: Vec<&str> = arn.splitn(6, ':').collect();
+    if parts[2] != "iam" {
+        return Err(format!(
+            "expected {label} but service is '{}' in '{arn}'",
+            parts[2]
+        ));
+    }
     if !parts[3].is_empty() {
-        return Err(format!("IAM ARN region must be empty, got '{}'", parts[3]));
+        return Err(format!(
+            "{label} region must be empty, got '{}' in '{arn}'",
+            parts[3]
+        ));
     }
     let account = parts[4];
     if account != "aws" && (account.len() != 12 || !account.chars().all(|c| c.is_ascii_digit())) {
         return Err(format!(
-            "IAM ARN account must be 'aws' or a 12-digit ID, got '{}'",
-            account
+            "{label} account must be 'aws' or a 12-digit ID, got '{account}' in '{arn}'"
+        ));
+    }
+    if !parts[5].starts_with(resource_prefix) {
+        return Err(format!(
+            "{label} resource must begin with '{resource_prefix}', but got '{}' in '{arn}'",
+            parts[5]
         ));
     }
     let resource_name = &parts[5][resource_prefix.len()..];
     if resource_name.is_empty() {
         return Err(format!(
-            "resource name after '{}' must not be empty",
-            resource_prefix
+            "{label} name after '{resource_prefix}' must not be empty in '{arn}'"
         ));
     }
     // IAM names/paths allow: alphanumeric, plus +, =, ,, ., @, -, _, /
@@ -841,8 +865,7 @@ pub fn validate_iam_arn(arn: &str, resource_prefix: &str) -> Result<(), String> 
         .all(|c| c.is_ascii_alphanumeric() || "+=,.@-_/".contains(c))
     {
         return Err(format!(
-            "resource name contains invalid characters: '{}'",
-            resource_name
+            "{label} name contains invalid characters: '{resource_name}' in '{arn}'"
         ));
     }
     Ok(())
@@ -1688,11 +1711,24 @@ mod tests {
     }
 
     #[test]
-    fn validate_iam_arn_error_message_is_descriptive() {
+    fn validate_iam_arn_error_says_iam_policy_arn() {
         let err = validate_iam_arn("arn:aws:iam:us-east-1:aws:policy/Foo", "policy/").unwrap_err();
         assert!(
-            err.contains("region must be empty"),
-            "Error should describe the problem: {err}"
+            err.contains("IAM Policy ARN"),
+            "Error should say 'IAM Policy ARN': {err}"
+        );
+        assert!(
+            err.contains("arn:aws:iam:us-east-1:aws:policy/Foo"),
+            "Error should include full ARN: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_iam_arn_error_says_iam_role_arn() {
+        let err = validate_iam_arn("arn:aws:iam:us-east-1:aws:role/Foo", "role/").unwrap_err();
+        assert!(
+            err.contains("IAM Role ARN"),
+            "Error should say 'IAM Role ARN': {err}"
         );
     }
 
