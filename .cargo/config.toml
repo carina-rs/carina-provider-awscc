@@ -1,8 +1,0 @@
-[build]
-rustc-wrapper = "sccache"
-target-dir = "/Users/mizzy/.cargo-target/carina-provider-awscc"
-
-[patch."https://github.com/carina-rs/carina"]
-carina-core = { path = "/Users/mizzy/src/github.com/carina-rs/carina/carina-core" }
-carina-plugin-sdk = { path = "/Users/mizzy/src/github.com/carina-rs/carina/carina-plugin-sdk" }
-carina-provider-protocol = { path = "/Users/mizzy/src/github.com/carina-rs/carina/carina-provider-protocol" }
