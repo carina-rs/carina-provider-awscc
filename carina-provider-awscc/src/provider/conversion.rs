@@ -92,10 +92,12 @@ pub(crate) fn aws_value_to_dsl(
         }
     }
 
-    // For Map types, preserve keys as-is (user-defined) and recurse into values
+    // For Map types, recurse into values.
+    // For IAM condition maps, convert PascalCase operator keys back to snake_case.
     if let AttributeType::Map(inner) = attr_type
         && let Some(obj) = value.as_object()
     {
+        let is_condition = dsl_name == "condition";
         let map: HashMap<String, Value> = obj
             .iter()
             .filter_map(|(k, v)| {
@@ -106,7 +108,12 @@ pub(crate) fn aws_value_to_dsl(
                         k, dsl_name, resource_type, v
                     );
                 }
-                result.map(|val| (k.clone(), val))
+                let key = if is_condition {
+                    carina_aws_types::condition_operator_to_snake(k).unwrap_or_else(|| k.clone())
+                } else {
+                    k.clone()
+                };
+                result.map(|val| (key, val))
             })
             .collect();
         return Some(Value::Map(map));
@@ -273,7 +280,9 @@ pub(crate) fn dsl_value_to_aws(
     } else if let AttributeType::Map(inner) = attr_type
         && let Value::Map(map) = value
     {
-        // Map type: preserve keys as-is (user-defined), recurse into values with inner type
+        // Map type: recurse into values with inner type.
+        // For IAM condition maps, convert snake_case operator keys to PascalCase.
+        let is_condition = attr_name == "condition";
         let obj: serde_json::Map<String, serde_json::Value> = map
             .iter()
             .filter_map(|(k, v)| {
@@ -284,7 +293,12 @@ pub(crate) fn dsl_value_to_aws(
                         k, attr_name, resource_type, v
                     );
                 }
-                result.map(|val| (k.clone(), val))
+                let key = if is_condition {
+                    carina_aws_types::condition_operator_to_aws(k).unwrap_or_else(|| k.clone())
+                } else {
+                    k.clone()
+                };
+                result.map(|val| (key, val))
             })
             .collect();
         Some(serde_json::Value::Object(obj))
