@@ -94,7 +94,7 @@ pub(crate) fn aws_value_to_dsl(
 
     // For Map types, recurse into values.
     // For IAM condition maps, convert PascalCase operator keys back to snake_case.
-    if let AttributeType::Map(inner) = attr_type
+    if let AttributeType::Map { value: inner, .. } = attr_type
         && let Some(obj) = value.as_object()
     {
         let is_condition = dsl_name == "condition";
@@ -277,7 +277,7 @@ pub(crate) fn dsl_value_to_aws(
             })
             .collect();
         Some(serde_json::Value::Object(obj))
-    } else if let AttributeType::Map(inner) = attr_type
+    } else if let AttributeType::Map { value: inner, .. } = attr_type
         && let Value::Map(map) = value
     {
         // Map type: recurse into values with inner type.
@@ -655,7 +655,7 @@ mod tests {
 
     #[test]
     fn test_dsl_value_to_aws_map_preserves_user_keys() {
-        let attr_type = AttributeType::Map(Box::new(AttributeType::String));
+        let attr_type = AttributeType::map(AttributeType::String);
 
         let mut map = HashMap::new();
         map.insert(
@@ -689,7 +689,7 @@ mod tests {
             namespace: Some("awscc.test.resource".to_string()),
             to_dsl: None,
         };
-        let attr_type = AttributeType::Map(Box::new(inner_type));
+        let attr_type = AttributeType::map(inner_type);
 
         let mut map = HashMap::new();
         map.insert(
@@ -710,7 +710,7 @@ mod tests {
 
     #[test]
     fn test_aws_value_to_dsl_map_preserves_user_keys() {
-        let attr_type = AttributeType::Map(Box::new(AttributeType::String));
+        let attr_type = AttributeType::map(AttributeType::String);
 
         let aws_json = json!({
             "MyCustomKey": "value1",

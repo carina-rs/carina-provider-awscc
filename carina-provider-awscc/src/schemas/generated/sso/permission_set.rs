@@ -228,7 +228,7 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
                 .with_provider_name("Description"),
         )
         .attribute(
-            AttributeSchema::new("inline_policy", AttributeType::Map(Box::new(AttributeType::String)))
+            AttributeSchema::new("inline_policy", AttributeType::map(AttributeType::String))
                 .with_description("The inline policy to put in permission set.")
                 .with_provider_name("InlinePolicy"),
         )
