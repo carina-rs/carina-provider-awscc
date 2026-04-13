@@ -1433,7 +1433,9 @@ pub fn validate_condition_operators(value: &Value) -> Result<(), String> {
                     CONDITION_OPERATORS.iter().map(|(s, _)| *s).collect();
                 return Err(format!(
                     "statement[{}]: unknown condition operator '{}'. \
-                     Valid operators: {} (append _if_exists for conditional variants)",
+                     Valid operators: {} \
+                     (prefix with for_all_values_ or for_any_value_ for set operators, \
+                     append _if_exists for conditional variants)",
                     i,
                     key,
                     valid_operators.join(", ")
