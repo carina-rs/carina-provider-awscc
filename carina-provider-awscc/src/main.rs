@@ -140,6 +140,18 @@ impl CarinaProvider for AwsccProcessProvider {
         schemas::generated::build_enum_aliases_map()
     }
 
+    fn validate_custom_type(&self, type_name: &str, value: &str) -> Result<(), String> {
+        use carina_core::parser::ValidatorFn;
+        use std::sync::OnceLock;
+        static VALIDATORS: OnceLock<HashMap<String, ValidatorFn>> = OnceLock::new();
+        let validators = VALIDATORS.get_or_init(schemas::awscc_types::awscc_validators);
+        if let Some(validator) = validators.get(type_name) {
+            validator(value)
+        } else {
+            Ok(())
+        }
+    }
+
     fn read(
         &self,
         id: &proto::ResourceId,
