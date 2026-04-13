@@ -62,7 +62,6 @@ RESOURCE_TYPES=(
     "AWS::IdentityStore::Group"
     "AWS::IdentityStore::GroupMembership"
     "AWS::Route53::HostedZone"
-    "AWS::Route53::RecordSet"
 )
 
 echo "Generating awscc provider schemas..."
@@ -104,18 +103,9 @@ for TYPE_NAME in "${RESOURCE_TYPES[@]}"; do
     fi
 done
 
-# Collect unique services and create directories
-SERVICES=""
-for TYPE_NAME in "${RESOURCE_TYPES[@]}"; do
-    SVC=$(service_name "$TYPE_NAME")
-    # Add to list if not already present
-    case " $SERVICES " in
-        *" $SVC "*) ;;
-        *) SERVICES="$SERVICES $SVC" ;;
-    esac
-    mkdir -p "$OUTPUT_DIR/$SVC"
-done
-SERVICES=$(echo "$SERVICES" | tr ' ' '\n' | sort | tr '\n' ' ')
+# Types that were successfully generated (filters out NON_PROVISIONABLE skips).
+# All mod.rs generation below references this array, not RESOURCE_TYPES.
+GENERATED_TYPES=()
 
 for TYPE_NAME in "${RESOURCE_TYPES[@]}"; do
     SVC=$(service_name "$TYPE_NAME")
@@ -123,6 +113,8 @@ for TYPE_NAME in "${RESOURCE_TYPES[@]}"; do
     OUTPUT_FILE="$OUTPUT_DIR/$SVC/${RESOURCE}.rs"
 
     echo "Generating $TYPE_NAME -> $OUTPUT_FILE"
+
+    mkdir -p "$OUTPUT_DIR/$SVC"
 
     # Cache CloudFormation schema to avoid redundant API calls
     CACHE_FILE="$CACHE_DIR/${TYPE_NAME//::/__}.json"
@@ -136,12 +128,46 @@ for TYPE_NAME in "${RESOURCE_TYPES[@]}"; do
         echo "  Using cached schema"
     fi
 
+    set +e
     "$CODEGEN_BIN" --type-name "$TYPE_NAME" < "$CACHE_FILE" > "$OUTPUT_FILE"
+    EXIT_CODE=$?
+    set -e
 
-    if [ $? -ne 0 ]; then
-        echo "  ERROR: Failed to generate $TYPE_NAME"
-        rm -f "$OUTPUT_FILE"
-    fi
+    case "$EXIT_CODE" in
+        0)
+            GENERATED_TYPES+=("$TYPE_NAME")
+            ;;
+        2)
+            # NON_PROVISIONABLE: codegen logged the reason to stderr.
+            rm -f "$OUTPUT_FILE"
+            ;;
+        *)
+            echo "  ERROR: Failed to generate $TYPE_NAME"
+            rm -f "$OUTPUT_FILE"
+            ;;
+    esac
+done
+
+# Services that have at least one generated resource. Drives mod.rs emission
+# below; services whose every resource was skipped are omitted entirely.
+SERVICES=""
+for TYPE_NAME in "${GENERATED_TYPES[@]}"; do
+    SVC=$(service_name "$TYPE_NAME")
+    case " $SERVICES " in
+        *" $SVC "*) ;;
+        *) SERVICES="$SERVICES $SVC" ;;
+    esac
+done
+SERVICES=$(echo "$SERVICES" | tr ' ' '\n' | sort | tr '\n' ' ')
+
+# Remove directories for services whose resources were all skipped this run.
+for DIR in "$OUTPUT_DIR"/*/; do
+    [ -d "$DIR" ] || continue
+    SVC=$(basename "$DIR")
+    case " $SERVICES " in
+        *" $SVC "*) ;;
+        *) rm -rf "$DIR" ;;
+    esac
 done
 
 # Generate per-service mod.rs files
@@ -161,7 +187,7 @@ pub use super::*;
 EOF
 
     # Add module declarations for resources in this service
-    for TYPE_NAME in "${RESOURCE_TYPES[@]}"; do
+    for TYPE_NAME in "${GENERATED_TYPES[@]}"; do
         TYPE_SVC=$(service_name "$TYPE_NAME")
         if [ "$TYPE_SVC" = "$SVC" ]; then
             RESOURCE=$(resource_module_name "$TYPE_NAME")
@@ -218,7 +244,7 @@ static ENUM_VALID_VALUES: LazyLock<
 EOF
 
 # Add enum_valid_values() calls for ENUM_VALID_VALUES
-for TYPE_NAME in "${RESOURCE_TYPES[@]}"; do
+for TYPE_NAME in "${GENERATED_TYPES[@]}"; do
     SVC=$(service_name "$TYPE_NAME")
     RESOURCE=$(resource_module_name "$TYPE_NAME")
     echo "        ${SVC}::${RESOURCE}::enum_valid_values()," >> "$OUTPUT_DIR/mod.rs"
@@ -246,7 +272,7 @@ static ENUM_ALIAS_DISPATCH: LazyLock<HashMap<&'static str, EnumAliasReverseFn>> 
 EOF
 
 # Add enum_alias_reverse dispatch entries
-for TYPE_NAME in "${RESOURCE_TYPES[@]}"; do
+for TYPE_NAME in "${GENERATED_TYPES[@]}"; do
     SVC=$(service_name "$TYPE_NAME")
     RESOURCE=$(resource_module_name "$TYPE_NAME")
     DSL_NAME=$("$CODEGEN_BIN" --type-name "$TYPE_NAME" --print-dsl-resource-name)
@@ -264,7 +290,7 @@ fn build_configs() -> Vec<AwsccSchemaConfig> {
 EOF
 
 # Add config function calls dynamically
-for TYPE_NAME in "${RESOURCE_TYPES[@]}"; do
+for TYPE_NAME in "${GENERATED_TYPES[@]}"; do
     SVC=$(service_name "$TYPE_NAME")
     RESOURCE=$(resource_module_name "$TYPE_NAME")
     FULL_NAME=$("$CODEGEN_BIN" --type-name "$TYPE_NAME" --print-full-resource-name)
@@ -316,7 +342,7 @@ pub fn build_enum_aliases_map() -> HashMap<String, HashMap<String, HashMap<Strin
 EOF
 
 # Add enum_alias_entries calls dynamically
-for TYPE_NAME in "${RESOURCE_TYPES[@]}"; do
+for TYPE_NAME in "${GENERATED_TYPES[@]}"; do
     SVC=$(service_name "$TYPE_NAME")
     RESOURCE=$(resource_module_name "$TYPE_NAME")
     DSL_NAME=$("$CODEGEN_BIN" --type-name "$TYPE_NAME" --print-dsl-resource-name)
