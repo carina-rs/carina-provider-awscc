@@ -23,10 +23,10 @@ default = ["native"]
 native = []
 
 [dependencies]
-carina-core = { git = "https://github.com/carina-rs/carina", branch = "issue-1722-custom-type-validation-wasm" }
+carina-core = { git = "https://github.com/carina-rs/carina" }
 carina-aws-types = { path = "../carina-aws-types" }
-carina-plugin-sdk = { git = "https://github.com/carina-rs/carina", branch = "issue-1722-custom-type-validation-wasm" }
-carina-provider-protocol = { git = "https://github.com/carina-rs/carina", branch = "issue-1722-custom-type-validation-wasm" }
+carina-plugin-sdk = { git = "https://github.com/carina-rs/carina" }
+carina-provider-protocol = { git = "https://github.com/carina-rs/carina" }
 aws-config = { version = "1", default-features = false, features = ["behavior-version-latest", "rt-tokio"] }
 aws-smithy-async = { version = "1", features = ["rt-tokio"] }
 aws-sdk-cloudcontrol = { version = "1", default-features = false, features = ["behavior-version-latest"] }
