@@ -30,8 +30,6 @@ const VALID_ACCESS_CONTROL_TRANSLATION_OWNER: &[&str] = &["Destination"];
 
 const VALID_BLOCKED_ENCRYPTION_TYPES_ENCRYPTION_TYPE: &[&str] = &["NONE", "SSE-C"];
 
-const VALID_BUCKET_NAMESPACE: &[&str] = &["global", "account-regional"];
-
 const VALID_CORS_RULE_ALLOWED_METHODS: &[&str] = &["GET", "PUT", "HEAD", "POST", "DELETE"];
 
 const VALID_DATA_EXPORT_OUTPUT_SCHEMA_VERSION: &[&str] = &["V_1"];
@@ -364,25 +362,6 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                 .create_only()
                 .with_description("A name for the bucket. If you don't specify a name, AWS CloudFormation generates a unique ID and uses that ID for the bucket name. The bucket name must contain only lowercase letters, numbers, periods (.), and dashes (-) and must follow [Amazon S3 bucket restrictions and limitations](https://docs.aws.amazon.com/AmazonS3/latest/dev/BucketRestrictions.html). For more information, see [Rules for naming Amazon S3 buckets](https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucketnamingrules.html) in the *Amazon S3 User Guide*. If you specify a name, you can't perform updates that require replacement of this resource. You can perform updates that require no or some interruption. If you need to replace the resource, specify a new name.")
                 .with_provider_name("BucketName"),
-        )
-        .attribute(
-            AttributeSchema::new("bucket_name_prefix", AttributeType::String)
-                .create_only()
-                .write_only()
-                .with_description("")
-                .with_provider_name("BucketNamePrefix"),
-        )
-        .attribute(
-            AttributeSchema::new("bucket_namespace", AttributeType::StringEnum {
-                name: "BucketNamespace".to_string(),
-                values: vec!["global".to_string(), "account-regional".to_string()],
-                namespace: Some("awscc.s3.bucket".to_string()),
-                to_dsl: Some(|s: &str| s.replace('-', "_")),
-            })
-                .create_only()
-                .write_only()
-                .with_description("")
-                .with_provider_name("BucketNamespace"),
         )
         .attribute(
             AttributeSchema::new("cors_configuration", AttributeType::Struct {
@@ -1244,7 +1223,6 @@ pub fn enum_valid_values() -> (
                 "encryption_type",
                 VALID_BLOCKED_ENCRYPTION_TYPES_ENCRYPTION_TYPE,
             ),
-            ("bucket_namespace", VALID_BUCKET_NAMESPACE),
             ("allowed_methods", VALID_CORS_RULE_ALLOWED_METHODS),
             (
                 "output_schema_version",
@@ -1324,15 +1302,11 @@ pub fn enum_valid_values() -> (
 pub fn enum_alias_reverse(attr_name: &str, value: &str) -> Option<&'static str> {
     match (attr_name, value) {
         ("encryption_type", "SSE_C") => Some("SSE-C"),
-        ("bucket_namespace", "account_regional") => Some("account-regional"),
         _ => None,
     }
 }
 
 /// Returns all enum alias entries as (attr_name, alias, canonical) tuples.
 pub fn enum_alias_entries() -> &'static [(&'static str, &'static str, &'static str)] {
-    &[
-        ("encryption_type", "SSE_C", "SSE-C"),
-        ("bucket_namespace", "account_regional", "account-regional"),
-    ]
+    &[("encryption_type", "SSE_C", "SSE-C")]
 }

@@ -67,12 +67,6 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
                 .with_provider_name("Arn"),
         )
         .attribute(
-            AttributeSchema::new("bearer_token_authentication_enabled", AttributeType::Bool)
-                .with_description("")
-                .with_provider_name("BearerTokenAuthenticationEnabled")
-                .with_default(Value::Bool(false)),
-        )
-        .attribute(
             AttributeSchema::new("data_protection_policy", AttributeType::map(AttributeType::String))
                 .with_description("Creates a data protection policy and assigns it to the log group. A data protection policy can help safeguard sensitive data that's ingested by the log group by auditing and masking the sensitive log data. When a user who does not have permission to view masked data views a log event that includes masked data, the sensitive data is replaced by asterisks.")
                 .with_provider_name("DataProtectionPolicy"),

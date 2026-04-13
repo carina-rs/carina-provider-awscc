@@ -15,6 +15,7 @@ pub mod iam;
 pub mod identitystore;
 pub mod logs;
 pub mod organizations;
+pub mod route53;
 pub mod s3;
 pub mod sso;
 
@@ -68,6 +69,8 @@ static ENUM_VALID_VALUES: LazyLock<
         sso::assignment::enum_valid_values(),
         identitystore::group::enum_valid_values(),
         identitystore::group_membership::enum_valid_values(),
+        route53::hosted_zone::enum_valid_values(),
+        route53::record_set::enum_valid_values(),
     ];
     let mut map: HashMap<&str, HashMap<&str, &[&str]>> = HashMap::new();
     for (rt, attrs) in modules {
@@ -163,6 +166,14 @@ static ENUM_ALIAS_DISPATCH: LazyLock<HashMap<&'static str, EnumAliasReverseFn>> 
                 "identitystore.group_membership",
                 identitystore::group_membership::enum_alias_reverse,
             ),
+            (
+                "route53.hosted_zone",
+                route53::hosted_zone::enum_alias_reverse,
+            ),
+            (
+                "route53.record_set",
+                route53::record_set::enum_alias_reverse,
+            ),
         ];
         entries.into_iter().collect()
     });
@@ -202,6 +213,8 @@ fn build_configs() -> Vec<AwsccSchemaConfig> {
         sso::assignment::sso_assignment_config(),
         identitystore::group::identitystore_group_config(),
         identitystore::group_membership::identitystore_group_membership_config(),
+        route53::hosted_zone::route53_hosted_zone_config(),
+        route53::record_set::route53_record_set_config(),
     ]
 }
 
@@ -467,6 +480,20 @@ pub fn build_enum_aliases_map() -> HashMap<String, HashMap<String, HashMap<Strin
     }
     for (attr, alias, canonical) in identitystore::group_membership::enum_alias_entries() {
         map.entry("identitystore.group_membership".to_string())
+            .or_default()
+            .entry(attr.to_string())
+            .or_default()
+            .insert(alias.to_string(), canonical.to_string());
+    }
+    for (attr, alias, canonical) in route53::hosted_zone::enum_alias_entries() {
+        map.entry("route53.hosted_zone".to_string())
+            .or_default()
+            .entry(attr.to_string())
+            .or_default()
+            .insert(alias.to_string(), canonical.to_string());
+    }
+    for (attr, alias, canonical) in route53::record_set::enum_alias_entries() {
+        map.entry("route53.record_set".to_string())
             .or_default()
             .entry(attr.to_string())
             .or_default()
