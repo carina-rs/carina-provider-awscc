@@ -1936,6 +1936,7 @@ pub fn {}() -> AwsccSchemaConfig {{
         // The parent is still returned by the CloudControl API read; only the
         // specific nested sub-properties are omitted.
         let is_write_only = write_only.contains(prop_name);
+        let is_identity = identity_properties().contains(&(type_name, prop_name));
 
         let attr_type = if let Some(enum_info) = enums.get(prop_name) {
             // Use shared schema enum type for constrained strings.
@@ -2023,6 +2024,10 @@ pub fn {}() -> AwsccSchemaConfig {{
 
         if is_write_only {
             attr_code.push_str("\n                .write_only()");
+        }
+
+        if is_identity {
+            attr_code.push_str("\n                .identity()");
         }
 
         if let Some(desc) = &prop.description {
@@ -3087,6 +3092,21 @@ fn resource_type_overrides() -> &'static HashMap<(&'static str, &'static str), T
             m
         });
     &OVERRIDES
+}
+
+/// Properties that should be marked as `identity` in the schema.
+/// Identity attributes are included in the anonymous resource identifier hash
+/// alongside create-only attributes.
+fn identity_properties() -> &'static HashSet<(&'static str, &'static str)> {
+    static IDENTITY: LazyLock<HashSet<(&'static str, &'static str)>> = LazyLock::new(|| {
+        let mut s = HashSet::new();
+        // Route 53 RecordSet: (HostedZoneId, Name, Type) uniquely identifies a record,
+        // but Type is not create-only in CloudFormation. Without identity, two records
+        // with the same name/zone but different types (A vs AAAA) collide.
+        s.insert(("AWS::Route53::RecordSet", "Type"));
+        s
+    });
+    &IDENTITY
 }
 
 /// Infer the Carina type string for a property based on its name.
