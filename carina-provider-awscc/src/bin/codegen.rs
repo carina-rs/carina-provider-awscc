@@ -3991,7 +3991,7 @@ fn cfn_type_to_carina_type_with_enum(
                 );
             }
             (
-                "AttributeType::Map(Box::new(AttributeType::String))".to_string(),
+                "AttributeType::map(AttributeType::String)".to_string(),
                 None,
             )
         }
@@ -4081,7 +4081,7 @@ fn tags_type_helper() -> &'static str {
     r#"
 /// Tags type for AWS resources
 pub fn tags_type() -> AttributeType {
-    AttributeType::Map(Box::new(AttributeType::String))
+    AttributeType::map(AttributeType::String)
 }
 "#
 }

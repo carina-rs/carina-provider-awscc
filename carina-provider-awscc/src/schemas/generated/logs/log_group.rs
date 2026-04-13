@@ -73,7 +73,7 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
                 .with_default(Value::Bool(false)),
         )
         .attribute(
-            AttributeSchema::new("data_protection_policy", AttributeType::Map(Box::new(AttributeType::String)))
+            AttributeSchema::new("data_protection_policy", AttributeType::map(AttributeType::String))
                 .with_description("Creates a data protection policy and assigns it to the log group. A data protection policy can help safeguard sensitive data that's ingested by the log group by auditing and masking the sensitive log data. When a user who does not have permission to view masked data views a log event that includes masked data, the sensitive data is replaced by asterisks.")
                 .with_provider_name("DataProtectionPolicy"),
         )
@@ -84,7 +84,7 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
                 .with_default(Value::Bool(false)),
         )
         .attribute(
-            AttributeSchema::new("field_index_policies", AttributeType::unordered_list(AttributeType::Map(Box::new(AttributeType::String))))
+            AttributeSchema::new("field_index_policies", AttributeType::unordered_list(AttributeType::map(AttributeType::String)))
                 .with_description("Creates or updates a *field index policy* for the specified log group. Only log groups in the Standard log class support field index policies. For more information about log classes, see [Log classes](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/CloudWatch_Logs_Log_Classes.html). You can use field index policies to create *field indexes* on fields found in log events in the log group. Creating field indexes lowers the costs for CWL Insights queries that reference those field indexes, because these queries attempt to skip the processing of log events that are known to not match the indexed field. Good fields to index are fields that you often need to query for and fields that have high cardinality of values Common examples of indexes include request ID, session ID, userID, and instance IDs. For more information, see [Create field indexes to improve query performance and reduce costs](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/CloudWatchLogs-Field-Indexing.html). Currently, this array supports only one field index policy object.")
                 .with_provider_name("FieldIndexPolicies"),
         )

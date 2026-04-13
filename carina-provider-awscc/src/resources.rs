@@ -69,7 +69,7 @@ mod tests {
                 AttributeType::List { inner, .. } => {
                     check_type(inner, path, missing);
                 }
-                AttributeType::Map(inner) => {
+                AttributeType::Map { value: inner, .. } => {
                     check_type(inner, path, missing);
                 }
                 _ => {}
