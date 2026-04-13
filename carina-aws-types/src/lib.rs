@@ -754,8 +754,11 @@ pub fn aws_account_id() -> AttributeType {
 
 // ========== ARN validators ==========
 
+/// Valid AWS partition values.
+const VALID_PARTITIONS: &[&str] = &["aws", "aws-cn", "aws-us-gov"];
+
 /// Validate basic ARN format (starts with "arn:", has 6+ colon-separated parts).
-/// Enforces that partition and service are non-empty.
+/// Enforces valid partition and non-empty service.
 pub fn validate_arn(arn: &str) -> Result<(), String> {
     if !arn.starts_with("arn:") {
         return Err("must start with 'arn:'".to_string());
@@ -766,11 +769,12 @@ pub fn validate_arn(arn: &str) -> Result<(), String> {
             "must have at least 6 colon-separated parts (arn:partition:service:region:account:resource)".to_string()
         );
     }
-    // Partition must be non-empty (e.g., "aws", "aws-cn", "aws-us-gov")
-    if parts[1].is_empty() {
-        return Err(
-            "partition must not be empty (e.g., 'aws', 'aws-cn', 'aws-us-gov')".to_string(),
-        );
+    if !VALID_PARTITIONS.contains(&parts[1]) {
+        return Err(format!(
+            "invalid partition '{}', must be one of: {}",
+            parts[1],
+            VALID_PARTITIONS.join(", ")
+        ));
     }
     // Service must be non-empty (e.g., "s3", "iam", "ec2")
     if parts[2].is_empty() {
@@ -804,6 +808,63 @@ pub fn validate_service_arn(
     Ok(())
 }
 
+/// Validate an IAM ARN with strict checks on region, account, and resource name.
+///
+/// IAM ARNs have the form `arn:{partition}:iam::{account}:{resource_prefix}{name}`.
+/// - Region (parts[3]) must be empty
+/// - Account (parts[4]) must be `aws` (managed policy) or a 12-digit account ID
+/// - Resource name after `resource_prefix` must be non-empty and contain only
+///   valid IAM path/name characters
+pub fn validate_iam_arn(arn: &str, resource_prefix: &str) -> Result<(), String> {
+    validate_arn(arn)?;
+    let parts: Vec<&str> = arn.splitn(6, ':').collect();
+    if parts[2] != "iam" {
+        return Err(format!(
+            "expected iam service, got '{}'\n  in ARN: {arn}",
+            parts[2]
+        ));
+    }
+    if !parts[3].is_empty() {
+        return Err(format!(
+            "IAM ARN region must be empty, got '{}'\n  in ARN: {arn}",
+            parts[3]
+        ));
+    }
+    let account = parts[4];
+    if account != "aws"
+        && (account.len() != 12 || !account.chars().all(|c| c.is_ascii_digit()))
+    {
+        return Err(format!(
+            "IAM ARN account must be 'aws' or a 12-digit ID, got '{}'\n  in ARN: {arn}",
+            account
+        ));
+    }
+    if !parts[5].starts_with(resource_prefix) {
+        return Err(format!(
+            "ARN resource segment must begin with '{}', but got '{}'\n  in ARN: {arn}",
+            resource_prefix, parts[5]
+        ));
+    }
+    let resource_name = &parts[5][resource_prefix.len()..];
+    if resource_name.is_empty() {
+        return Err(format!(
+            "resource name after '{}' must not be empty\n  in ARN: {arn}",
+            resource_prefix
+        ));
+    }
+    // IAM names/paths allow: alphanumeric, plus +, =, ,, ., @, -, _, /
+    if !resource_name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || "+=,.@-_/".contains(c))
+    {
+        return Err(format!(
+            "resource name contains invalid characters: '{}'\n  in ARN: {arn}",
+            resource_name
+        ));
+    }
+    Ok(())
+}
+
 /// ARN type (e.g., "arn:aws:s3:::my-bucket")
 pub fn arn() -> AttributeType {
     AttributeType::Custom {
@@ -829,7 +890,7 @@ pub fn iam_role_arn() -> AttributeType {
         base: Box::new(AttributeType::String),
         validate: |value| {
             if let Value::String(s) = value {
-                validate_service_arn(s, "iam", Some("role/"))
+                validate_iam_arn(s, "role/")
                     .map_err(|reason| format!("Invalid IAM Role ARN '{}': {}", s, reason))
             } else {
                 Err("Expected string".to_string())
@@ -848,7 +909,7 @@ pub fn iam_policy_arn() -> AttributeType {
         base: Box::new(AttributeType::String),
         validate: |value| {
             if let Value::String(s) = value {
-                validate_service_arn(s, "iam", Some("policy/"))
+                validate_iam_arn(s, "policy/")
                     .map_err(|reason| format!("Invalid IAM Policy ARN '{}': {}", s, reason))
             } else {
                 Err("Expected string".to_string())
@@ -1577,6 +1638,75 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    // --- validate_arn partition tests ---
+
+    #[test]
+    fn validate_arn_rejects_invalid_partition() {
+        assert!(validate_arn("arn:xxx:iam::aws:policy/Foo").is_err());
+        assert!(validate_arn("arn:invalid:s3:::bucket").is_err());
+    }
+
+    #[test]
+    fn validate_arn_accepts_valid_partitions() {
+        assert!(validate_arn("arn:aws:s3:::bucket").is_ok());
+        assert!(validate_arn("arn:aws-cn:s3:::bucket").is_ok());
+        assert!(validate_arn("arn:aws-us-gov:s3:::bucket").is_ok());
+    }
+
+    // --- IAM ARN validation tests ---
+
+    #[test]
+    fn validate_iam_arn_rejects_non_empty_region() {
+        assert!(validate_iam_arn("arn:aws:iam:us-east-1:aws:policy/Foo", "policy/").is_err());
+    }
+
+    #[test]
+    fn validate_iam_arn_rejects_short_account_id() {
+        assert!(validate_iam_arn("arn:aws:iam::1234:policy/Foo", "policy/").is_err());
+    }
+
+    #[test]
+    fn validate_iam_arn_rejects_non_digit_account() {
+        assert!(validate_iam_arn("arn:aws:iam::aw:policy/Foo", "policy/").is_err());
+    }
+
+    #[test]
+    fn validate_iam_arn_accepts_aws_managed() {
+        assert!(validate_iam_arn("arn:aws:iam::aws:policy/AdministratorAccess", "policy/").is_ok());
+    }
+
+    #[test]
+    fn validate_iam_arn_accepts_customer_managed() {
+        assert!(
+            validate_iam_arn("arn:aws:iam::123456789012:policy/MyPolicy", "policy/").is_ok()
+        );
+    }
+
+    #[test]
+    fn validate_iam_arn_rejects_empty_resource_name() {
+        assert!(validate_iam_arn("arn:aws:iam::aws:policy/", "policy/").is_err());
+    }
+
+    #[test]
+    fn validate_iam_arn_rejects_invalid_resource_chars() {
+        assert!(validate_iam_arn("arn:aws:iam::aws:policy/My Policy", "policy/").is_err());
+        assert!(validate_iam_arn("arn:aws:iam::aws:policy/foo<bar>", "policy/").is_err());
+    }
+
+    #[test]
+    fn validate_iam_arn_accepts_path_prefix() {
+        assert!(
+            validate_iam_arn("arn:aws:iam::123456789012:role/service-role/MyRole", "role/").is_ok()
+        );
+    }
+
+    #[test]
+    fn validate_iam_arn_error_includes_full_arn() {
+        let err = validate_iam_arn("arn:aws:iam:us-east-1:aws:policy/Foo", "policy/")
+            .unwrap_err();
+        assert!(err.contains("arn:aws:iam:us-east-1:aws:policy/Foo"), "Error should include full ARN: {err}");
     }
 
     // UUID tests
