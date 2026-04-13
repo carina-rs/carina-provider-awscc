@@ -1321,50 +1321,86 @@ const CONDITION_OPERATORS: &[(&str, &str)] = &[
     ("arn_not_like", "ArnNotLike"),
     // Null check
     ("null", "Null"),
-    // ForAllValues / ForAnyValue qualifiers
-    ("for_all_values_string_equals", "ForAllValues:StringEquals"),
-    ("for_all_values_string_like", "ForAllValues:StringLike"),
-    ("for_any_value_string_equals", "ForAnyValue:StringEquals"),
-    ("for_any_value_string_like", "ForAnyValue:StringLike"),
-    ("for_all_values_arn_like", "ForAllValues:ArnLike"),
-    ("for_any_value_arn_like", "ForAnyValue:ArnLike"),
+];
+
+/// Snake_case prefixes for set operators and their PascalCase AWS form.
+const CONDITION_QUALIFIER_PREFIXES: &[(&str, &str)] = &[
+    ("for_all_values_", "ForAllValues:"),
+    ("for_any_value_", "ForAnyValue:"),
 ];
 
 /// Convert a snake_case condition operator to its PascalCase AWS form.
 /// Returns `None` if the operator is unknown.
 ///
-/// Also handles `_if_exists` suffix: `string_equals_if_exists` → `StringEqualsIfExists`.
+/// Handles modifiers generically:
+/// - `_if_exists` suffix: `string_equals_if_exists` → `StringEqualsIfExists`
+/// - `for_all_values_` / `for_any_value_` prefix: `for_all_values_string_like` → `ForAllValues:StringLike`
+/// - Combined: `for_all_values_string_like_if_exists` → `ForAllValues:StringLikeIfExists`
 pub fn condition_operator_to_aws(snake: &str) -> Option<String> {
-    // Check for _if_exists suffix
-    if let Some(base) = snake.strip_suffix("_if_exists") {
-        return CONDITION_OPERATORS
-            .iter()
-            .find(|(s, _)| *s == base)
-            .map(|(_, pascal)| format!("{pascal}IfExists"));
+    let (rest, if_exists) = match snake.strip_suffix("_if_exists") {
+        Some(base) => (base, true),
+        None => (snake, false),
+    };
+    // Check for qualifier prefix (for_all_values_, for_any_value_)
+    for (snake_prefix, pascal_prefix) in CONDITION_QUALIFIER_PREFIXES {
+        if let Some(base) = rest.strip_prefix(snake_prefix) {
+            return CONDITION_OPERATORS
+                .iter()
+                .find(|(s, _)| *s == base)
+                .map(|(_, pascal)| {
+                    let suffix = if if_exists { "IfExists" } else { "" };
+                    format!("{pascal_prefix}{pascal}{suffix}")
+                });
+        }
     }
+    // Direct operator lookup
     CONDITION_OPERATORS
         .iter()
-        .find(|(s, _)| *s == snake)
-        .map(|(_, pascal)| pascal.to_string())
+        .find(|(s, _)| *s == rest)
+        .map(|(_, pascal)| {
+            if if_exists {
+                format!("{pascal}IfExists")
+            } else {
+                pascal.to_string()
+            }
+        })
 }
 
 /// Convert a PascalCase AWS condition operator to snake_case DSL form.
 /// Returns `None` if the operator is unknown.
 ///
-/// Handles `IfExists` suffix: `StringEqualsIfExists` → `string_equals_if_exists`.
-/// Handles `ForAllValues:`/`ForAnyValue:` prefixes.
+/// Handles modifiers generically:
+/// - `IfExists` suffix: `StringEqualsIfExists` → `string_equals_if_exists`
+/// - `ForAllValues:` / `ForAnyValue:` prefix: `ForAllValues:StringLike` → `for_all_values_string_like`
+/// - Combined: `ForAllValues:StringLikeIfExists` → `for_all_values_string_like_if_exists`
 pub fn condition_operator_to_snake(pascal: &str) -> Option<String> {
-    // Check for IfExists suffix
-    if let Some(base) = pascal.strip_suffix("IfExists") {
-        return CONDITION_OPERATORS
-            .iter()
-            .find(|(_, p)| *p == base)
-            .map(|(snake, _)| format!("{snake}_if_exists"));
+    let (rest, if_exists) = match pascal.strip_suffix("IfExists") {
+        Some(base) => (base, true),
+        None => (pascal, false),
+    };
+    // Check for qualifier prefix (ForAllValues:, ForAnyValue:)
+    for (snake_prefix, pascal_prefix) in CONDITION_QUALIFIER_PREFIXES {
+        if let Some(base) = rest.strip_prefix(pascal_prefix) {
+            return CONDITION_OPERATORS
+                .iter()
+                .find(|(_, p)| *p == base)
+                .map(|(snake, _)| {
+                    let suffix = if if_exists { "_if_exists" } else { "" };
+                    format!("{snake_prefix}{snake}{suffix}")
+                });
+        }
     }
+    // Direct operator lookup
     CONDITION_OPERATORS
         .iter()
-        .find(|(_, p)| *p == pascal)
-        .map(|(snake, _)| snake.to_string())
+        .find(|(_, p)| *p == rest)
+        .map(|(snake, _)| {
+            if if_exists {
+                format!("{snake}_if_exists")
+            } else {
+                snake.to_string()
+            }
+        })
 }
 
 /// Check if a string is a valid snake_case condition operator.
@@ -2231,6 +2267,28 @@ mod tests {
         assert_eq!(
             condition_operator_to_aws("for_any_value_string_like"),
             Some("ForAnyValue:StringLike".to_string())
+        );
+        // Any base operator should work with qualifiers
+        assert_eq!(
+            condition_operator_to_aws("for_all_values_numeric_equals"),
+            Some("ForAllValues:NumericEquals".to_string())
+        );
+        // Combined qualifier + if_exists
+        assert_eq!(
+            condition_operator_to_aws("for_all_values_string_like_if_exists"),
+            Some("ForAllValues:StringLikeIfExists".to_string())
+        );
+    }
+
+    #[test]
+    fn condition_operator_to_snake_roundtrip() {
+        assert_eq!(
+            condition_operator_to_snake("ForAllValues:NumericEquals"),
+            Some("for_all_values_numeric_equals".to_string())
+        );
+        assert_eq!(
+            condition_operator_to_snake("ForAnyValue:ArnLikeIfExists"),
+            Some("for_any_value_arn_like_if_exists".to_string())
         );
     }
 
