@@ -1282,11 +1282,176 @@ pub fn iam_policy_document() -> AttributeType {
     }
 }
 
-/// Validate IAM policy document structure
+/// IAM condition operator mappings: (snake_case, PascalCase).
+///
+/// See <https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_condition_operators.html>
+const CONDITION_OPERATORS: &[(&str, &str)] = &[
+    // String
+    ("string_equals", "StringEquals"),
+    ("string_not_equals", "StringNotEquals"),
+    ("string_equals_ignore_case", "StringEqualsIgnoreCase"),
+    ("string_not_equals_ignore_case", "StringNotEqualsIgnoreCase"),
+    ("string_like", "StringLike"),
+    ("string_not_like", "StringNotLike"),
+    // Numeric
+    ("numeric_equals", "NumericEquals"),
+    ("numeric_not_equals", "NumericNotEquals"),
+    ("numeric_less_than", "NumericLessThan"),
+    ("numeric_less_than_equals", "NumericLessThanEquals"),
+    ("numeric_greater_than", "NumericGreaterThan"),
+    ("numeric_greater_than_equals", "NumericGreaterThanEquals"),
+    // Date
+    ("date_equals", "DateEquals"),
+    ("date_not_equals", "DateNotEquals"),
+    ("date_less_than", "DateLessThan"),
+    ("date_less_than_equals", "DateLessThanEquals"),
+    ("date_greater_than", "DateGreaterThan"),
+    ("date_greater_than_equals", "DateGreaterThanEquals"),
+    // Boolean
+    ("bool", "Bool"),
+    // Binary
+    ("binary_equals", "BinaryEquals"),
+    // IP
+    ("ip_address", "IpAddress"),
+    ("not_ip_address", "NotIpAddress"),
+    // ARN
+    ("arn_equals", "ArnEquals"),
+    ("arn_not_equals", "ArnNotEquals"),
+    ("arn_like", "ArnLike"),
+    ("arn_not_like", "ArnNotLike"),
+    // Null check
+    ("null", "Null"),
+];
+
+/// Snake_case prefixes for set operators and their PascalCase AWS form.
+const CONDITION_QUALIFIER_PREFIXES: &[(&str, &str)] = &[
+    ("for_all_values_", "ForAllValues:"),
+    ("for_any_value_", "ForAnyValue:"),
+];
+
+/// Convert a snake_case condition operator to its PascalCase AWS form.
+/// Returns `None` if the operator is unknown.
+///
+/// Handles modifiers generically:
+/// - `_if_exists` suffix: `string_equals_if_exists` → `StringEqualsIfExists`
+/// - `for_all_values_` / `for_any_value_` prefix: `for_all_values_string_like` → `ForAllValues:StringLike`
+/// - Combined: `for_all_values_string_like_if_exists` → `ForAllValues:StringLikeIfExists`
+pub fn condition_operator_to_aws(snake: &str) -> Option<String> {
+    let (rest, if_exists) = match snake.strip_suffix("_if_exists") {
+        Some(base) => (base, true),
+        None => (snake, false),
+    };
+    // Check for qualifier prefix (for_all_values_, for_any_value_)
+    for (snake_prefix, pascal_prefix) in CONDITION_QUALIFIER_PREFIXES {
+        if let Some(base) = rest.strip_prefix(snake_prefix) {
+            return CONDITION_OPERATORS
+                .iter()
+                .find(|(s, _)| *s == base)
+                .map(|(_, pascal)| {
+                    let suffix = if if_exists { "IfExists" } else { "" };
+                    format!("{pascal_prefix}{pascal}{suffix}")
+                });
+        }
+    }
+    // Direct operator lookup
+    CONDITION_OPERATORS
+        .iter()
+        .find(|(s, _)| *s == rest)
+        .map(|(_, pascal)| {
+            if if_exists {
+                format!("{pascal}IfExists")
+            } else {
+                pascal.to_string()
+            }
+        })
+}
+
+/// Convert a PascalCase AWS condition operator to snake_case DSL form.
+/// Returns `None` if the operator is unknown.
+///
+/// Handles modifiers generically:
+/// - `IfExists` suffix: `StringEqualsIfExists` → `string_equals_if_exists`
+/// - `ForAllValues:` / `ForAnyValue:` prefix: `ForAllValues:StringLike` → `for_all_values_string_like`
+/// - Combined: `ForAllValues:StringLikeIfExists` → `for_all_values_string_like_if_exists`
+pub fn condition_operator_to_snake(pascal: &str) -> Option<String> {
+    let (rest, if_exists) = match pascal.strip_suffix("IfExists") {
+        Some(base) => (base, true),
+        None => (pascal, false),
+    };
+    // Check for qualifier prefix (ForAllValues:, ForAnyValue:)
+    for (snake_prefix, pascal_prefix) in CONDITION_QUALIFIER_PREFIXES {
+        if let Some(base) = rest.strip_prefix(pascal_prefix) {
+            return CONDITION_OPERATORS
+                .iter()
+                .find(|(_, p)| *p == base)
+                .map(|(snake, _)| {
+                    let suffix = if if_exists { "_if_exists" } else { "" };
+                    format!("{snake_prefix}{snake}{suffix}")
+                });
+        }
+    }
+    // Direct operator lookup
+    CONDITION_OPERATORS
+        .iter()
+        .find(|(_, p)| *p == rest)
+        .map(|(snake, _)| {
+            if if_exists {
+                format!("{snake}_if_exists")
+            } else {
+                snake.to_string()
+            }
+        })
+}
+
+/// Check if a string is a valid snake_case condition operator.
+pub fn is_valid_condition_operator(key: &str) -> bool {
+    condition_operator_to_aws(key).is_some()
+}
+
+/// Validate condition operators in a parsed IAM policy document.
+///
+/// Walks the document looking for `condition` maps and validates that
+/// all operator keys are valid snake_case condition operators.
+pub fn validate_condition_operators(value: &Value) -> Result<(), String> {
+    let Value::Map(doc) = value else {
+        return Ok(());
+    };
+    // Look for "statement" list
+    let Some(Value::List(statements)) = doc.get("statement") else {
+        return Ok(());
+    };
+    for (i, stmt) in statements.iter().enumerate() {
+        let Value::Map(stmt_map) = stmt else {
+            continue;
+        };
+        let Some(Value::Map(condition)) = stmt_map.get("condition") else {
+            continue;
+        };
+        for key in condition.keys() {
+            if !is_valid_condition_operator(key) {
+                let valid_operators: Vec<&str> =
+                    CONDITION_OPERATORS.iter().map(|(s, _)| *s).collect();
+                return Err(format!(
+                    "statement[{}]: unknown condition operator '{}'. \
+                     Valid operators: {} \
+                     (prefix with for_all_values_ or for_any_value_ for set operators, \
+                     append _if_exists for conditional variants)",
+                    i,
+                    key,
+                    valid_operators.join(", ")
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Validate IAM policy document structure and condition operators.
 pub fn validate_iam_policy_document(value: &Value) -> Result<(), String> {
     iam_policy_document()
         .validate(value)
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    validate_condition_operators(value)
 }
 
 #[cfg(test)]
@@ -2060,5 +2225,191 @@ mod tests {
     fn validate_tags_map_no_tags_ok() {
         let attrs = std::collections::HashMap::new();
         assert!(validate_tags_map(&attrs).is_ok());
+    }
+
+    // --- Condition operator tests ---
+
+    #[test]
+    fn condition_operator_to_aws_basic() {
+        assert_eq!(
+            condition_operator_to_aws("string_equals"),
+            Some("StringEquals".to_string())
+        );
+        assert_eq!(
+            condition_operator_to_aws("arn_like"),
+            Some("ArnLike".to_string())
+        );
+        assert_eq!(condition_operator_to_aws("null"), Some("Null".to_string()));
+    }
+
+    #[test]
+    fn condition_operator_to_aws_if_exists() {
+        assert_eq!(
+            condition_operator_to_aws("string_equals_if_exists"),
+            Some("StringEqualsIfExists".to_string())
+        );
+        assert_eq!(
+            condition_operator_to_aws("arn_like_if_exists"),
+            Some("ArnLikeIfExists".to_string())
+        );
+    }
+
+    #[test]
+    fn condition_operator_to_aws_unknown() {
+        assert_eq!(condition_operator_to_aws("unknown_op"), None);
+        assert_eq!(condition_operator_to_aws("StringEquals"), None);
+    }
+
+    #[test]
+    fn condition_operator_to_aws_for_all_values() {
+        assert_eq!(
+            condition_operator_to_aws("for_all_values_string_equals"),
+            Some("ForAllValues:StringEquals".to_string())
+        );
+        assert_eq!(
+            condition_operator_to_aws("for_any_value_string_like"),
+            Some("ForAnyValue:StringLike".to_string())
+        );
+        // Any base operator should work with qualifiers
+        assert_eq!(
+            condition_operator_to_aws("for_all_values_numeric_equals"),
+            Some("ForAllValues:NumericEquals".to_string())
+        );
+        // Combined qualifier + if_exists
+        assert_eq!(
+            condition_operator_to_aws("for_all_values_string_like_if_exists"),
+            Some("ForAllValues:StringLikeIfExists".to_string())
+        );
+    }
+
+    #[test]
+    fn condition_operator_to_snake_roundtrip() {
+        assert_eq!(
+            condition_operator_to_snake("ForAllValues:NumericEquals"),
+            Some("for_all_values_numeric_equals".to_string())
+        );
+        assert_eq!(
+            condition_operator_to_snake("ForAnyValue:ArnLikeIfExists"),
+            Some("for_any_value_arn_like_if_exists".to_string())
+        );
+    }
+
+    #[test]
+    fn validate_condition_operators_accepts_valid() {
+        let doc = Value::Map(
+            vec![(
+                "statement".to_string(),
+                Value::List(vec![Value::Map(
+                    vec![(
+                        "condition".to_string(),
+                        Value::Map(
+                            vec![(
+                                "string_equals".to_string(),
+                                Value::Map(
+                                    vec![(
+                                        "aws:RequestedRegion".to_string(),
+                                        Value::String("us-east-1".to_string()),
+                                    )]
+                                    .into_iter()
+                                    .collect(),
+                                ),
+                            )]
+                            .into_iter()
+                            .collect(),
+                        ),
+                    )]
+                    .into_iter()
+                    .collect(),
+                )]),
+            )]
+            .into_iter()
+            .collect(),
+        );
+        assert!(validate_condition_operators(&doc).is_ok());
+    }
+
+    #[test]
+    fn validate_condition_operators_rejects_pascal_case() {
+        let doc = Value::Map(
+            vec![(
+                "statement".to_string(),
+                Value::List(vec![Value::Map(
+                    vec![(
+                        "condition".to_string(),
+                        Value::Map(
+                            vec![(
+                                "StringEquals".to_string(),
+                                Value::Map(std::collections::HashMap::new()),
+                            )]
+                            .into_iter()
+                            .collect(),
+                        ),
+                    )]
+                    .into_iter()
+                    .collect(),
+                )]),
+            )]
+            .into_iter()
+            .collect(),
+        );
+        let err = validate_condition_operators(&doc).unwrap_err();
+        assert!(
+            err.contains("StringEquals"),
+            "Error should mention the invalid key: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_condition_operators_rejects_unknown() {
+        let doc = Value::Map(
+            vec![(
+                "statement".to_string(),
+                Value::List(vec![Value::Map(
+                    vec![(
+                        "condition".to_string(),
+                        Value::Map(
+                            vec![(
+                                "foo_bar".to_string(),
+                                Value::Map(std::collections::HashMap::new()),
+                            )]
+                            .into_iter()
+                            .collect(),
+                        ),
+                    )]
+                    .into_iter()
+                    .collect(),
+                )]),
+            )]
+            .into_iter()
+            .collect(),
+        );
+        assert!(validate_condition_operators(&doc).is_err());
+    }
+
+    #[test]
+    fn validate_condition_operators_accepts_if_exists() {
+        let doc = Value::Map(
+            vec![(
+                "statement".to_string(),
+                Value::List(vec![Value::Map(
+                    vec![(
+                        "condition".to_string(),
+                        Value::Map(
+                            vec![(
+                                "string_equals_if_exists".to_string(),
+                                Value::Map(std::collections::HashMap::new()),
+                            )]
+                            .into_iter()
+                            .collect(),
+                        ),
+                    )]
+                    .into_iter()
+                    .collect(),
+                )]),
+            )]
+            .into_iter()
+            .collect(),
+        );
+        assert!(validate_condition_operators(&doc).is_ok());
     }
 }
