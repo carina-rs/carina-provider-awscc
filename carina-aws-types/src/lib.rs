@@ -801,8 +801,8 @@ pub fn validate_service_arn(
         && !parts[5].starts_with(prefix)
     {
         return Err(format!(
-            "expected resource starting with '{}', got '{}'",
-            prefix, parts[5]
+            "ARN resource segment must begin with '{}', but got '{}' in '{}'",
+            prefix, parts[5], arn
         ));
     }
     Ok(())
