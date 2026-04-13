@@ -819,15 +819,10 @@ pub fn validate_iam_arn(arn: &str, resource_prefix: &str) -> Result<(), String> 
     validate_service_arn(arn, "iam", Some(resource_prefix))?;
     let parts: Vec<&str> = arn.splitn(6, ':').collect();
     if !parts[3].is_empty() {
-        return Err(format!(
-            "IAM ARN region must be empty, got '{}'",
-            parts[3]
-        ));
+        return Err(format!("IAM ARN region must be empty, got '{}'", parts[3]));
     }
     let account = parts[4];
-    if account != "aws"
-        && (account.len() != 12 || !account.chars().all(|c| c.is_ascii_digit()))
-    {
+    if account != "aws" && (account.len() != 12 || !account.chars().all(|c| c.is_ascii_digit())) {
         return Err(format!(
             "IAM ARN account must be 'aws' or a 12-digit ID, got '{}'",
             account
@@ -1667,9 +1662,7 @@ mod tests {
 
     #[test]
     fn validate_iam_arn_accepts_customer_managed() {
-        assert!(
-            validate_iam_arn("arn:aws:iam::123456789012:policy/MyPolicy", "policy/").is_ok()
-        );
+        assert!(validate_iam_arn("arn:aws:iam::123456789012:policy/MyPolicy", "policy/").is_ok());
     }
 
     #[test]
@@ -1686,14 +1679,17 @@ mod tests {
     #[test]
     fn validate_iam_arn_accepts_path_prefix() {
         assert!(
-            validate_iam_arn("arn:aws:iam::123456789012:role/service-role/MyRole", "role/").is_ok()
+            validate_iam_arn(
+                "arn:aws:iam::123456789012:role/service-role/MyRole",
+                "role/"
+            )
+            .is_ok()
         );
     }
 
     #[test]
     fn validate_iam_arn_error_message_is_descriptive() {
-        let err = validate_iam_arn("arn:aws:iam:us-east-1:aws:policy/Foo", "policy/")
-            .unwrap_err();
+        let err = validate_iam_arn("arn:aws:iam:us-east-1:aws:policy/Foo", "policy/").unwrap_err();
         assert!(
             err.contains("region must be empty"),
             "Error should describe the problem: {err}"
