@@ -1234,6 +1234,23 @@ fn iam_policy_version() -> AttributeType {
     }
 }
 
+/// IAM condition map type: Map<ConditionOperator, Map<ConditionKey, StringOrList>>
+fn condition_type() -> AttributeType {
+    let operator_values: Vec<String> = CONDITION_OPERATORS
+        .iter()
+        .map(|(s, _)| s.to_string())
+        .collect();
+    AttributeType::map_with_key(
+        AttributeType::StringEnum {
+            name: "ConditionOperator".to_string(),
+            values: operator_values,
+            namespace: None,
+            to_dsl: None,
+        },
+        AttributeType::map(string_or_list_of_strings()),
+    )
+}
+
 /// IAM Policy Statement struct type
 fn iam_policy_statement() -> AttributeType {
     AttributeType::Struct {
@@ -1252,11 +1269,7 @@ fn iam_policy_statement() -> AttributeType {
                 .with_provider_name("Principal"),
             StructField::new("not_principal", string_or_principal_struct())
                 .with_provider_name("NotPrincipal"),
-            StructField::new(
-                "condition",
-                AttributeType::map(AttributeType::map(string_or_list_of_strings())),
-            )
-            .with_provider_name("Condition"),
+            StructField::new("condition", condition_type()).with_provider_name("Condition"),
         ],
     }
 }
