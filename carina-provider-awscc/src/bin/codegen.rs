@@ -21,6 +21,11 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::io::{self, Read};
 use std::sync::LazyLock;
 
+/// Exit status used when a schema is deliberately skipped (NON_PROVISIONABLE).
+/// The generate-schemas.sh / generate-docs.sh wrappers branch on this to
+/// distinguish intentional skips from real errors.
+const EXIT_SKIPPED: i32 = 2;
+
 /// Unified type override for resource-scoped property overrides.
 /// Allows overriding string type, enum values, integer range, or integer enum
 /// for a specific (resource_type, property_name) pair.
@@ -106,6 +111,20 @@ struct CfnSchema {
     /// Top-level anyOf variants
     #[serde(default, rename = "anyOf")]
     any_of: Vec<CfnOneOfVariant>,
+    /// Cloud Control handlers (create/read/update/delete/list).
+    /// Absent or empty means the type is NON_PROVISIONABLE and cannot be
+    /// managed via Cloud Control API.
+    #[serde(default)]
+    handlers: BTreeMap<String, serde_json::Value>,
+}
+
+impl CfnSchema {
+    /// Returns true if the schema declares any Cloud Control handlers.
+    /// NON_PROVISIONABLE resource types have no handlers and cannot be
+    /// operated via Cloud Control API, so the codegen skips them.
+    fn has_cloud_control_handlers(&self) -> bool {
+        !self.handlers.is_empty()
+    }
 }
 
 /// CloudFormation Tagging metadata
@@ -311,6 +330,15 @@ fn main() -> Result<()> {
     // Parse schema
     let schema: CfnSchema =
         serde_json::from_str(&schema_json).context("Failed to parse CloudFormation schema")?;
+
+    if !schema.has_cloud_control_handlers() {
+        eprintln!(
+            "Skipping {}: NON_PROVISIONABLE (no Cloud Control handlers).\n\
+             Use carina-provider-aws if you need to manage this resource via the AWS SDK directly.",
+            args.type_name
+        );
+        std::process::exit(EXIT_SKIPPED);
+    }
 
     // Generate output based on format
     let output = match args.format.as_str() {
@@ -4321,6 +4349,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
         let (_, enum_info) =
             cfn_type_to_carina_type_with_enum(&prop, "IpProtocol", &schema, "", &BTreeMap::new());
@@ -4403,6 +4432,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
         let (type_str, _) =
             cfn_type_to_carina_type_with_enum(&prop, "CidrIp", &schema, "", &BTreeMap::new());
@@ -4449,6 +4479,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
         let (type_str, _) =
             cfn_type_to_carina_type_with_enum(&prop, "CidrIpv6", &schema, "", &BTreeMap::new());
@@ -4495,6 +4526,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
         let (type_str, _) = cfn_type_to_carina_type_with_enum(
             &prop,
@@ -4546,6 +4578,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
         let (type_str, _) =
             cfn_type_to_carina_type_with_enum(&prop, "PublicIp", &schema, "", &BTreeMap::new());
@@ -4592,6 +4625,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
         let (type_str, _) = cfn_type_to_carina_type_with_enum(
             &prop,
@@ -4642,6 +4676,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
 
         // AvailabilityZone should use super::availability_zone()
@@ -4939,6 +4974,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
         let enums = BTreeMap::new();
         assert_eq!(
@@ -5004,6 +5040,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
         let enums = BTreeMap::new();
         assert_eq!(
@@ -5049,6 +5086,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
         let enums = BTreeMap::new();
         assert_eq!(
@@ -5119,6 +5157,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
         let enums = BTreeMap::new();
 
@@ -5331,6 +5370,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
         let (type_str, _) = cfn_type_to_carina_type_with_enum(
             &prop,
@@ -5392,6 +5432,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
         let (type_str, _) =
             cfn_type_to_carina_type_with_enum(&prop, "SomeCount", &schema, "", &BTreeMap::new());
@@ -5435,6 +5476,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
         let (type_str, _) =
             cfn_type_to_carina_type_with_enum(&prop, "SomeCount", &schema, "", &BTreeMap::new());
@@ -5487,6 +5529,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
         let (type_str, _) =
             cfn_type_to_carina_type_with_enum(&prop, "SomeCount", &schema, "", &BTreeMap::new());
@@ -5545,6 +5588,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
         let (type_str, _) = cfn_type_to_carina_type_with_enum(
             &prop,
@@ -5606,6 +5650,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
         let enums = BTreeMap::new();
         let result = type_display_string("SecondaryPrivateIpAddressCount", &prop, &schema, &enums);
@@ -5653,6 +5698,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
         let enums = BTreeMap::new();
         let result = type_display_string("Priority", &prop, &schema, &enums);
@@ -5700,6 +5746,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
         let enums = BTreeMap::new();
         // Resource-scoped override takes precedence over schema enum values
@@ -5746,6 +5793,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
         let enums = BTreeMap::new();
         let result = type_display_string("Ipv4NetmaskLength", &prop, &schema, &enums);
@@ -5826,6 +5874,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
         let (type_str, _) = cfn_type_to_carina_type_with_enum(
             &prop,
@@ -5874,6 +5923,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
         let (type_str, _) =
             cfn_type_to_carina_type_with_enum(&prop, "FromPort", &schema, "", &BTreeMap::new());
@@ -5921,6 +5971,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
         let (type_str, _) =
             cfn_type_to_carina_type_with_enum(&prop, "Arn", &schema, "", &BTreeMap::new());
@@ -5981,6 +6032,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
         let (type_str, _) =
             cfn_type_to_carina_type_with_enum(&prop, "FromPort", &schema, "", &BTreeMap::new());
@@ -6669,6 +6721,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
 
         let generated = generate_schema_code(&schema, "AWS::EC2::IPAMPool").unwrap();
@@ -6778,6 +6831,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
 
         let generated = generate_schema_code(&schema, "AWS::EC2::TestResource").unwrap();
@@ -6817,6 +6871,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
         let enums = BTreeMap::new();
         let (_, enum_info) = cfn_type_to_carina_type_with_enum(
@@ -6862,6 +6917,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
         let enums = BTreeMap::new();
         let (type_str, enum_info) = cfn_type_to_carina_type_with_enum(
@@ -6921,6 +6977,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
         let enums = BTreeMap::new();
         let (_, enum_info) = cfn_type_to_carina_type_with_enum(
@@ -6982,6 +7039,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
         let enums = BTreeMap::new();
         let (type_str, enum_info) = cfn_type_to_carina_type_with_enum(
@@ -7038,6 +7096,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
         let generated = generate_schema_code(&schema, "AWS::S3::Bucket").unwrap();
         assert!(
@@ -7097,6 +7156,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
 
         let md = generate_markdown(&schema, "AWS::S3::Bucket").unwrap();
@@ -7177,6 +7237,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
 
         let md = generate_markdown(&schema, "AWS::S3::Bucket").unwrap();
@@ -7296,6 +7357,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
 
         let md = generate_markdown(&schema, "AWS::EC2::SecurityGroup").unwrap();
@@ -7399,6 +7461,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
 
         let md = generate_markdown(&schema, "AWS::Test::Resource").unwrap();
@@ -7493,6 +7556,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
 
         let md = generate_markdown(&schema, "AWS::Test::Resource").unwrap();
@@ -7542,6 +7606,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
 
         let generated = generate_schema_code(&schema, "AWS::IAM::Role").unwrap();
@@ -7582,6 +7647,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
 
         let generated = generate_schema_code(&schema, "AWS::Logs::LogGroup").unwrap();
@@ -7618,6 +7684,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
 
         let generated = generate_schema_code(&schema, "AWS::Test::Resource").unwrap();
@@ -7663,6 +7730,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
 
         let md = generate_markdown(&schema, "AWS::Test::Resource").unwrap();
@@ -7697,6 +7765,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
         let enums = BTreeMap::new();
         // Tags property should display Map(String)
@@ -7725,6 +7794,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
         let enums = BTreeMap::new();
         // Generic object should display Map(String)
@@ -7767,6 +7837,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
 
         let md = generate_markdown(&schema, "AWS::Test::Resource").unwrap();
@@ -7812,6 +7883,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
 
         let md = generate_markdown(&schema, "AWS::Test::Resource").unwrap();
@@ -7865,6 +7937,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
         let (type_str, _) = cfn_type_to_carina_type_with_enum(
             &prop,
@@ -7907,6 +7980,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
         let (type_str, _) = cfn_type_to_carina_type_with_enum(
             &prop,
@@ -7949,6 +8023,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
 
         let code = generate_schema_code(&schema, "AWS::Logs::LogGroup").unwrap();
@@ -7990,6 +8065,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
         let enums = BTreeMap::new();
         let (type_str, _) = cfn_type_to_carina_type_with_enum(
@@ -8038,6 +8114,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
         let enums = BTreeMap::new();
         let (type_str, _) = cfn_type_to_carina_type_with_enum(
@@ -8082,6 +8159,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
         let enums = BTreeMap::new();
         let (type_str, _) = cfn_type_to_carina_type_with_enum(
@@ -8158,6 +8236,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
 
         let generated = generate_schema_code(&schema, "AWS::EC2::VPCEndpoint").unwrap();
@@ -8202,6 +8281,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
 
         let generated = generate_schema_code(&schema, "AWS::Logs::LogGroup").unwrap();
@@ -8251,6 +8331,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
 
         let generated = generate_schema_code(&schema, "AWS::Test::Resource").unwrap();
@@ -8291,6 +8372,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
 
         let generated = generate_schema_code(&schema, "AWS::Test::Resource").unwrap();
@@ -8340,6 +8422,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
 
         let (type_str, _) = cfn_type_to_carina_type_with_enum(
@@ -8444,6 +8527,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
 
         let generated = generate_schema_code(&schema, "AWS::S3::Bucket").unwrap();
@@ -8490,6 +8574,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
 
         let generated = generate_schema_code(&schema, "AWS::Test::Resource").unwrap();
@@ -8535,6 +8620,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
 
         let generated = generate_schema_code(&schema, "AWS::Test::Resource").unwrap();
@@ -8624,6 +8710,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
 
         let generated = generate_schema_code(&schema, "AWS::Route53::HostedZone").unwrap();
@@ -8668,6 +8755,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
 
         let generated = generate_schema_code(&schema, "AWS::Test::Resource").unwrap();
@@ -8717,6 +8805,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
 
         let generated = generate_schema_code(&schema, "AWS::Test::Resource").unwrap();
@@ -8808,6 +8897,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
 
         let generated = generate_schema_code(&schema, "AWS::Test::Resource").unwrap();
@@ -8852,6 +8942,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
         let (type_str, _) =
             cfn_type_to_carina_type_with_enum(&prop, "SomeValue", &schema, "", &BTreeMap::new());
@@ -8883,6 +8974,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
         let display = type_display_string("SomeValue", &prop, &schema, &BTreeMap::new());
         assert!(
@@ -8913,6 +9005,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
         let (type_str, _) =
             cfn_type_to_carina_type_with_enum(&prop, "Url", &schema, "", &BTreeMap::new());
@@ -8944,6 +9037,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
         let display = type_display_string("Url", &prop, &schema, &BTreeMap::new());
         assert!(
@@ -8975,6 +9069,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
         let (type_str, _) = cfn_type_to_carina_type_with_enum(
             &prop,
@@ -9012,6 +9107,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
         let display =
             type_display_string("ObjectSizeGreaterThan", &prop, &schema, &BTreeMap::new());
@@ -9043,6 +9139,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
         let display = type_display_string("Value", &prop, &schema, &BTreeMap::new());
         assert!(
@@ -9076,6 +9173,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
         let (type_str, _) =
             cfn_type_to_carina_type_with_enum(&prop, "BoundedValue", &schema, "", &BTreeMap::new());
@@ -9114,6 +9212,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
         let (type_str, _) = cfn_type_to_carina_type_with_enum(
             &prop,
@@ -9158,6 +9257,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
         let (type_str, _) =
             cfn_type_to_carina_type_with_enum(&prop, "SomeName", &schema, "", &BTreeMap::new());
@@ -9209,6 +9309,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
 
         let code = generate_schema_code(&schema, "AWS::Test::ArrayPattern")
@@ -9298,6 +9399,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
 
         let generated = generate_schema_code(&schema, "AWS::EC2::FlowLog").unwrap();
@@ -9334,6 +9436,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
 
         let generated = generate_schema_code(&schema, "AWS::EC2::TestResource").unwrap();
@@ -9373,6 +9476,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         }
     }
 
@@ -9670,6 +9774,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
         let code = generate_schema_code(&schema, "AWS::EC2::VPCGatewayAttachment").unwrap();
         assert!(
@@ -9715,6 +9820,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
 
         let code = generate_schema_code(&schema, "AWS::Test::Resource").unwrap();
@@ -9772,6 +9878,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
 
         let md = generate_markdown(&schema, "AWS::Test::Resource").unwrap();
@@ -9828,6 +9935,7 @@ mod tests {
             tagging: None,
             one_of: vec![],
             any_of: vec![],
+            handlers: BTreeMap::new(),
         };
 
         let code = generate_schema_code(&schema, "AWS::Test::Nested").unwrap();
@@ -9838,5 +9946,41 @@ mod tests {
             "Parent attribute should NOT be marked write-only when only nested \
              sub-properties are write-only. Generated code:\n{code}"
         );
+    }
+
+    #[test]
+    fn test_has_cloud_control_handlers_with_handlers() {
+        let json = r#"{
+            "typeName": "AWS::EC2::VPC",
+            "properties": {},
+            "handlers": {
+                "create": {}, "read": {}, "update": {}, "delete": {}, "list": {}
+            }
+        }"#;
+        let schema: CfnSchema = serde_json::from_str(json).unwrap();
+        assert!(schema.has_cloud_control_handlers());
+    }
+
+    #[test]
+    fn test_has_cloud_control_handlers_empty() {
+        // NON_PROVISIONABLE types like AWS::Route53::RecordSet have handlers: {}
+        let json = r#"{
+            "typeName": "AWS::Route53::RecordSet",
+            "properties": {},
+            "handlers": {}
+        }"#;
+        let schema: CfnSchema = serde_json::from_str(json).unwrap();
+        assert!(!schema.has_cloud_control_handlers());
+    }
+
+    #[test]
+    fn test_has_cloud_control_handlers_missing() {
+        // Schemas without a handlers key at all are also unsupported.
+        let json = r#"{
+            "typeName": "AWS::Test::NoHandlers",
+            "properties": {}
+        }"#;
+        let schema: CfnSchema = serde_json::from_str(json).unwrap();
+        assert!(!schema.has_cloud_control_handlers());
     }
 }

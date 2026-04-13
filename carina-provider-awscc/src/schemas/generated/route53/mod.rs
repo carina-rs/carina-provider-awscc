@@ -7,4 +7,3 @@
 pub use super::*;
 
 pub mod hosted_zone;
-pub mod record_set;

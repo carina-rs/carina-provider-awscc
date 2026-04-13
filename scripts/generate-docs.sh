@@ -64,7 +64,6 @@ RESOURCE_TYPES=(
     "AWS::IdentityStore::Group"
     "AWS::IdentityStore::GroupMembership"
     "AWS::Route53::HostedZone"
-    "AWS::Route53::RecordSet"
 )
 
 echo "Generating awscc provider documentation..."
@@ -106,15 +105,29 @@ for TYPE_NAME in "${RESOURCE_TYPES[@]}"; do
         echo "  Using cached schema"
     fi
 
-    # Generate documentation
+    # Generate documentation. Exit code 2 signals a deliberate skip
+    # (NON_PROVISIONABLE type); anything else non-zero is a real error.
+    set +e
     "$CODEGEN_BIN" \
         --file "$CACHE_FILE" \
         --type-name "$TYPE_NAME" \
         --format markdown \
-        --output "$OUTPUT_FILE" 2>/dev/null || {
-        echo "  Warning: failed to generate docs for $TYPE_NAME, skipping"
-        continue
-    }
+        --output "$OUTPUT_FILE"
+    EXIT_CODE=$?
+    set -e
+
+    case "$EXIT_CODE" in
+        0) ;;
+        2)
+            rm -f "$OUTPUT_FILE"
+            continue
+            ;;
+        *)
+            echo "  Warning: failed to generate docs for $TYPE_NAME, skipping"
+            rm -f "$OUTPUT_FILE"
+            continue
+            ;;
+    esac
 
     # Add Starlight frontmatter
     if [ -f "$OUTPUT_FILE" ]; then
