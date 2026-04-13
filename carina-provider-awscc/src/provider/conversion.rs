@@ -185,7 +185,14 @@ pub(crate) fn dsl_value_to_aws(
                     let raw_extracted = extract_enum_value_with_values(s, &valid);
                     canonicalize_enum_value(raw_extracted, &valid)
                 } else {
-                    convert_enum_value(s)
+                    let extracted = convert_enum_value(s);
+                    // Custom types with namespace (e.g., Region) use underscores in DSL
+                    // but hyphens in AWS. Convert back.
+                    if attr_type.namespaced_enum_parts().is_some() {
+                        extracted.replace('_', "-")
+                    } else {
+                        extracted.to_string()
+                    }
                 };
                 // Apply alias reverse mapping (e.g., "all" -> "-1")
                 let resolved = match get_enum_alias_reverse(resource_type, attr_name, &raw) {
