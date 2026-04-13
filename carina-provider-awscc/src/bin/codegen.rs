@@ -1485,10 +1485,12 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
 
     // Also scan definitions for struct field string length constraints
     // (including array items with string length constraints)
-    // Skip Tag definitions since Tags are handled specially by tags_type()
+    // Skip the standard "Tag" definition since it's handled by tags_type().
+    // Non-standard tag definitions like "HostedZoneTag" are rendered as structs
+    // and need their validators collected.
     if let Some(definitions) = &schema.definitions {
         for (def_name, def) in definitions {
-            if def_name.contains("Tag") {
+            if def_name == "Tag" {
                 continue;
             }
             if let Some(props) = &def.properties {
@@ -8539,6 +8541,81 @@ mod tests {
         assert!(
             ref_count >= 3,
             "Both properties should reference the shared function (1 def + 2 refs), got {ref_count}: {generated}"
+        );
+    }
+
+    #[test]
+    fn test_non_standard_tag_definition_generates_validators() {
+        // Non-standard tag definitions like "HostedZoneTag" should have their
+        // string length validators generated. Only the standard "Tag" definition
+        // is skipped (handled by tags_type()).
+        let mut properties = BTreeMap::new();
+        properties.insert(
+            "HostedZoneTags".to_string(),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("array".to_string())),
+                description: Some("Tags".to_string()),
+                insertion_order: Some(false),
+                items: Some(Box::new(CfnProperty {
+                    ref_path: Some("#/definitions/HostedZoneTag".to_string()),
+                    ..Default::default()
+                })),
+                ..Default::default()
+            },
+        );
+
+        let mut definitions = BTreeMap::new();
+        let mut tag_props = BTreeMap::new();
+        tag_props.insert(
+            "Key".to_string(),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("string".to_string())),
+                max_length: Some(128),
+                ..Default::default()
+            },
+        );
+        tag_props.insert(
+            "Value".to_string(),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("string".to_string())),
+                max_length: Some(256),
+                ..Default::default()
+            },
+        );
+        definitions.insert(
+            "HostedZoneTag".to_string(),
+            CfnDefinition {
+                properties: Some(tag_props),
+                required: vec!["Key".to_string(), "Value".to_string()],
+                ..Default::default()
+            },
+        );
+
+        let schema = CfnSchema {
+            type_name: "AWS::Route53::HostedZone".to_string(),
+            description: None,
+            properties,
+            required: vec![],
+            read_only_properties: vec![],
+            create_only_properties: vec![],
+            write_only_properties: vec![],
+            primary_identifier: None,
+            definitions: Some(definitions),
+            tagging: None,
+            one_of: vec![],
+            any_of: vec![],
+        };
+
+        let generated = generate_schema_code(&schema, "AWS::Route53::HostedZone").unwrap();
+
+        // The HostedZoneTag struct fields should have validators generated
+        assert!(
+            generated.contains("fn validate_string_length_max_128"),
+            "Should generate validate_string_length_max_128 for HostedZoneTag.Key: {generated}"
+        );
+        assert!(
+            generated.contains("fn validate_string_length_max_256"),
+            "Should generate validate_string_length_max_256 for HostedZoneTag.Value: {generated}"
         );
     }
 
