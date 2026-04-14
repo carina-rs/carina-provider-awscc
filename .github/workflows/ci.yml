@@ -54,6 +54,13 @@ jobs:
           components: rustfmt
       - run: cargo fmt --check
 
+  docs-drift:
+    name: Check Docs Drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./scripts/check-docs-drift.sh
+
   wasm-build:
     name: WASM Build
     runs-on: ubuntu-latest
