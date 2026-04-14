@@ -39,6 +39,8 @@ enum TypeOverride {
     IntRange(i64, i64),
     /// Override to an integer enum with specific allowed values
     IntEnum(Vec<i64>),
+    /// Override to_dsl on a Custom type (Rust code for the closure)
+    ToDsl(&'static str),
 }
 
 /// Information about a detected enum type
@@ -3117,9 +3119,30 @@ fn resource_type_overrides() -> &'static HashMap<(&'static str, &'static str), T
                 ]),
             );
 
+            // === ToDsl overrides ===
+
+            // Route 53 HostedZone Name: AWS returns FQDN with trailing dot
+            m.insert(
+                ("AWS::Route53::HostedZone", "Name"),
+                TypeOverride::ToDsl(
+                    r#"Some(|s: &str| s.strip_suffix('.').unwrap_or(s).to_string())"#,
+                ),
+            );
+
             m
         });
     &OVERRIDES
+}
+
+/// Return the `to_dsl` code for a Custom type, checking for ToDsl overrides.
+fn to_dsl_code_for(resource_type: &str, prop_name: &str) -> &'static str {
+    if let Some(TypeOverride::ToDsl(code)) =
+        resource_type_overrides().get(&(resource_type, prop_name))
+    {
+        code
+    } else {
+        "None"
+    }
 }
 
 /// Properties that should be marked as `identity` in the schema.
@@ -3765,6 +3788,7 @@ fn cfn_type_to_carina_type_with_enum(
             if has_length {
                 let validate_fn = string_length_fn_name(effective_min, prop.max_length);
                 let display = string_length_display(effective_min, prop.max_length);
+                let to_dsl = to_dsl_code_for(&schema.type_name, prop_name);
                 return (
                     format!(
                         r#"AttributeType::Custom {{
@@ -3772,9 +3796,9 @@ fn cfn_type_to_carina_type_with_enum(
                 base: Box::new(AttributeType::String),
                 validate: {},
                 namespace: None,
-                to_dsl: None,
+                to_dsl: {},
             }}"#,
-                        display, validate_fn
+                        display, validate_fn, to_dsl
                     ),
                     None,
                 );
