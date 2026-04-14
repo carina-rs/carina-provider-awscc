@@ -3261,7 +3261,7 @@ fn is_aws_resource_id_property(prop_name: &str) -> bool {
     let resource_id_suffixes = [
         "vpcid",
         "subnetid",
-        "groupid",
+        "securitygroupid",
         "gatewayid",
         "routetableid",
         "allocationid",
@@ -3328,7 +3328,9 @@ fn classify_resource_id(prop_name: &str) -> ResourceIdKind {
         return ResourceIdKind::SubnetId;
     }
     // Security Group IDs (including DestinationSecurityGroupId, SourceSecurityGroupId, etc.)
-    if (lower.contains("securitygroup") || lower.contains("groupid")) && lower.ends_with("id") {
+    // Only match when "securitygroup" is explicitly in the name — bare "GroupId" is too
+    // broad and catches non-EC2 identifiers (e.g., identitystore GroupId).
+    if lower.contains("securitygroup") && lower.ends_with("id") {
         return ResourceIdKind::SecurityGroupId;
     }
     // Egress Only Internet Gateway IDs (must be checked before Internet Gateway IDs)
@@ -4729,7 +4731,7 @@ mod tests {
         // Known resource ID properties
         assert!(is_aws_resource_id_property("VpcId"));
         assert!(is_aws_resource_id_property("SubnetId"));
-        assert!(is_aws_resource_id_property("GroupId"));
+        assert!(is_aws_resource_id_property("SecurityGroupId"));
         assert!(is_aws_resource_id_property("RouteTableId"));
         assert!(is_aws_resource_id_property("InternetGatewayId"));
         assert!(is_aws_resource_id_property("AllocationId"));
@@ -6096,10 +6098,8 @@ mod tests {
             get_resource_id_type("SourceSecurityGroupId"),
             "super::security_group_id()"
         );
-        assert_eq!(
-            get_resource_id_type("GroupId"),
-            "super::security_group_id()"
-        );
+        // Bare "GroupId" should NOT match SecurityGroupId — it's too broad
+        assert_eq!(get_resource_id_type("GroupId"), "super::aws_resource_id()");
     }
 
     #[test]
@@ -6204,7 +6204,8 @@ mod tests {
             get_resource_id_display_name("DestinationSecurityGroupId"),
             "SecurityGroupId"
         );
-        assert_eq!(get_resource_id_display_name("GroupId"), "SecurityGroupId");
+        // Bare "GroupId" should NOT map to SecurityGroupId
+        assert_eq!(get_resource_id_display_name("GroupId"), "AwsResourceId");
     }
 
     #[test]
@@ -6287,10 +6288,8 @@ mod tests {
             classify_resource_id("SecurityGroupId"),
             ResourceIdKind::SecurityGroupId
         );
-        assert_eq!(
-            classify_resource_id("GroupId"),
-            ResourceIdKind::SecurityGroupId
-        );
+        // Bare "GroupId" should be Generic, not SecurityGroupId
+        assert_eq!(classify_resource_id("GroupId"), ResourceIdKind::Generic);
         assert_eq!(
             classify_resource_id("EgressOnlyInternetGatewayId"),
             ResourceIdKind::EgressOnlyInternetGatewayId

@@ -10,6 +10,28 @@ use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema};
 use regex::Regex;
 
 #[allow(dead_code)]
+fn validate_string_pattern_2a77a2e32f71b5f3_len_1_47(value: &Value) -> Result<(), String> {
+    if let Value::String(s) = value {
+        static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+            Regex::new("^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$").expect("invalid pattern regex")
+        });
+        if !RE.is_match(s) {
+            return Err(format!(
+                "Value '{}' does not match pattern ^([0-9a-f]{{10}}-|)[A-Fa-f0-9]{{8}}-[A-Fa-f0-9]{{4}}-[A-Fa-f0-9]{{4}}-[A-Fa-f0-9]{{4}}-[A-Fa-f0-9]{{12}}$",
+                s
+            ));
+        }
+        let len = s.chars().count();
+        if !(1..=47).contains(&len) {
+            return Err(format!("String length {} is out of range 1..=47", len));
+        }
+        Ok(())
+    } else {
+        Err("Expected string".to_string())
+    }
+}
+
+#[allow(dead_code)]
 fn validate_string_pattern_a301e45ae2f7df12_len_1_1024(value: &Value) -> Result<(), String> {
     if let Value::String(s) = value {
         static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
@@ -112,7 +134,13 @@ pub fn identitystore_group_config() -> AwsccSchemaConfig {
                 .with_provider_name("DisplayName"),
         )
         .attribute(
-            AttributeSchema::new("group_id", super::security_group_id())
+            AttributeSchema::new("group_id", AttributeType::Custom {
+                name: "String(pattern, len: 1..=47)".to_string(),
+                base: Box::new(AttributeType::String),
+                validate: validate_string_pattern_2a77a2e32f71b5f3_len_1_47,
+                namespace: None,
+                to_dsl: None,
+            })
                 .read_only()
                 .with_description("The unique identifier for a group in the identity store. (read-only)")
                 .with_provider_name("GroupId"),
