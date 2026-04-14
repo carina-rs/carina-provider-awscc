@@ -119,6 +119,19 @@ pub(crate) fn aws_value_to_dsl(
         return Some(Value::Map(map));
     }
 
+    // For non-namespaced Custom types with to_dsl, apply the transformation on read.
+    // This handles cases like Route 53 DNS names where the API returns a normalized
+    // form (trailing dot) that differs from user input.
+    if let AttributeType::Custom {
+        to_dsl: Some(transform),
+        namespace: None,
+        ..
+    } = attr_type
+        && let Some(s) = value.as_str()
+    {
+        return Some(Value::String(transform(s)));
+    }
+
     json_to_value(value)
 }
 
@@ -1215,5 +1228,33 @@ mod tests {
         let result = dsl_value_to_aws(&value, &attr_type, "test.resource", "test_attr");
         let expected = serde_json::json!([1.0, 2.0]);
         assert_eq!(result, Some(expected));
+    }
+
+    #[test]
+    fn test_aws_value_to_dsl_custom_to_dsl_strips_trailing_dot() {
+        let attr_type = AttributeType::Custom {
+            name: "DnsName".to_string(),
+            base: Box::new(AttributeType::String),
+            validate: |_| Ok(()),
+            namespace: None,
+            to_dsl: Some(|s: &str| s.strip_suffix('.').unwrap_or(s).to_string()),
+        };
+        let json_val = serde_json::json!("carina-rs.dev.");
+        let result = aws_value_to_dsl("name", &json_val, &attr_type, "route53.hosted_zone");
+        assert_eq!(result, Some(Value::String("carina-rs.dev".to_string())));
+    }
+
+    #[test]
+    fn test_aws_value_to_dsl_custom_without_to_dsl_passes_through() {
+        let attr_type = AttributeType::Custom {
+            name: "DnsName".to_string(),
+            base: Box::new(AttributeType::String),
+            validate: |_| Ok(()),
+            namespace: None,
+            to_dsl: None,
+        };
+        let json_val = serde_json::json!("carina-rs.dev.");
+        let result = aws_value_to_dsl("name", &json_val, &attr_type, "route53.hosted_zone");
+        assert_eq!(result, Some(Value::String("carina-rs.dev.".to_string())));
     }
 }
