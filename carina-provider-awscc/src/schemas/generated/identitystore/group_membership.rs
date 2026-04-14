@@ -65,11 +65,20 @@ pub fn identitystore_group_membership_config() -> AwsccSchemaConfig {
         schema: ResourceSchema::new("awscc.identitystore.group_membership")
             .with_description("Resource Type Definition for AWS:IdentityStore::GroupMembership")
             .attribute(
-                AttributeSchema::new("group_id", super::security_group_id())
-                    .required()
-                    .create_only()
-                    .with_description("The unique identifier for a group in the identity store.")
-                    .with_provider_name("GroupId"),
+                AttributeSchema::new(
+                    "group_id",
+                    AttributeType::Custom {
+                        name: "String(pattern, len: 1..=47)".to_string(),
+                        base: Box::new(AttributeType::String),
+                        validate: validate_string_pattern_2a77a2e32f71b5f3_len_1_47,
+                        namespace: None,
+                        to_dsl: None,
+                    },
+                )
+                .required()
+                .create_only()
+                .with_description("The unique identifier for a group in the identity store.")
+                .with_provider_name("GroupId"),
             )
             .attribute(
                 AttributeSchema::new(

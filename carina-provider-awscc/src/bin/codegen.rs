@@ -3261,7 +3261,7 @@ fn is_aws_resource_id_property(prop_name: &str) -> bool {
     let resource_id_suffixes = [
         "vpcid",
         "subnetid",
-        "groupid",
+        "securitygroupid",
         "gatewayid",
         "routetableid",
         "allocationid",
@@ -3328,7 +3328,9 @@ fn classify_resource_id(prop_name: &str) -> ResourceIdKind {
         return ResourceIdKind::SubnetId;
     }
     // Security Group IDs (including DestinationSecurityGroupId, SourceSecurityGroupId, etc.)
-    if (lower.contains("securitygroup") || lower.contains("groupid")) && lower.ends_with("id") {
+    // Only match when "securitygroup" is explicitly in the name — bare "GroupId" is too
+    // broad and catches non-EC2 identifiers (e.g., identitystore GroupId).
+    if lower.contains("securitygroup") && lower.ends_with("id") {
         return ResourceIdKind::SecurityGroupId;
     }
     // Egress Only Internet Gateway IDs (must be checked before Internet Gateway IDs)
