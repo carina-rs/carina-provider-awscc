@@ -26,45 +26,24 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CACHE_DIR="$PROJECT_ROOT/cfn-schema-cache"
 DOCS_DIR="$PROJECT_ROOT/generated-docs/awscc"
 EXAMPLES_DIR="$PROJECT_ROOT/examples"
+SCHEMAS_DIR="$PROJECT_ROOT/carina-provider-awscc/src/schemas/generated"
 mkdir -p "$CACHE_DIR"
 rm -rf "$DOCS_DIR"
 mkdir -p "$DOCS_DIR"
 
 cd "$PROJECT_ROOT"
 
-# Same resource types as generate-schemas.sh
-RESOURCE_TYPES=(
-    "AWS::EC2::VPC"
-    "AWS::EC2::Subnet"
-    "AWS::EC2::InternetGateway"
-    "AWS::EC2::RouteTable"
-    "AWS::EC2::Route"
-    "AWS::EC2::SubnetRouteTableAssociation"
-    "AWS::EC2::EIP"
-    "AWS::EC2::NatGateway"
-    "AWS::EC2::SecurityGroup"
-    "AWS::EC2::SecurityGroupIngress"
-    "AWS::EC2::SecurityGroupEgress"
-    "AWS::EC2::VPCEndpoint"
-    "AWS::EC2::VPCGatewayAttachment"
-    "AWS::EC2::FlowLog"
-    "AWS::EC2::IPAM"
-    "AWS::EC2::IPAMPool"
-    "AWS::EC2::VPNGateway"
-    "AWS::EC2::TransitGateway"
-    "AWS::EC2::VPCPeeringConnection"
-    "AWS::EC2::EgressOnlyInternetGateway"
-    "AWS::EC2::TransitGatewayAttachment"
-    "AWS::S3::Bucket"
-    "AWS::IAM::Role"
-    "AWS::Logs::LogGroup"
-    "AWS::SSO::Instance"
-    "AWS::SSO::PermissionSet"
-    "AWS::SSO::Assignment"
-    "AWS::IdentityStore::Group"
-    "AWS::IdentityStore::GroupMembership"
-    "AWS::Route53::HostedZone"
-)
+# Derive resource types from generated schema files (single source of truth).
+# Each .rs file (excluding mod.rs) has a header comment:
+#   Auto-generated from CloudFormation schema: AWS::EC2::VPC
+RESOURCE_TYPES=()
+for rs_file in "$SCHEMAS_DIR"/*/*.rs; do
+    [ "$(basename "$rs_file")" = "mod.rs" ] && continue
+    cfn_type=$(grep -m1 'Auto-generated from CloudFormation schema:' "$rs_file" | sed 's/.*schema: //')
+    if [ -n "$cfn_type" ]; then
+        RESOURCE_TYPES+=("$cfn_type")
+    fi
+done
 
 echo "Generating awscc provider documentation..."
 echo "Output directory: $DOCS_DIR"
