@@ -222,7 +222,7 @@ pub fn aws_resource_id() -> AttributeType {
 pub fn vpc_id() -> AttributeType {
     AttributeType::Custom {
         name: "VpcId".to_string(),
-        base: Box::new(AttributeType::String),
+        base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
                 validate_prefixed_resource_id(s, "vpc")
@@ -240,7 +240,7 @@ pub fn vpc_id() -> AttributeType {
 pub fn subnet_id() -> AttributeType {
     AttributeType::Custom {
         name: "SubnetId".to_string(),
-        base: Box::new(AttributeType::String),
+        base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
                 validate_prefixed_resource_id(s, "subnet")
@@ -258,7 +258,7 @@ pub fn subnet_id() -> AttributeType {
 pub fn security_group_id() -> AttributeType {
     AttributeType::Custom {
         name: "SecurityGroupId".to_string(),
-        base: Box::new(AttributeType::String),
+        base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
                 validate_prefixed_resource_id(s, "sg")
@@ -276,7 +276,7 @@ pub fn security_group_id() -> AttributeType {
 pub fn internet_gateway_id() -> AttributeType {
     AttributeType::Custom {
         name: "InternetGatewayId".to_string(),
-        base: Box::new(AttributeType::String),
+        base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
                 validate_prefixed_resource_id(s, "igw")
@@ -294,7 +294,7 @@ pub fn internet_gateway_id() -> AttributeType {
 pub fn route_table_id() -> AttributeType {
     AttributeType::Custom {
         name: "RouteTableId".to_string(),
-        base: Box::new(AttributeType::String),
+        base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
                 validate_prefixed_resource_id(s, "rtb")
@@ -312,7 +312,7 @@ pub fn route_table_id() -> AttributeType {
 pub fn nat_gateway_id() -> AttributeType {
     AttributeType::Custom {
         name: "NatGatewayId".to_string(),
-        base: Box::new(AttributeType::String),
+        base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
                 validate_prefixed_resource_id(s, "nat")
@@ -330,7 +330,7 @@ pub fn nat_gateway_id() -> AttributeType {
 pub fn vpc_peering_connection_id() -> AttributeType {
     AttributeType::Custom {
         name: "VpcPeeringConnectionId".to_string(),
-        base: Box::new(AttributeType::String),
+        base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
                 validate_prefixed_resource_id(s, "pcx").map_err(|reason| {
@@ -349,7 +349,7 @@ pub fn vpc_peering_connection_id() -> AttributeType {
 pub fn transit_gateway_id() -> AttributeType {
     AttributeType::Custom {
         name: "TransitGatewayId".to_string(),
-        base: Box::new(AttributeType::String),
+        base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
                 validate_prefixed_resource_id(s, "tgw")
@@ -367,7 +367,7 @@ pub fn transit_gateway_id() -> AttributeType {
 pub fn vpc_cidr_block_association_id() -> AttributeType {
     AttributeType::Custom {
         name: "VpcCidrBlockAssociationId".to_string(),
-        base: Box::new(AttributeType::String),
+        base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
                 validate_prefixed_resource_id(s, "vpc-cidr-assoc").map_err(|reason| {
@@ -386,7 +386,7 @@ pub fn vpc_cidr_block_association_id() -> AttributeType {
 pub fn tgw_route_table_id() -> AttributeType {
     AttributeType::Custom {
         name: "TgwRouteTableId".to_string(),
-        base: Box::new(AttributeType::String),
+        base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
                 validate_prefixed_resource_id(s, "tgw-rtb")
@@ -404,7 +404,7 @@ pub fn tgw_route_table_id() -> AttributeType {
 pub fn vpn_gateway_id() -> AttributeType {
     AttributeType::Custom {
         name: "VpnGatewayId".to_string(),
-        base: Box::new(AttributeType::String),
+        base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
                 validate_prefixed_resource_id(s, "vgw")
@@ -427,7 +427,7 @@ pub fn gateway_id() -> AttributeType {
 pub fn egress_only_internet_gateway_id() -> AttributeType {
     AttributeType::Custom {
         name: "EgressOnlyInternetGatewayId".to_string(),
-        base: Box::new(AttributeType::String),
+        base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
                 validate_prefixed_resource_id(s, "eigw").map_err(|reason| {
@@ -449,7 +449,7 @@ pub fn egress_only_internet_gateway_id() -> AttributeType {
 pub fn vpc_endpoint_id() -> AttributeType {
     AttributeType::Custom {
         name: "VpcEndpointId".to_string(),
-        base: Box::new(AttributeType::String),
+        base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
                 validate_prefixed_resource_id(s, "vpce")
@@ -467,7 +467,7 @@ pub fn vpc_endpoint_id() -> AttributeType {
 pub fn instance_id() -> AttributeType {
     AttributeType::Custom {
         name: "InstanceId".to_string(),
-        base: Box::new(AttributeType::String),
+        base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
                 validate_prefixed_resource_id(s, "i")
@@ -485,7 +485,7 @@ pub fn instance_id() -> AttributeType {
 pub fn network_interface_id() -> AttributeType {
     AttributeType::Custom {
         name: "NetworkInterfaceId".to_string(),
-        base: Box::new(AttributeType::String),
+        base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
                 validate_prefixed_resource_id(s, "eni")
@@ -504,7 +504,7 @@ pub fn network_interface_id() -> AttributeType {
 pub fn allocation_id() -> AttributeType {
     AttributeType::Custom {
         name: "AllocationId".to_string(),
-        base: Box::new(AttributeType::String),
+        base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
                 validate_prefixed_resource_id(s, "eipalloc")
@@ -522,7 +522,7 @@ pub fn allocation_id() -> AttributeType {
 pub fn prefix_list_id() -> AttributeType {
     AttributeType::Custom {
         name: "PrefixListId".to_string(),
-        base: Box::new(AttributeType::String),
+        base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
                 validate_prefixed_resource_id(s, "pl")
@@ -540,7 +540,7 @@ pub fn prefix_list_id() -> AttributeType {
 pub fn carrier_gateway_id() -> AttributeType {
     AttributeType::Custom {
         name: "CarrierGatewayId".to_string(),
-        base: Box::new(AttributeType::String),
+        base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
                 validate_prefixed_resource_id(s, "cagw")
@@ -558,7 +558,7 @@ pub fn carrier_gateway_id() -> AttributeType {
 pub fn local_gateway_id() -> AttributeType {
     AttributeType::Custom {
         name: "LocalGatewayId".to_string(),
-        base: Box::new(AttributeType::String),
+        base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
                 validate_prefixed_resource_id(s, "lgw")
@@ -577,7 +577,7 @@ pub fn local_gateway_id() -> AttributeType {
 pub fn network_acl_id() -> AttributeType {
     AttributeType::Custom {
         name: "NetworkAclId".to_string(),
-        base: Box::new(AttributeType::String),
+        base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
                 validate_prefixed_resource_id(s, "acl")
@@ -595,7 +595,7 @@ pub fn network_acl_id() -> AttributeType {
 pub fn transit_gateway_attachment_id() -> AttributeType {
     AttributeType::Custom {
         name: "TransitGatewayAttachmentId".to_string(),
-        base: Box::new(AttributeType::String),
+        base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
                 validate_prefixed_resource_id(s, "tgw-attach").map_err(|reason| {
@@ -614,7 +614,7 @@ pub fn transit_gateway_attachment_id() -> AttributeType {
 pub fn flow_log_id() -> AttributeType {
     AttributeType::Custom {
         name: "FlowLogId".to_string(),
-        base: Box::new(AttributeType::String),
+        base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
                 validate_prefixed_resource_id(s, "fl")
@@ -632,7 +632,7 @@ pub fn flow_log_id() -> AttributeType {
 pub fn ipam_id() -> AttributeType {
     AttributeType::Custom {
         name: "IpamId".to_string(),
-        base: Box::new(AttributeType::String),
+        base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
                 validate_prefixed_resource_id(s, "ipam")
@@ -650,7 +650,7 @@ pub fn ipam_id() -> AttributeType {
 pub fn subnet_route_table_association_id() -> AttributeType {
     AttributeType::Custom {
         name: "SubnetRouteTableAssociationId".to_string(),
-        base: Box::new(AttributeType::String),
+        base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
                 validate_prefixed_resource_id(s, "rtbassoc").map_err(|reason| {
@@ -672,7 +672,7 @@ pub fn subnet_route_table_association_id() -> AttributeType {
 pub fn security_group_rule_id() -> AttributeType {
     AttributeType::Custom {
         name: "SecurityGroupRuleId".to_string(),
-        base: Box::new(AttributeType::String),
+        base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
                 validate_prefixed_resource_id(s, "sgr")
@@ -704,7 +704,7 @@ pub fn validate_iam_role_id(id: &str) -> Result<(), String> {
 pub fn iam_role_id() -> AttributeType {
     AttributeType::Custom {
         name: "IamRoleId".to_string(),
-        base: Box::new(AttributeType::String),
+        base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
                 validate_iam_role_id(s)
@@ -893,7 +893,7 @@ pub fn arn() -> AttributeType {
 pub fn iam_role_arn() -> AttributeType {
     AttributeType::Custom {
         name: "IamRoleArn".to_string(),
-        base: Box::new(AttributeType::String),
+        base: Box::new(arn()),
         validate: |value| {
             if let Value::String(s) = value {
                 validate_iam_arn(s, "role/")
@@ -912,7 +912,7 @@ pub fn iam_role_arn() -> AttributeType {
 pub fn iam_policy_arn() -> AttributeType {
     AttributeType::Custom {
         name: "IamPolicyArn".to_string(),
-        base: Box::new(AttributeType::String),
+        base: Box::new(arn()),
         validate: |value| {
             if let Value::String(s) = value {
                 validate_iam_arn(s, "policy/")
@@ -931,7 +931,7 @@ pub fn iam_policy_arn() -> AttributeType {
 pub fn kms_key_arn() -> AttributeType {
     AttributeType::Custom {
         name: "KmsKeyArn".to_string(),
-        base: Box::new(AttributeType::String),
+        base: Box::new(arn()),
         validate: |value| {
             if let Value::String(s) = value {
                 validate_service_arn(s, "kms", Some("key/"))
@@ -999,7 +999,7 @@ pub fn validate_kms_key_id(value: &str) -> Result<(), String> {
 pub fn kms_key_id() -> AttributeType {
     AttributeType::Custom {
         name: "KmsKeyId".to_string(),
-        base: Box::new(AttributeType::String),
+        base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
                 validate_kms_key_id(s)
@@ -1033,7 +1033,7 @@ pub fn validate_ipam_pool_id(id: &str) -> Result<(), String> {
 pub fn ipam_pool_id() -> AttributeType {
     AttributeType::Custom {
         name: "IpamPoolId".to_string(),
-        base: Box::new(AttributeType::String),
+        base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
                 validate_ipam_pool_id(s)
