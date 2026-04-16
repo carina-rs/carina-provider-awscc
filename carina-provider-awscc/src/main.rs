@@ -167,6 +167,13 @@ impl CarinaProvider for AwsccProcessProvider {
         }
     }
 
+    fn read_data_source(
+        &self,
+        resource: &proto::Resource,
+    ) -> Result<proto::State, proto::ProviderError> {
+        self.read(&resource.id, None)
+    }
+
     fn create(&self, resource: &proto::Resource) -> Result<proto::State, proto::ProviderError> {
         let core_resource = convert::proto_to_core_resource(resource);
         let result = self

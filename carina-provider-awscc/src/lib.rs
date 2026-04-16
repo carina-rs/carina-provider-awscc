@@ -125,8 +125,8 @@ impl ProviderFactory for AwsccProviderFactory {
     fn create_normalizer(
         &self,
         _attributes: &HashMap<String, Value>,
-    ) -> BoxFuture<'_, Option<Box<dyn ProviderNormalizer>>> {
-        Box::pin(async { Some(Box::new(AwsccNormalizer) as Box<dyn ProviderNormalizer>) })
+    ) -> BoxFuture<'_, Box<dyn ProviderNormalizer>> {
+        Box::pin(async { Box::new(AwsccNormalizer) as Box<dyn ProviderNormalizer> })
     }
 
     fn schemas(&self) -> Vec<carina_core::schema::ResourceSchema> {
@@ -177,6 +177,10 @@ impl Provider for AwsccProvider {
             self.read_resource(&id.resource_type, &id.name, identifier.as_deref())
                 .await
         })
+    }
+
+    fn read_data_source(&self, resource: &Resource) -> BoxFuture<'_, ProviderResult<State>> {
+        self.read(&resource.id, None)
     }
 
     fn create(&self, resource: &Resource) -> BoxFuture<'_, ProviderResult<State>> {
