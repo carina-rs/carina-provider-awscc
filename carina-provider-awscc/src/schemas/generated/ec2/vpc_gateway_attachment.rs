@@ -5,9 +5,7 @@
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
 use super::AwsccSchemaConfig;
-use carina_core::schema::{
-    AttributeSchema, AttributeType, OperationConfig, ResourceSchema, validators,
-};
+use carina_core::schema::{AttributeSchema, AttributeType, OperationConfig, ResourceSchema};
 
 /// Returns the schema config for ec2_vpc_gateway_attachment (AWS::EC2::VPCGatewayAttachment)
 pub fn ec2_vpc_gateway_attachment_config() -> AwsccSchemaConfig {
@@ -46,13 +44,7 @@ pub fn ec2_vpc_gateway_attachment_config() -> AwsccSchemaConfig {
             create_timeout_secs: None,
             create_max_retries: None,
         })
-        .with_validator(|attrs| {
-            let mut errors = Vec::new();
-            if let Err(mut e) = validators::validate_exclusive_required(attrs, &["internet_gateway_id", "vpn_gateway_id"]) {
-                errors.append(&mut e);
-            }
-            if errors.is_empty() { Ok(()) } else { Err(errors) }
-        })
+        .exclusive_required(&["internet_gateway_id", "vpn_gateway_id"])
     }
 }
 
