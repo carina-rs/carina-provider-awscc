@@ -111,7 +111,9 @@ pub fn ec2_flow_log_config() -> AwsccSchemaConfig {
         )
         .attribute(
             AttributeSchema::new("max_aggregation_interval", AttributeType::Custom {
-                name: "IntEnum([60, 600])".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: None,
                 base: Box::new(AttributeType::Int),
                 validate: validate_max_aggregation_interval_int_enum,
                 namespace: None,

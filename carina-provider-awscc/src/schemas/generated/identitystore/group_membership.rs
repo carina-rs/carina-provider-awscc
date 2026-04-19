@@ -68,7 +68,9 @@ pub fn identitystore_group_membership_config() -> AwsccSchemaConfig {
                 AttributeSchema::new(
                     "group_id",
                     AttributeType::Custom {
-                        name: "String(pattern, len: 1..=47)".to_string(),
+                        semantic_name: None,
+                        pattern: None,
+                        length: Some((Some(1), Some(47))),
                         base: Box::new(AttributeType::String),
                         validate: validate_string_pattern_2a77a2e32f71b5f3_len_1_47,
                         namespace: None,
@@ -84,7 +86,9 @@ pub fn identitystore_group_membership_config() -> AwsccSchemaConfig {
                 AttributeSchema::new(
                     "identity_store_id",
                     AttributeType::Custom {
-                        name: "String(pattern, len: 1..=36)".to_string(),
+                        semantic_name: None,
+                        pattern: None,
+                        length: Some((Some(1), Some(36))),
                         base: Box::new(AttributeType::String),
                         validate: validate_string_pattern_135f0b126ef95449_len_1_36,
                         namespace: None,
@@ -105,7 +109,9 @@ pub fn identitystore_group_membership_config() -> AwsccSchemaConfig {
                             StructField::new(
                                 "user_id",
                                 AttributeType::Custom {
-                                    name: "String(pattern, len: 1..=47)".to_string(),
+                                    semantic_name: None,
+                                    pattern: None,
+                                    length: Some((Some(1), Some(47))),
                                     base: Box::new(AttributeType::String),
                                     validate: validate_string_pattern_2a77a2e32f71b5f3_len_1_47,
                                     namespace: None,
@@ -127,7 +133,9 @@ pub fn identitystore_group_membership_config() -> AwsccSchemaConfig {
                 AttributeSchema::new(
                     "membership_id",
                     AttributeType::Custom {
-                        name: "String(pattern, len: 1..=47)".to_string(),
+                        semantic_name: None,
+                        pattern: None,
+                        length: Some((Some(1), Some(47))),
                         base: Box::new(AttributeType::String),
                         validate: validate_string_pattern_2a77a2e32f71b5f3_len_1_47,
                         namespace: None,

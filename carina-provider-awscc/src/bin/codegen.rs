@@ -2853,6 +2853,37 @@ fn pattern_fn_name(pattern: &str) -> String {
     format!("validate_string_pattern_{:016x}", hash)
 }
 
+/// Emit a Rust expression for `Option<String>` pattern field. Escapes `"` and `\`
+/// so the generated source compiles; matching/validation logic itself stays in
+/// the `validate` closure.
+fn emit_pattern_option(pattern: Option<&str>) -> String {
+    match pattern {
+        Some(p) => {
+            let escaped = p.replace('\\', "\\\\").replace('"', "\\\"");
+            format!("Some(\"{}\".to_string())", escaped)
+        }
+        None => "None".to_string(),
+    }
+}
+
+/// Emit a Rust expression for the `length` field on `AttributeType::Custom`
+/// (i.e. `Option<(Option<u64>, Option<u64>)>`).
+fn emit_length_option(min: Option<u64>, max: Option<u64>) -> String {
+    let effective_min = min.filter(|&m| m > 0);
+    if effective_min.is_none() && max.is_none() {
+        return "None".to_string();
+    }
+    let min_str = match effective_min {
+        Some(m) => format!("Some({})", m),
+        None => "None".to_string(),
+    };
+    let max_str = match max {
+        Some(m) => format!("Some({})", m),
+        None => "None".to_string(),
+    };
+    format!("Some(({}, {}))", min_str, max_str)
+}
+
 /// Convert a CloudFormation regex pattern into one that Rust's `regex` crate can
 /// compile. Rust's regex does not support PCRE lookaround (`(?=`, `(?!`, `(?<=`,
 /// `(?<!`) or the `\Z` end-of-string anchor. Patterns that cannot be converted
@@ -3075,6 +3106,24 @@ fn resource_type_overrides() -> &'static HashMap<(&'static str, &'static str), T
             m.insert(
                 ("AWS::S3::Bucket", "ReplaceKeyPrefixWith"),
                 TypeOverride::StringType("AttributeType::String"),
+            );
+
+            // SSO Assignment identity semantics
+            m.insert(
+                ("AWS::SSO::Assignment", "TargetId"),
+                TypeOverride::StringType("super::aws_account_id()"),
+            );
+            m.insert(
+                ("AWS::SSO::Assignment", "PrincipalId"),
+                TypeOverride::StringType("super::sso_principal_id()"),
+            );
+            m.insert(
+                ("AWS::SSO::Assignment", "InstanceArn"),
+                TypeOverride::StringType("super::sso_instance_arn()"),
+            );
+            m.insert(
+                ("AWS::SSO::PermissionSet", "InstanceArn"),
+                TypeOverride::StringType("super::sso_instance_arn()"),
             );
 
             // === Enum overrides ===
@@ -3577,22 +3626,20 @@ fn cfn_type_to_carina_type_with_enum(
                     } else {
                         pattern_fn_name(pattern)
                     };
-                    let name = if has_length {
-                        let range = string_length_display(effective_min, def.max_length);
-                        format!("String(pattern, len: {})", range)
-                    } else {
-                        "String(pattern)".to_string()
-                    };
+                    let pattern_expr = emit_pattern_option(Some(pattern));
+                    let length_expr = emit_length_option(effective_min, def.max_length);
                     return (
                         format!(
                             r#"AttributeType::Custom {{
-                name: "{}".to_string(),
+                semantic_name: None,
+                pattern: {},
+                length: {},
                 base: Box::new(AttributeType::String),
                 validate: {},
                 namespace: None,
                 to_dsl: None,
             }}"#,
-                            name, validate_fn
+                            pattern_expr, length_expr, validate_fn
                         ),
                         None,
                     );
@@ -3618,22 +3665,20 @@ fn cfn_type_to_carina_type_with_enum(
                     _ => None,
                 })
                 .collect();
-            let values_str = values
-                .iter()
-                .map(|v| v.to_string())
-                .collect::<Vec<_>>()
-                .join(", ");
+            let _ = values;
             let validate_fn = format!("validate_{}_int_enum", prop_name.to_snake_case());
             return (
                 format!(
                     r#"AttributeType::Custom {{
-                name: "IntEnum([{}])".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: None,
                 base: Box::new(AttributeType::Int),
                 validate: {},
                 namespace: None,
                 to_dsl: None,
             }}"#,
-                    values_str, validate_fn
+                    validate_fn
                 ),
                 None,
             );
@@ -3714,22 +3759,20 @@ fn cfn_type_to_carina_type_with_enum(
                 } else {
                     pattern_fn_name(pattern)
                 };
-                let name = if has_length {
-                    let range = string_length_display(effective_min, prop.max_length);
-                    format!("NumericString(len: {})", range)
-                } else {
-                    "NumericString".to_string()
-                };
+                let pattern_expr = emit_pattern_option(Some(pattern));
+                let length_expr = emit_length_option(effective_min, prop.max_length);
                 return (
                     format!(
                         r#"AttributeType::Custom {{
-                name: "{}".to_string(),
+                semantic_name: None,
+                pattern: {},
+                length: {},
                 base: Box::new(AttributeType::String),
                 validate: {},
                 namespace: None,
                 to_dsl: None,
             }}"#,
-                        name, validate_fn
+                        pattern_expr, length_expr, validate_fn
                     ),
                     None,
                 );
@@ -3742,40 +3785,38 @@ fn cfn_type_to_carina_type_with_enum(
                 } else {
                     pattern_fn_name(pattern)
                 };
-                let name = if has_length {
-                    let range = string_length_display(effective_min, prop.max_length);
-                    format!("String(pattern, len: {})", range)
-                } else {
-                    "String(pattern)".to_string()
-                };
+                let pattern_expr = emit_pattern_option(Some(pattern));
+                let length_expr = emit_length_option(effective_min, prop.max_length);
                 return (
                     format!(
                         r#"AttributeType::Custom {{
-                name: "{}".to_string(),
+                semantic_name: None,
+                pattern: {},
+                length: {},
                 base: Box::new(AttributeType::String),
                 validate: {},
                 namespace: None,
                 to_dsl: None,
             }}"#,
-                        name, validate_fn
+                        pattern_expr, length_expr, validate_fn
                     ),
                     None,
                 );
             }
 
             // Check for string format constraint (e.g., "uri", "date-time")
-            if let Some(ref fmt) = prop.format {
+            if prop.format.is_some() {
                 return (
-                    format!(
-                        r#"AttributeType::Custom {{
-                name: "String({})".to_string(),
+                    r#"AttributeType::Custom {
+                semantic_name: None,
+                pattern: None,
+                length: None,
                 base: Box::new(AttributeType::String),
                 validate: |_| Ok(()),
                 namespace: None,
                 to_dsl: None,
-            }}"#,
-                        fmt
-                    ),
+            }"#
+                    .to_string(),
                     None,
                 );
             }
@@ -3783,18 +3824,20 @@ fn cfn_type_to_carina_type_with_enum(
             // Check for string length constraints (minLength/maxLength)
             if has_length {
                 let validate_fn = string_length_fn_name(effective_min, prop.max_length);
-                let display = string_length_display(effective_min, prop.max_length);
+                let length_expr = emit_length_option(effective_min, prop.max_length);
                 let to_dsl = to_dsl_code_for(&schema.type_name, prop_name);
                 return (
                     format!(
                         r#"AttributeType::Custom {{
-                name: "String(len: {})".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: {},
                 base: Box::new(AttributeType::String),
                 validate: {},
                 namespace: None,
                 to_dsl: {},
             }}"#,
-                        display, validate_fn, to_dsl
+                        length_expr, validate_fn, to_dsl
                     ),
                     None,
                 );
@@ -3807,40 +3850,38 @@ fn cfn_type_to_carina_type_with_enum(
             // Check resource-scoped overrides first
             let res_override =
                 resource_type_overrides().get(&(schema.type_name.as_str(), prop_name));
-            if let Some(TypeOverride::IntRange(min, max)) = res_override {
+            if let Some(TypeOverride::IntRange(_min, _max)) = res_override {
                 let validate_fn = format!("validate_{}_range", prop_name.to_snake_case());
-                let display = range_display_string(Some(*min), Some(*max));
                 return (
                     format!(
                         r#"AttributeType::Custom {{
-                name: "Int({})".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: None,
                 base: Box::new(AttributeType::Int),
                 validate: {},
                 namespace: None,
                 to_dsl: None,
             }}"#,
-                        display, validate_fn
+                        validate_fn
                     ),
                     None,
                 );
             }
-            if let Some(TypeOverride::IntEnum(values)) = res_override {
+            if let Some(TypeOverride::IntEnum(_values)) = res_override {
                 let validate_fn = format!("validate_{}_int_enum", prop_name.to_snake_case());
-                let values_str = values
-                    .iter()
-                    .map(|v| v.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ");
                 return (
                     format!(
                         r#"AttributeType::Custom {{
-                name: "IntEnum([{}])".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: None,
                 base: Box::new(AttributeType::Int),
                 validate: {},
                 namespace: None,
                 to_dsl: None,
             }}"#,
-                        values_str, validate_fn
+                        validate_fn
                     ),
                     None,
                 );
@@ -3854,41 +3895,37 @@ fn cfn_type_to_carina_type_with_enum(
                         .get(prop_name)
                         .map(|&(min, max)| (Some(min), Some(max)))
                 };
-            if let Some((min, max)) = range {
+            if range.is_some() {
                 // Generate a ranged int type with validation
                 let validate_fn = format!("validate_{}_range", prop_name.to_snake_case());
-                let range_str = range_display_string(min, max);
-                let display = if let Some(ref fmt) = prop.format {
-                    format!("{}, {}", range_str, fmt)
-                } else {
-                    range_str
-                };
                 (
                     format!(
                         r#"AttributeType::Custom {{
-                name: "Int({})".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: None,
                 base: Box::new(AttributeType::Int),
                 validate: {},
                 namespace: None,
                 to_dsl: None,
             }}"#,
-                        display, validate_fn
+                        validate_fn
                     ),
                     None,
                 )
-            } else if let Some(ref fmt) = prop.format {
+            } else if prop.format.is_some() {
                 // Format-only integer (e.g., int64) - informational, no range validation
                 (
-                    format!(
-                        r#"AttributeType::Custom {{
-                name: "Int({})".to_string(),
+                    r#"AttributeType::Custom {
+                semantic_name: None,
+                pattern: None,
+                length: None,
                 base: Box::new(AttributeType::Int),
                 validate: |_| Ok(()),
                 namespace: None,
                 to_dsl: None,
-            }}"#,
-                        fmt
-                    ),
+            }"#
+                    .to_string(),
                     None,
                 )
             } else {
@@ -3899,19 +3936,20 @@ fn cfn_type_to_carina_type_with_enum(
             // Check resource-scoped overrides first
             let res_override =
                 resource_type_overrides().get(&(schema.type_name.as_str(), prop_name));
-            if let Some(TypeOverride::IntRange(min, max)) = res_override {
+            if let Some(TypeOverride::IntRange(_min, _max)) = res_override {
                 let validate_fn = format!("validate_{}_range", prop_name.to_snake_case());
-                let display = range_display_string(Some(*min), Some(*max));
                 return (
                     format!(
                         r#"AttributeType::Custom {{
-                name: "Float({})".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: None,
                 base: Box::new(AttributeType::Float),
                 validate: {},
                 namespace: None,
                 to_dsl: None,
             }}"#,
-                        display, validate_fn
+                        validate_fn
                     ),
                     None,
                 );
@@ -3925,41 +3963,37 @@ fn cfn_type_to_carina_type_with_enum(
                         .get(prop_name)
                         .map(|&(min, max)| (Some(min), Some(max)))
                 };
-            if let Some((min, max)) = range {
+            if range.is_some() {
                 // Generate a ranged float type with validation
                 let validate_fn = format!("validate_{}_range", prop_name.to_snake_case());
-                let range_str = range_display_string(min, max);
-                let display = if let Some(ref fmt) = prop.format {
-                    format!("{}, {}", range_str, fmt)
-                } else {
-                    range_str
-                };
                 (
                     format!(
                         r#"AttributeType::Custom {{
-                name: "Float({})".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: None,
                 base: Box::new(AttributeType::Float),
                 validate: {},
                 namespace: None,
                 to_dsl: None,
             }}"#,
-                        display, validate_fn
+                        validate_fn
                     ),
                     None,
                 )
-            } else if let Some(ref fmt) = prop.format {
+            } else if prop.format.is_some() {
                 // Format-only float (e.g., double) - informational, no range validation
                 (
-                    format!(
-                        r#"AttributeType::Custom {{
-                name: "Float({})".to_string(),
+                    r#"AttributeType::Custom {
+                semantic_name: None,
+                pattern: None,
+                length: None,
                 base: Box::new(AttributeType::Float),
                 validate: |_| Ok(()),
                 namespace: None,
                 to_dsl: None,
-            }}"#,
-                        fmt
-                    ),
+            }"#
+                    .to_string(),
                     None,
                 )
             } else {
@@ -4006,17 +4040,18 @@ fn cfn_type_to_carina_type_with_enum(
             // Wrap in Custom type if minItems/maxItems constraints exist
             if prop.min_items.is_some() || prop.max_items.is_some() {
                 let validate_fn = list_items_fn_name(prop.min_items, prop.max_items);
-                let display = range_display_string(prop.min_items, prop.max_items);
                 (
                     format!(
                         r#"AttributeType::Custom {{
-                name: "List({})".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: None,
                 base: Box::new({}),
                 validate: {},
                 namespace: None,
                 to_dsl: None,
             }}"#,
-                        display, list_type, validate_fn
+                        list_type, validate_fn
                     ),
                     item_enum,
                 )
@@ -5405,8 +5440,8 @@ mod tests {
             type_str
         );
         assert!(
-            type_str.contains("Int(0..=32)"),
-            "Custom type name should include range, got: {}",
+            type_str.contains("Box::new(AttributeType::Int)"),
+            "Custom should wrap Int base, got: {}",
             type_str
         );
         assert!(
@@ -5506,8 +5541,8 @@ mod tests {
             type_str
         );
         assert!(
-            type_str.contains("Int(0..)"),
-            "Custom type name should show one-sided range, got: {}",
+            type_str.contains("Box::new(AttributeType::Int)"),
+            "Custom should wrap Int base, got: {}",
             type_str
         );
     }
@@ -5559,8 +5594,8 @@ mod tests {
             type_str
         );
         assert!(
-            type_str.contains("Int(..=100)"),
-            "Custom type name should show one-sided range, got: {}",
+            type_str.contains("Box::new(AttributeType::Int)"),
+            "Custom should wrap Int base, got: {}",
             type_str
         );
     }
@@ -5623,8 +5658,8 @@ mod tests {
             type_str
         );
         assert!(
-            type_str.contains("IntEnum([1, 3, 5, 7, 14])"),
-            "Custom type name should list enum values, got: {}",
+            type_str.contains("Box::new(AttributeType::Int)"),
+            "Custom should wrap Int base, got: {}",
             type_str
         );
         assert!(
@@ -5948,8 +5983,13 @@ mod tests {
         let (type_str, _) =
             cfn_type_to_carina_type_with_enum(&prop, "FromPort", &schema, "", &BTreeMap::new());
         assert!(
-            type_str.contains("Int(-1..=65535)"),
-            "FromPort should use override range, got: {}",
+            type_str.contains("validate_from_port_range"),
+            "FromPort should use override range validator, got: {}",
+            type_str
+        );
+        assert!(
+            type_str.contains("Box::new(AttributeType::Int)"),
+            "FromPort override should wrap Int base, got: {}",
             type_str
         );
     }
@@ -6057,8 +6097,8 @@ mod tests {
         let (type_str, _) =
             cfn_type_to_carina_type_with_enum(&prop, "FromPort", &schema, "", &BTreeMap::new());
         assert!(
-            type_str.contains("Float(0..=65535)"),
-            "Number with range should produce Float type, got: {}",
+            type_str.contains("validate_from_port_range"),
+            "Number with range should use range validator, got: {}",
             type_str
         );
         assert!(
@@ -8097,7 +8137,7 @@ mod tests {
             "array with minItems/maxItems should produce Custom type: {type_str}"
         );
         assert!(
-            type_str.contains("List"),
+            type_str.contains("AttributeType::list(") || type_str.contains("AttributeType::List"),
             "Custom type should wrap a List: {type_str}"
         );
         assert!(
@@ -8146,8 +8186,8 @@ mod tests {
             "array with only minItems should produce Custom type: {type_str}"
         );
         assert!(
-            type_str.contains("1.."),
-            "should show min bound in type name: {type_str}"
+            type_str.contains("validate_list_items_min_1"),
+            "should reference min-items validator: {type_str}"
         );
     }
 
@@ -8964,8 +9004,12 @@ mod tests {
         let (type_str, _) =
             cfn_type_to_carina_type_with_enum(&prop, "SomeValue", &schema, "", &BTreeMap::new());
         assert!(
-            type_str.contains("int64"),
-            "int64 format should appear in type: {type_str}"
+            type_str.contains("AttributeType::Custom"),
+            "int64 format should produce Custom type: {type_str}"
+        );
+        assert!(
+            type_str.contains("Box::new(AttributeType::Int)"),
+            "int64 format should wrap Int base: {type_str}"
         );
     }
 
@@ -9027,8 +9071,12 @@ mod tests {
         let (type_str, _) =
             cfn_type_to_carina_type_with_enum(&prop, "Url", &schema, "", &BTreeMap::new());
         assert!(
-            type_str.contains("uri"),
-            "uri format should appear in type: {type_str}"
+            type_str.contains("AttributeType::Custom"),
+            "uri format should produce Custom type: {type_str}"
+        );
+        assert!(
+            type_str.contains("Box::new(AttributeType::String)"),
+            "uri format should wrap String base: {type_str}"
         );
     }
 
@@ -9096,8 +9144,12 @@ mod tests {
             &BTreeMap::new(),
         );
         assert!(
-            type_str.contains("NumericString"),
-            "Numeric string pattern should produce NumericString type: {type_str}"
+            type_str.contains("pattern: Some(\"[0-9]+\".to_string())"),
+            "Numeric string pattern should be captured in Custom.pattern: {type_str}"
+        );
+        assert!(
+            type_str.contains("Some((None, Some(20)))"),
+            "maxLength=20 should be captured in Custom.length: {type_str}"
         );
     }
 
@@ -9194,14 +9246,14 @@ mod tests {
         };
         let (type_str, _) =
             cfn_type_to_carina_type_with_enum(&prop, "BoundedValue", &schema, "", &BTreeMap::new());
-        // Should have range validation (0..=100) and int64 format info
+        // Range validation is encoded in the generated validator fn name.
         assert!(
-            type_str.contains("0..=100"),
-            "Should have range constraint: {type_str}"
+            type_str.contains("validate_bounded_value_range"),
+            "Should reference range validator fn: {type_str}"
         );
         assert!(
-            type_str.contains("int64"),
-            "Should have int64 format info: {type_str}"
+            type_str.contains("Box::new(AttributeType::Int)"),
+            "Should wrap Int base: {type_str}"
         );
     }
 
@@ -9240,12 +9292,12 @@ mod tests {
         );
         // Should mention both constraints
         assert!(
-            type_str.contains("NumericString"),
-            "Should have NumericString type: {type_str}"
+            type_str.contains("pattern: Some(\"[0-9]+\".to_string())"),
+            "Should capture pattern: {type_str}"
         );
         assert!(
-            type_str.contains("20"),
-            "Should have max length constraint 20: {type_str}"
+            type_str.contains("Some((None, Some(20)))"),
+            "Should capture max length 20: {type_str}"
         );
     }
 
@@ -9280,12 +9332,12 @@ mod tests {
             cfn_type_to_carina_type_with_enum(&prop, "SomeName", &schema, "", &BTreeMap::new());
         // Should mention both constraints
         assert!(
-            type_str.contains("pattern"),
-            "Should have pattern constraint: {type_str}"
+            type_str.contains("pattern: Some(\"^[a-z]+$\".to_string())"),
+            "Should capture pattern: {type_str}"
         );
         assert!(
-            type_str.contains("len:"),
-            "Should have length constraint: {type_str}"
+            type_str.contains("Some((Some(1), Some(64)))"),
+            "Should capture length bounds 1..=64: {type_str}"
         );
     }
 

@@ -76,7 +76,9 @@ pub fn sso_assignment_config() -> AwsccSchemaConfig {
                 AttributeSchema::new(
                     "principal_id",
                     AttributeType::Custom {
-                        name: "String(pattern, len: 1..=47)".to_string(),
+                        semantic_name: None,
+                        pattern: None,
+                        length: Some((Some(1), Some(47))),
                         base: Box::new(AttributeType::String),
                         validate: validate_string_pattern_2a77a2e32f71b5f3_len_1_47,
                         namespace: None,
@@ -107,7 +109,9 @@ pub fn sso_assignment_config() -> AwsccSchemaConfig {
                 AttributeSchema::new(
                     "target_id",
                     AttributeType::Custom {
-                        name: "String(pattern)".to_string(),
+                        semantic_name: None,
+                        pattern: None,
+                        length: None,
                         base: Box::new(AttributeType::String),
                         validate: validate_string_pattern_fd8ddd3f8bec29c4,
                         namespace: None,

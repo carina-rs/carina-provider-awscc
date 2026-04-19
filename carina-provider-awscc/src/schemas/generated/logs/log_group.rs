@@ -106,7 +106,9 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
         )
         .attribute(
             AttributeSchema::new("log_group_name", AttributeType::Custom {
-                name: "String(pattern, len: 1..=512)".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: Some((Some(1), Some(512))),
                 base: Box::new(AttributeType::String),
                 validate: validate_string_pattern_b6dfbc56753dfe38_len_1_512,
                 namespace: None,
@@ -123,7 +125,9 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
         )
         .attribute(
             AttributeSchema::new("retention_in_days", AttributeType::Custom {
-                name: "IntEnum([1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096, 1827, 2192, 2557, 2922, 3288, 3653])".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: None,
                 base: Box::new(AttributeType::Int),
                 validate: validate_retention_in_days_int_enum,
                 namespace: None,

@@ -182,7 +182,13 @@ fn proto_to_core_attribute_type(t: &ProtoAttributeType) -> CoreAttributeType {
             base,
             namespace,
         } => CoreAttributeType::Custom {
-            name: name.clone(),
+            semantic_name: if name.is_empty() {
+                None
+            } else {
+                Some(name.clone())
+            },
+            pattern: None,
+            length: None,
             base: Box::new(proto_to_core_attribute_type(base)),
             validate: |_| Ok(()),
             namespace: namespace.clone(),
@@ -274,12 +280,12 @@ fn core_to_proto_attribute_type(t: &CoreAttributeType) -> ProtoAttributeType {
             fields: fields.iter().map(core_to_proto_struct_field).collect(),
         },
         CoreAttributeType::Custom {
-            name,
+            semantic_name,
             base,
             namespace,
             ..
         } => ProtoAttributeType::Custom {
-            name: name.clone(),
+            name: semantic_name.clone().unwrap_or_default(),
             base: Box::new(core_to_proto_attribute_type(base)),
             namespace: namespace.clone(),
         },

@@ -126,7 +126,9 @@ pub fn ec2_nat_gateway_config() -> AwsccSchemaConfig {
         )
         .attribute(
             AttributeSchema::new("secondary_private_ip_address_count", AttributeType::Custom {
-                name: "Int(1..)".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: None,
                 base: Box::new(AttributeType::Int),
                 validate: validate_secondary_private_ip_address_count_range,
                 namespace: None,

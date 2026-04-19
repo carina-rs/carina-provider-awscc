@@ -108,9 +108,13 @@ pub fn ec2_vpc_endpoint_config() -> AwsccSchemaConfig {
                 to_dsl: None,
             }).with_description("The preference for which private domains have a private hosted zone created for and associated with the specified VPC. Only supported when private DNS is enabled and when the VPC endpoint type is ServiceNetwork or Resource.").with_provider_name("PrivateDnsPreference"),
                     StructField::new("private_dns_specified_domains", AttributeType::Custom {
-                name: "List(1..=10)".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: None,
                 base: Box::new(AttributeType::list(AttributeType::Custom {
-                name: "String(len: 1..=255)".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: Some((Some(1), Some(255))),
                 base: Box::new(AttributeType::String),
                 validate: validate_string_length_1_255,
                 namespace: None,

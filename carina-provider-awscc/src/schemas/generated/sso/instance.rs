@@ -117,7 +117,9 @@ pub fn sso_instance_config() -> AwsccSchemaConfig {
         .with_description("Resource Type definition for Identity Center (SSO) Instance")
         .attribute(
             AttributeSchema::new("identity_store_id", AttributeType::Custom {
-                name: "String(pattern, len: 1..=64)".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: Some((Some(1), Some(64))),
                 base: Box::new(AttributeType::String),
                 validate: validate_string_pattern_52730ac83148124e_len_1_64,
                 namespace: None,
@@ -135,7 +137,9 @@ pub fn sso_instance_config() -> AwsccSchemaConfig {
         )
         .attribute(
             AttributeSchema::new("name", AttributeType::Custom {
-                name: "String(pattern, len: 1..=32)".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: Some((Some(1), Some(32))),
                 base: Box::new(AttributeType::String),
                 validate: validate_string_pattern_5a2bd7daee6344f1_len_1_32,
                 namespace: None,

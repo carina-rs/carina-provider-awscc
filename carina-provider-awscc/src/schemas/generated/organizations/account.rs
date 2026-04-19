@@ -161,7 +161,9 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
         )
         .attribute(
             AttributeSchema::new("account_name", AttributeType::Custom {
-                name: "String(pattern, len: 1..=50)".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: Some((Some(1), Some(50))),
                 base: Box::new(AttributeType::String),
                 validate: validate_string_pattern_3af299ea99241fab_len_1_50,
                 namespace: None,
@@ -179,7 +181,9 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
         )
         .attribute(
             AttributeSchema::new("email", AttributeType::Custom {
-                name: "String(pattern, len: 6..=64)".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: Some((Some(6), Some(64))),
                 base: Box::new(AttributeType::String),
                 validate: validate_string_pattern_ec4d9bee0dcd262b_len_6_64,
                 namespace: None,
@@ -208,7 +212,9 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
         )
         .attribute(
             AttributeSchema::new("parent_ids", AttributeType::unordered_list(AttributeType::Custom {
-                name: "String(pattern)".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: None,
                 base: Box::new(AttributeType::String),
                 validate: validate_string_pattern_6fa92970742ee8e6,
                 namespace: None,
@@ -219,7 +225,9 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
         )
         .attribute(
             AttributeSchema::new("role_name", AttributeType::Custom {
-                name: "String(pattern, len: 1..=64)".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: Some((Some(1), Some(64))),
                 base: Box::new(AttributeType::String),
                 validate: validate_string_pattern_253e7eb79a4beec5_len_1_64,
                 namespace: None,

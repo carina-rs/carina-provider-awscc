@@ -112,7 +112,9 @@ pub fn identitystore_group_config() -> AwsccSchemaConfig {
         .with_description("Resource Type definition for AWS::IdentityStore::Group")
         .attribute(
             AttributeSchema::new("description", AttributeType::Custom {
-                name: "String(pattern, len: 1..=1024)".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: Some((Some(1), Some(1024))),
                 base: Box::new(AttributeType::String),
                 validate: validate_string_pattern_3e29f1c0497511f3_len_1_1024,
                 namespace: None,
@@ -123,7 +125,9 @@ pub fn identitystore_group_config() -> AwsccSchemaConfig {
         )
         .attribute(
             AttributeSchema::new("display_name", AttributeType::Custom {
-                name: "String(pattern, len: 1..=1024)".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: Some((Some(1), Some(1024))),
                 base: Box::new(AttributeType::String),
                 validate: validate_string_pattern_a301e45ae2f7df12_len_1_1024,
                 namespace: None,
@@ -135,7 +139,9 @@ pub fn identitystore_group_config() -> AwsccSchemaConfig {
         )
         .attribute(
             AttributeSchema::new("group_id", AttributeType::Custom {
-                name: "String(pattern, len: 1..=47)".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: Some((Some(1), Some(47))),
                 base: Box::new(AttributeType::String),
                 validate: validate_string_pattern_2a77a2e32f71b5f3_len_1_47,
                 namespace: None,
@@ -147,7 +153,9 @@ pub fn identitystore_group_config() -> AwsccSchemaConfig {
         )
         .attribute(
             AttributeSchema::new("identity_store_id", AttributeType::Custom {
-                name: "String(pattern, len: 1..=36)".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: Some((Some(1), Some(36))),
                 base: Box::new(AttributeType::String),
                 validate: validate_string_pattern_135f0b126ef95449_len_1_36,
                 namespace: None,

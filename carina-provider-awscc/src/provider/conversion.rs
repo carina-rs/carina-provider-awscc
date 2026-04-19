@@ -584,7 +584,9 @@ mod tests {
     #[test]
     fn test_dsl_value_to_aws_converts_underscores_for_region() {
         let attr_type = AttributeType::Custom {
-            name: "Region".to_string(),
+            semantic_name: Some("Region".to_string()),
+            pattern: None,
+            length: None,
             base: Box::new(AttributeType::String),
             validate: |_| Ok(()),
             namespace: Some("awscc".to_string()),
@@ -1233,7 +1235,9 @@ mod tests {
     #[test]
     fn test_aws_value_to_dsl_custom_to_dsl_strips_trailing_dot() {
         let attr_type = AttributeType::Custom {
-            name: "DnsName".to_string(),
+            semantic_name: Some("DnsName".to_string()),
+            pattern: None,
+            length: None,
             base: Box::new(AttributeType::String),
             validate: |_| Ok(()),
             namespace: None,
@@ -1247,7 +1251,9 @@ mod tests {
     #[test]
     fn test_aws_value_to_dsl_custom_without_to_dsl_passes_through() {
         let attr_type = AttributeType::Custom {
-            name: "DnsName".to_string(),
+            semantic_name: Some("DnsName".to_string()),
+            pattern: None,
+            length: None,
             base: Box::new(AttributeType::String),
             validate: |_| Ok(()),
             namespace: None,

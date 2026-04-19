@@ -203,7 +203,9 @@ pub fn validate_prefixed_resource_id(id: &str, expected_prefix: &str) -> Result<
 #[allow(dead_code)]
 pub fn aws_resource_id() -> AttributeType {
     AttributeType::Custom {
-        name: "AwsResourceId".to_string(),
+        semantic_name: Some("AwsResourceId".to_string()),
+        pattern: None,
+        length: None,
         base: Box::new(AttributeType::String),
         validate: |value| {
             if let Value::String(s) = value {
@@ -221,7 +223,9 @@ pub fn aws_resource_id() -> AttributeType {
 /// VPC ID type (e.g., "vpc-1a2b3c4d")
 pub fn vpc_id() -> AttributeType {
     AttributeType::Custom {
-        name: "VpcId".to_string(),
+        semantic_name: Some("VpcId".to_string()),
+        pattern: None,
+        length: None,
         base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
@@ -239,7 +243,9 @@ pub fn vpc_id() -> AttributeType {
 /// Subnet ID type (e.g., "subnet-0123456789abcdef0")
 pub fn subnet_id() -> AttributeType {
     AttributeType::Custom {
-        name: "SubnetId".to_string(),
+        semantic_name: Some("SubnetId".to_string()),
+        pattern: None,
+        length: None,
         base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
@@ -257,7 +263,9 @@ pub fn subnet_id() -> AttributeType {
 /// Security Group ID type (e.g., "sg-12345678")
 pub fn security_group_id() -> AttributeType {
     AttributeType::Custom {
-        name: "SecurityGroupId".to_string(),
+        semantic_name: Some("SecurityGroupId".to_string()),
+        pattern: None,
+        length: None,
         base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
@@ -275,7 +283,9 @@ pub fn security_group_id() -> AttributeType {
 /// Internet Gateway ID type (e.g., "igw-12345678")
 pub fn internet_gateway_id() -> AttributeType {
     AttributeType::Custom {
-        name: "InternetGatewayId".to_string(),
+        semantic_name: Some("InternetGatewayId".to_string()),
+        pattern: None,
+        length: None,
         base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
@@ -293,7 +303,9 @@ pub fn internet_gateway_id() -> AttributeType {
 /// Route Table ID type (e.g., "rtb-abcdef12")
 pub fn route_table_id() -> AttributeType {
     AttributeType::Custom {
-        name: "RouteTableId".to_string(),
+        semantic_name: Some("RouteTableId".to_string()),
+        pattern: None,
+        length: None,
         base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
@@ -311,7 +323,9 @@ pub fn route_table_id() -> AttributeType {
 /// NAT Gateway ID type (e.g., "nat-12345678")
 pub fn nat_gateway_id() -> AttributeType {
     AttributeType::Custom {
-        name: "NatGatewayId".to_string(),
+        semantic_name: Some("NatGatewayId".to_string()),
+        pattern: None,
+        length: None,
         base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
@@ -329,7 +343,9 @@ pub fn nat_gateway_id() -> AttributeType {
 /// VPC Peering Connection ID type (e.g., "pcx-12345678")
 pub fn vpc_peering_connection_id() -> AttributeType {
     AttributeType::Custom {
-        name: "VpcPeeringConnectionId".to_string(),
+        semantic_name: Some("VpcPeeringConnectionId".to_string()),
+        pattern: None,
+        length: None,
         base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
@@ -348,7 +364,9 @@ pub fn vpc_peering_connection_id() -> AttributeType {
 /// Transit Gateway ID type (e.g., "tgw-12345678")
 pub fn transit_gateway_id() -> AttributeType {
     AttributeType::Custom {
-        name: "TransitGatewayId".to_string(),
+        semantic_name: Some("TransitGatewayId".to_string()),
+        pattern: None,
+        length: None,
         base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
@@ -366,7 +384,9 @@ pub fn transit_gateway_id() -> AttributeType {
 /// VPC CIDR Block Association ID type (e.g., "vpc-cidr-assoc-12345678")
 pub fn vpc_cidr_block_association_id() -> AttributeType {
     AttributeType::Custom {
-        name: "VpcCidrBlockAssociationId".to_string(),
+        semantic_name: Some("VpcCidrBlockAssociationId".to_string()),
+        pattern: None,
+        length: None,
         base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
@@ -385,7 +405,9 @@ pub fn vpc_cidr_block_association_id() -> AttributeType {
 /// Transit Gateway Route Table ID type (e.g., "tgw-rtb-12345678")
 pub fn tgw_route_table_id() -> AttributeType {
     AttributeType::Custom {
-        name: "TgwRouteTableId".to_string(),
+        semantic_name: Some("TgwRouteTableId".to_string()),
+        pattern: None,
+        length: None,
         base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
@@ -403,7 +425,9 @@ pub fn tgw_route_table_id() -> AttributeType {
 /// VPN Gateway ID type (e.g., "vgw-12345678")
 pub fn vpn_gateway_id() -> AttributeType {
     AttributeType::Custom {
-        name: "VpnGatewayId".to_string(),
+        semantic_name: Some("VpnGatewayId".to_string()),
+        pattern: None,
+        length: None,
         base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
@@ -426,7 +450,9 @@ pub fn gateway_id() -> AttributeType {
 /// Egress Only Internet Gateway ID type (e.g., "eigw-12345678")
 pub fn egress_only_internet_gateway_id() -> AttributeType {
     AttributeType::Custom {
-        name: "EgressOnlyInternetGatewayId".to_string(),
+        semantic_name: Some("EgressOnlyInternetGatewayId".to_string()),
+        pattern: None,
+        length: None,
         base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
@@ -448,7 +474,9 @@ pub fn egress_only_internet_gateway_id() -> AttributeType {
 /// VPC Endpoint ID type (e.g., "vpce-12345678")
 pub fn vpc_endpoint_id() -> AttributeType {
     AttributeType::Custom {
-        name: "VpcEndpointId".to_string(),
+        semantic_name: Some("VpcEndpointId".to_string()),
+        pattern: None,
+        length: None,
         base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
@@ -466,7 +494,9 @@ pub fn vpc_endpoint_id() -> AttributeType {
 /// Instance ID type (e.g., "i-0123456789abcdef0")
 pub fn instance_id() -> AttributeType {
     AttributeType::Custom {
-        name: "InstanceId".to_string(),
+        semantic_name: Some("InstanceId".to_string()),
+        pattern: None,
+        length: None,
         base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
@@ -484,7 +514,9 @@ pub fn instance_id() -> AttributeType {
 /// Network Interface ID type (e.g., "eni-0123456789abcdef0")
 pub fn network_interface_id() -> AttributeType {
     AttributeType::Custom {
-        name: "NetworkInterfaceId".to_string(),
+        semantic_name: Some("NetworkInterfaceId".to_string()),
+        pattern: None,
+        length: None,
         base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
@@ -503,7 +535,9 @@ pub fn network_interface_id() -> AttributeType {
 #[allow(dead_code)]
 pub fn allocation_id() -> AttributeType {
     AttributeType::Custom {
-        name: "AllocationId".to_string(),
+        semantic_name: Some("AllocationId".to_string()),
+        pattern: None,
+        length: None,
         base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
@@ -521,7 +555,9 @@ pub fn allocation_id() -> AttributeType {
 /// Prefix List ID type (e.g., "pl-0123456789abcdef0")
 pub fn prefix_list_id() -> AttributeType {
     AttributeType::Custom {
-        name: "PrefixListId".to_string(),
+        semantic_name: Some("PrefixListId".to_string()),
+        pattern: None,
+        length: None,
         base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
@@ -539,7 +575,9 @@ pub fn prefix_list_id() -> AttributeType {
 /// Carrier Gateway ID type (e.g., "cagw-0123456789abcdef0")
 pub fn carrier_gateway_id() -> AttributeType {
     AttributeType::Custom {
-        name: "CarrierGatewayId".to_string(),
+        semantic_name: Some("CarrierGatewayId".to_string()),
+        pattern: None,
+        length: None,
         base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
@@ -557,7 +595,9 @@ pub fn carrier_gateway_id() -> AttributeType {
 /// Local Gateway ID type (e.g., "lgw-0123456789abcdef0")
 pub fn local_gateway_id() -> AttributeType {
     AttributeType::Custom {
-        name: "LocalGatewayId".to_string(),
+        semantic_name: Some("LocalGatewayId".to_string()),
+        pattern: None,
+        length: None,
         base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
@@ -576,7 +616,9 @@ pub fn local_gateway_id() -> AttributeType {
 #[allow(dead_code)]
 pub fn network_acl_id() -> AttributeType {
     AttributeType::Custom {
-        name: "NetworkAclId".to_string(),
+        semantic_name: Some("NetworkAclId".to_string()),
+        pattern: None,
+        length: None,
         base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
@@ -594,7 +636,9 @@ pub fn network_acl_id() -> AttributeType {
 /// Transit Gateway Attachment ID type (e.g., "tgw-attach-0123456789abcdef0")
 pub fn transit_gateway_attachment_id() -> AttributeType {
     AttributeType::Custom {
-        name: "TransitGatewayAttachmentId".to_string(),
+        semantic_name: Some("TransitGatewayAttachmentId".to_string()),
+        pattern: None,
+        length: None,
         base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
@@ -613,7 +657,9 @@ pub fn transit_gateway_attachment_id() -> AttributeType {
 /// Flow Log ID type (e.g., "fl-0123456789abcdef0")
 pub fn flow_log_id() -> AttributeType {
     AttributeType::Custom {
-        name: "FlowLogId".to_string(),
+        semantic_name: Some("FlowLogId".to_string()),
+        pattern: None,
+        length: None,
         base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
@@ -631,7 +677,9 @@ pub fn flow_log_id() -> AttributeType {
 /// IPAM ID type (e.g., "ipam-0123456789abcdef0")
 pub fn ipam_id() -> AttributeType {
     AttributeType::Custom {
-        name: "IpamId".to_string(),
+        semantic_name: Some("IpamId".to_string()),
+        pattern: None,
+        length: None,
         base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
@@ -649,7 +697,9 @@ pub fn ipam_id() -> AttributeType {
 /// Subnet Route Table Association ID type (e.g., "rtbassoc-0123456789abcdef0")
 pub fn subnet_route_table_association_id() -> AttributeType {
     AttributeType::Custom {
-        name: "SubnetRouteTableAssociationId".to_string(),
+        semantic_name: Some("SubnetRouteTableAssociationId".to_string()),
+        pattern: None,
+        length: None,
         base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
@@ -671,7 +721,9 @@ pub fn subnet_route_table_association_id() -> AttributeType {
 /// Security Group Rule ID type (e.g., "sgr-0123456789abcdef0")
 pub fn security_group_rule_id() -> AttributeType {
     AttributeType::Custom {
-        name: "SecurityGroupRuleId".to_string(),
+        semantic_name: Some("SecurityGroupRuleId".to_string()),
+        pattern: None,
+        length: None,
         base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
@@ -703,7 +755,9 @@ pub fn validate_iam_role_id(id: &str) -> Result<(), String> {
 /// IAM Role ID type (e.g., "AROAEXAMPLEID")
 pub fn iam_role_id() -> AttributeType {
     AttributeType::Custom {
-        name: "IamRoleId".to_string(),
+        semantic_name: Some("IamRoleId".to_string()),
+        pattern: None,
+        length: None,
         base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
@@ -737,12 +791,85 @@ pub fn validate_aws_account_id(id: &str) -> Result<(), String> {
 /// AWS Account ID type (12-digit numeric string, e.g., "123456789012")
 pub fn aws_account_id() -> AttributeType {
     AttributeType::Custom {
-        name: "AwsAccountId".to_string(),
+        semantic_name: Some("AwsAccountId".to_string()),
+        pattern: None,
+        length: None,
         base: Box::new(AttributeType::String),
         validate: |value| {
             if let Value::String(s) = value {
                 validate_aws_account_id(s)
                     .map_err(|reason| format!("Invalid AWS Account ID '{}': {}", s, reason))
+            } else {
+                Err("Expected string".to_string())
+            }
+        },
+        namespace: None,
+        to_dsl: None,
+    }
+}
+
+// ========== SSO / Identity Center helpers ==========
+
+/// Validate an SSO principal ID. Accepts either an IdentityStore user id
+/// (`<region>-<uuid>`) or a group id (`<region>-<uuid>`) as defined by the
+/// AWS::SSO::Assignment CFN schema (pattern: `^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$`).
+pub fn validate_sso_principal_id(id: &str) -> Result<(), String> {
+    if id.is_empty() {
+        return Err("must not be empty".to_string());
+    }
+    if id.len() > 64 {
+        return Err(format!("must be at most 64 characters, got {}", id.len()));
+    }
+    Ok(())
+}
+
+/// SSO PrincipalId type (user or group id from IdentityStore).
+pub fn sso_principal_id() -> AttributeType {
+    AttributeType::Custom {
+        semantic_name: Some("SsoPrincipalId".to_string()),
+        pattern: None,
+        length: None,
+        base: Box::new(AttributeType::String),
+        validate: |value| {
+            if let Value::String(s) = value {
+                validate_sso_principal_id(s)
+                    .map_err(|reason| format!("Invalid SSO principal ID '{}': {}", s, reason))
+            } else {
+                Err("Expected string".to_string())
+            }
+        },
+        namespace: None,
+        to_dsl: None,
+    }
+}
+
+/// Validate an SSO Instance ARN
+/// (`arn:aws:sso:::instance/ssoins-<hex>`).
+pub fn validate_sso_instance_arn(arn: &str) -> Result<(), String> {
+    validate_arn(arn)?;
+    let parts: Vec<&str> = arn.splitn(6, ':').collect();
+    if parts[2] != "sso" {
+        return Err(format!("expected service 'sso', got '{}'", parts[2]));
+    }
+    if !parts[5].starts_with("instance/") {
+        return Err(
+            "resource must start with 'instance/' (e.g. 'instance/ssoins-...')".to_string(),
+        );
+    }
+    Ok(())
+}
+
+/// SSO Instance ARN type (e.g., "arn:aws:sso:::instance/ssoins-xxxxxxxx").
+pub fn sso_instance_arn() -> AttributeType {
+    AttributeType::Custom {
+        semantic_name: Some("SsoInstanceArn".to_string()),
+        pattern: None,
+        length: None,
+        base: Box::new(arn()),
+        validate: |value| {
+            if let Value::String(s) = value {
+                validate_sso_instance_arn(s)
+                    .map_err(|reason| format!("Invalid SSO instance ARN '{}': {}", s, reason))
             } else {
                 Err("Expected string".to_string())
             }
@@ -874,7 +1001,9 @@ pub fn validate_iam_arn(arn: &str, resource_prefix: &str) -> Result<(), String> 
 /// ARN type (e.g., "arn:aws:s3:::my-bucket")
 pub fn arn() -> AttributeType {
     AttributeType::Custom {
-        name: "Arn".to_string(),
+        semantic_name: Some("Arn".to_string()),
+        pattern: None,
+        length: None,
         base: Box::new(AttributeType::String),
         validate: |value| {
             if let Value::String(s) = value {
@@ -892,7 +1021,9 @@ pub fn arn() -> AttributeType {
 #[allow(dead_code)]
 pub fn iam_role_arn() -> AttributeType {
     AttributeType::Custom {
-        name: "IamRoleArn".to_string(),
+        semantic_name: Some("IamRoleArn".to_string()),
+        pattern: None,
+        length: None,
         base: Box::new(arn()),
         validate: |value| {
             if let Value::String(s) = value {
@@ -911,7 +1042,9 @@ pub fn iam_role_arn() -> AttributeType {
 #[allow(dead_code)]
 pub fn iam_policy_arn() -> AttributeType {
     AttributeType::Custom {
-        name: "IamPolicyArn".to_string(),
+        semantic_name: Some("IamPolicyArn".to_string()),
+        pattern: None,
+        length: None,
         base: Box::new(arn()),
         validate: |value| {
             if let Value::String(s) = value {
@@ -930,7 +1063,9 @@ pub fn iam_policy_arn() -> AttributeType {
 #[allow(dead_code)]
 pub fn kms_key_arn() -> AttributeType {
     AttributeType::Custom {
-        name: "KmsKeyArn".to_string(),
+        semantic_name: Some("KmsKeyArn".to_string()),
+        pattern: None,
+        length: None,
         base: Box::new(arn()),
         validate: |value| {
             if let Value::String(s) = value {
@@ -998,7 +1133,9 @@ pub fn validate_kms_key_id(value: &str) -> Result<(), String> {
 #[allow(dead_code)]
 pub fn kms_key_id() -> AttributeType {
     AttributeType::Custom {
-        name: "KmsKeyId".to_string(),
+        semantic_name: Some("KmsKeyId".to_string()),
+        pattern: None,
+        length: None,
         base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
@@ -1032,7 +1169,9 @@ pub fn validate_ipam_pool_id(id: &str) -> Result<(), String> {
 /// IPAM Pool ID type (e.g., "ipam-pool-0123456789abcdef0")
 pub fn ipam_pool_id() -> AttributeType {
     AttributeType::Custom {
-        name: "IpamPoolId".to_string(),
+        semantic_name: Some("IpamPoolId".to_string()),
+        pattern: None,
+        length: None,
         base: Box::new(aws_resource_id()),
         validate: |value| {
             if let Value::String(s) = value {
@@ -1139,7 +1278,9 @@ pub fn validate_availability_zone_id(az_id: &str) -> Result<(), String> {
 /// Availability Zone ID type (e.g., "use1-az1", "usw2-az2", "apne1-az4")
 pub fn availability_zone_id() -> AttributeType {
     AttributeType::Custom {
-        name: "AvailabilityZoneId".to_string(),
+        semantic_name: Some("AvailabilityZoneId".to_string()),
+        pattern: None,
+        length: None,
         base: Box::new(AttributeType::String),
         validate: |value| {
             if let Value::String(s) = value {
@@ -1190,7 +1331,9 @@ fn string_or_principal_struct() -> AttributeType {
 /// Only allows "Allow" or "Deny"
 fn iam_policy_effect() -> AttributeType {
     AttributeType::Custom {
-        name: "IamPolicyEffect".to_string(),
+        semantic_name: Some("IamPolicyEffect".to_string()),
+        pattern: None,
+        length: None,
         base: Box::new(AttributeType::String),
         validate: |value| {
             if let Value::String(s) = value {
@@ -1214,7 +1357,9 @@ fn iam_policy_effect() -> AttributeType {
 /// Only allows "2012-10-17" or "2008-10-17"
 fn iam_policy_version() -> AttributeType {
     AttributeType::Custom {
-        name: "IamPolicyVersion".to_string(),
+        semantic_name: Some("IamPolicyVersion".to_string()),
+        pattern: None,
+        length: None,
         base: Box::new(AttributeType::String),
         validate: |value| {
             if let Value::String(s) = value {
@@ -1764,6 +1909,40 @@ mod tests {
         assert!(validate_aws_account_id("1234").is_err());
         assert!(validate_aws_account_id("12345678901a").is_err());
         assert!(validate_aws_account_id("").is_err());
+    }
+
+    // SSO principal ID / instance ARN tests
+
+    #[test]
+    fn validate_sso_principal_id_valid() {
+        assert!(validate_sso_principal_id("11111111-2222-3333-4444-555555555555").is_ok());
+        assert!(
+            validate_sso_principal_id("d-1234567890-11111111-2222-3333-4444-555555555555").is_ok()
+        );
+    }
+
+    #[test]
+    fn validate_sso_principal_id_invalid() {
+        assert!(validate_sso_principal_id("").is_err());
+        let too_long = "x".repeat(65);
+        assert!(validate_sso_principal_id(&too_long).is_err());
+    }
+
+    #[test]
+    fn validate_sso_instance_arn_valid() {
+        assert!(
+            validate_sso_instance_arn("arn:aws:sso:::instance/ssoins-1234567890abcdef").is_ok()
+        );
+    }
+
+    #[test]
+    fn validate_sso_instance_arn_invalid() {
+        // Wrong service
+        assert!(validate_sso_instance_arn("arn:aws:iam:::instance/ssoins-abc").is_err());
+        // Wrong resource type
+        assert!(validate_sso_instance_arn("arn:aws:sso:::user/abc").is_err());
+        // Not an ARN
+        assert!(validate_sso_instance_arn("ssoins-1234567890abcdef").is_err());
     }
 
     // KMS Key ID tests

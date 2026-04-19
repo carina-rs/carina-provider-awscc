@@ -52,7 +52,9 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
                 AttributeSchema::new(
                     "amazon_side_asn",
                     AttributeType::Custom {
-                        name: "Int(1..=4294967294)".to_string(),
+                        semantic_name: None,
+                        pattern: None,
+                        length: None,
                         base: Box::new(AttributeType::Int),
                         validate: validate_amazon_side_asn_range,
                         namespace: None,
