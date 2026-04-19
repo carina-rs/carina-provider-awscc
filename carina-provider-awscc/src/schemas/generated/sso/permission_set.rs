@@ -275,7 +275,7 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
                 .with_provider_name("Name"),
         )
         .attribute(
-            AttributeSchema::new("permission_set_arn", super::arn())
+            AttributeSchema::new("permission_set_arn", super::sso_permission_set_arn())
                 .read_only()
                 .with_description("The permission set that the policy will be attached to (read-only)")
                 .with_provider_name("PermissionSetArn"),

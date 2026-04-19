@@ -879,6 +879,76 @@ pub fn sso_instance_arn() -> AttributeType {
     }
 }
 
+/// Validate an IdentityStore id (`d-<10-hex>` or a 36-char UUID).
+pub fn validate_identity_store_id(id: &str) -> Result<(), String> {
+    let looks_like_d = id
+        .strip_prefix("d-")
+        .is_some_and(|rest| rest.len() == 10 && rest.chars().all(|c| c.is_ascii_hexdigit()));
+    let looks_like_uuid = id.len() == 36
+        && id.chars().enumerate().all(|(i, c)| match i {
+            8 | 13 | 18 | 23 => c == '-',
+            _ => c.is_ascii_hexdigit(),
+        });
+    if looks_like_d || looks_like_uuid {
+        Ok(())
+    } else {
+        Err("must be d-<10 hex> or a 36-char UUID".to_string())
+    }
+}
+
+/// IdentityStore identity store id (`d-...` or UUID).
+pub fn identity_store_id() -> AttributeType {
+    AttributeType::Custom {
+        semantic_name: Some("IdentityStoreId".to_string()),
+        pattern: None,
+        length: None,
+        base: Box::new(AttributeType::String),
+        validate: |value| {
+            if let Value::String(s) = value {
+                validate_identity_store_id(s)
+                    .map_err(|reason| format!("Invalid IdentityStore id '{}': {}", s, reason))
+            } else {
+                Err("Expected string".to_string())
+            }
+        },
+        namespace: None,
+        to_dsl: None,
+    }
+}
+
+/// Validate an SSO PermissionSet ARN (`arn:aws:sso:::permissionSet/ssoins-<hex>/ps-<hex>`).
+pub fn validate_sso_permission_set_arn(arn: &str) -> Result<(), String> {
+    validate_arn(arn)?;
+    let parts: Vec<&str> = arn.splitn(6, ':').collect();
+    if parts[2] != "sso" {
+        return Err(format!("expected service 'sso', got '{}'", parts[2]));
+    }
+    if !parts[5].starts_with("permissionSet/") {
+        return Err("resource must start with 'permissionSet/'".to_string());
+    }
+    Ok(())
+}
+
+/// SSO PermissionSet ARN type.
+pub fn sso_permission_set_arn() -> AttributeType {
+    AttributeType::Custom {
+        semantic_name: Some("SsoPermissionSetArn".to_string()),
+        pattern: None,
+        length: None,
+        base: Box::new(arn()),
+        validate: |value| {
+            if let Value::String(s) = value {
+                validate_sso_permission_set_arn(s)
+                    .map_err(|reason| format!("Invalid SSO permission set ARN '{}': {}", s, reason))
+            } else {
+                Err("Expected string".to_string())
+            }
+        },
+        namespace: None,
+        to_dsl: None,
+    }
+}
+
 // ========== ARN validators ==========
 
 /// Valid AWS partition values.
