@@ -130,7 +130,9 @@ pub(crate) fn validate_namespaced_enum(
 /// - Shorthand: ap_northeast_1
 pub fn awscc_region() -> AttributeType {
     AttributeType::Custom {
-        name: "Region".to_string(),
+        semantic_name: Some("Region".to_string()),
+        pattern: None,
+        length: None,
         base: Box::new(AttributeType::String),
         validate: |value| {
             if let Value::String(s) = value {
@@ -159,7 +161,9 @@ pub fn awscc_region() -> AttributeType {
 /// Validates format: region + single letter zone identifier
 pub fn availability_zone() -> AttributeType {
     AttributeType::Custom {
-        name: "AvailabilityZone".to_string(),
+        semantic_name: Some("AvailabilityZone".to_string()),
+        pattern: None,
+        length: None,
         base: Box::new(AttributeType::String),
         validate: |value| {
             if let Value::String(s) = value {

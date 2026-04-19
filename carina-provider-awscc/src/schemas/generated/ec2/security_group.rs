@@ -54,7 +54,7 @@ pub fn ec2_security_group_config() -> AwsccSchemaConfig {
                 .with_provider_name("GroupDescription"),
         )
         .attribute(
-            AttributeSchema::new("group_id", super::security_group_id())
+            AttributeSchema::new("group_id", AttributeType::String)
                 .read_only()
                 .with_description("The group ID of the specified security group. (read-only)")
                 .with_provider_name("GroupId"),
@@ -81,7 +81,9 @@ pub fn ec2_security_group_config() -> AwsccSchemaConfig {
                     StructField::new("destination_prefix_list_id", super::prefix_list_id()).with_provider_name("DestinationPrefixListId"),
                     StructField::new("destination_security_group_id", super::security_group_id()).with_provider_name("DestinationSecurityGroupId"),
                     StructField::new("from_port", AttributeType::Custom {
-                name: "Int(-1..=65535)".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: None,
                 base: Box::new(AttributeType::Int),
                 validate: validate_from_port_range,
                 namespace: None,
@@ -94,7 +96,9 @@ pub fn ec2_security_group_config() -> AwsccSchemaConfig {
                 to_dsl: Some(|s: &str| match s { "-1" => "all".to_string(), _ => s.replace('-', "_") }),
             }).required().with_provider_name("IpProtocol"),
                     StructField::new("to_port", AttributeType::Custom {
-                name: "Int(-1..=65535)".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: None,
                 base: Box::new(AttributeType::Int),
                 validate: validate_to_port_range,
                 namespace: None,
@@ -114,7 +118,9 @@ pub fn ec2_security_group_config() -> AwsccSchemaConfig {
                     StructField::new("cidr_ipv6", types::ipv6_cidr()).with_provider_name("CidrIpv6"),
                     StructField::new("description", AttributeType::String).with_provider_name("Description"),
                     StructField::new("from_port", AttributeType::Custom {
-                name: "Int(-1..=65535)".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: None,
                 base: Box::new(AttributeType::Int),
                 validate: validate_from_port_range,
                 namespace: None,
@@ -131,7 +137,9 @@ pub fn ec2_security_group_config() -> AwsccSchemaConfig {
                     StructField::new("source_security_group_name", AttributeType::String).with_provider_name("SourceSecurityGroupName"),
                     StructField::new("source_security_group_owner_id", super::aws_account_id()).with_provider_name("SourceSecurityGroupOwnerId"),
                     StructField::new("to_port", AttributeType::Custom {
-                name: "Int(-1..=65535)".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: None,
                 base: Box::new(AttributeType::Int),
                 validate: validate_to_port_range,
                 namespace: None,

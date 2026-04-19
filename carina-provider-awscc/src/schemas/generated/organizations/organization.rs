@@ -101,7 +101,9 @@ pub fn organizations_organization_config() -> AwsccSchemaConfig {
         )
         .attribute(
             AttributeSchema::new("id", AttributeType::Custom {
-                name: "String(pattern)".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: None,
                 base: Box::new(AttributeType::String),
                 validate: validate_string_pattern_2fd01fd52b67fc75,
                 namespace: None,
@@ -119,7 +121,9 @@ pub fn organizations_organization_config() -> AwsccSchemaConfig {
         )
         .attribute(
             AttributeSchema::new("management_account_email", AttributeType::Custom {
-                name: "String(pattern, len: 6..=64)".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: Some((Some(6), Some(64))),
                 base: Box::new(AttributeType::String),
                 validate: validate_string_pattern_ec4d9bee0dcd262b_len_6_64,
                 namespace: None,
@@ -137,7 +141,9 @@ pub fn organizations_organization_config() -> AwsccSchemaConfig {
         )
         .attribute(
             AttributeSchema::new("root_id", AttributeType::Custom {
-                name: "String(pattern, len: ..=64)".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: Some((None, Some(64))),
                 base: Box::new(AttributeType::String),
                 validate: validate_string_pattern_0cb01cbc89d38ae3_len_max_64,
                 namespace: None,

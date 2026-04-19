@@ -54,7 +54,9 @@ pub fn iam_role_config() -> AwsccSchemaConfig {
         )
         .attribute(
             AttributeSchema::new("max_session_duration", AttributeType::Custom {
-                name: "Int(3600..=43200)".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: None,
                 base: Box::new(AttributeType::Int),
                 validate: validate_max_session_duration_range,
                 namespace: None,

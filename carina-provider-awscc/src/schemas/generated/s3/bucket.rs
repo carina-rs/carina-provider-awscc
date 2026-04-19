@@ -30,8 +30,6 @@ const VALID_ACCESS_CONTROL_TRANSLATION_OWNER: &[&str] = &["Destination"];
 
 const VALID_BLOCKED_ENCRYPTION_TYPES_ENCRYPTION_TYPE: &[&str] = &["NONE", "SSE-C"];
 
-const VALID_BUCKET_NAMESPACE: &[&str] = &["global", "account-regional"];
-
 const VALID_CORS_RULE_ALLOWED_METHODS: &[&str] = &["GET", "PUT", "HEAD", "POST", "DELETE"];
 
 const VALID_DATA_EXPORT_OUTPUT_SCHEMA_VERSION: &[&str] = &["V_1"];
@@ -366,25 +364,6 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                 .with_provider_name("BucketName"),
         )
         .attribute(
-            AttributeSchema::new("bucket_name_prefix", AttributeType::String)
-                .create_only()
-                .write_only()
-                .with_description("")
-                .with_provider_name("BucketNamePrefix"),
-        )
-        .attribute(
-            AttributeSchema::new("bucket_namespace", AttributeType::StringEnum {
-                name: "BucketNamespace".to_string(),
-                values: vec!["global".to_string(), "account-regional".to_string()],
-                namespace: Some("awscc.s3.bucket".to_string()),
-                to_dsl: Some(|s: &str| s.replace('-', "_")),
-            })
-                .create_only()
-                .write_only()
-                .with_description("")
-                .with_provider_name("BucketNamespace"),
-        )
-        .attribute(
             AttributeSchema::new("cors_configuration", AttributeType::Struct {
                     name: "CorsConfiguration".to_string(),
                     fields: vec![
@@ -401,14 +380,18 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     StructField::new("allowed_origins", AttributeType::list(AttributeType::String)).required().with_description("One or more origins you want customers to be able to access the bucket from.").with_provider_name("AllowedOrigins"),
                     StructField::new("exposed_headers", AttributeType::list(AttributeType::String)).with_description("One or more headers in the response that you want customers to be able to access from their applications (for example, from a JavaScript ``XMLHttpRequest`` object).").with_provider_name("ExposedHeaders"),
                     StructField::new("id", AttributeType::Custom {
-                name: "String(len: ..=255)".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: Some((None, Some(255))),
                 base: Box::new(AttributeType::String),
                 validate: validate_string_length_max_255,
                 namespace: None,
                 to_dsl: None,
             }).with_description("A unique identifier for this rule. The value must be no more than 255 characters.").with_provider_name("Id"),
                     StructField::new("max_age", AttributeType::Custom {
-                name: "Int(0..)".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: None,
                 base: Box::new(AttributeType::Int),
                 validate: validate_max_age_range,
                 namespace: None,
@@ -521,7 +504,9 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     name: "AbortIncompleteMultipartUpload".to_string(),
                     fields: vec![
                     StructField::new("days_after_initiation", AttributeType::Custom {
-                name: "Int(0..)".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: None,
                 base: Box::new(AttributeType::Int),
                 validate: validate_days_after_initiation_range,
                 namespace: None,
@@ -530,7 +515,9 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     ],
                 }).with_description("Specifies a lifecycle rule that stops incomplete multipart uploads to an Amazon S3 bucket.").with_provider_name("AbortIncompleteMultipartUpload"),
                     StructField::new("expiration_date", AttributeType::Custom {
-                name: "String(pattern)".to_string(),
+                semantic_name: None,
+                pattern: Some("^(\\d{4})-(0[0-9]|1[0-2])-([0-2]\\d|3[01])T([01]\\d|2[0-4]):([0-5]\\d):([0-6]\\d)((\\.\\d{3})?)Z$".to_string()),
+                length: None,
                 base: Box::new(AttributeType::String),
                 validate: validate_string_pattern_cc806c69dc4cdaf7,
                 namespace: None,
@@ -539,7 +526,9 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     StructField::new("expiration_in_days", AttributeType::Int).with_description("Indicates the number of days after creation when objects are deleted from Amazon S3 and Amazon S3 Glacier. If you specify an expiration and transition time, you must use the same time unit for both properties (either in days or by date). The expiration time must also be later than the transition time.").with_provider_name("ExpirationInDays"),
                     StructField::new("expired_object_delete_marker", AttributeType::Bool).with_description("Indicates whether Amazon S3 will remove a delete marker without any noncurrent versions. If set to true, the delete marker will be removed if there are no noncurrent versions. This cannot be specified with ``ExpirationInDays``, ``ExpirationDate``, or ``TagFilters``.").with_provider_name("ExpiredObjectDeleteMarker"),
                     StructField::new("id", AttributeType::Custom {
-                name: "String(len: ..=255)".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: Some((None, Some(255))),
                 base: Box::new(AttributeType::String),
                 validate: validate_string_length_max_255,
                 namespace: None,
@@ -580,14 +569,18 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     ],
                 })).with_description("For buckets with versioning enabled (or suspended), one or more transition rules that specify when non-current objects transition to a specified storage class. If you specify a transition and expiration time, the expiration time must be later than the transition time. If you specify this property, don't specify the ``NoncurrentVersionTransition`` property.").with_provider_name("NoncurrentVersionTransitions").with_block_name("noncurrent_version_transition"),
                     StructField::new("object_size_greater_than", AttributeType::Custom {
-                name: "NumericString(len: ..=20)".to_string(),
+                semantic_name: None,
+                pattern: Some("[0-9]+".to_string()),
+                length: Some((None, Some(20))),
                 base: Box::new(AttributeType::String),
                 validate: validate_string_pattern_3ee03875337c12ab_len_max_20,
                 namespace: None,
                 to_dsl: None,
             }).with_description("Specifies the minimum object size in bytes for this rule to apply to. Objects must be larger than this value in bytes. For more information about size based rules, see [Lifecycle configuration using size-based rules](https://docs.aws.amazon.com/AmazonS3/latest/userguide/lifecycle-configuration-examples.html#lc-size-rules) in the *Amazon S3 User Guide*.").with_provider_name("ObjectSizeGreaterThan"),
                     StructField::new("object_size_less_than", AttributeType::Custom {
-                name: "NumericString(len: ..=20)".to_string(),
+                semantic_name: None,
+                pattern: Some("[0-9]+".to_string()),
+                length: Some((None, Some(20))),
                 base: Box::new(AttributeType::String),
                 validate: validate_string_pattern_3ee03875337c12ab_len_max_20,
                 namespace: None,
@@ -611,7 +604,9 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                 to_dsl: None,
             }).required().with_description("The storage class to which you want the object to transition.").with_provider_name("StorageClass"),
                     StructField::new("transition_date", AttributeType::Custom {
-                name: "String(pattern)".to_string(),
+                semantic_name: None,
+                pattern: Some("^(\\d{4})-(0[0-9]|1[0-2])-([0-2]\\d|3[01])T([01]\\d|2[0-4]):([0-5]\\d):([0-6]\\d)((\\.\\d{3})?)Z$".to_string()),
+                length: None,
                 base: Box::new(AttributeType::String),
                 validate: validate_string_pattern_cc806c69dc4cdaf7,
                 namespace: None,
@@ -630,7 +625,9 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                 to_dsl: None,
             }).required().with_description("The storage class to which you want the object to transition.").with_provider_name("StorageClass"),
                     StructField::new("transition_date", AttributeType::Custom {
-                name: "String(pattern)".to_string(),
+                semantic_name: None,
+                pattern: Some("^(\\d{4})-(0[0-9]|1[0-2])-([0-2]\\d|3[01])T([01]\\d|2[0-4]):([0-5]\\d):([0-6]\\d)((\\.\\d{3})?)Z$".to_string()),
+                length: None,
                 base: Box::new(AttributeType::String),
                 validate: validate_string_pattern_cc806c69dc4cdaf7,
                 namespace: None,
@@ -818,7 +815,9 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     name: "FilterRule".to_string(),
                     fields: vec![
                     StructField::new("name", AttributeType::Custom {
-                name: "String(len: ..=1024)".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: Some((None, Some(1024))),
                 base: Box::new(AttributeType::String),
                 validate: validate_string_length_max_1024,
                 namespace: None,
@@ -848,7 +847,9 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     name: "FilterRule".to_string(),
                     fields: vec![
                     StructField::new("name", AttributeType::Custom {
-                name: "String(len: ..=1024)".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: Some((None, Some(1024))),
                 base: Box::new(AttributeType::String),
                 validate: validate_string_length_max_1024,
                 namespace: None,
@@ -878,7 +879,9 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     name: "FilterRule".to_string(),
                     fields: vec![
                     StructField::new("name", AttributeType::Custom {
-                name: "String(len: ..=1024)".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: Some((None, Some(1024))),
                 base: Box::new(AttributeType::String),
                 validate: validate_string_length_max_1024,
                 namespace: None,
@@ -1076,14 +1079,18 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     ],
                 }).with_description("A filter that identifies the subset of objects to which the replication rule applies. A ``Filter`` must specify exactly one ``Prefix``, ``TagFilter``, or an ``And`` child element. The use of the filter field indicates that this is a V2 replication configuration. This field isn't supported in a V1 replication configuration. V1 replication configuration only supports filtering by key prefix. To filter using a V1 replication configuration, add the ``Prefix`` directly as a child element of the ``Rule`` element.").with_provider_name("Filter"),
                     StructField::new("id", AttributeType::Custom {
-                name: "String(len: ..=255)".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: Some((None, Some(255))),
                 base: Box::new(AttributeType::String),
                 validate: validate_string_length_max_255,
                 namespace: None,
                 to_dsl: None,
             }).with_description("A unique identifier for the rule. The maximum value is 255 characters. If you don't specify a value, AWS CloudFormation generates a random ID. When using a V2 replication configuration this property is capitalized as \"ID\".").with_provider_name("Id"),
                     StructField::new("prefix", AttributeType::Custom {
-                name: "String(len: ..=1024)".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: Some((None, Some(1024))),
                 base: Box::new(AttributeType::String),
                 validate: validate_string_length_max_1024,
                 namespace: None,
@@ -1204,7 +1211,9 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
         )
         .attribute(
             AttributeSchema::new("website_url", AttributeType::Custom {
-                name: "String(uri)".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: None,
                 base: Box::new(AttributeType::String),
                 validate: |_| Ok(()),
                 namespace: None,
@@ -1244,7 +1253,6 @@ pub fn enum_valid_values() -> (
                 "encryption_type",
                 VALID_BLOCKED_ENCRYPTION_TYPES_ENCRYPTION_TYPE,
             ),
-            ("bucket_namespace", VALID_BUCKET_NAMESPACE),
             ("allowed_methods", VALID_CORS_RULE_ALLOWED_METHODS),
             (
                 "output_schema_version",
@@ -1324,15 +1332,11 @@ pub fn enum_valid_values() -> (
 pub fn enum_alias_reverse(attr_name: &str, value: &str) -> Option<&'static str> {
     match (attr_name, value) {
         ("encryption_type", "SSE_C") => Some("SSE-C"),
-        ("bucket_namespace", "account_regional") => Some("account-regional"),
         _ => None,
     }
 }
 
 /// Returns all enum alias entries as (attr_name, alias, canonical) tuples.
 pub fn enum_alias_entries() -> &'static [(&'static str, &'static str, &'static str)] {
-    &[
-        ("encryption_type", "SSE_C", "SSE-C"),
-        ("bucket_namespace", "account_regional", "account-regional"),
-    ]
+    &[("encryption_type", "SSE_C", "SSE-C")]
 }

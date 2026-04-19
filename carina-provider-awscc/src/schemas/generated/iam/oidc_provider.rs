@@ -78,7 +78,9 @@ pub fn iam_oidc_provider_config() -> AwsccSchemaConfig {
                 AttributeSchema::new(
                     "client_id_list",
                     AttributeType::unordered_list(AttributeType::Custom {
-                        name: "String(len: 1..=255)".to_string(),
+                        semantic_name: None,
+                        pattern: None,
+                        length: Some((Some(1), Some(255))),
                         base: Box::new(AttributeType::String),
                         validate: validate_string_length_1_255,
                         namespace: None,
@@ -92,9 +94,13 @@ pub fn iam_oidc_provider_config() -> AwsccSchemaConfig {
                 AttributeSchema::new(
                     "thumbprint_list",
                     AttributeType::Custom {
-                        name: "List(..=5)".to_string(),
+                        semantic_name: None,
+                        pattern: None,
+                        length: None,
                         base: Box::new(AttributeType::unordered_list(AttributeType::Custom {
-                            name: "String(pattern, len: 40..=40)".to_string(),
+                            semantic_name: None,
+                            pattern: None,
+                            length: Some((Some(40), Some(40))),
                             base: Box::new(AttributeType::String),
                             validate: validate_string_pattern_57ee0c44b504b839_len_40_40,
                             namespace: None,
@@ -111,7 +117,9 @@ pub fn iam_oidc_provider_config() -> AwsccSchemaConfig {
                 AttributeSchema::new(
                     "url",
                     AttributeType::Custom {
-                        name: "String(len: 1..=255)".to_string(),
+                        semantic_name: None,
+                        pattern: None,
+                        length: Some((Some(1), Some(255))),
                         base: Box::new(AttributeType::String),
                         validate: validate_string_length_1_255,
                         namespace: None,

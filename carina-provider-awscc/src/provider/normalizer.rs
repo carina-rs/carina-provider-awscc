@@ -480,7 +480,9 @@ mod tests {
             StructField::new(
                 "ip_protocol",
                 AttributeType::Custom {
-                    name: "IpProtocol".to_string(),
+                    semantic_name: Some("IpProtocol".to_string()),
+                    pattern: None,
+                    length: None,
                     base: Box::new(AttributeType::String),
                     validate: |_| Ok(()),
                     namespace: Some("awscc.ec2.security_group".to_string()),

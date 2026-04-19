@@ -189,19 +189,25 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
         .with_description("Resource Type definition for SSO PermissionSet")
         .attribute(
             AttributeSchema::new("customer_managed_policy_references", AttributeType::Custom {
-                name: "List(..=20)".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: None,
                 base: Box::new(AttributeType::unordered_list(AttributeType::Struct {
                     name: "CustomerManagedPolicyReference".to_string(),
                     fields: vec![
                     StructField::new("name", AttributeType::Custom {
-                name: "String(pattern, len: 1..=128)".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: Some((Some(1), Some(128))),
                 base: Box::new(AttributeType::String),
                 validate: validate_string_pattern_9b83f4f8f3673df5_len_1_128,
                 namespace: None,
                 to_dsl: None,
             }).required().with_provider_name("Name"),
                     StructField::new("path", AttributeType::Custom {
-                name: "String(pattern, len: 1..=512)".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: Some((Some(1), Some(512))),
                 base: Box::new(AttributeType::String),
                 validate: validate_string_pattern_b84fa12576539ca9_len_1_512,
                 namespace: None,
@@ -218,7 +224,9 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
         )
         .attribute(
             AttributeSchema::new("description", AttributeType::Custom {
-                name: "String(pattern, len: 1..=700)".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: Some((Some(1), Some(700))),
                 base: Box::new(AttributeType::String),
                 validate: validate_string_pattern_9863be410e005e12_len_1_700,
                 namespace: None,
@@ -241,7 +249,9 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
         )
         .attribute(
             AttributeSchema::new("managed_policies", AttributeType::Custom {
-                name: "List(..=20)".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: None,
                 base: Box::new(AttributeType::unordered_list(AttributeType::String)),
                 validate: validate_list_items_max_20,
                 namespace: None,
@@ -251,7 +261,9 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
         )
         .attribute(
             AttributeSchema::new("name", AttributeType::Custom {
-                name: "String(pattern, len: 1..=32)".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: Some((Some(1), Some(32))),
                 base: Box::new(AttributeType::String),
                 validate: validate_string_pattern_9b83f4f8f3673df5_len_1_32,
                 namespace: None,
@@ -276,14 +288,18 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
                     name: "CustomerManagedPolicyReference".to_string(),
                     fields: vec![
                     StructField::new("name", AttributeType::Custom {
-                name: "String(pattern, len: 1..=128)".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: Some((Some(1), Some(128))),
                 base: Box::new(AttributeType::String),
                 validate: validate_string_pattern_9b83f4f8f3673df5_len_1_128,
                 namespace: None,
                 to_dsl: None,
             }).required().with_provider_name("Name"),
                     StructField::new("path", AttributeType::Custom {
-                name: "String(pattern, len: 1..=512)".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: Some((Some(1), Some(512))),
                 base: Box::new(AttributeType::String),
                 validate: validate_string_pattern_b84fa12576539ca9_len_1_512,
                 namespace: None,
@@ -298,7 +314,9 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
         )
         .attribute(
             AttributeSchema::new("relay_state_type", AttributeType::Custom {
-                name: "String(pattern, len: 1..=240)".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: Some((Some(1), Some(240))),
                 base: Box::new(AttributeType::String),
                 validate: validate_string_pattern_4d6d630589930649_len_1_240,
                 namespace: None,
@@ -309,7 +327,9 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
         )
         .attribute(
             AttributeSchema::new("session_duration", AttributeType::Custom {
-                name: "String(pattern, len: 1..=100)".to_string(),
+                semantic_name: None,
+                pattern: None,
+                length: Some((Some(1), Some(100))),
                 base: Box::new(AttributeType::String),
                 validate: validate_string_pattern_1e58d8243b46a2f1_len_1_100,
                 namespace: None,
