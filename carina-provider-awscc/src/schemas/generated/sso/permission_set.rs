@@ -197,7 +197,7 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
                     fields: vec![
                     StructField::new("name", AttributeType::Custom {
                 semantic_name: None,
-                pattern: None,
+                pattern: Some("[\\w+=,.@-]+".to_string()),
                 length: Some((Some(1), Some(128))),
                 base: Box::new(AttributeType::String),
                 validate: validate_string_pattern_9b83f4f8f3673df5_len_1_128,
@@ -206,7 +206,7 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
             }).required().with_provider_name("Name"),
                     StructField::new("path", AttributeType::Custom {
                 semantic_name: None,
-                pattern: None,
+                pattern: Some("((/[A-Za-z0-9\\.,\\+@=_-]+)*)/".to_string()),
                 length: Some((Some(1), Some(512))),
                 base: Box::new(AttributeType::String),
                 validate: validate_string_pattern_b84fa12576539ca9_len_1_512,
@@ -225,7 +225,7 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
         .attribute(
             AttributeSchema::new("description", AttributeType::Custom {
                 semantic_name: None,
-                pattern: None,
+                pattern: Some("[\\u0009\\u000A\\u000D\\u0020-\\u007E\\u00A1-\\u00FF]*".to_string()),
                 length: Some((Some(1), Some(700))),
                 base: Box::new(AttributeType::String),
                 validate: validate_string_pattern_9863be410e005e12_len_1_700,
@@ -241,7 +241,7 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
                 .with_provider_name("InlinePolicy"),
         )
         .attribute(
-            AttributeSchema::new("instance_arn", super::arn())
+            AttributeSchema::new("instance_arn", super::sso_instance_arn())
                 .required()
                 .create_only()
                 .with_description("The sso instance arn that the permission set is owned.")
@@ -262,7 +262,7 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
         .attribute(
             AttributeSchema::new("name", AttributeType::Custom {
                 semantic_name: None,
-                pattern: None,
+                pattern: Some("[\\w+=,.@-]+".to_string()),
                 length: Some((Some(1), Some(32))),
                 base: Box::new(AttributeType::String),
                 validate: validate_string_pattern_9b83f4f8f3673df5_len_1_32,
@@ -289,7 +289,7 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
                     fields: vec![
                     StructField::new("name", AttributeType::Custom {
                 semantic_name: None,
-                pattern: None,
+                pattern: Some("[\\w+=,.@-]+".to_string()),
                 length: Some((Some(1), Some(128))),
                 base: Box::new(AttributeType::String),
                 validate: validate_string_pattern_9b83f4f8f3673df5_len_1_128,
@@ -298,7 +298,7 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
             }).required().with_provider_name("Name"),
                     StructField::new("path", AttributeType::Custom {
                 semantic_name: None,
-                pattern: None,
+                pattern: Some("((/[A-Za-z0-9\\.,\\+@=_-]+)*)/".to_string()),
                 length: Some((Some(1), Some(512))),
                 base: Box::new(AttributeType::String),
                 validate: validate_string_pattern_b84fa12576539ca9_len_1_512,
@@ -315,7 +315,7 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
         .attribute(
             AttributeSchema::new("relay_state_type", AttributeType::Custom {
                 semantic_name: None,
-                pattern: None,
+                pattern: Some("[a-zA-Z0-9&amp;$@#\\/%?=~\\-_'&quot;|!:,.;*+\\[\\]\\ \\(\\)\\{\\}]+".to_string()),
                 length: Some((Some(1), Some(240))),
                 base: Box::new(AttributeType::String),
                 validate: validate_string_pattern_4d6d630589930649_len_1_240,
@@ -328,7 +328,7 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
         .attribute(
             AttributeSchema::new("session_duration", AttributeType::Custom {
                 semantic_name: None,
-                pattern: None,
+                pattern: Some("^(-?)P(?=\\d|T\\d)(?:(\\d+)Y)?(?:(\\d+)M)?(?:(\\d+)([DW]))?(?:T(?:(\\d+)H)?(?:(\\d+)M)?(?:(\\d+(?:\\.\\d+)?)S)?)?$".to_string()),
                 length: Some((Some(1), Some(100))),
                 base: Box::new(AttributeType::String),
                 validate: validate_string_pattern_1e58d8243b46a2f1_len_1_100,

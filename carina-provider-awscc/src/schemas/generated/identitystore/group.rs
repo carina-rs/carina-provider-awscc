@@ -113,7 +113,7 @@ pub fn identitystore_group_config() -> AwsccSchemaConfig {
         .attribute(
             AttributeSchema::new("description", AttributeType::Custom {
                 semantic_name: None,
-                pattern: None,
+                pattern: Some("^[\\p{L}\\p{M}\\p{S}\\p{N}\\p{P}\\t\\n\\r  　]+$".to_string()),
                 length: Some((Some(1), Some(1024))),
                 base: Box::new(AttributeType::String),
                 validate: validate_string_pattern_3e29f1c0497511f3_len_1_1024,
@@ -126,7 +126,7 @@ pub fn identitystore_group_config() -> AwsccSchemaConfig {
         .attribute(
             AttributeSchema::new("display_name", AttributeType::Custom {
                 semantic_name: None,
-                pattern: None,
+                pattern: Some("^[\\p{L}\\p{M}\\p{S}\\p{N}\\p{P}\\t\\n\\r  ]+$".to_string()),
                 length: Some((Some(1), Some(1024))),
                 base: Box::new(AttributeType::String),
                 validate: validate_string_pattern_a301e45ae2f7df12_len_1_1024,
@@ -140,7 +140,7 @@ pub fn identitystore_group_config() -> AwsccSchemaConfig {
         .attribute(
             AttributeSchema::new("group_id", AttributeType::Custom {
                 semantic_name: None,
-                pattern: None,
+                pattern: Some("^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$".to_string()),
                 length: Some((Some(1), Some(47))),
                 base: Box::new(AttributeType::String),
                 validate: validate_string_pattern_2a77a2e32f71b5f3_len_1_47,
@@ -154,7 +154,7 @@ pub fn identitystore_group_config() -> AwsccSchemaConfig {
         .attribute(
             AttributeSchema::new("identity_store_id", AttributeType::Custom {
                 semantic_name: None,
-                pattern: None,
+                pattern: Some("^d-[0-9a-f]{10}$|^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$".to_string()),
                 length: Some((Some(1), Some(36))),
                 base: Box::new(AttributeType::String),
                 validate: validate_string_pattern_135f0b126ef95449_len_1_36,
