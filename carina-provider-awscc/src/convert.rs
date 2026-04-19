@@ -241,6 +241,7 @@ pub fn proto_to_core_schema(s: &ProtoResourceSchema) -> CoreResourceSchema {
                 create_max_retries: c.create_max_retries,
             }
         }),
+        exclusive_required: s.exclusive_required.clone(),
     }
 }
 
@@ -337,6 +338,7 @@ pub fn core_to_proto_schema(s: &CoreResourceSchema) -> ProtoResourceSchema {
             }
         }),
         validators: vec![],
+        exclusive_required: s.exclusive_required.clone(),
     }
 }
 

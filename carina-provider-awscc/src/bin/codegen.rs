@@ -1318,10 +1318,8 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
                     ranged_floats.insert(prop_name.clone(), (Some(min), Some(max)));
                 }
             }
-            Some("array") => {
-                if prop.min_items.is_some() || prop.max_items.is_some() {
-                    ranged_lists.insert(prop_name.clone(), (prop.min_items, prop.max_items));
-                }
+            Some("array") if prop.min_items.is_some() || prop.max_items.is_some() => {
+                ranged_lists.insert(prop_name.clone(), (prop.min_items, prop.max_items));
             }
             Some("string") => {
                 // Collect string length constraints (only for plain strings without
@@ -1605,7 +1603,6 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
 
     // Detect mutually exclusive field groups from schema structure and descriptions
     let exclusive_groups = detect_exclusive_fields(schema, type_name);
-    let has_exclusive_fields = !exclusive_groups.is_empty();
 
     // Generate header with conditional imports
     let mut schema_imports = vec!["AttributeSchema", "ResourceSchema"];
@@ -1617,9 +1614,6 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
     }
     if needs_types {
         schema_imports.push("types");
-    }
-    if has_exclusive_fields {
-        schema_imports.push("validators");
     }
     // Resources with custom operation config need the OperationConfig import
     const OPERATION_CONFIG_TYPES: &[&str] = &[
@@ -2151,25 +2145,25 @@ pub fn {}() -> AwsccSchemaConfig {{
         code.push_str("        })\n");
     }
 
-    // Generate validator for mutually exclusive field groups and/or tags validation.
-    let needs_validator = !exclusive_groups.is_empty() || has_tags;
-    if needs_validator {
+    // Mutually exclusive required groups are emitted as declarative data so
+    // the constraint survives the WASM plugin boundary (function-pointer
+    // validators are lost when schemas cross into the host).
+    for group in &exclusive_groups {
+        let fields_str = group
+            .iter()
+            .map(|f| format!("\"{}\"", f.to_snake_case()))
+            .collect::<Vec<_>>()
+            .join(", ");
+        code.push_str(&format!("        .exclusive_required(&[{}])\n", fields_str));
+    }
+
+    // Tags map-shape check is still emitted as a closure. It's a local
+    // safety net; the host side re-attaches the equivalent check via
+    // `ValidatorType::TagsKeyValueCheck` (see `main.rs::schemas`).
+    if has_tags {
         code.push_str("        .with_validator(|attrs| {\n");
         code.push_str("            let mut errors = Vec::new();\n");
-        for group in &exclusive_groups {
-            let fields_str = group
-                .iter()
-                .map(|f| format!("\"{}\"", f.to_snake_case()))
-                .collect::<Vec<_>>()
-                .join(", ");
-            code.push_str(&format!(
-                "            if let Err(mut e) = validators::validate_exclusive_required(attrs, &[{}]) {{\n                errors.append(&mut e);\n            }}\n",
-                fields_str
-            ));
-        }
-        if has_tags {
-            code.push_str("            if let Err(mut e) = validate_tags_map(attrs) {\n                errors.append(&mut e);\n            }\n");
-        }
+        code.push_str("            if let Err(mut e) = validate_tags_map(attrs) {\n                errors.append(&mut e);\n            }\n");
         code.push_str(
             "            if errors.is_empty() { Ok(()) } else { Err(errors) }\n        })\n",
         );
@@ -9753,8 +9747,9 @@ mod tests {
 
     #[test]
     fn test_generated_code_contains_validator_for_detected_exclusives() {
-        // Full integration: generate_schema_code should produce with_validator for
-        // description-detected exclusive fields
+        // Full integration: generate_schema_code should produce a declarative
+        // .exclusive_required(&[...]) for description-detected exclusive
+        // fields — not a closure. Closures don't cross the WASM boundary.
         let mut props = BTreeMap::new();
         props.insert(
             "InternetGatewayId".to_string(),
@@ -9801,12 +9796,16 @@ mod tests {
         };
         let code = generate_schema_code(&schema, "AWS::EC2::VPCGatewayAttachment").unwrap();
         assert!(
-            code.contains("validators::validate_exclusive_required"),
-            "Generated code should contain exclusive validator: {code}"
+            code.contains(".exclusive_required(&["),
+            "Generated code should emit declarative .exclusive_required: {code}"
         );
         assert!(
             code.contains("\"internet_gateway_id\"") && code.contains("\"vpn_gateway_id\""),
             "Generated code should reference snake_case field names: {code}"
+        );
+        assert!(
+            !code.contains("validators::validate_exclusive_required"),
+            "Generated code should not emit the old closure form: {code}"
         );
     }
 

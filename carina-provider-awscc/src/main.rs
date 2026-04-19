@@ -366,4 +366,27 @@ mod tests {
             );
         }
     }
+
+    /// Regression for carina-rs/carina#2025: the VPC schema must carry the
+    /// `cidr_block` / `ipv4_ipam_pool_id` oneOf constraint as serializable
+    /// data, so it survives the WASM plugin boundary and validate/plan can
+    /// reject `awscc.ec2.vpc {}` before any provider call.
+    #[test]
+    fn vpc_schema_carries_cidr_block_exclusive_group_across_proto() {
+        let provider = AwsccProcessProvider::new();
+        let schemas = provider.schemas();
+        let vpc = schemas
+            .iter()
+            .find(|s| s.resource_type == "awscc.ec2.vpc")
+            .expect("ec2.vpc schema should exist");
+        assert!(
+            vpc.exclusive_required
+                .iter()
+                .any(|g| g.contains(&"cidr_block".to_string())
+                    && g.contains(&"ipv4_ipam_pool_id".to_string())),
+            "vpc schema should expose cidr_block/ipv4_ipam_pool_id as a declarative \
+             exclusive_required group, got: {:?}",
+            vpc.exclusive_required
+        );
+    }
 }
