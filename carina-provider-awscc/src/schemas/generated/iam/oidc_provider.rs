@@ -99,7 +99,7 @@ pub fn iam_oidc_provider_config() -> AwsccSchemaConfig {
                         length: None,
                         base: Box::new(AttributeType::unordered_list(AttributeType::Custom {
                             semantic_name: None,
-                            pattern: None,
+                            pattern: Some("[0-9A-Fa-f]{40}".to_string()),
                             length: Some((Some(40), Some(40))),
                             base: Box::new(AttributeType::String),
                             validate: validate_string_pattern_57ee0c44b504b839_len_40_40,

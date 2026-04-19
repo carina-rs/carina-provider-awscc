@@ -63,91 +63,71 @@ pub fn identitystore_group_membership_config() -> AwsccSchemaConfig {
         resource_type_name: "identitystore.group_membership",
         has_tags: false,
         schema: ResourceSchema::new("awscc.identitystore.group_membership")
-            .with_description("Resource Type Definition for AWS:IdentityStore::GroupMembership")
-            .attribute(
-                AttributeSchema::new(
-                    "group_id",
-                    AttributeType::Custom {
-                        semantic_name: None,
-                        pattern: None,
-                        length: Some((Some(1), Some(47))),
-                        base: Box::new(AttributeType::String),
-                        validate: validate_string_pattern_2a77a2e32f71b5f3_len_1_47,
-                        namespace: None,
-                        to_dsl: None,
-                    },
-                )
+        .with_description("Resource Type Definition for AWS:IdentityStore::GroupMembership")
+        .attribute(
+            AttributeSchema::new("group_id", AttributeType::Custom {
+                semantic_name: None,
+                pattern: Some("^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$".to_string()),
+                length: Some((Some(1), Some(47))),
+                base: Box::new(AttributeType::String),
+                validate: validate_string_pattern_2a77a2e32f71b5f3_len_1_47,
+                namespace: None,
+                to_dsl: None,
+            })
                 .required()
                 .create_only()
                 .with_description("The unique identifier for a group in the identity store.")
                 .with_provider_name("GroupId"),
-            )
-            .attribute(
-                AttributeSchema::new(
-                    "identity_store_id",
-                    AttributeType::Custom {
-                        semantic_name: None,
-                        pattern: None,
-                        length: Some((Some(1), Some(36))),
-                        base: Box::new(AttributeType::String),
-                        validate: validate_string_pattern_135f0b126ef95449_len_1_36,
-                        namespace: None,
-                        to_dsl: None,
-                    },
-                )
+        )
+        .attribute(
+            AttributeSchema::new("identity_store_id", AttributeType::Custom {
+                semantic_name: None,
+                pattern: Some("^d-[0-9a-f]{10}$|^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$".to_string()),
+                length: Some((Some(1), Some(36))),
+                base: Box::new(AttributeType::String),
+                validate: validate_string_pattern_135f0b126ef95449_len_1_36,
+                namespace: None,
+                to_dsl: None,
+            })
                 .required()
                 .create_only()
                 .with_description("The globally unique identifier for the identity store.")
                 .with_provider_name("IdentityStoreId"),
-            )
-            .attribute(
-                AttributeSchema::new(
-                    "member_id",
-                    AttributeType::Struct {
-                        name: "MemberId".to_string(),
-                        fields: vec![
-                            StructField::new(
-                                "user_id",
-                                AttributeType::Custom {
-                                    semantic_name: None,
-                                    pattern: None,
-                                    length: Some((Some(1), Some(47))),
-                                    base: Box::new(AttributeType::String),
-                                    validate: validate_string_pattern_2a77a2e32f71b5f3_len_1_47,
-                                    namespace: None,
-                                    to_dsl: None,
-                                },
-                            )
-                            .required()
-                            .with_description("The identifier for a user in the identity store.")
-                            .with_provider_name("UserId"),
-                        ],
-                    },
-                )
+        )
+        .attribute(
+            AttributeSchema::new("member_id", AttributeType::Struct {
+                    name: "MemberId".to_string(),
+                    fields: vec![
+                    StructField::new("user_id", AttributeType::Custom {
+                semantic_name: None,
+                pattern: Some("^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$".to_string()),
+                length: Some((Some(1), Some(47))),
+                base: Box::new(AttributeType::String),
+                validate: validate_string_pattern_2a77a2e32f71b5f3_len_1_47,
+                namespace: None,
+                to_dsl: None,
+            }).required().with_description("The identifier for a user in the identity store.").with_provider_name("UserId")
+                    ],
+                })
                 .required()
                 .create_only()
                 .with_description("An object containing the identifier of a group member.")
                 .with_provider_name("MemberId"),
-            )
-            .attribute(
-                AttributeSchema::new(
-                    "membership_id",
-                    AttributeType::Custom {
-                        semantic_name: None,
-                        pattern: None,
-                        length: Some((Some(1), Some(47))),
-                        base: Box::new(AttributeType::String),
-                        validate: validate_string_pattern_2a77a2e32f71b5f3_len_1_47,
-                        namespace: None,
-                        to_dsl: None,
-                    },
-                )
+        )
+        .attribute(
+            AttributeSchema::new("membership_id", AttributeType::Custom {
+                semantic_name: None,
+                pattern: Some("^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$".to_string()),
+                length: Some((Some(1), Some(47))),
+                base: Box::new(AttributeType::String),
+                validate: validate_string_pattern_2a77a2e32f71b5f3_len_1_47,
+                namespace: None,
+                to_dsl: None,
+            })
                 .read_only()
-                .with_description(
-                    "The identifier for a GroupMembership in the identity store. (read-only)",
-                )
+                .with_description("The identifier for a GroupMembership in the identity store. (read-only)")
                 .with_provider_name("MembershipId"),
-            ),
+        )
     }
 }
 

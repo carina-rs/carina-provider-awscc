@@ -102,7 +102,7 @@ pub fn organizations_organization_config() -> AwsccSchemaConfig {
         .attribute(
             AttributeSchema::new("id", AttributeType::Custom {
                 semantic_name: None,
-                pattern: None,
+                pattern: Some("^o-[a-z0-9]{10,32}$".to_string()),
                 length: None,
                 base: Box::new(AttributeType::String),
                 validate: validate_string_pattern_2fd01fd52b67fc75,
@@ -122,7 +122,7 @@ pub fn organizations_organization_config() -> AwsccSchemaConfig {
         .attribute(
             AttributeSchema::new("management_account_email", AttributeType::Custom {
                 semantic_name: None,
-                pattern: None,
+                pattern: Some("[^\\s@]+@[^\\s@]+\\.[^\\s@]+".to_string()),
                 length: Some((Some(6), Some(64))),
                 base: Box::new(AttributeType::String),
                 validate: validate_string_pattern_ec4d9bee0dcd262b_len_6_64,
@@ -142,7 +142,7 @@ pub fn organizations_organization_config() -> AwsccSchemaConfig {
         .attribute(
             AttributeSchema::new("root_id", AttributeType::Custom {
                 semantic_name: None,
-                pattern: None,
+                pattern: Some("^r-[0-9a-z]{4,32}$".to_string()),
                 length: Some((None, Some(64))),
                 base: Box::new(AttributeType::String),
                 validate: validate_string_pattern_0cb01cbc89d38ae3_len_max_64,

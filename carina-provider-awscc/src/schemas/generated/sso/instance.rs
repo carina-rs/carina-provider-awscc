@@ -118,7 +118,7 @@ pub fn sso_instance_config() -> AwsccSchemaConfig {
         .attribute(
             AttributeSchema::new("identity_store_id", AttributeType::Custom {
                 semantic_name: None,
-                pattern: None,
+                pattern: Some("^[a-zA-Z0-9-]*$".to_string()),
                 length: Some((Some(1), Some(64))),
                 base: Box::new(AttributeType::String),
                 validate: validate_string_pattern_52730ac83148124e_len_1_64,
@@ -138,7 +138,7 @@ pub fn sso_instance_config() -> AwsccSchemaConfig {
         .attribute(
             AttributeSchema::new("name", AttributeType::Custom {
                 semantic_name: None,
-                pattern: None,
+                pattern: Some("^[\\w+=,.@-]+$".to_string()),
                 length: Some((Some(1), Some(32))),
                 base: Box::new(AttributeType::String),
                 validate: validate_string_pattern_5a2bd7daee6344f1_len_1_32,

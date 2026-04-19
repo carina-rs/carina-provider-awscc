@@ -44,6 +44,25 @@ fn validate_string_pattern_6fa92970742ee8e6(value: &Value) -> Result<(), String>
 }
 
 #[allow(dead_code)]
+fn validate_string_pattern_f777bea2efc17af6(value: &Value) -> Result<(), String> {
+    if let Value::String(s) = value {
+        static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+            Regex::new("^(o-[a-z0-9]{10,32}/r-[0-9a-z]{4,32}(/ou-[0-9a-z]{4,32}-[a-z0-9]{8,32})*(/\\d{12})*)/").expect("invalid pattern regex")
+        });
+        if RE.is_match(s) {
+            Ok(())
+        } else {
+            Err(format!(
+                "Value '{}' does not match pattern ^(o-[a-z0-9]{{10,32}}/r-[0-9a-z]{{4,32}}(/ou-[0-9a-z]{{4,32}}-[a-z0-9]{{8,32}})*(/\\d{{12}})*)/",
+                s
+            ))
+        }
+    } else {
+        Err("Expected string".to_string())
+    }
+}
+
+#[allow(dead_code)]
 fn validate_string_pattern_9329bdea96a93739_len_max_256(value: &Value) -> Result<(), String> {
     if let Value::String(s) = value {
         static RE: std::sync::LazyLock<Regex> =
@@ -162,7 +181,7 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
         .attribute(
             AttributeSchema::new("account_name", AttributeType::Custom {
                 semantic_name: None,
-                pattern: None,
+                pattern: Some("[\\u0020-\\u007E]+".to_string()),
                 length: Some((Some(1), Some(50))),
                 base: Box::new(AttributeType::String),
                 validate: validate_string_pattern_3af299ea99241fab_len_1_50,
@@ -182,7 +201,7 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
         .attribute(
             AttributeSchema::new("email", AttributeType::Custom {
                 semantic_name: None,
-                pattern: None,
+                pattern: Some("[^\\s@]+@[^\\s@]+\\.[^\\s@]+".to_string()),
                 length: Some((Some(6), Some(64))),
                 base: Box::new(AttributeType::String),
                 validate: validate_string_pattern_ec4d9bee0dcd262b_len_6_64,
@@ -213,7 +232,7 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
         .attribute(
             AttributeSchema::new("parent_ids", AttributeType::unordered_list(AttributeType::Custom {
                 semantic_name: None,
-                pattern: None,
+                pattern: Some("^(r-[0-9a-z]{4,32})|(ou-[0-9a-z]{4,32}-[a-z0-9]{8,32})$".to_string()),
                 length: None,
                 base: Box::new(AttributeType::String),
                 validate: validate_string_pattern_6fa92970742ee8e6,
@@ -224,9 +243,23 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
                 .with_provider_name("ParentIds"),
         )
         .attribute(
+            AttributeSchema::new("paths", AttributeType::list(AttributeType::Custom {
+                semantic_name: None,
+                pattern: Some("^(o-[a-z0-9]{10,32}/r-[0-9a-z]{4,32}(/ou-[0-9a-z]{4,32}-[a-z0-9]{8,32})*(/\\d{12})*)/".to_string()),
+                length: None,
+                base: Box::new(AttributeType::String),
+                validate: validate_string_pattern_f777bea2efc17af6,
+                namespace: None,
+                to_dsl: None,
+            }))
+                .read_only()
+                .with_description("The paths in the organization where the account exists. (read-only)")
+                .with_provider_name("Paths"),
+        )
+        .attribute(
             AttributeSchema::new("role_name", AttributeType::Custom {
                 semantic_name: None,
-                pattern: None,
+                pattern: Some("[\\w+=,.@-]{1,64}".to_string()),
                 length: Some((Some(1), Some(64))),
                 base: Box::new(AttributeType::String),
                 validate: validate_string_pattern_253e7eb79a4beec5_len_1_64,
