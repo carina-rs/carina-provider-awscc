@@ -27,7 +27,7 @@ pub fn sso_assignment_config() -> AwsccSchemaConfig {
                     .with_provider_name("InstanceArn"),
             )
             .attribute(
-                AttributeSchema::new("permission_set_arn", super::arn())
+                AttributeSchema::new("permission_set_arn", super::sso_permission_set_arn())
                     .required()
                     .create_only()
                     .with_description("The permission set that the assignment will be assigned")

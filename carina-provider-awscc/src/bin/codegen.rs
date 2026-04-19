@@ -3108,7 +3108,9 @@ fn resource_type_overrides() -> &'static HashMap<(&'static str, &'static str), T
                 TypeOverride::StringType("AttributeType::String"),
             );
 
-            // SSO Assignment identity semantics
+            // SSO / IdentityStore identity semantics
+            //
+            // Sinks (consumers in assignments, permission sets):
             m.insert(
                 ("AWS::SSO::Assignment", "TargetId"),
                 TypeOverride::StringType("super::aws_account_id()"),
@@ -3124,6 +3126,43 @@ fn resource_type_overrides() -> &'static HashMap<(&'static str, &'static str), T
             m.insert(
                 ("AWS::SSO::PermissionSet", "InstanceArn"),
                 TypeOverride::StringType("super::sso_instance_arn()"),
+            );
+            //
+            // Sources (produced by SSO/IdentityStore resources themselves).
+            // Without these, the sinks above can only accept values from
+            // hand-typed literals — references to the canonical producers
+            // fail with "expected SsoInstanceArn, got Arn".
+            m.insert(
+                ("AWS::SSO::Instance", "InstanceArn"),
+                TypeOverride::StringType("super::sso_instance_arn()"),
+            );
+            m.insert(
+                ("AWS::SSO::Instance", "IdentityStoreId"),
+                TypeOverride::StringType("super::identity_store_id()"),
+            );
+            m.insert(
+                ("AWS::SSO::PermissionSet", "PermissionSetArn"),
+                TypeOverride::StringType("super::sso_permission_set_arn()"),
+            );
+            m.insert(
+                ("AWS::SSO::Assignment", "PermissionSetArn"),
+                TypeOverride::StringType("super::sso_permission_set_arn()"),
+            );
+            m.insert(
+                ("AWS::IdentityStore::Group", "GroupId"),
+                TypeOverride::StringType("super::sso_principal_id()"),
+            );
+            m.insert(
+                ("AWS::IdentityStore::Group", "IdentityStoreId"),
+                TypeOverride::StringType("super::identity_store_id()"),
+            );
+            m.insert(
+                ("AWS::IdentityStore::GroupMembership", "IdentityStoreId"),
+                TypeOverride::StringType("super::identity_store_id()"),
+            );
+            m.insert(
+                ("AWS::IdentityStore::GroupMembership", "GroupId"),
+                TypeOverride::StringType("super::sso_principal_id()"),
             );
 
             // === Enum overrides ===

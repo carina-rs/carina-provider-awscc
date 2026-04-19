@@ -31,31 +31,6 @@ fn validate_string_pattern_2a77a2e32f71b5f3_len_1_47(value: &Value) -> Result<()
     }
 }
 
-#[allow(dead_code)]
-fn validate_string_pattern_135f0b126ef95449_len_1_36(value: &Value) -> Result<(), String> {
-    if let Value::String(s) = value {
-        static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-            Regex::new(
-                "^d-[0-9a-f]{10}$|^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
-            )
-            .expect("invalid pattern regex")
-        });
-        if !RE.is_match(s) {
-            return Err(format!(
-                "Value '{}' does not match pattern ^d-[0-9a-f]{{10}}$|^[0-9a-f]{{8}}-[0-9a-f]{{4}}-[0-9a-f]{{4}}-[0-9a-f]{{4}}-[0-9a-f]{{12}}$",
-                s
-            ));
-        }
-        let len = s.chars().count();
-        if !(1..=36).contains(&len) {
-            return Err(format!("String length {} is out of range 1..=36", len));
-        }
-        Ok(())
-    } else {
-        Err("Expected string".to_string())
-    }
-}
-
 /// Returns the schema config for identitystore_group_membership (AWS::IdentityStore::GroupMembership)
 pub fn identitystore_group_membership_config() -> AwsccSchemaConfig {
     AwsccSchemaConfig {
@@ -65,30 +40,14 @@ pub fn identitystore_group_membership_config() -> AwsccSchemaConfig {
         schema: ResourceSchema::new("awscc.identitystore.group_membership")
         .with_description("Resource Type Definition for AWS:IdentityStore::GroupMembership")
         .attribute(
-            AttributeSchema::new("group_id", AttributeType::Custom {
-                semantic_name: None,
-                pattern: Some("^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$".to_string()),
-                length: Some((Some(1), Some(47))),
-                base: Box::new(AttributeType::String),
-                validate: validate_string_pattern_2a77a2e32f71b5f3_len_1_47,
-                namespace: None,
-                to_dsl: None,
-            })
+            AttributeSchema::new("group_id", super::sso_principal_id())
                 .required()
                 .create_only()
                 .with_description("The unique identifier for a group in the identity store.")
                 .with_provider_name("GroupId"),
         )
         .attribute(
-            AttributeSchema::new("identity_store_id", AttributeType::Custom {
-                semantic_name: None,
-                pattern: Some("^d-[0-9a-f]{10}$|^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$".to_string()),
-                length: Some((Some(1), Some(36))),
-                base: Box::new(AttributeType::String),
-                validate: validate_string_pattern_135f0b126ef95449_len_1_36,
-                namespace: None,
-                to_dsl: None,
-            })
+            AttributeSchema::new("identity_store_id", super::identity_store_id())
                 .required()
                 .create_only()
                 .with_description("The globally unique identifier for the identity store.")

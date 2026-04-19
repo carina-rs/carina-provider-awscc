@@ -85,28 +85,6 @@ fn validate_string_pattern_5a2bd7daee6344f1_len_1_32(value: &Value) -> Result<()
     }
 }
 
-#[allow(dead_code)]
-fn validate_string_pattern_52730ac83148124e_len_1_64(value: &Value) -> Result<(), String> {
-    if let Value::String(s) = value {
-        static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-            Regex::new("^[a-zA-Z0-9-]*$").expect("invalid pattern regex")
-        });
-        if !RE.is_match(s) {
-            return Err(format!(
-                "Value '{}' does not match pattern ^[a-zA-Z0-9-]*$",
-                s
-            ));
-        }
-        let len = s.chars().count();
-        if !(1..=64).contains(&len) {
-            return Err(format!("String length {} is out of range 1..=64", len));
-        }
-        Ok(())
-    } else {
-        Err("Expected string".to_string())
-    }
-}
-
 /// Returns the schema config for sso_instance (AWS::SSO::Instance)
 pub fn sso_instance_config() -> AwsccSchemaConfig {
     AwsccSchemaConfig {
@@ -116,21 +94,13 @@ pub fn sso_instance_config() -> AwsccSchemaConfig {
         schema: ResourceSchema::new("awscc.sso.instance")
         .with_description("Resource Type definition for Identity Center (SSO) Instance")
         .attribute(
-            AttributeSchema::new("identity_store_id", AttributeType::Custom {
-                semantic_name: None,
-                pattern: Some("^[a-zA-Z0-9-]*$".to_string()),
-                length: Some((Some(1), Some(64))),
-                base: Box::new(AttributeType::String),
-                validate: validate_string_pattern_52730ac83148124e_len_1_64,
-                namespace: None,
-                to_dsl: None,
-            })
+            AttributeSchema::new("identity_store_id", super::identity_store_id())
                 .read_only()
                 .with_description("The ID of the identity store associated with the created Identity Center (SSO) Instance (read-only)")
                 .with_provider_name("IdentityStoreId"),
         )
         .attribute(
-            AttributeSchema::new("instance_arn", super::arn())
+            AttributeSchema::new("instance_arn", super::sso_instance_arn())
                 .read_only()
                 .with_description("The SSO Instance ARN that is returned upon creation of the Identity Center (SSO) Instance (read-only)")
                 .with_provider_name("InstanceArn"),
