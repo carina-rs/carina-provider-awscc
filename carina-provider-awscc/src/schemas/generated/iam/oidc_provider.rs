@@ -66,7 +66,7 @@ pub fn iam_oidc_provider_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::IAM::OIDCProvider",
         resource_type_name: "iam.OidcProvider",
         has_tags: true,
-        schema: ResourceSchema::new("awscc.iam.oidc_provider")
+        schema: ResourceSchema::new("awscc.iam.OidcProvider")
             .with_description("Resource Type definition for AWS::IAM::OIDCProvider")
             .attribute(
                 AttributeSchema::new("arn", super::arn())

@@ -170,7 +170,7 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::Organizations::Account",
         resource_type_name: "organizations.Account",
         has_tags: true,
-        schema: ResourceSchema::new("awscc.organizations.account")
+        schema: ResourceSchema::new("awscc.organizations.Account")
         .with_description("You can use AWS::Organizations::Account to manage accounts in organization.")
         .attribute(
             AttributeSchema::new("account_id", super::aws_account_id())
@@ -216,7 +216,7 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
             AttributeSchema::new("joined_method", AttributeType::StringEnum {
                 name: "JoinedMethod".to_string(),
                 values: vec!["INVITED".to_string(), "CREATED".to_string()],
-                namespace: Some("awscc.organizations.account".to_string()),
+                namespace: Some("awscc.organizations.Account".to_string()),
                 to_dsl: None,
             })
                 .read_only()
@@ -275,7 +275,7 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
             AttributeSchema::new("state", AttributeType::StringEnum {
                 name: "State".to_string(),
                 values: vec!["PENDING_ACTIVATION".to_string(), "ACTIVE".to_string(), "SUSPENDED".to_string(), "PENDING_CLOSURE".to_string(), "CLOSED".to_string()],
-                namespace: Some("awscc.organizations.account".to_string()),
+                namespace: Some("awscc.organizations.Account".to_string()),
                 to_dsl: None,
             })
                 .read_only()
@@ -286,7 +286,7 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
             AttributeSchema::new("status", AttributeType::StringEnum {
                 name: "Status".to_string(),
                 values: vec!["ACTIVE".to_string(), "SUSPENDED".to_string(), "PENDING_CLOSURE".to_string()],
-                namespace: Some("awscc.organizations.account".to_string()),
+                namespace: Some("awscc.organizations.Account".to_string()),
                 to_dsl: None,
             })
                 .read_only()
@@ -326,11 +326,33 @@ pub fn enum_valid_values() -> (
 /// Maps DSL alias values back to canonical AWS values for this module.
 /// e.g., ("ip_protocol", "all") -> Some("-1")
 pub fn enum_alias_reverse(attr_name: &str, value: &str) -> Option<&'static str> {
-    let _ = (attr_name, value);
-    None
+    match (attr_name, value) {
+        ("joined_method", "invited") => Some("INVITED"),
+        ("joined_method", "created") => Some("CREATED"),
+        ("state", "pending_activation") => Some("PENDING_ACTIVATION"),
+        ("state", "active") => Some("ACTIVE"),
+        ("state", "suspended") => Some("SUSPENDED"),
+        ("state", "pending_closure") => Some("PENDING_CLOSURE"),
+        ("state", "closed") => Some("CLOSED"),
+        ("status", "active") => Some("ACTIVE"),
+        ("status", "suspended") => Some("SUSPENDED"),
+        ("status", "pending_closure") => Some("PENDING_CLOSURE"),
+        _ => None,
+    }
 }
 
 /// Returns all enum alias entries as (attr_name, alias, canonical) tuples.
 pub fn enum_alias_entries() -> &'static [(&'static str, &'static str, &'static str)] {
-    &[]
+    &[
+        ("joined_method", "invited", "INVITED"),
+        ("joined_method", "created", "CREATED"),
+        ("state", "pending_activation", "PENDING_ACTIVATION"),
+        ("state", "active", "ACTIVE"),
+        ("state", "suspended", "SUSPENDED"),
+        ("state", "pending_closure", "PENDING_CLOSURE"),
+        ("state", "closed", "CLOSED"),
+        ("status", "active", "ACTIVE"),
+        ("status", "suspended", "SUSPENDED"),
+        ("status", "pending_closure", "PENDING_CLOSURE"),
+    ]
 }
