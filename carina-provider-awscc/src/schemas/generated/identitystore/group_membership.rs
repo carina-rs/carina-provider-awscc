@@ -35,9 +35,9 @@ fn validate_string_pattern_2a77a2e32f71b5f3_len_1_47(value: &Value) -> Result<()
 pub fn identitystore_group_membership_config() -> AwsccSchemaConfig {
     AwsccSchemaConfig {
         aws_type_name: "AWS::IdentityStore::GroupMembership",
-        resource_type_name: "identitystore.group_membership",
+        resource_type_name: "identitystore.GroupMembership",
         has_tags: false,
-        schema: ResourceSchema::new("awscc.identitystore.group_membership")
+        schema: ResourceSchema::new("awscc.identitystore.GroupMembership")
         .with_description("Resource Type Definition for AWS:IdentityStore::GroupMembership")
         .attribute(
             AttributeSchema::new("group_id", super::sso_principal_id())
@@ -95,7 +95,7 @@ pub fn enum_valid_values() -> (
     &'static str,
     &'static [(&'static str, &'static [&'static str])],
 ) {
-    ("identitystore.group_membership", &[])
+    ("identitystore.GroupMembership", &[])
 }
 
 /// Maps DSL alias values back to canonical AWS values for this module.

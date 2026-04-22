@@ -91,7 +91,7 @@ pub fn sso_instance_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::SSO::Instance",
         resource_type_name: "sso.Instance",
         has_tags: true,
-        schema: ResourceSchema::new("awscc.sso.instance")
+        schema: ResourceSchema::new("awscc.sso.Instance")
         .with_description("Resource Type definition for Identity Center (SSO) Instance")
         .attribute(
             AttributeSchema::new("identity_store_id", super::identity_store_id())
@@ -128,7 +128,7 @@ pub fn sso_instance_config() -> AwsccSchemaConfig {
             AttributeSchema::new("status", AttributeType::StringEnum {
                 name: "Status".to_string(),
                 values: vec!["CREATE_IN_PROGRESS".to_string(), "DELETE_IN_PROGRESS".to_string(), "ACTIVE".to_string()],
-                namespace: Some("awscc.sso.instance".to_string()),
+                namespace: Some("awscc.sso.Instance".to_string()),
                 to_dsl: None,
             })
                 .read_only()
@@ -160,11 +160,19 @@ pub fn enum_valid_values() -> (
 /// Maps DSL alias values back to canonical AWS values for this module.
 /// e.g., ("ip_protocol", "all") -> Some("-1")
 pub fn enum_alias_reverse(attr_name: &str, value: &str) -> Option<&'static str> {
-    let _ = (attr_name, value);
-    None
+    match (attr_name, value) {
+        ("status", "create_in_progress") => Some("CREATE_IN_PROGRESS"),
+        ("status", "delete_in_progress") => Some("DELETE_IN_PROGRESS"),
+        ("status", "active") => Some("ACTIVE"),
+        _ => None,
+    }
 }
 
 /// Returns all enum alias entries as (attr_name, alias, canonical) tuples.
 pub fn enum_alias_entries() -> &'static [(&'static str, &'static str, &'static str)] {
-    &[]
+    &[
+        ("status", "create_in_progress", "CREATE_IN_PROGRESS"),
+        ("status", "delete_in_progress", "DELETE_IN_PROGRESS"),
+        ("status", "active", "ACTIVE"),
+    ]
 }

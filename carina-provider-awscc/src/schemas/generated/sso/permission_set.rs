@@ -183,9 +183,9 @@ fn validate_string_pattern_1e58d8243b46a2f1_len_1_100(value: &Value) -> Result<(
 pub fn sso_permission_set_config() -> AwsccSchemaConfig {
     AwsccSchemaConfig {
         aws_type_name: "AWS::SSO::PermissionSet",
-        resource_type_name: "sso.permission_set",
+        resource_type_name: "sso.PermissionSet",
         has_tags: true,
-        schema: ResourceSchema::new("awscc.sso.permission_set")
+        schema: ResourceSchema::new("awscc.sso.PermissionSet")
         .with_description("Resource Type definition for SSO PermissionSet")
         .attribute(
             AttributeSchema::new("customer_managed_policy_references", AttributeType::Custom {
@@ -357,7 +357,7 @@ pub fn enum_valid_values() -> (
     &'static str,
     &'static [(&'static str, &'static [&'static str])],
 ) {
-    ("sso.permission_set", &[])
+    ("sso.PermissionSet", &[])
 }
 
 /// Maps DSL alias values back to canonical AWS values for this module.

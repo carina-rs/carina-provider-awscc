@@ -80,7 +80,7 @@ pub fn organizations_organization_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::Organizations::Organization",
         resource_type_name: "organizations.Organization",
         has_tags: false,
-        schema: ResourceSchema::new("awscc.organizations.organization")
+        schema: ResourceSchema::new("awscc.organizations.Organization")
         .with_description("Resource schema for AWS::Organizations::Organization")
         .attribute(
             AttributeSchema::new("arn", super::arn())
@@ -92,7 +92,7 @@ pub fn organizations_organization_config() -> AwsccSchemaConfig {
             AttributeSchema::new("feature_set", AttributeType::StringEnum {
                 name: "FeatureSet".to_string(),
                 values: vec!["ALL".to_string(), "CONSOLIDATED_BILLING".to_string()],
-                namespace: Some("awscc.organizations.organization".to_string()),
+                namespace: Some("awscc.organizations.Organization".to_string()),
                 to_dsl: None,
             })
                 .with_description("Specifies the feature set supported by the new organization. Each feature set supports different levels of functionality.")
@@ -170,11 +170,21 @@ pub fn enum_valid_values() -> (
 /// Maps DSL alias values back to canonical AWS values for this module.
 /// e.g., ("ip_protocol", "all") -> Some("-1")
 pub fn enum_alias_reverse(attr_name: &str, value: &str) -> Option<&'static str> {
-    let _ = (attr_name, value);
-    None
+    match (attr_name, value) {
+        ("feature_set", "all") => Some("ALL"),
+        ("feature_set", "consolidated_billing") => Some("CONSOLIDATED_BILLING"),
+        _ => None,
+    }
 }
 
 /// Returns all enum alias entries as (attr_name, alias, canonical) tuples.
 pub fn enum_alias_entries() -> &'static [(&'static str, &'static str, &'static str)] {
-    &[]
+    &[
+        ("feature_set", "all", "ALL"),
+        (
+            "feature_set",
+            "consolidated_billing",
+            "CONSOLIDATED_BILLING",
+        ),
+    ]
 }
