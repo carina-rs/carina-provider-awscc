@@ -13,9 +13,9 @@ use carina_core::schema::{AttributeSchema, ResourceSchema};
 pub fn ec2_internet_gateway_config() -> AwsccSchemaConfig {
     AwsccSchemaConfig {
         aws_type_name: "AWS::EC2::InternetGateway",
-        resource_type_name: "ec2.internet_gateway",
+        resource_type_name: "ec2.InternetGateway",
         has_tags: true,
-        schema: ResourceSchema::new("awscc.ec2.internet_gateway")
+        schema: ResourceSchema::new("awscc.ec2.InternetGateway")
         .with_description("Allocates an internet gateway for use with a VPC. After creating the Internet gateway, you then attach it to a VPC.")
         .attribute(
             AttributeSchema::new("internet_gateway_id", super::internet_gateway_id())
@@ -44,7 +44,7 @@ pub fn enum_valid_values() -> (
     &'static str,
     &'static [(&'static str, &'static [&'static str])],
 ) {
-    ("ec2.internet_gateway", &[])
+    ("ec2.InternetGateway", &[])
 }
 
 /// Maps DSL alias values back to canonical AWS values for this module.

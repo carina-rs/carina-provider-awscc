@@ -22,7 +22,7 @@ impl AwsccProvider {
         attributes: &mut HashMap<String, Value>,
     ) {
         match resource_type {
-            "ec2.internet_gateway" => {
+            "ec2.InternetGateway" => {
                 // Get VPC attachment
                 if let Some(attachments) = props.get("Attachments").and_then(|v| v.as_array())
                     && let Some(first) = attachments.first()
@@ -31,7 +31,7 @@ impl AwsccProvider {
                     attributes.insert("vpc_id".to_string(), Value::String(vpc_id.to_string()));
                 }
             }
-            "ec2.vpc_endpoint" => {
+            "ec2.VpcEndpoint" => {
                 // Handle route_table_ids list
                 if let Some(rt_ids) = props.get("RouteTableIds").and_then(|v| v.as_array()) {
                     let ids: Vec<Value> = rt_ids
@@ -61,7 +61,7 @@ impl AwsccProvider {
         resource_type: &str,
         desired_state: &mut serde_json::Map<String, serde_json::Value>,
     ) {
-        if resource_type == "ec2.eip" && !desired_state.contains_key("Domain") {
+        if resource_type == "ec2.Eip" && !desired_state.contains_key("Domain") {
             desired_state.insert("Domain".to_string(), json!("vpc"));
         }
     }
@@ -73,7 +73,7 @@ impl AwsccProvider {
         config: &AwsccSchemaConfig,
         identifier: &str,
     ) -> ProviderResult<()> {
-        if id.resource_type == "ec2.internet_gateway" {
+        if id.resource_type == "ec2.InternetGateway" {
             // Detach from VPC first
             if let Some(props) = self
                 .cc_get_resource(config.aws_type_name, identifier)

@@ -168,7 +168,7 @@ fn validate_string_pattern_ec4d9bee0dcd262b_len_6_64(value: &Value) -> Result<()
 pub fn organizations_account_config() -> AwsccSchemaConfig {
     AwsccSchemaConfig {
         aws_type_name: "AWS::Organizations::Account",
-        resource_type_name: "organizations.account",
+        resource_type_name: "organizations.Account",
         has_tags: true,
         schema: ResourceSchema::new("awscc.organizations.account")
         .with_description("You can use AWS::Organizations::Account to manage accounts in organization.")
@@ -314,7 +314,7 @@ pub fn enum_valid_values() -> (
     &'static [(&'static str, &'static [&'static str])],
 ) {
     (
-        "organizations.account",
+        "organizations.Account",
         &[
             ("joined_method", VALID_JOINED_METHOD),
             ("state", VALID_STATE),

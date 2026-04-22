@@ -7,9 +7,9 @@ provider awscc {
   region = awscc.Region.ap_northeast_1
 }
 
-awscc.ec2.ipam {
+awscc.ec2.Ipam {
   description = 'simhash acceptance test updated'
-  tier        = awscc.ec2.ipam.Tier.free
+  tier        = awscc.ec2.Ipam.Tier.free
 
   tags = {
     Environment = 'acceptance-test'

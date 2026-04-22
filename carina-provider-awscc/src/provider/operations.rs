@@ -218,7 +218,7 @@ impl AwsccProvider {
         self.pre_delete_operations(id, config, identifier).await?;
 
         // Handle force_delete for S3 buckets: empty the bucket before deletion
-        if lifecycle.force_delete && id.resource_type == "s3.bucket" {
+        if lifecycle.force_delete && id.resource_type == "s3.Bucket" {
             self.empty_s3_bucket(identifier).await.map_err(|e| {
                 ProviderError::new("Failed to empty S3 bucket before deletion")
                     .with_cause(e)

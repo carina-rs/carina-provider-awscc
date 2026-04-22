@@ -64,7 +64,7 @@ fn validate_string_pattern_57ee0c44b504b839_len_40_40(value: &Value) -> Result<(
 pub fn iam_oidc_provider_config() -> AwsccSchemaConfig {
     AwsccSchemaConfig {
         aws_type_name: "AWS::IAM::OIDCProvider",
-        resource_type_name: "iam.oidc_provider",
+        resource_type_name: "iam.OidcProvider",
         has_tags: true,
         schema: ResourceSchema::new("awscc.iam.oidc_provider")
             .with_description("Resource Type definition for AWS::IAM::OIDCProvider")
@@ -148,7 +148,7 @@ pub fn enum_valid_values() -> (
     &'static str,
     &'static [(&'static str, &'static [&'static str])],
 ) {
-    ("iam.oidc_provider", &[])
+    ("iam.OidcProvider", &[])
 }
 
 /// Maps DSL alias values back to canonical AWS values for this module.

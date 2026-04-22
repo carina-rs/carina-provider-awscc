@@ -41,9 +41,9 @@ fn validate_max_aggregation_interval_int_enum(value: &Value) -> Result<(), Strin
 pub fn ec2_flow_log_config() -> AwsccSchemaConfig {
     AwsccSchemaConfig {
         aws_type_name: "AWS::EC2::FlowLog",
-        resource_type_name: "ec2.flow_log",
+        resource_type_name: "ec2.FlowLog",
         has_tags: true,
-        schema: ResourceSchema::new("awscc.ec2.flow_log")
+        schema: ResourceSchema::new("awscc.ec2.FlowLog")
         .with_description("Specifies a VPC flow log, which enables you to capture IP traffic for a specific network interface, subnet, or VPC.")
         .attribute(
             AttributeSchema::new("deliver_cross_account_role", super::iam_role_arn())
@@ -64,7 +64,7 @@ pub fn ec2_flow_log_config() -> AwsccSchemaConfig {
                     StructField::new("file_format", AttributeType::StringEnum {
                 name: "FileFormat".to_string(),
                 values: vec!["plain-text".to_string(), "parquet".to_string()],
-                namespace: Some("awscc.ec2.flow_log".to_string()),
+                namespace: Some("awscc.ec2.FlowLog".to_string()),
                 to_dsl: Some(|s: &str| s.replace('-', "_")),
             }).required().with_provider_name("FileFormat"),
                     StructField::new("hive_compatible_partitions", AttributeType::Bool).required().with_provider_name("HiveCompatiblePartitions"),
@@ -90,7 +90,7 @@ pub fn ec2_flow_log_config() -> AwsccSchemaConfig {
             AttributeSchema::new("log_destination_type", AttributeType::StringEnum {
                 name: "LogDestinationType".to_string(),
                 values: vec!["cloud-watch-logs".to_string(), "s3".to_string(), "kinesis-data-firehose".to_string()],
-                namespace: Some("awscc.ec2.flow_log".to_string()),
+                namespace: Some("awscc.ec2.FlowLog".to_string()),
                 to_dsl: Some(|s: &str| s.replace('-', "_")),
             })
                 .create_only()
@@ -134,7 +134,7 @@ pub fn ec2_flow_log_config() -> AwsccSchemaConfig {
             AttributeSchema::new("resource_type", AttributeType::StringEnum {
                 name: "ResourceType".to_string(),
                 values: vec!["NetworkInterface".to_string(), "Subnet".to_string(), "VPC".to_string(), "TransitGateway".to_string(), "TransitGatewayAttachment".to_string(), "RegionalNatGateway".to_string()],
-                namespace: Some("awscc.ec2.flow_log".to_string()),
+                namespace: Some("awscc.ec2.FlowLog".to_string()),
                 to_dsl: None,
             })
                 .required()
@@ -151,7 +151,7 @@ pub fn ec2_flow_log_config() -> AwsccSchemaConfig {
             AttributeSchema::new("traffic_type", AttributeType::StringEnum {
                 name: "TrafficType".to_string(),
                 values: vec!["ACCEPT".to_string(), "ALL".to_string(), "REJECT".to_string()],
-                namespace: Some("awscc.ec2.flow_log".to_string()),
+                namespace: Some("awscc.ec2.FlowLog".to_string()),
                 to_dsl: None,
             })
                 .create_only()
@@ -174,7 +174,7 @@ pub fn enum_valid_values() -> (
     &'static [(&'static str, &'static [&'static str])],
 ) {
     (
-        "ec2.flow_log",
+        "ec2.FlowLog",
         &[
             ("log_destination_type", VALID_LOG_DESTINATION_TYPE),
             ("resource_type", VALID_RESOURCE_TYPE),
@@ -189,6 +189,15 @@ pub fn enum_alias_reverse(attr_name: &str, value: &str) -> Option<&'static str> 
     match (attr_name, value) {
         ("log_destination_type", "cloud_watch_logs") => Some("cloud-watch-logs"),
         ("log_destination_type", "kinesis_data_firehose") => Some("kinesis-data-firehose"),
+        ("resource_type", "network_interface") => Some("NetworkInterface"),
+        ("resource_type", "subnet") => Some("Subnet"),
+        ("resource_type", "vpc") => Some("VPC"),
+        ("resource_type", "transit_gateway") => Some("TransitGateway"),
+        ("resource_type", "transit_gateway_attachment") => Some("TransitGatewayAttachment"),
+        ("resource_type", "regional_nat_gateway") => Some("RegionalNatGateway"),
+        ("traffic_type", "accept") => Some("ACCEPT"),
+        ("traffic_type", "all") => Some("ALL"),
+        ("traffic_type", "reject") => Some("REJECT"),
         _ => None,
     }
 }
@@ -206,5 +215,22 @@ pub fn enum_alias_entries() -> &'static [(&'static str, &'static str, &'static s
             "kinesis_data_firehose",
             "kinesis-data-firehose",
         ),
+        ("resource_type", "network_interface", "NetworkInterface"),
+        ("resource_type", "subnet", "Subnet"),
+        ("resource_type", "vpc", "VPC"),
+        ("resource_type", "transit_gateway", "TransitGateway"),
+        (
+            "resource_type",
+            "transit_gateway_attachment",
+            "TransitGatewayAttachment",
+        ),
+        (
+            "resource_type",
+            "regional_nat_gateway",
+            "RegionalNatGateway",
+        ),
+        ("traffic_type", "accept", "ACCEPT"),
+        ("traffic_type", "all", "ALL"),
+        ("traffic_type", "reject", "REJECT"),
     ]
 }

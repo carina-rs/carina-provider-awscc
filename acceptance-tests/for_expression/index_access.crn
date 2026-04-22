@@ -3,7 +3,7 @@ provider awscc {
 }
 
 let vpcs = for env in ['dev', 'stg'] {
-  awscc.ec2.vpc {
+  awscc.ec2.Vpc {
     cidr_block = '10.0.0.0/16'
 
     tags = {
@@ -14,7 +14,7 @@ let vpcs = for env in ['dev', 'stg'] {
 }
 
 # Use index access to reference for expression result
-awscc.ec2.subnet {
+awscc.ec2.Subnet {
   vpc_id            = vpcs[0].vpc_id
   cidr_block        = '10.0.1.0/24'
   availability_zone = 'ap-northeast-1a'

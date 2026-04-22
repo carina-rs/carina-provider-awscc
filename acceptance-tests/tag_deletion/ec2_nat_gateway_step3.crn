@@ -8,31 +8,31 @@ provider awscc {
   region = awscc.Region.ap_northeast_1
 }
 
-let vpc = awscc.ec2.vpc {
+let vpc = awscc.ec2.Vpc {
   cidr_block           = '10.112.0.0/16'
   enable_dns_support   = true
   enable_dns_hostnames = true
 }
 
-let igw = awscc.ec2.internet_gateway {}
+let igw = awscc.ec2.InternetGateway {}
 
-awscc.ec2.vpc_gateway_attachment {
+awscc.ec2.VpcGatewayAttachment {
   vpc_id              = vpc.vpc_id
   internet_gateway_id = igw.internet_gateway_id
 }
 
-let public_subnet = awscc.ec2.subnet {
+let public_subnet = awscc.ec2.Subnet {
   vpc_id                  = vpc.vpc_id
   cidr_block              = '10.112.1.0/24'
   availability_zone       = 'ap-northeast-1a'
   map_public_ip_on_launch = true
 }
 
-let eip = awscc.ec2.eip {
+let eip = awscc.ec2.Eip {
   domain = 'vpc'
 }
 
-awscc.ec2.nat_gateway {
+awscc.ec2.NatGateway {
   allocation_id = eip.allocation_id
   subnet_id     = public_subnet.subnet_id
 }

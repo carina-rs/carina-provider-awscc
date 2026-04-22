@@ -7,15 +7,15 @@ provider awscc {
   region = awscc.Region.ap_northeast_1
 }
 
-let vpc = awscc.ec2.vpc {
+let vpc = awscc.ec2.Vpc {
   cidr_block = '10.0.0.0/16'
 }
 
-let vpn_gw = awscc.ec2.vpn_gateway {
-  type = awscc.ec2.vpn_gateway.Type.ipsec.1
+let vpn_gw = awscc.ec2.VpnGateway {
+  type = awscc.ec2.VpnGateway.Type.ipsec.1
 }
 
-awscc.ec2.vpc_gateway_attachment {
+awscc.ec2.VpcGatewayAttachment {
   vpc_id         = vpc.vpc_id
   vpn_gateway_id = vpn_gw.vpn_gateway_id
 }

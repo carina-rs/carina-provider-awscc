@@ -8,7 +8,7 @@ let cidrs = {
 }
 
 let vpcs = for name, cidr in cidrs {
-  awscc.ec2.vpc {
+  awscc.ec2.Vpc {
     cidr_block = cidr
 
     tags = {

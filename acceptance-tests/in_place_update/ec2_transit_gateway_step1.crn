@@ -6,7 +6,7 @@ provider awscc {
   region = awscc.Region.ap_northeast_1
 }
 
-awscc.ec2.transit_gateway {
+awscc.ec2.TransitGateway {
   description = 'carina acceptance test - step 1'
 
   tags = {

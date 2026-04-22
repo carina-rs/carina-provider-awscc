@@ -13,9 +13,9 @@ use carina_core::schema::{AttributeSchema, ResourceSchema};
 pub fn ec2_egress_only_internet_gateway_config() -> AwsccSchemaConfig {
     AwsccSchemaConfig {
         aws_type_name: "AWS::EC2::EgressOnlyInternetGateway",
-        resource_type_name: "ec2.egress_only_internet_gateway",
+        resource_type_name: "ec2.EgressOnlyInternetGateway",
         has_tags: true,
-        schema: ResourceSchema::new("awscc.ec2.egress_only_internet_gateway")
+        schema: ResourceSchema::new("awscc.ec2.EgressOnlyInternetGateway")
             .with_description("Resource Type definition for AWS::EC2::EgressOnlyInternetGateway")
             .attribute(
                 AttributeSchema::new("id", super::egress_only_internet_gateway_id())
@@ -58,7 +58,7 @@ pub fn enum_valid_values() -> (
     &'static str,
     &'static [(&'static str, &'static [&'static str])],
 ) {
-    ("ec2.egress_only_internet_gateway", &[])
+    ("ec2.EgressOnlyInternetGateway", &[])
 }
 
 /// Maps DSL alias values back to canonical AWS values for this module.

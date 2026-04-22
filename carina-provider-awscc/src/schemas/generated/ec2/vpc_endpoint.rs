@@ -69,9 +69,9 @@ fn validate_string_length_1_255(value: &Value) -> Result<(), String> {
 pub fn ec2_vpc_endpoint_config() -> AwsccSchemaConfig {
     AwsccSchemaConfig {
         aws_type_name: "AWS::EC2::VPCEndpoint",
-        resource_type_name: "ec2.vpc_endpoint",
+        resource_type_name: "ec2.VpcEndpoint",
         has_tags: true,
-        schema: ResourceSchema::new("awscc.ec2.vpc_endpoint")
+        schema: ResourceSchema::new("awscc.ec2.VpcEndpoint")
         .with_description("Specifies a VPC endpoint. A VPC endpoint provides a private connection between your VPC and an endpoint service. You can use an endpoint service provided by AWS, an MKT Partner, or another AWS accounts in your organization. For more information, see the [User Guide](https://docs.aws.amazon.com/vpc/latest/privatelink/).  An endpoint of type ``Interface`` establishes connections between the subnets in your VPC and an AWS-service, your own service, or a service hosted by another AWS-account. With an interface VPC endpoint, you specify the subnets in which to create the endpoint and the security groups to associate with the endpoint network interfaces.  An endpoint of type ``gateway`` serves as a target for a route in your route table for traffic destined for S3 or DDB. You can specify an endpoint policy for the endpoint, which controls access to the service from your VPC. You can also specify the VPC route tables that use the endpoint. For more information about connectivity to S3, see [Why can't I connect to an S3 bucket using a gateway VPC endpoint?](https://docs.aws.amazon.com/premiumsupport/knowledge-center/connect-s3-vpc-endpoint)  An endpoint of type ``GatewayLoadBalancer`` provides private connectivity between your VPC and virtual appliances from a service provider.")
         .attribute(
             AttributeSchema::new("creation_timestamp", AttributeType::String)
@@ -92,19 +92,19 @@ pub fn ec2_vpc_endpoint_config() -> AwsccSchemaConfig {
                     StructField::new("dns_record_ip_type", AttributeType::StringEnum {
                 name: "DnsRecordIpType".to_string(),
                 values: vec!["ipv4".to_string(), "ipv6".to_string(), "dualstack".to_string(), "service-defined".to_string(), "not-specified".to_string()],
-                namespace: Some("awscc.ec2.vpc_endpoint".to_string()),
+                namespace: Some("awscc.ec2.VpcEndpoint".to_string()),
                 to_dsl: Some(|s: &str| s.replace('-', "_")),
             }).with_description("The DNS records created for the endpoint.").with_provider_name("DnsRecordIpType"),
                     StructField::new("private_dns_only_for_inbound_resolver_endpoint", AttributeType::StringEnum {
                 name: "PrivateDnsOnlyForInboundResolverEndpoint".to_string(),
                 values: vec!["OnlyInboundResolver".to_string(), "AllResolvers".to_string(), "NotSpecified".to_string()],
-                namespace: Some("awscc.ec2.vpc_endpoint".to_string()),
+                namespace: Some("awscc.ec2.VpcEndpoint".to_string()),
                 to_dsl: None,
             }).with_description("Indicates whether to enable private DNS only for inbound endpoints. This option is available only for services that support both gateway and interface endpoints. It routes traffic that originates from the VPC to the gateway endpoint and traffic that originates from on-premises to the interface endpoint.").with_provider_name("PrivateDnsOnlyForInboundResolverEndpoint"),
                     StructField::new("private_dns_preference", AttributeType::StringEnum {
                 name: "PrivateDnsPreference".to_string(),
                 values: vec!["VERIFIED_DOMAINS_ONLY".to_string(), "ALL_DOMAINS".to_string(), "VERIFIED_DOMAINS_AND_SPECIFIED_DOMAINS".to_string(), "SPECIFIED_DOMAINS_ONLY".to_string()],
-                namespace: Some("awscc.ec2.vpc_endpoint".to_string()),
+                namespace: Some("awscc.ec2.VpcEndpoint".to_string()),
                 to_dsl: None,
             }).with_description("The preference for which private domains have a private hosted zone created for and associated with the specified VPC. Only supported when private DNS is enabled and when the VPC endpoint type is ServiceNetwork or Resource.").with_provider_name("PrivateDnsPreference"),
                     StructField::new("private_dns_specified_domains", AttributeType::Custom {
@@ -140,7 +140,7 @@ pub fn ec2_vpc_endpoint_config() -> AwsccSchemaConfig {
             AttributeSchema::new("ip_address_type", AttributeType::StringEnum {
                 name: "IpAddressType".to_string(),
                 values: vec!["ipv4".to_string(), "ipv6".to_string(), "dualstack".to_string(), "not-specified".to_string()],
-                namespace: Some("awscc.ec2.vpc_endpoint".to_string()),
+                namespace: Some("awscc.ec2.VpcEndpoint".to_string()),
                 to_dsl: Some(|s: &str| s.replace('-', "_")),
             })
                 .with_description("The supported IP address types.")
@@ -210,7 +210,7 @@ pub fn ec2_vpc_endpoint_config() -> AwsccSchemaConfig {
             AttributeSchema::new("vpc_endpoint_type", AttributeType::StringEnum {
                 name: "VpcEndpointType".to_string(),
                 values: vec!["Interface".to_string(), "Gateway".to_string(), "GatewayLoadBalancer".to_string(), "ServiceNetwork".to_string(), "Resource".to_string()],
-                namespace: Some("awscc.ec2.vpc_endpoint".to_string()),
+                namespace: Some("awscc.ec2.VpcEndpoint".to_string()),
                 to_dsl: None,
             })
                 .create_only()
@@ -240,7 +240,7 @@ pub fn enum_valid_values() -> (
     &'static [(&'static str, &'static [&'static str])],
 ) {
     (
-        "ec2.vpc_endpoint",
+        "ec2.VpcEndpoint",
         &[
             (
                 "dns_record_ip_type",
@@ -266,7 +266,23 @@ pub fn enum_alias_reverse(attr_name: &str, value: &str) -> Option<&'static str> 
     match (attr_name, value) {
         ("dns_record_ip_type", "service_defined") => Some("service-defined"),
         ("dns_record_ip_type", "not_specified") => Some("not-specified"),
+        ("private_dns_only_for_inbound_resolver_endpoint", "only_inbound_resolver") => {
+            Some("OnlyInboundResolver")
+        }
+        ("private_dns_only_for_inbound_resolver_endpoint", "all_resolvers") => Some("AllResolvers"),
+        ("private_dns_only_for_inbound_resolver_endpoint", "not_specified") => Some("NotSpecified"),
+        ("private_dns_preference", "verified_domains_only") => Some("VERIFIED_DOMAINS_ONLY"),
+        ("private_dns_preference", "all_domains") => Some("ALL_DOMAINS"),
+        ("private_dns_preference", "verified_domains_and_specified_domains") => {
+            Some("VERIFIED_DOMAINS_AND_SPECIFIED_DOMAINS")
+        }
+        ("private_dns_preference", "specified_domains_only") => Some("SPECIFIED_DOMAINS_ONLY"),
         ("ip_address_type", "not_specified") => Some("not-specified"),
+        ("vpc_endpoint_type", "interface") => Some("Interface"),
+        ("vpc_endpoint_type", "gateway") => Some("Gateway"),
+        ("vpc_endpoint_type", "gateway_load_balancer") => Some("GatewayLoadBalancer"),
+        ("vpc_endpoint_type", "service_network") => Some("ServiceNetwork"),
+        ("vpc_endpoint_type", "resource") => Some("Resource"),
         _ => None,
     }
 }
@@ -276,6 +292,46 @@ pub fn enum_alias_entries() -> &'static [(&'static str, &'static str, &'static s
     &[
         ("dns_record_ip_type", "service_defined", "service-defined"),
         ("dns_record_ip_type", "not_specified", "not-specified"),
+        (
+            "private_dns_only_for_inbound_resolver_endpoint",
+            "only_inbound_resolver",
+            "OnlyInboundResolver",
+        ),
+        (
+            "private_dns_only_for_inbound_resolver_endpoint",
+            "all_resolvers",
+            "AllResolvers",
+        ),
+        (
+            "private_dns_only_for_inbound_resolver_endpoint",
+            "not_specified",
+            "NotSpecified",
+        ),
+        (
+            "private_dns_preference",
+            "verified_domains_only",
+            "VERIFIED_DOMAINS_ONLY",
+        ),
+        ("private_dns_preference", "all_domains", "ALL_DOMAINS"),
+        (
+            "private_dns_preference",
+            "verified_domains_and_specified_domains",
+            "VERIFIED_DOMAINS_AND_SPECIFIED_DOMAINS",
+        ),
+        (
+            "private_dns_preference",
+            "specified_domains_only",
+            "SPECIFIED_DOMAINS_ONLY",
+        ),
         ("ip_address_type", "not_specified", "not-specified"),
+        ("vpc_endpoint_type", "interface", "Interface"),
+        ("vpc_endpoint_type", "gateway", "Gateway"),
+        (
+            "vpc_endpoint_type",
+            "gateway_load_balancer",
+            "GatewayLoadBalancer",
+        ),
+        ("vpc_endpoint_type", "service_network", "ServiceNetwork"),
+        ("vpc_endpoint_type", "resource", "Resource"),
     ]
 }

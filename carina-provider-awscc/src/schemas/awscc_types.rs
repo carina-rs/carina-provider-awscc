@@ -20,7 +20,7 @@ use carina_core::utils::{extract_enum_value, validate_enum_namespace};
 pub struct AwsccSchemaConfig {
     /// AWS CloudFormation type name (e.g., "AWS::EC2::VPC")
     pub aws_type_name: &'static str,
-    /// Resource type name used in DSL (e.g., "ec2.vpc")
+    /// Resource type name used in DSL (e.g., "ec2.Vpc")
     pub resource_type_name: &'static str,
     /// Whether this resource type uses tags
     pub has_tags: bool,
@@ -268,9 +268,9 @@ mod tests {
     #[test]
     fn validate_namespaced_enum_basic() {
         let result = validate_namespaced_enum(
-            &Value::String("awscc.ec2.vpc.InstanceTenancy.default".to_string()),
+            &Value::String("awscc.ec2.Vpc.InstanceTenancy.default".to_string()),
             "InstanceTenancy",
-            "awscc.ec2.vpc",
+            "awscc.ec2.Vpc",
             &["default", "dedicated", "host"],
         );
         assert!(result.is_ok());

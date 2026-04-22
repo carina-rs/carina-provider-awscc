@@ -89,7 +89,7 @@ fn validate_string_pattern_5a2bd7daee6344f1_len_1_32(value: &Value) -> Result<()
 pub fn sso_instance_config() -> AwsccSchemaConfig {
     AwsccSchemaConfig {
         aws_type_name: "AWS::SSO::Instance",
-        resource_type_name: "sso.instance",
+        resource_type_name: "sso.Instance",
         has_tags: true,
         schema: ResourceSchema::new("awscc.sso.instance")
         .with_description("Resource Type definition for Identity Center (SSO) Instance")
@@ -154,7 +154,7 @@ pub fn enum_valid_values() -> (
     &'static str,
     &'static [(&'static str, &'static [&'static str])],
 ) {
-    ("sso.instance", &[("status", VALID_STATUS)])
+    ("sso.Instance", &[("status", VALID_STATUS)])
 }
 
 /// Maps DSL alias values back to canonical AWS values for this module.

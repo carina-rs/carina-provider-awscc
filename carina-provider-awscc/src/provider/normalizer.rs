@@ -12,7 +12,7 @@ use carina_core::schema::{AttributeType, StructField};
 ///
 /// For each awscc resource, looks up the schema and resolves bare identifiers
 /// (e.g., `advanced`) or TypeName.value identifiers (e.g., `Tier.advanced`)
-/// into fully-qualified namespaced strings (e.g., `awscc.ec2.ipam.Tier.advanced`).
+/// into fully-qualified namespaced strings (e.g., `awscc.ec2.Ipam.Tier.advanced`).
 pub fn resolve_enum_identifiers_impl(resources: &mut [Resource]) {
     for resource in resources.iter_mut() {
         // Only handle awscc resources
@@ -141,7 +141,7 @@ fn resolve_struct_enum_values(value: &Value, fields: &[StructField]) -> Value {
 ///
 /// State files store raw AWS values (e.g., `"ap-northeast-1a"`, `"default"`).
 /// After `normalize_desired()` converts desired values to DSL enum format
-/// (e.g., `"awscc.ec2.subnet.AvailabilityZone.ap_northeast_1a"`), the differ
+/// (e.g., `"awscc.ec2.Subnet.AvailabilityZone.ap_northeast_1a"`), the differ
 /// would see a false diff. This function normalizes state values the same way
 /// so that both sides use the same representation.
 pub fn normalize_state_enums_impl(current_states: &mut HashMap<ResourceId, State>) {
@@ -235,7 +235,7 @@ mod tests {
 
     #[test]
     fn test_resolve_enum_identifiers_bare_ident() {
-        let mut resource = Resource::with_provider("awscc", "ec2.vpc", "test");
+        let mut resource = Resource::with_provider("awscc", "ec2.Vpc", "test");
         resource.set_attr(
             "instance_tenancy".to_string(),
             Value::String("dedicated".to_string()),
@@ -255,7 +255,7 @@ mod tests {
 
     #[test]
     fn test_resolve_enum_identifiers_typename_value() {
-        let mut resource = Resource::with_provider("awscc", "ec2.vpc", "test");
+        let mut resource = Resource::with_provider("awscc", "ec2.Vpc", "test");
         resource.set_attr(
             "instance_tenancy".to_string(),
             Value::String("InstanceTenancy.dedicated".to_string()),
@@ -275,7 +275,7 @@ mod tests {
 
     #[test]
     fn test_resolve_enum_identifiers_skips_non_awscc() {
-        let mut resource = Resource::with_provider("aws", "s3.bucket", "test");
+        let mut resource = Resource::with_provider("aws", "s3.Bucket", "test");
         resource.set_attr(
             "instance_tenancy".to_string(),
             Value::String("dedicated".to_string()),
@@ -291,7 +291,7 @@ mod tests {
 
     #[test]
     fn test_resolve_enum_identifiers_hyphen_to_underscore() {
-        let mut resource = Resource::with_provider("awscc", "ec2.flow_log", "test");
+        let mut resource = Resource::with_provider("awscc", "ec2.FlowLog", "test");
         resource.set_attr(
             "log_destination_type".to_string(),
             Value::String("cloud_watch_logs".to_string()),
@@ -302,7 +302,7 @@ mod tests {
         match resources[0].get_attr("log_destination_type").unwrap() {
             Value::String(s) => {
                 assert_eq!(
-                    s, "awscc.ec2.flow_log.LogDestinationType.cloud_watch_logs",
+                    s, "awscc.ec2.FlowLog.LogDestinationType.cloud_watch_logs",
                     "Expected underscored namespaced enum, got: {}",
                     s
                 );
@@ -313,7 +313,7 @@ mod tests {
 
     #[test]
     fn test_resolve_enum_identifiers_hyphen_string_to_underscore() {
-        let mut resource = Resource::with_provider("awscc", "ec2.flow_log", "test");
+        let mut resource = Resource::with_provider("awscc", "ec2.FlowLog", "test");
         resource.set_attr(
             "log_destination_type".to_string(),
             Value::String("cloud-watch-logs".to_string()),
@@ -324,7 +324,7 @@ mod tests {
         match resources[0].get_attr("log_destination_type").unwrap() {
             Value::String(s) => {
                 assert_eq!(
-                    s, "awscc.ec2.flow_log.LogDestinationType.cloud_watch_logs",
+                    s, "awscc.ec2.FlowLog.LogDestinationType.cloud_watch_logs",
                     "Hyphenated string should be converted to underscore form, got: {}",
                     s
                 );
@@ -335,7 +335,7 @@ mod tests {
 
     #[test]
     fn test_restore_unreturned_attrs_impl_create_only() {
-        let id = ResourceId::with_provider("awscc", "ec2.nat_gateway", "test");
+        let id = ResourceId::with_provider("awscc", "ec2.NatGateway", "test");
         let mut state = State::existing(id.clone(), HashMap::new());
         state.attributes.insert(
             "nat_gateway_id".to_string(),
@@ -363,7 +363,7 @@ mod tests {
 
     #[test]
     fn test_restore_unreturned_attrs_skips_non_awscc() {
-        let id = ResourceId::with_provider("aws", "s3.bucket", "test");
+        let id = ResourceId::with_provider("aws", "s3.Bucket", "test");
         let state = State::existing(id.clone(), HashMap::new());
 
         let mut current_states = HashMap::new();
@@ -381,7 +381,7 @@ mod tests {
 
     #[test]
     fn test_restore_unreturned_attrs_skips_already_present() {
-        let id = ResourceId::with_provider("awscc", "ec2.nat_gateway", "test");
+        let id = ResourceId::with_provider("awscc", "ec2.NatGateway", "test");
         let mut attrs = HashMap::new();
         attrs.insert(
             "subnet_id".to_string(),
@@ -410,11 +410,11 @@ mod tests {
 
     #[test]
     fn test_restore_unreturned_attrs_impl_non_create_only() {
-        let id = ResourceId::with_provider("awscc", "ec2.security_group_egress", "test");
+        let id = ResourceId::with_provider("awscc", "ec2.SecurityGroupEgress", "test");
         let mut state = State::existing(id.clone(), HashMap::new());
         state.attributes.insert(
             "ip_protocol".to_string(),
-            Value::String("awscc.ec2.security_group_egress.IpProtocol.all".to_string()),
+            Value::String("awscc.ec2.SecurityGroupEgress.IpProtocol.all".to_string()),
         );
 
         let mut current_states = HashMap::new();
@@ -438,7 +438,7 @@ mod tests {
 
     #[test]
     fn test_resolve_enum_identifiers_ip_protocol_all_alias() {
-        let mut resource = Resource::with_provider("awscc", "ec2.security_group_egress", "test");
+        let mut resource = Resource::with_provider("awscc", "ec2.SecurityGroupEgress", "test");
         resource.set_attr("ip_protocol".to_string(), Value::String("all".to_string()));
 
         let mut resources = vec![resource];
@@ -446,7 +446,7 @@ mod tests {
         match resources[0].get_attr("ip_protocol").unwrap() {
             Value::String(s) => {
                 assert_eq!(
-                    s, "awscc.ec2.security_group_egress.IpProtocol.all",
+                    s, "awscc.ec2.SecurityGroupEgress.IpProtocol.all",
                     "Expected namespaced IpProtocol.all, got: {}",
                     s
                 );
@@ -457,7 +457,7 @@ mod tests {
 
     #[test]
     fn test_resolve_enum_identifiers_ip_protocol_tcp() {
-        let mut resource = Resource::with_provider("awscc", "ec2.security_group_egress", "test");
+        let mut resource = Resource::with_provider("awscc", "ec2.SecurityGroupEgress", "test");
         resource.set_attr("ip_protocol".to_string(), Value::String("tcp".to_string()));
 
         let mut resources = vec![resource];
@@ -465,7 +465,7 @@ mod tests {
         match resources[0].get_attr("ip_protocol").unwrap() {
             Value::String(s) => {
                 assert_eq!(
-                    s, "awscc.ec2.security_group_egress.IpProtocol.tcp",
+                    s, "awscc.ec2.SecurityGroupEgress.IpProtocol.tcp",
                     "Expected namespaced IpProtocol.tcp, got: {}",
                     s
                 );
@@ -485,7 +485,7 @@ mod tests {
                     length: None,
                     base: Box::new(AttributeType::String),
                     validate: |_| Ok(()),
-                    namespace: Some("awscc.ec2.security_group".to_string()),
+                    namespace: Some("awscc.ec2.SecurityGroup".to_string()),
                     to_dsl: Some(|s: &str| match s {
                         "-1" => "all".to_string(),
                         _ => s.to_string(),
@@ -511,7 +511,7 @@ mod tests {
             if let Value::Map(m) = &items[0] {
                 match &m["ip_protocol"] {
                     Value::String(s) => {
-                        assert_eq!(s, "awscc.ec2.security_group.IpProtocol.all");
+                        assert_eq!(s, "awscc.ec2.SecurityGroup.IpProtocol.all");
                     }
                     other => panic!("Expected String, got: {:?}", other),
                 }
@@ -539,7 +539,7 @@ mod tests {
             if let Value::Map(m) = &items[0] {
                 match &m["ip_protocol"] {
                     Value::String(s) => {
-                        assert_eq!(s, "awscc.ec2.security_group.IpProtocol.tcp");
+                        assert_eq!(s, "awscc.ec2.SecurityGroup.IpProtocol.tcp");
                     }
                     other => panic!("Expected String, got: {:?}", other),
                 }
@@ -557,7 +557,7 @@ mod tests {
         let mut map = HashMap::new();
         map.insert(
             "ip_protocol".to_string(),
-            Value::String("awscc.ec2.security_group.IpProtocol.tcp".to_string()),
+            Value::String("awscc.ec2.SecurityGroup.IpProtocol.tcp".to_string()),
         );
         let value = Value::List(vec![Value::Map(map)]);
 
@@ -566,7 +566,7 @@ mod tests {
             if let Value::Map(m) = &items[0] {
                 match &m["ip_protocol"] {
                     Value::String(s) => {
-                        assert_eq!(s, "awscc.ec2.security_group.IpProtocol.tcp");
+                        assert_eq!(s, "awscc.ec2.SecurityGroup.IpProtocol.tcp");
                     }
                     other => panic!("Expected String, got: {:?}", other),
                 }
@@ -580,7 +580,7 @@ mod tests {
 
     #[test]
     fn test_resolve_enum_identifiers_impl_struct_field() {
-        let mut resource = Resource::with_provider("awscc", "ec2.security_group", "test-sg");
+        let mut resource = Resource::with_provider("awscc", "ec2.SecurityGroup", "test-sg");
         resource.set_attr(
             "group_description".to_string(),
             Value::String("test".to_string()),
@@ -604,7 +604,7 @@ mod tests {
                 match &m["ip_protocol"] {
                     Value::String(s) => {
                         assert_eq!(
-                            s, "awscc.ec2.security_group.IpProtocol.all",
+                            s, "awscc.ec2.SecurityGroup.IpProtocol.all",
                             "Expected namespaced IpProtocol.all in struct field, got: {}",
                             s
                         );
@@ -746,7 +746,7 @@ mod tests {
             AttributeType::list(AttributeType::StringEnum {
                 name: "EncryptionType".to_string(),
                 values: vec!["NONE".to_string(), "SSE-C".to_string()],
-                namespace: Some("awscc.s3.bucket".to_string()),
+                namespace: Some("awscc.s3.Bucket".to_string()),
                 to_dsl: Some(|s: &str| s.replace('-', "_")),
             }),
         )];
@@ -769,7 +769,7 @@ mod tests {
                         AttributeType::StringEnum {
                             name: "SseAlgorithm".to_string(),
                             values: vec!["AES256".to_string()],
-                            namespace: Some("awscc.s3.bucket".to_string()),
+                            namespace: Some("awscc.s3.Bucket".to_string()),
                             to_dsl: None,
                         },
                     )],
@@ -808,7 +808,7 @@ mod tests {
                     if let Value::List(types) = &blocked["encryption_type"] {
                         assert_eq!(
                             types[0],
-                            Value::String("awscc.s3.bucket.EncryptionType.SSE_C".to_string()),
+                            Value::String("awscc.s3.Bucket.EncryptionType.SSE_C".to_string()),
                             "Nested struct enum should be resolved to DSL format"
                         );
                     } else {
@@ -821,7 +821,7 @@ mod tests {
                 if let Value::Map(sse) = &m["server_side_encryption_by_default"] {
                     assert_eq!(
                         sse["sse_algorithm"],
-                        Value::String("awscc.s3.bucket.SseAlgorithm.AES256".to_string()),
+                        Value::String("awscc.s3.Bucket.SseAlgorithm.AES256".to_string()),
                         "Sibling struct enum should also be resolved"
                     );
                 } else {

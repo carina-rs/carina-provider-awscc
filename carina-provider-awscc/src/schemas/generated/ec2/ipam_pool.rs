@@ -32,15 +32,15 @@ const VALID_STATE: &[&str] = &[
 pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
     AwsccSchemaConfig {
         aws_type_name: "AWS::EC2::IPAMPool",
-        resource_type_name: "ec2.ipam_pool",
+        resource_type_name: "ec2.IpamPool",
         has_tags: true,
-        schema: ResourceSchema::new("awscc.ec2.ipam_pool")
+        schema: ResourceSchema::new("awscc.ec2.IpamPool")
         .with_description("Resource Schema of AWS::EC2::IPAMPool Type")
         .attribute(
             AttributeSchema::new("address_family", AttributeType::StringEnum {
                 name: "AddressFamily".to_string(),
                 values: vec!["IPv4".to_string(), "IPv6".to_string()],
-                namespace: Some("awscc.ec2.ipam_pool".to_string()),
+                namespace: Some("awscc.ec2.IpamPool".to_string()),
                 to_dsl: None,
             })
                 .required()
@@ -83,7 +83,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
             AttributeSchema::new("aws_service", AttributeType::StringEnum {
                 name: "AwsService".to_string(),
                 values: vec!["ec2".to_string(), "global-services".to_string()],
-                namespace: Some("awscc.ec2.ipam_pool".to_string()),
+                namespace: Some("awscc.ec2.IpamPool".to_string()),
                 to_dsl: Some(|s: &str| s.replace('-', "_")),
             })
                 .create_only()
@@ -123,7 +123,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
             AttributeSchema::new("ipam_scope_type", AttributeType::StringEnum {
                 name: "IpamScopeType".to_string(),
                 values: vec!["public".to_string(), "private".to_string()],
-                namespace: Some("awscc.ec2.ipam_pool".to_string()),
+                namespace: Some("awscc.ec2.IpamPool".to_string()),
                 to_dsl: None,
             })
                 .read_only()
@@ -157,7 +157,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
             AttributeSchema::new("public_ip_source", AttributeType::StringEnum {
                 name: "PublicIpSource".to_string(),
                 values: vec!["byoip".to_string(), "amazon".to_string()],
-                namespace: Some("awscc.ec2.ipam_pool".to_string()),
+                namespace: Some("awscc.ec2.IpamPool".to_string()),
                 to_dsl: None,
             })
                 .create_only()
@@ -193,7 +193,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
             AttributeSchema::new("state", AttributeType::StringEnum {
                 name: "State".to_string(),
                 values: vec!["create-in-progress".to_string(), "create-complete".to_string(), "modify-in-progress".to_string(), "modify-complete".to_string(), "delete-in-progress".to_string(), "delete-complete".to_string()],
-                namespace: Some("awscc.ec2.ipam_pool".to_string()),
+                namespace: Some("awscc.ec2.IpamPool".to_string()),
                 to_dsl: Some(|s: &str| s.replace('-', "_")),
             })
                 .read_only()
@@ -233,7 +233,7 @@ pub fn enum_valid_values() -> (
     &'static [(&'static str, &'static [&'static str])],
 ) {
     (
-        "ec2.ipam_pool",
+        "ec2.IpamPool",
         &[
             ("address_family", VALID_ADDRESS_FAMILY),
             ("aws_service", VALID_AWS_SERVICE),
@@ -248,6 +248,8 @@ pub fn enum_valid_values() -> (
 /// e.g., ("ip_protocol", "all") -> Some("-1")
 pub fn enum_alias_reverse(attr_name: &str, value: &str) -> Option<&'static str> {
     match (attr_name, value) {
+        ("address_family", "i_pv4") => Some("IPv4"),
+        ("address_family", "i_pv6") => Some("IPv6"),
         ("aws_service", "global_services") => Some("global-services"),
         ("state", "create_in_progress") => Some("create-in-progress"),
         ("state", "create_complete") => Some("create-complete"),
@@ -262,6 +264,8 @@ pub fn enum_alias_reverse(attr_name: &str, value: &str) -> Option<&'static str> 
 /// Returns all enum alias entries as (attr_name, alias, canonical) tuples.
 pub fn enum_alias_entries() -> &'static [(&'static str, &'static str, &'static str)] {
     &[
+        ("address_family", "i_pv4", "IPv4"),
+        ("address_family", "i_pv6", "IPv6"),
         ("aws_service", "global_services", "global-services"),
         ("state", "create_in_progress", "create-in-progress"),
         ("state", "create_complete", "create-complete"),

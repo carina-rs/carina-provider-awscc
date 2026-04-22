@@ -38,9 +38,9 @@ fn validate_to_port_range(value: &Value) -> Result<(), String> {
 pub fn ec2_security_group_egress_config() -> AwsccSchemaConfig {
     AwsccSchemaConfig {
         aws_type_name: "AWS::EC2::SecurityGroupEgress",
-        resource_type_name: "ec2.security_group_egress",
+        resource_type_name: "ec2.SecurityGroupEgress",
         has_tags: false,
-        schema: ResourceSchema::new("awscc.ec2.security_group_egress")
+        schema: ResourceSchema::new("awscc.ec2.SecurityGroupEgress")
         .with_description("Adds the specified outbound (egress) rule to a security group.  An outbound rule permits instances to send traffic to the specified IPv4 or IPv6 address range, the IP addresses that are specified by a prefix list, or the instances that are associated with a destination security group. For more information, see [Security group rules](https://docs.aws.amazon.com/vpc/latest/userguide/security-group-rules.html).  You must specify exactly one of the following destinations: an IPv4 address range, an IPv6 address range, a prefix list, or a security group.  You must specify a protocol for each rule (for example, TCP). If the protocol is TCP or UDP, you must also specify a port or port range. If the protocol is ICMP or ICMPv6, you must also specify the ICMP/ICMPv6 type and code. To specify all types or all codes, use -1.  Rule changes are propagated to instances associated with the security group as quickly as possible. However, a small delay might occur.")
         .attribute(
             AttributeSchema::new("cidr_ip", types::ipv4_cidr())
@@ -102,7 +102,7 @@ pub fn ec2_security_group_egress_config() -> AwsccSchemaConfig {
             AttributeSchema::new("ip_protocol", AttributeType::StringEnum {
                 name: "IpProtocol".to_string(),
                 values: vec!["tcp".to_string(), "udp".to_string(), "icmp".to_string(), "icmpv6".to_string(), "-1".to_string(), "all".to_string()],
-                namespace: Some("awscc.ec2.security_group_egress".to_string()),
+                namespace: Some("awscc.ec2.SecurityGroupEgress".to_string()),
                 to_dsl: Some(|s: &str| match s { "-1" => "all".to_string(), _ => s.replace('-', "_") }),
             })
                 .required()
@@ -133,7 +133,7 @@ pub fn enum_valid_values() -> (
     &'static [(&'static str, &'static [&'static str])],
 ) {
     (
-        "ec2.security_group_egress",
+        "ec2.SecurityGroupEgress",
         &[("ip_protocol", VALID_IP_PROTOCOL)],
     )
 }

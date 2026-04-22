@@ -11,23 +11,23 @@ mod tests {
 
     #[test]
     fn test_get_schema_config() {
-        assert!(get_config("ec2.vpc").is_some());
-        assert!(get_config("ec2.subnet").is_some());
+        assert!(get_config("ec2.Vpc").is_some());
+        assert!(get_config("ec2.Subnet").is_some());
         assert!(get_config("unknown").is_none());
     }
 
     #[test]
     fn test_schema_config_aws_type() {
         assert_eq!(
-            get_config("ec2.vpc").unwrap().aws_type_name,
+            get_config("ec2.Vpc").unwrap().aws_type_name,
             "AWS::EC2::VPC"
         );
         assert_eq!(
-            get_config("ec2.subnet").unwrap().aws_type_name,
+            get_config("ec2.Subnet").unwrap().aws_type_name,
             "AWS::EC2::Subnet"
         );
         assert_eq!(
-            get_config("ec2.security_group_ingress")
+            get_config("ec2.SecurityGroupIngress")
                 .unwrap()
                 .aws_type_name,
             "AWS::EC2::SecurityGroupIngress"
@@ -36,15 +36,15 @@ mod tests {
 
     #[test]
     fn test_schema_config_has_tags() {
-        assert!(get_config("ec2.vpc").unwrap().has_tags);
-        assert!(get_config("ec2.subnet").unwrap().has_tags);
-        assert!(!get_config("ec2.route").unwrap().has_tags);
-        assert!(!get_config("ec2.vpc_gateway_attachment").unwrap().has_tags);
+        assert!(get_config("ec2.Vpc").unwrap().has_tags);
+        assert!(get_config("ec2.Subnet").unwrap().has_tags);
+        assert!(!get_config("ec2.Route").unwrap().has_tags);
+        assert!(!get_config("ec2.VpcGatewayAttachment").unwrap().has_tags);
     }
 
     #[test]
     fn test_schema_config_provider_name() {
-        let vpc_config = get_config("ec2.vpc").unwrap();
+        let vpc_config = get_config("ec2.Vpc").unwrap();
         let cidr_attr = vpc_config.schema.attributes.get("cidr_block").unwrap();
         assert_eq!(cidr_attr.provider_name.as_deref(), Some("CidrBlock"));
         let vpc_id_attr = vpc_config.schema.attributes.get("vpc_id").unwrap();
@@ -124,8 +124,7 @@ mod tests {
 
     #[test]
     fn test_iam_oidc_provider_config() {
-        let config =
-            get_config("iam.oidc_provider").expect("iam.oidc_provider config should exist");
+        let config = get_config("iam.OidcProvider").expect("iam.oidc_provider config should exist");
         assert_eq!(config.aws_type_name, "AWS::IAM::OIDCProvider");
         assert!(config.has_tags, "OIDCProvider should support tags");
     }
@@ -138,7 +137,7 @@ mod tests {
         use carina_core::resource::Value;
         use std::collections::HashMap;
 
-        let config = get_config("ec2.vpc_gateway_attachment").unwrap();
+        let config = get_config("ec2.VpcGatewayAttachment").unwrap();
         let schema = &config.schema;
 
         // Providing both internet_gateway_id and vpn_gateway_id should fail validation
@@ -180,7 +179,7 @@ mod tests {
         use carina_core::resource::Value;
         use std::collections::HashMap;
 
-        let config = get_config("ec2.vpc_gateway_attachment").unwrap();
+        let config = get_config("ec2.VpcGatewayAttachment").unwrap();
         let schema = &config.schema;
 
         // Only internet_gateway_id - should pass
@@ -221,7 +220,7 @@ mod tests {
         use carina_core::resource::Value;
         use std::collections::HashMap;
 
-        let config = get_config("ec2.vpc_gateway_attachment").unwrap();
+        let config = get_config("ec2.VpcGatewayAttachment").unwrap();
         let schema = &config.schema;
 
         // Neither gateway specified - should fail

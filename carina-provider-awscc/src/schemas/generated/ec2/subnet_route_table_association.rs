@@ -11,9 +11,9 @@ use carina_core::schema::{AttributeSchema, ResourceSchema};
 pub fn ec2_subnet_route_table_association_config() -> AwsccSchemaConfig {
     AwsccSchemaConfig {
         aws_type_name: "AWS::EC2::SubnetRouteTableAssociation",
-        resource_type_name: "ec2.subnet_route_table_association",
+        resource_type_name: "ec2.SubnetRouteTableAssociation",
         has_tags: false,
-        schema: ResourceSchema::new("awscc.ec2.subnet_route_table_association")
+        schema: ResourceSchema::new("awscc.ec2.SubnetRouteTableAssociation")
         .with_description("Associates a subnet with a route table. The subnet and route table must be in the same VPC. This association causes traffic originating from the subnet to be routed according to the routes in the route table. A route table can be associated with multiple subnets. To create a route table, see [AWS::EC2::RouteTable](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-routetable.html).")
         .attribute(
             AttributeSchema::new("id", super::subnet_route_table_association_id())
@@ -43,7 +43,7 @@ pub fn enum_valid_values() -> (
     &'static str,
     &'static [(&'static str, &'static [&'static str])],
 ) {
-    ("ec2.subnet_route_table_association", &[])
+    ("ec2.SubnetRouteTableAssociation", &[])
 }
 
 /// Maps DSL alias values back to canonical AWS values for this module.

@@ -6,9 +6,9 @@
 let network = import '../network'
 
 arguments {
-  cidr_block : string
-  subnet_cidr: string
-  az         : string
+  cidr_block : String
+  subnet_cidr: String
+  az         : String
 }
 
 let net = network {
@@ -17,7 +17,7 @@ let net = network {
   az          = az
 }
 
-let rt = awscc.ec2.route_table {
+let rt = awscc.ec2.RouteTable {
   vpc_id = net.vpc_id
 
   tags = {
@@ -26,6 +26,6 @@ let rt = awscc.ec2.route_table {
 }
 
 attributes {
-  vpc_id        : awscc.ec2.vpc = net.vpc_id
-  route_table_id: awscc.ec2.route_table = rt.route_table_id
+  vpc_id        : awscc.ec2.Vpc = net.vpc_id
+  route_table_id: awscc.ec2.RouteTable = rt.route_table_id
 }

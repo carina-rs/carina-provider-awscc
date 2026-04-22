@@ -7,7 +7,7 @@ provider awscc {
   region = awscc.Region.ap_northeast_1
 }
 
-let ipam = awscc.ec2.ipam {
+let ipam = awscc.ec2.Ipam {
   tier = advanced
 
   operating_region {
@@ -15,7 +15,7 @@ let ipam = awscc.ec2.ipam {
   }
 }
 
-awscc.ec2.ipam_pool {
+awscc.ec2.IpamPool {
   ipam_scope_id  = ipam.private_default_scope_id
   address_family = 'IPv4'
   locale         = 'ap-northeast-1'
