@@ -2,11 +2,11 @@ provider awscc {
   region = awscc.Region.ap_northeast_1
 }
 
-fn tag_name(env: string, service: string): string {
+fn tag_name(env: String, service: String): String {
   join('-', [env, service, 'vpc'])
 }
 
-awscc.ec2.vpc {
+awscc.ec2.Vpc {
   cidr_block = '10.0.0.0/16'
 
   tags = {

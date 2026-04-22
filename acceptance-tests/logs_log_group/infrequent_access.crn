@@ -6,8 +6,8 @@ provider awscc {
   region = awscc.Region.ap_northeast_1
 }
 
-awscc.logs.log_group {
+awscc.logs.LogGroup {
   log_group_name_prefix = '/carina/acc-test-'
-  log_group_class       = awscc.logs.log_group.LogGroupClass.INFREQUENT_ACCESS
+  log_group_class       = awscc.logs.LogGroup.LogGroupClass.INFREQUENT_ACCESS
   retention_in_days     = 1
 }

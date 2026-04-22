@@ -338,7 +338,7 @@ mod tests {
         let schemas = provider.schemas();
         let bucket = schemas
             .iter()
-            .find(|s| s.resource_type == "awscc.s3.bucket")
+            .find(|s| s.resource_type == "awscc.s3.Bucket")
             .expect("s3.bucket schema should exist");
         assert!(
             bucket
@@ -370,14 +370,14 @@ mod tests {
     /// Regression for carina-rs/carina#2025: the VPC schema must carry the
     /// `cidr_block` / `ipv4_ipam_pool_id` oneOf constraint as serializable
     /// data, so it survives the WASM plugin boundary and validate/plan can
-    /// reject `awscc.ec2.vpc {}` before any provider call.
+    /// reject `awscc.ec2.Vpc {}` before any provider call.
     #[test]
     fn vpc_schema_carries_cidr_block_exclusive_group_across_proto() {
         let provider = AwsccProcessProvider::new();
         let schemas = provider.schemas();
         let vpc = schemas
             .iter()
-            .find(|s| s.resource_type == "awscc.ec2.vpc")
+            .find(|s| s.resource_type == "awscc.ec2.Vpc")
             .expect("ec2.vpc schema should exist");
         assert!(
             vpc.exclusive_required

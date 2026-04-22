@@ -78,7 +78,7 @@ fn validate_string_pattern_0cb01cbc89d38ae3_len_max_64(value: &Value) -> Result<
 pub fn organizations_organization_config() -> AwsccSchemaConfig {
     AwsccSchemaConfig {
         aws_type_name: "AWS::Organizations::Organization",
-        resource_type_name: "organizations.organization",
+        resource_type_name: "organizations.Organization",
         has_tags: false,
         schema: ResourceSchema::new("awscc.organizations.organization")
         .with_description("Resource schema for AWS::Organizations::Organization")
@@ -162,7 +162,7 @@ pub fn enum_valid_values() -> (
     &'static [(&'static str, &'static [&'static str])],
 ) {
     (
-        "organizations.organization",
+        "organizations.Organization",
         &[("feature_set", VALID_FEATURE_SET)],
     )
 }

@@ -1,9 +1,9 @@
 arguments {
-  cidr_block: string
-  env_name  : string
+  cidr_block: String
+  env_name  : String
 }
 
-awscc.ec2.vpc {
+awscc.ec2.Vpc {
   cidr_block = cidr_block
 
   tags = {

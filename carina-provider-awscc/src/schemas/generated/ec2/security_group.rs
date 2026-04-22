@@ -42,9 +42,9 @@ fn validate_to_port_range(value: &Value) -> Result<(), String> {
 pub fn ec2_security_group_config() -> AwsccSchemaConfig {
     AwsccSchemaConfig {
         aws_type_name: "AWS::EC2::SecurityGroup",
-        resource_type_name: "ec2.security_group",
+        resource_type_name: "ec2.SecurityGroup",
         has_tags: true,
-        schema: ResourceSchema::new("awscc.ec2.security_group")
+        schema: ResourceSchema::new("awscc.ec2.SecurityGroup")
         .with_description("Resource Type definition for AWS::EC2::SecurityGroup")
         .attribute(
             AttributeSchema::new("group_description", AttributeType::String)
@@ -92,7 +92,7 @@ pub fn ec2_security_group_config() -> AwsccSchemaConfig {
                     StructField::new("ip_protocol", AttributeType::StringEnum {
                 name: "IpProtocol".to_string(),
                 values: vec!["tcp".to_string(), "udp".to_string(), "icmp".to_string(), "icmpv6".to_string(), "-1".to_string(), "all".to_string()],
-                namespace: Some("awscc.ec2.security_group".to_string()),
+                namespace: Some("awscc.ec2.SecurityGroup".to_string()),
                 to_dsl: Some(|s: &str| match s { "-1" => "all".to_string(), _ => s.replace('-', "_") }),
             }).required().with_provider_name("IpProtocol"),
                     StructField::new("to_port", AttributeType::Custom {
@@ -129,7 +129,7 @@ pub fn ec2_security_group_config() -> AwsccSchemaConfig {
                     StructField::new("ip_protocol", AttributeType::StringEnum {
                 name: "IpProtocol".to_string(),
                 values: vec!["tcp".to_string(), "udp".to_string(), "icmp".to_string(), "icmpv6".to_string(), "-1".to_string(), "all".to_string()],
-                namespace: Some("awscc.ec2.security_group".to_string()),
+                namespace: Some("awscc.ec2.SecurityGroup".to_string()),
                 to_dsl: Some(|s: &str| match s { "-1" => "all".to_string(), _ => s.replace('-', "_") }),
             }).required().with_provider_name("IpProtocol"),
                     StructField::new("source_prefix_list_id", super::prefix_list_id()).with_provider_name("SourcePrefixListId"),
@@ -178,7 +178,7 @@ pub fn enum_valid_values() -> (
     &'static [(&'static str, &'static [&'static str])],
 ) {
     (
-        "ec2.security_group",
+        "ec2.SecurityGroup",
         &[
             ("ip_protocol", VALID_EGRESS_IP_PROTOCOL),
             ("ip_protocol", VALID_INGRESS_IP_PROTOCOL),

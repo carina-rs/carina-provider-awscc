@@ -6,7 +6,7 @@ let env = 'test'
 
 let app = 'web'
 
-awscc.ec2.vpc {
+awscc.ec2.Vpc {
   cidr_block = '10.0.0.0/16'
 
   tags = {

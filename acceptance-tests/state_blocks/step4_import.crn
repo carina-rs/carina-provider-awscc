@@ -3,11 +3,11 @@ provider awscc {
 }
 
 import {
-  to = awscc.ec2.vpc 'imported_vpc'
+  to = awscc.ec2.Vpc 'imported_vpc'
   id = 'PLACEHOLDER'
 }
 
-awscc.ec2.vpc {
+awscc.ec2.Vpc {
   cidr_block = '10.0.0.0/16'
 
   tags = {

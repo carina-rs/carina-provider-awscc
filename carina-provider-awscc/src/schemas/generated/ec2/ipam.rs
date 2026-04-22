@@ -46,9 +46,9 @@ fn validate_string_length_max_255(value: &Value) -> Result<(), String> {
 pub fn ec2_ipam_config() -> AwsccSchemaConfig {
     AwsccSchemaConfig {
         aws_type_name: "AWS::EC2::IPAM",
-        resource_type_name: "ec2.ipam",
+        resource_type_name: "ec2.Ipam",
         has_tags: true,
-        schema: ResourceSchema::new("awscc.ec2.ipam")
+        schema: ResourceSchema::new("awscc.ec2.Ipam")
         .with_description("Resource Schema of AWS::EC2::IPAM Type")
         .attribute(
             AttributeSchema::new("arn", super::arn())
@@ -106,7 +106,7 @@ pub fn ec2_ipam_config() -> AwsccSchemaConfig {
             AttributeSchema::new("metered_account", AttributeType::StringEnum {
                 name: "MeteredAccount".to_string(),
                 values: vec!["ipam-owner".to_string(), "resource-owner".to_string()],
-                namespace: Some("awscc.ec2.ipam".to_string()),
+                namespace: Some("awscc.ec2.Ipam".to_string()),
                 to_dsl: Some(|s: &str| s.replace('-', "_")),
             })
                 .with_description("A metered account is an account that is charged for active IP addresses managed in IPAM")
@@ -164,7 +164,7 @@ pub fn ec2_ipam_config() -> AwsccSchemaConfig {
             AttributeSchema::new("tier", AttributeType::StringEnum {
                 name: "Tier".to_string(),
                 values: vec!["free".to_string(), "advanced".to_string()],
-                namespace: Some("awscc.ec2.ipam".to_string()),
+                namespace: Some("awscc.ec2.Ipam".to_string()),
                 to_dsl: None,
             })
                 .with_description("The tier of the IPAM.")
@@ -193,7 +193,7 @@ pub fn enum_valid_values() -> (
     &'static [(&'static str, &'static [&'static str])],
 ) {
     (
-        "ec2.ipam",
+        "ec2.Ipam",
         &[
             ("metered_account", VALID_METERED_ACCOUNT),
             ("tier", VALID_TIER),

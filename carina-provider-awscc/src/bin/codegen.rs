@@ -287,16 +287,55 @@ fn full_resource_name_from_type(type_name: &str) -> Result<String> {
 }
 
 /// Compute DSL resource name (service.resource) from CloudFormation type name
-/// e.g., "AWS::EC2::SecurityGroupEgress" -> "ec2.security_group_egress"
-/// Used for DSL-facing strings (resource_type_name, namespace, display).
+/// e.g., "AWS::EC2::SecurityGroupEgress" -> "ec2.SecurityGroupEgress"
+/// and "AWS::EC2::VPC" -> "ec2.Vpc" (acronyms normalised via snake -> pascal).
+/// The service segment is lowercase (a namespace); the resource segment is
+/// PascalCase with acronyms treated as single words, matching carina-core's
+/// `snake_to_pascal` round-trip (design D2).
 fn dsl_resource_name_from_type(type_name: &str) -> Result<String> {
     let parts: Vec<&str> = type_name.split("::").collect();
     if parts.len() != 3 {
         anyhow::bail!("Invalid type name format: {}", type_name);
     }
     let service = parts[1].to_lowercase();
-    let resource = parts[2].to_snake_case();
+    // Route through snake_case first so CloudFormation-style acronyms
+    // ("VPC", "IPAM", "EIP") become single Pascal tokens ("Vpc", "Ipam",
+    // "Eip") rather than shouty residue.
+    let resource = parts[2].to_snake_case().to_pascal_case();
     Ok(format!("{}.{}", service, resource))
+}
+
+/// Convert a CloudFormation-side enum value to its DSL (snake_case) form.
+///
+/// Per naming-conventions design D7:
+/// - SHOUTY_SNAKE (`GROUP`, `AWS_ACCOUNT`) → lowercase (`group`, `aws_account`)
+/// - PascalCase (`Enabled`, `VersioningStatus`) → snake_case (`enabled`,
+///   `versioning_status`)
+/// - Already kebab/snake (`ap-northeast-1`, `ipsec.1`) → `-` to `_` if present
+///   (`ap_northeast_1`), leave `.`-containing values verbatim so they round-trip
+/// - Numeric values pass through unchanged.
+fn dsl_enum_value(value: &str) -> String {
+    if value.is_empty() {
+        return String::new();
+    }
+    // Passthrough for already-numeric or dotted values (e.g. "ipsec.1").
+    if value.chars().all(|c| c.is_ascii_digit() || c == '.') {
+        return value.to_string();
+    }
+    // SHOUTY_SNAKE: uppercase ASCII letters + underscores + optional digits.
+    if value
+        .chars()
+        .all(|c| c.is_ascii_uppercase() || c == '_' || c.is_ascii_digit())
+        && value.chars().any(|c| c.is_ascii_uppercase())
+    {
+        return value.to_ascii_lowercase();
+    }
+    // Already snake / kebab (no uppercase): just normalize hyphens.
+    if !value.chars().any(|c| c.is_ascii_uppercase()) {
+        return value.replace('-', "_");
+    }
+    // PascalCase (or anything else mixed): route through heck's ToSnakeCase.
+    value.to_snake_case()
 }
 
 fn main() -> Result<()> {
@@ -1203,7 +1242,7 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
     let resource = parts[2].to_snake_case();
     let full_resource = full_resource_name_from_type(type_name)?;
     let dsl_resource = dsl_resource_name_from_type(type_name)?;
-    // Namespace for enums: awscc.ec2.vpc
+    // Namespace for enums: awscc.ec2.Vpc
     let namespace = format!("awscc.{}", dsl_resource);
 
     // Build read-only properties set
@@ -1917,7 +1956,7 @@ fn {fn_name}(value: &Value) -> Result<(), String> {{
 
     // Generate config function
     let config_fn_name = format!("{}_config", full_resource);
-    // Use awscc.service.resource format (e.g., awscc.ec2.vpc)
+    // Use awscc.service.resource format (e.g., awscc.ec2.Vpc)
     let schema_name = format!("awscc.{}", dsl_resource);
 
     code.push_str(&format!(
@@ -2230,13 +2269,14 @@ pub fn {}() -> AwsccSchemaConfig {{
                 }
             }
 
-            // Add to_dsl reverse mappings for values containing hyphens.
+            // Auto-generate DSL aliases for every enum value so the user-facing
+            // DSL form is always snake_case (naming-conventions design D3). The
+            // alias maps the snake_case DSL form back to the canonical AWS API
+            // value (PascalCase, SHOUTY_SNAKE, or already-kebab/snake).
             for value in &enum_info.values {
-                if value.contains('-') {
-                    let dsl_form = value.replace('-', "_");
-                    if dsl_form != *value && seen.insert((attr_name.clone(), dsl_form.clone())) {
-                        alias_entries.push((attr_name.clone(), dsl_form, value.clone()));
-                    }
+                let dsl_form = dsl_enum_value(value);
+                if dsl_form != *value && seen.insert((attr_name.clone(), dsl_form.clone())) {
+                    alias_entries.push((attr_name.clone(), dsl_form, value.clone()));
                 }
             }
         }
@@ -6974,7 +7014,7 @@ mod tests {
             &prop,
             "OutputSchemaVersion",
             &schema,
-            "awscc.s3.bucket",
+            "awscc.s3.Bucket",
             &enums,
         );
         assert!(enum_info.is_some(), "const value should produce enum info");
@@ -7020,7 +7060,7 @@ mod tests {
             &prop,
             "AllowedMethods",
             &schema,
-            "awscc.s3.bucket",
+            "awscc.s3.Bucket",
             &enums,
         );
         assert!(
@@ -7080,7 +7120,7 @@ mod tests {
             &prop,
             "HttpMethod",
             &schema,
-            "awscc.s3.bucket",
+            "awscc.s3.Bucket",
             &enums,
         );
         assert!(
@@ -7142,7 +7182,7 @@ mod tests {
             &prop,
             "BlockedEncryptionTypes",
             &schema,
-            "awscc.s3.bucket",
+            "awscc.s3.Bucket",
             &enums,
         );
         assert!(
@@ -7582,11 +7622,11 @@ mod tests {
 
         // DSL identifiers should also be disambiguated
         assert!(
-            md.contains("awscc.test.resource.ConfigAStatus.Disabled"),
+            md.contains("awscc.test.Resource.ConfigAStatus.Disabled"),
             "Expected disambiguated DSL identifier for ConfigA"
         );
         assert!(
-            md.contains("awscc.test.resource.ConfigBStatus.Suspended"),
+            md.contains("awscc.test.Resource.ConfigBStatus.Suspended"),
             "Expected disambiguated DSL identifier for ConfigB"
         );
 
@@ -8039,7 +8079,7 @@ mod tests {
             &prop,
             "LogGroupName",
             &schema,
-            "awscc.logs.log_group",
+            "awscc.logs.LogGroup",
             &BTreeMap::new(),
         );
         assert!(
@@ -8082,7 +8122,7 @@ mod tests {
             &prop,
             "KmsKeyId",
             &schema,
-            "awscc.logs.log_group",
+            "awscc.logs.LogGroup",
             &BTreeMap::new(),
         );
         // KmsKeyId should be resolved to a specific ARN type, not pattern-validated
@@ -8168,7 +8208,7 @@ mod tests {
             &prop,
             "PrivateDnsSpecifiedDomains",
             &schema,
-            "awscc.ec2.vpc_endpoint",
+            "awscc.ec2.VpcEndpoint",
             &enums,
         );
         assert!(
@@ -8217,7 +8257,7 @@ mod tests {
             &prop,
             "SomeArray",
             &schema,
-            "awscc.ec2.vpc_endpoint",
+            "awscc.ec2.VpcEndpoint",
             &enums,
         );
         assert!(
@@ -8262,7 +8302,7 @@ mod tests {
             &prop,
             "SomeArray",
             &schema,
-            "awscc.ec2.vpc_endpoint",
+            "awscc.ec2.VpcEndpoint",
             &enums,
         );
         assert!(
@@ -8525,7 +8565,7 @@ mod tests {
             &prop,
             "ExpirationDate",
             &schema,
-            "awscc.s3.bucket",
+            "awscc.s3.Bucket",
             &BTreeMap::new(),
         );
         assert!(

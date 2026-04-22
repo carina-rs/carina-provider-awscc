@@ -9,7 +9,7 @@ provider awscc {
   region = awscc.Region.ap_northeast_1
 }
 
-let log_bucket = awscc.s3.bucket {
+let log_bucket = awscc.s3.Bucket {
   bucket_name_prefix = 'carina-acc-test-log-'
 
   lifecycle {
@@ -17,7 +17,7 @@ let log_bucket = awscc.s3.bucket {
   }
 }
 
-awscc.s3.bucket {
+awscc.s3.Bucket {
   bucket_name_prefix = 'carina-acc-test-src-'
 
   logging_configuration = {

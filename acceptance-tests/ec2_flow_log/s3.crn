@@ -7,17 +7,17 @@ provider awscc {
   region = awscc.Region.ap_northeast_1
 }
 
-let vpc = awscc.ec2.vpc {
+let vpc = awscc.ec2.Vpc {
   cidr_block = '10.0.0.0/16'
 }
 
-let bucket = awscc.s3.bucket {
+let bucket = awscc.s3.Bucket {
   lifecycle {
     force_delete = true
   }
 }
 
-awscc.ec2.flow_log {
+awscc.ec2.FlowLog {
   resource_id          = vpc.vpc_id
   resource_type        = VPC
   traffic_type         = ALL

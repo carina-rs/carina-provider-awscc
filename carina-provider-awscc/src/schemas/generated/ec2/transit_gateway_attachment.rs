@@ -15,9 +15,9 @@ use carina_core::schema::{
 pub fn ec2_transit_gateway_attachment_config() -> AwsccSchemaConfig {
     AwsccSchemaConfig {
         aws_type_name: "AWS::EC2::TransitGatewayAttachment",
-        resource_type_name: "ec2.transit_gateway_attachment",
+        resource_type_name: "ec2.TransitGatewayAttachment",
         has_tags: true,
-        schema: ResourceSchema::new("awscc.ec2.transit_gateway_attachment")
+        schema: ResourceSchema::new("awscc.ec2.TransitGatewayAttachment")
         .with_description("Resource Type definition for AWS::EC2::TransitGatewayAttachment")
         .attribute(
             AttributeSchema::new("id", super::transit_gateway_attachment_id())
@@ -31,25 +31,25 @@ pub fn ec2_transit_gateway_attachment_config() -> AwsccSchemaConfig {
                     StructField::new("appliance_mode_support", AttributeType::StringEnum {
                 name: "ApplianceModeSupport".to_string(),
                 values: vec!["enable".to_string(), "disable".to_string()],
-                namespace: Some("awscc.ec2.transit_gateway_attachment".to_string()),
+                namespace: Some("awscc.ec2.TransitGatewayAttachment".to_string()),
                 to_dsl: None,
             }).with_description("Indicates whether to enable Ipv6 Support for Vpc Attachment. Valid Values: enable | disable").with_provider_name("ApplianceModeSupport"),
                     StructField::new("dns_support", AttributeType::StringEnum {
                 name: "DnsSupport".to_string(),
                 values: vec!["enable".to_string(), "disable".to_string()],
-                namespace: Some("awscc.ec2.transit_gateway_attachment".to_string()),
+                namespace: Some("awscc.ec2.TransitGatewayAttachment".to_string()),
                 to_dsl: None,
             }).with_description("Indicates whether to enable DNS Support for Vpc Attachment. Valid Values: enable | disable").with_provider_name("DnsSupport"),
                     StructField::new("ipv6_support", AttributeType::StringEnum {
                 name: "Ipv6Support".to_string(),
                 values: vec!["enable".to_string(), "disable".to_string()],
-                namespace: Some("awscc.ec2.transit_gateway_attachment".to_string()),
+                namespace: Some("awscc.ec2.TransitGatewayAttachment".to_string()),
                 to_dsl: None,
             }).with_description("Indicates whether to enable Ipv6 Support for Vpc Attachment. Valid Values: enable | disable").with_provider_name("Ipv6Support"),
                     StructField::new("security_group_referencing_support", AttributeType::StringEnum {
                 name: "SecurityGroupReferencingSupport".to_string(),
                 values: vec!["enable".to_string(), "disable".to_string()],
-                namespace: Some("awscc.ec2.transit_gateway_attachment".to_string()),
+                namespace: Some("awscc.ec2.TransitGatewayAttachment".to_string()),
                 to_dsl: None,
             }).with_description("Indicates whether to enable Security Group referencing support for Vpc Attachment. Valid Values: enable | disable").with_provider_name("SecurityGroupReferencingSupport")
                     ],
@@ -99,7 +99,7 @@ pub fn enum_valid_values() -> (
     &'static str,
     &'static [(&'static str, &'static [&'static str])],
 ) {
-    ("ec2.transit_gateway_attachment", &[])
+    ("ec2.TransitGatewayAttachment", &[])
 }
 
 /// Maps DSL alias values back to canonical AWS values for this module.

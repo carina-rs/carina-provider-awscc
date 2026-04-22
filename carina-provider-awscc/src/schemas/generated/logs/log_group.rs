@@ -56,21 +56,15 @@ fn validate_string_pattern_b6dfbc56753dfe38_len_1_512(value: &Value) -> Result<(
 pub fn logs_log_group_config() -> AwsccSchemaConfig {
     AwsccSchemaConfig {
         aws_type_name: "AWS::Logs::LogGroup",
-        resource_type_name: "logs.log_group",
+        resource_type_name: "logs.LogGroup",
         has_tags: true,
-        schema: ResourceSchema::new("awscc.logs.log_group")
+        schema: ResourceSchema::new("awscc.logs.LogGroup")
         .with_description("The ``AWS::Logs::LogGroup`` resource specifies a log group. A log group defines common properties for log streams, such as their retention and access control rules. Each log stream must belong to one log group.  You can create up to 1,000,000 log groups per Region per account. You must use the following guidelines when naming a log group:   +  Log group names must be unique within a Region for an AWS account.   +  Log group names can be between 1 and 512 characters long.   +  Log group names consist of the following characters: a-z, A-Z, 0-9, '_' (underscore), '-' (hyphen), '/' (forward slash), and '.' (period).")
         .attribute(
             AttributeSchema::new("arn", super::arn())
                 .read_only()
                 .with_description(" (read-only)")
                 .with_provider_name("Arn"),
-        )
-        .attribute(
-            AttributeSchema::new("bearer_token_authentication_enabled", AttributeType::Bool)
-                .with_description("")
-                .with_provider_name("BearerTokenAuthenticationEnabled")
-                .with_default(Value::Bool(false)),
         )
         .attribute(
             AttributeSchema::new("data_protection_policy", AttributeType::map(AttributeType::String))
@@ -97,7 +91,7 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
             AttributeSchema::new("log_group_class", AttributeType::StringEnum {
                 name: "LogGroupClass".to_string(),
                 values: vec!["STANDARD".to_string(), "INFREQUENT_ACCESS".to_string(), "DELIVERY".to_string()],
-                namespace: Some("awscc.logs.log_group".to_string()),
+                namespace: Some("awscc.logs.LogGroup".to_string()),
                 to_dsl: None,
             })
                 .with_description("Specifies the log group class for this log group. There are two classes: + The ``Standard`` log class supports all CWL features. + The ``Infrequent Access`` log class supports a subset of CWL features and incurs lower costs. For details about the features supported by each class, see [Log classes](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/CloudWatch_Logs_Log_Classes.html)")
@@ -158,7 +152,7 @@ pub fn enum_valid_values() -> (
     &'static [(&'static str, &'static [&'static str])],
 ) {
     (
-        "logs.log_group",
+        "logs.LogGroup",
         &[("log_group_class", VALID_LOG_GROUP_CLASS)],
     )
 }
@@ -166,11 +160,19 @@ pub fn enum_valid_values() -> (
 /// Maps DSL alias values back to canonical AWS values for this module.
 /// e.g., ("ip_protocol", "all") -> Some("-1")
 pub fn enum_alias_reverse(attr_name: &str, value: &str) -> Option<&'static str> {
-    let _ = (attr_name, value);
-    None
+    match (attr_name, value) {
+        ("log_group_class", "standard") => Some("STANDARD"),
+        ("log_group_class", "infrequent_access") => Some("INFREQUENT_ACCESS"),
+        ("log_group_class", "delivery") => Some("DELIVERY"),
+        _ => None,
+    }
 }
 
 /// Returns all enum alias entries as (attr_name, alias, canonical) tuples.
 pub fn enum_alias_entries() -> &'static [(&'static str, &'static str, &'static str)] {
-    &[]
+    &[
+        ("log_group_class", "standard", "STANDARD"),
+        ("log_group_class", "infrequent_access", "INFREQUENT_ACCESS"),
+        ("log_group_class", "delivery", "DELIVERY"),
+    ]
 }

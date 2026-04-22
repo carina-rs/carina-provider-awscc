@@ -15,9 +15,9 @@ const VALID_DOMAIN: &[&str] = &["vpc", "standard"];
 pub fn ec2_eip_config() -> AwsccSchemaConfig {
     AwsccSchemaConfig {
         aws_type_name: "AWS::EC2::EIP",
-        resource_type_name: "ec2.eip",
+        resource_type_name: "ec2.Eip",
         has_tags: true,
-        schema: ResourceSchema::new("awscc.ec2.eip")
+        schema: ResourceSchema::new("awscc.ec2.Eip")
         .with_description("Specifies an Elastic IP (EIP) address and can, optionally, associate it with an Amazon EC2 instance.  You can allocate an Elastic IP address from an address pool owned by AWS or from an address pool created from a public IPv4 address range that you have brought to AWS for use with your AWS resources using bring your own IP addresses (BYOIP). For more information, see [Bring Your Own IP Addresses (BYOIP)](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-byoip.html) in the *Amazon EC2 User Guide*.  For more information, see [Elastic IP Addresses](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/elastic-ip-addresses-eip.html) in the *Amazon EC2 User Guide*.")
         .attribute(
             AttributeSchema::new("address", types::ipv4_address())
@@ -36,7 +36,7 @@ pub fn ec2_eip_config() -> AwsccSchemaConfig {
             AttributeSchema::new("domain", AttributeType::StringEnum {
                 name: "Domain".to_string(),
                 values: vec!["vpc".to_string(), "standard".to_string()],
-                namespace: Some("awscc.ec2.eip".to_string()),
+                namespace: Some("awscc.ec2.Eip".to_string()),
                 to_dsl: None,
             })
                 .with_description("The network (``vpc``). If you define an Elastic IP address and associate it with a VPC that is defined in the same template, you must declare a dependency on the VPC-gateway attachment by using the [DependsOn Attribute](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-attribute-dependson.html) on this resource.")
@@ -98,7 +98,7 @@ pub fn enum_valid_values() -> (
     &'static str,
     &'static [(&'static str, &'static [&'static str])],
 ) {
-    ("ec2.eip", &[("domain", VALID_DOMAIN)])
+    ("ec2.Eip", &[("domain", VALID_DOMAIN)])
 }
 
 /// Maps DSL alias values back to canonical AWS values for this module.

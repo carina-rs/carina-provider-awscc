@@ -3,12 +3,12 @@
 # Creates a VPC and subnet. Demonstrates intra-module resource references.
 
 arguments {
-  cidr_block : string
-  subnet_cidr: string
-  az         : string
+  cidr_block : String
+  subnet_cidr: String
+  az         : String
 }
 
-let vpc = awscc.ec2.vpc {
+let vpc = awscc.ec2.Vpc {
   cidr_block = cidr_block
 
   tags = {
@@ -16,7 +16,7 @@ let vpc = awscc.ec2.vpc {
   }
 }
 
-let subnet = awscc.ec2.subnet {
+let subnet = awscc.ec2.Subnet {
   vpc_id            = vpc.vpc_id
   cidr_block        = subnet_cidr
   availability_zone = az
@@ -27,6 +27,6 @@ let subnet = awscc.ec2.subnet {
 }
 
 attributes {
-  vpc_id   : awscc.ec2.vpc = vpc.vpc_id
-  subnet_id: awscc.ec2.subnet = subnet.subnet_id
+  vpc_id   : awscc.ec2.Vpc = vpc.vpc_id
+  subnet_id: awscc.ec2.Subnet = subnet.subnet_id
 }

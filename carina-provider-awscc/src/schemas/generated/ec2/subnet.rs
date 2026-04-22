@@ -38,9 +38,9 @@ fn validate_ipv6_netmask_length_range(value: &Value) -> Result<(), String> {
 pub fn ec2_subnet_config() -> AwsccSchemaConfig {
     AwsccSchemaConfig {
         aws_type_name: "AWS::EC2::Subnet",
-        resource_type_name: "ec2.subnet",
+        resource_type_name: "ec2.Subnet",
         has_tags: true,
-        schema: ResourceSchema::new("awscc.ec2.subnet")
+        schema: ResourceSchema::new("awscc.ec2.Subnet")
         .with_description("Specifies a subnet for the specified VPC.  For an IPv4 only subnet, specify an IPv4 CIDR block. If the VPC has an IPv6 CIDR block, you can create an IPv6 only subnet or a dual stack subnet instead. For an IPv6 only subnet, specify an IPv6 CIDR block. For a dual stack subnet, specify both an IPv4 CIDR block and an IPv6 CIDR block.  For more information, see [Subnets for your VPC](https://docs.aws.amazon.com/vpc/latest/userguide/configure-subnets.html) in the *Amazon VPC User Guide*.")
         .attribute(
             AttributeSchema::new("assign_ipv6_address_on_creation", AttributeType::Bool)
@@ -66,7 +66,7 @@ pub fn ec2_subnet_config() -> AwsccSchemaConfig {
                     StructField::new("internet_gateway_block_mode", AttributeType::StringEnum {
                 name: "InternetGatewayBlockMode".to_string(),
                 values: vec!["off".to_string(), "block-bidirectional".to_string(), "block-ingress".to_string()],
-                namespace: Some("awscc.ec2.subnet".to_string()),
+                namespace: Some("awscc.ec2.Subnet".to_string()),
                 to_dsl: Some(|s: &str| s.replace('-', "_")),
             }).with_description("The mode of VPC BPA. Options here are off, block-bidirectional, block-ingress ").with_provider_name("InternetGatewayBlockMode")
                     ],
@@ -179,7 +179,7 @@ pub fn ec2_subnet_config() -> AwsccSchemaConfig {
                     StructField::new("hostname_type", AttributeType::StringEnum {
                 name: "HostnameType".to_string(),
                 values: vec!["ip-name".to_string(), "resource-name".to_string()],
-                namespace: Some("awscc.ec2.subnet".to_string()),
+                namespace: Some("awscc.ec2.Subnet".to_string()),
                 to_dsl: Some(|s: &str| s.replace('-', "_")),
             }).with_provider_name("HostnameType")
                     ],
@@ -220,7 +220,7 @@ pub fn enum_valid_values() -> (
     &'static str,
     &'static [(&'static str, &'static [&'static str])],
 ) {
-    ("ec2.subnet", &[])
+    ("ec2.Subnet", &[])
 }
 
 /// Maps DSL alias values back to canonical AWS values for this module.

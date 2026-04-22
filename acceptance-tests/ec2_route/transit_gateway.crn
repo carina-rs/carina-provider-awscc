@@ -7,31 +7,31 @@ provider awscc {
   region = awscc.Region.ap_northeast_1
 }
 
-let vpc = awscc.ec2.vpc {
+let vpc = awscc.ec2.Vpc {
   cidr_block = '10.0.0.0/16'
 }
 
-let subnet = awscc.ec2.subnet {
+let subnet = awscc.ec2.Subnet {
   vpc_id            = vpc.vpc_id
   cidr_block        = '10.0.1.0/24'
   availability_zone = 'ap-northeast-1a'
 }
 
-let tgw = awscc.ec2.transit_gateway {
+let tgw = awscc.ec2.TransitGateway {
   description = 'Transit Gateway for route test'
 }
 
-let tgw_attach = awscc.ec2.transit_gateway_attachment {
+let tgw_attach = awscc.ec2.TransitGatewayAttachment {
   transit_gateway_id = tgw.id
   vpc_id             = vpc.vpc_id
   subnet_ids         = [subnet.subnet_id]
 }
 
-let rt = awscc.ec2.route_table {
+let rt = awscc.ec2.RouteTable {
   vpc_id = vpc.vpc_id
 }
 
-awscc.ec2.route {
+awscc.ec2.Route {
   route_table_id         = rt.route_table_id
   destination_cidr_block = '10.1.0.0/16'
   transit_gateway_id     = tgw_attach.transit_gateway_id

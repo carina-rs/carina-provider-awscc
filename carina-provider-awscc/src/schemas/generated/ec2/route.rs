@@ -11,9 +11,9 @@ use carina_core::schema::{AttributeSchema, ResourceSchema, types};
 pub fn ec2_route_config() -> AwsccSchemaConfig {
     AwsccSchemaConfig {
         aws_type_name: "AWS::EC2::Route",
-        resource_type_name: "ec2.route",
+        resource_type_name: "ec2.Route",
         has_tags: false,
-        schema: ResourceSchema::new("awscc.ec2.route")
+        schema: ResourceSchema::new("awscc.ec2.Route")
         .with_description("Specifies a route in a route table. For more information, see [Routes](https://docs.aws.amazon.com/vpc/latest/userguide/VPC_Route_Tables.html#route-table-routes) in the *Amazon VPC User Guide*.  You must specify either a destination CIDR block or prefix list ID. You must also specify exactly one of the resources as the target.  If you create a route that references a transit gateway in the same template where you create the transit gateway, you must declare a dependency on the transit gateway attachment. The route table cannot use the transit gateway until it has successfully attached to the VPC. Add a [DependsOn Attribute](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-attribute-dependson.html) in the ``AWS::EC2::Route`` resource to explicitly declare a dependency on the ``AWS::EC2::TransitGatewayAttachment`` resource.")
         .attribute(
             AttributeSchema::new("carrier_gateway_id", super::carrier_gateway_id())
@@ -109,7 +109,7 @@ pub fn enum_valid_values() -> (
     &'static str,
     &'static [(&'static str, &'static [&'static str])],
 ) {
-    ("ec2.route", &[])
+    ("ec2.Route", &[])
 }
 
 /// Maps DSL alias values back to canonical AWS values for this module.

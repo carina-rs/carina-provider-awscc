@@ -357,7 +357,7 @@ mod tests {
         let core_type = CoreAttributeType::StringEnum {
             name: "VersioningStatus".to_string(),
             values: vec!["Enabled".to_string(), "Suspended".to_string()],
-            namespace: Some("awscc.s3.bucket".to_string()),
+            namespace: Some("awscc.s3.Bucket".to_string()),
             to_dsl: None,
         };
 
@@ -372,7 +372,7 @@ mod tests {
             } => {
                 assert_eq!(name, "VersioningStatus");
                 assert_eq!(values.len(), 2);
-                assert_eq!(namespace.as_deref(), Some("awscc.s3.bucket"));
+                assert_eq!(namespace.as_deref(), Some("awscc.s3.Bucket"));
             }
             _ => panic!("Expected StringEnum"),
         }
@@ -390,7 +390,7 @@ mod tests {
 
     #[test]
     fn core_to_proto_schema_initializes_empty_validators() {
-        let schema = CoreResourceSchema::new("awscc.s3.bucket");
+        let schema = CoreResourceSchema::new("awscc.s3.Bucket");
         let proto = core_to_proto_schema(&schema);
         assert!(proto.validators.is_empty());
     }

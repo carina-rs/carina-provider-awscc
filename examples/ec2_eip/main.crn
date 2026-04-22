@@ -6,7 +6,7 @@ provider awscc {
   region = awscc.Region.ap_northeast_1
 }
 
-awscc.ec2.eip {
+awscc.ec2.Eip {
   domain = 'vpc'
 
   tags = {

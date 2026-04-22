@@ -199,7 +199,7 @@ pub(crate) fn dsl_value_to_aws(
             Value::String(s) => {
                 // Extract the raw enum value from the namespaced identifier, using
                 // known valid values for disambiguation when enum values contain dots
-                // (e.g., "ipsec.1" in "awscc.ec2.vpn_gateway.Type.ipsec.1").
+                // (e.g., "ipsec.1" in "awscc.ec2.VpnGateway.Type.ipsec.1").
                 let raw = if let Some((_, values, _, _)) = attr_type.string_enum_parts() {
                     let valid: Vec<&str> = values.iter().map(String::as_str).collect();
                     let raw_extracted = extract_enum_value_with_values(s, &valid);
@@ -523,7 +523,7 @@ mod tests {
 
         // 1. DSL side: resolve_enum_identifiers_impl converts bare `Gateway` ident
         let mut resource =
-            carina_core::resource::Resource::with_provider("awscc", "ec2.vpc_endpoint", "test");
+            carina_core::resource::Resource::with_provider("awscc", "ec2.VpcEndpoint", "test");
         resource.set_attr("vpc_id".to_string(), Value::String("vpc-123".to_string()));
         resource.set_attr(
             "vpc_endpoint_type".to_string(),
@@ -536,7 +536,7 @@ mod tests {
         let dsl_resolved = &resources[0].attributes["vpc_endpoint_type"];
         assert_eq!(
             dsl_resolved,
-            &Value::String("awscc.ec2.vpc_endpoint.VpcEndpointType.Gateway".to_string()),
+            &Value::String("awscc.ec2.VpcEndpoint.VpcEndpointType.Gateway".to_string()),
             "DSL bare ident `Gateway` should resolve to namespaced form"
         );
 
@@ -546,13 +546,13 @@ mod tests {
             "vpc_endpoint_type",
             &aws_json,
             &attr_schema.attr_type,
-            "ec2.vpc_endpoint",
+            "ec2.VpcEndpoint",
         )
         .expect("aws_value_to_dsl should return Some");
 
         assert_eq!(
             aws_dsl,
-            Value::String("awscc.ec2.vpc_endpoint.VpcEndpointType.Gateway".to_string()),
+            Value::String("awscc.ec2.VpcEndpoint.VpcEndpointType.Gateway".to_string()),
             "AWS read-back 'Gateway' should normalize to namespaced form"
         );
 
@@ -572,12 +572,12 @@ mod tests {
                 "INFREQUENT_ACCESS".to_string(),
                 "DELIVERY".to_string(),
             ],
-            namespace: Some("awscc.logs.log_group".to_string()),
+            namespace: Some("awscc.logs.LogGroup".to_string()),
             to_dsl: None,
         };
         let value =
-            Value::String("awscc.logs.log_group.LogGroupClass.INFREQUENT_ACCESS".to_string());
-        let result = dsl_value_to_aws(&value, &attr_type, "logs.log_group", "log_group_class");
+            Value::String("awscc.logs.LogGroup.LogGroupClass.INFREQUENT_ACCESS".to_string());
+        let result = dsl_value_to_aws(&value, &attr_type, "logs.LogGroup", "log_group_class");
         assert_eq!(result, Some(json!("INFREQUENT_ACCESS")));
     }
 
@@ -593,7 +593,7 @@ mod tests {
             to_dsl: None,
         };
         let value = Value::String("awscc.Region.ap_northeast_1".to_string());
-        let result = dsl_value_to_aws(&value, &attr_type, "logs.log_group", "region");
+        let result = dsl_value_to_aws(&value, &attr_type, "logs.LogGroup", "region");
         assert_eq!(result, Some(json!("ap-northeast-1")));
     }
 
@@ -602,15 +602,15 @@ mod tests {
         let inner = AttributeType::StringEnum {
             name: "AllowedMethod".to_string(),
             values: vec!["GET".to_string(), "PUT".to_string(), "DELETE".to_string()],
-            namespace: Some("awscc.s3.bucket".to_string()),
+            namespace: Some("awscc.s3.Bucket".to_string()),
             to_dsl: None,
         };
         let attr_type = AttributeType::list(inner);
         let value = Value::List(vec![
-            Value::String("awscc.s3.bucket.AllowedMethod.GET".to_string()),
-            Value::String("awscc.s3.bucket.AllowedMethod.PUT".to_string()),
+            Value::String("awscc.s3.Bucket.AllowedMethod.GET".to_string()),
+            Value::String("awscc.s3.Bucket.AllowedMethod.PUT".to_string()),
         ]);
-        let result = dsl_value_to_aws(&value, &attr_type, "s3.bucket", "allowed_methods");
+        let result = dsl_value_to_aws(&value, &attr_type, "s3.Bucket", "allowed_methods");
         assert_eq!(result, Some(json!(["GET", "PUT"])));
     }
 
@@ -619,17 +619,17 @@ mod tests {
         let inner = AttributeType::StringEnum {
             name: "AllowedMethod".to_string(),
             values: vec!["GET".to_string(), "PUT".to_string(), "DELETE".to_string()],
-            namespace: Some("awscc.s3.bucket".to_string()),
+            namespace: Some("awscc.s3.Bucket".to_string()),
             to_dsl: None,
         };
         let attr_type = AttributeType::list(inner);
         let json_val = json!(["GET", "PUT"]);
-        let result = aws_value_to_dsl("allowed_methods", &json_val, &attr_type, "s3.bucket");
+        let result = aws_value_to_dsl("allowed_methods", &json_val, &attr_type, "s3.Bucket");
         assert_eq!(
             result,
             Some(Value::List(vec![
-                Value::String("awscc.s3.bucket.AllowedMethod.GET".to_string()),
-                Value::String("awscc.s3.bucket.AllowedMethod.PUT".to_string()),
+                Value::String("awscc.s3.Bucket.AllowedMethod.GET".to_string()),
+                Value::String("awscc.s3.Bucket.AllowedMethod.PUT".to_string()),
             ]))
         );
     }
@@ -639,15 +639,15 @@ mod tests {
         let inner = AttributeType::StringEnum {
             name: "AllowedMethod".to_string(),
             values: vec!["GET".to_string(), "PUT".to_string()],
-            namespace: Some("awscc.s3.bucket".to_string()),
+            namespace: Some("awscc.s3.Bucket".to_string()),
             to_dsl: None,
         };
         let attr_type = AttributeType::list(inner);
 
         let aws_json = json!(["GET", "PUT"]);
-        let dsl = aws_value_to_dsl("allowed_methods", &aws_json, &attr_type, "s3.bucket")
+        let dsl = aws_value_to_dsl("allowed_methods", &aws_json, &attr_type, "s3.Bucket")
             .expect("read should succeed");
-        let written = dsl_value_to_aws(&dsl, &attr_type, "s3.bucket", "allowed_methods")
+        let written = dsl_value_to_aws(&dsl, &attr_type, "s3.Bucket", "allowed_methods")
             .expect("write should succeed");
         assert_eq!(written, aws_json, "Round-trip should produce original JSON");
     }
@@ -658,13 +658,13 @@ mod tests {
             AttributeType::StringEnum {
                 name: "Protocol".to_string(),
                 values: vec!["tcp".to_string(), "udp".to_string()],
-                namespace: Some("awscc.ec2.sg".to_string()),
+                namespace: Some("awscc.ec2.Sg".to_string()),
                 to_dsl: None,
             },
             AttributeType::String,
         ]);
-        let value = Value::String("awscc.ec2.sg.Protocol.tcp".to_string());
-        let result = dsl_value_to_aws(&value, &attr_type, "ec2.sg", "protocol");
+        let value = Value::String("awscc.ec2.Sg.Protocol.tcp".to_string());
+        let result = dsl_value_to_aws(&value, &attr_type, "ec2.Sg", "protocol");
         assert_eq!(result, Some(json!("tcp")));
     }
 
@@ -683,7 +683,7 @@ mod tests {
         );
         let dsl_value = Value::Map(map);
 
-        let result = dsl_value_to_aws(&dsl_value, &attr_type, "s3.bucket", "tags");
+        let result = dsl_value_to_aws(&dsl_value, &attr_type, "s3.Bucket", "tags");
         let result = result.expect("Should return Some");
 
         if let serde_json::Value::Object(obj) = &result {
@@ -732,7 +732,7 @@ mod tests {
             "another-key": "value2"
         });
 
-        let result = aws_value_to_dsl("tags", &aws_json, &attr_type, "s3.bucket");
+        let result = aws_value_to_dsl("tags", &aws_json, &attr_type, "s3.Bucket");
         let result = result.expect("Should return Some");
 
         if let Value::Map(map) = &result {
@@ -756,16 +756,16 @@ mod tests {
             AttributeType::StringEnum {
                 name: "Protocol".to_string(),
                 values: vec!["tcp".to_string(), "udp".to_string()],
-                namespace: Some("awscc.ec2.sg".to_string()),
+                namespace: Some("awscc.ec2.Sg".to_string()),
                 to_dsl: None,
             },
             AttributeType::String,
         ]);
         let json_val = json!("tcp");
-        let result = aws_value_to_dsl("protocol", &json_val, &attr_type, "ec2.sg");
+        let result = aws_value_to_dsl("protocol", &json_val, &attr_type, "ec2.Sg");
         assert_eq!(
             result,
-            Some(Value::String("awscc.ec2.sg.Protocol.tcp".to_string()))
+            Some(Value::String("awscc.ec2.Sg.Protocol.tcp".to_string()))
         );
     }
 
@@ -775,13 +775,13 @@ mod tests {
             AttributeType::StringEnum {
                 name: "Protocol".to_string(),
                 values: vec!["tcp".to_string(), "udp".to_string()],
-                namespace: Some("awscc.ec2.sg".to_string()),
+                namespace: Some("awscc.ec2.Sg".to_string()),
                 to_dsl: None,
             },
             AttributeType::Int,
         ]);
         let json_val = json!(42);
-        let result = aws_value_to_dsl("protocol", &json_val, &attr_type, "ec2.sg");
+        let result = aws_value_to_dsl("protocol", &json_val, &attr_type, "ec2.Sg");
         assert_eq!(result, Some(Value::Int(42)));
     }
 
@@ -829,7 +829,7 @@ mod tests {
         let result = dsl_value_to_aws(
             &value,
             &attr_type,
-            "iam.role",
+            "iam.Role",
             "assume_role_policy_document",
         );
         let result = result.expect("Should return Some");
@@ -884,7 +884,7 @@ mod tests {
             "assume_role_policy_document",
             &aws_json,
             &attr_type,
-            "iam.role",
+            "iam.Role",
         );
         let result = result.expect("Should return Some");
 
@@ -942,7 +942,7 @@ mod tests {
         });
         let json_val = json!([{"RegionName": "ap-northeast-1"}]);
 
-        let result = aws_value_to_dsl("operating_regions", &json_val, &attr_type, "ec2.ipam");
+        let result = aws_value_to_dsl("operating_regions", &json_val, &attr_type, "ec2.Ipam");
         let expected = Value::List(vec![Value::Map(HashMap::from([(
             "region_name".to_string(),
             Value::String("awscc.Region.ap_northeast_1".to_string()),
@@ -955,16 +955,16 @@ mod tests {
         let attr_type = AttributeType::StringEnum {
             name: "Type".to_string(),
             values: vec!["ipsec.1".to_string()],
-            namespace: Some("awscc.ec2.vpn_gateway".to_string()),
+            namespace: Some("awscc.ec2.VpnGateway".to_string()),
             to_dsl: None,
         };
         let json_val = json!("ipsec.1");
 
-        let result = aws_value_to_dsl("type", &json_val, &attr_type, "ec2.vpn_gateway");
+        let result = aws_value_to_dsl("type", &json_val, &attr_type, "ec2.VpnGateway");
         assert_eq!(
             result,
             Some(Value::String(
-                "awscc.ec2.vpn_gateway.Type.ipsec.1".to_string()
+                "awscc.ec2.VpnGateway.Type.ipsec.1".to_string()
             ))
         );
     }
@@ -974,12 +974,12 @@ mod tests {
         let attr_type = AttributeType::StringEnum {
             name: "Type".to_string(),
             values: vec!["ipsec.1".to_string()],
-            namespace: Some("awscc.ec2.vpn_gateway".to_string()),
+            namespace: Some("awscc.ec2.VpnGateway".to_string()),
             to_dsl: None,
         };
-        let value = Value::String("awscc.ec2.vpn_gateway.Type.ipsec.1".to_string());
+        let value = Value::String("awscc.ec2.VpnGateway.Type.ipsec.1".to_string());
 
-        let result = dsl_value_to_aws(&value, &attr_type, "ec2.vpn_gateway", "type");
+        let result = dsl_value_to_aws(&value, &attr_type, "ec2.VpnGateway", "type");
         assert_eq!(result, Some(json!("ipsec.1")));
     }
 
@@ -988,12 +988,12 @@ mod tests {
         let attr_type = AttributeType::StringEnum {
             name: "Type".to_string(),
             values: vec!["ipsec.1".to_string()],
-            namespace: Some("awscc.ec2.vpn_gateway".to_string()),
+            namespace: Some("awscc.ec2.VpnGateway".to_string()),
             to_dsl: None,
         };
         let value = Value::String("ipsec.1".to_string());
 
-        let result = dsl_value_to_aws(&value, &attr_type, "ec2.vpn_gateway", "type");
+        let result = dsl_value_to_aws(&value, &attr_type, "ec2.VpnGateway", "type");
         assert_eq!(result, Some(json!("ipsec.1")));
     }
 
@@ -1002,21 +1002,20 @@ mod tests {
         let attr_type = AttributeType::StringEnum {
             name: "Type".to_string(),
             values: vec!["ipsec.1".to_string()],
-            namespace: Some("awscc.ec2.vpn_gateway".to_string()),
+            namespace: Some("awscc.ec2.VpnGateway".to_string()),
             to_dsl: None,
         };
 
         let aws_val = json!("ipsec.1");
-        let dsl_val = aws_value_to_dsl("type", &aws_val, &attr_type, "ec2.vpn_gateway");
+        let dsl_val = aws_value_to_dsl("type", &aws_val, &attr_type, "ec2.VpnGateway");
         assert_eq!(
             dsl_val,
             Some(Value::String(
-                "awscc.ec2.vpn_gateway.Type.ipsec.1".to_string()
+                "awscc.ec2.VpnGateway.Type.ipsec.1".to_string()
             ))
         );
 
-        let back_to_aws =
-            dsl_value_to_aws(&dsl_val.unwrap(), &attr_type, "ec2.vpn_gateway", "type");
+        let back_to_aws = dsl_value_to_aws(&dsl_val.unwrap(), &attr_type, "ec2.VpnGateway", "type");
         assert_eq!(back_to_aws, Some(json!("ipsec.1")));
     }
 
@@ -1142,7 +1141,7 @@ mod tests {
             "lifecycle_configuration",
             &aws_json,
             &attr_schema.attr_type,
-            "s3.bucket",
+            "s3.Bucket",
         )
         .expect("aws_value_to_dsl should succeed for lifecycle_configuration");
 
@@ -1160,7 +1159,7 @@ mod tests {
             assert_eq!(
                 rule0.get("status"),
                 Some(&Value::String(
-                    "awscc.s3.bucket.RuleStatus.Enabled".to_string()
+                    "awscc.s3.Bucket.RuleStatus.Enabled".to_string()
                 )),
                 "status should be namespaced enum"
             );
@@ -1181,7 +1180,7 @@ mod tests {
             assert_eq!(
                 rule1.get("status"),
                 Some(&Value::String(
-                    "awscc.s3.bucket.RuleStatus.Enabled".to_string()
+                    "awscc.s3.Bucket.RuleStatus.Enabled".to_string()
                 )),
             );
             if let Some(Value::List(transitions)) = rule1.get("transitions") {
@@ -1190,7 +1189,7 @@ mod tests {
                     assert_eq!(
                         t.get("storage_class"),
                         Some(&Value::String(
-                            "awscc.s3.bucket.TransitionStorageClass.GLACIER".to_string()
+                            "awscc.s3.Bucket.TransitionStorageClass.GLACIER".to_string()
                         )),
                     );
                     assert_eq!(t.get("transition_in_days"), Some(&Value::Int(30)),);
@@ -1208,7 +1207,7 @@ mod tests {
         let written_json = dsl_value_to_aws(
             &dsl_value,
             &attr_schema.attr_type,
-            "s3.bucket",
+            "s3.Bucket",
             "lifecycle_configuration",
         )
         .expect("dsl_value_to_aws should succeed");
@@ -1244,7 +1243,7 @@ mod tests {
             to_dsl: Some(|s: &str| s.strip_suffix('.').unwrap_or(s).to_string()),
         };
         let json_val = serde_json::json!("carina-rs.dev.");
-        let result = aws_value_to_dsl("name", &json_val, &attr_type, "route53.hosted_zone");
+        let result = aws_value_to_dsl("name", &json_val, &attr_type, "route53.HostedZone");
         assert_eq!(result, Some(Value::String("carina-rs.dev".to_string())));
     }
 
@@ -1260,7 +1259,7 @@ mod tests {
             to_dsl: None,
         };
         let json_val = serde_json::json!("carina-rs.dev.");
-        let result = aws_value_to_dsl("name", &json_val, &attr_type, "route53.hosted_zone");
+        let result = aws_value_to_dsl("name", &json_val, &attr_type, "route53.HostedZone");
         assert_eq!(result, Some(Value::String("carina-rs.dev.".to_string())));
     }
 }

@@ -129,7 +129,7 @@ mod tests {
     }
 
     fn get_vpc_config() -> &'static AwsccSchemaConfig {
-        get_schema_config("ec2.vpc").expect("ec2.vpc schema should exist")
+        get_schema_config("ec2.Vpc").expect("ec2.vpc schema should exist")
     }
 
     #[test]
@@ -164,7 +164,7 @@ mod tests {
     #[test]
     fn test_build_update_patches_remove_attribute_absent_in_to() {
         let config = get_vpc_config();
-        let id = ResourceId::with_provider("awscc", "ec2.vpc", "test");
+        let id = ResourceId::with_provider("awscc", "ec2.Vpc", "test");
 
         let mut from_attrs = HashMap::new();
         from_attrs.insert(
@@ -173,11 +173,11 @@ mod tests {
         );
         from_attrs.insert(
             "instance_tenancy".to_string(),
-            Value::String("awscc.ec2.vpc.InstanceTenancy.default".to_string()),
+            Value::String("awscc.ec2.Vpc.InstanceTenancy.default".to_string()),
         );
         let from = State::existing(id.clone(), from_attrs);
 
-        let mut to = Resource::new("ec2.vpc", "test");
+        let mut to = Resource::new("ec2.Vpc", "test");
         to.set_attr(
             "cidr_block".to_string(),
             Value::String("10.0.0.0/16".to_string()),
@@ -199,7 +199,7 @@ mod tests {
     #[test]
     fn test_build_update_patches_remove_tags_absent_in_to() {
         let config = get_vpc_config();
-        let id = ResourceId::with_provider("awscc", "ec2.vpc", "test");
+        let id = ResourceId::with_provider("awscc", "ec2.Vpc", "test");
 
         let mut from_attrs = HashMap::new();
         from_attrs.insert(
@@ -211,7 +211,7 @@ mod tests {
         from_attrs.insert("tags".to_string(), Value::Map(tags));
         let from = State::existing(id.clone(), from_attrs);
 
-        let mut to = Resource::new("ec2.vpc", "test");
+        let mut to = Resource::new("ec2.Vpc", "test");
         to.set_attr(
             "cidr_block".to_string(),
             Value::String("10.0.0.0/16".to_string()),
@@ -233,7 +233,7 @@ mod tests {
     #[test]
     fn test_build_update_patches_no_remove_for_required_attribute() {
         let config = get_vpc_config();
-        let id = ResourceId::with_provider("awscc", "ec2.vpc", "test");
+        let id = ResourceId::with_provider("awscc", "ec2.Vpc", "test");
 
         let mut from_attrs = HashMap::new();
         from_attrs.insert(
@@ -242,7 +242,7 @@ mod tests {
         );
         let from = State::existing(id.clone(), from_attrs);
 
-        let to = Resource::new("ec2.vpc", "test");
+        let to = Resource::new("ec2.Vpc", "test");
 
         let patches = build_update_patches(config, &from, &to);
 
@@ -260,7 +260,7 @@ mod tests {
     #[test]
     fn test_build_update_patches_no_remove_when_both_present() {
         let config = get_vpc_config();
-        let id = ResourceId::with_provider("awscc", "ec2.vpc", "test");
+        let id = ResourceId::with_provider("awscc", "ec2.Vpc", "test");
 
         let mut from_attrs = HashMap::new();
         from_attrs.insert(
@@ -269,18 +269,18 @@ mod tests {
         );
         from_attrs.insert(
             "instance_tenancy".to_string(),
-            Value::String("awscc.ec2.vpc.InstanceTenancy.default".to_string()),
+            Value::String("awscc.ec2.Vpc.InstanceTenancy.default".to_string()),
         );
         let from = State::existing(id.clone(), from_attrs);
 
-        let mut to = Resource::new("ec2.vpc", "test");
+        let mut to = Resource::new("ec2.Vpc", "test");
         to.set_attr(
             "cidr_block".to_string(),
             Value::String("10.0.0.0/16".to_string()),
         );
         to.set_attr(
             "instance_tenancy".to_string(),
-            Value::String("awscc.ec2.vpc.InstanceTenancy.dedicated".to_string()),
+            Value::String("awscc.ec2.Vpc.InstanceTenancy.dedicated".to_string()),
         );
 
         let patches = build_update_patches(config, &from, &to);
@@ -298,7 +298,7 @@ mod tests {
     #[test]
     fn test_build_update_patches_skip_unchanged_attributes() {
         let config = get_vpc_config();
-        let id = ResourceId::with_provider("awscc", "ec2.vpc", "test");
+        let id = ResourceId::with_provider("awscc", "ec2.Vpc", "test");
 
         let mut from_attrs = HashMap::new();
         from_attrs.insert(
@@ -307,18 +307,18 @@ mod tests {
         );
         from_attrs.insert(
             "instance_tenancy".to_string(),
-            Value::String("awscc.ec2.vpc.InstanceTenancy.default".to_string()),
+            Value::String("awscc.ec2.Vpc.InstanceTenancy.default".to_string()),
         );
         let from = State::existing(id.clone(), from_attrs);
 
-        let mut to = Resource::new("ec2.vpc", "test");
+        let mut to = Resource::new("ec2.Vpc", "test");
         to.set_attr(
             "cidr_block".to_string(),
             Value::String("10.0.0.0/16".to_string()),
         );
         to.set_attr(
             "instance_tenancy".to_string(),
-            Value::String("awscc.ec2.vpc.InstanceTenancy.dedicated".to_string()),
+            Value::String("awscc.ec2.Vpc.InstanceTenancy.dedicated".to_string()),
         );
 
         let patches = build_update_patches(config, &from, &to);
@@ -347,7 +347,7 @@ mod tests {
     #[test]
     fn test_build_update_patches_no_patches_when_identical() {
         let config = get_vpc_config();
-        let id = ResourceId::with_provider("awscc", "ec2.vpc", "test");
+        let id = ResourceId::with_provider("awscc", "ec2.Vpc", "test");
 
         let mut from_attrs = HashMap::new();
         from_attrs.insert(
@@ -356,7 +356,7 @@ mod tests {
         );
         let from = State::existing(id.clone(), from_attrs);
 
-        let mut to = Resource::new("ec2.vpc", "test");
+        let mut to = Resource::new("ec2.Vpc", "test");
         to.set_attr(
             "cidr_block".to_string(),
             Value::String("10.0.0.0/16".to_string()),
@@ -374,7 +374,7 @@ mod tests {
     #[test]
     fn test_build_update_patches_skip_unchanged_tags() {
         let config = get_vpc_config();
-        let id = ResourceId::with_provider("awscc", "ec2.vpc", "test");
+        let id = ResourceId::with_provider("awscc", "ec2.Vpc", "test");
 
         let mut from_attrs = HashMap::new();
         from_attrs.insert(
@@ -386,7 +386,7 @@ mod tests {
         from_attrs.insert("tags".to_string(), Value::Map(tags.clone()));
         let from = State::existing(id.clone(), from_attrs);
 
-        let mut to = Resource::new("ec2.vpc", "test");
+        let mut to = Resource::new("ec2.Vpc", "test");
         to.set_attr(
             "cidr_block".to_string(),
             Value::String("10.0.0.0/16".to_string()),
@@ -408,7 +408,7 @@ mod tests {
         // while "replace" fails if the property doesn't exist in the model.
         // Using "add" is more robust and matches the AWS AWSCC Terraform provider behavior.
         let config = get_vpc_config();
-        let id = ResourceId::with_provider("awscc", "ec2.vpc", "test");
+        let id = ResourceId::with_provider("awscc", "ec2.Vpc", "test");
 
         let mut from_attrs = HashMap::new();
         from_attrs.insert(
@@ -417,18 +417,18 @@ mod tests {
         );
         from_attrs.insert(
             "instance_tenancy".to_string(),
-            Value::String("awscc.ec2.vpc.InstanceTenancy.default".to_string()),
+            Value::String("awscc.ec2.Vpc.InstanceTenancy.default".to_string()),
         );
         let from = State::existing(id.clone(), from_attrs);
 
-        let mut to = Resource::new("ec2.vpc", "test");
+        let mut to = Resource::new("ec2.Vpc", "test");
         to.set_attr(
             "cidr_block".to_string(),
             Value::String("10.0.0.0/16".to_string()),
         );
         to.set_attr(
             "instance_tenancy".to_string(),
-            Value::String("awscc.ec2.vpc.InstanceTenancy.dedicated".to_string()),
+            Value::String("awscc.ec2.Vpc.InstanceTenancy.dedicated".to_string()),
         );
 
         let patches = build_update_patches(config, &from, &to);
@@ -452,8 +452,8 @@ mod tests {
         // because "replace" op fails when the property path doesn't exist in
         // the CloudControl model.
         let config =
-            get_schema_config("logs.log_group").expect("logs.log_group schema should exist");
-        let id = ResourceId::with_provider("awscc", "logs.log_group", "test");
+            get_schema_config("logs.LogGroup").expect("logs.log_group schema should exist");
+        let id = ResourceId::with_provider("awscc", "logs.LogGroup", "test");
 
         let mut from_attrs = HashMap::new();
         from_attrs.insert("retention_in_days".to_string(), Value::Int(7));
@@ -463,7 +463,7 @@ mod tests {
         );
         let from = State::existing(id.clone(), from_attrs);
 
-        let mut to = Resource::new("logs.log_group", "test");
+        let mut to = Resource::new("logs.LogGroup", "test");
         to.set_attr("retention_in_days".to_string(), Value::Int(14));
         to.set_attr(
             "log_group_name".to_string(),
@@ -496,8 +496,8 @@ mod tests {
         // Regression test for issue #806: update patch includes readOnly property Arn
         // CloudFormation rejects patches that include read-only properties like Arn.
         let config =
-            get_schema_config("logs.log_group").expect("logs.log_group schema should exist");
-        let id = ResourceId::with_provider("awscc", "logs.log_group", "test");
+            get_schema_config("logs.LogGroup").expect("logs.log_group schema should exist");
+        let id = ResourceId::with_provider("awscc", "logs.LogGroup", "test");
 
         let mut from_attrs = HashMap::new();
         from_attrs.insert("retention_in_days".to_string(), Value::Int(7));
@@ -515,7 +515,7 @@ mod tests {
         );
         let from = State::existing(id.clone(), from_attrs);
 
-        let mut to = Resource::new("logs.log_group", "test");
+        let mut to = Resource::new("logs.LogGroup", "test");
         to.set_attr("retention_in_days".to_string(), Value::Int(14));
         to.set_attr(
             "log_group_name".to_string(),
@@ -551,8 +551,8 @@ mod tests {
         // When DnsOptions has nested create-only sub-properties (PrivateDnsPreference,
         // PrivateDnsSpecifiedDomains), the whole DnsOptions should be excluded from patches.
         let config =
-            get_schema_config("ec2.vpc_endpoint").expect("ec2.vpc_endpoint schema should exist");
-        let id = ResourceId::with_provider("awscc", "ec2.vpc_endpoint", "test");
+            get_schema_config("ec2.VpcEndpoint").expect("ec2.vpc_endpoint schema should exist");
+        let id = ResourceId::with_provider("awscc", "ec2.VpcEndpoint", "test");
 
         let mut from_attrs = HashMap::new();
         from_attrs.insert("vpc_id".to_string(), Value::String("vpc-123".to_string()));
@@ -568,13 +568,13 @@ mod tests {
         let mut dns_options = HashMap::new();
         dns_options.insert(
             "dns_record_ip_type".to_string(),
-            Value::String("awscc.ec2.vpc_endpoint.DnsRecordIpType.ipv4".to_string()),
+            Value::String("awscc.ec2.VpcEndpoint.DnsRecordIpType.ipv4".to_string()),
         );
         from_attrs.insert("dns_options".to_string(), Value::Map(dns_options));
         let from = State::existing(id.clone(), from_attrs);
 
         // User only specifies policy_document change, no dns_options
-        let mut to = Resource::new("ec2.vpc_endpoint", "test");
+        let mut to = Resource::new("ec2.VpcEndpoint", "test");
         to.set_attr("vpc_id".to_string(), Value::String("vpc-123".to_string()));
         to.set_attr(
             "service_name".to_string(),

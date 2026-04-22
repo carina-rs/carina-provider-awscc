@@ -6,8 +6,8 @@ provider awscc {
   region = awscc.Region.ap_northeast_1
 }
 
-awscc.ec2.vpn_gateway {
-  type = awscc.ec2.vpn_gateway.Type.ipsec.1
+awscc.ec2.VpnGateway {
+  type = awscc.ec2.VpnGateway.Type.ipsec.1
 
   tags = {
     Environment = 'example'

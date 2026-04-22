@@ -10,20 +10,20 @@ provider awscc {
   region = awscc.Region.ap_northeast_1
 }
 
-awscc.s3.bucket {
+awscc.s3.Bucket {
   bucket_name_prefix = 'carina-acc-test-'
 
   lifecycle_configuration = {
     rule {
       id                 = 'expire-old-objects'
-      status             = awscc.s3.bucket.RuleStatus.Enabled
+      status             = awscc.s3.Bucket.RuleStatus.Enabled
       expiration_in_days = 90
     }
     rule {
       id     = 'transition-to-glacier'
-      status = awscc.s3.bucket.RuleStatus.Enabled
+      status = awscc.s3.Bucket.RuleStatus.Enabled
       transition {
-        storage_class      = awscc.s3.bucket.TransitionStorageClass.GLACIER
+        storage_class      = awscc.s3.Bucket.TransitionStorageClass.GLACIER
         transition_in_days = 30
       }
     }

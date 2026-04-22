@@ -15,7 +15,7 @@ let net = network {
 }
 
 # Use module attributes to create a resource that depends on module output
-awscc.ec2.route_table {
+awscc.ec2.RouteTable {
   vpc_id = net.vpc_id
   tags   = { Name = 'module-attr-test' }
 }

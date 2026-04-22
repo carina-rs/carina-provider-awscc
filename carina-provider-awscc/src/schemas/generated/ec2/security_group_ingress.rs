@@ -38,9 +38,9 @@ fn validate_to_port_range(value: &Value) -> Result<(), String> {
 pub fn ec2_security_group_ingress_config() -> AwsccSchemaConfig {
     AwsccSchemaConfig {
         aws_type_name: "AWS::EC2::SecurityGroupIngress",
-        resource_type_name: "ec2.security_group_ingress",
+        resource_type_name: "ec2.SecurityGroupIngress",
         has_tags: false,
-        schema: ResourceSchema::new("awscc.ec2.security_group_ingress")
+        schema: ResourceSchema::new("awscc.ec2.SecurityGroupIngress")
         .with_description("Resource Type definition for AWS::EC2::SecurityGroupIngress")
         .attribute(
             AttributeSchema::new("cidr_ip", types::ipv4_cidr())
@@ -95,7 +95,7 @@ pub fn ec2_security_group_ingress_config() -> AwsccSchemaConfig {
             AttributeSchema::new("ip_protocol", AttributeType::StringEnum {
                 name: "IpProtocol".to_string(),
                 values: vec!["tcp".to_string(), "udp".to_string(), "icmp".to_string(), "icmpv6".to_string(), "-1".to_string(), "all".to_string()],
-                namespace: Some("awscc.ec2.security_group_ingress".to_string()),
+                namespace: Some("awscc.ec2.SecurityGroupIngress".to_string()),
                 to_dsl: Some(|s: &str| match s { "-1" => "all".to_string(), _ => s.replace('-', "_") }),
             })
                 .required()
@@ -150,7 +150,7 @@ pub fn enum_valid_values() -> (
     &'static [(&'static str, &'static [&'static str])],
 ) {
     (
-        "ec2.security_group_ingress",
+        "ec2.SecurityGroupIngress",
         &[("ip_protocol", VALID_IP_PROTOCOL)],
     )
 }
