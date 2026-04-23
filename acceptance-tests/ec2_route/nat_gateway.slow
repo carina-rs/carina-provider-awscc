@@ -1,0 +1,6 @@
+NAT Gateway + VPC Gateway Attachment destroy operations each take ~8–9 minutes
+via CloudControl, so the full cycle exceeds the 15-minute aws-vault SSO token
+lifetime and fails in destroy with ExpiredTokenException (see issue #157).
+
+Run explicitly with --include-slow (or a matching filter) when a fresh token
+or a longer session is available; otherwise this test is skipped.
