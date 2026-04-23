@@ -1,9 +1,9 @@
 # Network with Route Table module
 #
-# Imports the network module (VPC + Subnet) and adds a route table.
-# Demonstrates nested module imports.
+# Uses the network module (VPC + Subnet) and adds a route table.
+# Demonstrates nested module uses.
 
-let network = import '../network'
+let network = use { source = '../network' }
 
 arguments {
   cidr_block : String

@@ -1,12 +1,12 @@
 # Nested module test
 #
-# Tests: module importing another module (2-level nesting)
+# Tests: module useing another module (2-level nesting)
 
 provider awscc {
   region = awscc.Region.ap_northeast_1
 }
 
-let network_with_rt = import './modules/network_with_rt'
+let network_with_rt = use { source = './modules/network_with_rt' }
 
 let infra = network_with_rt {
   cidr_block  = '10.0.0.0/16'
