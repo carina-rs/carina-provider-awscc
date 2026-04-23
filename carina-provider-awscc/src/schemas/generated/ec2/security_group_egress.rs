@@ -86,7 +86,7 @@ pub fn ec2_security_group_egress_config() -> AwsccSchemaConfig {
                 .with_provider_name("FromPort"),
         )
         .attribute(
-            AttributeSchema::new("group_id", AttributeType::String)
+            AttributeSchema::new("group_id", super::security_group_id())
                 .required()
                 .create_only()
                 .with_description("The ID of the security group. You must specify either the security group ID or the security group name in the request. For security groups in a nondefault VPC, you must specify the security group ID.")

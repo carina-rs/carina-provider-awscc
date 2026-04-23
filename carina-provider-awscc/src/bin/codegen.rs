@@ -493,8 +493,8 @@ fn infer_string_type_display(prop_name: &str, resource_type: &str) -> String {
         "Arn".to_string()
     } else if is_ipam_pool_id_property(singular_name) {
         "IpamPoolId".to_string()
-    } else if is_aws_resource_id_property(singular_name) {
-        get_resource_id_display_name(singular_name).to_string()
+    } else if is_aws_resource_id_property(singular_name, Some(resource_type)) {
+        get_resource_id_display_name(singular_name, Some(resource_type)).to_string()
     } else if prop_lower.ends_with("ownerid") || prop_lower.ends_with("accountid") {
         "AwsAccountId".to_string()
     } else {
@@ -3363,8 +3363,8 @@ fn infer_string_type(prop_name: &str, resource_type: &str) -> Option<String> {
     }
 
     // Check resource ID pattern
-    if is_aws_resource_id_property(singular_name) {
-        return Some(get_resource_id_type(singular_name).to_string());
+    if is_aws_resource_id_property(singular_name, Some(resource_type)) {
+        return Some(get_resource_id_type(singular_name, Some(resource_type)).to_string());
     }
 
     // AWS Account ID (owner IDs and account IDs are 12-digit account IDs)
@@ -3376,8 +3376,14 @@ fn infer_string_type(prop_name: &str, resource_type: &str) -> Option<String> {
 }
 
 /// Check if a property name represents an AWS resource ID with the standard
-/// prefix-hex format (e.g., vpc-1a2b3c4d, subnet-0123456789abcdef0)
-fn is_aws_resource_id_property(prop_name: &str) -> bool {
+/// prefix-hex format (e.g., vpc-1a2b3c4d, subnet-0123456789abcdef0).
+///
+/// `resource_type` narrows the check for property names that are ambiguous
+/// without context. Notably, bare `GroupId` only counts as an AWS resource
+/// ID on EC2 security-group resources; on unrelated resources (e.g.,
+/// `AWS::IdentityStore::Group`) the same name refers to a different ID
+/// format and must stay generic.
+fn is_aws_resource_id_property(prop_name: &str, resource_type: Option<&str>) -> bool {
     let lower = prop_name.to_lowercase();
     // Known resource ID suffixes that use prefix-hex format
     let resource_id_suffixes = [
@@ -3404,9 +3410,25 @@ fn is_aws_resource_id_property(prop_name: &str) -> bool {
     } else {
         &lower
     };
-    resource_id_suffixes
+    if resource_id_suffixes
         .iter()
         .any(|suffix| lower.ends_with(suffix) || singular.ends_with(suffix))
+    {
+        return true;
+    }
+    // Bare `GroupId`/`groupId` on EC2 security-group resources. `classify_resource_id`
+    // narrows this further; here we just admit the property into the ID pipeline.
+    if (lower == "groupid")
+        && matches!(
+            resource_type,
+            Some("AWS::EC2::SecurityGroup")
+                | Some("AWS::EC2::SecurityGroupIngress")
+                | Some("AWS::EC2::SecurityGroupEgress")
+        )
+    {
+        return true;
+    }
+    false
 }
 
 /// Classification of AWS resource ID types.
@@ -3438,7 +3460,12 @@ enum ResourceIdKind {
 /// Classify a property name into a specific resource ID kind.
 /// The matching order matters: more specific patterns (e.g., EgressOnlyInternetGateway)
 /// must be checked before more general ones (e.g., InternetGateway).
-fn classify_resource_id(prop_name: &str) -> ResourceIdKind {
+///
+/// `resource_type` is the CloudFormation type name (e.g., `AWS::EC2::SecurityGroup`) of the
+/// resource the property belongs to. It's used for a narrow allowlist that lets bare
+/// `GroupId` on EC2 security-group resources classify as `SecurityGroupId`, without
+/// affecting `GroupId` on other resources (e.g., `AWS::IdentityStore::Group`).
+fn classify_resource_id(prop_name: &str, resource_type: Option<&str>) -> ResourceIdKind {
     let lower = prop_name.to_lowercase();
 
     // VPC IDs
@@ -3449,10 +3476,26 @@ fn classify_resource_id(prop_name: &str) -> ResourceIdKind {
     if lower.ends_with("subnetid") || lower == "subnetid" {
         return ResourceIdKind::SubnetId;
     }
-    // Security Group IDs (including DestinationSecurityGroupId, SourceSecurityGroupId, etc.)
-    // Only match when "securitygroup" is explicitly in the name — bare "GroupId" is too
-    // broad and catches non-EC2 identifiers (e.g., identitystore GroupId).
+    // Security Group IDs.
+    //
+    // Matches either:
+    // - any property name containing "securitygroup" and ending with "id"
+    //   (covers DestinationSecurityGroupId, SourceSecurityGroupId, etc.),
+    // - or bare `GroupId`/`groupId` on EC2 security-group resources
+    //   (AWS::EC2::SecurityGroup{,Ingress,Egress}). The resource-type
+    //   allowlist keeps `GroupId` on other resources — e.g., AWS::IdentityStore::Group —
+    //   classified as Generic.
     if lower.contains("securitygroup") && lower.ends_with("id") {
+        return ResourceIdKind::SecurityGroupId;
+    }
+    if (lower == "groupid")
+        && matches!(
+            resource_type,
+            Some("AWS::EC2::SecurityGroup")
+                | Some("AWS::EC2::SecurityGroupIngress")
+                | Some("AWS::EC2::SecurityGroupEgress")
+        )
+    {
         return ResourceIdKind::SecurityGroupId;
     }
     // Egress Only Internet Gateway IDs (must be checked before Internet Gateway IDs)
@@ -3521,8 +3564,11 @@ fn classify_resource_id(prop_name: &str) -> ResourceIdKind {
 
 /// Get the specific resource ID type function for a property name.
 /// Returns the function name (e.g., "super::vpc_id()") or generic aws_resource_id.
-fn get_resource_id_type(prop_name: &str) -> &'static str {
-    match classify_resource_id(prop_name) {
+///
+/// `resource_type` is the CloudFormation type name of the enclosing resource; see
+/// `classify_resource_id`.
+fn get_resource_id_type(prop_name: &str, resource_type: Option<&str>) -> &'static str {
+    match classify_resource_id(prop_name, resource_type) {
         ResourceIdKind::VpcId => "super::vpc_id()",
         ResourceIdKind::SubnetId => "super::subnet_id()",
         ResourceIdKind::SecurityGroupId => "super::security_group_id()",
@@ -3546,8 +3592,8 @@ fn get_resource_id_type(prop_name: &str) -> &'static str {
 }
 
 /// Get the display name for a resource ID type (for markdown documentation).
-fn get_resource_id_display_name(prop_name: &str) -> &'static str {
-    match classify_resource_id(prop_name) {
+fn get_resource_id_display_name(prop_name: &str, resource_type: Option<&str>) -> &'static str {
+    match classify_resource_id(prop_name, resource_type) {
         ResourceIdKind::VpcId => "VpcId",
         ResourceIdKind::SubnetId => "SubnetId",
         ResourceIdKind::SecurityGroupId => "SecurityGroupId",
@@ -4837,28 +4883,34 @@ mod tests {
     #[test]
     fn test_is_aws_resource_id_property() {
         // Known resource ID properties
-        assert!(is_aws_resource_id_property("VpcId"));
-        assert!(is_aws_resource_id_property("SubnetId"));
-        assert!(is_aws_resource_id_property("SecurityGroupId"));
-        assert!(is_aws_resource_id_property("RouteTableId"));
-        assert!(is_aws_resource_id_property("InternetGatewayId"));
-        assert!(is_aws_resource_id_property("AllocationId"));
-        assert!(is_aws_resource_id_property("NetworkInterfaceId"));
-        assert!(is_aws_resource_id_property("InstanceId"));
-        assert!(is_aws_resource_id_property("DestinationSecurityGroupId"));
-        assert!(is_aws_resource_id_property("DestinationPrefixListId"));
-        assert!(is_aws_resource_id_property("VpcEndpointId"));
+        assert!(is_aws_resource_id_property("VpcId", None));
+        assert!(is_aws_resource_id_property("SubnetId", None));
+        assert!(is_aws_resource_id_property("SecurityGroupId", None));
+        assert!(is_aws_resource_id_property("RouteTableId", None));
+        assert!(is_aws_resource_id_property("InternetGatewayId", None));
+        assert!(is_aws_resource_id_property("AllocationId", None));
+        assert!(is_aws_resource_id_property("NetworkInterfaceId", None));
+        assert!(is_aws_resource_id_property("InstanceId", None));
+        assert!(is_aws_resource_id_property(
+            "DestinationSecurityGroupId",
+            None
+        ));
+        assert!(is_aws_resource_id_property("DestinationPrefixListId", None));
+        assert!(is_aws_resource_id_property("VpcEndpointId", None));
 
         // Non-resource ID properties (should stay String)
-        assert!(!is_aws_resource_id_property("AvailabilityZoneId"));
-        assert!(!is_aws_resource_id_property("SourceSecurityGroupOwnerId"));
-        assert!(!is_aws_resource_id_property("ResourceId"));
+        assert!(!is_aws_resource_id_property("AvailabilityZoneId", None));
+        assert!(!is_aws_resource_id_property(
+            "SourceSecurityGroupOwnerId",
+            None
+        ));
+        assert!(!is_aws_resource_id_property("ResourceId", None));
 
         // IPAM Pool ID properties should NOT match AwsResourceId
-        assert!(!is_aws_resource_id_property("IpamPoolId"));
-        assert!(!is_aws_resource_id_property("Ipv4IpamPoolId"));
-        assert!(!is_aws_resource_id_property("Ipv6IpamPoolId"));
-        assert!(!is_aws_resource_id_property("SourceIpamPoolId"));
+        assert!(!is_aws_resource_id_property("IpamPoolId", None));
+        assert!(!is_aws_resource_id_property("Ipv4IpamPoolId", None));
+        assert!(!is_aws_resource_id_property("Ipv6IpamPoolId", None));
+        assert!(!is_aws_resource_id_property("SourceIpamPoolId", None));
     }
 
     #[test]
@@ -6189,36 +6241,65 @@ mod tests {
 
     #[test]
     fn test_get_resource_id_type_vpc_id() {
-        assert_eq!(get_resource_id_type("VpcId"), "super::vpc_id()");
+        assert_eq!(get_resource_id_type("VpcId", None), "super::vpc_id()");
     }
 
     #[test]
     fn test_get_resource_id_type_subnet_id() {
-        assert_eq!(get_resource_id_type("SubnetId"), "super::subnet_id()");
+        assert_eq!(get_resource_id_type("SubnetId", None), "super::subnet_id()");
     }
 
     #[test]
     fn test_get_resource_id_type_security_group_id() {
         assert_eq!(
-            get_resource_id_type("SecurityGroupId"),
+            get_resource_id_type("SecurityGroupId", None),
             "super::security_group_id()"
         );
         assert_eq!(
-            get_resource_id_type("DestinationSecurityGroupId"),
+            get_resource_id_type("DestinationSecurityGroupId", None),
             "super::security_group_id()"
         );
         assert_eq!(
-            get_resource_id_type("SourceSecurityGroupId"),
+            get_resource_id_type("SourceSecurityGroupId", None),
             "super::security_group_id()"
         );
-        // Bare "GroupId" should NOT match SecurityGroupId — it's too broad
-        assert_eq!(get_resource_id_type("GroupId"), "super::aws_resource_id()");
+        // Bare "GroupId" should NOT match SecurityGroupId without a resource-type hint
+        // — it's too broad and catches non-EC2 identifiers.
+        assert_eq!(
+            get_resource_id_type("GroupId", None),
+            "super::aws_resource_id()"
+        );
+    }
+
+    #[test]
+    fn test_get_resource_id_type_group_id_on_ec2_security_group_resources() {
+        // `GroupId` on the EC2 security-group resources should classify as
+        // SecurityGroupId so cross-resource reference typechecking works.
+        for resource_type in [
+            "AWS::EC2::SecurityGroup",
+            "AWS::EC2::SecurityGroupIngress",
+            "AWS::EC2::SecurityGroupEgress",
+        ] {
+            assert_eq!(
+                get_resource_id_type("GroupId", Some(resource_type)),
+                "super::security_group_id()",
+                "GroupId on {resource_type} should be SecurityGroupId",
+            );
+        }
+
+        // On unrelated resources, bare `GroupId` stays Generic — this is the
+        // existing behavior the allowlist is intentionally narrow to preserve
+        // (e.g., identitystore false-positive from issue #128).
+        assert_eq!(
+            get_resource_id_type("GroupId", Some("AWS::IdentityStore::Group")),
+            "super::aws_resource_id()",
+        );
     }
 
     #[test]
     fn test_get_resource_id_type_egress_only_internet_gateway_id() {
         assert_eq!(
-            get_resource_id_type("EgressOnlyInternetGatewayId"),
+            get_resource_id_type("EgressOnlyInternetGatewayId", None),
             "super::egress_only_internet_gateway_id()"
         );
     }
@@ -6226,7 +6307,7 @@ mod tests {
     #[test]
     fn test_get_resource_id_type_internet_gateway_id() {
         assert_eq!(
-            get_resource_id_type("InternetGatewayId"),
+            get_resource_id_type("InternetGatewayId", None),
             "super::internet_gateway_id()"
         );
     }
@@ -6234,7 +6315,7 @@ mod tests {
     #[test]
     fn test_get_resource_id_type_route_table_id() {
         assert_eq!(
-            get_resource_id_type("RouteTableId"),
+            get_resource_id_type("RouteTableId", None),
             "super::route_table_id()"
         );
     }
@@ -6242,7 +6323,7 @@ mod tests {
     #[test]
     fn test_get_resource_id_type_nat_gateway_id() {
         assert_eq!(
-            get_resource_id_type("NatGatewayId"),
+            get_resource_id_type("NatGatewayId", None),
             "super::nat_gateway_id()"
         );
     }
@@ -6250,7 +6331,7 @@ mod tests {
     #[test]
     fn test_get_resource_id_type_vpc_peering_connection_id() {
         assert_eq!(
-            get_resource_id_type("VpcPeeringConnectionId"),
+            get_resource_id_type("VpcPeeringConnectionId", None),
             "super::vpc_peering_connection_id()"
         );
     }
@@ -6258,7 +6339,7 @@ mod tests {
     #[test]
     fn test_get_resource_id_type_transit_gateway_id() {
         assert_eq!(
-            get_resource_id_type("TransitGatewayId"),
+            get_resource_id_type("TransitGatewayId", None),
             "super::transit_gateway_id()"
         );
     }
@@ -6266,7 +6347,7 @@ mod tests {
     #[test]
     fn test_get_resource_id_type_vpn_gateway_id() {
         assert_eq!(
-            get_resource_id_type("VpnGatewayId"),
+            get_resource_id_type("VpnGatewayId", None),
             "super::vpn_gateway_id()"
         );
     }
@@ -6274,7 +6355,7 @@ mod tests {
     #[test]
     fn test_get_resource_id_type_vpc_endpoint_id() {
         assert_eq!(
-            get_resource_id_type("VpcEndpointId"),
+            get_resource_id_type("VpcEndpointId", None),
             "super::vpc_endpoint_id()"
         );
     }
@@ -6284,7 +6365,7 @@ mod tests {
         // Regression test for #244: ServiceEndpointId should NOT match VPC Endpoint ID
         // Previously, due to operator precedence, anything ending with "endpointid" matched
         assert_eq!(
-            get_resource_id_type("ServiceEndpointId"),
+            get_resource_id_type("ServiceEndpointId", None),
             "super::aws_resource_id()"
         );
     }
@@ -6292,39 +6373,42 @@ mod tests {
     #[test]
     fn test_get_resource_id_type_fallback() {
         assert_eq!(
-            get_resource_id_type("SomeUnknownId"),
+            get_resource_id_type("SomeUnknownId", None),
             "super::aws_resource_id()"
         );
     }
 
     #[test]
     fn test_get_resource_id_display_name_vpc_id() {
-        assert_eq!(get_resource_id_display_name("VpcId"), "VpcId");
+        assert_eq!(get_resource_id_display_name("VpcId", None), "VpcId");
     }
 
     #[test]
     fn test_get_resource_id_display_name_subnet_id() {
-        assert_eq!(get_resource_id_display_name("SubnetId"), "SubnetId");
+        assert_eq!(get_resource_id_display_name("SubnetId", None), "SubnetId");
     }
 
     #[test]
     fn test_get_resource_id_display_name_security_group_id() {
         assert_eq!(
-            get_resource_id_display_name("SecurityGroupId"),
+            get_resource_id_display_name("SecurityGroupId", None),
             "SecurityGroupId"
         );
         assert_eq!(
-            get_resource_id_display_name("DestinationSecurityGroupId"),
+            get_resource_id_display_name("DestinationSecurityGroupId", None),
             "SecurityGroupId"
         );
         // Bare "GroupId" should NOT map to SecurityGroupId
-        assert_eq!(get_resource_id_display_name("GroupId"), "AwsResourceId");
+        assert_eq!(
+            get_resource_id_display_name("GroupId", None),
+            "AwsResourceId"
+        );
     }
 
     #[test]
     fn test_get_resource_id_display_name_egress_only_internet_gateway_id() {
         assert_eq!(
-            get_resource_id_display_name("EgressOnlyInternetGatewayId"),
+            get_resource_id_display_name("EgressOnlyInternetGatewayId", None),
             "EgressOnlyInternetGatewayId"
         );
     }
@@ -6332,25 +6416,31 @@ mod tests {
     #[test]
     fn test_get_resource_id_display_name_internet_gateway_id() {
         assert_eq!(
-            get_resource_id_display_name("InternetGatewayId"),
+            get_resource_id_display_name("InternetGatewayId", None),
             "InternetGatewayId"
         );
     }
 
     #[test]
     fn test_get_resource_id_display_name_route_table_id() {
-        assert_eq!(get_resource_id_display_name("RouteTableId"), "RouteTableId");
+        assert_eq!(
+            get_resource_id_display_name("RouteTableId", None),
+            "RouteTableId"
+        );
     }
 
     #[test]
     fn test_get_resource_id_display_name_nat_gateway_id() {
-        assert_eq!(get_resource_id_display_name("NatGatewayId"), "NatGatewayId");
+        assert_eq!(
+            get_resource_id_display_name("NatGatewayId", None),
+            "NatGatewayId"
+        );
     }
 
     #[test]
     fn test_get_resource_id_display_name_vpc_peering_connection_id() {
         assert_eq!(
-            get_resource_id_display_name("VpcPeeringConnectionId"),
+            get_resource_id_display_name("VpcPeeringConnectionId", None),
             "VpcPeeringConnectionId"
         );
     }
@@ -6358,20 +6448,23 @@ mod tests {
     #[test]
     fn test_get_resource_id_display_name_transit_gateway_id() {
         assert_eq!(
-            get_resource_id_display_name("TransitGatewayId"),
+            get_resource_id_display_name("TransitGatewayId", None),
             "TransitGatewayId"
         );
     }
 
     #[test]
     fn test_get_resource_id_display_name_vpn_gateway_id() {
-        assert_eq!(get_resource_id_display_name("VpnGatewayId"), "VpnGatewayId");
+        assert_eq!(
+            get_resource_id_display_name("VpnGatewayId", None),
+            "VpnGatewayId"
+        );
     }
 
     #[test]
     fn test_get_resource_id_display_name_vpc_endpoint_id() {
         assert_eq!(
-            get_resource_id_display_name("VpcEndpointId"),
+            get_resource_id_display_name("VpcEndpointId", None),
             "VpcEndpointId"
         );
     }
@@ -6380,7 +6473,7 @@ mod tests {
     fn test_get_resource_id_display_name_non_vpc_endpoint_id() {
         // Regression test for #244: ServiceEndpointId should NOT match VPC Endpoint ID
         assert_eq!(
-            get_resource_id_display_name("ServiceEndpointId"),
+            get_resource_id_display_name("ServiceEndpointId", None),
             "AwsResourceId"
         );
     }
@@ -6388,97 +6481,103 @@ mod tests {
     #[test]
     fn test_get_resource_id_display_name_fallback() {
         assert_eq!(
-            get_resource_id_display_name("SomeUnknownId"),
+            get_resource_id_display_name("SomeUnknownId", None),
             "AwsResourceId"
         );
     }
 
     #[test]
     fn test_classify_resource_id() {
-        assert_eq!(classify_resource_id("VpcId"), ResourceIdKind::VpcId);
-        assert_eq!(classify_resource_id("SubnetId"), ResourceIdKind::SubnetId);
+        assert_eq!(classify_resource_id("VpcId", None), ResourceIdKind::VpcId);
         assert_eq!(
-            classify_resource_id("SecurityGroupId"),
+            classify_resource_id("SubnetId", None),
+            ResourceIdKind::SubnetId
+        );
+        assert_eq!(
+            classify_resource_id("SecurityGroupId", None),
             ResourceIdKind::SecurityGroupId
         );
         // Bare "GroupId" should be Generic, not SecurityGroupId
-        assert_eq!(classify_resource_id("GroupId"), ResourceIdKind::Generic);
         assert_eq!(
-            classify_resource_id("EgressOnlyInternetGatewayId"),
+            classify_resource_id("GroupId", None),
+            ResourceIdKind::Generic
+        );
+        assert_eq!(
+            classify_resource_id("EgressOnlyInternetGatewayId", None),
             ResourceIdKind::EgressOnlyInternetGatewayId
         );
         assert_eq!(
-            classify_resource_id("InternetGatewayId"),
+            classify_resource_id("InternetGatewayId", None),
             ResourceIdKind::InternetGatewayId
         );
         assert_eq!(
-            classify_resource_id("RouteTableId"),
+            classify_resource_id("RouteTableId", None),
             ResourceIdKind::RouteTableId
         );
         assert_eq!(
-            classify_resource_id("NatGatewayId"),
+            classify_resource_id("NatGatewayId", None),
             ResourceIdKind::NatGatewayId
         );
         assert_eq!(
-            classify_resource_id("VpcPeeringConnectionId"),
+            classify_resource_id("VpcPeeringConnectionId", None),
             ResourceIdKind::VpcPeeringConnectionId
         );
         assert_eq!(
-            classify_resource_id("TransitGatewayId"),
+            classify_resource_id("TransitGatewayId", None),
             ResourceIdKind::TransitGatewayId
         );
         assert_eq!(
-            classify_resource_id("VpnGatewayId"),
+            classify_resource_id("VpnGatewayId", None),
             ResourceIdKind::VpnGatewayId
         );
         assert_eq!(
-            classify_resource_id("VpcEndpointId"),
+            classify_resource_id("VpcEndpointId", None),
             ResourceIdKind::VpcEndpointId
         );
         assert_eq!(
-            classify_resource_id("SomeUnknownId"),
+            classify_resource_id("SomeUnknownId", None),
             ResourceIdKind::Generic
         );
         // Regression: ServiceEndpointId should NOT match VpcEndpointId
         assert_eq!(
-            classify_resource_id("ServiceEndpointId"),
+            classify_resource_id("ServiceEndpointId", None),
             ResourceIdKind::Generic
         );
         // New resource ID types
         assert_eq!(
-            classify_resource_id("InstanceId"),
+            classify_resource_id("InstanceId", None),
             ResourceIdKind::InstanceId
         );
         assert_eq!(
-            classify_resource_id("NetworkInterfaceId"),
+            classify_resource_id("NetworkInterfaceId", None),
             ResourceIdKind::NetworkInterfaceId
         );
         assert_eq!(
-            classify_resource_id("EniId"),
+            classify_resource_id("EniId", None),
             ResourceIdKind::NetworkInterfaceId
         );
         assert_eq!(
-            classify_resource_id("AllocationId"),
+            classify_resource_id("AllocationId", None),
             ResourceIdKind::AllocationId
         );
         assert_eq!(
-            classify_resource_id("PrefixListId"),
+            classify_resource_id("PrefixListId", None),
             ResourceIdKind::PrefixListId
         );
         assert_eq!(
-            classify_resource_id("DestinationPrefixListId"),
+            classify_resource_id("DestinationPrefixListId", None),
             ResourceIdKind::PrefixListId
         );
         assert_eq!(
-            classify_resource_id("CarrierGatewayId"),
+            classify_resource_id("CarrierGatewayId", None),
             ResourceIdKind::CarrierGatewayId
         );
         assert_eq!(
-            classify_resource_id("LocalGatewayId"),
+            classify_resource_id("LocalGatewayId", None),
             ResourceIdKind::LocalGatewayId
         );
         assert_eq!(
-            classify_resource_id("NetworkAclId"),
+            classify_resource_id("NetworkAclId", None),
             ResourceIdKind::NetworkAclId
         );
     }
@@ -6514,10 +6613,10 @@ mod tests {
         ];
 
         for input in &test_inputs {
-            let kind = classify_resource_id(input);
+            let kind = classify_resource_id(input, None);
             let is_generic = kind == ResourceIdKind::Generic;
-            let type_is_generic = get_resource_id_type(input) == "super::aws_resource_id()";
-            let display_is_generic = get_resource_id_display_name(input) == "AwsResourceId";
+            let type_is_generic = get_resource_id_type(input, None) == "super::aws_resource_id()";
+            let display_is_generic = get_resource_id_display_name(input, None) == "AwsResourceId";
             assert_eq!(
                 is_generic, type_is_generic,
                 "Mismatch for {input}: classify says generic={is_generic}, type says generic={type_is_generic}"
