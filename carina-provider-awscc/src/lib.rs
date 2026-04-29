@@ -17,6 +17,8 @@ pub use provider::AwsccProvider;
 
 use std::collections::HashMap;
 
+use indexmap::IndexMap;
+
 use carina_core::provider::{
     BoxFuture, Provider, ProviderFactory, ProviderNormalizer, ProviderResult, SavedAttrs,
     merge_default_tags_for_provider,
@@ -50,7 +52,7 @@ impl ProviderNormalizer for AwsccNormalizer {
     fn merge_default_tags(
         &self,
         resources: &mut [Resource],
-        default_tags: &HashMap<String, Value>,
+        default_tags: &IndexMap<String, Value>,
         schemas: &HashMap<String, ResourceSchema>,
     ) {
         merge_default_tags_for_provider("awscc", resources, default_tags, schemas);
@@ -88,7 +90,7 @@ impl ProviderFactory for AwsccProviderFactory {
         types
     }
 
-    fn validate_config(&self, _attributes: &HashMap<String, Value>) -> Result<(), String> {
+    fn validate_config(&self, _attributes: &IndexMap<String, Value>) -> Result<(), String> {
         // Region format/value validation is handled by the host via
         // `provider_config_attribute_types`. No provider-specific semantic
         // checks are needed beyond that for now.
@@ -107,7 +109,7 @@ impl ProviderFactory for AwsccProviderFactory {
         }
     }
 
-    fn extract_region(&self, attributes: &HashMap<String, Value>) -> String {
+    fn extract_region(&self, attributes: &IndexMap<String, Value>) -> String {
         if let Some(Value::String(region)) = attributes.get("region") {
             return carina_core::utils::convert_region_value(region);
         }
@@ -116,7 +118,7 @@ impl ProviderFactory for AwsccProviderFactory {
 
     fn create_provider(
         &self,
-        attributes: &HashMap<String, Value>,
+        attributes: &IndexMap<String, Value>,
     ) -> BoxFuture<'_, Box<dyn Provider>> {
         let region = self.extract_region(attributes);
         Box::pin(async move { Box::new(AwsccProvider::new(&region).await) as Box<dyn Provider> })
@@ -124,7 +126,7 @@ impl ProviderFactory for AwsccProviderFactory {
 
     fn create_normalizer(
         &self,
-        _attributes: &HashMap<String, Value>,
+        _attributes: &IndexMap<String, Value>,
     ) -> BoxFuture<'_, Box<dyn ProviderNormalizer>> {
         Box::pin(async { Box::new(AwsccNormalizer) as Box<dyn ProviderNormalizer> })
     }
@@ -174,7 +176,7 @@ impl Provider for AwsccProvider {
         let id = id.clone();
         let identifier = identifier.map(|s| s.to_string());
         Box::pin(async move {
-            self.read_resource(&id.resource_type, &id.name, identifier.as_deref())
+            self.read_resource(&id.resource_type, id.name_str(), identifier.as_deref())
                 .await
         })
     }
@@ -238,7 +240,7 @@ mod tests {
             "cidr_block".to_string(),
             Value::String("10.0.0.0/16".to_string()),
         );
-        let mut resource_tags = HashMap::new();
+        let mut resource_tags: IndexMap<String, Value> = IndexMap::new();
         resource_tags.insert("Name".to_string(), Value::String("my-vpc".to_string()));
         resource_tags.insert(
             "Environment".to_string(),
@@ -246,7 +248,7 @@ mod tests {
         );
         resource.set_attr("tags".to_string(), Value::Map(resource_tags));
 
-        let mut default_tags = HashMap::new();
+        let mut default_tags: IndexMap<String, Value> = IndexMap::new();
         default_tags.insert(
             "Environment".to_string(),
             Value::String("production".to_string()),
@@ -295,7 +297,7 @@ mod tests {
             Value::String("10.0.0.0/16".to_string()),
         );
 
-        let mut default_tags = HashMap::new();
+        let mut default_tags: IndexMap<String, Value> = IndexMap::new();
         default_tags.insert(
             "Environment".to_string(),
             Value::String("production".to_string()),
@@ -338,7 +340,7 @@ mod tests {
             Value::String("rtb-123".to_string()),
         );
 
-        let mut default_tags = HashMap::new();
+        let mut default_tags: IndexMap<String, Value> = IndexMap::new();
         default_tags.insert(
             "Environment".to_string(),
             Value::String("production".to_string()),
@@ -361,11 +363,11 @@ mod tests {
             "cidr_block".to_string(),
             Value::String("10.0.0.0/16".to_string()),
         );
-        let mut resource_tags = HashMap::new();
+        let mut resource_tags: IndexMap<String, Value> = IndexMap::new();
         resource_tags.insert("Name".to_string(), Value::String("my-vpc".to_string()));
         resource.set_attr("tags".to_string(), Value::Map(resource_tags));
 
-        let default_tags = HashMap::new();
+        let default_tags: IndexMap<String, Value> = IndexMap::new();
 
         let mut resources = vec![resource];
         normalizer.merge_default_tags(&mut resources, &default_tags, &schemas);

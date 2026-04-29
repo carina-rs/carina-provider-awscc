@@ -136,7 +136,7 @@ impl AwsccProvider {
         let mut state = self
             .read_resource(
                 &resource.id.resource_type,
-                &resource.id.name,
+                resource.id.name_str(),
                 Some(&identifier),
             )
             .await?;
@@ -185,7 +185,7 @@ impl AwsccProvider {
             .map_err(|e| e.for_resource(id.clone()))?;
 
         let mut state = self
-            .read_resource(&id.resource_type, &id.name, Some(identifier))
+            .read_resource(&id.resource_type, id.name_str(), Some(identifier))
             .await?;
 
         // Preserve desired attributes not returned by CloudControl API.

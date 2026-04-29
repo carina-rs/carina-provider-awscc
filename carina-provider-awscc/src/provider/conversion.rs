@@ -4,7 +4,7 @@
 //! and AWS CloudControl API JSON representations. It includes type-aware conversion
 //! for enums, structs, lists, maps, and unions.
 
-use std::collections::HashMap;
+use indexmap::IndexMap;
 
 use carina_core::resource::Value;
 use carina_core::schema::AttributeType;
@@ -77,7 +77,7 @@ pub(crate) fn aws_value_to_dsl(
     if let AttributeType::Struct { fields, .. } = attr_type
         && let Some(obj) = value.as_object()
     {
-        let map: HashMap<String, Value> = fields
+        let map: IndexMap<String, Value> = fields
             .iter()
             .filter_map(|field| {
                 let provider_key = field.provider_name.as_deref().unwrap_or(&field.name);
@@ -98,7 +98,7 @@ pub(crate) fn aws_value_to_dsl(
         && let Some(obj) = value.as_object()
     {
         let is_condition = dsl_name == "condition";
-        let map: HashMap<String, Value> = obj
+        let map: IndexMap<String, Value> = obj
             .iter()
             .filter_map(|(k, v)| {
                 let result = aws_value_to_dsl(dsl_name, v, inner, resource_type);
@@ -166,7 +166,7 @@ pub(crate) fn json_to_value(value: &serde_json::Value) -> Option<Value> {
             Some(Value::List(items))
         }
         serde_json::Value::Object(obj) => {
-            let map: HashMap<String, Value> = obj
+            let map: IndexMap<String, Value> = obj
                 .iter()
                 .filter_map(|(k, v)| {
                     let result = json_to_value(v);
@@ -417,7 +417,7 @@ mod tests {
         };
 
         // Parser produces Value::Map(...) for map assignment syntax (= { ... })
-        let mut map = HashMap::new();
+        let mut map = IndexMap::new();
         map.insert("status".to_string(), Value::String("Enabled".to_string()));
         let dsl_value = Value::Map(map);
 
@@ -449,7 +449,7 @@ mod tests {
         };
 
         // Parser produces Value::List(vec![Value::Map(...)]) for block syntax (name { ... })
-        let mut map = HashMap::new();
+        let mut map = IndexMap::new();
         map.insert("status".to_string(), Value::String("Enabled".to_string()));
         let dsl_value = Value::List(vec![Value::Map(map)]);
 
@@ -491,7 +491,7 @@ mod tests {
         .expect("read should succeed");
 
         // Simulate parser output (what the user wrote in .crn with map assignment syntax)
-        let mut parser_map = HashMap::new();
+        let mut parser_map = IndexMap::new();
         parser_map.insert("status".to_string(), Value::String("Enabled".to_string()));
         let parser_value = Value::Map(parser_map);
 
@@ -672,7 +672,7 @@ mod tests {
     fn test_dsl_value_to_aws_map_preserves_user_keys() {
         let attr_type = AttributeType::map(AttributeType::String);
 
-        let mut map = HashMap::new();
+        let mut map = IndexMap::new();
         map.insert(
             "my_custom_key".to_string(),
             Value::String("value1".to_string()),
@@ -706,7 +706,7 @@ mod tests {
         };
         let attr_type = AttributeType::map(inner_type);
 
-        let mut map = HashMap::new();
+        let mut map = IndexMap::new();
         map.insert(
             "item_one".to_string(),
             Value::String("awscc.test.resource.Status.Active".to_string()),
@@ -943,7 +943,7 @@ mod tests {
         let json_val = json!([{"RegionName": "ap-northeast-1"}]);
 
         let result = aws_value_to_dsl("operating_regions", &json_val, &attr_type, "ec2.Ipam");
-        let expected = Value::List(vec![Value::Map(HashMap::from([(
+        let expected = Value::List(vec![Value::Map(IndexMap::from([(
             "region_name".to_string(),
             Value::String("awscc.Region.ap_northeast_1".to_string()),
         )]))]);
