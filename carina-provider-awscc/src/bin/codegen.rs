@@ -537,6 +537,7 @@ fn override_type_to_display_name(override_type: &str) -> &str {
         "super::vpc_cidr_block_association_id()" => "VpcCidrBlockAssociationId",
         "super::tgw_route_table_id()" => "TgwRouteTableId",
         "types::cidr()" => "Cidr",
+        "types::email()" => "Email",
         "AttributeType::String" => "String",
         _ => "String",
     }
@@ -3372,7 +3373,23 @@ fn infer_string_type(prop_name: &str, resource_type: &str) -> Option<String> {
         return Some("super::aws_account_id()".to_string());
     }
 
+    // Email addresses. Conservative match: property name is exactly "Email"
+    // or ends with "EmailAddress". Avoids false positives on names like
+    // "EmailEnabled" or "PrimaryEmailType" that are flags/categories rather
+    // than email addresses.
+    if is_email_property(prop_name) {
+        return Some("types::email()".to_string());
+    }
+
     None
+}
+
+/// Check if a property name represents an email address.
+/// Conservative: matches `Email` exactly or any name ending in `EmailAddress`
+/// (case-insensitive). Used to map CFN string properties to `types::email()`.
+fn is_email_property(prop_name: &str) -> bool {
+    let lower = prop_name.to_lowercase();
+    lower == "email" || lower.ends_with("emailaddress")
 }
 
 /// Check if a property name represents an AWS resource ID with the standard
@@ -8619,6 +8636,93 @@ mod tests {
         assert!(
             generated.contains("..=256"),
             "Should display open-ended range for max-only: {generated}"
+        );
+    }
+
+    #[test]
+    fn test_is_email_property_matches_expected_names() {
+        // Exact match (case-insensitive)
+        assert!(is_email_property("Email"));
+        assert!(is_email_property("email"));
+        // EmailAddress suffix
+        assert!(is_email_property("EmailAddress"));
+        assert!(is_email_property("PrimaryEmailAddress"));
+        assert!(is_email_property("ContactEmailAddress"));
+        // Should NOT match — these are flags / categories, not addresses
+        assert!(!is_email_property("EmailEnabled"));
+        assert!(!is_email_property("EmailType"));
+        assert!(!is_email_property("EmailVerified"));
+        assert!(!is_email_property("Name"));
+    }
+
+    #[test]
+    fn test_infer_string_type_email() {
+        assert_eq!(
+            infer_string_type("Email", ""),
+            Some("types::email()".to_string())
+        );
+        assert_eq!(
+            infer_string_type("EmailAddress", ""),
+            Some("types::email()".to_string())
+        );
+        assert_eq!(
+            infer_string_type("ContactEmailAddress", ""),
+            Some("types::email()".to_string())
+        );
+        // Negative cases
+        assert_eq!(infer_string_type("EmailEnabled", ""), None);
+    }
+
+    #[test]
+    fn test_generate_schema_code_email_uses_types_email() {
+        // Mirrors the AWS::Organizations::Account "Email" property: a CFN
+        // string with a pattern + length range. The generated code must use
+        // `types::email()` instead of an ad-hoc Custom validator.
+        let mut properties = BTreeMap::new();
+        properties.insert(
+            "Email".to_string(),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("string".to_string())),
+                description: Some(
+                    "The email address of the owner to assign to the new member account."
+                        .to_string(),
+                ),
+                pattern: Some("[^\\s@]+@[^\\s@]+\\.[^\\s@]+".to_string()),
+                min_length: Some(6),
+                max_length: Some(64),
+                ..Default::default()
+            },
+        );
+
+        let schema = CfnSchema {
+            type_name: "AWS::Organizations::Account".to_string(),
+            description: None,
+            properties,
+            required: vec!["Email".to_string()],
+            read_only_properties: vec![],
+            create_only_properties: vec![],
+            write_only_properties: vec![],
+            primary_identifier: None,
+            definitions: None,
+            tagging: None,
+            one_of: vec![],
+            any_of: vec![],
+            handlers: BTreeMap::new(),
+        };
+
+        let generated = generate_schema_code(&schema, "AWS::Organizations::Account").unwrap();
+
+        assert!(
+            generated.contains("types::email()"),
+            "Expected types::email() in generated code: {generated}"
+        );
+        assert!(
+            !generated.contains("validate_string_pattern_ec4d9bee0dcd262b_len_6_64"),
+            "Should not emit ad-hoc pattern validator for email: {generated}"
+        );
+        assert!(
+            !generated.contains("[^\\s@]+@[^\\s@]+"),
+            "Should not embed the email regex pattern in generated code: {generated}"
         );
     }
 
