@@ -121,6 +121,8 @@ pub(crate) fn build_update_patches(
 mod tests {
     use std::collections::HashMap;
 
+    use indexmap::IndexMap;
+
     use super::*;
     use carina_core::resource::ResourceId;
 
@@ -206,7 +208,7 @@ mod tests {
             "cidr_block".to_string(),
             Value::String("10.0.0.0/16".to_string()),
         );
-        let mut tags = HashMap::new();
+        let mut tags = IndexMap::new();
         tags.insert("Name".to_string(), Value::String("my-vpc".to_string()));
         from_attrs.insert("tags".to_string(), Value::Map(tags));
         let from = State::existing(id.clone(), from_attrs);
@@ -381,7 +383,7 @@ mod tests {
             "cidr_block".to_string(),
             Value::String("10.0.0.0/16".to_string()),
         );
-        let mut tags = HashMap::new();
+        let mut tags = IndexMap::new();
         tags.insert("Name".to_string(), Value::String("my-vpc".to_string()));
         from_attrs.insert("tags".to_string(), Value::Map(tags.clone()));
         let from = State::existing(id.clone(), from_attrs);
@@ -565,7 +567,7 @@ mod tests {
             Value::String("{\"Version\":\"2012-10-17\"}".to_string()),
         );
         // DnsOptions is returned by CloudControl API but has create-only sub-properties
-        let mut dns_options = HashMap::new();
+        let mut dns_options = IndexMap::new();
         dns_options.insert(
             "dns_record_ip_type".to_string(),
             Value::String("awscc.ec2.VpcEndpoint.DnsRecordIpType.ipv4".to_string()),

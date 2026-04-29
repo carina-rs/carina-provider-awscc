@@ -510,15 +510,17 @@ name = "carina-aws-types"
 version = "0.4.0"
 dependencies = [
  "carina-core",
+ "indexmap",
 ]
 
 [[package]]
 name = "carina-core"
 version = "0.4.0"
-source = "git+https://github.com/carina-rs/carina#aaa17511613befcec5f014b7d3ccc85e8a9b8298"
+source = "git+https://github.com/carina-rs/carina#f5bde953f57ef10f663803f7e382202237f16d76"
 dependencies = [
  "argon2",
  "futures",
+ "indexmap",
  "pest",
  "pest_derive",
  "semver",
@@ -531,7 +533,7 @@ dependencies = [
 [[package]]
 name = "carina-plugin-sdk"
 version = "0.4.0"
-source = "git+https://github.com/carina-rs/carina#aaa17511613befcec5f014b7d3ccc85e8a9b8298"
+source = "git+https://github.com/carina-rs/carina#f5bde953f57ef10f663803f7e382202237f16d76"
 dependencies = [
  "aws-smithy-runtime-api",
  "aws-smithy-types",
@@ -561,6 +563,7 @@ dependencies = [
  "clap",
  "heck",
  "http 1.4.0",
+ "indexmap",
  "log",
  "regex",
  "serde",
@@ -574,7 +577,7 @@ dependencies = [
 [[package]]
 name = "carina-provider-protocol"
 version = "0.3.0"
-source = "git+https://github.com/carina-rs/carina#aaa17511613befcec5f014b7d3ccc85e8a9b8298"
+source = "git+https://github.com/carina-rs/carina#f5bde953f57ef10f663803f7e382202237f16d76"
 dependencies = [
  "serde",
  "serde_json",

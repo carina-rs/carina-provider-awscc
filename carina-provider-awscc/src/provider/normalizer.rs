@@ -3,6 +3,7 @@
 //! This module contains standalone functions used by `ProviderNormalizer` to resolve
 //! enum identifiers in resources and restore unreturned attributes from saved state.
 
+use indexmap::IndexMap;
 use std::collections::HashMap;
 
 use carina_core::resource::{Resource, ResourceId, State, Value};
@@ -83,7 +84,7 @@ fn resolve_struct_enum_values(value: &Value, fields: &[StructField]) -> Value {
             Value::List(resolved_items)
         }
         Value::Map(map) => {
-            let mut resolved_map = HashMap::new();
+            let mut resolved_map = IndexMap::new();
             for (field_key, field_value) in map {
                 if let Some(field) = fields.iter().find(|f| f.name == *field_key) {
                     // Direct enum field (String value)
@@ -501,7 +502,7 @@ mod tests {
     #[test]
     fn test_resolve_struct_enum_values_bare_ident() {
         let fields = test_ip_protocol_fields();
-        let mut map = HashMap::new();
+        let mut map = IndexMap::new();
         map.insert("ip_protocol".to_string(), Value::String("all".to_string()));
         map.insert("from_port".to_string(), Value::Int(443));
         let value = Value::List(vec![Value::Map(map)]);
@@ -527,7 +528,7 @@ mod tests {
     #[test]
     fn test_resolve_struct_enum_values_typename_dot_value() {
         let fields = test_ip_protocol_fields();
-        let mut map = HashMap::new();
+        let mut map = IndexMap::new();
         map.insert(
             "ip_protocol".to_string(),
             Value::String("IpProtocol.tcp".to_string()),
@@ -554,7 +555,7 @@ mod tests {
     #[test]
     fn test_resolve_struct_enum_values_string_passthrough() {
         let fields = test_ip_protocol_fields();
-        let mut map = HashMap::new();
+        let mut map = IndexMap::new();
         map.insert(
             "ip_protocol".to_string(),
             Value::String("awscc.ec2.SecurityGroup.IpProtocol.tcp".to_string()),
@@ -585,7 +586,7 @@ mod tests {
             "group_description".to_string(),
             Value::String("test".to_string()),
         );
-        let mut egress_map = HashMap::new();
+        let mut egress_map = IndexMap::new();
         egress_map.insert("ip_protocol".to_string(), Value::String("all".to_string()));
         egress_map.insert(
             "cidr_ip".to_string(),
@@ -777,18 +778,18 @@ mod tests {
             ),
         ];
 
-        let mut inner_map = HashMap::new();
+        let mut inner_map = IndexMap::new();
         inner_map.insert(
             "encryption_type".to_string(),
             Value::List(vec![Value::String("SSE-C".to_string())]),
         );
-        let mut map = HashMap::new();
+        let mut map = IndexMap::new();
         map.insert(
             "blocked_encryption_types".to_string(),
             Value::Map(inner_map),
         );
         map.insert("bucket_key_enabled".to_string(), Value::Bool(false));
-        let mut sse_map = HashMap::new();
+        let mut sse_map = IndexMap::new();
         sse_map.insert(
             "sse_algorithm".to_string(),
             Value::String("AES256".to_string()),

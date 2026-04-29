@@ -4,7 +4,7 @@
 //! while the DSL uses `{ k = "v", ... }` map format. This module handles
 //! bidirectional conversion between these formats.
 
-use std::collections::HashMap;
+use indexmap::IndexMap;
 
 use carina_core::resource::Value;
 use serde_json::json;
@@ -26,8 +26,8 @@ impl AwsccProvider {
     }
 
     /// Parse tags from CloudFormation format to map
-    pub(crate) fn parse_tags(&self, tags_array: &[serde_json::Value]) -> HashMap<String, Value> {
-        let mut tags_map = HashMap::new();
+    pub(crate) fn parse_tags(&self, tags_array: &[serde_json::Value]) -> IndexMap<String, Value> {
+        let mut tags_map = IndexMap::new();
         for tag in tags_array {
             if let (Some(key), Some(value)) = (
                 tag.get("Key").and_then(|v| v.as_str()),
