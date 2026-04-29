@@ -8,7 +8,7 @@ use super::AwsccSchemaConfig;
 use super::tags_type;
 use super::validate_tags_map;
 use carina_core::resource::Value;
-use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema};
+use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, types};
 use regex::Regex;
 
 const VALID_JOINED_METHOD: &[&str] = &["INVITED", "CREATED"];
@@ -142,28 +142,6 @@ fn validate_string_pattern_253e7eb79a4beec5_len_1_64(value: &Value) -> Result<()
     }
 }
 
-#[allow(dead_code)]
-fn validate_string_pattern_ec4d9bee0dcd262b_len_6_64(value: &Value) -> Result<(), String> {
-    if let Value::String(s) = value {
-        static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-            Regex::new("[^\\s@]+@[^\\s@]+\\.[^\\s@]+").expect("invalid pattern regex")
-        });
-        if !RE.is_match(s) {
-            return Err(format!(
-                "Value '{}' does not match pattern [^\\s@]+@[^\\s@]+\\.[^\\s@]+",
-                s
-            ));
-        }
-        let len = s.chars().count();
-        if !(6..=64).contains(&len) {
-            return Err(format!("String length {} is out of range 6..=64", len));
-        }
-        Ok(())
-    } else {
-        Err("Expected string".to_string())
-    }
-}
-
 /// Returns the schema config for organizations_account (AWS::Organizations::Account)
 pub fn organizations_account_config() -> AwsccSchemaConfig {
     AwsccSchemaConfig {
@@ -199,15 +177,7 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
                 .with_provider_name("Arn"),
         )
         .attribute(
-            AttributeSchema::new("email", AttributeType::Custom {
-                semantic_name: None,
-                pattern: Some("[^\\s@]+@[^\\s@]+\\.[^\\s@]+".to_string()),
-                length: Some((Some(6), Some(64))),
-                base: Box::new(AttributeType::String),
-                validate: validate_string_pattern_ec4d9bee0dcd262b_len_6_64,
-                namespace: None,
-                to_dsl: None,
-            })
+            AttributeSchema::new("email", types::email())
                 .required()
                 .with_description("The email address of the owner to assign to the new member account.")
                 .with_provider_name("Email"),
