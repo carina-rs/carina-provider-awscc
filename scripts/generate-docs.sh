@@ -66,9 +66,16 @@ for TYPE_NAME in "${RESOURCE_TYPES[@]}"; do
     DSL_NAME=$("$CODEGEN_BIN" --type-name "$TYPE_NAME" --print-dsl-resource-name)
     SERVICE=$(echo "$DSL_NAME" | cut -d'.' -f1)
     RESOURCE=$(echo "$DSL_NAME" | cut -d'.' -f2-)
+    # On-disk filenames are snake_case to match the schema files
+    # (carina-provider-awscc/src/schemas/generated/<svc>/<resource>.rs) and the
+    # 1:1 basename invariant enforced by scripts/check-docs-drift.sh.
+    # Strategy Y casing makes the DSL surface PascalCase ("VpcEndpoint"),
+    # so we convert here only for the filename. Title, description, and the
+    # markdown body keep the codegen's PascalCase DSL form.
+    RESOURCE_FILE=$(echo "$RESOURCE" | sed -E 's/([a-z0-9])([A-Z])/\1_\2/g' | tr '[:upper:]' '[:lower:]')
     FULL_RESOURCE=$("$CODEGEN_BIN" --type-name "$TYPE_NAME" --print-full-resource-name)
     mkdir -p "$DOCS_DIR/$SERVICE"
-    OUTPUT_FILE="$DOCS_DIR/$SERVICE/$RESOURCE.md"
+    OUTPUT_FILE="$DOCS_DIR/$SERVICE/$RESOURCE_FILE.md"
 
     echo "Generating: $TYPE_NAME → $OUTPUT_FILE"
 
