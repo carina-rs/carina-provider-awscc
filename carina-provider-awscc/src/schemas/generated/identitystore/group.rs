@@ -6,7 +6,7 @@
 
 use super::AwsccSchemaConfig;
 use carina_core::resource::Value;
-use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema};
+use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, legacy_validator};
 use regex::Regex;
 
 #[allow(dead_code)]
@@ -69,7 +69,7 @@ pub fn identitystore_group_config() -> AwsccSchemaConfig {
                 pattern: Some("^[\\p{L}\\p{M}\\p{S}\\p{N}\\p{P}\\t\\n\\r  　]+$".to_string()),
                 length: Some((Some(1), Some(1024))),
                 base: Box::new(AttributeType::String),
-                validate: validate_string_pattern_3e29f1c0497511f3_len_1_1024,
+                validate: legacy_validator(validate_string_pattern_3e29f1c0497511f3_len_1_1024),
                 namespace: None,
                 to_dsl: None,
             })
@@ -82,7 +82,7 @@ pub fn identitystore_group_config() -> AwsccSchemaConfig {
                 pattern: Some("^[\\p{L}\\p{M}\\p{S}\\p{N}\\p{P}\\t\\n\\r  ]+$".to_string()),
                 length: Some((Some(1), Some(1024))),
                 base: Box::new(AttributeType::String),
-                validate: validate_string_pattern_a301e45ae2f7df12_len_1_1024,
+                validate: legacy_validator(validate_string_pattern_a301e45ae2f7df12_len_1_1024),
                 namespace: None,
                 to_dsl: None,
             })

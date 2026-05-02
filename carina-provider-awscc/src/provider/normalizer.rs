@@ -37,7 +37,7 @@ pub fn resolve_enum_identifiers_impl(resources: &mut [Resource]) {
                 if let Some(resolved) = carina_core::utils::resolve_enum_value(value, &parts) {
                     resolved_attrs.insert(key.clone(), resolved);
                 } else {
-                    resolved_attrs.insert(key.clone(), value.as_value().clone());
+                    resolved_attrs.insert(key.clone(), value.clone());
                 }
                 continue;
             }
@@ -63,7 +63,7 @@ pub fn resolve_enum_identifiers_impl(resources: &mut [Resource]) {
                 }
             }
 
-            resolved_attrs.insert(key.clone(), value.as_value().clone());
+            resolved_attrs.insert(key.clone(), value.clone());
         }
         for (key, value) in resolved_attrs {
             resource.set_attr(key, value);
@@ -233,6 +233,7 @@ pub fn restore_unreturned_attrs_impl(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use carina_core::schema::noop_validator;
 
     #[test]
     fn test_resolve_enum_identifiers_bare_ident() {
@@ -485,7 +486,7 @@ mod tests {
                     pattern: None,
                     length: None,
                     base: Box::new(AttributeType::String),
-                    validate: |_| Ok(()),
+                    validate: noop_validator(),
                     namespace: Some("awscc.ec2.SecurityGroup".to_string()),
                     to_dsl: Some(|s: &str| match s {
                         "-1" => "all".to_string(),

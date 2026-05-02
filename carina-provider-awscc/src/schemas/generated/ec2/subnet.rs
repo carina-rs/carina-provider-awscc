@@ -8,7 +8,9 @@ use super::AwsccSchemaConfig;
 use super::tags_type;
 use super::validate_tags_map;
 use carina_core::resource::Value;
-use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField, types};
+use carina_core::schema::{
+    AttributeSchema, AttributeType, ResourceSchema, StructField, legacy_validator, types,
+};
 
 fn validate_ipv4_netmask_length_range(value: &Value) -> Result<(), String> {
     if let Value::Int(n) = value {
@@ -105,7 +107,7 @@ pub fn ec2_subnet_config() -> AwsccSchemaConfig {
                 pattern: None,
                 length: None,
                 base: Box::new(AttributeType::Int),
-                validate: validate_ipv4_netmask_length_range,
+                validate: legacy_validator(validate_ipv4_netmask_length_range),
                 namespace: None,
                 to_dsl: None,
             })
@@ -144,7 +146,7 @@ pub fn ec2_subnet_config() -> AwsccSchemaConfig {
                 pattern: None,
                 length: None,
                 base: Box::new(AttributeType::Int),
-                validate: validate_ipv6_netmask_length_range,
+                validate: legacy_validator(validate_ipv6_netmask_length_range),
                 namespace: None,
                 to_dsl: None,
             })

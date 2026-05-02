@@ -9,7 +9,7 @@ use super::tags_type;
 use super::validate_tags_map;
 use carina_core::resource::Value;
 use carina_core::schema::{
-    AttributeSchema, AttributeType, OperationConfig, ResourceSchema, StructField,
+    AttributeSchema, AttributeType, OperationConfig, ResourceSchema, StructField, legacy_validator,
 };
 
 const VALID_METERED_ACCOUNT: &[&str] = &["ipam-owner", "resource-owner"];
@@ -77,7 +77,7 @@ pub fn ec2_ipam_config() -> AwsccSchemaConfig {
                 pattern: None,
                 length: Some((Some(1), None)),
                 base: Box::new(AttributeType::String),
-                validate: validate_string_length_min_1,
+                validate: legacy_validator(validate_string_length_min_1),
                 namespace: None,
                 to_dsl: None,
             }).required().with_description("An AWS Organizations entity path. Build the path for the OU(s) using AWS Organizations IDs separated by a '/'. Include all child OUs by ending the path with '/*'.").with_provider_name("OrganizationsEntityPath")
@@ -135,7 +135,7 @@ pub fn ec2_ipam_config() -> AwsccSchemaConfig {
                 pattern: None,
                 length: Some((None, Some(255))),
                 base: Box::new(AttributeType::String),
-                validate: validate_string_length_max_255,
+                validate: legacy_validator(validate_string_length_max_255),
                 namespace: None,
                 to_dsl: None,
             })

@@ -9,7 +9,8 @@ use super::tags_type;
 use super::validate_tags_map;
 use carina_core::resource::Value;
 use carina_core::schema::{
-    AttributeSchema, AttributeType, OperationConfig, ResourceSchema, StructField, types,
+    AttributeSchema, AttributeType, OperationConfig, ResourceSchema, StructField, legacy_validator,
+    types,
 };
 
 const VALID_AVAILABILITY_MODE: &[&str] = &["zonal", "regional"];
@@ -130,7 +131,7 @@ pub fn ec2_nat_gateway_config() -> AwsccSchemaConfig {
                 pattern: None,
                 length: None,
                 base: Box::new(AttributeType::Int),
-                validate: validate_secondary_private_ip_address_count_range,
+                validate: legacy_validator(validate_secondary_private_ip_address_count_range),
                 namespace: None,
                 to_dsl: None,
             })

@@ -6,7 +6,7 @@
 
 use super::AwsccSchemaConfig;
 use carina_core::resource::Value;
-use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema};
+use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, legacy_validator};
 use regex::Regex;
 
 const VALID_FEATURE_SET: &[&str] = &["ALL", "CONSOLIDATED_BILLING"];
@@ -105,7 +105,7 @@ pub fn organizations_organization_config() -> AwsccSchemaConfig {
                 pattern: Some("^o-[a-z0-9]{10,32}$".to_string()),
                 length: None,
                 base: Box::new(AttributeType::String),
-                validate: validate_string_pattern_2fd01fd52b67fc75,
+                validate: legacy_validator(validate_string_pattern_2fd01fd52b67fc75),
                 namespace: None,
                 to_dsl: None,
             })
@@ -125,7 +125,7 @@ pub fn organizations_organization_config() -> AwsccSchemaConfig {
                 pattern: Some("[^\\s@]+@[^\\s@]+\\.[^\\s@]+".to_string()),
                 length: Some((Some(6), Some(64))),
                 base: Box::new(AttributeType::String),
-                validate: validate_string_pattern_ec4d9bee0dcd262b_len_6_64,
+                validate: legacy_validator(validate_string_pattern_ec4d9bee0dcd262b_len_6_64),
                 namespace: None,
                 to_dsl: None,
             })
@@ -145,7 +145,7 @@ pub fn organizations_organization_config() -> AwsccSchemaConfig {
                 pattern: Some("^r-[0-9a-z]{4,32}$".to_string()),
                 length: Some((None, Some(64))),
                 base: Box::new(AttributeType::String),
-                validate: validate_string_pattern_0cb01cbc89d38ae3_len_max_64,
+                validate: legacy_validator(validate_string_pattern_0cb01cbc89d38ae3_len_max_64),
                 namespace: None,
                 to_dsl: None,
             })

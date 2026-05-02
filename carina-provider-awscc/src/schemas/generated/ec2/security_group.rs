@@ -8,7 +8,9 @@ use super::AwsccSchemaConfig;
 use super::tags_type;
 use super::validate_tags_map;
 use carina_core::resource::Value;
-use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField, types};
+use carina_core::schema::{
+    AttributeSchema, AttributeType, ResourceSchema, StructField, legacy_validator, types,
+};
 
 const VALID_EGRESS_IP_PROTOCOL: &[&str] = &["tcp", "udp", "icmp", "icmpv6", "-1", "all"];
 
@@ -85,7 +87,7 @@ pub fn ec2_security_group_config() -> AwsccSchemaConfig {
                 pattern: None,
                 length: None,
                 base: Box::new(AttributeType::Int),
-                validate: validate_from_port_range,
+                validate: legacy_validator(validate_from_port_range),
                 namespace: None,
                 to_dsl: None,
             }).with_provider_name("FromPort"),
@@ -100,7 +102,7 @@ pub fn ec2_security_group_config() -> AwsccSchemaConfig {
                 pattern: None,
                 length: None,
                 base: Box::new(AttributeType::Int),
-                validate: validate_to_port_range,
+                validate: legacy_validator(validate_to_port_range),
                 namespace: None,
                 to_dsl: None,
             }).with_provider_name("ToPort")
@@ -122,7 +124,7 @@ pub fn ec2_security_group_config() -> AwsccSchemaConfig {
                 pattern: None,
                 length: None,
                 base: Box::new(AttributeType::Int),
-                validate: validate_from_port_range,
+                validate: legacy_validator(validate_from_port_range),
                 namespace: None,
                 to_dsl: None,
             }).with_provider_name("FromPort"),
@@ -141,7 +143,7 @@ pub fn ec2_security_group_config() -> AwsccSchemaConfig {
                 pattern: None,
                 length: None,
                 base: Box::new(AttributeType::Int),
-                validate: validate_to_port_range,
+                validate: legacy_validator(validate_to_port_range),
                 namespace: None,
                 to_dsl: None,
             }).with_provider_name("ToPort")

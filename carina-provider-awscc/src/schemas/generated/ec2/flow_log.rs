@@ -8,7 +8,9 @@ use super::AwsccSchemaConfig;
 use super::tags_type;
 use super::validate_tags_map;
 use carina_core::resource::Value;
-use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField};
+use carina_core::schema::{
+    AttributeSchema, AttributeType, ResourceSchema, StructField, legacy_validator,
+};
 
 const VALID_LOG_DESTINATION_TYPE: &[&str] = &["cloud-watch-logs", "s3", "kinesis-data-firehose"];
 
@@ -115,7 +117,7 @@ pub fn ec2_flow_log_config() -> AwsccSchemaConfig {
                 pattern: None,
                 length: None,
                 base: Box::new(AttributeType::Int),
-                validate: validate_max_aggregation_interval_int_enum,
+                validate: legacy_validator(validate_max_aggregation_interval_int_enum),
                 namespace: None,
                 to_dsl: None,
             })

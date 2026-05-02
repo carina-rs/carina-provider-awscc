@@ -8,7 +8,9 @@ use super::AwsccSchemaConfig;
 use super::tags_type;
 use super::validate_tags_map;
 use carina_core::resource::Value;
-use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField};
+use carina_core::schema::{
+    AttributeSchema, AttributeType, ResourceSchema, StructField, legacy_validator,
+};
 use regex::Regex;
 
 #[allow(dead_code)]
@@ -200,7 +202,7 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
                 pattern: Some("[\\w+=,.@-]+".to_string()),
                 length: Some((Some(1), Some(128))),
                 base: Box::new(AttributeType::String),
-                validate: validate_string_pattern_9b83f4f8f3673df5_len_1_128,
+                validate: legacy_validator(validate_string_pattern_9b83f4f8f3673df5_len_1_128),
                 namespace: None,
                 to_dsl: None,
             }).required().with_provider_name("Name"),
@@ -209,13 +211,13 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
                 pattern: Some("((/[A-Za-z0-9\\.,\\+@=_-]+)*)/".to_string()),
                 length: Some((Some(1), Some(512))),
                 base: Box::new(AttributeType::String),
-                validate: validate_string_pattern_b84fa12576539ca9_len_1_512,
+                validate: legacy_validator(validate_string_pattern_b84fa12576539ca9_len_1_512),
                 namespace: None,
                 to_dsl: None,
             }).with_provider_name("Path")
                     ],
                 })),
-                validate: validate_list_items_max_20,
+                validate: legacy_validator(validate_list_items_max_20),
                 namespace: None,
                 to_dsl: None,
             })
@@ -228,7 +230,7 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
                 pattern: Some("[\\u0009\\u000A\\u000D\\u0020-\\u007E\\u00A1-\\u00FF]*".to_string()),
                 length: Some((Some(1), Some(700))),
                 base: Box::new(AttributeType::String),
-                validate: validate_string_pattern_9863be410e005e12_len_1_700,
+                validate: legacy_validator(validate_string_pattern_9863be410e005e12_len_1_700),
                 namespace: None,
                 to_dsl: None,
             })
@@ -253,7 +255,7 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
                 pattern: None,
                 length: None,
                 base: Box::new(AttributeType::unordered_list(AttributeType::String)),
-                validate: validate_list_items_max_20,
+                validate: legacy_validator(validate_list_items_max_20),
                 namespace: None,
                 to_dsl: None,
             })
@@ -265,7 +267,7 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
                 pattern: Some("[\\w+=,.@-]+".to_string()),
                 length: Some((Some(1), Some(32))),
                 base: Box::new(AttributeType::String),
-                validate: validate_string_pattern_9b83f4f8f3673df5_len_1_32,
+                validate: legacy_validator(validate_string_pattern_9b83f4f8f3673df5_len_1_32),
                 namespace: None,
                 to_dsl: None,
             })
@@ -292,7 +294,7 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
                 pattern: Some("[\\w+=,.@-]+".to_string()),
                 length: Some((Some(1), Some(128))),
                 base: Box::new(AttributeType::String),
-                validate: validate_string_pattern_9b83f4f8f3673df5_len_1_128,
+                validate: legacy_validator(validate_string_pattern_9b83f4f8f3673df5_len_1_128),
                 namespace: None,
                 to_dsl: None,
             }).required().with_provider_name("Name"),
@@ -301,7 +303,7 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
                 pattern: Some("((/[A-Za-z0-9\\.,\\+@=_-]+)*)/".to_string()),
                 length: Some((Some(1), Some(512))),
                 base: Box::new(AttributeType::String),
-                validate: validate_string_pattern_b84fa12576539ca9_len_1_512,
+                validate: legacy_validator(validate_string_pattern_b84fa12576539ca9_len_1_512),
                 namespace: None,
                 to_dsl: None,
             }).with_provider_name("Path")
@@ -318,7 +320,7 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
                 pattern: Some("[a-zA-Z0-9&amp;$@#\\/%?=~\\-_'&quot;|!:,.;*+\\[\\]\\ \\(\\)\\{\\}]+".to_string()),
                 length: Some((Some(1), Some(240))),
                 base: Box::new(AttributeType::String),
-                validate: validate_string_pattern_4d6d630589930649_len_1_240,
+                validate: legacy_validator(validate_string_pattern_4d6d630589930649_len_1_240),
                 namespace: None,
                 to_dsl: None,
             })
@@ -331,7 +333,7 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
                 pattern: Some("^(-?)P(?=\\d|T\\d)(?:(\\d+)Y)?(?:(\\d+)M)?(?:(\\d+)([DW]))?(?:T(?:(\\d+)H)?(?:(\\d+)M)?(?:(\\d+(?:\\.\\d+)?)S)?)?$".to_string()),
                 length: Some((Some(1), Some(100))),
                 base: Box::new(AttributeType::String),
-                validate: validate_string_pattern_1e58d8243b46a2f1_len_1_100,
+                validate: legacy_validator(validate_string_pattern_1e58d8243b46a2f1_len_1_100),
                 namespace: None,
                 to_dsl: None,
             })

@@ -10,7 +10,7 @@ use std::collections::HashMap;
 
 use carina_core::parser::ValidatorFn;
 use carina_core::resource::Value;
-use carina_core::schema::{AttributeType, ResourceSchema};
+use carina_core::schema::{AttributeType, ResourceSchema, legacy_validator};
 use carina_core::utils::{extract_enum_value, validate_enum_namespace};
 
 /// AWS Cloud Control schema configuration
@@ -134,7 +134,7 @@ pub fn awscc_region() -> AttributeType {
         pattern: None,
         length: None,
         base: Box::new(AttributeType::String),
-        validate: |value| {
+        validate: legacy_validator(|value| {
             if let Value::String(s) = value {
                 validate_enum_namespace(s, "Region", "awscc")
                     .map_err(|reason| format!("Invalid region '{}': {}", s, reason))?;
@@ -151,7 +151,7 @@ pub fn awscc_region() -> AttributeType {
             } else {
                 Err("Expected string".to_string())
             }
-        },
+        }),
         namespace: Some("awscc".to_string()),
         to_dsl: Some(|s: &str| s.replace('-', "_")),
     }
@@ -165,7 +165,7 @@ pub fn availability_zone() -> AttributeType {
         pattern: None,
         length: None,
         base: Box::new(AttributeType::String),
-        validate: |value| {
+        validate: legacy_validator(|value| {
             if let Value::String(s) = value {
                 validate_enum_namespace(s, "AvailabilityZone", "awscc")
                     .map_err(|reason| format!("Invalid availability zone '{}': {}", s, reason))?;
@@ -176,7 +176,7 @@ pub fn availability_zone() -> AttributeType {
             } else {
                 Err("Expected string".to_string())
             }
-        },
+        }),
         namespace: Some("awscc".to_string()),
         to_dsl: Some(|s: &str| s.replace('-', "_")),
     }

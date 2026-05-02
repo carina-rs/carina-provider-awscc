@@ -8,7 +8,7 @@ use super::AwsccSchemaConfig;
 use super::tags_type;
 use super::validate_tags_map;
 use carina_core::resource::Value;
-use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema};
+use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, legacy_validator};
 use regex::Regex;
 
 const VALID_LOG_GROUP_CLASS: &[&str] = &["STANDARD", "INFREQUENT_ACCESS", "DELIVERY"];
@@ -68,7 +68,7 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
         )
         .attribute(
             AttributeSchema::new("bearer_token_authentication_enabled", AttributeType::Bool)
-                .with_description("")
+                .with_description("Indicates whether bearer token authentication is enabled for this log group. When enabled, bearer token authentication is allowed on operations until it is explicitly disabled.")
                 .with_provider_name("BearerTokenAuthenticationEnabled")
                 .with_default(Value::Bool(false)),
         )
@@ -110,7 +110,7 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
                 pattern: Some("^[.\\-_/#A-Za-z0-9]{1,512}\\Z".to_string()),
                 length: Some((Some(1), Some(512))),
                 base: Box::new(AttributeType::String),
-                validate: validate_string_pattern_b6dfbc56753dfe38_len_1_512,
+                validate: legacy_validator(validate_string_pattern_b6dfbc56753dfe38_len_1_512),
                 namespace: None,
                 to_dsl: None,
             })
@@ -129,7 +129,7 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
                 pattern: None,
                 length: None,
                 base: Box::new(AttributeType::Int),
-                validate: validate_retention_in_days_int_enum,
+                validate: legacy_validator(validate_retention_in_days_int_enum),
                 namespace: None,
                 to_dsl: None,
             })

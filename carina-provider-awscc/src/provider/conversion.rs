@@ -370,7 +370,7 @@ pub(crate) fn value_to_json(value: &Value) -> Option<serde_json::Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use carina_core::schema::StructField;
+    use carina_core::schema::{StructField, noop_validator};
 
     #[test]
     fn test_aws_value_to_dsl_bare_struct_returns_map() {
@@ -588,7 +588,7 @@ mod tests {
             pattern: None,
             length: None,
             base: Box::new(AttributeType::String),
-            validate: |_| Ok(()),
+            validate: noop_validator(),
             namespace: Some("awscc".to_string()),
             to_dsl: None,
         };
@@ -1238,7 +1238,7 @@ mod tests {
             pattern: None,
             length: None,
             base: Box::new(AttributeType::String),
-            validate: |_| Ok(()),
+            validate: noop_validator(),
             namespace: None,
             to_dsl: Some(|s: &str| s.strip_suffix('.').unwrap_or(s).to_string()),
         };
@@ -1254,7 +1254,7 @@ mod tests {
             pattern: None,
             length: None,
             base: Box::new(AttributeType::String),
-            validate: |_| Ok(()),
+            validate: noop_validator(),
             namespace: None,
             to_dsl: None,
         };
