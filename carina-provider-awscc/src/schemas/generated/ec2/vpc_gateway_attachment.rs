@@ -13,7 +13,7 @@ pub fn ec2_vpc_gateway_attachment_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::EC2::VPCGatewayAttachment",
         resource_type_name: "ec2.VpcGatewayAttachment",
         has_tags: false,
-        schema: ResourceSchema::new("awscc.ec2.VpcGatewayAttachment")
+        schema: ResourceSchema::new("ec2.VpcGatewayAttachment")
         .with_description("Resource Type definition for AWS::EC2::VPCGatewayAttachment")
         .attribute(
             AttributeSchema::new("attachment_type", AttributeType::String)

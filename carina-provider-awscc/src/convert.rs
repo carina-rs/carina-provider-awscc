@@ -226,6 +226,12 @@ fn _proto_to_core_attribute_schema(a: &ProtoAttributeSchema) -> CoreAttributeSch
 }
 
 pub fn proto_to_core_schema(s: &ProtoResourceSchema) -> CoreResourceSchema {
+    use carina_core::schema::SchemaKind as CoreSchemaKind;
+    use carina_provider_protocol::types::SchemaKind as ProtoSchemaKind;
+    let kind = match s.kind {
+        ProtoSchemaKind::Managed => CoreSchemaKind::Managed,
+        ProtoSchemaKind::DataSource => CoreSchemaKind::DataSource,
+    };
     CoreResourceSchema {
         resource_type: s.resource_type.clone(),
         attributes: s
@@ -235,7 +241,7 @@ pub fn proto_to_core_schema(s: &ProtoResourceSchema) -> CoreResourceSchema {
             .collect(),
         description: s.description.clone(),
         validator: None,
-        data_source: s.data_source,
+        kind,
         name_attribute: s.name_attribute.clone(),
         force_replace: s.force_replace,
         operation_config: s.operation_config.as_ref().map(|c| {
@@ -323,6 +329,12 @@ fn core_to_proto_attribute_schema(a: &CoreAttributeSchema) -> ProtoAttributeSche
 }
 
 pub fn core_to_proto_schema(s: &CoreResourceSchema) -> ProtoResourceSchema {
+    use carina_core::schema::SchemaKind as CoreSchemaKind;
+    use carina_provider_protocol::types::SchemaKind as ProtoSchemaKind;
+    let kind = match s.kind {
+        CoreSchemaKind::Managed => ProtoSchemaKind::Managed,
+        CoreSchemaKind::DataSource => ProtoSchemaKind::DataSource,
+    };
     ProtoResourceSchema {
         resource_type: s.resource_type.clone(),
         attributes: s
@@ -331,7 +343,7 @@ pub fn core_to_proto_schema(s: &CoreResourceSchema) -> ProtoResourceSchema {
             .map(|(k, v)| (k.clone(), core_to_proto_attribute_schema(v)))
             .collect(),
         description: s.description.clone(),
-        data_source: s.data_source,
+        kind,
         name_attribute: s.name_attribute.clone(),
         force_replace: s.force_replace,
         operation_config: s.operation_config.as_ref().map(|c| {
@@ -389,7 +401,7 @@ mod tests {
 
     #[test]
     fn core_to_proto_schema_initializes_empty_validators() {
-        let schema = CoreResourceSchema::new("awscc.s3.Bucket");
+        let schema = CoreResourceSchema::new("s3.Bucket");
         let proto = core_to_proto_schema(&schema);
         assert!(proto.validators.is_empty());
     }

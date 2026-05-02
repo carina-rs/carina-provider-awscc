@@ -306,12 +306,12 @@ impl CarinaProvider for AwsccProcessProvider {
             .iter()
             .map(|(k, v)| (k.clone(), convert::proto_to_core_value(v)))
             .collect();
-        let core_schemas: HashMap<String, _> = proto_schemas
-            .iter()
-            .map(|s| (s.resource_type.clone(), convert::proto_to_core_schema(s)))
-            .collect();
+        let mut registry = carina_core::schema::SchemaRegistry::new();
+        for s in proto_schemas {
+            registry.insert("awscc", convert::proto_to_core_schema(s));
+        }
         self.normalizer
-            .merge_default_tags(&mut core_resources, &core_tags, &core_schemas);
+            .merge_default_tags(&mut core_resources, &core_tags, &registry);
         *resources = core_resources
             .iter()
             .map(convert::core_to_proto_resource)
@@ -341,7 +341,7 @@ mod tests {
         let schemas = provider.schemas();
         let bucket = schemas
             .iter()
-            .find(|s| s.resource_type == "awscc.s3.Bucket")
+            .find(|s| s.resource_type == "s3.Bucket")
             .expect("s3.bucket schema should exist");
         assert!(
             bucket
@@ -359,7 +359,7 @@ mod tests {
         if let Some(untagged) = configs.iter().find(|c| !c.has_tags) {
             let schema = schemas
                 .iter()
-                .find(|s| s.resource_type == format!("awscc.{}", untagged.resource_type_name))
+                .find(|s| s.resource_type == untagged.resource_type_name)
                 .expect("untagged schema should exist");
             assert!(
                 !schema
@@ -380,7 +380,7 @@ mod tests {
         let schemas = provider.schemas();
         let vpc = schemas
             .iter()
-            .find(|s| s.resource_type == "awscc.ec2.Vpc")
+            .find(|s| s.resource_type == "ec2.Vpc")
             .expect("ec2.vpc schema should exist");
         assert!(
             vpc.exclusive_required

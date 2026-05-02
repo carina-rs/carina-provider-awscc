@@ -17,7 +17,7 @@ pub fn sso_assignment_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::SSO::Assignment",
         resource_type_name: "sso.Assignment",
         has_tags: false,
-        schema: ResourceSchema::new("awscc.sso.Assignment")
+        schema: ResourceSchema::new("sso.Assignment")
             .with_description("Resource Type definition for SSO assignmet")
             .attribute(
                 AttributeSchema::new("instance_arn", super::sso_instance_arn())

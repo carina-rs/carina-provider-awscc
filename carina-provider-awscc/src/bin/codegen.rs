@@ -1905,8 +1905,10 @@ fn {fn_name}(value: &Value) -> Result<(), String> {{
 
     // Generate config function
     let config_fn_name = format!("{}_config", full_resource);
-    // Use awscc.service.resource format (e.g., awscc.ec2.Vpc)
-    let schema_name = format!("awscc.{}", dsl_resource);
+    // Schema `resource_type` is the un-prefixed DSL form (e.g. `ec2.Vpc`).
+    // The provider name (`awscc`) is supplied separately by
+    // `SchemaRegistry::insert("awscc", schema)` on the consumer side.
+    let schema_name = dsl_resource.clone();
 
     body.push_str(&format!(
         r#"/// Returns the schema config for {} ({})

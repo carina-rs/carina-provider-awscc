@@ -150,7 +150,7 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::Organizations::Account",
         resource_type_name: "organizations.Account",
         has_tags: true,
-        schema: ResourceSchema::new("awscc.organizations.Account")
+        schema: ResourceSchema::new("organizations.Account")
         .with_description("You can use AWS::Organizations::Account to manage accounts in organization.")
         .attribute(
             AttributeSchema::new("account_id", super::aws_account_id())

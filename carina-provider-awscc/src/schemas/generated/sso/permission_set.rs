@@ -187,7 +187,7 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::SSO::PermissionSet",
         resource_type_name: "sso.PermissionSet",
         has_tags: true,
-        schema: ResourceSchema::new("awscc.sso.PermissionSet")
+        schema: ResourceSchema::new("sso.PermissionSet")
         .with_description("Resource Type definition for SSO PermissionSet")
         .attribute(
             AttributeSchema::new("customer_managed_policy_references", AttributeType::Custom {

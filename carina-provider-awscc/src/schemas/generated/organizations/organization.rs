@@ -80,7 +80,7 @@ pub fn organizations_organization_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::Organizations::Organization",
         resource_type_name: "organizations.Organization",
         has_tags: false,
-        schema: ResourceSchema::new("awscc.organizations.Organization")
+        schema: ResourceSchema::new("organizations.Organization")
         .with_description("Resource schema for AWS::Organizations::Organization")
         .attribute(
             AttributeSchema::new("arn", super::arn())
