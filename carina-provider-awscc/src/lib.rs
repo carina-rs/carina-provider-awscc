@@ -24,7 +24,7 @@ use carina_core::provider::{
     merge_default_tags_for_provider,
 };
 use carina_core::resource::{LifecycleConfig, Resource, ResourceId, State, Value};
-use carina_core::schema::ResourceSchema;
+use carina_core::schema::SchemaRegistry;
 
 /// Schema extension for the AWSCC provider.
 ///
@@ -53,9 +53,9 @@ impl ProviderNormalizer for AwsccNormalizer {
         &self,
         resources: &mut [Resource],
         default_tags: &IndexMap<String, Value>,
-        schemas: &HashMap<String, ResourceSchema>,
+        registry: &SchemaRegistry,
     ) {
-        merge_default_tags_for_provider("awscc", resources, default_tags, schemas);
+        merge_default_tags_for_provider("awscc", resources, default_tags, registry);
     }
 }
 
@@ -221,13 +221,13 @@ impl Provider for AwsccProvider {
 mod tests {
     use super::*;
 
-    fn build_schemas() -> HashMap<String, ResourceSchema> {
+    fn build_schemas() -> SchemaRegistry {
         let factory = AwsccProviderFactory;
-        let mut schemas = HashMap::new();
+        let mut registry = SchemaRegistry::new();
         for schema in factory.schemas() {
-            schemas.insert(schema.resource_type.clone(), schema);
+            registry.insert("awscc", schema);
         }
-        schemas
+        registry
     }
 
     #[test]

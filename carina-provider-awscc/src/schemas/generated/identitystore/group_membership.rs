@@ -39,7 +39,7 @@ pub fn identitystore_group_membership_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::IdentityStore::GroupMembership",
         resource_type_name: "identitystore.GroupMembership",
         has_tags: false,
-        schema: ResourceSchema::new("awscc.identitystore.GroupMembership")
+        schema: ResourceSchema::new("identitystore.GroupMembership")
         .with_description("Resource Type Definition for AWS:IdentityStore::GroupMembership")
         .attribute(
             AttributeSchema::new("group_id", super::sso_principal_id())

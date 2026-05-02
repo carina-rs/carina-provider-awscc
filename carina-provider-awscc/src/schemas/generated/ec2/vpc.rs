@@ -32,7 +32,7 @@ pub fn ec2_vpc_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::EC2::VPC",
         resource_type_name: "ec2.Vpc",
         has_tags: true,
-        schema: ResourceSchema::new("awscc.ec2.Vpc")
+        schema: ResourceSchema::new("ec2.Vpc")
         .with_description("Specifies a virtual private cloud (VPC).  To add an IPv6 CIDR block to the VPC, see [AWS::EC2::VPCCidrBlock](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-vpccidrblock.html).  For more information, see [Virtual private clouds (VPC)](https://docs.aws.amazon.com/vpc/latest/userguide/configure-your-vpc.html) in the *Amazon VPC User Guide*.")
         .attribute(
             AttributeSchema::new("cidr_block", types::ipv4_cidr())

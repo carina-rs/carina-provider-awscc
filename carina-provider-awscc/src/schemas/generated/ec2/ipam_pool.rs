@@ -34,7 +34,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::EC2::IPAMPool",
         resource_type_name: "ec2.IpamPool",
         has_tags: true,
-        schema: ResourceSchema::new("awscc.ec2.IpamPool")
+        schema: ResourceSchema::new("ec2.IpamPool")
         .with_description("Resource Schema of AWS::EC2::IPAMPool Type")
         .attribute(
             AttributeSchema::new("address_family", AttributeType::StringEnum {

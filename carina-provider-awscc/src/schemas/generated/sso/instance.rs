@@ -91,7 +91,7 @@ pub fn sso_instance_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::SSO::Instance",
         resource_type_name: "sso.Instance",
         has_tags: true,
-        schema: ResourceSchema::new("awscc.sso.Instance")
+        schema: ResourceSchema::new("sso.Instance")
         .with_description("Resource Type definition for Identity Center (SSO) Instance")
         .attribute(
             AttributeSchema::new("identity_store_id", super::identity_store_id())

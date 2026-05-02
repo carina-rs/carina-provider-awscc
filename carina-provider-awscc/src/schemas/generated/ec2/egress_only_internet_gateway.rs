@@ -15,7 +15,7 @@ pub fn ec2_egress_only_internet_gateway_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::EC2::EgressOnlyInternetGateway",
         resource_type_name: "ec2.EgressOnlyInternetGateway",
         has_tags: true,
-        schema: ResourceSchema::new("awscc.ec2.EgressOnlyInternetGateway")
+        schema: ResourceSchema::new("ec2.EgressOnlyInternetGateway")
             .with_description("Resource Type definition for AWS::EC2::EgressOnlyInternetGateway")
             .attribute(
                 AttributeSchema::new("id", super::egress_only_internet_gateway_id())
