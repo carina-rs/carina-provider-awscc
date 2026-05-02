@@ -8,7 +8,9 @@ use super::AwsccSchemaConfig;
 use super::tags_type;
 use super::validate_tags_map;
 use carina_core::resource::Value;
-use carina_core::schema::{AttributeSchema, AttributeType, OperationConfig, ResourceSchema, types};
+use carina_core::schema::{
+    AttributeSchema, AttributeType, OperationConfig, ResourceSchema, legacy_validator, types,
+};
 
 const VALID_AUTO_ACCEPT_SHARED_ATTACHMENTS: &[&str] = &["enable", "disable"];
 
@@ -56,7 +58,7 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
                         pattern: None,
                         length: None,
                         base: Box::new(AttributeType::Int),
-                        validate: validate_amazon_side_asn_range,
+                        validate: legacy_validator(validate_amazon_side_asn_range),
                         namespace: None,
                         to_dsl: None,
                     },

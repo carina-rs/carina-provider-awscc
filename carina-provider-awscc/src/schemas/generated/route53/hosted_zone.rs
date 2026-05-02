@@ -7,7 +7,9 @@
 use super::AwsccSchemaConfig;
 use super::validate_tags_map;
 use carina_core::resource::Value;
-use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField};
+use carina_core::schema::{
+    AttributeSchema, AttributeType, ResourceSchema, StructField, legacy_validator,
+};
 
 fn validate_string_length_max_256(value: &Value) -> Result<(), String> {
     if let Value::String(s) = value {
@@ -65,7 +67,7 @@ pub fn route53_hosted_zone_config() -> AwsccSchemaConfig {
                 pattern: None,
                 length: Some((None, Some(256))),
                 base: Box::new(AttributeType::String),
-                validate: validate_string_length_max_256,
+                validate: legacy_validator(validate_string_length_max_256),
                 namespace: None,
                 to_dsl: None,
             }).with_description("Any comments that you want to include about the hosted zone.").with_provider_name("Comment")
@@ -93,7 +95,7 @@ pub fn route53_hosted_zone_config() -> AwsccSchemaConfig {
                 pattern: None,
                 length: Some((None, Some(128))),
                 base: Box::new(AttributeType::String),
-                validate: validate_string_length_max_128,
+                validate: legacy_validator(validate_string_length_max_128),
                 namespace: None,
                 to_dsl: None,
             }).required().with_description("The value of ``Key`` depends on the operation that you want to perform: + *Add a tag to a health check or hosted zone*: ``Key`` is the name that you want to give the new tag. + *Edit a tag*: ``Key`` is the name of the tag that you want to change the ``Value`` for. + *Delete a key*: ``Key`` is the name of the tag you want to remove. + *Give a name to a health check*: Edit the default ``Name`` tag. In the Amazon Route 53 console, the list of your health checks includes a *Name* column that lets you see the name that you've given to each health check.").with_provider_name("Key"),
@@ -102,7 +104,7 @@ pub fn route53_hosted_zone_config() -> AwsccSchemaConfig {
                 pattern: None,
                 length: Some((None, Some(256))),
                 base: Box::new(AttributeType::String),
-                validate: validate_string_length_max_256,
+                validate: legacy_validator(validate_string_length_max_256),
                 namespace: None,
                 to_dsl: None,
             }).required().with_description("The value of ``Value`` depends on the operation that you want to perform: + *Add a tag to a health check or hosted zone*: ``Value`` is the value that you want to give the new tag. + *Edit a tag*: ``Value`` is the new value that you want to assign the tag.").with_provider_name("Value")
@@ -124,7 +126,7 @@ pub fn route53_hosted_zone_config() -> AwsccSchemaConfig {
                 pattern: None,
                 length: Some((None, Some(1024))),
                 base: Box::new(AttributeType::String),
-                validate: validate_string_length_max_1024,
+                validate: legacy_validator(validate_string_length_max_1024),
                 namespace: None,
                 to_dsl: Some(|s: &str| s.strip_suffix('.').unwrap_or(s).to_string()),
             })

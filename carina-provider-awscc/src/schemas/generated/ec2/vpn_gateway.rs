@@ -8,7 +8,7 @@ use super::AwsccSchemaConfig;
 use super::tags_type;
 use super::validate_tags_map;
 use carina_core::resource::Value;
-use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema};
+use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, legacy_validator};
 
 const VALID_TYPE: &[&str] = &["ipsec.1"];
 
@@ -38,7 +38,7 @@ pub fn ec2_vpn_gateway_config() -> AwsccSchemaConfig {
                 pattern: None,
                 length: None,
                 base: Box::new(AttributeType::Int),
-                validate: validate_amazon_side_asn_range,
+                validate: legacy_validator(validate_amazon_side_asn_range),
                 namespace: None,
                 to_dsl: None,
             })

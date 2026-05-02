@@ -8,7 +8,7 @@ use super::AwsccSchemaConfig;
 use super::tags_type;
 use super::validate_tags_map;
 use carina_core::resource::Value;
-use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema};
+use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, legacy_validator};
 use regex::Regex;
 
 #[allow(dead_code)]
@@ -82,7 +82,7 @@ pub fn iam_oidc_provider_config() -> AwsccSchemaConfig {
                         pattern: None,
                         length: Some((Some(1), Some(255))),
                         base: Box::new(AttributeType::String),
-                        validate: validate_string_length_1_255,
+                        validate: legacy_validator(validate_string_length_1_255),
                         namespace: None,
                         to_dsl: None,
                     }),
@@ -102,11 +102,13 @@ pub fn iam_oidc_provider_config() -> AwsccSchemaConfig {
                             pattern: Some("[0-9A-Fa-f]{40}".to_string()),
                             length: Some((Some(40), Some(40))),
                             base: Box::new(AttributeType::String),
-                            validate: validate_string_pattern_57ee0c44b504b839_len_40_40,
+                            validate: legacy_validator(
+                                validate_string_pattern_57ee0c44b504b839_len_40_40,
+                            ),
                             namespace: None,
                             to_dsl: None,
                         })),
-                        validate: validate_list_items_max_5,
+                        validate: legacy_validator(validate_list_items_max_5),
                         namespace: None,
                         to_dsl: None,
                     },
@@ -121,7 +123,7 @@ pub fn iam_oidc_provider_config() -> AwsccSchemaConfig {
                         pattern: None,
                         length: Some((Some(1), Some(255))),
                         base: Box::new(AttributeType::String),
-                        validate: validate_string_length_1_255,
+                        validate: legacy_validator(validate_string_length_1_255),
                         namespace: None,
                         to_dsl: None,
                     },

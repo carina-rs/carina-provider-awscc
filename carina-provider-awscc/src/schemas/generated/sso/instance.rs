@@ -8,7 +8,7 @@ use super::AwsccSchemaConfig;
 use super::tags_type;
 use super::validate_tags_map;
 use carina_core::resource::Value;
-use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema};
+use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, legacy_validator};
 use regex::Regex;
 
 const VALID_STATUS: &[&str] = &["CREATE_IN_PROGRESS", "DELETE_IN_PROGRESS", "ACTIVE"];
@@ -111,7 +111,7 @@ pub fn sso_instance_config() -> AwsccSchemaConfig {
                 pattern: Some("^[\\w+=,.@-]+$".to_string()),
                 length: Some((Some(1), Some(32))),
                 base: Box::new(AttributeType::String),
-                validate: validate_string_pattern_5a2bd7daee6344f1_len_1_32,
+                validate: legacy_validator(validate_string_pattern_5a2bd7daee6344f1_len_1_32),
                 namespace: None,
                 to_dsl: None,
             })

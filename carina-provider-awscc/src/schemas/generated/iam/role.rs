@@ -8,7 +8,9 @@ use super::AwsccSchemaConfig;
 use super::tags_type;
 use super::validate_tags_map;
 use carina_core::resource::Value;
-use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField};
+use carina_core::schema::{
+    AttributeSchema, AttributeType, ResourceSchema, StructField, legacy_validator,
+};
 
 fn validate_max_session_duration_range(value: &Value) -> Result<(), String> {
     if let Value::Int(n) = value {
@@ -58,7 +60,7 @@ pub fn iam_role_config() -> AwsccSchemaConfig {
                 pattern: None,
                 length: None,
                 base: Box::new(AttributeType::Int),
-                validate: validate_max_session_duration_range,
+                validate: legacy_validator(validate_max_session_duration_range),
                 namespace: None,
                 to_dsl: None,
             })

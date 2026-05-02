@@ -8,7 +8,9 @@ use super::AwsccSchemaConfig;
 use super::tags_type;
 use super::validate_tags_map;
 use carina_core::resource::Value;
-use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, types};
+use carina_core::schema::{
+    AttributeSchema, AttributeType, ResourceSchema, legacy_validator, types,
+};
 
 const VALID_INSTANCE_TENANCY: &[&str] = &["default", "dedicated", "host"];
 
@@ -89,7 +91,7 @@ pub fn ec2_vpc_config() -> AwsccSchemaConfig {
                 pattern: None,
                 length: None,
                 base: Box::new(AttributeType::Int),
-                validate: validate_ipv4_netmask_length_range,
+                validate: legacy_validator(validate_ipv4_netmask_length_range),
                 namespace: None,
                 to_dsl: None,
             })

@@ -6,7 +6,9 @@
 
 use super::AwsccSchemaConfig;
 use carina_core::resource::Value;
-use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, types};
+use carina_core::schema::{
+    AttributeSchema, AttributeType, ResourceSchema, legacy_validator, types,
+};
 
 const VALID_IP_PROTOCOL: &[&str] = &["tcp", "udp", "icmp", "icmpv6", "-1", "all"];
 
@@ -77,7 +79,7 @@ pub fn ec2_security_group_egress_config() -> AwsccSchemaConfig {
                 pattern: None,
                 length: None,
                 base: Box::new(AttributeType::Int),
-                validate: validate_from_port_range,
+                validate: legacy_validator(validate_from_port_range),
                 namespace: None,
                 to_dsl: None,
             })
@@ -116,7 +118,7 @@ pub fn ec2_security_group_egress_config() -> AwsccSchemaConfig {
                 pattern: None,
                 length: None,
                 base: Box::new(AttributeType::Int),
-                validate: validate_to_port_range,
+                validate: legacy_validator(validate_to_port_range),
                 namespace: None,
                 to_dsl: None,
             })

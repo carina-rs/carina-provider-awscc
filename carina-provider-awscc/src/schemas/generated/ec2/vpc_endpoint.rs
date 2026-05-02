@@ -8,7 +8,9 @@ use super::AwsccSchemaConfig;
 use super::tags_type;
 use super::validate_tags_map;
 use carina_core::resource::Value;
-use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField};
+use carina_core::schema::{
+    AttributeSchema, AttributeType, ResourceSchema, StructField, legacy_validator,
+};
 
 const VALID_DNS_OPTIONS_SPECIFICATION_DNS_RECORD_IP_TYPE: &[&str] = &[
     "ipv4",
@@ -116,11 +118,11 @@ pub fn ec2_vpc_endpoint_config() -> AwsccSchemaConfig {
                 pattern: None,
                 length: Some((Some(1), Some(255))),
                 base: Box::new(AttributeType::String),
-                validate: validate_string_length_1_255,
+                validate: legacy_validator(validate_string_length_1_255),
                 namespace: None,
                 to_dsl: None,
             })),
-                validate: validate_list_items_1_10,
+                validate: legacy_validator(validate_list_items_1_10),
                 namespace: None,
                 to_dsl: None,
             }).with_description("Indicates which of the private domains to create private hosted zones for and associate with the specified VPC. Only supported when private DNS is enabled and the private DNS preference is ``VERIFIED_DOMAINS_AND_SPECIFIED_DOMAINS`` or ``SPECIFIED_DOMAINS_ONLY``.").with_provider_name("PrivateDnsSpecifiedDomains")

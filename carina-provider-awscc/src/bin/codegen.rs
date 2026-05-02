@@ -1617,7 +1617,6 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
             .as_ref()
             .is_some_and(|v| json_default_to_value_code(v).is_some())
     });
-
     // Enums use AttributeType::Custom with AttributeType::String base
     if has_enums {
         needs_attribute_type = true;
@@ -1644,63 +1643,12 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
     // Detect mutually exclusive field groups from schema structure and descriptions
     let exclusive_groups = detect_exclusive_fields(schema, type_name);
 
-    // Generate header with conditional imports
-    let mut schema_imports = vec!["AttributeSchema", "ResourceSchema"];
-    if needs_attribute_type {
-        schema_imports.insert(1, "AttributeType");
-    }
-    if needs_struct_field {
-        schema_imports.push("StructField");
-    }
-    if needs_types {
-        schema_imports.push("types");
-    }
-    // Resources with custom operation config need the OperationConfig import
-    const OPERATION_CONFIG_TYPES: &[&str] = &[
-        "AWS::EC2::TransitGateway",
-        "AWS::EC2::TransitGatewayAttachment",
-        "AWS::EC2::IPAM",
-        "AWS::EC2::IPAMPool",
-        "AWS::EC2::NatGateway",
-        "AWS::EC2::VPCGatewayAttachment",
-    ];
-    if OPERATION_CONFIG_TYPES.contains(&type_name) {
-        schema_imports.push("OperationConfig");
-    }
-    let schema_imports_str = schema_imports.join(", ");
-    code.push_str(&format!(
-        r#"//! {} schema definition for AWS Cloud Control
-//!
-//! Auto-generated from CloudFormation schema: {}
-//!
-//! DO NOT EDIT MANUALLY - regenerate with carina-codegen
-
-use carina_core::schema::{{{}}};
-use super::AwsccSchemaConfig;
-"#,
-        resource, type_name, schema_imports_str
-    ));
-
-    if has_ranged_ints
-        || has_ranged_floats
-        || has_int_enums
-        || has_ranged_lists
-        || has_ranged_strings
-        || has_defaults
-        || has_patterns
-    {
-        code.push_str("use carina_core::resource::Value;\n");
-    }
-    if has_patterns {
-        code.push_str("use regex::Regex;\n");
-    }
-    if needs_tags_type {
-        code.push_str("use super::tags_type;\n");
-    }
-    if has_tags {
-        code.push_str("use super::validate_tags_map;\n");
-    }
-    code.push('\n');
+    // Build the body into a separate buffer so import selection can scan it
+    // for `legacy_validator(` / `noop_validator(` mentions instead of
+    // approximating from `has_*` flags (which over-included for files whose
+    // enums lower to `types::*` rather than to `Custom`). The header — including
+    // all `use` lines — is constructed at the end.
+    let mut body = String::new();
 
     // Aliases are used for to_dsl closure and enum_alias_reverse generation below.
     let aliases = known_enum_aliases();
@@ -1718,7 +1666,7 @@ use super::AwsccSchemaConfig;
             .map(|v| format!("\"{}\"", v))
             .collect::<Vec<_>>()
             .join(", ");
-        code.push_str(&format!(
+        body.push_str(&format!(
             "const {}: &[&str] = &[{}];\n\n",
             const_name, values_str
         ));
@@ -1728,7 +1676,7 @@ use super::AwsccSchemaConfig;
     for (prop_name, (min, max)) in &ranged_ints {
         let fn_name = format!("validate_{}_range", prop_name.to_snake_case());
         let (condition, range_display) = int_range_condition_and_display(*min, *max);
-        code.push_str(&format!(
+        body.push_str(&format!(
             r#"fn {}(value: &Value) -> Result<(), String> {{
     if let Value::Int(n) = value {{
         if {} {{
@@ -1750,7 +1698,7 @@ use super::AwsccSchemaConfig;
     for (prop_name, (min, max)) in &ranged_floats {
         let fn_name = format!("validate_{}_range", prop_name.to_snake_case());
         let (condition, range_display) = float_range_condition_and_display(*min, *max);
-        code.push_str(&format!(
+        body.push_str(&format!(
             r#"fn {}(value: &Value) -> Result<(), String> {{
     let n = match value {{
         Value::Int(i) => *i as f64,
@@ -1778,7 +1726,7 @@ use super::AwsccSchemaConfig;
             .map(|v| v.to_string())
             .collect::<Vec<_>>()
             .join(", ");
-        code.push_str(&format!(
+        body.push_str(&format!(
             r#"const {}: &[i64] = &[{}];
 
 fn {}(value: &Value) -> Result<(), String> {{
@@ -1824,31 +1772,31 @@ fn {}(value: &Value) -> Result<(), String> {{
             let escaped_for_rust = rust_pattern.replace('\\', "\\\\").replace('"', "\\\"");
             // For the error message, also escape { and } for the inner format!() macro
             let escaped_for_msg = escaped_for_rust.replace('{', "{{").replace('}', "}}");
-            code.push_str("#[allow(dead_code)]\n");
-            code.push_str("fn ");
-            code.push_str(&fn_name);
-            code.push_str("(value: &Value) -> Result<(), String> {\n");
-            code.push_str("    if let Value::String(s) = value {\n");
-            code.push_str(
+            body.push_str("#[allow(dead_code)]\n");
+            body.push_str("fn ");
+            body.push_str(&fn_name);
+            body.push_str("(value: &Value) -> Result<(), String> {\n");
+            body.push_str("    if let Value::String(s) = value {\n");
+            body.push_str(
                 "        static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {\n",
             );
-            code.push_str(&format!(
+            body.push_str(&format!(
                 "            Regex::new(\"{}\").expect(\"invalid pattern regex\")\n",
                 escaped_for_rust
             ));
-            code.push_str("        });\n");
-            code.push_str("        if RE.is_match(s) {\n");
-            code.push_str("            Ok(())\n");
-            code.push_str("        } else {\n");
-            code.push_str(&format!(
+            body.push_str("        });\n");
+            body.push_str("        if RE.is_match(s) {\n");
+            body.push_str("            Ok(())\n");
+            body.push_str("        } else {\n");
+            body.push_str(&format!(
                 "            Err(format!(\"Value '{{}}' does not match pattern {}\", s))\n",
                 escaped_for_msg
             ));
-            code.push_str("        }\n");
-            code.push_str("    } else {\n");
-            code.push_str("        Err(\"Expected string\".to_string())\n");
-            code.push_str("    }\n");
-            code.push_str("}\n\n");
+            body.push_str("        }\n");
+            body.push_str("    } else {\n");
+            body.push_str("        Err(\"Expected string\".to_string())\n");
+            body.push_str("    }\n");
+            body.push_str("}\n\n");
         }
     }
 
@@ -1864,7 +1812,7 @@ fn {}(value: &Value) -> Result<(), String> {{
             generated_items.insert(key);
             let fn_name = list_items_fn_name(*min, *max);
             let (condition, range_display) = list_items_condition_and_display(*min, *max);
-            code.push_str(&format!(
+            body.push_str(&format!(
                 r#"#[allow(dead_code)]
 fn {}(value: &Value) -> Result<(), String> {{
     if let Value::List(items) = value {{
@@ -1897,7 +1845,7 @@ fn {}(value: &Value) -> Result<(), String> {{
             generated_lengths.insert(key);
             let fn_name = string_length_fn_name(*min, *max);
             let (condition, range_display) = string_length_condition_and_display(*min, *max);
-            code.push_str(&format!(
+            body.push_str(&format!(
                 r#"fn {}(value: &Value) -> Result<(), String> {{
     if let Value::String(s) = value {{
         let len = s.chars().count();
@@ -1930,7 +1878,7 @@ fn {}(value: &Value) -> Result<(), String> {{
             let escaped_for_rust = rust_pattern.replace('\\', "\\\\").replace('"', "\\\"");
             let escaped_for_msg = escaped_for_rust.replace('{', "{{").replace('}', "}}");
             let (len_condition, range_display) = string_length_condition_and_display(*min, *max);
-            code.push_str(&format!(
+            body.push_str(&format!(
                 r#"#[allow(dead_code)]
 fn {fn_name}(value: &Value) -> Result<(), String> {{
     if let Value::String(s) = value {{
@@ -1960,7 +1908,7 @@ fn {fn_name}(value: &Value) -> Result<(), String> {{
     // Use awscc.service.resource format (e.g., awscc.ec2.Vpc)
     let schema_name = format!("awscc.{}", dsl_resource);
 
-    code.push_str(&format!(
+    body.push_str(&format!(
         r#"/// Returns the schema config for {} ({})
 pub fn {}() -> AwsccSchemaConfig {{
     AwsccSchemaConfig {{
@@ -1978,7 +1926,7 @@ pub fn {}() -> AwsccSchemaConfig {{
             .replace('\\', "\\\\")
             .replace('"', "\\\"")
             .replace('\n', " ");
-        code.push_str(&format!(
+        body.push_str(&format!(
             "        .with_description(\"{}\")\n",
             escaped_desc
         ));
@@ -2138,7 +2086,7 @@ pub fn {}() -> AwsccSchemaConfig {{
         }
 
         attr_code.push_str(",\n        )\n");
-        code.push_str(&attr_code);
+        body.push_str(&attr_code);
     }
 
     // Determine name_attribute from primaryIdentifier:
@@ -2159,7 +2107,7 @@ pub fn {}() -> AwsccSchemaConfig {{
                 .unwrap_or(false);
             if is_string {
                 let attr_name = prop_path.to_snake_case();
-                code.push_str(&format!(
+                body.push_str(&format!(
                     "        .with_name_attribute(\"{}\")\n",
                     attr_name
                 ));
@@ -2171,18 +2119,18 @@ pub fn {}() -> AwsccSchemaConfig {{
     // having an update handler. These must be replaced instead of updated.
     const FORCE_REPLACE_TYPES: &[&str] = &["AWS::EC2::InternetGateway", "AWS::EC2::IPAM"];
     if FORCE_REPLACE_TYPES.contains(&type_name) {
-        code.push_str("        .force_replace()\n");
+        body.push_str("        .force_replace()\n");
     }
 
     // Per-resource operational config for resources with slow CloudControl operations.
     let op_config = operation_config_for_type(type_name);
     if let Some(cfg) = op_config {
-        code.push_str("        .with_operation_config(OperationConfig {\n");
-        emit_option_field(&mut code, "delete_timeout_secs", cfg.delete_timeout_secs);
-        emit_option_field(&mut code, "delete_max_retries", cfg.delete_max_retries);
-        emit_option_field(&mut code, "create_timeout_secs", cfg.create_timeout_secs);
-        emit_option_field(&mut code, "create_max_retries", cfg.create_max_retries);
-        code.push_str("        })\n");
+        body.push_str("        .with_operation_config(OperationConfig {\n");
+        emit_option_field(&mut body, "delete_timeout_secs", cfg.delete_timeout_secs);
+        emit_option_field(&mut body, "delete_max_retries", cfg.delete_max_retries);
+        emit_option_field(&mut body, "create_timeout_secs", cfg.create_timeout_secs);
+        emit_option_field(&mut body, "create_max_retries", cfg.create_max_retries);
+        body.push_str("        })\n");
     }
 
     // Mutually exclusive required groups are emitted as declarative data so
@@ -2194,26 +2142,26 @@ pub fn {}() -> AwsccSchemaConfig {{
             .map(|f| format!("\"{}\"", f.to_snake_case()))
             .collect::<Vec<_>>()
             .join(", ");
-        code.push_str(&format!("        .exclusive_required(&[{}])\n", fields_str));
+        body.push_str(&format!("        .exclusive_required(&[{}])\n", fields_str));
     }
 
     // Tags map-shape check is still emitted as a closure. It's a local
     // safety net; the host side re-attaches the equivalent check via
     // `ValidatorType::TagsKeyValueCheck` (see `main.rs::schemas`).
     if has_tags {
-        code.push_str("        .with_validator(|attrs| {\n");
-        code.push_str("            let mut errors = Vec::new();\n");
-        code.push_str("            if let Err(mut e) = validate_tags_map(attrs) {\n                errors.append(&mut e);\n            }\n");
-        code.push_str(
+        body.push_str("        .with_validator(|attrs| {\n");
+        body.push_str("            let mut errors = Vec::new();\n");
+        body.push_str("            if let Err(mut e) = validate_tags_map(attrs) {\n                errors.append(&mut e);\n            }\n");
+        body.push_str(
             "            if errors.is_empty() { Ok(()) } else { Err(errors) }\n        })\n",
         );
     }
 
     // Close the schema (ResourceSchema) and the AwsccSchemaConfig struct
-    code.push_str("    }\n}\n");
+    body.push_str("    }\n}\n");
 
     // Generate enum_valid_values() function that exposes VALID_* constants
-    code.push_str(&format!(
+    body.push_str(&format!(
         "\n/// Returns the resource type name and all enum valid values for this module\n\
          pub fn enum_valid_values() -> (&'static str, &'static [(&'static str, &'static [&'static str])]) {{\n\
          {}\
@@ -2283,13 +2231,13 @@ pub fn {}() -> AwsccSchemaConfig {{
         }
 
         // enum_alias_reverse(): match-based lookup
-        code.push_str(
+        body.push_str(
             "\n/// Maps DSL alias values back to canonical AWS values for this module.\n\
              /// e.g., (\"ip_protocol\", \"all\") -> Some(\"-1\")\n\
              pub fn enum_alias_reverse(attr_name: &str, value: &str) -> Option<&'static str> {\n",
         );
         if alias_entries.is_empty() {
-            code.push_str("    let _ = (attr_name, value);\n    None\n");
+            body.push_str("    let _ = (attr_name, value);\n    None\n");
         } else {
             let match_arms: Vec<String> = alias_entries
                 .iter()
@@ -2300,20 +2248,20 @@ pub fn {}() -> AwsccSchemaConfig {{
                     )
                 })
                 .collect();
-            code.push_str(&format!(
+            body.push_str(&format!(
                 "    match (attr_name, value) {{\n{},\n        _ => None\n    }}\n",
                 match_arms.join(",\n")
             ));
         }
-        code.push_str("}\n");
+        body.push_str("}\n");
 
         // enum_alias_entries(): static slice of all entries
-        code.push_str(
+        body.push_str(
             "\n/// Returns all enum alias entries as (attr_name, alias, canonical) tuples.\n\
              pub fn enum_alias_entries() -> &'static [(&'static str, &'static str, &'static str)] {\n",
         );
         if alias_entries.is_empty() {
-            code.push_str("    &[]\n");
+            body.push_str("    &[]\n");
         } else {
             let entry_strs: Vec<String> = alias_entries
                 .iter()
@@ -2321,10 +2269,74 @@ pub fn {}() -> AwsccSchemaConfig {{
                     format!("        (\"{}\", \"{}\", \"{}\")", attr, alias, canonical)
                 })
                 .collect();
-            code.push_str(&format!("    &[\n{}\n    ]\n", entry_strs.join(",\n")));
+            body.push_str(&format!("    &[\n{}\n    ]\n", entry_strs.join(",\n")));
         }
-        code.push_str("}\n");
+        body.push_str("}\n");
     }
+
+    // Header is built last so import selection can scan the body for
+    // `legacy_validator(` / `noop_validator(` actually-emitted mentions.
+    let mut schema_imports = vec!["AttributeSchema", "ResourceSchema"];
+    if needs_attribute_type {
+        schema_imports.insert(1, "AttributeType");
+    }
+    if needs_struct_field {
+        schema_imports.push("StructField");
+    }
+    if needs_types {
+        schema_imports.push("types");
+    }
+    if body.contains("legacy_validator(") {
+        schema_imports.push("legacy_validator");
+    }
+    if body.contains("noop_validator(") {
+        schema_imports.push("noop_validator");
+    }
+    const OPERATION_CONFIG_TYPES: &[&str] = &[
+        "AWS::EC2::TransitGateway",
+        "AWS::EC2::TransitGatewayAttachment",
+        "AWS::EC2::IPAM",
+        "AWS::EC2::IPAMPool",
+        "AWS::EC2::NatGateway",
+        "AWS::EC2::VPCGatewayAttachment",
+    ];
+    if OPERATION_CONFIG_TYPES.contains(&type_name) {
+        schema_imports.push("OperationConfig");
+    }
+    let schema_imports_str = schema_imports.join(", ");
+    code.push_str(&format!(
+        r#"//! {} schema definition for AWS Cloud Control
+//!
+//! Auto-generated from CloudFormation schema: {}
+//!
+//! DO NOT EDIT MANUALLY - regenerate with carina-codegen
+
+use carina_core::schema::{{{}}};
+use super::AwsccSchemaConfig;
+"#,
+        resource, type_name, schema_imports_str
+    ));
+    if has_ranged_ints
+        || has_ranged_floats
+        || has_int_enums
+        || has_ranged_lists
+        || has_ranged_strings
+        || has_defaults
+        || has_patterns
+    {
+        code.push_str("use carina_core::resource::Value;\n");
+    }
+    if has_patterns {
+        code.push_str("use regex::Regex;\n");
+    }
+    if needs_tags_type {
+        code.push_str("use super::tags_type;\n");
+    }
+    if has_tags {
+        code.push_str("use super::validate_tags_map;\n");
+    }
+    code.push('\n');
+    code.push_str(&body);
 
     Ok(code)
 }
@@ -3777,7 +3789,7 @@ fn cfn_type_to_carina_type_with_enum(
                 pattern: {},
                 length: {},
                 base: Box::new(AttributeType::String),
-                validate: {},
+                validate: legacy_validator({}),
                 namespace: None,
                 to_dsl: None,
             }}"#,
@@ -3816,7 +3828,7 @@ fn cfn_type_to_carina_type_with_enum(
                 pattern: None,
                 length: None,
                 base: Box::new(AttributeType::Int),
-                validate: {},
+                validate: legacy_validator({}),
                 namespace: None,
                 to_dsl: None,
             }}"#,
@@ -3910,7 +3922,7 @@ fn cfn_type_to_carina_type_with_enum(
                 pattern: {},
                 length: {},
                 base: Box::new(AttributeType::String),
-                validate: {},
+                validate: legacy_validator({}),
                 namespace: None,
                 to_dsl: None,
             }}"#,
@@ -3936,7 +3948,7 @@ fn cfn_type_to_carina_type_with_enum(
                 pattern: {},
                 length: {},
                 base: Box::new(AttributeType::String),
-                validate: {},
+                validate: legacy_validator({}),
                 namespace: None,
                 to_dsl: None,
             }}"#,
@@ -3954,7 +3966,7 @@ fn cfn_type_to_carina_type_with_enum(
                 pattern: None,
                 length: None,
                 base: Box::new(AttributeType::String),
-                validate: |_| Ok(()),
+                validate: noop_validator(),
                 namespace: None,
                 to_dsl: None,
             }"#
@@ -3975,7 +3987,7 @@ fn cfn_type_to_carina_type_with_enum(
                 pattern: None,
                 length: {},
                 base: Box::new(AttributeType::String),
-                validate: {},
+                validate: legacy_validator({}),
                 namespace: None,
                 to_dsl: {},
             }}"#,
@@ -4001,7 +4013,7 @@ fn cfn_type_to_carina_type_with_enum(
                 pattern: None,
                 length: None,
                 base: Box::new(AttributeType::Int),
-                validate: {},
+                validate: legacy_validator({}),
                 namespace: None,
                 to_dsl: None,
             }}"#,
@@ -4019,7 +4031,7 @@ fn cfn_type_to_carina_type_with_enum(
                 pattern: None,
                 length: None,
                 base: Box::new(AttributeType::Int),
-                validate: {},
+                validate: legacy_validator({}),
                 namespace: None,
                 to_dsl: None,
             }}"#,
@@ -4047,7 +4059,7 @@ fn cfn_type_to_carina_type_with_enum(
                 pattern: None,
                 length: None,
                 base: Box::new(AttributeType::Int),
-                validate: {},
+                validate: legacy_validator({}),
                 namespace: None,
                 to_dsl: None,
             }}"#,
@@ -4063,7 +4075,7 @@ fn cfn_type_to_carina_type_with_enum(
                 pattern: None,
                 length: None,
                 base: Box::new(AttributeType::Int),
-                validate: |_| Ok(()),
+                validate: noop_validator(),
                 namespace: None,
                 to_dsl: None,
             }"#
@@ -4087,7 +4099,7 @@ fn cfn_type_to_carina_type_with_enum(
                 pattern: None,
                 length: None,
                 base: Box::new(AttributeType::Float),
-                validate: {},
+                validate: legacy_validator({}),
                 namespace: None,
                 to_dsl: None,
             }}"#,
@@ -4115,7 +4127,7 @@ fn cfn_type_to_carina_type_with_enum(
                 pattern: None,
                 length: None,
                 base: Box::new(AttributeType::Float),
-                validate: {},
+                validate: legacy_validator({}),
                 namespace: None,
                 to_dsl: None,
             }}"#,
@@ -4131,7 +4143,7 @@ fn cfn_type_to_carina_type_with_enum(
                 pattern: None,
                 length: None,
                 base: Box::new(AttributeType::Float),
-                validate: |_| Ok(()),
+                validate: noop_validator(),
                 namespace: None,
                 to_dsl: None,
             }"#
@@ -4189,7 +4201,7 @@ fn cfn_type_to_carina_type_with_enum(
                 pattern: None,
                 length: None,
                 base: Box::new({}),
-                validate: {},
+                validate: legacy_validator({}),
                 namespace: None,
                 to_dsl: None,
             }}"#,

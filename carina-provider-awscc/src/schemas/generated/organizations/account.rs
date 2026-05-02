@@ -8,7 +8,9 @@ use super::AwsccSchemaConfig;
 use super::tags_type;
 use super::validate_tags_map;
 use carina_core::resource::Value;
-use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, types};
+use carina_core::schema::{
+    AttributeSchema, AttributeType, ResourceSchema, legacy_validator, types,
+};
 use regex::Regex;
 
 const VALID_JOINED_METHOD: &[&str] = &["INVITED", "CREATED"];
@@ -162,7 +164,7 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
                 pattern: Some("[\\u0020-\\u007E]+".to_string()),
                 length: Some((Some(1), Some(50))),
                 base: Box::new(AttributeType::String),
-                validate: validate_string_pattern_3af299ea99241fab_len_1_50,
+                validate: legacy_validator(validate_string_pattern_3af299ea99241fab_len_1_50),
                 namespace: None,
                 to_dsl: None,
             })
@@ -205,7 +207,7 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
                 pattern: Some("^(r-[0-9a-z]{4,32})|(ou-[0-9a-z]{4,32}-[a-z0-9]{8,32})$".to_string()),
                 length: None,
                 base: Box::new(AttributeType::String),
-                validate: validate_string_pattern_6fa92970742ee8e6,
+                validate: legacy_validator(validate_string_pattern_6fa92970742ee8e6),
                 namespace: None,
                 to_dsl: None,
             }))
@@ -218,7 +220,7 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
                 pattern: Some("^(o-[a-z0-9]{10,32}/r-[0-9a-z]{4,32}(/ou-[0-9a-z]{4,32}-[a-z0-9]{8,32})*(/\\d{12})*)/".to_string()),
                 length: None,
                 base: Box::new(AttributeType::String),
-                validate: validate_string_pattern_f777bea2efc17af6,
+                validate: legacy_validator(validate_string_pattern_f777bea2efc17af6),
                 namespace: None,
                 to_dsl: None,
             }))
@@ -232,7 +234,7 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
                 pattern: Some("[\\w+=,.@-]{1,64}".to_string()),
                 length: Some((Some(1), Some(64))),
                 base: Box::new(AttributeType::String),
-                validate: validate_string_pattern_253e7eb79a4beec5_len_1_64,
+                validate: legacy_validator(validate_string_pattern_253e7eb79a4beec5_len_1_64),
                 namespace: None,
                 to_dsl: None,
             })
