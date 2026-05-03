@@ -33,6 +33,25 @@ mkdir -p "$DOCS_DIR"
 
 cd "$PROJECT_ROOT"
 
+# Map a lowercase service code to its canonical AWS display name.
+# Naive uppercasing produces unreadable strings like "AWSCC LOGS LogGroup ..."
+# in the frontmatter description. Keep this list aligned with the services
+# present in carina-provider-awscc/src/schemas/generated/.
+service_display_name() {
+    case "$1" in
+        s3)            echo "S3" ;;
+        ec2)           echo "EC2" ;;
+        iam)           echo "IAM" ;;
+        sts)           echo "STS" ;;
+        sso)           echo "IAM Identity Center" ;;
+        logs)          echo "CloudWatch Logs" ;;
+        route53)       echo "Route 53" ;;
+        identitystore) echo "Identity Store" ;;
+        organizations) echo "Organizations" ;;
+        *)             echo "$1" | tr '[:lower:]' '[:upper:]' ;;
+    esac
+}
+
 # Derive resource types from generated schema files (single source of truth).
 # Each .rs file (excluding mod.rs) has a header comment:
 #   Auto-generated from CloudFormation schema: AWS::EC2::VPC
@@ -118,7 +137,7 @@ for TYPE_NAME in "${RESOURCE_TYPES[@]}"; do
     # Add Starlight frontmatter
     if [ -f "$OUTPUT_FILE" ]; then
         DSL_NAME_FULL="awscc.$DSL_NAME"
-        SERVICE_DISPLAY=$(echo "$SERVICE" | tr '[:lower:]' '[:upper:]')
+        SERVICE_DISPLAY=$(service_display_name "$SERVICE")
         FRONTMATTER_TMPFILE=$(mktemp)
         {
             echo "---"

@@ -576,10 +576,10 @@ fn type_display_string(
             enum_link
         }
     } else if prop_name == "Tags" {
-        "Map(String)".to_string()
+        "`Map<String, String>`".to_string()
     } else if let Some(ref_path) = &prop.ref_path {
         if ref_path.contains("/Tag") {
-            "Map(String)".to_string()
+            "`Map<String, String>`".to_string()
         } else if let Some(def_name) = ref_def_name(ref_path)
             && resolve_ref(schema, ref_path)
                 .and_then(|d| d.properties.as_ref())
@@ -737,7 +737,7 @@ fn type_display_string(
                                 "`List<String>`".to_string()
                             }
                         } else {
-                            "`List<Map(String)>`".to_string()
+                            "`List<Map<String, String>>`".to_string()
                         }
                     } else {
                         list_element_type_display(items, prop_name, &schema.type_name)
@@ -761,7 +761,7 @@ fn type_display_string(
                 } else if prop_name.ends_with("PolicyDocument") {
                     "IamPolicyDocument".to_string()
                 } else {
-                    "Map(String)".to_string()
+                    "`Map<String, String>`".to_string()
                 }
             }
             _ => "String".to_string(),
@@ -5196,7 +5196,7 @@ mod tests {
         let enums = BTreeMap::new();
         assert_eq!(
             type_display_string("ResourceTags", &prop, &schema, &enums),
-            "`List<Map(String)>`"
+            "`List<Map<String, String>>`"
         );
     }
 
@@ -8034,10 +8034,10 @@ mod tests {
             handlers: BTreeMap::new(),
         };
         let enums = BTreeMap::new();
-        // Tags property should display Map(String)
+        // Tags property should display Map<String, String>
         assert_eq!(
             type_display_string("Tags", &prop, &schema, &enums),
-            "Map(String)"
+            "`Map<String, String>`"
         );
     }
 
@@ -8063,10 +8063,10 @@ mod tests {
             handlers: BTreeMap::new(),
         };
         let enums = BTreeMap::new();
-        // Generic object should display Map(String)
+        // Generic object should display Map<String, String>
         assert_eq!(
             type_display_string("DataProtectionPolicy", &prop, &schema, &enums),
-            "Map(String)"
+            "`Map<String, String>`"
         );
     }
 
