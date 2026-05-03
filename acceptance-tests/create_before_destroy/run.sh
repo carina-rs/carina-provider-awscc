@@ -180,9 +180,12 @@ run_plan_verify() {
     return 0
 }
 
-# Cleanup helper: destroy resources in work_dir, retrying to handle dependencies
+# destroy_work_dir: destroy resources in work_dir, retrying to handle dependencies
 # Returns 0 if at least one destroy succeeded, 1 if ALL failed
-cleanup() {
+# (Named distinctly from `cleanup` so the EXIT trap in _helpers.sh keeps using
+# its own cleanup() — overriding it would call this with no args at exit and
+# emit "No .crn files found in .".)
+destroy_work_dir() {
     local work_dir="$1"
     local any_success=false
 
@@ -249,7 +252,7 @@ run_test() {
 
     # Step 1: Apply initial config
     if ! run_step "$work_dir" "step1: apply initial" "apply" "--auto-approve"; then
-        cleanup "$work_dir"
+        destroy_work_dir "$work_dir"
         rm -rf "$work_dir"
         ACTIVE_WORK_DIR=""
         return 1
@@ -257,7 +260,7 @@ run_test() {
 
     # Step 1b: Plan-verify initial state
     if ! run_plan_verify "$work_dir" "step1: plan-verify initial"; then
-        cleanup "$work_dir"
+        destroy_work_dir "$work_dir"
         rm -rf "$work_dir"
         ACTIVE_WORK_DIR=""
         return 1
@@ -272,7 +275,7 @@ run_test() {
 
     # Step 2: Apply modified config (triggers create_before_destroy replacement)
     if ! run_step "$work_dir" "step2: apply replace (create_before_destroy)" "apply" "--auto-approve"; then
-        cleanup "$work_dir"
+        destroy_work_dir "$work_dir"
         rm -rf "$work_dir"
         ACTIVE_WORK_DIR=""
         return 1
@@ -284,7 +287,7 @@ run_test() {
 
     # Assert identifiers changed (create_before_destroy should replace at least one resource)
     if ! assert_identifiers "assert: identifiers changed after replace" "$ids_after_step1" "$ids_after_step2" "different"; then
-        cleanup "$work_dir"
+        destroy_work_dir "$work_dir"
         rm -rf "$work_dir"
         ACTIVE_WORK_DIR=""
         return 1
@@ -292,7 +295,7 @@ run_test() {
 
     # Step 3: Plan-verify after replacement
     if ! run_plan_verify "$work_dir" "step3: plan-verify after replace"; then
-        cleanup "$work_dir"
+        destroy_work_dir "$work_dir"
         rm -rf "$work_dir"
         ACTIVE_WORK_DIR=""
         return 1
