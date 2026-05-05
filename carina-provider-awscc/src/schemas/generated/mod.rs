@@ -59,7 +59,9 @@ static ENUM_VALID_VALUES: LazyLock<
         ec2::egress_only_internet_gateway::enum_valid_values(),
         ec2::transit_gateway_attachment::enum_valid_values(),
         s3::bucket::enum_valid_values(),
+        s3::bucket_policy::enum_valid_values(),
         iam::role::enum_valid_values(),
+        iam::role_policy::enum_valid_values(),
         iam::oidc_provider::enum_valid_values(),
         logs::log_group::enum_valid_values(),
         organizations::organization::enum_valid_values(),
@@ -137,7 +139,9 @@ static ENUM_ALIAS_DISPATCH: LazyLock<HashMap<&'static str, EnumAliasReverseFn>> 
                 ec2::transit_gateway_attachment::enum_alias_reverse,
             ),
             ("s3.Bucket", s3::bucket::enum_alias_reverse),
+            ("s3.BucketPolicy", s3::bucket_policy::enum_alias_reverse),
             ("iam.Role", iam::role::enum_alias_reverse),
+            ("iam.RolePolicy", iam::role_policy::enum_alias_reverse),
             ("iam.OidcProvider", iam::oidc_provider::enum_alias_reverse),
             ("logs.LogGroup", logs::log_group::enum_alias_reverse),
             (
@@ -192,7 +196,9 @@ fn build_configs() -> Vec<AwsccSchemaConfig> {
         ec2::egress_only_internet_gateway::ec2_egress_only_internet_gateway_config(),
         ec2::transit_gateway_attachment::ec2_transit_gateway_attachment_config(),
         s3::bucket::s3_bucket_config(),
+        s3::bucket_policy::s3_bucket_policy_config(),
         iam::role::iam_role_config(),
+        iam::role_policy::iam_role_policy_config(),
         iam::oidc_provider::iam_oidc_provider_config(),
         logs::log_group::logs_log_group_config(),
         organizations::organization::organizations_organization_config(),
@@ -403,8 +409,22 @@ pub fn build_enum_aliases_map() -> HashMap<String, HashMap<String, HashMap<Strin
             .or_default()
             .insert(alias.to_string(), canonical.to_string());
     }
+    for (attr, alias, canonical) in s3::bucket_policy::enum_alias_entries() {
+        map.entry("s3.BucketPolicy".to_string())
+            .or_default()
+            .entry(attr.to_string())
+            .or_default()
+            .insert(alias.to_string(), canonical.to_string());
+    }
     for (attr, alias, canonical) in iam::role::enum_alias_entries() {
         map.entry("iam.Role".to_string())
+            .or_default()
+            .entry(attr.to_string())
+            .or_default()
+            .insert(alias.to_string(), canonical.to_string());
+    }
+    for (attr, alias, canonical) in iam::role_policy::enum_alias_entries() {
+        map.entry("iam.RolePolicy".to_string())
             .or_default()
             .entry(attr.to_string())
             .or_default()
