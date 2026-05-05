@@ -20,11 +20,13 @@ use std::collections::HashMap;
 use indexmap::IndexMap;
 
 use carina_core::provider::{
-    BoxFuture, Provider, ProviderFactory, ProviderNormalizer, ProviderResult, SavedAttrs,
-    merge_default_tags_for_provider,
+    BoxFuture, Provider, ProviderError, ProviderFactory, ProviderNormalizer, ProviderResult,
+    SavedAttrs, merge_default_tags_for_provider,
 };
 use carina_core::resource::{LifecycleConfig, Resource, ResourceId, State, Value};
 use carina_core::schema::SchemaRegistry;
+
+use crate::provider::AwsccProviderConfig;
 
 /// Schema extension for the AWSCC provider.
 ///
@@ -74,10 +76,11 @@ impl ProviderFactory for AwsccProviderFactory {
     fn provider_config_attribute_types(
         &self,
     ) -> HashMap<String, carina_core::schema::AttributeType> {
+        use carina_core::schema::AttributeType;
         let mut types = HashMap::new();
         types.insert(
             "region".to_string(),
-            carina_core::schema::AttributeType::StringEnum {
+            AttributeType::StringEnum {
                 name: "Region".to_string(),
                 values: carina_aws_types::REGIONS
                     .iter()
@@ -85,6 +88,20 @@ impl ProviderFactory for AwsccProviderFactory {
                     .collect(),
                 namespace: Some("awscc".to_string()),
                 to_dsl: Some(|s| s.replace('-', "_")),
+            },
+        );
+        types.insert(
+            "allowed_account_ids".to_string(),
+            AttributeType::List {
+                inner: Box::new(AttributeType::String),
+                ordered: false,
+            },
+        );
+        types.insert(
+            "forbidden_account_ids".to_string(),
+            AttributeType::List {
+                inner: Box::new(AttributeType::String),
+                ordered: false,
             },
         );
         types
@@ -121,7 +138,10 @@ impl ProviderFactory for AwsccProviderFactory {
         attributes: &IndexMap<String, Value>,
     ) -> BoxFuture<'_, Box<dyn Provider>> {
         let region = self.extract_region(attributes);
-        Box::pin(async move { Box::new(AwsccProvider::new(&region).await) as Box<dyn Provider> })
+        let cfg = extract_provider_config(attributes);
+        Box::pin(async move {
+            Box::new(AwsccProvider::new_with_config(&region, &cfg).await) as Box<dyn Provider>
+        })
     }
 
     fn create_normalizer(
@@ -163,6 +183,30 @@ impl ProviderFactory for AwsccProviderFactory {
 // Provider Trait Implementation
 // =============================================================================
 
+/// Extract the account-guard policy from a provider's configuration
+/// attributes. Treats unset / non-list / non-string-element values as
+/// "absent", consistent with the schema declared in
+/// `provider_config_attribute_types` — the host enforces the declared
+/// types before reaching the provider, so this is a defensive parse.
+pub(crate) fn extract_provider_config(attributes: &IndexMap<String, Value>) -> AwsccProviderConfig {
+    fn extract_string_list(attributes: &IndexMap<String, Value>, key: &str) -> Vec<String> {
+        match attributes.get(key) {
+            Some(Value::List(items)) => items
+                .iter()
+                .filter_map(|v| match v {
+                    Value::String(s) => Some(s.clone()),
+                    _ => None,
+                })
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+    AwsccProviderConfig {
+        allowed_account_ids: extract_string_list(attributes, "allowed_account_ids"),
+        forbidden_account_ids: extract_string_list(attributes, "forbidden_account_ids"),
+    }
+}
+
 impl Provider for AwsccProvider {
     fn name(&self) -> &str {
         "awscc"
@@ -173,6 +217,11 @@ impl Provider for AwsccProvider {
         id: &ResourceId,
         identifier: Option<&str>,
     ) -> BoxFuture<'_, ProviderResult<State>> {
+        if let Some(err) = self.init_error() {
+            let err = err.to_string();
+            let id = id.clone();
+            return Box::pin(async move { Err(ProviderError::new(err).for_resource(id)) });
+        }
         let id = id.clone();
         let identifier = identifier.map(|s| s.to_string());
         Box::pin(async move {
@@ -186,6 +235,11 @@ impl Provider for AwsccProvider {
     }
 
     fn create(&self, resource: &Resource) -> BoxFuture<'_, ProviderResult<State>> {
+        if let Some(err) = self.init_error() {
+            let err = err.to_string();
+            let id = resource.id.clone();
+            return Box::pin(async move { Err(ProviderError::new(err).for_resource(id)) });
+        }
         let resource = resource.clone();
         Box::pin(async move { self.create_resource(resource).await })
     }
@@ -197,6 +251,11 @@ impl Provider for AwsccProvider {
         from: &State,
         to: &Resource,
     ) -> BoxFuture<'_, ProviderResult<State>> {
+        if let Some(err) = self.init_error() {
+            let err = err.to_string();
+            let id = id.clone();
+            return Box::pin(async move { Err(ProviderError::new(err).for_resource(id)) });
+        }
         let id = id.clone();
         let identifier = identifier.to_string();
         let from = from.clone();
@@ -210,6 +269,11 @@ impl Provider for AwsccProvider {
         identifier: &str,
         lifecycle: &LifecycleConfig,
     ) -> BoxFuture<'_, ProviderResult<()>> {
+        if let Some(err) = self.init_error() {
+            let err = err.to_string();
+            let id = id.clone();
+            return Box::pin(async move { Err(ProviderError::new(err).for_resource(id)) });
+        }
         let id = id.clone();
         let identifier = identifier.to_string();
         let lifecycle = lifecycle.clone();
@@ -228,6 +292,51 @@ mod tests {
             registry.insert("awscc", schema);
         }
         registry
+    }
+
+    #[test]
+    fn extract_provider_config_reads_both_lists() {
+        let mut attrs: IndexMap<String, Value> = IndexMap::new();
+        attrs.insert(
+            "allowed_account_ids".to_string(),
+            Value::List(vec![
+                Value::String("111111111111".to_string()),
+                Value::String("222222222222".to_string()),
+            ]),
+        );
+        attrs.insert(
+            "forbidden_account_ids".to_string(),
+            Value::List(vec![Value::String("999999999999".to_string())]),
+        );
+
+        let cfg = extract_provider_config(&attrs);
+        assert_eq!(
+            cfg.allowed_account_ids,
+            vec!["111111111111".to_string(), "222222222222".to_string()]
+        );
+        assert_eq!(cfg.forbidden_account_ids, vec!["999999999999".to_string()]);
+    }
+
+    #[test]
+    fn extract_provider_config_defaults_to_empty_when_unset() {
+        let attrs: IndexMap<String, Value> = IndexMap::new();
+        let cfg = extract_provider_config(&attrs);
+        assert!(cfg.allowed_account_ids.is_empty());
+        assert!(cfg.forbidden_account_ids.is_empty());
+    }
+
+    #[test]
+    fn provider_config_attribute_types_declares_account_id_lists() {
+        let factory = AwsccProviderFactory;
+        let types = factory.provider_config_attribute_types();
+        assert!(matches!(
+            types.get("allowed_account_ids"),
+            Some(carina_core::schema::AttributeType::List { .. })
+        ));
+        assert!(matches!(
+            types.get("forbidden_account_ids"),
+            Some(carina_core::schema::AttributeType::List { .. })
+        ));
     }
 
     #[test]

@@ -1,0 +1,20 @@
+# allowed_account_ids guard - acceptance test
+#
+# Verifies the provider aborts before any CloudControl call when the
+# caller's AWS account is not in `allowed_account_ids`. The list below
+# pins to the all-zeros account, which no real AWS credentials can
+# match — `carina apply` against this directory MUST fail fast with an
+# error naming both the expected list and the actual account ID.
+
+provider awscc {
+  region              = awscc.Region.ap_northeast_1
+  allowed_account_ids = ['000000000000']
+}
+
+awscc.ec2.Eip {
+  domain = 'vpc'
+
+  tags = {
+    Environment = 'acceptance-test'
+  }
+}
