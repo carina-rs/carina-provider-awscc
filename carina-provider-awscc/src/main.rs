@@ -10,7 +10,7 @@ use carina_core::provider::{
 use carina_core::resource::{ResourceId as CoreResourceId, State as CoreState, Value as CoreValue};
 
 use carina_provider_awscc::AwsccNormalizer;
-use carina_provider_awscc::provider::AwsccProvider;
+use carina_provider_awscc::provider::{AwsccProvider, AwsccProviderConfig};
 use carina_provider_awscc::schemas;
 
 struct AwsccProcessProvider {
@@ -97,6 +97,20 @@ impl CarinaProvider for AwsccProcessProvider {
                 namespace: Some("awscc".to_string()),
             },
         );
+        types.insert(
+            "allowed_account_ids".to_string(),
+            proto::AttributeType::List {
+                inner: Box::new(proto::AttributeType::String),
+                ordered: false,
+            },
+        );
+        types.insert(
+            "forbidden_account_ids".to_string(),
+            proto::AttributeType::List {
+                inner: Box::new(proto::AttributeType::String),
+                ordered: false,
+            },
+        );
         types
     }
 
@@ -114,7 +128,17 @@ impl CarinaProvider for AwsccProcessProvider {
         } else {
             "ap-northeast-1".to_string()
         };
-        let provider = self.runtime.block_on(AwsccProvider::new(&region));
+        let cfg = extract_account_guard_config(&core_attrs);
+        let provider = self
+            .runtime
+            .block_on(AwsccProvider::new_with_config(&region, &cfg));
+        // Surface the account-guard rejection eagerly: if the caller's
+        // AWS account violates allowed_account_ids / forbidden_account_ids,
+        // initialize() must fail so the host aborts before any plan,
+        // refresh, or apply step.
+        if let Some(err) = provider.init_error() {
+            return Err(err.to_string());
+        }
         self.provider = Some(provider);
         Ok(())
     }
@@ -316,6 +340,29 @@ impl CarinaProvider for AwsccProcessProvider {
             .iter()
             .map(convert::core_to_proto_resource)
             .collect();
+    }
+}
+
+/// Pull `allowed_account_ids` / `forbidden_account_ids` out of the
+/// provider's configured attributes. Both unset/empty means "no
+/// account check"; matching mirrors the in-process Provider wiring in
+/// `lib.rs::extract_provider_config`.
+fn extract_account_guard_config(core_attrs: &HashMap<String, CoreValue>) -> AwsccProviderConfig {
+    fn extract_string_list(attrs: &HashMap<String, CoreValue>, key: &str) -> Vec<String> {
+        match attrs.get(key) {
+            Some(CoreValue::List(items)) => items
+                .iter()
+                .filter_map(|v| match v {
+                    CoreValue::String(s) => Some(s.clone()),
+                    _ => None,
+                })
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+    AwsccProviderConfig {
+        allowed_account_ids: extract_string_list(core_attrs, "allowed_account_ids"),
+        forbidden_account_ids: extract_string_list(core_attrs, "forbidden_account_ids"),
     }
 }
 

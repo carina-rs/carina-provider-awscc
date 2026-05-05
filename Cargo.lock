@@ -553,6 +553,7 @@ dependencies = [
  "aws-config",
  "aws-sdk-cloudcontrol",
  "aws-sdk-s3",
+ "aws-sdk-sts",
  "aws-smithy-async",
  "aws-smithy-runtime-api",
  "aws-smithy-types",
