@@ -198,6 +198,40 @@ pub fn normalize_state_enums_impl(current_states: &mut HashMap<ResourceId, State
     }
 }
 
+/// Canonicalize attributes of every awscc state whose declared schema
+/// type is `Union[String, list(String)]` (the IAM-style
+/// `string_or_list_of_strings` shape) into `Value::StringList`.
+///
+/// AWS server-side normalizes single-element list condition values back
+/// to scalars on read (e.g. `["x"]` is stored and returned as `"x"`).
+/// Pre-canonicalizing the actual-side at the provider boundary lets
+/// every downstream consumer (state writeback, plan display, the
+/// differ) see the same shape as the canonicalized desired side.
+/// See carina-rs/carina#2481, sub-issue 5.
+pub fn canonicalize_string_or_list_states_impl(current_states: &mut HashMap<ResourceId, State>) {
+    for (resource_id, state) in current_states.iter_mut() {
+        if !state.exists || resource_id.provider != "awscc" {
+            continue;
+        }
+        let config = match crate::schemas::generated::get_config_by_type(&resource_id.resource_type)
+        {
+            Some(c) => c,
+            None => continue,
+        };
+        let mut new_attrs = HashMap::with_capacity(state.attributes.len());
+        for (key, value) in std::mem::take(&mut state.attributes) {
+            let canon = match config.schema.attributes.get(key.as_str()) {
+                Some(attr_schema) => {
+                    carina_core::value::canonicalize_with_type(value, &attr_schema.attr_type)
+                }
+                None => value,
+            };
+            new_attrs.insert(key, canon);
+        }
+        state.attributes = new_attrs;
+    }
+}
+
 /// Restore unreturned attributes from saved state into current read states.
 ///
 /// CloudControl API doesn't always return all properties in GetResource responses
@@ -835,5 +869,145 @@ mod tests {
         } else {
             panic!("Expected List");
         }
+    }
+
+    // ---- canonicalize_string_or_list_states_impl tests ----
+    // (carina-rs/carina#2481, sub-issue 5)
+
+    fn make_state(
+        provider: &str,
+        resource_type: &str,
+        name: &str,
+        attrs: Vec<(&str, Value)>,
+    ) -> (ResourceId, State) {
+        use carina_core::resource::ResourceName;
+        use std::collections::BTreeSet;
+        let id = ResourceId {
+            provider: provider.to_string(),
+            resource_type: resource_type.to_string(),
+            name: ResourceName::Bound(name.to_string()),
+        };
+        let mut attributes = HashMap::new();
+        for (k, v) in attrs {
+            attributes.insert(k.to_string(), v);
+        }
+        let state = State {
+            id: id.clone(),
+            identifier: Some(name.to_string()),
+            attributes,
+            exists: true,
+            dependency_bindings: BTreeSet::new(),
+        };
+        (id, state)
+    }
+
+    #[test]
+    fn canonicalize_string_or_list_recurses_into_iam_policy_document() {
+        // AWS::IAM::RolePolicy has `policy_document` typed as
+        // `iam_policy_document()`, a Struct that nests
+        // Union[String, list(String)] fields like Statement[].Action.
+        // The provider canonicalize pass walks via the Struct schema
+        // and folds nested scalars to StringList.
+        let mut policy_map = IndexMap::new();
+        policy_map.insert(
+            "Statement".to_string(),
+            Value::List(vec![Value::Map({
+                let mut stmt = IndexMap::new();
+                stmt.insert("Effect".to_string(), Value::String("Allow".to_string()));
+                stmt.insert(
+                    "Action".to_string(),
+                    Value::String("s3:GetObject".to_string()),
+                );
+                stmt.insert(
+                    "Resource".to_string(),
+                    Value::String("arn:aws:s3:::my-bucket/*".to_string()),
+                );
+                stmt
+            })]),
+        );
+
+        let (id, state) = make_state(
+            "awscc",
+            "iam.RolePolicy",
+            "test-policy",
+            vec![
+                ("policy_name", Value::String("test-policy".to_string())),
+                ("policy_document", Value::Map(policy_map)),
+            ],
+        );
+        let mut current_states: HashMap<ResourceId, State> = HashMap::new();
+        current_states.insert(id.clone(), state);
+
+        canonicalize_string_or_list_states_impl(&mut current_states);
+
+        // Statement[0].Action: scalar → StringList(["s3:GetObject"])
+        let state = &current_states[&id];
+        let policy_document = state
+            .attributes
+            .get("policy_document")
+            .expect("policy_document present");
+        let Value::Map(pd) = policy_document else {
+            panic!("expected Map for policy_document");
+        };
+        let Value::List(stmts) = pd.get("Statement").expect("Statement present") else {
+            panic!("expected List for Statement");
+        };
+        let Value::Map(stmt) = &stmts[0] else {
+            panic!("expected Map for Statement[0]");
+        };
+        assert_eq!(
+            stmt.get("Action"),
+            Some(&Value::StringList(vec!["s3:GetObject".to_string()])),
+            "Action should be canonicalized to StringList"
+        );
+        assert_eq!(
+            stmt.get("Resource"),
+            Some(&Value::StringList(vec![
+                "arn:aws:s3:::my-bucket/*".to_string()
+            ])),
+            "Resource should be canonicalized to StringList"
+        );
+    }
+
+    #[test]
+    fn canonicalize_string_or_list_skips_non_awscc() {
+        let (id, state) = make_state(
+            "aws",
+            "iam.RolePolicy",
+            "test",
+            vec![("policy_name", Value::String("test".to_string()))],
+        );
+        let mut current_states: HashMap<ResourceId, State> = HashMap::new();
+        current_states.insert(id.clone(), state);
+
+        canonicalize_string_or_list_states_impl(&mut current_states);
+
+        let state = &current_states[&id];
+        assert_eq!(
+            state.attributes.get("policy_name"),
+            Some(&Value::String("test".to_string())),
+            "non-awscc state untouched"
+        );
+    }
+
+    #[test]
+    fn canonicalize_string_or_list_skips_unknown_resource_type() {
+        let (id, state) = make_state(
+            "awscc",
+            "unknown.UnknownType",
+            "test",
+            vec![("attr", Value::String("x".to_string()))],
+        );
+        let mut current_states: HashMap<ResourceId, State> = HashMap::new();
+        current_states.insert(id.clone(), state);
+
+        canonicalize_string_or_list_states_impl(&mut current_states);
+
+        let state = &current_states[&id];
+        assert_eq!(
+            state.attributes.get("attr"),
+            Some(&Value::String("x".to_string())),
+            "unknown resource types pass through unchanged"
+        );
     }
 }

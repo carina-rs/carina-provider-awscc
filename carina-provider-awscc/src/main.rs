@@ -46,7 +46,7 @@ impl AwsccProcessProvider {
             message: e.to_string(),
             resource_id: e
                 .resource_id
-                .as_ref()
+                .as_deref()
                 .map(convert::core_to_proto_resource_id),
             is_timeout: e.is_timeout,
         }
