@@ -41,6 +41,11 @@ impl ProviderNormalizer for AwsccNormalizer {
 
     fn normalize_state(&self, current_states: &mut HashMap<ResourceId, State>) {
         crate::provider::normalize_state_enums_impl(current_states);
+        // Canonicalize `Union[String, list(String)]` typed values
+        // (IAM-style `string_or_list_of_strings`) so AWS's silent
+        // scalar normalization no longer leaks past the provider
+        // boundary. See carina-rs/carina#2481, sub-issue 5.
+        crate::provider::canonicalize_string_or_list_states_impl(current_states);
     }
 
     fn hydrate_read_state(
@@ -136,11 +141,11 @@ impl ProviderFactory for AwsccProviderFactory {
     fn create_provider(
         &self,
         attributes: &IndexMap<String, Value>,
-    ) -> BoxFuture<'_, Box<dyn Provider>> {
+    ) -> BoxFuture<'_, Result<Box<dyn Provider>, carina_core::provider::ProviderError>> {
         let region = self.extract_region(attributes);
         let cfg = extract_provider_config(attributes);
         Box::pin(async move {
-            Box::new(AwsccProvider::new_with_config(&region, &cfg).await) as Box<dyn Provider>
+            Ok(Box::new(AwsccProvider::new_with_config(&region, &cfg).await) as Box<dyn Provider>)
         })
     }
 
