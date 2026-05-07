@@ -85,7 +85,7 @@ impl AwsccProvider {
                 self.cc_update_resource(config.aws_type_name, identifier, patch_ops)
                     .await
                     .map_err(|e| {
-                        ProviderError::new(
+                        ProviderError::api_error(
                             "Failed to detach Internet Gateway from VPC before deletion",
                         )
                         .with_cause(e)

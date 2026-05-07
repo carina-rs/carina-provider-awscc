@@ -5,7 +5,9 @@ use carina_plugin_sdk::CarinaProvider;
 use carina_provider_protocol::types as proto;
 
 use carina_core::provider::{
-    Provider, ProviderError as CoreProviderError, ProviderNormalizer, SavedAttrs,
+    CreateRequest as CoreCreateRequest, DeleteRequest as CoreDeleteRequest, Provider,
+    ProviderError as CoreProviderError, ProviderNormalizer, ReadRequest as CoreReadRequest,
+    SavedAttrs, UpdateRequest as CoreUpdateRequest,
 };
 use carina_core::resource::{ResourceId as CoreResourceId, State as CoreState, Value as CoreValue};
 
@@ -42,14 +44,7 @@ impl AwsccProcessProvider {
     }
 
     fn convert_error(e: CoreProviderError) -> proto::ProviderError {
-        proto::ProviderError {
-            message: e.to_string(),
-            resource_id: e
-                .resource_id
-                .as_deref()
-                .map(convert::core_to_proto_resource_id),
-            is_timeout: e.is_timeout,
-        }
+        convert::core_to_proto_provider_error(e)
     }
 
     fn provider(&self) -> &AwsccProvider {
@@ -179,12 +174,13 @@ impl CarinaProvider for AwsccProcessProvider {
     fn read(
         &self,
         id: &proto::ResourceId,
-        identifier: Option<&str>,
+        identifier: &str,
+        _request: proto::ReadRequest,
     ) -> Result<proto::State, proto::ProviderError> {
         let core_id = convert::proto_to_core_resource_id(id);
-        let result = self
-            .runtime
-            .block_on(self.provider().read(&core_id, identifier));
+        let result =
+            self.runtime
+                .block_on(self.provider().read(&core_id, identifier, CoreReadRequest));
         match result {
             Ok(state) => Ok(convert::core_to_proto_state(&state)),
             Err(e) => Err(Self::convert_error(e)),
@@ -195,14 +191,29 @@ impl CarinaProvider for AwsccProcessProvider {
         &self,
         resource: &proto::Resource,
     ) -> Result<proto::State, proto::ProviderError> {
-        self.read(&resource.id, None)
-    }
-
-    fn create(&self, resource: &proto::Resource) -> Result<proto::State, proto::ProviderError> {
         let core_resource = convert::proto_to_core_resource(resource);
         let result = self
             .runtime
-            .block_on(self.provider().create(&core_resource));
+            .block_on(self.provider().read_data_source(&core_resource));
+        match result {
+            Ok(state) => Ok(convert::core_to_proto_state(&state)),
+            Err(e) => Err(Self::convert_error(e)),
+        }
+    }
+
+    fn create(
+        &self,
+        id: &proto::ResourceId,
+        request: proto::CreateRequest,
+    ) -> Result<proto::State, proto::ProviderError> {
+        let core_id = convert::proto_to_core_resource_id(id);
+        let core_resource = convert::proto_to_core_resource(&request.resource);
+        let result = self.runtime.block_on(self.provider().create(
+            &core_id,
+            CoreCreateRequest {
+                resource: core_resource,
+            },
+        ));
         match result {
             Ok(state) => Ok(convert::core_to_proto_state(&state)),
             Err(e) => Err(Self::convert_error(e)),
@@ -213,16 +224,19 @@ impl CarinaProvider for AwsccProcessProvider {
         &self,
         id: &proto::ResourceId,
         identifier: &str,
-        from: &proto::State,
-        to: &proto::Resource,
+        request: proto::UpdateRequest,
     ) -> Result<proto::State, proto::ProviderError> {
         let core_id = convert::proto_to_core_resource_id(id);
-        let core_from = convert::proto_to_core_state(from);
-        let core_to = convert::proto_to_core_resource(to);
-        let result = self.runtime.block_on(
-            self.provider()
-                .update(&core_id, identifier, &core_from, &core_to),
-        );
+        let core_from = convert::proto_to_core_state(&request.from);
+        let core_patch = convert::proto_to_core_update_patch(&request.patch);
+        let result = self.runtime.block_on(self.provider().update(
+            &core_id,
+            identifier,
+            CoreUpdateRequest {
+                from: core_from,
+                patch: core_patch,
+            },
+        ));
         match result {
             Ok(state) => Ok(convert::core_to_proto_state(&state)),
             Err(e) => Err(Self::convert_error(e)),
@@ -233,18 +247,20 @@ impl CarinaProvider for AwsccProcessProvider {
         &self,
         id: &proto::ResourceId,
         identifier: &str,
-        lifecycle: &proto::LifecycleConfig,
+        request: proto::DeleteRequest,
     ) -> Result<(), proto::ProviderError> {
         let core_id = convert::proto_to_core_resource_id(id);
         let core_lifecycle = carina_core::resource::LifecycleConfig {
-            force_delete: lifecycle.force_delete,
-            create_before_destroy: lifecycle.create_before_destroy,
-            prevent_destroy: lifecycle.prevent_destroy,
+            force_delete: request.lifecycle.force_delete,
+            create_before_destroy: request.lifecycle.create_before_destroy,
+            prevent_destroy: request.lifecycle.prevent_destroy,
         };
         let result = self.runtime.block_on(self.provider().delete(
             &core_id,
             identifier,
-            &core_lifecycle,
+            CoreDeleteRequest {
+                lifecycle: core_lifecycle,
+            },
         ));
         match result {
             Ok(()) => Ok(()),

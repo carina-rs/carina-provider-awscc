@@ -20,10 +20,11 @@ use std::collections::HashMap;
 use indexmap::IndexMap;
 
 use carina_core::provider::{
-    BoxFuture, Provider, ProviderError, ProviderFactory, ProviderNormalizer, ProviderResult,
-    SavedAttrs, merge_default_tags_for_provider,
+    BoxFuture, CreateRequest, DeleteRequest, Provider, ProviderError, ProviderFactory,
+    ProviderNormalizer, ProviderResult, ReadRequest, SavedAttrs, UpdateRequest,
+    merge_default_tags_for_provider,
 };
-use carina_core::resource::{LifecycleConfig, Resource, ResourceId, State, Value};
+use carina_core::resource::{Resource, ResourceId, State, Value};
 use carina_core::schema::SchemaRegistry;
 
 use crate::provider::AwsccProviderConfig;
@@ -220,32 +221,58 @@ impl Provider for AwsccProvider {
     fn read(
         &self,
         id: &ResourceId,
-        identifier: Option<&str>,
+        identifier: &str,
+        _request: ReadRequest,
     ) -> BoxFuture<'_, ProviderResult<State>> {
         if let Some(err) = self.init_error() {
             let err = err.to_string();
             let id = id.clone();
-            return Box::pin(async move { Err(ProviderError::new(err).for_resource(id)) });
+            return Box::pin(async move {
+                Err(ProviderError::invalid_input(err)
+                    .for_provider("awscc")
+                    .for_resource(id))
+            });
         }
         let id = id.clone();
-        let identifier = identifier.map(|s| s.to_string());
+        let identifier = identifier.to_string();
         Box::pin(async move {
-            self.read_resource(&id.resource_type, id.name_str(), identifier.as_deref())
+            self.read_resource(&id.resource_type, id.name_str(), Some(&identifier))
                 .await
         })
     }
 
     fn read_data_source(&self, resource: &Resource) -> BoxFuture<'_, ProviderResult<State>> {
-        self.read(&resource.id, None)
-    }
-
-    fn create(&self, resource: &Resource) -> BoxFuture<'_, ProviderResult<State>> {
         if let Some(err) = self.init_error() {
             let err = err.to_string();
             let id = resource.id.clone();
-            return Box::pin(async move { Err(ProviderError::new(err).for_resource(id)) });
+            return Box::pin(async move {
+                Err(ProviderError::invalid_input(err)
+                    .for_provider("awscc")
+                    .for_resource(id))
+            });
         }
-        let resource = resource.clone();
+        let id = resource.id.clone();
+        Box::pin(async move {
+            self.read_resource(&id.resource_type, id.name_str(), None)
+                .await
+        })
+    }
+
+    fn create(
+        &self,
+        _id: &ResourceId,
+        request: CreateRequest,
+    ) -> BoxFuture<'_, ProviderResult<State>> {
+        if let Some(err) = self.init_error() {
+            let err = err.to_string();
+            let id = request.resource.id.clone();
+            return Box::pin(async move {
+                Err(ProviderError::invalid_input(err)
+                    .for_provider("awscc")
+                    .for_resource(id))
+            });
+        }
+        let resource = request.resource;
         Box::pin(async move { self.create_resource(resource).await })
     }
 
@@ -253,36 +280,46 @@ impl Provider for AwsccProvider {
         &self,
         id: &ResourceId,
         identifier: &str,
-        from: &State,
-        to: &Resource,
+        request: UpdateRequest,
     ) -> BoxFuture<'_, ProviderResult<State>> {
         if let Some(err) = self.init_error() {
             let err = err.to_string();
             let id = id.clone();
-            return Box::pin(async move { Err(ProviderError::new(err).for_resource(id)) });
+            return Box::pin(async move {
+                Err(ProviderError::invalid_input(err)
+                    .for_provider("awscc")
+                    .for_resource(id))
+            });
         }
         let id = id.clone();
         let identifier = identifier.to_string();
-        let from = from.clone();
-        let to = to.clone();
-        Box::pin(async move { self.update_resource(id, &identifier, &from, to).await })
+        Box::pin(async move {
+            self.update_resource(id, &identifier, &request.from, &request.patch)
+                .await
+        })
     }
 
     fn delete(
         &self,
         id: &ResourceId,
         identifier: &str,
-        lifecycle: &LifecycleConfig,
+        request: DeleteRequest,
     ) -> BoxFuture<'_, ProviderResult<()>> {
         if let Some(err) = self.init_error() {
             let err = err.to_string();
             let id = id.clone();
-            return Box::pin(async move { Err(ProviderError::new(err).for_resource(id)) });
+            return Box::pin(async move {
+                Err(ProviderError::invalid_input(err)
+                    .for_provider("awscc")
+                    .for_resource(id))
+            });
         }
         let id = id.clone();
         let identifier = identifier.to_string();
-        let lifecycle = lifecycle.clone();
-        Box::pin(async move { self.delete_resource(&id, &identifier, &lifecycle).await })
+        Box::pin(async move {
+            self.delete_resource(&id, &identifier, &request.lifecycle)
+                .await
+        })
     }
 }
 

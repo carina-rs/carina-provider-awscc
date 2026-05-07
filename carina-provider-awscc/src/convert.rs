@@ -6,6 +6,10 @@
 
 use std::collections::HashMap;
 
+use carina_core::provider::{
+    PatchOp as CorePatchOp, PatchOpKind as CorePatchOpKind, ProviderError as CoreProviderError,
+    UpdatePatch as CoreUpdatePatch,
+};
 use carina_core::resource::{
     LifecycleConfig as CoreLifecycle, Resource as CoreResource, ResourceId as CoreResourceId,
     State as CoreState, Value as CoreValue,
@@ -16,9 +20,11 @@ use carina_core::schema::{
 };
 use carina_provider_protocol::types::{
     AttributeSchema as ProtoAttributeSchema, AttributeType as ProtoAttributeType,
-    LifecycleConfig as ProtoLifecycle, Resource as ProtoResource, ResourceId as ProtoResourceId,
+    LifecycleConfig as ProtoLifecycle, PatchOp as ProtoPatchOp, PatchOpKind as ProtoPatchOpKind,
+    ProviderError as ProtoProviderError, ProviderErrorKind as ProtoProviderErrorKind,
+    Resource as ProtoResource, ResourceId as ProtoResourceId,
     ResourceSchema as ProtoResourceSchema, State as ProtoState, StructField as ProtoStructField,
-    Value as ProtoValue,
+    UpdatePatch as ProtoUpdatePatch, Value as ProtoValue,
 };
 
 // -- ResourceId --
@@ -356,6 +362,58 @@ pub fn core_to_proto_schema(s: &CoreResourceSchema) -> ProtoResourceSchema {
         }),
         validators: vec![],
         exclusive_required: s.exclusive_required.clone(),
+    }
+}
+
+// -- UpdatePatch --
+
+fn proto_to_core_patch_op_kind(k: ProtoPatchOpKind) -> CorePatchOpKind {
+    match k {
+        ProtoPatchOpKind::Add => CorePatchOpKind::Add,
+        ProtoPatchOpKind::Replace => CorePatchOpKind::Replace,
+        ProtoPatchOpKind::Remove => CorePatchOpKind::Remove,
+    }
+}
+
+fn proto_to_core_patch_op(op: &ProtoPatchOp) -> CorePatchOp {
+    CorePatchOp {
+        kind: proto_to_core_patch_op_kind(op.kind),
+        key: op.key.clone(),
+        value: op.value.as_ref().map(proto_to_core_value),
+    }
+}
+
+pub fn proto_to_core_update_patch(p: &ProtoUpdatePatch) -> CoreUpdatePatch {
+    CoreUpdatePatch {
+        ops: p.ops.iter().map(proto_to_core_patch_op).collect(),
+    }
+}
+
+// -- ProviderError --
+
+fn core_to_proto_provider_error_kind(e: &CoreProviderError) -> ProtoProviderErrorKind {
+    match e {
+        CoreProviderError::InvalidInput(_) => ProtoProviderErrorKind::InvalidInput,
+        CoreProviderError::ApiError(_) => ProtoProviderErrorKind::ApiError,
+        CoreProviderError::NotFound(_) => ProtoProviderErrorKind::NotFound,
+        CoreProviderError::Timeout(_) => ProtoProviderErrorKind::Timeout,
+        CoreProviderError::Internal(_) => ProtoProviderErrorKind::Internal,
+    }
+}
+
+pub fn core_to_proto_provider_error(e: CoreProviderError) -> ProtoProviderError {
+    let kind = core_to_proto_provider_error_kind(&e);
+    let detail = e.detail();
+    let resource_id = detail.resource_id.as_deref().map(core_to_proto_resource_id);
+    let cause = detail.cause.as_ref().map(|c| c.to_string());
+    let provider_name = detail.provider_name.clone();
+    let message = detail.message.clone();
+    ProtoProviderError {
+        kind,
+        message,
+        resource_id,
+        cause,
+        provider_name,
     }
 }
 
