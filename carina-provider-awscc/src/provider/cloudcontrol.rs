@@ -48,7 +48,7 @@ impl AwsccProvider {
                     Ok(None)
                 } else {
                     let detail = Self::format_sdk_error(&e);
-                    Err(ProviderError::new(format!(
+                    Err(ProviderError::api_error(format!(
                         "Failed to get resource: {}",
                         detail
                     )))
@@ -93,7 +93,7 @@ impl AwsccProvider {
                         response
                             .progress_event()
                             .and_then(|p| p.request_token())
-                            .ok_or_else(|| ProviderError::new("No request token returned"))?;
+                            .ok_or_else(|| ProviderError::internal("No request token returned"))?;
 
                     match self
                         .wait_for_operation_with_attempts(request_token, max_polling_attempts)
@@ -101,7 +101,7 @@ impl AwsccProvider {
                     {
                         Ok(identifier) => return Ok(identifier),
                         Err(e)
-                            if Self::is_retryable_status_message(&e.message)
+                            if Self::is_retryable_status_message(e.message())
                                 && attempt < max_retry_attempts =>
                         {
                             log::warn!(
@@ -109,7 +109,7 @@ impl AwsccProvider {
                                 type_name,
                                 attempt + 1,
                                 max_retry_attempts,
-                                e.message,
+                                e.message(),
                                 delay_secs,
                             );
                             tokio::time::sleep(Duration::from_secs(delay_secs)).await;
@@ -134,7 +134,7 @@ impl AwsccProvider {
                         continue;
                     }
                     let detail = Self::format_sdk_error(&e);
-                    return Err(ProviderError::new(format!(
+                    return Err(ProviderError::api_error(format!(
                         "Failed to create resource: {}",
                         detail
                     )));
@@ -142,7 +142,7 @@ impl AwsccProvider {
             }
         }
 
-        Err(ProviderError::new(format!(
+        Err(ProviderError::api_error(format!(
             "Failed to create resource {} after {} retry attempts",
             type_name, max_retry_attempts
         )))
@@ -160,7 +160,7 @@ impl AwsccProvider {
         }
 
         let patch_document = serde_json::to_string(&patch_ops)
-            .map_err(|e| ProviderError::new("Failed to build patch").with_cause(e))?;
+            .map_err(|e| ProviderError::internal("Failed to build patch").with_cause(e))?;
 
         let result = self
             .cloudcontrol_client
@@ -172,7 +172,7 @@ impl AwsccProvider {
             .await
             .map_err(|e| {
                 let detail = Self::format_sdk_error(&e);
-                ProviderError::new(format!("Failed to update resource: {}", detail))
+                ProviderError::api_error(format!("Failed to update resource: {}", detail))
             })?;
 
         if let Some(request_token) = result.progress_event().and_then(|p| p.request_token()) {
@@ -223,7 +223,7 @@ impl AwsccProvider {
                         {
                             Ok(_) => return Ok(()),
                             Err(e)
-                                if Self::is_retryable_status_message(&e.message)
+                                if Self::is_retryable_status_message(e.message())
                                     && attempt < max_retry_attempts =>
                             {
                                 log::warn!(
@@ -231,7 +231,7 @@ impl AwsccProvider {
                                     type_name,
                                     attempt + 1,
                                     max_retry_attempts,
-                                    e.message,
+                                    e.message(),
                                     delay_secs,
                                 );
                                 tokio::time::sleep(Duration::from_secs(delay_secs)).await;
@@ -258,7 +258,7 @@ impl AwsccProvider {
                         continue;
                     }
                     let detail = Self::format_sdk_error(&e);
-                    return Err(ProviderError::new(format!(
+                    return Err(ProviderError::api_error(format!(
                         "Failed to delete resource: {}",
                         detail
                     )));
@@ -266,7 +266,7 @@ impl AwsccProvider {
             }
         }
 
-        Err(ProviderError::new(format!(
+        Err(ProviderError::api_error(format!(
             "Failed to delete resource {} after {} retry attempts",
             type_name, max_retry_attempts
         )))
@@ -465,7 +465,9 @@ impl AwsccProvider {
                 .request_token(request_token)
                 .send()
                 .await
-                .map_err(|e| ProviderError::new("Failed to get operation status").with_cause(e))?;
+                .map_err(|e| {
+                    ProviderError::api_error("Failed to get operation status").with_cause(e)
+                })?;
 
             if let Some(progress) = status.progress_event() {
                 match progress.operation_status() {
@@ -474,10 +476,13 @@ impl AwsccProvider {
                     }
                     Some(OperationStatus::Failed) => {
                         let msg = progress.status_message().unwrap_or("Unknown error");
-                        return Err(ProviderError::new(format!("Operation failed: {}", msg)));
+                        return Err(ProviderError::api_error(format!(
+                            "Operation failed: {}",
+                            msg
+                        )));
                     }
                     Some(OperationStatus::CancelComplete) => {
-                        return Err(ProviderError::new("Operation was cancelled"));
+                        return Err(ProviderError::api_error("Operation was cancelled"));
                     }
                     _ => {
                         tokio::time::sleep(delay).await;
@@ -486,7 +491,7 @@ impl AwsccProvider {
             }
         }
 
-        Err(ProviderError::new("Operation timed out").timeout())
+        Err(ProviderError::timeout("Operation timed out"))
     }
 }
 

@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 
-use carina_core::provider::{ProviderError, ProviderResult};
+use carina_core::provider::{ProviderError, ProviderResult, UpdatePatch};
 use carina_core::resource::{LifecycleConfig, Resource, ResourceId, State, Value};
 use serde_json::json;
 
@@ -25,7 +25,7 @@ impl AwsccProvider {
         let id = ResourceId::with_provider("awscc", resource_type, name);
 
         let config = get_schema_config(resource_type).ok_or_else(|| {
-            ProviderError::new(format!("Unknown resource type: {}", resource_type))
+            ProviderError::internal(format!("Unknown resource type: {}", resource_type))
                 .for_resource(id.clone())
         })?;
 
@@ -80,7 +80,7 @@ impl AwsccProvider {
     /// Create a resource using its configuration
     pub async fn create_resource(&self, resource: Resource) -> ProviderResult<State> {
         let config = get_schema_config(&resource.id.resource_type).ok_or_else(|| {
-            ProviderError::new(format!(
+            ProviderError::internal(format!(
                 "Unknown resource type: {}",
                 resource.id.resource_type
             ))
@@ -156,29 +156,42 @@ impl AwsccProvider {
         Ok(state)
     }
 
-    /// Update a resource
+    /// Update a resource by applying an [`UpdatePatch`] to its
+    /// CloudControl-side state.
+    ///
+    /// The patch is the sole source of truth for the update payload —
+    /// fields the user has never specified are not in `patch.ops` and
+    /// therefore generate no JSON Patch op, leaving CloudControl's
+    /// other state alone (this is the actual fix for
+    /// `carina-rs/carina#2559`).
+    ///
+    /// `from` is the current provider-side state; it is used only to
+    /// reconstruct the post-update desired-state view that's carried
+    /// forward into the returned `State` for attributes the API does
+    /// not return in its read response. It MUST NOT be used to derive
+    /// additional fields to write back.
     pub async fn update_resource(
         &self,
         id: ResourceId,
         identifier: &str,
         from: &State,
-        to: Resource,
+        patch: &UpdatePatch,
     ) -> ProviderResult<State> {
         let config = get_schema_config(&id.resource_type).ok_or_else(|| {
-            ProviderError::new(format!("Unknown resource type: {}", id.resource_type))
+            ProviderError::internal(format!("Unknown resource type: {}", id.resource_type))
                 .for_resource(id.clone())
         })?;
 
         // Reject updates for resource types marked as force_replace in the schema
         if config.schema.force_replace {
-            return Err(ProviderError::new(format!(
+            return Err(ProviderError::invalid_input(format!(
                 "Update not supported for {}, delete and recreate",
                 id.resource_type
             ))
             .for_resource(id));
         }
 
-        let patch_ops = build_update_patches(config, from, &to);
+        let patch_ops = build_update_patches(config, &id.resource_type, patch);
 
         self.cc_update_resource(config.aws_type_name, identifier, patch_ops)
             .await
@@ -188,14 +201,17 @@ impl AwsccProvider {
             .read_resource(&id.resource_type, id.name_str(), Some(identifier))
             .await?;
 
-        // Preserve desired attributes not returned by CloudControl API.
-        // Same logic as create_resource: carry forward attributes that were accepted
-        // by the API but aren't included in the read response.
+        // Reconstruct the post-update desired view (current state + the
+        // patch we just applied). This is the source of values to carry
+        // forward for attributes CloudControl's read does not return —
+        // same logic as `create_resource` but built without a `to:
+        // Resource` (which Level 3 deliberately does not pass through).
+        let desired = post_update_attributes(from, patch);
         for dsl_name in config.schema.attributes.keys() {
             if !state.attributes.contains_key(dsl_name)
-                && let Some(value) = to.get_attr(dsl_name.as_str())
+                && let Some(value) = desired.get(dsl_name)
             {
-                state.attributes.insert(dsl_name.to_string(), value.clone());
+                state.attributes.insert(dsl_name.clone(), value.clone());
             }
         }
 
@@ -210,7 +226,7 @@ impl AwsccProvider {
         lifecycle: &LifecycleConfig,
     ) -> ProviderResult<()> {
         let config = get_schema_config(&id.resource_type).ok_or_else(|| {
-            ProviderError::new(format!("Unknown resource type: {}", id.resource_type))
+            ProviderError::internal(format!("Unknown resource type: {}", id.resource_type))
                 .for_resource(id.clone())
         })?;
 
@@ -220,7 +236,7 @@ impl AwsccProvider {
         // Handle force_delete for S3 buckets: empty the bucket before deletion
         if lifecycle.force_delete && id.resource_type == "s3.Bucket" {
             self.empty_s3_bucket(identifier).await.map_err(|e| {
-                ProviderError::new("Failed to empty S3 bucket before deletion")
+                ProviderError::api_error("Failed to empty S3 bucket before deletion")
                     .with_cause(e)
                     .for_resource(id.clone())
             })?;
@@ -234,4 +250,35 @@ impl AwsccProvider {
         .await
         .map_err(|e| e.for_resource(id.clone()))
     }
+}
+
+/// Reconstruct the post-update desired-state attribute map: take the
+/// current provider-side `from` state and apply each patch op on top.
+///
+/// Used by `update_resource` to know which attributes to carry forward
+/// when CloudControl's read response omits them. The map is the same
+/// logical shape as the old `to: Resource.attributes`, but built
+/// without exposing a full `Resource` to the update path.
+fn post_update_attributes(
+    from: &State,
+    patch: &UpdatePatch,
+) -> std::collections::HashMap<String, Value> {
+    use carina_core::provider::PatchOpKind;
+
+    let mut attributes = from.attributes.clone();
+    for op in &patch.ops {
+        match op.kind {
+            PatchOpKind::Add | PatchOpKind::Replace => {
+                if let Some(value) = &op.value {
+                    attributes.insert(op.key.clone(), value.clone());
+                } else {
+                    attributes.remove(&op.key);
+                }
+            }
+            PatchOpKind::Remove => {
+                attributes.remove(&op.key);
+            }
+        }
+    }
+    attributes
 }

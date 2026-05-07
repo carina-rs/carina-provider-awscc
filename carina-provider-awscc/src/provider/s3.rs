@@ -40,7 +40,7 @@ impl AwsccProvider {
                     if is_no_such_bucket(&e) {
                         return Ok(());
                     }
-                    return Err(ProviderError::new(format!(
+                    return Err(ProviderError::api_error(format!(
                         "Failed to list object versions: {}",
                         format_s3_error(&e)
                     )));
@@ -57,7 +57,7 @@ impl AwsccProvider {
                         id = id.version_id(vid);
                     }
                     objects_to_delete.push(id.build().map_err(|e| {
-                        ProviderError::new("Failed to build ObjectIdentifier").with_cause(e)
+                        ProviderError::internal("Failed to build ObjectIdentifier").with_cause(e)
                     })?);
                 }
             }
@@ -70,7 +70,7 @@ impl AwsccProvider {
                         id = id.version_id(vid);
                     }
                     objects_to_delete.push(id.build().map_err(|e| {
-                        ProviderError::new("Failed to build ObjectIdentifier").with_cause(e)
+                        ProviderError::internal("Failed to build ObjectIdentifier").with_cause(e)
                     })?);
                 }
             }
@@ -82,7 +82,7 @@ impl AwsccProvider {
                     .quiet(true)
                     .build()
                     .map_err(|e| {
-                        ProviderError::new("Failed to build Delete request").with_cause(e)
+                        ProviderError::internal("Failed to build Delete request").with_cause(e)
                     })?;
 
                 s3.delete_objects()
@@ -91,7 +91,7 @@ impl AwsccProvider {
                     .send()
                     .await
                     .map_err(|e| {
-                        ProviderError::new(format!(
+                        ProviderError::api_error(format!(
                             "Failed to delete objects: {}",
                             format_s3_error(&e)
                         ))
