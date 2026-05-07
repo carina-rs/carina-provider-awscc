@@ -46,14 +46,6 @@ impl ProviderNormalizer for AwsccNormalizer {
         // scalar normalization no longer leaks past the provider
         // boundary. See carina-rs/carina#2481, sub-issue 5.
         crate::provider::canonicalize_string_or_list_states_impl(current_states);
-        // Backfill optional list/map attributes that CloudControl
-        // omitted from the read response with empty containers, so
-        // the differ doesn't see `(none) → []` for resources that
-        // were applied with an empty list (e.g.
-        // `awscc.iam.Role.managed_policy_arns`). See
-        // carina-rs/carina-provider-awscc#182 (parent
-        // carina-rs/carina#2544).
-        crate::provider::normalize_absent_optional_lists_and_maps_impl(current_states);
     }
 
     fn hydrate_read_state(
