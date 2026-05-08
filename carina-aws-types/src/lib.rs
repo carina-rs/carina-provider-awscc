@@ -1129,6 +1129,27 @@ pub fn iam_policy_arn() -> AttributeType {
     }
 }
 
+/// IAM OIDC Provider ARN type (e.g., `arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com`)
+#[allow(dead_code)]
+pub fn iam_oidc_provider_arn() -> AttributeType {
+    AttributeType::Custom {
+        semantic_name: Some("IamOidcProviderArn".to_string()),
+        pattern: None,
+        length: None,
+        base: Box::new(arn()),
+        validate: legacy_validator(|value| {
+            if let Value::String(s) = value {
+                validate_iam_arn(s, "oidc-provider/")
+                    .map_err(|reason| format!("Invalid IAM OIDC Provider ARN '{}': {}", s, reason))
+            } else {
+                Err("Expected string".to_string())
+            }
+        }),
+        namespace: None,
+        to_dsl: None,
+    }
+}
+
 /// KMS Key ARN type (e.g., "arn:aws:kms:us-east-1:123456789012:key/...")
 #[allow(dead_code)]
 pub fn kms_key_arn() -> AttributeType {
@@ -2155,6 +2176,77 @@ mod tests {
             err.contains("IAM Role ARN"),
             "Error should say 'IAM Role ARN': {err}"
         );
+    }
+
+    // --- IAM OIDC Provider ARN tests ---
+
+    #[test]
+    fn iam_oidc_provider_arn_semantic_name() {
+        let AttributeType::Custom { semantic_name, .. } = iam_oidc_provider_arn() else {
+            panic!("iam_oidc_provider_arn() should be a Custom type");
+        };
+        assert_eq!(semantic_name.as_deref(), Some("IamOidcProviderArn"));
+    }
+
+    #[test]
+    fn iam_oidc_provider_arn_accepts_valid() {
+        let AttributeType::Custom { validate, .. } = iam_oidc_provider_arn() else {
+            panic!("iam_oidc_provider_arn() should be a Custom type");
+        };
+        let v = Value::String(
+            "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"
+                .to_string(),
+        );
+        assert!(validate(&v).is_ok());
+    }
+
+    #[test]
+    fn iam_oidc_provider_arn_rejects_wrong_resource() {
+        let AttributeType::Custom { validate, .. } = iam_oidc_provider_arn() else {
+            panic!("iam_oidc_provider_arn() should be a Custom type");
+        };
+        let v = Value::String("arn:aws:iam::123456789012:role/MyRole".to_string());
+        assert!(validate(&v).is_err());
+    }
+
+    #[test]
+    fn iam_oidc_provider_arn_rejects_non_iam_service() {
+        let AttributeType::Custom { validate, .. } = iam_oidc_provider_arn() else {
+            panic!("iam_oidc_provider_arn() should be a Custom type");
+        };
+        let v = Value::String("arn:aws:s3:::my-bucket".to_string());
+        assert!(validate(&v).is_err());
+    }
+
+    #[test]
+    fn iam_oidc_provider_arn_rejects_empty_provider_name() {
+        let AttributeType::Custom { validate, .. } = iam_oidc_provider_arn() else {
+            panic!("iam_oidc_provider_arn() should be a Custom type");
+        };
+        let v = Value::String("arn:aws:iam::123456789012:oidc-provider/".to_string());
+        assert!(validate(&v).is_err());
+    }
+
+    #[test]
+    fn iam_oidc_provider_arn_accepts_eks_multi_segment() {
+        let AttributeType::Custom { validate, .. } = iam_oidc_provider_arn() else {
+            panic!("iam_oidc_provider_arn() should be a Custom type");
+        };
+        let v = Value::String(
+            "arn:aws:iam::123456789012:oidc-provider/oidc.eks.us-east-1.amazonaws.com/id/AAAAAAAA000000"
+                .to_string(),
+        );
+        assert!(validate(&v).is_ok());
+    }
+
+    #[test]
+    fn iam_oidc_provider_arn_accepts_china_partition() {
+        let AttributeType::Custom { validate, .. } = iam_oidc_provider_arn() else {
+            panic!("iam_oidc_provider_arn() should be a Custom type");
+        };
+        let v =
+            Value::String("arn:aws-cn:iam::123456789012:oidc-provider/foo.example.com".to_string());
+        assert!(validate(&v).is_ok());
     }
 
     // UUID tests

@@ -94,6 +94,7 @@ pub fn awscc_validators() -> HashMap<String, ValidatorFn> {
         service_arn {
             iam_role_arn => |s: &str| validate_iam_arn(s, "role/"),
             iam_policy_arn => |s: &str| validate_iam_arn(s, "policy/"),
+            iam_oidc_provider_arn => |s: &str| validate_iam_arn(s, "oidc-provider/"),
             kms_key_arn => |s: &str| validate_kms_key_id(s),
         }
     }
@@ -322,7 +323,12 @@ mod tests {
         ];
 
         // Service ARNs
-        let expected_arn = ["iam_role_arn", "iam_policy_arn", "kms_key_arn"];
+        let expected_arn = [
+            "iam_role_arn",
+            "iam_policy_arn",
+            "iam_oidc_provider_arn",
+            "kms_key_arn",
+        ];
 
         let mut all_expected: Vec<&str> = Vec::new();
         all_expected.extend_from_slice(&expected_single);
@@ -367,6 +373,16 @@ mod tests {
         // Test a service ARN validator
         let iam_role_arn_validator = validators.get("iam_role_arn").unwrap();
         assert!(iam_role_arn_validator("arn:aws:iam::123456789012:role/my-role").is_ok());
+
+        // Test the OIDC provider ARN validator
+        let oidc_validator = validators.get("iam_oidc_provider_arn").unwrap();
+        assert!(
+            oidc_validator(
+                "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"
+            )
+            .is_ok()
+        );
+        assert!(oidc_validator("arn:aws:iam::123456789012:role/my-role").is_err());
     }
 
     #[test]
