@@ -510,6 +510,7 @@ fn override_type_to_display_name(override_type: &str) -> &str {
         "super::aws_resource_id()" => "AwsResourceId",
         "super::iam_role_arn()" => "IamRoleArn",
         "super::iam_policy_arn()" => "IamPolicyArn",
+        "super::iam_oidc_provider_arn()" => "IamOidcProviderArn",
         "super::kms_key_arn()" => "KmsKeyArn",
         "super::kms_key_id()" => "KmsKeyId",
         "super::gateway_id()" => "GatewayId",
@@ -3052,6 +3053,11 @@ fn resource_type_overrides() -> &'static HashMap<(&'static str, &'static str), T
             m.insert(
                 ("AWS::IAM::Role", "Arn"),
                 TypeOverride::StringType("super::iam_role_arn()"),
+            );
+            // IAM OIDCProvider's Arn is always an IAM OIDC Provider ARN
+            m.insert(
+                ("AWS::IAM::OIDCProvider", "Arn"),
+                TypeOverride::StringType("super::iam_oidc_provider_arn()"),
             );
             // IAM Role's RoleId uses AROA prefix pattern
             m.insert(
@@ -6685,6 +6691,19 @@ mod tests {
         assert_eq!(
             infer_string_type("GatewayId", "AWS::EC2::VPNGatewayRoutePropagation"),
             Some("super::aws_resource_id()".to_string())
+        );
+    }
+
+    #[test]
+    fn test_iam_oidc_provider_arn_override() {
+        // IAM OIDCProvider's Arn should use iam_oidc_provider_arn(), not generic arn
+        assert_eq!(
+            infer_string_type("Arn", "AWS::IAM::OIDCProvider"),
+            Some("super::iam_oidc_provider_arn()".to_string())
+        );
+        assert_eq!(
+            infer_string_type_display("Arn", "AWS::IAM::OIDCProvider"),
+            "IamOidcProviderArn"
         );
     }
 

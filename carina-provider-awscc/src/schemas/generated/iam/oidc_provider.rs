@@ -69,7 +69,7 @@ pub fn iam_oidc_provider_config() -> AwsccSchemaConfig {
         schema: ResourceSchema::new("iam.OidcProvider")
             .with_description("Resource Type definition for AWS::IAM::OIDCProvider")
             .attribute(
-                AttributeSchema::new("arn", super::arn())
+                AttributeSchema::new("arn", super::iam_oidc_provider_arn())
                     .read_only()
                     .with_description("Amazon Resource Name (ARN) of the OIDC provider (read-only)")
                     .with_provider_name("Arn"),
