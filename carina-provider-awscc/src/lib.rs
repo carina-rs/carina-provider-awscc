@@ -221,7 +221,7 @@ impl Provider for AwsccProvider {
     fn read(
         &self,
         id: &ResourceId,
-        identifier: &str,
+        identifier: Option<&str>,
         _request: ReadRequest,
     ) -> BoxFuture<'_, ProviderResult<State>> {
         if let Some(err) = self.init_error() {
@@ -234,9 +234,9 @@ impl Provider for AwsccProvider {
             });
         }
         let id = id.clone();
-        let identifier = identifier.to_string();
+        let identifier = identifier.map(|s| s.to_string());
         Box::pin(async move {
-            self.read_resource(&id.resource_type, id.name_str(), Some(&identifier))
+            self.read_resource(&id.resource_type, id.name_str(), identifier.as_deref())
                 .await
         })
     }

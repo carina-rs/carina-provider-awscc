@@ -174,7 +174,7 @@ impl CarinaProvider for AwsccProcessProvider {
     fn read(
         &self,
         id: &proto::ResourceId,
-        identifier: &str,
+        identifier: Option<&str>,
         _request: proto::ReadRequest,
     ) -> Result<proto::State, proto::ProviderError> {
         let core_id = convert::proto_to_core_resource_id(id);
