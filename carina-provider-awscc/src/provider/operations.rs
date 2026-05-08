@@ -8,6 +8,8 @@ use std::collections::HashMap;
 
 use carina_core::provider::{ProviderError, ProviderResult, UpdatePatch};
 use carina_core::resource::{LifecycleConfig, Resource, ResourceId, State, Value};
+use carina_core::schema::{AttributeSchema, AttributeType};
+use indexmap::IndexMap;
 use serde_json::json;
 
 use super::conversion::{aws_value_to_dsl, dsl_value_to_aws};
@@ -42,24 +44,8 @@ impl AwsccProvider {
             None => return Ok(State::not_found(id)),
         };
 
-        let mut attributes = HashMap::new();
-
-        // Map AWS attributes to DSL attributes using provider_name
-        for (dsl_name, attr_schema) in &config.schema.attributes {
-            // Skip tags - handled separately below
-            if dsl_name == "tags" {
-                continue;
-            }
-            if let Some(aws_name) = &attr_schema.provider_name
-                && let Some(value) = props.get(aws_name.as_str())
-            {
-                let dsl_value =
-                    aws_value_to_dsl(dsl_name, value, &attr_schema.attr_type, resource_type);
-                if let Some(v) = dsl_value {
-                    attributes.insert(dsl_name.to_string(), v);
-                }
-            }
-        }
+        let mut attributes =
+            map_aws_props_to_attributes(&props, &config.schema.attributes, resource_type);
 
         // Handle tags
         if config.has_tags
@@ -252,6 +238,63 @@ impl AwsccProvider {
     }
 }
 
+/// Map a CloudControl `GetResource` properties payload onto the DSL
+/// attribute map declared by `schema_attributes`.
+///
+/// CloudControl omits empty optional list/map fields from its read
+/// response. If we treated "absent" as "untracked", the differ would
+/// see `(none) → []` against a user that explicitly wrote `= []`,
+/// producing a persistent plan diff (carina-rs/carina#2544).
+///
+/// This helper canonicalizes the read shape at the provider boundary:
+/// when an optional list- or map-typed attribute is absent from the
+/// AWS response, an empty `Value::List` / `Value::Map` is inserted in
+/// its place. Scalars and structs are not synthesized — for them
+/// "absent" really means "untracked", and downstream carry-forward
+/// reuses the saved/desired value.
+///
+/// Tags are skipped here because they go through a dedicated parsing
+/// path in [`AwsccProvider::read_resource`].
+fn map_aws_props_to_attributes(
+    props: &serde_json::Value,
+    schema_attributes: &HashMap<String, AttributeSchema>,
+    resource_type: &str,
+) -> HashMap<String, Value> {
+    let mut attributes = HashMap::new();
+
+    for (dsl_name, attr_schema) in schema_attributes {
+        if dsl_name == "tags" {
+            continue;
+        }
+        let Some(aws_name) = &attr_schema.provider_name else {
+            continue;
+        };
+        match props.get(aws_name.as_str()) {
+            Some(value) => {
+                if let Some(v) =
+                    aws_value_to_dsl(dsl_name, value, &attr_schema.attr_type, resource_type)
+                {
+                    attributes.insert(dsl_name.clone(), v);
+                }
+            }
+            None if !attr_schema.required && !attr_schema.write_only => {
+                match &attr_schema.attr_type {
+                    AttributeType::List { .. } => {
+                        attributes.insert(dsl_name.clone(), Value::List(Vec::new()));
+                    }
+                    AttributeType::Map { .. } => {
+                        attributes.insert(dsl_name.clone(), Value::Map(IndexMap::new()));
+                    }
+                    _ => {}
+                }
+            }
+            None => {}
+        }
+    }
+
+    attributes
+}
+
 /// Reconstruct the post-update desired-state attribute map: take the
 /// current provider-side `from` state and apply each patch op on top.
 ///
@@ -281,4 +324,150 @@ fn post_update_attributes(
         }
     }
     attributes
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use carina_core::schema::AttributeType;
+    use serde_json::json;
+
+    fn make_schema_attrs(
+        entries: Vec<(&str, &str, AttributeType, bool)>,
+    ) -> HashMap<String, AttributeSchema> {
+        let mut map = HashMap::new();
+        for (dsl_name, provider_name, attr_type, required) in entries {
+            let mut s = AttributeSchema::new(dsl_name, attr_type);
+            s.provider_name = Some(provider_name.to_string());
+            s.required = required;
+            map.insert(dsl_name.to_string(), s);
+        }
+        map
+    }
+
+    /// carina-rs/carina#2544: CloudControl omits empty optional list
+    /// fields from `GetResource`. The provider read path must canonicalize
+    /// these absent-but-empty fields to `Value::List(vec![])` so the
+    /// differ does not see `(none) → []` against a user-specified `= []`.
+    #[test]
+    fn absent_optional_list_becomes_empty_list() {
+        let attrs = make_schema_attrs(vec![(
+            "managed_policy_arns",
+            "ManagedPolicyArns",
+            AttributeType::list(AttributeType::String),
+            false,
+        )]);
+        let props = json!({});
+
+        let result = map_aws_props_to_attributes(&props, &attrs, "iam.Role");
+
+        assert_eq!(
+            result.get("managed_policy_arns"),
+            Some(&Value::List(Vec::new())),
+            "absent optional list-typed attribute must canonicalize to empty list, not be dropped"
+        );
+    }
+
+    /// Same shape but for an optional map-typed attribute.
+    #[test]
+    fn absent_optional_map_becomes_empty_map() {
+        let attrs = make_schema_attrs(vec![(
+            "metadata",
+            "Metadata",
+            AttributeType::map(AttributeType::String),
+            false,
+        )]);
+        let props = json!({});
+
+        let result = map_aws_props_to_attributes(&props, &attrs, "some.Resource");
+
+        assert_eq!(
+            result.get("metadata"),
+            Some(&Value::Map(indexmap::IndexMap::new())),
+            "absent optional map-typed attribute must canonicalize to empty map"
+        );
+    }
+
+    /// Required attributes that are unexpectedly absent must NOT be
+    /// fabricated — that would mask a real provider-side bug.
+    #[test]
+    fn absent_required_list_is_not_fabricated() {
+        let attrs = make_schema_attrs(vec![(
+            "required_list",
+            "RequiredList",
+            AttributeType::list(AttributeType::String),
+            true,
+        )]);
+        let props = json!({});
+
+        let result = map_aws_props_to_attributes(&props, &attrs, "some.Resource");
+
+        assert!(
+            !result.contains_key("required_list"),
+            "required attributes must not be synthesized when AWS omits them"
+        );
+    }
+
+    /// Scalar absence still means "untracked" — the carry-forward path
+    /// in `read_resource` populates these from saved state. Synthesizing
+    /// a default here would clobber that.
+    #[test]
+    fn absent_optional_scalar_is_not_fabricated() {
+        let attrs = make_schema_attrs(vec![(
+            "description",
+            "Description",
+            AttributeType::String,
+            false,
+        )]);
+        let props = json!({});
+
+        let result = map_aws_props_to_attributes(&props, &attrs, "some.Resource");
+
+        assert!(
+            !result.contains_key("description"),
+            "absent scalar attributes must not be synthesized; carry-forward owns that case"
+        );
+    }
+
+    /// Present list values flow through `aws_value_to_dsl` unchanged.
+    #[test]
+    fn present_list_passes_through() {
+        let attrs = make_schema_attrs(vec![(
+            "managed_policy_arns",
+            "ManagedPolicyArns",
+            AttributeType::list(AttributeType::String),
+            false,
+        )]);
+        let props = json!({
+            "ManagedPolicyArns": ["arn:aws:iam::aws:policy/ReadOnlyAccess"]
+        });
+
+        let result = map_aws_props_to_attributes(&props, &attrs, "iam.Role");
+
+        assert_eq!(
+            result.get("managed_policy_arns"),
+            Some(&Value::List(vec![Value::String(
+                "arn:aws:iam::aws:policy/ReadOnlyAccess".to_string()
+            )])),
+        );
+    }
+
+    /// Tags are always skipped at this layer.
+    #[test]
+    fn tags_attribute_is_skipped() {
+        let attrs = make_schema_attrs(vec![(
+            "tags",
+            "Tags",
+            AttributeType::map(AttributeType::String),
+            false,
+        )]);
+        let props = json!({});
+
+        let result = map_aws_props_to_attributes(&props, &attrs, "some.Resource");
+
+        assert!(
+            !result.contains_key("tags"),
+            "tags must be skipped here; AwsccProvider::read_resource owns that path"
+        );
+    }
 }
