@@ -317,7 +317,7 @@ impl Provider for AwsccProvider {
         let id = id.clone();
         let identifier = identifier.to_string();
         Box::pin(async move {
-            self.delete_resource(&id, &identifier, &request.lifecycle)
+            self.delete_resource(&id, &identifier, &request.directives)
                 .await
         })
     }

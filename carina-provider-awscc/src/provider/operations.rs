@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 
 use carina_core::provider::{ProviderError, ProviderResult, UpdatePatch};
-use carina_core::resource::{LifecycleConfig, Resource, ResourceId, State, Value};
+use carina_core::resource::{Directives, Resource, ResourceId, State, Value};
 use carina_core::schema::{AttributeSchema, AttributeType};
 use indexmap::IndexMap;
 use serde_json::json;
@@ -209,7 +209,7 @@ impl AwsccProvider {
         &self,
         id: &ResourceId,
         identifier: &str,
-        lifecycle: &LifecycleConfig,
+        directives: &Directives,
     ) -> ProviderResult<()> {
         let config = get_schema_config(&id.resource_type).ok_or_else(|| {
             ProviderError::internal(format!("Unknown resource type: {}", id.resource_type))
@@ -220,7 +220,7 @@ impl AwsccProvider {
         self.pre_delete_operations(id, config, identifier).await?;
 
         // Handle force_delete for S3 buckets: empty the bucket before deletion
-        if lifecycle.force_delete && id.resource_type == "s3.Bucket" {
+        if directives.force_delete && id.resource_type == "s3.Bucket" {
             self.empty_s3_bucket(identifier).await.map_err(|e| {
                 ProviderError::api_error("Failed to empty S3 bucket before deletion")
                     .with_cause(e)
