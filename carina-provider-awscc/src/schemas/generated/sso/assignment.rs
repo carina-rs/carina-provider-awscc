@@ -47,7 +47,11 @@ pub fn sso_assignment_config() -> AwsccSchemaConfig {
                         name: "PrincipalType".to_string(),
                         values: vec!["USER".to_string(), "GROUP".to_string()],
                         namespace: Some("awscc.sso.Assignment".to_string()),
-                        to_dsl: None,
+                        to_dsl: Some(|s: &str| match s {
+                            "USER" => "user".to_string(),
+                            "GROUP" => "group".to_string(),
+                            _ => s.to_string(),
+                        }),
                     },
                 )
                 .required()
@@ -69,7 +73,10 @@ pub fn sso_assignment_config() -> AwsccSchemaConfig {
                         name: "TargetType".to_string(),
                         values: vec!["AWS_ACCOUNT".to_string()],
                         namespace: Some("awscc.sso.Assignment".to_string()),
-                        to_dsl: None,
+                        to_dsl: Some(|s: &str| match s {
+                            "AWS_ACCOUNT" => "aws_account".to_string(),
+                            _ => s.to_string(),
+                        }),
                     },
                 )
                 .required()

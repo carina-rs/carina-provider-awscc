@@ -20,7 +20,7 @@ let sg = awscc.ec2.SecurityGroup {
 awscc.ec2.VpcEndpoint {
   vpc_id              = vpc.vpc_id
   service_name        = 'com.amazonaws.ap-northeast-1.sts'
-  vpc_endpoint_type   = Interface
+  vpc_endpoint_type   = interface
   security_group_ids  = [sg.group_id]
   private_dns_enabled = true
 }

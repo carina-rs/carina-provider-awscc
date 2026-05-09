@@ -334,8 +334,86 @@ fn dsl_enum_value(value: &str) -> String {
     if !value.chars().any(|c| c.is_ascii_uppercase()) {
         return value.replace('-', "_");
     }
+    // Special case: acronym + lowercase + digits (e.g. "IPv4", "IPv6").
+    // Heck's snake_case splits these as "i_pv4" which loses the acronym
+    // structure. Treat them as a single all-lowercase word so the DSL
+    // spelling matches the conventional reading "ipv4".
+    if let Some(idx) = value.chars().position(|c| c.is_ascii_lowercase())
+        && idx >= 1
+        && value[..idx].chars().all(|c| c.is_ascii_uppercase())
+        && value[idx..]
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+    {
+        return value.to_ascii_lowercase();
+    }
     // PascalCase (or anything else mixed): route through heck's ToSnakeCase.
     value.to_snake_case()
+}
+
+/// Build the `to_dsl: ...` Rust source code for a `StringEnum`'s
+/// `to_dsl` field, following naming-conventions design D7.
+///
+/// Per #199 / D3 / D7, every enum value gets a snake_case DSL spelling and
+/// the validator must accept it. The validator checks both the canonical
+/// (API) value and `to_dsl(value)`, so this closure produces the snake_case
+/// DSL form for each canonical value.
+///
+/// `prop_aliases` carries hand-curated overrides from
+/// [`known_enum_aliases`] (e.g. `IpProtocol`'s `"-1"` ↔ `"all"`); those win
+/// over the mechanical D7 transform.
+///
+/// Returns `"None"` only when **every** value's DSL spelling equals the
+/// canonical spelling (i.e. all values are already snake_case and there
+/// are no manual aliases) — in that case `to_dsl` is a no-op and we emit
+/// `None` rather than an identity closure.
+fn to_dsl_closure_code(
+    values: &[String],
+    prop_aliases: Option<&Vec<(&'static str, &'static str)>>,
+) -> String {
+    // Build (canonical, dsl_form) pairs where the two strings differ.
+    // Manual aliases from known_enum_aliases win over the D7 transform.
+    let mut entries: Vec<(String, String)> = Vec::new();
+    for value in values {
+        let dsl_form = if let Some(aliases) = prop_aliases {
+            if let Some((_, alias)) = aliases.iter().find(|(c, _)| c == value) {
+                alias.to_string()
+            } else {
+                dsl_enum_value(value)
+            }
+        } else {
+            dsl_enum_value(value)
+        };
+        if dsl_form != *value {
+            entries.push((value.clone(), dsl_form));
+        }
+    }
+
+    // Also include alias entries whose canonical does not appear in `values`
+    // (defensive — known_enum_aliases is small and historically all entries
+    // do appear in `values`, but emit them anyway so the closure stays
+    // exhaustive against the hand-curated table).
+    if let Some(aliases) = prop_aliases {
+        for (canonical, alias) in aliases {
+            let already = entries.iter().any(|(c, _)| c == canonical);
+            if !already && canonical != alias {
+                entries.push(((*canonical).to_string(), (*alias).to_string()));
+            }
+        }
+    }
+
+    if entries.is_empty() {
+        return "None".to_string();
+    }
+
+    let match_arms: Vec<String> = entries
+        .iter()
+        .map(|(canonical, alias)| format!("\"{}\" => \"{}\".to_string()", canonical, alias))
+        .collect();
+    format!(
+        "Some(|s: &str| match s {{ {}, _ => s.to_string() }})",
+        match_arms.join(", ")
+    )
 }
 
 fn main() -> Result<()> {
@@ -893,45 +971,31 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str) -> Result<String> {
                 .next_back()
                 .unwrap_or(prop_name.as_str());
             let attr_name = field_name.to_snake_case();
-            let has_hyphens = enum_info.values.iter().any(|v| v.contains('-'));
             let prop_aliases = aliases.get(field_name);
+            // Per #199 / D7: render the snake_case DSL spelling in the
+            // "DSL Identifier" column and the "Shorthand formats" line.
+            // The hand-curated `known_enum_aliases` table wins over the
+            // mechanical D7 transform when both apply (e.g. "-1" -> "all").
+            let dsl_for = |value: &str| -> String {
+                if let Some(alias_list) = prop_aliases
+                    && let Some((_, alias)) = alias_list.iter().find(|(c, _)| *c == value)
+                {
+                    return alias.to_string();
+                }
+                dsl_enum_value(value)
+            };
             md.push_str(&format!("### {} ({})\n\n", attr_name, enum_info.type_name));
             md.push_str("| Value | DSL Identifier |\n");
             md.push_str("|-------|----------------|\n");
             for value in &enum_info.values {
-                // Check if this value has an alias
-                let dsl_value = if let Some(alias_list) = prop_aliases {
-                    if let Some((_, alias)) = alias_list.iter().find(|(c, _)| c == value) {
-                        alias.to_string()
-                    } else if has_hyphens {
-                        value.replace('-', "_")
-                    } else {
-                        value.clone()
-                    }
-                } else if has_hyphens {
-                    value.replace('-', "_")
-                } else {
-                    value.clone()
-                };
+                let dsl_value = dsl_for(value);
                 let dsl_id = format!("{}.{}.{}", namespace, enum_info.type_name, dsl_value);
                 md.push_str(&format!("| `{}` | `{}` |\n", value, dsl_id));
             }
             md.push('\n');
             let empty = String::new();
             let first_value = enum_info.values.first().unwrap_or(&empty);
-            let first_dsl = if let Some(alias_list) = prop_aliases {
-                if let Some((_, alias)) = alias_list.iter().find(|(c, _)| c == first_value) {
-                    alias.to_string()
-                } else if has_hyphens {
-                    first_value.replace('-', "_")
-                } else {
-                    first_value.clone()
-                }
-            } else if has_hyphens {
-                first_value.replace('-', "_")
-            } else {
-                first_value.clone()
-            };
+            let first_dsl = dsl_for(first_value);
             md.push_str(&format!(
                 "Shorthand formats: `{}` or `{}.{}`\n\n",
                 first_dsl, enum_info.type_name, first_dsl,
@@ -1955,30 +2019,10 @@ pub fn {}() -> AwsccSchemaConfig {{
 
         let attr_type = if let Some(enum_info) = enums.get(prop_name) {
             // Use shared schema enum type for constrained strings.
-            // Build to_dsl closure: handles aliases and hyphen-to-underscore conversion
+            // Build to_dsl closure that maps every canonical value to its
+            // snake_case DSL spelling per naming-conventions design D7.
             let prop_aliases = aliases.get(prop_name.as_str());
-            let has_hyphens = enum_info.values.iter().any(|v| v.contains('-'));
-            let to_dsl_code = if let Some(alias_list) = prop_aliases {
-                // Generate a closure that maps canonical values to aliases,
-                // with fallback to hyphen-to-underscore if needed
-                let mut match_arms: Vec<String> = alias_list
-                    .iter()
-                    .map(|(canonical, alias)| {
-                        format!("\"{}\" => \"{}\".to_string()", canonical, alias)
-                    })
-                    .collect();
-                let fallback = if has_hyphens {
-                    "_ => s.replace('-', \"_\")"
-                } else {
-                    "_ => s.to_string()"
-                };
-                match_arms.push(fallback.to_string());
-                format!("Some(|s: &str| match s {{ {} }})", match_arms.join(", "))
-            } else if has_hyphens {
-                "Some(|s: &str| s.replace('-', \"_\"))".to_string()
-            } else {
-                "None".to_string()
-            };
+            let to_dsl_code = to_dsl_closure_code(&enum_info.values, prop_aliases);
             let values_str = enum_info
                 .values
                 .iter()
@@ -2630,26 +2674,7 @@ fn generate_struct_type(
                     enums.get(&composite_key).or_else(|| enums.get(field_name))
                 {
                     let prop_aliases = aliases.get(field_name.as_str());
-                    let has_hyphens = enum_info.values.iter().any(|v| v.contains('-'));
-                    let to_dsl_code = if let Some(alias_list) = prop_aliases {
-                        let mut match_arms: Vec<String> = alias_list
-                            .iter()
-                            .map(|(canonical, alias)| {
-                                format!("\"{}\" => \"{}\".to_string()", canonical, alias)
-                            })
-                            .collect();
-                        let fallback = if has_hyphens {
-                            "_ => s.replace('-', \"_\")"
-                        } else {
-                            "_ => s.to_string()"
-                        };
-                        match_arms.push(fallback.to_string());
-                        format!("Some(|s: &str| match s {{ {} }})", match_arms.join(", "))
-                    } else if has_hyphens {
-                        "Some(|s: &str| s.replace('-', \"_\"))".to_string()
-                    } else {
-                        "None".to_string()
-                    };
+                    let to_dsl_code = to_dsl_closure_code(&enum_info.values, prop_aliases);
                     let values_str = enum_info
                         .values
                         .iter()
@@ -2670,26 +2695,7 @@ fn generate_struct_type(
                     // pre-scanned enums map (e.g., nested struct fields that were
                     // skipped during scanning due to snake_case name conflicts).
                     let prop_aliases = aliases.get(field_name.as_str());
-                    let has_hyphens = local_enum_info.values.iter().any(|v| v.contains('-'));
-                    let to_dsl_code = if let Some(alias_list) = prop_aliases {
-                        let mut match_arms: Vec<String> = alias_list
-                            .iter()
-                            .map(|(canonical, alias)| {
-                                format!("\"{}\" => \"{}\".to_string()", canonical, alias)
-                            })
-                            .collect();
-                        let fallback = if has_hyphens {
-                            "_ => s.replace('-', \"_\")"
-                        } else {
-                            "_ => s.to_string()"
-                        };
-                        match_arms.push(fallback.to_string());
-                        format!("Some(|s: &str| match s {{ {} }})", match_arms.join(", "))
-                    } else if has_hyphens {
-                        "Some(|s: &str| s.replace('-', \"_\"))".to_string()
-                    } else {
-                        "None".to_string()
-                    };
+                    let to_dsl_code = to_dsl_closure_code(&local_enum_info.values, prop_aliases);
                     let values_str = local_enum_info
                         .values
                         .iter()
@@ -7196,10 +7202,13 @@ mod tests {
             generated.contains("namespace: Some("),
             "StringEnum should include namespace: {generated}"
         );
-        // Should handle hyphens in values with to_dsl
+        // Should handle hyphens in values with to_dsl. Per #199 / D7, the
+        // generated closure now matches each canonical value individually
+        // and emits the snake_case DSL spelling, rather than calling
+        // `s.replace('-', "_")` once for the whole input.
         assert!(
-            generated.contains("s.replace('-', \"_\")"),
-            "hyphenated enum values should generate to_dsl: {generated}"
+            generated.contains("\"block-bidirectional\" => \"block_bidirectional\".to_string()"),
+            "hyphenated enum values should generate per-value to_dsl mapping: {generated}"
         );
     }
 
@@ -7835,14 +7844,15 @@ mod tests {
                 .join("\n")
         );
 
-        // DSL identifiers should also be disambiguated
+        // DSL identifiers should also be disambiguated.
+        // Per #199 / D7, the DSL spelling is snake_case.
         assert!(
-            md.contains("awscc.test.Resource.ConfigAStatus.Disabled"),
-            "Expected disambiguated DSL identifier for ConfigA"
+            md.contains("awscc.test.Resource.ConfigAStatus.disabled"),
+            "Expected disambiguated DSL identifier for ConfigA: {md}"
         );
         assert!(
-            md.contains("awscc.test.Resource.ConfigBStatus.Suspended"),
-            "Expected disambiguated DSL identifier for ConfigB"
+            md.contains("awscc.test.Resource.ConfigBStatus.suspended"),
+            "Expected disambiguated DSL identifier for ConfigB: {md}"
         );
 
         // Old ambiguous format should NOT appear
@@ -10437,5 +10447,377 @@ mod tests {
         }"#;
         let schema: CfnSchema = serde_json::from_str(json).unwrap();
         assert!(!schema.has_cloud_control_handlers());
+    }
+
+    // === Issue #199: snake_case DSL spelling for every StringEnum value ===
+
+    #[test]
+    fn test_dsl_enum_value_ipv4_ipv6() {
+        // IPv4/IPv6 are PascalCase-ish but heck's snake_case turns them into
+        // "i_pv4"/"i_pv6" which is wrong. The DSL form should be the all-lowercase
+        // "ipv4"/"ipv6".
+        assert_eq!(dsl_enum_value("IPv4"), "ipv4");
+        assert_eq!(dsl_enum_value("IPv6"), "ipv6");
+    }
+
+    #[test]
+    fn test_dsl_enum_value_pascal_case() {
+        // PascalCase -> snake_case
+        assert_eq!(dsl_enum_value("Enabled"), "enabled");
+        assert_eq!(
+            dsl_enum_value("BucketOwnerEnforced"),
+            "bucket_owner_enforced"
+        );
+        assert_eq!(dsl_enum_value("VersioningStatus"), "versioning_status");
+        assert_eq!(dsl_enum_value("ObjectWriter"), "object_writer");
+    }
+
+    #[test]
+    fn test_dsl_enum_value_shouty_snake() {
+        // SHOUTY_SNAKE -> lowercase
+        assert_eq!(dsl_enum_value("GROUP"), "group");
+        assert_eq!(dsl_enum_value("AES256"), "aes256");
+        assert_eq!(dsl_enum_value("DEEP_ARCHIVE"), "deep_archive");
+        assert_eq!(dsl_enum_value("AWS_ACCOUNT"), "aws_account");
+    }
+
+    #[test]
+    fn test_dsl_enum_value_kebab_to_snake() {
+        // kebab -> snake (replace hyphens with underscores)
+        assert_eq!(dsl_enum_value("ap-northeast-1"), "ap_northeast_1");
+        assert_eq!(dsl_enum_value("cloud-watch-logs"), "cloud_watch_logs");
+    }
+
+    #[test]
+    fn test_dsl_enum_value_already_snake_passthrough() {
+        // Already snake_case stays unchanged
+        assert_eq!(dsl_enum_value("default"), "default");
+        assert_eq!(dsl_enum_value("dedicated"), "dedicated");
+        assert_eq!(dsl_enum_value("ap_northeast_1"), "ap_northeast_1");
+    }
+
+    #[test]
+    fn test_dsl_enum_value_dotted_passthrough() {
+        // Dotted values like "ipsec.1" pass through verbatim
+        assert_eq!(dsl_enum_value("ipsec.1"), "ipsec.1");
+    }
+
+    #[test]
+    fn test_dsl_enum_value_numeric_passthrough() {
+        // Pure numeric stays
+        assert_eq!(dsl_enum_value("1"), "1");
+        assert_eq!(dsl_enum_value("128"), "128");
+    }
+
+    #[test]
+    fn test_string_enum_emits_snake_case_to_dsl_for_pascal_values() {
+        // Regression for #199: PascalCase enum values must produce a `to_dsl`
+        // closure that converts the canonical (API) spelling to a snake_case
+        // DSL spelling, so the validator accepts both forms.
+        let mut properties = BTreeMap::new();
+        properties.insert(
+            "ObjectOwnership".to_string(),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("string".to_string())),
+                description: Some("Object ownership".to_string()),
+                enum_values: Some(vec![
+                    EnumValue::Str("ObjectWriter".to_string()),
+                    EnumValue::Str("BucketOwnerPreferred".to_string()),
+                    EnumValue::Str("BucketOwnerEnforced".to_string()),
+                ]),
+                items: None,
+                ref_path: None,
+                insertion_order: None,
+                properties: None,
+                required: vec![],
+                minimum: None,
+                maximum: None,
+                additional_properties: None,
+                const_value: None,
+                default_value: None,
+                pattern: None,
+                min_items: None,
+                max_items: None,
+                min_length: None,
+                max_length: None,
+                format: None,
+            },
+        );
+        let schema = CfnSchema {
+            type_name: "AWS::S3::Bucket".to_string(),
+            description: None,
+            properties,
+            required: vec![],
+            read_only_properties: vec![],
+            create_only_properties: vec![],
+            write_only_properties: vec![],
+            primary_identifier: None,
+            definitions: None,
+            tagging: None,
+            one_of: vec![],
+            any_of: vec![],
+            handlers: BTreeMap::new(),
+        };
+        let generated = generate_schema_code(&schema, "AWS::S3::Bucket").unwrap();
+
+        // The values list still carries the API spellings (canonical for round-trip
+        // with the AWS API) but a non-None to_dsl must be present.
+        assert!(
+            generated.contains("\"BucketOwnerEnforced\".to_string()"),
+            "API spelling must remain in the values list: {generated}"
+        );
+        assert!(
+            !generated.contains("to_dsl: None,\n            }"),
+            "to_dsl must be Some for an enum with PascalCase values: {generated}"
+        );
+        // The generated to_dsl closure must contain a mapping from BucketOwnerEnforced.
+        assert!(
+            generated.contains("BucketOwnerEnforced")
+                && generated.contains("bucket_owner_enforced"),
+            "to_dsl closure must map PascalCase to snake_case: {generated}"
+        );
+    }
+
+    #[test]
+    fn test_string_enum_emits_snake_case_to_dsl_for_shouty_snake_values() {
+        // Regression for #199: SHOUTY_SNAKE values like AES256 must get a
+        // snake_case alias via to_dsl.
+        let mut properties = BTreeMap::new();
+        properties.insert(
+            "StorageClass".to_string(),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("string".to_string())),
+                description: Some("Storage class".to_string()),
+                enum_values: Some(vec![
+                    EnumValue::Str("STANDARD".to_string()),
+                    EnumValue::Str("DEEP_ARCHIVE".to_string()),
+                    EnumValue::Str("GLACIER_IR".to_string()),
+                ]),
+                items: None,
+                ref_path: None,
+                insertion_order: None,
+                properties: None,
+                required: vec![],
+                minimum: None,
+                maximum: None,
+                additional_properties: None,
+                const_value: None,
+                default_value: None,
+                pattern: None,
+                min_items: None,
+                max_items: None,
+                min_length: None,
+                max_length: None,
+                format: None,
+            },
+        );
+        let schema = CfnSchema {
+            type_name: "AWS::S3::Bucket".to_string(),
+            description: None,
+            properties,
+            required: vec![],
+            read_only_properties: vec![],
+            create_only_properties: vec![],
+            write_only_properties: vec![],
+            primary_identifier: None,
+            definitions: None,
+            tagging: None,
+            one_of: vec![],
+            any_of: vec![],
+            handlers: BTreeMap::new(),
+        };
+        let generated = generate_schema_code(&schema, "AWS::S3::Bucket").unwrap();
+        assert!(
+            generated.contains("DEEP_ARCHIVE") && generated.contains("deep_archive"),
+            "to_dsl closure must map SHOUTY_SNAKE to snake_case: {generated}"
+        );
+    }
+
+    #[test]
+    fn test_string_enum_to_dsl_none_when_all_values_already_snake() {
+        // When every enum value is already snake_case, no transformation is
+        // required and to_dsl stays None.
+        let mut properties = BTreeMap::new();
+        properties.insert(
+            "InstanceTenancy".to_string(),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("string".to_string())),
+                description: Some("Instance tenancy".to_string()),
+                enum_values: Some(vec![
+                    EnumValue::Str("default".to_string()),
+                    EnumValue::Str("dedicated".to_string()),
+                    EnumValue::Str("host".to_string()),
+                ]),
+                items: None,
+                ref_path: None,
+                insertion_order: None,
+                properties: None,
+                required: vec![],
+                minimum: None,
+                maximum: None,
+                additional_properties: None,
+                const_value: None,
+                default_value: None,
+                pattern: None,
+                min_items: None,
+                max_items: None,
+                min_length: None,
+                max_length: None,
+                format: None,
+            },
+        );
+        let schema = CfnSchema {
+            type_name: "AWS::EC2::VPC".to_string(),
+            description: None,
+            properties,
+            required: vec![],
+            read_only_properties: vec![],
+            create_only_properties: vec![],
+            write_only_properties: vec![],
+            primary_identifier: None,
+            definitions: None,
+            tagging: None,
+            one_of: vec![],
+            any_of: vec![],
+            handlers: BTreeMap::new(),
+        };
+        let generated = generate_schema_code(&schema, "AWS::EC2::VPC").unwrap();
+        // The schema has exactly one StringEnum and all its values are
+        // already snake_case, so to_dsl must be None (no transform closure
+        // needed and no identity-closure noise).
+        assert!(
+            generated.contains("to_dsl: None,"),
+            "to_dsl must remain None when all values are already snake_case: {generated}"
+        );
+        assert!(
+            !generated.contains("|s: &str| match s"),
+            "no to_dsl closure should be emitted when every value is already snake_case: {generated}"
+        );
+    }
+
+    #[test]
+    fn test_enum_alias_reverse_covers_pascal_values() {
+        // Regression for #199: enum_alias_reverse() must emit
+        // (snake_case, API) entries for every PascalCase value, so DSL inputs
+        // round-trip back to the API spelling on send.
+        let mut properties = BTreeMap::new();
+        properties.insert(
+            "ObjectOwnership".to_string(),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("string".to_string())),
+                description: Some("Object ownership".to_string()),
+                enum_values: Some(vec![EnumValue::Str("BucketOwnerEnforced".to_string())]),
+                items: None,
+                ref_path: None,
+                insertion_order: None,
+                properties: None,
+                required: vec![],
+                minimum: None,
+                maximum: None,
+                additional_properties: None,
+                const_value: None,
+                default_value: None,
+                pattern: None,
+                min_items: None,
+                max_items: None,
+                min_length: None,
+                max_length: None,
+                format: None,
+            },
+        );
+        let schema = CfnSchema {
+            type_name: "AWS::S3::Bucket".to_string(),
+            description: None,
+            properties,
+            required: vec![],
+            read_only_properties: vec![],
+            create_only_properties: vec![],
+            write_only_properties: vec![],
+            primary_identifier: None,
+            definitions: None,
+            tagging: None,
+            one_of: vec![],
+            any_of: vec![],
+            handlers: BTreeMap::new(),
+        };
+        let generated = generate_schema_code(&schema, "AWS::S3::Bucket").unwrap();
+        assert!(
+            generated.contains(
+                "(\"object_ownership\", \"bucket_owner_enforced\") => Some(\"BucketOwnerEnforced\")"
+            ),
+            "enum_alias_reverse must map snake_case DSL value to API spelling: {generated}"
+        );
+    }
+
+    #[test]
+    fn test_generate_markdown_uses_snake_case_dsl_identifier() {
+        // Regression for #199: the "DSL Identifier" column and "Shorthand
+        // formats" line in the generated markdown must use the snake_case DSL
+        // spelling, not the API spelling.
+        let mut properties = BTreeMap::new();
+        properties.insert(
+            "ObjectOwnership".to_string(),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("string".to_string())),
+                description: Some("Object ownership".to_string()),
+                enum_values: Some(vec![
+                    EnumValue::Str("ObjectWriter".to_string()),
+                    EnumValue::Str("BucketOwnerPreferred".to_string()),
+                    EnumValue::Str("BucketOwnerEnforced".to_string()),
+                ]),
+                items: None,
+                ref_path: None,
+                insertion_order: None,
+                properties: None,
+                required: vec![],
+                minimum: None,
+                maximum: None,
+                additional_properties: None,
+                const_value: None,
+                default_value: None,
+                pattern: None,
+                min_items: None,
+                max_items: None,
+                min_length: None,
+                max_length: None,
+                format: None,
+            },
+        );
+        let schema = CfnSchema {
+            type_name: "AWS::S3::Bucket".to_string(),
+            description: None,
+            properties,
+            required: vec![],
+            read_only_properties: vec![],
+            create_only_properties: vec![],
+            write_only_properties: vec![],
+            primary_identifier: None,
+            definitions: None,
+            tagging: None,
+            one_of: vec![],
+            any_of: vec![],
+            handlers: BTreeMap::new(),
+        };
+        let md = generate_markdown(&schema, "AWS::S3::Bucket").unwrap();
+        // DSL Identifier column must use snake_case
+        assert!(
+            md.contains("`awscc.s3.Bucket.ObjectOwnership.bucket_owner_enforced`"),
+            "DSL Identifier column must use snake_case: {md}"
+        );
+        // The PascalCase form must NOT appear as the DSL Identifier
+        assert!(
+            !md.contains("`awscc.s3.Bucket.ObjectOwnership.BucketOwnerEnforced`"),
+            "DSL Identifier column must not use the API spelling: {md}"
+        );
+        // Shorthand formats line must use snake_case (first value: ObjectWriter -> object_writer).
+        assert!(
+            md.contains("Shorthand formats: `object_writer` or `ObjectOwnership.object_writer`"),
+            "Shorthand formats must use snake_case: {md}"
+        );
+        // The "Value" column may keep the API spelling — verify it still does.
+        assert!(
+            md.contains("`BucketOwnerEnforced`"),
+            "Value column should retain the API spelling for round-trip clarity: {md}"
+        );
     }
 }

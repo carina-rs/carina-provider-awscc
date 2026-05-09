@@ -534,10 +534,14 @@ mod tests {
         crate::provider::resolve_enum_identifiers_impl(&mut resources);
 
         let dsl_resolved = &resources[0].attributes["vpc_endpoint_type"];
+        // Per naming-conventions design D7 / issue #199, the DSL spelling is
+        // snake_case; the bare ident `Gateway` is accepted (transition
+        // convenience) but resolves to the snake_case namespaced form, since
+        // `resolve_enum_identifiers_impl` runs `to_dsl` on the input.
         assert_eq!(
             dsl_resolved,
-            &Value::String("awscc.ec2.VpcEndpoint.VpcEndpointType.Gateway".to_string()),
-            "DSL bare ident `Gateway` should resolve to namespaced form"
+            &Value::String("awscc.ec2.VpcEndpoint.VpcEndpointType.gateway".to_string()),
+            "DSL bare ident `Gateway` should resolve to snake_case namespaced form"
         );
 
         // 2. AWS read-back side: aws_value_to_dsl converts "Gateway" string
@@ -552,8 +556,8 @@ mod tests {
 
         assert_eq!(
             aws_dsl,
-            Value::String("awscc.ec2.VpcEndpoint.VpcEndpointType.Gateway".to_string()),
-            "AWS read-back 'Gateway' should normalize to namespaced form"
+            Value::String("awscc.ec2.VpcEndpoint.VpcEndpointType.gateway".to_string()),
+            "AWS read-back 'Gateway' should normalize to snake_case namespaced form"
         );
 
         // 3. Both must be equal (no false diff)
@@ -1154,12 +1158,15 @@ mod tests {
         };
         assert_eq!(rules.len(), 2, "Should have 2 lifecycle rules");
 
-        // Verify enum values are converted to namespaced format
+        // Verify enum values are converted to namespaced format. Per
+        // naming-conventions design D7 / issue #199, the AWS-side spelling
+        // (`Enabled`, `GLACIER`) is mapped to the snake_case DSL spelling
+        // by the StringEnum's `to_dsl` closure on read.
         if let Value::Map(rule0) = &rules[0] {
             assert_eq!(
                 rule0.get("status"),
                 Some(&Value::String(
-                    "awscc.s3.Bucket.RuleStatus.Enabled".to_string()
+                    "awscc.s3.Bucket.RuleStatus.enabled".to_string()
                 )),
                 "status should be namespaced enum"
             );
@@ -1180,7 +1187,7 @@ mod tests {
             assert_eq!(
                 rule1.get("status"),
                 Some(&Value::String(
-                    "awscc.s3.Bucket.RuleStatus.Enabled".to_string()
+                    "awscc.s3.Bucket.RuleStatus.enabled".to_string()
                 )),
             );
             if let Some(Value::List(transitions)) = rule1.get("transitions") {
@@ -1189,7 +1196,7 @@ mod tests {
                     assert_eq!(
                         t.get("storage_class"),
                         Some(&Value::String(
-                            "awscc.s3.Bucket.TransitionStorageClass.GLACIER".to_string()
+                            "awscc.s3.Bucket.TransitionStorageClass.glacier".to_string()
                         )),
                     );
                     assert_eq!(t.get("transition_in_days"), Some(&Value::Int(30)),);
@@ -1216,6 +1223,78 @@ mod tests {
             written_json, aws_json,
             "Round-trip should produce original AWS JSON"
         );
+    }
+
+    /// Regression for #199: a snake_case DSL enum value (here
+    /// `bucket_owner_enforced`) must validate against the regenerated
+    /// `awscc.s3.Bucket.ObjectOwnership` schema, and `dsl_value_to_aws`
+    /// must round-trip it back to the AWS spelling
+    /// (`BucketOwnerEnforced`).
+    #[test]
+    fn test_object_ownership_snake_case_validates_and_roundtrips() {
+        // Walk the schema to find the nested ObjectOwnership StringEnum:
+        // s3.Bucket -> ownership_controls -> rules[] -> object_ownership.
+        let config = crate::schemas::generated::s3::bucket::s3_bucket_config();
+        let ownership_controls = config
+            .schema
+            .attributes
+            .get("ownership_controls")
+            .expect("s3.Bucket has ownership_controls");
+        let AttributeType::Struct { fields, .. } = &ownership_controls.attr_type else {
+            panic!("ownership_controls is a Struct");
+        };
+        let rules = fields.iter().find(|f| f.name == "rules").unwrap();
+        let AttributeType::List { inner, .. } = &rules.field_type else {
+            panic!("rules is a List");
+        };
+        let AttributeType::Struct {
+            fields: rule_fields,
+            ..
+        } = inner.as_ref()
+        else {
+            panic!("rules.inner is a Struct");
+        };
+        let object_ownership = rule_fields
+            .iter()
+            .find(|f| f.name == "object_ownership")
+            .unwrap();
+
+        // Validate the snake_case form (the canonical DSL spelling per D7).
+        let snake_case_value =
+            Value::String("awscc.s3.Bucket.ObjectOwnership.bucket_owner_enforced".to_string());
+        object_ownership
+            .field_type
+            .validate(&snake_case_value)
+            .expect("snake_case DSL spelling must validate");
+
+        // The PascalCase API spelling is also accepted as a transition
+        // convenience (matches_alias in the validator).
+        let pascal_value =
+            Value::String("awscc.s3.Bucket.ObjectOwnership.BucketOwnerEnforced".to_string());
+        object_ownership
+            .field_type
+            .validate(&pascal_value)
+            .expect("API spelling must still validate (transition convenience)");
+
+        // Round-trip: DSL snake_case -> AWS API spelling.
+        let aws_json = dsl_value_to_aws(
+            &snake_case_value,
+            &object_ownership.field_type,
+            "s3.Bucket",
+            "object_ownership",
+        )
+        .expect("dsl_value_to_aws must succeed");
+        assert_eq!(aws_json, json!("BucketOwnerEnforced"));
+
+        // And on read: the AWS spelling becomes the snake_case DSL form.
+        let dsl = aws_value_to_dsl(
+            "object_ownership",
+            &json!("BucketOwnerEnforced"),
+            &object_ownership.field_type,
+            "s3.Bucket",
+        )
+        .expect("aws_value_to_dsl must succeed");
+        assert_eq!(dsl, snake_case_value);
     }
 
     #[test]

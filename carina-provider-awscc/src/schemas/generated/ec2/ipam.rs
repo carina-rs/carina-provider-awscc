@@ -107,7 +107,7 @@ pub fn ec2_ipam_config() -> AwsccSchemaConfig {
                 name: "MeteredAccount".to_string(),
                 values: vec!["ipam-owner".to_string(), "resource-owner".to_string()],
                 namespace: Some("awscc.ec2.Ipam".to_string()),
-                to_dsl: Some(|s: &str| s.replace('-', "_")),
+                to_dsl: Some(|s: &str| match s { "ipam-owner" => "ipam_owner".to_string(), "resource-owner" => "resource_owner".to_string(), _ => s.to_string() }),
             })
                 .with_description("A metered account is an account that is charged for active IP addresses managed in IPAM")
                 .with_provider_name("MeteredAccount"),

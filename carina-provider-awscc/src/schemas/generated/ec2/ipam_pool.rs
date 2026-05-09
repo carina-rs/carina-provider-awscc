@@ -41,7 +41,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
                 name: "AddressFamily".to_string(),
                 values: vec!["IPv4".to_string(), "IPv6".to_string()],
                 namespace: Some("awscc.ec2.IpamPool".to_string()),
-                to_dsl: None,
+                to_dsl: Some(|s: &str| match s { "IPv4" => "ipv4".to_string(), "IPv6" => "ipv6".to_string(), _ => s.to_string() }),
             })
                 .required()
                 .create_only()
@@ -84,7 +84,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
                 name: "AwsService".to_string(),
                 values: vec!["ec2".to_string(), "global-services".to_string()],
                 namespace: Some("awscc.ec2.IpamPool".to_string()),
-                to_dsl: Some(|s: &str| s.replace('-', "_")),
+                to_dsl: Some(|s: &str| match s { "global-services" => "global_services".to_string(), _ => s.to_string() }),
             })
                 .create_only()
                 .with_description("Limits which service in Amazon Web Services that the pool can be used in.")
@@ -194,7 +194,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
                 name: "State".to_string(),
                 values: vec!["create-in-progress".to_string(), "create-complete".to_string(), "modify-in-progress".to_string(), "modify-complete".to_string(), "delete-in-progress".to_string(), "delete-complete".to_string()],
                 namespace: Some("awscc.ec2.IpamPool".to_string()),
-                to_dsl: Some(|s: &str| s.replace('-', "_")),
+                to_dsl: Some(|s: &str| match s { "create-in-progress" => "create_in_progress".to_string(), "create-complete" => "create_complete".to_string(), "modify-in-progress" => "modify_in_progress".to_string(), "modify-complete" => "modify_complete".to_string(), "delete-in-progress" => "delete_in_progress".to_string(), "delete-complete" => "delete_complete".to_string(), _ => s.to_string() }),
             })
                 .read_only()
                 .with_description("The state of this pool. This can be one of the following values: \"create-in-progress\", \"create-complete\", \"modify-in-progress\", \"modify-complete\", \"delete-in-progress\", or \"delete-complete\" (read-only)")
@@ -248,8 +248,8 @@ pub fn enum_valid_values() -> (
 /// e.g., ("ip_protocol", "all") -> Some("-1")
 pub fn enum_alias_reverse(attr_name: &str, value: &str) -> Option<&'static str> {
     match (attr_name, value) {
-        ("address_family", "i_pv4") => Some("IPv4"),
-        ("address_family", "i_pv6") => Some("IPv6"),
+        ("address_family", "ipv4") => Some("IPv4"),
+        ("address_family", "ipv6") => Some("IPv6"),
         ("aws_service", "global_services") => Some("global-services"),
         ("state", "create_in_progress") => Some("create-in-progress"),
         ("state", "create_complete") => Some("create-complete"),
@@ -264,8 +264,8 @@ pub fn enum_alias_reverse(attr_name: &str, value: &str) -> Option<&'static str> 
 /// Returns all enum alias entries as (attr_name, alias, canonical) tuples.
 pub fn enum_alias_entries() -> &'static [(&'static str, &'static str, &'static str)] {
     &[
-        ("address_family", "i_pv4", "IPv4"),
-        ("address_family", "i_pv6", "IPv6"),
+        ("address_family", "ipv4", "IPv4"),
+        ("address_family", "ipv6", "IPv6"),
         ("aws_service", "global_services", "global-services"),
         ("state", "create_in_progress", "create-in-progress"),
         ("state", "create_complete", "create-complete"),

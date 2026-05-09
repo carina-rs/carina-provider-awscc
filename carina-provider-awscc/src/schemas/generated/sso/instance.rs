@@ -129,7 +129,7 @@ pub fn sso_instance_config() -> AwsccSchemaConfig {
                 name: "Status".to_string(),
                 values: vec!["CREATE_IN_PROGRESS".to_string(), "DELETE_IN_PROGRESS".to_string(), "ACTIVE".to_string()],
                 namespace: Some("awscc.sso.Instance".to_string()),
-                to_dsl: None,
+                to_dsl: Some(|s: &str| match s { "CREATE_IN_PROGRESS" => "create_in_progress".to_string(), "DELETE_IN_PROGRESS" => "delete_in_progress".to_string(), "ACTIVE" => "active".to_string(), _ => s.to_string() }),
             })
                 .read_only()
                 .with_description("The status of the Identity Center (SSO) Instance, create_in_progress/delete_in_progress/active (read-only)")
