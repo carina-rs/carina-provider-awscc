@@ -2421,6 +2421,17 @@ fn looks_like_enum_value(s: &str) -> bool {
     if s.contains(' ') {
         return false;
     }
+    // CFN descriptions use double-backticks for both enum members and code-style
+    // examples (paths, URLs, file extensions, regex character ranges). They cannot
+    // be told apart syntactically, so we exclude shapes that real enum identifiers
+    // never take. Escape hatch for genuine outliers: known_enum_overrides.
+    if s.contains('/') || s.contains('*') || s.contains(':') || s.contains('.') {
+        return false;
+    }
+    // Regex character ranges in CFN docs (``A-Z``, ``a-z``, ``0-9``).
+    if s.len() == 3 && s.contains('-') {
+        return false;
+    }
     true
 }
 
@@ -4502,6 +4513,61 @@ mod tests {
         assert!(result.is_some());
         let values = result.unwrap();
         assert_eq!(values, vec!["enabled", "disabled"]);
+    }
+
+    #[test]
+    fn test_extract_enum_from_description_rejects_path_examples() {
+        let description = "An optional string that you want CloudFront to prefix to the access \
+            log ``filenames`` for this distribution, for example, ``myprefix/``. If you want \
+            to enable logging, but you don't want to specify a prefix, you still must include \
+            an empty ``Prefix`` element in the ``Logging`` element.";
+        let result = extract_enum_from_description(description);
+        assert!(
+            result.is_none(),
+            "Path-like example values must not be extracted as enums (got {:?})",
+            result
+        );
+    }
+
+    #[test]
+    fn test_extract_enum_from_description_rejects_glob_path_examples() {
+        let description = "The pattern (for example, ``images/*.jpg``) that specifies which \
+            requests to apply the behavior to. You can also specify a single character such \
+            as ``/`` or ``*`` or a path with wildcards like ``/images/*.jpg``.";
+        let result = extract_enum_from_description(description);
+        assert!(
+            result.is_none(),
+            "Glob/path examples must not be extracted as enums (got {:?})",
+            result
+        );
+    }
+
+    #[test]
+    fn test_extract_enum_from_description_rejects_regex_class_examples() {
+        let description = "The key of the tag. Valid characters are ``A-Z``, ``a-z``, \
+            ``0-9``, space, and the special characters _ . / = + - @";
+        let result = extract_enum_from_description(description);
+        assert!(
+            result.is_none(),
+            "Regex character classes must not be extracted as enums (got {:?})",
+            result
+        );
+    }
+
+    #[test]
+    fn test_extract_enum_from_description_rejects_html_path_examples() {
+        let description = "The object that you want CloudFront to request from your origin \
+            (for example, ``index.html``) when a viewer requests the root URL for your \
+            distribution (``https://www.example.com``) instead of an object in your \
+            distribution (``https://www.example.com/product-description.html``). You can \
+            also specify a folder name (such as ``exampleFolderName/index.html``) or a \
+            forward slash (``/``).";
+        let result = extract_enum_from_description(description);
+        assert!(
+            result.is_none(),
+            "URL/HTML-path examples must not be extracted as enums (got {:?})",
+            result
+        );
     }
 
     #[test]

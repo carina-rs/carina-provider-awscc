@@ -48,6 +48,7 @@ service_display_name() {
         route53)       echo "Route 53" ;;
         identitystore) echo "Identity Store" ;;
         organizations) echo "Organizations" ;;
+        cloudfront)    echo "CloudFront" ;;
         *)             echo "$1" | tr '[:lower:]' '[:upper:]' ;;
     esac
 }

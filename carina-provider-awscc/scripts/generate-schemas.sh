@@ -64,6 +64,8 @@ RESOURCE_TYPES=(
     "AWS::IdentityStore::Group"
     "AWS::IdentityStore::GroupMembership"
     "AWS::Route53::HostedZone"
+    "AWS::CloudFront::Distribution"
+    "AWS::CloudFront::OriginAccessControl"
 )
 
 echo "Generating awscc provider schemas..."
