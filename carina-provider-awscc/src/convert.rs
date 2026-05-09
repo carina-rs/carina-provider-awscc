@@ -11,7 +11,7 @@ use carina_core::provider::{
     UpdatePatch as CoreUpdatePatch,
 };
 use carina_core::resource::{
-    LifecycleConfig as CoreLifecycle, Resource as CoreResource, ResourceId as CoreResourceId,
+    Directives as CoreDirectives, Resource as CoreResource, ResourceId as CoreResourceId,
     State as CoreState, Value as CoreValue,
 };
 use carina_core::schema::{
@@ -20,7 +20,7 @@ use carina_core::schema::{
 };
 use carina_provider_protocol::types::{
     AttributeSchema as ProtoAttributeSchema, AttributeType as ProtoAttributeType,
-    LifecycleConfig as ProtoLifecycle, PatchOp as ProtoPatchOp, PatchOpKind as ProtoPatchOpKind,
+    Directives as ProtoDirectives, PatchOp as ProtoPatchOp, PatchOpKind as ProtoPatchOpKind,
     ProviderError as ProtoProviderError, ProviderErrorKind as ProtoProviderErrorKind,
     Resource as ProtoResource, ResourceId as ProtoResourceId,
     ResourceSchema as ProtoResourceSchema, State as ProtoState, StructField as ProtoStructField,
@@ -118,14 +118,14 @@ pub fn core_to_proto_resource(r: &CoreResource) -> ProtoResource {
     ProtoResource {
         id: core_to_proto_resource_id(&r.id),
         attributes: core_to_proto_value_map(&r.resolved_attributes()),
-        lifecycle: core_to_proto_lifecycle(&r.lifecycle),
+        directives: core_to_proto_directives(&r.directives),
     }
 }
 
-// -- LifecycleConfig --
+// -- Directives --
 
-pub fn core_to_proto_lifecycle(l: &CoreLifecycle) -> ProtoLifecycle {
-    ProtoLifecycle {
+pub fn core_to_proto_directives(l: &CoreDirectives) -> ProtoDirectives {
+    ProtoDirectives {
         force_delete: l.force_delete,
         create_before_destroy: l.create_before_destroy,
         prevent_destroy: l.prevent_destroy,
@@ -141,10 +141,10 @@ pub fn proto_to_core_resource(r: &ProtoResource) -> CoreResource {
         .iter()
         .map(|(k, v)| (k.clone(), proto_to_core_value(v)))
         .collect();
-    resource.lifecycle = CoreLifecycle {
-        force_delete: r.lifecycle.force_delete,
-        create_before_destroy: r.lifecycle.create_before_destroy,
-        prevent_destroy: r.lifecycle.prevent_destroy,
+    resource.directives = CoreDirectives {
+        force_delete: r.directives.force_delete,
+        create_before_destroy: r.directives.create_before_destroy,
+        prevent_destroy: r.directives.prevent_destroy,
     };
     resource
 }
