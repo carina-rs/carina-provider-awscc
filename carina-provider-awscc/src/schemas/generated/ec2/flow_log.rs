@@ -67,7 +67,7 @@ pub fn ec2_flow_log_config() -> AwsccSchemaConfig {
                 name: "FileFormat".to_string(),
                 values: vec!["plain-text".to_string(), "parquet".to_string()],
                 namespace: Some("awscc.ec2.FlowLog".to_string()),
-                to_dsl: Some(|s: &str| match s { "plain-text" => "plain_text".to_string(), _ => s.to_string() }),
+                dsl_aliases: vec![("plain-text".to_string(), "plain_text".to_string())],
             }).required().with_provider_name("FileFormat"),
                     StructField::new("hive_compatible_partitions", AttributeType::Bool).required().with_provider_name("HiveCompatiblePartitions"),
                     StructField::new("per_hour_partition", AttributeType::Bool).required().with_provider_name("PerHourPartition")
@@ -93,7 +93,7 @@ pub fn ec2_flow_log_config() -> AwsccSchemaConfig {
                 name: "LogDestinationType".to_string(),
                 values: vec!["cloud-watch-logs".to_string(), "s3".to_string(), "kinesis-data-firehose".to_string()],
                 namespace: Some("awscc.ec2.FlowLog".to_string()),
-                to_dsl: Some(|s: &str| match s { "cloud-watch-logs" => "cloud_watch_logs".to_string(), "kinesis-data-firehose" => "kinesis_data_firehose".to_string(), _ => s.to_string() }),
+                dsl_aliases: vec![("cloud-watch-logs".to_string(), "cloud_watch_logs".to_string()), ("kinesis-data-firehose".to_string(), "kinesis_data_firehose".to_string())],
             })
                 .create_only()
                 .with_description("Specifies the type of destination to which the flow log data is to be published. Flow log data can be published to CloudWatch Logs or Amazon S3.")
@@ -137,7 +137,7 @@ pub fn ec2_flow_log_config() -> AwsccSchemaConfig {
                 name: "ResourceType".to_string(),
                 values: vec!["NetworkInterface".to_string(), "Subnet".to_string(), "VPC".to_string(), "TransitGateway".to_string(), "TransitGatewayAttachment".to_string(), "RegionalNatGateway".to_string()],
                 namespace: Some("awscc.ec2.FlowLog".to_string()),
-                to_dsl: Some(|s: &str| match s { "NetworkInterface" => "network_interface".to_string(), "Subnet" => "subnet".to_string(), "VPC" => "vpc".to_string(), "TransitGateway" => "transit_gateway".to_string(), "TransitGatewayAttachment" => "transit_gateway_attachment".to_string(), "RegionalNatGateway" => "regional_nat_gateway".to_string(), _ => s.to_string() }),
+                dsl_aliases: vec![("NetworkInterface".to_string(), "network_interface".to_string()), ("Subnet".to_string(), "subnet".to_string()), ("VPC".to_string(), "vpc".to_string()), ("TransitGateway".to_string(), "transit_gateway".to_string()), ("TransitGatewayAttachment".to_string(), "transit_gateway_attachment".to_string()), ("RegionalNatGateway".to_string(), "regional_nat_gateway".to_string())],
             })
                 .required()
                 .create_only()
@@ -154,7 +154,7 @@ pub fn ec2_flow_log_config() -> AwsccSchemaConfig {
                 name: "TrafficType".to_string(),
                 values: vec!["ACCEPT".to_string(), "ALL".to_string(), "REJECT".to_string()],
                 namespace: Some("awscc.ec2.FlowLog".to_string()),
-                to_dsl: Some(|s: &str| match s { "ACCEPT" => "accept".to_string(), "ALL" => "all".to_string(), "REJECT" => "reject".to_string(), _ => s.to_string() }),
+                dsl_aliases: vec![("ACCEPT".to_string(), "accept".to_string()), ("ALL".to_string(), "all".to_string()), ("REJECT".to_string(), "reject".to_string())],
             })
                 .create_only()
                 .with_description("The type of traffic to log. You can log traffic that the resource accepts or rejects, or all traffic.")

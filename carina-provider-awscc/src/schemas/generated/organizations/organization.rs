@@ -93,7 +93,7 @@ pub fn organizations_organization_config() -> AwsccSchemaConfig {
                 name: "FeatureSet".to_string(),
                 values: vec!["ALL".to_string(), "CONSOLIDATED_BILLING".to_string()],
                 namespace: Some("awscc.organizations.Organization".to_string()),
-                to_dsl: Some(|s: &str| match s { "ALL" => "all".to_string(), "CONSOLIDATED_BILLING" => "consolidated_billing".to_string(), _ => s.to_string() }),
+                dsl_aliases: vec![("ALL".to_string(), "all".to_string()), ("CONSOLIDATED_BILLING".to_string(), "consolidated_billing".to_string())],
             })
                 .with_description("Specifies the feature set supported by the new organization. Each feature set supports different levels of functionality.")
                 .with_provider_name("FeatureSet")

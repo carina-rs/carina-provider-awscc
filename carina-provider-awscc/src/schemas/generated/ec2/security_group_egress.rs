@@ -105,7 +105,7 @@ pub fn ec2_security_group_egress_config() -> AwsccSchemaConfig {
                 name: "IpProtocol".to_string(),
                 values: vec!["tcp".to_string(), "udp".to_string(), "icmp".to_string(), "icmpv6".to_string(), "-1".to_string(), "all".to_string()],
                 namespace: Some("awscc.ec2.SecurityGroupEgress".to_string()),
-                to_dsl: Some(|s: &str| match s { "-1" => "all".to_string(), _ => s.to_string() }),
+                dsl_aliases: vec![("-1".to_string(), "all".to_string())],
             })
                 .required()
                 .create_only()

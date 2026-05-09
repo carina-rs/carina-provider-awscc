@@ -41,7 +41,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
                 name: "AddressFamily".to_string(),
                 values: vec!["IPv4".to_string(), "IPv6".to_string()],
                 namespace: Some("awscc.ec2.IpamPool".to_string()),
-                to_dsl: Some(|s: &str| match s { "IPv4" => "ipv4".to_string(), "IPv6" => "ipv6".to_string(), _ => s.to_string() }),
+                dsl_aliases: vec![("IPv4".to_string(), "ipv4".to_string()), ("IPv6".to_string(), "ipv6".to_string())],
             })
                 .required()
                 .create_only()
@@ -84,7 +84,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
                 name: "AwsService".to_string(),
                 values: vec!["ec2".to_string(), "global-services".to_string()],
                 namespace: Some("awscc.ec2.IpamPool".to_string()),
-                to_dsl: Some(|s: &str| match s { "global-services" => "global_services".to_string(), _ => s.to_string() }),
+                dsl_aliases: vec![("global-services".to_string(), "global_services".to_string())],
             })
                 .create_only()
                 .with_description("Limits which service in Amazon Web Services that the pool can be used in.")
@@ -124,7 +124,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
                 name: "IpamScopeType".to_string(),
                 values: vec!["public".to_string(), "private".to_string()],
                 namespace: Some("awscc.ec2.IpamPool".to_string()),
-                to_dsl: None,
+                dsl_aliases: vec![],
             })
                 .read_only()
                 .with_description("Determines whether this scope contains publicly routable space or space for a private network (read-only)")
@@ -158,7 +158,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
                 name: "PublicIpSource".to_string(),
                 values: vec!["byoip".to_string(), "amazon".to_string()],
                 namespace: Some("awscc.ec2.IpamPool".to_string()),
-                to_dsl: None,
+                dsl_aliases: vec![],
             })
                 .create_only()
                 .with_description("The IP address source for pools in the public scope. Only used for provisioning IP address CIDRs to pools in the public scope. Default is `byoip`.")
@@ -194,7 +194,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
                 name: "State".to_string(),
                 values: vec!["create-in-progress".to_string(), "create-complete".to_string(), "modify-in-progress".to_string(), "modify-complete".to_string(), "delete-in-progress".to_string(), "delete-complete".to_string()],
                 namespace: Some("awscc.ec2.IpamPool".to_string()),
-                to_dsl: Some(|s: &str| match s { "create-in-progress" => "create_in_progress".to_string(), "create-complete" => "create_complete".to_string(), "modify-in-progress" => "modify_in_progress".to_string(), "modify-complete" => "modify_complete".to_string(), "delete-in-progress" => "delete_in_progress".to_string(), "delete-complete" => "delete_complete".to_string(), _ => s.to_string() }),
+                dsl_aliases: vec![("create-in-progress".to_string(), "create_in_progress".to_string()), ("create-complete".to_string(), "create_complete".to_string()), ("modify-in-progress".to_string(), "modify_in_progress".to_string()), ("modify-complete".to_string(), "modify_complete".to_string()), ("delete-in-progress".to_string(), "delete_in_progress".to_string()), ("delete-complete".to_string(), "delete_complete".to_string())],
             })
                 .read_only()
                 .with_description("The state of this pool. This can be one of the following values: \"create-in-progress\", \"create-complete\", \"modify-in-progress\", \"modify-complete\", \"delete-in-progress\", or \"delete-complete\" (read-only)")

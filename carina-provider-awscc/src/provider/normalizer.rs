@@ -783,7 +783,10 @@ mod tests {
                 name: "EncryptionType".to_string(),
                 values: vec!["NONE".to_string(), "SSE-C".to_string()],
                 namespace: Some("awscc.s3.Bucket".to_string()),
-                to_dsl: Some(|s: &str| s.replace('-', "_")),
+                dsl_aliases: vec![
+                    ("NONE".to_string(), "none".to_string()),
+                    ("SSE-C".to_string(), "sse_c".to_string()),
+                ],
             }),
         )];
 
@@ -806,7 +809,7 @@ mod tests {
                             name: "SseAlgorithm".to_string(),
                             values: vec!["AES256".to_string()],
                             namespace: Some("awscc.s3.Bucket".to_string()),
-                            to_dsl: None,
+                            dsl_aliases: vec![("AES256".to_string(), "aes256".to_string())],
                         },
                     )],
                 },
@@ -844,8 +847,8 @@ mod tests {
                     if let Value::List(types) = &blocked["encryption_type"] {
                         assert_eq!(
                             types[0],
-                            Value::String("awscc.s3.Bucket.EncryptionType.SSE_C".to_string()),
-                            "Nested struct enum should be resolved to DSL format"
+                            Value::String("awscc.s3.Bucket.EncryptionType.sse_c".to_string()),
+                            "Nested struct enum should be resolved to its snake_case DSL form"
                         );
                     } else {
                         panic!("Expected List for encryption_type");
@@ -853,12 +856,14 @@ mod tests {
                 } else {
                     panic!("Expected Map for blocked_encryption_types");
                 }
-                // Also verify sse_algorithm in sibling struct
+                // Also verify sse_algorithm in sibling struct.
+                // SHOUTY_SNAKE values follow the same D7 transform: API
+                // `AES256` -> DSL `aes256`.
                 if let Value::Map(sse) = &m["server_side_encryption_by_default"] {
                     assert_eq!(
                         sse["sse_algorithm"],
-                        Value::String("awscc.s3.Bucket.SseAlgorithm.AES256".to_string()),
-                        "Sibling struct enum should also be resolved"
+                        Value::String("awscc.s3.Bucket.SseAlgorithm.aes256".to_string()),
+                        "Sibling struct enum should also be resolved to its snake_case DSL form"
                     );
                 } else {
                     panic!("Expected Map for server_side_encryption_by_default");

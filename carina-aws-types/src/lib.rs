@@ -111,6 +111,25 @@ pub fn valid_regions_display() -> String {
         .join(", ")
 }
 
+/// Region API spelling -> DSL spelling pairs for the carina-core /
+/// carina-provider-protocol `StringEnum.dsl_aliases` field.
+///
+/// AWS region codes carry hyphens (`ap-northeast-1`) but the DSL
+/// identifier form replaces them with underscores (`ap_northeast_1`).
+/// Provider crates emit this list verbatim so the alias table
+/// survives the WASM-component boundary as data — a `fn` pointer
+/// would not (carina#2831).
+pub fn region_dsl_aliases() -> Vec<(String, String)> {
+    REGIONS
+        .iter()
+        .filter_map(|(code, _)| {
+            let api = (*code).to_string();
+            let dsl = api.replace('-', "_");
+            (api != dsl).then_some((api, dsl))
+        })
+        .collect()
+}
+
 /// Generate region completion values for a given provider prefix (e.g., "aws" or "awscc").
 ///
 /// Converts AWS region format (`ap-northeast-1`) to DSL format (`ap_northeast_1`)
@@ -1481,7 +1500,7 @@ fn condition_type() -> AttributeType {
             name: "ConditionOperator".to_string(),
             values: operator_values,
             namespace: None,
-            to_dsl: None,
+            dsl_aliases: vec![],
         },
         AttributeType::map(string_or_list_of_strings()),
     )

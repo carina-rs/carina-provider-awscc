@@ -67,12 +67,6 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
                 .with_provider_name("Arn"),
         )
         .attribute(
-            AttributeSchema::new("bearer_token_authentication_enabled", AttributeType::Bool)
-                .with_description("Indicates whether bearer token authentication is enabled for this log group. When enabled, bearer token authentication is allowed on operations until it is explicitly disabled.")
-                .with_provider_name("BearerTokenAuthenticationEnabled")
-                .with_default(Value::Bool(false)),
-        )
-        .attribute(
             AttributeSchema::new("data_protection_policy", AttributeType::map(AttributeType::String))
                 .with_description("Creates a data protection policy and assigns it to the log group. A data protection policy can help safeguard sensitive data that's ingested by the log group by auditing and masking the sensitive log data. When a user who does not have permission to view masked data views a log event that includes masked data, the sensitive data is replaced by asterisks.")
                 .with_provider_name("DataProtectionPolicy"),
@@ -98,7 +92,7 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
                 name: "LogGroupClass".to_string(),
                 values: vec!["STANDARD".to_string(), "INFREQUENT_ACCESS".to_string(), "DELIVERY".to_string()],
                 namespace: Some("awscc.logs.LogGroup".to_string()),
-                to_dsl: Some(|s: &str| match s { "STANDARD" => "standard".to_string(), "INFREQUENT_ACCESS" => "infrequent_access".to_string(), "DELIVERY" => "delivery".to_string(), _ => s.to_string() }),
+                dsl_aliases: vec![("STANDARD".to_string(), "standard".to_string()), ("INFREQUENT_ACCESS".to_string(), "infrequent_access".to_string()), ("DELIVERY".to_string(), "delivery".to_string())],
             })
                 .with_description("Specifies the log group class for this log group. There are two classes: + The ``Standard`` log class supports all CWL features. + The ``Infrequent Access`` log class supports a subset of CWL features and incurs lower costs. For details about the features supported by each class, see [Log classes](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/CloudWatch_Logs_Log_Classes.html)")
                 .with_provider_name("LogGroupClass")
