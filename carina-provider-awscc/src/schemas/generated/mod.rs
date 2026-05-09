@@ -10,6 +10,7 @@ use std::sync::LazyLock;
 // generated schema files can use `super::` to access them.
 pub use super::awscc_types::*;
 
+pub mod cloudfront;
 pub mod ec2;
 pub mod iam;
 pub mod identitystore;
@@ -72,6 +73,8 @@ static ENUM_VALID_VALUES: LazyLock<
         identitystore::group::enum_valid_values(),
         identitystore::group_membership::enum_valid_values(),
         route53::hosted_zone::enum_valid_values(),
+        cloudfront::distribution::enum_valid_values(),
+        cloudfront::origin_access_control::enum_valid_values(),
     ];
     let mut map: HashMap<&str, HashMap<&str, &[&str]>> = HashMap::new();
     for (rt, attrs) in modules {
@@ -167,6 +170,14 @@ static ENUM_ALIAS_DISPATCH: LazyLock<HashMap<&'static str, EnumAliasReverseFn>> 
                 "route53.HostedZone",
                 route53::hosted_zone::enum_alias_reverse,
             ),
+            (
+                "cloudfront.Distribution",
+                cloudfront::distribution::enum_alias_reverse,
+            ),
+            (
+                "cloudfront.OriginAccessControl",
+                cloudfront::origin_access_control::enum_alias_reverse,
+            ),
         ];
         entries.into_iter().collect()
     });
@@ -209,6 +220,8 @@ fn build_configs() -> Vec<AwsccSchemaConfig> {
         identitystore::group::identitystore_group_config(),
         identitystore::group_membership::identitystore_group_membership_config(),
         route53::hosted_zone::route53_hosted_zone_config(),
+        cloudfront::distribution::cloudfront_distribution_config(),
+        cloudfront::origin_access_control::cloudfront_origin_access_control_config(),
     ]
 }
 
@@ -495,6 +508,20 @@ pub fn build_enum_aliases_map() -> HashMap<String, HashMap<String, HashMap<Strin
     }
     for (attr, alias, canonical) in route53::hosted_zone::enum_alias_entries() {
         map.entry("route53.HostedZone".to_string())
+            .or_default()
+            .entry(attr.to_string())
+            .or_default()
+            .insert(alias.to_string(), canonical.to_string());
+    }
+    for (attr, alias, canonical) in cloudfront::distribution::enum_alias_entries() {
+        map.entry("cloudfront.Distribution".to_string())
+            .or_default()
+            .entry(attr.to_string())
+            .or_default()
+            .insert(alias.to_string(), canonical.to_string());
+    }
+    for (attr, alias, canonical) in cloudfront::origin_access_control::enum_alias_entries() {
+        map.entry("cloudfront.OriginAccessControl".to_string())
             .or_default()
             .entry(attr.to_string())
             .or_default()
