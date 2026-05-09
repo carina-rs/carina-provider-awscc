@@ -36,8 +36,11 @@ pub(crate) fn aws_value_to_dsl(
                 s.to_string()
             }
         };
-        // Apply to_dsl transformation if present (e.g., hyphens -> underscores for AZs)
-        let dsl_val = to_dsl.map_or_else(|| canonical.clone(), |f| f(&canonical));
+        // Apply DSL transformation if present. For `StringEnum` this is the
+        // codegen-emitted alias table (data); for `Custom` namespaced types
+        // (e.g. AvailabilityZone hyphen-to-underscore) it is a host-side
+        // closure. `DslMap::dsl_for` unifies both.
+        let dsl_val = to_dsl.dsl_for(&canonical);
         let namespaced = format!("{}.{}.{}", ns, type_name, dsl_val);
         return Some(Value::String(namespaced));
     }
@@ -577,7 +580,7 @@ mod tests {
                 "DELIVERY".to_string(),
             ],
             namespace: Some("awscc.logs.LogGroup".to_string()),
-            to_dsl: None,
+            dsl_aliases: vec![],
         };
         let value =
             Value::String("awscc.logs.LogGroup.LogGroupClass.INFREQUENT_ACCESS".to_string());
@@ -607,7 +610,7 @@ mod tests {
             name: "AllowedMethod".to_string(),
             values: vec!["GET".to_string(), "PUT".to_string(), "DELETE".to_string()],
             namespace: Some("awscc.s3.Bucket".to_string()),
-            to_dsl: None,
+            dsl_aliases: vec![],
         };
         let attr_type = AttributeType::list(inner);
         let value = Value::List(vec![
@@ -624,7 +627,7 @@ mod tests {
             name: "AllowedMethod".to_string(),
             values: vec!["GET".to_string(), "PUT".to_string(), "DELETE".to_string()],
             namespace: Some("awscc.s3.Bucket".to_string()),
-            to_dsl: None,
+            dsl_aliases: vec![],
         };
         let attr_type = AttributeType::list(inner);
         let json_val = json!(["GET", "PUT"]);
@@ -644,7 +647,7 @@ mod tests {
             name: "AllowedMethod".to_string(),
             values: vec!["GET".to_string(), "PUT".to_string()],
             namespace: Some("awscc.s3.Bucket".to_string()),
-            to_dsl: None,
+            dsl_aliases: vec![],
         };
         let attr_type = AttributeType::list(inner);
 
@@ -663,7 +666,7 @@ mod tests {
                 name: "Protocol".to_string(),
                 values: vec!["tcp".to_string(), "udp".to_string()],
                 namespace: Some("awscc.ec2.Sg".to_string()),
-                to_dsl: None,
+                dsl_aliases: vec![],
             },
             AttributeType::String,
         ]);
@@ -706,7 +709,7 @@ mod tests {
             name: "Status".to_string(),
             values: vec!["Active".to_string(), "Inactive".to_string()],
             namespace: Some("awscc.test.resource".to_string()),
-            to_dsl: None,
+            dsl_aliases: vec![],
         };
         let attr_type = AttributeType::map(inner_type);
 
@@ -761,7 +764,7 @@ mod tests {
                 name: "Protocol".to_string(),
                 values: vec!["tcp".to_string(), "udp".to_string()],
                 namespace: Some("awscc.ec2.Sg".to_string()),
-                to_dsl: None,
+                dsl_aliases: vec![],
             },
             AttributeType::String,
         ]);
@@ -780,7 +783,7 @@ mod tests {
                 name: "Protocol".to_string(),
                 values: vec!["tcp".to_string(), "udp".to_string()],
                 namespace: Some("awscc.ec2.Sg".to_string()),
-                to_dsl: None,
+                dsl_aliases: vec![],
             },
             AttributeType::Int,
         ]);
@@ -960,7 +963,7 @@ mod tests {
             name: "Type".to_string(),
             values: vec!["ipsec.1".to_string()],
             namespace: Some("awscc.ec2.VpnGateway".to_string()),
-            to_dsl: None,
+            dsl_aliases: vec![],
         };
         let json_val = json!("ipsec.1");
 
@@ -979,7 +982,7 @@ mod tests {
             name: "Type".to_string(),
             values: vec!["ipsec.1".to_string()],
             namespace: Some("awscc.ec2.VpnGateway".to_string()),
-            to_dsl: None,
+            dsl_aliases: vec![],
         };
         let value = Value::String("awscc.ec2.VpnGateway.Type.ipsec.1".to_string());
 
@@ -993,7 +996,7 @@ mod tests {
             name: "Type".to_string(),
             values: vec!["ipsec.1".to_string()],
             namespace: Some("awscc.ec2.VpnGateway".to_string()),
-            to_dsl: None,
+            dsl_aliases: vec![],
         };
         let value = Value::String("ipsec.1".to_string());
 
@@ -1007,7 +1010,7 @@ mod tests {
             name: "Type".to_string(),
             values: vec!["ipsec.1".to_string()],
             namespace: Some("awscc.ec2.VpnGateway".to_string()),
-            to_dsl: None,
+            dsl_aliases: vec![],
         };
 
         let aws_val = json!("ipsec.1");

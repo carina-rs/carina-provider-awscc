@@ -93,7 +93,12 @@ impl ProviderFactory for AwsccProviderFactory {
                     .map(|(code, _)| code.to_string())
                     .collect(),
                 namespace: Some("awscc".to_string()),
-                to_dsl: Some(|s| s.replace('-', "_")),
+                // Region API spellings carry hyphens (`ap-northeast-1`)
+                // but the DSL spelling uses underscores
+                // (`ap_northeast_1`). Materialize the alias table so it
+                // is data, not a `fn` pointer — the latter cannot cross
+                // the WASM boundary (carina#2831).
+                dsl_aliases: carina_aws_types::region_dsl_aliases(),
             },
         );
         types.insert(

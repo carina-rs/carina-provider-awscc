@@ -351,23 +351,27 @@ fn dsl_enum_value(value: &str) -> String {
     value.to_snake_case()
 }
 
-/// Build the `to_dsl: ...` Rust source code for a `StringEnum`'s
-/// `to_dsl` field, following naming-conventions design D7.
+/// Build the `dsl_aliases: ...` Rust source code for a `StringEnum`'s
+/// alias table, following naming-conventions design D7.
 ///
-/// Per #199 / D3 / D7, every enum value gets a snake_case DSL spelling and
-/// the validator must accept it. The validator checks both the canonical
-/// (API) value and `to_dsl(value)`, so this closure produces the snake_case
-/// DSL form for each canonical value.
+/// Per awscc#199 / carina#2831 / D3 / D7, every enum value gets a
+/// snake_case DSL spelling and the validator must accept both the
+/// canonical (API) spelling and the DSL one. The alias table is data
+/// — `Vec<(api, dsl)>` — so it can serialize through the WASM
+/// boundary; the earlier `Option<fn(&str) -> String>` closure could
+/// not, which is why provider plugins silently lost their alias map
+/// and validation rejected legitimate snake_case spellings end-to-end.
 ///
 /// `prop_aliases` carries hand-curated overrides from
-/// [`known_enum_aliases`] (e.g. `IpProtocol`'s `"-1"` ↔ `"all"`); those win
-/// over the mechanical D7 transform.
+/// [`known_enum_aliases`] (e.g. `IpProtocol`'s `"-1"` ↔ `"all"`); those
+/// win over the mechanical D7 transform.
 ///
-/// Returns `"None"` only when **every** value's DSL spelling equals the
-/// canonical spelling (i.e. all values are already snake_case and there
-/// are no manual aliases) — in that case `to_dsl` is a no-op and we emit
-/// `None` rather than an identity closure.
-fn to_dsl_closure_code(
+/// Returns `"vec![]"` when every value's DSL spelling already equals
+/// the canonical spelling (i.e. all values are already snake_case and
+/// there are no manual aliases) — the empty vector signals "no
+/// rewrites" without dragging unused identifier text into the
+/// generated schema.
+fn dsl_aliases_code(
     values: &[String],
     prop_aliases: Option<&Vec<(&'static str, &'static str)>>,
 ) -> String {
@@ -391,7 +395,7 @@ fn to_dsl_closure_code(
 
     // Also include alias entries whose canonical does not appear in `values`
     // (defensive — known_enum_aliases is small and historically all entries
-    // do appear in `values`, but emit them anyway so the closure stays
+    // do appear in `values`, but emit them anyway so the table stays
     // exhaustive against the hand-curated table).
     if let Some(aliases) = prop_aliases {
         for (canonical, alias) in aliases {
@@ -403,17 +407,16 @@ fn to_dsl_closure_code(
     }
 
     if entries.is_empty() {
-        return "None".to_string();
+        return "vec![]".to_string();
     }
 
-    let match_arms: Vec<String> = entries
+    let pairs: Vec<String> = entries
         .iter()
-        .map(|(canonical, alias)| format!("\"{}\" => \"{}\".to_string()", canonical, alias))
+        .map(|(canonical, alias)| {
+            format!("(\"{}\".to_string(), \"{}\".to_string())", canonical, alias)
+        })
         .collect();
-    format!(
-        "Some(|s: &str| match s {{ {}, _ => s.to_string() }})",
-        match_arms.join(", ")
-    )
+    format!("vec![{}]", pairs.join(", "))
 }
 
 fn main() -> Result<()> {
@@ -2019,10 +2022,13 @@ pub fn {}() -> AwsccSchemaConfig {{
 
         let attr_type = if let Some(enum_info) = enums.get(prop_name) {
             // Use shared schema enum type for constrained strings.
-            // Build to_dsl closure that maps every canonical value to its
-            // snake_case DSL spelling per naming-conventions design D7.
+            // Emit a `dsl_aliases` data table mapping every canonical value
+            // to its snake_case DSL spelling per naming-conventions design
+            // D7. Data form (rather than a `fn` closure) is required so the
+            // alias map survives the WASM-component boundary — see
+            // awscc#199 / carina#2831.
             let prop_aliases = aliases.get(prop_name.as_str());
-            let to_dsl_code = to_dsl_closure_code(&enum_info.values, prop_aliases);
+            let dsl_aliases_code = dsl_aliases_code(&enum_info.values, prop_aliases);
             let values_str = enum_info
                 .values
                 .iter()
@@ -2034,9 +2040,9 @@ pub fn {}() -> AwsccSchemaConfig {{
                 name: "{}".to_string(),
                 values: vec![{}],
                 namespace: Some("{}".to_string()),
-                to_dsl: {},
+                dsl_aliases: {},
             }}"#,
-                enum_info.type_name, values_str, namespace, to_dsl_code
+                enum_info.type_name, values_str, namespace, dsl_aliases_code
             );
             // Wrap in List if the property is an array type
             let is_array = prop
@@ -2674,7 +2680,7 @@ fn generate_struct_type(
                     enums.get(&composite_key).or_else(|| enums.get(field_name))
                 {
                     let prop_aliases = aliases.get(field_name.as_str());
-                    let to_dsl_code = to_dsl_closure_code(&enum_info.values, prop_aliases);
+                    let dsl_aliases_code = dsl_aliases_code(&enum_info.values, prop_aliases);
                     let values_str = enum_info
                         .values
                         .iter()
@@ -2686,16 +2692,16 @@ fn generate_struct_type(
                 name: "{}".to_string(),
                 values: vec![{}],
                 namespace: Some("{}".to_string()),
-                to_dsl: {},
+                dsl_aliases: {},
             }}"#,
-                        enum_info.type_name, values_str, namespace, to_dsl_code
+                        enum_info.type_name, values_str, namespace, dsl_aliases_code
                     )
                 } else {
                     // Fallback: emit StringEnum with namespace even when not in the
                     // pre-scanned enums map (e.g., nested struct fields that were
                     // skipped during scanning due to snake_case name conflicts).
                     let prop_aliases = aliases.get(field_name.as_str());
-                    let to_dsl_code = to_dsl_closure_code(&local_enum_info.values, prop_aliases);
+                    let dsl_aliases_code = dsl_aliases_code(&local_enum_info.values, prop_aliases);
                     let values_str = local_enum_info
                         .values
                         .iter()
@@ -2707,9 +2713,9 @@ fn generate_struct_type(
                 name: "{}".to_string(),
                 values: vec![{}],
                 namespace: Some("{}".to_string()),
-                to_dsl: {},
+                dsl_aliases: {},
             }}"#,
-                        local_enum_info.type_name, values_str, namespace, to_dsl_code
+                        local_enum_info.type_name, values_str, namespace, dsl_aliases_code
                     )
                 };
                 // Wrap in List if the original field type was a List
@@ -7202,13 +7208,14 @@ mod tests {
             generated.contains("namespace: Some("),
             "StringEnum should include namespace: {generated}"
         );
-        // Should handle hyphens in values with to_dsl. Per #199 / D7, the
-        // generated closure now matches each canonical value individually
-        // and emits the snake_case DSL spelling, rather than calling
-        // `s.replace('-', "_")` once for the whole input.
+        // Should handle hyphens in values via dsl_aliases. Per #199 / D7,
+        // the generated alias table maps each canonical value to its
+        // snake_case DSL spelling as data, rather than via a `fn` pointer.
         assert!(
-            generated.contains("\"block-bidirectional\" => \"block_bidirectional\".to_string()"),
-            "hyphenated enum values should generate per-value to_dsl mapping: {generated}"
+            generated.contains(
+                "(\"block-bidirectional\".to_string(), \"block_bidirectional\".to_string())"
+            ),
+            "hyphenated enum values should generate per-value dsl_aliases entries: {generated}"
         );
     }
 
@@ -10510,10 +10517,12 @@ mod tests {
     }
 
     #[test]
-    fn test_string_enum_emits_snake_case_to_dsl_for_pascal_values() {
-        // Regression for #199: PascalCase enum values must produce a `to_dsl`
-        // closure that converts the canonical (API) spelling to a snake_case
-        // DSL spelling, so the validator accepts both forms.
+    fn test_string_enum_emits_snake_case_dsl_aliases_for_pascal_values() {
+        // Regression for awscc#199 / carina#2831: PascalCase enum values
+        // must produce `dsl_aliases` entries that pair the canonical (API)
+        // spelling with a snake_case DSL spelling, so the validator
+        // accepts both forms — and the data crosses the WASM boundary
+        // intact (where a `fn` pointer would not).
         let mut properties = BTreeMap::new();
         properties.insert(
             "ObjectOwnership".to_string(),
@@ -10561,27 +10570,33 @@ mod tests {
         let generated = generate_schema_code(&schema, "AWS::S3::Bucket").unwrap();
 
         // The values list still carries the API spellings (canonical for round-trip
-        // with the AWS API) but a non-None to_dsl must be present.
+        // with the AWS API) but a populated dsl_aliases entry must be present.
         assert!(
             generated.contains("\"BucketOwnerEnforced\".to_string()"),
             "API spelling must remain in the values list: {generated}"
         );
         assert!(
-            !generated.contains("to_dsl: None,\n            }"),
-            "to_dsl must be Some for an enum with PascalCase values: {generated}"
+            !generated.contains("dsl_aliases: vec![],"),
+            "dsl_aliases must be non-empty for an enum with PascalCase values: {generated}"
         );
-        // The generated to_dsl closure must contain a mapping from BucketOwnerEnforced.
+        // The generated dsl_aliases vec must contain a (PascalCase, snake_case) pair.
         assert!(
-            generated.contains("BucketOwnerEnforced")
-                && generated.contains("bucket_owner_enforced"),
-            "to_dsl closure must map PascalCase to snake_case: {generated}"
+            generated.contains(
+                "(\"BucketOwnerEnforced\".to_string(), \"bucket_owner_enforced\".to_string())"
+            ),
+            "dsl_aliases must map PascalCase to snake_case: {generated}"
+        );
+        // And the closure shape is gone — the alias map is data only.
+        assert!(
+            !generated.contains("|s: &str| match s"),
+            "no `fn` closure should remain in StringEnum emission: {generated}"
         );
     }
 
     #[test]
-    fn test_string_enum_emits_snake_case_to_dsl_for_shouty_snake_values() {
+    fn test_string_enum_emits_snake_case_dsl_aliases_for_shouty_snake_values() {
         // Regression for #199: SHOUTY_SNAKE values like AES256 must get a
-        // snake_case alias via to_dsl.
+        // snake_case alias entry in dsl_aliases.
         let mut properties = BTreeMap::new();
         properties.insert(
             "StorageClass".to_string(),
@@ -10628,15 +10643,15 @@ mod tests {
         };
         let generated = generate_schema_code(&schema, "AWS::S3::Bucket").unwrap();
         assert!(
-            generated.contains("DEEP_ARCHIVE") && generated.contains("deep_archive"),
-            "to_dsl closure must map SHOUTY_SNAKE to snake_case: {generated}"
+            generated.contains("(\"DEEP_ARCHIVE\".to_string(), \"deep_archive\".to_string())"),
+            "dsl_aliases must map SHOUTY_SNAKE to snake_case: {generated}"
         );
     }
 
     #[test]
-    fn test_string_enum_to_dsl_none_when_all_values_already_snake() {
+    fn test_string_enum_dsl_aliases_empty_when_all_values_already_snake() {
         // When every enum value is already snake_case, no transformation is
-        // required and to_dsl stays None.
+        // required and dsl_aliases is the empty vec — no rewrites needed.
         let mut properties = BTreeMap::new();
         properties.insert(
             "InstanceTenancy".to_string(),
@@ -10683,15 +10698,15 @@ mod tests {
         };
         let generated = generate_schema_code(&schema, "AWS::EC2::VPC").unwrap();
         // The schema has exactly one StringEnum and all its values are
-        // already snake_case, so to_dsl must be None (no transform closure
-        // needed and no identity-closure noise).
+        // already snake_case, so dsl_aliases must be the empty vec — no
+        // rewrites needed.
         assert!(
-            generated.contains("to_dsl: None,"),
-            "to_dsl must remain None when all values are already snake_case: {generated}"
+            generated.contains("dsl_aliases: vec![],"),
+            "dsl_aliases must be empty when all values are already snake_case: {generated}"
         );
         assert!(
             !generated.contains("|s: &str| match s"),
-            "no to_dsl closure should be emitted when every value is already snake_case: {generated}"
+            "no `fn` closure should be emitted when every value is already snake_case: {generated}"
         );
     }
 

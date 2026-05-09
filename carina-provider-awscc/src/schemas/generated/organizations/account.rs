@@ -189,7 +189,7 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
                 name: "JoinedMethod".to_string(),
                 values: vec!["INVITED".to_string(), "CREATED".to_string()],
                 namespace: Some("awscc.organizations.Account".to_string()),
-                to_dsl: Some(|s: &str| match s { "INVITED" => "invited".to_string(), "CREATED" => "created".to_string(), _ => s.to_string() }),
+                dsl_aliases: vec![("INVITED".to_string(), "invited".to_string()), ("CREATED".to_string(), "created".to_string())],
             })
                 .read_only()
                 .with_description("The method by which the account joined the organization. (read-only)")
@@ -248,7 +248,7 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
                 name: "State".to_string(),
                 values: vec!["PENDING_ACTIVATION".to_string(), "ACTIVE".to_string(), "SUSPENDED".to_string(), "PENDING_CLOSURE".to_string(), "CLOSED".to_string()],
                 namespace: Some("awscc.organizations.Account".to_string()),
-                to_dsl: Some(|s: &str| match s { "PENDING_ACTIVATION" => "pending_activation".to_string(), "ACTIVE" => "active".to_string(), "SUSPENDED" => "suspended".to_string(), "PENDING_CLOSURE" => "pending_closure".to_string(), "CLOSED" => "closed".to_string(), _ => s.to_string() }),
+                dsl_aliases: vec![("PENDING_ACTIVATION".to_string(), "pending_activation".to_string()), ("ACTIVE".to_string(), "active".to_string()), ("SUSPENDED".to_string(), "suspended".to_string()), ("PENDING_CLOSURE".to_string(), "pending_closure".to_string()), ("CLOSED".to_string(), "closed".to_string())],
             })
                 .read_only()
                 .with_description("The state of the account in the organization. (read-only)")
@@ -259,7 +259,7 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
                 name: "Status".to_string(),
                 values: vec!["ACTIVE".to_string(), "SUSPENDED".to_string(), "PENDING_CLOSURE".to_string()],
                 namespace: Some("awscc.organizations.Account".to_string()),
-                to_dsl: Some(|s: &str| match s { "ACTIVE" => "active".to_string(), "SUSPENDED" => "suspended".to_string(), "PENDING_CLOSURE" => "pending_closure".to_string(), _ => s.to_string() }),
+                dsl_aliases: vec![("ACTIVE".to_string(), "active".to_string()), ("SUSPENDED".to_string(), "suspended".to_string()), ("PENDING_CLOSURE".to_string(), "pending_closure".to_string())],
             })
                 .read_only()
                 .with_description("The status of the account in the organization. (read-only)")

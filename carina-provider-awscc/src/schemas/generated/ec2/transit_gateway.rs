@@ -80,7 +80,7 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
                         name: "AutoAcceptSharedAttachments".to_string(),
                         values: vec!["enable".to_string(), "disable".to_string()],
                         namespace: Some("awscc.ec2.TransitGateway".to_string()),
-                        to_dsl: None,
+                        dsl_aliases: vec![],
                     },
                 )
                 .with_provider_name("AutoAcceptSharedAttachments"),
@@ -92,7 +92,7 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
                         name: "DefaultRouteTableAssociation".to_string(),
                         values: vec!["enable".to_string(), "disable".to_string()],
                         namespace: Some("awscc.ec2.TransitGateway".to_string()),
-                        to_dsl: None,
+                        dsl_aliases: vec![],
                     },
                 )
                 .with_provider_name("DefaultRouteTableAssociation"),
@@ -104,7 +104,7 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
                         name: "DefaultRouteTablePropagation".to_string(),
                         values: vec!["enable".to_string(), "disable".to_string()],
                         namespace: Some("awscc.ec2.TransitGateway".to_string()),
-                        to_dsl: None,
+                        dsl_aliases: vec![],
                     },
                 )
                 .with_provider_name("DefaultRouteTablePropagation"),
@@ -120,7 +120,7 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
                         name: "DnsSupport".to_string(),
                         values: vec!["enable".to_string(), "disable".to_string()],
                         namespace: Some("awscc.ec2.TransitGateway".to_string()),
-                        to_dsl: None,
+                        dsl_aliases: vec![],
                     },
                 )
                 .with_provider_name("DnsSupport"),
@@ -132,7 +132,7 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
                         name: "EncryptionSupport".to_string(),
                         values: vec!["disable".to_string(), "enable".to_string()],
                         namespace: Some("awscc.ec2.TransitGateway".to_string()),
-                        to_dsl: None,
+                        dsl_aliases: vec![],
                     },
                 )
                 .write_only()
@@ -145,7 +145,7 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
                         name: "EncryptionSupportState".to_string(),
                         values: vec!["disable".to_string(), "enable".to_string()],
                         namespace: Some("awscc.ec2.TransitGateway".to_string()),
-                        to_dsl: None,
+                        dsl_aliases: vec![],
                     },
                 )
                 .read_only()
@@ -163,7 +163,7 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
                         name: "MulticastSupport".to_string(),
                         values: vec!["enable".to_string(), "disable".to_string()],
                         namespace: Some("awscc.ec2.TransitGateway".to_string()),
-                        to_dsl: None,
+                        dsl_aliases: vec![],
                     },
                 )
                 .create_only()
@@ -183,7 +183,7 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
                         name: "SecurityGroupReferencingSupport".to_string(),
                         values: vec!["enable".to_string(), "disable".to_string()],
                         namespace: Some("awscc.ec2.TransitGateway".to_string()),
-                        to_dsl: None,
+                        dsl_aliases: vec![],
                     },
                 )
                 .with_provider_name("SecurityGroupReferencingSupport"),
@@ -208,7 +208,7 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
                         name: "VpnEcmpSupport".to_string(),
                         values: vec!["enable".to_string(), "disable".to_string()],
                         namespace: Some("awscc.ec2.TransitGateway".to_string()),
-                        to_dsl: None,
+                        dsl_aliases: vec![],
                     },
                 )
                 .with_provider_name("VpnEcmpSupport"),

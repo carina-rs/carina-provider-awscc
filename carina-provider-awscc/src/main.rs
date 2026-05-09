@@ -90,6 +90,11 @@ impl CarinaProvider for AwsccProcessProvider {
                     .map(|(code, _)| code.to_string())
                     .collect(),
                 namespace: Some("awscc".to_string()),
+                // Region API spellings carry hyphens (`ap-northeast-1`)
+                // but the DSL spelling uses underscores. Materialize
+                // the alias pairs as data; a `fn` pointer would not
+                // cross the WASM boundary (carina#2831).
+                dsl_aliases: carina_aws_types::region_dsl_aliases(),
             },
         );
         types.insert(

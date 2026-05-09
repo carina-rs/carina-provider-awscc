@@ -161,11 +161,12 @@ fn proto_to_core_attribute_type(t: &ProtoAttributeType) -> CoreAttributeType {
             name,
             values,
             namespace,
+            dsl_aliases,
         } => CoreAttributeType::StringEnum {
             name: name.clone(),
             values: values.clone(),
             namespace: namespace.clone(),
-            to_dsl: None,
+            dsl_aliases: dsl_aliases.clone(),
         },
         ProtoAttributeType::List { inner, ordered } => CoreAttributeType::List {
             inner: Box::new(proto_to_core_attribute_type(inner)),
@@ -272,11 +273,12 @@ fn core_to_proto_attribute_type(t: &CoreAttributeType) -> ProtoAttributeType {
             name,
             values,
             namespace,
-            ..
+            dsl_aliases,
         } => ProtoAttributeType::StringEnum {
             name: name.clone(),
             values: values.clone(),
             namespace: namespace.clone(),
+            dsl_aliases: dsl_aliases.clone(),
         },
         CoreAttributeType::List { inner, ordered } => ProtoAttributeType::List {
             inner: Box::new(core_to_proto_attribute_type(inner)),
@@ -427,7 +429,7 @@ mod tests {
             name: "VersioningStatus".to_string(),
             values: vec!["Enabled".to_string(), "Suspended".to_string()],
             namespace: Some("awscc.s3.Bucket".to_string()),
-            to_dsl: None,
+            dsl_aliases: vec![],
         };
 
         let proto_type = core_to_proto_attribute_type(&core_type);
@@ -438,10 +440,12 @@ mod tests {
                 name,
                 values,
                 namespace,
+                dsl_aliases,
             } => {
                 assert_eq!(name, "VersioningStatus");
                 assert_eq!(values.len(), 2);
                 assert_eq!(namespace.as_deref(), Some("awscc.s3.Bucket"));
+                assert!(dsl_aliases.is_empty());
             }
             _ => panic!("Expected StringEnum"),
         }
@@ -452,6 +456,54 @@ mod tests {
             CoreAttributeType::StringEnum { name, values, .. } => {
                 assert_eq!(name, "VersioningStatus");
                 assert_eq!(values.len(), 2);
+            }
+            _ => panic!("Expected StringEnum"),
+        }
+    }
+
+    /// Regression for awscc#199: when codegen populates `dsl_aliases` on
+    /// a `StringEnum`, those alias pairs MUST cross the WASM boundary
+    /// intact (proto-side carries them as data, not a fn pointer) so the
+    /// host-side validator accepts the snake_case DSL spelling.
+    #[test]
+    fn string_enum_dsl_aliases_round_trip_through_proto() {
+        let aliases = vec![
+            (
+                "BucketOwnerEnforced".to_string(),
+                "bucket_owner_enforced".to_string(),
+            ),
+            (
+                "BucketOwnerPreferred".to_string(),
+                "bucket_owner_preferred".to_string(),
+            ),
+            ("ObjectWriter".to_string(), "object_writer".to_string()),
+        ];
+        let core_type = CoreAttributeType::StringEnum {
+            name: "ObjectOwnership".to_string(),
+            values: vec![
+                "ObjectWriter".to_string(),
+                "BucketOwnerPreferred".to_string(),
+                "BucketOwnerEnforced".to_string(),
+            ],
+            namespace: Some("awscc.s3.Bucket".to_string()),
+            dsl_aliases: aliases.clone(),
+        };
+
+        let proto_type = core_to_proto_attribute_type(&core_type);
+        match &proto_type {
+            ProtoAttributeType::StringEnum { dsl_aliases: a, .. } => {
+                assert_eq!(a, &aliases, "proto must carry the alias data verbatim");
+            }
+            _ => panic!("Expected StringEnum"),
+        }
+
+        let roundtripped = proto_to_core_attribute_type(&proto_type);
+        match &roundtripped {
+            CoreAttributeType::StringEnum { dsl_aliases: a, .. } => {
+                assert_eq!(
+                    a, &aliases,
+                    "alias data must survive proto -> core round-trip"
+                );
             }
             _ => panic!("Expected StringEnum"),
         }

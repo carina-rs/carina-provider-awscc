@@ -95,19 +95,19 @@ pub fn ec2_vpc_endpoint_config() -> AwsccSchemaConfig {
                 name: "DnsRecordIpType".to_string(),
                 values: vec!["ipv4".to_string(), "ipv6".to_string(), "dualstack".to_string(), "service-defined".to_string(), "not-specified".to_string()],
                 namespace: Some("awscc.ec2.VpcEndpoint".to_string()),
-                to_dsl: Some(|s: &str| match s { "service-defined" => "service_defined".to_string(), "not-specified" => "not_specified".to_string(), _ => s.to_string() }),
+                dsl_aliases: vec![("service-defined".to_string(), "service_defined".to_string()), ("not-specified".to_string(), "not_specified".to_string())],
             }).with_description("The DNS records created for the endpoint.").with_provider_name("DnsRecordIpType"),
                     StructField::new("private_dns_only_for_inbound_resolver_endpoint", AttributeType::StringEnum {
                 name: "PrivateDnsOnlyForInboundResolverEndpoint".to_string(),
                 values: vec!["OnlyInboundResolver".to_string(), "AllResolvers".to_string(), "NotSpecified".to_string()],
                 namespace: Some("awscc.ec2.VpcEndpoint".to_string()),
-                to_dsl: Some(|s: &str| match s { "OnlyInboundResolver" => "only_inbound_resolver".to_string(), "AllResolvers" => "all_resolvers".to_string(), "NotSpecified" => "not_specified".to_string(), _ => s.to_string() }),
+                dsl_aliases: vec![("OnlyInboundResolver".to_string(), "only_inbound_resolver".to_string()), ("AllResolvers".to_string(), "all_resolvers".to_string()), ("NotSpecified".to_string(), "not_specified".to_string())],
             }).with_description("Indicates whether to enable private DNS only for inbound endpoints. This option is available only for services that support both gateway and interface endpoints. It routes traffic that originates from the VPC to the gateway endpoint and traffic that originates from on-premises to the interface endpoint.").with_provider_name("PrivateDnsOnlyForInboundResolverEndpoint"),
                     StructField::new("private_dns_preference", AttributeType::StringEnum {
                 name: "PrivateDnsPreference".to_string(),
                 values: vec!["VERIFIED_DOMAINS_ONLY".to_string(), "ALL_DOMAINS".to_string(), "VERIFIED_DOMAINS_AND_SPECIFIED_DOMAINS".to_string(), "SPECIFIED_DOMAINS_ONLY".to_string()],
                 namespace: Some("awscc.ec2.VpcEndpoint".to_string()),
-                to_dsl: Some(|s: &str| match s { "VERIFIED_DOMAINS_ONLY" => "verified_domains_only".to_string(), "ALL_DOMAINS" => "all_domains".to_string(), "VERIFIED_DOMAINS_AND_SPECIFIED_DOMAINS" => "verified_domains_and_specified_domains".to_string(), "SPECIFIED_DOMAINS_ONLY" => "specified_domains_only".to_string(), _ => s.to_string() }),
+                dsl_aliases: vec![("VERIFIED_DOMAINS_ONLY".to_string(), "verified_domains_only".to_string()), ("ALL_DOMAINS".to_string(), "all_domains".to_string()), ("VERIFIED_DOMAINS_AND_SPECIFIED_DOMAINS".to_string(), "verified_domains_and_specified_domains".to_string()), ("SPECIFIED_DOMAINS_ONLY".to_string(), "specified_domains_only".to_string())],
             }).with_description("The preference for which private domains have a private hosted zone created for and associated with the specified VPC. Only supported when private DNS is enabled and when the VPC endpoint type is ServiceNetwork or Resource.").with_provider_name("PrivateDnsPreference"),
                     StructField::new("private_dns_specified_domains", AttributeType::Custom {
                 semantic_name: None,
@@ -143,7 +143,7 @@ pub fn ec2_vpc_endpoint_config() -> AwsccSchemaConfig {
                 name: "IpAddressType".to_string(),
                 values: vec!["ipv4".to_string(), "ipv6".to_string(), "dualstack".to_string(), "not-specified".to_string()],
                 namespace: Some("awscc.ec2.VpcEndpoint".to_string()),
-                to_dsl: Some(|s: &str| match s { "not-specified" => "not_specified".to_string(), _ => s.to_string() }),
+                dsl_aliases: vec![("not-specified".to_string(), "not_specified".to_string())],
             })
                 .with_description("The supported IP address types.")
                 .with_provider_name("IpAddressType"),
@@ -213,7 +213,7 @@ pub fn ec2_vpc_endpoint_config() -> AwsccSchemaConfig {
                 name: "VpcEndpointType".to_string(),
                 values: vec!["Interface".to_string(), "Gateway".to_string(), "GatewayLoadBalancer".to_string(), "ServiceNetwork".to_string(), "Resource".to_string()],
                 namespace: Some("awscc.ec2.VpcEndpoint".to_string()),
-                to_dsl: Some(|s: &str| match s { "Interface" => "interface".to_string(), "Gateway" => "gateway".to_string(), "GatewayLoadBalancer" => "gateway_load_balancer".to_string(), "ServiceNetwork" => "service_network".to_string(), "Resource" => "resource".to_string(), _ => s.to_string() }),
+                dsl_aliases: vec![("Interface".to_string(), "interface".to_string()), ("Gateway".to_string(), "gateway".to_string()), ("GatewayLoadBalancer".to_string(), "gateway_load_balancer".to_string()), ("ServiceNetwork".to_string(), "service_network".to_string()), ("Resource".to_string(), "resource".to_string())],
             })
                 .create_only()
                 .with_description("The type of endpoint. Default: Gateway")
