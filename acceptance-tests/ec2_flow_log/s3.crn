@@ -19,8 +19,8 @@ let bucket = awscc.s3.Bucket {
 
 awscc.ec2.FlowLog {
   resource_id          = vpc.vpc_id
-  resource_type        = VPC
-  traffic_type         = ALL
+  resource_type        = vpc
+  traffic_type         = all
   log_destination_type = s3
   log_destination      = bucket.arn
 

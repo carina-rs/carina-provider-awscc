@@ -36,7 +36,7 @@ awscc.ec2.SecurityGroupIngress {
 awscc.ec2.VpcEndpoint {
   vpc_id              = vpc.vpc_id
   service_name        = 'com.amazonaws.ap-northeast-1.ecr.dkr'
-  vpc_endpoint_type   = Interface
+  vpc_endpoint_type   = interface
   subnet_ids          = [subnet.subnet_id]
   security_group_ids  = [sg.group_id]
   private_dns_enabled = true

@@ -98,7 +98,7 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
                 name: "LogGroupClass".to_string(),
                 values: vec!["STANDARD".to_string(), "INFREQUENT_ACCESS".to_string(), "DELIVERY".to_string()],
                 namespace: Some("awscc.logs.LogGroup".to_string()),
-                to_dsl: None,
+                to_dsl: Some(|s: &str| match s { "STANDARD" => "standard".to_string(), "INFREQUENT_ACCESS" => "infrequent_access".to_string(), "DELIVERY" => "delivery".to_string(), _ => s.to_string() }),
             })
                 .with_description("Specifies the log group class for this log group. There are two classes: + The ``Standard`` log class supports all CWL features. + The ``Infrequent Access`` log class supports a subset of CWL features and incurs lower costs. For details about the features supported by each class, see [Log classes](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/CloudWatch_Logs_Log_Classes.html)")
                 .with_provider_name("LogGroupClass")
