@@ -147,7 +147,7 @@ pub(crate) fn json_to_value(value: &serde_json::Value) -> Option<Value> {
             if let Some(i) = n.as_i64() {
                 Some(Value::Concrete(ConcreteValue::Int(i)))
             } else {
-                n.as_f64().map(Value::Float)
+                n.as_f64().map(|f| Value::Concrete(ConcreteValue::Float(f)))
             }
         }
         serde_json::Value::Array(arr) => {
