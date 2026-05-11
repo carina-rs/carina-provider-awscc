@@ -5,7 +5,7 @@
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
 use super::AwsccSchemaConfig;
-use carina_core::resource::Value;
+use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, legacy_validator};
 use regex::Regex;
 
@@ -13,7 +13,7 @@ const VALID_FEATURE_SET: &[&str] = &["ALL", "CONSOLIDATED_BILLING"];
 
 #[allow(dead_code)]
 fn validate_string_pattern_2fd01fd52b67fc75(value: &Value) -> Result<(), String> {
-    if let Value::String(s) = value {
+    if let Value::Concrete(ConcreteValue::String(s)) = value {
         static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
             Regex::new("^o-[a-z0-9]{10,32}$").expect("invalid pattern regex")
         });
@@ -32,7 +32,7 @@ fn validate_string_pattern_2fd01fd52b67fc75(value: &Value) -> Result<(), String>
 
 #[allow(dead_code)]
 fn validate_string_pattern_ec4d9bee0dcd262b_len_6_64(value: &Value) -> Result<(), String> {
-    if let Value::String(s) = value {
+    if let Value::Concrete(ConcreteValue::String(s)) = value {
         static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
             Regex::new("[^\\s@]+@[^\\s@]+\\.[^\\s@]+").expect("invalid pattern regex")
         });
@@ -54,7 +54,7 @@ fn validate_string_pattern_ec4d9bee0dcd262b_len_6_64(value: &Value) -> Result<()
 
 #[allow(dead_code)]
 fn validate_string_pattern_0cb01cbc89d38ae3_len_max_64(value: &Value) -> Result<(), String> {
-    if let Value::String(s) = value {
+    if let Value::Concrete(ConcreteValue::String(s)) = value {
         static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
             Regex::new("^r-[0-9a-z]{4,32}$").expect("invalid pattern regex")
         });
@@ -97,7 +97,7 @@ pub fn organizations_organization_config() -> AwsccSchemaConfig {
             })
                 .with_description("Specifies the feature set supported by the new organization. Each feature set supports different levels of functionality.")
                 .with_provider_name("FeatureSet")
-                .with_default(Value::String("ALL".to_string())),
+                .with_default(Value::Concrete(ConcreteValue::String("ALL".to_string()))),
         )
         .attribute(
             AttributeSchema::new("id", AttributeType::Custom {

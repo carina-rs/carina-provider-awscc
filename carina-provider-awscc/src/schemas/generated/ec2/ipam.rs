@@ -7,7 +7,7 @@
 use super::AwsccSchemaConfig;
 use super::tags_type;
 use super::validate_tags_map;
-use carina_core::resource::Value;
+use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{
     AttributeSchema, AttributeType, OperationConfig, ResourceSchema, StructField, legacy_validator,
 };
@@ -17,7 +17,7 @@ const VALID_METERED_ACCOUNT: &[&str] = &["ipam-owner", "resource-owner"];
 const VALID_TIER: &[&str] = &["free", "advanced"];
 
 fn validate_string_length_min_1(value: &Value) -> Result<(), String> {
-    if let Value::String(s) = value {
+    if let Value::Concrete(ConcreteValue::String(s)) = value {
         let len = s.chars().count();
         if len < 1 {
             Err(format!("String length {} is out of range 1..", len))
@@ -30,7 +30,7 @@ fn validate_string_length_min_1(value: &Value) -> Result<(), String> {
 }
 
 fn validate_string_length_max_255(value: &Value) -> Result<(), String> {
-    if let Value::String(s) = value {
+    if let Value::Concrete(ConcreteValue::String(s)) = value {
         let len = s.chars().count();
         if len > 255 {
             Err(format!("String length {} is out of range ..=255", len))

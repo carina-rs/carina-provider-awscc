@@ -7,7 +7,7 @@
 use super::AwsccSchemaConfig;
 use super::tags_type;
 use super::validate_tags_map;
-use carina_core::resource::Value;
+use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{
     AttributeSchema, AttributeType, ResourceSchema, StructField, legacy_validator,
 };
@@ -28,7 +28,7 @@ const VALID_TRAFFIC_TYPE: &[&str] = &["ACCEPT", "ALL", "REJECT"];
 const VALID_MAX_AGGREGATION_INTERVAL_VALUES: &[i64] = &[60, 600];
 
 fn validate_max_aggregation_interval_int_enum(value: &Value) -> Result<(), String> {
-    if let Value::Int(n) = value {
+    if let Value::Concrete(ConcreteValue::Int(n)) = value {
         if VALID_MAX_AGGREGATION_INTERVAL_VALUES.contains(n) {
             Ok(())
         } else {

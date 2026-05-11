@@ -7,7 +7,7 @@
 use super::AwsccSchemaConfig;
 use super::tags_type;
 use super::validate_tags_map;
-use carina_core::resource::Value;
+use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, legacy_validator};
 use regex::Regex;
 
@@ -19,7 +19,7 @@ const VALID_RETENTION_IN_DAYS_VALUES: &[i64] = &[
 ];
 
 fn validate_retention_in_days_int_enum(value: &Value) -> Result<(), String> {
-    if let Value::Int(n) = value {
+    if let Value::Concrete(ConcreteValue::Int(n)) = value {
         if VALID_RETENTION_IN_DAYS_VALUES.contains(n) {
             Ok(())
         } else {
@@ -32,7 +32,7 @@ fn validate_retention_in_days_int_enum(value: &Value) -> Result<(), String> {
 
 #[allow(dead_code)]
 fn validate_string_pattern_b6dfbc56753dfe38_len_1_512(value: &Value) -> Result<(), String> {
-    if let Value::String(s) = value {
+    if let Value::Concrete(ConcreteValue::String(s)) = value {
         static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
             Regex::new("^[.\\-_/#A-Za-z0-9]{1,512}\\z").expect("invalid pattern regex")
         });
@@ -75,7 +75,7 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
             AttributeSchema::new("deletion_protection_enabled", AttributeType::Bool)
                 .with_description("Indicates whether deletion protection is enabled for this log group. When enabled, deletion protection blocks all deletion operations until it is explicitly disabled.")
                 .with_provider_name("DeletionProtectionEnabled")
-                .with_default(Value::Bool(false)),
+                .with_default(Value::Concrete(ConcreteValue::Bool(false))),
         )
         .attribute(
             AttributeSchema::new("field_index_policies", AttributeType::unordered_list(AttributeType::map(AttributeType::String)))
@@ -96,7 +96,7 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
             })
                 .with_description("Specifies the log group class for this log group. There are two classes: + The ``Standard`` log class supports all CWL features. + The ``Infrequent Access`` log class supports a subset of CWL features and incurs lower costs. For details about the features supported by each class, see [Log classes](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/CloudWatch_Logs_Log_Classes.html)")
                 .with_provider_name("LogGroupClass")
-                .with_default(Value::String("STANDARD".to_string())),
+                .with_default(Value::Concrete(ConcreteValue::String("STANDARD".to_string()))),
         )
         .attribute(
             AttributeSchema::new("log_group_name", AttributeType::Custom {

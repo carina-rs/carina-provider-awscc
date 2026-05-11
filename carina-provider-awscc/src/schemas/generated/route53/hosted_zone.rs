@@ -6,13 +6,13 @@
 
 use super::AwsccSchemaConfig;
 use super::validate_tags_map;
-use carina_core::resource::Value;
+use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{
     AttributeSchema, AttributeType, ResourceSchema, StructField, legacy_validator,
 };
 
 fn validate_string_length_max_256(value: &Value) -> Result<(), String> {
-    if let Value::String(s) = value {
+    if let Value::Concrete(ConcreteValue::String(s)) = value {
         let len = s.chars().count();
         if len > 256 {
             Err(format!("String length {} is out of range ..=256", len))
@@ -25,7 +25,7 @@ fn validate_string_length_max_256(value: &Value) -> Result<(), String> {
 }
 
 fn validate_string_length_max_128(value: &Value) -> Result<(), String> {
-    if let Value::String(s) = value {
+    if let Value::Concrete(ConcreteValue::String(s)) = value {
         let len = s.chars().count();
         if len > 128 {
             Err(format!("String length {} is out of range ..=128", len))
@@ -38,7 +38,7 @@ fn validate_string_length_max_128(value: &Value) -> Result<(), String> {
 }
 
 fn validate_string_length_max_1024(value: &Value) -> Result<(), String> {
-    if let Value::String(s) = value {
+    if let Value::Concrete(ConcreteValue::String(s)) = value {
         let len = s.chars().count();
         if len > 1024 {
             Err(format!("String length {} is out of range ..=1024", len))

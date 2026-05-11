@@ -7,13 +7,13 @@
 use super::AwsccSchemaConfig;
 use super::tags_type;
 use super::validate_tags_map;
-use carina_core::resource::Value;
+use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{
     AttributeSchema, AttributeType, ResourceSchema, StructField, legacy_validator,
 };
 
 fn validate_max_session_duration_range(value: &Value) -> Result<(), String> {
-    if let Value::Int(n) = value {
+    if let Value::Concrete(ConcreteValue::Int(n)) = value {
         if *n < 3600 || *n > 43200 {
             Err(format!("Value {} is out of range 3600..=43200", n))
         } else {
@@ -72,7 +72,7 @@ pub fn iam_role_config() -> AwsccSchemaConfig {
                 .create_only()
                 .with_description("The path to the role. For more information about paths, see [IAM Identifiers](https://docs.aws.amazon.com/IAM/latest/UserGuide/Using_Identifiers.html) in the *IAM User Guide*. This parameter is optional. If it is not included, it defaults to a slash (/). This parameter allows (through its [regex pattern](https://docs.aws.amazon.com/http://wikipedia.org/wiki/regex)) a string of characters consisting of either a forward slash (/) by itself or a string that must begin and end with forward slashes. In addition, it can contain any ASCII character from the ! (``\\u0021``) through the DEL character (``\\u007F``), including most punctuation characters, digits, and upper and lowercased letters.")
                 .with_provider_name("Path")
-                .with_default(Value::String("/".to_string())),
+                .with_default(Value::Concrete(ConcreteValue::String("/".to_string()))),
         )
         .attribute(
             AttributeSchema::new("permissions_boundary", super::iam_policy_arn())

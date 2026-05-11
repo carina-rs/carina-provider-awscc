@@ -7,7 +7,7 @@
 use super::AwsccSchemaConfig;
 use super::tags_type;
 use super::validate_tags_map;
-use carina_core::resource::Value;
+use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{
     AttributeSchema, AttributeType, ResourceSchema, StructField, legacy_validator,
 };
@@ -42,7 +42,7 @@ const VALID_VPC_ENDPOINT_TYPE: &[&str] = &[
 
 #[allow(dead_code)]
 fn validate_list_items_1_10(value: &Value) -> Result<(), String> {
-    if let Value::List(items) = value {
+    if let Value::Concrete(ConcreteValue::List(items)) = value {
         let len = items.len();
         if !(1..=10).contains(&len) {
             Err(format!("List has {} items, expected 1..=10", len))
@@ -55,7 +55,7 @@ fn validate_list_items_1_10(value: &Value) -> Result<(), String> {
 }
 
 fn validate_string_length_1_255(value: &Value) -> Result<(), String> {
-    if let Value::String(s) = value {
+    if let Value::Concrete(ConcreteValue::String(s)) = value {
         let len = s.chars().count();
         if !(1..=255).contains(&len) {
             Err(format!("String length {} is out of range 1..=255", len))

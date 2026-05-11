@@ -6,7 +6,7 @@
 use indexmap::IndexMap;
 use std::collections::HashMap;
 
-use carina_core::resource::{Resource, ResourceId, State, Value};
+use carina_core::resource::{ConcreteValue, Resource, ResourceId, State, Value};
 use carina_core::schema::{AttributeType, StructField};
 
 /// Resolve enum identifiers in resources to their fully-qualified DSL format.
@@ -76,14 +76,14 @@ pub fn resolve_enum_identifiers_impl(resources: &mut [Resource]) {
 /// for struct fields that have StringEnum type with namespace.
 fn resolve_struct_enum_values(value: &Value, fields: &[StructField]) -> Value {
     match value {
-        Value::List(items) => {
+        Value::Concrete(ConcreteValue::List(items)) => {
             let resolved_items: Vec<Value> = items
                 .iter()
                 .map(|item| resolve_struct_enum_values(item, fields))
                 .collect();
-            Value::List(resolved_items)
+            Value::Concrete(ConcreteValue::List(resolved_items))
         }
-        Value::Map(map) => {
+        Value::Concrete(ConcreteValue::Map(map)) => {
             let mut resolved_map = IndexMap::new();
             for (field_key, field_value) in map {
                 if let Some(field) = fields.iter().find(|f| f.name == *field_key) {
@@ -98,7 +98,7 @@ fn resolve_struct_enum_values(value: &Value, fields: &[StructField]) -> Value {
                     // List(StringEnum): resolve each element
                     if let AttributeType::List { inner, .. } = &field.field_type
                         && let Some(parts) = inner.namespaced_enum_parts()
-                        && let Value::List(items) = field_value
+                        && let Value::Concrete(ConcreteValue::List(items)) = field_value
                     {
                         let resolved_items: Vec<Value> = items
                             .iter()
@@ -107,7 +107,10 @@ fn resolve_struct_enum_values(value: &Value, fields: &[StructField]) -> Value {
                                     .unwrap_or_else(|| item.clone())
                             })
                             .collect();
-                        resolved_map.insert(field_key.clone(), Value::List(resolved_items));
+                        resolved_map.insert(
+                            field_key.clone(),
+                            Value::Concrete(ConcreteValue::List(resolved_items)),
+                        );
                         continue;
                     }
                     // Recurse into nested Struct or List(Struct) fields
@@ -132,7 +135,7 @@ fn resolve_struct_enum_values(value: &Value, fields: &[StructField]) -> Value {
                 }
                 resolved_map.insert(field_key.clone(), field_value.clone());
             }
-            Value::Map(resolved_map)
+            Value::Concrete(ConcreteValue::Map(resolved_map))
         }
         _ => value.clone(),
     }
@@ -274,13 +277,13 @@ mod tests {
         let mut resource = Resource::with_provider("awscc", "ec2.Vpc", "test");
         resource.set_attr(
             "instance_tenancy".to_string(),
-            Value::String("dedicated".to_string()),
+            Value::Concrete(ConcreteValue::String("dedicated".to_string())),
         );
 
         let mut resources = vec![resource];
         resolve_enum_identifiers_impl(&mut resources);
         match resources[0].get_attr("instance_tenancy").unwrap() {
-            Value::String(s) => assert!(
+            Value::Concrete(ConcreteValue::String(s)) => assert!(
                 s.contains("InstanceTenancy") && s.contains("dedicated"),
                 "Expected namespaced enum, got: {}",
                 s
@@ -294,13 +297,15 @@ mod tests {
         let mut resource = Resource::with_provider("awscc", "ec2.Vpc", "test");
         resource.set_attr(
             "instance_tenancy".to_string(),
-            Value::String("InstanceTenancy.dedicated".to_string()),
+            Value::Concrete(ConcreteValue::String(
+                "InstanceTenancy.dedicated".to_string(),
+            )),
         );
 
         let mut resources = vec![resource];
         resolve_enum_identifiers_impl(&mut resources);
         match resources[0].get_attr("instance_tenancy").unwrap() {
-            Value::String(s) => assert!(
+            Value::Concrete(ConcreteValue::String(s)) => assert!(
                 s.contains("InstanceTenancy") && s.contains("dedicated"),
                 "Expected namespaced enum, got: {}",
                 s
@@ -314,14 +319,14 @@ mod tests {
         let mut resource = Resource::with_provider("aws", "s3.Bucket", "test");
         resource.set_attr(
             "instance_tenancy".to_string(),
-            Value::String("dedicated".to_string()),
+            Value::Concrete(ConcreteValue::String("dedicated".to_string())),
         );
 
         let mut resources = vec![resource];
         resolve_enum_identifiers_impl(&mut resources);
         assert!(matches!(
             resources[0].get_attr("instance_tenancy").unwrap(),
-            Value::String(_)
+            Value::Concrete(ConcreteValue::String(_))
         ));
     }
 
@@ -330,13 +335,13 @@ mod tests {
         let mut resource = Resource::with_provider("awscc", "ec2.FlowLog", "test");
         resource.set_attr(
             "log_destination_type".to_string(),
-            Value::String("cloud_watch_logs".to_string()),
+            Value::Concrete(ConcreteValue::String("cloud_watch_logs".to_string())),
         );
 
         let mut resources = vec![resource];
         resolve_enum_identifiers_impl(&mut resources);
         match resources[0].get_attr("log_destination_type").unwrap() {
-            Value::String(s) => {
+            Value::Concrete(ConcreteValue::String(s)) => {
                 assert_eq!(
                     s, "awscc.ec2.FlowLog.LogDestinationType.cloud_watch_logs",
                     "Expected underscored namespaced enum, got: {}",
@@ -352,13 +357,13 @@ mod tests {
         let mut resource = Resource::with_provider("awscc", "ec2.FlowLog", "test");
         resource.set_attr(
             "log_destination_type".to_string(),
-            Value::String("cloud-watch-logs".to_string()),
+            Value::Concrete(ConcreteValue::String("cloud-watch-logs".to_string())),
         );
 
         let mut resources = vec![resource];
         resolve_enum_identifiers_impl(&mut resources);
         match resources[0].get_attr("log_destination_type").unwrap() {
-            Value::String(s) => {
+            Value::Concrete(ConcreteValue::String(s)) => {
                 assert_eq!(
                     s, "awscc.ec2.FlowLog.LogDestinationType.cloud_watch_logs",
                     "Hyphenated string should be converted to underscore form, got: {}",
@@ -375,7 +380,7 @@ mod tests {
         let mut state = State::existing(id.clone(), HashMap::new());
         state.attributes.insert(
             "nat_gateway_id".to_string(),
-            Value::String("nat-123".to_string()),
+            Value::Concrete(ConcreteValue::String("nat-123".to_string())),
         );
 
         let mut current_states = HashMap::new();
@@ -384,7 +389,7 @@ mod tests {
         let mut saved = HashMap::new();
         saved.insert(
             "subnet_id".to_string(),
-            Value::String("subnet-abc".to_string()),
+            Value::Concrete(ConcreteValue::String("subnet-abc".to_string())),
         );
         let mut saved_attrs = HashMap::new();
         saved_attrs.insert(id.clone(), saved);
@@ -393,7 +398,9 @@ mod tests {
 
         assert_eq!(
             current_states[&id].attributes.get("subnet_id"),
-            Some(&Value::String("subnet-abc".to_string()))
+            Some(&Value::Concrete(ConcreteValue::String(
+                "subnet-abc".to_string()
+            )))
         );
     }
 
@@ -406,7 +413,10 @@ mod tests {
         current_states.insert(id.clone(), state);
 
         let mut saved = HashMap::new();
-        saved.insert("some_attr".to_string(), Value::String("value".to_string()));
+        saved.insert(
+            "some_attr".to_string(),
+            Value::Concrete(ConcreteValue::String("value".to_string())),
+        );
         let mut saved_attrs = HashMap::new();
         saved_attrs.insert(id.clone(), saved);
 
@@ -421,7 +431,7 @@ mod tests {
         let mut attrs = HashMap::new();
         attrs.insert(
             "subnet_id".to_string(),
-            Value::String("subnet-current".to_string()),
+            Value::Concrete(ConcreteValue::String("subnet-current".to_string())),
         );
         let state = State::existing(id.clone(), attrs);
 
@@ -431,7 +441,7 @@ mod tests {
         let mut saved = HashMap::new();
         saved.insert(
             "subnet_id".to_string(),
-            Value::String("subnet-saved".to_string()),
+            Value::Concrete(ConcreteValue::String("subnet-saved".to_string())),
         );
         let mut saved_attrs = HashMap::new();
         saved_attrs.insert(id.clone(), saved);
@@ -440,7 +450,9 @@ mod tests {
 
         assert_eq!(
             current_states[&id].attributes.get("subnet_id"),
-            Some(&Value::String("subnet-current".to_string()))
+            Some(&Value::Concrete(ConcreteValue::String(
+                "subnet-current".to_string()
+            )))
         );
     }
 
@@ -450,7 +462,9 @@ mod tests {
         let mut state = State::existing(id.clone(), HashMap::new());
         state.attributes.insert(
             "ip_protocol".to_string(),
-            Value::String("awscc.ec2.SecurityGroupEgress.IpProtocol.all".to_string()),
+            Value::Concrete(ConcreteValue::String(
+                "awscc.ec2.SecurityGroupEgress.IpProtocol.all".to_string(),
+            )),
         );
 
         let mut current_states = HashMap::new();
@@ -459,7 +473,7 @@ mod tests {
         let mut saved = HashMap::new();
         saved.insert(
             "description".to_string(),
-            Value::String("Allow all outbound".to_string()),
+            Value::Concrete(ConcreteValue::String("Allow all outbound".to_string())),
         );
         let mut saved_attrs = HashMap::new();
         saved_attrs.insert(id.clone(), saved);
@@ -468,19 +482,24 @@ mod tests {
 
         assert_eq!(
             current_states[&id].attributes.get("description"),
-            Some(&Value::String("Allow all outbound".to_string()))
+            Some(&Value::Concrete(ConcreteValue::String(
+                "Allow all outbound".to_string()
+            )))
         );
     }
 
     #[test]
     fn test_resolve_enum_identifiers_ip_protocol_all_alias() {
         let mut resource = Resource::with_provider("awscc", "ec2.SecurityGroupEgress", "test");
-        resource.set_attr("ip_protocol".to_string(), Value::String("all".to_string()));
+        resource.set_attr(
+            "ip_protocol".to_string(),
+            Value::Concrete(ConcreteValue::String("all".to_string())),
+        );
 
         let mut resources = vec![resource];
         resolve_enum_identifiers_impl(&mut resources);
         match resources[0].get_attr("ip_protocol").unwrap() {
-            Value::String(s) => {
+            Value::Concrete(ConcreteValue::String(s)) => {
                 assert_eq!(
                     s, "awscc.ec2.SecurityGroupEgress.IpProtocol.all",
                     "Expected namespaced IpProtocol.all, got: {}",
@@ -494,12 +513,15 @@ mod tests {
     #[test]
     fn test_resolve_enum_identifiers_ip_protocol_tcp() {
         let mut resource = Resource::with_provider("awscc", "ec2.SecurityGroupEgress", "test");
-        resource.set_attr("ip_protocol".to_string(), Value::String("tcp".to_string()));
+        resource.set_attr(
+            "ip_protocol".to_string(),
+            Value::Concrete(ConcreteValue::String("tcp".to_string())),
+        );
 
         let mut resources = vec![resource];
         resolve_enum_identifiers_impl(&mut resources);
         match resources[0].get_attr("ip_protocol").unwrap() {
-            Value::String(s) => {
+            Value::Concrete(ConcreteValue::String(s)) => {
                 assert_eq!(
                     s, "awscc.ec2.SecurityGroupEgress.IpProtocol.tcp",
                     "Expected namespaced IpProtocol.tcp, got: {}",
@@ -538,20 +560,26 @@ mod tests {
     fn test_resolve_struct_enum_values_bare_ident() {
         let fields = test_ip_protocol_fields();
         let mut map = IndexMap::new();
-        map.insert("ip_protocol".to_string(), Value::String("all".to_string()));
-        map.insert("from_port".to_string(), Value::Int(443));
-        let value = Value::List(vec![Value::Map(map)]);
+        map.insert(
+            "ip_protocol".to_string(),
+            Value::Concrete(ConcreteValue::String("all".to_string())),
+        );
+        map.insert(
+            "from_port".to_string(),
+            Value::Concrete(ConcreteValue::Int(443)),
+        );
+        let value = Value::Concrete(ConcreteValue::List(vec![Value::Map(map)]));
 
         let resolved = resolve_struct_enum_values(&value, &fields);
-        if let Value::List(items) = resolved {
-            if let Value::Map(m) = &items[0] {
+        if let Value::Concrete(ConcreteValue::List(items)) = resolved {
+            if let Value::Concrete(ConcreteValue::Map(m)) = &items[0] {
                 match &m["ip_protocol"] {
-                    Value::String(s) => {
+                    Value::Concrete(ConcreteValue::String(s)) => {
                         assert_eq!(s, "awscc.ec2.SecurityGroup.IpProtocol.all");
                     }
                     other => panic!("Expected String, got: {:?}", other),
                 }
-                assert_eq!(m["from_port"], Value::Int(443));
+                assert_eq!(m["from_port"], Value::Concrete(ConcreteValue::Int(443)));
             } else {
                 panic!("Expected Map");
             }
@@ -566,15 +594,15 @@ mod tests {
         let mut map = IndexMap::new();
         map.insert(
             "ip_protocol".to_string(),
-            Value::String("IpProtocol.tcp".to_string()),
+            Value::Concrete(ConcreteValue::String("IpProtocol.tcp".to_string())),
         );
-        let value = Value::List(vec![Value::Map(map)]);
+        let value = Value::Concrete(ConcreteValue::List(vec![Value::Map(map)]));
 
         let resolved = resolve_struct_enum_values(&value, &fields);
-        if let Value::List(items) = resolved {
-            if let Value::Map(m) = &items[0] {
+        if let Value::Concrete(ConcreteValue::List(items)) = resolved {
+            if let Value::Concrete(ConcreteValue::Map(m)) = &items[0] {
                 match &m["ip_protocol"] {
-                    Value::String(s) => {
+                    Value::Concrete(ConcreteValue::String(s)) => {
                         assert_eq!(s, "awscc.ec2.SecurityGroup.IpProtocol.tcp");
                     }
                     other => panic!("Expected String, got: {:?}", other),
@@ -593,15 +621,17 @@ mod tests {
         let mut map = IndexMap::new();
         map.insert(
             "ip_protocol".to_string(),
-            Value::String("awscc.ec2.SecurityGroup.IpProtocol.tcp".to_string()),
+            Value::Concrete(ConcreteValue::String(
+                "awscc.ec2.SecurityGroup.IpProtocol.tcp".to_string(),
+            )),
         );
-        let value = Value::List(vec![Value::Map(map)]);
+        let value = Value::Concrete(ConcreteValue::List(vec![Value::Map(map)]));
 
         let resolved = resolve_struct_enum_values(&value, &fields);
-        if let Value::List(items) = resolved {
-            if let Value::Map(m) = &items[0] {
+        if let Value::Concrete(ConcreteValue::List(items)) = resolved {
+            if let Value::Concrete(ConcreteValue::Map(m)) = &items[0] {
                 match &m["ip_protocol"] {
-                    Value::String(s) => {
+                    Value::Concrete(ConcreteValue::String(s)) => {
                         assert_eq!(s, "awscc.ec2.SecurityGroup.IpProtocol.tcp");
                     }
                     other => panic!("Expected String, got: {:?}", other),
@@ -619,26 +649,31 @@ mod tests {
         let mut resource = Resource::with_provider("awscc", "ec2.SecurityGroup", "test-sg");
         resource.set_attr(
             "group_description".to_string(),
-            Value::String("test".to_string()),
+            Value::Concrete(ConcreteValue::String("test".to_string())),
         );
         let mut egress_map = IndexMap::new();
-        egress_map.insert("ip_protocol".to_string(), Value::String("all".to_string()));
+        egress_map.insert(
+            "ip_protocol".to_string(),
+            Value::Concrete(ConcreteValue::String("all".to_string())),
+        );
         egress_map.insert(
             "cidr_ip".to_string(),
-            Value::String("0.0.0.0/0".to_string()),
+            Value::Concrete(ConcreteValue::String("0.0.0.0/0".to_string())),
         );
         resource.set_attr(
             "security_group_egress".to_string(),
-            Value::List(vec![Value::Map(egress_map)]),
+            Value::Concrete(ConcreteValue::List(vec![Value::Map(egress_map)])),
         );
 
         let mut resources = vec![resource];
         resolve_enum_identifiers_impl(&mut resources);
 
-        if let Value::List(items) = resources[0].get_attr("security_group_egress").unwrap() {
-            if let Value::Map(m) = &items[0] {
+        if let Value::Concrete(ConcreteValue::List(items)) =
+            resources[0].get_attr("security_group_egress").unwrap()
+        {
+            if let Value::Concrete(ConcreteValue::Map(m)) = &items[0] {
                 match &m["ip_protocol"] {
-                    Value::String(s) => {
+                    Value::Concrete(ConcreteValue::String(s)) => {
                         assert_eq!(
                             s, "awscc.ec2.SecurityGroup.IpProtocol.all",
                             "Expected namespaced IpProtocol.all in struct field, got: {}",
@@ -648,7 +683,7 @@ mod tests {
                     other => panic!("Expected String for ip_protocol, got: {:?}", other),
                 }
                 match &m["cidr_ip"] {
-                    Value::String(s) => assert_eq!(s, "0.0.0.0/0"),
+                    Value::Concrete(ConcreteValue::String(s)) => assert_eq!(s, "0.0.0.0/0"),
                     other => panic!("Expected String for cidr_ip, got: {:?}", other),
                 }
             } else {
@@ -819,35 +854,44 @@ mod tests {
         let mut inner_map = IndexMap::new();
         inner_map.insert(
             "encryption_type".to_string(),
-            Value::List(vec![Value::String("SSE-C".to_string())]),
+            Value::Concrete(ConcreteValue::List(vec![Value::String(
+                "SSE-C".to_string(),
+            )])),
         );
         let mut map = IndexMap::new();
         map.insert(
             "blocked_encryption_types".to_string(),
-            Value::Map(inner_map),
+            Value::Concrete(ConcreteValue::Map(inner_map)),
         );
-        map.insert("bucket_key_enabled".to_string(), Value::Bool(false));
+        map.insert(
+            "bucket_key_enabled".to_string(),
+            Value::Concrete(ConcreteValue::Bool(false)),
+        );
         let mut sse_map = IndexMap::new();
         sse_map.insert(
             "sse_algorithm".to_string(),
-            Value::String("AES256".to_string()),
+            Value::Concrete(ConcreteValue::String("AES256".to_string())),
         );
         map.insert(
             "server_side_encryption_by_default".to_string(),
-            Value::Map(sse_map),
+            Value::Concrete(ConcreteValue::Map(sse_map)),
         );
 
-        let value = Value::List(vec![Value::Map(map)]);
+        let value = Value::Concrete(ConcreteValue::List(vec![Value::Map(map)]));
         let resolved = resolve_struct_enum_values(&value, &fields);
 
         // Verify the nested enum was resolved
-        if let Value::List(items) = &resolved {
-            if let Value::Map(m) = &items[0] {
-                if let Value::Map(blocked) = &m["blocked_encryption_types"] {
-                    if let Value::List(types) = &blocked["encryption_type"] {
+        if let Value::Concrete(ConcreteValue::List(items)) = &resolved {
+            if let Value::Concrete(ConcreteValue::Map(m)) = &items[0] {
+                if let Value::Concrete(ConcreteValue::Map(blocked)) = &m["blocked_encryption_types"]
+                {
+                    if let Value::Concrete(ConcreteValue::List(types)) = &blocked["encryption_type"]
+                    {
                         assert_eq!(
                             types[0],
-                            Value::String("awscc.s3.Bucket.EncryptionType.sse_c".to_string()),
+                            Value::Concrete(ConcreteValue::String(
+                                "awscc.s3.Bucket.EncryptionType.sse_c".to_string()
+                            )),
                             "Nested struct enum should be resolved to its snake_case DSL form"
                         );
                     } else {
@@ -859,10 +903,14 @@ mod tests {
                 // Also verify sse_algorithm in sibling struct.
                 // SHOUTY_SNAKE values follow the same D7 transform: API
                 // `AES256` -> DSL `aes256`.
-                if let Value::Map(sse) = &m["server_side_encryption_by_default"] {
+                if let Value::Concrete(ConcreteValue::Map(sse)) =
+                    &m["server_side_encryption_by_default"]
+                {
                     assert_eq!(
                         sse["sse_algorithm"],
-                        Value::String("awscc.s3.Bucket.SseAlgorithm.aes256".to_string()),
+                        Value::Concrete(ConcreteValue::String(
+                            "awscc.s3.Bucket.SseAlgorithm.aes256".to_string()
+                        )),
                         "Sibling struct enum should also be resolved to its snake_case DSL form"
                     );
                 } else {
@@ -916,7 +964,7 @@ mod tests {
         let mut policy_map = IndexMap::new();
         policy_map.insert(
             "Statement".to_string(),
-            Value::List(vec![Value::Map({
+            Value::Concrete(ConcreteValue::List(vec![Value::Map({
                 let mut stmt = IndexMap::new();
                 stmt.insert("Effect".to_string(), Value::String("Allow".to_string()));
                 stmt.insert(
@@ -928,7 +976,7 @@ mod tests {
                     Value::String("arn:aws:s3:::my-bucket/*".to_string()),
                 );
                 stmt
-            })]),
+            })])),
         );
 
         let (id, state) = make_state(
@@ -936,8 +984,14 @@ mod tests {
             "iam.RolePolicy",
             "test-policy",
             vec![
-                ("policy_name", Value::String("test-policy".to_string())),
-                ("policy_document", Value::Map(policy_map)),
+                (
+                    "policy_name",
+                    Value::Concrete(ConcreteValue::String("test-policy".to_string())),
+                ),
+                (
+                    "policy_document",
+                    Value::Concrete(ConcreteValue::Map(policy_map)),
+                ),
             ],
         );
         let mut current_states: HashMap<ResourceId, State> = HashMap::new();
@@ -951,25 +1005,29 @@ mod tests {
             .attributes
             .get("policy_document")
             .expect("policy_document present");
-        let Value::Map(pd) = policy_document else {
+        let Value::Concrete(ConcreteValue::Map(pd)) = policy_document else {
             panic!("expected Map for policy_document");
         };
-        let Value::List(stmts) = pd.get("Statement").expect("Statement present") else {
+        let Value::Concrete(ConcreteValue::List(stmts)) =
+            pd.get("Statement").expect("Statement present")
+        else {
             panic!("expected List for Statement");
         };
-        let Value::Map(stmt) = &stmts[0] else {
+        let Value::Concrete(ConcreteValue::Map(stmt)) = &stmts[0] else {
             panic!("expected Map for Statement[0]");
         };
         assert_eq!(
             stmt.get("Action"),
-            Some(&Value::StringList(vec!["s3:GetObject".to_string()])),
+            Some(&Value::Concrete(ConcreteValue::StringList(vec![
+                "s3:GetObject".to_string()
+            ]))),
             "Action should be canonicalized to StringList"
         );
         assert_eq!(
             stmt.get("Resource"),
-            Some(&Value::StringList(vec![
+            Some(&Value::Concrete(ConcreteValue::StringList(vec![
                 "arn:aws:s3:::my-bucket/*".to_string()
-            ])),
+            ]))),
             "Resource should be canonicalized to StringList"
         );
     }
@@ -980,7 +1038,10 @@ mod tests {
             "aws",
             "iam.RolePolicy",
             "test",
-            vec![("policy_name", Value::String("test".to_string()))],
+            vec![(
+                "policy_name",
+                Value::Concrete(ConcreteValue::String("test".to_string())),
+            )],
         );
         let mut current_states: HashMap<ResourceId, State> = HashMap::new();
         current_states.insert(id.clone(), state);
@@ -990,7 +1051,7 @@ mod tests {
         let state = &current_states[&id];
         assert_eq!(
             state.attributes.get("policy_name"),
-            Some(&Value::String("test".to_string())),
+            Some(&Value::Concrete(ConcreteValue::String("test".to_string()))),
             "non-awscc state untouched"
         );
     }
@@ -1001,7 +1062,10 @@ mod tests {
             "awscc",
             "unknown.UnknownType",
             "test",
-            vec![("attr", Value::String("x".to_string()))],
+            vec![(
+                "attr",
+                Value::Concrete(ConcreteValue::String("x".to_string())),
+            )],
         );
         let mut current_states: HashMap<ResourceId, State> = HashMap::new();
         current_states.insert(id.clone(), state);
@@ -1011,7 +1075,7 @@ mod tests {
         let state = &current_states[&id];
         assert_eq!(
             state.attributes.get("attr"),
-            Some(&Value::String("x".to_string())),
+            Some(&Value::Concrete(ConcreteValue::String("x".to_string()))),
             "unknown resource types pass through unchanged"
         );
     }

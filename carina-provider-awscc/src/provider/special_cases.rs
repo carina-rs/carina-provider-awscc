@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 
 use carina_core::provider::{ProviderError, ProviderResult};
-use carina_core::resource::{Resource, ResourceId, Value};
+use carina_core::resource::{ConcreteValue, Resource, ResourceId, Value};
 use serde_json::json;
 
 use super::AwsccProvider;
@@ -28,7 +28,10 @@ impl AwsccProvider {
                     && let Some(first) = attachments.first()
                     && let Some(vpc_id) = first.get("VpcId").and_then(|v| v.as_str())
                 {
-                    attributes.insert("vpc_id".to_string(), Value::String(vpc_id.to_string()));
+                    attributes.insert(
+                        "vpc_id".to_string(),
+                        Value::Concrete(ConcreteValue::String(vpc_id.to_string())),
+                    );
                 }
             }
             "ec2.VpcEndpoint" => {
@@ -36,10 +39,16 @@ impl AwsccProvider {
                 if let Some(rt_ids) = props.get("RouteTableIds").and_then(|v| v.as_array()) {
                     let ids: Vec<Value> = rt_ids
                         .iter()
-                        .filter_map(|v| v.as_str().map(|s| Value::String(s.to_string())))
+                        .filter_map(|v| {
+                            v.as_str()
+                                .map(|s| Value::Concrete(ConcreteValue::String(s.to_string())))
+                        })
                         .collect();
                     if !ids.is_empty() {
-                        attributes.insert("route_table_ids".to_string(), Value::List(ids));
+                        attributes.insert(
+                            "route_table_ids".to_string(),
+                            Value::Concrete(ConcreteValue::List(ids)),
+                        );
                     }
                 }
             }

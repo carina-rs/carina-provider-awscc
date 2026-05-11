@@ -9,7 +9,7 @@ pub use carina_aws_types::*;
 use std::collections::HashMap;
 
 use carina_core::parser::ValidatorFn;
-use carina_core::resource::Value;
+use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{AttributeType, ResourceSchema, legacy_validator};
 use carina_core::utils::{extract_enum_value, validate_enum_namespace};
 
@@ -110,7 +110,7 @@ pub(crate) fn validate_namespaced_enum(
     namespace: &str,
     valid_values: &[&str],
 ) -> Result<(), String> {
-    if let Value::String(s) = value {
+    if let Value::Concrete(ConcreteValue::String(s)) = value {
         validate_enum_namespace(s, type_name, namespace)?;
 
         let normalized = extract_enum_value(s);
@@ -136,7 +136,7 @@ pub fn awscc_region() -> AttributeType {
         length: None,
         base: Box::new(AttributeType::String),
         validate: legacy_validator(|value| {
-            if let Value::String(s) = value {
+            if let Value::Concrete(ConcreteValue::String(s)) = value {
                 validate_enum_namespace(s, "Region", "awscc")
                     .map_err(|reason| format!("Invalid region '{}': {}", s, reason))?;
                 let normalized = extract_enum_value(s).replace('_', "-");
@@ -167,7 +167,7 @@ pub fn availability_zone() -> AttributeType {
         length: None,
         base: Box::new(AttributeType::String),
         validate: legacy_validator(|value| {
-            if let Value::String(s) = value {
+            if let Value::Concrete(ConcreteValue::String(s)) = value {
                 validate_enum_namespace(s, "AvailabilityZone", "awscc")
                     .map_err(|reason| format!("Invalid availability zone '{}': {}", s, reason))?;
                 let extracted = extract_enum_value(s);
@@ -195,29 +195,41 @@ mod tests {
         let t = availability_zone();
         // Full namespace format
         assert!(
-            t.validate(&Value::String(
+            t.validate(&Value::Concrete(ConcreteValue::String(
                 "awscc.AvailabilityZone.us_east_1a".to_string()
-            ))
+            )))
             .is_ok()
         );
         // Type.value format
         assert!(
-            t.validate(&Value::String("AvailabilityZone.us_east_1a".to_string()))
-                .is_ok()
+            t.validate(&Value::Concrete(ConcreteValue::String(
+                "AvailabilityZone.us_east_1a".to_string()
+            )))
+            .is_ok()
         );
         // Shorthand format
-        assert!(t.validate(&Value::String("us_east_1a".to_string())).is_ok());
+        assert!(
+            t.validate(&Value::Concrete(ConcreteValue::String(
+                "us_east_1a".to_string()
+            )))
+            .is_ok()
+        );
         // AWS format
-        assert!(t.validate(&Value::String("us-east-1a".to_string())).is_ok());
+        assert!(
+            t.validate(&Value::Concrete(ConcreteValue::String(
+                "us-east-1a".to_string()
+            )))
+            .is_ok()
+        );
     }
 
     #[test]
     fn validate_availability_zone_rejects_wrong_namespace() {
         let t = availability_zone();
         assert!(
-            t.validate(&Value::String(
+            t.validate(&Value::Concrete(ConcreteValue::String(
                 "aws.AvailabilityZone.us_east_1a".to_string()
-            ))
+            )))
             .is_err()
         );
     }
@@ -225,8 +237,18 @@ mod tests {
     #[test]
     fn validate_availability_zone_rejects_invalid() {
         let t = availability_zone();
-        assert!(t.validate(&Value::String("us-east-1".to_string())).is_err()); // no zone letter
-        assert!(t.validate(&Value::String("invalid".to_string())).is_err());
+        assert!(
+            t.validate(&Value::Concrete(ConcreteValue::String(
+                "us-east-1".to_string()
+            )))
+            .is_err()
+        ); // no zone letter
+        assert!(
+            t.validate(&Value::Concrete(ConcreteValue::String(
+                "invalid".to_string()
+            )))
+            .is_err()
+        );
     }
 
     #[test]
@@ -246,12 +268,16 @@ mod tests {
         let region_type = awscc_region();
         assert!(
             region_type
-                .validate(&Value::String("awscc.Region.ap_northeast_1".to_string()))
+                .validate(&Value::Concrete(ConcreteValue::String(
+                    "awscc.Region.ap_northeast_1".to_string()
+                )))
                 .is_ok()
         );
         assert!(
             region_type
-                .validate(&Value::String("ap-northeast-1".to_string()))
+                .validate(&Value::Concrete(ConcreteValue::String(
+                    "ap-northeast-1".to_string()
+                )))
                 .is_ok()
         );
     }
@@ -261,7 +287,9 @@ mod tests {
         let region_type = awscc_region();
         assert!(
             region_type
-                .validate(&Value::String("aws.Region.ap_northeast_1".to_string()))
+                .validate(&Value::Concrete(ConcreteValue::String(
+                    "aws.Region.ap_northeast_1".to_string()
+                )))
                 .is_err()
         );
     }
@@ -269,7 +297,9 @@ mod tests {
     #[test]
     fn validate_namespaced_enum_basic() {
         let result = validate_namespaced_enum(
-            &Value::String("awscc.ec2.Vpc.InstanceTenancy.default".to_string()),
+            &Value::Concrete(ConcreteValue::String(
+                "awscc.ec2.Vpc.InstanceTenancy.default".to_string(),
+            )),
             "InstanceTenancy",
             "awscc.ec2.Vpc",
             &["default", "dedicated", "host"],
@@ -387,7 +417,7 @@ mod tests {
 
     #[test]
     fn validate_iam_policy_document_basic() {
-        let doc = Value::Map(
+        let doc = Value::Concrete(ConcreteValue::Map(
             vec![
                 (
                     "version".to_string(),
@@ -411,7 +441,7 @@ mod tests {
             ]
             .into_iter()
             .collect(),
-        );
+        ));
         assert!(validate_iam_policy_document(&doc).is_ok());
     }
 }

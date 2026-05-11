@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 
 use carina_core::provider::{ProviderError, ProviderResult, UpdatePatch};
-use carina_core::resource::{Directives, Resource, ResourceId, State, Value};
+use carina_core::resource::{ConcreteValue, Directives, Resource, ResourceId, State, Value};
 use carina_core::schema::{AttributeSchema, AttributeType};
 use indexmap::IndexMap;
 use serde_json::json;
@@ -53,7 +53,10 @@ impl AwsccProvider {
         {
             let tags_map = self.parse_tags(tags_array);
             if !tags_map.is_empty() {
-                attributes.insert("tags".to_string(), Value::Map(tags_map));
+                attributes.insert(
+                    "tags".to_string(),
+                    Value::Concrete(ConcreteValue::Map(tags_map)),
+                );
             }
         }
 
@@ -280,10 +283,16 @@ fn map_aws_props_to_attributes(
             None if !attr_schema.required && !attr_schema.write_only => {
                 match &attr_schema.attr_type {
                     AttributeType::List { .. } => {
-                        attributes.insert(dsl_name.clone(), Value::List(Vec::new()));
+                        attributes.insert(
+                            dsl_name.clone(),
+                            Value::Concrete(ConcreteValue::List(Vec::new())),
+                        );
                     }
                     AttributeType::Map { .. } => {
-                        attributes.insert(dsl_name.clone(), Value::Map(IndexMap::new()));
+                        attributes.insert(
+                            dsl_name.clone(),
+                            Value::Concrete(ConcreteValue::Map(IndexMap::new())),
+                        );
                     }
                     _ => {}
                 }
@@ -363,7 +372,7 @@ mod tests {
 
         assert_eq!(
             result.get("managed_policy_arns"),
-            Some(&Value::List(Vec::new())),
+            Some(&Value::Concrete(ConcreteValue::List(Vec::new()))),
             "absent optional list-typed attribute must canonicalize to empty list, not be dropped"
         );
     }
@@ -383,7 +392,9 @@ mod tests {
 
         assert_eq!(
             result.get("metadata"),
-            Some(&Value::Map(indexmap::IndexMap::new())),
+            Some(&Value::Concrete(ConcreteValue::Map(
+                indexmap::IndexMap::new()
+            ))),
             "absent optional map-typed attribute must canonicalize to empty map"
         );
     }
@@ -446,9 +457,9 @@ mod tests {
 
         assert_eq!(
             result.get("managed_policy_arns"),
-            Some(&Value::List(vec![Value::String(
+            Some(&Value::Concrete(ConcreteValue::List(vec![Value::String(
                 "arn:aws:iam::aws:policy/ReadOnlyAccess".to_string()
-            )])),
+            )]))),
         );
     }
 

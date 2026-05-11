@@ -6,7 +6,7 @@
 
 use indexmap::IndexMap;
 
-use carina_core::resource::Value;
+use carina_core::resource::{ConcreteValue, Value};
 use serde_json::json;
 
 use super::AwsccProvider;
@@ -15,9 +15,9 @@ impl AwsccProvider {
     /// Build tags array for CloudFormation format
     pub(crate) fn build_tags(&self, user_tags: Option<&Value>) -> Vec<serde_json::Value> {
         let mut tags = Vec::new();
-        if let Some(Value::Map(user_tags)) = user_tags {
+        if let Some(Value::Concrete(ConcreteValue::Map(user_tags))) = user_tags {
             for (key, value) in user_tags {
-                if let Value::String(v) = value {
+                if let Value::Concrete(ConcreteValue::String(v)) = value {
                     tags.push(json!({"Key": key, "Value": v}));
                 }
             }
@@ -33,7 +33,10 @@ impl AwsccProvider {
                 tag.get("Key").and_then(|v| v.as_str()),
                 tag.get("Value").and_then(|v| v.as_str()),
             ) {
-                tags_map.insert(key.to_string(), Value::String(value.to_string()));
+                tags_map.insert(
+                    key.to_string(),
+                    Value::Concrete(ConcreteValue::String(value.to_string())),
+                );
             }
         }
         tags_map

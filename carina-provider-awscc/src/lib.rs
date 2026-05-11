@@ -24,7 +24,7 @@ use carina_core::provider::{
     ProviderNormalizer, ProviderResult, ReadRequest, SavedAttrs, UpdateRequest,
     merge_default_tags_for_provider,
 };
-use carina_core::resource::{Resource, ResourceId, State, Value};
+use carina_core::resource::{ConcreteValue, Resource, ResourceId, State, Value};
 use carina_core::schema::SchemaRegistry;
 
 use crate::provider::AwsccProviderConfig;
@@ -138,7 +138,7 @@ impl ProviderFactory for AwsccProviderFactory {
     }
 
     fn extract_region(&self, attributes: &IndexMap<String, Value>) -> String {
-        if let Some(Value::String(region)) = attributes.get("region") {
+        if let Some(Value::Concrete(ConcreteValue::String(region))) = attributes.get("region") {
             return carina_core::utils::convert_region_value(region);
         }
         "ap-northeast-1".to_string()
@@ -202,10 +202,10 @@ impl ProviderFactory for AwsccProviderFactory {
 pub(crate) fn extract_provider_config(attributes: &IndexMap<String, Value>) -> AwsccProviderConfig {
     fn extract_string_list(attributes: &IndexMap<String, Value>, key: &str) -> Vec<String> {
         match attributes.get(key) {
-            Some(Value::List(items)) => items
+            Some(Value::Concrete(ConcreteValue::List(items))) => items
                 .iter()
                 .filter_map(|v| match v {
-                    Value::String(s) => Some(s.clone()),
+                    Value::Concrete(ConcreteValue::String(s)) => Some(s.clone()),
                     _ => None,
                 })
                 .collect(),
@@ -346,14 +346,16 @@ mod tests {
         let mut attrs: IndexMap<String, Value> = IndexMap::new();
         attrs.insert(
             "allowed_account_ids".to_string(),
-            Value::List(vec![
+            Value::Concrete(ConcreteValue::List(vec![
                 Value::String("111111111111".to_string()),
                 Value::String("222222222222".to_string()),
-            ]),
+            ])),
         );
         attrs.insert(
             "forbidden_account_ids".to_string(),
-            Value::List(vec![Value::String("999999999999".to_string())]),
+            Value::Concrete(ConcreteValue::List(vec![Value::String(
+                "999999999999".to_string(),
+            )])),
         );
 
         let cfg = extract_provider_config(&attrs);
@@ -394,45 +396,65 @@ mod tests {
         let mut resource = Resource::with_provider("awscc", "ec2.Vpc", "test-vpc");
         resource.set_attr(
             "cidr_block".to_string(),
-            Value::String("10.0.0.0/16".to_string()),
+            Value::Concrete(ConcreteValue::String("10.0.0.0/16".to_string())),
         );
         let mut resource_tags: IndexMap<String, Value> = IndexMap::new();
-        resource_tags.insert("Name".to_string(), Value::String("my-vpc".to_string()));
+        resource_tags.insert(
+            "Name".to_string(),
+            Value::Concrete(ConcreteValue::String("my-vpc".to_string())),
+        );
         resource_tags.insert(
             "Environment".to_string(),
-            Value::String("staging".to_string()),
+            Value::Concrete(ConcreteValue::String("staging".to_string())),
         );
-        resource.set_attr("tags".to_string(), Value::Map(resource_tags));
+        resource.set_attr(
+            "tags".to_string(),
+            Value::Concrete(ConcreteValue::Map(resource_tags)),
+        );
 
         let mut default_tags: IndexMap<String, Value> = IndexMap::new();
         default_tags.insert(
             "Environment".to_string(),
-            Value::String("production".to_string()),
+            Value::Concrete(ConcreteValue::String("production".to_string())),
         );
-        default_tags.insert("Team".to_string(), Value::String("platform".to_string()));
+        default_tags.insert(
+            "Team".to_string(),
+            Value::Concrete(ConcreteValue::String("platform".to_string())),
+        );
 
         let mut resources = vec![resource];
         normalizer.merge_default_tags(&mut resources, &default_tags, &schemas);
 
-        if let Some(Value::Map(tags)) = resources[0].get_attr("tags") {
+        if let Some(Value::Concrete(ConcreteValue::Map(tags))) = resources[0].get_attr("tags") {
             assert_eq!(
                 tags.get("Environment"),
-                Some(&Value::String("staging".to_string()))
+                Some(&Value::Concrete(ConcreteValue::String(
+                    "staging".to_string()
+                )))
             );
-            assert_eq!(tags.get("Name"), Some(&Value::String("my-vpc".to_string())));
+            assert_eq!(
+                tags.get("Name"),
+                Some(&Value::Concrete(ConcreteValue::String(
+                    "my-vpc".to_string()
+                )))
+            );
             assert_eq!(
                 tags.get("Team"),
-                Some(&Value::String("platform".to_string()))
+                Some(&Value::Concrete(ConcreteValue::String(
+                    "platform".to_string()
+                )))
             );
         } else {
             panic!("Expected tags to be a Map");
         }
 
-        if let Some(Value::List(keys)) = resources[0].get_attr("_default_tag_keys") {
+        if let Some(Value::Concrete(ConcreteValue::List(keys))) =
+            resources[0].get_attr("_default_tag_keys")
+        {
             let key_strs: Vec<&str> = keys
                 .iter()
                 .filter_map(|v| match v {
-                    Value::String(s) => Some(s.as_str()),
+                    Value::Concrete(ConcreteValue::String(s)) => Some(s.as_str()),
                     _ => None,
                 })
                 .collect();
@@ -450,32 +472,36 @@ mod tests {
         let mut resource = Resource::with_provider("awscc", "ec2.Vpc", "test-vpc");
         resource.set_attr(
             "cidr_block".to_string(),
-            Value::String("10.0.0.0/16".to_string()),
+            Value::Concrete(ConcreteValue::String("10.0.0.0/16".to_string())),
         );
 
         let mut default_tags: IndexMap<String, Value> = IndexMap::new();
         default_tags.insert(
             "Environment".to_string(),
-            Value::String("production".to_string()),
+            Value::Concrete(ConcreteValue::String("production".to_string())),
         );
 
         let mut resources = vec![resource];
         normalizer.merge_default_tags(&mut resources, &default_tags, &schemas);
 
-        if let Some(Value::Map(tags)) = resources[0].get_attr("tags") {
+        if let Some(Value::Concrete(ConcreteValue::Map(tags))) = resources[0].get_attr("tags") {
             assert_eq!(
                 tags.get("Environment"),
-                Some(&Value::String("production".to_string()))
+                Some(&Value::Concrete(ConcreteValue::String(
+                    "production".to_string()
+                )))
             );
         } else {
             panic!("Expected tags to be set from default_tags");
         }
 
-        if let Some(Value::List(keys)) = resources[0].get_attr("_default_tag_keys") {
+        if let Some(Value::Concrete(ConcreteValue::List(keys))) =
+            resources[0].get_attr("_default_tag_keys")
+        {
             let key_strs: Vec<&str> = keys
                 .iter()
                 .filter_map(|v| match v {
-                    Value::String(s) => Some(s.as_str()),
+                    Value::Concrete(ConcreteValue::String(s)) => Some(s.as_str()),
                     _ => None,
                 })
                 .collect();
@@ -493,13 +519,13 @@ mod tests {
         let mut resource = Resource::with_provider("awscc", "ec2.Route", "test-route");
         resource.set_attr(
             "route_table_id".to_string(),
-            Value::String("rtb-123".to_string()),
+            Value::Concrete(ConcreteValue::String("rtb-123".to_string())),
         );
 
         let mut default_tags: IndexMap<String, Value> = IndexMap::new();
         default_tags.insert(
             "Environment".to_string(),
-            Value::String("production".to_string()),
+            Value::Concrete(ConcreteValue::String("production".to_string())),
         );
 
         let mut resources = vec![resource];
@@ -517,20 +543,31 @@ mod tests {
         let mut resource = Resource::with_provider("awscc", "ec2.Vpc", "test-vpc");
         resource.set_attr(
             "cidr_block".to_string(),
-            Value::String("10.0.0.0/16".to_string()),
+            Value::Concrete(ConcreteValue::String("10.0.0.0/16".to_string())),
         );
         let mut resource_tags: IndexMap<String, Value> = IndexMap::new();
-        resource_tags.insert("Name".to_string(), Value::String("my-vpc".to_string()));
-        resource.set_attr("tags".to_string(), Value::Map(resource_tags));
+        resource_tags.insert(
+            "Name".to_string(),
+            Value::Concrete(ConcreteValue::String("my-vpc".to_string())),
+        );
+        resource.set_attr(
+            "tags".to_string(),
+            Value::Concrete(ConcreteValue::Map(resource_tags)),
+        );
 
         let default_tags: IndexMap<String, Value> = IndexMap::new();
 
         let mut resources = vec![resource];
         normalizer.merge_default_tags(&mut resources, &default_tags, &schemas);
 
-        if let Some(Value::Map(tags)) = resources[0].get_attr("tags") {
+        if let Some(Value::Concrete(ConcreteValue::Map(tags))) = resources[0].get_attr("tags") {
             assert_eq!(tags.len(), 1);
-            assert_eq!(tags.get("Name"), Some(&Value::String("my-vpc".to_string())));
+            assert_eq!(
+                tags.get("Name"),
+                Some(&Value::Concrete(ConcreteValue::String(
+                    "my-vpc".to_string()
+                )))
+            );
         } else {
             panic!("Expected tags to be unchanged");
         }

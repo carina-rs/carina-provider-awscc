@@ -7,13 +7,13 @@
 use super::AwsccSchemaConfig;
 use super::tags_type;
 use super::validate_tags_map;
-use carina_core::resource::Value;
+use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, legacy_validator};
 use regex::Regex;
 
 #[allow(dead_code)]
 fn validate_list_items_max_5(value: &Value) -> Result<(), String> {
-    if let Value::List(items) = value {
+    if let Value::Concrete(ConcreteValue::List(items)) = value {
         let len = items.len();
         if len > 5 {
             Err(format!("List has {} items, expected ..=5", len))
@@ -26,7 +26,7 @@ fn validate_list_items_max_5(value: &Value) -> Result<(), String> {
 }
 
 fn validate_string_length_1_255(value: &Value) -> Result<(), String> {
-    if let Value::String(s) = value {
+    if let Value::Concrete(ConcreteValue::String(s)) = value {
         let len = s.chars().count();
         if !(1..=255).contains(&len) {
             Err(format!("String length {} is out of range 1..=255", len))
@@ -40,7 +40,7 @@ fn validate_string_length_1_255(value: &Value) -> Result<(), String> {
 
 #[allow(dead_code)]
 fn validate_string_pattern_57ee0c44b504b839_len_40_40(value: &Value) -> Result<(), String> {
-    if let Value::String(s) = value {
+    if let Value::Concrete(ConcreteValue::String(s)) = value {
         static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
             Regex::new("[0-9A-Fa-f]{40}").expect("invalid pattern regex")
         });

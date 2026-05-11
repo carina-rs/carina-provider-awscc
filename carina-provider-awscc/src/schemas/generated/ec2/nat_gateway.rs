@@ -7,7 +7,7 @@
 use super::AwsccSchemaConfig;
 use super::tags_type;
 use super::validate_tags_map;
-use carina_core::resource::Value;
+use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{
     AttributeSchema, AttributeType, OperationConfig, ResourceSchema, StructField, legacy_validator,
     types,
@@ -18,7 +18,7 @@ const VALID_AVAILABILITY_MODE: &[&str] = &["zonal", "regional"];
 const VALID_CONNECTIVITY_TYPE: &[&str] = &["public", "private"];
 
 fn validate_secondary_private_ip_address_count_range(value: &Value) -> Result<(), String> {
-    if let Value::Int(n) = value {
+    if let Value::Concrete(ConcreteValue::Int(n)) = value {
         if *n < 1 {
             Err(format!("Value {} is out of range 1..", n))
         } else {
