@@ -156,23 +156,3 @@ pub fn enum_valid_values() -> (
 ) {
     ("sso.Instance", &[("status", VALID_STATUS)])
 }
-
-/// Maps DSL alias values back to canonical AWS values for this module.
-/// e.g., ("ip_protocol", "all") -> Some("-1")
-pub fn enum_alias_reverse(attr_name: &str, value: &str) -> Option<&'static str> {
-    match (attr_name, value) {
-        ("status", "create_in_progress") => Some("CREATE_IN_PROGRESS"),
-        ("status", "delete_in_progress") => Some("DELETE_IN_PROGRESS"),
-        ("status", "active") => Some("ACTIVE"),
-        _ => None,
-    }
-}
-
-/// Returns all enum alias entries as (attr_name, alias, canonical) tuples.
-pub fn enum_alias_entries() -> &'static [(&'static str, &'static str, &'static str)] {
-    &[
-        ("status", "create_in_progress", "CREATE_IN_PROGRESS"),
-        ("status", "delete_in_progress", "DELETE_IN_PROGRESS"),
-        ("status", "active", "ACTIVE"),
-    ]
-}

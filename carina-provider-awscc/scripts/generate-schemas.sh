@@ -289,28 +289,6 @@ cat >> "$OUTPUT_DIR/mod.rs" << 'EOF'
     map
 });
 
-/// Function signature for enum alias reverse lookups.
-type EnumAliasReverseFn = fn(&str, &str) -> Option<&'static str>;
-
-/// Enum alias reverse dispatch table: resource_type -> dispatch function.
-static ENUM_ALIAS_DISPATCH: LazyLock<HashMap<&'static str, EnumAliasReverseFn>> =
-    LazyLock::new(|| {
-        let entries: Vec<(&str, EnumAliasReverseFn)> = vec![
-EOF
-
-# Add enum_alias_reverse dispatch entries
-for TYPE_NAME in "${GENERATED_TYPES[@]}"; do
-    SVC=$(service_name "$TYPE_NAME")
-    RESOURCE=$(resource_module_name "$TYPE_NAME")
-    DSL_NAME=$("$CODEGEN_BIN" --type-name "$TYPE_NAME" --print-dsl-resource-name)
-    echo "            (\"${DSL_NAME}\", ${SVC}::${RESOURCE}::enum_alias_reverse)," >> "$OUTPUT_DIR/mod.rs"
-done
-
-cat >> "$OUTPUT_DIR/mod.rs" << 'EOF'
-        ];
-        entries.into_iter().collect()
-    });
-
 /// Build all schema configs (called once by LazyLock).
 fn build_configs() -> Vec<AwsccSchemaConfig> {
     vec![
@@ -353,40 +331,11 @@ pub fn get_enum_valid_values(resource_type: &str, attr_name: &str) -> Option<&'s
         .copied()
 }
 
-/// Maps DSL alias values back to canonical AWS values. O(1) dispatch.
-/// Dispatches to per-module enum_alias_reverse() functions.
-pub fn get_enum_alias_reverse(resource_type: &str, attr_name: &str, value: &str) -> Option<&'static str> {
-    ENUM_ALIAS_DISPATCH
-        .get(resource_type)
-        .and_then(|f| f(attr_name, value))
-}
-
-/// Build a complete enum aliases map for all resource types.
-/// Returns: resource_type -> attr_name -> alias -> canonical_value.
-/// Used by CarinaProvider::enum_aliases() for the WASM host cache.
-pub fn build_enum_aliases_map() -> HashMap<String, HashMap<String, HashMap<String, String>>> {
-    let mut map: HashMap<String, HashMap<String, HashMap<String, String>>> = HashMap::new();
-EOF
-
-# Add enum_alias_entries calls dynamically
-for TYPE_NAME in "${GENERATED_TYPES[@]}"; do
-    SVC=$(service_name "$TYPE_NAME")
-    RESOURCE=$(resource_module_name "$TYPE_NAME")
-    DSL_NAME=$("$CODEGEN_BIN" --type-name "$TYPE_NAME" --print-dsl-resource-name)
-    cat >> "$OUTPUT_DIR/mod.rs" << INNER_EOF
-    for (attr, alias, canonical) in ${SVC}::${RESOURCE}::enum_alias_entries() {
-        map.entry("${DSL_NAME}".to_string())
-            .or_default()
-            .entry(attr.to_string())
-            .or_default()
-            .insert(alias.to_string(), canonical.to_string());
-    }
-INNER_EOF
-done
-
-cat >> "$OUTPUT_DIR/mod.rs" << 'EOF'
-    map
-}
+// `get_enum_alias_reverse` and `build_enum_aliases_map` are no
+// longer emitted — DSL → API canonical conversion now goes through
+// `DslMap::api_for` against the exhaustive `dsl_aliases` table on
+// each `StringEnum` (awscc#220). The single source of truth lives
+// inline in `schemas/generated/<service>/<resource>.rs`.
 EOF
 
 echo ""

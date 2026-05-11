@@ -11,7 +11,6 @@ use carina_core::schema::AttributeType;
 use serde_json::json;
 
 use crate::schemas::generated::canonicalize_enum_value;
-use crate::schemas::generated::get_enum_alias_reverse;
 use carina_core::utils::{convert_enum_value, extract_enum_value_with_values};
 
 /// Convert AWS value to DSL value
@@ -200,27 +199,23 @@ pub(crate) fn dsl_value_to_aws(
     if attr_type.namespaced_enum_parts().is_some() {
         match value {
             Value::Concrete(ConcreteValue::String(s)) => {
-                // Extract the raw enum value from the namespaced identifier, using
-                // known valid values for disambiguation when enum values contain dots
-                // (e.g., "ipsec.1" in "awscc.ec2.VpnGateway.Type.ipsec.1").
-                let raw = if let Some((_, values, _, _)) = attr_type.string_enum_parts() {
+                // For StringEnum: extract the trailing segment (handling
+                // dotted values like the legacy `ipsec.1` shape that may
+                // still arrive from older state) and look up the
+                // API-canonical spelling via `DslMap::api_for`. The
+                // alias table is now exhaustive (carina-rs/carina#2980 /
+                // awscc#222) so every DSL spelling — including identity
+                // rows — round-trips through this single lookup.
+                let resolved = if let Some((_, values, _, dsl_map)) = attr_type.string_enum_parts()
+                {
                     let valid: Vec<&str> = values.iter().map(String::as_str).collect();
                     let raw_extracted = extract_enum_value_with_values(s, &valid);
-                    canonicalize_enum_value(raw_extracted, &valid)
+                    dsl_map.api_for(raw_extracted)
                 } else {
-                    let extracted = convert_enum_value(s);
-                    // Custom types with namespace (e.g., Region) use underscores in DSL
-                    // but hyphens in AWS. Convert back.
-                    if attr_type.namespaced_enum_parts().is_some() {
-                        extracted.replace('_', "-")
-                    } else {
-                        extracted.to_string()
-                    }
-                };
-                // Apply alias reverse mapping (e.g., "all" -> "-1")
-                let resolved = match get_enum_alias_reverse(resource_type, attr_name, &raw) {
-                    Some(canonical) => canonical.to_string(),
-                    None => raw,
+                    // Custom types with namespace (e.g. Region) use a
+                    // closure-shaped DslMap; the convention there is
+                    // underscores in DSL, hyphens in the AWS API.
+                    convert_enum_value(s).replace('_', "-")
                 };
                 Some(json!(resolved))
             }

@@ -164,9 +164,11 @@ impl CarinaProvider for AwsccProcessProvider {
         vec!["region".to_string()]
     }
 
-    fn enum_aliases(&self) -> HashMap<String, HashMap<String, HashMap<String, String>>> {
-        schemas::generated::build_enum_aliases_map()
-    }
+    // `enum_aliases` is no longer overridden. After awscc#220 / #223,
+    // DSL → API canonical conversion goes through `DslMap::api_for`
+    // against each `StringEnum`'s exhaustive `dsl_aliases` table
+    // (sourced from `carina-core` schema). The host-side dispatch
+    // table this method used to feed has been removed.
 
     fn validate_custom_type(&self, type_name: &str, value: &str) -> Result<(), String> {
         use carina_core::parser::ValidatorFn;

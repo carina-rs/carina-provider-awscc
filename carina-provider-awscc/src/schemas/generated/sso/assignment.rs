@@ -96,23 +96,3 @@ pub fn enum_valid_values() -> (
         ],
     )
 }
-
-/// Maps DSL alias values back to canonical AWS values for this module.
-/// e.g., ("ip_protocol", "all") -> Some("-1")
-pub fn enum_alias_reverse(attr_name: &str, value: &str) -> Option<&'static str> {
-    match (attr_name, value) {
-        ("principal_type", "user") => Some("USER"),
-        ("principal_type", "group") => Some("GROUP"),
-        ("target_type", "aws_account") => Some("AWS_ACCOUNT"),
-        _ => None,
-    }
-}
-
-/// Returns all enum alias entries as (attr_name, alias, canonical) tuples.
-pub fn enum_alias_entries() -> &'static [(&'static str, &'static str, &'static str)] {
-    &[
-        ("principal_type", "user", "USER"),
-        ("principal_type", "group", "GROUP"),
-        ("target_type", "aws_account", "AWS_ACCOUNT"),
-    ]
-}

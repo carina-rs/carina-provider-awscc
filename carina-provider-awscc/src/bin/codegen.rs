@@ -1728,7 +1728,7 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
     // all `use` lines — is constructed at the end.
     let mut body = String::new();
 
-    // Aliases are used for to_dsl closure and enum_alias_reverse generation below.
+    // Aliases feed the `dsl_aliases` table on each `StringEnum` below.
     let aliases = known_enum_aliases();
 
     // Generate enum constants.
@@ -2255,87 +2255,10 @@ pub fn {}() -> AwsccSchemaConfig {{
         }
     ));
 
-    // Generate enum_alias_reverse() and enum_alias_entries() functions.
-    // Both share the same alias data: (attr_name, alias, canonical).
-    {
-        // Collect alias entries as (attr_name, alias, canonical) tuples.
-        let mut alias_entries: Vec<(String, String, String)> = Vec::new();
-        let mut seen: HashSet<(String, String)> = HashSet::new();
-        for (prop_name, enum_info) in &enums {
-            let field_name = prop_name
-                .split('.')
-                .next_back()
-                .unwrap_or(prop_name.as_str());
-            let attr_name = field_name.to_snake_case();
-
-            // Add explicit aliases from known_enum_aliases()
-            if let Some(prop_aliases) = aliases.get(field_name) {
-                for (canonical, alias) in prop_aliases {
-                    if seen.insert((attr_name.clone(), alias.to_string())) {
-                        alias_entries.push((
-                            attr_name.clone(),
-                            alias.to_string(),
-                            canonical.to_string(),
-                        ));
-                    }
-                }
-            }
-
-            // Auto-generate DSL aliases for every enum value so the user-facing
-            // DSL form is always snake_case (naming-conventions design D3). The
-            // alias maps the snake_case DSL form back to the canonical AWS API
-            // value (PascalCase, SHOUTY_SNAKE, or already-kebab/snake).
-            for value in &enum_info.values {
-                let dsl_form = dsl_enum_value(value);
-                if dsl_form != *value && seen.insert((attr_name.clone(), dsl_form.clone())) {
-                    alias_entries.push((attr_name.clone(), dsl_form, value.clone()));
-                }
-            }
-        }
-
-        // enum_alias_reverse(): match-based lookup
-        body.push_str(
-            "\n/// Maps DSL alias values back to canonical AWS values for this module.\n\
-             /// e.g., (\"ip_protocol\", \"all\") -> Some(\"-1\")\n\
-             pub fn enum_alias_reverse(attr_name: &str, value: &str) -> Option<&'static str> {\n",
-        );
-        if alias_entries.is_empty() {
-            body.push_str("    let _ = (attr_name, value);\n    None\n");
-        } else {
-            let match_arms: Vec<String> = alias_entries
-                .iter()
-                .map(|(attr, alias, canonical)| {
-                    format!(
-                        "        (\"{}\", \"{}\") => Some(\"{}\")",
-                        attr, alias, canonical
-                    )
-                })
-                .collect();
-            body.push_str(&format!(
-                "    match (attr_name, value) {{\n{},\n        _ => None\n    }}\n",
-                match_arms.join(",\n")
-            ));
-        }
-        body.push_str("}\n");
-
-        // enum_alias_entries(): static slice of all entries
-        body.push_str(
-            "\n/// Returns all enum alias entries as (attr_name, alias, canonical) tuples.\n\
-             pub fn enum_alias_entries() -> &'static [(&'static str, &'static str, &'static str)] {\n",
-        );
-        if alias_entries.is_empty() {
-            body.push_str("    &[]\n");
-        } else {
-            let entry_strs: Vec<String> = alias_entries
-                .iter()
-                .map(|(attr, alias, canonical)| {
-                    format!("        (\"{}\", \"{}\", \"{}\")", attr, alias, canonical)
-                })
-                .collect();
-            body.push_str(&format!("    &[\n{}\n    ]\n", entry_strs.join(",\n")));
-        }
-        body.push_str("}\n");
-    }
+    // `enum_alias_reverse()` / `enum_alias_entries()` are no longer
+    // emitted. DSL → API canonical conversion is now done through
+    // `DslMap::api_for` against the exhaustive `dsl_aliases` table on
+    // each `StringEnum`, sourced from a single place (see awscc#220).
 
     // Header is built last so import selection can scan the body for
     // `legacy_validator(` / `noop_validator(` actually-emitted mentions.
@@ -10735,59 +10658,11 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_enum_alias_reverse_covers_pascal_values() {
-        // Regression for #199: enum_alias_reverse() must emit
-        // (snake_case, API) entries for every PascalCase value, so DSL inputs
-        // round-trip back to the API spelling on send.
-        let mut properties = BTreeMap::new();
-        properties.insert(
-            "ObjectOwnership".to_string(),
-            CfnProperty {
-                prop_type: Some(TypeValue::Single("string".to_string())),
-                description: Some("Object ownership".to_string()),
-                enum_values: Some(vec![EnumValue::Str("BucketOwnerEnforced".to_string())]),
-                items: None,
-                ref_path: None,
-                insertion_order: None,
-                properties: None,
-                required: vec![],
-                minimum: None,
-                maximum: None,
-                additional_properties: None,
-                const_value: None,
-                default_value: None,
-                pattern: None,
-                min_items: None,
-                max_items: None,
-                min_length: None,
-                max_length: None,
-                format: None,
-            },
-        );
-        let schema = CfnSchema {
-            type_name: "AWS::S3::Bucket".to_string(),
-            description: None,
-            properties,
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
-        let generated = generate_schema_code(&schema, "AWS::S3::Bucket").unwrap();
-        assert!(
-            generated.contains(
-                "(\"object_ownership\", \"bucket_owner_enforced\") => Some(\"BucketOwnerEnforced\")"
-            ),
-            "enum_alias_reverse must map snake_case DSL value to API spelling: {generated}"
-        );
-    }
+    // (test_enum_alias_reverse_covers_pascal_values removed in
+    // awscc#220 — the enum_alias_reverse() / enum_alias_entries() /
+    // ENUM_ALIAS_DISPATCH path is gone. The (snake_case, API)
+    // round-trip is now exercised by `DslMap::api_for` against the
+    // exhaustive `dsl_aliases` table; see #223's tests.)
 
     #[test]
     fn test_generate_markdown_uses_snake_case_dsl_identifier() {
