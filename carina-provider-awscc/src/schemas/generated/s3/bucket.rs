@@ -347,7 +347,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                 name: "ServerSideEncryptionByDefaultSseAlgorithm".to_string(),
                 values: vec!["aws:kms".to_string(), "AES256".to_string(), "aws:kms:dsse".to_string()],
                 namespace: Some("awscc.s3.Bucket".to_string()),
-                dsl_aliases: vec![("aws:kms".to_string(), "aws:kms".to_string()), ("AES256".to_string(), "aes256".to_string()), ("aws:kms:dsse".to_string(), "aws:kms:dsse".to_string())],
+                dsl_aliases: vec![("aws:kms".to_string(), "aws_kms".to_string()), ("AES256".to_string(), "aes256".to_string()), ("aws:kms:dsse".to_string(), "aws_kms_dsse".to_string())],
             }).required().with_description("Server-side encryption algorithm to use for the default encryption. For directory buckets, there are only two supported values for server-side encryption: ``AES256`` and ``aws:kms``.").with_provider_name("SSEAlgorithm")
                     ],
                 }).with_description("Specifies the default server-side encryption to apply to new objects in the bucket. If a PUT Object request doesn't specify any server-side encryption, this default encryption will be applied.").with_provider_name("ServerSideEncryptionByDefault")
@@ -717,7 +717,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                 name: "MetadataTableEncryptionConfigurationSseAlgorithm".to_string(),
                 values: vec!["aws:kms".to_string(), "AES256".to_string()],
                 namespace: Some("awscc.s3.Bucket".to_string()),
-                dsl_aliases: vec![("aws:kms".to_string(), "aws:kms".to_string()), ("AES256".to_string(), "aes256".to_string())],
+                dsl_aliases: vec![("aws:kms".to_string(), "aws_kms".to_string()), ("AES256".to_string(), "aes256".to_string())],
             }).required().with_description("The encryption type specified for a metadata table. To specify server-side encryption with KMSlong (KMS) keys (SSE-KMS), use the ``aws:kms`` value. To specify server-side encryption with Amazon S3 managed keys (SSE-S3), use the ``AES256`` value.").with_provider_name("SseAlgorithm")
                     ],
                 }).with_description("The encryption configuration for the inventory table.").with_provider_name("EncryptionConfiguration"),
@@ -736,7 +736,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                 name: "MetadataTableEncryptionConfigurationSseAlgorithm".to_string(),
                 values: vec!["aws:kms".to_string(), "AES256".to_string()],
                 namespace: Some("awscc.s3.Bucket".to_string()),
-                dsl_aliases: vec![("aws:kms".to_string(), "aws:kms".to_string()), ("AES256".to_string(), "aes256".to_string())],
+                dsl_aliases: vec![("aws:kms".to_string(), "aws_kms".to_string()), ("AES256".to_string(), "aes256".to_string())],
             }).required().with_description("The encryption type specified for a metadata table. To specify server-side encryption with KMSlong (KMS) keys (SSE-KMS), use the ``aws:kms`` value. To specify server-side encryption with Amazon S3 managed keys (SSE-S3), use the ``AES256`` value.").with_provider_name("SseAlgorithm")
                     ],
                 }).with_description("The encryption configuration for the journal table.").with_provider_name("EncryptionConfiguration"),

@@ -330,13 +330,14 @@ fn dsl_enum_value(value: &str) -> String {
     {
         return value.to_ascii_lowercase();
     }
-    // Already snake / kebab (no uppercase): normalize hyphens and
-    // dotted-numeric splits (e.g. `cloud-watch-logs` → `cloud_watch_logs`,
-    // `ipsec.1` → `ipsec_1`). The strict-DSL validator
-    // (carina-rs/carina#2980) gates acceptance on the DSL spelling,
-    // so dotted values must collapse to bare identifiers.
+    // Already snake / kebab (no uppercase): normalize hyphens, colons,
+    // and dotted-numeric splits (e.g. `cloud-watch-logs` →
+    // `cloud_watch_logs`, `ipsec.1` → `ipsec_1`, `aws:kms` → `aws_kms`).
+    // The strict-DSL validator (carina-rs/carina#2980) gates acceptance
+    // on the DSL spelling, so any non-identifier separator must collapse
+    // to `_` to keep the value reachable as a bare DSL identifier.
     if !value.chars().any(|c| c.is_ascii_uppercase()) {
-        return value.replace(['-', '.'], "_");
+        return value.replace(['-', '.', ':'], "_");
     }
     // Special case: acronym + lowercase + digits (e.g. "IPv4", "IPv6").
     // Heck's snake_case splits these as "i_pv4" which loses the acronym
@@ -10440,6 +10441,16 @@ mod tests {
         assert_eq!(dsl_enum_value("default"), "default");
         assert_eq!(dsl_enum_value("dedicated"), "dedicated");
         assert_eq!(dsl_enum_value("ap_northeast_1"), "ap_northeast_1");
+    }
+
+    #[test]
+    fn test_dsl_enum_value_colon_to_snake() {
+        // AWS S3 SSE algorithm values carry a colon (`aws:kms`, `aws:kms:dsse`).
+        // The colon makes the value unwritable as a bare DSL identifier, so
+        // codegen must rewrite it to `_` to keep the value reachable under
+        // the strict-DSL validator (carina-rs/carina#2986). See awscc#230.
+        assert_eq!(dsl_enum_value("aws:kms"), "aws_kms");
+        assert_eq!(dsl_enum_value("aws:kms:dsse"), "aws_kms_dsse");
     }
 
     #[test]
