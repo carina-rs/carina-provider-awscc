@@ -67,7 +67,7 @@ pub fn ec2_flow_log_config() -> AwsccSchemaConfig {
                 name: "FileFormat".to_string(),
                 values: vec!["plain-text".to_string(), "parquet".to_string()],
                 namespace: Some("awscc.ec2.FlowLog".to_string()),
-                dsl_aliases: vec![("plain-text".to_string(), "plain_text".to_string())],
+                dsl_aliases: vec![("plain-text".to_string(), "plain_text".to_string()), ("parquet".to_string(), "parquet".to_string())],
             }).required().with_provider_name("FileFormat"),
                     StructField::new("hive_compatible_partitions", AttributeType::Bool).required().with_provider_name("HiveCompatiblePartitions"),
                     StructField::new("per_hour_partition", AttributeType::Bool).required().with_provider_name("PerHourPartition")
@@ -93,7 +93,7 @@ pub fn ec2_flow_log_config() -> AwsccSchemaConfig {
                 name: "LogDestinationType".to_string(),
                 values: vec!["cloud-watch-logs".to_string(), "s3".to_string(), "kinesis-data-firehose".to_string()],
                 namespace: Some("awscc.ec2.FlowLog".to_string()),
-                dsl_aliases: vec![("cloud-watch-logs".to_string(), "cloud_watch_logs".to_string()), ("kinesis-data-firehose".to_string(), "kinesis_data_firehose".to_string())],
+                dsl_aliases: vec![("cloud-watch-logs".to_string(), "cloud_watch_logs".to_string()), ("s3".to_string(), "s3".to_string()), ("kinesis-data-firehose".to_string(), "kinesis_data_firehose".to_string())],
             })
                 .create_only()
                 .with_description("Specifies the type of destination to which the flow log data is to be published. Flow log data can be published to CloudWatch Logs or Amazon S3.")

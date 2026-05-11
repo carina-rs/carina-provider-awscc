@@ -330,9 +330,13 @@ fn dsl_enum_value(value: &str) -> String {
     {
         return value.to_ascii_lowercase();
     }
-    // Already snake / kebab (no uppercase): just normalize hyphens.
+    // Already snake / kebab (no uppercase): normalize hyphens and
+    // dotted-numeric splits (e.g. `cloud-watch-logs` → `cloud_watch_logs`,
+    // `ipsec.1` → `ipsec_1`). The strict-DSL validator
+    // (carina-rs/carina#2980) gates acceptance on the DSL spelling,
+    // so dotted values must collapse to bare identifiers.
     if !value.chars().any(|c| c.is_ascii_uppercase()) {
-        return value.replace('-', "_");
+        return value.replace(['-', '.'], "_");
     }
     // Special case: acronym + lowercase + digits (e.g. "IPv4", "IPv6").
     // Heck's snake_case splits these as "i_pv4" which loses the acronym
@@ -375,8 +379,16 @@ fn dsl_aliases_code(
     values: &[String],
     prop_aliases: Option<&Vec<(&'static str, &'static str)>>,
 ) -> String {
-    // Build (canonical, dsl_form) pairs where the two strings differ.
-    // Manual aliases from known_enum_aliases win over the D7 transform.
+    // Build (canonical, dsl_form) pairs for **every** value, including
+    // identity rows where the DSL spelling equals the canonical. The
+    // exhaustive table is what makes the carina-core strict-DSL
+    // validator (see carina-rs/carina#2980) treat the whole enum
+    // uniformly — once any pair in `dsl_aliases` actually rewrites,
+    // strict mode kicks in for every variant, and identity rows are
+    // needed so the legitimate same-spelling values still validate.
+    //
+    // Manual aliases from known_enum_aliases win over the D7
+    // mechanical transform.
     let mut entries: Vec<(String, String)> = Vec::new();
     for value in values {
         let dsl_form = if let Some(aliases) = prop_aliases {
@@ -388,9 +400,7 @@ fn dsl_aliases_code(
         } else {
             dsl_enum_value(value)
         };
-        if dsl_form != *value {
-            entries.push((value.clone(), dsl_form));
-        }
+        entries.push((value.clone(), dsl_form));
     }
 
     // Also include alias entries whose canonical does not appear in `values`
@@ -10510,9 +10520,12 @@ mod tests {
     }
 
     #[test]
-    fn test_dsl_enum_value_dotted_passthrough() {
-        // Dotted values like "ipsec.1" pass through verbatim
-        assert_eq!(dsl_enum_value("ipsec.1"), "ipsec.1");
+    fn test_dsl_enum_value_dotted_mixed_to_snake() {
+        // Mixed dotted values (letters + `.`) like "ipsec.1" rewrite
+        // to snake_case (`ipsec_1`) so the DSL spelling stays a bare
+        // identifier — the strict-DSL validator
+        // (carina-rs/carina#2980 / awscc#222) gates acceptance on it.
+        assert_eq!(dsl_enum_value("ipsec.1"), "ipsec_1");
     }
 
     #[test]
@@ -10703,13 +10716,19 @@ mod tests {
             handlers: BTreeMap::new(),
         };
         let generated = generate_schema_code(&schema, "AWS::EC2::VPC").unwrap();
-        // The schema has exactly one StringEnum and all its values are
-        // already snake_case, so dsl_aliases must be the empty vec — no
-        // rewrites needed.
-        assert!(
-            generated.contains("dsl_aliases: vec![],"),
-            "dsl_aliases must be empty when all values are already snake_case: {generated}"
-        );
+        // After carina-rs/carina#2980 / awscc#222 the dsl_aliases table
+        // is exhaustive — every value (including identity rows where
+        // the DSL spelling equals the canonical) is emitted. The
+        // strict-DSL validator gates on the presence of any rewrite
+        // pair; identity rows are needed so legitimate same-spelling
+        // values still validate.
+        for v in ["default", "dedicated", "host"] {
+            let identity_pair = format!("(\"{v}\".to_string(), \"{v}\".to_string())");
+            assert!(
+                generated.contains(&identity_pair),
+                "dsl_aliases must include identity row for `{v}`: {generated}"
+            );
+        }
         assert!(
             !generated.contains("|s: &str| match s"),
             "no `fn` closure should be emitted when every value is already snake_case: {generated}"

@@ -37,7 +37,7 @@ pub fn ec2_eip_config() -> AwsccSchemaConfig {
                 name: "Domain".to_string(),
                 values: vec!["vpc".to_string(), "standard".to_string()],
                 namespace: Some("awscc.ec2.Eip".to_string()),
-                dsl_aliases: vec![],
+                dsl_aliases: vec![("vpc".to_string(), "vpc".to_string()), ("standard".to_string(), "standard".to_string())],
             })
                 .with_description("The network (``vpc``). If you define an Elastic IP address and associate it with a VPC that is defined in the same template, you must declare a dependency on the VPC-gateway attachment by using the [DependsOn Attribute](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-attribute-dependson.html) on this resource.")
                 .with_provider_name("Domain"),

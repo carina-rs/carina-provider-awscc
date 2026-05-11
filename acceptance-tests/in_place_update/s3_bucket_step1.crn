@@ -10,7 +10,7 @@ awscc.s3.Bucket {
   bucket_name_prefix = 'carina-acc-test-update-'
 
   versioning_configuration = {
-    status = awscc.s3.Bucket.VersioningConfigurationStatus.Enabled
+    status = awscc.s3.Bucket.VersioningConfigurationStatus.enabled
   }
 
   lifecycle {

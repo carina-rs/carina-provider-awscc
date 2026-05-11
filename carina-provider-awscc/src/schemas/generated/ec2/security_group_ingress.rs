@@ -98,7 +98,7 @@ pub fn ec2_security_group_ingress_config() -> AwsccSchemaConfig {
                 name: "IpProtocol".to_string(),
                 values: vec!["tcp".to_string(), "udp".to_string(), "icmp".to_string(), "icmpv6".to_string(), "-1".to_string(), "all".to_string()],
                 namespace: Some("awscc.ec2.SecurityGroupIngress".to_string()),
-                dsl_aliases: vec![("-1".to_string(), "all".to_string())],
+                dsl_aliases: vec![("tcp".to_string(), "tcp".to_string()), ("udp".to_string(), "udp".to_string()), ("icmp".to_string(), "icmp".to_string()), ("icmpv6".to_string(), "icmpv6".to_string()), ("-1".to_string(), "all".to_string()), ("all".to_string(), "all".to_string())],
             })
                 .required()
                 .create_only()

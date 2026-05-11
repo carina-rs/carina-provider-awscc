@@ -16,14 +16,14 @@ awscc.s3.Bucket {
   lifecycle_configuration = {
     rule {
       id                 = 'expire-old-objects'
-      status             = awscc.s3.Bucket.RuleStatus.Enabled
+      status             = awscc.s3.Bucket.RuleStatus.enabled
       expiration_in_days = 90
     }
     rule {
       id     = 'transition-to-glacier'
-      status = awscc.s3.Bucket.RuleStatus.Enabled
+      status = awscc.s3.Bucket.RuleStatus.enabled
       transition {
-        storage_class      = awscc.s3.Bucket.TransitionStorageClass.GLACIER
+        storage_class      = awscc.s3.Bucket.TransitionStorageClass.glacier
         transition_in_days = 30
       }
     }

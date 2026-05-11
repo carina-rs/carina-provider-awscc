@@ -347,7 +347,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                 name: "ServerSideEncryptionByDefaultSseAlgorithm".to_string(),
                 values: vec!["aws:kms".to_string(), "AES256".to_string(), "aws:kms:dsse".to_string()],
                 namespace: Some("awscc.s3.Bucket".to_string()),
-                dsl_aliases: vec![("AES256".to_string(), "aes256".to_string())],
+                dsl_aliases: vec![("aws:kms".to_string(), "aws:kms".to_string()), ("AES256".to_string(), "aes256".to_string()), ("aws:kms:dsse".to_string(), "aws:kms:dsse".to_string())],
             }).required().with_description("Server-side encryption algorithm to use for the default encryption. For directory buckets, there are only two supported values for server-side encryption: ``AES256`` and ``aws:kms``.").with_provider_name("SSEAlgorithm")
                     ],
                 }).with_description("Specifies the default server-side encryption to apply to new objects in the bucket. If a PUT Object request doesn't specify any server-side encryption, this default encryption will be applied.").with_provider_name("ServerSideEncryptionByDefault")
@@ -644,7 +644,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                 name: "TransitionDefaultMinimumObjectSize".to_string(),
                 values: vec!["varies_by_storage_class".to_string(), "all_storage_classes_128K".to_string()],
                 namespace: Some("awscc.s3.Bucket".to_string()),
-                dsl_aliases: vec![("all_storage_classes_128K".to_string(), "all_storage_classes_128k".to_string())],
+                dsl_aliases: vec![("varies_by_storage_class".to_string(), "varies_by_storage_class".to_string()), ("all_storage_classes_128K".to_string(), "all_storage_classes_128k".to_string())],
             }).with_description("Indicates which default minimum object size behavior is applied to the lifecycle configuration. This parameter applies to general purpose buckets only. It isn't supported for directory bucket lifecycle configurations. + ``all_storage_classes_128K`` - Objects smaller than 128 KB will not transition to any storage class by default. + ``varies_by_storage_class`` - Objects smaller than 128 KB will transition to Glacier Flexible Retrieval or Glacier Deep Archive storage classes. By default, all other storage classes will prevent transitions smaller than 128 KB. To customize the minimum object size for any transition you can add a filter that specifies a custom ``ObjectSizeGreaterThan`` or ``ObjectSizeLessThan`` in the body of your transition rule. Custom filters always take precedence over the default transition behavior.").with_provider_name("TransitionDefaultMinimumObjectSize")
                     ],
                 })
@@ -695,7 +695,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                 name: "TableBucketType".to_string(),
                 values: vec!["aws".to_string(), "customer".to_string()],
                 namespace: Some("awscc.s3.Bucket".to_string()),
-                dsl_aliases: vec![],
+                dsl_aliases: vec![("aws".to_string(), "aws".to_string()), ("customer".to_string(), "customer".to_string())],
             }).required().with_description("The type of the table bucket where the metadata configuration is stored. The ``aws`` value indicates an AWS managed table bucket, and the ``customer`` value indicates a customer-managed table bucket. V2 metadata configurations are stored in AWS managed table buckets, and V1 metadata configurations are stored in customer-managed table buckets.").with_provider_name("TableBucketType"),
                     StructField::new("table_namespace", AttributeType::String).with_description("The namespace in the table bucket where the metadata tables for a metadata configuration are stored.").with_provider_name("TableNamespace")
                     ],
@@ -717,7 +717,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                 name: "MetadataTableEncryptionConfigurationSseAlgorithm".to_string(),
                 values: vec!["aws:kms".to_string(), "AES256".to_string()],
                 namespace: Some("awscc.s3.Bucket".to_string()),
-                dsl_aliases: vec![("AES256".to_string(), "aes256".to_string())],
+                dsl_aliases: vec![("aws:kms".to_string(), "aws:kms".to_string()), ("AES256".to_string(), "aes256".to_string())],
             }).required().with_description("The encryption type specified for a metadata table. To specify server-side encryption with KMSlong (KMS) keys (SSE-KMS), use the ``aws:kms`` value. To specify server-side encryption with Amazon S3 managed keys (SSE-S3), use the ``AES256`` value.").with_provider_name("SseAlgorithm")
                     ],
                 }).with_description("The encryption configuration for the inventory table.").with_provider_name("EncryptionConfiguration"),
@@ -736,7 +736,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                 name: "MetadataTableEncryptionConfigurationSseAlgorithm".to_string(),
                 values: vec!["aws:kms".to_string(), "AES256".to_string()],
                 namespace: Some("awscc.s3.Bucket".to_string()),
-                dsl_aliases: vec![("AES256".to_string(), "aes256".to_string())],
+                dsl_aliases: vec![("aws:kms".to_string(), "aws:kms".to_string()), ("AES256".to_string(), "aes256".to_string())],
             }).required().with_description("The encryption type specified for a metadata table. To specify server-side encryption with KMSlong (KMS) keys (SSE-KMS), use the ``aws:kms`` value. To specify server-side encryption with Amazon S3 managed keys (SSE-S3), use the ``AES256`` value.").with_provider_name("SseAlgorithm")
                     ],
                 }).with_description("The encryption configuration for the journal table.").with_provider_name("EncryptionConfiguration"),
@@ -1174,7 +1174,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                 name: "Protocol".to_string(),
                 values: vec!["http".to_string(), "https".to_string()],
                 namespace: Some("awscc.s3.Bucket".to_string()),
-                dsl_aliases: vec![],
+                dsl_aliases: vec![("http".to_string(), "http".to_string()), ("https".to_string(), "https".to_string())],
             }).with_description("Protocol to use when redirecting requests. The default is the protocol that is used in the original request.").with_provider_name("Protocol")
                     ],
                 }).with_description("The redirect behavior for every request to this bucket's website endpoint. If you specify this property, you can't specify any other property.").with_provider_name("RedirectAllRequestsTo"),
@@ -1190,7 +1190,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                 name: "Protocol".to_string(),
                 values: vec!["http".to_string(), "https".to_string()],
                 namespace: Some("awscc.s3.Bucket".to_string()),
-                dsl_aliases: vec![],
+                dsl_aliases: vec![("http".to_string(), "http".to_string()), ("https".to_string(), "https".to_string())],
             }).with_description("Protocol to use when redirecting requests. The default is the protocol that is used in the original request.").with_provider_name("Protocol"),
                     StructField::new("replace_key_prefix_with", AttributeType::String).with_description("The object key prefix to use in the redirect request. For example, to redirect requests for all pages with prefix ``docs/`` (objects in the ``docs/`` folder) to ``documents/``, you can set a condition block with ``KeyPrefixEquals`` set to ``docs/`` and in the Redirect set ``ReplaceKeyPrefixWith`` to ``/documents``. Not required if one of the siblings is present. Can be present only if ``ReplaceKeyWith`` is not provided. Replacement must be made for object keys containing special characters (such as carriage returns) when using XML requests. For more information, see [XML related object key constraints](https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html#object-key-xml-related-constraints).").with_provider_name("ReplaceKeyPrefixWith"),
                     StructField::new("replace_key_with", AttributeType::String).with_description("The specific object key to use in the redirect request. For example, redirect request to ``error.html``. Not required if one of the siblings is present. Can be present only if ``ReplaceKeyPrefixWith`` is not provided. Replacement must be made for object keys containing special characters (such as carriage returns) when using XML requests. For more information, see [XML related object key constraints](https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html#object-key-xml-related-constraints).").with_provider_name("ReplaceKeyWith")
