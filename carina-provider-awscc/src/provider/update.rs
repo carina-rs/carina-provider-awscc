@@ -9,7 +9,7 @@
 //! `carina-rs/carina#2559`).
 
 use carina_core::provider::{PatchOp, PatchOpKind, ProviderError, ProviderResult, UpdatePatch};
-use carina_core::resource::Value;
+use carina_core::resource::{ConcreteValue, Value};
 use serde_json::json;
 
 use super::conversion::dsl_value_to_aws;
@@ -110,10 +110,13 @@ pub(crate) fn build_update_patches(
 /// CloudControl `[{"Key": ..., "Value": ...}]` shape.
 fn push_tags_op(patch_ops: &mut Vec<serde_json::Value>, op: &PatchOp) {
     match (op.kind, &op.value) {
-        (PatchOpKind::Add | PatchOpKind::Replace, Some(Value::Map(user_tags))) => {
+        (
+            PatchOpKind::Add | PatchOpKind::Replace,
+            Some(Value::Concrete(ConcreteValue::Map(user_tags))),
+        ) => {
             let mut tags = Vec::new();
             for (key, value) in user_tags {
-                if let Value::String(v) = value {
+                if let Value::Concrete(ConcreteValue::String(v)) = value {
                     tags.push(json!({"Key": key, "Value": v}));
                 }
             }
@@ -215,9 +218,12 @@ mod tests {
         let config = get_schema_config("iam.Role").expect("iam.role schema should exist");
 
         let mut tags = IndexMap::new();
-        tags.insert("Env".to_string(), Value::String("staging".to_string()));
+        tags.insert(
+            "Env".to_string(),
+            Value::Concrete(ConcreteValue::String("staging".to_string())),
+        );
         let patch = UpdatePatch {
-            ops: vec![replace("tags", Value::Map(tags))],
+            ops: vec![replace("tags", Value::Concrete(ConcreteValue::Map(tags)))],
         };
 
         let patches = build_update_patches(config, "iam.Role", &patch);
@@ -260,7 +266,9 @@ mod tests {
         let patch = UpdatePatch {
             ops: vec![replace(
                 "instance_tenancy",
-                Value::String("awscc.ec2.Vpc.InstanceTenancy.dedicated".to_string()),
+                Value::Concrete(ConcreteValue::String(
+                    "awscc.ec2.Vpc.InstanceTenancy.dedicated".to_string(),
+                )),
             )],
         };
         let patches = build_update_patches(config, "ec2.Vpc", &patch);
@@ -279,7 +287,10 @@ mod tests {
         let config =
             get_schema_config("logs.LogGroup").expect("logs.log_group schema should exist");
         let patch = UpdatePatch {
-            ops: vec![add("retention_in_days", Value::Int(14))],
+            ops: vec![add(
+                "retention_in_days",
+                Value::Concrete(ConcreteValue::Int(14)),
+            )],
         };
         let patches = build_update_patches(config, "logs.LogGroup", &patch);
 
@@ -324,7 +335,7 @@ mod tests {
         let patch = UpdatePatch {
             ops: vec![replace(
                 "arn",
-                Value::String("arn:aws:logs:::*".to_string()),
+                Value::Concrete(ConcreteValue::String("arn:aws:logs:::*".to_string())),
             )],
         };
         let patches = build_update_patches(config, "logs.LogGroup", &patch);
@@ -352,10 +363,16 @@ mod tests {
     fn test_replace_tags_projects_to_aws_shape() {
         let config = get_vpc_config();
         let mut tags = IndexMap::new();
-        tags.insert("Name".to_string(), Value::String("my-vpc".to_string()));
-        tags.insert("Env".to_string(), Value::String("prod".to_string()));
+        tags.insert(
+            "Name".to_string(),
+            Value::Concrete(ConcreteValue::String("my-vpc".to_string())),
+        );
+        tags.insert(
+            "Env".to_string(),
+            Value::Concrete(ConcreteValue::String("prod".to_string())),
+        );
         let patch = UpdatePatch {
-            ops: vec![replace("tags", Value::Map(tags))],
+            ops: vec![replace("tags", Value::Concrete(ConcreteValue::Map(tags)))],
         };
         let patches = build_update_patches(config, "ec2.Vpc", &patch);
 
@@ -379,7 +396,10 @@ mod tests {
     fn test_unknown_attribute_is_dropped() {
         let config = get_vpc_config();
         let patch = UpdatePatch {
-            ops: vec![replace("not_a_real_attr", Value::String("x".to_string()))],
+            ops: vec![replace(
+                "not_a_real_attr",
+                Value::Concrete(ConcreteValue::String("x".to_string())),
+            )],
         };
         let patches = build_update_patches(config, "ec2.Vpc", &patch);
         assert!(

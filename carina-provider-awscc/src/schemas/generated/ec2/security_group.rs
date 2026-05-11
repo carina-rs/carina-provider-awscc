@@ -7,7 +7,7 @@
 use super::AwsccSchemaConfig;
 use super::tags_type;
 use super::validate_tags_map;
-use carina_core::resource::Value;
+use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{
     AttributeSchema, AttributeType, ResourceSchema, StructField, legacy_validator, types,
 };
@@ -17,7 +17,7 @@ const VALID_EGRESS_IP_PROTOCOL: &[&str] = &["tcp", "udp", "icmp", "icmpv6", "-1"
 const VALID_INGRESS_IP_PROTOCOL: &[&str] = &["tcp", "udp", "icmp", "icmpv6", "-1", "all"];
 
 fn validate_from_port_range(value: &Value) -> Result<(), String> {
-    if let Value::Int(n) = value {
+    if let Value::Concrete(ConcreteValue::Int(n)) = value {
         if *n < -1 || *n > 65535 {
             Err(format!("Value {} is out of range -1..=65535", n))
         } else {
@@ -29,7 +29,7 @@ fn validate_from_port_range(value: &Value) -> Result<(), String> {
 }
 
 fn validate_to_port_range(value: &Value) -> Result<(), String> {
-    if let Value::Int(n) = value {
+    if let Value::Concrete(ConcreteValue::Int(n)) = value {
         if *n < -1 || *n > 65535 {
             Err(format!("Value {} is out of range -1..=65535", n))
         } else {

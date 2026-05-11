@@ -7,13 +7,13 @@
 use super::AwsccSchemaConfig;
 use super::tags_type;
 use super::validate_tags_map;
-use carina_core::resource::Value;
+use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, legacy_validator};
 
 const VALID_TYPE: &[&str] = &["ipsec.1"];
 
 fn validate_amazon_side_asn_range(value: &Value) -> Result<(), String> {
-    if let Value::Int(n) = value {
+    if let Value::Concrete(ConcreteValue::Int(n)) = value {
         if *n < 1 || *n > 4294967294 {
             Err(format!("Value {} is out of range 1..=4294967294", n))
         } else {

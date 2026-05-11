@@ -2377,7 +2377,7 @@ use super::AwsccSchemaConfig;
         || has_defaults
         || has_patterns
     {
-        code.push_str("use carina_core::resource::Value;\n");
+        code.push_str("use carina_core::resource::{ConcreteValue, DeferredValue, Value};\n");
     }
     if has_patterns {
         code.push_str("use regex::Regex;\n");
@@ -7984,7 +7984,7 @@ mod tests {
             "Should emit .with_default() for string default value: {generated}"
         );
         assert!(
-            generated.contains("use carina_core::resource::Value;"),
+            generated.contains("use carina_core::resource::{ConcreteValue, DeferredValue, Value};"),
             "Should import Value when defaults are present: {generated}"
         );
     }

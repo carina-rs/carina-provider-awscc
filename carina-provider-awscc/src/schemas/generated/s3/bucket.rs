@@ -7,7 +7,7 @@
 use super::AwsccSchemaConfig;
 use super::tags_type;
 use super::validate_tags_map;
-use carina_core::resource::Value;
+use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{
     AttributeSchema, AttributeType, ResourceSchema, StructField, legacy_validator, noop_validator,
 };
@@ -141,7 +141,7 @@ const VALID_TRANSITION_STORAGE_CLASS: &[&str] = &[
 const VALID_VERSIONING_CONFIGURATION_STATUS: &[&str] = &["Enabled", "Suspended"];
 
 fn validate_days_after_initiation_range(value: &Value) -> Result<(), String> {
-    if let Value::Int(n) = value {
+    if let Value::Concrete(ConcreteValue::Int(n)) = value {
         if *n < 0 {
             Err(format!("Value {} is out of range 0..", n))
         } else {
@@ -153,7 +153,7 @@ fn validate_days_after_initiation_range(value: &Value) -> Result<(), String> {
 }
 
 fn validate_max_age_range(value: &Value) -> Result<(), String> {
-    if let Value::Int(n) = value {
+    if let Value::Concrete(ConcreteValue::Int(n)) = value {
         if *n < 0 {
             Err(format!("Value {} is out of range 0..", n))
         } else {
@@ -166,7 +166,7 @@ fn validate_max_age_range(value: &Value) -> Result<(), String> {
 
 #[allow(dead_code)]
 fn validate_string_pattern_cc806c69dc4cdaf7(value: &Value) -> Result<(), String> {
-    if let Value::String(s) = value {
+    if let Value::Concrete(ConcreteValue::String(s)) = value {
         static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
             Regex::new("^(\\d{4})-(0[0-9]|1[0-2])-([0-2]\\d|3[01])T([01]\\d|2[0-4]):([0-5]\\d):([0-6]\\d)((\\.\\d{3})?)Z$").expect("invalid pattern regex")
         });
@@ -184,7 +184,7 @@ fn validate_string_pattern_cc806c69dc4cdaf7(value: &Value) -> Result<(), String>
 }
 
 fn validate_string_length_max_255(value: &Value) -> Result<(), String> {
-    if let Value::String(s) = value {
+    if let Value::Concrete(ConcreteValue::String(s)) = value {
         let len = s.chars().count();
         if len > 255 {
             Err(format!("String length {} is out of range ..=255", len))
@@ -197,7 +197,7 @@ fn validate_string_length_max_255(value: &Value) -> Result<(), String> {
 }
 
 fn validate_string_length_max_1024(value: &Value) -> Result<(), String> {
-    if let Value::String(s) = value {
+    if let Value::Concrete(ConcreteValue::String(s)) = value {
         let len = s.chars().count();
         if len > 1024 {
             Err(format!("String length {} is out of range ..=1024", len))
@@ -211,7 +211,7 @@ fn validate_string_length_max_1024(value: &Value) -> Result<(), String> {
 
 #[allow(dead_code)]
 fn validate_string_pattern_3ee03875337c12ab_len_max_20(value: &Value) -> Result<(), String> {
-    if let Value::String(s) = value {
+    if let Value::Concrete(ConcreteValue::String(s)) = value {
         static RE: std::sync::LazyLock<Regex> =
             std::sync::LazyLock::new(|| Regex::new("[0-9]+").expect("invalid pattern regex"));
         if !RE.is_match(s) {

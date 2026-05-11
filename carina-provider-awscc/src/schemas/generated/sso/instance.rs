@@ -7,7 +7,7 @@
 use super::AwsccSchemaConfig;
 use super::tags_type;
 use super::validate_tags_map;
-use carina_core::resource::Value;
+use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, legacy_validator};
 use regex::Regex;
 
@@ -15,7 +15,7 @@ const VALID_STATUS: &[&str] = &["CREATE_IN_PROGRESS", "DELETE_IN_PROGRESS", "ACT
 
 #[allow(dead_code)]
 fn validate_list_items_max_75(value: &Value) -> Result<(), String> {
-    if let Value::List(items) = value {
+    if let Value::Concrete(ConcreteValue::List(items)) = value {
         let len = items.len();
         if len > 75 {
             Err(format!("List has {} items, expected ..=75", len))
@@ -29,7 +29,7 @@ fn validate_list_items_max_75(value: &Value) -> Result<(), String> {
 
 #[allow(dead_code)]
 fn validate_string_pattern_9b83f4f8f3673df5_len_max_256(value: &Value) -> Result<(), String> {
-    if let Value::String(s) = value {
+    if let Value::Concrete(ConcreteValue::String(s)) = value {
         static RE: std::sync::LazyLock<Regex> =
             std::sync::LazyLock::new(|| Regex::new("[\\w+=,.@-]+").expect("invalid pattern regex"));
         if !RE.is_match(s) {
@@ -47,7 +47,7 @@ fn validate_string_pattern_9b83f4f8f3673df5_len_max_256(value: &Value) -> Result
 
 #[allow(dead_code)]
 fn validate_string_pattern_9b83f4f8f3673df5_len_1_128(value: &Value) -> Result<(), String> {
-    if let Value::String(s) = value {
+    if let Value::Concrete(ConcreteValue::String(s)) = value {
         static RE: std::sync::LazyLock<Regex> =
             std::sync::LazyLock::new(|| Regex::new("[\\w+=,.@-]+").expect("invalid pattern regex"));
         if !RE.is_match(s) {
@@ -65,7 +65,7 @@ fn validate_string_pattern_9b83f4f8f3673df5_len_1_128(value: &Value) -> Result<(
 
 #[allow(dead_code)]
 fn validate_string_pattern_5a2bd7daee6344f1_len_1_32(value: &Value) -> Result<(), String> {
-    if let Value::String(s) = value {
+    if let Value::Concrete(ConcreteValue::String(s)) = value {
         static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
             Regex::new("^[\\w+=,.@-]+$").expect("invalid pattern regex")
         });

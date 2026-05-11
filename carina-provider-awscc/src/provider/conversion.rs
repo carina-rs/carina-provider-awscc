@@ -6,7 +6,7 @@
 
 use indexmap::IndexMap;
 
-use carina_core::resource::Value;
+use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::AttributeType;
 use serde_json::json;
 
@@ -42,7 +42,7 @@ pub(crate) fn aws_value_to_dsl(
         // closure. `DslMap::dsl_for` unifies both.
         let dsl_val = to_dsl.dsl_for(&canonical);
         let namespaced = format!("{}.{}.{}", ns, type_name, dsl_val);
-        return Some(Value::String(namespaced));
+        return Some(Value::Concrete(ConcreteValue::String(namespaced)));
     }
 
     // For List types, recurse into each item with the inner type for type-aware conversion
@@ -63,7 +63,7 @@ pub(crate) fn aws_value_to_dsl(
                 result
             })
             .collect();
-        return Some(Value::List(items));
+        return Some(Value::Concrete(ConcreteValue::List(items)));
     }
 
     // For Union types, try each member type and use the first that produces a type-aware result
@@ -91,7 +91,7 @@ pub(crate) fn aws_value_to_dsl(
             })
             .collect();
         if !map.is_empty() {
-            return Some(Value::Map(map));
+            return Some(Value::Concrete(ConcreteValue::Map(map)));
         }
     }
 
@@ -119,7 +119,7 @@ pub(crate) fn aws_value_to_dsl(
                 result.map(|val| (key, val))
             })
             .collect();
-        return Some(Value::Map(map));
+        return Some(Value::Concrete(ConcreteValue::Map(map)));
     }
 
     // For non-namespaced Custom types with to_dsl, apply the transformation on read.
@@ -132,7 +132,7 @@ pub(crate) fn aws_value_to_dsl(
     } = attr_type
         && let Some(s) = value.as_str()
     {
-        return Some(Value::String(transform(s)));
+        return Some(Value::Concrete(ConcreteValue::String(transform(s))));
     }
 
     json_to_value(value)
@@ -141,11 +141,11 @@ pub(crate) fn aws_value_to_dsl(
 /// Convert JSON value to DSL Value
 pub(crate) fn json_to_value(value: &serde_json::Value) -> Option<Value> {
     match value {
-        serde_json::Value::String(s) => Some(Value::String(s.clone())),
-        serde_json::Value::Bool(b) => Some(Value::Bool(*b)),
+        serde_json::Value::String(s) => Some(Value::Concrete(ConcreteValue::String(s.clone()))),
+        serde_json::Value::Bool(b) => Some(Value::Concrete(ConcreteValue::Bool(*b))),
         serde_json::Value::Number(n) => {
             if let Some(i) = n.as_i64() {
-                Some(Value::Int(i))
+                Some(Value::Concrete(ConcreteValue::Int(i)))
             } else {
                 n.as_f64().map(Value::Float)
             }
@@ -166,7 +166,7 @@ pub(crate) fn json_to_value(value: &serde_json::Value) -> Option<Value> {
                     result
                 })
                 .collect();
-            Some(Value::List(items))
+            Some(Value::Concrete(ConcreteValue::List(items)))
         }
         serde_json::Value::Object(obj) => {
             let map: IndexMap<String, Value> = obj
@@ -183,7 +183,7 @@ pub(crate) fn json_to_value(value: &serde_json::Value) -> Option<Value> {
                     result.map(|val| (k.clone(), val))
                 })
                 .collect();
-            Some(Value::Map(map))
+            Some(Value::Concrete(ConcreteValue::Map(map)))
         }
         _ => None,
     }
@@ -199,7 +199,7 @@ pub(crate) fn dsl_value_to_aws(
     // For schema-level string enums, convert namespaced DSL values back to provider values.
     if attr_type.namespaced_enum_parts().is_some() {
         match value {
-            Value::String(s) => {
+            Value::Concrete(ConcreteValue::String(s)) => {
                 // Extract the raw enum value from the namespaced identifier, using
                 // known valid values for disambiguation when enum values contain dots
                 // (e.g., "ipsec.1" in "awscc.ec2.VpnGateway.Type.ipsec.1").
@@ -227,7 +227,7 @@ pub(crate) fn dsl_value_to_aws(
             _ => value_to_json(value),
         }
     } else if let AttributeType::List { inner, .. } = attr_type
-        && let Value::List(items) = value
+        && let Value::Concrete(ConcreteValue::List(items)) = value
     {
         // Recurse into list items with inner type for type-aware conversion
         let arr: Vec<serde_json::Value> = items
@@ -254,7 +254,7 @@ pub(crate) fn dsl_value_to_aws(
         }
         value_to_json(value)
     } else if let AttributeType::Struct { fields, .. } = attr_type
-        && let Value::Map(map) = value
+        && let Value::Concrete(ConcreteValue::Map(map)) = value
     {
         // Recurse into bare struct fields for type-aware conversion (map assignment syntax)
         let obj: serde_json::Map<String, serde_json::Value> = fields
@@ -273,9 +273,9 @@ pub(crate) fn dsl_value_to_aws(
             .collect();
         Some(serde_json::Value::Object(obj))
     } else if let AttributeType::Struct { fields, .. } = attr_type
-        && let Value::List(items) = value
+        && let Value::Concrete(ConcreteValue::List(items)) = value
         && items.len() == 1
-        && let Value::Map(map) = &items[0]
+        && let Value::Concrete(ConcreteValue::Map(map)) = &items[0]
     {
         // Recurse into bare struct fields for type-aware conversion (block syntax)
         let obj: serde_json::Map<String, serde_json::Value> = fields
@@ -294,7 +294,7 @@ pub(crate) fn dsl_value_to_aws(
             .collect();
         Some(serde_json::Value::Object(obj))
     } else if let AttributeType::Map { value: inner, .. } = attr_type
-        && let Value::Map(map) = value
+        && let Value::Concrete(ConcreteValue::Map(map)) = value
     {
         // Map type: recurse into values with inner type.
         // For IAM condition maps, convert snake_case operator keys to PascalCase.
@@ -326,12 +326,12 @@ pub(crate) fn dsl_value_to_aws(
 /// Convert DSL Value to JSON value
 pub(crate) fn value_to_json(value: &Value) -> Option<serde_json::Value> {
     match value {
-        Value::String(s) => Some(json!(s)),
-        Value::Bool(b) => Some(json!(b)),
-        Value::Int(i) => Some(json!(i)),
-        Value::Float(f) if f.is_finite() => Some(json!(f)),
-        Value::Float(_) => None,
-        Value::List(items) => {
+        Value::Concrete(ConcreteValue::String(s)) => Some(json!(s)),
+        Value::Concrete(ConcreteValue::Bool(b)) => Some(json!(b)),
+        Value::Concrete(ConcreteValue::Int(i)) => Some(json!(i)),
+        Value::Concrete(ConcreteValue::Float(f)) if f.is_finite() => Some(json!(f)),
+        Value::Concrete(ConcreteValue::Float(_)) => None,
+        Value::Concrete(ConcreteValue::List(items)) => {
             let arr: Vec<serde_json::Value> = items
                 .iter()
                 .enumerate()
@@ -349,7 +349,7 @@ pub(crate) fn value_to_json(value: &Value) -> Option<serde_json::Value> {
                 .collect();
             Some(serde_json::Value::Array(arr))
         }
-        Value::Map(map) => {
+        Value::Concrete(ConcreteValue::Map(map)) => {
             let obj: serde_json::Map<String, serde_json::Value> = map
                 .iter()
                 .filter_map(|(k, v)| {
@@ -398,10 +398,12 @@ mod tests {
         let result = result.expect("Should return Some");
 
         // Must be Value::Map(...) to match parser output for map assignment syntax
-        if let Value::Map(map) = &result {
+        if let Value::Concrete(ConcreteValue::Map(map)) = &result {
             assert_eq!(
                 map.get("status"),
-                Some(&Value::String("Enabled".to_string()))
+                Some(&Value::Concrete(ConcreteValue::String(
+                    "Enabled".to_string()
+                )))
             );
         } else {
             panic!("Expected Value::Map, got: {:?}", result);
@@ -421,8 +423,11 @@ mod tests {
 
         // Parser produces Value::Map(...) for map assignment syntax (= { ... })
         let mut map = IndexMap::new();
-        map.insert("status".to_string(), Value::String("Enabled".to_string()));
-        let dsl_value = Value::Map(map);
+        map.insert(
+            "status".to_string(),
+            Value::Concrete(ConcreteValue::String("Enabled".to_string())),
+        );
+        let dsl_value = Value::Concrete(ConcreteValue::Map(map));
 
         let result = dsl_value_to_aws(
             &dsl_value,
@@ -453,8 +458,11 @@ mod tests {
 
         // Parser produces Value::List(vec![Value::Map(...)]) for block syntax (name { ... })
         let mut map = IndexMap::new();
-        map.insert("status".to_string(), Value::String("Enabled".to_string()));
-        let dsl_value = Value::List(vec![Value::Map(map)]);
+        map.insert(
+            "status".to_string(),
+            Value::Concrete(ConcreteValue::String("Enabled".to_string())),
+        );
+        let dsl_value = Value::Concrete(ConcreteValue::List(vec![Value::Map(map)]));
 
         let result = dsl_value_to_aws(
             &dsl_value,
@@ -495,8 +503,11 @@ mod tests {
 
         // Simulate parser output (what the user wrote in .crn with map assignment syntax)
         let mut parser_map = IndexMap::new();
-        parser_map.insert("status".to_string(), Value::String("Enabled".to_string()));
-        let parser_value = Value::Map(parser_map);
+        parser_map.insert(
+            "status".to_string(),
+            Value::Concrete(ConcreteValue::String("Enabled".to_string())),
+        );
+        let parser_value = Value::Concrete(ConcreteValue::Map(parser_map));
 
         // The read value and parser value must be equal (no spurious diff)
         assert_eq!(
@@ -527,10 +538,13 @@ mod tests {
         // 1. DSL side: resolve_enum_identifiers_impl converts bare `Gateway` ident
         let mut resource =
             carina_core::resource::Resource::with_provider("awscc", "ec2.VpcEndpoint", "test");
-        resource.set_attr("vpc_id".to_string(), Value::String("vpc-123".to_string()));
+        resource.set_attr(
+            "vpc_id".to_string(),
+            Value::Concrete(ConcreteValue::String("vpc-123".to_string())),
+        );
         resource.set_attr(
             "vpc_endpoint_type".to_string(),
-            Value::String("Gateway".to_string()),
+            Value::Concrete(ConcreteValue::String("Gateway".to_string())),
         );
 
         let mut resources = vec![resource];
@@ -543,7 +557,9 @@ mod tests {
         // `resolve_enum_identifiers_impl` runs `to_dsl` on the input.
         assert_eq!(
             dsl_resolved,
-            &Value::String("awscc.ec2.VpcEndpoint.VpcEndpointType.gateway".to_string()),
+            &Value::Concrete(ConcreteValue::String(
+                "awscc.ec2.VpcEndpoint.VpcEndpointType.gateway".to_string()
+            )),
             "DSL bare ident `Gateway` should resolve to snake_case namespaced form"
         );
 
@@ -559,7 +575,9 @@ mod tests {
 
         assert_eq!(
             aws_dsl,
-            Value::String("awscc.ec2.VpcEndpoint.VpcEndpointType.gateway".to_string()),
+            Value::Concrete(ConcreteValue::String(
+                "awscc.ec2.VpcEndpoint.VpcEndpointType.gateway".to_string()
+            )),
             "AWS read-back 'Gateway' should normalize to snake_case namespaced form"
         );
 
@@ -582,8 +600,9 @@ mod tests {
             namespace: Some("awscc.logs.LogGroup".to_string()),
             dsl_aliases: vec![],
         };
-        let value =
-            Value::String("awscc.logs.LogGroup.LogGroupClass.INFREQUENT_ACCESS".to_string());
+        let value = Value::Concrete(ConcreteValue::String(
+            "awscc.logs.LogGroup.LogGroupClass.INFREQUENT_ACCESS".to_string(),
+        ));
         let result = dsl_value_to_aws(&value, &attr_type, "logs.LogGroup", "log_group_class");
         assert_eq!(result, Some(json!("INFREQUENT_ACCESS")));
     }
@@ -599,7 +618,9 @@ mod tests {
             namespace: Some("awscc".to_string()),
             to_dsl: None,
         };
-        let value = Value::String("awscc.Region.ap_northeast_1".to_string());
+        let value = Value::Concrete(ConcreteValue::String(
+            "awscc.Region.ap_northeast_1".to_string(),
+        ));
         let result = dsl_value_to_aws(&value, &attr_type, "logs.LogGroup", "region");
         assert_eq!(result, Some(json!("ap-northeast-1")));
     }
@@ -613,10 +634,10 @@ mod tests {
             dsl_aliases: vec![],
         };
         let attr_type = AttributeType::list(inner);
-        let value = Value::List(vec![
+        let value = Value::Concrete(ConcreteValue::List(vec![
             Value::String("awscc.s3.Bucket.AllowedMethod.GET".to_string()),
             Value::String("awscc.s3.Bucket.AllowedMethod.PUT".to_string()),
-        ]);
+        ]));
         let result = dsl_value_to_aws(&value, &attr_type, "s3.Bucket", "allowed_methods");
         assert_eq!(result, Some(json!(["GET", "PUT"])));
     }
@@ -634,10 +655,10 @@ mod tests {
         let result = aws_value_to_dsl("allowed_methods", &json_val, &attr_type, "s3.Bucket");
         assert_eq!(
             result,
-            Some(Value::List(vec![
+            Some(Value::Concrete(ConcreteValue::List(vec![
                 Value::String("awscc.s3.Bucket.AllowedMethod.GET".to_string()),
                 Value::String("awscc.s3.Bucket.AllowedMethod.PUT".to_string()),
-            ]))
+            ])))
         );
     }
 
@@ -670,7 +691,9 @@ mod tests {
             },
             AttributeType::String,
         ]);
-        let value = Value::String("awscc.ec2.Sg.Protocol.tcp".to_string());
+        let value = Value::Concrete(ConcreteValue::String(
+            "awscc.ec2.Sg.Protocol.tcp".to_string(),
+        ));
         let result = dsl_value_to_aws(&value, &attr_type, "ec2.Sg", "protocol");
         assert_eq!(result, Some(json!("tcp")));
     }
@@ -682,13 +705,13 @@ mod tests {
         let mut map = IndexMap::new();
         map.insert(
             "my_custom_key".to_string(),
-            Value::String("value1".to_string()),
+            Value::Concrete(ConcreteValue::String("value1".to_string())),
         );
         map.insert(
             "another-key".to_string(),
-            Value::String("value2".to_string()),
+            Value::Concrete(ConcreteValue::String("value2".to_string())),
         );
-        let dsl_value = Value::Map(map);
+        let dsl_value = Value::Concrete(ConcreteValue::Map(map));
 
         let result = dsl_value_to_aws(&dsl_value, &attr_type, "s3.Bucket", "tags");
         let result = result.expect("Should return Some");
@@ -716,9 +739,11 @@ mod tests {
         let mut map = IndexMap::new();
         map.insert(
             "item_one".to_string(),
-            Value::String("awscc.test.resource.Status.Active".to_string()),
+            Value::Concrete(ConcreteValue::String(
+                "awscc.test.resource.Status.Active".to_string(),
+            )),
         );
-        let dsl_value = Value::Map(map);
+        let dsl_value = Value::Concrete(ConcreteValue::Map(map));
 
         let result = dsl_value_to_aws(&dsl_value, &attr_type, "test.resource", "status_map");
         let result = result.expect("Should return Some");
@@ -742,14 +767,18 @@ mod tests {
         let result = aws_value_to_dsl("tags", &aws_json, &attr_type, "s3.Bucket");
         let result = result.expect("Should return Some");
 
-        if let Value::Map(map) = &result {
+        if let Value::Concrete(ConcreteValue::Map(map)) = &result {
             assert_eq!(
                 map.get("MyCustomKey"),
-                Some(&Value::String("value1".to_string()))
+                Some(&Value::Concrete(ConcreteValue::String(
+                    "value1".to_string()
+                )))
             );
             assert_eq!(
                 map.get("another-key"),
-                Some(&Value::String("value2".to_string()))
+                Some(&Value::Concrete(ConcreteValue::String(
+                    "value2".to_string()
+                )))
             );
             assert!(map.get("my_custom_key").is_none());
         } else {
@@ -772,7 +801,9 @@ mod tests {
         let result = aws_value_to_dsl("protocol", &json_val, &attr_type, "ec2.Sg");
         assert_eq!(
             result,
-            Some(Value::String("awscc.ec2.Sg.Protocol.tcp".to_string()))
+            Some(Value::Concrete(ConcreteValue::String(
+                "awscc.ec2.Sg.Protocol.tcp".to_string()
+            )))
         );
     }
 
@@ -789,7 +820,7 @@ mod tests {
         ]);
         let json_val = json!(42);
         let result = aws_value_to_dsl("protocol", &json_val, &attr_type, "ec2.Sg");
-        assert_eq!(result, Some(Value::Int(42)));
+        assert_eq!(result, Some(Value::Concrete(ConcreteValue::Int(42))));
     }
 
     #[test]
@@ -797,7 +828,7 @@ mod tests {
         use carina_aws_types::iam_policy_document;
 
         let attr_type = iam_policy_document();
-        let value = Value::Map(
+        let value = Value::Concrete(ConcreteValue::Map(
             vec![
                 (
                     "version".to_string(),
@@ -831,7 +862,7 @@ mod tests {
             ]
             .into_iter()
             .collect(),
-        );
+        ));
 
         let result = dsl_value_to_aws(
             &value,
@@ -895,30 +926,38 @@ mod tests {
         );
         let result = result.expect("Should return Some");
 
-        if let Value::Map(map) = &result {
+        if let Value::Concrete(ConcreteValue::Map(map)) = &result {
             assert_eq!(
                 map.get("version"),
-                Some(&Value::String("2012-10-17".to_string()))
+                Some(&Value::Concrete(ConcreteValue::String(
+                    "2012-10-17".to_string()
+                )))
             );
             assert!(
                 map.get("Version").is_none(),
                 "PascalCase 'Version' should not exist"
             );
 
-            if let Some(Value::List(stmts)) = map.get("statement") {
-                if let Some(Value::Map(stmt)) = stmts.first() {
+            if let Some(Value::Concrete(ConcreteValue::List(stmts))) = map.get("statement") {
+                if let Some(Value::Concrete(ConcreteValue::Map(stmt))) = stmts.first() {
                     assert_eq!(
                         stmt.get("effect"),
-                        Some(&Value::String("Allow".to_string()))
+                        Some(&Value::Concrete(ConcreteValue::String("Allow".to_string())))
                     );
                     assert_eq!(
                         stmt.get("action"),
-                        Some(&Value::String("sts:AssumeRole".to_string()))
+                        Some(&Value::Concrete(ConcreteValue::String(
+                            "sts:AssumeRole".to_string()
+                        )))
                     );
-                    if let Some(Value::Map(principal)) = stmt.get("principal") {
+                    if let Some(Value::Concrete(ConcreteValue::Map(principal))) =
+                        stmt.get("principal")
+                    {
                         assert_eq!(
                             principal.get("service"),
-                            Some(&Value::String("lambda.amazonaws.com".to_string()))
+                            Some(&Value::Concrete(ConcreteValue::String(
+                                "lambda.amazonaws.com".to_string()
+                            )))
                         );
                     } else {
                         panic!("Expected principal to be a Map");
@@ -950,10 +989,10 @@ mod tests {
         let json_val = json!([{"RegionName": "ap-northeast-1"}]);
 
         let result = aws_value_to_dsl("operating_regions", &json_val, &attr_type, "ec2.Ipam");
-        let expected = Value::List(vec![Value::Map(IndexMap::from([(
+        let expected = Value::Concrete(ConcreteValue::List(vec![Value::Map(IndexMap::from([(
             "region_name".to_string(),
             Value::String("awscc.Region.ap_northeast_1".to_string()),
-        )]))]);
+        )]))]));
         assert_eq!(result, Some(expected));
     }
 
@@ -970,9 +1009,9 @@ mod tests {
         let result = aws_value_to_dsl("type", &json_val, &attr_type, "ec2.VpnGateway");
         assert_eq!(
             result,
-            Some(Value::String(
+            Some(Value::Concrete(ConcreteValue::String(
                 "awscc.ec2.VpnGateway.Type.ipsec.1".to_string()
-            ))
+            )))
         );
     }
 
@@ -984,7 +1023,9 @@ mod tests {
             namespace: Some("awscc.ec2.VpnGateway".to_string()),
             dsl_aliases: vec![],
         };
-        let value = Value::String("awscc.ec2.VpnGateway.Type.ipsec.1".to_string());
+        let value = Value::Concrete(ConcreteValue::String(
+            "awscc.ec2.VpnGateway.Type.ipsec.1".to_string(),
+        ));
 
         let result = dsl_value_to_aws(&value, &attr_type, "ec2.VpnGateway", "type");
         assert_eq!(result, Some(json!("ipsec.1")));
@@ -998,7 +1039,7 @@ mod tests {
             namespace: Some("awscc.ec2.VpnGateway".to_string()),
             dsl_aliases: vec![],
         };
-        let value = Value::String("ipsec.1".to_string());
+        let value = Value::Concrete(ConcreteValue::String("ipsec.1".to_string()));
 
         let result = dsl_value_to_aws(&value, &attr_type, "ec2.VpnGateway", "type");
         assert_eq!(result, Some(json!("ipsec.1")));
@@ -1017,9 +1058,9 @@ mod tests {
         let dsl_val = aws_value_to_dsl("type", &aws_val, &attr_type, "ec2.VpnGateway");
         assert_eq!(
             dsl_val,
-            Some(Value::String(
+            Some(Value::Concrete(ConcreteValue::String(
                 "awscc.ec2.VpnGateway.Type.ipsec.1".to_string()
-            ))
+            )))
         );
 
         let back_to_aws = dsl_value_to_aws(&dsl_val.unwrap(), &attr_type, "ec2.VpnGateway", "type");
@@ -1028,25 +1069,25 @@ mod tests {
 
     #[test]
     fn test_value_to_json_nan_returns_none() {
-        let value = Value::Float(f64::NAN);
+        let value = Value::Concrete(ConcreteValue::Float(f64::NAN));
         assert_eq!(value_to_json(&value), None);
     }
 
     #[test]
     fn test_value_to_json_infinity_returns_none() {
-        let value = Value::Float(f64::INFINITY);
+        let value = Value::Concrete(ConcreteValue::Float(f64::INFINITY));
         assert_eq!(value_to_json(&value), None);
     }
 
     #[test]
     fn test_value_to_json_neg_infinity_returns_none() {
-        let value = Value::Float(f64::NEG_INFINITY);
+        let value = Value::Concrete(ConcreteValue::Float(f64::NEG_INFINITY));
         assert_eq!(value_to_json(&value), None);
     }
 
     #[test]
     fn test_value_to_json_finite_float() {
-        let value = Value::Float(1.5);
+        let value = Value::Concrete(ConcreteValue::Float(1.5));
         let result = value_to_json(&value);
         assert!(result.is_some());
         assert_eq!(result.unwrap(), serde_json::json!(1.5));
@@ -1056,10 +1097,10 @@ mod tests {
     fn test_json_to_value_array_with_null_drops_null_items() {
         let json = serde_json::json!(["a", null, "b"]);
         let result = json_to_value(&json);
-        let expected = Value::List(vec![
+        let expected = Value::Concrete(ConcreteValue::List(vec![
             Value::String("a".to_string()),
             Value::String("b".to_string()),
-        ]);
+        ]));
         assert_eq!(result, Some(expected));
     }
 
@@ -1068,9 +1109,12 @@ mod tests {
         let json = serde_json::json!({"key1": "val1", "key2": null});
         let result = json_to_value(&json);
         match result {
-            Some(Value::Map(map)) => {
+            Some(Value::Concrete(ConcreteValue::Map(map))) => {
                 assert_eq!(map.len(), 1);
-                assert_eq!(map.get("key1"), Some(&Value::String("val1".to_string())));
+                assert_eq!(
+                    map.get("key1"),
+                    Some(&Value::Concrete(ConcreteValue::String("val1".to_string())))
+                );
                 assert!(!map.contains_key("key2"));
             }
             other => panic!("Expected Some(Value::Map), got {:?}", other),
@@ -1082,20 +1126,20 @@ mod tests {
         let json = serde_json::json!(["a", null, "b"]);
         let attr_type = AttributeType::list(AttributeType::String);
         let result = aws_value_to_dsl("test_attr", &json, &attr_type, "test.resource");
-        let expected = Value::List(vec![
+        let expected = Value::Concrete(ConcreteValue::List(vec![
             Value::String("a".to_string()),
             Value::String("b".to_string()),
-        ]);
+        ]));
         assert_eq!(result, Some(expected));
     }
 
     #[test]
     fn test_value_to_json_list_with_nan_drops_nan_items() {
-        let value = Value::List(vec![
+        let value = Value::Concrete(ConcreteValue::List(vec![
             Value::Float(1.0),
             Value::Float(f64::NAN),
             Value::Float(2.0),
-        ]);
+        ]));
         let result = value_to_json(&value);
         let expected = serde_json::json!([1.0, 2.0]);
         assert_eq!(result, Some(expected));
@@ -1153,10 +1197,10 @@ mod tests {
         .expect("aws_value_to_dsl should succeed for lifecycle_configuration");
 
         // Verify the converted value has the expected structure
-        let Value::Map(top_map) = &dsl_value else {
+        let Value::Concrete(ConcreteValue::Map(top_map)) = &dsl_value else {
             panic!("Expected Value::Map, got: {:?}", dsl_value);
         };
-        let Some(Value::List(rules)) = top_map.get("rules") else {
+        let Some(Value::Concrete(ConcreteValue::List(rules))) = top_map.get("rules") else {
             panic!("Expected 'rules' key with Value::List, got: {:?}", top_map);
         };
         assert_eq!(rules.len(), 2, "Should have 2 lifecycle rules");
@@ -1165,44 +1209,51 @@ mod tests {
         // naming-conventions design D7 / issue #199, the AWS-side spelling
         // (`Enabled`, `GLACIER`) is mapped to the snake_case DSL spelling
         // by the StringEnum's `to_dsl` closure on read.
-        if let Value::Map(rule0) = &rules[0] {
+        if let Value::Concrete(ConcreteValue::Map(rule0)) = &rules[0] {
             assert_eq!(
                 rule0.get("status"),
-                Some(&Value::String(
+                Some(&Value::Concrete(ConcreteValue::String(
                     "awscc.s3.Bucket.RuleStatus.enabled".to_string()
-                )),
+                ))),
                 "status should be namespaced enum"
             );
             assert_eq!(
                 rule0.get("expiration_in_days"),
-                Some(&Value::Int(90)),
+                Some(&Value::Concrete(ConcreteValue::Int(90))),
                 "expiration_in_days should be Int"
             );
             assert_eq!(
                 rule0.get("id"),
-                Some(&Value::String("expire-old-objects".to_string())),
+                Some(&Value::Concrete(ConcreteValue::String(
+                    "expire-old-objects".to_string()
+                ))),
             );
         } else {
             panic!("Expected rule[0] to be a Map");
         }
 
-        if let Value::Map(rule1) = &rules[1] {
+        if let Value::Concrete(ConcreteValue::Map(rule1)) = &rules[1] {
             assert_eq!(
                 rule1.get("status"),
-                Some(&Value::String(
+                Some(&Value::Concrete(ConcreteValue::String(
                     "awscc.s3.Bucket.RuleStatus.enabled".to_string()
-                )),
+                ))),
             );
-            if let Some(Value::List(transitions)) = rule1.get("transitions") {
+            if let Some(Value::Concrete(ConcreteValue::List(transitions))) =
+                rule1.get("transitions")
+            {
                 assert_eq!(transitions.len(), 1);
-                if let Value::Map(t) = &transitions[0] {
+                if let Value::Concrete(ConcreteValue::Map(t)) = &transitions[0] {
                     assert_eq!(
                         t.get("storage_class"),
-                        Some(&Value::String(
+                        Some(&Value::Concrete(ConcreteValue::String(
                             "awscc.s3.Bucket.TransitionStorageClass.glacier".to_string()
-                        )),
+                        ))),
                     );
-                    assert_eq!(t.get("transition_in_days"), Some(&Value::Int(30)),);
+                    assert_eq!(
+                        t.get("transition_in_days"),
+                        Some(&Value::Concrete(ConcreteValue::Int(30))),
+                    );
                 } else {
                     panic!("Expected transition to be a Map");
                 }
@@ -1263,8 +1314,9 @@ mod tests {
             .unwrap();
 
         // Validate the snake_case form (the canonical DSL spelling per D7).
-        let snake_case_value =
-            Value::String("awscc.s3.Bucket.ObjectOwnership.bucket_owner_enforced".to_string());
+        let snake_case_value = Value::Concrete(ConcreteValue::String(
+            "awscc.s3.Bucket.ObjectOwnership.bucket_owner_enforced".to_string(),
+        ));
         object_ownership
             .field_type
             .validate(&snake_case_value)
@@ -1272,8 +1324,9 @@ mod tests {
 
         // The PascalCase API spelling is also accepted as a transition
         // convenience (matches_alias in the validator).
-        let pascal_value =
-            Value::String("awscc.s3.Bucket.ObjectOwnership.BucketOwnerEnforced".to_string());
+        let pascal_value = Value::Concrete(ConcreteValue::String(
+            "awscc.s3.Bucket.ObjectOwnership.BucketOwnerEnforced".to_string(),
+        ));
         object_ownership
             .field_type
             .validate(&pascal_value)
@@ -1302,11 +1355,11 @@ mod tests {
 
     #[test]
     fn test_dsl_value_to_aws_list_with_nan_drops_nan_items() {
-        let value = Value::List(vec![
+        let value = Value::Concrete(ConcreteValue::List(vec![
             Value::Float(1.0),
             Value::Float(f64::NAN),
             Value::Float(2.0),
-        ]);
+        ]));
         let attr_type = AttributeType::list(AttributeType::Float);
         let result = dsl_value_to_aws(&value, &attr_type, "test.resource", "test_attr");
         let expected = serde_json::json!([1.0, 2.0]);
@@ -1326,7 +1379,12 @@ mod tests {
         };
         let json_val = serde_json::json!("carina-rs.dev.");
         let result = aws_value_to_dsl("name", &json_val, &attr_type, "route53.HostedZone");
-        assert_eq!(result, Some(Value::String("carina-rs.dev".to_string())));
+        assert_eq!(
+            result,
+            Some(Value::Concrete(ConcreteValue::String(
+                "carina-rs.dev".to_string()
+            )))
+        );
     }
 
     #[test]
@@ -1342,6 +1400,11 @@ mod tests {
         };
         let json_val = serde_json::json!("carina-rs.dev.");
         let result = aws_value_to_dsl("name", &json_val, &attr_type, "route53.HostedZone");
-        assert_eq!(result, Some(Value::String("carina-rs.dev.".to_string())));
+        assert_eq!(
+            result,
+            Some(Value::Concrete(ConcreteValue::String(
+                "carina-rs.dev.".to_string()
+            )))
+        );
     }
 }

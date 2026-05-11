@@ -9,7 +9,9 @@ use carina_core::provider::{
     ProviderError as CoreProviderError, ProviderNormalizer, ReadRequest as CoreReadRequest,
     SavedAttrs, UpdateRequest as CoreUpdateRequest,
 };
-use carina_core::resource::{ResourceId as CoreResourceId, State as CoreState, Value as CoreValue};
+use carina_core::resource::{
+    ConcreteValue, ResourceId as CoreResourceId, State as CoreState, Value as CoreValue,
+};
 
 use carina_provider_awscc::AwsccNormalizer;
 use carina_provider_awscc::provider::{AwsccProvider, AwsccProviderConfig};
@@ -123,7 +125,9 @@ impl CarinaProvider for AwsccProcessProvider {
 
     fn initialize(&mut self, attrs: &HashMap<String, proto::Value>) -> Result<(), String> {
         let core_attrs = convert::proto_to_core_value_map(attrs);
-        let region = if let Some(CoreValue::String(region)) = core_attrs.get("region") {
+        let region = if let Some(CoreValue::Concrete(ConcreteValue::String(region))) =
+            core_attrs.get("region")
+        {
             carina_core::utils::convert_region_value(region)
         } else {
             "ap-northeast-1".to_string()
@@ -259,6 +263,7 @@ impl CarinaProvider for AwsccProcessProvider {
             force_delete: request.directives.force_delete,
             create_before_destroy: request.directives.create_before_destroy,
             prevent_destroy: request.directives.prevent_destroy,
+            depends_on: Vec::new(),
         };
         let result = self.runtime.block_on(self.provider().delete(
             &core_id,
@@ -371,10 +376,10 @@ impl CarinaProvider for AwsccProcessProvider {
 fn extract_account_guard_config(core_attrs: &HashMap<String, CoreValue>) -> AwsccProviderConfig {
     fn extract_string_list(attrs: &HashMap<String, CoreValue>, key: &str) -> Vec<String> {
         match attrs.get(key) {
-            Some(CoreValue::List(items)) => items
+            Some(CoreValue::Concrete(ConcreteValue::List(items))) => items
                 .iter()
                 .filter_map(|v| match v {
-                    CoreValue::String(s) => Some(s.clone()),
+                    CoreValue::Concrete(ConcreteValue::String(s)) => Some(s.clone()),
                     _ => None,
                 })
                 .collect(),

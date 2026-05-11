@@ -5,7 +5,7 @@
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
 use super::AwsccSchemaConfig;
-use carina_core::resource::Value;
+use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{
     AttributeSchema, AttributeType, ResourceSchema, StructField, legacy_validator,
 };
@@ -16,7 +16,7 @@ const VALID_ORIGIN_ACCESS_CONTROL_CONFIG_SIGNING_BEHAVIOR: &[&str] =
 
 #[allow(dead_code)]
 fn validate_string_pattern_597c12a2d8028697(value: &Value) -> Result<(), String> {
-    if let Value::String(s) = value {
+    if let Value::Concrete(ConcreteValue::String(s)) = value {
         static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
             Regex::new("^(s3|mediastore|lambda|mediapackagev2)$").expect("invalid pattern regex")
         });
@@ -35,7 +35,7 @@ fn validate_string_pattern_597c12a2d8028697(value: &Value) -> Result<(), String>
 
 #[allow(dead_code)]
 fn validate_string_pattern_e0706e45c974b71e(value: &Value) -> Result<(), String> {
-    if let Value::String(s) = value {
+    if let Value::Concrete(ConcreteValue::String(s)) = value {
         static RE: std::sync::LazyLock<Regex> =
             std::sync::LazyLock::new(|| Regex::new("^(sigv4)$").expect("invalid pattern regex"));
         if RE.is_match(s) {

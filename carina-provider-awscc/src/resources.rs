@@ -134,7 +134,7 @@ mod tests {
     /// See: https://github.com/carina-rs/carina/issues/925
     #[test]
     fn vpc_gateway_attachment_rejects_both_internet_and_vpn_gateway() {
-        use carina_core::resource::Value;
+        use carina_core::resource::{ConcreteValue, Value};
         use std::collections::HashMap;
 
         let config = get_config("ec2.VpcGatewayAttachment").unwrap();
@@ -144,15 +144,15 @@ mod tests {
         let mut attrs = HashMap::new();
         attrs.insert(
             "vpc_id".to_string(),
-            Value::String("vpc-12345678".to_string()),
+            Value::Concrete(ConcreteValue::String("vpc-12345678".to_string())),
         );
         attrs.insert(
             "internet_gateway_id".to_string(),
-            Value::String("igw-12345678".to_string()),
+            Value::Concrete(ConcreteValue::String("igw-12345678".to_string())),
         );
         attrs.insert(
             "vpn_gateway_id".to_string(),
-            Value::String("vgw-12345678".to_string()),
+            Value::Concrete(ConcreteValue::String("vgw-12345678".to_string())),
         );
 
         let result = schema.validate(&attrs);
@@ -176,7 +176,7 @@ mod tests {
     /// See: https://github.com/carina-rs/carina/issues/925
     #[test]
     fn vpc_gateway_attachment_accepts_single_gateway() {
-        use carina_core::resource::Value;
+        use carina_core::resource::{ConcreteValue, Value};
         use std::collections::HashMap;
 
         let config = get_config("ec2.VpcGatewayAttachment").unwrap();
@@ -186,11 +186,11 @@ mod tests {
         let mut attrs_igw = HashMap::new();
         attrs_igw.insert(
             "vpc_id".to_string(),
-            Value::String("vpc-12345678".to_string()),
+            Value::Concrete(ConcreteValue::String("vpc-12345678".to_string())),
         );
         attrs_igw.insert(
             "internet_gateway_id".to_string(),
-            Value::String("igw-12345678".to_string()),
+            Value::Concrete(ConcreteValue::String("igw-12345678".to_string())),
         );
         assert!(
             schema.validate(&attrs_igw).is_ok(),
@@ -201,11 +201,11 @@ mod tests {
         let mut attrs_vpn = HashMap::new();
         attrs_vpn.insert(
             "vpc_id".to_string(),
-            Value::String("vpc-12345678".to_string()),
+            Value::Concrete(ConcreteValue::String("vpc-12345678".to_string())),
         );
         attrs_vpn.insert(
             "vpn_gateway_id".to_string(),
-            Value::String("vgw-12345678".to_string()),
+            Value::Concrete(ConcreteValue::String("vgw-12345678".to_string())),
         );
         assert!(
             schema.validate(&attrs_vpn).is_ok(),
@@ -217,7 +217,7 @@ mod tests {
     /// See: https://github.com/carina-rs/carina/issues/925
     #[test]
     fn vpc_gateway_attachment_rejects_neither_gateway() {
-        use carina_core::resource::Value;
+        use carina_core::resource::{ConcreteValue, Value};
         use std::collections::HashMap;
 
         let config = get_config("ec2.VpcGatewayAttachment").unwrap();
@@ -227,7 +227,7 @@ mod tests {
         let mut attrs = HashMap::new();
         attrs.insert(
             "vpc_id".to_string(),
-            Value::String("vpc-12345678".to_string()),
+            Value::Concrete(ConcreteValue::String("vpc-12345678".to_string())),
         );
 
         let result = schema.validate(&attrs);
