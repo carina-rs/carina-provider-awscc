@@ -372,10 +372,10 @@ Shorthand formats: `aws` or `TableBucketType.aws`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `aws:kms` | `awscc.s3.Bucket.MetadataTableEncryptionConfigurationSseAlgorithm.aws:kms` |
+| `aws:kms` | `awscc.s3.Bucket.MetadataTableEncryptionConfigurationSseAlgorithm.aws_kms` |
 | `AES256` | `awscc.s3.Bucket.MetadataTableEncryptionConfigurationSseAlgorithm.aes256` |
 
-Shorthand formats: `aws:kms` or `MetadataTableEncryptionConfigurationSseAlgorithm.aws:kms`
+Shorthand formats: `aws_kms` or `MetadataTableEncryptionConfigurationSseAlgorithm.aws_kms`
 
 ### status (MetricsStatus)
 
@@ -499,11 +499,11 @@ Shorthand formats: `enabled` or `RuleStatus.enabled`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `aws:kms` | `awscc.s3.Bucket.ServerSideEncryptionByDefaultSseAlgorithm.aws:kms` |
+| `aws:kms` | `awscc.s3.Bucket.ServerSideEncryptionByDefaultSseAlgorithm.aws_kms` |
 | `AES256` | `awscc.s3.Bucket.ServerSideEncryptionByDefaultSseAlgorithm.aes256` |
-| `aws:kms:dsse` | `awscc.s3.Bucket.ServerSideEncryptionByDefaultSseAlgorithm.aws:kms:dsse` |
+| `aws:kms:dsse` | `awscc.s3.Bucket.ServerSideEncryptionByDefaultSseAlgorithm.aws_kms_dsse` |
 
-Shorthand formats: `aws:kms` or `ServerSideEncryptionByDefaultSseAlgorithm.aws:kms`
+Shorthand formats: `aws_kms` or `ServerSideEncryptionByDefaultSseAlgorithm.aws_kms`
 
 ### status (SseKmsEncryptedObjectsStatus)
 
