@@ -18,7 +18,7 @@ awscc.s3.Bucket {
     restrict_public_buckets = true
   }
 
-  lifecycle {
+  directives {
     force_delete = true
   }
 }

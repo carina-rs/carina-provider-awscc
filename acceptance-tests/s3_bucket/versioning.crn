@@ -15,7 +15,7 @@ awscc.s3.Bucket {
     status = awscc.s3.Bucket.VersioningConfigurationStatus.Enabled
   }
 
-  lifecycle {
+  directives {
     force_delete = true
   }
 }
