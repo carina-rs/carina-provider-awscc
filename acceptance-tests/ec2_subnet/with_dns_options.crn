@@ -19,7 +19,7 @@ awscc.ec2.Subnet {
 
   private_dns_name_options_on_launch = {
     enable_resource_name_dns_a_record = true
-    hostname_type                     = 'ip-name'
+    hostname_type                     = 'ip_name'
   }
 
   tags = {

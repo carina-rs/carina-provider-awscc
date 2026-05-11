@@ -25,7 +25,7 @@ awscc.ec2.FlowLog {
   log_destination      = bucket.arn
 
   destination_options = {
-    file_format                = 'plain-text'
+    file_format                = 'plain_text'
     hive_compatible_partitions = false
     per_hour_partition         = false
   }
