@@ -29,7 +29,7 @@ awscc.s3.Bucket {
     }
   }
 
-  lifecycle {
+  directives {
     force_delete = true
   }
 }
