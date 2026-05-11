@@ -356,7 +356,7 @@ mod tests {
 
     /// carina-rs/carina#2544: CloudControl omits empty optional list
     /// fields from `GetResource`. The provider read path must canonicalize
-    /// these absent-but-empty fields to `Value::List(vec![])` so the
+    /// these absent-but-empty fields to `Value::Concrete(ConcreteValue::List(vec![]))` so the
     /// differ does not see `(none) → []` against a user-specified `= []`.
     #[test]
     fn absent_optional_list_becomes_empty_list() {
@@ -457,9 +457,11 @@ mod tests {
 
         assert_eq!(
             result.get("managed_policy_arns"),
-            Some(&Value::Concrete(ConcreteValue::List(vec![Value::String(
-                "arn:aws:iam::aws:policy/ReadOnlyAccess".to_string()
-            )]))),
+            Some(&Value::Concrete(ConcreteValue::List(vec![
+                Value::Concrete(ConcreteValue::String(
+                    "arn:aws:iam::aws:policy/ReadOnlyAccess".to_string()
+                ))
+            ]))),
         );
     }
 

@@ -568,7 +568,9 @@ mod tests {
             "from_port".to_string(),
             Value::Concrete(ConcreteValue::Int(443)),
         );
-        let value = Value::Concrete(ConcreteValue::List(vec![Value::Map(map)]));
+        let value = Value::Concrete(ConcreteValue::List(vec![Value::Concrete(
+            ConcreteValue::Map(map),
+        )]));
 
         let resolved = resolve_struct_enum_values(&value, &fields);
         if let Value::Concrete(ConcreteValue::List(items)) = resolved {
@@ -596,7 +598,9 @@ mod tests {
             "ip_protocol".to_string(),
             Value::Concrete(ConcreteValue::String("IpProtocol.tcp".to_string())),
         );
-        let value = Value::Concrete(ConcreteValue::List(vec![Value::Map(map)]));
+        let value = Value::Concrete(ConcreteValue::List(vec![Value::Concrete(
+            ConcreteValue::Map(map),
+        )]));
 
         let resolved = resolve_struct_enum_values(&value, &fields);
         if let Value::Concrete(ConcreteValue::List(items)) = resolved {
@@ -625,7 +629,9 @@ mod tests {
                 "awscc.ec2.SecurityGroup.IpProtocol.tcp".to_string(),
             )),
         );
-        let value = Value::Concrete(ConcreteValue::List(vec![Value::Map(map)]));
+        let value = Value::Concrete(ConcreteValue::List(vec![Value::Concrete(
+            ConcreteValue::Map(map),
+        )]));
 
         let resolved = resolve_struct_enum_values(&value, &fields);
         if let Value::Concrete(ConcreteValue::List(items)) = resolved {
@@ -662,7 +668,9 @@ mod tests {
         );
         resource.set_attr(
             "security_group_egress".to_string(),
-            Value::Concrete(ConcreteValue::List(vec![Value::Map(egress_map)])),
+            Value::Concrete(ConcreteValue::List(vec![Value::Concrete(
+                ConcreteValue::Map(egress_map),
+            )])),
         );
 
         let mut resources = vec![resource];
@@ -854,8 +862,8 @@ mod tests {
         let mut inner_map = IndexMap::new();
         inner_map.insert(
             "encryption_type".to_string(),
-            Value::Concrete(ConcreteValue::List(vec![Value::String(
-                "SSE-C".to_string(),
+            Value::Concrete(ConcreteValue::List(vec![Value::Concrete(
+                ConcreteValue::String("SSE-C".to_string()),
             )])),
         );
         let mut map = IndexMap::new();
@@ -877,7 +885,9 @@ mod tests {
             Value::Concrete(ConcreteValue::Map(sse_map)),
         );
 
-        let value = Value::Concrete(ConcreteValue::List(vec![Value::Map(map)]));
+        let value = Value::Concrete(ConcreteValue::List(vec![Value::Concrete(
+            ConcreteValue::Map(map),
+        )]));
         let resolved = resolve_struct_enum_values(&value, &fields);
 
         // Verify the nested enum was resolved
@@ -964,19 +974,26 @@ mod tests {
         let mut policy_map = IndexMap::new();
         policy_map.insert(
             "Statement".to_string(),
-            Value::Concrete(ConcreteValue::List(vec![Value::Map({
-                let mut stmt = IndexMap::new();
-                stmt.insert("Effect".to_string(), Value::String("Allow".to_string()));
-                stmt.insert(
-                    "Action".to_string(),
-                    Value::String("s3:GetObject".to_string()),
-                );
-                stmt.insert(
-                    "Resource".to_string(),
-                    Value::String("arn:aws:s3:::my-bucket/*".to_string()),
-                );
-                stmt
-            })])),
+            Value::Concrete(ConcreteValue::List(vec![Value::Concrete(
+                ConcreteValue::Map({
+                    let mut stmt = IndexMap::new();
+                    stmt.insert(
+                        "Effect".to_string(),
+                        Value::Concrete(ConcreteValue::String("Allow".to_string())),
+                    );
+                    stmt.insert(
+                        "Action".to_string(),
+                        Value::Concrete(ConcreteValue::String("s3:GetObject".to_string())),
+                    );
+                    stmt.insert(
+                        "Resource".to_string(),
+                        Value::Concrete(ConcreteValue::String(
+                            "arn:aws:s3:::my-bucket/*".to_string(),
+                        )),
+                    );
+                    stmt
+                }),
+            )])),
         );
 
         let (id, state) = make_state(

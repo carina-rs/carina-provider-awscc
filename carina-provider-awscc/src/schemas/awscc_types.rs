@@ -421,22 +421,32 @@ mod tests {
             vec![
                 (
                     "version".to_string(),
-                    Value::String("2012-10-17".to_string()),
+                    Value::Concrete(ConcreteValue::String("2012-10-17".to_string())),
                 ),
                 (
                     "statement".to_string(),
-                    Value::List(vec![Value::Map(
-                        vec![
-                            ("effect".to_string(), Value::String("Allow".to_string())),
-                            (
-                                "action".to_string(),
-                                Value::String("sts:AssumeRole".to_string()),
-                            ),
-                            ("resource".to_string(), Value::String("*".to_string())),
-                        ]
-                        .into_iter()
-                        .collect(),
-                    )]),
+                    Value::Concrete(ConcreteValue::List(vec![Value::Concrete(
+                        ConcreteValue::Map(
+                            vec![
+                                (
+                                    "effect".to_string(),
+                                    Value::Concrete(ConcreteValue::String("Allow".to_string())),
+                                ),
+                                (
+                                    "action".to_string(),
+                                    Value::Concrete(ConcreteValue::String(
+                                        "sts:AssumeRole".to_string(),
+                                    )),
+                                ),
+                                (
+                                    "resource".to_string(),
+                                    Value::Concrete(ConcreteValue::String("*".to_string())),
+                                ),
+                            ]
+                            .into_iter()
+                            .collect(),
+                        ),
+                    )])),
                 ),
             ]
             .into_iter()
