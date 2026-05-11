@@ -294,37 +294,3 @@ pub fn enum_valid_values() -> (
         ],
     )
 }
-
-/// Maps DSL alias values back to canonical AWS values for this module.
-/// e.g., ("ip_protocol", "all") -> Some("-1")
-pub fn enum_alias_reverse(attr_name: &str, value: &str) -> Option<&'static str> {
-    match (attr_name, value) {
-        ("joined_method", "invited") => Some("INVITED"),
-        ("joined_method", "created") => Some("CREATED"),
-        ("state", "pending_activation") => Some("PENDING_ACTIVATION"),
-        ("state", "active") => Some("ACTIVE"),
-        ("state", "suspended") => Some("SUSPENDED"),
-        ("state", "pending_closure") => Some("PENDING_CLOSURE"),
-        ("state", "closed") => Some("CLOSED"),
-        ("status", "active") => Some("ACTIVE"),
-        ("status", "suspended") => Some("SUSPENDED"),
-        ("status", "pending_closure") => Some("PENDING_CLOSURE"),
-        _ => None,
-    }
-}
-
-/// Returns all enum alias entries as (attr_name, alias, canonical) tuples.
-pub fn enum_alias_entries() -> &'static [(&'static str, &'static str, &'static str)] {
-    &[
-        ("joined_method", "invited", "INVITED"),
-        ("joined_method", "created", "CREATED"),
-        ("state", "pending_activation", "PENDING_ACTIVATION"),
-        ("state", "active", "ACTIVE"),
-        ("state", "suspended", "SUSPENDED"),
-        ("state", "pending_closure", "PENDING_CLOSURE"),
-        ("state", "closed", "CLOSED"),
-        ("status", "active", "ACTIVE"),
-        ("status", "suspended", "SUSPENDED"),
-        ("status", "pending_closure", "PENDING_CLOSURE"),
-    ]
-}

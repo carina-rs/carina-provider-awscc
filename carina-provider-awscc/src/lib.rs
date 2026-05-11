@@ -179,15 +179,12 @@ impl ProviderFactory for AwsccProviderFactory {
         )])
     }
 
-    fn get_enum_alias_reverse(
-        &self,
-        resource_type: &str,
-        attr_name: &str,
-        value: &str,
-    ) -> Option<String> {
-        schemas::generated::get_enum_alias_reverse(resource_type, attr_name, value)
-            .map(|s| s.to_string())
-    }
+    // The default `Provider::get_enum_alias_reverse` returning `None`
+    // is fine — DSL → API canonical lookup is done via
+    // `DslMap::api_for` in `dsl_value_to_aws`, sourced from the
+    // exhaustive `dsl_aliases` table on each StringEnum. The legacy
+    // string-keyed dispatch (`(resource_type, attr_name)`) was
+    // removed in awscc#223 / awscc#220.
 }
 
 // =============================================================================
