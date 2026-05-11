@@ -12,16 +12,16 @@ let vpc = awscc.ec2.Vpc {
 }
 
 let bucket = awscc.s3.Bucket {
-  lifecycle {
+  directives {
     force_delete = true
   }
 }
 
 awscc.ec2.FlowLog {
   resource_id          = vpc.vpc_id
-  resource_type        = vpc
-  traffic_type         = all
-  log_destination_type = s3
+  resource_type        = awscc.ec2.FlowLog.ResourceType.VPC
+  traffic_type         = awscc.ec2.FlowLog.TrafficType.ALL
+  log_destination_type = awscc.ec2.FlowLog.LogDestinationType.s3
   log_destination      = bucket.arn
 
   destination_options = {
