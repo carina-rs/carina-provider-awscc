@@ -1345,15 +1345,17 @@ mod tests {
             .validate(&snake_case_value)
             .expect("snake_case DSL spelling must validate");
 
-        // The PascalCase API spelling is also accepted as a transition
-        // convenience (matches_alias in the validator).
+        // After carina-rs/carina#2980 / awscc#222 the validator is
+        // strict on DSL input — the PascalCase API spelling is
+        // rejected. State JSON still flows through `aws_value_to_dsl`
+        // separately, so this only gates DSL-source values.
         let pascal_value = Value::Concrete(ConcreteValue::String(
             "awscc.s3.Bucket.ObjectOwnership.BucketOwnerEnforced".to_string(),
         ));
-        object_ownership
-            .field_type
-            .validate(&pascal_value)
-            .expect("API spelling must still validate (transition convenience)");
+        assert!(
+            object_ownership.field_type.validate(&pascal_value).is_err(),
+            "PascalCase API spelling must be rejected in DSL position",
+        );
 
         // Round-trip: DSL snake_case -> AWS API spelling.
         let aws_json = dsl_value_to_aws(

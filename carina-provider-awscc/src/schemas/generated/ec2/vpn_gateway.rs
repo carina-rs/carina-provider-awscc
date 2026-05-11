@@ -56,7 +56,7 @@ pub fn ec2_vpn_gateway_config() -> AwsccSchemaConfig {
                 name: "Type".to_string(),
                 values: vec!["ipsec.1".to_string()],
                 namespace: Some("awscc.ec2.VpnGateway".to_string()),
-                dsl_aliases: vec![],
+                dsl_aliases: vec![("ipsec.1".to_string(), "ipsec_1".to_string())],
             })
                 .required()
                 .create_only()
@@ -90,11 +90,13 @@ pub fn enum_valid_values() -> (
 /// Maps DSL alias values back to canonical AWS values for this module.
 /// e.g., ("ip_protocol", "all") -> Some("-1")
 pub fn enum_alias_reverse(attr_name: &str, value: &str) -> Option<&'static str> {
-    let _ = (attr_name, value);
-    None
+    match (attr_name, value) {
+        ("type", "ipsec_1") => Some("ipsec.1"),
+        _ => None,
+    }
 }
 
 /// Returns all enum alias entries as (attr_name, alias, canonical) tuples.
 pub fn enum_alias_entries() -> &'static [(&'static str, &'static str, &'static str)] {
-    &[]
+    &[("type", "ipsec_1", "ipsec.1")]
 }

@@ -84,7 +84,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
                 name: "AwsService".to_string(),
                 values: vec!["ec2".to_string(), "global-services".to_string()],
                 namespace: Some("awscc.ec2.IpamPool".to_string()),
-                dsl_aliases: vec![("global-services".to_string(), "global_services".to_string())],
+                dsl_aliases: vec![("ec2".to_string(), "ec2".to_string()), ("global-services".to_string(), "global_services".to_string())],
             })
                 .create_only()
                 .with_description("Limits which service in Amazon Web Services that the pool can be used in.")
@@ -124,7 +124,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
                 name: "IpamScopeType".to_string(),
                 values: vec!["public".to_string(), "private".to_string()],
                 namespace: Some("awscc.ec2.IpamPool".to_string()),
-                dsl_aliases: vec![],
+                dsl_aliases: vec![("public".to_string(), "public".to_string()), ("private".to_string(), "private".to_string())],
             })
                 .read_only()
                 .with_description("Determines whether this scope contains publicly routable space or space for a private network (read-only)")
@@ -158,7 +158,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
                 name: "PublicIpSource".to_string(),
                 values: vec!["byoip".to_string(), "amazon".to_string()],
                 namespace: Some("awscc.ec2.IpamPool".to_string()),
-                dsl_aliases: vec![],
+                dsl_aliases: vec![("byoip".to_string(), "byoip".to_string()), ("amazon".to_string(), "amazon".to_string())],
             })
                 .create_only()
                 .with_description("The IP address source for pools in the public scope. Only used for provisioning IP address CIDRs to pools in the public scope. Default is `byoip`.")

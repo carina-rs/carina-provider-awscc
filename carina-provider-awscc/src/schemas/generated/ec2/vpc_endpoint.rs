@@ -95,7 +95,7 @@ pub fn ec2_vpc_endpoint_config() -> AwsccSchemaConfig {
                 name: "DnsRecordIpType".to_string(),
                 values: vec!["ipv4".to_string(), "ipv6".to_string(), "dualstack".to_string(), "service-defined".to_string(), "not-specified".to_string()],
                 namespace: Some("awscc.ec2.VpcEndpoint".to_string()),
-                dsl_aliases: vec![("service-defined".to_string(), "service_defined".to_string()), ("not-specified".to_string(), "not_specified".to_string())],
+                dsl_aliases: vec![("ipv4".to_string(), "ipv4".to_string()), ("ipv6".to_string(), "ipv6".to_string()), ("dualstack".to_string(), "dualstack".to_string()), ("service-defined".to_string(), "service_defined".to_string()), ("not-specified".to_string(), "not_specified".to_string())],
             }).with_description("The DNS records created for the endpoint.").with_provider_name("DnsRecordIpType"),
                     StructField::new("private_dns_only_for_inbound_resolver_endpoint", AttributeType::StringEnum {
                 name: "PrivateDnsOnlyForInboundResolverEndpoint".to_string(),
@@ -143,7 +143,7 @@ pub fn ec2_vpc_endpoint_config() -> AwsccSchemaConfig {
                 name: "IpAddressType".to_string(),
                 values: vec!["ipv4".to_string(), "ipv6".to_string(), "dualstack".to_string(), "not-specified".to_string()],
                 namespace: Some("awscc.ec2.VpcEndpoint".to_string()),
-                dsl_aliases: vec![("not-specified".to_string(), "not_specified".to_string())],
+                dsl_aliases: vec![("ipv4".to_string(), "ipv4".to_string()), ("ipv6".to_string(), "ipv6".to_string()), ("dualstack".to_string(), "dualstack".to_string()), ("not-specified".to_string(), "not_specified".to_string())],
             })
                 .with_description("The supported IP address types.")
                 .with_provider_name("IpAddressType"),

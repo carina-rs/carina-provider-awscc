@@ -151,7 +151,7 @@ pub fn cloudfront_distribution_config() -> AwsccSchemaConfig {
                 name: "ConnectionMode".to_string(),
                 values: vec!["direct".to_string(), "tenant-only".to_string()],
                 namespace: Some("awscc.cloudfront.Distribution".to_string()),
-                dsl_aliases: vec![("tenant-only".to_string(), "tenant_only".to_string())],
+                dsl_aliases: vec![("direct".to_string(), "direct".to_string()), ("tenant-only".to_string(), "tenant_only".to_string())],
             }).with_description("This field specifies whether the connection mode is through a standard distribution (direct) or a multi-tenant distribution with distribution tenants (tenant-only).").with_provider_name("ConnectionMode"),
                     StructField::new("continuous_deployment_policy_id", AttributeType::String).with_description("This field only supports standard distributions. You can't specify this field for multi-tenant distributions. For more information, see [Unsupported features for SaaS Manager for Amazon CloudFront](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/distribution-config-options.html#unsupported-saas) in the *Amazon CloudFront Developer Guide*. The identifier of a continuous deployment policy. For more information, see ``CreateContinuousDeploymentPolicy``.").with_provider_name("ContinuousDeploymentPolicyId"),
                     StructField::new("custom_error_responses", AttributeType::list(AttributeType::Struct {
@@ -292,7 +292,7 @@ pub fn cloudfront_distribution_config() -> AwsccSchemaConfig {
                 name: "OriginGroupSelectionCriteria".to_string(),
                 values: vec!["default".to_string(), "media-quality-based".to_string()],
                 namespace: Some("awscc.cloudfront.Distribution".to_string()),
-                dsl_aliases: vec![("media-quality-based".to_string(), "media_quality_based".to_string())],
+                dsl_aliases: vec![("default".to_string(), "default".to_string()), ("media-quality-based".to_string(), "media_quality_based".to_string())],
             }).with_description("The selection criteria for the origin group. For more information, see [Create an origin group](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/high_availability_origin_failover.html#concept_origin_groups.creating) in the *Amazon CloudFront Developer Guide*.").with_provider_name("SelectionCriteria")
                     ],
                 })).with_description("The items (origin groups) in a distribution.").with_provider_name("Items").with_block_name("item"),
@@ -313,7 +313,7 @@ pub fn cloudfront_distribution_config() -> AwsccSchemaConfig {
                 name: "IpAddressType".to_string(),
                 values: vec!["ipv4".to_string(), "ipv6".to_string(), "dualstack".to_string()],
                 namespace: Some("awscc.cloudfront.Distribution".to_string()),
-                dsl_aliases: vec![],
+                dsl_aliases: vec![("ipv4".to_string(), "ipv4".to_string()), ("ipv6".to_string(), "ipv6".to_string()), ("dualstack".to_string(), "dualstack".to_string())],
             }).with_description("Specifies which IP protocol CloudFront uses when connecting to your origin. If your origin uses both IPv4 and IPv6 protocols, you can choose ``dualstack`` to help optimize reliability.").with_provider_name("IpAddressType"),
                     StructField::new("origin_keepalive_timeout", AttributeType::Int).with_description("Specifies how long, in seconds, CloudFront persists its connection to the origin. The minimum timeout is 1 second, the maximum is 120 seconds, and the default (if you don't specify otherwise) is 5 seconds. For more information, see [Keep-alive timeout (custom origins only)](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/DownloadDistValuesOrigin.html#DownloadDistValuesOriginKeepaliveTimeout) in the *Amazon CloudFront Developer Guide*.").with_provider_name("OriginKeepaliveTimeout"),
                     StructField::new("origin_mtls_config", AttributeType::Struct {
@@ -381,7 +381,7 @@ pub fn cloudfront_distribution_config() -> AwsccSchemaConfig {
                 name: "RestrictionType".to_string(),
                 values: vec!["none".to_string(), "blacklist".to_string(), "whitelist".to_string()],
                 namespace: Some("awscc.cloudfront.Distribution".to_string()),
-                dsl_aliases: vec![],
+                dsl_aliases: vec![("none".to_string(), "none".to_string()), ("blacklist".to_string(), "blacklist".to_string()), ("whitelist".to_string(), "whitelist".to_string())],
             }).required().with_description("The method that you want to use to restrict distribution of your content by country: + ``none``: No geo restriction is enabled, meaning access to content is not restricted by client geo location. + ``blacklist``: The ``Location`` elements specify the countries in which you don't want CloudFront to distribute your content. + ``whitelist``: The ``Location`` elements specify the countries in which you want CloudFront to distribute your content.").with_provider_name("RestrictionType")
                     ],
                 }).required().with_description("A complex type that controls the countries in which your content is distributed. CF determines the location of your users using ``MaxMind`` GeoIP databases. To disable geo restriction, remove the [Restrictions](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-cloudfront-distribution-distributionconfig.html#cfn-cloudfront-distribution-distributionconfig-restrictions) property from your stack template.").with_provider_name("GeoRestriction")
@@ -429,13 +429,13 @@ pub fn cloudfront_distribution_config() -> AwsccSchemaConfig {
                 name: "MinimumProtocolVersion".to_string(),
                 values: vec!["sni-only".to_string(), "true".to_string()],
                 namespace: Some("awscc.cloudfront.Distribution".to_string()),
-                dsl_aliases: vec![("sni-only".to_string(), "sni_only".to_string())],
+                dsl_aliases: vec![("sni-only".to_string(), "sni_only".to_string()), ("true".to_string(), "true".to_string())],
             }).with_description("If the distribution uses ``Aliases`` (alternate domain names or CNAMEs), specify the security policy that you want CloudFront to use for HTTPS connections with viewers. The security policy determines two settings: + The minimum SSL/TLS protocol that CloudFront can use to communicate with viewers. + The ciphers that CloudFront can use to encrypt the content that it returns to viewers. For more information, see [Security Policy](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/distribution-web-values-specify.html#DownloadDistValues-security-policy) and [Supported Protocols and Ciphers Between Viewers and CloudFront](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/secure-connections-supported-viewer-protocols-ciphers.html#secure-connections-supported-ciphers) in the *Amazon CloudFront Developer Guide*. On the CloudFront console, this setting is called *Security Policy*. When you're using SNI only (you set ``SSLSupportMethod`` to ``sni-only``), you must specify ``TLSv1`` or higher. (In CloudFormation, the field name is ``SslSupportMethod``. Note the different capitalization.) If the distribution uses the CloudFront domain name such as ``d111111abcdef8.cloudfront.net`` (you set ``CloudFrontDefaultCertificate`` to ``true``), CloudFront automatically sets the security policy to ``TLSv1`` regardless of the value that you set here.").with_provider_name("MinimumProtocolVersion"),
                     StructField::new("ssl_support_method", AttributeType::StringEnum {
                 name: "SslSupportMethod".to_string(),
                 values: vec!["sni-only".to_string(), "vip".to_string(), "static-ip".to_string()],
                 namespace: Some("awscc.cloudfront.Distribution".to_string()),
-                dsl_aliases: vec![("sni-only".to_string(), "sni_only".to_string()), ("static-ip".to_string(), "static_ip".to_string())],
+                dsl_aliases: vec![("sni-only".to_string(), "sni_only".to_string()), ("vip".to_string(), "vip".to_string()), ("static-ip".to_string(), "static_ip".to_string())],
             }).with_description("In CloudFormation, this field name is ``SslSupportMethod``. Note the different capitalization. If the distribution uses ``Aliases`` (alternate domain names or CNAMEs), specify which viewers the distribution accepts HTTPS connections from. + ``sni-only`` – The distribution accepts HTTPS connections from only viewers that support [server name indication (SNI)](https://docs.aws.amazon.com/https://en.wikipedia.org/wiki/Server_Name_Indication). This is recommended. Most browsers and clients support SNI. + ``vip`` – The distribution accepts HTTPS connections from all viewers including those that don't support SNI. This is not recommended, and results in additional monthly charges from CloudFront. + ``static-ip`` - Do not specify this value unless your distribution has been enabled for this feature by the CloudFront team. If you have a use case that requires static IP addresses for a distribution, contact CloudFront through the [Center](https://docs.aws.amazon.com/support/home). If the distribution uses the CloudFront domain name such as ``d111111abcdef8.cloudfront.net``, don't set a value for this field.").with_provider_name("SslSupportMethod")
                     ],
                 }).with_description("A complex type that determines the distribution's SSL/TLS configuration for communicating with viewers.").with_provider_name("ViewerCertificate"),
@@ -446,7 +446,7 @@ pub fn cloudfront_distribution_config() -> AwsccSchemaConfig {
                 name: "ViewerMtlsMode".to_string(),
                 values: vec!["required".to_string(), "optional".to_string(), "passthrough".to_string()],
                 namespace: Some("awscc.cloudfront.Distribution".to_string()),
-                dsl_aliases: vec![],
+                dsl_aliases: vec![("required".to_string(), "required".to_string()), ("optional".to_string(), "optional".to_string()), ("passthrough".to_string(), "passthrough".to_string())],
             }).with_description("The viewer mTLS mode.").with_provider_name("Mode"),
                     StructField::new("trust_store_config", AttributeType::Struct {
                     name: "TrustStoreConfig".to_string(),

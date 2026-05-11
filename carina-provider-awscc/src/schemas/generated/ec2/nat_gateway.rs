@@ -60,7 +60,7 @@ pub fn ec2_nat_gateway_config() -> AwsccSchemaConfig {
                 name: "AvailabilityMode".to_string(),
                 values: vec!["zonal".to_string(), "regional".to_string()],
                 namespace: Some("awscc.ec2.NatGateway".to_string()),
-                dsl_aliases: vec![],
+                dsl_aliases: vec![("zonal".to_string(), "zonal".to_string()), ("regional".to_string(), "regional".to_string())],
             })
                 .create_only()
                 .with_description("Indicates whether this is a zonal (single-AZ) or regional (multi-AZ) NAT gateway. A zonal NAT gateway is a NAT Gateway that provides redundancy and scalability within a single availability zone. A regional NAT gateway is a single NAT Gateway that works across multiple availability zones (AZs) in your VPC, providing redundancy, scalability and availability across all the AZs in a Region. For more information, see [Regional NAT gateways for automatic multi-AZ expansion](https://docs.aws.amazon.com/vpc/latest/userguide/nat-gateways-regional.html) in the *Amazon VPC User Guide*.")
@@ -84,7 +84,7 @@ pub fn ec2_nat_gateway_config() -> AwsccSchemaConfig {
                 name: "ConnectivityType".to_string(),
                 values: vec!["public".to_string(), "private".to_string()],
                 namespace: Some("awscc.ec2.NatGateway".to_string()),
-                dsl_aliases: vec![],
+                dsl_aliases: vec![("public".to_string(), "public".to_string()), ("private".to_string(), "private".to_string())],
             })
                 .create_only()
                 .with_description("Indicates whether the NAT gateway supports public or private connectivity. The default is public connectivity.")

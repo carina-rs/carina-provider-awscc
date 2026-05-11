@@ -165,7 +165,7 @@ pub fn ec2_ipam_config() -> AwsccSchemaConfig {
                 name: "Tier".to_string(),
                 values: vec!["free".to_string(), "advanced".to_string()],
                 namespace: Some("awscc.ec2.Ipam".to_string()),
-                dsl_aliases: vec![],
+                dsl_aliases: vec![("free".to_string(), "free".to_string()), ("advanced".to_string(), "advanced".to_string())],
             })
                 .with_description("The tier of the IPAM.")
                 .with_provider_name("Tier"),

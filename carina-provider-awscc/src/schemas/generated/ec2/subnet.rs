@@ -69,7 +69,7 @@ pub fn ec2_subnet_config() -> AwsccSchemaConfig {
                 name: "InternetGatewayBlockMode".to_string(),
                 values: vec!["off".to_string(), "block-bidirectional".to_string(), "block-ingress".to_string()],
                 namespace: Some("awscc.ec2.Subnet".to_string()),
-                dsl_aliases: vec![("block-bidirectional".to_string(), "block_bidirectional".to_string()), ("block-ingress".to_string(), "block_ingress".to_string())],
+                dsl_aliases: vec![("off".to_string(), "off".to_string()), ("block-bidirectional".to_string(), "block_bidirectional".to_string()), ("block-ingress".to_string(), "block_ingress".to_string())],
             }).with_description("The mode of VPC BPA. Options here are off, block-bidirectional, block-ingress ").with_provider_name("InternetGatewayBlockMode")
                     ],
                 })
