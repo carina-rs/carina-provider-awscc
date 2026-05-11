@@ -4,11 +4,17 @@
 # Usage (from project root):
 #   aws-vault exec <profile> -- ./carina-provider-awscc/scripts/generate-schemas.sh
 #   aws-vault exec <profile> -- ./carina-provider-awscc/scripts/generate-schemas.sh --refresh-cache
+#   ./carina-provider-awscc/scripts/generate-schemas.sh --from-cache-only
 #
 # Options:
-#   --refresh-cache  Force re-download of all CloudFormation schemas
+#   --refresh-cache    Force re-download of all CloudFormation schemas
+#                      (requires AWS credentials via aws-vault).
+#   --from-cache-only  Never call AWS; require every schema to be present
+#                      in the committed cache. Fails with a clear error
+#                      if any cache file is missing. Used by CI to detect
+#                      codegen drift without needing AWS credentials.
 #
-# Downloaded schemas are cached in carina-provider-awscc/cfn-schema-cache/.
+# Downloaded schemas are cached in cfn-schema-cache/ at the repo root.
 # Subsequent runs use cached schemas unless --refresh-cache is specified.
 #
 # This script generates Rust schema code from CloudFormation resource type schemas.
@@ -17,13 +23,18 @@ set -e
 
 # Parse flags
 REFRESH_CACHE=false
+FROM_CACHE_ONLY=false
 for arg in "$@"; do
     case "$arg" in
         --refresh-cache) REFRESH_CACHE=true ;;
+        --from-cache-only) FROM_CACHE_ONLY=true ;;
     esac
 done
 
-CACHE_DIR="carina-provider-awscc/cfn-schema-cache"
+# Cache lives at the repo root (where the user runs `cd <repo> && ...`).
+# Keeping it at the repo root rather than nested under the crate dir lets
+# CI access it without juggling per-crate working directories.
+CACHE_DIR="cfn-schema-cache"
 OUTPUT_DIR="carina-provider-awscc/src/schemas/generated"
 mkdir -p "$CACHE_DIR"
 
@@ -120,9 +131,21 @@ for TYPE_NAME in "${RESOURCE_TYPES[@]}"; do
 
     mkdir -p "$OUTPUT_DIR/$SVC"
 
-    # Cache CloudFormation schema to avoid redundant API calls
+    # Cache CloudFormation schema to avoid redundant API calls.
     CACHE_FILE="$CACHE_DIR/${TYPE_NAME//::/__}.json"
-    if [ "$REFRESH_CACHE" = true ] || [ ! -f "$CACHE_FILE" ]; then
+    if [ "$FROM_CACHE_ONLY" = true ]; then
+        # CI / offline mode: cache must already exist. Surface a clear
+        # error rather than silently calling AWS (which would fail with
+        # a credential error and obscure the real cause).
+        if [ ! -f "$CACHE_FILE" ]; then
+            echo "ERROR: --from-cache-only set but cache file not found:" >&2
+            echo "  $CACHE_FILE" >&2
+            echo "Run 'aws-vault exec <profile> -- $0 --refresh-cache'" >&2
+            echo "locally and commit the updated cfn-schema-cache/." >&2
+            exit 1
+        fi
+        echo "  Using cached schema (--from-cache-only)"
+    elif [ "$REFRESH_CACHE" = true ] || [ ! -f "$CACHE_FILE" ]; then
         aws cloudformation describe-type \
             --type RESOURCE \
             --type-name "$TYPE_NAME" \
