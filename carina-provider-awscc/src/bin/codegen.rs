@@ -1746,7 +1746,7 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
         let (condition, range_display) = int_range_condition_and_display(*min, *max);
         body.push_str(&format!(
             r#"fn {}(value: &Value) -> Result<(), String> {{
-    if let Value::Int(n) = value {{
+    if let Value::Concrete(ConcreteValue::Int(n)) = value {{
         if {} {{
             Err(format!("Value {{}} is out of range {}", n))
         }} else {{
@@ -1769,8 +1769,8 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
         body.push_str(&format!(
             r#"fn {}(value: &Value) -> Result<(), String> {{
     let n = match value {{
-        Value::Int(i) => *i as f64,
-        Value::Float(f) => *f,
+        Value::Concrete(ConcreteValue::Int(i)) => *i as f64,
+        Value::Concrete(ConcreteValue::Float(f)) => *f,
         _ => return Err("Expected number".to_string()),
     }};
     if {} {{
@@ -1798,7 +1798,7 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
             r#"const {}: &[i64] = &[{}];
 
 fn {}(value: &Value) -> Result<(), String> {{
-    if let Value::Int(n) = value {{
+    if let Value::Concrete(ConcreteValue::Int(n)) = value {{
         if {}.contains(n) {{
             Ok(())
         }} else {{
@@ -1844,7 +1844,7 @@ fn {}(value: &Value) -> Result<(), String> {{
             body.push_str("fn ");
             body.push_str(&fn_name);
             body.push_str("(value: &Value) -> Result<(), String> {\n");
-            body.push_str("    if let Value::String(s) = value {\n");
+            body.push_str("    if let Value::Concrete(ConcreteValue::String(s)) = value {\n");
             body.push_str(
                 "        static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {\n",
             );
@@ -1883,7 +1883,7 @@ fn {}(value: &Value) -> Result<(), String> {{
             body.push_str(&format!(
                 r#"#[allow(dead_code)]
 fn {}(value: &Value) -> Result<(), String> {{
-    if let Value::List(items) = value {{
+    if let Value::Concrete(ConcreteValue::List(items)) = value {{
         let len = items.len();
         if {} {{
             Err(format!("List has {{}} items, expected {}", len))
@@ -1915,7 +1915,7 @@ fn {}(value: &Value) -> Result<(), String> {{
             let (condition, range_display) = string_length_condition_and_display(*min, *max);
             body.push_str(&format!(
                 r#"fn {}(value: &Value) -> Result<(), String> {{
-    if let Value::String(s) = value {{
+    if let Value::Concrete(ConcreteValue::String(s)) = value {{
         let len = s.chars().count();
         if {} {{
             Err(format!("String length {{}} is out of range {}", len))
@@ -1949,7 +1949,7 @@ fn {}(value: &Value) -> Result<(), String> {{
             body.push_str(&format!(
                 r#"#[allow(dead_code)]
 fn {fn_name}(value: &Value) -> Result<(), String> {{
-    if let Value::String(s) = value {{
+    if let Value::Concrete(ConcreteValue::String(s)) = value {{
         static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {{
             Regex::new("{escaped_for_rust}").expect("invalid pattern regex")
         }});
@@ -2377,7 +2377,7 @@ use super::AwsccSchemaConfig;
         || has_defaults
         || has_patterns
     {
-        code.push_str("use carina_core::resource::{ConcreteValue, DeferredValue, Value};\n");
+        code.push_str("use carina_core::resource::{ConcreteValue, Value};\n");
     }
     if has_patterns {
         code.push_str("use regex::Regex;\n");
@@ -4302,14 +4302,18 @@ fn json_default_to_value_code(val: &serde_json::Value) -> Option<String> {
     match val {
         serde_json::Value::String(s) => {
             let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
-            Some(format!("Value::String(\"{}\".to_string())", escaped))
+            Some(format!(
+                "Value::Concrete(ConcreteValue::String(\"{}\".to_string()))",
+                escaped
+            ))
         }
-        serde_json::Value::Bool(b) => Some(format!("Value::Bool({})", b)),
+        serde_json::Value::Bool(b) => Some(format!("Value::Concrete(ConcreteValue::Bool({}))", b)),
         serde_json::Value::Number(n) => {
             if let Some(i) = n.as_i64() {
-                Some(format!("Value::Int({})", i))
+                Some(format!("Value::Concrete(ConcreteValue::Int({}))", i))
             } else {
-                n.as_f64().map(|f| format!("Value::Float({:.1})", f))
+                n.as_f64()
+                    .map(|f| format!("Value::Concrete(ConcreteValue::Float({:.1}))", f))
             }
         }
         _ => None,
@@ -7980,11 +7984,13 @@ mod tests {
         let generated = generate_schema_code(&schema, "AWS::IAM::Role").unwrap();
 
         assert!(
-            generated.contains(r#".with_default(Value::String("/".to_string()))"#),
+            generated.contains(
+                r#".with_default(Value::Concrete(ConcreteValue::String("/".to_string())))"#
+            ),
             "Should emit .with_default() for string default value: {generated}"
         );
         assert!(
-            generated.contains("use carina_core::resource::{ConcreteValue, DeferredValue, Value};"),
+            generated.contains("use carina_core::resource::{ConcreteValue, Value};"),
             "Should import Value when defaults are present: {generated}"
         );
     }
@@ -8021,7 +8027,7 @@ mod tests {
         let generated = generate_schema_code(&schema, "AWS::Logs::LogGroup").unwrap();
 
         assert!(
-            generated.contains(".with_default(Value::Bool(false))"),
+            generated.contains(".with_default(Value::Concrete(ConcreteValue::Bool(false)))"),
             "Should emit .with_default() for boolean default value: {generated}"
         );
     }
@@ -8058,7 +8064,7 @@ mod tests {
         let generated = generate_schema_code(&schema, "AWS::Test::Resource").unwrap();
 
         assert!(
-            generated.contains(".with_default(Value::Int(3))"),
+            generated.contains(".with_default(Value::Concrete(ConcreteValue::Int(3)))"),
             "Should emit .with_default() for integer default value: {generated}"
         );
     }
@@ -8270,15 +8276,15 @@ mod tests {
     fn test_json_default_to_value_code() {
         assert_eq!(
             json_default_to_value_code(&serde_json::Value::String("hello".to_string())),
-            Some("Value::String(\"hello\".to_string())".to_string())
+            Some("Value::Concrete(ConcreteValue::String(\"hello\".to_string()))".to_string())
         );
         assert_eq!(
             json_default_to_value_code(&serde_json::Value::Bool(true)),
-            Some("Value::Bool(true)".to_string())
+            Some("Value::Concrete(ConcreteValue::Bool(true))".to_string())
         );
         assert_eq!(
             json_default_to_value_code(&serde_json::json!(42)),
-            Some("Value::Int(42)".to_string())
+            Some("Value::Concrete(ConcreteValue::Int(42))".to_string())
         );
         assert_eq!(json_default_to_value_code(&serde_json::Value::Null), None,);
         assert_eq!(json_default_to_value_code(&serde_json::json!([])), None,);
@@ -8613,7 +8619,7 @@ mod tests {
             "should generate items validation function: {generated}"
         );
         assert!(
-            generated.contains("Value::List(items)"),
+            generated.contains("Value::Concrete(ConcreteValue::List(items))"),
             "validation function should check Value::List: {generated}"
         );
         assert!(
