@@ -347,14 +347,14 @@ mod tests {
         attrs.insert(
             "allowed_account_ids".to_string(),
             Value::Concrete(ConcreteValue::List(vec![
-                Value::String("111111111111".to_string()),
-                Value::String("222222222222".to_string()),
+                Value::Concrete(ConcreteValue::String("111111111111".to_string())),
+                Value::Concrete(ConcreteValue::String("222222222222".to_string())),
             ])),
         );
         attrs.insert(
             "forbidden_account_ids".to_string(),
-            Value::Concrete(ConcreteValue::List(vec![Value::String(
-                "999999999999".to_string(),
+            Value::Concrete(ConcreteValue::List(vec![Value::Concrete(
+                ConcreteValue::String("999999999999".to_string()),
             )])),
         );
 

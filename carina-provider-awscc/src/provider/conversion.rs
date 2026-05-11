@@ -397,7 +397,7 @@ mod tests {
         );
         let result = result.expect("Should return Some");
 
-        // Must be Value::Map(...) to match parser output for map assignment syntax
+        // Must be Value::Concrete(ConcreteValue::Map(...)) to match parser output for map assignment syntax
         if let Value::Concrete(ConcreteValue::Map(map)) = &result {
             assert_eq!(
                 map.get("status"),
@@ -421,7 +421,7 @@ mod tests {
             fields,
         };
 
-        // Parser produces Value::Map(...) for map assignment syntax (= { ... })
+        // Parser produces Value::Concrete(ConcreteValue::Map(...)) for map assignment syntax (= { ... })
         let mut map = IndexMap::new();
         map.insert(
             "status".to_string(),
@@ -456,13 +456,15 @@ mod tests {
             fields,
         };
 
-        // Parser produces Value::List(vec![Value::Map(...)]) for block syntax (name { ... })
+        // Parser produces Value::Concrete(ConcreteValue::List(vec![Value::Concrete(ConcreteValue::Map(...))])) for block syntax (name { ... })
         let mut map = IndexMap::new();
         map.insert(
             "status".to_string(),
             Value::Concrete(ConcreteValue::String("Enabled".to_string())),
         );
-        let dsl_value = Value::Concrete(ConcreteValue::List(vec![Value::Map(map)]));
+        let dsl_value = Value::Concrete(ConcreteValue::List(vec![Value::Concrete(
+            ConcreteValue::Map(map),
+        )]));
 
         let result = dsl_value_to_aws(
             &dsl_value,
@@ -635,8 +637,12 @@ mod tests {
         };
         let attr_type = AttributeType::list(inner);
         let value = Value::Concrete(ConcreteValue::List(vec![
-            Value::String("awscc.s3.Bucket.AllowedMethod.GET".to_string()),
-            Value::String("awscc.s3.Bucket.AllowedMethod.PUT".to_string()),
+            Value::Concrete(ConcreteValue::String(
+                "awscc.s3.Bucket.AllowedMethod.GET".to_string(),
+            )),
+            Value::Concrete(ConcreteValue::String(
+                "awscc.s3.Bucket.AllowedMethod.PUT".to_string(),
+            )),
         ]));
         let result = dsl_value_to_aws(&value, &attr_type, "s3.Bucket", "allowed_methods");
         assert_eq!(result, Some(json!(["GET", "PUT"])));
@@ -656,8 +662,12 @@ mod tests {
         assert_eq!(
             result,
             Some(Value::Concrete(ConcreteValue::List(vec![
-                Value::String("awscc.s3.Bucket.AllowedMethod.GET".to_string()),
-                Value::String("awscc.s3.Bucket.AllowedMethod.PUT".to_string()),
+                Value::Concrete(ConcreteValue::String(
+                    "awscc.s3.Bucket.AllowedMethod.GET".to_string()
+                )),
+                Value::Concrete(ConcreteValue::String(
+                    "awscc.s3.Bucket.AllowedMethod.PUT".to_string()
+                )),
             ])))
         );
     }
@@ -832,32 +842,41 @@ mod tests {
             vec![
                 (
                     "version".to_string(),
-                    Value::String("2012-10-17".to_string()),
+                    Value::Concrete(ConcreteValue::String("2012-10-17".to_string())),
                 ),
                 (
                     "statement".to_string(),
-                    Value::List(vec![Value::Map(
-                        vec![
-                            ("effect".to_string(), Value::String("Allow".to_string())),
-                            (
-                                "action".to_string(),
-                                Value::String("sts:AssumeRole".to_string()),
-                            ),
-                            (
-                                "principal".to_string(),
-                                Value::Map(
-                                    vec![(
-                                        "service".to_string(),
-                                        Value::String("lambda.amazonaws.com".to_string()),
-                                    )]
-                                    .into_iter()
-                                    .collect(),
+                    Value::Concrete(ConcreteValue::List(vec![Value::Concrete(
+                        ConcreteValue::Map(
+                            vec![
+                                (
+                                    "effect".to_string(),
+                                    Value::Concrete(ConcreteValue::String("Allow".to_string())),
                                 ),
-                            ),
-                        ]
-                        .into_iter()
-                        .collect(),
-                    )]),
+                                (
+                                    "action".to_string(),
+                                    Value::Concrete(ConcreteValue::String(
+                                        "sts:AssumeRole".to_string(),
+                                    )),
+                                ),
+                                (
+                                    "principal".to_string(),
+                                    Value::Concrete(ConcreteValue::Map(
+                                        vec![(
+                                            "service".to_string(),
+                                            Value::Concrete(ConcreteValue::String(
+                                                "lambda.amazonaws.com".to_string(),
+                                            )),
+                                        )]
+                                        .into_iter()
+                                        .collect(),
+                                    )),
+                                ),
+                            ]
+                            .into_iter()
+                            .collect(),
+                        ),
+                    )])),
                 ),
             ]
             .into_iter()
@@ -989,10 +1008,14 @@ mod tests {
         let json_val = json!([{"RegionName": "ap-northeast-1"}]);
 
         let result = aws_value_to_dsl("operating_regions", &json_val, &attr_type, "ec2.Ipam");
-        let expected = Value::Concrete(ConcreteValue::List(vec![Value::Map(IndexMap::from([(
-            "region_name".to_string(),
-            Value::String("awscc.Region.ap_northeast_1".to_string()),
-        )]))]));
+        let expected = Value::Concrete(ConcreteValue::List(vec![Value::Concrete(
+            ConcreteValue::Map(IndexMap::from([(
+                "region_name".to_string(),
+                Value::Concrete(ConcreteValue::String(
+                    "awscc.Region.ap_northeast_1".to_string(),
+                )),
+            )])),
+        )]));
         assert_eq!(result, Some(expected));
     }
 
@@ -1098,8 +1121,8 @@ mod tests {
         let json = serde_json::json!(["a", null, "b"]);
         let result = json_to_value(&json);
         let expected = Value::Concrete(ConcreteValue::List(vec![
-            Value::String("a".to_string()),
-            Value::String("b".to_string()),
+            Value::Concrete(ConcreteValue::String("a".to_string())),
+            Value::Concrete(ConcreteValue::String("b".to_string())),
         ]));
         assert_eq!(result, Some(expected));
     }
@@ -1127,8 +1150,8 @@ mod tests {
         let attr_type = AttributeType::list(AttributeType::String);
         let result = aws_value_to_dsl("test_attr", &json, &attr_type, "test.resource");
         let expected = Value::Concrete(ConcreteValue::List(vec![
-            Value::String("a".to_string()),
-            Value::String("b".to_string()),
+            Value::Concrete(ConcreteValue::String("a".to_string())),
+            Value::Concrete(ConcreteValue::String("b".to_string())),
         ]));
         assert_eq!(result, Some(expected));
     }
@@ -1136,9 +1159,9 @@ mod tests {
     #[test]
     fn test_value_to_json_list_with_nan_drops_nan_items() {
         let value = Value::Concrete(ConcreteValue::List(vec![
-            Value::Float(1.0),
-            Value::Float(f64::NAN),
-            Value::Float(2.0),
+            Value::Concrete(ConcreteValue::Float(1.0)),
+            Value::Concrete(ConcreteValue::Float(f64::NAN)),
+            Value::Concrete(ConcreteValue::Float(2.0)),
         ]));
         let result = value_to_json(&value);
         let expected = serde_json::json!([1.0, 2.0]);
@@ -1356,9 +1379,9 @@ mod tests {
     #[test]
     fn test_dsl_value_to_aws_list_with_nan_drops_nan_items() {
         let value = Value::Concrete(ConcreteValue::List(vec![
-            Value::Float(1.0),
-            Value::Float(f64::NAN),
-            Value::Float(2.0),
+            Value::Concrete(ConcreteValue::Float(1.0)),
+            Value::Concrete(ConcreteValue::Float(f64::NAN)),
+            Value::Concrete(ConcreteValue::Float(2.0)),
         ]));
         let attr_type = AttributeType::list(AttributeType::Float);
         let result = dsl_value_to_aws(&value, &attr_type, "test.resource", "test_attr");
