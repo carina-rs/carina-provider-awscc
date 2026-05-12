@@ -34,7 +34,7 @@ let ipam = awscc.ec2.Ipam {
 
 let top_pool = awscc.ec2.IpamPool {
   ipam_scope_id  = ipam.private_default_scope_id
-  address_family = 'IPv4'
+  address_family = ipv4
   locale         = 'ap-northeast-1'
 
   provisioned_cidr {
@@ -49,7 +49,7 @@ let vpc = awscc.ec2.Vpc {
 
 let vpc_pool = awscc.ec2.IpamPool {
   ipam_scope_id       = ipam.private_default_scope_id
-  address_family      = 'IPv4'
+  address_family      = ipv4
   locale              = 'ap-northeast-1'
   source_ipam_pool_id = top_pool.ipam_pool_id
 
@@ -57,7 +57,7 @@ let vpc_pool = awscc.ec2.IpamPool {
     resource_id     = vpc.vpc_id
     resource_owner  = identity.account_id
     resource_region = 'ap-northeast-1'
-    resource_type   = 'vpc'
+    resource_type   = vpc
   }
 
   provisioned_cidr {

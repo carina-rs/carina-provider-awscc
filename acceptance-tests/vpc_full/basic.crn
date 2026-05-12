@@ -109,7 +109,7 @@ awscc.ec2.SubnetRouteTableAssociation {
 # --- Elastic IPs and NAT Gateways ---
 
 let eip_1a = awscc.ec2.Eip {
-  domain = 'vpc'
+  domain = vpc
 
   tags = {
     Name = 'nat-gw-ap-northeast-1a'
@@ -117,7 +117,7 @@ let eip_1a = awscc.ec2.Eip {
 }
 
 let eip_1c = awscc.ec2.Eip {
-  domain = 'vpc'
+  domain = vpc
 
   tags = {
     Name = 'nat-gw-ap-northeast-1c'
@@ -125,7 +125,7 @@ let eip_1c = awscc.ec2.Eip {
 }
 
 let eip_1d = awscc.ec2.Eip {
-  domain = 'vpc'
+  domain = vpc
 
   tags = {
     Name = 'nat-gw-ap-northeast-1d'
@@ -321,7 +321,7 @@ let endpoint_sg = awscc.ec2.SecurityGroup {
 awscc.ec2.SecurityGroupIngress {
   group_id    = endpoint_sg.group_id
   description = 'Allow HTTPS from VPC'
-  ip_protocol = 'tcp'
+  ip_protocol = tcp
   from_port   = 443
   to_port     = 443
   cidr_ip     = '10.0.0.0/16'
