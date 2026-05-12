@@ -33,7 +33,7 @@ awscc.ec2.VpcGatewayAttachment {
 }
 
 let eip = awscc.ec2.Eip {
-  domain = 'vpc'
+  domain = awscc.ec2.Eip.Domain.vpc
 
   tags = {
     Name = 'write-only-test'

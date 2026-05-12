@@ -12,7 +12,7 @@ provider awscc {
 }
 
 awscc.ec2.Eip {
-  domain = 'vpc'
+  domain = vpc
 
   tags = {
     Environment = 'acceptance-test'

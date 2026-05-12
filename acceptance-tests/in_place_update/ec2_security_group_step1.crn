@@ -15,7 +15,7 @@ awscc.ec2.SecurityGroup {
   group_description = 'carina acceptance test - in-place update'
 
   security_group_ingress {
-    ip_protocol = 'tcp'
+    ip_protocol = tcp
     from_port   = 80
     to_port     = 80
     cidr_ip     = '0.0.0.0/0'
