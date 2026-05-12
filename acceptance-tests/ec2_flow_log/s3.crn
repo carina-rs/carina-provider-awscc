@@ -12,7 +12,7 @@ let vpc = awscc.ec2.Vpc {
 }
 
 let bucket = awscc.s3.Bucket {
-  lifecycle {
+  directives {
     force_delete = true
   }
 }
