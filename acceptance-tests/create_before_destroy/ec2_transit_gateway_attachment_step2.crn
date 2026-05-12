@@ -52,7 +52,7 @@ awscc.ec2.TransitGatewayAttachment {
   transit_gateway_id = tgw_b.id
   vpc_id             = vpc.vpc_id
 
-  lifecycle {
+  directives {
     create_before_destroy = true
   }
 

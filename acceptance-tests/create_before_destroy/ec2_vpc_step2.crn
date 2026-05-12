@@ -13,7 +13,7 @@ awscc.ec2.Vpc {
   enable_dns_support   = true
   enable_dns_hostnames = true
 
-  lifecycle {
+  directives {
     create_before_destroy = true
   }
 
