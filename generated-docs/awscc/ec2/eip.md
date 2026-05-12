@@ -14,7 +14,7 @@ Specifies an Elastic IP (EIP) address and can, optionally, associate it with an 
 
 ```crn
 awscc.ec2.Eip {
-  domain = 'vpc'
+  domain = vpc
 
   tags = {
     Environment = 'example'
