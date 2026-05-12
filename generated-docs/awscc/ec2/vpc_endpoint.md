@@ -34,7 +34,7 @@ let sg = awscc.ec2.SecurityGroup {
 awscc.ec2.SecurityGroupIngress {
   group_id    = sg.group_id
   description = 'Allow HTTPS from VPC'
-  ip_protocol = 'tcp'
+  ip_protocol = tcp
   from_port   = 443
   to_port     = 443
   cidr_ip     = '10.0.0.0/16'
