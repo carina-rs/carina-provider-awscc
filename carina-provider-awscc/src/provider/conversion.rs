@@ -198,7 +198,14 @@ pub(crate) fn dsl_value_to_aws(
     // For schema-level string enums, convert namespaced DSL values back to provider values.
     if attr_type.namespaced_enum_parts().is_some() {
         match value {
-            Value::Concrete(ConcreteValue::String(s)) => {
+            // Phase 3 of carina#2986 routes DSL-source enum values to
+            // `EnumIdentifier`; the same text payload also still arrives
+            // as `String` from state-loader / aws_value_to_dsl paths
+            // that haven't been promoted yet. Accept both — the
+            // namespace-strip / `api_for` lookup below is text-based
+            // and shape-agnostic.
+            Value::Concrete(ConcreteValue::String(s))
+            | Value::Concrete(ConcreteValue::EnumIdentifier(s)) => {
                 // For StringEnum: extract the trailing segment (handling
                 // dotted values like the legacy `ipsec.1` shape that may
                 // still arrive from older state) and look up the
@@ -321,7 +328,8 @@ pub(crate) fn dsl_value_to_aws(
 /// Convert DSL Value to JSON value
 pub(crate) fn value_to_json(value: &Value) -> Option<serde_json::Value> {
     match value {
-        Value::Concrete(ConcreteValue::String(s)) => Some(json!(s)),
+        Value::Concrete(ConcreteValue::String(s))
+        | Value::Concrete(ConcreteValue::EnumIdentifier(s)) => Some(json!(s)),
         Value::Concrete(ConcreteValue::Bool(b)) => Some(json!(b)),
         Value::Concrete(ConcreteValue::Int(i)) => Some(json!(i)),
         Value::Concrete(ConcreteValue::Float(f)) if f.is_finite() => Some(json!(f)),
@@ -1332,7 +1340,10 @@ mod tests {
             .unwrap();
 
         // Validate the snake_case form (the canonical DSL spelling per D7).
-        let snake_case_value = Value::Concrete(ConcreteValue::String(
+        // Phase 4 of carina#2986: DSL-source enum values arrive as
+        // `EnumIdentifier`; a `String` here would route to
+        // `StringLiteralExpectedEnum`.
+        let snake_case_value = Value::Concrete(ConcreteValue::EnumIdentifier(
             "awscc.s3.Bucket.ObjectOwnership.bucket_owner_enforced".to_string(),
         ));
         object_ownership
@@ -1344,7 +1355,7 @@ mod tests {
         // strict on DSL input — the PascalCase API spelling is
         // rejected. State JSON still flows through `aws_value_to_dsl`
         // separately, so this only gates DSL-source values.
-        let pascal_value = Value::Concrete(ConcreteValue::String(
+        let pascal_value = Value::Concrete(ConcreteValue::EnumIdentifier(
             "awscc.s3.Bucket.ObjectOwnership.BucketOwnerEnforced".to_string(),
         ));
         assert!(
