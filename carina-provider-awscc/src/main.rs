@@ -266,6 +266,7 @@ impl CarinaProvider for AwsccProcessProvider {
             create_before_destroy: request.directives.create_before_destroy,
             prevent_destroy: request.directives.prevent_destroy,
             depends_on: Vec::new(),
+            provider_instance: None,
         };
         let result = self.runtime.block_on(self.provider().delete(
             &core_id,
