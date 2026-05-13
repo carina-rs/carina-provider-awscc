@@ -949,6 +949,7 @@ mod tests {
             provider: provider.to_string(),
             resource_type: resource_type.to_string(),
             name: ResourceName::Bound(name.to_string()),
+            provider_instance: None,
         };
         let mut attributes = HashMap::new();
         for (k, v) in attrs {

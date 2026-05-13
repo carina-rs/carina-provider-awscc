@@ -146,8 +146,14 @@ impl ProviderFactory for AwsccProviderFactory {
 
     fn create_provider(
         &self,
+        _binding: Option<&str>,
         attributes: &IndexMap<String, Value>,
     ) -> BoxFuture<'_, Result<Box<dyn Provider>, carina_core::provider::ProviderError>> {
+        // `_binding` is intentionally unused: the AWS Cloud Control
+        // factory does not cache instances, so each call already
+        // produces an independent `AwsccProvider`. The host uses the
+        // binding name as a cache key in `WasmProviderFactory`; for
+        // in-process factories the constructed-fresh shape is enough.
         let region = self.extract_region(attributes);
         let cfg = extract_provider_config(attributes);
         Box::pin(async move {
@@ -157,6 +163,7 @@ impl ProviderFactory for AwsccProviderFactory {
 
     fn create_normalizer(
         &self,
+        _binding: Option<&str>,
         _attributes: &IndexMap<String, Value>,
     ) -> BoxFuture<'_, Box<dyn ProviderNormalizer>> {
         Box::pin(async { Box::new(AwsccNormalizer) as Box<dyn ProviderNormalizer> })
