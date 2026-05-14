@@ -110,10 +110,22 @@ Shorthand formats: `default` or `OriginGroupSelectionCriteria.default`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `sni-only` | `awscc.cloudfront.Distribution.MinimumProtocolVersion.sni_only` |
-| `true` | `awscc.cloudfront.Distribution.MinimumProtocolVersion.true` |
+| `SSLv3` | `awscc.cloudfront.Distribution.MinimumProtocolVersion.sslv3` |
+| `TLSv1` | `awscc.cloudfront.Distribution.MinimumProtocolVersion.tlsv1` |
+| `TLSv1_2016` | `awscc.cloudfront.Distribution.MinimumProtocolVersion.tlsv1_2016` |
+| `TLSv1.1_2016` | `awscc.cloudfront.Distribution.MinimumProtocolVersion.tlsv1_1_2016` |
+| `TLSv1.2_2018` | `awscc.cloudfront.Distribution.MinimumProtocolVersion.tlsv1_2_2018` |
+| `TLSv1.2_2019` | `awscc.cloudfront.Distribution.MinimumProtocolVersion.tlsv1_2_2019` |
+| `TLSv1.2_2021` | `awscc.cloudfront.Distribution.MinimumProtocolVersion.tlsv1_2_2021` |
+| `sslv3` | `awscc.cloudfront.Distribution.MinimumProtocolVersion.sslv3` |
+| `tlsv1` | `awscc.cloudfront.Distribution.MinimumProtocolVersion.tlsv1` |
+| `tlsv1_2016` | `awscc.cloudfront.Distribution.MinimumProtocolVersion.tlsv1_2016` |
+| `tlsv1_1_2016` | `awscc.cloudfront.Distribution.MinimumProtocolVersion.tlsv1_1_2016` |
+| `tlsv1_2_2018` | `awscc.cloudfront.Distribution.MinimumProtocolVersion.tlsv1_2_2018` |
+| `tlsv1_2_2019` | `awscc.cloudfront.Distribution.MinimumProtocolVersion.tlsv1_2_2019` |
+| `tlsv1_2_2021` | `awscc.cloudfront.Distribution.MinimumProtocolVersion.tlsv1_2_2021` |
 
-Shorthand formats: `sni_only` or `MinimumProtocolVersion.sni_only`
+Shorthand formats: `sslv3` or `MinimumProtocolVersion.sslv3`
 
 ### ssl_support_method (SslSupportMethod)
 
