@@ -40,7 +40,22 @@ const VALID_LAMBDA_FUNCTION_ASSOCIATION_EVENT_TYPE: &[&str] = &[
 
 const VALID_ORIGIN_GROUP_SELECTION_CRITERIA: &[&str] = &["default", "media-quality-based"];
 
-const VALID_VIEWER_CERTIFICATE_MINIMUM_PROTOCOL_VERSION: &[&str] = &["sni-only", "true"];
+const VALID_VIEWER_CERTIFICATE_MINIMUM_PROTOCOL_VERSION: &[&str] = &[
+    "SSLv3",
+    "TLSv1",
+    "TLSv1_2016",
+    "TLSv1.1_2016",
+    "TLSv1.2_2018",
+    "TLSv1.2_2019",
+    "TLSv1.2_2021",
+    "sslv3",
+    "tlsv1",
+    "tlsv1_2016",
+    "tlsv1_1_2016",
+    "tlsv1_2_2018",
+    "tlsv1_2_2019",
+    "tlsv1_2_2021",
+];
 
 const VALID_VIEWER_CERTIFICATE_SSL_SUPPORT_METHOD: &[&str] = &["sni-only", "vip", "static-ip"];
 
@@ -427,9 +442,9 @@ pub fn cloudfront_distribution_config() -> AwsccSchemaConfig {
                     StructField::new("iam_certificate_id", AttributeType::String).with_description("This field only supports standard distributions. You can't specify this field for multi-tenant distributions. For more information, see [Unsupported features for SaaS Manager for Amazon CloudFront](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/distribution-config-options.html#unsupported-saas) in the *Amazon CloudFront Developer Guide*. In CloudFormation, this field name is ``IamCertificateId``. Note the different capitalization. If the distribution uses ``Aliases`` (alternate domain names or CNAMEs) and the SSL/TLS certificate is stored in [(IAM)](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_server-certs.html), provide the ID of the IAM certificate. If you specify an IAM certificate ID, you must also specify values for ``MinimumProtocolVersion`` and ``SSLSupportMethod``. (In CloudFormation, the field name is ``SslSupportMethod``. Note the different capitalization.)").with_provider_name("IamCertificateId"),
                     StructField::new("minimum_protocol_version", AttributeType::StringEnum {
                 name: "MinimumProtocolVersion".to_string(),
-                values: vec!["sni-only".to_string(), "true".to_string()],
+                values: vec!["SSLv3".to_string(), "TLSv1".to_string(), "TLSv1_2016".to_string(), "TLSv1.1_2016".to_string(), "TLSv1.2_2018".to_string(), "TLSv1.2_2019".to_string(), "TLSv1.2_2021".to_string(), "sslv3".to_string(), "tlsv1".to_string(), "tlsv1_2016".to_string(), "tlsv1_1_2016".to_string(), "tlsv1_2_2018".to_string(), "tlsv1_2_2019".to_string(), "tlsv1_2_2021".to_string()],
                 namespace: Some("awscc.cloudfront.Distribution".to_string()),
-                dsl_aliases: vec![("sni-only".to_string(), "sni_only".to_string()), ("true".to_string(), "true".to_string())],
+                dsl_aliases: vec![("SSLv3".to_string(), "sslv3".to_string()), ("TLSv1".to_string(), "tlsv1".to_string()), ("TLSv1_2016".to_string(), "tlsv1_2016".to_string()), ("TLSv1.1_2016".to_string(), "tlsv1_1_2016".to_string()), ("TLSv1.2_2018".to_string(), "tlsv1_2_2018".to_string()), ("TLSv1.2_2019".to_string(), "tlsv1_2_2019".to_string()), ("TLSv1.2_2021".to_string(), "tlsv1_2_2021".to_string()), ("sslv3".to_string(), "sslv3".to_string()), ("tlsv1".to_string(), "tlsv1".to_string()), ("tlsv1_2016".to_string(), "tlsv1_2016".to_string()), ("tlsv1_1_2016".to_string(), "tlsv1_1_2016".to_string()), ("tlsv1_2_2018".to_string(), "tlsv1_2_2018".to_string()), ("tlsv1_2_2019".to_string(), "tlsv1_2_2019".to_string()), ("tlsv1_2_2021".to_string(), "tlsv1_2_2021".to_string())],
             }).with_description("If the distribution uses ``Aliases`` (alternate domain names or CNAMEs), specify the security policy that you want CloudFront to use for HTTPS connections with viewers. The security policy determines two settings: + The minimum SSL/TLS protocol that CloudFront can use to communicate with viewers. + The ciphers that CloudFront can use to encrypt the content that it returns to viewers. For more information, see [Security Policy](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/distribution-web-values-specify.html#DownloadDistValues-security-policy) and [Supported Protocols and Ciphers Between Viewers and CloudFront](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/secure-connections-supported-viewer-protocols-ciphers.html#secure-connections-supported-ciphers) in the *Amazon CloudFront Developer Guide*. On the CloudFront console, this setting is called *Security Policy*. When you're using SNI only (you set ``SSLSupportMethod`` to ``sni-only``), you must specify ``TLSv1`` or higher. (In CloudFormation, the field name is ``SslSupportMethod``. Note the different capitalization.) If the distribution uses the CloudFront domain name such as ``d111111abcdef8.cloudfront.net`` (you set ``CloudFrontDefaultCertificate`` to ``true``), CloudFront automatically sets the security policy to ``TLSv1`` regardless of the value that you set here.").with_provider_name("MinimumProtocolVersion"),
                     StructField::new("ssl_support_method", AttributeType::StringEnum {
                 name: "SslSupportMethod".to_string(),

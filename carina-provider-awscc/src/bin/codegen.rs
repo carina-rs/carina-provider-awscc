@@ -2765,6 +2765,26 @@ fn known_enum_overrides() -> &'static HashMap<&'static str, Vec<&'static str>> {
         m.insert("SecurityGroupReferencingSupport", vec!["enable", "disable"]);
         m.insert("VpnEcmpSupport", vec!["enable", "disable"]);
         m.insert("EncryptionSupportState", vec!["disable", "enable"]);
+        // CloudFront ViewerCertificate.MinimumProtocolVersion: CFN schema declares
+        // it as a free-form string, so the description-scraping heuristic in
+        // extract_enum_from_description() picked up unrelated backticked tokens
+        // from sibling fields (`sni-only` from SslSupportMethod, `true` from
+        // CloudFrontDefaultCertificate) while filtering out the real value
+        // `TLSv1` as a "property name". Pin the canonical security-policy values
+        // here so the heuristic is short-circuited (overrides are consulted
+        // before description extraction). awscc#242.
+        m.insert(
+            "MinimumProtocolVersion",
+            vec![
+                "SSLv3",
+                "TLSv1",
+                "TLSv1_2016",
+                "TLSv1.1_2016",
+                "TLSv1.2_2018",
+                "TLSv1.2_2019",
+                "TLSv1.2_2021",
+            ],
+        );
         m
     });
     &OVERRIDES
@@ -2778,6 +2798,23 @@ fn known_enum_aliases() -> &'static HashMap<&'static str, Vec<(&'static str, &'s
         LazyLock::new(|| {
             let mut m = HashMap::new();
             m.insert("IpProtocol", vec![("-1", "all")]);
+            // CloudFront security-policy values mix uppercase acronyms (`TLS`),
+            // version digits, and dotted minor versions. The mechanical D7
+            // snake_case transform splits `TLSv1_2016` as `tl_sv1_2016`, which
+            // is unreadable. Pin the human-friendly DSL spellings here so
+            // users can write `tlsv1_2_2021` etc. instead.
+            m.insert(
+                "MinimumProtocolVersion",
+                vec![
+                    ("SSLv3", "sslv3"),
+                    ("TLSv1", "tlsv1"),
+                    ("TLSv1_2016", "tlsv1_2016"),
+                    ("TLSv1.1_2016", "tlsv1_1_2016"),
+                    ("TLSv1.2_2018", "tlsv1_2_2018"),
+                    ("TLSv1.2_2019", "tlsv1_2_2019"),
+                    ("TLSv1.2_2021", "tlsv1_2_2021"),
+                ],
+            );
             m
         });
     &ALIASES
@@ -4702,6 +4739,123 @@ mod tests {
             info.values,
             vec!["tcp", "udp", "icmp", "icmpv6", "-1", "all"]
         );
+    }
+
+    #[test]
+    fn test_minimum_protocol_version_override_short_circuits_sibling_bleed() {
+        // Regression test for awscc#242. The CFN description for
+        // ViewerCertificate.MinimumProtocolVersion mentions sibling-field values
+        // (`sni-only` from SslSupportMethod, `true` from CloudFrontDefaultCertificate)
+        // in backticks, while filtering out the real value `TLSv1` as a "property
+        // name". Without the override, extract_enum_from_description picks up the
+        // sibling values and ships them as the enum membership; the override must
+        // short-circuit that path.
+        let description = "If the distribution uses ``Aliases`` (alternate domain \
+            names or CNAMEs), specify the security policy that you want CloudFront \
+            to use for HTTPS connections with viewers. When you're using SNI only \
+            (you set ``SSLSupportMethod`` to ``sni-only``), you must specify \
+            ``TLSv1`` or higher. If the distribution uses the CloudFront domain \
+            name such as ``d111111abcdef8.cloudfront.net`` (you set \
+            ``CloudFrontDefaultCertificate`` to ``true``), CloudFront automatically \
+            sets the security policy to ``TLSv1``.";
+
+        // Demonstrate the underlying heuristic still misfires on this description
+        // — overrides are the correct fix layer, not a heuristic tweak.
+        let scraped = extract_enum_from_description(description);
+        assert_eq!(
+            scraped,
+            Some(vec!["sni-only".to_string(), "true".to_string()]),
+            "heuristic still produces the bogus pair; override must short-circuit it"
+        );
+
+        let prop = CfnProperty {
+            prop_type: Some(TypeValue::Single("string".to_string())),
+            description: Some(description.to_string()),
+            enum_values: None,
+            items: None,
+            ref_path: None,
+            insertion_order: None,
+            properties: None,
+            required: vec![],
+            minimum: None,
+            maximum: None,
+            additional_properties: None,
+            const_value: None,
+            default_value: None,
+            pattern: None,
+            min_items: None,
+            max_items: None,
+            min_length: None,
+            max_length: None,
+            format: None,
+        };
+        let schema = CfnSchema {
+            type_name: "AWS::CloudFront::Distribution".to_string(),
+            description: None,
+            properties: BTreeMap::new(),
+            required: vec![],
+            read_only_properties: vec![],
+            create_only_properties: vec![],
+            write_only_properties: vec![],
+            primary_identifier: None,
+            definitions: None,
+            tagging: None,
+            one_of: vec![],
+            any_of: vec![],
+            handlers: BTreeMap::new(),
+        };
+        let (_, enum_info) = cfn_type_to_carina_type_with_enum(
+            &prop,
+            "MinimumProtocolVersion",
+            &schema,
+            "",
+            &BTreeMap::new(),
+        );
+        let info = enum_info.expect("MinimumProtocolVersion should produce EnumInfo via overrides");
+        assert_eq!(info.type_name, "MinimumProtocolVersion");
+        // The canonical AWS values must be present (the headline fix for awscc#242).
+        for canonical in [
+            "SSLv3",
+            "TLSv1",
+            "TLSv1_2016",
+            "TLSv1.1_2016",
+            "TLSv1.2_2018",
+            "TLSv1.2_2019",
+            "TLSv1.2_2021",
+        ] {
+            assert!(
+                info.values.iter().any(|v| v == canonical),
+                "MinimumProtocolVersion must carry canonical value {canonical}; got {:?}",
+                info.values
+            );
+        }
+        // The sibling-bleed values must NOT appear.
+        for bogus in ["sni-only", "true"] {
+            assert!(
+                !info.values.iter().any(|v| v == bogus),
+                "MinimumProtocolVersion must not carry sibling-bleed value {bogus}; got {:?}",
+                info.values
+            );
+        }
+        // The DSL aliases registered in known_enum_aliases for this property
+        // are merged into `values` (mirroring the existing IpProtocol "all"
+        // injection at codegen.rs:3929-3938) so the strict-DSL validator
+        // accepts both spellings.
+        for alias in [
+            "tlsv1_2_2021",
+            "tlsv1_2_2019",
+            "tlsv1_2_2018",
+            "tlsv1_1_2016",
+            "tlsv1_2016",
+            "tlsv1",
+            "sslv3",
+        ] {
+            assert!(
+                info.values.iter().any(|v| v == alias),
+                "MinimumProtocolVersion alias {alias} must be merged into values; got {:?}",
+                info.values
+            );
+        }
     }
 
     #[test]
