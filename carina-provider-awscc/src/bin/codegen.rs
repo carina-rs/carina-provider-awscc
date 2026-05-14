@@ -1075,10 +1075,15 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str) -> Result<String> {
     }
 
     // Attribute Reference (read-only attributes)
+    let synth_for_type: Vec<&SyntheticAttribute> = synthetic_attributes()
+        .iter()
+        .filter(|s| s.cfn_type == type_name)
+        .collect();
     let has_read_only = schema
         .properties
         .keys()
-        .any(|name| read_only.contains(name));
+        .any(|name| read_only.contains(name))
+        || !synth_for_type.is_empty();
     if has_read_only {
         md.push_str("## Attribute Reference\n\n");
 
@@ -1099,6 +1104,15 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str) -> Result<String> {
             } else {
                 md.push('\n');
             }
+        }
+
+        for synth in synth_for_type {
+            md.push_str(&format!("### `{}`\n\n", synth.attr_name));
+            md.push_str("- **Type:** String\n\n");
+            md.push_str(&format!(
+                "{}\n\n",
+                collapse_whitespace(&synth.description.replace('\n', " "))
+            ));
         }
     }
 
@@ -2156,6 +2170,30 @@ pub fn {}() -> AwsccSchemaConfig {{
 
         attr_code.push_str(",\n        )\n");
         body.push_str(&attr_code);
+    }
+
+    // Emit synthetic attributes — values the Cloud Control read path does
+    // not return because the CFN schema omits them. The provider fills
+    // these in on the read path; the schema entry exists so DSL references
+    // (e.g. `distribution.arn`) resolve at validate time.
+    for synth in synthetic_attributes() {
+        if synth.cfn_type != type_name {
+            continue;
+        }
+        let escaped = collapse_whitespace(
+            &synth
+                .description
+                .replace('\\', "\\\\")
+                .replace('"', "\\\"")
+                .replace('\n', " "),
+        );
+        body.push_str(&format!(
+            "        .attribute(\n            \
+             AttributeSchema::new(\"{}\", {})\n                \
+             .read_only()\n                \
+             .with_description(\"{} (read-only)\"),\n        )\n",
+            synth.attr_name, synth.attr_type, escaped,
+        ));
     }
 
     // Determine name_attribute from primaryIdentifier:
@@ -3291,6 +3329,41 @@ fn deferred_populate_properties() -> &'static HashSet<(&'static str, &'static st
         s
     });
     &DEFERRED
+}
+
+/// Attributes that do **not** exist in the CloudFormation schema but that
+/// the provider synthesizes on the read path so downstream `.crn`
+/// references can resolve. Each entry expands into an extra
+/// `AttributeSchema::new(...).read_only()` block in the generated schema
+/// with no `provider_name` (the missing `provider_name` is what tells the
+/// read-path mapper to skip CFN lookup and rely on synthesis instead).
+///
+/// Closes carina-rs/carina-provider-awscc#240 for cloudfront.Distribution.
+///
+/// If AWS later updates a CFN type to surface one of these attributes
+/// natively, drop the entry from this list so the regular CFN-driven
+/// emission takes over — otherwise the synthesis path becomes dead code
+/// silently (the value AWS would return and the one we'd synthesize are
+/// identical, so a regression here would not be observable).
+fn synthetic_attributes() -> &'static [SyntheticAttribute] {
+    static ATTRS: LazyLock<Vec<SyntheticAttribute>> = LazyLock::new(|| {
+        vec![SyntheticAttribute {
+            cfn_type: "AWS::CloudFront::Distribution",
+            attr_name: "arn",
+            attr_type: "super::arn()",
+            description: "The ARN of the CloudFront distribution. Synthesized by the provider \
+                 from the distribution id; CloudFront's CloudFormation type does not \
+                 expose ARN through the Cloud Control API.",
+        }]
+    });
+    &ATTRS
+}
+
+struct SyntheticAttribute {
+    cfn_type: &'static str,
+    attr_name: &'static str,
+    attr_type: &'static str,
+    description: &'static str,
 }
 
 /// Infer the Carina type string for a property based on its name.

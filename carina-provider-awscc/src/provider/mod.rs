@@ -15,6 +15,7 @@
 //! - `update` - Update patch building and resource property parsing
 
 pub(crate) mod account_guard;
+mod arn_synthesis;
 mod cloudcontrol;
 pub(crate) mod conversion;
 mod normalizer;
@@ -27,6 +28,8 @@ pub(crate) mod update;
 use aws_config::Region;
 use aws_sdk_cloudcontrol::Client as CloudControlClient;
 use aws_sdk_sts::Client as StsClient;
+use carina_core::provider::{ProviderError, ProviderResult};
+use tokio::sync::OnceCell;
 
 use crate::schemas::generated::AwsccSchemaConfig;
 
@@ -76,6 +79,11 @@ pub struct AwsccProvider {
     /// touching CloudControl, so a wrong-account `apply` aborts before
     /// any read/refresh/mutation.
     init_error: Option<String>,
+    /// Caller's AWS account id, fetched lazily via `sts:GetCallerIdentity`
+    /// the first time a synthesized attribute (e.g.
+    /// `cloudfront.Distribution.arn`) needs it, then cached for the
+    /// lifetime of the provider instance.
+    account_id: OnceCell<String>,
 }
 
 impl AwsccProvider {
@@ -110,7 +118,26 @@ impl AwsccProvider {
             cloudcontrol_client: CloudControlClient::new(&config),
             aws_config: config,
             init_error,
+            account_id: OnceCell::new(),
         }
+    }
+
+    /// Return the caller's AWS account id, fetching it via
+    /// `sts:GetCallerIdentity` on first call and caching the result on
+    /// the provider for subsequent reads.
+    pub(crate) async fn account_id(&self) -> ProviderResult<&str> {
+        self.account_id
+            .get_or_try_init(|| async {
+                let sts = StsClient::new(&self.aws_config);
+                let identity = sts.get_caller_identity().send().await.map_err(|e| {
+                    ProviderError::api_error(format!("Failed to call sts:GetCallerIdentity: {e}"))
+                })?;
+                identity.account().map(|s| s.to_string()).ok_or_else(|| {
+                    ProviderError::api_error("sts:GetCallerIdentity returned no account id")
+                })
+            })
+            .await
+            .map(String::as_str)
     }
 
     /// Look up the caller's AWS account ID via STS and validate it

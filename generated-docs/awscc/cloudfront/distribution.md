@@ -490,3 +490,9 @@ Shorthand formats: `required` or `ViewerMtlsMode.required`
 
 
 
+### `arn`
+
+- **Type:** String
+
+The ARN of the CloudFront distribution. Synthesized by the provider from the distribution id; CloudFront's CloudFormation type does not expose ARN through the Cloud Control API.
+
