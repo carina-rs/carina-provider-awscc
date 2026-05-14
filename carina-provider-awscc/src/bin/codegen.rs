@@ -2030,6 +2030,7 @@ pub fn {}() -> AwsccSchemaConfig {{
         // specific nested sub-properties are omitted.
         let is_write_only = write_only.contains(prop_name);
         let is_identity = identity_properties().contains(&(type_name, prop_name));
+        let is_deferred_populate = deferred_populate_properties().contains(&(type_name, prop_name));
 
         let attr_type = if let Some(enum_info) = enums.get(prop_name) {
             // Use shared schema enum type for constrained strings.
@@ -2104,6 +2105,10 @@ pub fn {}() -> AwsccSchemaConfig {{
 
         if is_identity {
             attr_code.push_str("\n                .identity()");
+        }
+
+        if is_deferred_populate {
+            attr_code.push_str("\n                .deferred_populate()");
         }
 
         if let Some(desc) = &prop.description {
@@ -3258,6 +3263,34 @@ fn identity_properties() -> &'static HashSet<(&'static str, &'static str)> {
         s
     });
     &IDENTITY
+}
+
+/// Properties that should be marked as `deferred_populate` in the schema
+/// (carina#3034). The AWS API populates these *asynchronously after Create
+/// returns* — chained references to them from another resource will be
+/// rejected at validate time unless the user has declared a `wait` block
+/// on the binding.
+///
+/// CloudFormation `readOnlyProperties` is a coarser bucket: it includes
+/// both attributes that are echoed back synchronously (e.g. ARNs) and
+/// attributes that genuinely transition state asynchronously (e.g. ACM
+/// `Status`, CloudFront `DomainName`). This list narrows the second class
+/// so the validate-time rule does not over-flag.
+fn deferred_populate_properties() -> &'static HashSet<(&'static str, &'static str)> {
+    static DEFERRED: LazyLock<HashSet<(&'static str, &'static str)>> = LazyLock::new(|| {
+        let mut s = HashSet::new();
+        // CloudFront Distribution: `DomainName` (the
+        // `<random>.cloudfront.net` host) is computed by the service
+        // after CreateDistribution returns. Downstream consumers
+        // that wire this into, e.g., a route53 alias record need a
+        // `wait` synchronization. (`Status` transitions InProgress →
+        // Deployed asynchronously too, but CFN does not expose it
+        // as a top-level property — wait predicates that need it
+        // hit the Cloud Control read path directly.)
+        s.insert(("AWS::CloudFront::Distribution", "DomainName"));
+        s
+    });
+    &DEFERRED
 }
 
 /// Infer the Carina type string for a property based on its name.
