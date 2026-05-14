@@ -484,6 +484,11 @@ pub fn cloudfront_distribution_config() -> AwsccSchemaConfig {
                 .with_description("A complex type that contains zero or more ``Tag`` elements.")
                 .with_provider_name("Tags"),
         )
+        .attribute(
+            AttributeSchema::new("arn", super::arn())
+                .read_only()
+                .with_description("The ARN of the CloudFront distribution. Synthesized by the provider from the distribution id; CloudFront's CloudFormation type does not expose ARN through the Cloud Control API. (read-only)"),
+        )
         .with_validator(|attrs| {
             let mut errors = Vec::new();
             if let Err(mut e) = validate_tags_map(attrs) {

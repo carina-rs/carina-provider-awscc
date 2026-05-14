@@ -63,6 +63,11 @@ impl AwsccProvider {
         // Handle special cases
         self.read_special_attributes(resource_type, &props, &mut attributes);
 
+        // Synthesize attributes the Cloud Control read does not return
+        // (e.g. cloudfront.Distribution.arn). Reads STS once, then caches.
+        self.synthesize_read_attributes(resource_type, &mut attributes)
+            .await?;
+
         Ok(State::existing(id, attributes).with_identifier(identifier))
     }
 
