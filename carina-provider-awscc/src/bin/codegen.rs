@@ -2878,6 +2878,57 @@ fn is_numeric_string_pattern(pattern: &str) -> bool {
     )
 }
 
+/// Detect a regex pattern that is a pure alternation of literal values
+/// and return those literals in source order.
+///
+/// Recognized shapes (anchors required):
+///   - `^(a|b|c)$`  -> Some(vec!["a", "b", "c"])
+///   - `^(only)$`   -> Some(vec!["only"])
+///   - `^only$`     -> Some(vec!["only"])
+///
+/// An "alternative" must be a literal: ASCII letters, digits, or any of
+/// the few separator characters that real CFN enum-as-pattern values use
+/// (`-`, `_`, `:`, `.`, `/`). Any regex metacharacter (`[`, `]`, `(`,
+/// `)`, `*`, `+`, `?`, `\`, `{`, `}`, `^`, `$`, `|` inside the alt) or
+/// an empty alternative disqualifies the pattern; it then flows through
+/// the existing `Custom { pattern }` path. See awscc#245.
+fn extract_enum_from_alternation_pattern(pattern: &str) -> Option<Vec<String>> {
+    let inner = pattern
+        .strip_prefix('^')
+        .and_then(|s| s.strip_suffix('$'))?;
+    // Two recognized shapes:
+    //   1. `^(alt1|alt2|...)$` — one outer paren group, `|` only inside.
+    //   2. `^literal$`         — no parens, no `|`.
+    // Anything else (nested groups, top-level alternation without parens
+    // like `^a|b$` which regex-parses as `(^a)|(b$)`, regex meta inside
+    // alts, etc.) flows through the existing `Custom { pattern }` path.
+    let alternatives: Vec<&str> = if let Some(stripped) =
+        inner.strip_prefix('(').and_then(|s| s.strip_suffix(')'))
+    {
+        if stripped.is_empty() || stripped.contains('(') || stripped.contains(')') {
+            return None;
+        }
+        stripped.split('|').collect()
+    } else {
+        if inner.is_empty() || inner.contains('(') || inner.contains(')') || inner.contains('|') {
+            return None;
+        }
+        vec![inner]
+    };
+    if alternatives.iter().any(|alt| !is_literal_enum_value(alt)) {
+        return None;
+    }
+    Some(alternatives.into_iter().map(|s| s.to_string()).collect())
+}
+
+/// True when `s` is a non-empty literal value safe to treat as an enum
+/// member: ASCII letters, digits, or one of `-`, `_`, `:`, `.`, `/`.
+fn is_literal_enum_value(s: &str) -> bool {
+    !s.is_empty()
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | ':' | '.' | '/'))
+}
+
 /// Recursively collect string length constraints from a property and its array items.
 /// Treats minLength=0 as no constraint since usize is always >= 0.
 fn collect_string_length_constraints(
@@ -3881,6 +3932,13 @@ fn cfn_type_to_carina_type_with_enum(
             {
                 // Check if name-based heuristics would override the type
                 if infer_string_type(prop_name, &schema.type_name).is_none() {
+                    // Promote alternation-only patterns to a real StringEnum.
+                    // See awscc#245.
+                    if let Some(values) = extract_enum_from_alternation_pattern(pattern) {
+                        let type_name = prop_name.to_pascal_case();
+                        let enum_info = EnumInfo { type_name, values };
+                        return ("/* enum */".to_string(), Some(enum_info));
+                    }
                     let effective_min = def.min_length.filter(|&m| m > 0);
                     let has_length = effective_min.is_some() || def.max_length.is_some();
                     let validate_fn = if has_length {
@@ -4038,6 +4096,18 @@ fn cfn_type_to_carina_type_with_enum(
                     ),
                     None,
                 );
+            }
+
+            // Check for alternation-only pattern (e.g., "^(a|b|c)$") and
+            // promote it to a real StringEnum so users get bare-identifier
+            // syntax, did-you-mean diagnostics, and LSP completion. See
+            // awscc#245.
+            if let Some(ref pattern) = prop.pattern
+                && let Some(values) = extract_enum_from_alternation_pattern(pattern)
+            {
+                let type_name = prop_name.to_pascal_case();
+                let enum_info = EnumInfo { type_name, values };
+                return ("/* enum */".to_string(), Some(enum_info));
             }
 
             // Check for regex pattern constraint
@@ -11005,5 +11075,140 @@ mod tests {
             md.contains("`BucketOwnerEnforced`"),
             "Value column should retain the API spelling for round-trip clarity: {md}"
         );
+    }
+
+    // === awscc#245: alternation-only patterns become real enums ===
+
+    #[test]
+    fn test_extract_enum_from_alternation_pattern_multi() {
+        assert_eq!(
+            extract_enum_from_alternation_pattern("^(s3|mediastore|lambda|mediapackagev2)$"),
+            Some(vec![
+                "s3".to_string(),
+                "mediastore".to_string(),
+                "lambda".to_string(),
+                "mediapackagev2".to_string(),
+            ])
+        );
+        assert_eq!(
+            extract_enum_from_alternation_pattern("^(never|no-override|always)$"),
+            Some(vec![
+                "never".to_string(),
+                "no-override".to_string(),
+                "always".to_string(),
+            ])
+        );
+    }
+
+    #[test]
+    fn test_extract_enum_from_alternation_pattern_single_value() {
+        // Parenthesized single value.
+        assert_eq!(
+            extract_enum_from_alternation_pattern("^(sigv4)$"),
+            Some(vec!["sigv4".to_string()])
+        );
+        // Bare single value, no parens.
+        assert_eq!(
+            extract_enum_from_alternation_pattern("^sigv4$"),
+            Some(vec!["sigv4".to_string()])
+        );
+    }
+
+    #[test]
+    fn test_extract_enum_from_alternation_pattern_rejects_non_alternation() {
+        // Missing anchors.
+        assert_eq!(extract_enum_from_alternation_pattern("(a|b|c)"), None);
+        assert_eq!(extract_enum_from_alternation_pattern("a|b"), None);
+        // Character classes / quantifiers / escapes.
+        assert_eq!(extract_enum_from_alternation_pattern("^[0-9]+$"), None);
+        assert_eq!(extract_enum_from_alternation_pattern("^(a|b)+$"), None);
+        assert_eq!(extract_enum_from_alternation_pattern("^(a|b\\d)$"), None);
+        // Empty alternative (trailing `|`).
+        assert_eq!(extract_enum_from_alternation_pattern("^(a|b|)$"), None);
+        // Nested groups.
+        assert_eq!(extract_enum_from_alternation_pattern("^((a)|b)$"), None);
+        // Real-world non-alternation patterns from the CFN cache.
+        assert_eq!(
+            extract_enum_from_alternation_pattern(
+                "^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}$"
+            ),
+            None
+        );
+        // Top-level alternation without an outer group is NOT equivalent to
+        // `^(a|b)$`: regex parses `^a|b$` as `(^a)|(b$)`. Reject it.
+        assert_eq!(extract_enum_from_alternation_pattern("^a|b$"), None);
+        assert_eq!(extract_enum_from_alternation_pattern("^a|b|c$"), None);
+        // Empty parens.
+        assert_eq!(extract_enum_from_alternation_pattern("^()$"), None);
+        assert_eq!(extract_enum_from_alternation_pattern("^$"), None);
+    }
+
+    #[test]
+    fn test_alternation_pattern_emits_string_enum_not_custom() {
+        // Mirrors the awscc#245 reproducer: a CFN string property whose only
+        // constraint is `pattern: "^(a|b|c)$"` must become a real
+        // StringEnum, not Custom { pattern, base: String }.
+        let mut properties = BTreeMap::new();
+        properties.insert(
+            "OriginAccessControlOriginType".to_string(),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("string".to_string())),
+                description: None,
+                enum_values: None,
+                items: None,
+                ref_path: None,
+                insertion_order: None,
+                properties: None,
+                required: vec![],
+                minimum: None,
+                maximum: None,
+                additional_properties: None,
+                const_value: None,
+                default_value: None,
+                pattern: Some("^(s3|mediastore|lambda|mediapackagev2)$".to_string()),
+                min_items: None,
+                max_items: None,
+                min_length: None,
+                max_length: None,
+                format: None,
+            },
+        );
+        let schema = CfnSchema {
+            type_name: "AWS::CloudFront::OriginAccessControl".to_string(),
+            description: None,
+            properties,
+            required: vec![],
+            read_only_properties: vec![],
+            create_only_properties: vec![],
+            write_only_properties: vec![],
+            primary_identifier: None,
+            definitions: None,
+            tagging: None,
+            one_of: vec![],
+            any_of: vec![],
+            handlers: BTreeMap::new(),
+        };
+        let generated =
+            generate_schema_code(&schema, "AWS::CloudFront::OriginAccessControl").unwrap();
+        assert!(
+            generated.contains("AttributeType::StringEnum {"),
+            "alternation pattern should produce StringEnum: {generated}"
+        );
+        // Must not fall back to a Custom { pattern, ... } emission.
+        assert!(
+            !generated.contains("pattern: Some(\"^(s3|mediastore|lambda|mediapackagev2)$\""),
+            "alternation pattern should not flow through Custom: {generated}"
+        );
+        assert!(
+            !generated.contains("validate_string_pattern_"),
+            "alternation pattern should not emit a per-pattern validator: {generated}"
+        );
+        // All four literals must appear in the StringEnum values list.
+        for v in ["s3", "mediastore", "lambda", "mediapackagev2"] {
+            assert!(
+                generated.contains(&format!("\"{}\".to_string()", v)),
+                "missing enum value {v} in: {generated}"
+            );
+        }
     }
 }

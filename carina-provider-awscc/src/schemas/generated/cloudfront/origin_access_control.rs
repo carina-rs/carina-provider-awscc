@@ -5,48 +5,15 @@
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
 use super::AwsccSchemaConfig;
-use carina_core::resource::{ConcreteValue, Value};
-use carina_core::schema::{
-    AttributeSchema, AttributeType, ResourceSchema, StructField, legacy_validator,
-};
-use regex::Regex;
+use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField};
+
+const VALID_ORIGIN_ACCESS_CONTROL_CONFIG_ORIGIN_ACCESS_CONTROL_ORIGIN_TYPE: &[&str] =
+    &["s3", "mediastore", "lambda", "mediapackagev2"];
 
 const VALID_ORIGIN_ACCESS_CONTROL_CONFIG_SIGNING_BEHAVIOR: &[&str] =
     &["always", "never", "no-override"];
 
-#[allow(dead_code)]
-fn validate_string_pattern_597c12a2d8028697(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::String(s)) = value {
-        static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-            Regex::new("^(s3|mediastore|lambda|mediapackagev2)$").expect("invalid pattern regex")
-        });
-        if RE.is_match(s) {
-            Ok(())
-        } else {
-            Err(format!(
-                "Value '{}' does not match pattern ^(s3|mediastore|lambda|mediapackagev2)$",
-                s
-            ))
-        }
-    } else {
-        Err("Expected string".to_string())
-    }
-}
-
-#[allow(dead_code)]
-fn validate_string_pattern_e0706e45c974b71e(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::String(s)) = value {
-        static RE: std::sync::LazyLock<Regex> =
-            std::sync::LazyLock::new(|| Regex::new("^(sigv4)$").expect("invalid pattern regex"));
-        if RE.is_match(s) {
-            Ok(())
-        } else {
-            Err(format!("Value '{}' does not match pattern ^(sigv4)$", s))
-        }
-    } else {
-        Err("Expected string".to_string())
-    }
-}
+const VALID_ORIGIN_ACCESS_CONTROL_CONFIG_SIGNING_PROTOCOL: &[&str] = &["sigv4"];
 
 /// Returns the schema config for cloudfront_origin_access_control (AWS::CloudFront::OriginAccessControl)
 pub fn cloudfront_origin_access_control_config() -> AwsccSchemaConfig {
@@ -68,14 +35,11 @@ pub fn cloudfront_origin_access_control_config() -> AwsccSchemaConfig {
                     fields: vec![
                     StructField::new("description", AttributeType::String).with_description("A description of the origin access control.").with_provider_name("Description"),
                     StructField::new("name", AttributeType::String).required().with_description("A name to identify the origin access control. You can specify up to 64 characters.").with_provider_name("Name"),
-                    StructField::new("origin_access_control_origin_type", AttributeType::Custom {
-                semantic_name: None,
-                pattern: Some("^(s3|mediastore|lambda|mediapackagev2)$".to_string()),
-                length: None,
-                base: Box::new(AttributeType::String),
-                validate: legacy_validator(validate_string_pattern_597c12a2d8028697),
-                namespace: None,
-                to_dsl: None,
+                    StructField::new("origin_access_control_origin_type", AttributeType::StringEnum {
+                name: "OriginAccessControlOriginType".to_string(),
+                values: vec!["s3".to_string(), "mediastore".to_string(), "lambda".to_string(), "mediapackagev2".to_string()],
+                namespace: Some("awscc.cloudfront.OriginAccessControl".to_string()),
+                dsl_aliases: vec![("s3".to_string(), "s3".to_string()), ("mediastore".to_string(), "mediastore".to_string()), ("lambda".to_string(), "lambda".to_string()), ("mediapackagev2".to_string(), "mediapackagev2".to_string())],
             }).required().with_description("The type of origin that this origin access control is for.").with_provider_name("OriginAccessControlOriginType"),
                     StructField::new("signing_behavior", AttributeType::StringEnum {
                 name: "SigningBehavior".to_string(),
@@ -83,14 +47,11 @@ pub fn cloudfront_origin_access_control_config() -> AwsccSchemaConfig {
                 namespace: Some("awscc.cloudfront.OriginAccessControl".to_string()),
                 dsl_aliases: vec![("always".to_string(), "always".to_string()), ("never".to_string(), "never".to_string()), ("no-override".to_string(), "no_override".to_string())],
             }).required().with_description("Specifies which requests CloudFront signs (adds authentication information to). Specify ``always`` for the most common use case. For more information, see [origin access control advanced settings](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-restricting-access-to-s3.html#oac-advanced-settings) in the *Amazon CloudFront Developer Guide*. This field can have one of the following values: + ``always`` – CloudFront signs all origin requests, overwriting the ``Authorization`` header from the viewer request if one exists. + ``never`` – CloudFront doesn't sign any origin requests. This value turns off origin access control for all origins in all distributions that use this origin access control. + ``no-override`` – If the viewer request doesn't contain the ``Authorization`` header, then CloudFront signs the origin request. If the viewer request contains the ``Authorization`` header, then CloudFront doesn't sign the origin request and instead passes along the ``Authorization`` header from the viewer request. *WARNING: To pass along the Authorization header from the viewer request, you must add the Authorization header to a cache policy for all cache behaviors that use origins associated with this origin access control.*").with_provider_name("SigningBehavior"),
-                    StructField::new("signing_protocol", AttributeType::Custom {
-                semantic_name: None,
-                pattern: Some("^(sigv4)$".to_string()),
-                length: None,
-                base: Box::new(AttributeType::String),
-                validate: legacy_validator(validate_string_pattern_e0706e45c974b71e),
-                namespace: None,
-                to_dsl: None,
+                    StructField::new("signing_protocol", AttributeType::StringEnum {
+                name: "SigningProtocol".to_string(),
+                values: vec!["sigv4".to_string()],
+                namespace: Some("awscc.cloudfront.OriginAccessControl".to_string()),
+                dsl_aliases: vec![("sigv4".to_string(), "sigv4".to_string())],
             }).required().with_description("The signing protocol of the origin access control, which determines how CloudFront signs (authenticates) requests. The only valid value is ``sigv4``.").with_provider_name("SigningProtocol")
                     ],
                 })
@@ -108,9 +69,19 @@ pub fn enum_valid_values() -> (
 ) {
     (
         "cloudfront.OriginAccessControl",
-        &[(
-            "signing_behavior",
-            VALID_ORIGIN_ACCESS_CONTROL_CONFIG_SIGNING_BEHAVIOR,
-        )],
+        &[
+            (
+                "origin_access_control_origin_type",
+                VALID_ORIGIN_ACCESS_CONTROL_CONFIG_ORIGIN_ACCESS_CONTROL_ORIGIN_TYPE,
+            ),
+            (
+                "signing_behavior",
+                VALID_ORIGIN_ACCESS_CONTROL_CONFIG_SIGNING_BEHAVIOR,
+            ),
+            (
+                "signing_protocol",
+                VALID_ORIGIN_ACCESS_CONTROL_CONFIG_SIGNING_PROTOCOL,
+            ),
+        ],
     )
 }
