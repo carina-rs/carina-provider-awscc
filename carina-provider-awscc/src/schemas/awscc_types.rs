@@ -421,7 +421,7 @@ mod tests {
             vec![
                 (
                     "version".to_string(),
-                    Value::Concrete(ConcreteValue::String("2012-10-17".to_string())),
+                    Value::Concrete(ConcreteValue::EnumIdentifier("2012_10_17".to_string())),
                 ),
                 (
                     "statement".to_string(),
@@ -430,7 +430,9 @@ mod tests {
                             vec![
                                 (
                                     "effect".to_string(),
-                                    Value::Concrete(ConcreteValue::String("Allow".to_string())),
+                                    Value::Concrete(ConcreteValue::EnumIdentifier(
+                                        "allow".to_string(),
+                                    )),
                                 ),
                                 (
                                     "action".to_string(),
