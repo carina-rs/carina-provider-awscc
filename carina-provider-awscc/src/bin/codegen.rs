@@ -908,11 +908,23 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str) -> Result<String> {
     // Scan struct definition fields for enum info (const values, $ref to enum-only definitions)
     for (def_name, def_info) in &struct_defs {
         for (field_name, field_prop) in &def_info.properties {
+            let composite_key = format!("{}.{}", def_name, field_name);
+            // Apply nested-field enum overlay (awscc#246) — same lookup as
+            // `generate_schema_code`, so the markdown's enum tables stay in
+            // sync with the generated Rust schema.
+            if let Some(TypeOverride::Enum(values)) =
+                resource_type_overrides().get(&(type_name, composite_key.as_str()))
+            {
+                enums.insert(
+                    composite_key.clone(),
+                    enum_info_for_override(field_name, values),
+                );
+                continue;
+            }
             let (_, enum_info) = cfn_type_to_carina_type_with_enum(
                 field_prop, field_name, schema, &namespace, &enums,
             );
             if let Some(info) = enum_info {
-                let composite_key = format!("{}.{}", def_name, field_name);
                 enums.insert(composite_key, info);
             }
         }
@@ -1684,11 +1696,26 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
                     if existing_snake.contains(&snake) {
                         continue;
                     }
+                    let composite_key = format!("{}.{}", def_name, field_name);
+                    // Curated nested-field enum overlay (awscc#246). Wins over
+                    // the natural cfn_type inference so that fields the CFN
+                    // schema leaves as plain strings still register as enums
+                    // in the `enums` map (and therefore get a VALID_* constant
+                    // and an enum_valid_values() entry alongside StringEnum
+                    // emission in `generate_struct_type`).
+                    if let Some(TypeOverride::Enum(values)) =
+                        resource_type_overrides().get(&(type_name, composite_key.as_str()))
+                    {
+                        enums.insert(
+                            composite_key.clone(),
+                            enum_info_for_override(field_name, values),
+                        );
+                        continue;
+                    }
                     let (_, field_enum_info) = cfn_type_to_carina_type_with_enum(
                         field_prop, field_name, schema, &namespace, &enums,
                     );
                     if let Some(info) = field_enum_info {
-                        let composite_key = format!("{}.{}", def_name, field_name);
                         enums.insert(composite_key, info);
                     }
                 }
@@ -2643,8 +2670,20 @@ fn generate_struct_type(
         .iter()
         .map(|(field_name, field_prop)| {
             let snake_name = field_name.to_snake_case();
-            let (field_type, enum_info) =
+            let (field_type, mut enum_info) =
                 cfn_type_to_carina_type_with_enum(field_prop, field_name, schema, namespace, enums);
+            // Apply nested-field enum overlay (awscc#246). When the resource
+            // schema does not annotate a struct field as an enum but we have
+            // a curated value list in `resource_type_overrides()` keyed by
+            // ("AWS::Service::Type", "DefName.FieldName"), promote it to a
+            // synthetic StringEnum here. List fields (`array<string>`) keep
+            // the list wrapping below; only the item type changes.
+            let nested_key = format!("{}.{}", def_name, field_name);
+            if let Some(TypeOverride::Enum(values)) =
+                resource_type_overrides().get(&(schema.type_name.as_str(), nested_key.as_str()))
+            {
+                enum_info = Some(enum_info_for_override(field_name, values));
+            }
             // If enum detected in struct field and it's in the enums map, use shared string enum type.
             // Try composite key "DefName.FieldName" first (for definition-scoped enums),
             // then fall back to plain "FieldName" (for top-level property enums).
@@ -2815,9 +2854,45 @@ fn known_enum_aliases() -> &'static HashMap<&'static str, Vec<(&'static str, &'s
                     ("TLSv1.2_2021", "tlsv1_2_2021"),
                 ],
             );
+            // CloudFront CustomOriginConfig.OriginSSLProtocols /
+            // LegacyCustomOrigin.OriginSSLProtocols (awscc#246):
+            // heck snake-cases `TLSv1.1` to `tl_sv1_1` because it splits at
+            // every upper→lower boundary. Pin the natural DSL spelling so
+            // users can write `tlsv1_1` etc.
+            m.insert(
+                "OriginSSLProtocols",
+                vec![
+                    ("SSLv3", "sslv3"),
+                    ("TLSv1", "tlsv1"),
+                    ("TLSv1.1", "tlsv1_1"),
+                    ("TLSv1.2", "tlsv1_2"),
+                ],
+            );
             m
         });
     &ALIASES
+}
+
+/// Build an `EnumInfo` for a curated nested-field override
+/// (`resource_type_overrides()` Enum entries; awscc#246).
+///
+/// Mirrors the logic at the `known_enum_overrides` call site: take the
+/// canonical AWS values and append any `known_enum_aliases` DSL spellings
+/// not already present, so `dsl_aliases_code` and the resulting
+/// `VALID_*` constant carry the full union of accepted spellings.
+fn enum_info_for_override(field_name: &str, values: &[&'static str]) -> EnumInfo {
+    let mut enum_values: Vec<String> = values.iter().map(|s| s.to_string()).collect();
+    if let Some(alias_list) = known_enum_aliases().get(field_name) {
+        for (_, alias) in alias_list {
+            if !enum_values.iter().any(|v| v == alias) {
+                enum_values.push(alias.to_string());
+            }
+        }
+    }
+    EnumInfo {
+        type_name: field_name.to_pascal_case(),
+        values: enum_values,
+    }
 }
 
 /// Generate condition string and display string for integer range validation.
@@ -3320,6 +3395,89 @@ fn resource_type_overrides() -> &'static HashMap<(&'static str, &'static str), T
             m.insert(
                 ("AWS::EC2::VPNGateway", "Type"),
                 TypeOverride::Enum(vec!["ipsec.1"]),
+            );
+
+            // CloudFront Distribution: fields the CFN schema leaves as plain
+            // strings but are documented as a closed value set (awscc#246).
+            // Keys use "DefName.FieldName" composite form so the lookup hits
+            // each nested struct field at codegen time. Source for the value
+            // lists: AWS docs + Terraform AWS provider validators.
+            m.insert(
+                (
+                    "AWS::CloudFront::Distribution",
+                    "DistributionConfig.PriceClass",
+                ),
+                TypeOverride::Enum(vec!["PriceClass_100", "PriceClass_200", "PriceClass_All"]),
+            );
+            m.insert(
+                (
+                    "AWS::CloudFront::Distribution",
+                    "DistributionConfig.HttpVersion",
+                ),
+                TypeOverride::Enum(vec!["http1.1", "http2", "http2and3", "http3"]),
+            );
+            m.insert(
+                ("AWS::CloudFront::Distribution", "Cookies.Forward"),
+                TypeOverride::Enum(vec!["all", "none", "whitelist"]),
+            );
+            // AllowedMethods / CachedMethods appear in both DefaultCacheBehavior
+            // and CacheBehavior with identical semantics; register both.
+            let allowed_methods = vec!["GET", "HEAD", "OPTIONS", "PUT", "PATCH", "POST", "DELETE"];
+            let cached_methods = vec!["GET", "HEAD", "OPTIONS"];
+            m.insert(
+                (
+                    "AWS::CloudFront::Distribution",
+                    "DefaultCacheBehavior.AllowedMethods",
+                ),
+                TypeOverride::Enum(allowed_methods.clone()),
+            );
+            m.insert(
+                (
+                    "AWS::CloudFront::Distribution",
+                    "CacheBehavior.AllowedMethods",
+                ),
+                TypeOverride::Enum(allowed_methods),
+            );
+            m.insert(
+                (
+                    "AWS::CloudFront::Distribution",
+                    "DefaultCacheBehavior.CachedMethods",
+                ),
+                TypeOverride::Enum(cached_methods.clone()),
+            );
+            m.insert(
+                (
+                    "AWS::CloudFront::Distribution",
+                    "CacheBehavior.CachedMethods",
+                ),
+                TypeOverride::Enum(cached_methods),
+            );
+            // OriginProtocolPolicy: the modern CustomOriginConfig path is
+            // already CFN-enum, but the LegacyCustomOrigin definition is
+            // plain string. Override there.
+            m.insert(
+                (
+                    "AWS::CloudFront::Distribution",
+                    "LegacyCustomOrigin.OriginProtocolPolicy",
+                ),
+                TypeOverride::Enum(vec!["http-only", "https-only", "match-viewer"]),
+            );
+            // OriginSSLProtocols: list-of-string in both LegacyCustomOrigin
+            // and CustomOriginConfig; AWS-documented closed set.
+            let ssl_protocols = vec!["SSLv3", "TLSv1", "TLSv1.1", "TLSv1.2"];
+            m.insert(
+                (
+                    "AWS::CloudFront::Distribution",
+                    "LegacyCustomOrigin.OriginSSLProtocols",
+                ),
+                TypeOverride::Enum(ssl_protocols.clone()),
+            );
+            m.insert(
+                (
+                    "AWS::CloudFront::Distribution",
+                    "CustomOriginConfig.OriginSSLProtocols",
+                ),
+                TypeOverride::Enum(ssl_protocols),
             );
 
             // === IntRange overrides ===
@@ -11208,6 +11366,257 @@ mod tests {
             assert!(
                 generated.contains(&format!("\"{}\".to_string()", v)),
                 "missing enum value {v} in: {generated}"
+            );
+        }
+    }
+
+    // === awscc#246: nested-field enum overlay ===
+
+    #[test]
+    fn test_resource_type_overrides_has_nested_distribution_enum_keys() {
+        // Spot-check the overlay registration. If any of these keys are
+        // missing the codegen will silently fall back to plain String for
+        // the affected field, which is the bug awscc#246 fixed.
+        let table = resource_type_overrides();
+        for key in [
+            "DistributionConfig.PriceClass",
+            "DistributionConfig.HttpVersion",
+            "Cookies.Forward",
+            "DefaultCacheBehavior.AllowedMethods",
+            "CacheBehavior.AllowedMethods",
+            "DefaultCacheBehavior.CachedMethods",
+            "CacheBehavior.CachedMethods",
+            "LegacyCustomOrigin.OriginProtocolPolicy",
+            "LegacyCustomOrigin.OriginSSLProtocols",
+            "CustomOriginConfig.OriginSSLProtocols",
+        ] {
+            assert!(
+                matches!(
+                    table.get(&("AWS::CloudFront::Distribution", key)),
+                    Some(TypeOverride::Enum(_))
+                ),
+                "missing nested-field enum override: {key}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_nested_field_enum_overlay_promotes_string_to_string_enum() {
+        // A struct field whose CFN type is plain `string` (no enum, no
+        // pattern) but appears in `resource_type_overrides()` keyed by
+        // "DefName.FieldName" must emit as StringEnum, not String.
+        let mut config_props = BTreeMap::new();
+        config_props.insert(
+            "PriceClass".to_string(),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("string".to_string())),
+                description: None,
+                enum_values: None,
+                items: None,
+                ref_path: None,
+                insertion_order: None,
+                properties: None,
+                required: vec![],
+                minimum: None,
+                maximum: None,
+                additional_properties: None,
+                const_value: None,
+                default_value: None,
+                pattern: None,
+                min_items: None,
+                max_items: None,
+                min_length: None,
+                max_length: None,
+                format: None,
+            },
+        );
+        let mut definitions = BTreeMap::new();
+        definitions.insert(
+            "DistributionConfig".to_string(),
+            CfnDefinition {
+                def_type: Some("object".to_string()),
+                properties: Some(config_props),
+                ..Default::default()
+            },
+        );
+        let mut top = BTreeMap::new();
+        top.insert(
+            "DistributionConfig".to_string(),
+            CfnProperty {
+                prop_type: None,
+                description: None,
+                enum_values: None,
+                items: None,
+                ref_path: Some("#/definitions/DistributionConfig".to_string()),
+                insertion_order: None,
+                properties: None,
+                required: vec![],
+                minimum: None,
+                maximum: None,
+                additional_properties: None,
+                const_value: None,
+                default_value: None,
+                pattern: None,
+                min_items: None,
+                max_items: None,
+                min_length: None,
+                max_length: None,
+                format: None,
+            },
+        );
+        let schema = CfnSchema {
+            type_name: "AWS::CloudFront::Distribution".to_string(),
+            description: None,
+            properties: top,
+            required: vec![],
+            read_only_properties: vec![],
+            create_only_properties: vec![],
+            write_only_properties: vec![],
+            primary_identifier: None,
+            definitions: Some(definitions),
+            tagging: None,
+            one_of: vec![],
+            any_of: vec![],
+            handlers: BTreeMap::new(),
+        };
+        let generated = generate_schema_code(&schema, "AWS::CloudFront::Distribution").unwrap();
+        // The struct field must emit as StringEnum, not String.
+        assert!(
+            generated.contains("StructField::new(\"price_class\", AttributeType::StringEnum"),
+            "nested-field overlay should promote price_class to StringEnum: {generated}"
+        );
+        // All three documented values must be present.
+        for v in ["PriceClass_100", "PriceClass_200", "PriceClass_All"] {
+            assert!(
+                generated.contains(&format!("\"{}\"", v)),
+                "missing override value {v}: {generated}"
+            );
+        }
+        // The override must register in enum_valid_values() so DSL value
+        // lookup and did-you-mean diagnostics fire on it.
+        assert!(
+            generated.contains("VALID_DISTRIBUTION_CONFIG_PRICE_CLASS"),
+            "VALID_* constant for the nested override should be emitted: {generated}"
+        );
+        assert!(
+            generated.contains("(\"price_class\", VALID_DISTRIBUTION_CONFIG_PRICE_CLASS)"),
+            "enum_valid_values() should include the nested override: {generated}"
+        );
+    }
+
+    #[test]
+    fn test_nested_field_enum_overlay_promotes_list_string_to_list_string_enum() {
+        // List fields (CFN `array<string>`) overridden via the nested-field
+        // overlay must produce `list(StringEnum)`, not `list(String)`.
+        let mut behavior_props = BTreeMap::new();
+        behavior_props.insert(
+            "AllowedMethods".to_string(),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("array".to_string())),
+                description: None,
+                enum_values: None,
+                items: Some(Box::new(CfnProperty {
+                    prop_type: Some(TypeValue::Single("string".to_string())),
+                    description: None,
+                    enum_values: None,
+                    items: None,
+                    ref_path: None,
+                    insertion_order: None,
+                    properties: None,
+                    required: vec![],
+                    minimum: None,
+                    maximum: None,
+                    additional_properties: None,
+                    const_value: None,
+                    default_value: None,
+                    pattern: None,
+                    min_items: None,
+                    max_items: None,
+                    min_length: None,
+                    max_length: None,
+                    format: None,
+                })),
+                ref_path: None,
+                insertion_order: None,
+                properties: None,
+                required: vec![],
+                minimum: None,
+                maximum: None,
+                additional_properties: None,
+                const_value: None,
+                default_value: None,
+                pattern: None,
+                min_items: None,
+                max_items: None,
+                min_length: None,
+                max_length: None,
+                format: None,
+            },
+        );
+        let mut definitions = BTreeMap::new();
+        definitions.insert(
+            "DefaultCacheBehavior".to_string(),
+            CfnDefinition {
+                def_type: Some("object".to_string()),
+                properties: Some(behavior_props),
+                ..Default::default()
+            },
+        );
+        let mut top = BTreeMap::new();
+        top.insert(
+            "DefaultCacheBehavior".to_string(),
+            CfnProperty {
+                prop_type: None,
+                description: None,
+                enum_values: None,
+                items: None,
+                ref_path: Some("#/definitions/DefaultCacheBehavior".to_string()),
+                insertion_order: None,
+                properties: None,
+                required: vec![],
+                minimum: None,
+                maximum: None,
+                additional_properties: None,
+                const_value: None,
+                default_value: None,
+                pattern: None,
+                min_items: None,
+                max_items: None,
+                min_length: None,
+                max_length: None,
+                format: None,
+            },
+        );
+        let schema = CfnSchema {
+            type_name: "AWS::CloudFront::Distribution".to_string(),
+            description: None,
+            properties: top,
+            required: vec![],
+            read_only_properties: vec![],
+            create_only_properties: vec![],
+            write_only_properties: vec![],
+            primary_identifier: None,
+            definitions: Some(definitions),
+            tagging: None,
+            one_of: vec![],
+            any_of: vec![],
+            handlers: BTreeMap::new(),
+        };
+        let generated = generate_schema_code(&schema, "AWS::CloudFront::Distribution").unwrap();
+        // Must emit list(StringEnum), keeping the list wrapping intact.
+        assert!(
+            generated.contains("AttributeType::list(AttributeType::StringEnum"),
+            "nested list-of-string overlay should produce list(StringEnum): {generated}"
+        );
+        // The plain list(String) form must not appear for this field.
+        assert!(
+            !generated.contains("\"allowed_methods\", AttributeType::list(AttributeType::String)"),
+            "list(String) must be replaced for overridden list field: {generated}"
+        );
+        for v in ["GET", "HEAD", "OPTIONS", "PUT", "PATCH", "POST", "DELETE"] {
+            assert!(
+                generated.contains(&format!("\"{}\".to_string()", v)),
+                "missing override value {v}: {generated}"
             );
         }
     }
