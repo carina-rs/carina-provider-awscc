@@ -26,6 +26,30 @@ A complex type that contains zero or more ``Tag`` elements.
 
 ## Enum Values
 
+### allowed_methods (AllowedMethods)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `GET` | `awscc.cloudfront.Distribution.AllowedMethods.get` |
+| `HEAD` | `awscc.cloudfront.Distribution.AllowedMethods.head` |
+| `OPTIONS` | `awscc.cloudfront.Distribution.AllowedMethods.options` |
+| `PUT` | `awscc.cloudfront.Distribution.AllowedMethods.put` |
+| `PATCH` | `awscc.cloudfront.Distribution.AllowedMethods.patch` |
+| `POST` | `awscc.cloudfront.Distribution.AllowedMethods.post` |
+| `DELETE` | `awscc.cloudfront.Distribution.AllowedMethods.delete` |
+
+Shorthand formats: `get` or `AllowedMethods.get`
+
+### cached_methods (CachedMethods)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `GET` | `awscc.cloudfront.Distribution.CachedMethods.get` |
+| `HEAD` | `awscc.cloudfront.Distribution.CachedMethods.head` |
+| `OPTIONS` | `awscc.cloudfront.Distribution.CachedMethods.options` |
+
+Shorthand formats: `get` or `CachedMethods.get`
+
 ### viewer_protocol_policy (ViewerProtocolPolicy)
 
 | Value | DSL Identifier |
@@ -35,6 +59,16 @@ A complex type that contains zero or more ``Tag`` elements.
 | `https-only` | `awscc.cloudfront.Distribution.ViewerProtocolPolicy.https_only` |
 
 Shorthand formats: `allow_all` or `ViewerProtocolPolicy.allow_all`
+
+### forward (Forward)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `all` | `awscc.cloudfront.Distribution.Forward.all` |
+| `none` | `awscc.cloudfront.Distribution.Forward.none` |
+| `whitelist` | `awscc.cloudfront.Distribution.Forward.whitelist` |
+
+Shorthand formats: `all` or `Forward.all`
 
 ### ip_address_type (IpAddressType)
 
@@ -46,15 +80,30 @@ Shorthand formats: `allow_all` or `ViewerProtocolPolicy.allow_all`
 
 Shorthand formats: `ipv4` or `IpAddressType.ipv4`
 
-### origin_protocol_policy (OriginProtocolPolicy)
+### origin_protocol_policy (CustomOriginConfigOriginProtocolPolicy)
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `http-only` | `awscc.cloudfront.Distribution.OriginProtocolPolicy.http_only` |
-| `match-viewer` | `awscc.cloudfront.Distribution.OriginProtocolPolicy.match_viewer` |
-| `https-only` | `awscc.cloudfront.Distribution.OriginProtocolPolicy.https_only` |
+| `http-only` | `awscc.cloudfront.Distribution.CustomOriginConfigOriginProtocolPolicy.http_only` |
+| `match-viewer` | `awscc.cloudfront.Distribution.CustomOriginConfigOriginProtocolPolicy.match_viewer` |
+| `https-only` | `awscc.cloudfront.Distribution.CustomOriginConfigOriginProtocolPolicy.https_only` |
 
-Shorthand formats: `http_only` or `OriginProtocolPolicy.http_only`
+Shorthand formats: `http_only` or `CustomOriginConfigOriginProtocolPolicy.http_only`
+
+### origin_ssl_protocols (OriginSslProtocols)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `SSLv3` | `awscc.cloudfront.Distribution.OriginSslProtocols.sslv3` |
+| `TLSv1` | `awscc.cloudfront.Distribution.OriginSslProtocols.tlsv1` |
+| `TLSv1.1` | `awscc.cloudfront.Distribution.OriginSslProtocols.tlsv1_1` |
+| `TLSv1.2` | `awscc.cloudfront.Distribution.OriginSslProtocols.tlsv1_2` |
+| `sslv3` | `awscc.cloudfront.Distribution.OriginSslProtocols.sslv3` |
+| `tlsv1` | `awscc.cloudfront.Distribution.OriginSslProtocols.tlsv1` |
+| `tlsv1_1` | `awscc.cloudfront.Distribution.OriginSslProtocols.tlsv1_1` |
+| `tlsv1_2` | `awscc.cloudfront.Distribution.OriginSslProtocols.tlsv1_2` |
+
+Shorthand formats: `sslv3` or `OriginSslProtocols.sslv3`
 
 ### connection_mode (ConnectionMode)
 
@@ -64,6 +113,27 @@ Shorthand formats: `http_only` or `OriginProtocolPolicy.http_only`
 | `tenant-only` | `awscc.cloudfront.Distribution.ConnectionMode.tenant_only` |
 
 Shorthand formats: `direct` or `ConnectionMode.direct`
+
+### http_version (HttpVersion)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `http1.1` | `awscc.cloudfront.Distribution.HttpVersion.http1_1` |
+| `http2` | `awscc.cloudfront.Distribution.HttpVersion.http2` |
+| `http2and3` | `awscc.cloudfront.Distribution.HttpVersion.http2and3` |
+| `http3` | `awscc.cloudfront.Distribution.HttpVersion.http3` |
+
+Shorthand formats: `http1_1` or `HttpVersion.http1_1`
+
+### price_class (PriceClass)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `PriceClass_100` | `awscc.cloudfront.Distribution.PriceClass.price_class_100` |
+| `PriceClass_200` | `awscc.cloudfront.Distribution.PriceClass.price_class_200` |
+| `PriceClass_All` | `awscc.cloudfront.Distribution.PriceClass.price_class_all` |
+
+Shorthand formats: `price_class_100` or `PriceClass.price_class_100`
 
 ### event_type (FunctionAssociationEventType)
 
@@ -96,6 +166,16 @@ Shorthand formats: `none` or `RestrictionType.none`
 | `viewer-response` | `awscc.cloudfront.Distribution.LambdaFunctionAssociationEventType.viewer_response` |
 
 Shorthand formats: `viewer_request` or `LambdaFunctionAssociationEventType.viewer_request`
+
+### origin_protocol_policy (LegacyCustomOriginOriginProtocolPolicy)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `http-only` | `awscc.cloudfront.Distribution.LegacyCustomOriginOriginProtocolPolicy.http_only` |
+| `https-only` | `awscc.cloudfront.Distribution.LegacyCustomOriginOriginProtocolPolicy.https_only` |
+| `match-viewer` | `awscc.cloudfront.Distribution.LegacyCustomOriginOriginProtocolPolicy.match_viewer` |
+
+Shorthand formats: `http_only` or `LegacyCustomOriginOriginProtocolPolicy.http_only`
 
 ### selection_criteria (OriginGroupSelectionCriteria)
 
@@ -153,9 +233,9 @@ Shorthand formats: `required` or `ViewerMtlsMode.required`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `allowed_methods` | `List<String>` | No | A complex type that controls which HTTP methods CloudFront processes and forwards to your Amazon S3 bucket or your custom origin. There are three choices: + CloudFront forwards only ``GET`` and ``HEAD`` requests. + CloudFront forwards only ``GET``, ``HEAD``, and ``OPTIONS`` requests. + CloudFront forwards ``GET, HEAD, OPTIONS, PUT, PATCH, POST``, and ``DELETE`` requests. If you pick the third choice, you may need to restrict access to your Amazon S3 bucket or to your custom origin so users can't perform operations that you don't want them to. For example, you might not want users to have permissions to delete objects from your origin. |
+| `allowed_methods` | List\<[Enum (AllowedMethods)](#allowed_methods-allowedmethods)\> | No | A complex type that controls which HTTP methods CloudFront processes and forwards to your Amazon S3 bucket or your custom origin. There are three choices: + CloudFront forwards only ``GET`` and ``HEAD`` requests. + CloudFront forwards only ``GET``, ``HEAD``, and ``OPTIONS`` requests. + CloudFront forwards ``GET, HEAD, OPTIONS, PUT, PATCH, POST``, and ``DELETE`` requests. If you pick the third choice, you may need to restrict access to your Amazon S3 bucket or to your custom origin so users can't perform operations that you don't want them to. For example, you might not want users to have permissions to delete objects from your origin. |
 | `cache_policy_id` | String | No | The unique identifier of the cache policy that is attached to this cache behavior. For more information, see [Creating cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-the-cache-key.html#cache-key-create-cache-policy) or [Using the managed cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/using-managed-cache-policies.html) in the *Amazon CloudFront Developer Guide*. A ``CacheBehavior`` must include either a ``CachePolicyId`` or ``ForwardedValues``. We recommend that you use a ``CachePolicyId``. |
-| `cached_methods` | `List<String>` | No | A complex type that controls whether CloudFront caches the response to requests using the specified HTTP methods. There are two choices: + CloudFront caches responses to ``GET`` and ``HEAD`` requests. + CloudFront caches responses to ``GET``, ``HEAD``, and ``OPTIONS`` requests. If you pick the second choice for your Amazon S3 Origin, you may need to forward Access-Control-Request-Method, Access-Control-Request-Headers, and Origin headers for the responses to be cached correctly. |
+| `cached_methods` | List\<[Enum (CachedMethods)](#cached_methods-cachedmethods)\> | No | A complex type that controls whether CloudFront caches the response to requests using the specified HTTP methods. There are two choices: + CloudFront caches responses to ``GET`` and ``HEAD`` requests. + CloudFront caches responses to ``GET``, ``HEAD``, and ``OPTIONS`` requests. If you pick the second choice for your Amazon S3 Origin, you may need to forward Access-Control-Request-Method, Access-Control-Request-Headers, and Origin headers for the responses to be cached correctly. |
 | `compress` | Bool | No | Whether you want CloudFront to automatically compress certain files for this cache behavior. If so, specify true; if not, specify false. For more information, see [Serving Compressed Files](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/ServingCompressedFiles.html) in the *Amazon CloudFront Developer Guide*. |
 | `default_ttl` | Float | No | This field only supports standard distributions. You can't specify this field for multi-tenant distributions. For more information, see [Unsupported features for SaaS Manager for Amazon CloudFront](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/distribution-config-options.html#unsupported-saas) in the *Amazon CloudFront Developer Guide*. This field is deprecated. We recommend that you use the ``DefaultTTL`` field in a cache policy instead of this field. For more information, see [Creating cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-the-cache-key.html#cache-key-create-cache-policy) or [Using the managed cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/using-managed-cache-policies.html) in the *Amazon CloudFront Developer Guide*. The default amount of time that you want objects to stay in CloudFront caches before CloudFront forwards another request to your origin to determine whether the object has been updated. The value that you specify applies only when your origin does not add HTTP headers such as ``Cache-Control max-age``, ``Cache-Control s-maxage``, and ``Expires`` to objects. For more information, see [Managing How Long Content Stays in an Edge Cache (Expiration)](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/Expiration.html) in the *Amazon CloudFront Developer Guide*. |
 | `field_level_encryption_id` | String | No | The value of ``ID`` for the field-level encryption configuration that you want CloudFront to use for encrypting specific fields of data for this cache behavior. |
@@ -191,7 +271,7 @@ Shorthand formats: `required` or `ViewerMtlsMode.required`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `forward` | String | Yes | This field is deprecated. We recommend that you use a cache policy or an origin request policy instead of this field. If you want to include cookies in the cache key, use a cache policy. For more information, see [Creating cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-the-cache-key.html#cache-key-create-cache-policy) in the *Amazon CloudFront Developer Guide*. If you want to send cookies to the origin but not include them in the cache key, use origin request policy. For more information, see [Creating origin request policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-origin-requests.html#origin-request-create-origin-request-policy) in the *Amazon CloudFront Developer Guide*. Specifies which cookies to forward to the origin for this cache behavior: all, none, or the list of cookies specified in the ``WhitelistedNames`` complex type. Amazon S3 doesn't process cookies. When the cache behavior is forwarding requests to an Amazon S3 origin, specify none for the ``Forward`` element. |
+| `forward` | [Enum (Forward)](#forward-forward) | Yes | This field is deprecated. We recommend that you use a cache policy or an origin request policy instead of this field. If you want to include cookies in the cache key, use a cache policy. For more information, see [Creating cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-the-cache-key.html#cache-key-create-cache-policy) in the *Amazon CloudFront Developer Guide*. If you want to send cookies to the origin but not include them in the cache key, use origin request policy. For more information, see [Creating origin request policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-origin-requests.html#origin-request-create-origin-request-policy) in the *Amazon CloudFront Developer Guide*. Specifies which cookies to forward to the origin for this cache behavior: all, none, or the list of cookies specified in the ``WhitelistedNames`` complex type. Amazon S3 doesn't process cookies. When the cache behavior is forwarding requests to an Amazon S3 origin, specify none for the ``Forward`` element. |
 | `whitelisted_names` | `List<String>` | No | This field is deprecated. We recommend that you use a cache policy or an origin request policy instead of this field. If you want to include cookies in the cache key, use a cache policy. For more information, see [Creating cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-the-cache-key.html#cache-key-create-cache-policy) in the *Amazon CloudFront Developer Guide*. If you want to send cookies to the origin but not include them in the cache key, use an origin request policy. For more information, see [Creating origin request policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-origin-requests.html#origin-request-create-origin-request-policy) in the *Amazon CloudFront Developer Guide*. Required if you specify ``whitelist`` for the value of ``Forward``. A complex type that specifies how many different cookies you want CloudFront to forward to the origin for this cache behavior and, if you want to forward selected cookies, the names of those cookies. If you specify ``all`` or ``none`` for the value of ``Forward``, omit ``WhitelistedNames``. If you change the value of ``Forward`` from ``whitelist`` to ``all`` or ``none`` and you don't delete the ``WhitelistedNames`` element and its child elements, CloudFront deletes them automatically. For the current limit on the number of cookie names that you can whitelist for each cache behavior, see [CloudFront Limits](https://docs.aws.amazon.com/general/latest/gr/xrefaws_service_limits.html#limits_cloudfront) in the *General Reference*. |
 
 ### CustomErrorResponse
@@ -212,17 +292,17 @@ Shorthand formats: `required` or `ViewerMtlsMode.required`
 | `ip_address_type` | [Enum (IpAddressType)](#ip_address_type-ipaddresstype) | No | Specifies which IP protocol CloudFront uses when connecting to your origin. If your origin uses both IPv4 and IPv6 protocols, you can choose ``dualstack`` to help optimize reliability. |
 | `origin_keepalive_timeout` | Int | No | Specifies how long, in seconds, CloudFront persists its connection to the origin. The minimum timeout is 1 second, the maximum is 120 seconds, and the default (if you don't specify otherwise) is 5 seconds. For more information, see [Keep-alive timeout (custom origins only)](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/DownloadDistValuesOrigin.html#DownloadDistValuesOriginKeepaliveTimeout) in the *Amazon CloudFront Developer Guide*. |
 | `origin_mtls_config` | [Struct(OriginMtlsConfig)](#originmtlsconfig) | No | Configures mutual TLS authentication between CloudFront and your origin server. |
-| `origin_protocol_policy` | [Enum (OriginProtocolPolicy)](#origin_protocol_policy-originprotocolpolicy) | Yes | Specifies the protocol (HTTP or HTTPS) that CloudFront uses to connect to the origin. Valid values are: + ``http-only`` – CloudFront always uses HTTP to connect to the origin. + ``match-viewer`` – CloudFront connects to the origin using the same protocol that the viewer used to connect to CloudFront. + ``https-only`` – CloudFront always uses HTTPS to connect to the origin. |
+| `origin_protocol_policy` | [Enum (CustomOriginConfigOriginProtocolPolicy)](#origin_protocol_policy-customoriginconfigoriginprotocolpolicy) | Yes | Specifies the protocol (HTTP or HTTPS) that CloudFront uses to connect to the origin. Valid values are: + ``http-only`` – CloudFront always uses HTTP to connect to the origin. + ``match-viewer`` – CloudFront connects to the origin using the same protocol that the viewer used to connect to CloudFront. + ``https-only`` – CloudFront always uses HTTPS to connect to the origin. |
 | `origin_read_timeout` | Int | No | Specifies how long, in seconds, CloudFront waits for a response from the origin. This is also known as the *origin response timeout*. The minimum timeout is 1 second, the maximum is 120 seconds, and the default (if you don't specify otherwise) is 30 seconds. For more information, see [Response timeout](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/DownloadDistValuesOrigin.html#DownloadDistValuesOriginResponseTimeout) in the *Amazon CloudFront Developer Guide*. |
-| `origin_ssl_protocols` | `List<String>` | No | Specifies the minimum SSL/TLS protocol that CloudFront uses when connecting to your origin over HTTPS. Valid values include ``SSLv3``, ``TLSv1``, ``TLSv1.1``, and ``TLSv1.2``. For more information, see [Minimum Origin SSL Protocol](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/DownloadDistValuesOrigin.html#DownloadDistValuesOriginSSLProtocols) in the *Amazon CloudFront Developer Guide*. |
+| `origin_ssl_protocols` | List\<[Enum (OriginSslProtocols)](#origin_ssl_protocols-originsslprotocols)\> | No | Specifies the minimum SSL/TLS protocol that CloudFront uses when connecting to your origin over HTTPS. Valid values include ``SSLv3``, ``TLSv1``, ``TLSv1.1``, and ``TLSv1.2``. For more information, see [Minimum Origin SSL Protocol](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/DownloadDistValuesOrigin.html#DownloadDistValuesOriginSSLProtocols) in the *Amazon CloudFront Developer Guide*. |
 
 ### DefaultCacheBehavior
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `allowed_methods` | `List<String>` | No | A complex type that controls which HTTP methods CloudFront processes and forwards to your Amazon S3 bucket or your custom origin. There are three choices: + CloudFront forwards only ``GET`` and ``HEAD`` requests. + CloudFront forwards only ``GET``, ``HEAD``, and ``OPTIONS`` requests. + CloudFront forwards ``GET, HEAD, OPTIONS, PUT, PATCH, POST``, and ``DELETE`` requests. If you pick the third choice, you may need to restrict access to your Amazon S3 bucket or to your custom origin so users can't perform operations that you don't want them to. For example, you might not want users to have permissions to delete objects from your origin. |
+| `allowed_methods` | List\<[Enum (AllowedMethods)](#allowed_methods-allowedmethods)\> | No | A complex type that controls which HTTP methods CloudFront processes and forwards to your Amazon S3 bucket or your custom origin. There are three choices: + CloudFront forwards only ``GET`` and ``HEAD`` requests. + CloudFront forwards only ``GET``, ``HEAD``, and ``OPTIONS`` requests. + CloudFront forwards ``GET, HEAD, OPTIONS, PUT, PATCH, POST``, and ``DELETE`` requests. If you pick the third choice, you may need to restrict access to your Amazon S3 bucket or to your custom origin so users can't perform operations that you don't want them to. For example, you might not want users to have permissions to delete objects from your origin. |
 | `cache_policy_id` | String | No | The unique identifier of the cache policy that is attached to the default cache behavior. For more information, see [Creating cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-the-cache-key.html#cache-key-create-cache-policy) or [Using the managed cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/using-managed-cache-policies.html) in the *Amazon CloudFront Developer Guide*. A ``DefaultCacheBehavior`` must include either a ``CachePolicyId`` or ``ForwardedValues``. We recommend that you use a ``CachePolicyId``. |
-| `cached_methods` | `List<String>` | No | A complex type that controls whether CloudFront caches the response to requests using the specified HTTP methods. There are two choices: + CloudFront caches responses to ``GET`` and ``HEAD`` requests. + CloudFront caches responses to ``GET``, ``HEAD``, and ``OPTIONS`` requests. If you pick the second choice for your Amazon S3 Origin, you may need to forward Access-Control-Request-Method, Access-Control-Request-Headers, and Origin headers for the responses to be cached correctly. |
+| `cached_methods` | List\<[Enum (CachedMethods)](#cached_methods-cachedmethods)\> | No | A complex type that controls whether CloudFront caches the response to requests using the specified HTTP methods. There are two choices: + CloudFront caches responses to ``GET`` and ``HEAD`` requests. + CloudFront caches responses to ``GET``, ``HEAD``, and ``OPTIONS`` requests. If you pick the second choice for your Amazon S3 Origin, you may need to forward Access-Control-Request-Method, Access-Control-Request-Headers, and Origin headers for the responses to be cached correctly. |
 | `compress` | Bool | No | Whether you want CloudFront to automatically compress certain files for this cache behavior. If so, specify ``true``; if not, specify ``false``. For more information, see [Serving Compressed Files](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/ServingCompressedFiles.html) in the *Amazon CloudFront Developer Guide*. |
 | `default_ttl` | Float | No | This field only supports standard distributions. You can't specify this field for multi-tenant distributions. For more information, see [Unsupported features for SaaS Manager for Amazon CloudFront](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/distribution-config-options.html#unsupported-saas) in the *Amazon CloudFront Developer Guide*. This field is deprecated. We recommend that you use the ``DefaultTTL`` field in a cache policy instead of this field. For more information, see [Creating cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-the-cache-key.html#cache-key-create-cache-policy) or [Using the managed cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/using-managed-cache-policies.html) in the *Amazon CloudFront Developer Guide*. The default amount of time that you want objects to stay in CloudFront caches before CloudFront forwards another request to your origin to determine whether the object has been updated. The value that you specify applies only when your origin does not add HTTP headers such as ``Cache-Control max-age``, ``Cache-Control s-maxage``, and ``Expires`` to objects. For more information, see [Managing How Long Content Stays in an Edge Cache (Expiration)](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/Expiration.html) in the *Amazon CloudFront Developer Guide*. |
 | `field_level_encryption_id` | String | No | The value of ``ID`` for the field-level encryption configuration that you want CloudFront to use for encrypting specific fields of data for the default cache behavior. |
@@ -265,12 +345,12 @@ Shorthand formats: `required` or `ViewerMtlsMode.required`
 | `default_cache_behavior` | [Struct(DefaultCacheBehavior)](#defaultcachebehavior) | Yes | A complex type that describes the default cache behavior if you don't specify a ``CacheBehavior`` element or if files don't match any of the values of ``PathPattern`` in ``CacheBehavior`` elements. You must create exactly one default cache behavior. |
 | `default_root_object` | String | No | When a viewer requests the root URL for your distribution, the default root object is the object that you want CloudFront to request from your origin. For example, if your root URL is ``https://www.example.com``, you can specify CloudFront to return the ``index.html`` file as the default root object. You can specify a default root object so that viewers see a specific file or object, instead of another object in your distribution (for example, ``https://www.example.com/product-description.html``). A default root object avoids exposing the contents of your distribution. You can specify the object name or a path to the object name (for example, ``index.html`` or ``exampleFolderName/index.html``). Your string can't begin with a forward slash (``/``). Only specify the object name or the path to the object. If you don't want to specify a default root object when you create a distribution, include an empty ``DefaultRootObject`` element. To delete the default root object from an existing distribution, update the distribution configuration and include an empty ``DefaultRootObject`` element. To replace the default root object, update the distribution configuration and specify the new object. For more information about the default root object, see [Specify a default root object](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/DefaultRootObject.html) in the *Amazon CloudFront Developer Guide*. |
 | `enabled` | Bool | Yes | From this field, you can enable or disable the selected distribution. |
-| `http_version` | String | No | (Optional) Specify the HTTP version(s) that you want viewers to use to communicate with CF. The default value for new distributions is ``http1.1``. For viewers and CF to use HTTP/2, viewers must support TLSv1.2 or later, and must support Server Name Indication (SNI). For viewers and CF to use HTTP/3, viewers must support TLSv1.3 and Server Name Indication (SNI). CF supports HTTP/3 connection migration to allow the viewer to switch networks without losing connection. For more information about connection migration, see [Connection Migration](https://docs.aws.amazon.com/https://www.rfc-editor.org/rfc/rfc9000.html#name-connection-migration) at RFC 9000. For more information about supported TLSv1.3 ciphers, see [Supported protocols and ciphers between viewers and CloudFront](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/secure-connections-supported-viewer-protocols-ciphers.html). |
+| `http_version` | [Enum (HttpVersion)](#http_version-httpversion) | No | (Optional) Specify the HTTP version(s) that you want viewers to use to communicate with CF. The default value for new distributions is ``http1.1``. For viewers and CF to use HTTP/2, viewers must support TLSv1.2 or later, and must support Server Name Indication (SNI). For viewers and CF to use HTTP/3, viewers must support TLSv1.3 and Server Name Indication (SNI). CF supports HTTP/3 connection migration to allow the viewer to switch networks without losing connection. For more information about connection migration, see [Connection Migration](https://docs.aws.amazon.com/https://www.rfc-editor.org/rfc/rfc9000.html#name-connection-migration) at RFC 9000. For more information about supported TLSv1.3 ciphers, see [Supported protocols and ciphers between viewers and CloudFront](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/secure-connections-supported-viewer-protocols-ciphers.html). |
 | `ipv6_enabled` | Bool | No | To use this field for a multi-tenant distribution, use a connection group instead. For more information, see [ConnectionGroup](https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_ConnectionGroup.html). If you want CloudFront to respond to IPv6 DNS requests with an IPv6 address for your distribution, specify ``true``. If you specify ``false``, CloudFront responds to IPv6 DNS requests with the DNS response code ``NOERROR`` and with no IP addresses. This allows viewers to submit a second request, for an IPv4 address for your distribution. In general, you should enable IPv6 if you have users on IPv6 networks who want to access your content. However, if you're using signed URLs or signed cookies to restrict access to your content, and if you're using a custom policy that includes the ``IpAddress`` parameter to restrict the IP addresses that can access your content, don't enable IPv6. If you want to restrict access to some content by IP address and not restrict access to other content (or restrict access but not by IP address), you can create two distributions. For more information, see [Creating a Signed URL Using a Custom Policy](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-creating-signed-url-custom-policy.html) in the *Amazon CloudFront Developer Guide*. If you're using an R53AWSIntlong alias resource record set to route traffic to your CloudFront distribution, you need to create a second alias resource record set when both of the following are true: + You enable IPv6 for the distribution + You're using alternate domain names in the URLs for your objects For more information, see [Routing Traffic to an Amazon CloudFront Web Distribution by Using Your Domain Name](https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/routing-to-cloudfront-distribution.html) in the *Developer Guide*. If you created a CNAME resource record set, either with R53AWSIntlong or with another DNS service, you don't need to make any changes. A CNAME record will route traffic to your distribution regardless of the IP address format of the viewer request. |
 | `logging` | [Struct(Logging)](#logging) | No | A complex type that controls whether access logs are written for the distribution. For more information about logging, see [Access Logs](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/AccessLogs.html) in the *Amazon CloudFront Developer Guide*. |
 | `origin_groups` | [Struct(OriginGroups)](#origingroups) | No | A complex type that contains information about origin groups for this distribution. Specify a value for either the ``Origins`` or ``OriginGroups`` property. |
 | `origins` | [List\<Origin\>](#origin) | No | A complex type that contains information about origins for this distribution. Specify a value for either the ``Origins`` or ``OriginGroups`` property. |
-| `price_class` | String | No | This field only supports standard distributions. You can't specify this field for multi-tenant distributions. For more information, see [Unsupported features for SaaS Manager for Amazon CloudFront](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/distribution-config-options.html#unsupported-saas) in the *Amazon CloudFront Developer Guide*. The price class that corresponds with the maximum price that you want to pay for CloudFront service. If you specify ``PriceClass_All``, CloudFront responds to requests for your objects from all CloudFront edge locations. If you specify a price class other than ``PriceClass_All``, CloudFront serves your objects from the CloudFront edge location that has the lowest latency among the edge locations in your price class. Viewers who are in or near regions that are excluded from your specified price class may encounter slower performance. For more information about price classes, see [Choosing the Price Class for a CloudFront Distribution](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/PriceClass.html) in the *Amazon CloudFront Developer Guide*. For information about CloudFront pricing, including how price classes (such as Price Class 100) map to CloudFront regions, see [Amazon CloudFront Pricing](https://docs.aws.amazon.com/cloudfront/pricing/). |
+| `price_class` | [Enum (PriceClass)](#price_class-priceclass) | No | This field only supports standard distributions. You can't specify this field for multi-tenant distributions. For more information, see [Unsupported features for SaaS Manager for Amazon CloudFront](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/distribution-config-options.html#unsupported-saas) in the *Amazon CloudFront Developer Guide*. The price class that corresponds with the maximum price that you want to pay for CloudFront service. If you specify ``PriceClass_All``, CloudFront responds to requests for your objects from all CloudFront edge locations. If you specify a price class other than ``PriceClass_All``, CloudFront serves your objects from the CloudFront edge location that has the lowest latency among the edge locations in your price class. Viewers who are in or near regions that are excluded from your specified price class may encounter slower performance. For more information about price classes, see [Choosing the Price Class for a CloudFront Distribution](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/PriceClass.html) in the *Amazon CloudFront Developer Guide*. For information about CloudFront pricing, including how price classes (such as Price Class 100) map to CloudFront regions, see [Amazon CloudFront Pricing](https://docs.aws.amazon.com/cloudfront/pricing/). |
 | `restrictions` | [Struct(Restrictions)](#restrictions) | No | A complex type that identifies ways in which you want to restrict distribution of your content. |
 | `s3_origin` | [Struct(LegacyS3Origin)](#legacys3origin) | No | The origin as an S3 bucket. This property is legacy. We recommend that you use [Origin](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-cloudfront-distribution-origin.html) instead. |
 | `staging` | Bool | No | This field only supports standard distributions. You can't specify this field for multi-tenant distributions. For more information, see [Unsupported features for SaaS Manager for Amazon CloudFront](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/distribution-config-options.html#unsupported-saas) in the *Amazon CloudFront Developer Guide*. A Boolean that indicates whether this is a staging distribution. When this value is ``true``, this is a staging distribution. When this value is ``false``, this is not a staging distribution. |
@@ -323,8 +403,8 @@ Shorthand formats: `required` or `ViewerMtlsMode.required`
 | `dns_name` | String | Yes | The domain name assigned to your CF distribution. |
 | `http_port` | Int | No | The HTTP port that CF uses to connect to the origin. Specify the HTTP port that the origin listens on. |
 | `https_port` | Int | No | The HTTPS port that CF uses to connect to the origin. Specify the HTTPS port that the origin listens on. |
-| `origin_protocol_policy` | String | Yes | Specifies the protocol (HTTP or HTTPS) that CF uses to connect to the origin. |
-| `origin_ssl_protocols` | `List<String>` | Yes | The minimum SSL/TLS protocol version that CF uses when communicating with your origin server over HTTPs. For more information, see [Minimum Origin SSL Protocol](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/distribution-web-values-specify.html#DownloadDistValuesOriginSSLProtocols) in the *Developer Guide*. |
+| `origin_protocol_policy` | [Enum (LegacyCustomOriginOriginProtocolPolicy)](#origin_protocol_policy-legacycustomoriginoriginprotocolpolicy) | Yes | Specifies the protocol (HTTP or HTTPS) that CF uses to connect to the origin. |
+| `origin_ssl_protocols` | List\<[Enum (OriginSslProtocols)](#origin_ssl_protocols-originsslprotocols)\> | Yes | The minimum SSL/TLS protocol version that CF uses when communicating with your origin server over HTTPs. For more information, see [Minimum Origin SSL Protocol](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/distribution-web-values-specify.html#DownloadDistValuesOriginSSLProtocols) in the *Developer Guide*. |
 
 ### LegacyS3Origin
 
