@@ -516,7 +516,7 @@ dependencies = [
 [[package]]
 name = "carina-core"
 version = "0.4.0"
-source = "git+https://github.com/carina-rs/carina?rev=455e6fa1#455e6fa1e0666578a595806a41c4dfeb5f5e38e4"
+source = "git+https://github.com/carina-rs/carina?rev=5c600ddf#5c600ddf2bd17fc54f72b0cbb7c247a25b81e219"
 dependencies = [
  "argon2",
  "futures",
@@ -534,7 +534,7 @@ dependencies = [
 [[package]]
 name = "carina-plugin-sdk"
 version = "0.4.0"
-source = "git+https://github.com/carina-rs/carina?rev=455e6fa1#455e6fa1e0666578a595806a41c4dfeb5f5e38e4"
+source = "git+https://github.com/carina-rs/carina?rev=5c600ddf#5c600ddf2bd17fc54f72b0cbb7c247a25b81e219"
 dependencies = [
  "aws-smithy-runtime-api",
  "aws-smithy-types",
@@ -579,7 +579,7 @@ dependencies = [
 [[package]]
 name = "carina-provider-protocol"
 version = "0.3.0"
-source = "git+https://github.com/carina-rs/carina?rev=455e6fa1#455e6fa1e0666578a595806a41c4dfeb5f5e38e4"
+source = "git+https://github.com/carina-rs/carina?rev=5c600ddf#5c600ddf2bd17fc54f72b0cbb7c247a25b81e219"
 dependencies = [
  "serde",
  "serde_json",

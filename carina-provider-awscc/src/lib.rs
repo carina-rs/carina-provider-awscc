@@ -397,7 +397,7 @@ mod tests {
         let schemas = build_schemas();
         let normalizer = AwsccNormalizer;
 
-        let mut resource = Resource::with_provider("awscc", "ec2.Vpc", "test-vpc");
+        let mut resource = Resource::with_provider("awscc", "ec2.Vpc", "test-vpc", None);
         resource.set_attr(
             "cidr_block".to_string(),
             Value::Concrete(ConcreteValue::String("10.0.0.0/16".to_string())),
@@ -473,7 +473,7 @@ mod tests {
         let schemas = build_schemas();
         let normalizer = AwsccNormalizer;
 
-        let mut resource = Resource::with_provider("awscc", "ec2.Vpc", "test-vpc");
+        let mut resource = Resource::with_provider("awscc", "ec2.Vpc", "test-vpc", None);
         resource.set_attr(
             "cidr_block".to_string(),
             Value::Concrete(ConcreteValue::String("10.0.0.0/16".to_string())),
@@ -520,7 +520,7 @@ mod tests {
         let schemas = build_schemas();
         let normalizer = AwsccNormalizer;
 
-        let mut resource = Resource::with_provider("awscc", "ec2.Route", "test-route");
+        let mut resource = Resource::with_provider("awscc", "ec2.Route", "test-route", None);
         resource.set_attr(
             "route_table_id".to_string(),
             Value::Concrete(ConcreteValue::String("rtb-123".to_string())),
@@ -544,7 +544,7 @@ mod tests {
         let schemas = build_schemas();
         let normalizer = AwsccNormalizer;
 
-        let mut resource = Resource::with_provider("awscc", "ec2.Vpc", "test-vpc");
+        let mut resource = Resource::with_provider("awscc", "ec2.Vpc", "test-vpc", None);
         resource.set_attr(
             "cidr_block".to_string(),
             Value::Concrete(ConcreteValue::String("10.0.0.0/16".to_string())),
