@@ -953,10 +953,16 @@ mod tests {
         let result = result.expect("Should return Some");
 
         if let Value::Concrete(ConcreteValue::Map(map)) = &result {
+            // After aws#313 (mirroring aws #311) the IAM policy doc's
+            // `version` / `statement[].effect` StringEnums carry
+            // `namespace: Some("aws.iam.PolicyDocument")`, so the read
+            // path canonicalizes them to the fully-qualified DSL form —
+            // identical to what the parsed desired side produces — so
+            // the differ reports no diff. Keys stay snake_case.
             assert_eq!(
                 map.get("version"),
                 Some(&Value::Concrete(ConcreteValue::String(
-                    "2012-10-17".to_string()
+                    "aws.iam.PolicyDocument.Version.2012_10_17".to_string()
                 )))
             );
             assert!(
@@ -968,7 +974,9 @@ mod tests {
                 if let Some(Value::Concrete(ConcreteValue::Map(stmt))) = stmts.first() {
                     assert_eq!(
                         stmt.get("effect"),
-                        Some(&Value::Concrete(ConcreteValue::String("Allow".to_string())))
+                        Some(&Value::Concrete(ConcreteValue::String(
+                            "aws.iam.PolicyDocument.Effect.allow".to_string()
+                        )))
                     );
                     assert_eq!(
                         stmt.get("action"),
@@ -997,6 +1005,86 @@ mod tests {
         } else {
             panic!("Expected Value::Map, got: {:?}", result);
         }
+    }
+
+    /// Regression for aws#313: the IAM policy doc's `version` /
+    /// `statement[].effect` must converge between the parsed-desired
+    /// side and the AWS-read side. Before the fix the awscc copy of
+    /// `iam_policy_{effect,version}()` was an `AttributeType::Custom`
+    /// with `namespace: None`, so `aws_value_to_dsl` left the read
+    /// values raw (`"2012-10-17"`, `"Allow"`) while the parsed desired
+    /// side carried `aws.iam.PolicyDocument.Version.2012_10_17` /
+    /// `aws.iam.PolicyDocument.Effect.allow` — a perpetual differ diff
+    /// that never converged. After mirroring aws #311 (StringEnum +
+    /// `namespace: Some("aws.iam.PolicyDocument")`) both sides reduce
+    /// to the identical fully-qualified DSL form.
+    #[test]
+    fn test_aws313_iam_policy_doc_read_matches_parsed_desired() {
+        use carina_aws_types::iam_policy_document;
+
+        let attr_type = iam_policy_document();
+
+        // AWS-read side: Cloud Control returns the raw API spelling.
+        let aws_json = json!({
+            "Version": "2012-10-17",
+            "Statement": [{
+                "Effect": "Allow",
+                "Action": "sts:AssumeRole"
+            }]
+        });
+        let read_side = aws_value_to_dsl(
+            "assume_role_policy_document",
+            &aws_json,
+            &attr_type,
+            "iam.Role",
+        )
+        .expect("read conversion should return Some");
+
+        // Parsed-desired side: the parser emits the fully-qualified DSL
+        // form (`version` *must* be namespaced to parse the numeric
+        // tail; `effect` shown namespaced too for symmetry).
+        let desired_side = Value::Concrete(ConcreteValue::Map(
+            vec![
+                (
+                    "version".to_string(),
+                    Value::Concrete(ConcreteValue::String(
+                        "aws.iam.PolicyDocument.Version.2012_10_17".to_string(),
+                    )),
+                ),
+                (
+                    "statement".to_string(),
+                    Value::Concrete(ConcreteValue::List(vec![Value::Concrete(
+                        ConcreteValue::Map(
+                            vec![
+                                (
+                                    "effect".to_string(),
+                                    Value::Concrete(ConcreteValue::String(
+                                        "aws.iam.PolicyDocument.Effect.allow".to_string(),
+                                    )),
+                                ),
+                                (
+                                    "action".to_string(),
+                                    Value::Concrete(ConcreteValue::String(
+                                        "sts:AssumeRole".to_string(),
+                                    )),
+                                ),
+                            ]
+                            .into_iter()
+                            .collect(),
+                        ),
+                    )])),
+                ),
+            ]
+            .into_iter()
+            .collect(),
+        ));
+
+        assert_eq!(
+            read_side, desired_side,
+            "read-side and parsed-desired IAM policy docs must be \
+             byte-identical so the differ reports no diff; \
+             got read={read_side:?} desired={desired_side:?}"
+        );
     }
 
     #[test]

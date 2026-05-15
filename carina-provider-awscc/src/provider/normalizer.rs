@@ -330,6 +330,70 @@ mod tests {
         ));
     }
 
+    /// aws#313 bare-`effect` path: the issue notes `effect` is
+    /// typically written bare (`effect = allow`) — the parser emits
+    /// `ConcreteValue::EnumIdentifier("allow")`, which exercises
+    /// `resolve_enum_value` Case 1 (no dots), a different branch than
+    /// the already-fully-qualified `version` path. The desired side
+    /// must resolve to the same fully-qualified DSL form that the
+    /// AWS-read side produces from raw `"Allow"`
+    /// (`aws.iam.PolicyDocument.Effect.allow`), or the differ diverges.
+    #[test]
+    fn test_aws313_bare_effect_desired_resolves_to_namespaced() {
+        use indexmap::IndexMap;
+
+        let mut stmt = IndexMap::new();
+        stmt.insert(
+            "effect".to_string(),
+            Value::Concrete(ConcreteValue::EnumIdentifier("allow".to_string())),
+        );
+        stmt.insert(
+            "action".to_string(),
+            Value::Concrete(ConcreteValue::String("sts:AssumeRole".to_string())),
+        );
+        let mut policy = IndexMap::new();
+        policy.insert(
+            "version".to_string(),
+            Value::Concrete(ConcreteValue::String(
+                "aws.iam.PolicyDocument.Version.2012_10_17".to_string(),
+            )),
+        );
+        policy.insert(
+            "statement".to_string(),
+            Value::Concrete(ConcreteValue::List(vec![Value::Concrete(
+                ConcreteValue::Map(stmt),
+            )])),
+        );
+        let mut resource = Resource::with_provider("awscc", "iam.Role", "rd-role", None);
+        resource.set_attr(
+            "assume_role_policy_document".to_string(),
+            Value::Concrete(ConcreteValue::Map(policy)),
+        );
+
+        let mut resources = vec![resource];
+        resolve_enum_identifiers_impl(&mut resources);
+
+        let Some(Value::Concrete(ConcreteValue::Map(doc))) =
+            resources[0].get_attr("assume_role_policy_document")
+        else {
+            panic!("expected assume_role_policy_document Map");
+        };
+        let Some(Value::Concrete(ConcreteValue::List(stmts))) = doc.get("statement") else {
+            panic!("expected statement List");
+        };
+        let Some(Value::Concrete(ConcreteValue::Map(s0))) = stmts.first() else {
+            panic!("expected statement[0] Map");
+        };
+        assert_eq!(
+            s0.get("effect"),
+            Some(&Value::Concrete(ConcreteValue::String(
+                "aws.iam.PolicyDocument.Effect.allow".to_string()
+            ))),
+            "bare `effect = allow` desired must resolve to the same \
+             fully-qualified form the read side produces from \"Allow\""
+        );
+    }
+
     #[test]
     fn test_resolve_enum_identifiers_hyphen_to_underscore() {
         let mut resource = Resource::with_provider("awscc", "ec2.FlowLog", "test", None);

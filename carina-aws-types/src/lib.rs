@@ -1437,55 +1437,50 @@ fn string_or_principal_struct() -> AttributeType {
     ])
 }
 
-/// IAM Policy Effect enum type
-/// Only allows "Allow" or "Deny"
+/// IAM Policy Effect enum type. Allows `Allow` or `Deny` (AWS
+/// canonical) and their snake_case DSL aliases `allow` / `deny`, so
+/// users can write `effect = allow` as a bare identifier, matching the
+/// bare-identifier convention used by every other enum field in the
+/// same `.crn` file. The namespace also makes the fully-qualified form
+/// `aws.iam.PolicyDocument.Effect.allow` parse and resolve: the
+/// resolver's canonical shape is namespace then type_name then value,
+/// so `type_name` is the trailing `Effect` segment and `namespace` is
+/// `aws.iam.PolicyDocument`. Mirrors carina-provider-aws #311 so the
+/// shared `iam_policy_document()` Struct canonicalizes identically on
+/// both providers (aws#313).
 fn iam_policy_effect() -> AttributeType {
-    AttributeType::Custom {
-        semantic_name: Some("IamPolicyEffect".to_string()),
-        pattern: None,
-        length: None,
-        base: Box::new(AttributeType::String),
-        validate: legacy_validator(|value| {
-            if let Value::Concrete(ConcreteValue::String(s)) = value {
-                match s.as_str() {
-                    "Allow" | "Deny" => Ok(()),
-                    _ => Err(format!(
-                        "Invalid IAM policy effect: \"{}\". Must be \"Allow\" or \"Deny\"",
-                        s
-                    )),
-                }
-            } else {
-                Err(format!("Expected string, got {:?}", value))
-            }
-        }),
-        namespace: None,
-        to_dsl: None,
+    AttributeType::StringEnum {
+        name: "Effect".to_string(),
+        values: vec!["Allow".to_string(), "Deny".to_string()],
+        namespace: Some("aws.iam.PolicyDocument".to_string()),
+        dsl_aliases: vec![
+            ("Allow".to_string(), "allow".to_string()),
+            ("Deny".to_string(), "deny".to_string()),
+        ],
     }
 }
 
-/// IAM Policy Document Version enum type
-/// Only allows "2012-10-17" or "2008-10-17"
+/// IAM Policy Document Version enum type. Allows `2012-10-17` or
+/// `2008-10-17` (AWS canonical) with snake_case DSL aliases
+/// `2012_10_17` / `2008_10_17`, so users can write `version` as
+/// `2012_10_17`. The fully-qualified form
+/// `aws.iam.PolicyDocument.Version.2012_10_17` parses via the
+/// `namespaced_id` numeric-tail extension from `carina-rs/carina#3051`
+/// and resolves through this namespace: the resolver's canonical shape
+/// is namespace then type_name then value, so `type_name` is the
+/// trailing `Version` segment and `namespace` is
+/// `aws.iam.PolicyDocument`. Mirrors carina-provider-aws #311 so the
+/// shared `iam_policy_document()` Struct canonicalizes identically on
+/// both providers (aws#313).
 fn iam_policy_version() -> AttributeType {
-    AttributeType::Custom {
-        semantic_name: Some("IamPolicyVersion".to_string()),
-        pattern: None,
-        length: None,
-        base: Box::new(AttributeType::String),
-        validate: legacy_validator(|value| {
-            if let Value::Concrete(ConcreteValue::String(s)) = value {
-                match s.as_str() {
-                    "2012-10-17" | "2008-10-17" => Ok(()),
-                    _ => Err(format!(
-                        "Invalid IAM policy version: \"{}\". Must be \"2012-10-17\" or \"2008-10-17\"",
-                        s
-                    )),
-                }
-            } else {
-                Err(format!("Expected string, got {:?}", value))
-            }
-        }),
-        namespace: None,
-        to_dsl: None,
+    AttributeType::StringEnum {
+        name: "Version".to_string(),
+        values: vec!["2012-10-17".to_string(), "2008-10-17".to_string()],
+        namespace: Some("aws.iam.PolicyDocument".to_string()),
+        dsl_aliases: vec![
+            ("2012-10-17".to_string(), "2012_10_17".to_string()),
+            ("2008-10-17".to_string(), "2008_10_17".to_string()),
+        ],
     }
 }
 
@@ -2342,7 +2337,7 @@ mod tests {
             vec![
                 (
                     "version".to_string(),
-                    Value::Concrete(ConcreteValue::String("2012-10-17".to_string())),
+                    Value::Concrete(ConcreteValue::EnumIdentifier("2012_10_17".to_string())),
                 ),
                 (
                     "statement".to_string(),
@@ -2351,7 +2346,9 @@ mod tests {
                             vec![
                                 (
                                     "effect".to_string(),
-                                    Value::Concrete(ConcreteValue::String("Allow".to_string())),
+                                    Value::Concrete(ConcreteValue::EnumIdentifier(
+                                        "allow".to_string(),
+                                    )),
                                 ),
                                 (
                                     "action".to_string(),
@@ -2418,7 +2415,7 @@ mod tests {
             vec![
                 (
                     "version".to_string(),
-                    Value::Concrete(ConcreteValue::String("2012-10-17".to_string())),
+                    Value::Concrete(ConcreteValue::EnumIdentifier("2012_10_17".to_string())),
                 ),
                 (
                     "statement".to_string(),
@@ -2427,7 +2424,9 @@ mod tests {
                             vec![
                                 (
                                     "effect".to_string(),
-                                    Value::Concrete(ConcreteValue::String("Deny".to_string())),
+                                    Value::Concrete(ConcreteValue::EnumIdentifier(
+                                        "deny".to_string(),
+                                    )),
                                 ),
                                 (
                                     "action".to_string(),
@@ -2458,7 +2457,7 @@ mod tests {
             vec![
                 (
                     "version".to_string(),
-                    Value::Concrete(ConcreteValue::String("2012-10-17".to_string())),
+                    Value::Concrete(ConcreteValue::EnumIdentifier("2012_10_17".to_string())),
                 ),
                 (
                     "statement".to_string(),
@@ -2467,7 +2466,9 @@ mod tests {
                             vec![
                                 (
                                     "effect".to_string(),
-                                    Value::Concrete(ConcreteValue::String("Allow".to_string())),
+                                    Value::Concrete(ConcreteValue::EnumIdentifier(
+                                        "allow".to_string(),
+                                    )),
                                 ),
                                 (
                                     "principal".to_string(),
@@ -2513,7 +2514,7 @@ mod tests {
             vec![
                 (
                     "version".to_string(),
-                    Value::Concrete(ConcreteValue::String("2012-10-17".to_string())),
+                    Value::Concrete(ConcreteValue::EnumIdentifier("2012_10_17".to_string())),
                 ),
                 (
                     "statement".to_string(),
@@ -2522,7 +2523,9 @@ mod tests {
                             vec![
                                 (
                                     "effect".to_string(),
-                                    Value::Concrete(ConcreteValue::String("Allow".to_string())),
+                                    Value::Concrete(ConcreteValue::EnumIdentifier(
+                                        "allow".to_string(),
+                                    )),
                                 ),
                                 (
                                     "principal".to_string(),

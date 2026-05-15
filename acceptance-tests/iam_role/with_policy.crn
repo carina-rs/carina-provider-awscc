@@ -13,9 +13,9 @@ awscc.iam.Role {
   max_session_duration = 7200
 
   assume_role_policy_document = {
-    version = '2012-10-17'
+    version = aws.iam.PolicyDocument.Version.2012_10_17
     statement {
-      effect = 'Allow'
+      effect = aws.iam.PolicyDocument.Effect.allow
 
       principal = {
         service = 'lambda.amazonaws.com'
@@ -29,7 +29,7 @@ awscc.iam.Role {
     policy_name = 'test-policy'
 
     policy_document = {
-      version = '2012-10-17'
+      version = aws.iam.PolicyDocument.Version.2012_10_17
       statement {
         effect   = 'Allow'
         action   = 'logs:CreateLogGroup'
