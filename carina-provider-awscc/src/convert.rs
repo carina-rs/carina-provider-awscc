@@ -38,7 +38,7 @@ pub fn core_to_proto_resource_id(id: &CoreResourceId) -> ProtoResourceId {
 }
 
 pub fn proto_to_core_resource_id(id: &ProtoResourceId) -> CoreResourceId {
-    CoreResourceId::with_provider(&id.provider, &id.resource_type, &id.name)
+    CoreResourceId::with_provider(&id.provider, &id.resource_type, &id.name, None)
 }
 
 // -- Value --
@@ -174,7 +174,8 @@ pub fn core_to_proto_directives(l: &CoreDirectives) -> ProtoDirectives {
 // -- proto_to_core_resource (reverse of core_to_proto_resource) --
 
 pub fn proto_to_core_resource(r: &ProtoResource) -> CoreResource {
-    let mut resource = CoreResource::with_provider(&r.id.provider, &r.id.resource_type, &r.id.name);
+    let mut resource =
+        CoreResource::with_provider(&r.id.provider, &r.id.resource_type, &r.id.name, None);
     resource.attributes = r
         .attributes
         .iter()

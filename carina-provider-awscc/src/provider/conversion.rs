@@ -541,8 +541,12 @@ mod tests {
         let attr_schema = config.schema.attributes.get("vpc_endpoint_type").unwrap();
 
         // 1. DSL side: resolve_enum_identifiers_impl converts bare `Gateway` ident
-        let mut resource =
-            carina_core::resource::Resource::with_provider("awscc", "ec2.VpcEndpoint", "test");
+        let mut resource = carina_core::resource::Resource::with_provider(
+            "awscc",
+            "ec2.VpcEndpoint",
+            "test",
+            None,
+        );
         resource.set_attr(
             "vpc_id".to_string(),
             Value::Concrete(ConcreteValue::String("vpc-123".to_string())),
