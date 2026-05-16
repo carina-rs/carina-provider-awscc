@@ -928,6 +928,84 @@ mod tests {
         assert!(principal_obj.get("service").is_none());
     }
 
+    /// Regression for aws#315 (cross-checked on the awscc side): the
+    /// aws#315 root cause was the aws normalizer's StringEnum leaf guard
+    /// matching only `String`, silently skipping the `EnumIdentifier`
+    /// shape that nested IAM policy `version` / `effect` arrive in after
+    /// the carina#3055 state-lift. This test feeds the awscc serializer
+    /// the **same `EnumIdentifier` shape** (namespaced for `version`, bare
+    /// alias for `effect`) to prove awscc has no parallel gap:
+    /// `dsl_value_to_aws` accepts both `String | EnumIdentifier` at the
+    /// StringEnum branch and resolves via `DslMap::api_for`, so the Cloud
+    /// Control `desired_state` payload still gets the AWS wire form
+    /// (`"2012-10-17"`, `"Allow"`).
+    #[test]
+    fn test_dsl_value_to_aws_iam_policy_document_canonicalizes_namespaced_and_alias_enums() {
+        use carina_aws_types::iam_policy_document;
+
+        let attr_type = iam_policy_document();
+        let value = Value::Concrete(ConcreteValue::Map(
+            vec![
+                (
+                    "version".to_string(),
+                    Value::Concrete(ConcreteValue::EnumIdentifier(
+                        "aws.iam.PolicyDocument.Version.2012_10_17".to_string(),
+                    )),
+                ),
+                (
+                    "statement".to_string(),
+                    Value::Concrete(ConcreteValue::List(vec![Value::Concrete(
+                        ConcreteValue::Map(
+                            vec![
+                                (
+                                    "effect".to_string(),
+                                    Value::Concrete(ConcreteValue::EnumIdentifier(
+                                        "allow".to_string(),
+                                    )),
+                                ),
+                                (
+                                    "action".to_string(),
+                                    Value::Concrete(ConcreteValue::String(
+                                        "s3:GetObject".to_string(),
+                                    )),
+                                ),
+                            ]
+                            .into_iter()
+                            .collect(),
+                        ),
+                    )])),
+                ),
+            ]
+            .into_iter()
+            .collect(),
+        ));
+
+        let result = dsl_value_to_aws(&value, &attr_type, "iam.RolePolicy", "policy_document")
+            .expect("Should return Some");
+        let obj = result.as_object().expect("Expected JSON Object");
+        assert_eq!(
+            obj.get("Version"),
+            Some(&json!("2012-10-17")),
+            "version must be AWS-canonical, got: {result}"
+        );
+        let stmt = obj
+            .get("Statement")
+            .and_then(|s| s.as_array())
+            .and_then(|a| a.first())
+            .and_then(|s| s.as_object())
+            .expect("Statement[0] object");
+        assert_eq!(
+            stmt.get("Effect"),
+            Some(&json!("Allow")),
+            "effect must be AWS-canonical, got: {result}"
+        );
+        let serialized = serde_json::to_string(&result).unwrap();
+        assert!(
+            !serialized.contains("2012_10_17") && !serialized.contains(r#""allow""#),
+            "DSL spelling must not reach Cloud Control, got: {serialized}"
+        );
+    }
+
     #[test]
     fn test_aws_value_to_dsl_iam_policy_document_uses_snake_case() {
         use carina_aws_types::iam_policy_document;
