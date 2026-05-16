@@ -20,8 +20,14 @@ pub(crate) fn aws_value_to_dsl(
     attr_type: &AttributeType,
     resource_type: &str,
 ) -> Option<Value> {
-    // For schema-level string enums with namespace, convert to DSL namespaced format.
-    if let Some((type_name, ns, to_dsl)) = attr_type.namespaced_enum_parts()
+    // This feeds the read/import path, whose result is written to
+    // state. State must hold the provider-side (API) value, NOT a
+    // fully-qualified DSL string: carina-core's state-lift reconciles
+    // the API value back to an `EnumIdentifier` on the next plan, but a
+    // fully-qualified DSL string matches neither `values` nor
+    // `dsl_aliases`, so the lift would skip it and every subsequent
+    // plan would report a spurious `~ change` (awscc#254).
+    if attr_type.namespaced_enum_parts().is_some()
         && let Some(s) = value.as_str()
     {
         let canonical = if let Some((_, values, _, _)) = attr_type.string_enum_parts() {
@@ -35,13 +41,7 @@ pub(crate) fn aws_value_to_dsl(
                 s.to_string()
             }
         };
-        // Apply DSL transformation if present. For `StringEnum` this is the
-        // codegen-emitted alias table (data); for `Custom` namespaced types
-        // (e.g. AvailabilityZone hyphen-to-underscore) it is a host-side
-        // closure. `DslMap::dsl_for` unifies both.
-        let dsl_val = to_dsl.dsl_for(&canonical);
-        let namespaced = format!("{}.{}.{}", ns, type_name, dsl_val);
-        return Some(Value::Concrete(ConcreteValue::String(namespaced)));
+        return Some(Value::Concrete(ConcreteValue::String(canonical)));
     }
 
     // For List types, recurse into each item with the inner type for type-aware conversion
@@ -379,6 +379,130 @@ mod tests {
     use carina_core::schema::{StructField, noop_validator};
 
     #[test]
+    fn test_aws_value_to_dsl_string_enum_returns_api_canonical_value() {
+        let attr_type = AttributeType::StringEnum {
+            name: "ViewerProtocolPolicy".to_string(),
+            values: vec![
+                "allow-all".to_string(),
+                "redirect-to-https".to_string(),
+                "https-only".to_string(),
+            ],
+            namespace: Some("awscc.cloudfront.Distribution".to_string()),
+            dsl_aliases: vec![(
+                "redirect-to-https".to_string(),
+                "redirect_to_https".to_string(),
+            )],
+        };
+
+        // CloudControl returns the API-canonical hyphen form.
+        let from_api = aws_value_to_dsl(
+            "viewer_protocol_policy",
+            &json!("redirect-to-https"),
+            &attr_type,
+            "cloudfront.Distribution",
+        )
+        .expect("read should succeed");
+        assert_eq!(
+            from_api,
+            Value::Concrete(ConcreteValue::String("redirect-to-https".to_string())),
+            "read must persist the API-canonical value, not a fully-qualified DSL string"
+        );
+
+        // If the API ever echoes the DSL-alias spelling, it must still be
+        // canonicalized to the API form so state is stable.
+        let from_alias = aws_value_to_dsl(
+            "viewer_protocol_policy",
+            &json!("redirect_to_https"),
+            &attr_type,
+            "cloudfront.Distribution",
+        )
+        .expect("read should succeed");
+        assert_eq!(
+            from_alias,
+            Value::Concrete(ConcreteValue::String("redirect-to-https".to_string())),
+            "DSL-alias spelling from the API must canonicalize to the API value"
+        );
+    }
+
+    // awscc#254 literal reproduction: read the real generated
+    // `awscc.cloudfront.Distribution` `distribution_config` from a
+    // CloudControl-shaped response (PascalCase keys, raw API enum
+    // values) and assert the nested enum leaves are persisted as the
+    // API-canonical value, then lift to the canonical short identifier
+    // the differ reconciles against.
+    #[test]
+    fn test_cloudfront_distribution_config_read_is_api_canonical() {
+        let config =
+            crate::schemas::generated::cloudfront::distribution::cloudfront_distribution_config();
+        let attr_schema = config.schema.attributes.get("distribution_config").unwrap();
+
+        let aws_json = json!({
+            "DefaultCacheBehavior": {
+                "TargetOriginId": "origin-1",
+                "ViewerProtocolPolicy": "redirect-to-https"
+            },
+            "PriceClass": "PriceClass_200"
+        });
+
+        let dsl = aws_value_to_dsl(
+            "distribution_config",
+            &aws_json,
+            &attr_schema.attr_type,
+            "cloudfront.Distribution",
+        )
+        .expect("aws_value_to_dsl should succeed for distribution_config");
+
+        let Value::Concrete(ConcreteValue::Map(top)) = &dsl else {
+            panic!("expected distribution_config to be a Map, got {dsl:?}");
+        };
+        assert_eq!(
+            top.get("price_class"),
+            Some(&Value::Concrete(ConcreteValue::String(
+                "PriceClass_200".to_string()
+            ))),
+            "price_class must persist the API-canonical value"
+        );
+        let Some(Value::Concrete(ConcreteValue::Map(dcb))) = top.get("default_cache_behavior")
+        else {
+            panic!("expected default_cache_behavior map");
+        };
+        assert_eq!(
+            dcb.get("viewer_protocol_policy"),
+            Some(&Value::Concrete(ConcreteValue::String(
+                "redirect-to-https".to_string()
+            ))),
+            "nested viewer_protocol_policy must persist the API-canonical value, \
+             not a fully-qualified DSL string"
+        );
+
+        // carina-core's state-lift reduces the persisted API values to
+        // the canonical short identifiers the differ reconciles against
+        // the parsed-desired side — closing the awscc#254 spurious diff.
+        let lifted = carina_core::utils::lift_string_enum_leaves(&dsl, &attr_schema.attr_type)
+            .expect("API-canonical distribution_config must lift");
+        let Value::Concrete(ConcreteValue::Map(lifted_top)) = &lifted else {
+            panic!("expected lifted distribution_config to be a Map, got {lifted:?}");
+        };
+        assert_eq!(
+            lifted_top.get("price_class"),
+            Some(&Value::Concrete(ConcreteValue::EnumIdentifier(
+                "price_class_200".to_string()
+            )))
+        );
+        let Some(Value::Concrete(ConcreteValue::Map(lifted_dcb))) =
+            lifted_top.get("default_cache_behavior")
+        else {
+            panic!("expected lifted default_cache_behavior map");
+        };
+        assert_eq!(
+            lifted_dcb.get("viewer_protocol_policy"),
+            Some(&Value::Concrete(ConcreteValue::EnumIdentifier(
+                "redirect_to_https".to_string()
+            )))
+        );
+    }
+
+    #[test]
     fn test_aws_value_to_dsl_bare_struct_returns_map() {
         let fields = vec![
             StructField::new("status", AttributeType::String).with_provider_name("Status"),
@@ -559,20 +683,20 @@ mod tests {
         let mut resources = vec![resource];
         crate::provider::resolve_enum_identifiers_impl(&mut resources);
 
-        let dsl_resolved = &resources[0].attributes["vpc_endpoint_type"];
+        let dsl_resolved = resources[0].attributes["vpc_endpoint_type"].clone();
         // Per naming-conventions design D7 / issue #199, the DSL spelling is
         // snake_case; the bare ident `Gateway` is accepted (transition
         // convenience) but resolves to the snake_case namespaced form, since
         // `resolve_enum_identifiers_impl` runs `to_dsl` on the input.
         assert_eq!(
             dsl_resolved,
-            &Value::Concrete(ConcreteValue::String(
+            Value::Concrete(ConcreteValue::String(
                 "awscc.ec2.VpcEndpoint.VpcEndpointType.gateway".to_string()
             )),
             "DSL bare ident `Gateway` should resolve to snake_case namespaced form"
         );
 
-        // 2. AWS read-back side: aws_value_to_dsl converts "Gateway" string
+        // 2. AWS read-back side.
         let aws_json = serde_json::json!("Gateway");
         let aws_dsl = aws_value_to_dsl(
             "vpc_endpoint_type",
@@ -584,16 +708,20 @@ mod tests {
 
         assert_eq!(
             aws_dsl,
-            Value::Concrete(ConcreteValue::String(
-                "awscc.ec2.VpcEndpoint.VpcEndpointType.gateway".to_string()
-            )),
-            "AWS read-back 'Gateway' should normalize to snake_case namespaced form"
+            Value::Concrete(ConcreteValue::String("Gateway".to_string())),
+            "AWS read-back must persist the API-canonical value"
         );
 
-        // 3. Both must be equal (no false diff)
+        // 3. No false diff: reconciliation now happens in carina-core
+        // (state-lift + differ), not by the provider emitting identical
+        // strings on both sides. Assert the awscc-owned half — the
+        // persisted API value lifts to the canonical short identifier.
+        let lifted = carina_core::utils::lift_string_enum_leaves(&aws_dsl, &attr_schema.attr_type)
+            .expect("API-canonical state value must lift to an EnumIdentifier");
         assert_eq!(
-            dsl_resolved, &aws_dsl,
-            "DSL resolved value and AWS read-back value must match — no false diff"
+            lifted,
+            Value::Concrete(ConcreteValue::EnumIdentifier("gateway".to_string())),
+            "state-lift must reduce the API value to the canonical short identifier"
         );
     }
 
@@ -669,12 +797,8 @@ mod tests {
         assert_eq!(
             result,
             Some(Value::Concrete(ConcreteValue::List(vec![
-                Value::Concrete(ConcreteValue::String(
-                    "awscc.s3.Bucket.AllowedMethod.GET".to_string()
-                )),
-                Value::Concrete(ConcreteValue::String(
-                    "awscc.s3.Bucket.AllowedMethod.PUT".to_string()
-                )),
+                Value::Concrete(ConcreteValue::String("GET".to_string())),
+                Value::Concrete(ConcreteValue::String("PUT".to_string())),
             ])))
         );
     }
@@ -818,9 +942,7 @@ mod tests {
         let result = aws_value_to_dsl("protocol", &json_val, &attr_type, "ec2.Sg");
         assert_eq!(
             result,
-            Some(Value::Concrete(ConcreteValue::String(
-                "awscc.ec2.Sg.Protocol.tcp".to_string()
-            )))
+            Some(Value::Concrete(ConcreteValue::String("tcp".to_string())))
         );
     }
 
@@ -1031,16 +1153,11 @@ mod tests {
         let result = result.expect("Should return Some");
 
         if let Value::Concrete(ConcreteValue::Map(map)) = &result {
-            // After aws#313 (mirroring aws #311) the IAM policy doc's
-            // `version` / `statement[].effect` StringEnums carry
-            // `namespace: Some("aws.iam.PolicyDocument")`, so the read
-            // path canonicalizes them to the fully-qualified DSL form —
-            // identical to what the parsed desired side produces — so
-            // the differ reports no diff. Keys stay snake_case.
+            // Values are persisted API-canonical; keys stay snake_case.
             assert_eq!(
                 map.get("version"),
                 Some(&Value::Concrete(ConcreteValue::String(
-                    "aws.iam.PolicyDocument.Version.2012_10_17".to_string()
+                    "2012-10-17".to_string()
                 )))
             );
             assert!(
@@ -1052,9 +1169,7 @@ mod tests {
                 if let Some(Value::Concrete(ConcreteValue::Map(stmt))) = stmts.first() {
                     assert_eq!(
                         stmt.get("effect"),
-                        Some(&Value::Concrete(ConcreteValue::String(
-                            "aws.iam.PolicyDocument.Effect.allow".to_string()
-                        )))
+                        Some(&Value::Concrete(ConcreteValue::String("Allow".to_string())))
                     );
                     assert_eq!(
                         stmt.get("action"),
@@ -1085,24 +1200,20 @@ mod tests {
         }
     }
 
-    /// Regression for aws#313: the IAM policy doc's `version` /
-    /// `statement[].effect` must converge between the parsed-desired
-    /// side and the AWS-read side. Before the fix the awscc copy of
-    /// `iam_policy_{effect,version}()` was an `AttributeType::Custom`
-    /// with `namespace: None`, so `aws_value_to_dsl` left the read
-    /// values raw (`"2012-10-17"`, `"Allow"`) while the parsed desired
-    /// side carried `aws.iam.PolicyDocument.Version.2012_10_17` /
-    /// `aws.iam.PolicyDocument.Effect.allow` — a perpetual differ diff
-    /// that never converged. After mirroring aws #311 (StringEnum +
-    /// `namespace: Some("aws.iam.PolicyDocument")`) both sides reduce
-    /// to the identical fully-qualified DSL form.
+    /// Regression for aws#313 + awscc#254. aws#313 made the IAM policy
+    /// doc's `version`/`effect` a namespaced `StringEnum`; at the time
+    /// the read path emitted the fully-qualified DSL form. awscc#254
+    /// flipped that: the read path persists the *API-canonical* value
+    /// (`"2012-10-17"`, `"Allow"`) since that is what is written to
+    /// state, and carina-core's state-lift reduces it to the canonical
+    /// short `EnumIdentifier`. This pins the awscc-owned half of that
+    /// contract.
     #[test]
-    fn test_aws313_iam_policy_doc_read_matches_parsed_desired() {
+    fn test_aws313_iam_policy_doc_read_is_api_canonical_and_lifts() {
         use carina_aws_types::iam_policy_document;
 
         let attr_type = iam_policy_document();
 
-        // AWS-read side: Cloud Control returns the raw API spelling.
         let aws_json = json!({
             "Version": "2012-10-17",
             "Statement": [{
@@ -1118,16 +1229,11 @@ mod tests {
         )
         .expect("read conversion should return Some");
 
-        // Parsed-desired side: the parser emits the fully-qualified DSL
-        // form (`version` *must* be namespaced to parse the numeric
-        // tail; `effect` shown namespaced too for symmetry).
-        let desired_side = Value::Concrete(ConcreteValue::Map(
+        let api_canonical = Value::Concrete(ConcreteValue::Map(
             vec![
                 (
                     "version".to_string(),
-                    Value::Concrete(ConcreteValue::String(
-                        "aws.iam.PolicyDocument.Version.2012_10_17".to_string(),
-                    )),
+                    Value::Concrete(ConcreteValue::String("2012-10-17".to_string())),
                 ),
                 (
                     "statement".to_string(),
@@ -1136,9 +1242,7 @@ mod tests {
                             vec![
                                 (
                                     "effect".to_string(),
-                                    Value::Concrete(ConcreteValue::String(
-                                        "aws.iam.PolicyDocument.Effect.allow".to_string(),
-                                    )),
+                                    Value::Concrete(ConcreteValue::String("Allow".to_string())),
                                 ),
                                 (
                                     "action".to_string(),
@@ -1158,15 +1262,44 @@ mod tests {
         ));
 
         assert_eq!(
-            read_side, desired_side,
-            "read-side and parsed-desired IAM policy docs must be \
-             byte-identical so the differ reports no diff; \
-             got read={read_side:?} desired={desired_side:?}"
+            read_side, api_canonical,
+            "read-side IAM policy doc must persist the API-canonical \
+             spelling, not a fully-qualified DSL string; \
+             got read={read_side:?}"
+        );
+
+        // carina-core's state-lift reduces the persisted API values to
+        // the canonical short `EnumIdentifier` form — the shape the
+        // differ reconciles against the parsed-desired side.
+        let lifted = carina_core::utils::lift_string_enum_leaves(&read_side, &attr_type)
+            .expect("API-canonical IAM policy doc must lift");
+        let Value::Concrete(ConcreteValue::Map(lifted_map)) = &lifted else {
+            panic!("expected lifted policy doc to be a Map, got {lifted:?}");
+        };
+        assert_eq!(
+            lifted_map.get("version"),
+            Some(&Value::Concrete(ConcreteValue::EnumIdentifier(
+                "2012_10_17".to_string()
+            )))
+        );
+        let Some(Value::Concrete(ConcreteValue::List(stmts))) = lifted_map.get("statement") else {
+            panic!("expected statement list");
+        };
+        let Some(Value::Concrete(ConcreteValue::Map(stmt))) = stmts.first() else {
+            panic!("expected statement map");
+        };
+        assert_eq!(
+            stmt.get("effect"),
+            Some(&Value::Concrete(ConcreteValue::EnumIdentifier(
+                "allow".to_string()
+            )))
         );
     }
 
+    // A namespaced `Custom` (region) also flows through this path and
+    // is persisted as the hyphen API form, not a DSL string.
     #[test]
-    fn test_aws_value_to_dsl_region_in_struct_uses_underscores() {
+    fn test_aws_value_to_dsl_region_in_struct_is_api_canonical() {
         use crate::schemas::awscc_types::awscc_region;
 
         let fields = vec![
@@ -1184,9 +1317,7 @@ mod tests {
         let expected = Value::Concrete(ConcreteValue::List(vec![Value::Concrete(
             ConcreteValue::Map(IndexMap::from([(
                 "region_name".to_string(),
-                Value::Concrete(ConcreteValue::String(
-                    "awscc.Region.ap_northeast_1".to_string(),
-                )),
+                Value::Concrete(ConcreteValue::String("ap-northeast-1".to_string())),
             )])),
         )]));
         assert_eq!(result, Some(expected));
@@ -1203,10 +1334,12 @@ mod tests {
         let json_val = json!("ipsec.1");
 
         let result = aws_value_to_dsl("type", &json_val, &attr_type, "ec2.VpnGateway");
+        // The dotted tail (`ipsec.1`) is the API value itself, not a
+        // namespace separator — it must survive verbatim.
         assert_eq!(
             result,
             Some(Value::Concrete(ConcreteValue::String(
-                "awscc.ec2.VpnGateway.Type.ipsec.1".to_string()
+                "ipsec.1".to_string()
             )))
         );
     }
@@ -1255,7 +1388,7 @@ mod tests {
         assert_eq!(
             dsl_val,
             Some(Value::Concrete(ConcreteValue::String(
-                "awscc.ec2.VpnGateway.Type.ipsec.1".to_string()
+                "ipsec.1".to_string()
             )))
         );
 
@@ -1401,17 +1534,13 @@ mod tests {
         };
         assert_eq!(rules.len(), 2, "Should have 2 lifecycle rules");
 
-        // Verify enum values are converted to namespaced format. Per
-        // naming-conventions design D7 / issue #199, the AWS-side spelling
-        // (`Enabled`, `GLACIER`) is mapped to the snake_case DSL spelling
-        // by the StringEnum's `to_dsl` closure on read.
         if let Value::Concrete(ConcreteValue::Map(rule0)) = &rules[0] {
             assert_eq!(
                 rule0.get("status"),
                 Some(&Value::Concrete(ConcreteValue::String(
-                    "awscc.s3.Bucket.RuleStatus.enabled".to_string()
+                    "Enabled".to_string()
                 ))),
-                "status should be namespaced enum"
+                "status should be the API-canonical enum value"
             );
             assert_eq!(
                 rule0.get("expiration_in_days"),
@@ -1432,7 +1561,7 @@ mod tests {
             assert_eq!(
                 rule1.get("status"),
                 Some(&Value::Concrete(ConcreteValue::String(
-                    "awscc.s3.Bucket.RuleStatus.enabled".to_string()
+                    "Enabled".to_string()
                 ))),
             );
             if let Some(Value::Concrete(ConcreteValue::List(transitions))) =
@@ -1443,7 +1572,7 @@ mod tests {
                     assert_eq!(
                         t.get("storage_class"),
                         Some(&Value::Concrete(ConcreteValue::String(
-                            "awscc.s3.Bucket.TransitionStorageClass.glacier".to_string()
+                            "GLACIER".to_string()
                         ))),
                     );
                     assert_eq!(
@@ -1543,7 +1672,7 @@ mod tests {
         .expect("dsl_value_to_aws must succeed");
         assert_eq!(aws_json, json!("BucketOwnerEnforced"));
 
-        // And on read: the AWS spelling becomes the snake_case DSL form.
+        // On read the AWS spelling is persisted verbatim, then lifted.
         let dsl = aws_value_to_dsl(
             "object_ownership",
             &json!("BucketOwnerEnforced"),
@@ -1551,7 +1680,21 @@ mod tests {
             "s3.Bucket",
         )
         .expect("aws_value_to_dsl must succeed");
-        assert_eq!(dsl, snake_case_value);
+        assert_eq!(
+            dsl,
+            Value::Concrete(ConcreteValue::String("BucketOwnerEnforced".to_string())),
+            "read must persist the API-canonical value"
+        );
+        let lifted =
+            carina_core::utils::lift_string_enum_leaves(&dsl, &object_ownership.field_type)
+                .expect("API-canonical state value must lift");
+        assert_eq!(
+            lifted,
+            Value::Concrete(ConcreteValue::EnumIdentifier(
+                "bucket_owner_enforced".to_string()
+            )),
+            "state-lift must reduce the API value to the canonical short identifier"
+        );
     }
 
     #[test]
