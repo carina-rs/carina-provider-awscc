@@ -286,7 +286,12 @@ impl CarinaProvider for AwsccProcessProvider {
             .iter()
             .map(convert::proto_to_core_resource)
             .collect();
-        self.normalizer.normalize_desired(&mut core_resources);
+        // Guest-side: drive the now-async normalizer on the guest's own
+        // outermost runtime — same pattern as the guest's `Provider`
+        // CRUD methods. Not a nested runtime: the host drives the WASM
+        // call, the guest drives its internal async (carina#3112).
+        self.runtime
+            .block_on(self.normalizer.normalize_desired(&mut core_resources));
         core_resources
             .iter()
             .map(convert::core_to_proto_resource)
@@ -304,7 +309,8 @@ impl CarinaProvider for AwsccProcessProvider {
                 (core_state.id.clone(), core_state)
             })
             .collect();
-        self.normalizer.normalize_state(&mut core_states);
+        self.runtime
+            .block_on(self.normalizer.normalize_state(&mut core_states));
         core_states
             .iter()
             .map(|(id, state)| (id.to_string(), convert::core_to_proto_state(state)))
@@ -337,8 +343,10 @@ impl CarinaProvider for AwsccProcessProvider {
                 Some((id, attrs))
             })
             .collect();
-        self.normalizer
-            .hydrate_read_state(&mut core_states, &core_saved);
+        self.runtime.block_on(
+            self.normalizer
+                .hydrate_read_state(&mut core_states, &core_saved),
+        );
         *states = core_states
             .iter()
             .map(|(id, state)| (id.to_string(), convert::core_to_proto_state(state)))
@@ -363,8 +371,11 @@ impl CarinaProvider for AwsccProcessProvider {
         for s in proto_schemas {
             registry.insert("awscc", convert::proto_to_core_schema(s));
         }
-        self.normalizer
-            .merge_default_tags(&mut core_resources, &core_tags, &registry);
+        self.runtime.block_on(self.normalizer.merge_default_tags(
+            &mut core_resources,
+            &core_tags,
+            &registry,
+        ));
         *resources = core_resources
             .iter()
             .map(convert::core_to_proto_resource)

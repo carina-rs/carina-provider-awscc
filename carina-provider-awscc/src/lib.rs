@@ -36,34 +36,50 @@ use crate::provider::AwsccProviderConfig;
 pub struct AwsccNormalizer;
 
 impl ProviderNormalizer for AwsccNormalizer {
-    fn normalize_desired(&self, resources: &mut [Resource]) {
-        crate::provider::resolve_enum_identifiers_impl(resources);
+    // The trait is async (carina#3112) only so the WASM host impl can
+    // `.await` the guest directly. These bodies are pure (enum
+    // resolution, state canonicalization, attr hydration, tag merge —
+    // no I/O), so wrapping the existing sync logic in a ready future is
+    // sufficient; no logic change.
+    fn normalize_desired<'a>(&'a self, resources: &'a mut [Resource]) -> BoxFuture<'a, ()> {
+        Box::pin(async move {
+            crate::provider::resolve_enum_identifiers_impl(resources);
+        })
     }
 
-    fn normalize_state(&self, current_states: &mut HashMap<ResourceId, State>) {
-        crate::provider::normalize_state_enums_impl(current_states);
-        // Canonicalize `Union[String, list(String)]` typed values
-        // (IAM-style `string_or_list_of_strings`) so AWS's silent
-        // scalar normalization no longer leaks past the provider
-        // boundary. See carina-rs/carina#2481, sub-issue 5.
-        crate::provider::canonicalize_string_or_list_states_impl(current_states);
+    fn normalize_state<'a>(
+        &'a self,
+        current_states: &'a mut HashMap<ResourceId, State>,
+    ) -> BoxFuture<'a, ()> {
+        Box::pin(async move {
+            crate::provider::normalize_state_enums_impl(current_states);
+            // Canonicalize `Union[String, list(String)]` typed values
+            // (IAM-style `string_or_list_of_strings`) so AWS's silent
+            // scalar normalization no longer leaks past the provider
+            // boundary. See carina-rs/carina#2481, sub-issue 5.
+            crate::provider::canonicalize_string_or_list_states_impl(current_states);
+        })
     }
 
-    fn hydrate_read_state(
-        &self,
-        current_states: &mut HashMap<ResourceId, State>,
-        saved_attrs: &SavedAttrs,
-    ) {
-        crate::provider::restore_unreturned_attrs_impl(current_states, saved_attrs);
+    fn hydrate_read_state<'a>(
+        &'a self,
+        current_states: &'a mut HashMap<ResourceId, State>,
+        saved_attrs: &'a SavedAttrs,
+    ) -> BoxFuture<'a, ()> {
+        Box::pin(async move {
+            crate::provider::restore_unreturned_attrs_impl(current_states, saved_attrs);
+        })
     }
 
-    fn merge_default_tags(
-        &self,
-        resources: &mut [Resource],
-        default_tags: &IndexMap<String, Value>,
-        registry: &SchemaRegistry,
-    ) {
-        merge_default_tags_for_provider("awscc", resources, default_tags, registry);
+    fn merge_default_tags<'a>(
+        &'a self,
+        resources: &'a mut [Resource],
+        default_tags: &'a IndexMap<String, Value>,
+        registry: &'a SchemaRegistry,
+    ) -> BoxFuture<'a, ()> {
+        Box::pin(async move {
+            merge_default_tags_for_provider("awscc", resources, default_tags, registry);
+        })
     }
 }
 
@@ -455,8 +471,8 @@ mod tests {
         assert!(found.iter().any(|(n, _)| n == "cached_methods"));
     }
 
-    #[test]
-    fn test_merge_default_tags_resource_tags_win() {
+    #[tokio::test]
+    async fn test_merge_default_tags_resource_tags_win() {
         let schemas = build_schemas();
         let normalizer = AwsccNormalizer;
 
@@ -490,7 +506,9 @@ mod tests {
         );
 
         let mut resources = vec![resource];
-        normalizer.merge_default_tags(&mut resources, &default_tags, &schemas);
+        normalizer
+            .merge_default_tags(&mut resources, &default_tags, &schemas)
+            .await;
 
         if let Some(Value::Concrete(ConcreteValue::Map(tags))) = resources[0].get_attr("tags") {
             assert_eq!(
@@ -531,8 +549,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_merge_default_tags_no_explicit_tags() {
+    #[tokio::test]
+    async fn test_merge_default_tags_no_explicit_tags() {
         let schemas = build_schemas();
         let normalizer = AwsccNormalizer;
 
@@ -549,7 +567,9 @@ mod tests {
         );
 
         let mut resources = vec![resource];
-        normalizer.merge_default_tags(&mut resources, &default_tags, &schemas);
+        normalizer
+            .merge_default_tags(&mut resources, &default_tags, &schemas)
+            .await;
 
         if let Some(Value::Concrete(ConcreteValue::Map(tags))) = resources[0].get_attr("tags") {
             assert_eq!(
@@ -578,8 +598,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_merge_default_tags_skips_no_tag_schema() {
+    #[tokio::test]
+    async fn test_merge_default_tags_skips_no_tag_schema() {
         let schemas = build_schemas();
         let normalizer = AwsccNormalizer;
 
@@ -596,14 +616,16 @@ mod tests {
         );
 
         let mut resources = vec![resource];
-        normalizer.merge_default_tags(&mut resources, &default_tags, &schemas);
+        normalizer
+            .merge_default_tags(&mut resources, &default_tags, &schemas)
+            .await;
 
         assert!(!resources[0].attributes.contains_key("tags"));
         assert!(!resources[0].attributes.contains_key("_default_tag_keys"));
     }
 
-    #[test]
-    fn test_merge_default_tags_no_default_tags() {
+    #[tokio::test]
+    async fn test_merge_default_tags_no_default_tags() {
         let schemas = build_schemas();
         let normalizer = AwsccNormalizer;
 
@@ -625,7 +647,9 @@ mod tests {
         let default_tags: IndexMap<String, Value> = IndexMap::new();
 
         let mut resources = vec![resource];
-        normalizer.merge_default_tags(&mut resources, &default_tags, &schemas);
+        normalizer
+            .merge_default_tags(&mut resources, &default_tags, &schemas)
+            .await;
 
         if let Some(Value::Concrete(ConcreteValue::Map(tags))) = resources[0].get_attr("tags") {
             assert_eq!(tags.len(), 1);
