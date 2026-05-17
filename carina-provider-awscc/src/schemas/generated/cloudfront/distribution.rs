@@ -107,14 +107,14 @@ pub fn cloudfront_distribution_config() -> AwsccSchemaConfig {
                     StructField::new("cache_behaviors", AttributeType::list(AttributeType::Struct {
                     name: "CacheBehavior".to_string(),
                     fields: vec![
-                    StructField::new("allowed_methods", AttributeType::list(AttributeType::StringEnum {
+                    StructField::new("allowed_methods", AttributeType::unordered_list(AttributeType::StringEnum {
                 name: "AllowedMethods".to_string(),
                 values: vec!["GET".to_string(), "HEAD".to_string(), "OPTIONS".to_string(), "PUT".to_string(), "PATCH".to_string(), "POST".to_string(), "DELETE".to_string()],
                 namespace: Some("awscc.cloudfront.Distribution".to_string()),
                 dsl_aliases: vec![("GET".to_string(), "get".to_string()), ("HEAD".to_string(), "head".to_string()), ("OPTIONS".to_string(), "options".to_string()), ("PUT".to_string(), "put".to_string()), ("PATCH".to_string(), "patch".to_string()), ("POST".to_string(), "post".to_string()), ("DELETE".to_string(), "delete".to_string())],
             })).with_description("A complex type that controls which HTTP methods CloudFront processes and forwards to your Amazon S3 bucket or your custom origin. There are three choices: + CloudFront forwards only ``GET`` and ``HEAD`` requests. + CloudFront forwards only ``GET``, ``HEAD``, and ``OPTIONS`` requests. + CloudFront forwards ``GET, HEAD, OPTIONS, PUT, PATCH, POST``, and ``DELETE`` requests. If you pick the third choice, you may need to restrict access to your Amazon S3 bucket or to your custom origin so users can't perform operations that you don't want them to. For example, you might not want users to have permissions to delete objects from your origin.").with_provider_name("AllowedMethods"),
                     StructField::new("cache_policy_id", AttributeType::String).with_description("The unique identifier of the cache policy that is attached to this cache behavior. For more information, see [Creating cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-the-cache-key.html#cache-key-create-cache-policy) or [Using the managed cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/using-managed-cache-policies.html) in the *Amazon CloudFront Developer Guide*. A ``CacheBehavior`` must include either a ``CachePolicyId`` or ``ForwardedValues``. We recommend that you use a ``CachePolicyId``.").with_provider_name("CachePolicyId"),
-                    StructField::new("cached_methods", AttributeType::list(AttributeType::StringEnum {
+                    StructField::new("cached_methods", AttributeType::unordered_list(AttributeType::StringEnum {
                 name: "CachedMethods".to_string(),
                 values: vec!["GET".to_string(), "HEAD".to_string(), "OPTIONS".to_string()],
                 namespace: Some("awscc.cloudfront.Distribution".to_string()),
@@ -244,14 +244,14 @@ pub fn cloudfront_distribution_config() -> AwsccSchemaConfig {
                     StructField::new("default_cache_behavior", AttributeType::Struct {
                     name: "DefaultCacheBehavior".to_string(),
                     fields: vec![
-                    StructField::new("allowed_methods", AttributeType::list(AttributeType::StringEnum {
+                    StructField::new("allowed_methods", AttributeType::unordered_list(AttributeType::StringEnum {
                 name: "AllowedMethods".to_string(),
                 values: vec!["GET".to_string(), "HEAD".to_string(), "OPTIONS".to_string(), "PUT".to_string(), "PATCH".to_string(), "POST".to_string(), "DELETE".to_string()],
                 namespace: Some("awscc.cloudfront.Distribution".to_string()),
                 dsl_aliases: vec![("GET".to_string(), "get".to_string()), ("HEAD".to_string(), "head".to_string()), ("OPTIONS".to_string(), "options".to_string()), ("PUT".to_string(), "put".to_string()), ("PATCH".to_string(), "patch".to_string()), ("POST".to_string(), "post".to_string()), ("DELETE".to_string(), "delete".to_string())],
             })).with_description("A complex type that controls which HTTP methods CloudFront processes and forwards to your Amazon S3 bucket or your custom origin. There are three choices: + CloudFront forwards only ``GET`` and ``HEAD`` requests. + CloudFront forwards only ``GET``, ``HEAD``, and ``OPTIONS`` requests. + CloudFront forwards ``GET, HEAD, OPTIONS, PUT, PATCH, POST``, and ``DELETE`` requests. If you pick the third choice, you may need to restrict access to your Amazon S3 bucket or to your custom origin so users can't perform operations that you don't want them to. For example, you might not want users to have permissions to delete objects from your origin.").with_provider_name("AllowedMethods"),
                     StructField::new("cache_policy_id", AttributeType::String).with_description("The unique identifier of the cache policy that is attached to the default cache behavior. For more information, see [Creating cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-the-cache-key.html#cache-key-create-cache-policy) or [Using the managed cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/using-managed-cache-policies.html) in the *Amazon CloudFront Developer Guide*. A ``DefaultCacheBehavior`` must include either a ``CachePolicyId`` or ``ForwardedValues``. We recommend that you use a ``CachePolicyId``.").with_provider_name("CachePolicyId"),
-                    StructField::new("cached_methods", AttributeType::list(AttributeType::StringEnum {
+                    StructField::new("cached_methods", AttributeType::unordered_list(AttributeType::StringEnum {
                 name: "CachedMethods".to_string(),
                 values: vec!["GET".to_string(), "HEAD".to_string(), "OPTIONS".to_string()],
                 namespace: Some("awscc.cloudfront.Distribution".to_string()),
