@@ -392,6 +392,69 @@ mod tests {
         ));
     }
 
+    /// carina#3093 acceptance: the *generated* CloudFront Distribution
+    /// schema must type every `allowed_methods` / `cached_methods`
+    /// (nested under `distribution_config.{default_cache_behavior,
+    /// cache_behaviors[]}`) as an **unordered** list. With
+    /// `ordered: false`, carina-core's `type_aware_equal` compares
+    /// these as multisets, so a provider-read order differing from the
+    /// DSL-authored order is no longer a never-converging phantom diff.
+    /// Walking the real schema (not just asserting the override kind)
+    /// is the apply-path-faithful check — it proves the override
+    /// actually reached the emitted `AttributeType`.
+    #[test]
+    fn cloudfront_distribution_methods_are_unordered_lists() {
+        use carina_core::schema::AttributeType;
+
+        let factory = AwsccProviderFactory;
+        let schema = factory
+            .schemas()
+            .into_iter()
+            .find(|s| s.resource_type == "cloudfront.Distribution")
+            .expect("cloudfront.Distribution schema must be present");
+
+        // Recursively collect the `ordered` flag of every List whose
+        // owning struct field is named allowed_methods/cached_methods.
+        fn collect(at: &AttributeType, field: Option<&str>, out: &mut Vec<(String, bool)>) {
+            match at {
+                AttributeType::List { inner, ordered } => {
+                    if matches!(field, Some("allowed_methods" | "cached_methods")) {
+                        out.push((field.unwrap().to_string(), *ordered));
+                    }
+                    collect(inner, None, out);
+                }
+                AttributeType::Struct { fields, .. } => {
+                    for f in fields {
+                        collect(&f.field_type, Some(f.name.as_str()), out);
+                    }
+                }
+                AttributeType::Map { value, .. } => collect(value, None, out),
+                _ => {}
+            }
+        }
+
+        let mut found = Vec::new();
+        for attr in schema.attributes.values() {
+            collect(&attr.attr_type, None, &mut found);
+        }
+
+        assert!(
+            !found.is_empty(),
+            "expected to find allowed_methods/cached_methods list fields in the schema"
+        );
+        for (name, ordered) in &found {
+            assert!(
+                !ordered,
+                "carina#3093: `{name}` must be an unordered_list \
+                 (ordered=false); got ordered={ordered}"
+            );
+        }
+        // Sanity: both field names are actually present (default +
+        // per-behavior cache configs each carry both).
+        assert!(found.iter().any(|(n, _)| n == "allowed_methods"));
+        assert!(found.iter().any(|(n, _)| n == "cached_methods"));
+    }
+
     #[test]
     fn test_merge_default_tags_resource_tags_win() {
         let schemas = build_schemas();

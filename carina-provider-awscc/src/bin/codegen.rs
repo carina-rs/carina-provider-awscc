@@ -35,6 +35,14 @@ enum TypeOverride {
     StringType(&'static str),
     /// Override to an enum with specific values
     Enum(Vec<&'static str>),
+    /// Like [`TypeOverride::Enum`], but when the property is an array
+    /// the generated list is `unordered_list` regardless of the CFN
+    /// `insertionOrder` (which defaults to ordered when unspecified).
+    /// For order-insensitive set-valued fields whose CloudFormation
+    /// schema omits `insertionOrder: false` — e.g. CloudFront
+    /// `AllowedMethods`/`CachedMethods` (carina#3093). Element-type
+    /// handling is identical to `Enum`; only the list ordering differs.
+    EnumUnordered(Vec<&'static str>),
     /// Override to an integer range (min, max)
     IntRange(i64, i64),
     /// Override to an integer enum with specific allowed values
@@ -912,7 +920,7 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str) -> Result<String> {
             // Apply nested-field enum overlay (awscc#246) — same lookup as
             // `generate_schema_code`, so the markdown's enum tables stay in
             // sync with the generated Rust schema.
-            if let Some(TypeOverride::Enum(values)) =
+            if let Some(TypeOverride::Enum(values) | TypeOverride::EnumUnordered(values)) =
                 resource_type_overrides().get(&(type_name, composite_key.as_str()))
             {
                 enums.insert(
@@ -1411,7 +1419,9 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
         }
         // Check resource-scoped overrides for enum, int range, and int enum
         let resource_override = resource_type_overrides().get(&(type_name, prop_name.as_str()));
-        if let Some(TypeOverride::Enum(values)) = resource_override {
+        if let Some(TypeOverride::Enum(values) | TypeOverride::EnumUnordered(values)) =
+            resource_override
+        {
             enums.insert(
                 prop_name.clone(),
                 EnumInfo {
@@ -1703,7 +1713,7 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
                     // in the `enums` map (and therefore get a VALID_* constant
                     // and an enum_valid_values() entry alongside StringEnum
                     // emission in `generate_struct_type`).
-                    if let Some(TypeOverride::Enum(values)) =
+                    if let Some(TypeOverride::Enum(values) | TypeOverride::EnumUnordered(values)) =
                         resource_type_overrides().get(&(type_name, composite_key.as_str()))
                     {
                         enums.insert(
@@ -2112,7 +2122,10 @@ pub fn {}() -> AwsccSchemaConfig {{
                 .map(|def| def.def_type.as_deref() == Some("array"))
                 .unwrap_or(false);
             if is_array || is_ref_array {
-                let list_ctor = list_constructor(prop.insertion_order);
+                let list_ctor = list_constructor(
+                    prop.insertion_order,
+                    override_forces_unordered(schema.type_name.as_str(), prop_name),
+                );
                 format!("{}({})", list_ctor, enum_type)
             } else {
                 enum_type
@@ -2679,11 +2692,18 @@ fn generate_struct_type(
             // synthetic StringEnum here. List fields (`array<string>`) keep
             // the list wrapping below; only the item type changes.
             let nested_key = format!("{}.{}", def_name, field_name);
-            if let Some(TypeOverride::Enum(values)) =
-                resource_type_overrides().get(&(schema.type_name.as_str(), nested_key.as_str()))
+            let nested_override =
+                resource_type_overrides().get(&(schema.type_name.as_str(), nested_key.as_str()));
+            // `EnumUnordered` is element-handled identically to `Enum`;
+            // it differs only in forcing `unordered_list` below
+            // (carina#3093).
+            if let Some(TypeOverride::Enum(values) | TypeOverride::EnumUnordered(values)) =
+                nested_override
             {
                 enum_info = Some(enum_info_for_override(field_name, values));
             }
+            let field_force_unordered =
+                matches!(nested_override, Some(TypeOverride::EnumUnordered(_)));
             // If enum detected in struct field and it's in the enums map, use shared string enum type.
             // Try composite key "DefName.FieldName" first (for definition-scoped enums),
             // then fall back to plain "FieldName" (for top-level property enums).
@@ -2736,7 +2756,8 @@ fn generate_struct_type(
                 };
                 // Wrap in List if the original field type was a List
                 if is_list_field {
-                    let list_ctor = list_constructor(field_prop.insertion_order);
+                    let list_ctor =
+                        list_constructor(field_prop.insertion_order, field_force_unordered);
                     format!("{}({})", list_ctor, enum_type)
                 } else {
                     enum_type
@@ -3429,28 +3450,28 @@ fn resource_type_overrides() -> &'static HashMap<(&'static str, &'static str), T
                     "AWS::CloudFront::Distribution",
                     "DefaultCacheBehavior.AllowedMethods",
                 ),
-                TypeOverride::Enum(allowed_methods.clone()),
+                TypeOverride::EnumUnordered(allowed_methods.clone()),
             );
             m.insert(
                 (
                     "AWS::CloudFront::Distribution",
                     "CacheBehavior.AllowedMethods",
                 ),
-                TypeOverride::Enum(allowed_methods),
+                TypeOverride::EnumUnordered(allowed_methods),
             );
             m.insert(
                 (
                     "AWS::CloudFront::Distribution",
                     "DefaultCacheBehavior.CachedMethods",
                 ),
-                TypeOverride::Enum(cached_methods.clone()),
+                TypeOverride::EnumUnordered(cached_methods.clone()),
             );
             m.insert(
                 (
                     "AWS::CloudFront::Distribution",
                     "CacheBehavior.CachedMethods",
                 ),
-                TypeOverride::Enum(cached_methods),
+                TypeOverride::EnumUnordered(cached_methods),
             );
             // OriginProtocolPolicy: the modern CustomOriginConfig path is
             // already CFN-enum, but the LegacyCustomOrigin definition is
@@ -3973,10 +3994,30 @@ fn is_ipam_pool_id_property(prop_name: &str) -> bool {
     lower.ends_with("poolid")
 }
 
+/// `true` when the resource-type override for `(type_name, key)` is
+/// [`TypeOverride::EnumUnordered`], i.e. an array field that must be
+/// `unordered_list` regardless of the CFN `insertionOrder`
+/// (carina#3093). `key` is the property name for top-level props or
+/// `"DefName.FieldName"` for nested struct fields — whichever the
+/// caller used to look the override up.
+fn override_forces_unordered(type_name: &str, key: &str) -> bool {
+    matches!(
+        resource_type_overrides().get(&(type_name, key)),
+        Some(TypeOverride::EnumUnordered(_))
+    )
+}
+
 /// Return the correct list constructor based on insertionOrder.
 /// CloudFormation defaults insertionOrder to true when not specified.
-fn list_constructor(insertion_order: Option<bool>) -> &'static str {
-    if insertion_order == Some(false) {
+///
+/// `force_unordered` lets a `TypeOverride::EnumUnordered` declare a
+/// field order-insensitive even when the CFN schema omits
+/// `insertionOrder: false` (carina#3093). It only ever forces
+/// *unordered*: a CFN-declared `insertionOrder: false` already yields
+/// unordered, and forcing has no inverse (we never coerce an
+/// order-sensitive list to ordered against the schema).
+fn list_constructor(insertion_order: Option<bool>, force_unordered: bool) -> &'static str {
+    if force_unordered || insertion_order == Some(false) {
         "AttributeType::unordered_list"
     } else {
         "AttributeType::list"
@@ -4081,7 +4122,10 @@ fn cfn_type_to_carina_type_with_enum(
                 } else {
                     item_type
                 };
-                let list_ctor = list_constructor(prop.insertion_order);
+                let list_ctor = list_constructor(
+                    prop.insertion_order,
+                    override_forces_unordered(schema.type_name.as_str(), prop_name),
+                );
                 return (format!("{}({})", list_ctor, effective_item_type), item_enum);
             }
             // Handle string-typed $ref definitions with pattern constraints
@@ -4491,7 +4535,10 @@ fn cfn_type_to_carina_type_with_enum(
             }
         }
         Some("array") => {
-            let list_ctor = list_constructor(prop.insertion_order);
+            let list_ctor = list_constructor(
+                prop.insertion_order,
+                override_forces_unordered(schema.type_name.as_str(), prop_name),
+            );
             let (list_type, item_enum) = if let Some(items) = &prop.items {
                 // Check if items has a $ref to a definition
                 if let Some(ref_path) = &items.ref_path
@@ -4705,6 +4752,66 @@ fn collapse_whitespace(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// carina#3093: `list_constructor` must let an override force
+    /// `unordered_list` even when CFN `insertionOrder` is unspecified
+    /// (defaults to ordered). CloudFront `AllowedMethods`/`CachedMethods`
+    /// are order-insensitive HTTP-method sets but the CFN schema does
+    /// not set `insertionOrder: false`.
+    #[test]
+    fn test_list_constructor_force_unordered_overrides_default_ordered() {
+        // CFN default (insertion_order unspecified) is ordered.
+        assert_eq!(
+            list_constructor(None, false),
+            "AttributeType::list",
+            "unspecified insertionOrder defaults to ordered"
+        );
+        // An override forcing unordered wins over the ordered default.
+        assert_eq!(
+            list_constructor(None, true),
+            "AttributeType::unordered_list",
+            "force_unordered must override the ordered CFN default"
+        );
+        // CFN-declared insertionOrder:false still yields unordered.
+        assert_eq!(
+            list_constructor(Some(false), false),
+            "AttributeType::unordered_list"
+        );
+        // Explicit CFN ordered + no force = ordered (unchanged behavior).
+        assert_eq!(list_constructor(Some(true), false), "AttributeType::list");
+    }
+
+    /// The four CloudFront methods overrides must be `EnumUnordered`
+    /// so the generated schema uses `unordered_list` (carina#3093).
+    #[test]
+    fn test_cloudfront_methods_overrides_are_enum_unordered() {
+        let ov = resource_type_overrides();
+        for key in [
+            (
+                "AWS::CloudFront::Distribution",
+                "DefaultCacheBehavior.AllowedMethods",
+            ),
+            (
+                "AWS::CloudFront::Distribution",
+                "CacheBehavior.AllowedMethods",
+            ),
+            (
+                "AWS::CloudFront::Distribution",
+                "DefaultCacheBehavior.CachedMethods",
+            ),
+            (
+                "AWS::CloudFront::Distribution",
+                "CacheBehavior.CachedMethods",
+            ),
+        ] {
+            match ov.get(&key) {
+                Some(TypeOverride::EnumUnordered(_)) => {}
+                other => panic!(
+                    "{key:?} must be TypeOverride::EnumUnordered (carina#3093), got {other:?}"
+                ),
+            }
+        }
+    }
 
     #[test]
     fn test_collapse_whitespace() {
@@ -11378,14 +11485,11 @@ mod tests {
         // missing the codegen will silently fall back to plain String for
         // the affected field, which is the bug awscc#246 fixed.
         let table = resource_type_overrides();
+        // Plain `Enum` overrides (order-sensitive scalars/lists).
         for key in [
             "DistributionConfig.PriceClass",
             "DistributionConfig.HttpVersion",
             "Cookies.Forward",
-            "DefaultCacheBehavior.AllowedMethods",
-            "CacheBehavior.AllowedMethods",
-            "DefaultCacheBehavior.CachedMethods",
-            "CacheBehavior.CachedMethods",
             "LegacyCustomOrigin.OriginProtocolPolicy",
             "LegacyCustomOrigin.OriginSSLProtocols",
             "CustomOriginConfig.OriginSSLProtocols",
@@ -11396,6 +11500,23 @@ mod tests {
                     Some(TypeOverride::Enum(_))
                 ),
                 "missing nested-field enum override: {key}"
+            );
+        }
+        // AllowedMethods / CachedMethods are order-insensitive sets:
+        // they must be `EnumUnordered` so the generated list is
+        // `unordered_list` (carina#3093).
+        for key in [
+            "DefaultCacheBehavior.AllowedMethods",
+            "CacheBehavior.AllowedMethods",
+            "DefaultCacheBehavior.CachedMethods",
+            "CacheBehavior.CachedMethods",
+        ] {
+            assert!(
+                matches!(
+                    table.get(&("AWS::CloudFront::Distribution", key)),
+                    Some(TypeOverride::EnumUnordered(_))
+                ),
+                "carina#3093: {key} must be EnumUnordered"
             );
         }
     }
@@ -11603,14 +11724,21 @@ mod tests {
             handlers: BTreeMap::new(),
         };
         let generated = generate_schema_code(&schema, "AWS::CloudFront::Distribution").unwrap();
-        // Must emit list(StringEnum), keeping the list wrapping intact.
+        // The list wrapping is kept and the element promoted to
+        // StringEnum. `AllowedMethods` is an order-insensitive set, so
+        // post-carina#3093 the list is `unordered_list` (the overlay
+        // still wraps a list — only the ordering flag changed).
         assert!(
-            generated.contains("AttributeType::list(AttributeType::StringEnum"),
-            "nested list-of-string overlay should produce list(StringEnum): {generated}"
+            generated.contains("AttributeType::unordered_list(AttributeType::StringEnum"),
+            "nested list-of-string overlay should produce unordered_list(StringEnum) \
+             for AllowedMethods (carina#3093): {generated}"
         );
-        // The plain list(String) form must not appear for this field.
+        // No plain `String`-element list for this field, ordered or not.
         assert!(
-            !generated.contains("\"allowed_methods\", AttributeType::list(AttributeType::String)"),
+            !generated.contains("\"allowed_methods\", AttributeType::list(AttributeType::String)")
+                && !generated.contains(
+                    "\"allowed_methods\", AttributeType::unordered_list(AttributeType::String)"
+                ),
             "list(String) must be replaced for overridden list field: {generated}"
         );
         for v in ["GET", "HEAD", "OPTIONS", "PUT", "PATCH", "POST", "DELETE"] {
