@@ -113,13 +113,25 @@ impl CarinaProvider for AwsccProcessProvider {
                 ordered: false,
             },
         );
+        types.insert("assume_role".to_string(), assume_role_attribute_type());
         types
     }
 
-    fn validate_config(&self, _attrs: &HashMap<String, proto::Value>) -> Result<(), String> {
-        // Region format/value validation is handled by the host via
-        // `provider_config_attribute_types`. No provider-specific semantic
-        // checks are needed beyond that for now.
+    fn validate_config(&self, attrs: &HashMap<String, proto::Value>) -> Result<(), String> {
+        // Cross-account guardrail: when `assume_role.role_arn` parses to
+        // an account id that is not in `allowed_account_ids` (when that
+        // list is configured), refuse the configuration. Avoids the
+        // foot-gun of an assume-role silently landing in the wrong AWS
+        // account (awscc#260).
+        use carina_provider_awscc::provider::assume_role::{
+            check_cross_account, extract_assume_role,
+        };
+        let core_attrs = convert::proto_to_core_value_map(attrs);
+        let assume_role = extract_assume_role(core_attrs.get("assume_role"))?;
+        if let Some(ar) = &assume_role {
+            let allowed = extract_string_list(&core_attrs, "allowed_account_ids");
+            check_cross_account(&ar.role_arn, &allowed)?;
+        }
         Ok(())
     }
 
@@ -132,7 +144,7 @@ impl CarinaProvider for AwsccProcessProvider {
         } else {
             "ap-northeast-1".to_string()
         };
-        let cfg = extract_account_guard_config(&core_attrs);
+        let cfg = extract_account_guard_config(&core_attrs)?;
         let provider = self
             .runtime
             .block_on(AwsccProvider::new_with_config(&region, &cfg));
@@ -383,26 +395,89 @@ impl CarinaProvider for AwsccProcessProvider {
     }
 }
 
-/// Pull `allowed_account_ids` / `forbidden_account_ids` out of the
-/// provider's configured attributes. Both unset/empty means "no
-/// account check"; matching mirrors the in-process Provider wiring in
+/// Pull `allowed_account_ids` / `forbidden_account_ids` / `assume_role`
+/// out of the provider's configured attributes. Both lists unset/empty
+/// means "no account check"; `assume_role` absent means "do not chain
+/// sts:AssumeRole". Mirrors the in-process Provider wiring in
 /// `lib.rs::extract_provider_config`.
-fn extract_account_guard_config(core_attrs: &HashMap<String, CoreValue>) -> AwsccProviderConfig {
-    fn extract_string_list(attrs: &HashMap<String, CoreValue>, key: &str) -> Vec<String> {
-        match attrs.get(key) {
-            Some(CoreValue::Concrete(ConcreteValue::List(items))) => items
-                .iter()
-                .filter_map(|v| match v {
-                    CoreValue::Concrete(ConcreteValue::String(s)) => Some(s.clone()),
-                    _ => None,
-                })
-                .collect(),
-            _ => Vec::new(),
-        }
-    }
-    AwsccProviderConfig {
+fn extract_account_guard_config(
+    core_attrs: &HashMap<String, CoreValue>,
+) -> Result<AwsccProviderConfig, String> {
+    let assume_role = carina_provider_awscc::provider::assume_role::extract_assume_role(
+        core_attrs.get("assume_role"),
+    )?;
+    Ok(AwsccProviderConfig {
         allowed_account_ids: extract_string_list(core_attrs, "allowed_account_ids"),
         forbidden_account_ids: extract_string_list(core_attrs, "forbidden_account_ids"),
+        assume_role,
+    })
+}
+
+/// Shared `list(string)` extractor used by both `validate_config` and
+/// `extract_account_guard_config`. Drops non-string elements silently —
+/// the host enforces the declared `list(string)` shape before we see
+/// the value.
+fn extract_string_list(attrs: &HashMap<String, CoreValue>, key: &str) -> Vec<String> {
+    match attrs.get(key) {
+        Some(CoreValue::Concrete(ConcreteValue::List(items))) => items
+            .iter()
+            .filter_map(|v| match v {
+                CoreValue::Concrete(ConcreteValue::String(s)) => Some(s.clone()),
+                _ => None,
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// Schema for the provider-level `assume_role` block. Mirrors the
+/// Terraform AWS provider's `assume_role` (MVP field set: `role_arn`,
+/// `session_name`, `external_id`, `duration`). When present, the
+/// provider chains an `sts:AssumeRole` call on top of the ambient
+/// credential chain (awscc#260).
+fn assume_role_attribute_type() -> proto::AttributeType {
+    proto::AttributeType::Struct {
+        name: "AssumeRole".to_string(),
+        fields: vec![
+            proto::StructField {
+                name: "role_arn".to_string(),
+                field_type: proto::AttributeType::String,
+                required: true,
+                description: Some("IAM role ARN to assume.".to_string()),
+                block_name: None,
+                provider_name: None,
+            },
+            proto::StructField {
+                name: "session_name".to_string(),
+                field_type: proto::AttributeType::String,
+                required: false,
+                description: Some(
+                    "STS session name to associate with the assumed-role session.".to_string(),
+                ),
+                block_name: None,
+                provider_name: None,
+            },
+            proto::StructField {
+                name: "external_id".to_string(),
+                field_type: proto::AttributeType::String,
+                required: false,
+                description: Some(
+                    "External ID required by the trust policy of the assumed role.".to_string(),
+                ),
+                block_name: None,
+                provider_name: None,
+            },
+            proto::StructField {
+                name: "duration".to_string(),
+                field_type: proto::AttributeType::Duration,
+                required: false,
+                description: Some(
+                    "Assumed-role session duration (e.g., 30min, 1h, 15s).".to_string(),
+                ),
+                block_name: None,
+                provider_name: None,
+            },
+        ],
     }
 }
 
@@ -455,6 +530,110 @@ mod tests {
                 "untagged resource should not have TagsKeyValueCheck"
             );
         }
+    }
+
+    #[test]
+    fn provider_config_attribute_types_declares_assume_role_struct() {
+        // Mirrors the in-process Provider's assume_role declaration over
+        // the WASM/proto boundary. If the proto declaration goes missing
+        // or its required field changes, the host stops surfacing
+        // schema-level errors for malformed assume_role blocks
+        // (awscc#260).
+        let provider = AwsccProcessProvider::new();
+        let types = provider.provider_config_attribute_types();
+        let ty = types
+            .get("assume_role")
+            .expect("assume_role must be declared as a provider config attribute");
+        match ty {
+            proto::AttributeType::Struct { name, fields } => {
+                assert_eq!(name, "AssumeRole");
+                let role_arn = fields
+                    .iter()
+                    .find(|f| f.name == "role_arn")
+                    .expect("assume_role.role_arn must be declared");
+                assert!(role_arn.required, "role_arn must be required");
+                for opt in ["session_name", "external_id"] {
+                    let f = fields
+                        .iter()
+                        .find(|f| f.name == opt)
+                        .unwrap_or_else(|| panic!("assume_role.{opt} must be declared"));
+                    assert!(!f.required, "assume_role.{opt} must be optional");
+                    assert!(matches!(f.field_type, proto::AttributeType::String));
+                }
+                let duration = fields
+                    .iter()
+                    .find(|f| f.name == "duration")
+                    .expect("assume_role.duration must be declared");
+                assert!(!duration.required, "duration must be optional");
+                assert!(
+                    matches!(duration.field_type, proto::AttributeType::Duration),
+                    "duration must be a Duration so DSL literals like `30min` are accepted; \
+                     was {:?}",
+                    duration.field_type
+                );
+            }
+            other => panic!("assume_role must be a Struct, was {other:?}"),
+        }
+    }
+
+    fn proto_str(s: &str) -> proto::Value {
+        proto::Value::String(s.to_string())
+    }
+
+    fn proto_list_str(items: &[&str]) -> proto::Value {
+        proto::Value::List(items.iter().copied().map(proto_str).collect())
+    }
+
+    fn proto_map(items: &[(&str, proto::Value)]) -> proto::Value {
+        let mut m = std::collections::HashMap::new();
+        for (k, v) in items {
+            m.insert((*k).to_string(), v.clone());
+        }
+        proto::Value::Map(m)
+    }
+
+    #[test]
+    fn validate_config_accepts_assume_role_in_allowed_account() {
+        let provider = AwsccProcessProvider::new();
+        let attrs = HashMap::from([
+            (
+                "allowed_account_ids".to_string(),
+                proto_list_str(&["412038850359"]),
+            ),
+            (
+                "assume_role".to_string(),
+                proto_map(&[(
+                    "role_arn",
+                    proto_str("arn:aws:iam::412038850359:role/delegation"),
+                )]),
+            ),
+        ]);
+        provider
+            .validate_config(&attrs)
+            .expect("matching allowed_account_ids must validate");
+    }
+
+    #[test]
+    fn validate_config_rejects_assume_role_outside_allowed_account() {
+        let provider = AwsccProcessProvider::new();
+        let attrs = HashMap::from([
+            (
+                "allowed_account_ids".to_string(),
+                proto_list_str(&["111111111111"]),
+            ),
+            (
+                "assume_role".to_string(),
+                proto_map(&[(
+                    "role_arn",
+                    proto_str("arn:aws:iam::412038850359:role/delegation"),
+                )]),
+            ),
+        ]);
+        let err = provider
+            .validate_config(&attrs)
+            .expect_err("cross-account role outside allowed_account_ids must fail");
+        assert!(err.contains("412038850359"), "must name target: {err}");
+        assert!(err.contains("111111111111"), "must name allow list: {err}");
     }
 
     /// Regression for carina-rs/carina#2025: the VPC schema must carry the

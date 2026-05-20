@@ -16,6 +16,7 @@
 
 pub(crate) mod account_guard;
 mod arn_synthesis;
+pub mod assume_role;
 mod cloudcontrol;
 pub(crate) mod conversion;
 mod normalizer;
@@ -60,13 +61,15 @@ const DELETE_RETRY_MAX_DELAY_SECS: u64 = 120;
 
 /// Provider-level configuration that affects AwsccProvider construction.
 ///
-/// Currently carries the `allowed_account_ids` / `forbidden_account_ids`
-/// guard lists. Both empty means "no check", matching the
-/// pre-allowed-account-ids behavior.
+/// Carries the `allowed_account_ids` / `forbidden_account_ids` guard
+/// lists (both empty = "no check") and, when present, a parsed
+/// `assume_role` block that layers an STS `AssumeRoleProvider` on top
+/// of the ambient credential chain.
 #[derive(Debug, Default, Clone)]
 pub struct AwsccProviderConfig {
     pub allowed_account_ids: Vec<String>,
     pub forbidden_account_ids: Vec<String>,
+    pub assume_role: Option<assume_role::AssumeRoleConfig>,
 }
 
 /// AWS Cloud Control Provider
@@ -105,7 +108,7 @@ impl AwsccProvider {
     /// returned instance will surface that error before any
     /// CloudControl call.
     pub async fn new_with_config(region: &str, cfg: &AwsccProviderConfig) -> Self {
-        let config = Self::build_config(region).await;
+        let config = Self::build_config(region, cfg.assume_role.as_ref()).await;
 
         let init_error =
             if cfg.allowed_account_ids.is_empty() && cfg.forbidden_account_ids.is_empty() {
@@ -176,21 +179,35 @@ impl AwsccProvider {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    async fn build_config(region: &str) -> aws_config::SdkConfig {
-        aws_config::defaults(aws_config::BehaviorVersion::latest())
+    async fn build_config(
+        region: &str,
+        assume_role: Option<&assume_role::AssumeRoleConfig>,
+    ) -> aws_config::SdkConfig {
+        let base = aws_config::defaults(aws_config::BehaviorVersion::latest())
             .region(Region::new(region.to_string()))
             .load()
-            .await
+            .await;
+        match assume_role {
+            None => base,
+            Some(ar) => assume_role::wrap_with_assume_role(base, ar).await,
+        }
     }
 
     #[cfg(target_arch = "wasm32")]
-    async fn build_config(region: &str) -> aws_config::SdkConfig {
+    async fn build_config(
+        region: &str,
+        assume_role: Option<&assume_role::AssumeRoleConfig>,
+    ) -> aws_config::SdkConfig {
         use carina_plugin_sdk::wasi_http::WasiHttpClient;
-        aws_config::defaults(aws_config::BehaviorVersion::latest())
+        let base = aws_config::defaults(aws_config::BehaviorVersion::latest())
             .region(Region::new(region.to_string()))
             .http_client(WasiHttpClient::new())
             .load()
-            .await
+            .await;
+        match assume_role {
+            None => base,
+            Some(ar) => assume_role::wrap_with_assume_role(base, ar).await,
+        }
     }
 }
 

@@ -199,6 +199,7 @@ fn proto_to_core_attribute_type(t: &ProtoAttributeType) -> CoreAttributeType {
         ProtoAttributeType::Int => CoreAttributeType::Int,
         ProtoAttributeType::Float => CoreAttributeType::Float,
         ProtoAttributeType::Bool => CoreAttributeType::Bool,
+        ProtoAttributeType::Duration => CoreAttributeType::Duration,
         ProtoAttributeType::StringEnum {
             name,
             values,
@@ -322,8 +323,13 @@ fn core_to_proto_attribute_type(t: &CoreAttributeType) -> ProtoAttributeType {
         CoreAttributeType::Int => ProtoAttributeType::Int,
         CoreAttributeType::Float => ProtoAttributeType::Float,
         CoreAttributeType::Bool => ProtoAttributeType::Bool,
-        // Duration isn't representable on the WIT wire today; map to Int seconds.
-        CoreAttributeType::Duration => ProtoAttributeType::Int,
+        // `Duration` is now a first-class proto variant (carina#3166) so
+        // providers can declare Duration-typed schema attributes and the
+        // host's type checker accepts DSL literals like `30min` / `1h` /
+        // `15s` against them. The WIT *value* boundary is still
+        // integer-seconds (see carina-plugin-host wasm_convert.rs:60-76),
+        // but the *type* boundary now round-trips faithfully.
+        CoreAttributeType::Duration => ProtoAttributeType::Duration,
         CoreAttributeType::StringEnum {
             name,
             values,
