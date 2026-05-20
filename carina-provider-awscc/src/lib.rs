@@ -131,13 +131,22 @@ impl ProviderFactory for AwsccProviderFactory {
                 ordered: false,
             },
         );
+        types.insert("assume_role".to_string(), assume_role_attribute_type());
         types
     }
 
-    fn validate_config(&self, _attributes: &IndexMap<String, Value>) -> Result<(), String> {
-        // Region format/value validation is handled by the host via
-        // `provider_config_attribute_types`. No provider-specific semantic
-        // checks are needed beyond that for now.
+    fn validate_config(&self, attributes: &IndexMap<String, Value>) -> Result<(), String> {
+        // Cross-account guardrail: when `assume_role.role_arn` parses to
+        // an account id that is not in `allowed_account_ids` (when that
+        // list is configured), refuse the configuration. Avoids the
+        // foot-gun of an assume-role silently landing in the wrong AWS
+        // account (awscc#260).
+        use crate::provider::assume_role::{check_cross_account, extract_assume_role};
+        let assume_role = extract_assume_role(attributes.get("assume_role"))?;
+        if let Some(ar) = &assume_role {
+            let allowed = extract_string_list_attr(attributes, "allowed_account_ids");
+            check_cross_account(&ar.role_arn, &allowed)?;
+        }
         Ok(())
     }
 
@@ -220,21 +229,58 @@ impl ProviderFactory for AwsccProviderFactory {
 /// `provider_config_attribute_types` — the host enforces the declared
 /// types before reaching the provider, so this is a defensive parse.
 pub(crate) fn extract_provider_config(attributes: &IndexMap<String, Value>) -> AwsccProviderConfig {
-    fn extract_string_list(attributes: &IndexMap<String, Value>, key: &str) -> Vec<String> {
-        match attributes.get(key) {
-            Some(Value::Concrete(ConcreteValue::List(items))) => items
-                .iter()
-                .filter_map(|v| match v {
-                    Value::Concrete(ConcreteValue::String(s)) => Some(s.clone()),
-                    _ => None,
-                })
-                .collect(),
-            _ => Vec::new(),
-        }
-    }
+    // `assume_role` is parsed here without surfacing parse errors —
+    // `validate_config` runs first on the host side and would have
+    // rejected a malformed block before reaching this code path. Fall
+    // back to `None` defensively if it somehow slips through.
+    let assume_role =
+        crate::provider::assume_role::extract_assume_role(attributes.get("assume_role"))
+            .ok()
+            .flatten();
     AwsccProviderConfig {
-        allowed_account_ids: extract_string_list(attributes, "allowed_account_ids"),
-        forbidden_account_ids: extract_string_list(attributes, "forbidden_account_ids"),
+        allowed_account_ids: extract_string_list_attr(attributes, "allowed_account_ids"),
+        forbidden_account_ids: extract_string_list_attr(attributes, "forbidden_account_ids"),
+        assume_role,
+    }
+}
+
+/// Schema for the provider-level `assume_role` block. Mirrors the
+/// Terraform AWS provider's `assume_role` (MVP field set: `role_arn`,
+/// `session_name`, `external_id`, `duration`). When present, the
+/// provider chains an `sts:AssumeRole` call on top of the ambient
+/// credential chain (awscc#260).
+fn assume_role_attribute_type() -> carina_core::schema::AttributeType {
+    use carina_core::schema::{AttributeType, StructField};
+    AttributeType::Struct {
+        name: "AssumeRole".to_string(),
+        fields: vec![
+            StructField::new("role_arn", AttributeType::String)
+                .required()
+                .with_description("IAM role ARN to assume."),
+            StructField::new("session_name", AttributeType::String)
+                .with_description("STS session name to associate with the assumed-role session."),
+            StructField::new("external_id", AttributeType::String)
+                .with_description("External ID required by the trust policy of the assumed role."),
+            StructField::new("duration", AttributeType::Duration)
+                .with_description("Assumed-role session duration (e.g., 30min, 1h, 15s)."),
+        ],
+    }
+}
+
+/// Extract a `list(string)` provider config attribute. Non-string
+/// elements are dropped silently — the host enforces type before we
+/// see the value here. Used by both `extract_provider_config` and the
+/// cross-account guardrail in `validate_config`.
+fn extract_string_list_attr(attributes: &IndexMap<String, Value>, key: &str) -> Vec<String> {
+    match attributes.get(key) {
+        Some(Value::Concrete(ConcreteValue::List(items))) => items
+            .iter()
+            .filter_map(|v| match v {
+                Value::Concrete(ConcreteValue::String(s)) => Some(s.clone()),
+                _ => None,
+            })
+            .collect(),
+        _ => Vec::new(),
     }
 }
 
@@ -406,6 +452,146 @@ mod tests {
             types.get("forbidden_account_ids"),
             Some(carina_core::schema::AttributeType::List { .. })
         ));
+    }
+
+    #[test]
+    fn provider_config_attribute_types_declares_assume_role_struct() {
+        // The host validates the assume_role block's shape against this
+        // Struct declaration before calling `initialize`. If the
+        // declaration disappears or its required field changes, the
+        // host stops surfacing schema-level errors for malformed
+        // assume_role blocks — this test prevents that regression
+        // (awscc#260).
+        let factory = AwsccProviderFactory;
+        let types = factory.provider_config_attribute_types();
+        let ty = types
+            .get("assume_role")
+            .expect("assume_role must be declared as a provider config attribute");
+        match ty {
+            carina_core::schema::AttributeType::Struct { name, fields } => {
+                assert_eq!(name, "AssumeRole");
+                let role_arn = fields
+                    .iter()
+                    .find(|f| f.name == "role_arn")
+                    .expect("assume_role.role_arn must be declared");
+                assert!(role_arn.required, "role_arn must be required");
+                for opt in ["session_name", "external_id", "duration"] {
+                    let f = fields
+                        .iter()
+                        .find(|f| f.name == opt)
+                        .unwrap_or_else(|| panic!("assume_role.{opt} must be declared"));
+                    assert!(!f.required, "assume_role.{opt} must be optional");
+                }
+            }
+            other => panic!("assume_role must be a Struct, was {other:?}"),
+        }
+    }
+
+    fn list_of(items: &[&str]) -> Value {
+        Value::Concrete(ConcreteValue::List(
+            items
+                .iter()
+                .map(|s| Value::Concrete(ConcreteValue::String((*s).to_string())))
+                .collect(),
+        ))
+    }
+
+    fn map_of(items: &[(&str, Value)]) -> Value {
+        let mut m = IndexMap::new();
+        for (k, v) in items {
+            m.insert((*k).to_string(), v.clone());
+        }
+        Value::Concrete(ConcreteValue::Map(m))
+    }
+
+    #[test]
+    fn validate_config_accepts_assume_role_in_allowed_account() {
+        let factory = AwsccProviderFactory;
+        let mut attrs: IndexMap<String, Value> = IndexMap::new();
+        attrs.insert(
+            "allowed_account_ids".to_string(),
+            list_of(&["412038850359"]),
+        );
+        attrs.insert(
+            "assume_role".to_string(),
+            map_of(&[(
+                "role_arn",
+                Value::Concrete(ConcreteValue::String(
+                    "arn:aws:iam::412038850359:role/delegation".to_string(),
+                )),
+            )]),
+        );
+        factory
+            .validate_config(&attrs)
+            .expect("matching allowed_account_ids must validate");
+    }
+
+    #[test]
+    fn validate_config_rejects_assume_role_outside_allowed_account() {
+        let factory = AwsccProviderFactory;
+        let mut attrs: IndexMap<String, Value> = IndexMap::new();
+        attrs.insert(
+            "allowed_account_ids".to_string(),
+            list_of(&["111111111111"]),
+        );
+        attrs.insert(
+            "assume_role".to_string(),
+            map_of(&[(
+                "role_arn",
+                Value::Concrete(ConcreteValue::String(
+                    "arn:aws:iam::412038850359:role/delegation".to_string(),
+                )),
+            )]),
+        );
+        let err = factory
+            .validate_config(&attrs)
+            .expect_err("cross-account role outside allowed_account_ids must fail");
+        assert!(err.contains("412038850359"), "must name target: {err}");
+        assert!(err.contains("111111111111"), "must name allow list: {err}");
+    }
+
+    #[test]
+    fn validate_config_no_assume_role_is_noop() {
+        let factory = AwsccProviderFactory;
+        let mut attrs: IndexMap<String, Value> = IndexMap::new();
+        attrs.insert(
+            "allowed_account_ids".to_string(),
+            list_of(&["412038850359"]),
+        );
+        factory
+            .validate_config(&attrs)
+            .expect("validate_config without assume_role must be a no-op");
+    }
+
+    #[test]
+    fn extract_provider_config_reads_assume_role() {
+        let mut attrs: IndexMap<String, Value> = IndexMap::new();
+        attrs.insert(
+            "assume_role".to_string(),
+            map_of(&[
+                (
+                    "role_arn",
+                    Value::Concrete(ConcreteValue::String(
+                        "arn:aws:iam::412038850359:role/delegation".to_string(),
+                    )),
+                ),
+                (
+                    "session_name",
+                    Value::Concrete(ConcreteValue::String("carina".to_string())),
+                ),
+                (
+                    "duration",
+                    Value::Concrete(ConcreteValue::Duration(std::time::Duration::from_secs(
+                        1800,
+                    ))),
+                ),
+            ]),
+        );
+        let cfg = extract_provider_config(&attrs);
+        let ar = cfg.assume_role.expect("assume_role must be parsed");
+        assert_eq!(ar.role_arn, "arn:aws:iam::412038850359:role/delegation");
+        assert_eq!(ar.session_name.as_deref(), Some("carina"));
+        assert_eq!(ar.duration, Some(std::time::Duration::from_secs(1800)));
     }
 
     /// carina#3093 acceptance: the *generated* CloudFront Distribution
