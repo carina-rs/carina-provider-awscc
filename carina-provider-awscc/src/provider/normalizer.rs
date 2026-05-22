@@ -6,7 +6,7 @@
 use indexmap::IndexMap;
 use std::collections::HashMap;
 
-use carina_core::resource::{ConcreteValue, Resource, ResourceId, State, Value};
+use carina_core::resource::{ConcreteValue, ManagedResource, ResourceId, State, Value};
 use carina_core::schema::{AttributeType, StructField};
 
 /// Resolve enum identifiers in resources to their fully-qualified DSL format.
@@ -14,7 +14,7 @@ use carina_core::schema::{AttributeType, StructField};
 /// For each awscc resource, looks up the schema and resolves bare identifiers
 /// (e.g., `advanced`) or TypeName.value identifiers (e.g., `Tier.advanced`)
 /// into fully-qualified namespaced strings (e.g., `awscc.ec2.Ipam.Tier.advanced`).
-pub fn resolve_enum_identifiers_impl(resources: &mut [Resource]) {
+pub fn resolve_enum_identifiers_impl(resources: &mut [ManagedResource]) {
     for resource in resources.iter_mut() {
         // Only handle awscc resources
         if resource.id.provider != "awscc" {
@@ -274,7 +274,7 @@ mod tests {
 
     #[test]
     fn test_resolve_enum_identifiers_bare_ident() {
-        let mut resource = Resource::with_provider("awscc", "ec2.Vpc", "test", None);
+        let mut resource = ManagedResource::with_provider("awscc", "ec2.Vpc", "test", None);
         resource.set_attr(
             "instance_tenancy".to_string(),
             Value::Concrete(ConcreteValue::String("dedicated".to_string())),
@@ -294,7 +294,7 @@ mod tests {
 
     #[test]
     fn test_resolve_enum_identifiers_typename_value() {
-        let mut resource = Resource::with_provider("awscc", "ec2.Vpc", "test", None);
+        let mut resource = ManagedResource::with_provider("awscc", "ec2.Vpc", "test", None);
         resource.set_attr(
             "instance_tenancy".to_string(),
             Value::Concrete(ConcreteValue::String(
@@ -316,7 +316,7 @@ mod tests {
 
     #[test]
     fn test_resolve_enum_identifiers_skips_non_awscc() {
-        let mut resource = Resource::with_provider("aws", "s3.Bucket", "test", None);
+        let mut resource = ManagedResource::with_provider("aws", "s3.Bucket", "test", None);
         resource.set_attr(
             "instance_tenancy".to_string(),
             Value::Concrete(ConcreteValue::String("dedicated".to_string())),
@@ -364,7 +364,7 @@ mod tests {
                 ConcreteValue::Map(stmt),
             )])),
         );
-        let mut resource = Resource::with_provider("awscc", "iam.Role", "rd-role", None);
+        let mut resource = ManagedResource::with_provider("awscc", "iam.Role", "rd-role", None);
         resource.set_attr(
             "assume_role_policy_document".to_string(),
             Value::Concrete(ConcreteValue::Map(policy)),
@@ -396,7 +396,7 @@ mod tests {
 
     #[test]
     fn test_resolve_enum_identifiers_hyphen_to_underscore() {
-        let mut resource = Resource::with_provider("awscc", "ec2.FlowLog", "test", None);
+        let mut resource = ManagedResource::with_provider("awscc", "ec2.FlowLog", "test", None);
         resource.set_attr(
             "log_destination_type".to_string(),
             Value::Concrete(ConcreteValue::String("cloud_watch_logs".to_string())),
@@ -418,7 +418,7 @@ mod tests {
 
     #[test]
     fn test_resolve_enum_identifiers_hyphen_string_to_underscore() {
-        let mut resource = Resource::with_provider("awscc", "ec2.FlowLog", "test", None);
+        let mut resource = ManagedResource::with_provider("awscc", "ec2.FlowLog", "test", None);
         resource.set_attr(
             "log_destination_type".to_string(),
             Value::Concrete(ConcreteValue::String("cloud-watch-logs".to_string())),
@@ -555,7 +555,7 @@ mod tests {
     #[test]
     fn test_resolve_enum_identifiers_ip_protocol_all_alias() {
         let mut resource =
-            Resource::with_provider("awscc", "ec2.SecurityGroupEgress", "test", None);
+            ManagedResource::with_provider("awscc", "ec2.SecurityGroupEgress", "test", None);
         resource.set_attr(
             "ip_protocol".to_string(),
             Value::Concrete(ConcreteValue::String("all".to_string())),
@@ -578,7 +578,7 @@ mod tests {
     #[test]
     fn test_resolve_enum_identifiers_ip_protocol_tcp() {
         let mut resource =
-            Resource::with_provider("awscc", "ec2.SecurityGroupEgress", "test", None);
+            ManagedResource::with_provider("awscc", "ec2.SecurityGroupEgress", "test", None);
         resource.set_attr(
             "ip_protocol".to_string(),
             Value::Concrete(ConcreteValue::String("tcp".to_string())),
@@ -718,7 +718,8 @@ mod tests {
 
     #[test]
     fn test_resolve_enum_identifiers_impl_struct_field() {
-        let mut resource = Resource::with_provider("awscc", "ec2.SecurityGroup", "test-sg", None);
+        let mut resource =
+            ManagedResource::with_provider("awscc", "ec2.SecurityGroup", "test-sg", None);
         resource.set_attr(
             "group_description".to_string(),
             Value::Concrete(ConcreteValue::String("test".to_string())),

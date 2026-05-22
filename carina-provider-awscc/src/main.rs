@@ -214,10 +214,10 @@ impl CarinaProvider for AwsccProcessProvider {
         &self,
         resource: &proto::Resource,
     ) -> Result<proto::State, proto::ProviderError> {
-        let core_resource = convert::proto_to_core_resource(resource);
+        let core_data_source = convert::proto_to_core_data_source(resource);
         let result = self
             .runtime
-            .block_on(self.provider().read_data_source(&core_resource));
+            .block_on(self.provider().read_data_source(&core_data_source));
         match result {
             Ok(state) => Ok(convert::core_to_proto_state(&state)),
             Err(e) => Err(Self::convert_error(e)),

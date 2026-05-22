@@ -11,8 +11,9 @@ use carina_core::provider::{
     UpdatePatch as CoreUpdatePatch,
 };
 use carina_core::resource::{
-    ConcreteValue, DeferredValue, Directives as CoreDirectives, Resource as CoreResource,
-    ResourceId as CoreResourceId, State as CoreState, Value as CoreValue,
+    ConcreteValue, DataSource as CoreDataSource, DeferredValue, Directives as CoreDirectives,
+    ManagedResource as CoreResource, ResourceId as CoreResourceId, State as CoreState,
+    Value as CoreValue,
 };
 use carina_core::schema::{
     AttributeSchema as CoreAttributeSchema, AttributeType as CoreAttributeType,
@@ -189,6 +190,28 @@ pub fn proto_to_core_resource(r: &ProtoResource) -> CoreResource {
         provider_instance: None,
     };
     resource
+}
+
+/// Rebuild a [`CoreDataSource`] from the WIT `Resource` record carried
+/// over the plugin boundary. `Provider::read_data_source` consumes a
+/// `DataSource`, so a data-source read request maps to this typed
+/// projection (carina#3181).
+pub fn proto_to_core_data_source(r: &ProtoResource) -> CoreDataSource {
+    let mut data_source =
+        CoreDataSource::with_provider(&r.id.provider, &r.id.resource_type, &r.id.name, None);
+    data_source.attributes = r
+        .attributes
+        .iter()
+        .map(|(k, v)| (k.clone(), proto_to_core_value(v)))
+        .collect();
+    data_source.directives = CoreDirectives {
+        force_delete: r.directives.force_delete,
+        create_before_destroy: r.directives.create_before_destroy,
+        prevent_destroy: r.directives.prevent_destroy,
+        depends_on: Vec::new(),
+        provider_instance: None,
+    };
+    data_source
 }
 
 // -- AttributeType --
