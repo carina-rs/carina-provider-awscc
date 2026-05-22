@@ -31,7 +31,7 @@ awscc.iam.Role {
     policy_document = {
       version = aws.iam.PolicyDocument.Version.2012_10_17
       statement {
-        effect   = 'Allow'
+        effect   = aws.iam.PolicyDocument.Effect.allow
         action   = 'logs:CreateLogGroup'
         resource = '*'
       }
