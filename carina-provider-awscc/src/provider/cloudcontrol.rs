@@ -359,11 +359,11 @@ impl AwsccProvider {
     /// Retryable error types:
     /// - `ThrottlingException`: Request rate exceeded (covers "Throttling", "Rate exceeded")
     /// - `ServiceInternalErrorException`: AWS internal server error
-    /// - `HandlerFailureException`: Resource handler failed (may be transient)
+    /// - `HandlerFailureException`: ManagedResource handler failed (may be transient)
     /// - `HandlerInternalFailureException`: Internal handler error
     /// - `NetworkFailureException`: Network connectivity issues
     /// - `ConcurrentOperationException`: Another operation is in progress
-    /// - `NotStabilizedException`: Resource not yet stabilized
+    /// - `NotStabilizedException`: ManagedResource not yet stabilized
     /// - `SdkError::TimeoutError`: Connection timeout
     /// - `SdkError::DispatchFailure`: HTTP dispatch failure
     pub(crate) fn is_retryable_sdk_error<E, R>(error: &SdkError<E, R>) -> bool

@@ -10,7 +10,7 @@
 //! - `normalizer` - Plan-time enum resolution and state hydration
 //! - `operations` - High-level resource operations (read, create, update, delete)
 //! - `s3` - S3-specific operations (empty bucket for force_delete)
-//! - `special_cases` - Resource-type-specific attribute handling
+//! - `special_cases` - ManagedResource-type-specific attribute handling
 //! - `tags` - Tag conversion between DSL and CloudFormation formats
 //! - `update` - Update patch building and resource property parsing
 
