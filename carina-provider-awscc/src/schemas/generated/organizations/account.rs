@@ -160,7 +160,7 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
         )
         .attribute(
             AttributeSchema::new("account_name", AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: Some("[\\u0020-\\u007E]+".to_string()),
                 length: Some((Some(1), Some(50))),
                 base: Box::new(AttributeType::String),
@@ -203,7 +203,7 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
         )
         .attribute(
             AttributeSchema::new("parent_ids", AttributeType::unordered_list(AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: Some("^(r-[0-9a-z]{4,32})|(ou-[0-9a-z]{4,32}-[a-z0-9]{8,32})$".to_string()),
                 length: None,
                 base: Box::new(AttributeType::String),
@@ -216,7 +216,7 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
         )
         .attribute(
             AttributeSchema::new("paths", AttributeType::list(AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: Some("^(o-[a-z0-9]{10,32}/r-[0-9a-z]{4,32}(/ou-[0-9a-z]{4,32}-[a-z0-9]{8,32})*(/\\d{12})*)/".to_string()),
                 length: None,
                 base: Box::new(AttributeType::String),
@@ -230,7 +230,7 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
         )
         .attribute(
             AttributeSchema::new("role_name", AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: Some("[\\w+=,.@-]{1,64}".to_string()),
                 length: Some((Some(1), Some(64))),
                 base: Box::new(AttributeType::String),

@@ -63,7 +63,7 @@ pub fn route53_hosted_zone_config() -> AwsccSchemaConfig {
                     name: "HostedZoneConfig".to_string(),
                     fields: vec![
                     StructField::new("comment", AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: None,
                 length: Some((None, Some(256))),
                 base: Box::new(AttributeType::String),
@@ -91,7 +91,7 @@ pub fn route53_hosted_zone_config() -> AwsccSchemaConfig {
                     name: "HostedZoneTag".to_string(),
                     fields: vec![
                     StructField::new("key", AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: None,
                 length: Some((None, Some(128))),
                 base: Box::new(AttributeType::String),
@@ -100,7 +100,7 @@ pub fn route53_hosted_zone_config() -> AwsccSchemaConfig {
                 to_dsl: None,
             }).required().with_description("The value of ``Key`` depends on the operation that you want to perform: + *Add a tag to a health check or hosted zone*: ``Key`` is the name that you want to give the new tag. + *Edit a tag*: ``Key`` is the name of the tag that you want to change the ``Value`` for. + *Delete a key*: ``Key`` is the name of the tag you want to remove. + *Give a name to a health check*: Edit the default ``Name`` tag. In the Amazon Route 53 console, the list of your health checks includes a *Name* column that lets you see the name that you've given to each health check.").with_provider_name("Key"),
                     StructField::new("value", AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: None,
                 length: Some((None, Some(256))),
                 base: Box::new(AttributeType::String),
@@ -122,7 +122,7 @@ pub fn route53_hosted_zone_config() -> AwsccSchemaConfig {
         )
         .attribute(
             AttributeSchema::new("name", AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: None,
                 length: Some((None, Some(1024))),
                 base: Box::new(AttributeType::String),

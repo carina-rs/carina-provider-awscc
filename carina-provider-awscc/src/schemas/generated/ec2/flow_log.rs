@@ -113,7 +113,7 @@ pub fn ec2_flow_log_config() -> AwsccSchemaConfig {
         )
         .attribute(
             AttributeSchema::new("max_aggregation_interval", AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: None,
                 length: None,
                 base: Box::new(AttributeType::Int),

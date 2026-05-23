@@ -73,7 +73,7 @@ pub fn ec2_ipam_config() -> AwsccSchemaConfig {
                     name: "IpamOrganizationalUnitExclusion".to_string(),
                     fields: vec![
                     StructField::new("organizations_entity_path", AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: None,
                 length: Some((Some(1), None)),
                 base: Box::new(AttributeType::String),
@@ -131,7 +131,7 @@ pub fn ec2_ipam_config() -> AwsccSchemaConfig {
         )
         .attribute(
             AttributeSchema::new("public_default_scope_id", AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: None,
                 length: Some((None, Some(255))),
                 base: Box::new(AttributeType::String),

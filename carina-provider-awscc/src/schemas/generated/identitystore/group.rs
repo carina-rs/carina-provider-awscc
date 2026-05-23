@@ -65,7 +65,7 @@ pub fn identitystore_group_config() -> AwsccSchemaConfig {
         .with_description("Resource Type definition for AWS::IdentityStore::Group")
         .attribute(
             AttributeSchema::new("description", AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: Some("^[\\p{L}\\p{M}\\p{S}\\p{N}\\p{P}\\t\\n\\r  　]+$".to_string()),
                 length: Some((Some(1), Some(1024))),
                 base: Box::new(AttributeType::String),
@@ -78,7 +78,7 @@ pub fn identitystore_group_config() -> AwsccSchemaConfig {
         )
         .attribute(
             AttributeSchema::new("display_name", AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: Some("^[\\p{L}\\p{M}\\p{S}\\p{N}\\p{P}\\t\\n\\r  ]+$".to_string()),
                 length: Some((Some(1), Some(1024))),
                 base: Box::new(AttributeType::String),

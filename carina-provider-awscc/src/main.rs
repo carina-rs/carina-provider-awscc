@@ -182,12 +182,20 @@ impl CarinaProvider for AwsccProcessProvider {
     // (sourced from `carina-core` schema). The host-side dispatch
     // table this method used to feed has been removed.
 
-    fn validate_custom_type(&self, type_name: &str, value: &str) -> Result<(), String> {
+    fn validate_custom_type(
+        &self,
+        identity: &carina_plugin_sdk::types::TypeIdentity,
+        value: &str,
+    ) -> Result<(), String> {
         use carina_core::parser::ValidatorFn;
         use std::sync::OnceLock;
         static VALIDATORS: OnceLock<HashMap<String, ValidatorFn>> = OnceLock::new();
         let validators = VALIDATORS.get_or_init(schemas::awscc_types::awscc_validators);
-        if let Some(validator) = validators.get(type_name) {
+        // Inner map is still snake-cased; project the kind once at the
+        // boundary. Provider-axis collisions are filtered by the host
+        // before the call reaches us.
+        let key = carina_core::parser::pascal_to_snake(&identity.kind);
+        if let Some(validator) = validators.get(&key) {
             validator(value)
         } else {
             Ok(())

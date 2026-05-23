@@ -604,7 +604,11 @@ mod tests {
             StructField::new(
                 "ip_protocol",
                 AttributeType::Custom {
-                    semantic_name: Some("IpProtocol".to_string()),
+                    identity: Some(carina_core::schema::TypeIdentity::new(
+                        Some("awscc"),
+                        ["ec2", "SecurityGroup"],
+                        "IpProtocol",
+                    )),
                     pattern: None,
                     length: None,
                     base: Box::new(AttributeType::String),
