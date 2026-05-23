@@ -78,7 +78,6 @@ pub fn ec2_ipam_config() -> AwsccSchemaConfig {
                 length: Some((Some(1), None)),
                 base: Box::new(AttributeType::String),
                 validate: legacy_validator(validate_string_length_min_1),
-                namespace: None,
                 to_dsl: None,
             }).required().with_description("An AWS Organizations entity path. Build the path for the OU(s) using AWS Organizations IDs separated by a '/'. Include all child OUs by ending the path with '/*'.").with_provider_name("OrganizationsEntityPath")
                     ],
@@ -106,7 +105,7 @@ pub fn ec2_ipam_config() -> AwsccSchemaConfig {
             AttributeSchema::new("metered_account", AttributeType::StringEnum {
                 name: "MeteredAccount".to_string(),
                 values: vec!["ipam-owner".to_string(), "resource-owner".to_string()],
-                namespace: Some("awscc.ec2.Ipam".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("MeteredAccount", Some("awscc.ec2.Ipam"))),
                 dsl_aliases: vec![("ipam-owner".to_string(), "ipam_owner".to_string()), ("resource-owner".to_string(), "resource_owner".to_string())],
             })
                 .with_description("A metered account is an account that is charged for active IP addresses managed in IPAM")
@@ -136,7 +135,6 @@ pub fn ec2_ipam_config() -> AwsccSchemaConfig {
                 length: Some((None, Some(255))),
                 base: Box::new(AttributeType::String),
                 validate: legacy_validator(validate_string_length_max_255),
-                namespace: None,
                 to_dsl: None,
             })
                 .read_only()
@@ -164,7 +162,7 @@ pub fn ec2_ipam_config() -> AwsccSchemaConfig {
             AttributeSchema::new("tier", AttributeType::StringEnum {
                 name: "Tier".to_string(),
                 values: vec!["free".to_string(), "advanced".to_string()],
-                namespace: Some("awscc.ec2.Ipam".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("Tier", Some("awscc.ec2.Ipam"))),
                 dsl_aliases: vec![("free".to_string(), "free".to_string()), ("advanced".to_string(), "advanced".to_string())],
             })
                 .with_description("The tier of the IPAM.")

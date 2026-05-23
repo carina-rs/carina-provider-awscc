@@ -257,7 +257,6 @@ pub fn aws_resource_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        namespace: None,
         to_dsl: None,
     }
 }
@@ -277,7 +276,6 @@ pub fn vpc_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        namespace: None,
         to_dsl: None,
     }
 }
@@ -297,7 +295,6 @@ pub fn subnet_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        namespace: None,
         to_dsl: None,
     }
 }
@@ -317,7 +314,6 @@ pub fn security_group_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        namespace: None,
         to_dsl: None,
     }
 }
@@ -337,7 +333,6 @@ pub fn internet_gateway_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        namespace: None,
         to_dsl: None,
     }
 }
@@ -357,7 +352,6 @@ pub fn route_table_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        namespace: None,
         to_dsl: None,
     }
 }
@@ -377,7 +371,6 @@ pub fn nat_gateway_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        namespace: None,
         to_dsl: None,
     }
 }
@@ -398,7 +391,6 @@ pub fn vpc_peering_connection_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        namespace: None,
         to_dsl: None,
     }
 }
@@ -418,7 +410,6 @@ pub fn transit_gateway_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        namespace: None,
         to_dsl: None,
     }
 }
@@ -439,7 +430,6 @@ pub fn vpc_cidr_block_association_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        namespace: None,
         to_dsl: None,
     }
 }
@@ -459,7 +449,6 @@ pub fn tgw_route_table_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        namespace: None,
         to_dsl: None,
     }
 }
@@ -479,7 +468,6 @@ pub fn vpn_gateway_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        namespace: None,
         to_dsl: None,
     }
 }
@@ -508,7 +496,6 @@ pub fn egress_only_internet_gateway_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        namespace: None,
         to_dsl: None,
     }
 }
@@ -528,7 +515,6 @@ pub fn vpc_endpoint_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        namespace: None,
         to_dsl: None,
     }
 }
@@ -548,7 +534,6 @@ pub fn instance_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        namespace: None,
         to_dsl: None,
     }
 }
@@ -568,7 +553,6 @@ pub fn network_interface_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        namespace: None,
         to_dsl: None,
     }
 }
@@ -589,7 +573,6 @@ pub fn allocation_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        namespace: None,
         to_dsl: None,
     }
 }
@@ -609,7 +592,6 @@ pub fn prefix_list_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        namespace: None,
         to_dsl: None,
     }
 }
@@ -629,7 +611,6 @@ pub fn carrier_gateway_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        namespace: None,
         to_dsl: None,
     }
 }
@@ -649,7 +630,6 @@ pub fn local_gateway_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        namespace: None,
         to_dsl: None,
     }
 }
@@ -670,7 +650,6 @@ pub fn network_acl_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        namespace: None,
         to_dsl: None,
     }
 }
@@ -691,7 +670,6 @@ pub fn transit_gateway_attachment_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        namespace: None,
         to_dsl: None,
     }
 }
@@ -711,7 +689,6 @@ pub fn flow_log_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        namespace: None,
         to_dsl: None,
     }
 }
@@ -731,7 +708,6 @@ pub fn ipam_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        namespace: None,
         to_dsl: None,
     }
 }
@@ -755,7 +731,6 @@ pub fn subnet_route_table_association_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        namespace: None,
         to_dsl: None,
     }
 }
@@ -775,7 +750,6 @@ pub fn security_group_rule_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        namespace: None,
         to_dsl: None,
     }
 }
@@ -809,7 +783,6 @@ pub fn iam_role_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        namespace: None,
         to_dsl: None,
     }
 }
@@ -845,7 +818,6 @@ pub fn aws_account_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        namespace: None,
         to_dsl: None,
     }
 }
@@ -880,7 +852,6 @@ pub fn sso_principal_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        namespace: None,
         to_dsl: None,
     }
 }
@@ -916,7 +887,6 @@ pub fn sso_instance_arn() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        namespace: None,
         to_dsl: None,
     }
 }
@@ -953,7 +923,6 @@ pub fn identity_store_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        namespace: None,
         to_dsl: None,
     }
 }
@@ -986,7 +955,6 @@ pub fn sso_permission_set_arn() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        namespace: None,
         to_dsl: None,
     }
 }
@@ -1124,7 +1092,6 @@ pub fn arn() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        namespace: None,
         to_dsl: None,
     }
 }
@@ -1145,7 +1112,6 @@ pub fn iam_role_arn() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        namespace: None,
         to_dsl: None,
     }
 }
@@ -1166,7 +1132,6 @@ pub fn iam_policy_arn() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        namespace: None,
         to_dsl: None,
     }
 }
@@ -1187,7 +1152,6 @@ pub fn iam_oidc_provider_arn() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        namespace: None,
         to_dsl: None,
     }
 }
@@ -1208,7 +1172,6 @@ pub fn kms_key_arn() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        namespace: None,
         to_dsl: None,
     }
 }
@@ -1278,7 +1241,6 @@ pub fn kms_key_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        namespace: None,
         to_dsl: None,
     }
 }
@@ -1314,7 +1276,6 @@ pub fn ipam_pool_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        namespace: None,
         to_dsl: None,
     }
 }
@@ -1423,7 +1384,6 @@ pub fn availability_zone_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        namespace: None,
         to_dsl: None,
     }
 }
@@ -1475,7 +1435,10 @@ fn iam_policy_effect() -> AttributeType {
     AttributeType::StringEnum {
         name: "Effect".to_string(),
         values: vec!["Allow".to_string(), "Deny".to_string()],
-        namespace: Some("aws.iam.PolicyDocument".to_string()),
+        identity: Some(carina_core::schema::string_enum_identity(
+            "Effect",
+            Some("aws.iam.PolicyDocument"),
+        )),
         dsl_aliases: vec![
             ("Allow".to_string(), "allow".to_string()),
             ("Deny".to_string(), "deny".to_string()),
@@ -1499,7 +1462,10 @@ fn iam_policy_version() -> AttributeType {
     AttributeType::StringEnum {
         name: "Version".to_string(),
         values: vec!["2012-10-17".to_string(), "2008-10-17".to_string()],
-        namespace: Some("aws.iam.PolicyDocument".to_string()),
+        identity: Some(carina_core::schema::string_enum_identity(
+            "Version",
+            Some("aws.iam.PolicyDocument"),
+        )),
         dsl_aliases: vec![
             ("2012-10-17".to_string(), "2012_10_17".to_string()),
             ("2008-10-17".to_string(), "2008_10_17".to_string()),
@@ -1520,7 +1486,7 @@ fn condition_type() -> AttributeType {
         AttributeType::StringEnum {
             name: "ConditionOperator".to_string(),
             values: operator_values,
-            namespace: None,
+            identity: None,
             dsl_aliases: vec![],
         },
         AttributeType::map(string_or_list_of_strings()),

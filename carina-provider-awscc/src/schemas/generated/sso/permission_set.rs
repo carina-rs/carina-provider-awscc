@@ -203,7 +203,6 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
                 length: Some((Some(1), Some(128))),
                 base: Box::new(AttributeType::String),
                 validate: legacy_validator(validate_string_pattern_9b83f4f8f3673df5_len_1_128),
-                namespace: None,
                 to_dsl: None,
             }).required().with_provider_name("Name"),
                     StructField::new("path", AttributeType::Custom {
@@ -212,13 +211,11 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
                 length: Some((Some(1), Some(512))),
                 base: Box::new(AttributeType::String),
                 validate: legacy_validator(validate_string_pattern_b84fa12576539ca9_len_1_512),
-                namespace: None,
                 to_dsl: None,
             }).with_provider_name("Path")
                     ],
                 })),
                 validate: legacy_validator(validate_list_items_max_20),
-                namespace: None,
                 to_dsl: None,
             })
                 .with_provider_name("CustomerManagedPolicyReferences")
@@ -231,7 +228,6 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
                 length: Some((Some(1), Some(700))),
                 base: Box::new(AttributeType::String),
                 validate: legacy_validator(validate_string_pattern_9863be410e005e12_len_1_700),
-                namespace: None,
                 to_dsl: None,
             })
                 .with_description("The permission set description.")
@@ -256,7 +252,6 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
                 length: None,
                 base: Box::new(AttributeType::unordered_list(AttributeType::String)),
                 validate: legacy_validator(validate_list_items_max_20),
-                namespace: None,
                 to_dsl: None,
             })
                 .with_provider_name("ManagedPolicies"),
@@ -268,7 +263,6 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
                 length: Some((Some(1), Some(32))),
                 base: Box::new(AttributeType::String),
                 validate: legacy_validator(validate_string_pattern_9b83f4f8f3673df5_len_1_32),
-                namespace: None,
                 to_dsl: None,
             })
                 .required()
@@ -295,7 +289,6 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
                 length: Some((Some(1), Some(128))),
                 base: Box::new(AttributeType::String),
                 validate: legacy_validator(validate_string_pattern_9b83f4f8f3673df5_len_1_128),
-                namespace: None,
                 to_dsl: None,
             }).required().with_provider_name("Name"),
                     StructField::new("path", AttributeType::Custom {
@@ -304,7 +297,6 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
                 length: Some((Some(1), Some(512))),
                 base: Box::new(AttributeType::String),
                 validate: legacy_validator(validate_string_pattern_b84fa12576539ca9_len_1_512),
-                namespace: None,
                 to_dsl: None,
             }).with_provider_name("Path")
                     ],
@@ -321,7 +313,6 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
                 length: Some((Some(1), Some(240))),
                 base: Box::new(AttributeType::String),
                 validate: legacy_validator(validate_string_pattern_4d6d630589930649_len_1_240),
-                namespace: None,
                 to_dsl: None,
             })
                 .with_description("The relay state URL that redirect links to any service in the AWS Management Console.")
@@ -334,7 +325,6 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
                 length: Some((Some(1), Some(100))),
                 base: Box::new(AttributeType::String),
                 validate: legacy_validator(validate_string_pattern_1e58d8243b46a2f1_len_1_100),
-                namespace: None,
                 to_dsl: None,
             })
                 .with_description("The length of time that a user can be signed in to an AWS account.")

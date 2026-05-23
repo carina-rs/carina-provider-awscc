@@ -68,7 +68,7 @@ pub fn ec2_subnet_config() -> AwsccSchemaConfig {
                     StructField::new("internet_gateway_block_mode", AttributeType::StringEnum {
                 name: "InternetGatewayBlockMode".to_string(),
                 values: vec!["off".to_string(), "block-bidirectional".to_string(), "block-ingress".to_string()],
-                namespace: Some("awscc.ec2.Subnet".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("InternetGatewayBlockMode", Some("awscc.ec2.Subnet"))),
                 dsl_aliases: vec![("off".to_string(), "off".to_string()), ("block-bidirectional".to_string(), "block_bidirectional".to_string()), ("block-ingress".to_string(), "block_ingress".to_string())],
             }).with_description("The mode of VPC BPA. Options here are off, block-bidirectional, block-ingress ").with_provider_name("InternetGatewayBlockMode")
                     ],
@@ -108,7 +108,6 @@ pub fn ec2_subnet_config() -> AwsccSchemaConfig {
                 length: None,
                 base: Box::new(AttributeType::Int),
                 validate: legacy_validator(validate_ipv4_netmask_length_range),
-                namespace: None,
                 to_dsl: None,
             })
                 .create_only()
@@ -147,7 +146,6 @@ pub fn ec2_subnet_config() -> AwsccSchemaConfig {
                 length: None,
                 base: Box::new(AttributeType::Int),
                 validate: legacy_validator(validate_ipv6_netmask_length_range),
-                namespace: None,
                 to_dsl: None,
             })
                 .create_only()
@@ -181,7 +179,7 @@ pub fn ec2_subnet_config() -> AwsccSchemaConfig {
                     StructField::new("hostname_type", AttributeType::StringEnum {
                 name: "HostnameType".to_string(),
                 values: vec!["ip-name".to_string(), "resource-name".to_string()],
-                namespace: Some("awscc.ec2.Subnet".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("HostnameType", Some("awscc.ec2.Subnet"))),
                 dsl_aliases: vec![("ip-name".to_string(), "ip_name".to_string()), ("resource-name".to_string(), "resource_name".to_string())],
             }).with_provider_name("HostnameType")
                     ],

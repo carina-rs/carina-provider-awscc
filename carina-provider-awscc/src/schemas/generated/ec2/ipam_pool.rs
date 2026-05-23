@@ -40,7 +40,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
             AttributeSchema::new("address_family", AttributeType::StringEnum {
                 name: "AddressFamily".to_string(),
                 values: vec!["IPv4".to_string(), "IPv6".to_string()],
-                namespace: Some("awscc.ec2.IpamPool".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("AddressFamily", Some("awscc.ec2.IpamPool"))),
                 dsl_aliases: vec![("IPv4".to_string(), "ipv4".to_string()), ("IPv6".to_string(), "ipv6".to_string())],
             })
                 .required()
@@ -83,7 +83,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
             AttributeSchema::new("aws_service", AttributeType::StringEnum {
                 name: "AwsService".to_string(),
                 values: vec!["ec2".to_string(), "global-services".to_string()],
-                namespace: Some("awscc.ec2.IpamPool".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("AwsService", Some("awscc.ec2.IpamPool"))),
                 dsl_aliases: vec![("ec2".to_string(), "ec2".to_string()), ("global-services".to_string(), "global_services".to_string())],
             })
                 .create_only()
@@ -123,7 +123,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
             AttributeSchema::new("ipam_scope_type", AttributeType::StringEnum {
                 name: "IpamScopeType".to_string(),
                 values: vec!["public".to_string(), "private".to_string()],
-                namespace: Some("awscc.ec2.IpamPool".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("IpamScopeType", Some("awscc.ec2.IpamPool"))),
                 dsl_aliases: vec![("public".to_string(), "public".to_string()), ("private".to_string(), "private".to_string())],
             })
                 .read_only()
@@ -157,7 +157,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
             AttributeSchema::new("public_ip_source", AttributeType::StringEnum {
                 name: "PublicIpSource".to_string(),
                 values: vec!["byoip".to_string(), "amazon".to_string()],
-                namespace: Some("awscc.ec2.IpamPool".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("PublicIpSource", Some("awscc.ec2.IpamPool"))),
                 dsl_aliases: vec![("byoip".to_string(), "byoip".to_string()), ("amazon".to_string(), "amazon".to_string())],
             })
                 .create_only()
@@ -193,7 +193,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
             AttributeSchema::new("state", AttributeType::StringEnum {
                 name: "State".to_string(),
                 values: vec!["create-in-progress".to_string(), "create-complete".to_string(), "modify-in-progress".to_string(), "modify-complete".to_string(), "delete-in-progress".to_string(), "delete-complete".to_string()],
-                namespace: Some("awscc.ec2.IpamPool".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("State", Some("awscc.ec2.IpamPool"))),
                 dsl_aliases: vec![("create-in-progress".to_string(), "create_in_progress".to_string()), ("create-complete".to_string(), "create_complete".to_string()), ("modify-in-progress".to_string(), "modify_in_progress".to_string()), ("modify-complete".to_string(), "modify_complete".to_string()), ("delete-in-progress".to_string(), "delete_in_progress".to_string()), ("delete-complete".to_string(), "delete_complete".to_string())],
             })
                 .read_only()

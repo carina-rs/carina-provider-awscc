@@ -2102,10 +2102,10 @@ pub fn {}() -> AwsccSchemaConfig {{
                 r#"AttributeType::StringEnum {{
                 name: "{}".to_string(),
                 values: vec![{}],
-                namespace: Some("{}".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("{}", Some("{}"))),
                 dsl_aliases: {},
             }}"#,
-                enum_info.type_name, values_str, namespace, dsl_aliases_code
+                enum_info.type_name, values_str, enum_info.type_name, namespace, dsl_aliases_code
             );
             // Wrap in List if the property is an array type
             let is_array = prop
@@ -2727,13 +2727,17 @@ fn generate_struct_type(
                         r#"AttributeType::StringEnum {{
                 name: "{}".to_string(),
                 values: vec![{}],
-                namespace: Some("{}".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("{}", Some("{}"))),
                 dsl_aliases: {},
             }}"#,
-                        enum_info.type_name, values_str, namespace, dsl_aliases_code
+                        enum_info.type_name,
+                        values_str,
+                        enum_info.type_name,
+                        namespace,
+                        dsl_aliases_code
                     )
                 } else {
-                    // Fallback: emit StringEnum with namespace even when not in the
+                    // Fallback: emit StringEnum with identity even when not in the
                     // pre-scanned enums map (e.g., nested struct fields that were
                     // skipped during scanning due to snake_case name conflicts).
                     let prop_aliases = aliases.get(field_name.as_str());
@@ -2748,10 +2752,14 @@ fn generate_struct_type(
                         r#"AttributeType::StringEnum {{
                 name: "{}".to_string(),
                 values: vec![{}],
-                namespace: Some("{}".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("{}", Some("{}"))),
                 dsl_aliases: {},
             }}"#,
-                        local_enum_info.type_name, values_str, namespace, dsl_aliases_code
+                        local_enum_info.type_name,
+                        values_str,
+                        local_enum_info.type_name,
+                        namespace,
+                        dsl_aliases_code
                     )
                 };
                 // Wrap in List if the original field type was a List
@@ -4158,7 +4166,6 @@ fn cfn_type_to_carina_type_with_enum(
                 length: {},
                 base: Box::new(AttributeType::String),
                 validate: legacy_validator({}),
-                namespace: None,
                 to_dsl: None,
             }}"#,
                             pattern_expr, length_expr, validate_fn
@@ -4197,7 +4204,6 @@ fn cfn_type_to_carina_type_with_enum(
                 length: None,
                 base: Box::new(AttributeType::Int),
                 validate: legacy_validator({}),
-                namespace: None,
                 to_dsl: None,
             }}"#,
                     validate_fn
@@ -4291,7 +4297,6 @@ fn cfn_type_to_carina_type_with_enum(
                 length: {},
                 base: Box::new(AttributeType::String),
                 validate: legacy_validator({}),
-                namespace: None,
                 to_dsl: None,
             }}"#,
                         pattern_expr, length_expr, validate_fn
@@ -4329,7 +4334,6 @@ fn cfn_type_to_carina_type_with_enum(
                 length: {},
                 base: Box::new(AttributeType::String),
                 validate: legacy_validator({}),
-                namespace: None,
                 to_dsl: None,
             }}"#,
                         pattern_expr, length_expr, validate_fn
@@ -4347,7 +4351,6 @@ fn cfn_type_to_carina_type_with_enum(
                 length: None,
                 base: Box::new(AttributeType::String),
                 validate: noop_validator(),
-                namespace: None,
                 to_dsl: None,
             }"#
                     .to_string(),
@@ -4368,7 +4371,6 @@ fn cfn_type_to_carina_type_with_enum(
                 length: {},
                 base: Box::new(AttributeType::String),
                 validate: legacy_validator({}),
-                namespace: None,
                 to_dsl: {},
             }}"#,
                         length_expr, validate_fn, to_dsl
@@ -4394,7 +4396,6 @@ fn cfn_type_to_carina_type_with_enum(
                 length: None,
                 base: Box::new(AttributeType::Int),
                 validate: legacy_validator({}),
-                namespace: None,
                 to_dsl: None,
             }}"#,
                         validate_fn
@@ -4412,7 +4413,6 @@ fn cfn_type_to_carina_type_with_enum(
                 length: None,
                 base: Box::new(AttributeType::Int),
                 validate: legacy_validator({}),
-                namespace: None,
                 to_dsl: None,
             }}"#,
                         validate_fn
@@ -4440,7 +4440,6 @@ fn cfn_type_to_carina_type_with_enum(
                 length: None,
                 base: Box::new(AttributeType::Int),
                 validate: legacy_validator({}),
-                namespace: None,
                 to_dsl: None,
             }}"#,
                         validate_fn
@@ -4456,7 +4455,6 @@ fn cfn_type_to_carina_type_with_enum(
                 length: None,
                 base: Box::new(AttributeType::Int),
                 validate: noop_validator(),
-                namespace: None,
                 to_dsl: None,
             }"#
                     .to_string(),
@@ -4480,7 +4478,6 @@ fn cfn_type_to_carina_type_with_enum(
                 length: None,
                 base: Box::new(AttributeType::Float),
                 validate: legacy_validator({}),
-                namespace: None,
                 to_dsl: None,
             }}"#,
                         validate_fn
@@ -4508,7 +4505,6 @@ fn cfn_type_to_carina_type_with_enum(
                 length: None,
                 base: Box::new(AttributeType::Float),
                 validate: legacy_validator({}),
-                namespace: None,
                 to_dsl: None,
             }}"#,
                         validate_fn
@@ -4524,7 +4520,6 @@ fn cfn_type_to_carina_type_with_enum(
                 length: None,
                 base: Box::new(AttributeType::Float),
                 validate: noop_validator(),
-                namespace: None,
                 to_dsl: None,
             }"#
                     .to_string(),
@@ -4585,7 +4580,6 @@ fn cfn_type_to_carina_type_with_enum(
                 length: None,
                 base: Box::new({}),
                 validate: legacy_validator({}),
-                namespace: None,
                 to_dsl: None,
             }}"#,
                         list_type, validate_fn
@@ -7736,10 +7730,11 @@ mod tests {
             generated.contains("AttributeType::StringEnum {"),
             "struct field enums should be emitted as StringEnum: {generated}"
         );
-        // Should have namespace
+        // Should have a structured identity (post-#3222, `namespace`
+        // was replaced by `identity: Some(string_enum_identity(...))`).
         assert!(
-            generated.contains("namespace: Some("),
-            "StringEnum should include namespace: {generated}"
+            generated.contains("identity: Some(carina_core::schema::string_enum_identity("),
+            "StringEnum should include structured identity: {generated}"
         );
         // Should handle hyphens in values via dsl_aliases. Per #199 / D7,
         // the generated alias table maps each canonical value to its

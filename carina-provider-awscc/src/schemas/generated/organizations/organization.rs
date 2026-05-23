@@ -92,7 +92,7 @@ pub fn organizations_organization_config() -> AwsccSchemaConfig {
             AttributeSchema::new("feature_set", AttributeType::StringEnum {
                 name: "FeatureSet".to_string(),
                 values: vec!["ALL".to_string(), "CONSOLIDATED_BILLING".to_string()],
-                namespace: Some("awscc.organizations.Organization".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("FeatureSet", Some("awscc.organizations.Organization"))),
                 dsl_aliases: vec![("ALL".to_string(), "all".to_string()), ("CONSOLIDATED_BILLING".to_string(), "consolidated_billing".to_string())],
             })
                 .with_description("Specifies the feature set supported by the new organization. Each feature set supports different levels of functionality.")
@@ -106,7 +106,6 @@ pub fn organizations_organization_config() -> AwsccSchemaConfig {
                 length: None,
                 base: Box::new(AttributeType::String),
                 validate: legacy_validator(validate_string_pattern_2fd01fd52b67fc75),
-                namespace: None,
                 to_dsl: None,
             })
                 .read_only()
@@ -126,7 +125,6 @@ pub fn organizations_organization_config() -> AwsccSchemaConfig {
                 length: Some((Some(6), Some(64))),
                 base: Box::new(AttributeType::String),
                 validate: legacy_validator(validate_string_pattern_ec4d9bee0dcd262b_len_6_64),
-                namespace: None,
                 to_dsl: None,
             })
                 .read_only()
@@ -146,7 +144,6 @@ pub fn organizations_organization_config() -> AwsccSchemaConfig {
                 length: Some((None, Some(64))),
                 base: Box::new(AttributeType::String),
                 validate: legacy_validator(validate_string_pattern_0cb01cbc89d38ae3_len_max_64),
-                namespace: None,
                 to_dsl: None,
             })
                 .read_only()

@@ -66,7 +66,7 @@ pub fn ec2_flow_log_config() -> AwsccSchemaConfig {
                     StructField::new("file_format", AttributeType::StringEnum {
                 name: "FileFormat".to_string(),
                 values: vec!["plain-text".to_string(), "parquet".to_string()],
-                namespace: Some("awscc.ec2.FlowLog".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("FileFormat", Some("awscc.ec2.FlowLog"))),
                 dsl_aliases: vec![("plain-text".to_string(), "plain_text".to_string()), ("parquet".to_string(), "parquet".to_string())],
             }).required().with_provider_name("FileFormat"),
                     StructField::new("hive_compatible_partitions", AttributeType::Bool).required().with_provider_name("HiveCompatiblePartitions"),
@@ -92,7 +92,7 @@ pub fn ec2_flow_log_config() -> AwsccSchemaConfig {
             AttributeSchema::new("log_destination_type", AttributeType::StringEnum {
                 name: "LogDestinationType".to_string(),
                 values: vec!["cloud-watch-logs".to_string(), "s3".to_string(), "kinesis-data-firehose".to_string()],
-                namespace: Some("awscc.ec2.FlowLog".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("LogDestinationType", Some("awscc.ec2.FlowLog"))),
                 dsl_aliases: vec![("cloud-watch-logs".to_string(), "cloud_watch_logs".to_string()), ("s3".to_string(), "s3".to_string()), ("kinesis-data-firehose".to_string(), "kinesis_data_firehose".to_string())],
             })
                 .create_only()
@@ -118,7 +118,6 @@ pub fn ec2_flow_log_config() -> AwsccSchemaConfig {
                 length: None,
                 base: Box::new(AttributeType::Int),
                 validate: legacy_validator(validate_max_aggregation_interval_int_enum),
-                namespace: None,
                 to_dsl: None,
             })
                 .create_only()
@@ -136,7 +135,7 @@ pub fn ec2_flow_log_config() -> AwsccSchemaConfig {
             AttributeSchema::new("resource_type", AttributeType::StringEnum {
                 name: "ResourceType".to_string(),
                 values: vec!["NetworkInterface".to_string(), "Subnet".to_string(), "VPC".to_string(), "TransitGateway".to_string(), "TransitGatewayAttachment".to_string(), "RegionalNatGateway".to_string()],
-                namespace: Some("awscc.ec2.FlowLog".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("ResourceType", Some("awscc.ec2.FlowLog"))),
                 dsl_aliases: vec![("NetworkInterface".to_string(), "network_interface".to_string()), ("Subnet".to_string(), "subnet".to_string()), ("VPC".to_string(), "vpc".to_string()), ("TransitGateway".to_string(), "transit_gateway".to_string()), ("TransitGatewayAttachment".to_string(), "transit_gateway_attachment".to_string()), ("RegionalNatGateway".to_string(), "regional_nat_gateway".to_string())],
             })
                 .required()
@@ -153,7 +152,7 @@ pub fn ec2_flow_log_config() -> AwsccSchemaConfig {
             AttributeSchema::new("traffic_type", AttributeType::StringEnum {
                 name: "TrafficType".to_string(),
                 values: vec!["ACCEPT".to_string(), "ALL".to_string(), "REJECT".to_string()],
-                namespace: Some("awscc.ec2.FlowLog".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("TrafficType", Some("awscc.ec2.FlowLog"))),
                 dsl_aliases: vec![("ACCEPT".to_string(), "accept".to_string()), ("ALL".to_string(), "all".to_string()), ("REJECT".to_string(), "reject".to_string())],
             })
                 .create_only()

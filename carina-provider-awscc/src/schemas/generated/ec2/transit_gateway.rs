@@ -59,7 +59,6 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
                         length: None,
                         base: Box::new(AttributeType::Int),
                         validate: legacy_validator(validate_amazon_side_asn_range),
-                        namespace: None,
                         to_dsl: None,
                     },
                 )
@@ -79,7 +78,10 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
                     AttributeType::StringEnum {
                         name: "AutoAcceptSharedAttachments".to_string(),
                         values: vec!["enable".to_string(), "disable".to_string()],
-                        namespace: Some("awscc.ec2.TransitGateway".to_string()),
+                        identity: Some(carina_core::schema::string_enum_identity(
+                            "AutoAcceptSharedAttachments",
+                            Some("awscc.ec2.TransitGateway"),
+                        )),
                         dsl_aliases: vec![
                             ("enable".to_string(), "enable".to_string()),
                             ("disable".to_string(), "disable".to_string()),
@@ -94,7 +96,10 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
                     AttributeType::StringEnum {
                         name: "DefaultRouteTableAssociation".to_string(),
                         values: vec!["enable".to_string(), "disable".to_string()],
-                        namespace: Some("awscc.ec2.TransitGateway".to_string()),
+                        identity: Some(carina_core::schema::string_enum_identity(
+                            "DefaultRouteTableAssociation",
+                            Some("awscc.ec2.TransitGateway"),
+                        )),
                         dsl_aliases: vec![
                             ("enable".to_string(), "enable".to_string()),
                             ("disable".to_string(), "disable".to_string()),
@@ -109,7 +114,10 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
                     AttributeType::StringEnum {
                         name: "DefaultRouteTablePropagation".to_string(),
                         values: vec!["enable".to_string(), "disable".to_string()],
-                        namespace: Some("awscc.ec2.TransitGateway".to_string()),
+                        identity: Some(carina_core::schema::string_enum_identity(
+                            "DefaultRouteTablePropagation",
+                            Some("awscc.ec2.TransitGateway"),
+                        )),
                         dsl_aliases: vec![
                             ("enable".to_string(), "enable".to_string()),
                             ("disable".to_string(), "disable".to_string()),
@@ -128,7 +136,10 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
                     AttributeType::StringEnum {
                         name: "DnsSupport".to_string(),
                         values: vec!["enable".to_string(), "disable".to_string()],
-                        namespace: Some("awscc.ec2.TransitGateway".to_string()),
+                        identity: Some(carina_core::schema::string_enum_identity(
+                            "DnsSupport",
+                            Some("awscc.ec2.TransitGateway"),
+                        )),
                         dsl_aliases: vec![
                             ("enable".to_string(), "enable".to_string()),
                             ("disable".to_string(), "disable".to_string()),
@@ -143,7 +154,10 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
                     AttributeType::StringEnum {
                         name: "EncryptionSupport".to_string(),
                         values: vec!["disable".to_string(), "enable".to_string()],
-                        namespace: Some("awscc.ec2.TransitGateway".to_string()),
+                        identity: Some(carina_core::schema::string_enum_identity(
+                            "EncryptionSupport",
+                            Some("awscc.ec2.TransitGateway"),
+                        )),
                         dsl_aliases: vec![
                             ("disable".to_string(), "disable".to_string()),
                             ("enable".to_string(), "enable".to_string()),
@@ -159,7 +173,10 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
                     AttributeType::StringEnum {
                         name: "EncryptionSupportState".to_string(),
                         values: vec!["disable".to_string(), "enable".to_string()],
-                        namespace: Some("awscc.ec2.TransitGateway".to_string()),
+                        identity: Some(carina_core::schema::string_enum_identity(
+                            "EncryptionSupportState",
+                            Some("awscc.ec2.TransitGateway"),
+                        )),
                         dsl_aliases: vec![
                             ("disable".to_string(), "disable".to_string()),
                             ("enable".to_string(), "enable".to_string()),
@@ -180,7 +197,10 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
                     AttributeType::StringEnum {
                         name: "MulticastSupport".to_string(),
                         values: vec!["enable".to_string(), "disable".to_string()],
-                        namespace: Some("awscc.ec2.TransitGateway".to_string()),
+                        identity: Some(carina_core::schema::string_enum_identity(
+                            "MulticastSupport",
+                            Some("awscc.ec2.TransitGateway"),
+                        )),
                         dsl_aliases: vec![
                             ("enable".to_string(), "enable".to_string()),
                             ("disable".to_string(), "disable".to_string()),
@@ -203,7 +223,10 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
                     AttributeType::StringEnum {
                         name: "SecurityGroupReferencingSupport".to_string(),
                         values: vec!["enable".to_string(), "disable".to_string()],
-                        namespace: Some("awscc.ec2.TransitGateway".to_string()),
+                        identity: Some(carina_core::schema::string_enum_identity(
+                            "SecurityGroupReferencingSupport",
+                            Some("awscc.ec2.TransitGateway"),
+                        )),
                         dsl_aliases: vec![
                             ("enable".to_string(), "enable".to_string()),
                             ("disable".to_string(), "disable".to_string()),
@@ -231,7 +254,10 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
                     AttributeType::StringEnum {
                         name: "VpnEcmpSupport".to_string(),
                         values: vec!["enable".to_string(), "disable".to_string()],
-                        namespace: Some("awscc.ec2.TransitGateway".to_string()),
+                        identity: Some(carina_core::schema::string_enum_identity(
+                            "VpnEcmpSupport",
+                            Some("awscc.ec2.TransitGateway"),
+                        )),
                         dsl_aliases: vec![
                             ("enable".to_string(), "enable".to_string()),
                             ("disable".to_string(), "disable".to_string()),

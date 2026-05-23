@@ -239,7 +239,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
             AttributeSchema::new("abac_status", AttributeType::StringEnum {
                 name: "AbacStatus".to_string(),
                 values: vec!["Enabled".to_string(), "Disabled".to_string()],
-                namespace: Some("awscc.s3.Bucket".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("AbacStatus", Some("awscc.s3.Bucket"))),
                 dsl_aliases: vec![("Enabled".to_string(), "enabled".to_string()), ("Disabled".to_string(), "disabled".to_string())],
             })
                 .with_description("The ABAC status of the general purpose bucket. When ABAC is enabled for the general purpose bucket, you can use tags to manage access to the general purpose buckets as well as for cost tracking purposes. When ABAC is disabled for the general purpose buckets, you can only use tags for cost tracking purposes. For more information, see [Using tags with S3 general purpose buckets](https://docs.aws.amazon.com/AmazonS3/latest/userguide/buckets-tagging.html).")
@@ -252,7 +252,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     StructField::new("acceleration_status", AttributeType::StringEnum {
                 name: "AccelerationStatus".to_string(),
                 values: vec!["Enabled".to_string(), "Suspended".to_string()],
-                namespace: Some("awscc.s3.Bucket".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("AccelerationStatus", Some("awscc.s3.Bucket"))),
                 dsl_aliases: vec![("Enabled".to_string(), "enabled".to_string()), ("Suspended".to_string(), "suspended".to_string())],
             }).required().with_description("Specifies the transfer acceleration status of the bucket.").with_provider_name("AccelerationStatus")
                     ],
@@ -264,7 +264,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
             AttributeSchema::new("access_control", AttributeType::StringEnum {
                 name: "AccessControl".to_string(),
                 values: vec!["AuthenticatedRead".to_string(), "AwsExecRead".to_string(), "BucketOwnerFullControl".to_string(), "BucketOwnerRead".to_string(), "LogDeliveryWrite".to_string(), "Private".to_string(), "PublicRead".to_string(), "PublicReadWrite".to_string()],
-                namespace: Some("awscc.s3.Bucket".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("AccessControl", Some("awscc.s3.Bucket"))),
                 dsl_aliases: vec![("AuthenticatedRead".to_string(), "authenticated_read".to_string()), ("AwsExecRead".to_string(), "aws_exec_read".to_string()), ("BucketOwnerFullControl".to_string(), "bucket_owner_full_control".to_string()), ("BucketOwnerRead".to_string(), "bucket_owner_read".to_string()), ("LogDeliveryWrite".to_string(), "log_delivery_write".to_string()), ("Private".to_string(), "private".to_string()), ("PublicRead".to_string(), "public_read".to_string()), ("PublicReadWrite".to_string(), "public_read_write".to_string())],
             })
                 .write_only()
@@ -291,7 +291,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     StructField::new("format", AttributeType::StringEnum {
                 name: "Format".to_string(),
                 values: vec!["CSV".to_string(), "ORC".to_string(), "Parquet".to_string()],
-                namespace: Some("awscc.s3.Bucket".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("Format", Some("awscc.s3.Bucket"))),
                 dsl_aliases: vec![("CSV".to_string(), "csv".to_string()), ("ORC".to_string(), "orc".to_string()), ("Parquet".to_string(), "parquet".to_string())],
             }).required().with_description("Specifies the file format used when exporting data to Amazon S3. *Allowed values*: ``CSV`` | ``ORC`` | ``Parquet``").with_provider_name("Format"),
                     StructField::new("prefix", AttributeType::String).with_description("The prefix to use when exporting data. The prefix is prepended to all results.").with_provider_name("Prefix")
@@ -300,7 +300,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     StructField::new("output_schema_version", AttributeType::StringEnum {
                 name: "OutputSchemaVersion".to_string(),
                 values: vec!["V_1".to_string()],
-                namespace: Some("awscc.s3.Bucket".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("OutputSchemaVersion", Some("awscc.s3.Bucket"))),
                 dsl_aliases: vec![("V_1".to_string(), "v_1".to_string())],
             }).required().with_description("The version of the output schema to use when exporting data. Must be ``V_1``.").with_provider_name("OutputSchemaVersion")
                     ],
@@ -333,7 +333,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     StructField::new("encryption_type", AttributeType::list(AttributeType::StringEnum {
                 name: "EncryptionType".to_string(),
                 values: vec!["NONE".to_string(), "SSE-C".to_string()],
-                namespace: Some("awscc.s3.Bucket".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("EncryptionType", Some("awscc.s3.Bucket"))),
                 dsl_aliases: vec![("NONE".to_string(), "none".to_string()), ("SSE-C".to_string(), "sse_c".to_string())],
             })).with_description("The object encryption type that you want to block or unblock for an Amazon S3 general purpose bucket. Currently, this parameter only supports blocking or unblocking server side encryption with customer-provided keys (SSE-C). For more information about SSE-C, see [Using server-side encryption with customer-provided keys (SSE-C)](https://docs.aws.amazon.com/AmazonS3/latest/userguide/ServerSideEncryptionCustomerKeys.html).").with_provider_name("EncryptionType")
                     ],
@@ -346,7 +346,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     StructField::new("sse_algorithm", AttributeType::StringEnum {
                 name: "ServerSideEncryptionByDefaultSseAlgorithm".to_string(),
                 values: vec!["aws:kms".to_string(), "AES256".to_string(), "aws:kms:dsse".to_string()],
-                namespace: Some("awscc.s3.Bucket".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("ServerSideEncryptionByDefaultSseAlgorithm", Some("awscc.s3.Bucket"))),
                 dsl_aliases: vec![("aws:kms".to_string(), "aws_kms".to_string()), ("AES256".to_string(), "aes256".to_string()), ("aws:kms:dsse".to_string(), "aws_kms_dsse".to_string())],
             }).required().with_description("Server-side encryption algorithm to use for the default encryption. For directory buckets, there are only two supported values for server-side encryption: ``AES256`` and ``aws:kms``.").with_provider_name("SSEAlgorithm")
                     ],
@@ -376,7 +376,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     StructField::new("allowed_methods", AttributeType::list(AttributeType::StringEnum {
                 name: "AllowedMethods".to_string(),
                 values: vec!["GET".to_string(), "PUT".to_string(), "HEAD".to_string(), "POST".to_string(), "DELETE".to_string()],
-                namespace: Some("awscc.s3.Bucket".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("AllowedMethods", Some("awscc.s3.Bucket"))),
                 dsl_aliases: vec![("GET".to_string(), "get".to_string()), ("PUT".to_string(), "put".to_string()), ("HEAD".to_string(), "head".to_string()), ("POST".to_string(), "post".to_string()), ("DELETE".to_string(), "delete".to_string())],
             })).required().with_description("An HTTP method that you allow the origin to run. *Allowed values*: ``GET`` | ``PUT`` | ``HEAD`` | ``POST`` | ``DELETE``").with_provider_name("AllowedMethods"),
                     StructField::new("allowed_origins", AttributeType::list(AttributeType::String)).required().with_description("One or more origins you want customers to be able to access the bucket from.").with_provider_name("AllowedOrigins"),
@@ -387,7 +387,6 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                 length: Some((None, Some(255))),
                 base: Box::new(AttributeType::String),
                 validate: legacy_validator(validate_string_length_max_255),
-                namespace: None,
                 to_dsl: None,
             }).with_description("A unique identifier for this rule. The value must be no more than 255 characters.").with_provider_name("Id"),
                     StructField::new("max_age", AttributeType::Custom {
@@ -396,7 +395,6 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                 length: None,
                 base: Box::new(AttributeType::Int),
                 validate: legacy_validator(validate_max_age_range),
-                namespace: None,
                 to_dsl: None,
             }).with_description("The time in seconds that your browser is to cache the preflight response for the specified resource.").with_provider_name("MaxAge")
                     ],
@@ -428,7 +426,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     StructField::new("status", AttributeType::StringEnum {
                 name: "IntelligentTieringConfigurationStatus".to_string(),
                 values: vec!["Disabled".to_string(), "Enabled".to_string()],
-                namespace: Some("awscc.s3.Bucket".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("IntelligentTieringConfigurationStatus", Some("awscc.s3.Bucket"))),
                 dsl_aliases: vec![("Disabled".to_string(), "disabled".to_string()), ("Enabled".to_string(), "enabled".to_string())],
             }).required().with_description("Specifies the status of the configuration.").with_provider_name("Status"),
                     StructField::new("tag_filters", AttributeType::list(tags_type())).with_description("A container for a key-value pair.").with_provider_name("TagFilters"),
@@ -438,7 +436,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     StructField::new("access_tier", AttributeType::StringEnum {
                 name: "AccessTier".to_string(),
                 values: vec!["ARCHIVE_ACCESS".to_string(), "DEEP_ARCHIVE_ACCESS".to_string()],
-                namespace: Some("awscc.s3.Bucket".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("AccessTier", Some("awscc.s3.Bucket"))),
                 dsl_aliases: vec![("ARCHIVE_ACCESS".to_string(), "archive_access".to_string()), ("DEEP_ARCHIVE_ACCESS".to_string(), "deep_archive_access".to_string())],
             }).required().with_description("S3 Intelligent-Tiering access tier. See [Storage class for automatically optimizing frequently and infrequently accessed objects](https://docs.aws.amazon.com/AmazonS3/latest/dev/storage-class-intro.html#sc-dynamic-data-access) for a list of access tiers in the S3 Intelligent-Tiering storage class.").with_provider_name("AccessTier"),
                     StructField::new("days", AttributeType::Int).required().with_description("The number of consecutive days of no access after which an object will be eligible to be transitioned to the corresponding tier. The minimum number of days specified for Archive Access tier must be at least 90 days and Deep Archive Access tier must be at least 180 days. The maximum can be up to 2 years (730 days).").with_provider_name("Days")
@@ -462,7 +460,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     StructField::new("format", AttributeType::StringEnum {
                 name: "Format".to_string(),
                 values: vec!["CSV".to_string(), "ORC".to_string(), "Parquet".to_string()],
-                namespace: Some("awscc.s3.Bucket".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("Format", Some("awscc.s3.Bucket"))),
                 dsl_aliases: vec![("CSV".to_string(), "csv".to_string()), ("ORC".to_string(), "orc".to_string()), ("Parquet".to_string(), "parquet".to_string())],
             }).required().with_description("Specifies the file format used when exporting data to Amazon S3. *Allowed values*: ``CSV`` | ``ORC`` | ``Parquet``").with_provider_name("Format"),
                     StructField::new("prefix", AttributeType::String).with_description("The prefix to use when exporting data. The prefix is prepended to all results.").with_provider_name("Prefix")
@@ -473,20 +471,20 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     StructField::new("included_object_versions", AttributeType::StringEnum {
                 name: "IncludedObjectVersions".to_string(),
                 values: vec!["All".to_string(), "Current".to_string()],
-                namespace: Some("awscc.s3.Bucket".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("IncludedObjectVersions", Some("awscc.s3.Bucket"))),
                 dsl_aliases: vec![("All".to_string(), "all".to_string()), ("Current".to_string(), "current".to_string())],
             }).required().with_description("Object versions to include in the inventory list. If set to ``All``, the list includes all the object versions, which adds the version-related fields ``VersionId``, ``IsLatest``, and ``DeleteMarker`` to the list. If set to ``Current``, the list does not contain these version-related fields.").with_provider_name("IncludedObjectVersions"),
                     StructField::new("optional_fields", AttributeType::list(AttributeType::StringEnum {
                 name: "OptionalFields".to_string(),
                 values: vec!["Size".to_string(), "LastModifiedDate".to_string(), "StorageClass".to_string(), "ETag".to_string(), "IsMultipartUploaded".to_string(), "ReplicationStatus".to_string(), "EncryptionStatus".to_string(), "ObjectLockRetainUntilDate".to_string(), "ObjectLockMode".to_string(), "ObjectLockLegalHoldStatus".to_string(), "IntelligentTieringAccessTier".to_string(), "BucketKeyStatus".to_string(), "ChecksumAlgorithm".to_string(), "ObjectAccessControlList".to_string(), "ObjectOwner".to_string(), "LifecycleExpirationDate".to_string()],
-                namespace: Some("awscc.s3.Bucket".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("OptionalFields", Some("awscc.s3.Bucket"))),
                 dsl_aliases: vec![("Size".to_string(), "size".to_string()), ("LastModifiedDate".to_string(), "last_modified_date".to_string()), ("StorageClass".to_string(), "storage_class".to_string()), ("ETag".to_string(), "etag".to_string()), ("IsMultipartUploaded".to_string(), "is_multipart_uploaded".to_string()), ("ReplicationStatus".to_string(), "replication_status".to_string()), ("EncryptionStatus".to_string(), "encryption_status".to_string()), ("ObjectLockRetainUntilDate".to_string(), "object_lock_retain_until_date".to_string()), ("ObjectLockMode".to_string(), "object_lock_mode".to_string()), ("ObjectLockLegalHoldStatus".to_string(), "object_lock_legal_hold_status".to_string()), ("IntelligentTieringAccessTier".to_string(), "intelligent_tiering_access_tier".to_string()), ("BucketKeyStatus".to_string(), "bucket_key_status".to_string()), ("ChecksumAlgorithm".to_string(), "checksum_algorithm".to_string()), ("ObjectAccessControlList".to_string(), "object_access_control_list".to_string()), ("ObjectOwner".to_string(), "object_owner".to_string()), ("LifecycleExpirationDate".to_string(), "lifecycle_expiration_date".to_string())],
             })).with_description("Contains the optional fields that are included in the inventory results.").with_provider_name("OptionalFields"),
                     StructField::new("prefix", AttributeType::String).with_description("Specifies the inventory filter prefix.").with_provider_name("Prefix"),
                     StructField::new("schedule_frequency", AttributeType::StringEnum {
                 name: "ScheduleFrequency".to_string(),
                 values: vec!["Daily".to_string(), "Weekly".to_string()],
-                namespace: Some("awscc.s3.Bucket".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("ScheduleFrequency", Some("awscc.s3.Bucket"))),
                 dsl_aliases: vec![("Daily".to_string(), "daily".to_string()), ("Weekly".to_string(), "weekly".to_string())],
             }).required().with_description("Specifies the schedule for generating inventory results.").with_provider_name("ScheduleFrequency")
                     ],
@@ -511,7 +509,6 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                 length: None,
                 base: Box::new(AttributeType::Int),
                 validate: legacy_validator(validate_days_after_initiation_range),
-                namespace: None,
                 to_dsl: None,
             }).required().with_description("Specifies the number of days after which Amazon S3 stops an incomplete multipart upload.").with_provider_name("DaysAfterInitiation")
                     ],
@@ -522,7 +519,6 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                 length: None,
                 base: Box::new(AttributeType::String),
                 validate: legacy_validator(validate_string_pattern_cc806c69dc4cdaf7),
-                namespace: None,
                 to_dsl: None,
             }).with_description("Indicates when objects are deleted from Amazon S3 and Amazon S3 Glacier. The date value must be in ISO 8601 format. The time is always midnight UTC. If you specify an expiration and transition time, you must use the same time unit for both properties (either in days or by date). The expiration time must also be later than the transition time.").with_provider_name("ExpirationDate"),
                     StructField::new("expiration_in_days", AttributeType::Int).with_description("Indicates the number of days after creation when objects are deleted from Amazon S3 and Amazon S3 Glacier. If you specify an expiration and transition time, you must use the same time unit for both properties (either in days or by date). The expiration time must also be later than the transition time.").with_provider_name("ExpirationInDays"),
@@ -533,7 +529,6 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                 length: Some((None, Some(255))),
                 base: Box::new(AttributeType::String),
                 validate: legacy_validator(validate_string_length_max_255),
-                namespace: None,
                 to_dsl: None,
             }).with_description("Unique identifier for the rule. The value can't be longer than 255 characters.").with_provider_name("Id"),
                     StructField::new("noncurrent_version_expiration", AttributeType::Struct {
@@ -551,7 +546,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     StructField::new("storage_class", AttributeType::StringEnum {
                 name: "NoncurrentVersionTransitionStorageClass".to_string(),
                 values: vec!["DEEP_ARCHIVE".to_string(), "GLACIER".to_string(), "GLACIER_IR".to_string(), "INTELLIGENT_TIERING".to_string(), "ONEZONE_IA".to_string(), "STANDARD_IA".to_string()],
-                namespace: Some("awscc.s3.Bucket".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("NoncurrentVersionTransitionStorageClass", Some("awscc.s3.Bucket"))),
                 dsl_aliases: vec![("DEEP_ARCHIVE".to_string(), "deep_archive".to_string()), ("GLACIER".to_string(), "glacier".to_string()), ("GLACIER_IR".to_string(), "glacier_ir".to_string()), ("INTELLIGENT_TIERING".to_string(), "intelligent_tiering".to_string()), ("ONEZONE_IA".to_string(), "onezone_ia".to_string()), ("STANDARD_IA".to_string(), "standard_ia".to_string())],
             }).required().with_description("The class of storage used to store the object.").with_provider_name("StorageClass"),
                     StructField::new("transition_in_days", AttributeType::Int).required().with_description("Specifies the number of days an object is noncurrent before Amazon S3 can perform the associated action. For information about the noncurrent days calculations, see [How Amazon S3 Calculates How Long an Object Has Been Noncurrent](https://docs.aws.amazon.com/AmazonS3/latest/dev/intro-lifecycle-rules.html#non-current-days-calculations) in the *Amazon S3 User Guide*.").with_provider_name("TransitionInDays")
@@ -564,7 +559,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     StructField::new("storage_class", AttributeType::StringEnum {
                 name: "NoncurrentVersionTransitionStorageClass".to_string(),
                 values: vec!["DEEP_ARCHIVE".to_string(), "GLACIER".to_string(), "GLACIER_IR".to_string(), "INTELLIGENT_TIERING".to_string(), "ONEZONE_IA".to_string(), "STANDARD_IA".to_string()],
-                namespace: Some("awscc.s3.Bucket".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("NoncurrentVersionTransitionStorageClass", Some("awscc.s3.Bucket"))),
                 dsl_aliases: vec![("DEEP_ARCHIVE".to_string(), "deep_archive".to_string()), ("GLACIER".to_string(), "glacier".to_string()), ("GLACIER_IR".to_string(), "glacier_ir".to_string()), ("INTELLIGENT_TIERING".to_string(), "intelligent_tiering".to_string()), ("ONEZONE_IA".to_string(), "onezone_ia".to_string()), ("STANDARD_IA".to_string(), "standard_ia".to_string())],
             }).required().with_description("The class of storage used to store the object.").with_provider_name("StorageClass"),
                     StructField::new("transition_in_days", AttributeType::Int).required().with_description("Specifies the number of days an object is noncurrent before Amazon S3 can perform the associated action. For information about the noncurrent days calculations, see [How Amazon S3 Calculates How Long an Object Has Been Noncurrent](https://docs.aws.amazon.com/AmazonS3/latest/dev/intro-lifecycle-rules.html#non-current-days-calculations) in the *Amazon S3 User Guide*.").with_provider_name("TransitionInDays")
@@ -576,7 +571,6 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                 length: Some((None, Some(20))),
                 base: Box::new(AttributeType::String),
                 validate: legacy_validator(validate_string_pattern_3ee03875337c12ab_len_max_20),
-                namespace: None,
                 to_dsl: None,
             }).with_description("Specifies the minimum object size in bytes for this rule to apply to. Objects must be larger than this value in bytes. For more information about size based rules, see [Lifecycle configuration using size-based rules](https://docs.aws.amazon.com/AmazonS3/latest/userguide/lifecycle-configuration-examples.html#lc-size-rules) in the *Amazon S3 User Guide*.").with_provider_name("ObjectSizeGreaterThan"),
                     StructField::new("object_size_less_than", AttributeType::Custom {
@@ -585,14 +579,13 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                 length: Some((None, Some(20))),
                 base: Box::new(AttributeType::String),
                 validate: legacy_validator(validate_string_pattern_3ee03875337c12ab_len_max_20),
-                namespace: None,
                 to_dsl: None,
             }).with_description("Specifies the maximum object size in bytes for this rule to apply to. Objects must be smaller than this value in bytes. For more information about sized based rules, see [Lifecycle configuration using size-based rules](https://docs.aws.amazon.com/AmazonS3/latest/userguide/lifecycle-configuration-examples.html#lc-size-rules) in the *Amazon S3 User Guide*.").with_provider_name("ObjectSizeLessThan"),
                     StructField::new("prefix", AttributeType::String).with_description("Object key prefix that identifies one or more objects to which this rule applies. Replacement must be made for object keys containing special characters (such as carriage returns) when using XML requests. For more information, see [XML related object key constraints](https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html#object-key-xml-related-constraints).").with_provider_name("Prefix"),
                     StructField::new("status", AttributeType::StringEnum {
                 name: "RuleStatus".to_string(),
                 values: vec!["Enabled".to_string(), "Disabled".to_string()],
-                namespace: Some("awscc.s3.Bucket".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("RuleStatus", Some("awscc.s3.Bucket"))),
                 dsl_aliases: vec![("Enabled".to_string(), "enabled".to_string()), ("Disabled".to_string(), "disabled".to_string())],
             }).required().with_description("If ``Enabled``, the rule is currently being applied. If ``Disabled``, the rule is not currently being applied.").with_provider_name("Status"),
                     StructField::new("tag_filters", AttributeType::list(tags_type())).with_description("Tags to use to identify a subset of objects to which the lifecycle rule applies.").with_provider_name("TagFilters"),
@@ -602,7 +595,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     StructField::new("storage_class", AttributeType::StringEnum {
                 name: "TransitionStorageClass".to_string(),
                 values: vec!["DEEP_ARCHIVE".to_string(), "GLACIER".to_string(), "GLACIER_IR".to_string(), "INTELLIGENT_TIERING".to_string(), "ONEZONE_IA".to_string(), "STANDARD_IA".to_string()],
-                namespace: Some("awscc.s3.Bucket".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("TransitionStorageClass", Some("awscc.s3.Bucket"))),
                 dsl_aliases: vec![("DEEP_ARCHIVE".to_string(), "deep_archive".to_string()), ("GLACIER".to_string(), "glacier".to_string()), ("GLACIER_IR".to_string(), "glacier_ir".to_string()), ("INTELLIGENT_TIERING".to_string(), "intelligent_tiering".to_string()), ("ONEZONE_IA".to_string(), "onezone_ia".to_string()), ("STANDARD_IA".to_string(), "standard_ia".to_string())],
             }).required().with_description("The storage class to which you want the object to transition.").with_provider_name("StorageClass"),
                     StructField::new("transition_date", AttributeType::Custom {
@@ -611,7 +604,6 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                 length: None,
                 base: Box::new(AttributeType::String),
                 validate: legacy_validator(validate_string_pattern_cc806c69dc4cdaf7),
-                namespace: None,
                 to_dsl: None,
             }).with_description("Indicates when objects are transitioned to the specified storage class. The date value must be in ISO 8601 format. The time is always midnight UTC.").with_provider_name("TransitionDate"),
                     StructField::new("transition_in_days", AttributeType::Int).with_description("Indicates the number of days after creation when objects are transitioned to the specified storage class. If the specified storage class is ``INTELLIGENT_TIERING``, ``GLACIER_IR``, ``GLACIER``, or ``DEEP_ARCHIVE``, valid values are ``0`` or positive integers. If the specified storage class is ``STANDARD_IA`` or ``ONEZONE_IA``, valid values are positive integers greater than ``30``. Be aware that some storage classes have a minimum storage duration and that you're charged for transitioning objects before their minimum storage duration. For more information, see [Constraints and considerations for transitions](https://docs.aws.amazon.com/AmazonS3/latest/userguide/lifecycle-transition-general-considerations.html#lifecycle-configuration-constraints) in the *Amazon S3 User Guide*.").with_provider_name("TransitionInDays")
@@ -623,7 +615,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     StructField::new("storage_class", AttributeType::StringEnum {
                 name: "TransitionStorageClass".to_string(),
                 values: vec!["DEEP_ARCHIVE".to_string(), "GLACIER".to_string(), "GLACIER_IR".to_string(), "INTELLIGENT_TIERING".to_string(), "ONEZONE_IA".to_string(), "STANDARD_IA".to_string()],
-                namespace: Some("awscc.s3.Bucket".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("TransitionStorageClass", Some("awscc.s3.Bucket"))),
                 dsl_aliases: vec![("DEEP_ARCHIVE".to_string(), "deep_archive".to_string()), ("GLACIER".to_string(), "glacier".to_string()), ("GLACIER_IR".to_string(), "glacier_ir".to_string()), ("INTELLIGENT_TIERING".to_string(), "intelligent_tiering".to_string()), ("ONEZONE_IA".to_string(), "onezone_ia".to_string()), ("STANDARD_IA".to_string(), "standard_ia".to_string())],
             }).required().with_description("The storage class to which you want the object to transition.").with_provider_name("StorageClass"),
                     StructField::new("transition_date", AttributeType::Custom {
@@ -632,7 +624,6 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                 length: None,
                 base: Box::new(AttributeType::String),
                 validate: legacy_validator(validate_string_pattern_cc806c69dc4cdaf7),
-                namespace: None,
                 to_dsl: None,
             }).with_description("Indicates when objects are transitioned to the specified storage class. The date value must be in ISO 8601 format. The time is always midnight UTC.").with_provider_name("TransitionDate"),
                     StructField::new("transition_in_days", AttributeType::Int).with_description("Indicates the number of days after creation when objects are transitioned to the specified storage class. If the specified storage class is ``INTELLIGENT_TIERING``, ``GLACIER_IR``, ``GLACIER``, or ``DEEP_ARCHIVE``, valid values are ``0`` or positive integers. If the specified storage class is ``STANDARD_IA`` or ``ONEZONE_IA``, valid values are positive integers greater than ``30``. Be aware that some storage classes have a minimum storage duration and that you're charged for transitioning objects before their minimum storage duration. For more information, see [Constraints and considerations for transitions](https://docs.aws.amazon.com/AmazonS3/latest/userguide/lifecycle-transition-general-considerations.html#lifecycle-configuration-constraints) in the *Amazon S3 User Guide*.").with_provider_name("TransitionInDays")
@@ -643,7 +634,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     StructField::new("transition_default_minimum_object_size", AttributeType::StringEnum {
                 name: "TransitionDefaultMinimumObjectSize".to_string(),
                 values: vec!["varies_by_storage_class".to_string(), "all_storage_classes_128K".to_string()],
-                namespace: Some("awscc.s3.Bucket".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("TransitionDefaultMinimumObjectSize", Some("awscc.s3.Bucket"))),
                 dsl_aliases: vec![("varies_by_storage_class".to_string(), "varies_by_storage_class".to_string()), ("all_storage_classes_128K".to_string(), "all_storage_classes_128k".to_string())],
             }).with_description("Indicates which default minimum object size behavior is applied to the lifecycle configuration. This parameter applies to general purpose buckets only. It isn't supported for directory bucket lifecycle configurations. + ``all_storage_classes_128K`` - Objects smaller than 128 KB will not transition to any storage class by default. + ``varies_by_storage_class`` - Objects smaller than 128 KB will transition to Glacier Flexible Retrieval or Glacier Deep Archive storage classes. By default, all other storage classes will prevent transitions smaller than 128 KB. To customize the minimum object size for any transition you can add a filter that specifies a custom ``ObjectSizeGreaterThan`` or ``ObjectSizeLessThan`` in the body of your transition rule. Custom filters always take precedence over the default transition behavior.").with_provider_name("TransitionDefaultMinimumObjectSize")
                     ],
@@ -667,7 +658,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     StructField::new("partition_date_source", AttributeType::StringEnum {
                 name: "PartitionDateSource".to_string(),
                 values: vec!["EventTime".to_string(), "DeliveryTime".to_string()],
-                namespace: Some("awscc.s3.Bucket".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("PartitionDateSource", Some("awscc.s3.Bucket"))),
                 dsl_aliases: vec![("EventTime".to_string(), "event_time".to_string()), ("DeliveryTime".to_string(), "delivery_time".to_string())],
             }).with_description("Specifies the partition date source for the partitioned prefix. ``PartitionDateSource`` can be ``EventTime`` or ``DeliveryTime``. For ``DeliveryTime``, the time in the log file names corresponds to the delivery time for the log files. For ``EventTime``, The logs delivered are for a specific day only. The year, month, and day correspond to the day on which the event occurred, and the hour, minutes and seconds are set to 00 in the key.").with_provider_name("PartitionDateSource")
                     ],
@@ -694,7 +685,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     StructField::new("table_bucket_type", AttributeType::StringEnum {
                 name: "TableBucketType".to_string(),
                 values: vec!["aws".to_string(), "customer".to_string()],
-                namespace: Some("awscc.s3.Bucket".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("TableBucketType", Some("awscc.s3.Bucket"))),
                 dsl_aliases: vec![("aws".to_string(), "aws".to_string()), ("customer".to_string(), "customer".to_string())],
             }).required().with_description("The type of the table bucket where the metadata configuration is stored. The ``aws`` value indicates an AWS managed table bucket, and the ``customer`` value indicates a customer-managed table bucket. V2 metadata configurations are stored in AWS managed table buckets, and V1 metadata configurations are stored in customer-managed table buckets.").with_provider_name("TableBucketType"),
                     StructField::new("table_namespace", AttributeType::String).with_description("The namespace in the table bucket where the metadata tables for a metadata configuration are stored.").with_provider_name("TableNamespace")
@@ -706,7 +697,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     StructField::new("configuration_state", AttributeType::StringEnum {
                 name: "ConfigurationState".to_string(),
                 values: vec!["ENABLED".to_string(), "DISABLED".to_string()],
-                namespace: Some("awscc.s3.Bucket".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("ConfigurationState", Some("awscc.s3.Bucket"))),
                 dsl_aliases: vec![("ENABLED".to_string(), "enabled".to_string()), ("DISABLED".to_string(), "disabled".to_string())],
             }).required().with_description("The configuration state of the inventory table, indicating whether the inventory table is enabled or disabled.").with_provider_name("ConfigurationState"),
                     StructField::new("encryption_configuration", AttributeType::Struct {
@@ -716,7 +707,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     StructField::new("sse_algorithm", AttributeType::StringEnum {
                 name: "MetadataTableEncryptionConfigurationSseAlgorithm".to_string(),
                 values: vec!["aws:kms".to_string(), "AES256".to_string()],
-                namespace: Some("awscc.s3.Bucket".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("MetadataTableEncryptionConfigurationSseAlgorithm", Some("awscc.s3.Bucket"))),
                 dsl_aliases: vec![("aws:kms".to_string(), "aws_kms".to_string()), ("AES256".to_string(), "aes256".to_string())],
             }).required().with_description("The encryption type specified for a metadata table. To specify server-side encryption with KMSlong (KMS) keys (SSE-KMS), use the ``aws:kms`` value. To specify server-side encryption with Amazon S3 managed keys (SSE-S3), use the ``AES256`` value.").with_provider_name("SseAlgorithm")
                     ],
@@ -735,7 +726,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     StructField::new("sse_algorithm", AttributeType::StringEnum {
                 name: "MetadataTableEncryptionConfigurationSseAlgorithm".to_string(),
                 values: vec!["aws:kms".to_string(), "AES256".to_string()],
-                namespace: Some("awscc.s3.Bucket".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("MetadataTableEncryptionConfigurationSseAlgorithm", Some("awscc.s3.Bucket"))),
                 dsl_aliases: vec![("aws:kms".to_string(), "aws_kms".to_string()), ("AES256".to_string(), "aes256".to_string())],
             }).required().with_description("The encryption type specified for a metadata table. To specify server-side encryption with KMSlong (KMS) keys (SSE-KMS), use the ``aws:kms`` value. To specify server-side encryption with Amazon S3 managed keys (SSE-S3), use the ``AES256`` value.").with_provider_name("SseAlgorithm")
                     ],
@@ -747,7 +738,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     StructField::new("expiration", AttributeType::StringEnum {
                 name: "Expiration".to_string(),
                 values: vec!["ENABLED".to_string(), "DISABLED".to_string()],
-                namespace: Some("awscc.s3.Bucket".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("Expiration", Some("awscc.s3.Bucket"))),
                 dsl_aliases: vec![("ENABLED".to_string(), "enabled".to_string()), ("DISABLED".to_string(), "disabled".to_string())],
             }).required().with_description("Specifies whether journal table record expiration is enabled or disabled.").with_provider_name("Expiration")
                     ],
@@ -822,7 +813,6 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                 length: Some((None, Some(1024))),
                 base: Box::new(AttributeType::String),
                 validate: legacy_validator(validate_string_length_max_1024),
-                namespace: None,
                 to_dsl: None,
             }).required().with_description("The object key name prefix or suffix identifying one or more objects to which the filtering rule applies. The maximum length is 1,024 characters. Overlapping prefixes and suffixes are not supported. For more information, see [Configuring Event Notifications](https://docs.aws.amazon.com/AmazonS3/latest/dev/NotificationHowTo.html) in the *Amazon S3 User Guide*.").with_provider_name("Name"),
                     StructField::new("value", AttributeType::String).required().with_description("The value that the filter searches for in object key names.").with_provider_name("Value")
@@ -854,7 +844,6 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                 length: Some((None, Some(1024))),
                 base: Box::new(AttributeType::String),
                 validate: legacy_validator(validate_string_length_max_1024),
-                namespace: None,
                 to_dsl: None,
             }).required().with_description("The object key name prefix or suffix identifying one or more objects to which the filtering rule applies. The maximum length is 1,024 characters. Overlapping prefixes and suffixes are not supported. For more information, see [Configuring Event Notifications](https://docs.aws.amazon.com/AmazonS3/latest/dev/NotificationHowTo.html) in the *Amazon S3 User Guide*.").with_provider_name("Name"),
                     StructField::new("value", AttributeType::String).required().with_description("The value that the filter searches for in object key names.").with_provider_name("Value")
@@ -886,7 +875,6 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                 length: Some((None, Some(1024))),
                 base: Box::new(AttributeType::String),
                 validate: legacy_validator(validate_string_length_max_1024),
-                namespace: None,
                 to_dsl: None,
             }).required().with_description("The object key name prefix or suffix identifying one or more objects to which the filtering rule applies. The maximum length is 1,024 characters. Overlapping prefixes and suffixes are not supported. For more information, see [Configuring Event Notifications](https://docs.aws.amazon.com/AmazonS3/latest/dev/NotificationHowTo.html) in the *Amazon S3 User Guide*.").with_provider_name("Name"),
                     StructField::new("value", AttributeType::String).required().with_description("The value that the filter searches for in object key names.").with_provider_name("Value")
@@ -912,7 +900,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     StructField::new("object_lock_enabled", AttributeType::StringEnum {
                 name: "ObjectLockEnabled".to_string(),
                 values: vec!["Enabled".to_string()],
-                namespace: Some("awscc.s3.Bucket".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("ObjectLockEnabled", Some("awscc.s3.Bucket"))),
                 dsl_aliases: vec![("Enabled".to_string(), "enabled".to_string())],
             }).with_description("Indicates whether this bucket has an Object Lock configuration enabled. Enable ``ObjectLockEnabled`` when you apply ``ObjectLockConfiguration`` to a bucket.").with_provider_name("ObjectLockEnabled"),
                     StructField::new("rule", AttributeType::Struct {
@@ -925,7 +913,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     StructField::new("mode", AttributeType::StringEnum {
                 name: "Mode".to_string(),
                 values: vec!["COMPLIANCE".to_string(), "GOVERNANCE".to_string()],
-                namespace: Some("awscc.s3.Bucket".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("Mode", Some("awscc.s3.Bucket"))),
                 dsl_aliases: vec![("COMPLIANCE".to_string(), "compliance".to_string()), ("GOVERNANCE".to_string(), "governance".to_string())],
             }).with_description("The default Object Lock retention mode you want to apply to new objects placed in the specified bucket. If Object Lock is turned on, you must specify ``Mode`` and specify either ``Days`` or ``Years``.").with_provider_name("Mode"),
                     StructField::new("years", AttributeType::Int).with_description("The number of years that you want to specify for the default retention period. If Object Lock is turned on, you must specify ``Mode`` and specify either ``Days`` or ``Years``.").with_provider_name("Years")
@@ -953,7 +941,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     StructField::new("object_ownership", AttributeType::StringEnum {
                 name: "ObjectOwnership".to_string(),
                 values: vec!["ObjectWriter".to_string(), "BucketOwnerPreferred".to_string(), "BucketOwnerEnforced".to_string()],
-                namespace: Some("awscc.s3.Bucket".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("ObjectOwnership", Some("awscc.s3.Bucket"))),
                 dsl_aliases: vec![("ObjectWriter".to_string(), "object_writer".to_string()), ("BucketOwnerPreferred".to_string(), "bucket_owner_preferred".to_string()), ("BucketOwnerEnforced".to_string(), "bucket_owner_enforced".to_string())],
             }).with_description("Specifies an object ownership rule.").with_provider_name("ObjectOwnership")
                     ],
@@ -997,7 +985,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     StructField::new("status", AttributeType::StringEnum {
                 name: "DeleteMarkerReplicationStatus".to_string(),
                 values: vec!["Disabled".to_string(), "Enabled".to_string()],
-                namespace: Some("awscc.s3.Bucket".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("DeleteMarkerReplicationStatus", Some("awscc.s3.Bucket"))),
                 dsl_aliases: vec![("Disabled".to_string(), "disabled".to_string()), ("Enabled".to_string(), "enabled".to_string())],
             }).with_description("Indicates whether to replicate delete markers.").with_provider_name("Status")
                     ],
@@ -1011,7 +999,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     StructField::new("owner", AttributeType::StringEnum {
                 name: "Owner".to_string(),
                 values: vec!["Destination".to_string()],
-                namespace: Some("awscc.s3.Bucket".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("Owner", Some("awscc.s3.Bucket"))),
                 dsl_aliases: vec![("Destination".to_string(), "destination".to_string())],
             }).required().with_description("Specifies the replica ownership. For default and valid values, see [PUT bucket replication](https://docs.aws.amazon.com/AmazonS3/latest/API/RESTBucketPUTreplication.html) in the *Amazon S3 API Reference*.").with_provider_name("Owner")
                     ],
@@ -1036,7 +1024,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     StructField::new("status", AttributeType::StringEnum {
                 name: "MetricsStatus".to_string(),
                 values: vec!["Disabled".to_string(), "Enabled".to_string()],
-                namespace: Some("awscc.s3.Bucket".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("MetricsStatus", Some("awscc.s3.Bucket"))),
                 dsl_aliases: vec![("Disabled".to_string(), "disabled".to_string()), ("Enabled".to_string(), "enabled".to_string())],
             }).required().with_description("Specifies whether the replication metrics are enabled.").with_provider_name("Status")
                     ],
@@ -1047,7 +1035,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     StructField::new("status", AttributeType::StringEnum {
                 name: "ReplicationTimeStatus".to_string(),
                 values: vec!["Disabled".to_string(), "Enabled".to_string()],
-                namespace: Some("awscc.s3.Bucket".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("ReplicationTimeStatus", Some("awscc.s3.Bucket"))),
                 dsl_aliases: vec![("Disabled".to_string(), "disabled".to_string()), ("Enabled".to_string(), "enabled".to_string())],
             }).required().with_description("Specifies whether the replication time is enabled.").with_provider_name("Status"),
                     StructField::new("time", AttributeType::Struct {
@@ -1061,7 +1049,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     StructField::new("storage_class", AttributeType::StringEnum {
                 name: "ReplicationDestinationStorageClass".to_string(),
                 values: vec!["DEEP_ARCHIVE".to_string(), "GLACIER".to_string(), "GLACIER_IR".to_string(), "INTELLIGENT_TIERING".to_string(), "ONEZONE_IA".to_string(), "REDUCED_REDUNDANCY".to_string(), "STANDARD".to_string(), "STANDARD_IA".to_string()],
-                namespace: Some("awscc.s3.Bucket".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("ReplicationDestinationStorageClass", Some("awscc.s3.Bucket"))),
                 dsl_aliases: vec![("DEEP_ARCHIVE".to_string(), "deep_archive".to_string()), ("GLACIER".to_string(), "glacier".to_string()), ("GLACIER_IR".to_string(), "glacier_ir".to_string()), ("INTELLIGENT_TIERING".to_string(), "intelligent_tiering".to_string()), ("ONEZONE_IA".to_string(), "onezone_ia".to_string()), ("REDUCED_REDUNDANCY".to_string(), "reduced_redundancy".to_string()), ("STANDARD".to_string(), "standard".to_string()), ("STANDARD_IA".to_string(), "standard_ia".to_string())],
             }).with_description("The storage class to use when replicating objects, such as S3 Standard or reduced redundancy. By default, Amazon S3 uses the storage class of the source object to create the object replica. For valid values, see the ``StorageClass`` element of the [PUT Bucket replication](https://docs.aws.amazon.com/AmazonS3/latest/API/RESTBucketPUTreplication.html) action in the *Amazon S3 API Reference*. ``FSX_OPENZFS`` is not an accepted value when replicating objects.").with_provider_name("StorageClass")
                     ],
@@ -1086,7 +1074,6 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                 length: Some((None, Some(255))),
                 base: Box::new(AttributeType::String),
                 validate: legacy_validator(validate_string_length_max_255),
-                namespace: None,
                 to_dsl: None,
             }).with_description("A unique identifier for the rule. The maximum value is 255 characters. If you don't specify a value, AWS CloudFormation generates a random ID. When using a V2 replication configuration this property is capitalized as \"ID\".").with_provider_name("Id"),
                     StructField::new("prefix", AttributeType::Custom {
@@ -1095,7 +1082,6 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                 length: Some((None, Some(1024))),
                 base: Box::new(AttributeType::String),
                 validate: legacy_validator(validate_string_length_max_1024),
-                namespace: None,
                 to_dsl: None,
             }).with_description("An object key name prefix that identifies the object or objects to which the rule applies. The maximum prefix length is 1,024 characters. To include all objects in a bucket, specify an empty string. To filter using a V1 replication configuration, add the ``Prefix`` directly as a child element of the ``Rule`` element. Replacement must be made for object keys containing special characters (such as carriage returns) when using XML requests. For more information, see [XML related object key constraints](https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html#object-key-xml-related-constraints).").with_provider_name("Prefix"),
                     StructField::new("priority", AttributeType::Int).with_description("The priority indicates which rule has precedence whenever two or more replication rules conflict. Amazon S3 will attempt to replicate objects according to all replication rules. However, if there are two or more rules with the same destination bucket, then objects will be replicated according to the rule with the highest priority. The higher the number, the higher the priority. For more information, see [Replication](https://docs.aws.amazon.com/AmazonS3/latest/dev/replication.html) in the *Amazon S3 User Guide*.").with_provider_name("Priority"),
@@ -1108,7 +1094,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     StructField::new("status", AttributeType::StringEnum {
                 name: "ReplicaModificationsStatus".to_string(),
                 values: vec!["Enabled".to_string(), "Disabled".to_string()],
-                namespace: Some("awscc.s3.Bucket".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("ReplicaModificationsStatus", Some("awscc.s3.Bucket"))),
                 dsl_aliases: vec![("Enabled".to_string(), "enabled".to_string()), ("Disabled".to_string(), "disabled".to_string())],
             }).required().with_description("Specifies whether Amazon S3 replicates modifications on replicas. *Allowed values*: ``Enabled`` | ``Disabled``").with_provider_name("Status")
                     ],
@@ -1119,7 +1105,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     StructField::new("status", AttributeType::StringEnum {
                 name: "SseKmsEncryptedObjectsStatus".to_string(),
                 values: vec!["Disabled".to_string(), "Enabled".to_string()],
-                namespace: Some("awscc.s3.Bucket".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("SseKmsEncryptedObjectsStatus", Some("awscc.s3.Bucket"))),
                 dsl_aliases: vec![("Disabled".to_string(), "disabled".to_string()), ("Enabled".to_string(), "enabled".to_string())],
             }).required().with_description("Specifies whether Amazon S3 replicates objects created with server-side encryption using an AWS KMS key stored in AWS Key Management Service.").with_provider_name("Status")
                     ],
@@ -1129,7 +1115,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     StructField::new("status", AttributeType::StringEnum {
                 name: "ReplicationRuleStatus".to_string(),
                 values: vec!["Disabled".to_string(), "Enabled".to_string()],
-                namespace: Some("awscc.s3.Bucket".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("ReplicationRuleStatus", Some("awscc.s3.Bucket"))),
                 dsl_aliases: vec![("Disabled".to_string(), "disabled".to_string()), ("Enabled".to_string(), "enabled".to_string())],
             }).required().with_description("Specifies whether the rule is enabled.").with_provider_name("Status")
                     ],
@@ -1152,7 +1138,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     StructField::new("status", AttributeType::StringEnum {
                 name: "VersioningConfigurationStatus".to_string(),
                 values: vec!["Enabled".to_string(), "Suspended".to_string()],
-                namespace: Some("awscc.s3.Bucket".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("VersioningConfigurationStatus", Some("awscc.s3.Bucket"))),
                 dsl_aliases: vec![("Enabled".to_string(), "enabled".to_string()), ("Suspended".to_string(), "suspended".to_string())],
             }).required().with_description("The versioning state of the bucket.").with_provider_name("Status")
                     ],
@@ -1173,7 +1159,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     StructField::new("protocol", AttributeType::StringEnum {
                 name: "Protocol".to_string(),
                 values: vec!["http".to_string(), "https".to_string()],
-                namespace: Some("awscc.s3.Bucket".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("Protocol", Some("awscc.s3.Bucket"))),
                 dsl_aliases: vec![("http".to_string(), "http".to_string()), ("https".to_string(), "https".to_string())],
             }).with_description("Protocol to use when redirecting requests. The default is the protocol that is used in the original request.").with_provider_name("Protocol")
                     ],
@@ -1189,7 +1175,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     StructField::new("protocol", AttributeType::StringEnum {
                 name: "Protocol".to_string(),
                 values: vec!["http".to_string(), "https".to_string()],
-                namespace: Some("awscc.s3.Bucket".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("Protocol", Some("awscc.s3.Bucket"))),
                 dsl_aliases: vec![("http".to_string(), "http".to_string()), ("https".to_string(), "https".to_string())],
             }).with_description("Protocol to use when redirecting requests. The default is the protocol that is used in the original request.").with_provider_name("Protocol"),
                     StructField::new("replace_key_prefix_with", AttributeType::String).with_description("The object key prefix to use in the redirect request. For example, to redirect requests for all pages with prefix ``docs/`` (objects in the ``docs/`` folder) to ``documents/``, you can set a condition block with ``KeyPrefixEquals`` set to ``docs/`` and in the Redirect set ``ReplaceKeyPrefixWith`` to ``/documents``. Not required if one of the siblings is present. Can be present only if ``ReplaceKeyWith`` is not provided. Replacement must be made for object keys containing special characters (such as carriage returns) when using XML requests. For more information, see [XML related object key constraints](https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html#object-key-xml-related-constraints).").with_provider_name("ReplaceKeyPrefixWith"),
@@ -1218,7 +1204,6 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                 length: None,
                 base: Box::new(AttributeType::String),
                 validate: noop_validator(),
-                namespace: None,
                 to_dsl: None,
             })
                 .read_only()

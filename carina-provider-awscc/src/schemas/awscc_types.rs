@@ -143,14 +143,8 @@ pub(crate) fn validate_namespaced_enum(
 /// - AWS string format: "ap-northeast-1"
 /// - Shorthand: ap_northeast_1
 pub fn awscc_region() -> AttributeType {
-    AttributeType::Custom {
-        identity: Some(TypeIdentity::new(
-            Some("awscc"),
-            Vec::<String>::new(),
-            "Region",
-        )),
-        pattern: None,
-        length: None,
+    AttributeType::CustomEnum {
+        identity: TypeIdentity::new(Some("awscc"), Vec::<String>::new(), "Region"),
         base: Box::new(AttributeType::String),
         validate: legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
@@ -171,7 +165,6 @@ pub fn awscc_region() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        namespace: Some("awscc".to_string()),
         to_dsl: Some(|s: &str| s.replace('-', "_")),
     }
 }
@@ -179,14 +172,8 @@ pub fn awscc_region() -> AttributeType {
 /// Availability Zone type (e.g., "us-east-1a", "ap-northeast-1c")
 /// Validates format: region + single letter zone identifier
 pub fn availability_zone() -> AttributeType {
-    AttributeType::Custom {
-        identity: Some(TypeIdentity::new(
-            Some("awscc"),
-            ["AvailabilityZone"],
-            "ZoneName",
-        )),
-        pattern: None,
-        length: None,
+    AttributeType::CustomEnum {
+        identity: TypeIdentity::new(Some("awscc"), ["AvailabilityZone"], "ZoneName"),
         base: Box::new(AttributeType::String),
         validate: legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
@@ -201,7 +188,6 @@ pub fn availability_zone() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        namespace: Some("awscc".to_string()),
         to_dsl: Some(|s: &str| s.replace('-', "_")),
     }
 }
@@ -278,13 +264,15 @@ mod tests {
 
     #[test]
     fn validate_availability_zone_to_dsl() {
+        // Post-#3222: AZ is a CustomEnum (the namespaced shorthand
+        // path), not a structural Custom.
         let t = availability_zone();
-        if let AttributeType::Custom { to_dsl, .. } = &t {
+        if let AttributeType::CustomEnum { to_dsl, .. } = &t {
             let f = to_dsl.unwrap();
             assert_eq!(f("us-east-1a"), "us_east_1a");
             assert_eq!(f("ap-northeast-1c"), "ap_northeast_1c");
         } else {
-            panic!("Expected Custom type");
+            panic!("Expected CustomEnum type");
         }
     }
 

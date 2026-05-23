@@ -91,6 +91,9 @@ impl CarinaProvider for AwsccProcessProvider {
                     .iter()
                     .map(|(code, _)| code.to_string())
                     .collect(),
+                // proto's StringEnum still carries the flat namespace
+                // string for the wire form; only the core form was
+                // restructured in carina#3222.
                 namespace: Some("awscc".to_string()),
                 // Region API spellings carry hyphens (`ap-northeast-1`)
                 // but the DSL spelling uses underscores. Materialize

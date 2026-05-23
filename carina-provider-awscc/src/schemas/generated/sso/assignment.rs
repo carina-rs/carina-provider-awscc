@@ -46,7 +46,10 @@ pub fn sso_assignment_config() -> AwsccSchemaConfig {
                     AttributeType::StringEnum {
                         name: "PrincipalType".to_string(),
                         values: vec!["USER".to_string(), "GROUP".to_string()],
-                        namespace: Some("awscc.sso.Assignment".to_string()),
+                        identity: Some(carina_core::schema::string_enum_identity(
+                            "PrincipalType",
+                            Some("awscc.sso.Assignment"),
+                        )),
                         dsl_aliases: vec![
                             ("USER".to_string(), "user".to_string()),
                             ("GROUP".to_string(), "group".to_string()),
@@ -71,7 +74,10 @@ pub fn sso_assignment_config() -> AwsccSchemaConfig {
                     AttributeType::StringEnum {
                         name: "TargetType".to_string(),
                         values: vec!["AWS_ACCOUNT".to_string()],
-                        namespace: Some("awscc.sso.Assignment".to_string()),
+                        identity: Some(carina_core::schema::string_enum_identity(
+                            "TargetType",
+                            Some("awscc.sso.Assignment"),
+                        )),
                         dsl_aliases: vec![("AWS_ACCOUNT".to_string(), "aws_account".to_string())],
                     },
                 )

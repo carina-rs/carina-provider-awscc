@@ -70,7 +70,6 @@ pub fn identitystore_group_config() -> AwsccSchemaConfig {
                 length: Some((Some(1), Some(1024))),
                 base: Box::new(AttributeType::String),
                 validate: legacy_validator(validate_string_pattern_3e29f1c0497511f3_len_1_1024),
-                namespace: None,
                 to_dsl: None,
             })
                 .with_description("A string containing the description of the group.")
@@ -83,7 +82,6 @@ pub fn identitystore_group_config() -> AwsccSchemaConfig {
                 length: Some((Some(1), Some(1024))),
                 base: Box::new(AttributeType::String),
                 validate: legacy_validator(validate_string_pattern_a301e45ae2f7df12_len_1_1024),
-                namespace: None,
                 to_dsl: None,
             })
                 .required()

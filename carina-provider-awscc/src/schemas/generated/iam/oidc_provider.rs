@@ -83,7 +83,6 @@ pub fn iam_oidc_provider_config() -> AwsccSchemaConfig {
                         length: Some((Some(1), Some(255))),
                         base: Box::new(AttributeType::String),
                         validate: legacy_validator(validate_string_length_1_255),
-                        namespace: None,
                         to_dsl: None,
                     }),
                 )
@@ -105,11 +104,9 @@ pub fn iam_oidc_provider_config() -> AwsccSchemaConfig {
                             validate: legacy_validator(
                                 validate_string_pattern_57ee0c44b504b839_len_40_40,
                             ),
-                            namespace: None,
                             to_dsl: None,
                         })),
                         validate: legacy_validator(validate_list_items_max_5),
-                        namespace: None,
                         to_dsl: None,
                     },
                 )
@@ -124,7 +121,6 @@ pub fn iam_oidc_provider_config() -> AwsccSchemaConfig {
                         length: Some((Some(1), Some(255))),
                         base: Box::new(AttributeType::String),
                         validate: legacy_validator(validate_string_length_1_255),
-                        namespace: None,
                         to_dsl: None,
                     },
                 )

@@ -31,25 +31,25 @@ pub fn ec2_transit_gateway_attachment_config() -> AwsccSchemaConfig {
                     StructField::new("appliance_mode_support", AttributeType::StringEnum {
                 name: "ApplianceModeSupport".to_string(),
                 values: vec!["enable".to_string(), "disable".to_string()],
-                namespace: Some("awscc.ec2.TransitGatewayAttachment".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("ApplianceModeSupport", Some("awscc.ec2.TransitGatewayAttachment"))),
                 dsl_aliases: vec![("enable".to_string(), "enable".to_string()), ("disable".to_string(), "disable".to_string())],
             }).with_description("Indicates whether to enable Ipv6 Support for Vpc Attachment. Valid Values: enable | disable").with_provider_name("ApplianceModeSupport"),
                     StructField::new("dns_support", AttributeType::StringEnum {
                 name: "DnsSupport".to_string(),
                 values: vec!["enable".to_string(), "disable".to_string()],
-                namespace: Some("awscc.ec2.TransitGatewayAttachment".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("DnsSupport", Some("awscc.ec2.TransitGatewayAttachment"))),
                 dsl_aliases: vec![("enable".to_string(), "enable".to_string()), ("disable".to_string(), "disable".to_string())],
             }).with_description("Indicates whether to enable DNS Support for Vpc Attachment. Valid Values: enable | disable").with_provider_name("DnsSupport"),
                     StructField::new("ipv6_support", AttributeType::StringEnum {
                 name: "Ipv6Support".to_string(),
                 values: vec!["enable".to_string(), "disable".to_string()],
-                namespace: Some("awscc.ec2.TransitGatewayAttachment".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("Ipv6Support", Some("awscc.ec2.TransitGatewayAttachment"))),
                 dsl_aliases: vec![("enable".to_string(), "enable".to_string()), ("disable".to_string(), "disable".to_string())],
             }).with_description("Indicates whether to enable Ipv6 Support for Vpc Attachment. Valid Values: enable | disable").with_provider_name("Ipv6Support"),
                     StructField::new("security_group_referencing_support", AttributeType::StringEnum {
                 name: "SecurityGroupReferencingSupport".to_string(),
                 values: vec!["enable".to_string(), "disable".to_string()],
-                namespace: Some("awscc.ec2.TransitGatewayAttachment".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("SecurityGroupReferencingSupport", Some("awscc.ec2.TransitGatewayAttachment"))),
                 dsl_aliases: vec![("enable".to_string(), "enable".to_string()), ("disable".to_string(), "disable".to_string())],
             }).with_description("Indicates whether to enable Security Group referencing support for Vpc Attachment. Valid Values: enable | disable").with_provider_name("SecurityGroupReferencingSupport")
                     ],

@@ -39,7 +39,6 @@ pub fn ec2_vpn_gateway_config() -> AwsccSchemaConfig {
                 length: None,
                 base: Box::new(AttributeType::Int),
                 validate: legacy_validator(validate_amazon_side_asn_range),
-                namespace: None,
                 to_dsl: None,
             })
                 .create_only()
@@ -55,7 +54,7 @@ pub fn ec2_vpn_gateway_config() -> AwsccSchemaConfig {
             AttributeSchema::new("type", AttributeType::StringEnum {
                 name: "Type".to_string(),
                 values: vec!["ipsec.1".to_string()],
-                namespace: Some("awscc.ec2.VpnGateway".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("Type", Some("awscc.ec2.VpnGateway"))),
                 dsl_aliases: vec![("ipsec.1".to_string(), "ipsec_1".to_string())],
             })
                 .required()
