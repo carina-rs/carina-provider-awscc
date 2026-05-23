@@ -65,7 +65,6 @@ pub fn identitystore_group_membership_config() -> AwsccSchemaConfig {
                 length: Some((Some(1), Some(47))),
                 base: Box::new(AttributeType::String),
                 validate: legacy_validator(validate_string_pattern_2a77a2e32f71b5f3_len_1_47),
-                namespace: None,
                 to_dsl: None,
             }).required().with_description("The identifier for a user in the identity store.").with_provider_name("UserId")
                     ],
@@ -82,7 +81,6 @@ pub fn identitystore_group_membership_config() -> AwsccSchemaConfig {
                 length: Some((Some(1), Some(47))),
                 base: Box::new(AttributeType::String),
                 validate: legacy_validator(validate_string_pattern_2a77a2e32f71b5f3_len_1_47),
-                namespace: None,
                 to_dsl: None,
             })
                 .read_only()

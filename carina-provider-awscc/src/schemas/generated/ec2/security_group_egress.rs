@@ -80,7 +80,6 @@ pub fn ec2_security_group_egress_config() -> AwsccSchemaConfig {
                 length: None,
                 base: Box::new(AttributeType::Int),
                 validate: legacy_validator(validate_from_port_range),
-                namespace: None,
                 to_dsl: None,
             })
                 .create_only()
@@ -104,7 +103,7 @@ pub fn ec2_security_group_egress_config() -> AwsccSchemaConfig {
             AttributeSchema::new("ip_protocol", AttributeType::StringEnum {
                 name: "IpProtocol".to_string(),
                 values: vec!["tcp".to_string(), "udp".to_string(), "icmp".to_string(), "icmpv6".to_string(), "-1".to_string(), "all".to_string()],
-                namespace: Some("awscc.ec2.SecurityGroupEgress".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("IpProtocol", Some("awscc.ec2.SecurityGroupEgress"))),
                 dsl_aliases: vec![("tcp".to_string(), "tcp".to_string()), ("udp".to_string(), "udp".to_string()), ("icmp".to_string(), "icmp".to_string()), ("icmpv6".to_string(), "icmpv6".to_string()), ("-1".to_string(), "all".to_string()), ("all".to_string(), "all".to_string())],
             })
                 .required()
@@ -119,7 +118,6 @@ pub fn ec2_security_group_egress_config() -> AwsccSchemaConfig {
                 length: None,
                 base: Box::new(AttributeType::Int),
                 validate: legacy_validator(validate_to_port_range),
-                namespace: None,
                 to_dsl: None,
             })
                 .create_only()

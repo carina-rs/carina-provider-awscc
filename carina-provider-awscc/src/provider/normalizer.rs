@@ -603,17 +603,14 @@ mod tests {
         vec![
             StructField::new(
                 "ip_protocol",
-                AttributeType::Custom {
-                    identity: Some(carina_core::schema::TypeIdentity::new(
+                AttributeType::CustomEnum {
+                    identity: carina_core::schema::TypeIdentity::new(
                         Some("awscc"),
                         ["ec2", "SecurityGroup"],
                         "IpProtocol",
-                    )),
-                    pattern: None,
-                    length: None,
+                    ),
                     base: Box::new(AttributeType::String),
                     validate: noop_validator(),
-                    namespace: Some("awscc.ec2.SecurityGroup".to_string()),
                     to_dsl: Some(|s: &str| match s {
                         "-1" => "all".to_string(),
                         _ => s.to_string(),
@@ -896,7 +893,10 @@ mod tests {
             AttributeType::list(AttributeType::StringEnum {
                 name: "EncryptionType".to_string(),
                 values: vec!["NONE".to_string(), "SSE-C".to_string()],
-                namespace: Some("awscc.s3.Bucket".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity(
+                    "EncryptionType",
+                    Some("awscc.s3.Bucket"),
+                )),
                 dsl_aliases: vec![
                     ("NONE".to_string(), "none".to_string()),
                     ("SSE-C".to_string(), "sse_c".to_string()),
@@ -922,7 +922,10 @@ mod tests {
                         AttributeType::StringEnum {
                             name: "SseAlgorithm".to_string(),
                             values: vec!["AES256".to_string()],
-                            namespace: Some("awscc.s3.Bucket".to_string()),
+                            identity: Some(carina_core::schema::string_enum_identity(
+                                "SseAlgorithm",
+                                Some("awscc.s3.Bucket"),
+                            )),
                             dsl_aliases: vec![("AES256".to_string(), "aes256".to_string())],
                         },
                     )],

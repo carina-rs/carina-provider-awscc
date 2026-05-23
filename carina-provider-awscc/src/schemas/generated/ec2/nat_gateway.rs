@@ -59,7 +59,7 @@ pub fn ec2_nat_gateway_config() -> AwsccSchemaConfig {
             AttributeSchema::new("availability_mode", AttributeType::StringEnum {
                 name: "AvailabilityMode".to_string(),
                 values: vec!["zonal".to_string(), "regional".to_string()],
-                namespace: Some("awscc.ec2.NatGateway".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("AvailabilityMode", Some("awscc.ec2.NatGateway"))),
                 dsl_aliases: vec![("zonal".to_string(), "zonal".to_string()), ("regional".to_string(), "regional".to_string())],
             })
                 .create_only()
@@ -83,7 +83,7 @@ pub fn ec2_nat_gateway_config() -> AwsccSchemaConfig {
             AttributeSchema::new("connectivity_type", AttributeType::StringEnum {
                 name: "ConnectivityType".to_string(),
                 values: vec!["public".to_string(), "private".to_string()],
-                namespace: Some("awscc.ec2.NatGateway".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("ConnectivityType", Some("awscc.ec2.NatGateway"))),
                 dsl_aliases: vec![("public".to_string(), "public".to_string()), ("private".to_string(), "private".to_string())],
             })
                 .create_only()
@@ -132,7 +132,6 @@ pub fn ec2_nat_gateway_config() -> AwsccSchemaConfig {
                 length: None,
                 base: Box::new(AttributeType::Int),
                 validate: legacy_validator(validate_secondary_private_ip_address_count_range),
-                namespace: None,
                 to_dsl: None,
             })
                 .with_description("[Private NAT gateway only] The number of secondary private IPv4 addresses you want to assign to the NAT gateway. For more information about secondary addresses, see [Create a NAT gateway](https://docs.aws.amazon.com/vpc/latest/userguide/vpc-nat-gateway.html#nat-gateway-creating) in the *Amazon Virtual Private Cloud User Guide*. ``SecondaryPrivateIpAddressCount`` and ``SecondaryPrivateIpAddresses`` cannot be set at the same time.")

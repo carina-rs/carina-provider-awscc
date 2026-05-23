@@ -165,7 +165,6 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
                 length: Some((Some(1), Some(50))),
                 base: Box::new(AttributeType::String),
                 validate: legacy_validator(validate_string_pattern_3af299ea99241fab_len_1_50),
-                namespace: None,
                 to_dsl: None,
             })
                 .required()
@@ -188,7 +187,7 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
             AttributeSchema::new("joined_method", AttributeType::StringEnum {
                 name: "JoinedMethod".to_string(),
                 values: vec!["INVITED".to_string(), "CREATED".to_string()],
-                namespace: Some("awscc.organizations.Account".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("JoinedMethod", Some("awscc.organizations.Account"))),
                 dsl_aliases: vec![("INVITED".to_string(), "invited".to_string()), ("CREATED".to_string(), "created".to_string())],
             })
                 .read_only()
@@ -208,7 +207,6 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
                 length: None,
                 base: Box::new(AttributeType::String),
                 validate: legacy_validator(validate_string_pattern_6fa92970742ee8e6),
-                namespace: None,
                 to_dsl: None,
             }))
                 .with_description("List of parent nodes for the member account. Currently only one parent at a time is supported. Default is root.")
@@ -221,7 +219,6 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
                 length: None,
                 base: Box::new(AttributeType::String),
                 validate: legacy_validator(validate_string_pattern_f777bea2efc17af6),
-                namespace: None,
                 to_dsl: None,
             }))
                 .read_only()
@@ -235,7 +232,6 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
                 length: Some((Some(1), Some(64))),
                 base: Box::new(AttributeType::String),
                 validate: legacy_validator(validate_string_pattern_253e7eb79a4beec5_len_1_64),
-                namespace: None,
                 to_dsl: None,
             })
                 .write_only()
@@ -247,7 +243,7 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
             AttributeSchema::new("state", AttributeType::StringEnum {
                 name: "State".to_string(),
                 values: vec!["PENDING_ACTIVATION".to_string(), "ACTIVE".to_string(), "SUSPENDED".to_string(), "PENDING_CLOSURE".to_string(), "CLOSED".to_string()],
-                namespace: Some("awscc.organizations.Account".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("State", Some("awscc.organizations.Account"))),
                 dsl_aliases: vec![("PENDING_ACTIVATION".to_string(), "pending_activation".to_string()), ("ACTIVE".to_string(), "active".to_string()), ("SUSPENDED".to_string(), "suspended".to_string()), ("PENDING_CLOSURE".to_string(), "pending_closure".to_string()), ("CLOSED".to_string(), "closed".to_string())],
             })
                 .read_only()
@@ -258,7 +254,7 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
             AttributeSchema::new("status", AttributeType::StringEnum {
                 name: "Status".to_string(),
                 values: vec!["ACTIVE".to_string(), "SUSPENDED".to_string(), "PENDING_CLOSURE".to_string()],
-                namespace: Some("awscc.organizations.Account".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("Status", Some("awscc.organizations.Account"))),
                 dsl_aliases: vec![("ACTIVE".to_string(), "active".to_string()), ("SUSPENDED".to_string(), "suspended".to_string()), ("PENDING_CLOSURE".to_string(), "pending_closure".to_string())],
             })
                 .read_only()

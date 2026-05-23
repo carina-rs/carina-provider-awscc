@@ -121,12 +121,15 @@ pub(crate) fn aws_value_to_dsl(
         return Some(Value::Concrete(ConcreteValue::Map(map)));
     }
 
-    // For non-namespaced Custom types with to_dsl, apply the transformation on read.
-    // This handles cases like Route 53 DNS names where the API returns a normalized
-    // form (trailing dot) that differs from user input.
+    // For structural Custom types carrying a `to_dsl` normalization
+    // closure, apply the transformation on read. This handles cases
+    // like Route 53 DNS names where the API returns a normalized form
+    // (trailing dot) that differs from user input. Post-#3230, the
+    // enum-shorthand path lives on `CustomEnum.to_dsl`; `Custom.to_dsl`
+    // is restricted to structural state→DSL normalization, so the
+    // pre-#3222 `namespace: None` gate is no longer needed.
     if let AttributeType::Custom {
         to_dsl: Some(transform),
-        namespace: None,
         ..
     } = attr_type
         && let Some(s) = value.as_str()
@@ -387,7 +390,10 @@ mod tests {
                 "redirect-to-https".to_string(),
                 "https-only".to_string(),
             ],
-            namespace: Some("awscc.cloudfront.Distribution".to_string()),
+            identity: Some(carina_core::schema::string_enum_identity(
+                "ViewerProtocolPolicy",
+                Some("awscc.cloudfront.Distribution"),
+            )),
             dsl_aliases: vec![(
                 "redirect-to-https".to_string(),
                 "redirect_to_https".to_string(),
@@ -734,7 +740,10 @@ mod tests {
                 "INFREQUENT_ACCESS".to_string(),
                 "DELIVERY".to_string(),
             ],
-            namespace: Some("awscc.logs.LogGroup".to_string()),
+            identity: Some(carina_core::schema::string_enum_identity(
+                "LogGroupClass",
+                Some("awscc.logs.LogGroup"),
+            )),
             dsl_aliases: vec![],
         };
         let value = Value::Concrete(ConcreteValue::String(
@@ -746,17 +755,14 @@ mod tests {
 
     #[test]
     fn test_dsl_value_to_aws_converts_underscores_for_region() {
-        let attr_type = AttributeType::Custom {
-            identity: Some(carina_core::schema::TypeIdentity::new(
+        let attr_type = AttributeType::CustomEnum {
+            identity: carina_core::schema::TypeIdentity::new(
                 Some("awscc"),
                 Vec::<String>::new(),
                 "Region",
-            )),
-            pattern: None,
-            length: None,
+            ),
             base: Box::new(AttributeType::String),
             validate: noop_validator(),
-            namespace: Some("awscc".to_string()),
             to_dsl: None,
         };
         let value = Value::Concrete(ConcreteValue::String(
@@ -771,7 +777,10 @@ mod tests {
         let inner = AttributeType::StringEnum {
             name: "AllowedMethod".to_string(),
             values: vec!["GET".to_string(), "PUT".to_string(), "DELETE".to_string()],
-            namespace: Some("awscc.s3.Bucket".to_string()),
+            identity: Some(carina_core::schema::string_enum_identity(
+                "AllowedMethod",
+                Some("awscc.s3.Bucket"),
+            )),
             dsl_aliases: vec![],
         };
         let attr_type = AttributeType::list(inner);
@@ -792,7 +801,10 @@ mod tests {
         let inner = AttributeType::StringEnum {
             name: "AllowedMethod".to_string(),
             values: vec!["GET".to_string(), "PUT".to_string(), "DELETE".to_string()],
-            namespace: Some("awscc.s3.Bucket".to_string()),
+            identity: Some(carina_core::schema::string_enum_identity(
+                "AllowedMethod",
+                Some("awscc.s3.Bucket"),
+            )),
             dsl_aliases: vec![],
         };
         let attr_type = AttributeType::list(inner);
@@ -812,7 +824,10 @@ mod tests {
         let inner = AttributeType::StringEnum {
             name: "AllowedMethod".to_string(),
             values: vec!["GET".to_string(), "PUT".to_string()],
-            namespace: Some("awscc.s3.Bucket".to_string()),
+            identity: Some(carina_core::schema::string_enum_identity(
+                "AllowedMethod",
+                Some("awscc.s3.Bucket"),
+            )),
             dsl_aliases: vec![],
         };
         let attr_type = AttributeType::list(inner);
@@ -831,7 +846,10 @@ mod tests {
             AttributeType::StringEnum {
                 name: "Protocol".to_string(),
                 values: vec!["tcp".to_string(), "udp".to_string()],
-                namespace: Some("awscc.ec2.Sg".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity(
+                    "Protocol",
+                    Some("awscc.ec2.Sg"),
+                )),
                 dsl_aliases: vec![],
             },
             AttributeType::String,
@@ -876,7 +894,10 @@ mod tests {
         let inner_type = AttributeType::StringEnum {
             name: "Status".to_string(),
             values: vec!["Active".to_string(), "Inactive".to_string()],
-            namespace: Some("awscc.test.resource".to_string()),
+            identity: Some(carina_core::schema::string_enum_identity(
+                "Status",
+                Some("awscc.test.resource"),
+            )),
             dsl_aliases: vec![],
         };
         let attr_type = AttributeType::map(inner_type);
@@ -937,7 +958,10 @@ mod tests {
             AttributeType::StringEnum {
                 name: "Protocol".to_string(),
                 values: vec!["tcp".to_string(), "udp".to_string()],
-                namespace: Some("awscc.ec2.Sg".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity(
+                    "Protocol",
+                    Some("awscc.ec2.Sg"),
+                )),
                 dsl_aliases: vec![],
             },
             AttributeType::String,
@@ -956,7 +980,10 @@ mod tests {
             AttributeType::StringEnum {
                 name: "Protocol".to_string(),
                 values: vec!["tcp".to_string(), "udp".to_string()],
-                namespace: Some("awscc.ec2.Sg".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity(
+                    "Protocol",
+                    Some("awscc.ec2.Sg"),
+                )),
                 dsl_aliases: vec![],
             },
             AttributeType::Int,
@@ -1332,7 +1359,10 @@ mod tests {
         let attr_type = AttributeType::StringEnum {
             name: "Type".to_string(),
             values: vec!["ipsec.1".to_string()],
-            namespace: Some("awscc.ec2.VpnGateway".to_string()),
+            identity: Some(carina_core::schema::string_enum_identity(
+                "Type",
+                Some("awscc.ec2.VpnGateway"),
+            )),
             dsl_aliases: vec![],
         };
         let json_val = json!("ipsec.1");
@@ -1353,7 +1383,10 @@ mod tests {
         let attr_type = AttributeType::StringEnum {
             name: "Type".to_string(),
             values: vec!["ipsec.1".to_string()],
-            namespace: Some("awscc.ec2.VpnGateway".to_string()),
+            identity: Some(carina_core::schema::string_enum_identity(
+                "Type",
+                Some("awscc.ec2.VpnGateway"),
+            )),
             dsl_aliases: vec![],
         };
         let value = Value::Concrete(ConcreteValue::String(
@@ -1369,7 +1402,10 @@ mod tests {
         let attr_type = AttributeType::StringEnum {
             name: "Type".to_string(),
             values: vec!["ipsec.1".to_string()],
-            namespace: Some("awscc.ec2.VpnGateway".to_string()),
+            identity: Some(carina_core::schema::string_enum_identity(
+                "Type",
+                Some("awscc.ec2.VpnGateway"),
+            )),
             dsl_aliases: vec![],
         };
         let value = Value::Concrete(ConcreteValue::String("ipsec.1".to_string()));
@@ -1383,7 +1419,10 @@ mod tests {
         let attr_type = AttributeType::StringEnum {
             name: "Type".to_string(),
             values: vec!["ipsec.1".to_string()],
-            namespace: Some("awscc.ec2.VpnGateway".to_string()),
+            identity: Some(carina_core::schema::string_enum_identity(
+                "Type",
+                Some("awscc.ec2.VpnGateway"),
+            )),
             dsl_aliases: vec![],
         };
 
@@ -1722,7 +1761,6 @@ mod tests {
             length: None,
             base: Box::new(AttributeType::String),
             validate: noop_validator(),
-            namespace: None,
             to_dsl: Some(|s: &str| s.strip_suffix('.').unwrap_or(s).to_string()),
         };
         let json_val = serde_json::json!("carina-rs.dev.");
@@ -1743,7 +1781,6 @@ mod tests {
             length: None,
             base: Box::new(AttributeType::String),
             validate: noop_validator(),
-            namespace: None,
             to_dsl: None,
         };
         let json_val = serde_json::json!("carina-rs.dev.");

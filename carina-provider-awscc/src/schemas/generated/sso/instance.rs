@@ -112,7 +112,6 @@ pub fn sso_instance_config() -> AwsccSchemaConfig {
                 length: Some((Some(1), Some(32))),
                 base: Box::new(AttributeType::String),
                 validate: legacy_validator(validate_string_pattern_5a2bd7daee6344f1_len_1_32),
-                namespace: None,
                 to_dsl: None,
             })
                 .with_description("The name you want to assign to this Identity Center (SSO) Instance")
@@ -128,7 +127,7 @@ pub fn sso_instance_config() -> AwsccSchemaConfig {
             AttributeSchema::new("status", AttributeType::StringEnum {
                 name: "Status".to_string(),
                 values: vec!["CREATE_IN_PROGRESS".to_string(), "DELETE_IN_PROGRESS".to_string(), "ACTIVE".to_string()],
-                namespace: Some("awscc.sso.Instance".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("Status", Some("awscc.sso.Instance"))),
                 dsl_aliases: vec![("CREATE_IN_PROGRESS".to_string(), "create_in_progress".to_string()), ("DELETE_IN_PROGRESS".to_string(), "delete_in_progress".to_string()), ("ACTIVE".to_string(), "active".to_string())],
             })
                 .read_only()

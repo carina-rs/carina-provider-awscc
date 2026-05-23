@@ -88,13 +88,12 @@ pub fn ec2_security_group_config() -> AwsccSchemaConfig {
                 length: None,
                 base: Box::new(AttributeType::Int),
                 validate: legacy_validator(validate_from_port_range),
-                namespace: None,
                 to_dsl: None,
             }).with_provider_name("FromPort"),
                     StructField::new("ip_protocol", AttributeType::StringEnum {
                 name: "IpProtocol".to_string(),
                 values: vec!["tcp".to_string(), "udp".to_string(), "icmp".to_string(), "icmpv6".to_string(), "-1".to_string(), "all".to_string()],
-                namespace: Some("awscc.ec2.SecurityGroup".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("IpProtocol", Some("awscc.ec2.SecurityGroup"))),
                 dsl_aliases: vec![("tcp".to_string(), "tcp".to_string()), ("udp".to_string(), "udp".to_string()), ("icmp".to_string(), "icmp".to_string()), ("icmpv6".to_string(), "icmpv6".to_string()), ("-1".to_string(), "all".to_string()), ("all".to_string(), "all".to_string())],
             }).required().with_provider_name("IpProtocol"),
                     StructField::new("to_port", AttributeType::Custom {
@@ -103,7 +102,6 @@ pub fn ec2_security_group_config() -> AwsccSchemaConfig {
                 length: None,
                 base: Box::new(AttributeType::Int),
                 validate: legacy_validator(validate_to_port_range),
-                namespace: None,
                 to_dsl: None,
             }).with_provider_name("ToPort")
                     ],
@@ -125,13 +123,12 @@ pub fn ec2_security_group_config() -> AwsccSchemaConfig {
                 length: None,
                 base: Box::new(AttributeType::Int),
                 validate: legacy_validator(validate_from_port_range),
-                namespace: None,
                 to_dsl: None,
             }).with_provider_name("FromPort"),
                     StructField::new("ip_protocol", AttributeType::StringEnum {
                 name: "IpProtocol".to_string(),
                 values: vec!["tcp".to_string(), "udp".to_string(), "icmp".to_string(), "icmpv6".to_string(), "-1".to_string(), "all".to_string()],
-                namespace: Some("awscc.ec2.SecurityGroup".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("IpProtocol", Some("awscc.ec2.SecurityGroup"))),
                 dsl_aliases: vec![("tcp".to_string(), "tcp".to_string()), ("udp".to_string(), "udp".to_string()), ("icmp".to_string(), "icmp".to_string()), ("icmpv6".to_string(), "icmpv6".to_string()), ("-1".to_string(), "all".to_string()), ("all".to_string(), "all".to_string())],
             }).required().with_provider_name("IpProtocol"),
                     StructField::new("source_prefix_list_id", super::prefix_list_id()).with_provider_name("SourcePrefixListId"),
@@ -144,7 +141,6 @@ pub fn ec2_security_group_config() -> AwsccSchemaConfig {
                 length: None,
                 base: Box::new(AttributeType::Int),
                 validate: legacy_validator(validate_to_port_range),
-                namespace: None,
                 to_dsl: None,
             }).with_provider_name("ToPort")
                     ],

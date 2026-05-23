@@ -91,7 +91,7 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
             AttributeSchema::new("log_group_class", AttributeType::StringEnum {
                 name: "LogGroupClass".to_string(),
                 values: vec!["STANDARD".to_string(), "INFREQUENT_ACCESS".to_string(), "DELIVERY".to_string()],
-                namespace: Some("awscc.logs.LogGroup".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("LogGroupClass", Some("awscc.logs.LogGroup"))),
                 dsl_aliases: vec![("STANDARD".to_string(), "standard".to_string()), ("INFREQUENT_ACCESS".to_string(), "infrequent_access".to_string()), ("DELIVERY".to_string(), "delivery".to_string())],
             })
                 .with_description("Specifies the log group class for this log group. There are two classes: + The ``Standard`` log class supports all CWL features. + The ``Infrequent Access`` log class supports a subset of CWL features and incurs lower costs. For details about the features supported by each class, see [Log classes](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/CloudWatch_Logs_Log_Classes.html)")
@@ -105,7 +105,6 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
                 length: Some((Some(1), Some(512))),
                 base: Box::new(AttributeType::String),
                 validate: legacy_validator(validate_string_pattern_b6dfbc56753dfe38_len_1_512),
-                namespace: None,
                 to_dsl: None,
             })
                 .create_only()
@@ -124,7 +123,6 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
                 length: None,
                 base: Box::new(AttributeType::Int),
                 validate: legacy_validator(validate_retention_in_days_int_enum),
-                namespace: None,
                 to_dsl: None,
             })
                 .with_description("The number of days to retain the log events in the specified log group. Possible values are: 1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096, 1827, 2192, 2557, 2922, 3288, and 3653. To set a log group so that its log events do not expire, do not specify this property.")

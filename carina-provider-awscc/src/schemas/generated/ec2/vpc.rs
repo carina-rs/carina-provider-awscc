@@ -72,7 +72,7 @@ pub fn ec2_vpc_config() -> AwsccSchemaConfig {
             AttributeSchema::new("instance_tenancy", AttributeType::StringEnum {
                 name: "InstanceTenancy".to_string(),
                 values: vec!["default".to_string(), "dedicated".to_string(), "host".to_string()],
-                namespace: Some("awscc.ec2.Vpc".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity("InstanceTenancy", Some("awscc.ec2.Vpc"))),
                 dsl_aliases: vec![("default".to_string(), "default".to_string()), ("dedicated".to_string(), "dedicated".to_string()), ("host".to_string(), "host".to_string())],
             })
                 .with_description("The allowed tenancy of instances launched into the VPC. + ``default``: An instance launched into the VPC runs on shared hardware by default, unless you explicitly specify a different tenancy during instance launch. + ``dedicated``: An instance launched into the VPC runs on dedicated hardware by default, unless you explicitly specify a tenancy of ``host`` during instance launch. You cannot specify a tenancy of ``default`` during instance launch. Updating ``InstanceTenancy`` requires no replacement only if you are updating its value from ``dedicated`` to ``default``. Updating ``InstanceTenancy`` from ``default`` to ``dedicated`` requires replacement.")
@@ -92,7 +92,6 @@ pub fn ec2_vpc_config() -> AwsccSchemaConfig {
                 length: None,
                 base: Box::new(AttributeType::Int),
                 validate: legacy_validator(validate_ipv4_netmask_length_range),
-                namespace: None,
                 to_dsl: None,
             })
                 .create_only()

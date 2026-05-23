@@ -108,7 +108,10 @@ impl ProviderFactory for AwsccProviderFactory {
                     .iter()
                     .map(|(code, _)| code.to_string())
                     .collect(),
-                namespace: Some("awscc".to_string()),
+                identity: Some(carina_core::schema::string_enum_identity(
+                    "Region",
+                    Some("awscc"),
+                )),
                 // Region API spellings carry hyphens (`ap-northeast-1`)
                 // but the DSL spelling uses underscores
                 // (`ap_northeast_1`). Materialize the alias table so it
