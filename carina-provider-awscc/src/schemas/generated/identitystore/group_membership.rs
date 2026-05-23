@@ -60,7 +60,7 @@ pub fn identitystore_group_membership_config() -> AwsccSchemaConfig {
                     name: "MemberId".to_string(),
                     fields: vec![
                     StructField::new("user_id", AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: Some("^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$".to_string()),
                 length: Some((Some(1), Some(47))),
                 base: Box::new(AttributeType::String),
@@ -77,7 +77,7 @@ pub fn identitystore_group_membership_config() -> AwsccSchemaConfig {
         )
         .attribute(
             AttributeSchema::new("membership_id", AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: Some("^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$".to_string()),
                 length: Some((Some(1), Some(47))),
                 base: Box::new(AttributeType::String),

@@ -63,7 +63,7 @@ pub fn ec2_security_group_ingress_config() -> AwsccSchemaConfig {
         )
         .attribute(
             AttributeSchema::new("from_port", AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: None,
                 length: None,
                 base: Box::new(AttributeType::Int),
@@ -131,7 +131,7 @@ pub fn ec2_security_group_ingress_config() -> AwsccSchemaConfig {
         )
         .attribute(
             AttributeSchema::new("to_port", AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: None,
                 length: None,
                 base: Box::new(AttributeType::Int),

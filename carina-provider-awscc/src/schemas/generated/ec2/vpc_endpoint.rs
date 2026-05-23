@@ -110,11 +110,11 @@ pub fn ec2_vpc_endpoint_config() -> AwsccSchemaConfig {
                 dsl_aliases: vec![("VERIFIED_DOMAINS_ONLY".to_string(), "verified_domains_only".to_string()), ("ALL_DOMAINS".to_string(), "all_domains".to_string()), ("VERIFIED_DOMAINS_AND_SPECIFIED_DOMAINS".to_string(), "verified_domains_and_specified_domains".to_string()), ("SPECIFIED_DOMAINS_ONLY".to_string(), "specified_domains_only".to_string())],
             }).with_description("The preference for which private domains have a private hosted zone created for and associated with the specified VPC. Only supported when private DNS is enabled and when the VPC endpoint type is ServiceNetwork or Resource.").with_provider_name("PrivateDnsPreference"),
                     StructField::new("private_dns_specified_domains", AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: None,
                 length: None,
                 base: Box::new(AttributeType::list(AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: None,
                 length: Some((Some(1), Some(255))),
                 base: Box::new(AttributeType::String),

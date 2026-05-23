@@ -78,7 +78,7 @@ pub fn iam_oidc_provider_config() -> AwsccSchemaConfig {
                 AttributeSchema::new(
                     "client_id_list",
                     AttributeType::unordered_list(AttributeType::Custom {
-                        semantic_name: None,
+                        identity: None,
                         pattern: None,
                         length: Some((Some(1), Some(255))),
                         base: Box::new(AttributeType::String),
@@ -94,11 +94,11 @@ pub fn iam_oidc_provider_config() -> AwsccSchemaConfig {
                 AttributeSchema::new(
                     "thumbprint_list",
                     AttributeType::Custom {
-                        semantic_name: None,
+                        identity: None,
                         pattern: None,
                         length: None,
                         base: Box::new(AttributeType::unordered_list(AttributeType::Custom {
-                            semantic_name: None,
+                            identity: None,
                             pattern: Some("[0-9A-Fa-f]{40}".to_string()),
                             length: Some((Some(40), Some(40))),
                             base: Box::new(AttributeType::String),
@@ -119,7 +119,7 @@ pub fn iam_oidc_provider_config() -> AwsccSchemaConfig {
                 AttributeSchema::new(
                     "url",
                     AttributeType::Custom {
-                        semantic_name: None,
+                        identity: None,
                         pattern: None,
                         length: Some((Some(1), Some(255))),
                         base: Box::new(AttributeType::String),

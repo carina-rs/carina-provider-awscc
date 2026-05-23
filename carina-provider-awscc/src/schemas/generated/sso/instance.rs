@@ -107,7 +107,7 @@ pub fn sso_instance_config() -> AwsccSchemaConfig {
         )
         .attribute(
             AttributeSchema::new("name", AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: Some("^[\\w+=,.@-]+$".to_string()),
                 length: Some((Some(1), Some(32))),
                 base: Box::new(AttributeType::String),

@@ -382,7 +382,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     StructField::new("allowed_origins", AttributeType::list(AttributeType::String)).required().with_description("One or more origins you want customers to be able to access the bucket from.").with_provider_name("AllowedOrigins"),
                     StructField::new("exposed_headers", AttributeType::list(AttributeType::String)).with_description("One or more headers in the response that you want customers to be able to access from their applications (for example, from a JavaScript ``XMLHttpRequest`` object).").with_provider_name("ExposedHeaders"),
                     StructField::new("id", AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: None,
                 length: Some((None, Some(255))),
                 base: Box::new(AttributeType::String),
@@ -391,7 +391,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                 to_dsl: None,
             }).with_description("A unique identifier for this rule. The value must be no more than 255 characters.").with_provider_name("Id"),
                     StructField::new("max_age", AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: None,
                 length: None,
                 base: Box::new(AttributeType::Int),
@@ -506,7 +506,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     name: "AbortIncompleteMultipartUpload".to_string(),
                     fields: vec![
                     StructField::new("days_after_initiation", AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: None,
                 length: None,
                 base: Box::new(AttributeType::Int),
@@ -517,7 +517,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     ],
                 }).with_description("Specifies a lifecycle rule that stops incomplete multipart uploads to an Amazon S3 bucket.").with_provider_name("AbortIncompleteMultipartUpload"),
                     StructField::new("expiration_date", AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: Some("^(\\d{4})-(0[0-9]|1[0-2])-([0-2]\\d|3[01])T([01]\\d|2[0-4]):([0-5]\\d):([0-6]\\d)((\\.\\d{3})?)Z$".to_string()),
                 length: None,
                 base: Box::new(AttributeType::String),
@@ -528,7 +528,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     StructField::new("expiration_in_days", AttributeType::Int).with_description("Indicates the number of days after creation when objects are deleted from Amazon S3 and Amazon S3 Glacier. If you specify an expiration and transition time, you must use the same time unit for both properties (either in days or by date). The expiration time must also be later than the transition time.").with_provider_name("ExpirationInDays"),
                     StructField::new("expired_object_delete_marker", AttributeType::Bool).with_description("Indicates whether Amazon S3 will remove a delete marker without any noncurrent versions. If set to true, the delete marker will be removed if there are no noncurrent versions. This cannot be specified with ``ExpirationInDays``, ``ExpirationDate``, or ``TagFilters``.").with_provider_name("ExpiredObjectDeleteMarker"),
                     StructField::new("id", AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: None,
                 length: Some((None, Some(255))),
                 base: Box::new(AttributeType::String),
@@ -571,7 +571,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     ],
                 })).with_description("For buckets with versioning enabled (or suspended), one or more transition rules that specify when non-current objects transition to a specified storage class. If you specify a transition and expiration time, the expiration time must be later than the transition time. If you specify this property, don't specify the ``NoncurrentVersionTransition`` property.").with_provider_name("NoncurrentVersionTransitions").with_block_name("noncurrent_version_transition"),
                     StructField::new("object_size_greater_than", AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: Some("[0-9]+".to_string()),
                 length: Some((None, Some(20))),
                 base: Box::new(AttributeType::String),
@@ -580,7 +580,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                 to_dsl: None,
             }).with_description("Specifies the minimum object size in bytes for this rule to apply to. Objects must be larger than this value in bytes. For more information about size based rules, see [Lifecycle configuration using size-based rules](https://docs.aws.amazon.com/AmazonS3/latest/userguide/lifecycle-configuration-examples.html#lc-size-rules) in the *Amazon S3 User Guide*.").with_provider_name("ObjectSizeGreaterThan"),
                     StructField::new("object_size_less_than", AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: Some("[0-9]+".to_string()),
                 length: Some((None, Some(20))),
                 base: Box::new(AttributeType::String),
@@ -606,7 +606,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                 dsl_aliases: vec![("DEEP_ARCHIVE".to_string(), "deep_archive".to_string()), ("GLACIER".to_string(), "glacier".to_string()), ("GLACIER_IR".to_string(), "glacier_ir".to_string()), ("INTELLIGENT_TIERING".to_string(), "intelligent_tiering".to_string()), ("ONEZONE_IA".to_string(), "onezone_ia".to_string()), ("STANDARD_IA".to_string(), "standard_ia".to_string())],
             }).required().with_description("The storage class to which you want the object to transition.").with_provider_name("StorageClass"),
                     StructField::new("transition_date", AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: Some("^(\\d{4})-(0[0-9]|1[0-2])-([0-2]\\d|3[01])T([01]\\d|2[0-4]):([0-5]\\d):([0-6]\\d)((\\.\\d{3})?)Z$".to_string()),
                 length: None,
                 base: Box::new(AttributeType::String),
@@ -627,7 +627,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                 dsl_aliases: vec![("DEEP_ARCHIVE".to_string(), "deep_archive".to_string()), ("GLACIER".to_string(), "glacier".to_string()), ("GLACIER_IR".to_string(), "glacier_ir".to_string()), ("INTELLIGENT_TIERING".to_string(), "intelligent_tiering".to_string()), ("ONEZONE_IA".to_string(), "onezone_ia".to_string()), ("STANDARD_IA".to_string(), "standard_ia".to_string())],
             }).required().with_description("The storage class to which you want the object to transition.").with_provider_name("StorageClass"),
                     StructField::new("transition_date", AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: Some("^(\\d{4})-(0[0-9]|1[0-2])-([0-2]\\d|3[01])T([01]\\d|2[0-4]):([0-5]\\d):([0-6]\\d)((\\.\\d{3})?)Z$".to_string()),
                 length: None,
                 base: Box::new(AttributeType::String),
@@ -817,7 +817,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     name: "FilterRule".to_string(),
                     fields: vec![
                     StructField::new("name", AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: None,
                 length: Some((None, Some(1024))),
                 base: Box::new(AttributeType::String),
@@ -849,7 +849,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     name: "FilterRule".to_string(),
                     fields: vec![
                     StructField::new("name", AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: None,
                 length: Some((None, Some(1024))),
                 base: Box::new(AttributeType::String),
@@ -881,7 +881,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     name: "FilterRule".to_string(),
                     fields: vec![
                     StructField::new("name", AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: None,
                 length: Some((None, Some(1024))),
                 base: Box::new(AttributeType::String),
@@ -1081,7 +1081,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                     ],
                 }).with_description("A filter that identifies the subset of objects to which the replication rule applies. A ``Filter`` must specify exactly one ``Prefix``, ``TagFilter``, or an ``And`` child element. The use of the filter field indicates that this is a V2 replication configuration. This field isn't supported in a V1 replication configuration. V1 replication configuration only supports filtering by key prefix. To filter using a V1 replication configuration, add the ``Prefix`` directly as a child element of the ``Rule`` element.").with_provider_name("Filter"),
                     StructField::new("id", AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: None,
                 length: Some((None, Some(255))),
                 base: Box::new(AttributeType::String),
@@ -1090,7 +1090,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
                 to_dsl: None,
             }).with_description("A unique identifier for the rule. The maximum value is 255 characters. If you don't specify a value, AWS CloudFormation generates a random ID. When using a V2 replication configuration this property is capitalized as \"ID\".").with_provider_name("Id"),
                     StructField::new("prefix", AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: None,
                 length: Some((None, Some(1024))),
                 base: Box::new(AttributeType::String),
@@ -1213,7 +1213,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
         )
         .attribute(
             AttributeSchema::new("website_url", AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: None,
                 length: None,
                 base: Box::new(AttributeType::String),

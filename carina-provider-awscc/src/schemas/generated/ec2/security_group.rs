@@ -83,7 +83,7 @@ pub fn ec2_security_group_config() -> AwsccSchemaConfig {
                     StructField::new("destination_prefix_list_id", super::prefix_list_id()).with_provider_name("DestinationPrefixListId"),
                     StructField::new("destination_security_group_id", super::security_group_id()).with_provider_name("DestinationSecurityGroupId"),
                     StructField::new("from_port", AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: None,
                 length: None,
                 base: Box::new(AttributeType::Int),
@@ -98,7 +98,7 @@ pub fn ec2_security_group_config() -> AwsccSchemaConfig {
                 dsl_aliases: vec![("tcp".to_string(), "tcp".to_string()), ("udp".to_string(), "udp".to_string()), ("icmp".to_string(), "icmp".to_string()), ("icmpv6".to_string(), "icmpv6".to_string()), ("-1".to_string(), "all".to_string()), ("all".to_string(), "all".to_string())],
             }).required().with_provider_name("IpProtocol"),
                     StructField::new("to_port", AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: None,
                 length: None,
                 base: Box::new(AttributeType::Int),
@@ -120,7 +120,7 @@ pub fn ec2_security_group_config() -> AwsccSchemaConfig {
                     StructField::new("cidr_ipv6", types::ipv6_cidr()).with_provider_name("CidrIpv6"),
                     StructField::new("description", AttributeType::String).with_provider_name("Description"),
                     StructField::new("from_port", AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: None,
                 length: None,
                 base: Box::new(AttributeType::Int),
@@ -139,7 +139,7 @@ pub fn ec2_security_group_config() -> AwsccSchemaConfig {
                     StructField::new("source_security_group_name", AttributeType::String).with_provider_name("SourceSecurityGroupName"),
                     StructField::new("source_security_group_owner_id", super::aws_account_id()).with_provider_name("SourceSecurityGroupOwnerId"),
                     StructField::new("to_port", AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: None,
                 length: None,
                 base: Box::new(AttributeType::Int),

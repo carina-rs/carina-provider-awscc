@@ -100,7 +100,7 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
         )
         .attribute(
             AttributeSchema::new("log_group_name", AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: Some("^[.\\-_/#A-Za-z0-9]{1,512}\\Z".to_string()),
                 length: Some((Some(1), Some(512))),
                 base: Box::new(AttributeType::String),
@@ -119,7 +119,7 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
         )
         .attribute(
             AttributeSchema::new("retention_in_days", AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: None,
                 length: None,
                 base: Box::new(AttributeType::Int),

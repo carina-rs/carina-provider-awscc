@@ -103,7 +103,7 @@ pub fn ec2_subnet_config() -> AwsccSchemaConfig {
         )
         .attribute(
             AttributeSchema::new("ipv4_netmask_length", AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: None,
                 length: None,
                 base: Box::new(AttributeType::Int),
@@ -142,7 +142,7 @@ pub fn ec2_subnet_config() -> AwsccSchemaConfig {
         )
         .attribute(
             AttributeSchema::new("ipv6_netmask_length", AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: None,
                 length: None,
                 base: Box::new(AttributeType::Int),

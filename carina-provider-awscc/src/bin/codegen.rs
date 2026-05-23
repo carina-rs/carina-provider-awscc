@@ -4153,7 +4153,7 @@ fn cfn_type_to_carina_type_with_enum(
                     return (
                         format!(
                             r#"AttributeType::Custom {{
-                semantic_name: None,
+                identity: None,
                 pattern: {},
                 length: {},
                 base: Box::new(AttributeType::String),
@@ -4192,7 +4192,7 @@ fn cfn_type_to_carina_type_with_enum(
             return (
                 format!(
                     r#"AttributeType::Custom {{
-                semantic_name: None,
+                identity: None,
                 pattern: None,
                 length: None,
                 base: Box::new(AttributeType::Int),
@@ -4286,7 +4286,7 @@ fn cfn_type_to_carina_type_with_enum(
                 return (
                     format!(
                         r#"AttributeType::Custom {{
-                semantic_name: None,
+                identity: None,
                 pattern: {},
                 length: {},
                 base: Box::new(AttributeType::String),
@@ -4324,7 +4324,7 @@ fn cfn_type_to_carina_type_with_enum(
                 return (
                     format!(
                         r#"AttributeType::Custom {{
-                semantic_name: None,
+                identity: None,
                 pattern: {},
                 length: {},
                 base: Box::new(AttributeType::String),
@@ -4342,7 +4342,7 @@ fn cfn_type_to_carina_type_with_enum(
             if prop.format.is_some() {
                 return (
                     r#"AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: None,
                 length: None,
                 base: Box::new(AttributeType::String),
@@ -4363,7 +4363,7 @@ fn cfn_type_to_carina_type_with_enum(
                 return (
                     format!(
                         r#"AttributeType::Custom {{
-                semantic_name: None,
+                identity: None,
                 pattern: None,
                 length: {},
                 base: Box::new(AttributeType::String),
@@ -4389,7 +4389,7 @@ fn cfn_type_to_carina_type_with_enum(
                 return (
                     format!(
                         r#"AttributeType::Custom {{
-                semantic_name: None,
+                identity: None,
                 pattern: None,
                 length: None,
                 base: Box::new(AttributeType::Int),
@@ -4407,7 +4407,7 @@ fn cfn_type_to_carina_type_with_enum(
                 return (
                     format!(
                         r#"AttributeType::Custom {{
-                semantic_name: None,
+                identity: None,
                 pattern: None,
                 length: None,
                 base: Box::new(AttributeType::Int),
@@ -4435,7 +4435,7 @@ fn cfn_type_to_carina_type_with_enum(
                 (
                     format!(
                         r#"AttributeType::Custom {{
-                semantic_name: None,
+                identity: None,
                 pattern: None,
                 length: None,
                 base: Box::new(AttributeType::Int),
@@ -4451,7 +4451,7 @@ fn cfn_type_to_carina_type_with_enum(
                 // Format-only integer (e.g., int64) - informational, no range validation
                 (
                     r#"AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: None,
                 length: None,
                 base: Box::new(AttributeType::Int),
@@ -4475,7 +4475,7 @@ fn cfn_type_to_carina_type_with_enum(
                 return (
                     format!(
                         r#"AttributeType::Custom {{
-                semantic_name: None,
+                identity: None,
                 pattern: None,
                 length: None,
                 base: Box::new(AttributeType::Float),
@@ -4503,7 +4503,7 @@ fn cfn_type_to_carina_type_with_enum(
                 (
                     format!(
                         r#"AttributeType::Custom {{
-                semantic_name: None,
+                identity: None,
                 pattern: None,
                 length: None,
                 base: Box::new(AttributeType::Float),
@@ -4519,7 +4519,7 @@ fn cfn_type_to_carina_type_with_enum(
                 // Format-only float (e.g., double) - informational, no range validation
                 (
                     r#"AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: None,
                 length: None,
                 base: Box::new(AttributeType::Float),
@@ -4580,7 +4580,7 @@ fn cfn_type_to_carina_type_with_enum(
                 (
                     format!(
                         r#"AttributeType::Custom {{
-                semantic_name: None,
+                identity: None,
                 pattern: None,
                 length: None,
                 base: Box::new({}),

@@ -254,10 +254,10 @@ fn proto_to_core_attribute_type(t: &ProtoAttributeType) -> CoreAttributeType {
             base,
             namespace,
         } => CoreAttributeType::Custom {
-            semantic_name: if name.is_empty() {
+            identity: if name.is_empty() {
                 None
             } else {
-                Some(name.clone())
+                Some(carina_core::schema::TypeIdentity::from_dotted(name))
             },
             pattern: None,
             length: None,
@@ -377,12 +377,18 @@ fn core_to_proto_attribute_type(t: &CoreAttributeType) -> ProtoAttributeType {
             fields: fields.iter().map(core_to_proto_struct_field).collect(),
         },
         CoreAttributeType::Custom {
-            semantic_name,
+            identity,
             base,
             namespace,
             ..
         } => ProtoAttributeType::Custom {
-            name: semantic_name.clone().unwrap_or_default(),
+            // Serialize the structured identity to its dotted display
+            // form for the JSON wire; the host parses it back via
+            // `TypeIdentity::from_dotted`.
+            name: identity
+                .as_ref()
+                .map(|id| id.to_string())
+                .unwrap_or_default(),
             base: Box::new(core_to_proto_attribute_type(base)),
             namespace: namespace.clone(),
         },

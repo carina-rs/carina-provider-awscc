@@ -10,7 +10,7 @@ use std::collections::HashMap;
 
 use carina_core::parser::ValidatorFn;
 use carina_core::resource::{ConcreteValue, Value};
-use carina_core::schema::{AttributeType, ResourceSchema, legacy_validator};
+use carina_core::schema::{AttributeType, ResourceSchema, TypeIdentity, legacy_validator};
 use carina_core::utils::{extract_enum_value, validate_enum_namespace};
 
 /// AWS Cloud Control schema configuration
@@ -111,7 +111,20 @@ pub(crate) fn validate_namespaced_enum(
     valid_values: &[&str],
 ) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
-        validate_enum_namespace(s, type_name, namespace)?;
+        // Reconstruct the structured identity from the caller-supplied
+        // `(type_name, namespace)` pair: the namespace's first segment is
+        // the provider, the remainder are the service/resource segments,
+        // and the type name is the kind. Mirrors the helper used in
+        // S2.5b's test corpus.
+        let mut parts = namespace.split('.');
+        let provider = parts.next().map(String::from);
+        let segments: Vec<String> = parts.map(String::from).collect();
+        let identity = carina_core::schema::TypeIdentity {
+            provider,
+            segments,
+            kind: type_name.to_string(),
+        };
+        validate_enum_namespace(s, &identity)?;
 
         let normalized = extract_enum_value(s);
         if find_matching_enum_value(normalized, valid_values).is_some() {
@@ -131,13 +144,18 @@ pub(crate) fn validate_namespaced_enum(
 /// - Shorthand: ap_northeast_1
 pub fn awscc_region() -> AttributeType {
     AttributeType::Custom {
-        semantic_name: Some("Region".to_string()),
+        identity: Some(TypeIdentity::new(
+            Some("awscc"),
+            Vec::<String>::new(),
+            "Region",
+        )),
         pattern: None,
         length: None,
         base: Box::new(AttributeType::String),
         validate: legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
-                validate_enum_namespace(s, "Region", "awscc")
+                let id = TypeIdentity::new(Some("awscc"), Vec::<String>::new(), "Region");
+                validate_enum_namespace(s, &id)
                     .map_err(|reason| format!("Invalid region '{}': {}", s, reason))?;
                 let normalized = extract_enum_value(s).replace('_', "-");
                 if is_valid_region(&normalized) {
@@ -162,13 +180,18 @@ pub fn awscc_region() -> AttributeType {
 /// Validates format: region + single letter zone identifier
 pub fn availability_zone() -> AttributeType {
     AttributeType::Custom {
-        semantic_name: Some("AvailabilityZone".to_string()),
+        identity: Some(TypeIdentity::new(
+            Some("awscc"),
+            ["AvailabilityZone"],
+            "ZoneName",
+        )),
         pattern: None,
         length: None,
         base: Box::new(AttributeType::String),
         validate: legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
-                validate_enum_namespace(s, "AvailabilityZone", "awscc")
+                let id = TypeIdentity::new(Some("awscc"), ["AvailabilityZone"], "ZoneName");
+                validate_enum_namespace(s, &id)
                     .map_err(|reason| format!("Invalid availability zone '{}': {}", s, reason))?;
                 let extracted = extract_enum_value(s);
                 let normalized = extracted.replace('_', "-");
@@ -193,17 +216,19 @@ mod tests {
     #[test]
     fn validate_availability_zone_namespace_expanded() {
         let t = availability_zone();
-        // Full namespace format
+        // Full namespace format — under the structured identity the
+        // type lives at `awscc.AvailabilityZone.ZoneName`, so the value
+        // form carries the kind segment as well.
         assert!(
             t.validate(&Value::Concrete(ConcreteValue::String(
-                "awscc.AvailabilityZone.us_east_1a".to_string()
+                "awscc.AvailabilityZone.ZoneName.us_east_1a".to_string()
             )))
             .is_ok()
         );
-        // Type.value format
+        // 2-part shorthand: TypeName matches the identity's kind.
         assert!(
             t.validate(&Value::Concrete(ConcreteValue::String(
-                "AvailabilityZone.us_east_1a".to_string()
+                "ZoneName.us_east_1a".to_string()
             )))
             .is_ok()
         );

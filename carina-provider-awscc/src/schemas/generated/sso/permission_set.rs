@@ -191,14 +191,14 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
         .with_description("Resource Type definition for SSO PermissionSet")
         .attribute(
             AttributeSchema::new("customer_managed_policy_references", AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: None,
                 length: None,
                 base: Box::new(AttributeType::unordered_list(AttributeType::Struct {
                     name: "CustomerManagedPolicyReference".to_string(),
                     fields: vec![
                     StructField::new("name", AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: Some("[\\w+=,.@-]+".to_string()),
                 length: Some((Some(1), Some(128))),
                 base: Box::new(AttributeType::String),
@@ -207,7 +207,7 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
                 to_dsl: None,
             }).required().with_provider_name("Name"),
                     StructField::new("path", AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: Some("((/[A-Za-z0-9\\.,\\+@=_-]+)*)/".to_string()),
                 length: Some((Some(1), Some(512))),
                 base: Box::new(AttributeType::String),
@@ -226,7 +226,7 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
         )
         .attribute(
             AttributeSchema::new("description", AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: Some("[\\u0009\\u000A\\u000D\\u0020-\\u007E\\u00A1-\\u00FF]*".to_string()),
                 length: Some((Some(1), Some(700))),
                 base: Box::new(AttributeType::String),
@@ -251,7 +251,7 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
         )
         .attribute(
             AttributeSchema::new("managed_policies", AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: None,
                 length: None,
                 base: Box::new(AttributeType::unordered_list(AttributeType::String)),
@@ -263,7 +263,7 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
         )
         .attribute(
             AttributeSchema::new("name", AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: Some("[\\w+=,.@-]+".to_string()),
                 length: Some((Some(1), Some(32))),
                 base: Box::new(AttributeType::String),
@@ -290,7 +290,7 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
                     name: "CustomerManagedPolicyReference".to_string(),
                     fields: vec![
                     StructField::new("name", AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: Some("[\\w+=,.@-]+".to_string()),
                 length: Some((Some(1), Some(128))),
                 base: Box::new(AttributeType::String),
@@ -299,7 +299,7 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
                 to_dsl: None,
             }).required().with_provider_name("Name"),
                     StructField::new("path", AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: Some("((/[A-Za-z0-9\\.,\\+@=_-]+)*)/".to_string()),
                 length: Some((Some(1), Some(512))),
                 base: Box::new(AttributeType::String),
@@ -316,7 +316,7 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
         )
         .attribute(
             AttributeSchema::new("relay_state_type", AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: Some("[a-zA-Z0-9&amp;$@#\\/%?=~\\-_'&quot;|!:,.;*+\\[\\]\\ \\(\\)\\{\\}]+".to_string()),
                 length: Some((Some(1), Some(240))),
                 base: Box::new(AttributeType::String),
@@ -329,7 +329,7 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
         )
         .attribute(
             AttributeSchema::new("session_duration", AttributeType::Custom {
-                semantic_name: None,
+                identity: None,
                 pattern: Some("^(-?)P(?=\\d|T\\d)(?:(\\d+)Y)?(?:(\\d+)M)?(?:(\\d+)([DW]))?(?:T(?:(\\d+)H)?(?:(\\d+)M)?(?:(\\d+(?:\\.\\d+)?)S)?)?$".to_string()),
                 length: Some((Some(1), Some(100))),
                 base: Box::new(AttributeType::String),
