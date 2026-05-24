@@ -521,12 +521,20 @@ pub fn core_to_proto_provider_error(e: CoreProviderError) -> ProtoProviderError 
     let cause = detail.cause.as_ref().map(|c| c.to_string());
     let provider_name = detail.provider_name.clone();
     let message = detail.message.clone();
+    let operation = detail.operation.clone();
+    let status = detail.status;
+    let code = detail.code.clone();
+    let request_id = detail.request_id.clone();
     ProtoProviderError {
         kind,
         message,
         resource_id,
         cause,
         provider_name,
+        operation,
+        status,
+        code,
+        request_id,
     }
 }
 
