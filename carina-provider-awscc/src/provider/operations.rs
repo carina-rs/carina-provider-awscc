@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 
 use carina_core::provider::{ProviderError, ProviderResult, UpdatePatch};
-use carina_core::resource::{ConcreteValue, Directives, ManagedResource, ResourceId, State, Value};
+use carina_core::resource::{ConcreteValue, Directives, Resource, ResourceId, State, Value};
 use carina_core::schema::{AttributeSchema, AttributeType};
 use indexmap::IndexMap;
 use serde_json::json;
@@ -72,7 +72,7 @@ impl AwsccProvider {
     }
 
     /// Create a resource using its configuration
-    pub async fn create_resource(&self, resource: ManagedResource) -> ProviderResult<State> {
+    pub async fn create_resource(&self, resource: Resource) -> ProviderResult<State> {
         let config = get_schema_config(&resource.id.resource_type).ok_or_else(|| {
             ProviderError::internal(format!(
                 "Unknown resource type: {}",
@@ -199,7 +199,7 @@ impl AwsccProvider {
         // patch we just applied). This is the source of values to carry
         // forward for attributes CloudControl's read does not return —
         // same logic as `create_resource` but built without a `to:
-        // ManagedResource` (which Level 3 deliberately does not pass through).
+        // Resource` (which Level 3 deliberately does not pass through).
         let desired = post_update_attributes(from, patch);
         for dsl_name in config.schema.attributes.keys() {
             if !state.attributes.contains_key(dsl_name)
@@ -314,8 +314,8 @@ fn map_aws_props_to_attributes(
 ///
 /// Used by `update_resource` to know which attributes to carry forward
 /// when CloudControl's read response omits them. The map is the same
-/// logical shape as the old `to: ManagedResource.attributes`, but built
-/// without exposing a full `ManagedResource` to the update path.
+/// logical shape as the old `to: Resource.attributes`, but built
+/// without exposing a full `Resource` to the update path.
 fn post_update_attributes(
     from: &State,
     patch: &UpdatePatch,

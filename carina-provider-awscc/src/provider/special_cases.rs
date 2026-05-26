@@ -1,4 +1,4 @@
-//! ManagedResource-type-specific special case handlers.
+//! Resource-type-specific special case handlers.
 //!
 //! Some AWS resource types require non-standard attribute handling that falls
 //! outside the generic schema-driven mapping. This module centralizes those
@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 
 use carina_core::provider::{ProviderError, ProviderResult};
-use carina_core::resource::{ConcreteValue, ManagedResource, ResourceId, Value};
+use carina_core::resource::{ConcreteValue, Resource, ResourceId, Value};
 use serde_json::json;
 
 use super::AwsccProvider;
@@ -59,7 +59,7 @@ impl AwsccProvider {
     /// Handle special attributes for create
     pub(crate) fn create_special_attributes(
         &self,
-        _resource: &ManagedResource,
+        _resource: &Resource,
         _desired_state: &mut serde_json::Map<String, serde_json::Value>,
     ) {
     }
