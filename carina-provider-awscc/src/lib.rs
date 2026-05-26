@@ -24,7 +24,7 @@ use carina_core::provider::{
     ProviderNormalizer, ProviderResult, ReadRequest, SavedAttrs, UpdateRequest,
     merge_default_tags_for_provider,
 };
-use carina_core::resource::{ConcreteValue, DataSource, ManagedResource, ResourceId, State, Value};
+use carina_core::resource::{ConcreteValue, DataSource, Resource, ResourceId, State, Value};
 use carina_core::schema::SchemaRegistry;
 
 use crate::provider::AwsccProviderConfig;
@@ -41,7 +41,7 @@ impl ProviderNormalizer for AwsccNormalizer {
     // resolution, state canonicalization, attr hydration, tag merge —
     // no I/O), so wrapping the existing sync logic in a ready future is
     // sufficient; no logic change.
-    fn normalize_desired<'a>(&'a self, resources: &'a mut [ManagedResource]) -> BoxFuture<'a, ()> {
+    fn normalize_desired<'a>(&'a self, resources: &'a mut [Resource]) -> BoxFuture<'a, ()> {
         Box::pin(async move {
             crate::provider::resolve_enum_identifiers_impl(resources);
         })
@@ -73,7 +73,7 @@ impl ProviderNormalizer for AwsccNormalizer {
 
     fn merge_default_tags<'a>(
         &'a self,
-        resources: &'a mut [ManagedResource],
+        resources: &'a mut [Resource],
         default_tags: &'a IndexMap<String, Value>,
         registry: &'a SchemaRegistry,
     ) -> BoxFuture<'a, ()> {
@@ -674,7 +674,7 @@ mod tests {
         let schemas = build_schemas();
         let normalizer = AwsccNormalizer;
 
-        let mut resource = ManagedResource::with_provider("awscc", "ec2.Vpc", "test-vpc", None);
+        let mut resource = Resource::with_provider("awscc", "ec2.Vpc", "test-vpc", None);
         resource.set_attr(
             "cidr_block".to_string(),
             Value::Concrete(ConcreteValue::String("10.0.0.0/16".to_string())),
@@ -752,7 +752,7 @@ mod tests {
         let schemas = build_schemas();
         let normalizer = AwsccNormalizer;
 
-        let mut resource = ManagedResource::with_provider("awscc", "ec2.Vpc", "test-vpc", None);
+        let mut resource = Resource::with_provider("awscc", "ec2.Vpc", "test-vpc", None);
         resource.set_attr(
             "cidr_block".to_string(),
             Value::Concrete(ConcreteValue::String("10.0.0.0/16".to_string())),
@@ -801,7 +801,7 @@ mod tests {
         let schemas = build_schemas();
         let normalizer = AwsccNormalizer;
 
-        let mut resource = ManagedResource::with_provider("awscc", "ec2.Route", "test-route", None);
+        let mut resource = Resource::with_provider("awscc", "ec2.Route", "test-route", None);
         resource.set_attr(
             "route_table_id".to_string(),
             Value::Concrete(ConcreteValue::String("rtb-123".to_string())),
@@ -827,7 +827,7 @@ mod tests {
         let schemas = build_schemas();
         let normalizer = AwsccNormalizer;
 
-        let mut resource = ManagedResource::with_provider("awscc", "ec2.Vpc", "test-vpc", None);
+        let mut resource = Resource::with_provider("awscc", "ec2.Vpc", "test-vpc", None);
         resource.set_attr(
             "cidr_block".to_string(),
             Value::Concrete(ConcreteValue::String("10.0.0.0/16".to_string())),

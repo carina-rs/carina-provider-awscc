@@ -12,8 +12,7 @@ use carina_core::provider::{
 };
 use carina_core::resource::{
     ConcreteValue, DataSource as CoreDataSource, DeferredValue, Directives as CoreDirectives,
-    ManagedResource as CoreResource, ResourceId as CoreResourceId, State as CoreState,
-    Value as CoreValue,
+    Resource as CoreResource, ResourceId as CoreResourceId, State as CoreState, Value as CoreValue,
 };
 use carina_core::schema::{
     AttributeSchema as CoreAttributeSchema, AttributeType as CoreAttributeType,
@@ -326,7 +325,7 @@ pub fn proto_to_core_schema(s: &ProtoResourceSchema) -> CoreResourceSchema {
     use carina_core::schema::SchemaKind as CoreSchemaKind;
     use carina_provider_protocol::types::SchemaKind as ProtoSchemaKind;
     let kind = match s.kind {
-        ProtoSchemaKind::Managed => CoreSchemaKind::Managed,
+        ProtoSchemaKind::Managed => CoreSchemaKind::Resource,
         ProtoSchemaKind::DataSource => CoreSchemaKind::DataSource,
     };
     CoreResourceSchema {
@@ -451,7 +450,7 @@ pub fn core_to_proto_schema(s: &CoreResourceSchema) -> ProtoResourceSchema {
     use carina_core::schema::SchemaKind as CoreSchemaKind;
     use carina_provider_protocol::types::SchemaKind as ProtoSchemaKind;
     let kind = match s.kind {
-        CoreSchemaKind::Managed => ProtoSchemaKind::Managed,
+        CoreSchemaKind::Resource => ProtoSchemaKind::Managed,
         CoreSchemaKind::DataSource => ProtoSchemaKind::DataSource,
     };
     ProtoResourceSchema {

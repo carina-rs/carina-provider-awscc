@@ -6577,7 +6577,7 @@ mod tests {
             handlers: BTreeMap::new(),
         };
         let enums = BTreeMap::new();
-        // ManagedResource-scoped override takes precedence over schema enum values
+        // Resource-scoped override takes precedence over schema enum values
         let result = type_display_string("RetentionInDays", &prop, &schema, &enums);
         assert_eq!(
             result,
