@@ -277,33 +277,7 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
                 .with_provider_name("PermissionSetArn"),
         )
         .attribute(
-            AttributeSchema::new("permissions_boundary", AttributeType::Struct {
-                    name: "PermissionsBoundary".to_string(),
-                    fields: vec![
-                    StructField::new("customer_managed_policy_reference", AttributeType::Struct {
-                    name: "CustomerManagedPolicyReference".to_string(),
-                    fields: vec![
-                    StructField::new("name", AttributeType::Custom {
-                identity: None,
-                pattern: Some("[\\w+=,.@-]+".to_string()),
-                length: Some((Some(1), Some(128))),
-                base: Box::new(AttributeType::String),
-                validate: legacy_validator(validate_string_pattern_9b83f4f8f3673df5_len_1_128),
-                to_dsl: None,
-            }).required().with_provider_name("Name"),
-                    StructField::new("path", AttributeType::Custom {
-                identity: None,
-                pattern: Some("((/[A-Za-z0-9\\.,\\+@=_-]+)*)/".to_string()),
-                length: Some((Some(1), Some(512))),
-                base: Box::new(AttributeType::String),
-                validate: legacy_validator(validate_string_pattern_b84fa12576539ca9_len_1_512),
-                to_dsl: None,
-            }).with_provider_name("Path")
-                    ],
-                }).with_provider_name("CustomerManagedPolicyReference"),
-                    StructField::new("managed_policy_arn", super::arn()).with_provider_name("ManagedPolicyArn")
-                    ],
-                })
+            AttributeSchema::new("permissions_boundary", AttributeType::Ref("PermissionsBoundary".to_string()))
                 .with_provider_name("PermissionsBoundary"),
         )
         .attribute(
@@ -341,6 +315,54 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
             }
             if errors.is_empty() { Ok(()) } else { Err(errors) }
         })
+        .with_def("CustomerManagedPolicyReference", AttributeType::Struct {
+                    name: "CustomerManagedPolicyReference".to_string(),
+                    fields: vec![
+                    StructField::new("name", AttributeType::Custom {
+                identity: None,
+                pattern: Some("[\\w+=,.@-]+".to_string()),
+                length: Some((Some(1), Some(128))),
+                base: Box::new(AttributeType::String),
+                validate: legacy_validator(validate_string_pattern_9b83f4f8f3673df5_len_1_128),
+                to_dsl: None,
+            }).required().with_provider_name("Name"),
+                    StructField::new("path", AttributeType::Custom {
+                identity: None,
+                pattern: Some("((/[A-Za-z0-9\\.,\\+@=_-]+)*)/".to_string()),
+                length: Some((Some(1), Some(512))),
+                base: Box::new(AttributeType::String),
+                validate: legacy_validator(validate_string_pattern_b84fa12576539ca9_len_1_512),
+                to_dsl: None,
+            }).with_provider_name("Path")
+                    ],
+                })
+        .with_def("PermissionsBoundary", AttributeType::Struct {
+                    name: "PermissionsBoundary".to_string(),
+                    fields: vec![
+                    StructField::new("customer_managed_policy_reference", AttributeType::Struct {
+                    name: "CustomerManagedPolicyReference".to_string(),
+                    fields: vec![
+                    StructField::new("name", AttributeType::Custom {
+                identity: None,
+                pattern: Some("[\\w+=,.@-]+".to_string()),
+                length: Some((Some(1), Some(128))),
+                base: Box::new(AttributeType::String),
+                validate: legacy_validator(validate_string_pattern_9b83f4f8f3673df5_len_1_128),
+                to_dsl: None,
+            }).required().with_provider_name("Name"),
+                    StructField::new("path", AttributeType::Custom {
+                identity: None,
+                pattern: Some("((/[A-Za-z0-9\\.,\\+@=_-]+)*)/".to_string()),
+                length: Some((Some(1), Some(512))),
+                base: Box::new(AttributeType::String),
+                validate: legacy_validator(validate_string_pattern_b84fa12576539ca9_len_1_512),
+                to_dsl: None,
+            }).with_provider_name("Path")
+                    ],
+                }).with_provider_name("CustomerManagedPolicyReference"),
+                    StructField::new("managed_policy_arn", super::arn()).with_provider_name("ManagedPolicyArn")
+                    ],
+                })
     }
 }
 

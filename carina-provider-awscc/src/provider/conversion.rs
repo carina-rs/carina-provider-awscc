@@ -13,13 +13,40 @@ use serde_json::json;
 use crate::schemas::generated::canonicalize_enum_value;
 use carina_core::utils::{convert_enum_value, extract_enum_value_with_values};
 
-/// Convert AWS value to DSL value
+/// Convert AWS value to DSL value (no cyclic-struct defs).
+/// Used by tests; production callers should prefer
+/// [`aws_value_to_dsl_with_defs`].
+#[allow(dead_code)]
 pub(crate) fn aws_value_to_dsl(
     dsl_name: &str,
     value: &serde_json::Value,
     attr_type: &AttributeType,
     resource_type: &str,
 ) -> Option<Value> {
+    aws_value_to_dsl_with_defs(
+        dsl_name,
+        value,
+        attr_type,
+        resource_type,
+        carina_core::schema::empty_defs(),
+    )
+}
+
+/// carina#3340: schema-aware variant that takes the enclosing
+/// [`ResourceSchema::defs`] map so `AttributeType::Ref` chains can be
+/// resolved during the value-tree walk. Callers that hold a resource
+/// schema should prefer this entry point; the 4-arg shim above uses
+/// an empty def map and will panic if a `Ref` is reached.
+pub(crate) fn aws_value_to_dsl_with_defs(
+    dsl_name: &str,
+    value: &serde_json::Value,
+    attr_type: &AttributeType,
+    resource_type: &str,
+    defs: &std::collections::BTreeMap<String, AttributeType>,
+) -> Option<Value> {
+    // Resolve any top-level `Ref` chain so the subsequent shape
+    // checks see the actual Struct/List/Map/... underneath.
+    let attr_type = attr_type.resolve_refs(defs);
     // This feeds the read/import path, whose result is written to
     // state. State must hold the provider-side (API) value, NOT a
     // fully-qualified DSL string: carina-core's state-lift reconciles
@@ -52,7 +79,7 @@ pub(crate) fn aws_value_to_dsl(
             .iter()
             .enumerate()
             .filter_map(|(i, item)| {
-                let result = aws_value_to_dsl(dsl_name, item, inner, resource_type);
+                let result = aws_value_to_dsl_with_defs(dsl_name, item, inner, resource_type, defs);
                 if result.is_none() {
                     log::warn!(
                         "aws_value_to_dsl: dropping unconvertible array item at index {} for attribute '{}' in resource '{}': {:?}",
@@ -68,7 +95,9 @@ pub(crate) fn aws_value_to_dsl(
     // For Union types, try each member type and use the first that produces a type-aware result
     if let AttributeType::Union(members) = attr_type {
         for member in members {
-            if let Some(result) = aws_value_to_dsl(dsl_name, value, member, resource_type) {
+            if let Some(result) =
+                aws_value_to_dsl_with_defs(dsl_name, value, member, resource_type, defs)
+            {
                 return Some(result);
             }
         }
@@ -84,8 +113,13 @@ pub(crate) fn aws_value_to_dsl(
             .filter_map(|field| {
                 let provider_key = field.provider_name.as_deref().unwrap_or(&field.name);
                 let json_val = obj.get(provider_key)?;
-                let dsl_val =
-                    aws_value_to_dsl(&field.name, json_val, &field.field_type, resource_type);
+                let dsl_val = aws_value_to_dsl_with_defs(
+                    &field.name,
+                    json_val,
+                    &field.field_type,
+                    resource_type,
+                    defs,
+                );
                 dsl_val.map(|v| (field.name.clone(), v))
             })
             .collect();
@@ -103,7 +137,7 @@ pub(crate) fn aws_value_to_dsl(
         let map: IndexMap<String, Value> = obj
             .iter()
             .filter_map(|(k, v)| {
-                let result = aws_value_to_dsl(dsl_name, v, inner, resource_type);
+                let result = aws_value_to_dsl_with_defs(dsl_name, v, inner, resource_type, defs);
                 if result.is_none() {
                     log::warn!(
                         "aws_value_to_dsl: dropping unconvertible map entry '{}' for attribute '{}' in resource '{}': {:?}",
@@ -192,12 +226,32 @@ pub(crate) fn json_to_value(value: &serde_json::Value) -> Option<Value> {
 }
 
 /// Convert DSL value to AWS JSON value
+#[allow(dead_code)]
 pub(crate) fn dsl_value_to_aws(
     value: &Value,
     attr_type: &AttributeType,
     resource_type: &str,
     attr_name: &str,
 ) -> Option<serde_json::Value> {
+    dsl_value_to_aws_with_defs(
+        value,
+        attr_type,
+        resource_type,
+        attr_name,
+        carina_core::schema::empty_defs(),
+    )
+}
+
+/// carina#3340: schema-aware variant — see [`aws_value_to_dsl_with_defs`]
+/// for the rationale. Same `Ref` chains, same `&defs` parameter.
+pub(crate) fn dsl_value_to_aws_with_defs(
+    value: &Value,
+    attr_type: &AttributeType,
+    resource_type: &str,
+    attr_name: &str,
+    defs: &std::collections::BTreeMap<String, AttributeType>,
+) -> Option<serde_json::Value> {
+    let attr_type = attr_type.resolve_refs(defs);
     // For schema-level string enums, convert namespaced DSL values back to provider values.
     if attr_type.namespaced_enum_parts().is_some() {
         match value {
@@ -239,7 +293,7 @@ pub(crate) fn dsl_value_to_aws(
             .iter()
             .enumerate()
             .filter_map(|(i, item)| {
-                let result = dsl_value_to_aws(item, inner, resource_type, attr_name);
+                let result = dsl_value_to_aws_with_defs(item, inner, resource_type, attr_name, defs);
                 if result.is_none() {
                     log::warn!(
                         "dsl_value_to_aws: dropping unconvertible list item at index {} for attribute '{}' in resource '{}': {:?}",
@@ -253,7 +307,9 @@ pub(crate) fn dsl_value_to_aws(
     } else if let AttributeType::Union(members) = attr_type {
         // Try each member type; use the first that produces a type-aware result
         for member in members {
-            if let Some(result) = dsl_value_to_aws(value, member, resource_type, attr_name) {
+            if let Some(result) =
+                dsl_value_to_aws_with_defs(value, member, resource_type, attr_name, defs)
+            {
                 return Some(result);
             }
         }
@@ -271,8 +327,13 @@ pub(crate) fn dsl_value_to_aws(
                     .as_deref()
                     .unwrap_or(&field.name)
                     .to_string();
-                let json_val =
-                    dsl_value_to_aws(dsl_val, &field.field_type, resource_type, &field.name);
+                let json_val = dsl_value_to_aws_with_defs(
+                    dsl_val,
+                    &field.field_type,
+                    resource_type,
+                    &field.name,
+                    defs,
+                );
                 json_val.map(|v| (provider_key, v))
             })
             .collect();
@@ -292,8 +353,13 @@ pub(crate) fn dsl_value_to_aws(
                     .as_deref()
                     .unwrap_or(&field.name)
                     .to_string();
-                let json_val =
-                    dsl_value_to_aws(dsl_val, &field.field_type, resource_type, &field.name);
+                let json_val = dsl_value_to_aws_with_defs(
+                    dsl_val,
+                    &field.field_type,
+                    resource_type,
+                    &field.name,
+                    defs,
+                );
                 json_val.map(|v| (provider_key, v))
             })
             .collect();
@@ -307,7 +373,7 @@ pub(crate) fn dsl_value_to_aws(
         let obj: serde_json::Map<String, serde_json::Value> = map
             .iter()
             .filter_map(|(k, v)| {
-                let result = dsl_value_to_aws(v, inner, resource_type, attr_name);
+                let result = dsl_value_to_aws_with_defs(v, inner, resource_type, attr_name, defs);
                 if result.is_none() {
                     log::warn!(
                         "dsl_value_to_aws: dropping unconvertible map entry '{}' for attribute '{}' in resource '{}': {:?}",
@@ -450,11 +516,12 @@ mod tests {
             "PriceClass": "PriceClass_200"
         });
 
-        let dsl = aws_value_to_dsl(
+        let dsl = aws_value_to_dsl_with_defs(
             "distribution_config",
             &aws_json,
             &attr_schema.attr_type,
             "cloudfront.Distribution",
+            &config.schema.defs,
         )
         .expect("aws_value_to_dsl should succeed for distribution_config");
 
@@ -484,8 +551,12 @@ mod tests {
         // carina-core's state-lift reduces the persisted API values to
         // the canonical short identifiers the differ reconciles against
         // the parsed-desired side — closing the awscc#254 spurious diff.
-        let lifted = carina_core::utils::lift_string_enum_leaves(&dsl, &attr_schema.attr_type)
-            .expect("API-canonical distribution_config must lift");
+        let lifted = carina_core::utils::lift_string_enum_leaves_with_defs(
+            &dsl,
+            &attr_schema.attr_type,
+            &config.schema.defs,
+        )
+        .expect("API-canonical distribution_config must lift");
         let Value::Concrete(ConcreteValue::Map(lifted_top)) = &lifted else {
             panic!("expected lifted distribution_config to be a Map, got {lifted:?}");
         };
@@ -1560,11 +1631,12 @@ mod tests {
         });
 
         // Read path: convert AWS JSON to DSL value
-        let dsl_value = aws_value_to_dsl(
+        let dsl_value = aws_value_to_dsl_with_defs(
             "lifecycle_configuration",
             &aws_json,
             &attr_schema.attr_type,
             "s3.Bucket",
+            &config.schema.defs,
         )
         .expect("aws_value_to_dsl should succeed for lifecycle_configuration");
 
@@ -1633,11 +1705,12 @@ mod tests {
         }
 
         // Write path: convert DSL value back to AWS JSON
-        let written_json = dsl_value_to_aws(
+        let written_json = dsl_value_to_aws_with_defs(
             &dsl_value,
             &attr_schema.attr_type,
             "s3.Bucket",
             "lifecycle_configuration",
+            &config.schema.defs,
         )
         .expect("dsl_value_to_aws should succeed");
 
@@ -1662,17 +1735,23 @@ mod tests {
             .attributes
             .get("ownership_controls")
             .expect("s3.Bucket has ownership_controls");
-        let AttributeType::Struct { fields, .. } = &ownership_controls.attr_type else {
+        // carina#3340: reuse-via-Ref may produce `AttributeType::Ref`
+        // at this position; resolve through `schema.defs` so the test
+        // still sees the underlying Struct.
+        let defs = &config.schema.defs;
+        let oc_resolved = ownership_controls.attr_type.resolve_refs(defs);
+        let AttributeType::Struct { fields, .. } = oc_resolved else {
             panic!("ownership_controls is a Struct");
         };
         let rules = fields.iter().find(|f| f.name == "rules").unwrap();
         let AttributeType::List { inner, .. } = &rules.field_type else {
             panic!("rules is a List");
         };
+        let inner_resolved = inner.as_ref().resolve_refs(defs);
         let AttributeType::Struct {
             fields: rule_fields,
             ..
-        } = inner.as_ref()
+        } = inner_resolved
         else {
             panic!("rules.inner is a Struct");
         };

@@ -19,6 +19,7 @@ pub mod organizations;
 pub mod route53;
 pub mod s3;
 pub mod sso;
+pub mod wafv2;
 
 /// Cached schema configs, initialized once on first access.
 static SCHEMA_CONFIGS: LazyLock<Vec<AwsccSchemaConfig>> = LazyLock::new(build_configs);
@@ -75,6 +76,7 @@ static ENUM_VALID_VALUES: LazyLock<
         route53::hosted_zone::enum_valid_values(),
         cloudfront::distribution::enum_valid_values(),
         cloudfront::origin_access_control::enum_valid_values(),
+        wafv2::web_acl::enum_valid_values(),
     ];
     let mut map: HashMap<&str, HashMap<&str, &[&str]>> = HashMap::new();
     for (rt, attrs) in modules {
@@ -126,6 +128,7 @@ fn build_configs() -> Vec<AwsccSchemaConfig> {
         route53::hosted_zone::route53_hosted_zone_config(),
         cloudfront::distribution::cloudfront_distribution_config(),
         cloudfront::origin_access_control::cloudfront_origin_access_control_config(),
+        wafv2::web_acl::wafv2_web_acl_config(),
     ]
 }
 

@@ -98,7 +98,162 @@ pub fn cloudfront_distribution_config() -> AwsccSchemaConfig {
         schema: ResourceSchema::new("cloudfront.Distribution")
         .with_description("A distribution tells CloudFront where you want content to be delivered from, and the details about how to track and manage content delivery.")
         .attribute(
-            AttributeSchema::new("distribution_config", AttributeType::Struct {
+            AttributeSchema::new("distribution_config", AttributeType::Ref("DistributionConfig".to_string()))
+                .required()
+                .with_description("The distribution's configuration.")
+                .with_provider_name("DistributionConfig"),
+        )
+        .attribute(
+            AttributeSchema::new("domain_name", AttributeType::String)
+                .read_only()
+                .deferred_populate()
+                .with_description(" (read-only)")
+                .with_provider_name("DomainName"),
+        )
+        .attribute(
+            AttributeSchema::new("id", AttributeType::String)
+                .read_only()
+                .with_description(" (read-only)")
+                .with_provider_name("Id"),
+        )
+        .attribute(
+            AttributeSchema::new("tags", tags_type())
+                .with_description("A complex type that contains zero or more ``Tag`` elements.")
+                .with_provider_name("Tags"),
+        )
+        .attribute(
+            AttributeSchema::new("arn", super::arn())
+                .read_only()
+                .with_description("The ARN of the CloudFront distribution. Synthesized by the provider from the distribution id; CloudFront's CloudFormation type does not expose ARN through the Cloud Control API. (read-only)"),
+        )
+        .with_validator(|attrs| {
+            let mut errors = Vec::new();
+            if let Err(mut e) = validate_tags_map(attrs) {
+                errors.append(&mut e);
+            }
+            if errors.is_empty() { Ok(()) } else { Err(errors) }
+        })
+        .with_def("CacheTagConfig", AttributeType::Struct {
+                    name: "CacheTagConfig".to_string(),
+                    fields: vec![
+                    StructField::new("header_name", AttributeType::String).required().with_description("The name of the HTTP header that your origin includes in responses. CloudFront uses this header to extract cache tags. The header value must contain comma-separated tag values (for example, ``product:electronics, category:tv, brand:example``).").with_provider_name("HeaderName")
+                    ],
+                })
+        .with_def("ConnectionFunctionAssociation", AttributeType::Struct {
+                    name: "ConnectionFunctionAssociation".to_string(),
+                    fields: vec![
+                    StructField::new("id", AttributeType::String).required().with_description("The association's ID.").with_provider_name("Id")
+                    ],
+                })
+        .with_def("Cookies", AttributeType::Struct {
+                    name: "Cookies".to_string(),
+                    fields: vec![
+                    StructField::new("forward", AttributeType::StringEnum {
+                name: "Forward".to_string(),
+                values: vec!["all".to_string(), "none".to_string(), "whitelist".to_string()],
+                identity: Some(carina_core::schema::string_enum_identity("Forward", Some("awscc.cloudfront.Distribution"))),
+                dsl_aliases: vec![("all".to_string(), "all".to_string()), ("none".to_string(), "none".to_string()), ("whitelist".to_string(), "whitelist".to_string())],
+            }).required().with_description("This field is deprecated. We recommend that you use a cache policy or an origin request policy instead of this field. If you want to include cookies in the cache key, use a cache policy. For more information, see [Creating cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-the-cache-key.html#cache-key-create-cache-policy) in the *Amazon CloudFront Developer Guide*. If you want to send cookies to the origin but not include them in the cache key, use origin request policy. For more information, see [Creating origin request policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-origin-requests.html#origin-request-create-origin-request-policy) in the *Amazon CloudFront Developer Guide*. Specifies which cookies to forward to the origin for this cache behavior: all, none, or the list of cookies specified in the ``WhitelistedNames`` complex type. Amazon S3 doesn't process cookies. When the cache behavior is forwarding requests to an Amazon S3 origin, specify none for the ``Forward`` element.").with_provider_name("Forward"),
+                    StructField::new("whitelisted_names", AttributeType::list(AttributeType::String)).with_description("This field is deprecated. We recommend that you use a cache policy or an origin request policy instead of this field. If you want to include cookies in the cache key, use a cache policy. For more information, see [Creating cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-the-cache-key.html#cache-key-create-cache-policy) in the *Amazon CloudFront Developer Guide*. If you want to send cookies to the origin but not include them in the cache key, use an origin request policy. For more information, see [Creating origin request policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-origin-requests.html#origin-request-create-origin-request-policy) in the *Amazon CloudFront Developer Guide*. Required if you specify ``whitelist`` for the value of ``Forward``. A complex type that specifies how many different cookies you want CloudFront to forward to the origin for this cache behavior and, if you want to forward selected cookies, the names of those cookies. If you specify ``all`` or ``none`` for the value of ``Forward``, omit ``WhitelistedNames``. If you change the value of ``Forward`` from ``whitelist`` to ``all`` or ``none`` and you don't delete the ``WhitelistedNames`` element and its child elements, CloudFront deletes them automatically. For the current limit on the number of cookie names that you can whitelist for each cache behavior, see [CloudFront Limits](https://docs.aws.amazon.com/general/latest/gr/xrefaws_service_limits.html#limits_cloudfront) in the *General Reference*.").with_provider_name("WhitelistedNames")
+                    ],
+                })
+        .with_def("CustomOriginConfig", AttributeType::Struct {
+                    name: "CustomOriginConfig".to_string(),
+                    fields: vec![
+                    StructField::new("http_port", AttributeType::Int).with_description("The HTTP port that CloudFront uses to connect to the origin. Specify the HTTP port that the origin listens on.").with_provider_name("HTTPPort"),
+                    StructField::new("https_port", AttributeType::Int).with_description("The HTTPS port that CloudFront uses to connect to the origin. Specify the HTTPS port that the origin listens on.").with_provider_name("HTTPSPort"),
+                    StructField::new("ip_address_type", AttributeType::StringEnum {
+                name: "IpAddressType".to_string(),
+                values: vec!["ipv4".to_string(), "ipv6".to_string(), "dualstack".to_string()],
+                identity: Some(carina_core::schema::string_enum_identity("IpAddressType", Some("awscc.cloudfront.Distribution"))),
+                dsl_aliases: vec![("ipv4".to_string(), "ipv4".to_string()), ("ipv6".to_string(), "ipv6".to_string()), ("dualstack".to_string(), "dualstack".to_string())],
+            }).with_description("Specifies which IP protocol CloudFront uses when connecting to your origin. If your origin uses both IPv4 and IPv6 protocols, you can choose ``dualstack`` to help optimize reliability.").with_provider_name("IpAddressType"),
+                    StructField::new("origin_keepalive_timeout", AttributeType::Int).with_description("Specifies how long, in seconds, CloudFront persists its connection to the origin. The minimum timeout is 1 second, the maximum is 120 seconds, and the default (if you don't specify otherwise) is 5 seconds. For more information, see [Keep-alive timeout (custom origins only)](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/DownloadDistValuesOrigin.html#DownloadDistValuesOriginKeepaliveTimeout) in the *Amazon CloudFront Developer Guide*.").with_provider_name("OriginKeepaliveTimeout"),
+                    StructField::new("origin_mtls_config", AttributeType::Struct {
+                    name: "OriginMtlsConfig".to_string(),
+                    fields: vec![
+                    StructField::new("client_certificate_arn", super::arn()).required().with_description("The Amazon Resource Name (ARN) of the client certificate stored in AWS Certificate Manager (ACM) that CloudFront uses to authenticate with your origin using Mutual TLS.").with_provider_name("ClientCertificateArn")
+                    ],
+                }).with_description("Configures mutual TLS authentication between CloudFront and your origin server.").with_provider_name("OriginMtlsConfig"),
+                    StructField::new("origin_protocol_policy", AttributeType::StringEnum {
+                name: "OriginProtocolPolicy".to_string(),
+                values: vec!["http-only".to_string(), "match-viewer".to_string(), "https-only".to_string()],
+                identity: Some(carina_core::schema::string_enum_identity("OriginProtocolPolicy", Some("awscc.cloudfront.Distribution"))),
+                dsl_aliases: vec![("http-only".to_string(), "http_only".to_string()), ("match-viewer".to_string(), "match_viewer".to_string()), ("https-only".to_string(), "https_only".to_string())],
+            }).required().with_description("Specifies the protocol (HTTP or HTTPS) that CloudFront uses to connect to the origin. Valid values are: + ``http-only`` – CloudFront always uses HTTP to connect to the origin. + ``match-viewer`` – CloudFront connects to the origin using the same protocol that the viewer used to connect to CloudFront. + ``https-only`` – CloudFront always uses HTTPS to connect to the origin.").with_provider_name("OriginProtocolPolicy"),
+                    StructField::new("origin_read_timeout", AttributeType::Int).with_description("Specifies how long, in seconds, CloudFront waits for a response from the origin. This is also known as the *origin response timeout*. The minimum timeout is 1 second, the maximum is 120 seconds, and the default (if you don't specify otherwise) is 30 seconds. For more information, see [Response timeout](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/DownloadDistValuesOrigin.html#DownloadDistValuesOriginResponseTimeout) in the *Amazon CloudFront Developer Guide*.").with_provider_name("OriginReadTimeout"),
+                    StructField::new("origin_ssl_protocols", AttributeType::list(AttributeType::StringEnum {
+                name: "OriginSslProtocols".to_string(),
+                values: vec!["SSLv3".to_string(), "TLSv1".to_string(), "TLSv1.1".to_string(), "TLSv1.2".to_string(), "sslv3".to_string(), "tlsv1".to_string(), "tlsv1_1".to_string(), "tlsv1_2".to_string()],
+                identity: Some(carina_core::schema::string_enum_identity("OriginSslProtocols", Some("awscc.cloudfront.Distribution"))),
+                dsl_aliases: vec![("SSLv3".to_string(), "sslv3".to_string()), ("TLSv1".to_string(), "tlsv1".to_string()), ("TLSv1.1".to_string(), "tlsv1_1".to_string()), ("TLSv1.2".to_string(), "tlsv1_2".to_string()), ("sslv3".to_string(), "sslv3".to_string()), ("tlsv1".to_string(), "tlsv1".to_string()), ("tlsv1_1".to_string(), "tlsv1_1".to_string()), ("tlsv1_2".to_string(), "tlsv1_2".to_string())],
+            })).with_description("Specifies the minimum SSL/TLS protocol that CloudFront uses when connecting to your origin over HTTPS. Valid values include ``SSLv3``, ``TLSv1``, ``TLSv1.1``, and ``TLSv1.2``. For more information, see [Minimum Origin SSL Protocol](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/DownloadDistValuesOrigin.html#DownloadDistValuesOriginSSLProtocols) in the *Amazon CloudFront Developer Guide*.").with_provider_name("OriginSSLProtocols")
+                    ],
+                })
+        .with_def("DefaultCacheBehavior", AttributeType::Struct {
+                    name: "DefaultCacheBehavior".to_string(),
+                    fields: vec![
+                    StructField::new("allowed_methods", AttributeType::unordered_list(AttributeType::StringEnum {
+                name: "AllowedMethods".to_string(),
+                values: vec!["GET".to_string(), "HEAD".to_string(), "OPTIONS".to_string(), "PUT".to_string(), "PATCH".to_string(), "POST".to_string(), "DELETE".to_string()],
+                identity: Some(carina_core::schema::string_enum_identity("AllowedMethods", Some("awscc.cloudfront.Distribution"))),
+                dsl_aliases: vec![("GET".to_string(), "get".to_string()), ("HEAD".to_string(), "head".to_string()), ("OPTIONS".to_string(), "options".to_string()), ("PUT".to_string(), "put".to_string()), ("PATCH".to_string(), "patch".to_string()), ("POST".to_string(), "post".to_string()), ("DELETE".to_string(), "delete".to_string())],
+            })).with_description("A complex type that controls which HTTP methods CloudFront processes and forwards to your Amazon S3 bucket or your custom origin. There are three choices: + CloudFront forwards only ``GET`` and ``HEAD`` requests. + CloudFront forwards only ``GET``, ``HEAD``, and ``OPTIONS`` requests. + CloudFront forwards ``GET, HEAD, OPTIONS, PUT, PATCH, POST``, and ``DELETE`` requests. If you pick the third choice, you may need to restrict access to your Amazon S3 bucket or to your custom origin so users can't perform operations that you don't want them to. For example, you might not want users to have permissions to delete objects from your origin.").with_provider_name("AllowedMethods"),
+                    StructField::new("cache_policy_id", AttributeType::String).with_description("The unique identifier of the cache policy that is attached to the default cache behavior. For more information, see [Creating cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-the-cache-key.html#cache-key-create-cache-policy) or [Using the managed cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/using-managed-cache-policies.html) in the *Amazon CloudFront Developer Guide*. A ``DefaultCacheBehavior`` must include either a ``CachePolicyId`` or ``ForwardedValues``. We recommend that you use a ``CachePolicyId``.").with_provider_name("CachePolicyId"),
+                    StructField::new("cached_methods", AttributeType::unordered_list(AttributeType::StringEnum {
+                name: "CachedMethods".to_string(),
+                values: vec!["GET".to_string(), "HEAD".to_string(), "OPTIONS".to_string()],
+                identity: Some(carina_core::schema::string_enum_identity("CachedMethods", Some("awscc.cloudfront.Distribution"))),
+                dsl_aliases: vec![("GET".to_string(), "get".to_string()), ("HEAD".to_string(), "head".to_string()), ("OPTIONS".to_string(), "options".to_string())],
+            })).with_description("A complex type that controls whether CloudFront caches the response to requests using the specified HTTP methods. There are two choices: + CloudFront caches responses to ``GET`` and ``HEAD`` requests. + CloudFront caches responses to ``GET``, ``HEAD``, and ``OPTIONS`` requests. If you pick the second choice for your Amazon S3 Origin, you may need to forward Access-Control-Request-Method, Access-Control-Request-Headers, and Origin headers for the responses to be cached correctly.").with_provider_name("CachedMethods"),
+                    StructField::new("compress", AttributeType::Bool).with_description("Whether you want CloudFront to automatically compress certain files for this cache behavior. If so, specify ``true``; if not, specify ``false``. For more information, see [Serving Compressed Files](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/ServingCompressedFiles.html) in the *Amazon CloudFront Developer Guide*.").with_provider_name("Compress"),
+                    StructField::new("default_ttl", AttributeType::Float).with_description("This field only supports standard distributions. You can't specify this field for multi-tenant distributions. For more information, see [Unsupported features for SaaS Manager for Amazon CloudFront](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/distribution-config-options.html#unsupported-saas) in the *Amazon CloudFront Developer Guide*. This field is deprecated. We recommend that you use the ``DefaultTTL`` field in a cache policy instead of this field. For more information, see [Creating cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-the-cache-key.html#cache-key-create-cache-policy) or [Using the managed cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/using-managed-cache-policies.html) in the *Amazon CloudFront Developer Guide*. The default amount of time that you want objects to stay in CloudFront caches before CloudFront forwards another request to your origin to determine whether the object has been updated. The value that you specify applies only when your origin does not add HTTP headers such as ``Cache-Control max-age``, ``Cache-Control s-maxage``, and ``Expires`` to objects. For more information, see [Managing How Long Content Stays in an Edge Cache (Expiration)](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/Expiration.html) in the *Amazon CloudFront Developer Guide*.").with_provider_name("DefaultTTL"),
+                    StructField::new("field_level_encryption_id", AttributeType::String).with_description("The value of ``ID`` for the field-level encryption configuration that you want CloudFront to use for encrypting specific fields of data for the default cache behavior.").with_provider_name("FieldLevelEncryptionId"),
+                    StructField::new("forwarded_values", AttributeType::Ref("ForwardedValues".to_string())).with_description("This field is deprecated. We recommend that you use a cache policy or an origin request policy instead of this field. For more information, see [Working with policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/working-with-policies.html) in the *Amazon CloudFront Developer Guide*. If you want to include values in the cache key, use a cache policy. For more information, see [Creating cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-the-cache-key.html#cache-key-create-cache-policy) or [Using the managed cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/using-managed-cache-policies.html) in the *Amazon CloudFront Developer Guide*. If you want to send values to the origin but not include them in the cache key, use an origin request policy. For more information, see [Creating origin request policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-origin-requests.html#origin-request-create-origin-request-policy) or [Using the managed origin request policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/using-managed-origin-request-policies.html) in the *Amazon CloudFront Developer Guide*. A ``DefaultCacheBehavior`` must include either a ``CachePolicyId`` or ``ForwardedValues``. We recommend that you use a ``CachePolicyId``. A complex type that specifies how CloudFront handles query strings, cookies, and HTTP headers.").with_provider_name("ForwardedValues"),
+                    StructField::new("function_associations", AttributeType::list(AttributeType::Struct {
+                    name: "FunctionAssociation".to_string(),
+                    fields: vec![
+                    StructField::new("event_type", AttributeType::StringEnum {
+                name: "EventType".to_string(),
+                values: vec!["viewer-request".to_string(), "viewer-response".to_string(), "origin-request".to_string(), "origin-response".to_string()],
+                identity: Some(carina_core::schema::string_enum_identity("EventType", Some("awscc.cloudfront.Distribution"))),
+                dsl_aliases: vec![("viewer-request".to_string(), "viewer_request".to_string()), ("viewer-response".to_string(), "viewer_response".to_string()), ("origin-request".to_string(), "origin_request".to_string()), ("origin-response".to_string(), "origin_response".to_string())],
+            }).with_description("The event type of the function, either ``viewer-request`` or ``viewer-response``. You cannot use origin-facing event types (``origin-request`` and ``origin-response``) with a CloudFront function.").with_provider_name("EventType"),
+                    StructField::new("function_arn", super::arn()).with_description("The Amazon Resource Name (ARN) of the function.").with_provider_name("FunctionARN")
+                    ],
+                })).with_description("A list of CloudFront functions that are associated with this cache behavior. Your functions must be published to the ``LIVE`` stage to associate them with a cache behavior.").with_provider_name("FunctionAssociations").with_block_name("function_association"),
+                    StructField::new("grpc_config", AttributeType::Ref("GrpcConfig".to_string())).with_description("The gRPC configuration for your cache behavior.").with_provider_name("GrpcConfig"),
+                    StructField::new("lambda_function_associations", AttributeType::list(AttributeType::Struct {
+                    name: "LambdaFunctionAssociation".to_string(),
+                    fields: vec![
+                    StructField::new("event_type", AttributeType::StringEnum {
+                name: "EventType".to_string(),
+                values: vec!["viewer-request".to_string(), "origin-request".to_string(), "origin-response".to_string(), "viewer-response".to_string()],
+                identity: Some(carina_core::schema::string_enum_identity("EventType", Some("awscc.cloudfront.Distribution"))),
+                dsl_aliases: vec![("viewer-request".to_string(), "viewer_request".to_string()), ("origin-request".to_string(), "origin_request".to_string()), ("origin-response".to_string(), "origin_response".to_string()), ("viewer-response".to_string(), "viewer_response".to_string())],
+            }).with_description("Specifies the event type that triggers a Lambda@Edge function invocation. You can specify the following values: + ``viewer-request``: The function executes when CloudFront receives a request from a viewer and before it checks to see whether the requested object is in the edge cache. + ``origin-request``: The function executes only when CloudFront sends a request to your origin. When the requested object is in the edge cache, the function doesn't execute. + ``origin-response``: The function executes after CloudFront receives a response from the origin and before it caches the object in the response. When the requested object is in the edge cache, the function doesn't execute. + ``viewer-response``: The function executes before CloudFront returns the requested object to the viewer. The function executes regardless of whether the object was already in the edge cache. If the origin returns an HTTP status code other than HTTP 200 (OK), the function doesn't execute.").with_provider_name("EventType"),
+                    StructField::new("include_body", AttributeType::Bool).with_description("A flag that allows a Lambda@Edge function to have read access to the body content. For more information, see [Accessing the Request Body by Choosing the Include Body Option](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/lambda-include-body-access.html) in the Amazon CloudFront Developer Guide.").with_provider_name("IncludeBody"),
+                    StructField::new("lambda_function_arn", super::arn()).with_description("The ARN of the Lambda@Edge function. You must specify the ARN of a function version; you can't specify an alias or $LATEST.").with_provider_name("LambdaFunctionARN")
+                    ],
+                })).with_description("A complex type that contains zero or more Lambda@Edge function associations for a cache behavior.").with_provider_name("LambdaFunctionAssociations").with_block_name("lambda_function_association"),
+                    StructField::new("max_ttl", AttributeType::Float).with_description("This field only supports standard distributions. You can't specify this field for multi-tenant distributions. For more information, see [Unsupported features for SaaS Manager for Amazon CloudFront](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/distribution-config-options.html#unsupported-saas) in the *Amazon CloudFront Developer Guide*. This field is deprecated. We recommend that you use the ``MaxTTL`` field in a cache policy instead of this field. For more information, see [Creating cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-the-cache-key.html#cache-key-create-cache-policy) or [Using the managed cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/using-managed-cache-policies.html) in the *Amazon CloudFront Developer Guide*. The maximum amount of time that you want objects to stay in CloudFront caches before CloudFront forwards another request to your origin to determine whether the object has been updated. The value that you specify applies only when your origin adds HTTP headers such as ``Cache-Control max-age``, ``Cache-Control s-maxage``, and ``Expires`` to objects. For more information, see [Managing How Long Content Stays in an Edge Cache (Expiration)](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/Expiration.html) in the *Amazon CloudFront Developer Guide*.").with_provider_name("MaxTTL"),
+                    StructField::new("min_ttl", AttributeType::Float).with_description("This field only supports standard distributions. You can't specify this field for multi-tenant distributions. For more information, see [Unsupported features for SaaS Manager for Amazon CloudFront](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/distribution-config-options.html#unsupported-saas) in the *Amazon CloudFront Developer Guide*. This field is deprecated. We recommend that you use the ``MinTTL`` field in a cache policy instead of this field. For more information, see [Creating cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-the-cache-key.html#cache-key-create-cache-policy) or [Using the managed cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/using-managed-cache-policies.html) in the *Amazon CloudFront Developer Guide*. The minimum amount of time that you want objects to stay in CloudFront caches before CloudFront forwards another request to your origin to determine whether the object has been updated. For more information, see [Managing How Long Content Stays in an Edge Cache (Expiration)](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/Expiration.html) in the *Amazon CloudFront Developer Guide*. You must specify ``0`` for ``MinTTL`` if you configure CloudFront to forward all headers to your origin (under ``Headers``, if you specify ``1`` for ``Quantity`` and ``*`` for ``Name``).").with_provider_name("MinTTL"),
+                    StructField::new("origin_request_policy_id", AttributeType::String).with_description("The unique identifier of the origin request policy that is attached to the default cache behavior. For more information, see [Creating origin request policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-origin-requests.html#origin-request-create-origin-request-policy) or [Using the managed origin request policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/using-managed-origin-request-policies.html) in the *Amazon CloudFront Developer Guide*.").with_provider_name("OriginRequestPolicyId"),
+                    StructField::new("realtime_log_config_arn", super::arn()).with_description("The Amazon Resource Name (ARN) of the real-time log configuration that is attached to this cache behavior. For more information, see [Real-time logs](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/real-time-logs.html) in the *Amazon CloudFront Developer Guide*.").with_provider_name("RealtimeLogConfigArn"),
+                    StructField::new("response_headers_policy_id", AttributeType::String).with_description("The identifier for a response headers policy.").with_provider_name("ResponseHeadersPolicyId"),
+                    StructField::new("smooth_streaming", AttributeType::Bool).with_description("This field only supports standard distributions. You can't specify this field for multi-tenant distributions. For more information, see [Unsupported features for SaaS Manager for Amazon CloudFront](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/distribution-config-options.html#unsupported-saas) in the *Amazon CloudFront Developer Guide*. Indicates whether you want to distribute media files in the Microsoft Smooth Streaming format using the origin that is associated with this cache behavior. If so, specify ``true``; if not, specify ``false``. If you specify ``true`` for ``SmoothStreaming``, you can still distribute other content using this cache behavior if the content matches the value of ``PathPattern``.").with_provider_name("SmoothStreaming"),
+                    StructField::new("target_origin_id", AttributeType::String).required().with_description("The value of ``ID`` for the origin that you want CloudFront to route requests to when they use the default cache behavior.").with_provider_name("TargetOriginId"),
+                    StructField::new("trusted_key_groups", AttributeType::list(AttributeType::String)).with_description("A list of key groups that CloudFront can use to validate signed URLs or signed cookies. When a cache behavior contains trusted key groups, CloudFront requires signed URLs or signed cookies for all requests that match the cache behavior. The URLs or cookies must be signed with a private key whose corresponding public key is in the key group. The signed URL or cookie contains information about which public key CloudFront should use to verify the signature. For more information, see [Serving private content](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/PrivateContent.html) in the *Amazon CloudFront Developer Guide*.").with_provider_name("TrustedKeyGroups"),
+                    StructField::new("trusted_signers", AttributeType::list(AttributeType::String)).with_description("We recommend using ``TrustedKeyGroups`` instead of ``TrustedSigners``. This field only supports standard distributions. You can't specify this field for multi-tenant distributions. For more information, see [Unsupported features for SaaS Manager for Amazon CloudFront](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/distribution-config-options.html#unsupported-saas) in the *Amazon CloudFront Developer Guide*. A list of AWS-account IDs whose public keys CloudFront can use to validate signed URLs or signed cookies. When a cache behavior contains trusted signers, CloudFront requires signed URLs or signed cookies for all requests that match the cache behavior. The URLs or cookies must be signed with the private key of a CloudFront key pair in a trusted signer's AWS-account. The signed URL or cookie contains information about which public key CloudFront should use to verify the signature. For more information, see [Serving private content](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/PrivateContent.html) in the *Amazon CloudFront Developer Guide*.").with_provider_name("TrustedSigners"),
+                    StructField::new("viewer_protocol_policy", AttributeType::StringEnum {
+                name: "ViewerProtocolPolicy".to_string(),
+                values: vec!["allow-all".to_string(), "redirect-to-https".to_string(), "https-only".to_string()],
+                identity: Some(carina_core::schema::string_enum_identity("ViewerProtocolPolicy", Some("awscc.cloudfront.Distribution"))),
+                dsl_aliases: vec![("allow-all".to_string(), "allow_all".to_string()), ("redirect-to-https".to_string(), "redirect_to_https".to_string()), ("https-only".to_string(), "https_only".to_string())],
+            }).required().with_description("The protocol that viewers can use to access the files in the origin specified by ``TargetOriginId`` when a request matches the path pattern in ``PathPattern``. You can specify the following options: + ``allow-all``: Viewers can use HTTP or HTTPS. + ``redirect-to-https``: If a viewer submits an HTTP request, CloudFront returns an HTTP status code of 301 (Moved Permanently) to the viewer along with the HTTPS URL. The viewer then resubmits the request using the new URL. + ``https-only``: If a viewer sends an HTTP request, CloudFront returns an HTTP status code of 403 (Forbidden). For more information about requiring the HTTPS protocol, see [Requiring HTTPS Between Viewers and CloudFront](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/using-https-viewers-to-cloudfront.html) in the *Amazon CloudFront Developer Guide*. The only way to guarantee that viewers retrieve an object that was fetched from the origin using HTTPS is never to use any other protocol to fetch the object. If you have recently changed from HTTP to HTTPS, we recommend that you clear your objects' cache because cached objects are protocol agnostic. That means that an edge location will return an object from the cache regardless of whether the current request protocol matches the protocol used previously. For more information, see [Managing Cache Expiration](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/Expiration.html) in the *Amazon CloudFront Developer Guide*.").with_provider_name("ViewerProtocolPolicy")
+                    ],
+                })
+        .with_def("DistributionConfig", AttributeType::Struct {
                     name: "DistributionConfig".to_string(),
                     fields: vec![
                     StructField::new("aliases", AttributeType::list(AttributeType::String)).with_description("This field only supports standard distributions. You can't specify this field for multi-tenant distributions. For more information, see [Unsupported features for SaaS Manager for Amazon CloudFront](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/distribution-config-options.html#unsupported-saas) in the *Amazon CloudFront Developer Guide*. A complex type that contains information about CNAMEs (alternate domain names), if any, for this distribution.").with_provider_name("Aliases"),
@@ -147,9 +302,9 @@ pub fn cloudfront_distribution_config() -> AwsccSchemaConfig {
                     name: "FunctionAssociation".to_string(),
                     fields: vec![
                     StructField::new("event_type", AttributeType::StringEnum {
-                name: "FunctionAssociationEventType".to_string(),
+                name: "EventType".to_string(),
                 values: vec!["viewer-request".to_string(), "viewer-response".to_string(), "origin-request".to_string(), "origin-response".to_string()],
-                identity: Some(carina_core::schema::string_enum_identity("FunctionAssociationEventType", Some("awscc.cloudfront.Distribution"))),
+                identity: Some(carina_core::schema::string_enum_identity("EventType", Some("awscc.cloudfront.Distribution"))),
                 dsl_aliases: vec![("viewer-request".to_string(), "viewer_request".to_string()), ("viewer-response".to_string(), "viewer_response".to_string()), ("origin-request".to_string(), "origin_request".to_string()), ("origin-response".to_string(), "origin_response".to_string())],
             }).with_description("The event type of the function, either ``viewer-request`` or ``viewer-response``. You cannot use origin-facing event types (``origin-request`` and ``origin-response``) with a CloudFront function.").with_provider_name("EventType"),
                     StructField::new("function_arn", super::arn()).with_description("The Amazon Resource Name (ARN) of the function.").with_provider_name("FunctionARN")
@@ -165,9 +320,9 @@ pub fn cloudfront_distribution_config() -> AwsccSchemaConfig {
                     name: "LambdaFunctionAssociation".to_string(),
                     fields: vec![
                     StructField::new("event_type", AttributeType::StringEnum {
-                name: "LambdaFunctionAssociationEventType".to_string(),
+                name: "EventType".to_string(),
                 values: vec!["viewer-request".to_string(), "origin-request".to_string(), "origin-response".to_string(), "viewer-response".to_string()],
-                identity: Some(carina_core::schema::string_enum_identity("LambdaFunctionAssociationEventType", Some("awscc.cloudfront.Distribution"))),
+                identity: Some(carina_core::schema::string_enum_identity("EventType", Some("awscc.cloudfront.Distribution"))),
                 dsl_aliases: vec![("viewer-request".to_string(), "viewer_request".to_string()), ("origin-request".to_string(), "origin_request".to_string()), ("origin-response".to_string(), "origin_response".to_string()), ("viewer-response".to_string(), "viewer_response".to_string())],
             }).with_description("Specifies the event type that triggers a Lambda@Edge function invocation. You can specify the following values: + ``viewer-request``: The function executes when CloudFront receives a request from a viewer and before it checks to see whether the requested object is in the edge cache. + ``origin-request``: The function executes only when CloudFront sends a request to your origin. When the requested object is in the edge cache, the function doesn't execute. + ``origin-response``: The function executes after CloudFront receives a response from the origin and before it caches the object in the response. When the requested object is in the edge cache, the function doesn't execute. + ``viewer-response``: The function executes before CloudFront returns the requested object to the viewer. The function executes regardless of whether the object was already in the edge cache. If the origin returns an HTTP status code other than HTTP 200 (OK), the function doesn't execute.").with_provider_name("EventType"),
                     StructField::new("include_body", AttributeType::Bool).with_description("A flag that allows a Lambda@Edge function to have read access to the body content. For more information, see [Accessing the Request Body by Choosing the Include Body Option](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/lambda-include-body-access.html) in the Amazon CloudFront Developer Guide.").with_provider_name("IncludeBody"),
@@ -228,9 +383,9 @@ pub fn cloudfront_distribution_config() -> AwsccSchemaConfig {
                     StructField::new("http_port", AttributeType::Int).with_description("The HTTP port that CF uses to connect to the origin. Specify the HTTP port that the origin listens on.").with_provider_name("HTTPPort"),
                     StructField::new("https_port", AttributeType::Int).with_description("The HTTPS port that CF uses to connect to the origin. Specify the HTTPS port that the origin listens on.").with_provider_name("HTTPSPort"),
                     StructField::new("origin_protocol_policy", AttributeType::StringEnum {
-                name: "LegacyCustomOriginOriginProtocolPolicy".to_string(),
+                name: "OriginProtocolPolicy".to_string(),
                 values: vec!["http-only".to_string(), "https-only".to_string(), "match-viewer".to_string()],
-                identity: Some(carina_core::schema::string_enum_identity("LegacyCustomOriginOriginProtocolPolicy", Some("awscc.cloudfront.Distribution"))),
+                identity: Some(carina_core::schema::string_enum_identity("OriginProtocolPolicy", Some("awscc.cloudfront.Distribution"))),
                 dsl_aliases: vec![("http-only".to_string(), "http_only".to_string()), ("https-only".to_string(), "https_only".to_string()), ("match-viewer".to_string(), "match_viewer".to_string())],
             }).required().with_description("Specifies the protocol (HTTP or HTTPS) that CF uses to connect to the origin.").with_provider_name("OriginProtocolPolicy"),
                     StructField::new("origin_ssl_protocols", AttributeType::list(AttributeType::StringEnum {
@@ -260,51 +415,27 @@ pub fn cloudfront_distribution_config() -> AwsccSchemaConfig {
                     StructField::new("compress", AttributeType::Bool).with_description("Whether you want CloudFront to automatically compress certain files for this cache behavior. If so, specify ``true``; if not, specify ``false``. For more information, see [Serving Compressed Files](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/ServingCompressedFiles.html) in the *Amazon CloudFront Developer Guide*.").with_provider_name("Compress"),
                     StructField::new("default_ttl", AttributeType::Float).with_description("This field only supports standard distributions. You can't specify this field for multi-tenant distributions. For more information, see [Unsupported features for SaaS Manager for Amazon CloudFront](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/distribution-config-options.html#unsupported-saas) in the *Amazon CloudFront Developer Guide*. This field is deprecated. We recommend that you use the ``DefaultTTL`` field in a cache policy instead of this field. For more information, see [Creating cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-the-cache-key.html#cache-key-create-cache-policy) or [Using the managed cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/using-managed-cache-policies.html) in the *Amazon CloudFront Developer Guide*. The default amount of time that you want objects to stay in CloudFront caches before CloudFront forwards another request to your origin to determine whether the object has been updated. The value that you specify applies only when your origin does not add HTTP headers such as ``Cache-Control max-age``, ``Cache-Control s-maxage``, and ``Expires`` to objects. For more information, see [Managing How Long Content Stays in an Edge Cache (Expiration)](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/Expiration.html) in the *Amazon CloudFront Developer Guide*.").with_provider_name("DefaultTTL"),
                     StructField::new("field_level_encryption_id", AttributeType::String).with_description("The value of ``ID`` for the field-level encryption configuration that you want CloudFront to use for encrypting specific fields of data for the default cache behavior.").with_provider_name("FieldLevelEncryptionId"),
-                    StructField::new("forwarded_values", AttributeType::Struct {
-                    name: "ForwardedValues".to_string(),
-                    fields: vec![
-                    StructField::new("cookies", AttributeType::Struct {
-                    name: "Cookies".to_string(),
-                    fields: vec![
-                    StructField::new("forward", AttributeType::StringEnum {
-                name: "Forward".to_string(),
-                values: vec!["all".to_string(), "none".to_string(), "whitelist".to_string()],
-                identity: Some(carina_core::schema::string_enum_identity("Forward", Some("awscc.cloudfront.Distribution"))),
-                dsl_aliases: vec![("all".to_string(), "all".to_string()), ("none".to_string(), "none".to_string()), ("whitelist".to_string(), "whitelist".to_string())],
-            }).required().with_description("This field is deprecated. We recommend that you use a cache policy or an origin request policy instead of this field. If you want to include cookies in the cache key, use a cache policy. For more information, see [Creating cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-the-cache-key.html#cache-key-create-cache-policy) in the *Amazon CloudFront Developer Guide*. If you want to send cookies to the origin but not include them in the cache key, use origin request policy. For more information, see [Creating origin request policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-origin-requests.html#origin-request-create-origin-request-policy) in the *Amazon CloudFront Developer Guide*. Specifies which cookies to forward to the origin for this cache behavior: all, none, or the list of cookies specified in the ``WhitelistedNames`` complex type. Amazon S3 doesn't process cookies. When the cache behavior is forwarding requests to an Amazon S3 origin, specify none for the ``Forward`` element.").with_provider_name("Forward"),
-                    StructField::new("whitelisted_names", AttributeType::list(AttributeType::String)).with_description("This field is deprecated. We recommend that you use a cache policy or an origin request policy instead of this field. If you want to include cookies in the cache key, use a cache policy. For more information, see [Creating cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-the-cache-key.html#cache-key-create-cache-policy) in the *Amazon CloudFront Developer Guide*. If you want to send cookies to the origin but not include them in the cache key, use an origin request policy. For more information, see [Creating origin request policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-origin-requests.html#origin-request-create-origin-request-policy) in the *Amazon CloudFront Developer Guide*. Required if you specify ``whitelist`` for the value of ``Forward``. A complex type that specifies how many different cookies you want CloudFront to forward to the origin for this cache behavior and, if you want to forward selected cookies, the names of those cookies. If you specify ``all`` or ``none`` for the value of ``Forward``, omit ``WhitelistedNames``. If you change the value of ``Forward`` from ``whitelist`` to ``all`` or ``none`` and you don't delete the ``WhitelistedNames`` element and its child elements, CloudFront deletes them automatically. For the current limit on the number of cookie names that you can whitelist for each cache behavior, see [CloudFront Limits](https://docs.aws.amazon.com/general/latest/gr/xrefaws_service_limits.html#limits_cloudfront) in the *General Reference*.").with_provider_name("WhitelistedNames")
-                    ],
-                }).with_description("This field is deprecated. We recommend that you use a cache policy or an origin request policy instead of this field. If you want to include cookies in the cache key, use a cache policy. For more information, see [Creating cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-the-cache-key.html#cache-key-create-cache-policy) in the *Amazon CloudFront Developer Guide*. If you want to send cookies to the origin but not include them in the cache key, use an origin request policy. For more information, see [Creating origin request policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-origin-requests.html#origin-request-create-origin-request-policy) in the *Amazon CloudFront Developer Guide*. A complex type that specifies whether you want CloudFront to forward cookies to the origin and, if so, which ones. For more information about forwarding cookies to the origin, see [How CloudFront Forwards, Caches, and Logs Cookies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/Cookies.html) in the *Amazon CloudFront Developer Guide*.").with_provider_name("Cookies"),
-                    StructField::new("headers", AttributeType::list(AttributeType::String)).with_description("This field is deprecated. We recommend that you use a cache policy or an origin request policy instead of this field. If you want to include headers in the cache key, use a cache policy. For more information, see [Creating cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-the-cache-key.html#cache-key-create-cache-policy) in the *Amazon CloudFront Developer Guide*. If you want to send headers to the origin but not include them in the cache key, use an origin request policy. For more information, see [Creating origin request policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-origin-requests.html#origin-request-create-origin-request-policy) in the *Amazon CloudFront Developer Guide*. A complex type that specifies the ``Headers``, if any, that you want CloudFront to forward to the origin for this cache behavior (whitelisted headers). For the headers that you specify, CloudFront also caches separate versions of a specified object that is based on the header values in viewer requests. For more information, see [Caching Content Based on Request Headers](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/header-caching.html) in the *Amazon CloudFront Developer Guide*.").with_provider_name("Headers"),
-                    StructField::new("query_string", AttributeType::Bool).required().with_description("This field is deprecated. We recommend that you use a cache policy or an origin request policy instead of this field. If you want to include query strings in the cache key, use a cache policy. For more information, see [Creating cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-the-cache-key.html#cache-key-create-cache-policy) in the *Amazon CloudFront Developer Guide*. If you want to send query strings to the origin but not include them in the cache key, use an origin request policy. For more information, see [Creating origin request policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-origin-requests.html#origin-request-create-origin-request-policy) in the *Amazon CloudFront Developer Guide*. Indicates whether you want CloudFront to forward query strings to the origin that is associated with this cache behavior and cache based on the query string parameters. CloudFront behavior depends on the value of ``QueryString`` and on the values that you specify for ``QueryStringCacheKeys``, if any: If you specify true for ``QueryString`` and you don't specify any values for ``QueryStringCacheKeys``, CloudFront forwards all query string parameters to the origin and caches based on all query string parameters. Depending on how many query string parameters and values you have, this can adversely affect performance because CloudFront must forward more requests to the origin. If you specify true for ``QueryString`` and you specify one or more values for ``QueryStringCacheKeys``, CloudFront forwards all query string parameters to the origin, but it only caches based on the query string parameters that you specify. If you specify false for ``QueryString``, CloudFront doesn't forward any query string parameters to the origin, and doesn't cache based on query string parameters. For more information, see [Configuring CloudFront to Cache Based on Query String Parameters](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/QueryStringParameters.html) in the *Amazon CloudFront Developer Guide*.").with_provider_name("QueryString"),
-                    StructField::new("query_string_cache_keys", AttributeType::list(AttributeType::String)).with_description("This field is deprecated. We recommend that you use a cache policy or an origin request policy instead of this field. If you want to include query strings in the cache key, use a cache policy. For more information, see [Creating cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-the-cache-key.html#cache-key-create-cache-policy) in the *Amazon CloudFront Developer Guide*. If you want to send query strings to the origin but not include them in the cache key, use an origin request policy. For more information, see [Creating origin request policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-origin-requests.html#origin-request-create-origin-request-policy) in the *Amazon CloudFront Developer Guide*. A complex type that contains information about the query string parameters that you want CloudFront to use for caching for this cache behavior.").with_provider_name("QueryStringCacheKeys")
-                    ],
-                }).with_description("This field is deprecated. We recommend that you use a cache policy or an origin request policy instead of this field. For more information, see [Working with policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/working-with-policies.html) in the *Amazon CloudFront Developer Guide*. If you want to include values in the cache key, use a cache policy. For more information, see [Creating cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-the-cache-key.html#cache-key-create-cache-policy) or [Using the managed cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/using-managed-cache-policies.html) in the *Amazon CloudFront Developer Guide*. If you want to send values to the origin but not include them in the cache key, use an origin request policy. For more information, see [Creating origin request policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-origin-requests.html#origin-request-create-origin-request-policy) or [Using the managed origin request policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/using-managed-origin-request-policies.html) in the *Amazon CloudFront Developer Guide*. A ``DefaultCacheBehavior`` must include either a ``CachePolicyId`` or ``ForwardedValues``. We recommend that you use a ``CachePolicyId``. A complex type that specifies how CloudFront handles query strings, cookies, and HTTP headers.").with_provider_name("ForwardedValues"),
+                    StructField::new("forwarded_values", AttributeType::Ref("ForwardedValues".to_string())).with_description("This field is deprecated. We recommend that you use a cache policy or an origin request policy instead of this field. For more information, see [Working with policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/working-with-policies.html) in the *Amazon CloudFront Developer Guide*. If you want to include values in the cache key, use a cache policy. For more information, see [Creating cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-the-cache-key.html#cache-key-create-cache-policy) or [Using the managed cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/using-managed-cache-policies.html) in the *Amazon CloudFront Developer Guide*. If you want to send values to the origin but not include them in the cache key, use an origin request policy. For more information, see [Creating origin request policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-origin-requests.html#origin-request-create-origin-request-policy) or [Using the managed origin request policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/using-managed-origin-request-policies.html) in the *Amazon CloudFront Developer Guide*. A ``DefaultCacheBehavior`` must include either a ``CachePolicyId`` or ``ForwardedValues``. We recommend that you use a ``CachePolicyId``. A complex type that specifies how CloudFront handles query strings, cookies, and HTTP headers.").with_provider_name("ForwardedValues"),
                     StructField::new("function_associations", AttributeType::list(AttributeType::Struct {
                     name: "FunctionAssociation".to_string(),
                     fields: vec![
                     StructField::new("event_type", AttributeType::StringEnum {
-                name: "FunctionAssociationEventType".to_string(),
+                name: "EventType".to_string(),
                 values: vec!["viewer-request".to_string(), "viewer-response".to_string(), "origin-request".to_string(), "origin-response".to_string()],
-                identity: Some(carina_core::schema::string_enum_identity("FunctionAssociationEventType", Some("awscc.cloudfront.Distribution"))),
+                identity: Some(carina_core::schema::string_enum_identity("EventType", Some("awscc.cloudfront.Distribution"))),
                 dsl_aliases: vec![("viewer-request".to_string(), "viewer_request".to_string()), ("viewer-response".to_string(), "viewer_response".to_string()), ("origin-request".to_string(), "origin_request".to_string()), ("origin-response".to_string(), "origin_response".to_string())],
             }).with_description("The event type of the function, either ``viewer-request`` or ``viewer-response``. You cannot use origin-facing event types (``origin-request`` and ``origin-response``) with a CloudFront function.").with_provider_name("EventType"),
                     StructField::new("function_arn", super::arn()).with_description("The Amazon Resource Name (ARN) of the function.").with_provider_name("FunctionARN")
                     ],
                 })).with_description("A list of CloudFront functions that are associated with this cache behavior. Your functions must be published to the ``LIVE`` stage to associate them with a cache behavior.").with_provider_name("FunctionAssociations").with_block_name("function_association"),
-                    StructField::new("grpc_config", AttributeType::Struct {
-                    name: "GrpcConfig".to_string(),
-                    fields: vec![
-                    StructField::new("enabled", AttributeType::Bool).required().with_description("Enables your CloudFront distribution to receive gRPC requests and to proxy them directly to your origins.").with_provider_name("Enabled")
-                    ],
-                }).with_description("The gRPC configuration for your cache behavior.").with_provider_name("GrpcConfig"),
+                    StructField::new("grpc_config", AttributeType::Ref("GrpcConfig".to_string())).with_description("The gRPC configuration for your cache behavior.").with_provider_name("GrpcConfig"),
                     StructField::new("lambda_function_associations", AttributeType::list(AttributeType::Struct {
                     name: "LambdaFunctionAssociation".to_string(),
                     fields: vec![
                     StructField::new("event_type", AttributeType::StringEnum {
-                name: "LambdaFunctionAssociationEventType".to_string(),
+                name: "EventType".to_string(),
                 values: vec!["viewer-request".to_string(), "origin-request".to_string(), "origin-response".to_string(), "viewer-response".to_string()],
-                identity: Some(carina_core::schema::string_enum_identity("LambdaFunctionAssociationEventType", Some("awscc.cloudfront.Distribution"))),
+                identity: Some(carina_core::schema::string_enum_identity("EventType", Some("awscc.cloudfront.Distribution"))),
                 dsl_aliases: vec![("viewer-request".to_string(), "viewer_request".to_string()), ("origin-request".to_string(), "origin_request".to_string()), ("origin-response".to_string(), "origin_response".to_string()), ("viewer-response".to_string(), "viewer_response".to_string())],
             }).with_description("Specifies the event type that triggers a Lambda@Edge function invocation. You can specify the following values: + ``viewer-request``: The function executes when CloudFront receives a request from a viewer and before it checks to see whether the requested object is in the edge cache. + ``origin-request``: The function executes only when CloudFront sends a request to your origin. When the requested object is in the edge cache, the function doesn't execute. + ``origin-response``: The function executes after CloudFront receives a response from the origin and before it caches the object in the response. When the requested object is in the edge cache, the function doesn't execute. + ``viewer-response``: The function executes before CloudFront returns the requested object to the viewer. The function executes regardless of whether the object was already in the edge cache. If the origin returns an HTTP status code other than HTTP 200 (OK), the function doesn't execute.").with_provider_name("EventType"),
                     StructField::new("include_body", AttributeType::Bool).with_description("A flag that allows a Lambda@Edge function to have read access to the body content. For more information, see [Accessing the Request Body by Choosing the Include Body Option](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/lambda-include-body-access.html) in the Amazon CloudFront Developer Guide.").with_provider_name("IncludeBody"),
@@ -411,9 +542,9 @@ pub fn cloudfront_distribution_config() -> AwsccSchemaConfig {
                     ],
                 }).with_description("Configures mutual TLS authentication between CloudFront and your origin server.").with_provider_name("OriginMtlsConfig"),
                     StructField::new("origin_protocol_policy", AttributeType::StringEnum {
-                name: "CustomOriginConfigOriginProtocolPolicy".to_string(),
+                name: "OriginProtocolPolicy".to_string(),
                 values: vec!["http-only".to_string(), "match-viewer".to_string(), "https-only".to_string()],
-                identity: Some(carina_core::schema::string_enum_identity("CustomOriginConfigOriginProtocolPolicy", Some("awscc.cloudfront.Distribution"))),
+                identity: Some(carina_core::schema::string_enum_identity("OriginProtocolPolicy", Some("awscc.cloudfront.Distribution"))),
                 dsl_aliases: vec![("http-only".to_string(), "http_only".to_string()), ("match-viewer".to_string(), "match_viewer".to_string()), ("https-only".to_string(), "https_only".to_string())],
             }).required().with_description("Specifies the protocol (HTTP or HTTPS) that CloudFront uses to connect to the origin. Valid values are: + ``http-only`` – CloudFront always uses HTTP to connect to the origin. + ``match-viewer`` – CloudFront connects to the origin using the same protocol that the viewer used to connect to CloudFront. + ``https-only`` – CloudFront always uses HTTPS to connect to the origin.").with_provider_name("OriginProtocolPolicy"),
                     StructField::new("origin_read_timeout", AttributeType::Int).with_description("Specifies how long, in seconds, CloudFront waits for a response from the origin. This is also known as the *origin response timeout*. The minimum timeout is 1 second, the maximum is 120 seconds, and the default (if you don't specify otherwise) is 30 seconds. For more information, see [Response timeout](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/DownloadDistValuesOrigin.html#DownloadDistValuesOriginResponseTimeout) in the *Amazon CloudFront Developer Guide*.").with_provider_name("OriginReadTimeout"),
@@ -559,41 +690,245 @@ pub fn cloudfront_distribution_config() -> AwsccSchemaConfig {
                     StructField::new("web_acl_id", AttributeType::String).with_description("Multi-tenant distributions only support WAF V2 web ACLs. A unique identifier that specifies the WAF web ACL, if any, to associate with this distribution. To specify a web ACL created using the latest version of WAF, use the ACL ARN, for example ``arn:aws:wafv2:us-east-1:123456789012:global/webacl/ExampleWebACL/a1b2c3d4-5678-90ab-cdef-EXAMPLE11111``. To specify a web ACL created using WAF Classic, use the ACL ID, for example ``a1b2c3d4-5678-90ab-cdef-EXAMPLE11111``. WAF is a web application firewall that lets you monitor the HTTP and HTTPS requests that are forwarded to CloudFront, and lets you control access to your content. Based on conditions that you specify, such as the IP addresses that requests originate from or the values of query strings, CloudFront responds to requests either with the requested content or with an HTTP 403 status code (Forbidden). You can also configure CloudFront to return a custom error page when a request is blocked. For more information about WAF, see the [Developer Guide](https://docs.aws.amazon.com/waf/latest/developerguide/what-is-aws-waf.html).").with_provider_name("WebACLId")
                     ],
                 })
-                .required()
-                .with_description("The distribution's configuration.")
-                .with_provider_name("DistributionConfig")
-                .with_block_name("distribution_config"),
-        )
-        .attribute(
-            AttributeSchema::new("domain_name", AttributeType::String)
-                .read_only()
-                .deferred_populate()
-                .with_description(" (read-only)")
-                .with_provider_name("DomainName"),
-        )
-        .attribute(
-            AttributeSchema::new("id", AttributeType::String)
-                .read_only()
-                .with_description(" (read-only)")
-                .with_provider_name("Id"),
-        )
-        .attribute(
-            AttributeSchema::new("tags", tags_type())
-                .with_description("A complex type that contains zero or more ``Tag`` elements.")
-                .with_provider_name("Tags"),
-        )
-        .attribute(
-            AttributeSchema::new("arn", super::arn())
-                .read_only()
-                .with_description("The ARN of the CloudFront distribution. Synthesized by the provider from the distribution id; CloudFront's CloudFormation type does not expose ARN through the Cloud Control API. (read-only)"),
-        )
-        .with_validator(|attrs| {
-            let mut errors = Vec::new();
-            if let Err(mut e) = validate_tags_map(attrs) {
-                errors.append(&mut e);
-            }
-            if errors.is_empty() { Ok(()) } else { Err(errors) }
-        })
+        .with_def("ForwardedValues", AttributeType::Struct {
+                    name: "ForwardedValues".to_string(),
+                    fields: vec![
+                    StructField::new("cookies", AttributeType::Struct {
+                    name: "Cookies".to_string(),
+                    fields: vec![
+                    StructField::new("forward", AttributeType::StringEnum {
+                name: "Forward".to_string(),
+                values: vec!["all".to_string(), "none".to_string(), "whitelist".to_string()],
+                identity: Some(carina_core::schema::string_enum_identity("Forward", Some("awscc.cloudfront.Distribution"))),
+                dsl_aliases: vec![("all".to_string(), "all".to_string()), ("none".to_string(), "none".to_string()), ("whitelist".to_string(), "whitelist".to_string())],
+            }).required().with_description("This field is deprecated. We recommend that you use a cache policy or an origin request policy instead of this field. If you want to include cookies in the cache key, use a cache policy. For more information, see [Creating cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-the-cache-key.html#cache-key-create-cache-policy) in the *Amazon CloudFront Developer Guide*. If you want to send cookies to the origin but not include them in the cache key, use origin request policy. For more information, see [Creating origin request policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-origin-requests.html#origin-request-create-origin-request-policy) in the *Amazon CloudFront Developer Guide*. Specifies which cookies to forward to the origin for this cache behavior: all, none, or the list of cookies specified in the ``WhitelistedNames`` complex type. Amazon S3 doesn't process cookies. When the cache behavior is forwarding requests to an Amazon S3 origin, specify none for the ``Forward`` element.").with_provider_name("Forward"),
+                    StructField::new("whitelisted_names", AttributeType::list(AttributeType::String)).with_description("This field is deprecated. We recommend that you use a cache policy or an origin request policy instead of this field. If you want to include cookies in the cache key, use a cache policy. For more information, see [Creating cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-the-cache-key.html#cache-key-create-cache-policy) in the *Amazon CloudFront Developer Guide*. If you want to send cookies to the origin but not include them in the cache key, use an origin request policy. For more information, see [Creating origin request policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-origin-requests.html#origin-request-create-origin-request-policy) in the *Amazon CloudFront Developer Guide*. Required if you specify ``whitelist`` for the value of ``Forward``. A complex type that specifies how many different cookies you want CloudFront to forward to the origin for this cache behavior and, if you want to forward selected cookies, the names of those cookies. If you specify ``all`` or ``none`` for the value of ``Forward``, omit ``WhitelistedNames``. If you change the value of ``Forward`` from ``whitelist`` to ``all`` or ``none`` and you don't delete the ``WhitelistedNames`` element and its child elements, CloudFront deletes them automatically. For the current limit on the number of cookie names that you can whitelist for each cache behavior, see [CloudFront Limits](https://docs.aws.amazon.com/general/latest/gr/xrefaws_service_limits.html#limits_cloudfront) in the *General Reference*.").with_provider_name("WhitelistedNames")
+                    ],
+                }).with_description("This field is deprecated. We recommend that you use a cache policy or an origin request policy instead of this field. If you want to include cookies in the cache key, use a cache policy. For more information, see [Creating cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-the-cache-key.html#cache-key-create-cache-policy) in the *Amazon CloudFront Developer Guide*. If you want to send cookies to the origin but not include them in the cache key, use an origin request policy. For more information, see [Creating origin request policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-origin-requests.html#origin-request-create-origin-request-policy) in the *Amazon CloudFront Developer Guide*. A complex type that specifies whether you want CloudFront to forward cookies to the origin and, if so, which ones. For more information about forwarding cookies to the origin, see [How CloudFront Forwards, Caches, and Logs Cookies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/Cookies.html) in the *Amazon CloudFront Developer Guide*.").with_provider_name("Cookies"),
+                    StructField::new("headers", AttributeType::list(AttributeType::String)).with_description("This field is deprecated. We recommend that you use a cache policy or an origin request policy instead of this field. If you want to include headers in the cache key, use a cache policy. For more information, see [Creating cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-the-cache-key.html#cache-key-create-cache-policy) in the *Amazon CloudFront Developer Guide*. If you want to send headers to the origin but not include them in the cache key, use an origin request policy. For more information, see [Creating origin request policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-origin-requests.html#origin-request-create-origin-request-policy) in the *Amazon CloudFront Developer Guide*. A complex type that specifies the ``Headers``, if any, that you want CloudFront to forward to the origin for this cache behavior (whitelisted headers). For the headers that you specify, CloudFront also caches separate versions of a specified object that is based on the header values in viewer requests. For more information, see [Caching Content Based on Request Headers](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/header-caching.html) in the *Amazon CloudFront Developer Guide*.").with_provider_name("Headers"),
+                    StructField::new("query_string", AttributeType::Bool).required().with_description("This field is deprecated. We recommend that you use a cache policy or an origin request policy instead of this field. If you want to include query strings in the cache key, use a cache policy. For more information, see [Creating cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-the-cache-key.html#cache-key-create-cache-policy) in the *Amazon CloudFront Developer Guide*. If you want to send query strings to the origin but not include them in the cache key, use an origin request policy. For more information, see [Creating origin request policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-origin-requests.html#origin-request-create-origin-request-policy) in the *Amazon CloudFront Developer Guide*. Indicates whether you want CloudFront to forward query strings to the origin that is associated with this cache behavior and cache based on the query string parameters. CloudFront behavior depends on the value of ``QueryString`` and on the values that you specify for ``QueryStringCacheKeys``, if any: If you specify true for ``QueryString`` and you don't specify any values for ``QueryStringCacheKeys``, CloudFront forwards all query string parameters to the origin and caches based on all query string parameters. Depending on how many query string parameters and values you have, this can adversely affect performance because CloudFront must forward more requests to the origin. If you specify true for ``QueryString`` and you specify one or more values for ``QueryStringCacheKeys``, CloudFront forwards all query string parameters to the origin, but it only caches based on the query string parameters that you specify. If you specify false for ``QueryString``, CloudFront doesn't forward any query string parameters to the origin, and doesn't cache based on query string parameters. For more information, see [Configuring CloudFront to Cache Based on Query String Parameters](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/QueryStringParameters.html) in the *Amazon CloudFront Developer Guide*.").with_provider_name("QueryString"),
+                    StructField::new("query_string_cache_keys", AttributeType::list(AttributeType::String)).with_description("This field is deprecated. We recommend that you use a cache policy or an origin request policy instead of this field. If you want to include query strings in the cache key, use a cache policy. For more information, see [Creating cache policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-the-cache-key.html#cache-key-create-cache-policy) in the *Amazon CloudFront Developer Guide*. If you want to send query strings to the origin but not include them in the cache key, use an origin request policy. For more information, see [Creating origin request policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-origin-requests.html#origin-request-create-origin-request-policy) in the *Amazon CloudFront Developer Guide*. A complex type that contains information about the query string parameters that you want CloudFront to use for caching for this cache behavior.").with_provider_name("QueryStringCacheKeys")
+                    ],
+                })
+        .with_def("GeoRestriction", AttributeType::Struct {
+                    name: "GeoRestriction".to_string(),
+                    fields: vec![
+                    StructField::new("locations", AttributeType::list(AttributeType::String)).with_description("A complex type that contains a ``Location`` element for each country in which you want CloudFront either to distribute your content (``whitelist``) or not distribute your content (``blacklist``). The ``Location`` element is a two-letter, uppercase country code for a country that you want to include in your ``blacklist`` or ``whitelist``. Include one ``Location`` element for each country. CloudFront and ``MaxMind`` both use ``ISO 3166`` country codes. For the current list of countries and the corresponding codes, see ``ISO 3166-1-alpha-2`` code on the *International Organization for Standardization* website. You can also refer to the country list on the CloudFront console, which includes both country names and codes.").with_provider_name("Locations"),
+                    StructField::new("restriction_type", AttributeType::StringEnum {
+                name: "RestrictionType".to_string(),
+                values: vec!["none".to_string(), "blacklist".to_string(), "whitelist".to_string()],
+                identity: Some(carina_core::schema::string_enum_identity("RestrictionType", Some("awscc.cloudfront.Distribution"))),
+                dsl_aliases: vec![("none".to_string(), "none".to_string()), ("blacklist".to_string(), "blacklist".to_string()), ("whitelist".to_string(), "whitelist".to_string())],
+            }).required().with_description("The method that you want to use to restrict distribution of your content by country: + ``none``: No geo restriction is enabled, meaning access to content is not restricted by client geo location. + ``blacklist``: The ``Location`` elements specify the countries in which you don't want CloudFront to distribute your content. + ``whitelist``: The ``Location`` elements specify the countries in which you want CloudFront to distribute your content.").with_provider_name("RestrictionType")
+                    ],
+                })
+        .with_def("GrpcConfig", AttributeType::Struct {
+                    name: "GrpcConfig".to_string(),
+                    fields: vec![
+                    StructField::new("enabled", AttributeType::Bool).required().with_description("Enables your CloudFront distribution to receive gRPC requests and to proxy them directly to your origins.").with_provider_name("Enabled")
+                    ],
+                })
+        .with_def("LegacyCustomOrigin", AttributeType::Struct {
+                    name: "LegacyCustomOrigin".to_string(),
+                    fields: vec![
+                    StructField::new("dns_name", AttributeType::String).required().with_description("The domain name assigned to your CF distribution.").with_provider_name("DNSName"),
+                    StructField::new("http_port", AttributeType::Int).with_description("The HTTP port that CF uses to connect to the origin. Specify the HTTP port that the origin listens on.").with_provider_name("HTTPPort"),
+                    StructField::new("https_port", AttributeType::Int).with_description("The HTTPS port that CF uses to connect to the origin. Specify the HTTPS port that the origin listens on.").with_provider_name("HTTPSPort"),
+                    StructField::new("origin_protocol_policy", AttributeType::StringEnum {
+                name: "OriginProtocolPolicy".to_string(),
+                values: vec!["http-only".to_string(), "https-only".to_string(), "match-viewer".to_string()],
+                identity: Some(carina_core::schema::string_enum_identity("OriginProtocolPolicy", Some("awscc.cloudfront.Distribution"))),
+                dsl_aliases: vec![("http-only".to_string(), "http_only".to_string()), ("https-only".to_string(), "https_only".to_string()), ("match-viewer".to_string(), "match_viewer".to_string())],
+            }).required().with_description("Specifies the protocol (HTTP or HTTPS) that CF uses to connect to the origin.").with_provider_name("OriginProtocolPolicy"),
+                    StructField::new("origin_ssl_protocols", AttributeType::list(AttributeType::StringEnum {
+                name: "OriginSslProtocols".to_string(),
+                values: vec!["SSLv3".to_string(), "TLSv1".to_string(), "TLSv1.1".to_string(), "TLSv1.2".to_string(), "sslv3".to_string(), "tlsv1".to_string(), "tlsv1_1".to_string(), "tlsv1_2".to_string()],
+                identity: Some(carina_core::schema::string_enum_identity("OriginSslProtocols", Some("awscc.cloudfront.Distribution"))),
+                dsl_aliases: vec![("SSLv3".to_string(), "sslv3".to_string()), ("TLSv1".to_string(), "tlsv1".to_string()), ("TLSv1.1".to_string(), "tlsv1_1".to_string()), ("TLSv1.2".to_string(), "tlsv1_2".to_string()), ("sslv3".to_string(), "sslv3".to_string()), ("tlsv1".to_string(), "tlsv1".to_string()), ("tlsv1_1".to_string(), "tlsv1_1".to_string()), ("tlsv1_2".to_string(), "tlsv1_2".to_string())],
+            })).required().with_description("The minimum SSL/TLS protocol version that CF uses when communicating with your origin server over HTTPs. For more information, see [Minimum Origin SSL Protocol](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/distribution-web-values-specify.html#DownloadDistValuesOriginSSLProtocols) in the *Developer Guide*.").with_provider_name("OriginSSLProtocols")
+                    ],
+                })
+        .with_def("LegacyS3Origin", AttributeType::Struct {
+                    name: "LegacyS3Origin".to_string(),
+                    fields: vec![
+                    StructField::new("dns_name", AttributeType::String).required().with_description("The domain name assigned to your CF distribution.").with_provider_name("DNSName"),
+                    StructField::new("origin_access_identity", AttributeType::String).with_description("The CF origin access identity to associate with the distribution. Use an origin access identity to configure the distribution so that end users can only access objects in an S3 through CF. This property is legacy. We recommend that you use [OriginAccessControl](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-cloudfront-originaccesscontrol.html) instead.").with_provider_name("OriginAccessIdentity")
+                    ],
+                })
+        .with_def("Logging", AttributeType::Struct {
+                    name: "Logging".to_string(),
+                    fields: vec![
+                    StructField::new("bucket", AttributeType::String).with_description("The Amazon S3 bucket to store the access logs in, for example, ``amzn-s3-demo-bucket.s3.amazonaws.com``.").with_provider_name("Bucket"),
+                    StructField::new("include_cookies", AttributeType::Bool).with_description("Specifies whether you want CloudFront to include cookies in access logs, specify ``true`` for ``IncludeCookies``. If you choose to include cookies in logs, CloudFront logs all cookies regardless of how you configure the cache behaviors for this distribution. If you don't want to include cookies when you create a distribution or if you want to disable include cookies for an existing distribution, specify ``false`` for ``IncludeCookies``.").with_provider_name("IncludeCookies"),
+                    StructField::new("prefix", AttributeType::String).with_description("An optional string that you want CloudFront to prefix to the access log ``filenames`` for this distribution, for example, ``myprefix/``. If you want to enable logging, but you don't want to specify a prefix, you still must include an empty ``Prefix`` element in the ``Logging`` element.").with_provider_name("Prefix")
+                    ],
+                })
+        .with_def("OriginGroupFailoverCriteria", AttributeType::Struct {
+                    name: "OriginGroupFailoverCriteria".to_string(),
+                    fields: vec![
+                    StructField::new("status_codes", AttributeType::Struct {
+                    name: "StatusCodes".to_string(),
+                    fields: vec![
+                    StructField::new("items", AttributeType::list(AttributeType::Int)).required().with_description("The items (status codes) for an origin group.").with_provider_name("Items"),
+                    StructField::new("quantity", AttributeType::Int).required().with_description("The number of status codes.").with_provider_name("Quantity")
+                    ],
+                }).required().with_description("The status codes that, when returned from the primary origin, will trigger CloudFront to failover to the second origin.").with_provider_name("StatusCodes")
+                    ],
+                })
+        .with_def("OriginGroupMembers", AttributeType::Struct {
+                    name: "OriginGroupMembers".to_string(),
+                    fields: vec![
+                    StructField::new("items", AttributeType::list(AttributeType::Struct {
+                    name: "OriginGroupMember".to_string(),
+                    fields: vec![
+                    StructField::new("origin_id", AttributeType::String).required().with_description("The ID for an origin in an origin group.").with_provider_name("OriginId")
+                    ],
+                })).required().with_description("Items (origins) in an origin group.").with_provider_name("Items").with_block_name("item"),
+                    StructField::new("quantity", AttributeType::Int).required().with_description("The number of origins in an origin group.").with_provider_name("Quantity")
+                    ],
+                })
+        .with_def("OriginGroups", AttributeType::Struct {
+                    name: "OriginGroups".to_string(),
+                    fields: vec![
+                    StructField::new("items", AttributeType::list(AttributeType::Struct {
+                    name: "OriginGroup".to_string(),
+                    fields: vec![
+                    StructField::new("failover_criteria", AttributeType::Struct {
+                    name: "OriginGroupFailoverCriteria".to_string(),
+                    fields: vec![
+                    StructField::new("status_codes", AttributeType::Struct {
+                    name: "StatusCodes".to_string(),
+                    fields: vec![
+                    StructField::new("items", AttributeType::list(AttributeType::Int)).required().with_description("The items (status codes) for an origin group.").with_provider_name("Items"),
+                    StructField::new("quantity", AttributeType::Int).required().with_description("The number of status codes.").with_provider_name("Quantity")
+                    ],
+                }).required().with_description("The status codes that, when returned from the primary origin, will trigger CloudFront to failover to the second origin.").with_provider_name("StatusCodes")
+                    ],
+                }).required().with_description("A complex type that contains information about the failover criteria for an origin group.").with_provider_name("FailoverCriteria"),
+                    StructField::new("id", AttributeType::String).required().with_description("The origin group's ID.").with_provider_name("Id"),
+                    StructField::new("members", AttributeType::Struct {
+                    name: "OriginGroupMembers".to_string(),
+                    fields: vec![
+                    StructField::new("items", AttributeType::list(AttributeType::Struct {
+                    name: "OriginGroupMember".to_string(),
+                    fields: vec![
+                    StructField::new("origin_id", AttributeType::String).required().with_description("The ID for an origin in an origin group.").with_provider_name("OriginId")
+                    ],
+                })).required().with_description("Items (origins) in an origin group.").with_provider_name("Items").with_block_name("item"),
+                    StructField::new("quantity", AttributeType::Int).required().with_description("The number of origins in an origin group.").with_provider_name("Quantity")
+                    ],
+                }).required().with_description("A complex type that contains information about the origins in an origin group.").with_provider_name("Members").with_block_name("member"),
+                    StructField::new("selection_criteria", AttributeType::StringEnum {
+                name: "OriginGroupSelectionCriteria".to_string(),
+                values: vec!["default".to_string(), "media-quality-based".to_string()],
+                identity: Some(carina_core::schema::string_enum_identity("OriginGroupSelectionCriteria", Some("awscc.cloudfront.Distribution"))),
+                dsl_aliases: vec![("default".to_string(), "default".to_string()), ("media-quality-based".to_string(), "media_quality_based".to_string())],
+            }).with_description("The selection criteria for the origin group. For more information, see [Create an origin group](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/high_availability_origin_failover.html#concept_origin_groups.creating) in the *Amazon CloudFront Developer Guide*.").with_provider_name("SelectionCriteria")
+                    ],
+                })).with_description("The items (origin groups) in a distribution.").with_provider_name("Items").with_block_name("item"),
+                    StructField::new("quantity", AttributeType::Int).required().with_description("The number of origin groups.").with_provider_name("Quantity")
+                    ],
+                })
+        .with_def("OriginMtlsConfig", AttributeType::Struct {
+                    name: "OriginMtlsConfig".to_string(),
+                    fields: vec![
+                    StructField::new("client_certificate_arn", super::arn()).required().with_description("The Amazon Resource Name (ARN) of the client certificate stored in AWS Certificate Manager (ACM) that CloudFront uses to authenticate with your origin using Mutual TLS.").with_provider_name("ClientCertificateArn")
+                    ],
+                })
+        .with_def("OriginShield", AttributeType::Struct {
+                    name: "OriginShield".to_string(),
+                    fields: vec![
+                    StructField::new("enabled", AttributeType::Bool).with_description("A flag that specifies whether Origin Shield is enabled. When it's enabled, CloudFront routes all requests through Origin Shield, which can help protect your origin. When it's disabled, CloudFront might send requests directly to your origin from multiple edge locations or regional edge caches.").with_provider_name("Enabled"),
+                    StructField::new("origin_shield_region", super::awscc_region()).with_description("The AWS-Region for Origin Shield. Specify the AWS-Region that has the lowest latency to your origin. To specify a region, use the region code, not the region name. For example, specify the US East (Ohio) region as ``us-east-2``. When you enable CloudFront Origin Shield, you must specify the AWS-Region for Origin Shield. For the list of AWS-Regions that you can specify, and for help choosing the best Region for your origin, see [Choosing the for Origin Shield](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/origin-shield.html#choose-origin-shield-region) in the *Amazon CloudFront Developer Guide*.").with_provider_name("OriginShieldRegion")
+                    ],
+                })
+        .with_def("Restrictions", AttributeType::Struct {
+                    name: "Restrictions".to_string(),
+                    fields: vec![
+                    StructField::new("geo_restriction", AttributeType::Struct {
+                    name: "GeoRestriction".to_string(),
+                    fields: vec![
+                    StructField::new("locations", AttributeType::list(AttributeType::String)).with_description("A complex type that contains a ``Location`` element for each country in which you want CloudFront either to distribute your content (``whitelist``) or not distribute your content (``blacklist``). The ``Location`` element is a two-letter, uppercase country code for a country that you want to include in your ``blacklist`` or ``whitelist``. Include one ``Location`` element for each country. CloudFront and ``MaxMind`` both use ``ISO 3166`` country codes. For the current list of countries and the corresponding codes, see ``ISO 3166-1-alpha-2`` code on the *International Organization for Standardization* website. You can also refer to the country list on the CloudFront console, which includes both country names and codes.").with_provider_name("Locations"),
+                    StructField::new("restriction_type", AttributeType::StringEnum {
+                name: "RestrictionType".to_string(),
+                values: vec!["none".to_string(), "blacklist".to_string(), "whitelist".to_string()],
+                identity: Some(carina_core::schema::string_enum_identity("RestrictionType", Some("awscc.cloudfront.Distribution"))),
+                dsl_aliases: vec![("none".to_string(), "none".to_string()), ("blacklist".to_string(), "blacklist".to_string()), ("whitelist".to_string(), "whitelist".to_string())],
+            }).required().with_description("The method that you want to use to restrict distribution of your content by country: + ``none``: No geo restriction is enabled, meaning access to content is not restricted by client geo location. + ``blacklist``: The ``Location`` elements specify the countries in which you don't want CloudFront to distribute your content. + ``whitelist``: The ``Location`` elements specify the countries in which you want CloudFront to distribute your content.").with_provider_name("RestrictionType")
+                    ],
+                }).required().with_description("A complex type that controls the countries in which your content is distributed. CF determines the location of your users using ``MaxMind`` GeoIP databases. To disable geo restriction, remove the [Restrictions](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-cloudfront-distribution-distributionconfig.html#cfn-cloudfront-distribution-distributionconfig-restrictions) property from your stack template.").with_provider_name("GeoRestriction")
+                    ],
+                })
+        .with_def("S3OriginConfig", AttributeType::Struct {
+                    name: "S3OriginConfig".to_string(),
+                    fields: vec![
+                    StructField::new("origin_access_identity", AttributeType::String).with_description("If you're using origin access control (OAC) instead of origin access identity, specify an empty ``OriginAccessIdentity`` element. For more information, see [Restricting access to an](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-restricting-access-to-origin.html) in the *Amazon CloudFront Developer Guide*. The CloudFront origin access identity to associate with the origin. Use an origin access identity to configure the origin so that viewers can *only* access objects in an Amazon S3 bucket through CloudFront. The format of the value is: ``origin-access-identity/cloudfront/ID-of-origin-access-identity`` The ``ID-of-origin-access-identity`` is the value that CloudFront returned in the ``ID`` element when you created the origin access identity. If you want viewers to be able to access objects using either the CloudFront URL or the Amazon S3 URL, specify an empty ``OriginAccessIdentity`` element. To delete the origin access identity from an existing distribution, update the distribution configuration and include an empty ``OriginAccessIdentity`` element. To replace the origin access identity, update the distribution configuration and specify the new origin access identity. For more information about the origin access identity, see [Serving Private Content through CloudFront](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/PrivateContent.html) in the *Amazon CloudFront Developer Guide*.").with_provider_name("OriginAccessIdentity"),
+                    StructField::new("origin_read_timeout", AttributeType::Int).with_description("Specifies how long, in seconds, CloudFront waits for a response from the origin. This is also known as the *origin response timeout*. The minimum timeout is 1 second, the maximum is 120 seconds, and the default (if you don't specify otherwise) is 30 seconds. For more information, see [Response timeout](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/DownloadDistValuesOrigin.html#DownloadDistValuesOriginResponseTimeout) in the *Amazon CloudFront Developer Guide*.").with_provider_name("OriginReadTimeout")
+                    ],
+                })
+        .with_def("StatusCodes", AttributeType::Struct {
+                    name: "StatusCodes".to_string(),
+                    fields: vec![
+                    StructField::new("items", AttributeType::list(AttributeType::Int)).required().with_description("The items (status codes) for an origin group.").with_provider_name("Items"),
+                    StructField::new("quantity", AttributeType::Int).required().with_description("The number of status codes.").with_provider_name("Quantity")
+                    ],
+                })
+        .with_def("TrustStoreConfig", AttributeType::Struct {
+                    name: "TrustStoreConfig".to_string(),
+                    fields: vec![
+                    StructField::new("advertise_trust_store_ca_names", AttributeType::Bool).with_description("The configuration to use to advertise trust store CA names.").with_provider_name("AdvertiseTrustStoreCaNames"),
+                    StructField::new("ignore_certificate_expiry", AttributeType::Bool).with_description("The configuration to use to ignore certificate expiration.").with_provider_name("IgnoreCertificateExpiry"),
+                    StructField::new("trust_store_id", AttributeType::String).required().with_description("The trust store ID.").with_provider_name("TrustStoreId")
+                    ],
+                })
+        .with_def("ViewerCertificate", AttributeType::Struct {
+                    name: "ViewerCertificate".to_string(),
+                    fields: vec![
+                    StructField::new("acm_certificate_arn", super::arn()).with_description("In CloudFormation, this field name is ``AcmCertificateArn``. Note the different capitalization. If the distribution uses ``Aliases`` (alternate domain names or CNAMEs) and the SSL/TLS certificate is stored in [(ACM)](https://docs.aws.amazon.com/acm/latest/userguide/acm-overview.html), provide the Amazon Resource Name (ARN) of the ACM certificate. CloudFront only supports ACM certificates in the US East (N. Virginia) Region (``us-east-1``). If you specify an ACM certificate ARN, you must also specify values for ``MinimumProtocolVersion`` and ``SSLSupportMethod``. (In CloudFormation, the field name is ``SslSupportMethod``. Note the different capitalization.)").with_provider_name("AcmCertificateArn"),
+                    StructField::new("cloud_front_default_certificate", AttributeType::Bool).with_description("If the distribution uses the CloudFront domain name such as ``d111111abcdef8.cloudfront.net``, set this field to ``true``. If the distribution uses ``Aliases`` (alternate domain names or CNAMEs), omit this field and specify values for the following fields: + ``AcmCertificateArn`` or ``IamCertificateId`` (specify a value for one, not both) + ``MinimumProtocolVersion`` + ``SslSupportMethod``").with_provider_name("CloudFrontDefaultCertificate"),
+                    StructField::new("iam_certificate_id", AttributeType::String).with_description("This field only supports standard distributions. You can't specify this field for multi-tenant distributions. For more information, see [Unsupported features for SaaS Manager for Amazon CloudFront](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/distribution-config-options.html#unsupported-saas) in the *Amazon CloudFront Developer Guide*. In CloudFormation, this field name is ``IamCertificateId``. Note the different capitalization. If the distribution uses ``Aliases`` (alternate domain names or CNAMEs) and the SSL/TLS certificate is stored in [(IAM)](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_server-certs.html), provide the ID of the IAM certificate. If you specify an IAM certificate ID, you must also specify values for ``MinimumProtocolVersion`` and ``SSLSupportMethod``. (In CloudFormation, the field name is ``SslSupportMethod``. Note the different capitalization.)").with_provider_name("IamCertificateId"),
+                    StructField::new("minimum_protocol_version", AttributeType::StringEnum {
+                name: "MinimumProtocolVersion".to_string(),
+                values: vec!["SSLv3".to_string(), "TLSv1".to_string(), "TLSv1_2016".to_string(), "TLSv1.1_2016".to_string(), "TLSv1.2_2018".to_string(), "TLSv1.2_2019".to_string(), "TLSv1.2_2021".to_string(), "sslv3".to_string(), "tlsv1".to_string(), "tlsv1_2016".to_string(), "tlsv1_1_2016".to_string(), "tlsv1_2_2018".to_string(), "tlsv1_2_2019".to_string(), "tlsv1_2_2021".to_string()],
+                identity: Some(carina_core::schema::string_enum_identity("MinimumProtocolVersion", Some("awscc.cloudfront.Distribution"))),
+                dsl_aliases: vec![("SSLv3".to_string(), "sslv3".to_string()), ("TLSv1".to_string(), "tlsv1".to_string()), ("TLSv1_2016".to_string(), "tlsv1_2016".to_string()), ("TLSv1.1_2016".to_string(), "tlsv1_1_2016".to_string()), ("TLSv1.2_2018".to_string(), "tlsv1_2_2018".to_string()), ("TLSv1.2_2019".to_string(), "tlsv1_2_2019".to_string()), ("TLSv1.2_2021".to_string(), "tlsv1_2_2021".to_string()), ("sslv3".to_string(), "sslv3".to_string()), ("tlsv1".to_string(), "tlsv1".to_string()), ("tlsv1_2016".to_string(), "tlsv1_2016".to_string()), ("tlsv1_1_2016".to_string(), "tlsv1_1_2016".to_string()), ("tlsv1_2_2018".to_string(), "tlsv1_2_2018".to_string()), ("tlsv1_2_2019".to_string(), "tlsv1_2_2019".to_string()), ("tlsv1_2_2021".to_string(), "tlsv1_2_2021".to_string())],
+            }).with_description("If the distribution uses ``Aliases`` (alternate domain names or CNAMEs), specify the security policy that you want CloudFront to use for HTTPS connections with viewers. The security policy determines two settings: + The minimum SSL/TLS protocol that CloudFront can use to communicate with viewers. + The ciphers that CloudFront can use to encrypt the content that it returns to viewers. For more information, see [Security Policy](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/distribution-web-values-specify.html#DownloadDistValues-security-policy) and [Supported Protocols and Ciphers Between Viewers and CloudFront](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/secure-connections-supported-viewer-protocols-ciphers.html#secure-connections-supported-ciphers) in the *Amazon CloudFront Developer Guide*. On the CloudFront console, this setting is called *Security Policy*. When you're using SNI only (you set ``SSLSupportMethod`` to ``sni-only``), you must specify ``TLSv1`` or higher. (In CloudFormation, the field name is ``SslSupportMethod``. Note the different capitalization.) If the distribution uses the CloudFront domain name such as ``d111111abcdef8.cloudfront.net`` (you set ``CloudFrontDefaultCertificate`` to ``true``), CloudFront automatically sets the security policy to ``TLSv1`` regardless of the value that you set here.").with_provider_name("MinimumProtocolVersion"),
+                    StructField::new("ssl_support_method", AttributeType::StringEnum {
+                name: "SslSupportMethod".to_string(),
+                values: vec!["sni-only".to_string(), "vip".to_string(), "static-ip".to_string()],
+                identity: Some(carina_core::schema::string_enum_identity("SslSupportMethod", Some("awscc.cloudfront.Distribution"))),
+                dsl_aliases: vec![("sni-only".to_string(), "sni_only".to_string()), ("vip".to_string(), "vip".to_string()), ("static-ip".to_string(), "static_ip".to_string())],
+            }).with_description("In CloudFormation, this field name is ``SslSupportMethod``. Note the different capitalization. If the distribution uses ``Aliases`` (alternate domain names or CNAMEs), specify which viewers the distribution accepts HTTPS connections from. + ``sni-only`` – The distribution accepts HTTPS connections from only viewers that support [server name indication (SNI)](https://docs.aws.amazon.com/https://en.wikipedia.org/wiki/Server_Name_Indication). This is recommended. Most browsers and clients support SNI. + ``vip`` – The distribution accepts HTTPS connections from all viewers including those that don't support SNI. This is not recommended, and results in additional monthly charges from CloudFront. + ``static-ip`` - Do not specify this value unless your distribution has been enabled for this feature by the CloudFront team. If you have a use case that requires static IP addresses for a distribution, contact CloudFront through the [Center](https://docs.aws.amazon.com/support/home). If the distribution uses the CloudFront domain name such as ``d111111abcdef8.cloudfront.net``, don't set a value for this field.").with_provider_name("SslSupportMethod")
+                    ],
+                })
+        .with_def("ViewerMtlsConfig", AttributeType::Struct {
+                    name: "ViewerMtlsConfig".to_string(),
+                    fields: vec![
+                    StructField::new("mode", AttributeType::StringEnum {
+                name: "ViewerMtlsMode".to_string(),
+                values: vec!["required".to_string(), "optional".to_string(), "passthrough".to_string()],
+                identity: Some(carina_core::schema::string_enum_identity("ViewerMtlsMode", Some("awscc.cloudfront.Distribution"))),
+                dsl_aliases: vec![("required".to_string(), "required".to_string()), ("optional".to_string(), "optional".to_string()), ("passthrough".to_string(), "passthrough".to_string())],
+            }).with_description("The viewer mTLS mode.").with_provider_name("Mode"),
+                    StructField::new("trust_store_config", AttributeType::Struct {
+                    name: "TrustStoreConfig".to_string(),
+                    fields: vec![
+                    StructField::new("advertise_trust_store_ca_names", AttributeType::Bool).with_description("The configuration to use to advertise trust store CA names.").with_provider_name("AdvertiseTrustStoreCaNames"),
+                    StructField::new("ignore_certificate_expiry", AttributeType::Bool).with_description("The configuration to use to ignore certificate expiration.").with_provider_name("IgnoreCertificateExpiry"),
+                    StructField::new("trust_store_id", AttributeType::String).required().with_description("The trust store ID.").with_provider_name("TrustStoreId")
+                    ],
+                }).with_description("The trust store configuration associated with the viewer mTLS configuration.").with_provider_name("TrustStoreConfig")
+                    ],
+                })
+        .with_def("VpcOriginConfig", AttributeType::Struct {
+                    name: "VpcOriginConfig".to_string(),
+                    fields: vec![
+                    StructField::new("origin_keepalive_timeout", AttributeType::Int).with_description("Specifies how long, in seconds, CloudFront persists its connection to the origin. The minimum timeout is 1 second, the maximum is 120 seconds, and the default (if you don't specify otherwise) is 5 seconds. For more information, see [Keep-alive timeout (custom origins only)](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/DownloadDistValuesOrigin.html#DownloadDistValuesOriginKeepaliveTimeout) in the *Amazon CloudFront Developer Guide*.").with_provider_name("OriginKeepaliveTimeout"),
+                    StructField::new("origin_read_timeout", AttributeType::Int).with_description("Specifies how long, in seconds, CloudFront waits for a response from the origin. This is also known as the *origin response timeout*. The minimum timeout is 1 second, the maximum is 120 seconds, and the default (if you don't specify otherwise) is 30 seconds. For more information, see [Response timeout](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/DownloadDistValuesOrigin.html#DownloadDistValuesOriginResponseTimeout) in the *Amazon CloudFront Developer Guide*.").with_provider_name("OriginReadTimeout"),
+                    StructField::new("owner_account_id", super::aws_account_id()).with_description("The account ID of the AWS-account that owns the VPC origin.").with_provider_name("OwnerAccountId"),
+                    StructField::new("vpc_origin_id", AttributeType::String).required().with_description("The VPC origin ID.").with_provider_name("VpcOriginId")
+                    ],
+                })
     }
 }
 

@@ -30,7 +30,12 @@ pub fn cloudfront_origin_access_control_config() -> AwsccSchemaConfig {
                 .with_provider_name("Id"),
         )
         .attribute(
-            AttributeSchema::new("origin_access_control_config", AttributeType::Struct {
+            AttributeSchema::new("origin_access_control_config", AttributeType::Ref("OriginAccessControlConfig".to_string()))
+                .required()
+                .with_description("The origin access control.")
+                .with_provider_name("OriginAccessControlConfig"),
+        )
+        .with_def("OriginAccessControlConfig", AttributeType::Struct {
                     name: "OriginAccessControlConfig".to_string(),
                     fields: vec![
                     StructField::new("description", AttributeType::String).with_description("A description of the origin access control.").with_provider_name("Description"),
@@ -55,10 +60,6 @@ pub fn cloudfront_origin_access_control_config() -> AwsccSchemaConfig {
             }).required().with_description("The signing protocol of the origin access control, which determines how CloudFront signs (authenticates) requests. The only valid value is ``sigv4``.").with_provider_name("SigningProtocol")
                     ],
                 })
-                .required()
-                .with_description("The origin access control.")
-                .with_provider_name("OriginAccessControlConfig"),
-        )
     }
 }
 
