@@ -49,6 +49,7 @@ service_display_name() {
         identitystore) echo "Identity Store" ;;
         organizations) echo "Organizations" ;;
         cloudfront)    echo "CloudFront" ;;
+        wafv2)         echo "WAFv2" ;;
         *)             echo "$1" | tr '[:lower:]' '[:upper:]' ;;
     esac
 }

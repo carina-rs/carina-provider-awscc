@@ -177,15 +177,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
                 .with_provider_name("SourceIpamPoolId"),
         )
         .attribute(
-            AttributeSchema::new("source_resource", AttributeType::Struct {
-                    name: "SourceResource".to_string(),
-                    fields: vec![
-                    StructField::new("resource_id", AttributeType::String).required().with_provider_name("ResourceId"),
-                    StructField::new("resource_owner", AttributeType::String).required().with_provider_name("ResourceOwner"),
-                    StructField::new("resource_region", super::awscc_region()).required().with_provider_name("ResourceRegion"),
-                    StructField::new("resource_type", AttributeType::String).required().with_provider_name("ResourceType")
-                    ],
-                })
+            AttributeSchema::new("source_resource", AttributeType::Ref("SourceResource".to_string()))
                 .create_only()
                 .with_provider_name("SourceResource"),
         )
@@ -224,6 +216,15 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
             }
             if errors.is_empty() { Ok(()) } else { Err(errors) }
         })
+        .with_def("SourceResource", AttributeType::Struct {
+                    name: "SourceResource".to_string(),
+                    fields: vec![
+                    StructField::new("resource_id", AttributeType::String).required().with_provider_name("ResourceId"),
+                    StructField::new("resource_owner", AttributeType::String).required().with_provider_name("ResourceOwner"),
+                    StructField::new("resource_region", super::awscc_region()).required().with_provider_name("ResourceRegion"),
+                    StructField::new("resource_type", AttributeType::String).required().with_provider_name("ResourceType")
+                    ],
+                })
     }
 }
 

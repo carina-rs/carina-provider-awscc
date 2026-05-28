@@ -88,44 +88,7 @@ pub fn ec2_vpc_endpoint_config() -> AwsccSchemaConfig {
                 .with_provider_name("DnsEntries"),
         )
         .attribute(
-            AttributeSchema::new("dns_options", AttributeType::Struct {
-                    name: "DnsOptionsSpecification".to_string(),
-                    fields: vec![
-                    StructField::new("dns_record_ip_type", AttributeType::StringEnum {
-                name: "DnsRecordIpType".to_string(),
-                values: vec!["ipv4".to_string(), "ipv6".to_string(), "dualstack".to_string(), "service-defined".to_string(), "not-specified".to_string()],
-                identity: Some(carina_core::schema::string_enum_identity("DnsRecordIpType", Some("awscc.ec2.VpcEndpoint"))),
-                dsl_aliases: vec![("ipv4".to_string(), "ipv4".to_string()), ("ipv6".to_string(), "ipv6".to_string()), ("dualstack".to_string(), "dualstack".to_string()), ("service-defined".to_string(), "service_defined".to_string()), ("not-specified".to_string(), "not_specified".to_string())],
-            }).with_description("The DNS records created for the endpoint.").with_provider_name("DnsRecordIpType"),
-                    StructField::new("private_dns_only_for_inbound_resolver_endpoint", AttributeType::StringEnum {
-                name: "PrivateDnsOnlyForInboundResolverEndpoint".to_string(),
-                values: vec!["OnlyInboundResolver".to_string(), "AllResolvers".to_string(), "NotSpecified".to_string()],
-                identity: Some(carina_core::schema::string_enum_identity("PrivateDnsOnlyForInboundResolverEndpoint", Some("awscc.ec2.VpcEndpoint"))),
-                dsl_aliases: vec![("OnlyInboundResolver".to_string(), "only_inbound_resolver".to_string()), ("AllResolvers".to_string(), "all_resolvers".to_string()), ("NotSpecified".to_string(), "not_specified".to_string())],
-            }).with_description("Indicates whether to enable private DNS only for inbound endpoints. This option is available only for services that support both gateway and interface endpoints. It routes traffic that originates from the VPC to the gateway endpoint and traffic that originates from on-premises to the interface endpoint.").with_provider_name("PrivateDnsOnlyForInboundResolverEndpoint"),
-                    StructField::new("private_dns_preference", AttributeType::StringEnum {
-                name: "PrivateDnsPreference".to_string(),
-                values: vec!["VERIFIED_DOMAINS_ONLY".to_string(), "ALL_DOMAINS".to_string(), "VERIFIED_DOMAINS_AND_SPECIFIED_DOMAINS".to_string(), "SPECIFIED_DOMAINS_ONLY".to_string()],
-                identity: Some(carina_core::schema::string_enum_identity("PrivateDnsPreference", Some("awscc.ec2.VpcEndpoint"))),
-                dsl_aliases: vec![("VERIFIED_DOMAINS_ONLY".to_string(), "verified_domains_only".to_string()), ("ALL_DOMAINS".to_string(), "all_domains".to_string()), ("VERIFIED_DOMAINS_AND_SPECIFIED_DOMAINS".to_string(), "verified_domains_and_specified_domains".to_string()), ("SPECIFIED_DOMAINS_ONLY".to_string(), "specified_domains_only".to_string())],
-            }).with_description("The preference for which private domains have a private hosted zone created for and associated with the specified VPC. Only supported when private DNS is enabled and when the VPC endpoint type is ServiceNetwork or Resource.").with_provider_name("PrivateDnsPreference"),
-                    StructField::new("private_dns_specified_domains", AttributeType::Custom {
-                identity: None,
-                pattern: None,
-                length: None,
-                base: Box::new(AttributeType::list(AttributeType::Custom {
-                identity: None,
-                pattern: None,
-                length: Some((Some(1), Some(255))),
-                base: Box::new(AttributeType::String),
-                validate: legacy_validator(validate_string_length_1_255),
-                to_dsl: None,
-            })),
-                validate: legacy_validator(validate_list_items_1_10),
-                to_dsl: None,
-            }).with_description("Indicates which of the private domains to create private hosted zones for and associate with the specified VPC. Only supported when private DNS is enabled and the private DNS preference is ``VERIFIED_DOMAINS_AND_SPECIFIED_DOMAINS`` or ``SPECIFIED_DOMAINS_ONLY``.").with_provider_name("PrivateDnsSpecifiedDomains")
-                    ],
-                })
+            AttributeSchema::new("dns_options", AttributeType::Ref("DnsOptionsSpecification".to_string()))
                 .create_only()
                 .with_description("Describes the DNS options for an endpoint.")
                 .with_provider_name("DnsOptions"),
@@ -231,6 +194,44 @@ pub fn ec2_vpc_endpoint_config() -> AwsccSchemaConfig {
             }
             if errors.is_empty() { Ok(()) } else { Err(errors) }
         })
+        .with_def("DnsOptionsSpecification", AttributeType::Struct {
+                    name: "DnsOptionsSpecification".to_string(),
+                    fields: vec![
+                    StructField::new("dns_record_ip_type", AttributeType::StringEnum {
+                name: "DnsRecordIpType".to_string(),
+                values: vec!["ipv4".to_string(), "ipv6".to_string(), "dualstack".to_string(), "service-defined".to_string(), "not-specified".to_string()],
+                identity: Some(carina_core::schema::string_enum_identity("DnsRecordIpType", Some("awscc.ec2.VpcEndpoint"))),
+                dsl_aliases: vec![("ipv4".to_string(), "ipv4".to_string()), ("ipv6".to_string(), "ipv6".to_string()), ("dualstack".to_string(), "dualstack".to_string()), ("service-defined".to_string(), "service_defined".to_string()), ("not-specified".to_string(), "not_specified".to_string())],
+            }).with_description("The DNS records created for the endpoint.").with_provider_name("DnsRecordIpType"),
+                    StructField::new("private_dns_only_for_inbound_resolver_endpoint", AttributeType::StringEnum {
+                name: "PrivateDnsOnlyForInboundResolverEndpoint".to_string(),
+                values: vec!["OnlyInboundResolver".to_string(), "AllResolvers".to_string(), "NotSpecified".to_string()],
+                identity: Some(carina_core::schema::string_enum_identity("PrivateDnsOnlyForInboundResolverEndpoint", Some("awscc.ec2.VpcEndpoint"))),
+                dsl_aliases: vec![("OnlyInboundResolver".to_string(), "only_inbound_resolver".to_string()), ("AllResolvers".to_string(), "all_resolvers".to_string()), ("NotSpecified".to_string(), "not_specified".to_string())],
+            }).with_description("Indicates whether to enable private DNS only for inbound endpoints. This option is available only for services that support both gateway and interface endpoints. It routes traffic that originates from the VPC to the gateway endpoint and traffic that originates from on-premises to the interface endpoint.").with_provider_name("PrivateDnsOnlyForInboundResolverEndpoint"),
+                    StructField::new("private_dns_preference", AttributeType::StringEnum {
+                name: "PrivateDnsPreference".to_string(),
+                values: vec!["VERIFIED_DOMAINS_ONLY".to_string(), "ALL_DOMAINS".to_string(), "VERIFIED_DOMAINS_AND_SPECIFIED_DOMAINS".to_string(), "SPECIFIED_DOMAINS_ONLY".to_string()],
+                identity: Some(carina_core::schema::string_enum_identity("PrivateDnsPreference", Some("awscc.ec2.VpcEndpoint"))),
+                dsl_aliases: vec![("VERIFIED_DOMAINS_ONLY".to_string(), "verified_domains_only".to_string()), ("ALL_DOMAINS".to_string(), "all_domains".to_string()), ("VERIFIED_DOMAINS_AND_SPECIFIED_DOMAINS".to_string(), "verified_domains_and_specified_domains".to_string()), ("SPECIFIED_DOMAINS_ONLY".to_string(), "specified_domains_only".to_string())],
+            }).with_description("The preference for which private domains have a private hosted zone created for and associated with the specified VPC. Only supported when private DNS is enabled and when the VPC endpoint type is ServiceNetwork or Resource.").with_provider_name("PrivateDnsPreference"),
+                    StructField::new("private_dns_specified_domains", AttributeType::Custom {
+                identity: None,
+                pattern: None,
+                length: None,
+                base: Box::new(AttributeType::list(AttributeType::Custom {
+                identity: None,
+                pattern: None,
+                length: Some((Some(1), Some(255))),
+                base: Box::new(AttributeType::String),
+                validate: legacy_validator(validate_string_length_1_255),
+                to_dsl: None,
+            })),
+                validate: legacy_validator(validate_list_items_1_10),
+                to_dsl: None,
+            }).with_description("Indicates which of the private domains to create private hosted zones for and associate with the specified VPC. Only supported when private DNS is enabled and the private DNS preference is ``VERIFIED_DOMAINS_AND_SPECIFIED_DOMAINS`` or ``SPECIFIED_DOMAINS_ONLY``.").with_provider_name("PrivateDnsSpecifiedDomains")
+                    ],
+                })
     }
 }
 

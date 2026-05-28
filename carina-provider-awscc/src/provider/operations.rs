@@ -12,7 +12,7 @@ use carina_core::schema::{AttributeSchema, AttributeType};
 use indexmap::IndexMap;
 use serde_json::json;
 
-use super::conversion::{aws_value_to_dsl, dsl_value_to_aws};
+use super::conversion::{aws_value_to_dsl_with_defs, dsl_value_to_aws_with_defs};
 use super::update::build_update_patches;
 use super::{AwsccProvider, get_schema_config};
 
@@ -44,8 +44,12 @@ impl AwsccProvider {
             None => return Ok(State::not_found(id)),
         };
 
-        let mut attributes =
-            map_aws_props_to_attributes(&props, &config.schema.attributes, resource_type);
+        let mut attributes = map_aws_props_to_attributes(
+            &props,
+            &config.schema.attributes,
+            resource_type,
+            &config.schema.defs,
+        );
 
         // Handle tags
         if config.has_tags
@@ -92,11 +96,12 @@ impl AwsccProvider {
             if let Some(aws_name) = &attr_schema.provider_name
                 && let Some(value) = resource.get_attr(dsl_name.as_str())
             {
-                let aws_value = dsl_value_to_aws(
+                let aws_value = dsl_value_to_aws_with_defs(
                     value,
                     &attr_schema.attr_type,
                     &resource.id.resource_type,
                     dsl_name,
+                    &config.schema.defs,
                 );
                 if let Some(v) = aws_value {
                     desired_state.insert(aws_name.to_string(), v);
@@ -267,6 +272,7 @@ fn map_aws_props_to_attributes(
     props: &serde_json::Value,
     schema_attributes: &HashMap<String, AttributeSchema>,
     resource_type: &str,
+    defs: &std::collections::BTreeMap<String, AttributeType>,
 ) -> HashMap<String, Value> {
     let mut attributes = HashMap::new();
 
@@ -279,9 +285,13 @@ fn map_aws_props_to_attributes(
         };
         match props.get(aws_name.as_str()) {
             Some(value) => {
-                if let Some(v) =
-                    aws_value_to_dsl(dsl_name, value, &attr_schema.attr_type, resource_type)
-                {
+                if let Some(v) = aws_value_to_dsl_with_defs(
+                    dsl_name,
+                    value,
+                    &attr_schema.attr_type,
+                    resource_type,
+                    defs,
+                ) {
                     attributes.insert(dsl_name.clone(), v);
                 }
             }
@@ -373,7 +383,12 @@ mod tests {
         )]);
         let props = json!({});
 
-        let result = map_aws_props_to_attributes(&props, &attrs, "iam.Role");
+        let result = map_aws_props_to_attributes(
+            &props,
+            &attrs,
+            "iam.Role",
+            carina_core::schema::empty_defs(),
+        );
 
         assert_eq!(
             result.get("managed_policy_arns"),
@@ -393,7 +408,12 @@ mod tests {
         )]);
         let props = json!({});
 
-        let result = map_aws_props_to_attributes(&props, &attrs, "some.Resource");
+        let result = map_aws_props_to_attributes(
+            &props,
+            &attrs,
+            "some.Resource",
+            carina_core::schema::empty_defs(),
+        );
 
         assert_eq!(
             result.get("metadata"),
@@ -416,7 +436,12 @@ mod tests {
         )]);
         let props = json!({});
 
-        let result = map_aws_props_to_attributes(&props, &attrs, "some.Resource");
+        let result = map_aws_props_to_attributes(
+            &props,
+            &attrs,
+            "some.Resource",
+            carina_core::schema::empty_defs(),
+        );
 
         assert!(
             !result.contains_key("required_list"),
@@ -437,7 +462,12 @@ mod tests {
         )]);
         let props = json!({});
 
-        let result = map_aws_props_to_attributes(&props, &attrs, "some.Resource");
+        let result = map_aws_props_to_attributes(
+            &props,
+            &attrs,
+            "some.Resource",
+            carina_core::schema::empty_defs(),
+        );
 
         assert!(
             !result.contains_key("description"),
@@ -458,7 +488,12 @@ mod tests {
             "ManagedPolicyArns": ["arn:aws:iam::aws:policy/ReadOnlyAccess"]
         });
 
-        let result = map_aws_props_to_attributes(&props, &attrs, "iam.Role");
+        let result = map_aws_props_to_attributes(
+            &props,
+            &attrs,
+            "iam.Role",
+            carina_core::schema::empty_defs(),
+        );
 
         assert_eq!(
             result.get("managed_policy_arns"),
@@ -481,7 +516,12 @@ mod tests {
         )]);
         let props = json!({});
 
-        let result = map_aws_props_to_attributes(&props, &attrs, "some.Resource");
+        let result = map_aws_props_to_attributes(
+            &props,
+            &attrs,
+            "some.Resource",
+            carina_core::schema::empty_defs(),
+        );
 
         assert!(
             !result.contains_key("tags"),

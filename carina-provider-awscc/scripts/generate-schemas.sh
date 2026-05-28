@@ -77,6 +77,7 @@ RESOURCE_TYPES=(
     "AWS::Route53::HostedZone"
     "AWS::CloudFront::Distribution"
     "AWS::CloudFront::OriginAccessControl"
+    "AWS::WAFv2::WebACL"
 )
 
 echo "Generating awscc provider schemas..."

@@ -17,9 +17,137 @@ use clap::Parser;
 use heck::{ToPascalCase, ToSnakeCase};
 use regex::Regex;
 use serde::Deserialize;
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::io::{self, Read};
 use std::sync::LazyLock;
+
+// carina#3340: in-progress recursion guard for cyclic CFN $ref
+// definitions (WAFv2 `WebACL.Statement` → `AndStatement` → `List<Statement>`).
+// When `generate_struct_type` is asked to expand a definition whose name
+// is already on the stack, it emits `AttributeType::Ref(name)` and
+// records the def's body into [`STRUCT_DEFS_OUT`] for later emission
+// into `ResourceSchema.defs`. The set is per-resource — cleared at the
+// top of each resource generation pass.
+/// `(pattern, min, max)` triples accumulated by the recursion guard.
+type PatternWithLength = (String, Option<u64>, Option<u64>);
+/// `(min, max, is_float)` tuple keyed by prop name for int / float
+/// range validators accumulated by the recursion guard.
+type RangeValidator = (Option<i64>, Option<i64>, bool);
+
+// `HashSet::new()` is not `const fn`, so clippy's
+// `missing_const_for_thread_local` suggestion is rejected for the
+// HashSet-typed cells by rustc. The BTree-typed cells can use `const`
+// init, but mixing styles inside one `thread_local!` block makes the
+// allow attribute awkward; suppressing the lint for the whole block
+// keeps the source consistent. (carina#3340.)
+thread_local! {
+    #[allow(clippy::missing_const_for_thread_local)]
+    static IN_PROGRESS_DEFS: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
+    /// Collected `(def_name, AttributeType-rendered Rust code)` for the
+    /// resource currently being generated. Populated by the recursion
+    /// guard in `cfn_type_to_carina_type_with_enum`; consumed by the
+    /// resource emitter to populate `ResourceSchema.defs`.
+    #[allow(clippy::missing_const_for_thread_local)]
+    static EMITTED_DEFS: RefCell<BTreeMap<String, String>> = RefCell::new(BTreeMap::new());
+    /// Patterns discovered during recursive expansion of CFN `$ref`
+    /// struct definitions. The original pre-scan walks only the
+    /// top-level properties + definitions one hop deep; once the
+    /// recursion guard lets `generate_struct_type` walk N levels deep
+    /// into a cyclic struct, the patterns inside those nested levels
+    /// must still be emitted as `fn` definitions or the generated
+    /// file will reference undefined symbols. Populated by
+    /// `cfn_type_to_carina_type_with_enum` at every pattern emission
+    /// site; the resource emitter drains this into the same
+    /// `pattern_with_lengths` set used by the existing pre-scan
+    /// emitter (carina#3340).
+    #[allow(clippy::missing_const_for_thread_local)]
+    static EMITTED_PATTERNS_WITH_LENGTHS: RefCell<BTreeSet<PatternWithLength>> =
+        RefCell::new(BTreeSet::new());
+    #[allow(clippy::missing_const_for_thread_local)]
+    static EMITTED_STANDALONE_PATTERNS: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
+    /// `(prop_name -> (min, max, is_float))` for integer/number range
+    /// validators referenced by the recursive cycle expansion. Same
+    /// rationale as `EMITTED_PATTERNS_WITH_LENGTHS`: the existing
+    /// `ranged_ints` / `ranged_floats` pre-scan walks only one hop
+    /// into definitions; nested cyclic fields can reference
+    /// `validate_<snake>_range` fns the pre-scan never collected.
+    #[allow(clippy::missing_const_for_thread_local)]
+    static EMITTED_RANGE_VALIDATORS: RefCell<BTreeMap<String, RangeValidator>> =
+        RefCell::new(BTreeMap::new());
+    /// `prop_name -> integer enum values`, same rationale as
+    /// `EMITTED_RANGE_VALIDATORS` (carina#3340).
+    #[allow(clippy::missing_const_for_thread_local)]
+    static EMITTED_INT_ENUMS: RefCell<BTreeMap<String, Vec<i64>>> =
+        RefCell::new(BTreeMap::new());
+}
+
+/// Reset the per-resource recursion guard state. Called at the start
+/// of every resource generation so a cycle detected for resource A
+/// does not leak into resource B.
+fn reset_recursion_guard() {
+    IN_PROGRESS_DEFS.with(|s| s.borrow_mut().clear());
+    EMITTED_DEFS.with(|s| s.borrow_mut().clear());
+    EMITTED_PATTERNS_WITH_LENGTHS.with(|s| s.borrow_mut().clear());
+    EMITTED_STANDALONE_PATTERNS.with(|s| s.borrow_mut().clear());
+    EMITTED_RANGE_VALIDATORS.with(|s| s.borrow_mut().clear());
+    EMITTED_INT_ENUMS.with(|s| s.borrow_mut().clear());
+}
+
+/// Take the defs collected during the current resource pass and
+/// return them as a sorted `BTreeMap`. Empty for non-cyclic resources.
+fn take_emitted_defs() -> BTreeMap<String, String> {
+    EMITTED_DEFS.with(|s| std::mem::take(&mut *s.borrow_mut()))
+}
+
+/// Record a pattern+length validator emission so the function-emitter
+/// can produce its matching `fn` definition. Called from every
+/// emission site in `cfn_type_to_carina_type_with_enum` that
+/// references a `validate_string_pattern_<hash>_len_<min>_<max>`
+/// symbol. The pre-scan over `definitions` already collects most
+/// patterns; this set is the cycle-recursion safety net that catches
+/// patterns nested deeper than the pre-scan walks (carina#3340).
+fn record_pattern_with_length(pattern: &str, min: Option<u64>, max: Option<u64>) {
+    EMITTED_PATTERNS_WITH_LENGTHS.with(|s| {
+        s.borrow_mut().insert((pattern.to_string(), min, max));
+    });
+}
+
+fn record_standalone_pattern(pattern: &str) {
+    EMITTED_STANDALONE_PATTERNS.with(|s| {
+        s.borrow_mut().insert(pattern.to_string());
+    });
+}
+
+fn take_emitted_patterns_with_lengths() -> BTreeSet<(String, Option<u64>, Option<u64>)> {
+    EMITTED_PATTERNS_WITH_LENGTHS.with(|s| std::mem::take(&mut *s.borrow_mut()))
+}
+
+fn take_emitted_standalone_patterns() -> HashSet<String> {
+    EMITTED_STANDALONE_PATTERNS.with(|s| std::mem::take(&mut *s.borrow_mut()))
+}
+
+fn record_range_validator(prop_name: &str, min: Option<i64>, max: Option<i64>, is_float: bool) {
+    EMITTED_RANGE_VALIDATORS.with(|s| {
+        s.borrow_mut()
+            .insert(prop_name.to_string(), (min, max, is_float));
+    });
+}
+
+fn take_emitted_range_validators() -> BTreeMap<String, (Option<i64>, Option<i64>, bool)> {
+    EMITTED_RANGE_VALIDATORS.with(|s| std::mem::take(&mut *s.borrow_mut()))
+}
+
+fn record_int_enum(prop_name: &str, values: &[i64]) {
+    EMITTED_INT_ENUMS.with(|s| {
+        s.borrow_mut()
+            .insert(prop_name.to_string(), values.to_vec());
+    });
+}
+
+fn take_emitted_int_enums() -> BTreeMap<String, Vec<i64>> {
+    EMITTED_INT_ENUMS.with(|s| std::mem::take(&mut *s.borrow_mut()))
+}
 
 /// Exit status used when a schema is deliberately skipped (NON_PROVISIONABLE).
 /// The generate-schemas.sh / generate-docs.sh wrappers branch on this to
@@ -1346,6 +1474,12 @@ fn detect_exclusive_fields(schema: &CfnSchema, type_name: &str) -> Vec<Vec<Strin
 }
 
 fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
+    // carina#3340: clear per-resource codegen state at function entry
+    // (cyclic-$ref guard + emitted-pattern accumulators) so prior
+    // resources don't leak entries into this resource's pre-scan or
+    // post-emit validator-fn generation.
+    reset_recursion_guard();
+
     let mut code = String::new();
 
     // Parse type name: AWS::EC2::VPC -> (ec2, vpc)
@@ -2304,8 +2438,190 @@ pub fn {}() -> AwsccSchemaConfig {{
         );
     }
 
+    // carina#3340: drain any cyclic-struct definitions that the
+    // `$ref` recursion guard accumulated during attribute emission
+    // and attach them to the schema via `.with_def(...)`. Non-cyclic
+    // resources contribute nothing here; the map is empty and no
+    // calls are emitted. The Rust string in `def_body` is already a
+    // valid `AttributeType` expression (the same string the inline
+    // attribute emitter would have produced).
+    let defs = take_emitted_defs();
+    for (def_name, def_body) in &defs {
+        body.push_str(&format!(
+            "        .with_def(\"{}\", {})\n",
+            def_name, def_body
+        ));
+    }
+
     // Close the schema (ResourceSchema) and the AwsccSchemaConfig struct
     body.push_str("    }\n}\n");
+
+    // carina#3340: emit validator fns for patterns that the cycle
+    // expansion in `cfn_type_to_carina_type_with_enum` referenced
+    // but the original `pattern_with_lengths` pre-scan didn't see.
+    // The pre-scan walks top-level properties + each definition one
+    // hop deep; with the recursion guard, `generate_struct_type` can
+    // recurse arbitrarily many hops into cyclic CFN structures
+    // (WAFv2 `WebACL.Statement` → `AndStatement` → ...) and emit
+    // pattern validators that the pre-scan would never have visited.
+    // Each emission site records its (pattern, min, max) into
+    // `EMITTED_PATTERNS_WITH_LENGTHS`; here we drain that set,
+    // subtract anything the pre-scan already emitted, and append the
+    // remaining `fn` definitions. Rust allows fn definitions in any
+    // order, so appending after the schema body works.
+    let extra_pwl = take_emitted_patterns_with_lengths();
+    let extra_standalone = take_emitted_standalone_patterns();
+    let already_pwl: HashSet<(String, Option<u64>, Option<u64>)> =
+        pattern_with_lengths.iter().cloned().collect();
+    for (pattern, min, max) in &extra_pwl {
+        if already_pwl.contains(&(pattern.clone(), *min, *max)) {
+            continue;
+        }
+        let fn_name = pattern_and_length_fn_name(pattern, *min, *max);
+        let rust_pattern = rust_compatible_pattern(pattern);
+        let escaped_for_rust = rust_pattern.replace('\\', "\\\\").replace('"', "\\\"");
+        let escaped_for_msg = escaped_for_rust.replace('{', "{{").replace('}', "}}");
+        let (len_condition, range_display) = string_length_condition_and_display(*min, *max);
+        body.push_str(&format!(
+            r#"
+#[allow(dead_code)]
+fn {fn_name}(value: &Value) -> Result<(), String> {{
+    if let Value::Concrete(ConcreteValue::String(s)) = value {{
+        static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {{
+            Regex::new("{escaped_for_rust}").expect("invalid pattern regex")
+        }});
+        if !RE.is_match(s) {{
+            return Err(format!("Value '{{}}' does not match pattern {escaped_for_msg}", s));
+        }}
+        let len = s.chars().count();
+        if {len_condition} {{
+            return Err(format!("String length {{}} is out of range {range_display}", len));
+        }}
+        Ok(())
+    }} else {{
+        Err("Expected string".to_string())
+    }}
+}}
+"#
+        ));
+    }
+    // Same shape for int / float range validators referenced by
+    // cyclic nested struct fields (carina#3340).
+    let extra_ranges = take_emitted_range_validators();
+    for (prop_name, (min, max, is_float)) in &extra_ranges {
+        // Skip if pre-scan already emitted via ranged_ints / ranged_floats.
+        if ranged_ints.contains_key(prop_name) || ranged_floats.contains_key(prop_name) {
+            continue;
+        }
+        let fn_name = format!("validate_{}_range", prop_name.to_snake_case());
+        if *is_float {
+            let (condition, range_display) = float_range_condition_and_display(*min, *max);
+            body.push_str(&format!(
+                r#"
+#[allow(dead_code)]
+fn {}(value: &Value) -> Result<(), String> {{
+    let n = match value {{
+        Value::Concrete(ConcreteValue::Int(i)) => *i as f64,
+        Value::Concrete(ConcreteValue::Float(f)) => *f,
+        _ => return Err("Expected number".to_string()),
+    }};
+    if {} {{
+        Err(format!("Value {{}} is out of range {}", n))
+    }} else {{
+        Ok(())
+    }}
+}}
+"#,
+                fn_name, condition, range_display
+            ));
+        } else {
+            let (condition, range_display) = int_range_condition_and_display(*min, *max);
+            body.push_str(&format!(
+                r#"
+#[allow(dead_code)]
+fn {}(value: &Value) -> Result<(), String> {{
+    if let Value::Concrete(ConcreteValue::Int(n)) = value {{
+        if {} {{
+            Err(format!("Value {{}} is out of range {}", n))
+        }} else {{
+            Ok(())
+        }}
+    }} else {{
+        Err("Expected integer".to_string())
+    }}
+}}
+"#,
+                fn_name, condition, range_display
+            ));
+        }
+    }
+
+    // Same shape for integer enum validators referenced from cyclic
+    // nested fields (carina#3340).
+    let extra_int_enums = take_emitted_int_enums();
+    for (prop_name, values) in &extra_int_enums {
+        if int_enums.contains_key(prop_name) {
+            continue;
+        }
+        let fn_name = format!("validate_{}_int_enum", prop_name.to_snake_case());
+        let const_name = format!("VALID_{}_VALUES", prop_name.to_snake_case().to_uppercase());
+        let values_str = values
+            .iter()
+            .map(|v| v.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        body.push_str(&format!(
+            r#"
+#[allow(dead_code)]
+const {}: &[i64] = &[{}];
+
+#[allow(dead_code)]
+fn {}(value: &Value) -> Result<(), String> {{
+    if let Value::Concrete(ConcreteValue::Int(n)) = value {{
+        if {}.contains(n) {{
+            Ok(())
+        }} else {{
+            Err(format!("Value {{}} is not a valid value", n))
+        }}
+    }} else {{
+        Err("Expected integer".to_string())
+    }}
+}}
+"#,
+            const_name, values_str, fn_name, const_name
+        ));
+    }
+
+    // And the standalone (no-length) patterns recorded by the
+    // recursion guard. Skip any the pre-scan already emitted.
+    for pattern in &extra_standalone {
+        if patterns_used_standalone.contains(pattern) || patterns.values().any(|p| p == pattern) {
+            continue;
+        }
+        let fn_name = pattern_fn_name(pattern);
+        let rust_pattern = rust_compatible_pattern(pattern);
+        let escaped_for_rust = rust_pattern.replace('\\', "\\\\").replace('"', "\\\"");
+        let escaped_for_msg = escaped_for_rust.replace('{', "{{").replace('}', "}}");
+        body.push_str(&format!(
+            r#"
+#[allow(dead_code)]
+fn {fn_name}(value: &Value) -> Result<(), String> {{
+    if let Value::Concrete(ConcreteValue::String(s)) = value {{
+        static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {{
+            Regex::new("{escaped_for_rust}").expect("invalid pattern regex")
+        }});
+        if RE.is_match(s) {{
+            Ok(())
+        }} else {{
+            Err(format!("Value '{{}}' does not match pattern {escaped_for_msg}", s))
+        }}
+    }} else {{
+        Err("Expected string".to_string())
+    }}
+}}
+"#
+        ));
+    }
 
     // Generate enum_valid_values() function that exposes VALID_* constants
     body.push_str(&format!(
@@ -2953,8 +3269,11 @@ fn list_items_condition_and_display(min: Option<i64>, max: Option<i64>) -> (Stri
 
 fn float_range_condition_and_display(min: Option<i64>, max: Option<i64>) -> (String, String) {
     match (min, max) {
+        // Clippy 1.95 flags `n < x || n > y` as `manual_range_contains`;
+        // emit the `!RangeInclusive::contains` form directly so generated
+        // files stay `-D warnings` clean (carina#3340 post-emit drain).
         (Some(min), Some(max)) => (
-            format!("n < {}.0 || n > {}.0", min, max),
+            format!("!({}.0..={}.0).contains(&n)", min, max),
             format!("{}..={}", min, max),
         ),
         (Some(min), None) => (format!("n < {}.0", min), format!("{}..", min)),
@@ -4065,16 +4384,58 @@ fn cfn_type_to_carina_type_with_enum(
         if ref_path.contains("/Tag") {
             return ("tags_type()".to_string(), None);
         }
+        // carina#3340: cycle guard + reuse-via-Ref. Two cases emit
+        // `AttributeType::Ref(<name>)` instead of recursing into the
+        // resolved body:
+        //   1. The def name is already on the expansion stack — a
+        //      true cycle that would otherwise recurse infinitely.
+        //   2. The def has already been emitted once during this
+        //      resource's generation pass. Inlining the body again
+        //      at every reuse site (WAFv2 `Statement` is referenced
+        //      from 6 parent fields and itself contains thousands
+        //      of nested struct/list nodes) explodes both the
+        //      generated source size AND the runtime stack at
+        //      `ResourceSchema::new()` construction. The factored
+        //      shape is also the design `defs` exists for —
+        //      sharing a single canonical instance via `Ref`.
+        // Either way, the body is in `EMITTED_DEFS` and the host
+        // resolves the `Ref` at walk-time.
+        if let Some(def_name) = ref_def_name(ref_path) {
+            let already_known = IN_PROGRESS_DEFS.with(|s| s.borrow().contains(def_name))
+                || EMITTED_DEFS.with(|s| s.borrow().contains_key(def_name));
+            if already_known {
+                return (
+                    format!("AttributeType::Ref(\"{}\".to_string())", def_name),
+                    None,
+                );
+            }
+        }
         // Try to resolve the $ref to a definition and generate Struct type
         if let Some(def) = resolve_ref(schema, ref_path) {
             if let Some(props) = &def.properties
                 && !props.is_empty()
             {
                 let def_name = ref_def_name(ref_path).unwrap_or(prop_name);
-                return (
-                    generate_struct_type(def_name, props, &def.required, schema, namespace, enums),
-                    None,
-                );
+                // Push onto the expansion stack so a nested re-entry
+                // emits a Ref instead of recursing infinitely. The
+                // body is generated under this guard, then popped.
+                IN_PROGRESS_DEFS.with(|s| {
+                    s.borrow_mut().insert(def_name.to_string());
+                });
+                let body =
+                    generate_struct_type(def_name, props, &def.required, schema, namespace, enums);
+                IN_PROGRESS_DEFS.with(|s| {
+                    s.borrow_mut().remove(def_name);
+                });
+                // Record the def's body so the resource emitter can
+                // populate `ResourceSchema.defs` with it (only useful
+                // when this def is actually cycle-target; storing
+                // unconditionally is fine because non-cycle defs are
+                // never referenced via `Ref(_)`).
+                EMITTED_DEFS.with(|s| {
+                    s.borrow_mut().insert(def_name.to_string(), body.clone());
+                });
+                return (body, None);
             }
             // Handle oneOf: merge all variant properties into a single struct
             if !def.one_of.is_empty() {
@@ -4089,17 +4450,26 @@ fn cfn_type_to_carina_type_with_enum(
                 }
                 if !merged_props.is_empty() {
                     let def_name = ref_def_name(ref_path).unwrap_or(prop_name);
-                    return (
-                        generate_struct_type(
-                            def_name,
-                            &merged_props,
-                            &[], // no required fields - variants are mutually exclusive
-                            schema,
-                            namespace,
-                            enums,
-                        ),
-                        None,
+                    // Same cycle-guarded shape as the `properties`
+                    // branch above (carina#3340).
+                    IN_PROGRESS_DEFS.with(|s| {
+                        s.borrow_mut().insert(def_name.to_string());
+                    });
+                    let body = generate_struct_type(
+                        def_name,
+                        &merged_props,
+                        &[], // no required fields - variants are mutually exclusive
+                        schema,
+                        namespace,
+                        enums,
                     );
+                    IN_PROGRESS_DEFS.with(|s| {
+                        s.borrow_mut().remove(def_name);
+                    });
+                    EMITTED_DEFS.with(|s| {
+                        s.borrow_mut().insert(def_name.to_string(), body.clone());
+                    });
+                    return (body, None);
                 }
             }
             // Handle enum-only $ref definitions (no properties, just enum values)
@@ -4152,8 +4522,10 @@ fn cfn_type_to_carina_type_with_enum(
                     let effective_min = def.min_length.filter(|&m| m > 0);
                     let has_length = effective_min.is_some() || def.max_length.is_some();
                     let validate_fn = if has_length {
+                        record_pattern_with_length(pattern, effective_min, def.max_length);
                         pattern_and_length_fn_name(pattern, effective_min, def.max_length)
                     } else {
+                        record_standalone_pattern(pattern);
                         pattern_fn_name(pattern)
                     };
                     let pattern_expr = emit_pattern_option(Some(pattern));
@@ -4194,6 +4566,7 @@ fn cfn_type_to_carina_type_with_enum(
                     _ => None,
                 })
                 .collect();
+            record_int_enum(prop_name, &values);
             let _ = values;
             let validate_fn = format!("validate_{}_int_enum", prop_name.to_snake_case());
             return (
@@ -4283,8 +4656,10 @@ fn cfn_type_to_carina_type_with_enum(
                 && is_numeric_string_pattern(pattern)
             {
                 let validate_fn = if has_length {
+                    record_pattern_with_length(pattern, effective_min, prop.max_length);
                     pattern_and_length_fn_name(pattern, effective_min, prop.max_length)
                 } else {
+                    record_standalone_pattern(pattern);
                     pattern_fn_name(pattern)
                 };
                 let pattern_expr = emit_pattern_option(Some(pattern));
@@ -4320,8 +4695,10 @@ fn cfn_type_to_carina_type_with_enum(
             // Check for regex pattern constraint
             if let Some(pattern) = &prop.pattern {
                 let validate_fn = if has_length {
+                    record_pattern_with_length(pattern, effective_min, prop.max_length);
                     pattern_and_length_fn_name(pattern, effective_min, prop.max_length)
                 } else {
+                    record_standalone_pattern(pattern);
                     pattern_fn_name(pattern)
                 };
                 let pattern_expr = emit_pattern_option(Some(pattern));
@@ -4386,8 +4763,9 @@ fn cfn_type_to_carina_type_with_enum(
             // Check resource-scoped overrides first
             let res_override =
                 resource_type_overrides().get(&(schema.type_name.as_str(), prop_name));
-            if let Some(TypeOverride::IntRange(_min, _max)) = res_override {
+            if let Some(TypeOverride::IntRange(min, max)) = res_override {
                 let validate_fn = format!("validate_{}_range", prop_name.to_snake_case());
+                record_range_validator(prop_name, Some(*min), Some(*max), false);
                 return (
                     format!(
                         r#"AttributeType::Custom {{
@@ -4403,7 +4781,8 @@ fn cfn_type_to_carina_type_with_enum(
                     None,
                 );
             }
-            if let Some(TypeOverride::IntEnum(_values)) = res_override {
+            if let Some(TypeOverride::IntEnum(values)) = res_override {
+                record_int_enum(prop_name, values);
                 let validate_fn = format!("validate_{}_int_enum", prop_name.to_snake_case());
                 return (
                     format!(
@@ -4429,9 +4808,10 @@ fn cfn_type_to_carina_type_with_enum(
                         .get(prop_name)
                         .map(|&(min, max)| (Some(min), Some(max)))
                 };
-            if range.is_some() {
+            if let Some((min, max)) = range {
                 // Generate a ranged int type with validation
                 let validate_fn = format!("validate_{}_range", prop_name.to_snake_case());
+                record_range_validator(prop_name, min, max, false);
                 (
                     format!(
                         r#"AttributeType::Custom {{
@@ -4468,8 +4848,9 @@ fn cfn_type_to_carina_type_with_enum(
             // Check resource-scoped overrides first
             let res_override =
                 resource_type_overrides().get(&(schema.type_name.as_str(), prop_name));
-            if let Some(TypeOverride::IntRange(_min, _max)) = res_override {
+            if let Some(TypeOverride::IntRange(min, max)) = res_override {
                 let validate_fn = format!("validate_{}_range", prop_name.to_snake_case());
+                record_range_validator(prop_name, Some(*min), Some(*max), true);
                 return (
                     format!(
                         r#"AttributeType::Custom {{
@@ -4494,9 +4875,10 @@ fn cfn_type_to_carina_type_with_enum(
                         .get(prop_name)
                         .map(|&(min, max)| (Some(min), Some(max)))
                 };
-            if range.is_some() {
+            if let Some((min, max)) = range {
                 // Generate a ranged float type with validation
                 let validate_fn = format!("validate_{}_range", prop_name.to_snake_case());
+                record_range_validator(prop_name, min, max, true);
                 (
                     format!(
                         r#"AttributeType::Custom {{

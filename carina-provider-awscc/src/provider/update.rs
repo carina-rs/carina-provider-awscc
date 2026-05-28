@@ -12,7 +12,7 @@ use carina_core::provider::{PatchOp, PatchOpKind, ProviderError, ProviderResult,
 use carina_core::resource::{ConcreteValue, Value};
 use serde_json::json;
 
-use super::conversion::dsl_value_to_aws;
+use super::conversion::dsl_value_to_aws_with_defs;
 use crate::schemas::generated::AwsccSchemaConfig;
 
 /// Parse a JSON string from CloudControl API response into a `serde_json::Value`.
@@ -84,9 +84,13 @@ pub(crate) fn build_update_patches(
 
         match (op.kind, &op.value) {
             (PatchOpKind::Add | PatchOpKind::Replace, Some(value)) => {
-                if let Some(aws_value) =
-                    dsl_value_to_aws(value, &attr_schema.attr_type, resource_type, &op.key)
-                {
+                if let Some(aws_value) = dsl_value_to_aws_with_defs(
+                    value,
+                    &attr_schema.attr_type,
+                    resource_type,
+                    &op.key,
+                    &config.schema.defs,
+                ) {
                     patch_ops.push(json!({
                         "op": "add",
                         "path": format!("/{}", aws_name),

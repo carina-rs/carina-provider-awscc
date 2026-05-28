@@ -629,27 +629,45 @@ mod tests {
 
         // Recursively collect the `ordered` flag of every List whose
         // owning struct field is named allowed_methods/cached_methods.
-        fn collect(at: &AttributeType, field: Option<&str>, out: &mut Vec<(String, bool)>) {
+        // carina#3340: the walker resolves `AttributeType::Ref` against
+        // `schema.defs` so cycle-broken / shared struct subtrees stay
+        // reachable. A `seen` set guards against infinite recursion on
+        // genuine cycles.
+        fn collect(
+            at: &AttributeType,
+            field: Option<&str>,
+            defs: &std::collections::BTreeMap<String, AttributeType>,
+            seen: &mut std::collections::HashSet<String>,
+            out: &mut Vec<(String, bool)>,
+        ) {
             match at {
                 AttributeType::List { inner, ordered } => {
                     if matches!(field, Some("allowed_methods" | "cached_methods")) {
                         out.push((field.unwrap().to_string(), *ordered));
                     }
-                    collect(inner, None, out);
+                    collect(inner, None, defs, seen, out);
                 }
                 AttributeType::Struct { fields, .. } => {
                     for f in fields {
-                        collect(&f.field_type, Some(f.name.as_str()), out);
+                        collect(&f.field_type, Some(f.name.as_str()), defs, seen, out);
                     }
                 }
-                AttributeType::Map { value, .. } => collect(value, None, out),
+                AttributeType::Map { value, .. } => collect(value, None, defs, seen, out),
+                AttributeType::Ref(name) => {
+                    if seen.insert(name.clone())
+                        && let Some(target) = defs.get(name)
+                    {
+                        collect(target, field, defs, seen, out);
+                    }
+                }
                 _ => {}
             }
         }
 
         let mut found = Vec::new();
         for attr in schema.attributes.values() {
-            collect(&attr.attr_type, None, &mut found);
+            let mut seen = std::collections::HashSet::new();
+            collect(&attr.attr_type, None, &schema.defs, &mut seen, &mut found);
         }
 
         assert!(
