@@ -221,12 +221,18 @@ pub fn canonicalize_string_or_list_states_impl(current_states: &mut HashMap<Reso
             Some(c) => c,
             None => continue,
         };
+        // Route canonicalization through `Schema::canonicalize_attr`
+        // so cyclic CFN attributes (`AttributeType::Ref`) resolve
+        // against this resource's def map. The defs-less
+        // `carina_core::value::canonicalize_with_type` wrapper this
+        // replaced silently used `empty_defs()` and panicked on every
+        // Ref-containing attribute (carina#3345 Symptom B —
+        // `ec2_vpc_endpoint/{gateway,interface}` plan-verify).
+        let schema_view = carina_core::schema::Schema::with_defs(config.schema.defs.clone());
         let mut new_attrs = HashMap::with_capacity(state.attributes.len());
         for (key, value) in std::mem::take(&mut state.attributes) {
             let canon = match config.schema.attributes.get(key.as_str()) {
-                Some(attr_schema) => {
-                    carina_core::value::canonicalize_with_type(value, &attr_schema.attr_type)
-                }
+                Some(attr_schema) => schema_view.canonicalize_attr(&attr_schema.attr_type, value),
                 None => value,
             };
             new_attrs.insert(key, canon);
