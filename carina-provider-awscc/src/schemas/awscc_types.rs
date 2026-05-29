@@ -206,31 +206,35 @@ mod tests {
         // type lives at `awscc.AvailabilityZone.ZoneName`, so the value
         // form carries the kind segment as well.
         assert!(
-            t.validate(&Value::Concrete(ConcreteValue::String(
-                "awscc.AvailabilityZone.ZoneName.us_east_1a".to_string()
-            )))
-            .is_ok()
+            carina_core::schema::Schema::flat(t.clone())
+                .validate(&Value::Concrete(ConcreteValue::String(
+                    "awscc.AvailabilityZone.ZoneName.us_east_1a".to_string()
+                )))
+                .is_ok()
         );
         // 2-part shorthand: TypeName matches the identity's kind.
         assert!(
-            t.validate(&Value::Concrete(ConcreteValue::String(
-                "ZoneName.us_east_1a".to_string()
-            )))
-            .is_ok()
+            carina_core::schema::Schema::flat(t.clone())
+                .validate(&Value::Concrete(ConcreteValue::String(
+                    "ZoneName.us_east_1a".to_string()
+                )))
+                .is_ok()
         );
         // Shorthand format
         assert!(
-            t.validate(&Value::Concrete(ConcreteValue::String(
-                "us_east_1a".to_string()
-            )))
-            .is_ok()
+            carina_core::schema::Schema::flat(t.clone())
+                .validate(&Value::Concrete(ConcreteValue::String(
+                    "us_east_1a".to_string()
+                )))
+                .is_ok()
         );
         // AWS format
         assert!(
-            t.validate(&Value::Concrete(ConcreteValue::String(
-                "us-east-1a".to_string()
-            )))
-            .is_ok()
+            carina_core::schema::Schema::flat(t.clone())
+                .validate(&Value::Concrete(ConcreteValue::String(
+                    "us-east-1a".to_string()
+                )))
+                .is_ok()
         );
     }
 
@@ -238,10 +242,11 @@ mod tests {
     fn validate_availability_zone_rejects_wrong_namespace() {
         let t = availability_zone();
         assert!(
-            t.validate(&Value::Concrete(ConcreteValue::String(
-                "aws.AvailabilityZone.us_east_1a".to_string()
-            )))
-            .is_err()
+            carina_core::schema::Schema::flat(t.clone())
+                .validate(&Value::Concrete(ConcreteValue::String(
+                    "aws.AvailabilityZone.us_east_1a".to_string()
+                )))
+                .is_err()
         );
     }
 
@@ -249,16 +254,18 @@ mod tests {
     fn validate_availability_zone_rejects_invalid() {
         let t = availability_zone();
         assert!(
-            t.validate(&Value::Concrete(ConcreteValue::String(
-                "us-east-1".to_string()
-            )))
-            .is_err()
+            carina_core::schema::Schema::flat(t.clone())
+                .validate(&Value::Concrete(ConcreteValue::String(
+                    "us-east-1".to_string()
+                )))
+                .is_err()
         ); // no zone letter
         assert!(
-            t.validate(&Value::Concrete(ConcreteValue::String(
-                "invalid".to_string()
-            )))
-            .is_err()
+            carina_core::schema::Schema::flat(t.clone())
+                .validate(&Value::Concrete(ConcreteValue::String(
+                    "invalid".to_string()
+                )))
+                .is_err()
         );
     }
 
@@ -279,15 +286,16 @@ mod tests {
     #[test]
     fn awscc_region_accepts_awscc_namespace() {
         let region_type = awscc_region();
+        let schema = carina_core::schema::Schema::flat(region_type);
         assert!(
-            region_type
+            schema
                 .validate(&Value::Concrete(ConcreteValue::String(
                     "awscc.Region.ap_northeast_1".to_string()
                 )))
                 .is_ok()
         );
         assert!(
-            region_type
+            schema
                 .validate(&Value::Concrete(ConcreteValue::String(
                     "ap-northeast-1".to_string()
                 )))
@@ -299,7 +307,7 @@ mod tests {
     fn awscc_region_rejects_aws_namespace() {
         let region_type = awscc_region();
         assert!(
-            region_type
+            carina_core::schema::Schema::flat(region_type)
                 .validate(&Value::Concrete(ConcreteValue::String(
                     "aws.Region.ap_northeast_1".to_string()
                 )))

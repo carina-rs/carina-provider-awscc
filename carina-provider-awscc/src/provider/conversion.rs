@@ -1767,8 +1767,9 @@ mod tests {
         let snake_case_value = Value::Concrete(ConcreteValue::EnumIdentifier(
             "awscc.s3.Bucket.ObjectOwnership.bucket_owner_enforced".to_string(),
         ));
-        object_ownership
-            .field_type
+        let ownership_schema =
+            carina_core::schema::Schema::flat(object_ownership.field_type.clone());
+        ownership_schema
             .validate(&snake_case_value)
             .expect("snake_case DSL spelling must validate");
 
@@ -1780,7 +1781,7 @@ mod tests {
             "awscc.s3.Bucket.ObjectOwnership.BucketOwnerEnforced".to_string(),
         ));
         assert!(
-            object_ownership.field_type.validate(&pascal_value).is_err(),
+            ownership_schema.validate(&pascal_value).is_err(),
             "PascalCase API spelling must be rejected in DSL position",
         );
 
