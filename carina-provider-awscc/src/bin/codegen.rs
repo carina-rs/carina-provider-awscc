@@ -1066,7 +1066,7 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str) -> Result<String> {
         }
     }
 
-    disambiguate_enum_type_names(&mut enums);
+    qualify_nested_enum_type_names(&mut enums);
 
     // Title
     md.push_str(&format!("# awscc.{}\n\n", dsl_resource));
@@ -1829,17 +1829,9 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
     // definitions have fields with the same name but different enum values
     // (e.g., IntelligentTieringConfiguration.Status vs VersioningConfiguration.Status)
     if let Some(definitions) = &schema.definitions {
-        // Build set of existing snake_case names from top-level properties
-        // (e.g., "SSEAlgorithm" and "SseAlgorithm" both become "sse_algorithm")
-        let existing_snake: HashSet<String> = enums.keys().map(|k| k.to_snake_case()).collect();
         for (def_name, def) in definitions {
             if let Some(props) = &def.properties {
                 for (field_name, field_prop) in props {
-                    let snake = field_name.to_snake_case();
-                    // Skip if a top-level property with the same snake_case name exists
-                    if existing_snake.contains(&snake) {
-                        continue;
-                    }
                     let composite_key = format!("{}.{}", def_name, field_name);
                     // Curated nested-field enum overlay (awscc#246). Wins over
                     // the natural cfn_type inference so that fields the CFN
@@ -1867,7 +1859,20 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
         }
     }
 
-    disambiguate_enum_type_names(&mut enums);
+    qualify_nested_enum_type_names(&mut enums);
+
+    // The top-level prop pre-scan above recursed into `$ref` struct
+    // definitions to populate `enums` and the various pattern/range
+    // caches. That same recursion also populated `EMITTED_DEFS` with
+    // def bodies that hard-coded the *unqualified* enum `type_name`s.
+    // Now that qualification has rewritten the enums map, drop those
+    // stale bodies so the upcoming attribute-emission phase re-walks
+    // every def with the qualified enums in scope. (carina#3350.)
+    //
+    // Note: pattern / range / int-enum caches do not embed enum
+    // `type_name`s — they key on pattern strings, numeric bounds, and
+    // integer values — so they survive qualification unchanged.
+    EMITTED_DEFS.with(|s| s.borrow_mut().clear());
 
     let has_enums = !enums.is_empty();
     let has_ranged_ints = !ranged_ints.is_empty();
@@ -2906,36 +2911,58 @@ fn extract_enum_from_description(description: &str) -> Option<Vec<String>> {
     None
 }
 
-/// Disambiguate enum type_names that collide (same type_name, different values).
-/// For struct field enums with composite keys "DefName.FieldName", prefixes the
-/// type_name with the parent struct name (e.g., "Status" -> "VersioningConfigurationStatus").
-/// Enums with the same type_name and identical values are left unchanged (they deduplicate later).
-fn disambiguate_enum_type_names(enums: &mut BTreeMap<String, EnumInfo>) {
-    let mut type_name_groups: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    for (key, info) in enums.iter() {
-        type_name_groups
-            .entry(info.type_name.clone())
-            .or_default()
-            .push(key.clone());
-    }
-    for keys in type_name_groups.values() {
-        let unique_value_sets: HashSet<Vec<String>> = keys
-            .iter()
-            .filter_map(|k| enums.get(k))
-            .map(|info| info.values.clone())
-            .collect();
-        if unique_value_sets.len() <= 1 {
-            continue; // No collision - all have identical values
+/// Qualify nested struct-field enum `type_name`s with their parent struct
+/// name so no two nested enums share a [`TypeIdentity`] by construction.
+///
+/// Keys in `enums` follow two shapes:
+///
+/// - `"FieldName"` — a top-level resource property enum. Left untouched;
+///   the field name is already unique at the resource root.
+/// - `"DefName.FieldName"` — a nested struct-field enum. Rewritten so that
+///   `type_name` becomes `DefName + type_name` (e.g.
+///   `"VersioningConfiguration.Status"` → `"VersioningConfigurationStatus"`).
+///
+/// Unconditional prefixing (rather than only-on-collision) is deliberate:
+/// every CloudFormation type that nests a struct named `Status` /
+/// `Protocol` / `RuleStatus` etc. used to silently collapse onto a single
+/// bare `TypeIdentity`, which let the DSL validator accept a value
+/// authored against a sibling enum (carina#3350). Prefixing by
+/// construction makes that class of bug unrepresentable for nested
+/// fields — a future schema regeneration cannot reintroduce it by
+/// adding a new nested enum that happens to share its sibling's value
+/// set.
+///
+/// Scope note: the guarantee is "no two *nested* enums share a
+/// `type_name` if their parent structs differ". A top-level prop whose
+/// name happens to equal `<DefName><FieldName>` would still collide
+/// because top-level keys are not qualified; the debug-assert below
+/// turns that case into a build-time failure rather than a silent
+/// runtime collision.
+fn qualify_nested_enum_type_names(enums: &mut BTreeMap<String, EnumInfo>) {
+    for (key, info) in enums.iter_mut() {
+        if let Some(dot_pos) = key.find('.') {
+            let parent_struct = &key[..dot_pos];
+            info.type_name = format!("{}{}", parent_struct, info.type_name);
         }
-        // There's a collision: disambiguate by prefixing parent struct name
-        for key in keys {
-            if let Some(dot_pos) = key.find('.') {
-                let parent_struct = &key[..dot_pos];
-                if let Some(info) = enums.get_mut(key) {
-                    info.type_name = format!("{}{}", parent_struct, info.type_name);
-                }
+    }
+
+    // Load-bearing invariant: after qualification, every distinct
+    // `type_name` corresponds to exactly one value set. If two entries
+    // end up with the same `type_name` but different `values`, the
+    // emitted `TypeIdentity` is still ambiguous and the carina#3350
+    // class of bug is back. Debug-assert here so a future schema
+    // regen (or a future codegen change that adds a new path into
+    // `enums`) fails the build rather than silently degrading.
+    if cfg!(debug_assertions) {
+        let mut by_name: BTreeMap<&str, &Vec<String>> = BTreeMap::new();
+        for info in enums.values() {
+            if let Some(prior) = by_name.insert(info.type_name.as_str(), &info.values) {
+                debug_assert_eq!(
+                    prior, &info.values,
+                    "enum TypeIdentity collision after qualification: {} has two value sets",
+                    info.type_name,
+                );
             }
-            // Top-level properties (no dot) keep their original type_name
         }
     }
 }
@@ -3043,9 +3070,14 @@ fn generate_struct_type(
                         dsl_aliases_code
                     )
                 } else {
-                    // Fallback: emit StringEnum with identity even when not in the
-                    // pre-scanned enums map (e.g., nested struct fields that were
-                    // skipped during scanning due to snake_case name conflicts).
+                    // Fallback: emit StringEnum with identity even when the
+                    // pre-scanned enums map missed this field. The pre-scan
+                    // no longer skips struct fields whose name snake-cases
+                    // to a top-level prop, so reaching this branch is rare
+                    // — but we still apply the same parent-qualification
+                    // rule as `qualify_nested_enum_type_names` so the
+                    // emitted `TypeIdentity` is uniquely scoped to its
+                    // enclosing struct (carina#3350).
                     let prop_aliases = aliases.get(field_name.as_str());
                     let dsl_aliases_code = dsl_aliases_code(&local_enum_info.values, prop_aliases);
                     let values_str = local_enum_info
@@ -3054,11 +3086,13 @@ fn generate_struct_type(
                         .map(|v| format!("\"{}\".to_string()", v))
                         .collect::<Vec<_>>()
                         .join(", ");
+                    let qualified_type_name =
+                        format!("{}{}", def_name, local_enum_info.type_name);
                     format!(
                         r#"AttributeType::string_enum("{}".to_string(), vec![{}], Some(carina_core::schema::string_enum_identity("{}", Some("{}"))), {})"#,
-                        local_enum_info.type_name,
+                        qualified_type_name,
                         values_str,
-                        local_enum_info.type_name,
+                        qualified_type_name,
                         namespace,
                         dsl_aliases_code
                     )
@@ -8321,8 +8355,9 @@ mod tests {
         };
 
         let md = generate_markdown(&schema, "AWS::S3::Bucket").unwrap();
+        // Parent-qualified TypeIdentity per carina#3350.
         assert!(
-            md.contains("Enum (ObjectLockEnabled)"),
+            md.contains("Enum (ObjectLockConfigurationObjectLockEnabled)"),
             "Struct field with const_value should display as Enum in markdown, got:\n{}",
             md.lines()
                 .filter(|l| l.contains("object_lock_enabled"))
@@ -8402,8 +8437,11 @@ mod tests {
         };
 
         let md = generate_markdown(&schema, "AWS::S3::Bucket").unwrap();
+        // Parent-qualified TypeIdentity per carina#3350. Even though the
+        // enum is factored as a shared `RetentionMode` definition in CFN,
+        // the field is identified by its enclosing struct (`DefaultRetention`).
         assert!(
-            md.contains("Enum (RetentionMode)"),
+            md.contains("Enum (DefaultRetentionRetentionMode)"),
             "Struct field with $ref to enum-only definition should display as Enum, got:\n{}",
             md.lines()
                 .filter(|l| l.contains("mode"))
@@ -8413,9 +8451,14 @@ mod tests {
     }
 
     #[test]
-    fn test_shared_enum_type_across_structs_is_deduplicated_in_markdown() {
-        // Two structs (Ingress, Egress) sharing the same enum field (IpProtocol)
-        // should produce only one enum section in markdown
+    fn test_shared_enum_type_across_structs_is_qualified_in_markdown() {
+        // Two structs (Ingress, Egress) sharing the same enum field name
+        // (IpProtocol) get parent-qualified TypeIdentities — even when the
+        // CFN schema factors the enum into a single `#/definitions/IpProtocol`
+        // and points both fields at it. This is the carina#3350 rule: nested
+        // enums are always identified by their enclosing struct so a future
+        // diverging values list (Ingress-only / Egress-only) cannot be
+        // silently routed to the wrong validator.
         let mut ingress_props = BTreeMap::new();
         ingress_props.insert(
             "IpProtocol".to_string(),
@@ -8522,16 +8565,32 @@ mod tests {
         };
 
         let md = generate_markdown(&schema, "AWS::EC2::SecurityGroup").unwrap();
-        let ip_protocol_count = md.matches("### ip_protocol (IpProtocol)").count();
+        let egress_count = md.matches("### ip_protocol (EgressIpProtocol)").count();
+        let ingress_count = md.matches("### ip_protocol (IngressIpProtocol)").count();
         assert_eq!(
-            ip_protocol_count,
+            egress_count,
             1,
-            "Expected exactly 1 IpProtocol enum section, found {}.\nEnum sections:\n{}",
-            ip_protocol_count,
+            "Expected one EgressIpProtocol section, got {}.\nEnum sections:\n{}",
+            egress_count,
             md.lines()
                 .filter(|l| l.contains("IpProtocol"))
                 .collect::<Vec<_>>()
                 .join("\n")
+        );
+        assert_eq!(
+            ingress_count,
+            1,
+            "Expected one IngressIpProtocol section, got {}.\nEnum sections:\n{}",
+            ingress_count,
+            md.lines()
+                .filter(|l| l.contains("IpProtocol"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+        assert_eq!(
+            md.matches("### ip_protocol (IpProtocol)").count(),
+            0,
+            "Bare 'IpProtocol' identity must not leak into markdown: parent-qualification is unconditional.",
         );
     }
 
@@ -8723,9 +8782,12 @@ mod tests {
 
         let md = generate_markdown(&schema, "AWS::Test::Resource").unwrap();
 
-        // The struct field table should contain a link, not plain "Enum"
+        // The struct field table should contain a link, not plain "Enum".
+        // The enum's `TypeIdentity` is unconditionally parent-qualified
+        // (`MyConfig` + `Status` = `MyConfigStatus`) so the link spelling
+        // tracks the qualified name (carina#3350).
         assert!(
-            md.contains("[Enum (Status)]"),
+            md.contains("[Enum (MyConfigStatus)]"),
             "Expected linked enum type in struct field table, got plain 'Enum'.\nStruct lines:\n{}",
             md.lines()
                 .filter(|l| l.contains("status") || l.contains("Enum"))
@@ -10592,11 +10654,11 @@ mod tests {
     }
 
     #[test]
-    fn test_disambiguate_prefixes_colliding_struct_field_enums() {
-        // When multiple struct field enums share the same type_name but have different
-        // values, they should be disambiguated by prefixing the parent struct name.
-        // This ensures that e.g. VersioningConfiguration.Status (Enabled/Suspended) and
-        // IntelligentTieringConfiguration.Status (Enabled/Disabled) get distinct type names.
+    fn test_qualify_prefixes_colliding_struct_field_enums() {
+        // When multiple struct field enums share the same type_name with
+        // different value sets, prefixing the parent struct name keeps each
+        // identity distinct (VersioningConfiguration.Status vs
+        // IntelligentTieringConfiguration.Status).
         // See: https://github.com/carina-rs/carina/issues/640
         let mut enums = BTreeMap::new();
 
@@ -10615,18 +10677,107 @@ mod tests {
             },
         );
 
-        disambiguate_enum_type_names(&mut enums);
+        qualify_nested_enum_type_names(&mut enums);
 
         let versioning = enums.get("VersioningConfiguration.Status").unwrap();
         assert_eq!(
             versioning.type_name, "VersioningConfigurationStatus",
-            "Colliding struct field enum should be prefixed with parent struct name"
+            "Nested struct field enum should be prefixed with parent struct name"
         );
         let tiering = enums.get("IntelligentTieringConfiguration.Status").unwrap();
         assert_eq!(
             tiering.type_name, "IntelligentTieringConfigurationStatus",
-            "Colliding struct field enum should be prefixed with parent struct name"
+            "Nested struct field enum should be prefixed with parent struct name"
         );
+    }
+
+    #[test]
+    fn test_qualify_prefixes_even_when_values_match() {
+        // Long-term type-safety guard: nested struct field enums get the
+        // parent-struct-qualified TypeIdentity regardless of whether their
+        // values collide with a sibling. carina#3350: two nested `Status`
+        // enums with identical values silently collapsed onto a single bare
+        // `Status` identity, letting the validator accept a value that
+        // belonged to the wrong enum context. Prefixing unconditionally
+        // makes every nested identity unique by construction.
+        let mut enums = BTreeMap::new();
+        enums.insert(
+            "DeleteMarkerReplication.Status".to_string(),
+            EnumInfo {
+                type_name: "Status".to_string(),
+                values: vec!["Disabled".to_string(), "Enabled".to_string()],
+            },
+        );
+        enums.insert(
+            "ReplicationTime.Status".to_string(),
+            EnumInfo {
+                type_name: "Status".to_string(),
+                values: vec!["Disabled".to_string(), "Enabled".to_string()],
+            },
+        );
+
+        qualify_nested_enum_type_names(&mut enums);
+
+        assert_eq!(
+            enums
+                .get("DeleteMarkerReplication.Status")
+                .unwrap()
+                .type_name,
+            "DeleteMarkerReplicationStatus",
+        );
+        assert_eq!(
+            enums.get("ReplicationTime.Status").unwrap().type_name,
+            "ReplicationTimeStatus",
+        );
+    }
+
+    #[test]
+    fn test_qualify_leaves_top_level_property_enums_untouched() {
+        // Top-level property enums (no parent struct, key has no dot) keep
+        // their original type_name — they are already disambiguated by
+        // being at the resource root.
+        let mut enums = BTreeMap::new();
+        enums.insert(
+            "AbacStatus".to_string(),
+            EnumInfo {
+                type_name: "AbacStatus".to_string(),
+                values: vec!["Enabled".to_string(), "Disabled".to_string()],
+            },
+        );
+
+        qualify_nested_enum_type_names(&mut enums);
+
+        assert_eq!(enums.get("AbacStatus").unwrap().type_name, "AbacStatus");
+    }
+
+    #[test]
+    #[should_panic(expected = "enum TypeIdentity collision after qualification")]
+    fn test_qualify_debug_asserts_on_value_set_collision() {
+        // Load-bearing guard: if two entries end up sharing a qualified
+        // `type_name` with *different* value sets, the emitted
+        // `TypeIdentity` is ambiguous and carina#3350 is back. The
+        // debug-assert turns that into a build-time failure. Identical
+        // value sets are still allowed (they map to the same identity
+        // semantically).
+        let mut enums = BTreeMap::new();
+        enums.insert(
+            "A.Same".to_string(),
+            EnumInfo {
+                type_name: "Same".to_string(),
+                values: vec!["X".to_string()],
+            },
+        );
+        // Manually injected duplicate qualified name with a different
+        // value set. The post-qualification debug-assert must catch it.
+        enums.insert(
+            "Other".to_string(),
+            EnumInfo {
+                type_name: "ASame".to_string(),
+                values: vec!["Y".to_string()],
+            },
+        );
+
+        qualify_nested_enum_type_names(&mut enums);
     }
 
     #[test]

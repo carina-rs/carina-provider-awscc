@@ -751,8 +751,8 @@ mod tests {
                 match &m["ip_protocol"] {
                     Value::Concrete(ConcreteValue::String(s)) => {
                         assert_eq!(
-                            s, "awscc.ec2.SecurityGroup.IpProtocol.all",
-                            "Expected namespaced IpProtocol.all in struct field, got: {}",
+                            s, "awscc.ec2.SecurityGroup.EgressIpProtocol.all",
+                            "Expected namespaced EgressIpProtocol.all in struct field, got: {}",
                             s
                         );
                     }

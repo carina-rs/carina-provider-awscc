@@ -152,7 +152,10 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
                 .with_provider_name("SourceIpamPoolId"),
         )
         .attribute(
-            AttributeSchema::new("source_resource", AttributeType::ref_("SourceResource".to_string()))
+            AttributeSchema::new("source_resource", AttributeType::struct_("SourceResource".to_string(), vec![StructField::new("resource_id", AttributeType::string()).required().with_provider_name("ResourceId"),
+                    StructField::new("resource_owner", AttributeType::string()).required().with_provider_name("ResourceOwner"),
+                    StructField::new("resource_region", super::awscc_region()).required().with_provider_name("ResourceRegion"),
+                    StructField::new("resource_type", AttributeType::string()).required().with_provider_name("ResourceType")]))
                 .create_only()
                 .with_provider_name("SourceResource"),
         )

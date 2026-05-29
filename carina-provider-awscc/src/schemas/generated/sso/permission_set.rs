@@ -230,7 +230,9 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
                 .with_provider_name("PermissionSetArn"),
         )
         .attribute(
-            AttributeSchema::new("permissions_boundary", AttributeType::ref_("PermissionsBoundary".to_string()))
+            AttributeSchema::new("permissions_boundary", AttributeType::struct_("PermissionsBoundary".to_string(), vec![StructField::new("customer_managed_policy_reference", AttributeType::struct_("CustomerManagedPolicyReference".to_string(), vec![StructField::new("name", AttributeType::custom(None, AttributeType::string(), Some("[\\w+=,.@-]+".to_string()), Some((Some(1), Some(128))), legacy_validator(validate_string_pattern_9b83f4f8f3673df5_len_1_128), None)).required().with_provider_name("Name"),
+                    StructField::new("path", AttributeType::custom(None, AttributeType::string(), Some("((/[A-Za-z0-9\\.,\\+@=_-]+)*)/".to_string()), Some((Some(1), Some(512))), legacy_validator(validate_string_pattern_b84fa12576539ca9_len_1_512), None)).with_provider_name("Path")])).with_provider_name("CustomerManagedPolicyReference"),
+                    StructField::new("managed_policy_arn", super::arn()).with_provider_name("ManagedPolicyArn")]))
                 .with_provider_name("PermissionsBoundary"),
         )
         .attribute(
