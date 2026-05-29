@@ -158,38 +158,38 @@ The ID of the VPC.
 
 ## Enum Values
 
-### dns_record_ip_type (DnsRecordIpType)
+### dns_record_ip_type (DnsOptionsSpecificationDnsRecordIpType)
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `ipv4` | `awscc.ec2.VpcEndpoint.DnsRecordIpType.ipv4` |
-| `ipv6` | `awscc.ec2.VpcEndpoint.DnsRecordIpType.ipv6` |
-| `dualstack` | `awscc.ec2.VpcEndpoint.DnsRecordIpType.dualstack` |
-| `service-defined` | `awscc.ec2.VpcEndpoint.DnsRecordIpType.service_defined` |
-| `not-specified` | `awscc.ec2.VpcEndpoint.DnsRecordIpType.not_specified` |
+| `ipv4` | `awscc.ec2.VpcEndpoint.DnsOptionsSpecificationDnsRecordIpType.ipv4` |
+| `ipv6` | `awscc.ec2.VpcEndpoint.DnsOptionsSpecificationDnsRecordIpType.ipv6` |
+| `dualstack` | `awscc.ec2.VpcEndpoint.DnsOptionsSpecificationDnsRecordIpType.dualstack` |
+| `service-defined` | `awscc.ec2.VpcEndpoint.DnsOptionsSpecificationDnsRecordIpType.service_defined` |
+| `not-specified` | `awscc.ec2.VpcEndpoint.DnsOptionsSpecificationDnsRecordIpType.not_specified` |
 
-Shorthand formats: `ipv4` or `DnsRecordIpType.ipv4`
+Shorthand formats: `ipv4` or `DnsOptionsSpecificationDnsRecordIpType.ipv4`
 
-### private_dns_only_for_inbound_resolver_endpoint (PrivateDnsOnlyForInboundResolverEndpoint)
-
-| Value | DSL Identifier |
-|-------|----------------|
-| `OnlyInboundResolver` | `awscc.ec2.VpcEndpoint.PrivateDnsOnlyForInboundResolverEndpoint.only_inbound_resolver` |
-| `AllResolvers` | `awscc.ec2.VpcEndpoint.PrivateDnsOnlyForInboundResolverEndpoint.all_resolvers` |
-| `NotSpecified` | `awscc.ec2.VpcEndpoint.PrivateDnsOnlyForInboundResolverEndpoint.not_specified` |
-
-Shorthand formats: `only_inbound_resolver` or `PrivateDnsOnlyForInboundResolverEndpoint.only_inbound_resolver`
-
-### private_dns_preference (PrivateDnsPreference)
+### private_dns_only_for_inbound_resolver_endpoint (DnsOptionsSpecificationPrivateDnsOnlyForInboundResolverEndpoint)
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `VERIFIED_DOMAINS_ONLY` | `awscc.ec2.VpcEndpoint.PrivateDnsPreference.verified_domains_only` |
-| `ALL_DOMAINS` | `awscc.ec2.VpcEndpoint.PrivateDnsPreference.all_domains` |
-| `VERIFIED_DOMAINS_AND_SPECIFIED_DOMAINS` | `awscc.ec2.VpcEndpoint.PrivateDnsPreference.verified_domains_and_specified_domains` |
-| `SPECIFIED_DOMAINS_ONLY` | `awscc.ec2.VpcEndpoint.PrivateDnsPreference.specified_domains_only` |
+| `OnlyInboundResolver` | `awscc.ec2.VpcEndpoint.DnsOptionsSpecificationPrivateDnsOnlyForInboundResolverEndpoint.only_inbound_resolver` |
+| `AllResolvers` | `awscc.ec2.VpcEndpoint.DnsOptionsSpecificationPrivateDnsOnlyForInboundResolverEndpoint.all_resolvers` |
+| `NotSpecified` | `awscc.ec2.VpcEndpoint.DnsOptionsSpecificationPrivateDnsOnlyForInboundResolverEndpoint.not_specified` |
 
-Shorthand formats: `verified_domains_only` or `PrivateDnsPreference.verified_domains_only`
+Shorthand formats: `only_inbound_resolver` or `DnsOptionsSpecificationPrivateDnsOnlyForInboundResolverEndpoint.only_inbound_resolver`
+
+### private_dns_preference (DnsOptionsSpecificationPrivateDnsPreference)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `VERIFIED_DOMAINS_ONLY` | `awscc.ec2.VpcEndpoint.DnsOptionsSpecificationPrivateDnsPreference.verified_domains_only` |
+| `ALL_DOMAINS` | `awscc.ec2.VpcEndpoint.DnsOptionsSpecificationPrivateDnsPreference.all_domains` |
+| `VERIFIED_DOMAINS_AND_SPECIFIED_DOMAINS` | `awscc.ec2.VpcEndpoint.DnsOptionsSpecificationPrivateDnsPreference.verified_domains_and_specified_domains` |
+| `SPECIFIED_DOMAINS_ONLY` | `awscc.ec2.VpcEndpoint.DnsOptionsSpecificationPrivateDnsPreference.specified_domains_only` |
+
+Shorthand formats: `verified_domains_only` or `DnsOptionsSpecificationPrivateDnsPreference.verified_domains_only`
 
 ### ip_address_type (IpAddressType)
 
@@ -220,9 +220,9 @@ Shorthand formats: `interface` or `VpcEndpointType.interface`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `dns_record_ip_type` | [Enum (DnsRecordIpType)](#dns_record_ip_type-dnsrecordiptype) | No | The DNS records created for the endpoint. |
-| `private_dns_only_for_inbound_resolver_endpoint` | [Enum (PrivateDnsOnlyForInboundResolverEndpoint)](#private_dns_only_for_inbound_resolver_endpoint-privatednsonlyforinboundresolverendpoint) | No | Indicates whether to enable private DNS only for inbound endpoints. This option is available only for services that support both gateway and interface endpoints. It routes traffic that originates from the VPC to the gateway endpoint and traffic that originates from on-premises to the interface endpoint. |
-| `private_dns_preference` | [Enum (PrivateDnsPreference)](#private_dns_preference-privatednspreference) | No | The preference for which private domains have a private hosted zone created for and associated with the specified VPC. Only supported when private DNS is enabled and when the VPC endpoint type is ServiceNetwork or Resource. |
+| `dns_record_ip_type` | [Enum (DnsOptionsSpecificationDnsRecordIpType)](#dns_record_ip_type-dnsoptionsspecificationdnsrecordiptype) | No | The DNS records created for the endpoint. |
+| `private_dns_only_for_inbound_resolver_endpoint` | [Enum (DnsOptionsSpecificationPrivateDnsOnlyForInboundResolverEndpoint)](#private_dns_only_for_inbound_resolver_endpoint-dnsoptionsspecificationprivatednsonlyforinboundresolverendpoint) | No | Indicates whether to enable private DNS only for inbound endpoints. This option is available only for services that support both gateway and interface endpoints. It routes traffic that originates from the VPC to the gateway endpoint and traffic that originates from on-premises to the interface endpoint. |
+| `private_dns_preference` | [Enum (DnsOptionsSpecificationPrivateDnsPreference)](#private_dns_preference-dnsoptionsspecificationprivatednspreference) | No | The preference for which private domains have a private hosted zone created for and associated with the specified VPC. Only supported when private DNS is enabled and when the VPC endpoint type is ServiceNetwork or Resource. |
 | `private_dns_specified_domains` | `List<String>` (items: 1..=10) | No | Indicates which of the private domains to create private hosted zones for and associate with the specified VPC. Only supported when private DNS is enabled and the private DNS preference is ``VERIFIED_DOMAINS_AND_SPECIFIED_DOMAINS`` or ``SPECIFIED_DOMAINS_ONLY``. |
 
 ## Attribute Reference

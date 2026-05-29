@@ -60,7 +60,7 @@ pub fn ec2_flow_log_config() -> AwsccSchemaConfig {
                 .with_provider_name("DeliverLogsPermissionArn"),
         )
         .attribute(
-            AttributeSchema::new("destination_options", AttributeType::struct_("DestinationOptions".to_string(), vec![StructField::new("file_format", AttributeType::string_enum("FileFormat".to_string(), vec!["plain-text".to_string(), "parquet".to_string()], Some(carina_core::schema::string_enum_identity("FileFormat", Some("awscc.ec2.FlowLog"))), vec![("plain-text".to_string(), "plain_text".to_string()), ("parquet".to_string(), "parquet".to_string())])).required().with_provider_name("FileFormat"),
+            AttributeSchema::new("destination_options", AttributeType::struct_("DestinationOptions".to_string(), vec![StructField::new("file_format", AttributeType::string_enum("DestinationOptionsFileFormat".to_string(), vec!["plain-text".to_string(), "parquet".to_string()], Some(carina_core::schema::string_enum_identity("DestinationOptionsFileFormat", Some("awscc.ec2.FlowLog"))), vec![("plain-text".to_string(), "plain_text".to_string()), ("parquet".to_string(), "parquet".to_string())])).required().with_provider_name("FileFormat"),
                     StructField::new("hive_compatible_partitions", AttributeType::bool()).required().with_provider_name("HiveCompatiblePartitions"),
                     StructField::new("per_hour_partition", AttributeType::bool()).required().with_provider_name("PerHourPartition")]))
                 .create_only()

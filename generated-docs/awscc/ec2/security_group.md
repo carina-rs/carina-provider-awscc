@@ -88,18 +88,31 @@ The ID of the VPC for the security group.
 
 ## Enum Values
 
-### ip_protocol (IpProtocol)
+### ip_protocol (EgressIpProtocol)
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `tcp` | `awscc.ec2.SecurityGroup.IpProtocol.tcp` |
-| `udp` | `awscc.ec2.SecurityGroup.IpProtocol.udp` |
-| `icmp` | `awscc.ec2.SecurityGroup.IpProtocol.icmp` |
-| `icmpv6` | `awscc.ec2.SecurityGroup.IpProtocol.icmpv6` |
-| `-1` | `awscc.ec2.SecurityGroup.IpProtocol.all` |
-| `all` | `awscc.ec2.SecurityGroup.IpProtocol.all` |
+| `tcp` | `awscc.ec2.SecurityGroup.EgressIpProtocol.tcp` |
+| `udp` | `awscc.ec2.SecurityGroup.EgressIpProtocol.udp` |
+| `icmp` | `awscc.ec2.SecurityGroup.EgressIpProtocol.icmp` |
+| `icmpv6` | `awscc.ec2.SecurityGroup.EgressIpProtocol.icmpv6` |
+| `-1` | `awscc.ec2.SecurityGroup.EgressIpProtocol.all` |
+| `all` | `awscc.ec2.SecurityGroup.EgressIpProtocol.all` |
 
-Shorthand formats: `tcp` or `IpProtocol.tcp`
+Shorthand formats: `tcp` or `EgressIpProtocol.tcp`
+
+### ip_protocol (IngressIpProtocol)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `tcp` | `awscc.ec2.SecurityGroup.IngressIpProtocol.tcp` |
+| `udp` | `awscc.ec2.SecurityGroup.IngressIpProtocol.udp` |
+| `icmp` | `awscc.ec2.SecurityGroup.IngressIpProtocol.icmp` |
+| `icmpv6` | `awscc.ec2.SecurityGroup.IngressIpProtocol.icmpv6` |
+| `-1` | `awscc.ec2.SecurityGroup.IngressIpProtocol.all` |
+| `all` | `awscc.ec2.SecurityGroup.IngressIpProtocol.all` |
+
+Shorthand formats: `tcp` or `IngressIpProtocol.tcp`
 
 ## Struct Definitions
 
@@ -113,7 +126,7 @@ Shorthand formats: `tcp` or `IpProtocol.tcp`
 | `destination_prefix_list_id` | PrefixListId | No |  |
 | `destination_security_group_id` | SecurityGroupId | No |  |
 | `from_port` | Int(-1..=65535) | No |  |
-| `ip_protocol` | [Enum (IpProtocol)](#ip_protocol-ipprotocol) | Yes |  |
+| `ip_protocol` | [Enum (EgressIpProtocol)](#ip_protocol-egressipprotocol) | Yes |  |
 | `to_port` | Int(-1..=65535) | No |  |
 
 ### Ingress
@@ -124,7 +137,7 @@ Shorthand formats: `tcp` or `IpProtocol.tcp`
 | `cidr_ipv6` | Ipv6Cidr | No |  |
 | `description` | String | No |  |
 | `from_port` | Int(-1..=65535) | No |  |
-| `ip_protocol` | [Enum (IpProtocol)](#ip_protocol-ipprotocol) | Yes |  |
+| `ip_protocol` | [Enum (IngressIpProtocol)](#ip_protocol-ingressipprotocol) | Yes |  |
 | `source_prefix_list_id` | PrefixListId | No |  |
 | `source_security_group_id` | SecurityGroupId | No |  |
 | `source_security_group_name` | String | No |  |

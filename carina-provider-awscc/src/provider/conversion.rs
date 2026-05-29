@@ -1729,9 +1729,9 @@ mod tests {
 
     /// Regression for #199: a snake_case DSL enum value (here
     /// `bucket_owner_enforced`) must validate against the regenerated
-    /// `awscc.s3.Bucket.ObjectOwnership` schema, and `dsl_value_to_aws`
-    /// must round-trip it back to the AWS spelling
-    /// (`BucketOwnerEnforced`).
+    /// `awscc.s3.Bucket.OwnershipControlsRuleObjectOwnership` schema,
+    /// and `dsl_value_to_aws` must round-trip it back to the AWS
+    /// spelling (`BucketOwnerEnforced`).
     #[test]
     fn test_object_ownership_snake_case_validates_and_roundtrips() {
         // Walk the schema to find the nested ObjectOwnership StringEnum:
@@ -1770,7 +1770,8 @@ mod tests {
         // `EnumIdentifier`; a `String` here would route to
         // `StringLiteralExpectedEnum`.
         let snake_case_value = Value::Concrete(ConcreteValue::EnumIdentifier(
-            "awscc.s3.Bucket.ObjectOwnership.bucket_owner_enforced".to_string(),
+            "awscc.s3.Bucket.OwnershipControlsRuleObjectOwnership.bucket_owner_enforced"
+                .to_string(),
         ));
         let ownership_schema =
             carina_core::schema::Schema::flat(object_ownership.field_type.clone());
@@ -1783,7 +1784,7 @@ mod tests {
         // rejected. State JSON still flows through `aws_value_to_dsl`
         // separately, so this only gates DSL-source values.
         let pascal_value = Value::Concrete(ConcreteValue::EnumIdentifier(
-            "awscc.s3.Bucket.ObjectOwnership.BucketOwnerEnforced".to_string(),
+            "awscc.s3.Bucket.OwnershipControlsRuleObjectOwnership.BucketOwnerEnforced".to_string(),
         ));
         assert!(
             ownership_schema.validate(&pascal_value).is_err(),

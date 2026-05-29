@@ -202,14 +202,14 @@ Information used to configure the bucket as a static website. For more informati
 
 Shorthand formats: `enabled` or `AbacStatus.enabled`
 
-### acceleration_status (AccelerationStatus)
+### acceleration_status (AccelerateConfigurationAccelerationStatus)
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `Enabled` | `awscc.s3.Bucket.AccelerationStatus.enabled` |
-| `Suspended` | `awscc.s3.Bucket.AccelerationStatus.suspended` |
+| `Enabled` | `awscc.s3.Bucket.AccelerateConfigurationAccelerationStatus.enabled` |
+| `Suspended` | `awscc.s3.Bucket.AccelerateConfigurationAccelerationStatus.suspended` |
 
-Shorthand formats: `enabled` or `AccelerationStatus.enabled`
+Shorthand formats: `enabled` or `AccelerateConfigurationAccelerationStatus.enabled`
 
 ### access_control (AccessControl)
 
@@ -226,51 +226,51 @@ Shorthand formats: `enabled` or `AccelerationStatus.enabled`
 
 Shorthand formats: `authenticated_read` or `AccessControl.authenticated_read`
 
-### owner (Owner)
+### owner (AccessControlTranslationOwner)
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `Destination` | `awscc.s3.Bucket.Owner.destination` |
+| `Destination` | `awscc.s3.Bucket.AccessControlTranslationOwner.destination` |
 
-Shorthand formats: `destination` or `Owner.destination`
+Shorthand formats: `destination` or `AccessControlTranslationOwner.destination`
 
-### encryption_type (EncryptionType)
-
-| Value | DSL Identifier |
-|-------|----------------|
-| `NONE` | `awscc.s3.Bucket.EncryptionType.none` |
-| `SSE-C` | `awscc.s3.Bucket.EncryptionType.sse_c` |
-
-Shorthand formats: `none` or `EncryptionType.none`
-
-### allowed_methods (AllowedMethods)
+### encryption_type (BlockedEncryptionTypesEncryptionType)
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `GET` | `awscc.s3.Bucket.AllowedMethods.get` |
-| `PUT` | `awscc.s3.Bucket.AllowedMethods.put` |
-| `HEAD` | `awscc.s3.Bucket.AllowedMethods.head` |
-| `POST` | `awscc.s3.Bucket.AllowedMethods.post` |
-| `DELETE` | `awscc.s3.Bucket.AllowedMethods.delete` |
+| `NONE` | `awscc.s3.Bucket.BlockedEncryptionTypesEncryptionType.none` |
+| `SSE-C` | `awscc.s3.Bucket.BlockedEncryptionTypesEncryptionType.sse_c` |
 
-Shorthand formats: `get` or `AllowedMethods.get`
+Shorthand formats: `none` or `BlockedEncryptionTypesEncryptionType.none`
 
-### output_schema_version (OutputSchemaVersion)
+### allowed_methods (CorsRuleAllowedMethods)
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `V_1` | `awscc.s3.Bucket.OutputSchemaVersion.v_1` |
+| `GET` | `awscc.s3.Bucket.CorsRuleAllowedMethods.get` |
+| `PUT` | `awscc.s3.Bucket.CorsRuleAllowedMethods.put` |
+| `HEAD` | `awscc.s3.Bucket.CorsRuleAllowedMethods.head` |
+| `POST` | `awscc.s3.Bucket.CorsRuleAllowedMethods.post` |
+| `DELETE` | `awscc.s3.Bucket.CorsRuleAllowedMethods.delete` |
 
-Shorthand formats: `v_1` or `OutputSchemaVersion.v_1`
+Shorthand formats: `get` or `CorsRuleAllowedMethods.get`
 
-### mode (Mode)
+### output_schema_version (DataExportOutputSchemaVersion)
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `COMPLIANCE` | `awscc.s3.Bucket.Mode.compliance` |
-| `GOVERNANCE` | `awscc.s3.Bucket.Mode.governance` |
+| `V_1` | `awscc.s3.Bucket.DataExportOutputSchemaVersion.v_1` |
 
-Shorthand formats: `compliance` or `Mode.compliance`
+Shorthand formats: `v_1` or `DataExportOutputSchemaVersion.v_1`
+
+### mode (DefaultRetentionMode)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `COMPLIANCE` | `awscc.s3.Bucket.DefaultRetentionMode.compliance` |
+| `GOVERNANCE` | `awscc.s3.Bucket.DefaultRetentionMode.governance` |
+
+Shorthand formats: `compliance` or `DefaultRetentionMode.compliance`
 
 ### status (DeleteMarkerReplicationStatus)
 
@@ -281,15 +281,15 @@ Shorthand formats: `compliance` or `Mode.compliance`
 
 Shorthand formats: `disabled` or `DeleteMarkerReplicationStatus.disabled`
 
-### format (Format)
+### format (DestinationFormat)
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `CSV` | `awscc.s3.Bucket.Format.csv` |
-| `ORC` | `awscc.s3.Bucket.Format.orc` |
-| `Parquet` | `awscc.s3.Bucket.Format.parquet` |
+| `CSV` | `awscc.s3.Bucket.DestinationFormat.csv` |
+| `ORC` | `awscc.s3.Bucket.DestinationFormat.orc` |
+| `Parquet` | `awscc.s3.Bucket.DestinationFormat.parquet` |
 
-Shorthand formats: `csv` or `Format.csv`
+Shorthand formats: `csv` or `DestinationFormat.csv`
 
 ### status (IntelligentTieringConfigurationStatus)
 
@@ -300,73 +300,73 @@ Shorthand formats: `csv` or `Format.csv`
 
 Shorthand formats: `disabled` or `IntelligentTieringConfigurationStatus.disabled`
 
-### included_object_versions (IncludedObjectVersions)
+### included_object_versions (InventoryConfigurationIncludedObjectVersions)
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `All` | `awscc.s3.Bucket.IncludedObjectVersions.all` |
-| `Current` | `awscc.s3.Bucket.IncludedObjectVersions.current` |
+| `All` | `awscc.s3.Bucket.InventoryConfigurationIncludedObjectVersions.all` |
+| `Current` | `awscc.s3.Bucket.InventoryConfigurationIncludedObjectVersions.current` |
 
-Shorthand formats: `all` or `IncludedObjectVersions.all`
+Shorthand formats: `all` or `InventoryConfigurationIncludedObjectVersions.all`
 
-### optional_fields (OptionalFields)
-
-| Value | DSL Identifier |
-|-------|----------------|
-| `Size` | `awscc.s3.Bucket.OptionalFields.size` |
-| `LastModifiedDate` | `awscc.s3.Bucket.OptionalFields.last_modified_date` |
-| `StorageClass` | `awscc.s3.Bucket.OptionalFields.storage_class` |
-| `ETag` | `awscc.s3.Bucket.OptionalFields.etag` |
-| `IsMultipartUploaded` | `awscc.s3.Bucket.OptionalFields.is_multipart_uploaded` |
-| `ReplicationStatus` | `awscc.s3.Bucket.OptionalFields.replication_status` |
-| `EncryptionStatus` | `awscc.s3.Bucket.OptionalFields.encryption_status` |
-| `ObjectLockRetainUntilDate` | `awscc.s3.Bucket.OptionalFields.object_lock_retain_until_date` |
-| `ObjectLockMode` | `awscc.s3.Bucket.OptionalFields.object_lock_mode` |
-| `ObjectLockLegalHoldStatus` | `awscc.s3.Bucket.OptionalFields.object_lock_legal_hold_status` |
-| `IntelligentTieringAccessTier` | `awscc.s3.Bucket.OptionalFields.intelligent_tiering_access_tier` |
-| `BucketKeyStatus` | `awscc.s3.Bucket.OptionalFields.bucket_key_status` |
-| `ChecksumAlgorithm` | `awscc.s3.Bucket.OptionalFields.checksum_algorithm` |
-| `ObjectAccessControlList` | `awscc.s3.Bucket.OptionalFields.object_access_control_list` |
-| `ObjectOwner` | `awscc.s3.Bucket.OptionalFields.object_owner` |
-| `LifecycleExpirationDate` | `awscc.s3.Bucket.OptionalFields.lifecycle_expiration_date` |
-
-Shorthand formats: `size` or `OptionalFields.size`
-
-### schedule_frequency (ScheduleFrequency)
+### optional_fields (InventoryConfigurationOptionalFields)
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `Daily` | `awscc.s3.Bucket.ScheduleFrequency.daily` |
-| `Weekly` | `awscc.s3.Bucket.ScheduleFrequency.weekly` |
+| `Size` | `awscc.s3.Bucket.InventoryConfigurationOptionalFields.size` |
+| `LastModifiedDate` | `awscc.s3.Bucket.InventoryConfigurationOptionalFields.last_modified_date` |
+| `StorageClass` | `awscc.s3.Bucket.InventoryConfigurationOptionalFields.storage_class` |
+| `ETag` | `awscc.s3.Bucket.InventoryConfigurationOptionalFields.etag` |
+| `IsMultipartUploaded` | `awscc.s3.Bucket.InventoryConfigurationOptionalFields.is_multipart_uploaded` |
+| `ReplicationStatus` | `awscc.s3.Bucket.InventoryConfigurationOptionalFields.replication_status` |
+| `EncryptionStatus` | `awscc.s3.Bucket.InventoryConfigurationOptionalFields.encryption_status` |
+| `ObjectLockRetainUntilDate` | `awscc.s3.Bucket.InventoryConfigurationOptionalFields.object_lock_retain_until_date` |
+| `ObjectLockMode` | `awscc.s3.Bucket.InventoryConfigurationOptionalFields.object_lock_mode` |
+| `ObjectLockLegalHoldStatus` | `awscc.s3.Bucket.InventoryConfigurationOptionalFields.object_lock_legal_hold_status` |
+| `IntelligentTieringAccessTier` | `awscc.s3.Bucket.InventoryConfigurationOptionalFields.intelligent_tiering_access_tier` |
+| `BucketKeyStatus` | `awscc.s3.Bucket.InventoryConfigurationOptionalFields.bucket_key_status` |
+| `ChecksumAlgorithm` | `awscc.s3.Bucket.InventoryConfigurationOptionalFields.checksum_algorithm` |
+| `ObjectAccessControlList` | `awscc.s3.Bucket.InventoryConfigurationOptionalFields.object_access_control_list` |
+| `ObjectOwner` | `awscc.s3.Bucket.InventoryConfigurationOptionalFields.object_owner` |
+| `LifecycleExpirationDate` | `awscc.s3.Bucket.InventoryConfigurationOptionalFields.lifecycle_expiration_date` |
 
-Shorthand formats: `daily` or `ScheduleFrequency.daily`
+Shorthand formats: `size` or `InventoryConfigurationOptionalFields.size`
 
-### configuration_state (ConfigurationState)
-
-| Value | DSL Identifier |
-|-------|----------------|
-| `ENABLED` | `awscc.s3.Bucket.ConfigurationState.enabled` |
-| `DISABLED` | `awscc.s3.Bucket.ConfigurationState.disabled` |
-
-Shorthand formats: `enabled` or `ConfigurationState.enabled`
-
-### transition_default_minimum_object_size (TransitionDefaultMinimumObjectSize)
-
-| Value | DSL Identifier |
-|-------|----------------|
-| `varies_by_storage_class` | `awscc.s3.Bucket.TransitionDefaultMinimumObjectSize.varies_by_storage_class` |
-| `all_storage_classes_128K` | `awscc.s3.Bucket.TransitionDefaultMinimumObjectSize.all_storage_classes_128k` |
-
-Shorthand formats: `varies_by_storage_class` or `TransitionDefaultMinimumObjectSize.varies_by_storage_class`
-
-### table_bucket_type (TableBucketType)
+### schedule_frequency (InventoryConfigurationScheduleFrequency)
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `aws` | `awscc.s3.Bucket.TableBucketType.aws` |
-| `customer` | `awscc.s3.Bucket.TableBucketType.customer` |
+| `Daily` | `awscc.s3.Bucket.InventoryConfigurationScheduleFrequency.daily` |
+| `Weekly` | `awscc.s3.Bucket.InventoryConfigurationScheduleFrequency.weekly` |
 
-Shorthand formats: `aws` or `TableBucketType.aws`
+Shorthand formats: `daily` or `InventoryConfigurationScheduleFrequency.daily`
+
+### configuration_state (InventoryTableConfigurationConfigurationState)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `ENABLED` | `awscc.s3.Bucket.InventoryTableConfigurationConfigurationState.enabled` |
+| `DISABLED` | `awscc.s3.Bucket.InventoryTableConfigurationConfigurationState.disabled` |
+
+Shorthand formats: `enabled` or `InventoryTableConfigurationConfigurationState.enabled`
+
+### transition_default_minimum_object_size (LifecycleConfigurationTransitionDefaultMinimumObjectSize)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `varies_by_storage_class` | `awscc.s3.Bucket.LifecycleConfigurationTransitionDefaultMinimumObjectSize.varies_by_storage_class` |
+| `all_storage_classes_128K` | `awscc.s3.Bucket.LifecycleConfigurationTransitionDefaultMinimumObjectSize.all_storage_classes_128k` |
+
+Shorthand formats: `varies_by_storage_class` or `LifecycleConfigurationTransitionDefaultMinimumObjectSize.varies_by_storage_class`
+
+### table_bucket_type (MetadataDestinationTableBucketType)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `aws` | `awscc.s3.Bucket.MetadataDestinationTableBucketType.aws` |
+| `customer` | `awscc.s3.Bucket.MetadataDestinationTableBucketType.customer` |
+
+Shorthand formats: `aws` or `MetadataDestinationTableBucketType.aws`
 
 ### sse_algorithm (MetadataTableEncryptionConfigurationSseAlgorithm)
 
@@ -399,50 +399,59 @@ Shorthand formats: `disabled` or `MetricsStatus.disabled`
 
 Shorthand formats: `deep_archive` or `NoncurrentVersionTransitionStorageClass.deep_archive`
 
-### object_lock_enabled (ObjectLockEnabled)
+### object_lock_enabled (ObjectLockConfigurationObjectLockEnabled)
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `Enabled` | `awscc.s3.Bucket.ObjectLockEnabled.enabled` |
+| `Enabled` | `awscc.s3.Bucket.ObjectLockConfigurationObjectLockEnabled.enabled` |
 
-Shorthand formats: `enabled` or `ObjectLockEnabled.enabled`
+Shorthand formats: `enabled` or `ObjectLockConfigurationObjectLockEnabled.enabled`
 
-### object_ownership (ObjectOwnership)
-
-| Value | DSL Identifier |
-|-------|----------------|
-| `ObjectWriter` | `awscc.s3.Bucket.ObjectOwnership.object_writer` |
-| `BucketOwnerPreferred` | `awscc.s3.Bucket.ObjectOwnership.bucket_owner_preferred` |
-| `BucketOwnerEnforced` | `awscc.s3.Bucket.ObjectOwnership.bucket_owner_enforced` |
-
-Shorthand formats: `object_writer` or `ObjectOwnership.object_writer`
-
-### partition_date_source (PartitionDateSource)
+### object_ownership (OwnershipControlsRuleObjectOwnership)
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `EventTime` | `awscc.s3.Bucket.PartitionDateSource.event_time` |
-| `DeliveryTime` | `awscc.s3.Bucket.PartitionDateSource.delivery_time` |
+| `ObjectWriter` | `awscc.s3.Bucket.OwnershipControlsRuleObjectOwnership.object_writer` |
+| `BucketOwnerPreferred` | `awscc.s3.Bucket.OwnershipControlsRuleObjectOwnership.bucket_owner_preferred` |
+| `BucketOwnerEnforced` | `awscc.s3.Bucket.OwnershipControlsRuleObjectOwnership.bucket_owner_enforced` |
 
-Shorthand formats: `event_time` or `PartitionDateSource.event_time`
+Shorthand formats: `object_writer` or `OwnershipControlsRuleObjectOwnership.object_writer`
 
-### expiration (Expiration)
-
-| Value | DSL Identifier |
-|-------|----------------|
-| `ENABLED` | `awscc.s3.Bucket.Expiration.enabled` |
-| `DISABLED` | `awscc.s3.Bucket.Expiration.disabled` |
-
-Shorthand formats: `enabled` or `Expiration.enabled`
-
-### protocol (Protocol)
+### partition_date_source (PartitionedPrefixPartitionDateSource)
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `http` | `awscc.s3.Bucket.Protocol.http` |
-| `https` | `awscc.s3.Bucket.Protocol.https` |
+| `EventTime` | `awscc.s3.Bucket.PartitionedPrefixPartitionDateSource.event_time` |
+| `DeliveryTime` | `awscc.s3.Bucket.PartitionedPrefixPartitionDateSource.delivery_time` |
 
-Shorthand formats: `http` or `Protocol.http`
+Shorthand formats: `event_time` or `PartitionedPrefixPartitionDateSource.event_time`
+
+### expiration (RecordExpirationExpiration)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `ENABLED` | `awscc.s3.Bucket.RecordExpirationExpiration.enabled` |
+| `DISABLED` | `awscc.s3.Bucket.RecordExpirationExpiration.disabled` |
+
+Shorthand formats: `enabled` or `RecordExpirationExpiration.enabled`
+
+### protocol (RedirectAllRequestsToProtocol)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `http` | `awscc.s3.Bucket.RedirectAllRequestsToProtocol.http` |
+| `https` | `awscc.s3.Bucket.RedirectAllRequestsToProtocol.https` |
+
+Shorthand formats: `http` or `RedirectAllRequestsToProtocol.http`
+
+### protocol (RedirectRuleProtocol)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `http` | `awscc.s3.Bucket.RedirectRuleProtocol.http` |
+| `https` | `awscc.s3.Bucket.RedirectRuleProtocol.https` |
+
+Shorthand formats: `http` or `RedirectRuleProtocol.http`
 
 ### status (ReplicaModificationsStatus)
 
@@ -514,14 +523,14 @@ Shorthand formats: `aws_kms` or `ServerSideEncryptionByDefaultSseAlgorithm.aws_k
 
 Shorthand formats: `disabled` or `SseKmsEncryptedObjectsStatus.disabled`
 
-### access_tier (AccessTier)
+### access_tier (TieringAccessTier)
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `ARCHIVE_ACCESS` | `awscc.s3.Bucket.AccessTier.archive_access` |
-| `DEEP_ARCHIVE_ACCESS` | `awscc.s3.Bucket.AccessTier.deep_archive_access` |
+| `ARCHIVE_ACCESS` | `awscc.s3.Bucket.TieringAccessTier.archive_access` |
+| `DEEP_ARCHIVE_ACCESS` | `awscc.s3.Bucket.TieringAccessTier.deep_archive_access` |
 
-Shorthand formats: `archive_access` or `AccessTier.archive_access`
+Shorthand formats: `archive_access` or `TieringAccessTier.archive_access`
 
 ### storage_class (TransitionStorageClass)
 
@@ -557,13 +566,13 @@ Shorthand formats: `enabled` or `VersioningConfigurationStatus.enabled`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `acceleration_status` | [Enum (AccelerationStatus)](#acceleration_status-accelerationstatus) | Yes | Specifies the transfer acceleration status of the bucket. |
+| `acceleration_status` | [Enum (AccelerateConfigurationAccelerationStatus)](#acceleration_status-accelerateconfigurationaccelerationstatus) | Yes | Specifies the transfer acceleration status of the bucket. |
 
 ### AccessControlTranslation
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `owner` | [Enum (Owner)](#owner-owner) | Yes | Specifies the replica ownership. For default and valid values, see [PUT bucket replication](https://docs.aws.amazon.com/AmazonS3/latest/API/RESTBucketPUTreplication.html) in the *Amazon S3 API Reference*. |
+| `owner` | [Enum (AccessControlTranslationOwner)](#owner-accesscontroltranslationowner) | Yes | Specifies the replica ownership. For default and valid values, see [PUT bucket replication](https://docs.aws.amazon.com/AmazonS3/latest/API/RESTBucketPUTreplication.html) in the *Amazon S3 API Reference*. |
 
 ### AnalyticsConfiguration
 
@@ -578,7 +587,7 @@ Shorthand formats: `enabled` or `VersioningConfigurationStatus.enabled`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `encryption_type` | [Enum (EncryptionType)](#encryption_type-encryptiontype) | No | The object encryption type that you want to block or unblock for an Amazon S3 general purpose bucket. Currently, this parameter only supports blocking or unblocking server side encryption with customer-provided keys (SSE-C). For more information about SSE-C, see [Using server-side encryption with customer-provided keys (SSE-C)](https://docs.aws.amazon.com/AmazonS3/latest/userguide/ServerSideEncryptionCustomerKeys.html). |
+| `encryption_type` | [Enum (BlockedEncryptionTypesEncryptionType)](#encryption_type-blockedencryptiontypesencryptiontype) | No | The object encryption type that you want to block or unblock for an Amazon S3 general purpose bucket. Currently, this parameter only supports blocking or unblocking server side encryption with customer-provided keys (SSE-C). For more information about SSE-C, see [Using server-side encryption with customer-provided keys (SSE-C)](https://docs.aws.amazon.com/AmazonS3/latest/userguide/ServerSideEncryptionCustomerKeys.html). |
 
 ### BucketEncryption
 
@@ -597,7 +606,7 @@ Shorthand formats: `enabled` or `VersioningConfigurationStatus.enabled`
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `allowed_headers` | `List<String>` | No | Headers that are specified in the ``Access-Control-Request-Headers`` header. These headers are allowed in a preflight OPTIONS request. In response to any preflight OPTIONS request, Amazon S3 returns any requested headers that are allowed. |
-| `allowed_methods` | List\<[Enum (AllowedMethods)](#allowed_methods-allowedmethods)\> | Yes | An HTTP method that you allow the origin to run. *Allowed values*: ``GET`` | ``PUT`` | ``HEAD`` | ``POST`` | ``DELETE`` |
+| `allowed_methods` | List\<[Enum (CorsRuleAllowedMethods)](#allowed_methods-corsruleallowedmethods)\> | Yes | An HTTP method that you allow the origin to run. *Allowed values*: ``GET`` | ``PUT`` | ``HEAD`` | ``POST`` | ``DELETE`` |
 | `allowed_origins` | `List<String>` | Yes | One or more origins you want customers to be able to access the bucket from. |
 | `exposed_headers` | `List<String>` | No | One or more headers in the response that you want customers to be able to access from their applications (for example, from a JavaScript ``XMLHttpRequest`` object). |
 | `id` | String(len: ..=255) | No | A unique identifier for this rule. The value must be no more than 255 characters. |
@@ -608,14 +617,14 @@ Shorthand formats: `enabled` or `VersioningConfigurationStatus.enabled`
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `destination` | [Struct(Destination)](#destination) | Yes | The place to store the data for an analysis. |
-| `output_schema_version` | [Enum (OutputSchemaVersion)](#output_schema_version-outputschemaversion) | Yes | The version of the output schema to use when exporting data. Must be ``V_1``. |
+| `output_schema_version` | [Enum (DataExportOutputSchemaVersion)](#output_schema_version-dataexportoutputschemaversion) | Yes | The version of the output schema to use when exporting data. Must be ``V_1``. |
 
 ### DefaultRetention
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `days` | Int | No | The number of days that you want to specify for the default retention period. If Object Lock is turned on, you must specify ``Mode`` and specify either ``Days`` or ``Years``. |
-| `mode` | [Enum (Mode)](#mode-mode) | No | The default Object Lock retention mode you want to apply to new objects placed in the specified bucket. If Object Lock is turned on, you must specify ``Mode`` and specify either ``Days`` or ``Years``. |
+| `mode` | [Enum (DefaultRetentionMode)](#mode-defaultretentionmode) | No | The default Object Lock retention mode you want to apply to new objects placed in the specified bucket. If Object Lock is turned on, you must specify ``Mode`` and specify either ``Days`` or ``Years``. |
 | `years` | Int | No | The number of years that you want to specify for the default retention period. If Object Lock is turned on, you must specify ``Mode`` and specify either ``Days`` or ``Years``. |
 
 ### DeleteMarkerReplication
@@ -630,7 +639,7 @@ Shorthand formats: `enabled` or `VersioningConfigurationStatus.enabled`
 |-------|------|----------|-------------|
 | `bucket_account_id` | AwsAccountId | No | The account ID that owns the destination S3 bucket. If no account ID is provided, the owner is not validated before exporting data. Although this value is optional, we strongly recommend that you set it to help prevent problems if the destination bucket ownership changes. |
 | `bucket_arn` | Arn | Yes | The Amazon Resource Name (ARN) of the bucket to which data is exported. |
-| `format` | [Enum (Format)](#format-format) | Yes | Specifies the file format used when exporting data to Amazon S3. *Allowed values*: ``CSV`` | ``ORC`` | ``Parquet`` |
+| `format` | [Enum (DestinationFormat)](#format-destinationformat) | Yes | Specifies the file format used when exporting data to Amazon S3. *Allowed values*: ``CSV`` | ``ORC`` | ``Parquet`` |
 | `prefix` | String | No | The prefix to use when exporting data. The prefix is prepended to all results. |
 
 ### EncryptionConfiguration
@@ -669,16 +678,16 @@ Shorthand formats: `enabled` or `VersioningConfigurationStatus.enabled`
 | `destination` | [Struct(Destination)](#destination) | Yes | Contains information about where to publish the inventory results. |
 | `enabled` | Bool | Yes | Specifies whether the inventory is enabled or disabled. If set to ``True``, an inventory list is generated. If set to ``False``, no inventory list is generated. |
 | `id` | String | Yes | The ID used to identify the inventory configuration. |
-| `included_object_versions` | [Enum (IncludedObjectVersions)](#included_object_versions-includedobjectversions) | Yes | Object versions to include in the inventory list. If set to ``All``, the list includes all the object versions, which adds the version-related fields ``VersionId``, ``IsLatest``, and ``DeleteMarker`` to the list. If set to ``Current``, the list does not contain these version-related fields. |
-| `optional_fields` | List\<[Enum (OptionalFields)](#optional_fields-optionalfields)\> | No | Contains the optional fields that are included in the inventory results. |
+| `included_object_versions` | [Enum (InventoryConfigurationIncludedObjectVersions)](#included_object_versions-inventoryconfigurationincludedobjectversions) | Yes | Object versions to include in the inventory list. If set to ``All``, the list includes all the object versions, which adds the version-related fields ``VersionId``, ``IsLatest``, and ``DeleteMarker`` to the list. If set to ``Current``, the list does not contain these version-related fields. |
+| `optional_fields` | List\<[Enum (InventoryConfigurationOptionalFields)](#optional_fields-inventoryconfigurationoptionalfields)\> | No | Contains the optional fields that are included in the inventory results. |
 | `prefix` | String | No | Specifies the inventory filter prefix. |
-| `schedule_frequency` | [Enum (ScheduleFrequency)](#schedule_frequency-schedulefrequency) | Yes | Specifies the schedule for generating inventory results. |
+| `schedule_frequency` | [Enum (InventoryConfigurationScheduleFrequency)](#schedule_frequency-inventoryconfigurationschedulefrequency) | Yes | Specifies the schedule for generating inventory results. |
 
 ### InventoryTableConfiguration
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `configuration_state` | [Enum (ConfigurationState)](#configuration_state-configurationstate) | Yes | The configuration state of the inventory table, indicating whether the inventory table is enabled or disabled. |
+| `configuration_state` | [Enum (InventoryTableConfigurationConfigurationState)](#configuration_state-inventorytableconfigurationconfigurationstate) | Yes | The configuration state of the inventory table, indicating whether the inventory table is enabled or disabled. |
 | `encryption_configuration` | [Struct(MetadataTableEncryptionConfiguration)](#metadatatableencryptionconfiguration) | No | The encryption configuration for the inventory table. |
 | `table_arn` | Arn | No | The Amazon Resource Name (ARN) for the inventory table. |
 | `table_name` | String | No | The name of the inventory table. |
@@ -705,7 +714,7 @@ Shorthand formats: `enabled` or `VersioningConfigurationStatus.enabled`
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `rules` | [List\<Rule\>](#rule) | Yes | A lifecycle rule for individual objects in an Amazon S3 bucket. |
-| `transition_default_minimum_object_size` | [Enum (TransitionDefaultMinimumObjectSize)](#transition_default_minimum_object_size-transitiondefaultminimumobjectsize) | No | Indicates which default minimum object size behavior is applied to the lifecycle configuration. This parameter applies to general purpose buckets only. It isn't supported for directory bucket lifecycle configurations. + ``all_storage_classes_128K`` - Objects smaller than 128 KB will not transition to any storage class by default. + ``varies_by_storage_class`` - Objects smaller than 128 KB will transition to Glacier Flexible Retrieval or Glacier Deep Archive storage classes. By default, all other storage classes will prevent transitions smaller than 128 KB. To customize the minimum object size for any transition you can add a filter that specifies a custom ``ObjectSizeGreaterThan`` or ``ObjectSizeLessThan`` in the body of your transition rule. Custom filters always take precedence over the default transition behavior. |
+| `transition_default_minimum_object_size` | [Enum (LifecycleConfigurationTransitionDefaultMinimumObjectSize)](#transition_default_minimum_object_size-lifecycleconfigurationtransitiondefaultminimumobjectsize) | No | Indicates which default minimum object size behavior is applied to the lifecycle configuration. This parameter applies to general purpose buckets only. It isn't supported for directory bucket lifecycle configurations. + ``all_storage_classes_128K`` - Objects smaller than 128 KB will not transition to any storage class by default. + ``varies_by_storage_class`` - Objects smaller than 128 KB will transition to Glacier Flexible Retrieval or Glacier Deep Archive storage classes. By default, all other storage classes will prevent transitions smaller than 128 KB. To customize the minimum object size for any transition you can add a filter that specifies a custom ``ObjectSizeGreaterThan`` or ``ObjectSizeLessThan`` in the body of your transition rule. Custom filters always take precedence over the default transition behavior. |
 
 ### LoggingConfiguration
 
@@ -728,7 +737,7 @@ Shorthand formats: `enabled` or `VersioningConfigurationStatus.enabled`
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `table_bucket_arn` | Arn | No | The Amazon Resource Name (ARN) of the table bucket where the metadata configuration is stored. |
-| `table_bucket_type` | [Enum (TableBucketType)](#table_bucket_type-tablebuckettype) | Yes | The type of the table bucket where the metadata configuration is stored. The ``aws`` value indicates an AWS managed table bucket, and the ``customer`` value indicates a customer-managed table bucket. V2 metadata configurations are stored in AWS managed table buckets, and V1 metadata configurations are stored in customer-managed table buckets. |
+| `table_bucket_type` | [Enum (MetadataDestinationTableBucketType)](#table_bucket_type-metadatadestinationtablebuckettype) | Yes | The type of the table bucket where the metadata configuration is stored. The ``aws`` value indicates an AWS managed table bucket, and the ``customer`` value indicates a customer-managed table bucket. V2 metadata configurations are stored in AWS managed table buckets, and V1 metadata configurations are stored in customer-managed table buckets. |
 | `table_namespace` | String | No | The namespace in the table bucket where the metadata tables for a metadata configuration are stored. |
 
 ### MetadataTableConfiguration
@@ -794,7 +803,7 @@ Shorthand formats: `enabled` or `VersioningConfigurationStatus.enabled`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `object_lock_enabled` | [Enum (ObjectLockEnabled)](#object_lock_enabled-objectlockenabled) | No | Indicates whether this bucket has an Object Lock configuration enabled. Enable ``ObjectLockEnabled`` when you apply ``ObjectLockConfiguration`` to a bucket. |
+| `object_lock_enabled` | [Enum (ObjectLockConfigurationObjectLockEnabled)](#object_lock_enabled-objectlockconfigurationobjectlockenabled) | No | Indicates whether this bucket has an Object Lock configuration enabled. Enable ``ObjectLockEnabled`` when you apply ``ObjectLockConfiguration`` to a bucket. |
 | `rule` | [Struct(ObjectLockRule)](#objectlockrule) | No | Specifies the Object Lock rule for the specified object. Enable this rule when you apply ``ObjectLockConfiguration`` to a bucket. If Object Lock is turned on, bucket settings require both ``Mode`` and a period of either ``Days`` or ``Years``. You cannot specify ``Days`` and ``Years`` at the same time. For more information, see [ObjectLockRule](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-s3-bucket-objectlockrule.html) and [DefaultRetention](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-s3-bucket-defaultretention.html). |
 
 ### ObjectLockRule
@@ -813,13 +822,13 @@ Shorthand formats: `enabled` or `VersioningConfigurationStatus.enabled`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `object_ownership` | [Enum (ObjectOwnership)](#object_ownership-objectownership) | No | Specifies an object ownership rule. |
+| `object_ownership` | [Enum (OwnershipControlsRuleObjectOwnership)](#object_ownership-ownershipcontrolsruleobjectownership) | No | Specifies an object ownership rule. |
 
 ### PartitionedPrefix
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `partition_date_source` | [Enum (PartitionDateSource)](#partition_date_source-partitiondatesource) | No | Specifies the partition date source for the partitioned prefix. ``PartitionDateSource`` can be ``EventTime`` or ``DeliveryTime``. For ``DeliveryTime``, the time in the log file names corresponds to the delivery time for the log files. For ``EventTime``, The logs delivered are for a specific day only. The year, month, and day correspond to the day on which the event occurred, and the hour, minutes and seconds are set to 00 in the key. |
+| `partition_date_source` | [Enum (PartitionedPrefixPartitionDateSource)](#partition_date_source-partitionedprefixpartitiondatesource) | No | Specifies the partition date source for the partitioned prefix. ``PartitionDateSource`` can be ``EventTime`` or ``DeliveryTime``. For ``DeliveryTime``, the time in the log file names corresponds to the delivery time for the log files. For ``EventTime``, The logs delivered are for a specific day only. The year, month, and day correspond to the day on which the event occurred, and the hour, minutes and seconds are set to 00 in the key. |
 
 ### PublicAccessBlockConfiguration
 
@@ -843,14 +852,14 @@ Shorthand formats: `enabled` or `VersioningConfigurationStatus.enabled`
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `days` | Int | No | If you enable journal table record expiration, you can set the number of days to retain your journal table records. Journal table records must be retained for a minimum of 7 days. To set this value, specify any whole number from ``7`` to ``2147483647``. For example, to retain your journal table records for one year, set this value to ``365``. |
-| `expiration` | [Enum (Expiration)](#expiration-expiration) | Yes | Specifies whether journal table record expiration is enabled or disabled. |
+| `expiration` | [Enum (RecordExpirationExpiration)](#expiration-recordexpirationexpiration) | Yes | Specifies whether journal table record expiration is enabled or disabled. |
 
 ### RedirectAllRequestsTo
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `host_name` | String | Yes | Name of the host where requests are redirected. |
-| `protocol` | [Enum (Protocol)](#protocol-protocol) | No | Protocol to use when redirecting requests. The default is the protocol that is used in the original request. |
+| `protocol` | [Enum (RedirectAllRequestsToProtocol)](#protocol-redirectallrequeststoprotocol) | No | Protocol to use when redirecting requests. The default is the protocol that is used in the original request. |
 
 ### RedirectRule
 
@@ -858,7 +867,7 @@ Shorthand formats: `enabled` or `VersioningConfigurationStatus.enabled`
 |-------|------|----------|-------------|
 | `host_name` | String | No | The host name to use in the redirect request. |
 | `http_redirect_code` | String | No | The HTTP redirect code to use on the response. Not required if one of the siblings is present. |
-| `protocol` | [Enum (Protocol)](#protocol-protocol) | No | Protocol to use when redirecting requests. The default is the protocol that is used in the original request. |
+| `protocol` | [Enum (RedirectRuleProtocol)](#protocol-redirectruleprotocol) | No | Protocol to use when redirecting requests. The default is the protocol that is used in the original request. |
 | `replace_key_prefix_with` | String | No | The object key prefix to use in the redirect request. For example, to redirect requests for all pages with prefix ``docs/`` (objects in the ``docs/`` folder) to ``documents/``, you can set a condition block with ``KeyPrefixEquals`` set to ``docs/`` and in the Redirect set ``ReplaceKeyPrefixWith`` to ``/documents``. Not required if one of the siblings is present. Can be present only if ``ReplaceKeyWith`` is not provided. Replacement must be made for object keys containing special characters (such as carriage returns) when using XML requests. For more information, see [XML related object key constraints](https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html#object-key-xml-related-constraints). |
 | `replace_key_with` | String | No | The specific object key to use in the redirect request. For example, redirect request to ``error.html``. Not required if one of the siblings is present. Can be present only if ``ReplaceKeyPrefixWith`` is not provided. Replacement must be made for object keys containing special characters (such as carriage returns) when using XML requests. For more information, see [XML related object key constraints](https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html#object-key-xml-related-constraints). |
 
@@ -1023,7 +1032,7 @@ Shorthand formats: `enabled` or `VersioningConfigurationStatus.enabled`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `access_tier` | [Enum (AccessTier)](#access_tier-accesstier) | Yes | S3 Intelligent-Tiering access tier. See [Storage class for automatically optimizing frequently and infrequently accessed objects](https://docs.aws.amazon.com/AmazonS3/latest/dev/storage-class-intro.html#sc-dynamic-data-access) for a list of access tiers in the S3 Intelligent-Tiering storage class. |
+| `access_tier` | [Enum (TieringAccessTier)](#access_tier-tieringaccesstier) | Yes | S3 Intelligent-Tiering access tier. See [Storage class for automatically optimizing frequently and infrequently accessed objects](https://docs.aws.amazon.com/AmazonS3/latest/dev/storage-class-intro.html#sc-dynamic-data-access) for a list of access tiers in the S3 Intelligent-Tiering storage class. |
 | `days` | Int | Yes | The number of consecutive days of no access after which an object will be eligible to be transitioned to the corresponding tier. The minimum number of days specified for Archive Access tier must be at least 90 days and Deep Archive Access tier must be at least 180 days. The maximum can be up to 2 years (730 days). |
 
 ### TopicConfiguration
