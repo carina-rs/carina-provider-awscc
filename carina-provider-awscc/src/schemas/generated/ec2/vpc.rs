@@ -59,22 +59,17 @@ pub fn ec2_vpc_config() -> AwsccSchemaConfig {
                 .with_provider_name("DefaultSecurityGroup"),
         )
         .attribute(
-            AttributeSchema::new("enable_dns_hostnames", AttributeType::Bool)
+            AttributeSchema::new("enable_dns_hostnames", AttributeType::bool())
                 .with_description("Indicates whether the instances launched in the VPC get DNS hostnames. If enabled, instances in the VPC get DNS hostnames; otherwise, they do not. Disabled by default for nondefault VPCs. For more information, see [DNS attributes in your VPC](https://docs.aws.amazon.com/vpc/latest/userguide/vpc-dns.html#vpc-dns-support). You can only enable DNS hostnames if you've enabled DNS support.")
                 .with_provider_name("EnableDnsHostnames"),
         )
         .attribute(
-            AttributeSchema::new("enable_dns_support", AttributeType::Bool)
+            AttributeSchema::new("enable_dns_support", AttributeType::bool())
                 .with_description("Indicates whether the DNS resolution is supported for the VPC. If enabled, queries to the Amazon provided DNS server at the 169.254.169.253 IP address, or the reserved IP address at the base of the VPC network range \"plus two\" succeed. If disabled, the Amazon provided DNS service in the VPC that resolves public DNS hostnames to IP addresses is not enabled. Enabled by default. For more information, see [DNS attributes in your VPC](https://docs.aws.amazon.com/vpc/latest/userguide/vpc-dns.html#vpc-dns-support).")
                 .with_provider_name("EnableDnsSupport"),
         )
         .attribute(
-            AttributeSchema::new("instance_tenancy", AttributeType::StringEnum {
-                name: "InstanceTenancy".to_string(),
-                values: vec!["default".to_string(), "dedicated".to_string(), "host".to_string()],
-                identity: Some(carina_core::schema::string_enum_identity("InstanceTenancy", Some("awscc.ec2.Vpc"))),
-                dsl_aliases: vec![("default".to_string(), "default".to_string()), ("dedicated".to_string(), "dedicated".to_string()), ("host".to_string(), "host".to_string())],
-            })
+            AttributeSchema::new("instance_tenancy", AttributeType::string_enum("InstanceTenancy".to_string(), vec!["default".to_string(), "dedicated".to_string(), "host".to_string()], Some(carina_core::schema::string_enum_identity("InstanceTenancy", Some("awscc.ec2.Vpc"))), vec![("default".to_string(), "default".to_string()), ("dedicated".to_string(), "dedicated".to_string()), ("host".to_string(), "host".to_string())]))
                 .with_description("The allowed tenancy of instances launched into the VPC. + ``default``: An instance launched into the VPC runs on shared hardware by default, unless you explicitly specify a different tenancy during instance launch. + ``dedicated``: An instance launched into the VPC runs on dedicated hardware by default, unless you explicitly specify a tenancy of ``host`` during instance launch. You cannot specify a tenancy of ``default`` during instance launch. Updating ``InstanceTenancy`` requires no replacement only if you are updating its value from ``dedicated`` to ``default``. Updating ``InstanceTenancy`` from ``default`` to ``dedicated`` requires replacement.")
                 .with_provider_name("InstanceTenancy"),
         )
@@ -86,14 +81,7 @@ pub fn ec2_vpc_config() -> AwsccSchemaConfig {
                 .with_provider_name("Ipv4IpamPoolId"),
         )
         .attribute(
-            AttributeSchema::new("ipv4_netmask_length", AttributeType::Custom {
-                identity: None,
-                pattern: None,
-                length: None,
-                base: Box::new(AttributeType::Int),
-                validate: legacy_validator(validate_ipv4_netmask_length_range),
-                to_dsl: None,
-            })
+            AttributeSchema::new("ipv4_netmask_length", AttributeType::custom(None, AttributeType::int(), None, None, legacy_validator(validate_ipv4_netmask_length_range), None))
                 .create_only()
                 .write_only()
                 .with_description("The netmask length of the IPv4 CIDR you want to allocate to this VPC from an Amazon VPC IP Address Manager (IPAM) pool. For more information about IPAM, see [What is IPAM?](https://docs.aws.amazon.com//vpc/latest/ipam/what-is-it-ipam.html) in the *Amazon VPC IPAM User Guide*.")

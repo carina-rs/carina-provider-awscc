@@ -21,14 +21,14 @@ pub fn iam_role_policy_config() -> AwsccSchemaConfig {
                 .with_provider_name("PolicyDocument"),
         )
         .attribute(
-            AttributeSchema::new("policy_name", AttributeType::String)
+            AttributeSchema::new("policy_name", AttributeType::string())
                 .required()
                 .create_only()
                 .with_description("The name of the policy document. This parameter allows (through its [regex pattern](https://docs.aws.amazon.com/http://wikipedia.org/wiki/regex)) a string of characters consisting of upper and lowercase alphanumeric characters with no spaces. You can also include any of the following characters: _+=,.@-")
                 .with_provider_name("PolicyName"),
         )
         .attribute(
-            AttributeSchema::new("role_name", AttributeType::String)
+            AttributeSchema::new("role_name", AttributeType::string())
                 .required()
                 .create_only()
                 .with_description("The name of the role to associate the policy with. This parameter allows (through its [regex pattern](https://docs.aws.amazon.com/http://wikipedia.org/wiki/regex)) a string of characters consisting of upper and lowercase alphanumeric characters with no spaces. You can also include any of the following characters: _+=,.@-")

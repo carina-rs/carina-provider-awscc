@@ -7,7 +7,7 @@
 use indexmap::IndexMap;
 
 use carina_core::resource::{ConcreteValue, Value};
-use carina_core::schema::AttributeType;
+use carina_core::schema::{AttributeType, Shape};
 use serde_json::json;
 
 use crate::schemas::generated::canonicalize_enum_value;
@@ -44,9 +44,13 @@ pub(crate) fn aws_value_to_dsl_with_defs(
     resource_type: &str,
     defs: &std::collections::BTreeMap<String, AttributeType>,
 ) -> Option<Value> {
-    // Resolve any top-level `Ref` chain so the subsequent shape
-    // checks see the actual Struct/List/Map/... underneath.
-    let attr_type = attr_type.resolve_refs(defs);
+    // Project onto the Shape view, which resolves any top-level `Ref`
+    // chain against `defs` so the subsequent dispatch sees the actual
+    // Struct / List / Map / ... underneath. `Shape` has no `Ref`
+    // variant, so the wildcard fallthrough cannot silently swallow a
+    // `Ref` (carina#3349).
+    let shape = attr_type.shape(defs);
+
     // This feeds the read/import path, whose result is written to
     // state. State must hold the provider-side (API) value, NOT a
     // fully-qualified DSL string: carina-core's state-lift reconciles
@@ -54,25 +58,31 @@ pub(crate) fn aws_value_to_dsl_with_defs(
     // fully-qualified DSL string matches neither `values` nor
     // `dsl_aliases`, so the lift would skip it and every subsequent
     // plan would report a spurious `~ change` (awscc#254).
-    if attr_type.namespaced_enum_parts().is_some()
+    if let Shape::StringEnum {
+        identity: Some(_),
+        values,
+        ..
+    } = shape
         && let Some(s) = value.as_str()
     {
-        let canonical = if let Some((_, values, _, _)) = attr_type.string_enum_parts() {
-            let valid_values: Vec<&str> = values.iter().map(String::as_str).collect();
-            canonicalize_enum_value(s, &valid_values)
+        let valid_values: Vec<&str> = values.iter().map(String::as_str).collect();
+        let canonical = canonicalize_enum_value(s, &valid_values);
+        return Some(Value::Concrete(ConcreteValue::String(canonical)));
+    }
+    if let Shape::CustomEnum { .. } = shape
+        && let Some(s) = value.as_str()
+    {
+        use crate::schemas::generated::get_enum_valid_values;
+        let canonical = if let Some(valid_values) = get_enum_valid_values(resource_type, dsl_name) {
+            canonicalize_enum_value(s, valid_values)
         } else {
-            use crate::schemas::generated::get_enum_valid_values;
-            if let Some(valid_values) = get_enum_valid_values(resource_type, dsl_name) {
-                canonicalize_enum_value(s, valid_values)
-            } else {
-                s.to_string()
-            }
+            s.to_string()
         };
         return Some(Value::Concrete(ConcreteValue::String(canonical)));
     }
 
     // For List types, recurse into each item with the inner type for type-aware conversion
-    if let AttributeType::List { inner, .. } = attr_type
+    if let Shape::List { inner, .. } = shape
         && let Some(arr) = value.as_array()
     {
         let items: Vec<Value> = arr
@@ -93,7 +103,7 @@ pub(crate) fn aws_value_to_dsl_with_defs(
     }
 
     // For Union types, try each member type and use the first that produces a type-aware result
-    if let AttributeType::Union(members) = attr_type {
+    if let Shape::Union(members) = shape {
         for member in members {
             if let Some(result) =
                 aws_value_to_dsl_with_defs(dsl_name, value, member, resource_type, defs)
@@ -105,7 +115,7 @@ pub(crate) fn aws_value_to_dsl_with_defs(
     }
 
     // For bare Struct{fields}, recurse into fields
-    if let AttributeType::Struct { fields, .. } = attr_type
+    if let Shape::Struct { fields, .. } = shape
         && let Some(obj) = value.as_object()
     {
         let map: IndexMap<String, Value> = fields
@@ -130,7 +140,7 @@ pub(crate) fn aws_value_to_dsl_with_defs(
 
     // For Map types, recurse into values.
     // For IAM condition maps, convert PascalCase operator keys back to snake_case.
-    if let AttributeType::Map { value: inner, .. } = attr_type
+    if let Shape::Map { value: inner, .. } = shape
         && let Some(obj) = value.as_object()
     {
         let is_condition = dsl_name == "condition";
@@ -162,10 +172,10 @@ pub(crate) fn aws_value_to_dsl_with_defs(
     // enum-shorthand path lives on `CustomEnum.to_dsl`; `Custom.to_dsl`
     // is restricted to structural state→DSL normalization, so the
     // pre-#3222 `namespace: None` gate is no longer needed.
-    if let AttributeType::Custom {
+    if let Shape::Custom {
         to_dsl: Some(transform),
         ..
-    } = attr_type
+    } = shape
         && let Some(s) = value.as_str()
     {
         return Some(Value::Concrete(ConcreteValue::String(transform(s))));
@@ -251,9 +261,18 @@ pub(crate) fn dsl_value_to_aws_with_defs(
     attr_name: &str,
     defs: &std::collections::BTreeMap<String, AttributeType>,
 ) -> Option<serde_json::Value> {
-    let attr_type = attr_type.resolve_refs(defs);
+    let shape = attr_type.shape(defs);
     // For schema-level string enums, convert namespaced DSL values back to provider values.
-    if attr_type.namespaced_enum_parts().is_some() {
+    // The gate is "has a populated namespace identity": StringEnum with
+    // `identity: Some(_)`, or CustomEnum (always namespaced).
+    let is_namespaced_enum = matches!(
+        shape,
+        Shape::StringEnum {
+            identity: Some(_),
+            ..
+        } | Shape::CustomEnum { .. }
+    );
+    if is_namespaced_enum {
         match value {
             // Phase 3 of carina#2986 routes DSL-source enum values to
             // `EnumIdentifier`; the same text payload also still arrives
@@ -270,14 +289,18 @@ pub(crate) fn dsl_value_to_aws_with_defs(
                 // alias table is now exhaustive (carina-rs/carina#2980 /
                 // awscc#222) so every DSL spelling — including identity
                 // rows — round-trips through this single lookup.
-                let resolved = if let Some((_, values, _, dsl_map)) = attr_type.string_enum_parts()
+                let resolved = if let Shape::StringEnum {
+                    values,
+                    dsl_aliases,
+                    ..
+                } = shape
                 {
                     let valid: Vec<&str> = values.iter().map(String::as_str).collect();
                     let raw_extracted = extract_enum_value_with_values(s, &valid);
-                    dsl_map.api_for(raw_extracted)
+                    carina_core::schema::DslMap::Aliases(dsl_aliases).api_for(raw_extracted)
                 } else {
-                    // Custom types with namespace (e.g. Region) use a
-                    // closure-shaped DslMap; the convention there is
+                    // CustomEnum (Custom types with namespace, e.g. Region)
+                    // use a closure-shaped DslMap; the convention there is
                     // underscores in DSL, hyphens in the AWS API.
                     convert_enum_value(s).replace('_', "-")
                 };
@@ -285,7 +308,7 @@ pub(crate) fn dsl_value_to_aws_with_defs(
             }
             _ => value_to_json(value),
         }
-    } else if let AttributeType::List { inner, .. } = attr_type
+    } else if let Shape::List { inner, .. } = shape
         && let Value::Concrete(ConcreteValue::List(items)) = value
     {
         // Recurse into list items with inner type for type-aware conversion
@@ -304,7 +327,7 @@ pub(crate) fn dsl_value_to_aws_with_defs(
             })
             .collect();
         Some(serde_json::Value::Array(arr))
-    } else if let AttributeType::Union(members) = attr_type {
+    } else if let Shape::Union(members) = shape {
         // Try each member type; use the first that produces a type-aware result
         for member in members {
             if let Some(result) =
@@ -314,7 +337,7 @@ pub(crate) fn dsl_value_to_aws_with_defs(
             }
         }
         value_to_json(value)
-    } else if let AttributeType::Struct { fields, .. } = attr_type
+    } else if let Shape::Struct { fields, .. } = shape
         && let Value::Concrete(ConcreteValue::Map(map)) = value
     {
         // Recurse into bare struct fields for type-aware conversion (map assignment syntax)
@@ -338,7 +361,7 @@ pub(crate) fn dsl_value_to_aws_with_defs(
             })
             .collect();
         Some(serde_json::Value::Object(obj))
-    } else if let AttributeType::Struct { fields, .. } = attr_type
+    } else if let Shape::Struct { fields, .. } = shape
         && let Value::Concrete(ConcreteValue::List(items)) = value
         && items.len() == 1
         && let Value::Concrete(ConcreteValue::Map(map)) = &items[0]
@@ -364,7 +387,7 @@ pub(crate) fn dsl_value_to_aws_with_defs(
             })
             .collect();
         Some(serde_json::Value::Object(obj))
-    } else if let AttributeType::Map { value: inner, .. } = attr_type
+    } else if let Shape::Map { value: inner, .. } = shape
         && let Value::Concrete(ConcreteValue::Map(map)) = value
     {
         // Map type: recurse into values with inner type.
@@ -449,22 +472,22 @@ mod tests {
 
     #[test]
     fn test_aws_value_to_dsl_string_enum_returns_api_canonical_value() {
-        let attr_type = AttributeType::StringEnum {
-            name: "ViewerProtocolPolicy".to_string(),
-            values: vec![
+        let attr_type = AttributeType::string_enum(
+            "ViewerProtocolPolicy".to_string(),
+            vec![
                 "allow-all".to_string(),
                 "redirect-to-https".to_string(),
                 "https-only".to_string(),
             ],
-            identity: Some(carina_core::schema::string_enum_identity(
+            Some(carina_core::schema::string_enum_identity(
                 "ViewerProtocolPolicy",
                 Some("awscc.cloudfront.Distribution"),
             )),
-            dsl_aliases: vec![(
+            vec![(
                 "redirect-to-https".to_string(),
                 "redirect_to_https".to_string(),
             )],
-        };
+        );
 
         // CloudControl returns the API-canonical hyphen form.
         let from_api = aws_value_to_dsl(
@@ -582,13 +605,10 @@ mod tests {
     #[test]
     fn test_aws_value_to_dsl_bare_struct_returns_map() {
         let fields = vec![
-            StructField::new("status", AttributeType::String).with_provider_name("Status"),
-            StructField::new("mfa_delete", AttributeType::String).with_provider_name("MfaDelete"),
+            StructField::new("status", AttributeType::string()).with_provider_name("Status"),
+            StructField::new("mfa_delete", AttributeType::string()).with_provider_name("MfaDelete"),
         ];
-        let attr_type = AttributeType::Struct {
-            name: "VersioningConfiguration".to_string(),
-            fields,
-        };
+        let attr_type = AttributeType::struct_("VersioningConfiguration".to_string(), fields);
         let json_val = serde_json::json!({
             "Status": "Enabled",
         });
@@ -617,13 +637,10 @@ mod tests {
     #[test]
     fn test_dsl_value_to_aws_map_for_bare_struct() {
         let fields = vec![
-            StructField::new("status", AttributeType::String).with_provider_name("Status"),
-            StructField::new("mfa_delete", AttributeType::String).with_provider_name("MfaDelete"),
+            StructField::new("status", AttributeType::string()).with_provider_name("Status"),
+            StructField::new("mfa_delete", AttributeType::string()).with_provider_name("MfaDelete"),
         ];
-        let attr_type = AttributeType::Struct {
-            name: "VersioningConfiguration".to_string(),
-            fields,
-        };
+        let attr_type = AttributeType::struct_("VersioningConfiguration".to_string(), fields);
 
         // Parser produces Value::Concrete(ConcreteValue::Map(...)) for map assignment syntax (= { ... })
         let mut map = IndexMap::new();
@@ -652,13 +669,10 @@ mod tests {
     #[test]
     fn test_dsl_value_to_aws_list_for_bare_struct() {
         let fields = vec![
-            StructField::new("status", AttributeType::String).with_provider_name("Status"),
-            StructField::new("mfa_delete", AttributeType::String).with_provider_name("MfaDelete"),
+            StructField::new("status", AttributeType::string()).with_provider_name("Status"),
+            StructField::new("mfa_delete", AttributeType::string()).with_provider_name("MfaDelete"),
         ];
-        let attr_type = AttributeType::Struct {
-            name: "VersioningConfiguration".to_string(),
-            fields,
-        };
+        let attr_type = AttributeType::struct_("VersioningConfiguration".to_string(), fields);
 
         // Parser produces Value::Concrete(ConcreteValue::List(vec![Value::Concrete(ConcreteValue::Map(...))])) for block syntax (name { ... })
         let mut map = IndexMap::new();
@@ -689,11 +703,8 @@ mod tests {
     #[test]
     fn test_bare_struct_roundtrip_no_spurious_diff() {
         let fields =
-            vec![StructField::new("status", AttributeType::String).with_provider_name("Status")];
-        let attr_type = AttributeType::Struct {
-            name: "VersioningConfiguration".to_string(),
-            fields,
-        };
+            vec![StructField::new("status", AttributeType::string()).with_provider_name("Status")];
+        let attr_type = AttributeType::struct_("VersioningConfiguration".to_string(), fields);
 
         // Simulate AWS API response (JSON object)
         let aws_json = serde_json::json!({ "Status": "Enabled" });
@@ -804,19 +815,19 @@ mod tests {
 
     #[test]
     fn test_dsl_value_to_aws_preserves_underscores_in_enum_values() {
-        let attr_type = AttributeType::StringEnum {
-            name: "LogGroupClass".to_string(),
-            values: vec![
+        let attr_type = AttributeType::string_enum(
+            "LogGroupClass".to_string(),
+            vec![
                 "STANDARD".to_string(),
                 "INFREQUENT_ACCESS".to_string(),
                 "DELIVERY".to_string(),
             ],
-            identity: Some(carina_core::schema::string_enum_identity(
+            Some(carina_core::schema::string_enum_identity(
                 "LogGroupClass",
                 Some("awscc.logs.LogGroup"),
             )),
-            dsl_aliases: vec![],
-        };
+            vec![],
+        );
         let value = Value::Concrete(ConcreteValue::String(
             "awscc.logs.LogGroup.LogGroupClass.INFREQUENT_ACCESS".to_string(),
         ));
@@ -826,16 +837,12 @@ mod tests {
 
     #[test]
     fn test_dsl_value_to_aws_converts_underscores_for_region() {
-        let attr_type = AttributeType::CustomEnum {
-            identity: carina_core::schema::TypeIdentity::new(
-                Some("awscc"),
-                Vec::<String>::new(),
-                "Region",
-            ),
-            base: Box::new(AttributeType::String),
-            validate: noop_validator(),
-            to_dsl: None,
-        };
+        let attr_type = AttributeType::custom_enum(
+            carina_core::schema::TypeIdentity::new(Some("awscc"), Vec::<String>::new(), "Region"),
+            AttributeType::string(),
+            noop_validator(),
+            None,
+        );
         let value = Value::Concrete(ConcreteValue::String(
             "awscc.Region.ap_northeast_1".to_string(),
         ));
@@ -845,15 +852,15 @@ mod tests {
 
     #[test]
     fn test_dsl_value_to_aws_list_string_enum() {
-        let inner = AttributeType::StringEnum {
-            name: "AllowedMethod".to_string(),
-            values: vec!["GET".to_string(), "PUT".to_string(), "DELETE".to_string()],
-            identity: Some(carina_core::schema::string_enum_identity(
+        let inner = AttributeType::string_enum(
+            "AllowedMethod".to_string(),
+            vec!["GET".to_string(), "PUT".to_string(), "DELETE".to_string()],
+            Some(carina_core::schema::string_enum_identity(
                 "AllowedMethod",
                 Some("awscc.s3.Bucket"),
             )),
-            dsl_aliases: vec![],
-        };
+            vec![],
+        );
         let attr_type = AttributeType::list(inner);
         let value = Value::Concrete(ConcreteValue::List(vec![
             Value::Concrete(ConcreteValue::String(
@@ -869,15 +876,15 @@ mod tests {
 
     #[test]
     fn test_aws_value_to_dsl_list_string_enum() {
-        let inner = AttributeType::StringEnum {
-            name: "AllowedMethod".to_string(),
-            values: vec!["GET".to_string(), "PUT".to_string(), "DELETE".to_string()],
-            identity: Some(carina_core::schema::string_enum_identity(
+        let inner = AttributeType::string_enum(
+            "AllowedMethod".to_string(),
+            vec!["GET".to_string(), "PUT".to_string(), "DELETE".to_string()],
+            Some(carina_core::schema::string_enum_identity(
                 "AllowedMethod",
                 Some("awscc.s3.Bucket"),
             )),
-            dsl_aliases: vec![],
-        };
+            vec![],
+        );
         let attr_type = AttributeType::list(inner);
         let json_val = json!(["GET", "PUT"]);
         let result = aws_value_to_dsl("allowed_methods", &json_val, &attr_type, "s3.Bucket");
@@ -892,15 +899,15 @@ mod tests {
 
     #[test]
     fn test_dsl_value_to_aws_list_string_enum_roundtrip() {
-        let inner = AttributeType::StringEnum {
-            name: "AllowedMethod".to_string(),
-            values: vec!["GET".to_string(), "PUT".to_string()],
-            identity: Some(carina_core::schema::string_enum_identity(
+        let inner = AttributeType::string_enum(
+            "AllowedMethod".to_string(),
+            vec!["GET".to_string(), "PUT".to_string()],
+            Some(carina_core::schema::string_enum_identity(
                 "AllowedMethod",
                 Some("awscc.s3.Bucket"),
             )),
-            dsl_aliases: vec![],
-        };
+            vec![],
+        );
         let attr_type = AttributeType::list(inner);
 
         let aws_json = json!(["GET", "PUT"]);
@@ -913,17 +920,17 @@ mod tests {
 
     #[test]
     fn test_dsl_value_to_aws_union_with_string_enum() {
-        let attr_type = AttributeType::Union(vec![
-            AttributeType::StringEnum {
-                name: "Protocol".to_string(),
-                values: vec!["tcp".to_string(), "udp".to_string()],
-                identity: Some(carina_core::schema::string_enum_identity(
+        let attr_type = AttributeType::union(vec![
+            AttributeType::string_enum(
+                "Protocol".to_string(),
+                vec!["tcp".to_string(), "udp".to_string()],
+                Some(carina_core::schema::string_enum_identity(
                     "Protocol",
                     Some("awscc.ec2.Sg"),
                 )),
-                dsl_aliases: vec![],
-            },
-            AttributeType::String,
+                vec![],
+            ),
+            AttributeType::string(),
         ]);
         let value = Value::Concrete(ConcreteValue::String(
             "awscc.ec2.Sg.Protocol.tcp".to_string(),
@@ -934,7 +941,7 @@ mod tests {
 
     #[test]
     fn test_dsl_value_to_aws_map_preserves_user_keys() {
-        let attr_type = AttributeType::map(AttributeType::String);
+        let attr_type = AttributeType::map(AttributeType::string());
 
         let mut map = IndexMap::new();
         map.insert(
@@ -962,15 +969,15 @@ mod tests {
 
     #[test]
     fn test_dsl_value_to_aws_map_recurses_into_values() {
-        let inner_type = AttributeType::StringEnum {
-            name: "Status".to_string(),
-            values: vec!["Active".to_string(), "Inactive".to_string()],
-            identity: Some(carina_core::schema::string_enum_identity(
+        let inner_type = AttributeType::string_enum(
+            "Status".to_string(),
+            vec!["Active".to_string(), "Inactive".to_string()],
+            Some(carina_core::schema::string_enum_identity(
                 "Status",
                 Some("awscc.test.resource"),
             )),
-            dsl_aliases: vec![],
-        };
+            vec![],
+        );
         let attr_type = AttributeType::map(inner_type);
 
         let mut map = IndexMap::new();
@@ -994,7 +1001,7 @@ mod tests {
 
     #[test]
     fn test_aws_value_to_dsl_map_preserves_user_keys() {
-        let attr_type = AttributeType::map(AttributeType::String);
+        let attr_type = AttributeType::map(AttributeType::string());
 
         let aws_json = json!({
             "MyCustomKey": "value1",
@@ -1025,17 +1032,17 @@ mod tests {
 
     #[test]
     fn test_aws_value_to_dsl_union_with_string_enum() {
-        let attr_type = AttributeType::Union(vec![
-            AttributeType::StringEnum {
-                name: "Protocol".to_string(),
-                values: vec!["tcp".to_string(), "udp".to_string()],
-                identity: Some(carina_core::schema::string_enum_identity(
+        let attr_type = AttributeType::union(vec![
+            AttributeType::string_enum(
+                "Protocol".to_string(),
+                vec!["tcp".to_string(), "udp".to_string()],
+                Some(carina_core::schema::string_enum_identity(
                     "Protocol",
                     Some("awscc.ec2.Sg"),
                 )),
-                dsl_aliases: vec![],
-            },
-            AttributeType::String,
+                vec![],
+            ),
+            AttributeType::string(),
         ]);
         let json_val = json!("tcp");
         let result = aws_value_to_dsl("protocol", &json_val, &attr_type, "ec2.Sg");
@@ -1047,17 +1054,17 @@ mod tests {
 
     #[test]
     fn test_aws_value_to_dsl_union_fallback() {
-        let attr_type = AttributeType::Union(vec![
-            AttributeType::StringEnum {
-                name: "Protocol".to_string(),
-                values: vec!["tcp".to_string(), "udp".to_string()],
-                identity: Some(carina_core::schema::string_enum_identity(
+        let attr_type = AttributeType::union(vec![
+            AttributeType::string_enum(
+                "Protocol".to_string(),
+                vec!["tcp".to_string(), "udp".to_string()],
+                Some(carina_core::schema::string_enum_identity(
                     "Protocol",
                     Some("awscc.ec2.Sg"),
                 )),
-                dsl_aliases: vec![],
-            },
-            AttributeType::Int,
+                vec![],
+            ),
+            AttributeType::int(),
         ]);
         let json_val = json!(42);
         let result = aws_value_to_dsl("protocol", &json_val, &attr_type, "ec2.Sg");
@@ -1409,10 +1416,10 @@ mod tests {
                 .required()
                 .with_provider_name("RegionName"),
         ];
-        let attr_type = AttributeType::list(AttributeType::Struct {
-            name: "IpamOperatingRegion".to_string(),
+        let attr_type = AttributeType::list(AttributeType::struct_(
+            "IpamOperatingRegion".to_string(),
             fields,
-        });
+        ));
         let json_val = json!([{"RegionName": "ap-northeast-1"}]);
 
         let result = aws_value_to_dsl("operating_regions", &json_val, &attr_type, "ec2.Ipam");
@@ -1427,15 +1434,15 @@ mod tests {
 
     #[test]
     fn test_aws_value_to_dsl_enum_value_with_dot() {
-        let attr_type = AttributeType::StringEnum {
-            name: "Type".to_string(),
-            values: vec!["ipsec.1".to_string()],
-            identity: Some(carina_core::schema::string_enum_identity(
+        let attr_type = AttributeType::string_enum(
+            "Type".to_string(),
+            vec!["ipsec.1".to_string()],
+            Some(carina_core::schema::string_enum_identity(
                 "Type",
                 Some("awscc.ec2.VpnGateway"),
             )),
-            dsl_aliases: vec![],
-        };
+            vec![],
+        );
         let json_val = json!("ipsec.1");
 
         let result = aws_value_to_dsl("type", &json_val, &attr_type, "ec2.VpnGateway");
@@ -1451,15 +1458,15 @@ mod tests {
 
     #[test]
     fn test_dsl_value_to_aws_enum_value_with_dot() {
-        let attr_type = AttributeType::StringEnum {
-            name: "Type".to_string(),
-            values: vec!["ipsec.1".to_string()],
-            identity: Some(carina_core::schema::string_enum_identity(
+        let attr_type = AttributeType::string_enum(
+            "Type".to_string(),
+            vec!["ipsec.1".to_string()],
+            Some(carina_core::schema::string_enum_identity(
                 "Type",
                 Some("awscc.ec2.VpnGateway"),
             )),
-            dsl_aliases: vec![],
-        };
+            vec![],
+        );
         let value = Value::Concrete(ConcreteValue::String(
             "awscc.ec2.VpnGateway.Type.ipsec.1".to_string(),
         ));
@@ -1470,15 +1477,15 @@ mod tests {
 
     #[test]
     fn test_dsl_value_to_aws_enum_plain_dot_value() {
-        let attr_type = AttributeType::StringEnum {
-            name: "Type".to_string(),
-            values: vec!["ipsec.1".to_string()],
-            identity: Some(carina_core::schema::string_enum_identity(
+        let attr_type = AttributeType::string_enum(
+            "Type".to_string(),
+            vec!["ipsec.1".to_string()],
+            Some(carina_core::schema::string_enum_identity(
                 "Type",
                 Some("awscc.ec2.VpnGateway"),
             )),
-            dsl_aliases: vec![],
-        };
+            vec![],
+        );
         let value = Value::Concrete(ConcreteValue::String("ipsec.1".to_string()));
 
         let result = dsl_value_to_aws(&value, &attr_type, "ec2.VpnGateway", "type");
@@ -1487,15 +1494,15 @@ mod tests {
 
     #[test]
     fn test_enum_round_trip_with_dotted_value() {
-        let attr_type = AttributeType::StringEnum {
-            name: "Type".to_string(),
-            values: vec!["ipsec.1".to_string()],
-            identity: Some(carina_core::schema::string_enum_identity(
+        let attr_type = AttributeType::string_enum(
+            "Type".to_string(),
+            vec!["ipsec.1".to_string()],
+            Some(carina_core::schema::string_enum_identity(
                 "Type",
                 Some("awscc.ec2.VpnGateway"),
             )),
-            dsl_aliases: vec![],
-        };
+            vec![],
+        );
 
         let aws_val = json!("ipsec.1");
         let dsl_val = aws_value_to_dsl("type", &aws_val, &attr_type, "ec2.VpnGateway");
@@ -1567,7 +1574,7 @@ mod tests {
     #[test]
     fn test_aws_value_to_dsl_list_with_null_drops_null_items() {
         let json = serde_json::json!(["a", null, "b"]);
-        let attr_type = AttributeType::list(AttributeType::String);
+        let attr_type = AttributeType::list(AttributeType::string());
         let result = aws_value_to_dsl("test_attr", &json, &attr_type, "test.resource");
         let expected = Value::Concrete(ConcreteValue::List(vec![
             Value::Concrete(ConcreteValue::String("a".to_string())),
@@ -1739,19 +1746,17 @@ mod tests {
         // at this position; resolve through `schema.defs` so the test
         // still sees the underlying Struct.
         let defs = &config.schema.defs;
-        let oc_resolved = ownership_controls.attr_type.resolve_refs(defs);
-        let AttributeType::Struct { fields, .. } = oc_resolved else {
+        let Shape::Struct { fields, .. } = ownership_controls.attr_type.shape(defs) else {
             panic!("ownership_controls is a Struct");
         };
         let rules = fields.iter().find(|f| f.name == "rules").unwrap();
-        let AttributeType::List { inner, .. } = &rules.field_type else {
+        let Shape::List { inner, .. } = rules.field_type.shape(defs) else {
             panic!("rules is a List");
         };
-        let inner_resolved = inner.as_ref().resolve_refs(defs);
-        let AttributeType::Struct {
+        let Shape::Struct {
             fields: rule_fields,
             ..
-        } = inner_resolved
+        } = inner.shape(defs)
         else {
             panic!("rules.inner is a Struct");
         };
@@ -1827,7 +1832,7 @@ mod tests {
             Value::Concrete(ConcreteValue::Float(f64::NAN)),
             Value::Concrete(ConcreteValue::Float(2.0)),
         ]));
-        let attr_type = AttributeType::list(AttributeType::Float);
+        let attr_type = AttributeType::list(AttributeType::float());
         let result = dsl_value_to_aws(&value, &attr_type, "test.resource", "test_attr");
         let expected = serde_json::json!([1.0, 2.0]);
         assert_eq!(result, Some(expected));
@@ -1835,14 +1840,14 @@ mod tests {
 
     #[test]
     fn test_aws_value_to_dsl_custom_to_dsl_strips_trailing_dot() {
-        let attr_type = AttributeType::Custom {
-            identity: Some(carina_core::schema::TypeIdentity::bare("DnsName")),
-            pattern: None,
-            length: None,
-            base: Box::new(AttributeType::String),
-            validate: noop_validator(),
-            to_dsl: Some(|s: &str| s.strip_suffix('.').unwrap_or(s).to_string()),
-        };
+        let attr_type = AttributeType::custom(
+            Some(carina_core::schema::TypeIdentity::bare("DnsName")),
+            AttributeType::string(),
+            None,
+            None,
+            noop_validator(),
+            Some(|s: &str| s.strip_suffix('.').unwrap_or(s).to_string()),
+        );
         let json_val = serde_json::json!("carina-rs.dev.");
         let result = aws_value_to_dsl("name", &json_val, &attr_type, "route53.HostedZone");
         assert_eq!(
@@ -1855,14 +1860,14 @@ mod tests {
 
     #[test]
     fn test_aws_value_to_dsl_custom_without_to_dsl_passes_through() {
-        let attr_type = AttributeType::Custom {
-            identity: Some(carina_core::schema::TypeIdentity::bare("DnsName")),
-            pattern: None,
-            length: None,
-            base: Box::new(AttributeType::String),
-            validate: noop_validator(),
-            to_dsl: None,
-        };
+        let attr_type = AttributeType::custom(
+            Some(carina_core::schema::TypeIdentity::bare("DnsName")),
+            AttributeType::string(),
+            None,
+            None,
+            noop_validator(),
+            None,
+        );
         let json_val = serde_json::json!("carina-rs.dev.");
         let result = aws_value_to_dsl("name", &json_val, &attr_type, "route53.HostedZone");
         assert_eq!(

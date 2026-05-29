@@ -16,7 +16,7 @@ pub fn ec2_vpc_gateway_attachment_config() -> AwsccSchemaConfig {
         schema: ResourceSchema::new("ec2.VpcGatewayAttachment")
         .with_description("Resource Type definition for AWS::EC2::VPCGatewayAttachment")
         .attribute(
-            AttributeSchema::new("attachment_type", AttributeType::String)
+            AttributeSchema::new("attachment_type", AttributeType::string())
                 .read_only()
                 .with_description("Used to identify if this resource is an Internet Gateway or Vpn Gateway Attachment  (read-only)")
                 .with_provider_name("AttachmentType"),

@@ -64,26 +64,12 @@ pub fn identitystore_group_config() -> AwsccSchemaConfig {
         schema: ResourceSchema::new("identitystore.Group")
         .with_description("Resource Type definition for AWS::IdentityStore::Group")
         .attribute(
-            AttributeSchema::new("description", AttributeType::Custom {
-                identity: None,
-                pattern: Some("^[\\p{L}\\p{M}\\p{S}\\p{N}\\p{P}\\t\\n\\r  　]+$".to_string()),
-                length: Some((Some(1), Some(1024))),
-                base: Box::new(AttributeType::String),
-                validate: legacy_validator(validate_string_pattern_3e29f1c0497511f3_len_1_1024),
-                to_dsl: None,
-            })
+            AttributeSchema::new("description", AttributeType::custom(None, AttributeType::string(), Some("^[\\p{L}\\p{M}\\p{S}\\p{N}\\p{P}\\t\\n\\r  　]+$".to_string()), Some((Some(1), Some(1024))), legacy_validator(validate_string_pattern_3e29f1c0497511f3_len_1_1024), None))
                 .with_description("A string containing the description of the group.")
                 .with_provider_name("Description"),
         )
         .attribute(
-            AttributeSchema::new("display_name", AttributeType::Custom {
-                identity: None,
-                pattern: Some("^[\\p{L}\\p{M}\\p{S}\\p{N}\\p{P}\\t\\n\\r  ]+$".to_string()),
-                length: Some((Some(1), Some(1024))),
-                base: Box::new(AttributeType::String),
-                validate: legacy_validator(validate_string_pattern_a301e45ae2f7df12_len_1_1024),
-                to_dsl: None,
-            })
+            AttributeSchema::new("display_name", AttributeType::custom(None, AttributeType::string(), Some("^[\\p{L}\\p{M}\\p{S}\\p{N}\\p{P}\\t\\n\\r  ]+$".to_string()), Some((Some(1), Some(1024))), legacy_validator(validate_string_pattern_a301e45ae2f7df12_len_1_1024), None))
                 .required()
                 .with_description("A string containing the name of the group. This value is commonly displayed when the group is referenced.")
                 .with_provider_name("DisplayName"),

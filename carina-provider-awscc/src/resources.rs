@@ -56,57 +56,112 @@ mod tests {
     /// convert `= [{...}]` syntax into block syntax.
     #[test]
     fn all_list_struct_attributes_have_block_name() {
-        use carina_core::schema::{AttributeSchema, AttributeType, StructField};
+        use carina_core::schema::{AttributeSchema, AttributeType, RawShape, StructField};
 
         /// Collect missing block_names from an AttributeType, recursing into Structs.
-        fn check_type(attr_type: &AttributeType, path: &str, missing: &mut Vec<String>) {
-            match attr_type {
-                AttributeType::Struct { fields, .. } => {
-                    for field in fields {
-                        check_field(field, path, missing);
+        /// Uses `raw_shape()` (Ref-preserving) plus an explicit `seen` set to
+        /// terminate on cyclic CFN schemas (WAFv2 WebACL.Statement) — `shape(defs)`
+        /// would auto-resolve Ref and infinite-loop into a stack overflow on a
+        /// self-referential def.
+        fn check_type(
+            attr_type: &AttributeType,
+            path: &str,
+            missing: &mut Vec<String>,
+            defs: &std::collections::BTreeMap<String, AttributeType>,
+            seen: &mut std::collections::HashSet<String>,
+        ) {
+            match attr_type.raw_shape() {
+                RawShape::Ref(name) => {
+                    if seen.insert(name.to_string())
+                        && let Some(target) = defs.get(name)
+                    {
+                        check_type(target, path, missing, defs, seen);
                     }
                 }
-                AttributeType::List { inner, .. } => {
-                    check_type(inner, path, missing);
+                RawShape::Struct { fields, .. } => {
+                    for field in fields {
+                        check_field(field, path, missing, defs, seen);
+                    }
                 }
-                AttributeType::Map { value: inner, .. } => {
-                    check_type(inner, path, missing);
+                RawShape::List { inner, .. } => {
+                    check_type(inner, path, missing, defs, seen);
+                }
+                RawShape::Map { value: inner, .. } => {
+                    check_type(inner, path, missing, defs, seen);
                 }
                 _ => {}
             }
         }
 
         /// Check a StructField: if it is List<Struct>, it must have block_name.
-        fn check_field(field: &StructField, parent_path: &str, missing: &mut Vec<String>) {
+        /// `is_list_of_struct` peels a single Ref hop on the inner so a
+        /// `List<Ref(Foo)>` whose `Foo` is a Struct still triggers the check.
+        fn check_field(
+            field: &StructField,
+            parent_path: &str,
+            missing: &mut Vec<String>,
+            defs: &std::collections::BTreeMap<String, AttributeType>,
+            seen: &mut std::collections::HashSet<String>,
+        ) {
             let field_path = format!("{}.{}", parent_path, field.name);
-            if let AttributeType::List { inner, .. } = &field.field_type
-                && matches!(inner.as_ref(), AttributeType::Struct { .. })
-                && field.block_name.is_none()
-            {
+            if is_list_of_struct(&field.field_type, defs) && field.block_name.is_none() {
                 missing.push(field_path.clone());
             }
             // Recurse into the field type regardless
-            check_type(&field.field_type, &field_path, missing);
+            check_type(&field.field_type, &field_path, missing, defs, seen);
         }
 
         /// Check a top-level AttributeSchema: if it is List<Struct>, it must have block_name.
-        fn check_attr(attr: &AttributeSchema, resource_type: &str, missing: &mut Vec<String>) {
+        fn check_attr(
+            attr: &AttributeSchema,
+            resource_type: &str,
+            missing: &mut Vec<String>,
+            defs: &std::collections::BTreeMap<String, AttributeType>,
+        ) {
             let path = format!("{}.{}", resource_type, attr.name);
-            if let AttributeType::List { inner, .. } = &attr.attr_type
-                && matches!(inner.as_ref(), AttributeType::Struct { .. })
-                && attr.block_name.is_none()
-            {
+            if is_list_of_struct(&attr.attr_type, defs) && attr.block_name.is_none() {
                 missing.push(path.clone());
             }
             // Recurse into the attribute type regardless
-            check_type(&attr.attr_type, &path, missing);
+            let mut seen = std::collections::HashSet::new();
+            check_type(&attr.attr_type, &path, missing, defs, &mut seen);
+        }
+
+        /// True iff `at` resolves to `List<inner>` where `inner` (peeling one
+        /// Ref hop) resolves to a Struct. The single-Ref peel mirrors the
+        /// pre-carina#3349 walker that matched `inner.as_ref()` directly
+        /// against `AttributeType::Struct`.
+        fn is_list_of_struct(
+            at: &AttributeType,
+            defs: &std::collections::BTreeMap<String, AttributeType>,
+        ) -> bool {
+            let peeled = match at.raw_shape() {
+                RawShape::Ref(name) => match defs.get(name) {
+                    Some(target) => target.raw_shape(),
+                    None => return false,
+                },
+                other => other,
+            };
+            let RawShape::List { inner, .. } = peeled else {
+                return false;
+            };
+            matches!(
+                match inner.raw_shape() {
+                    RawShape::Ref(name) => match defs.get(name) {
+                        Some(target) => target.raw_shape(),
+                        None => return false,
+                    },
+                    other => other,
+                },
+                RawShape::Struct { .. }
+            )
         }
 
         let mut missing = Vec::new();
         for config in configs() {
             let resource_type = &config.schema.resource_type;
             for attr in config.schema.attributes.values() {
-                check_attr(attr, resource_type, &mut missing);
+                check_attr(attr, resource_type, &mut missing, &config.schema.defs);
             }
         }
 

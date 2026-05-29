@@ -57,7 +57,7 @@ pub fn ec2_security_group_egress_config() -> AwsccSchemaConfig {
                 .with_provider_name("CidrIpv6"),
         )
         .attribute(
-            AttributeSchema::new("description", AttributeType::String)
+            AttributeSchema::new("description", AttributeType::string())
                 .with_description("The description of an egress (outbound) security group rule. Constraints: Up to 255 characters in length. Allowed characters are a-z, A-Z, 0-9, spaces, and ._-:/()#,@[]+=;{}!$*")
                 .with_provider_name("Description"),
         )
@@ -74,14 +74,7 @@ pub fn ec2_security_group_egress_config() -> AwsccSchemaConfig {
                 .with_provider_name("DestinationSecurityGroupId"),
         )
         .attribute(
-            AttributeSchema::new("from_port", AttributeType::Custom {
-                identity: None,
-                pattern: None,
-                length: None,
-                base: Box::new(AttributeType::Int),
-                validate: legacy_validator(validate_from_port_range),
-                to_dsl: None,
-            })
+            AttributeSchema::new("from_port", AttributeType::custom(None, AttributeType::int(), None, None, legacy_validator(validate_from_port_range), None))
                 .create_only()
                 .with_description("If the protocol is TCP or UDP, this is the start of the port range. If the protocol is ICMP or ICMPv6, this is the ICMP type or -1 (all ICMP types).")
                 .with_provider_name("FromPort"),
@@ -94,32 +87,20 @@ pub fn ec2_security_group_egress_config() -> AwsccSchemaConfig {
                 .with_provider_name("GroupId"),
         )
         .attribute(
-            AttributeSchema::new("id", AttributeType::String)
+            AttributeSchema::new("id", AttributeType::string())
                 .read_only()
                 .with_description(" (read-only)")
                 .with_provider_name("Id"),
         )
         .attribute(
-            AttributeSchema::new("ip_protocol", AttributeType::StringEnum {
-                name: "IpProtocol".to_string(),
-                values: vec!["tcp".to_string(), "udp".to_string(), "icmp".to_string(), "icmpv6".to_string(), "-1".to_string(), "all".to_string()],
-                identity: Some(carina_core::schema::string_enum_identity("IpProtocol", Some("awscc.ec2.SecurityGroupEgress"))),
-                dsl_aliases: vec![("tcp".to_string(), "tcp".to_string()), ("udp".to_string(), "udp".to_string()), ("icmp".to_string(), "icmp".to_string()), ("icmpv6".to_string(), "icmpv6".to_string()), ("-1".to_string(), "all".to_string()), ("all".to_string(), "all".to_string())],
-            })
+            AttributeSchema::new("ip_protocol", AttributeType::string_enum("IpProtocol".to_string(), vec!["tcp".to_string(), "udp".to_string(), "icmp".to_string(), "icmpv6".to_string(), "-1".to_string(), "all".to_string()], Some(carina_core::schema::string_enum_identity("IpProtocol", Some("awscc.ec2.SecurityGroupEgress"))), vec![("tcp".to_string(), "tcp".to_string()), ("udp".to_string(), "udp".to_string()), ("icmp".to_string(), "icmp".to_string()), ("icmpv6".to_string(), "icmpv6".to_string()), ("-1".to_string(), "all".to_string()), ("all".to_string(), "all".to_string())]))
                 .required()
                 .create_only()
                 .with_description("The IP protocol name (``tcp``, ``udp``, ``icmp``, ``icmpv6``) or number (see [Protocol Numbers](https://docs.aws.amazon.com/http://www.iana.org/assignments/protocol-numbers/protocol-numbers.xhtml)). Use ``-1`` to specify all protocols. When authorizing security group rules, specifying ``-1`` or a protocol number other than ``tcp``, ``udp``, ``icmp``, or ``icmpv6`` allows traffic on all ports, regardless of any port range you specify. For ``tcp``, ``udp``, and ``icmp``, you must specify a port range. For ``icmpv6``, the port range is optional; if you omit the port range, traffic for all types and codes is allowed.")
                 .with_provider_name("IpProtocol"),
         )
         .attribute(
-            AttributeSchema::new("to_port", AttributeType::Custom {
-                identity: None,
-                pattern: None,
-                length: None,
-                base: Box::new(AttributeType::Int),
-                validate: legacy_validator(validate_to_port_range),
-                to_dsl: None,
-            })
+            AttributeSchema::new("to_port", AttributeType::custom(None, AttributeType::int(), None, None, legacy_validator(validate_to_port_range), None))
                 .create_only()
                 .with_description("If the protocol is TCP or UDP, this is the end of the port range. If the protocol is ICMP or ICMPv6, this is the ICMP code or -1 (all ICMP codes). If the start port is -1 (all ICMP types), then the end port must be -1 (all ICMP codes).")
                 .with_provider_name("ToPort"),

@@ -77,14 +77,14 @@ pub fn iam_oidc_provider_config() -> AwsccSchemaConfig {
             .attribute(
                 AttributeSchema::new(
                     "client_id_list",
-                    AttributeType::unordered_list(AttributeType::Custom {
-                        identity: None,
-                        pattern: None,
-                        length: Some((Some(1), Some(255))),
-                        base: Box::new(AttributeType::String),
-                        validate: legacy_validator(validate_string_length_1_255),
-                        to_dsl: None,
-                    }),
+                    AttributeType::unordered_list(AttributeType::custom(
+                        None,
+                        AttributeType::string(),
+                        None,
+                        Some((Some(1), Some(255))),
+                        legacy_validator(validate_string_length_1_255),
+                        None,
+                    )),
                 )
                 .with_provider_name("ClientIdList"),
             )
@@ -92,37 +92,35 @@ pub fn iam_oidc_provider_config() -> AwsccSchemaConfig {
             .attribute(
                 AttributeSchema::new(
                     "thumbprint_list",
-                    AttributeType::Custom {
-                        identity: None,
-                        pattern: None,
-                        length: None,
-                        base: Box::new(AttributeType::unordered_list(AttributeType::Custom {
-                            identity: None,
-                            pattern: Some("[0-9A-Fa-f]{40}".to_string()),
-                            length: Some((Some(40), Some(40))),
-                            base: Box::new(AttributeType::String),
-                            validate: legacy_validator(
-                                validate_string_pattern_57ee0c44b504b839_len_40_40,
-                            ),
-                            to_dsl: None,
-                        })),
-                        validate: legacy_validator(validate_list_items_max_5),
-                        to_dsl: None,
-                    },
+                    AttributeType::custom(
+                        None,
+                        AttributeType::unordered_list(AttributeType::custom(
+                            None,
+                            AttributeType::string(),
+                            Some("[0-9A-Fa-f]{40}".to_string()),
+                            Some((Some(40), Some(40))),
+                            legacy_validator(validate_string_pattern_57ee0c44b504b839_len_40_40),
+                            None,
+                        )),
+                        None,
+                        None,
+                        legacy_validator(validate_list_items_max_5),
+                        None,
+                    ),
                 )
                 .with_provider_name("ThumbprintList"),
             )
             .attribute(
                 AttributeSchema::new(
                     "url",
-                    AttributeType::Custom {
-                        identity: None,
-                        pattern: None,
-                        length: Some((Some(1), Some(255))),
-                        base: Box::new(AttributeType::String),
-                        validate: legacy_validator(validate_string_length_1_255),
-                        to_dsl: None,
-                    },
+                    AttributeType::custom(
+                        None,
+                        AttributeType::string(),
+                        None,
+                        Some((Some(1), Some(255))),
+                        legacy_validator(validate_string_length_1_255),
+                        None,
+                    ),
                 )
                 .create_only()
                 .with_provider_name("Url"),

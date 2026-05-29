@@ -190,51 +190,18 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
         schema: ResourceSchema::new("sso.PermissionSet")
         .with_description("Resource Type definition for SSO PermissionSet")
         .attribute(
-            AttributeSchema::new("customer_managed_policy_references", AttributeType::Custom {
-                identity: None,
-                pattern: None,
-                length: None,
-                base: Box::new(AttributeType::unordered_list(AttributeType::Struct {
-                    name: "CustomerManagedPolicyReference".to_string(),
-                    fields: vec![
-                    StructField::new("name", AttributeType::Custom {
-                identity: None,
-                pattern: Some("[\\w+=,.@-]+".to_string()),
-                length: Some((Some(1), Some(128))),
-                base: Box::new(AttributeType::String),
-                validate: legacy_validator(validate_string_pattern_9b83f4f8f3673df5_len_1_128),
-                to_dsl: None,
-            }).required().with_provider_name("Name"),
-                    StructField::new("path", AttributeType::Custom {
-                identity: None,
-                pattern: Some("((/[A-Za-z0-9\\.,\\+@=_-]+)*)/".to_string()),
-                length: Some((Some(1), Some(512))),
-                base: Box::new(AttributeType::String),
-                validate: legacy_validator(validate_string_pattern_b84fa12576539ca9_len_1_512),
-                to_dsl: None,
-            }).with_provider_name("Path")
-                    ],
-                })),
-                validate: legacy_validator(validate_list_items_max_20),
-                to_dsl: None,
-            })
+            AttributeSchema::new("customer_managed_policy_references", AttributeType::custom(None, AttributeType::unordered_list(AttributeType::struct_("CustomerManagedPolicyReference".to_string(), vec![StructField::new("name", AttributeType::custom(None, AttributeType::string(), Some("[\\w+=,.@-]+".to_string()), Some((Some(1), Some(128))), legacy_validator(validate_string_pattern_9b83f4f8f3673df5_len_1_128), None)).required().with_provider_name("Name"),
+                    StructField::new("path", AttributeType::custom(None, AttributeType::string(), Some("((/[A-Za-z0-9\\.,\\+@=_-]+)*)/".to_string()), Some((Some(1), Some(512))), legacy_validator(validate_string_pattern_b84fa12576539ca9_len_1_512), None)).with_provider_name("Path")])), None, None, legacy_validator(validate_list_items_max_20), None))
                 .with_provider_name("CustomerManagedPolicyReferences")
                 .with_block_name("customer_managed_policy_reference"),
         )
         .attribute(
-            AttributeSchema::new("description", AttributeType::Custom {
-                identity: None,
-                pattern: Some("[\\u0009\\u000A\\u000D\\u0020-\\u007E\\u00A1-\\u00FF]*".to_string()),
-                length: Some((Some(1), Some(700))),
-                base: Box::new(AttributeType::String),
-                validate: legacy_validator(validate_string_pattern_9863be410e005e12_len_1_700),
-                to_dsl: None,
-            })
+            AttributeSchema::new("description", AttributeType::custom(None, AttributeType::string(), Some("[\\u0009\\u000A\\u000D\\u0020-\\u007E\\u00A1-\\u00FF]*".to_string()), Some((Some(1), Some(700))), legacy_validator(validate_string_pattern_9863be410e005e12_len_1_700), None))
                 .with_description("The permission set description.")
                 .with_provider_name("Description"),
         )
         .attribute(
-            AttributeSchema::new("inline_policy", AttributeType::map(AttributeType::String))
+            AttributeSchema::new("inline_policy", AttributeType::map(AttributeType::string()))
                 .with_description("The inline policy to put in permission set.")
                 .with_provider_name("InlinePolicy"),
         )
@@ -246,25 +213,11 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
                 .with_provider_name("InstanceArn"),
         )
         .attribute(
-            AttributeSchema::new("managed_policies", AttributeType::Custom {
-                identity: None,
-                pattern: None,
-                length: None,
-                base: Box::new(AttributeType::unordered_list(AttributeType::String)),
-                validate: legacy_validator(validate_list_items_max_20),
-                to_dsl: None,
-            })
+            AttributeSchema::new("managed_policies", AttributeType::custom(None, AttributeType::unordered_list(AttributeType::string()), None, None, legacy_validator(validate_list_items_max_20), None))
                 .with_provider_name("ManagedPolicies"),
         )
         .attribute(
-            AttributeSchema::new("name", AttributeType::Custom {
-                identity: None,
-                pattern: Some("[\\w+=,.@-]+".to_string()),
-                length: Some((Some(1), Some(32))),
-                base: Box::new(AttributeType::String),
-                validate: legacy_validator(validate_string_pattern_9b83f4f8f3673df5_len_1_32),
-                to_dsl: None,
-            })
+            AttributeSchema::new("name", AttributeType::custom(None, AttributeType::string(), Some("[\\w+=,.@-]+".to_string()), Some((Some(1), Some(32))), legacy_validator(validate_string_pattern_9b83f4f8f3673df5_len_1_32), None))
                 .required()
                 .create_only()
                 .with_description("The name you want to assign to this permission set.")
@@ -277,30 +230,16 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
                 .with_provider_name("PermissionSetArn"),
         )
         .attribute(
-            AttributeSchema::new("permissions_boundary", AttributeType::Ref("PermissionsBoundary".to_string()))
+            AttributeSchema::new("permissions_boundary", AttributeType::ref_("PermissionsBoundary".to_string()))
                 .with_provider_name("PermissionsBoundary"),
         )
         .attribute(
-            AttributeSchema::new("relay_state_type", AttributeType::Custom {
-                identity: None,
-                pattern: Some("[a-zA-Z0-9&amp;$@#\\/%?=~\\-_'&quot;|!:,.;*+\\[\\]\\ \\(\\)\\{\\}]+".to_string()),
-                length: Some((Some(1), Some(240))),
-                base: Box::new(AttributeType::String),
-                validate: legacy_validator(validate_string_pattern_4d6d630589930649_len_1_240),
-                to_dsl: None,
-            })
+            AttributeSchema::new("relay_state_type", AttributeType::custom(None, AttributeType::string(), Some("[a-zA-Z0-9&amp;$@#\\/%?=~\\-_'&quot;|!:,.;*+\\[\\]\\ \\(\\)\\{\\}]+".to_string()), Some((Some(1), Some(240))), legacy_validator(validate_string_pattern_4d6d630589930649_len_1_240), None))
                 .with_description("The relay state URL that redirect links to any service in the AWS Management Console.")
                 .with_provider_name("RelayStateType"),
         )
         .attribute(
-            AttributeSchema::new("session_duration", AttributeType::Custom {
-                identity: None,
-                pattern: Some("^(-?)P(?=\\d|T\\d)(?:(\\d+)Y)?(?:(\\d+)M)?(?:(\\d+)([DW]))?(?:T(?:(\\d+)H)?(?:(\\d+)M)?(?:(\\d+(?:\\.\\d+)?)S)?)?$".to_string()),
-                length: Some((Some(1), Some(100))),
-                base: Box::new(AttributeType::String),
-                validate: legacy_validator(validate_string_pattern_1e58d8243b46a2f1_len_1_100),
-                to_dsl: None,
-            })
+            AttributeSchema::new("session_duration", AttributeType::custom(None, AttributeType::string(), Some("^(-?)P(?=\\d|T\\d)(?:(\\d+)Y)?(?:(\\d+)M)?(?:(\\d+)([DW]))?(?:T(?:(\\d+)H)?(?:(\\d+)M)?(?:(\\d+(?:\\.\\d+)?)S)?)?$".to_string()), Some((Some(1), Some(100))), legacy_validator(validate_string_pattern_1e58d8243b46a2f1_len_1_100), None))
                 .with_description("The length of time that a user can be signed in to an AWS account.")
                 .with_provider_name("SessionDuration"),
         )
@@ -315,54 +254,11 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
             }
             if errors.is_empty() { Ok(()) } else { Err(errors) }
         })
-        .with_def("CustomerManagedPolicyReference", AttributeType::Struct {
-                    name: "CustomerManagedPolicyReference".to_string(),
-                    fields: vec![
-                    StructField::new("name", AttributeType::Custom {
-                identity: None,
-                pattern: Some("[\\w+=,.@-]+".to_string()),
-                length: Some((Some(1), Some(128))),
-                base: Box::new(AttributeType::String),
-                validate: legacy_validator(validate_string_pattern_9b83f4f8f3673df5_len_1_128),
-                to_dsl: None,
-            }).required().with_provider_name("Name"),
-                    StructField::new("path", AttributeType::Custom {
-                identity: None,
-                pattern: Some("((/[A-Za-z0-9\\.,\\+@=_-]+)*)/".to_string()),
-                length: Some((Some(1), Some(512))),
-                base: Box::new(AttributeType::String),
-                validate: legacy_validator(validate_string_pattern_b84fa12576539ca9_len_1_512),
-                to_dsl: None,
-            }).with_provider_name("Path")
-                    ],
-                })
-        .with_def("PermissionsBoundary", AttributeType::Struct {
-                    name: "PermissionsBoundary".to_string(),
-                    fields: vec![
-                    StructField::new("customer_managed_policy_reference", AttributeType::Struct {
-                    name: "CustomerManagedPolicyReference".to_string(),
-                    fields: vec![
-                    StructField::new("name", AttributeType::Custom {
-                identity: None,
-                pattern: Some("[\\w+=,.@-]+".to_string()),
-                length: Some((Some(1), Some(128))),
-                base: Box::new(AttributeType::String),
-                validate: legacy_validator(validate_string_pattern_9b83f4f8f3673df5_len_1_128),
-                to_dsl: None,
-            }).required().with_provider_name("Name"),
-                    StructField::new("path", AttributeType::Custom {
-                identity: None,
-                pattern: Some("((/[A-Za-z0-9\\.,\\+@=_-]+)*)/".to_string()),
-                length: Some((Some(1), Some(512))),
-                base: Box::new(AttributeType::String),
-                validate: legacy_validator(validate_string_pattern_b84fa12576539ca9_len_1_512),
-                to_dsl: None,
-            }).with_provider_name("Path")
-                    ],
-                }).with_provider_name("CustomerManagedPolicyReference"),
-                    StructField::new("managed_policy_arn", super::arn()).with_provider_name("ManagedPolicyArn")
-                    ],
-                })
+        .with_def("CustomerManagedPolicyReference", AttributeType::struct_("CustomerManagedPolicyReference".to_string(), vec![StructField::new("name", AttributeType::custom(None, AttributeType::string(), Some("[\\w+=,.@-]+".to_string()), Some((Some(1), Some(128))), legacy_validator(validate_string_pattern_9b83f4f8f3673df5_len_1_128), None)).required().with_provider_name("Name"),
+                    StructField::new("path", AttributeType::custom(None, AttributeType::string(), Some("((/[A-Za-z0-9\\.,\\+@=_-]+)*)/".to_string()), Some((Some(1), Some(512))), legacy_validator(validate_string_pattern_b84fa12576539ca9_len_1_512), None)).with_provider_name("Path")]))
+        .with_def("PermissionsBoundary", AttributeType::struct_("PermissionsBoundary".to_string(), vec![StructField::new("customer_managed_policy_reference", AttributeType::struct_("CustomerManagedPolicyReference".to_string(), vec![StructField::new("name", AttributeType::custom(None, AttributeType::string(), Some("[\\w+=,.@-]+".to_string()), Some((Some(1), Some(128))), legacy_validator(validate_string_pattern_9b83f4f8f3673df5_len_1_128), None)).required().with_provider_name("Name"),
+                    StructField::new("path", AttributeType::custom(None, AttributeType::string(), Some("((/[A-Za-z0-9\\.,\\+@=_-]+)*)/".to_string()), Some((Some(1), Some(512))), legacy_validator(validate_string_pattern_b84fa12576539ca9_len_1_512), None)).with_provider_name("Path")])).with_provider_name("CustomerManagedPolicyReference"),
+                    StructField::new("managed_policy_arn", super::arn()).with_provider_name("ManagedPolicyArn")]))
     }
 }
 

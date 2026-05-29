@@ -33,12 +33,7 @@ pub fn ec2_eip_config() -> AwsccSchemaConfig {
                 .with_provider_name("AllocationId"),
         )
         .attribute(
-            AttributeSchema::new("domain", AttributeType::StringEnum {
-                name: "Domain".to_string(),
-                values: vec!["vpc".to_string(), "standard".to_string()],
-                identity: Some(carina_core::schema::string_enum_identity("Domain", Some("awscc.ec2.Eip"))),
-                dsl_aliases: vec![("vpc".to_string(), "vpc".to_string()), ("standard".to_string(), "standard".to_string())],
-            })
+            AttributeSchema::new("domain", AttributeType::string_enum("Domain".to_string(), vec!["vpc".to_string(), "standard".to_string()], Some(carina_core::schema::string_enum_identity("Domain", Some("awscc.ec2.Eip"))), vec![("vpc".to_string(), "vpc".to_string()), ("standard".to_string(), "standard".to_string())]))
                 .with_description("The network (``vpc``). If you define an Elastic IP address and associate it with a VPC that is defined in the same template, you must declare a dependency on the VPC-gateway attachment by using the [DependsOn Attribute](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-attribute-dependson.html) on this resource.")
                 .with_provider_name("Domain"),
         )
@@ -55,7 +50,7 @@ pub fn ec2_eip_config() -> AwsccSchemaConfig {
                 .with_provider_name("IpamPoolId"),
         )
         .attribute(
-            AttributeSchema::new("network_border_group", AttributeType::String)
+            AttributeSchema::new("network_border_group", AttributeType::string())
                 .create_only()
                 .with_description("A unique set of Availability Zones, Local Zones, or Wavelength Zones from which AWS advertises IP addresses. Use this parameter to limit the IP address to this location. IP addresses cannot move between network border groups. Use [DescribeAvailabilityZones](https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeAvailabilityZones.html) to view the network border groups.")
                 .with_provider_name("NetworkBorderGroup"),
@@ -67,7 +62,7 @@ pub fn ec2_eip_config() -> AwsccSchemaConfig {
                 .with_provider_name("PublicIp"),
         )
         .attribute(
-            AttributeSchema::new("public_ipv4_pool", AttributeType::String)
+            AttributeSchema::new("public_ipv4_pool", AttributeType::string())
                 .with_description("The ID of an address pool that you own. Use this parameter to let Amazon EC2 select an address from the address pool. Updates to the ``PublicIpv4Pool`` property may require *some interruptions*. Updates on an EIP reassociates the address on its associated resource.")
                 .with_provider_name("PublicIpv4Pool"),
         )
