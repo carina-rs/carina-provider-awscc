@@ -8,7 +8,7 @@ use std::collections::HashMap;
 
 use carina_core::provider::{ProviderError, ProviderResult, UpdatePatch};
 use carina_core::resource::{ConcreteValue, Directives, Resource, ResourceId, State, Value};
-use carina_core::schema::{AttributeSchema, AttributeType};
+use carina_core::schema::{AttributeSchema, AttributeType, Shape};
 use indexmap::IndexMap;
 use serde_json::json;
 
@@ -296,14 +296,14 @@ fn map_aws_props_to_attributes(
                 }
             }
             None if !attr_schema.required && !attr_schema.write_only => {
-                match &attr_schema.attr_type {
-                    AttributeType::List { .. } => {
+                match attr_schema.attr_type.shape(defs) {
+                    Shape::List { .. } => {
                         attributes.insert(
                             dsl_name.clone(),
                             Value::Concrete(ConcreteValue::List(Vec::new())),
                         );
                     }
-                    AttributeType::Map { .. } => {
+                    Shape::Map { .. } => {
                         attributes.insert(
                             dsl_name.clone(),
                             Value::Concrete(ConcreteValue::Map(IndexMap::new())),
@@ -378,7 +378,7 @@ mod tests {
         let attrs = make_schema_attrs(vec![(
             "managed_policy_arns",
             "ManagedPolicyArns",
-            AttributeType::list(AttributeType::String),
+            AttributeType::list(AttributeType::string()),
             false,
         )]);
         let props = json!({});
@@ -403,7 +403,7 @@ mod tests {
         let attrs = make_schema_attrs(vec![(
             "metadata",
             "Metadata",
-            AttributeType::map(AttributeType::String),
+            AttributeType::map(AttributeType::string()),
             false,
         )]);
         let props = json!({});
@@ -431,7 +431,7 @@ mod tests {
         let attrs = make_schema_attrs(vec![(
             "required_list",
             "RequiredList",
-            AttributeType::list(AttributeType::String),
+            AttributeType::list(AttributeType::string()),
             true,
         )]);
         let props = json!({});
@@ -457,7 +457,7 @@ mod tests {
         let attrs = make_schema_attrs(vec![(
             "description",
             "Description",
-            AttributeType::String,
+            AttributeType::string(),
             false,
         )]);
         let props = json!({});
@@ -481,7 +481,7 @@ mod tests {
         let attrs = make_schema_attrs(vec![(
             "managed_policy_arns",
             "ManagedPolicyArns",
-            AttributeType::list(AttributeType::String),
+            AttributeType::list(AttributeType::string()),
             false,
         )]);
         let props = json!({
@@ -511,7 +511,7 @@ mod tests {
         let attrs = make_schema_attrs(vec![(
             "tags",
             "Tags",
-            AttributeType::map(AttributeType::String),
+            AttributeType::map(AttributeType::string()),
             false,
         )]);
         let props = json!({});

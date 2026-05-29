@@ -159,14 +159,7 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
                 .with_provider_name("AccountId"),
         )
         .attribute(
-            AttributeSchema::new("account_name", AttributeType::Custom {
-                identity: None,
-                pattern: Some("[\\u0020-\\u007E]+".to_string()),
-                length: Some((Some(1), Some(50))),
-                base: Box::new(AttributeType::String),
-                validate: legacy_validator(validate_string_pattern_3af299ea99241fab_len_1_50),
-                to_dsl: None,
-            })
+            AttributeSchema::new("account_name", AttributeType::custom(None, AttributeType::string(), Some("[\\u0020-\\u007E]+".to_string()), Some((Some(1), Some(50))), legacy_validator(validate_string_pattern_3af299ea99241fab_len_1_50), None))
                 .required()
                 .with_description("The friendly name of the member account.")
                 .with_provider_name("AccountName"),
@@ -184,79 +177,43 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
                 .with_provider_name("Email"),
         )
         .attribute(
-            AttributeSchema::new("joined_method", AttributeType::StringEnum {
-                name: "JoinedMethod".to_string(),
-                values: vec!["INVITED".to_string(), "CREATED".to_string()],
-                identity: Some(carina_core::schema::string_enum_identity("JoinedMethod", Some("awscc.organizations.Account"))),
-                dsl_aliases: vec![("INVITED".to_string(), "invited".to_string()), ("CREATED".to_string(), "created".to_string())],
-            })
+            AttributeSchema::new("joined_method", AttributeType::string_enum("JoinedMethod".to_string(), vec!["INVITED".to_string(), "CREATED".to_string()], Some(carina_core::schema::string_enum_identity("JoinedMethod", Some("awscc.organizations.Account"))), vec![("INVITED".to_string(), "invited".to_string()), ("CREATED".to_string(), "created".to_string())]))
                 .read_only()
                 .with_description("The method by which the account joined the organization. (read-only)")
                 .with_provider_name("JoinedMethod"),
         )
         .attribute(
-            AttributeSchema::new("joined_timestamp", AttributeType::String)
+            AttributeSchema::new("joined_timestamp", AttributeType::string())
                 .read_only()
                 .with_description("The date the account became a part of the organization. (read-only)")
                 .with_provider_name("JoinedTimestamp"),
         )
         .attribute(
-            AttributeSchema::new("parent_ids", AttributeType::unordered_list(AttributeType::Custom {
-                identity: None,
-                pattern: Some("^(r-[0-9a-z]{4,32})|(ou-[0-9a-z]{4,32}-[a-z0-9]{8,32})$".to_string()),
-                length: None,
-                base: Box::new(AttributeType::String),
-                validate: legacy_validator(validate_string_pattern_6fa92970742ee8e6),
-                to_dsl: None,
-            }))
+            AttributeSchema::new("parent_ids", AttributeType::unordered_list(AttributeType::custom(None, AttributeType::string(), Some("^(r-[0-9a-z]{4,32})|(ou-[0-9a-z]{4,32}-[a-z0-9]{8,32})$".to_string()), None, legacy_validator(validate_string_pattern_6fa92970742ee8e6), None)))
                 .with_description("List of parent nodes for the member account. Currently only one parent at a time is supported. Default is root.")
                 .with_provider_name("ParentIds"),
         )
         .attribute(
-            AttributeSchema::new("paths", AttributeType::list(AttributeType::Custom {
-                identity: None,
-                pattern: Some("^(o-[a-z0-9]{10,32}/r-[0-9a-z]{4,32}(/ou-[0-9a-z]{4,32}-[a-z0-9]{8,32})*(/\\d{12})*)/".to_string()),
-                length: None,
-                base: Box::new(AttributeType::String),
-                validate: legacy_validator(validate_string_pattern_f777bea2efc17af6),
-                to_dsl: None,
-            }))
+            AttributeSchema::new("paths", AttributeType::list(AttributeType::custom(None, AttributeType::string(), Some("^(o-[a-z0-9]{10,32}/r-[0-9a-z]{4,32}(/ou-[0-9a-z]{4,32}-[a-z0-9]{8,32})*(/\\d{12})*)/".to_string()), None, legacy_validator(validate_string_pattern_f777bea2efc17af6), None)))
                 .read_only()
                 .with_description("The paths in the organization where the account exists. (read-only)")
                 .with_provider_name("Paths"),
         )
         .attribute(
-            AttributeSchema::new("role_name", AttributeType::Custom {
-                identity: None,
-                pattern: Some("[\\w+=,.@-]{1,64}".to_string()),
-                length: Some((Some(1), Some(64))),
-                base: Box::new(AttributeType::String),
-                validate: legacy_validator(validate_string_pattern_253e7eb79a4beec5_len_1_64),
-                to_dsl: None,
-            })
+            AttributeSchema::new("role_name", AttributeType::custom(None, AttributeType::string(), Some("[\\w+=,.@-]{1,64}".to_string()), Some((Some(1), Some(64))), legacy_validator(validate_string_pattern_253e7eb79a4beec5_len_1_64), None))
                 .write_only()
                 .with_description("The name of an IAM role that AWS Organizations automatically preconfigures in the new member account. Default name is OrganizationAccountAccessRole if not specified.")
                 .with_provider_name("RoleName")
                 .with_default(Value::Concrete(ConcreteValue::String("OrganizationAccountAccessRole".to_string()))),
         )
         .attribute(
-            AttributeSchema::new("state", AttributeType::StringEnum {
-                name: "State".to_string(),
-                values: vec!["PENDING_ACTIVATION".to_string(), "ACTIVE".to_string(), "SUSPENDED".to_string(), "PENDING_CLOSURE".to_string(), "CLOSED".to_string()],
-                identity: Some(carina_core::schema::string_enum_identity("State", Some("awscc.organizations.Account"))),
-                dsl_aliases: vec![("PENDING_ACTIVATION".to_string(), "pending_activation".to_string()), ("ACTIVE".to_string(), "active".to_string()), ("SUSPENDED".to_string(), "suspended".to_string()), ("PENDING_CLOSURE".to_string(), "pending_closure".to_string()), ("CLOSED".to_string(), "closed".to_string())],
-            })
+            AttributeSchema::new("state", AttributeType::string_enum("State".to_string(), vec!["PENDING_ACTIVATION".to_string(), "ACTIVE".to_string(), "SUSPENDED".to_string(), "PENDING_CLOSURE".to_string(), "CLOSED".to_string()], Some(carina_core::schema::string_enum_identity("State", Some("awscc.organizations.Account"))), vec![("PENDING_ACTIVATION".to_string(), "pending_activation".to_string()), ("ACTIVE".to_string(), "active".to_string()), ("SUSPENDED".to_string(), "suspended".to_string()), ("PENDING_CLOSURE".to_string(), "pending_closure".to_string()), ("CLOSED".to_string(), "closed".to_string())]))
                 .read_only()
                 .with_description("The state of the account in the organization. (read-only)")
                 .with_provider_name("State"),
         )
         .attribute(
-            AttributeSchema::new("status", AttributeType::StringEnum {
-                name: "Status".to_string(),
-                values: vec!["ACTIVE".to_string(), "SUSPENDED".to_string(), "PENDING_CLOSURE".to_string()],
-                identity: Some(carina_core::schema::string_enum_identity("Status", Some("awscc.organizations.Account"))),
-                dsl_aliases: vec![("ACTIVE".to_string(), "active".to_string()), ("SUSPENDED".to_string(), "suspended".to_string()), ("PENDING_CLOSURE".to_string(), "pending_closure".to_string())],
-            })
+            AttributeSchema::new("status", AttributeType::string_enum("Status".to_string(), vec!["ACTIVE".to_string(), "SUSPENDED".to_string(), "PENDING_CLOSURE".to_string()], Some(carina_core::schema::string_enum_identity("Status", Some("awscc.organizations.Account"))), vec![("ACTIVE".to_string(), "active".to_string()), ("SUSPENDED".to_string(), "suspended".to_string()), ("PENDING_CLOSURE".to_string(), "pending_closure".to_string())]))
                 .read_only()
                 .with_description("The status of the account in the organization. (read-only)")
                 .with_provider_name("Status"),

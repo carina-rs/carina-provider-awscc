@@ -67,18 +67,18 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
                 .with_provider_name("Arn"),
         )
         .attribute(
-            AttributeSchema::new("data_protection_policy", AttributeType::map(AttributeType::String))
+            AttributeSchema::new("data_protection_policy", AttributeType::map(AttributeType::string()))
                 .with_description("Creates a data protection policy and assigns it to the log group. A data protection policy can help safeguard sensitive data that's ingested by the log group by auditing and masking the sensitive log data. When a user who does not have permission to view masked data views a log event that includes masked data, the sensitive data is replaced by asterisks.")
                 .with_provider_name("DataProtectionPolicy"),
         )
         .attribute(
-            AttributeSchema::new("deletion_protection_enabled", AttributeType::Bool)
+            AttributeSchema::new("deletion_protection_enabled", AttributeType::bool())
                 .with_description("Indicates whether deletion protection is enabled for this log group. When enabled, deletion protection blocks all deletion operations until it is explicitly disabled.")
                 .with_provider_name("DeletionProtectionEnabled")
                 .with_default(Value::Concrete(ConcreteValue::Bool(false))),
         )
         .attribute(
-            AttributeSchema::new("field_index_policies", AttributeType::unordered_list(AttributeType::map(AttributeType::String)))
+            AttributeSchema::new("field_index_policies", AttributeType::unordered_list(AttributeType::map(AttributeType::string())))
                 .with_description("Creates or updates a *field index policy* for the specified log group. Only log groups in the Standard log class support field index policies. For more information about log classes, see [Log classes](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/CloudWatch_Logs_Log_Classes.html). You can use field index policies to create *field indexes* on fields found in log events in the log group. Creating field indexes lowers the costs for CWL Insights queries that reference those field indexes, because these queries attempt to skip the processing of log events that are known to not match the indexed field. Good fields to index are fields that you often need to query for and fields that have high cardinality of values Common examples of indexes include request ID, session ID, userID, and instance IDs. For more information, see [Create field indexes to improve query performance and reduce costs](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/CloudWatchLogs-Field-Indexing.html). Currently, this array supports only one field index policy object.")
                 .with_provider_name("FieldIndexPolicies"),
         )
@@ -88,25 +88,13 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
                 .with_provider_name("KmsKeyId"),
         )
         .attribute(
-            AttributeSchema::new("log_group_class", AttributeType::StringEnum {
-                name: "LogGroupClass".to_string(),
-                values: vec!["STANDARD".to_string(), "INFREQUENT_ACCESS".to_string(), "DELIVERY".to_string()],
-                identity: Some(carina_core::schema::string_enum_identity("LogGroupClass", Some("awscc.logs.LogGroup"))),
-                dsl_aliases: vec![("STANDARD".to_string(), "standard".to_string()), ("INFREQUENT_ACCESS".to_string(), "infrequent_access".to_string()), ("DELIVERY".to_string(), "delivery".to_string())],
-            })
+            AttributeSchema::new("log_group_class", AttributeType::string_enum("LogGroupClass".to_string(), vec!["STANDARD".to_string(), "INFREQUENT_ACCESS".to_string(), "DELIVERY".to_string()], Some(carina_core::schema::string_enum_identity("LogGroupClass", Some("awscc.logs.LogGroup"))), vec![("STANDARD".to_string(), "standard".to_string()), ("INFREQUENT_ACCESS".to_string(), "infrequent_access".to_string()), ("DELIVERY".to_string(), "delivery".to_string())]))
                 .with_description("Specifies the log group class for this log group. There are two classes: + The ``Standard`` log class supports all CWL features. + The ``Infrequent Access`` log class supports a subset of CWL features and incurs lower costs. For details about the features supported by each class, see [Log classes](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/CloudWatch_Logs_Log_Classes.html)")
                 .with_provider_name("LogGroupClass")
                 .with_default(Value::Concrete(ConcreteValue::String("STANDARD".to_string()))),
         )
         .attribute(
-            AttributeSchema::new("log_group_name", AttributeType::Custom {
-                identity: None,
-                pattern: Some("^[.\\-_/#A-Za-z0-9]{1,512}\\Z".to_string()),
-                length: Some((Some(1), Some(512))),
-                base: Box::new(AttributeType::String),
-                validate: legacy_validator(validate_string_pattern_b6dfbc56753dfe38_len_1_512),
-                to_dsl: None,
-            })
+            AttributeSchema::new("log_group_name", AttributeType::custom(None, AttributeType::string(), Some("^[.\\-_/#A-Za-z0-9]{1,512}\\Z".to_string()), Some((Some(1), Some(512))), legacy_validator(validate_string_pattern_b6dfbc56753dfe38_len_1_512), None))
                 .create_only()
                 .with_description("The name of the log group. If you don't specify a name, CFNlong generates a unique ID for the log group.")
                 .with_provider_name("LogGroupName"),
@@ -117,14 +105,7 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
                 .with_provider_name("ResourcePolicyDocument"),
         )
         .attribute(
-            AttributeSchema::new("retention_in_days", AttributeType::Custom {
-                identity: None,
-                pattern: None,
-                length: None,
-                base: Box::new(AttributeType::Int),
-                validate: legacy_validator(validate_retention_in_days_int_enum),
-                to_dsl: None,
-            })
+            AttributeSchema::new("retention_in_days", AttributeType::custom(None, AttributeType::int(), None, None, legacy_validator(validate_retention_in_days_int_enum), None))
                 .with_description("The number of days to retain the log events in the specified log group. Possible values are: 1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096, 1827, 2192, 2557, 2922, 3288, and 3653. To set a log group so that its log events do not expire, do not specify this property.")
                 .with_provider_name("RetentionInDays"),
         )

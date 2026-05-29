@@ -56,38 +56,19 @@ pub fn identitystore_group_membership_config() -> AwsccSchemaConfig {
                 .with_provider_name("IdentityStoreId"),
         )
         .attribute(
-            AttributeSchema::new("member_id", AttributeType::Ref("MemberId".to_string()))
+            AttributeSchema::new("member_id", AttributeType::ref_("MemberId".to_string()))
                 .required()
                 .create_only()
                 .with_description("An object containing the identifier of a group member.")
                 .with_provider_name("MemberId"),
         )
         .attribute(
-            AttributeSchema::new("membership_id", AttributeType::Custom {
-                identity: None,
-                pattern: Some("^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$".to_string()),
-                length: Some((Some(1), Some(47))),
-                base: Box::new(AttributeType::String),
-                validate: legacy_validator(validate_string_pattern_2a77a2e32f71b5f3_len_1_47),
-                to_dsl: None,
-            })
+            AttributeSchema::new("membership_id", AttributeType::custom(None, AttributeType::string(), Some("^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$".to_string()), Some((Some(1), Some(47))), legacy_validator(validate_string_pattern_2a77a2e32f71b5f3_len_1_47), None))
                 .read_only()
                 .with_description("The identifier for a GroupMembership in the identity store. (read-only)")
                 .with_provider_name("MembershipId"),
         )
-        .with_def("MemberId", AttributeType::Struct {
-                    name: "MemberId".to_string(),
-                    fields: vec![
-                    StructField::new("user_id", AttributeType::Custom {
-                identity: None,
-                pattern: Some("^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$".to_string()),
-                length: Some((Some(1), Some(47))),
-                base: Box::new(AttributeType::String),
-                validate: legacy_validator(validate_string_pattern_2a77a2e32f71b5f3_len_1_47),
-                to_dsl: None,
-            }).required().with_description("The identifier for a user in the identity store.").with_provider_name("UserId")
-                    ],
-                })
+        .with_def("MemberId", AttributeType::struct_("MemberId".to_string(), vec![StructField::new("user_id", AttributeType::custom(None, AttributeType::string(), Some("^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$".to_string()), Some((Some(1), Some(47))), legacy_validator(validate_string_pattern_2a77a2e32f71b5f3_len_1_47), None)).required().with_description("The identifier for a user in the identity store.").with_provider_name("UserId")]))
     }
 }
 

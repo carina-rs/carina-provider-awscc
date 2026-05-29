@@ -5,6 +5,8 @@
 //! schema config structs) remain in their respective crates.
 
 use carina_core::resource::{ConcreteValue, Value};
+#[cfg(test)]
+use carina_core::schema::RawShape;
 use carina_core::schema::{
     AttributeType, CompletionValue, StructField, TypeIdentity, legacy_validator,
 };
@@ -171,7 +173,7 @@ pub fn region_completions(prefix: &str) -> Vec<CompletionValue> {
 
 /// Tags type for AWS resources (map of string values)
 pub fn tags_type() -> AttributeType {
-    AttributeType::map(AttributeType::String)
+    AttributeType::map(AttributeType::string())
 }
 
 /// Validate that a tags map does not use Key/Value pair list structure.
@@ -244,12 +246,12 @@ pub fn validate_prefixed_resource_id(id: &str, expected_prefix: &str) -> Result<
 /// AWS resource ID type (e.g., "vpc-1a2b3c4d", "subnet-0123456789abcdef0")
 #[allow(dead_code)]
 pub fn aws_resource_id() -> AttributeType {
-    AttributeType::Custom {
-        identity: Some(aws_bare_type(&[], "ResourceId")),
-        pattern: None,
-        length: None,
-        base: Box::new(AttributeType::String),
-        validate: legacy_validator(|value| {
+    AttributeType::custom(
+        Some(aws_bare_type(&[], "ResourceId")),
+        AttributeType::string(),
+        None,
+        None,
+        legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
                 validate_aws_resource_id(s)
                     .map_err(|reason| format!("Invalid resource ID '{}': {}", s, reason))
@@ -257,18 +259,18 @@ pub fn aws_resource_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        to_dsl: None,
-    }
+        None,
+    )
 }
 
 /// VPC ID type (e.g., "vpc-1a2b3c4d")
 pub fn vpc_id() -> AttributeType {
-    AttributeType::Custom {
-        identity: Some(aws_type("ec2", "Vpc", "Id")),
-        pattern: None,
-        length: None,
-        base: Box::new(aws_resource_id()),
-        validate: legacy_validator(|value| {
+    AttributeType::custom(
+        Some(aws_type("ec2", "Vpc", "Id")),
+        aws_resource_id(),
+        None,
+        None,
+        legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
                 validate_prefixed_resource_id(s, "vpc")
                     .map_err(|reason| format!("Invalid VPC ID '{}': {}", s, reason))
@@ -276,18 +278,18 @@ pub fn vpc_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        to_dsl: None,
-    }
+        None,
+    )
 }
 
 /// Subnet ID type (e.g., "subnet-0123456789abcdef0")
 pub fn subnet_id() -> AttributeType {
-    AttributeType::Custom {
-        identity: Some(aws_type("ec2", "Subnet", "Id")),
-        pattern: None,
-        length: None,
-        base: Box::new(aws_resource_id()),
-        validate: legacy_validator(|value| {
+    AttributeType::custom(
+        Some(aws_type("ec2", "Subnet", "Id")),
+        aws_resource_id(),
+        None,
+        None,
+        legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
                 validate_prefixed_resource_id(s, "subnet")
                     .map_err(|reason| format!("Invalid Subnet ID '{}': {}", s, reason))
@@ -295,18 +297,18 @@ pub fn subnet_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        to_dsl: None,
-    }
+        None,
+    )
 }
 
 /// Security Group ID type (e.g., "sg-12345678")
 pub fn security_group_id() -> AttributeType {
-    AttributeType::Custom {
-        identity: Some(aws_type("ec2", "SecurityGroup", "Id")),
-        pattern: None,
-        length: None,
-        base: Box::new(aws_resource_id()),
-        validate: legacy_validator(|value| {
+    AttributeType::custom(
+        Some(aws_type("ec2", "SecurityGroup", "Id")),
+        aws_resource_id(),
+        None,
+        None,
+        legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
                 validate_prefixed_resource_id(s, "sg")
                     .map_err(|reason| format!("Invalid Security Group ID '{}': {}", s, reason))
@@ -314,18 +316,18 @@ pub fn security_group_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        to_dsl: None,
-    }
+        None,
+    )
 }
 
 /// Internet Gateway ID type (e.g., "igw-12345678")
 pub fn internet_gateway_id() -> AttributeType {
-    AttributeType::Custom {
-        identity: Some(aws_type("ec2", "InternetGateway", "Id")),
-        pattern: None,
-        length: None,
-        base: Box::new(aws_resource_id()),
-        validate: legacy_validator(|value| {
+    AttributeType::custom(
+        Some(aws_type("ec2", "InternetGateway", "Id")),
+        aws_resource_id(),
+        None,
+        None,
+        legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
                 validate_prefixed_resource_id(s, "igw")
                     .map_err(|reason| format!("Invalid Internet Gateway ID '{}': {}", s, reason))
@@ -333,18 +335,18 @@ pub fn internet_gateway_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        to_dsl: None,
-    }
+        None,
+    )
 }
 
 /// Route Table ID type (e.g., "rtb-abcdef12")
 pub fn route_table_id() -> AttributeType {
-    AttributeType::Custom {
-        identity: Some(aws_type("ec2", "RouteTable", "Id")),
-        pattern: None,
-        length: None,
-        base: Box::new(aws_resource_id()),
-        validate: legacy_validator(|value| {
+    AttributeType::custom(
+        Some(aws_type("ec2", "RouteTable", "Id")),
+        aws_resource_id(),
+        None,
+        None,
+        legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
                 validate_prefixed_resource_id(s, "rtb")
                     .map_err(|reason| format!("Invalid Route Table ID '{}': {}", s, reason))
@@ -352,18 +354,18 @@ pub fn route_table_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        to_dsl: None,
-    }
+        None,
+    )
 }
 
 /// NAT Gateway ID type (e.g., "nat-12345678")
 pub fn nat_gateway_id() -> AttributeType {
-    AttributeType::Custom {
-        identity: Some(aws_type("ec2", "NatGateway", "Id")),
-        pattern: None,
-        length: None,
-        base: Box::new(aws_resource_id()),
-        validate: legacy_validator(|value| {
+    AttributeType::custom(
+        Some(aws_type("ec2", "NatGateway", "Id")),
+        aws_resource_id(),
+        None,
+        None,
+        legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
                 validate_prefixed_resource_id(s, "nat")
                     .map_err(|reason| format!("Invalid NAT Gateway ID '{}': {}", s, reason))
@@ -371,18 +373,18 @@ pub fn nat_gateway_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        to_dsl: None,
-    }
+        None,
+    )
 }
 
 /// VPC Peering Connection ID type (e.g., "pcx-12345678")
 pub fn vpc_peering_connection_id() -> AttributeType {
-    AttributeType::Custom {
-        identity: Some(aws_type("ec2", "VpcPeeringConnection", "Id")),
-        pattern: None,
-        length: None,
-        base: Box::new(aws_resource_id()),
-        validate: legacy_validator(|value| {
+    AttributeType::custom(
+        Some(aws_type("ec2", "VpcPeeringConnection", "Id")),
+        aws_resource_id(),
+        None,
+        None,
+        legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
                 validate_prefixed_resource_id(s, "pcx").map_err(|reason| {
                     format!("Invalid VPC Peering Connection ID '{}': {}", s, reason)
@@ -391,18 +393,18 @@ pub fn vpc_peering_connection_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        to_dsl: None,
-    }
+        None,
+    )
 }
 
 /// Transit Gateway ID type (e.g., "tgw-12345678")
 pub fn transit_gateway_id() -> AttributeType {
-    AttributeType::Custom {
-        identity: Some(aws_type("ec2", "TransitGateway", "Id")),
-        pattern: None,
-        length: None,
-        base: Box::new(aws_resource_id()),
-        validate: legacy_validator(|value| {
+    AttributeType::custom(
+        Some(aws_type("ec2", "TransitGateway", "Id")),
+        aws_resource_id(),
+        None,
+        None,
+        legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
                 validate_prefixed_resource_id(s, "tgw")
                     .map_err(|reason| format!("Invalid Transit Gateway ID '{}': {}", s, reason))
@@ -410,18 +412,18 @@ pub fn transit_gateway_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        to_dsl: None,
-    }
+        None,
+    )
 }
 
 /// VPC CIDR Block Association ID type (e.g., "vpc-cidr-assoc-12345678")
 pub fn vpc_cidr_block_association_id() -> AttributeType {
-    AttributeType::Custom {
-        identity: Some(aws_type("ec2", "VpcCidrBlockAssociation", "Id")),
-        pattern: None,
-        length: None,
-        base: Box::new(aws_resource_id()),
-        validate: legacy_validator(|value| {
+    AttributeType::custom(
+        Some(aws_type("ec2", "VpcCidrBlockAssociation", "Id")),
+        aws_resource_id(),
+        None,
+        None,
+        legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
                 validate_prefixed_resource_id(s, "vpc-cidr-assoc").map_err(|reason| {
                     format!("Invalid VPC CIDR Block Association ID '{}': {}", s, reason)
@@ -430,18 +432,18 @@ pub fn vpc_cidr_block_association_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        to_dsl: None,
-    }
+        None,
+    )
 }
 
 /// Transit Gateway Route Table ID type (e.g., "tgw-rtb-12345678")
 pub fn tgw_route_table_id() -> AttributeType {
-    AttributeType::Custom {
-        identity: Some(aws_type("ec2", "TransitGatewayRouteTable", "Id")),
-        pattern: None,
-        length: None,
-        base: Box::new(aws_resource_id()),
-        validate: legacy_validator(|value| {
+    AttributeType::custom(
+        Some(aws_type("ec2", "TransitGatewayRouteTable", "Id")),
+        aws_resource_id(),
+        None,
+        None,
+        legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
                 validate_prefixed_resource_id(s, "tgw-rtb")
                     .map_err(|reason| format!("Invalid TGW Route Table ID '{}': {}", s, reason))
@@ -449,18 +451,18 @@ pub fn tgw_route_table_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        to_dsl: None,
-    }
+        None,
+    )
 }
 
 /// VPN Gateway ID type (e.g., "vgw-12345678")
 pub fn vpn_gateway_id() -> AttributeType {
-    AttributeType::Custom {
-        identity: Some(aws_type("ec2", "VpnGateway", "Id")),
-        pattern: None,
-        length: None,
-        base: Box::new(aws_resource_id()),
-        validate: legacy_validator(|value| {
+    AttributeType::custom(
+        Some(aws_type("ec2", "VpnGateway", "Id")),
+        aws_resource_id(),
+        None,
+        None,
+        legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
                 validate_prefixed_resource_id(s, "vgw")
                     .map_err(|reason| format!("Invalid VPN Gateway ID '{}': {}", s, reason))
@@ -468,23 +470,23 @@ pub fn vpn_gateway_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        to_dsl: None,
-    }
+        None,
+    )
 }
 
 /// Gateway ID type — union of InternetGatewayId and VpnGatewayId.
 pub fn gateway_id() -> AttributeType {
-    AttributeType::Union(vec![internet_gateway_id(), vpn_gateway_id()])
+    AttributeType::union(vec![internet_gateway_id(), vpn_gateway_id()])
 }
 
 /// Egress Only Internet Gateway ID type (e.g., "eigw-12345678")
 pub fn egress_only_internet_gateway_id() -> AttributeType {
-    AttributeType::Custom {
-        identity: Some(aws_type("ec2", "EgressOnlyInternetGateway", "Id")),
-        pattern: None,
-        length: None,
-        base: Box::new(aws_resource_id()),
-        validate: legacy_validator(|value| {
+    AttributeType::custom(
+        Some(aws_type("ec2", "EgressOnlyInternetGateway", "Id")),
+        aws_resource_id(),
+        None,
+        None,
+        legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
                 validate_prefixed_resource_id(s, "eigw").map_err(|reason| {
                     format!(
@@ -496,18 +498,18 @@ pub fn egress_only_internet_gateway_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        to_dsl: None,
-    }
+        None,
+    )
 }
 
 /// VPC Endpoint ID type (e.g., "vpce-12345678")
 pub fn vpc_endpoint_id() -> AttributeType {
-    AttributeType::Custom {
-        identity: Some(aws_type("ec2", "VpcEndpoint", "Id")),
-        pattern: None,
-        length: None,
-        base: Box::new(aws_resource_id()),
-        validate: legacy_validator(|value| {
+    AttributeType::custom(
+        Some(aws_type("ec2", "VpcEndpoint", "Id")),
+        aws_resource_id(),
+        None,
+        None,
+        legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
                 validate_prefixed_resource_id(s, "vpce")
                     .map_err(|reason| format!("Invalid VPC Endpoint ID '{}': {}", s, reason))
@@ -515,18 +517,18 @@ pub fn vpc_endpoint_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        to_dsl: None,
-    }
+        None,
+    )
 }
 
 /// Instance ID type (e.g., "i-0123456789abcdef0")
 pub fn instance_id() -> AttributeType {
-    AttributeType::Custom {
-        identity: Some(aws_type("ec2", "Instance", "Id")),
-        pattern: None,
-        length: None,
-        base: Box::new(aws_resource_id()),
-        validate: legacy_validator(|value| {
+    AttributeType::custom(
+        Some(aws_type("ec2", "Instance", "Id")),
+        aws_resource_id(),
+        None,
+        None,
+        legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
                 validate_prefixed_resource_id(s, "i")
                     .map_err(|reason| format!("Invalid Instance ID '{}': {}", s, reason))
@@ -534,18 +536,18 @@ pub fn instance_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        to_dsl: None,
-    }
+        None,
+    )
 }
 
 /// Network Interface ID type (e.g., "eni-0123456789abcdef0")
 pub fn network_interface_id() -> AttributeType {
-    AttributeType::Custom {
-        identity: Some(aws_type("ec2", "NetworkInterface", "Id")),
-        pattern: None,
-        length: None,
-        base: Box::new(aws_resource_id()),
-        validate: legacy_validator(|value| {
+    AttributeType::custom(
+        Some(aws_type("ec2", "NetworkInterface", "Id")),
+        aws_resource_id(),
+        None,
+        None,
+        legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
                 validate_prefixed_resource_id(s, "eni")
                     .map_err(|reason| format!("Invalid Network Interface ID '{}': {}", s, reason))
@@ -553,19 +555,19 @@ pub fn network_interface_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        to_dsl: None,
-    }
+        None,
+    )
 }
 
 /// EIP Allocation ID type (e.g., "eipalloc-0123456789abcdef0")
 #[allow(dead_code)]
 pub fn allocation_id() -> AttributeType {
-    AttributeType::Custom {
-        identity: Some(aws_type("ec2", "Eip", "AllocationId")),
-        pattern: None,
-        length: None,
-        base: Box::new(aws_resource_id()),
-        validate: legacy_validator(|value| {
+    AttributeType::custom(
+        Some(aws_type("ec2", "Eip", "AllocationId")),
+        aws_resource_id(),
+        None,
+        None,
+        legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
                 validate_prefixed_resource_id(s, "eipalloc")
                     .map_err(|reason| format!("Invalid Allocation ID '{}': {}", s, reason))
@@ -573,18 +575,18 @@ pub fn allocation_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        to_dsl: None,
-    }
+        None,
+    )
 }
 
 /// Prefix List ID type (e.g., "pl-0123456789abcdef0")
 pub fn prefix_list_id() -> AttributeType {
-    AttributeType::Custom {
-        identity: Some(aws_type("ec2", "PrefixList", "Id")),
-        pattern: None,
-        length: None,
-        base: Box::new(aws_resource_id()),
-        validate: legacy_validator(|value| {
+    AttributeType::custom(
+        Some(aws_type("ec2", "PrefixList", "Id")),
+        aws_resource_id(),
+        None,
+        None,
+        legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
                 validate_prefixed_resource_id(s, "pl")
                     .map_err(|reason| format!("Invalid Prefix List ID '{}': {}", s, reason))
@@ -592,18 +594,18 @@ pub fn prefix_list_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        to_dsl: None,
-    }
+        None,
+    )
 }
 
 /// Carrier Gateway ID type (e.g., "cagw-0123456789abcdef0")
 pub fn carrier_gateway_id() -> AttributeType {
-    AttributeType::Custom {
-        identity: Some(aws_type("ec2", "CarrierGateway", "Id")),
-        pattern: None,
-        length: None,
-        base: Box::new(aws_resource_id()),
-        validate: legacy_validator(|value| {
+    AttributeType::custom(
+        Some(aws_type("ec2", "CarrierGateway", "Id")),
+        aws_resource_id(),
+        None,
+        None,
+        legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
                 validate_prefixed_resource_id(s, "cagw")
                     .map_err(|reason| format!("Invalid Carrier Gateway ID '{}': {}", s, reason))
@@ -611,18 +613,18 @@ pub fn carrier_gateway_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        to_dsl: None,
-    }
+        None,
+    )
 }
 
 /// Local Gateway ID type (e.g., "lgw-0123456789abcdef0")
 pub fn local_gateway_id() -> AttributeType {
-    AttributeType::Custom {
-        identity: Some(aws_type("ec2", "LocalGateway", "Id")),
-        pattern: None,
-        length: None,
-        base: Box::new(aws_resource_id()),
-        validate: legacy_validator(|value| {
+    AttributeType::custom(
+        Some(aws_type("ec2", "LocalGateway", "Id")),
+        aws_resource_id(),
+        None,
+        None,
+        legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
                 validate_prefixed_resource_id(s, "lgw")
                     .map_err(|reason| format!("Invalid Local Gateway ID '{}': {}", s, reason))
@@ -630,19 +632,19 @@ pub fn local_gateway_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        to_dsl: None,
-    }
+        None,
+    )
 }
 
 /// Network ACL ID type (e.g., "acl-0123456789abcdef0")
 #[allow(dead_code)]
 pub fn network_acl_id() -> AttributeType {
-    AttributeType::Custom {
-        identity: Some(aws_type("ec2", "NetworkAcl", "Id")),
-        pattern: None,
-        length: None,
-        base: Box::new(aws_resource_id()),
-        validate: legacy_validator(|value| {
+    AttributeType::custom(
+        Some(aws_type("ec2", "NetworkAcl", "Id")),
+        aws_resource_id(),
+        None,
+        None,
+        legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
                 validate_prefixed_resource_id(s, "acl")
                     .map_err(|reason| format!("Invalid Network ACL ID '{}': {}", s, reason))
@@ -650,18 +652,18 @@ pub fn network_acl_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        to_dsl: None,
-    }
+        None,
+    )
 }
 
 /// Transit Gateway Attachment ID type (e.g., "tgw-attach-0123456789abcdef0")
 pub fn transit_gateway_attachment_id() -> AttributeType {
-    AttributeType::Custom {
-        identity: Some(aws_type("ec2", "TransitGatewayAttachment", "Id")),
-        pattern: None,
-        length: None,
-        base: Box::new(aws_resource_id()),
-        validate: legacy_validator(|value| {
+    AttributeType::custom(
+        Some(aws_type("ec2", "TransitGatewayAttachment", "Id")),
+        aws_resource_id(),
+        None,
+        None,
+        legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
                 validate_prefixed_resource_id(s, "tgw-attach").map_err(|reason| {
                     format!("Invalid Transit Gateway Attachment ID '{}': {}", s, reason)
@@ -670,18 +672,18 @@ pub fn transit_gateway_attachment_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        to_dsl: None,
-    }
+        None,
+    )
 }
 
 /// Flow Log ID type (e.g., "fl-0123456789abcdef0")
 pub fn flow_log_id() -> AttributeType {
-    AttributeType::Custom {
-        identity: Some(aws_type("ec2", "FlowLog", "Id")),
-        pattern: None,
-        length: None,
-        base: Box::new(aws_resource_id()),
-        validate: legacy_validator(|value| {
+    AttributeType::custom(
+        Some(aws_type("ec2", "FlowLog", "Id")),
+        aws_resource_id(),
+        None,
+        None,
+        legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
                 validate_prefixed_resource_id(s, "fl")
                     .map_err(|reason| format!("Invalid Flow Log ID '{}': {}", s, reason))
@@ -689,18 +691,18 @@ pub fn flow_log_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        to_dsl: None,
-    }
+        None,
+    )
 }
 
 /// IPAM ID type (e.g., "ipam-0123456789abcdef0")
 pub fn ipam_id() -> AttributeType {
-    AttributeType::Custom {
-        identity: Some(aws_type("ec2", "Ipam", "Id")),
-        pattern: None,
-        length: None,
-        base: Box::new(aws_resource_id()),
-        validate: legacy_validator(|value| {
+    AttributeType::custom(
+        Some(aws_type("ec2", "Ipam", "Id")),
+        aws_resource_id(),
+        None,
+        None,
+        legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
                 validate_prefixed_resource_id(s, "ipam")
                     .map_err(|reason| format!("Invalid IPAM ID '{}': {}", s, reason))
@@ -708,18 +710,18 @@ pub fn ipam_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        to_dsl: None,
-    }
+        None,
+    )
 }
 
 /// Subnet Route Table Association ID type (e.g., "rtbassoc-0123456789abcdef0")
 pub fn subnet_route_table_association_id() -> AttributeType {
-    AttributeType::Custom {
-        identity: Some(aws_type("ec2", "SubnetRouteTableAssociation", "Id")),
-        pattern: None,
-        length: None,
-        base: Box::new(aws_resource_id()),
-        validate: legacy_validator(|value| {
+    AttributeType::custom(
+        Some(aws_type("ec2", "SubnetRouteTableAssociation", "Id")),
+        aws_resource_id(),
+        None,
+        None,
+        legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
                 validate_prefixed_resource_id(s, "rtbassoc").map_err(|reason| {
                     format!(
@@ -731,18 +733,18 @@ pub fn subnet_route_table_association_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        to_dsl: None,
-    }
+        None,
+    )
 }
 
 /// Security Group Rule ID type (e.g., "sgr-0123456789abcdef0")
 pub fn security_group_rule_id() -> AttributeType {
-    AttributeType::Custom {
-        identity: Some(aws_type("ec2", "SecurityGroupRule", "Id")),
-        pattern: None,
-        length: None,
-        base: Box::new(aws_resource_id()),
-        validate: legacy_validator(|value| {
+    AttributeType::custom(
+        Some(aws_type("ec2", "SecurityGroupRule", "Id")),
+        aws_resource_id(),
+        None,
+        None,
+        legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
                 validate_prefixed_resource_id(s, "sgr")
                     .map_err(|reason| format!("Invalid Security Group Rule ID '{}': {}", s, reason))
@@ -750,8 +752,8 @@ pub fn security_group_rule_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        to_dsl: None,
-    }
+        None,
+    )
 }
 
 /// Validate IAM Role ID format: starts with "AROA" followed by alphanumeric characters.
@@ -770,12 +772,12 @@ pub fn validate_iam_role_id(id: &str) -> Result<(), String> {
 
 /// IAM Role ID type (e.g., "AROAEXAMPLEID")
 pub fn iam_role_id() -> AttributeType {
-    AttributeType::Custom {
-        identity: Some(aws_type("iam", "Role", "Id")),
-        pattern: None,
-        length: None,
-        base: Box::new(aws_resource_id()),
-        validate: legacy_validator(|value| {
+    AttributeType::custom(
+        Some(aws_type("iam", "Role", "Id")),
+        aws_resource_id(),
+        None,
+        None,
+        legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
                 validate_iam_role_id(s)
                     .map_err(|reason| format!("Invalid IAM Role ID '{}': {}", s, reason))
@@ -783,8 +785,8 @@ pub fn iam_role_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        to_dsl: None,
-    }
+        None,
+    )
 }
 
 // ========== AWS Account ID ==========
@@ -805,12 +807,12 @@ pub fn validate_aws_account_id(id: &str) -> Result<(), String> {
 
 /// AWS Account ID type (12-digit numeric string, e.g., "123456789012")
 pub fn aws_account_id() -> AttributeType {
-    AttributeType::Custom {
-        identity: Some(aws_bare_type(&[], "AccountId")),
-        pattern: None,
-        length: None,
-        base: Box::new(AttributeType::String),
-        validate: legacy_validator(|value| {
+    AttributeType::custom(
+        Some(aws_bare_type(&[], "AccountId")),
+        AttributeType::string(),
+        None,
+        None,
+        legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
                 validate_aws_account_id(s)
                     .map_err(|reason| format!("Invalid AWS Account ID '{}': {}", s, reason))
@@ -818,8 +820,8 @@ pub fn aws_account_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        to_dsl: None,
-    }
+        None,
+    )
 }
 
 // ========== SSO / Identity Center helpers ==========
@@ -839,12 +841,12 @@ pub fn validate_sso_principal_id(id: &str) -> Result<(), String> {
 
 /// SSO PrincipalId type (user or group id from IdentityStore).
 pub fn sso_principal_id() -> AttributeType {
-    AttributeType::Custom {
-        identity: Some(aws_type("sso", "Principal", "Id")),
-        pattern: None,
-        length: None,
-        base: Box::new(AttributeType::String),
-        validate: legacy_validator(|value| {
+    AttributeType::custom(
+        Some(aws_type("sso", "Principal", "Id")),
+        AttributeType::string(),
+        None,
+        None,
+        legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
                 validate_sso_principal_id(s)
                     .map_err(|reason| format!("Invalid SSO principal ID '{}': {}", s, reason))
@@ -852,8 +854,8 @@ pub fn sso_principal_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        to_dsl: None,
-    }
+        None,
+    )
 }
 
 /// Validate an SSO Instance ARN
@@ -874,12 +876,12 @@ pub fn validate_sso_instance_arn(arn: &str) -> Result<(), String> {
 
 /// SSO Instance ARN type (e.g., "arn:aws:sso:::instance/ssoins-xxxxxxxx").
 pub fn sso_instance_arn() -> AttributeType {
-    AttributeType::Custom {
-        identity: Some(aws_type("sso", "Instance", "Arn")),
-        pattern: None,
-        length: None,
-        base: Box::new(arn()),
-        validate: legacy_validator(|value| {
+    AttributeType::custom(
+        Some(aws_type("sso", "Instance", "Arn")),
+        arn(),
+        None,
+        None,
+        legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
                 validate_sso_instance_arn(s)
                     .map_err(|reason| format!("Invalid SSO instance ARN '{}': {}", s, reason))
@@ -887,8 +889,8 @@ pub fn sso_instance_arn() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        to_dsl: None,
-    }
+        None,
+    )
 }
 
 /// Validate an IdentityStore id (`d-<10-hex>` or a 36-char UUID).
@@ -910,12 +912,12 @@ pub fn validate_identity_store_id(id: &str) -> Result<(), String> {
 
 /// IdentityStore identity store id (`d-...` or UUID).
 pub fn identity_store_id() -> AttributeType {
-    AttributeType::Custom {
-        identity: Some(aws_type("identitystore", "Store", "Id")),
-        pattern: None,
-        length: None,
-        base: Box::new(AttributeType::String),
-        validate: legacy_validator(|value| {
+    AttributeType::custom(
+        Some(aws_type("identitystore", "Store", "Id")),
+        AttributeType::string(),
+        None,
+        None,
+        legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
                 validate_identity_store_id(s)
                     .map_err(|reason| format!("Invalid IdentityStore id '{}': {}", s, reason))
@@ -923,8 +925,8 @@ pub fn identity_store_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        to_dsl: None,
-    }
+        None,
+    )
 }
 
 /// Validate an SSO PermissionSet ARN (`arn:aws:sso:::permissionSet/ssoins-<hex>/ps-<hex>`).
@@ -942,12 +944,12 @@ pub fn validate_sso_permission_set_arn(arn: &str) -> Result<(), String> {
 
 /// SSO PermissionSet ARN type.
 pub fn sso_permission_set_arn() -> AttributeType {
-    AttributeType::Custom {
-        identity: Some(aws_type("sso", "PermissionSet", "Arn")),
-        pattern: None,
-        length: None,
-        base: Box::new(arn()),
-        validate: legacy_validator(|value| {
+    AttributeType::custom(
+        Some(aws_type("sso", "PermissionSet", "Arn")),
+        arn(),
+        None,
+        None,
+        legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
                 validate_sso_permission_set_arn(s)
                     .map_err(|reason| format!("Invalid SSO permission set ARN '{}': {}", s, reason))
@@ -955,8 +957,8 @@ pub fn sso_permission_set_arn() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        to_dsl: None,
-    }
+        None,
+    )
 }
 
 // ========== ARN validators ==========
@@ -1080,31 +1082,31 @@ pub fn validate_iam_arn(arn: &str, resource_prefix: &str) -> Result<(), String> 
 
 /// ARN type (e.g., "arn:aws:s3:::my-bucket")
 pub fn arn() -> AttributeType {
-    AttributeType::Custom {
-        identity: Some(aws_bare_type(&[], "Arn")),
-        pattern: None,
-        length: None,
-        base: Box::new(AttributeType::String),
-        validate: legacy_validator(|value| {
+    AttributeType::custom(
+        Some(aws_bare_type(&[], "Arn")),
+        AttributeType::string(),
+        None,
+        None,
+        legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
                 validate_arn(s).map_err(|reason| format!("Invalid ARN '{}': {}", s, reason))
             } else {
                 Err("Expected string".to_string())
             }
         }),
-        to_dsl: None,
-    }
+        None,
+    )
 }
 
 /// IAM Role ARN type (e.g., "arn:aws:iam::123456789012:role/MyRole")
 #[allow(dead_code)]
 pub fn iam_role_arn() -> AttributeType {
-    AttributeType::Custom {
-        identity: Some(aws_type("iam", "Role", "Arn")),
-        pattern: None,
-        length: None,
-        base: Box::new(arn()),
-        validate: legacy_validator(|value| {
+    AttributeType::custom(
+        Some(aws_type("iam", "Role", "Arn")),
+        arn(),
+        None,
+        None,
+        legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
                 validate_iam_arn(s, "role/")
                     .map_err(|reason| format!("Invalid IAM Role ARN '{}': {}", s, reason))
@@ -1112,19 +1114,19 @@ pub fn iam_role_arn() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        to_dsl: None,
-    }
+        None,
+    )
 }
 
 /// IAM Policy ARN type (e.g., "arn:aws:iam::123456789012:policy/MyPolicy")
 #[allow(dead_code)]
 pub fn iam_policy_arn() -> AttributeType {
-    AttributeType::Custom {
-        identity: Some(aws_type("iam", "Policy", "Arn")),
-        pattern: None,
-        length: None,
-        base: Box::new(arn()),
-        validate: legacy_validator(|value| {
+    AttributeType::custom(
+        Some(aws_type("iam", "Policy", "Arn")),
+        arn(),
+        None,
+        None,
+        legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
                 validate_iam_arn(s, "policy/")
                     .map_err(|reason| format!("Invalid IAM Policy ARN '{}': {}", s, reason))
@@ -1132,19 +1134,19 @@ pub fn iam_policy_arn() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        to_dsl: None,
-    }
+        None,
+    )
 }
 
 /// IAM OIDC Provider ARN type (e.g., `arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com`)
 #[allow(dead_code)]
 pub fn iam_oidc_provider_arn() -> AttributeType {
-    AttributeType::Custom {
-        identity: Some(aws_type("iam", "OidcProvider", "Arn")),
-        pattern: None,
-        length: None,
-        base: Box::new(arn()),
-        validate: legacy_validator(|value| {
+    AttributeType::custom(
+        Some(aws_type("iam", "OidcProvider", "Arn")),
+        arn(),
+        None,
+        None,
+        legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
                 validate_iam_arn(s, "oidc-provider/")
                     .map_err(|reason| format!("Invalid IAM OIDC Provider ARN '{}': {}", s, reason))
@@ -1152,19 +1154,19 @@ pub fn iam_oidc_provider_arn() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        to_dsl: None,
-    }
+        None,
+    )
 }
 
 /// KMS Key ARN type (e.g., "arn:aws:kms:us-east-1:123456789012:key/...")
 #[allow(dead_code)]
 pub fn kms_key_arn() -> AttributeType {
-    AttributeType::Custom {
-        identity: Some(aws_type("kms", "Key", "Arn")),
-        pattern: None,
-        length: None,
-        base: Box::new(arn()),
-        validate: legacy_validator(|value| {
+    AttributeType::custom(
+        Some(aws_type("kms", "Key", "Arn")),
+        arn(),
+        None,
+        None,
+        legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
                 validate_service_arn(s, "kms", Some("key/"))
                     .map_err(|reason| format!("Invalid KMS Key ARN '{}': {}", s, reason))
@@ -1172,8 +1174,8 @@ pub fn kms_key_arn() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        to_dsl: None,
-    }
+        None,
+    )
 }
 
 // ========== KMS Key ID ==========
@@ -1228,12 +1230,12 @@ pub fn validate_kms_key_id(value: &str) -> Result<(), String> {
 /// - Key ID: "1234abcd-12ab-34cd-56ef-1234567890ab"
 #[allow(dead_code)]
 pub fn kms_key_id() -> AttributeType {
-    AttributeType::Custom {
-        identity: Some(aws_type("kms", "Key", "Id")),
-        pattern: None,
-        length: None,
-        base: Box::new(aws_resource_id()),
-        validate: legacy_validator(|value| {
+    AttributeType::custom(
+        Some(aws_type("kms", "Key", "Id")),
+        aws_resource_id(),
+        None,
+        None,
+        legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
                 validate_kms_key_id(s)
                     .map_err(|reason| format!("Invalid KMS key identifier '{}': {}", s, reason))
@@ -1241,8 +1243,8 @@ pub fn kms_key_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        to_dsl: None,
-    }
+        None,
+    )
 }
 
 // ========== IPAM types ==========
@@ -1263,12 +1265,12 @@ pub fn validate_ipam_pool_id(id: &str) -> Result<(), String> {
 
 /// IPAM Pool ID type (e.g., "ipam-pool-0123456789abcdef0")
 pub fn ipam_pool_id() -> AttributeType {
-    AttributeType::Custom {
-        identity: Some(aws_type("ec2", "IpamPool", "Id")),
-        pattern: None,
-        length: None,
-        base: Box::new(aws_resource_id()),
-        validate: legacy_validator(|value| {
+    AttributeType::custom(
+        Some(aws_type("ec2", "IpamPool", "Id")),
+        aws_resource_id(),
+        None,
+        None,
+        legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
                 validate_ipam_pool_id(s)
                     .map_err(|reason| format!("Invalid IPAM Pool ID '{}': {}", s, reason))
@@ -1276,8 +1278,8 @@ pub fn ipam_pool_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        to_dsl: None,
-    }
+        None,
+    )
 }
 
 // ========== Availability Zone ==========
@@ -1371,12 +1373,12 @@ pub fn validate_availability_zone_id(az_id: &str) -> Result<(), String> {
 
 /// Availability Zone ID type (e.g., "use1-az1", "usw2-az2", "apne1-az4")
 pub fn availability_zone_id() -> AttributeType {
-    AttributeType::Custom {
-        identity: Some(aws_bare_type(&["AvailabilityZone"], "ZoneId")),
-        pattern: None,
-        length: None,
-        base: Box::new(AttributeType::String),
-        validate: legacy_validator(|value| {
+    AttributeType::custom(
+        Some(aws_bare_type(&["AvailabilityZone"], "ZoneId")),
+        AttributeType::string(),
+        None,
+        None,
+        legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
                 validate_availability_zone_id(s)
                     .map_err(|reason| format!("Invalid availability zone ID '{}': {}", s, reason))
@@ -1384,17 +1386,17 @@ pub fn availability_zone_id() -> AttributeType {
                 Err("Expected string".to_string())
             }
         }),
-        to_dsl: None,
-    }
+        None,
+    )
 }
 
 // ========== IAM Policy Document ==========
 
 /// String or list of strings type — for IAM policy fields like action, resource
 fn string_or_list_of_strings() -> AttributeType {
-    AttributeType::Union(vec![
-        AttributeType::String,
-        AttributeType::list(AttributeType::String),
+    AttributeType::union(vec![
+        AttributeType::string(),
+        AttributeType::list(AttributeType::string()),
     ])
 }
 
@@ -1405,18 +1407,18 @@ fn string_or_principal_struct() -> AttributeType {
     // Struct must come before String because Union tries members in order,
     // and dsl_value_to_aws's fallthrough to value_to_json would match
     // Value::Map against String incorrectly.
-    AttributeType::Union(vec![
-        AttributeType::Struct {
-            name: "IamPolicyPrincipal".to_string(),
-            fields: vec![
+    AttributeType::union(vec![
+        AttributeType::struct_(
+            "IamPolicyPrincipal".to_string(),
+            vec![
                 StructField::new("service", string_or_list_of_strings())
                     .with_provider_name("Service"),
                 StructField::new("aws", string_or_list_of_strings()).with_provider_name("AWS"),
                 StructField::new("federated", string_or_list_of_strings())
                     .with_provider_name("Federated"),
             ],
-        },
-        AttributeType::String,
+        ),
+        AttributeType::string(),
     ])
 }
 
@@ -1432,18 +1434,18 @@ fn string_or_principal_struct() -> AttributeType {
 /// shared `iam_policy_document()` Struct canonicalizes identically on
 /// both providers (aws#313).
 fn iam_policy_effect() -> AttributeType {
-    AttributeType::StringEnum {
-        name: "Effect".to_string(),
-        values: vec!["Allow".to_string(), "Deny".to_string()],
-        identity: Some(carina_core::schema::string_enum_identity(
+    AttributeType::string_enum(
+        "Effect".to_string(),
+        vec!["Allow".to_string(), "Deny".to_string()],
+        Some(carina_core::schema::string_enum_identity(
             "Effect",
             Some("aws.iam.PolicyDocument"),
         )),
-        dsl_aliases: vec![
+        vec![
             ("Allow".to_string(), "allow".to_string()),
             ("Deny".to_string(), "deny".to_string()),
         ],
-    }
+    )
 }
 
 /// IAM Policy Document Version enum type. Allows `2012-10-17` or
@@ -1459,18 +1461,18 @@ fn iam_policy_effect() -> AttributeType {
 /// shared `iam_policy_document()` Struct canonicalizes identically on
 /// both providers (aws#313).
 fn iam_policy_version() -> AttributeType {
-    AttributeType::StringEnum {
-        name: "Version".to_string(),
-        values: vec!["2012-10-17".to_string(), "2008-10-17".to_string()],
-        identity: Some(carina_core::schema::string_enum_identity(
+    AttributeType::string_enum(
+        "Version".to_string(),
+        vec!["2012-10-17".to_string(), "2008-10-17".to_string()],
+        Some(carina_core::schema::string_enum_identity(
             "Version",
             Some("aws.iam.PolicyDocument"),
         )),
-        dsl_aliases: vec![
+        vec![
             ("2012-10-17".to_string(), "2012_10_17".to_string()),
             ("2008-10-17".to_string(), "2008_10_17".to_string()),
         ],
-    }
+    )
 }
 
 /// IAM condition map type: Map<ConditionOperator, Map<ConditionKey, StringOrList>>
@@ -1483,22 +1485,22 @@ fn iam_policy_version() -> AttributeType {
 fn condition_type() -> AttributeType {
     let operator_values: Vec<String> = all_condition_operator_snake_forms();
     AttributeType::map_with_key(
-        AttributeType::StringEnum {
-            name: "ConditionOperator".to_string(),
-            values: operator_values,
-            identity: None,
-            dsl_aliases: vec![],
-        },
+        AttributeType::string_enum(
+            "ConditionOperator".to_string(),
+            operator_values,
+            None,
+            vec![],
+        ),
         AttributeType::map(string_or_list_of_strings()),
     )
 }
 
 /// IAM Policy Statement struct type
 fn iam_policy_statement() -> AttributeType {
-    AttributeType::Struct {
-        name: "IamPolicyStatement".to_string(),
-        fields: vec![
-            StructField::new("sid", AttributeType::String).with_provider_name("Sid"),
+    AttributeType::struct_(
+        "IamPolicyStatement".to_string(),
+        vec![
+            StructField::new("sid", AttributeType::string()).with_provider_name("Sid"),
             StructField::new("effect", iam_policy_effect()).with_provider_name("Effect"),
             StructField::new("action", string_or_list_of_strings()).with_provider_name("Action"),
             StructField::new("not_action", string_or_list_of_strings())
@@ -1513,7 +1515,7 @@ fn iam_policy_statement() -> AttributeType {
                 .with_provider_name("NotPrincipal"),
             StructField::new("condition", condition_type()).with_provider_name("Condition"),
         ],
-    }
+    )
 }
 
 /// IAM Policy Document type
@@ -1523,16 +1525,16 @@ fn iam_policy_statement() -> AttributeType {
 /// convert between snake_case DSL field names and PascalCase IAM field names
 /// (e.g., `version` <-> `Version`, `statement` <-> `Statement`).
 pub fn iam_policy_document() -> AttributeType {
-    AttributeType::Struct {
-        name: "IamPolicyDocument".to_string(),
-        fields: vec![
+    AttributeType::struct_(
+        "IamPolicyDocument".to_string(),
+        vec![
             StructField::new("version", iam_policy_version()).with_provider_name("Version"),
-            StructField::new("id", AttributeType::String).with_provider_name("Id"),
+            StructField::new("id", AttributeType::string()).with_provider_name("Id"),
             StructField::new("statement", AttributeType::list(iam_policy_statement()))
                 .with_provider_name("Statement")
                 .with_block_name("statement"),
         ],
-    }
+    )
 }
 
 /// IAM condition operator — represented as a fully-decomposed sum
@@ -2506,7 +2508,8 @@ mod tests {
 
     #[test]
     fn iam_oidc_provider_arn_identity() {
-        let AttributeType::Custom { identity, .. } = iam_oidc_provider_arn() else {
+        let t = iam_oidc_provider_arn();
+        let RawShape::Custom { identity, .. } = t.raw_shape() else {
             panic!("iam_oidc_provider_arn() should be a Custom type");
         };
         assert_eq!(
@@ -2517,7 +2520,8 @@ mod tests {
 
     #[test]
     fn iam_oidc_provider_arn_accepts_valid() {
-        let AttributeType::Custom { validate, .. } = iam_oidc_provider_arn() else {
+        let t = iam_oidc_provider_arn();
+        let RawShape::Custom { validate, .. } = t.raw_shape() else {
             panic!("iam_oidc_provider_arn() should be a Custom type");
         };
         let v = Value::Concrete(ConcreteValue::String(
@@ -2529,7 +2533,8 @@ mod tests {
 
     #[test]
     fn iam_oidc_provider_arn_rejects_wrong_resource() {
-        let AttributeType::Custom { validate, .. } = iam_oidc_provider_arn() else {
+        let t = iam_oidc_provider_arn();
+        let RawShape::Custom { validate, .. } = t.raw_shape() else {
             panic!("iam_oidc_provider_arn() should be a Custom type");
         };
         let v = Value::Concrete(ConcreteValue::String(
@@ -2540,7 +2545,8 @@ mod tests {
 
     #[test]
     fn iam_oidc_provider_arn_rejects_non_iam_service() {
-        let AttributeType::Custom { validate, .. } = iam_oidc_provider_arn() else {
+        let t = iam_oidc_provider_arn();
+        let RawShape::Custom { validate, .. } = t.raw_shape() else {
             panic!("iam_oidc_provider_arn() should be a Custom type");
         };
         let v = Value::Concrete(ConcreteValue::String("arn:aws:s3:::my-bucket".to_string()));
@@ -2549,7 +2555,8 @@ mod tests {
 
     #[test]
     fn iam_oidc_provider_arn_rejects_empty_provider_name() {
-        let AttributeType::Custom { validate, .. } = iam_oidc_provider_arn() else {
+        let t = iam_oidc_provider_arn();
+        let RawShape::Custom { validate, .. } = t.raw_shape() else {
             panic!("iam_oidc_provider_arn() should be a Custom type");
         };
         let v = Value::Concrete(ConcreteValue::String(
@@ -2560,7 +2567,8 @@ mod tests {
 
     #[test]
     fn iam_oidc_provider_arn_accepts_eks_multi_segment() {
-        let AttributeType::Custom { validate, .. } = iam_oidc_provider_arn() else {
+        let t = iam_oidc_provider_arn();
+        let RawShape::Custom { validate, .. } = t.raw_shape() else {
             panic!("iam_oidc_provider_arn() should be a Custom type");
         };
         let v = Value::Concrete(ConcreteValue::String(
@@ -2572,7 +2580,8 @@ mod tests {
 
     #[test]
     fn iam_oidc_provider_arn_accepts_china_partition() {
-        let AttributeType::Custom { validate, .. } = iam_oidc_provider_arn() else {
+        let t = iam_oidc_provider_arn();
+        let RawShape::Custom { validate, .. } = t.raw_shape() else {
             panic!("iam_oidc_provider_arn() should be a Custom type");
         };
         let v = Value::Concrete(ConcreteValue::String(
@@ -3104,10 +3113,10 @@ mod tests {
         // `_if_exists` suffixed, and the combination — so that `validate` does
         // not reject inputs that the conversion layer already handles.
         let cond = condition_type();
-        let AttributeType::Map { key, .. } = cond else {
+        let RawShape::Map { key, .. } = cond.raw_shape() else {
             panic!("condition_type() should be a Map");
         };
-        let AttributeType::StringEnum { values, .. } = *key else {
+        let RawShape::StringEnum { values, .. } = key.raw_shape() else {
             panic!("condition_type() key should be a StringEnum");
         };
         for expected in [
@@ -3124,7 +3133,7 @@ mod tests {
                 "ConditionOperator StringEnum should include {expected:?}; got {values:?}"
             );
         }
-        for v in &values {
+        for v in values {
             assert!(
                 condition_operator_to_aws(v).is_some(),
                 "schema value {v:?} not accepted by condition_operator_to_aws"

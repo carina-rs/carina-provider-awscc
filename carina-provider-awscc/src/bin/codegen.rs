@@ -767,7 +767,7 @@ fn override_type_to_display_name(override_type: &str) -> &str {
         "super::tgw_route_table_id()" => "TgwRouteTableId",
         "types::cidr()" => "Cidr",
         "types::email()" => "Email",
-        "AttributeType::String" => "String",
+        "AttributeType::string()" => "String",
         _ => "String",
     }
 }
@@ -2233,12 +2233,7 @@ pub fn {}() -> AwsccSchemaConfig {{
                 .collect::<Vec<_>>()
                 .join(", ");
             let enum_type = format!(
-                r#"AttributeType::StringEnum {{
-                name: "{}".to_string(),
-                values: vec![{}],
-                identity: Some(carina_core::schema::string_enum_identity("{}", Some("{}"))),
-                dsl_aliases: {},
-            }}"#,
+                r#"AttributeType::string_enum("{}".to_string(), vec![{}], Some(carina_core::schema::string_enum_identity("{}", Some("{}"))), {})"#,
                 enum_info.type_name, values_str, enum_info.type_name, namespace, dsl_aliases_code
             );
             // Wrap in List if the property is an array type
@@ -2333,7 +2328,7 @@ pub fn {}() -> AwsccSchemaConfig {{
         // Even if the singular form conflicts with an existing field name,
         // resolve_block_names distinguishes block syntax (Value::List) from
         // attribute assignment (Value::Map) so the block_name is safe to add.
-        if attr_type.contains("list(AttributeType::Struct")
+        if attr_type.contains("list(AttributeType::struct_")
             && let Some(singular) = compute_block_name(&attr_name)
         {
             attr_code.push_str(&format!(
@@ -3040,12 +3035,7 @@ fn generate_struct_type(
                         .collect::<Vec<_>>()
                         .join(", ");
                     format!(
-                        r#"AttributeType::StringEnum {{
-                name: "{}".to_string(),
-                values: vec![{}],
-                identity: Some(carina_core::schema::string_enum_identity("{}", Some("{}"))),
-                dsl_aliases: {},
-            }}"#,
+                        r#"AttributeType::string_enum("{}".to_string(), vec![{}], Some(carina_core::schema::string_enum_identity("{}", Some("{}"))), {})"#,
                         enum_info.type_name,
                         values_str,
                         enum_info.type_name,
@@ -3065,12 +3055,7 @@ fn generate_struct_type(
                         .collect::<Vec<_>>()
                         .join(", ");
                     format!(
-                        r#"AttributeType::StringEnum {{
-                name: "{}".to_string(),
-                values: vec![{}],
-                identity: Some(carina_core::schema::string_enum_identity("{}", Some("{}"))),
-                dsl_aliases: {},
-            }}"#,
+                        r#"AttributeType::string_enum("{}".to_string(), vec![{}], Some(carina_core::schema::string_enum_identity("{}", Some("{}"))), {})"#,
                         local_enum_info.type_name,
                         values_str,
                         local_enum_info.type_name,
@@ -3110,7 +3095,7 @@ fn generate_struct_type(
             // Even if the singular form conflicts with an existing field name,
             // resolve_block_names distinguishes block syntax (Value::List) from
             // attribute assignment (Value::Map) so the block_name is safe to add.
-            if field_type.contains("list(AttributeType::Struct")
+            if field_type.contains("list(AttributeType::struct_")
                 && let Some(singular) = compute_block_name(&snake_name)
             {
                 field_code.push_str(&format!(".with_block_name(\"{}\")", singular));
@@ -3122,7 +3107,7 @@ fn generate_struct_type(
 
     let fields_str = fields.join(",\n                    ");
     format!(
-        "AttributeType::Struct {{\n                    name: \"{}\".to_string(),\n                    fields: vec![\n                    {}\n                    ],\n                }}",
+        "AttributeType::struct_(\"{}\".to_string(), vec![{}])",
         def_name, fields_str
     )
 }
@@ -3677,7 +3662,7 @@ fn resource_type_overrides() -> &'static HashMap<(&'static str, &'static str), T
             // S3 ReplaceKeyPrefixWith is a free-form string, not an enum
             m.insert(
                 ("AWS::S3::Bucket", "ReplaceKeyPrefixWith"),
-                TypeOverride::StringType("AttributeType::String"),
+                TypeOverride::StringType("AttributeType::string()"),
             );
 
             // SSO / IdentityStore identity semantics
@@ -4405,7 +4390,7 @@ fn cfn_type_to_carina_type_with_enum(
                 || EMITTED_DEFS.with(|s| s.borrow().contains_key(def_name));
             if already_known {
                 return (
-                    format!("AttributeType::Ref(\"{}\".to_string())", def_name),
+                    format!("AttributeType::ref_(\"{}\".to_string())", def_name),
                     None,
                 );
             }
@@ -4496,7 +4481,7 @@ fn cfn_type_to_carina_type_with_enum(
                     cfn_type_to_carina_type_with_enum(items, prop_name, schema, namespace, enums);
                 // Propagate item_enum so callers can register the enum type.
                 let effective_item_type = if item_enum.is_some() {
-                    "AttributeType::String".to_string()
+                    "AttributeType::string()".to_string()
                 } else {
                     item_type
                 };
@@ -4532,14 +4517,7 @@ fn cfn_type_to_carina_type_with_enum(
                     let length_expr = emit_length_option(effective_min, def.max_length);
                     return (
                         format!(
-                            r#"AttributeType::Custom {{
-                identity: None,
-                pattern: {},
-                length: {},
-                base: Box::new(AttributeType::String),
-                validate: legacy_validator({}),
-                to_dsl: None,
-            }}"#,
+                            r#"AttributeType::custom(None, AttributeType::string(), {}, {}, legacy_validator({}), None)"#,
                             pattern_expr, length_expr, validate_fn
                         ),
                         None,
@@ -4551,7 +4529,7 @@ fn cfn_type_to_carina_type_with_enum(
         if let Some(inferred) = infer_string_type(prop_name, &schema.type_name) {
             return (inferred, None);
         }
-        return ("AttributeType::String".to_string(), None);
+        return ("AttributeType::string()".to_string(), None);
     }
 
     // Handle explicit enum
@@ -4571,14 +4549,7 @@ fn cfn_type_to_carina_type_with_enum(
             let validate_fn = format!("validate_{}_int_enum", prop_name.to_snake_case());
             return (
                 format!(
-                    r#"AttributeType::Custom {{
-                identity: None,
-                pattern: None,
-                length: None,
-                base: Box::new(AttributeType::Int),
-                validate: legacy_validator({}),
-                to_dsl: None,
-            }}"#,
+                    r#"AttributeType::custom(None, AttributeType::int(), None, None, legacy_validator({}), None)"#,
                     validate_fn
                 ),
                 None,
@@ -4666,14 +4637,7 @@ fn cfn_type_to_carina_type_with_enum(
                 let length_expr = emit_length_option(effective_min, prop.max_length);
                 return (
                     format!(
-                        r#"AttributeType::Custom {{
-                identity: None,
-                pattern: {},
-                length: {},
-                base: Box::new(AttributeType::String),
-                validate: legacy_validator({}),
-                to_dsl: None,
-            }}"#,
+                        r#"AttributeType::custom(None, AttributeType::string(), {}, {}, legacy_validator({}), None)"#,
                         pattern_expr, length_expr, validate_fn
                     ),
                     None,
@@ -4705,14 +4669,7 @@ fn cfn_type_to_carina_type_with_enum(
                 let length_expr = emit_length_option(effective_min, prop.max_length);
                 return (
                     format!(
-                        r#"AttributeType::Custom {{
-                identity: None,
-                pattern: {},
-                length: {},
-                base: Box::new(AttributeType::String),
-                validate: legacy_validator({}),
-                to_dsl: None,
-            }}"#,
+                        r#"AttributeType::custom(None, AttributeType::string(), {}, {}, legacy_validator({}), None)"#,
                         pattern_expr, length_expr, validate_fn
                     ),
                     None,
@@ -4722,14 +4679,7 @@ fn cfn_type_to_carina_type_with_enum(
             // Check for string format constraint (e.g., "uri", "date-time")
             if prop.format.is_some() {
                 return (
-                    r#"AttributeType::Custom {
-                identity: None,
-                pattern: None,
-                length: None,
-                base: Box::new(AttributeType::String),
-                validate: noop_validator(),
-                to_dsl: None,
-            }"#
+                    r#"AttributeType::custom(None, AttributeType::string(), None, None, noop_validator(), None)"#
                     .to_string(),
                     None,
                 );
@@ -4742,23 +4692,16 @@ fn cfn_type_to_carina_type_with_enum(
                 let to_dsl = to_dsl_code_for(&schema.type_name, prop_name);
                 return (
                     format!(
-                        r#"AttributeType::Custom {{
-                identity: None,
-                pattern: None,
-                length: {},
-                base: Box::new(AttributeType::String),
-                validate: legacy_validator({}),
-                to_dsl: {},
-            }}"#,
+                        r#"AttributeType::custom(None, AttributeType::string(), None, {}, legacy_validator({}), {})"#,
                         length_expr, validate_fn, to_dsl
                     ),
                     None,
                 );
             }
 
-            ("AttributeType::String".to_string(), None)
+            ("AttributeType::string()".to_string(), None)
         }
-        Some("boolean") => ("AttributeType::Bool".to_string(), None),
+        Some("boolean") => ("AttributeType::bool()".to_string(), None),
         Some("integer") => {
             // Check resource-scoped overrides first
             let res_override =
@@ -4768,14 +4711,7 @@ fn cfn_type_to_carina_type_with_enum(
                 record_range_validator(prop_name, Some(*min), Some(*max), false);
                 return (
                     format!(
-                        r#"AttributeType::Custom {{
-                identity: None,
-                pattern: None,
-                length: None,
-                base: Box::new(AttributeType::Int),
-                validate: legacy_validator({}),
-                to_dsl: None,
-            }}"#,
+                        r#"AttributeType::custom(None, AttributeType::int(), None, None, legacy_validator({}), None)"#,
                         validate_fn
                     ),
                     None,
@@ -4786,14 +4722,7 @@ fn cfn_type_to_carina_type_with_enum(
                 let validate_fn = format!("validate_{}_int_enum", prop_name.to_snake_case());
                 return (
                     format!(
-                        r#"AttributeType::Custom {{
-                identity: None,
-                pattern: None,
-                length: None,
-                base: Box::new(AttributeType::Int),
-                validate: legacy_validator({}),
-                to_dsl: None,
-            }}"#,
+                        r#"AttributeType::custom(None, AttributeType::int(), None, None, legacy_validator({}), None)"#,
                         validate_fn
                     ),
                     None,
@@ -4814,14 +4743,7 @@ fn cfn_type_to_carina_type_with_enum(
                 record_range_validator(prop_name, min, max, false);
                 (
                     format!(
-                        r#"AttributeType::Custom {{
-                identity: None,
-                pattern: None,
-                length: None,
-                base: Box::new(AttributeType::Int),
-                validate: legacy_validator({}),
-                to_dsl: None,
-            }}"#,
+                        r#"AttributeType::custom(None, AttributeType::int(), None, None, legacy_validator({}), None)"#,
                         validate_fn
                     ),
                     None,
@@ -4829,19 +4751,12 @@ fn cfn_type_to_carina_type_with_enum(
             } else if prop.format.is_some() {
                 // Format-only integer (e.g., int64) - informational, no range validation
                 (
-                    r#"AttributeType::Custom {
-                identity: None,
-                pattern: None,
-                length: None,
-                base: Box::new(AttributeType::Int),
-                validate: noop_validator(),
-                to_dsl: None,
-            }"#
+                    r#"AttributeType::custom(None, AttributeType::int(), None, None, noop_validator(), None)"#
                     .to_string(),
                     None,
                 )
             } else {
-                ("AttributeType::Int".to_string(), None)
+                ("AttributeType::int()".to_string(), None)
             }
         }
         Some("number") => {
@@ -4853,14 +4768,7 @@ fn cfn_type_to_carina_type_with_enum(
                 record_range_validator(prop_name, Some(*min), Some(*max), true);
                 return (
                     format!(
-                        r#"AttributeType::Custom {{
-                identity: None,
-                pattern: None,
-                length: None,
-                base: Box::new(AttributeType::Float),
-                validate: legacy_validator({}),
-                to_dsl: None,
-            }}"#,
+                        r#"AttributeType::custom(None, AttributeType::float(), None, None, legacy_validator({}), None)"#,
                         validate_fn
                     ),
                     None,
@@ -4881,14 +4789,7 @@ fn cfn_type_to_carina_type_with_enum(
                 record_range_validator(prop_name, min, max, true);
                 (
                     format!(
-                        r#"AttributeType::Custom {{
-                identity: None,
-                pattern: None,
-                length: None,
-                base: Box::new(AttributeType::Float),
-                validate: legacy_validator({}),
-                to_dsl: None,
-            }}"#,
+                        r#"AttributeType::custom(None, AttributeType::float(), None, None, legacy_validator({}), None)"#,
                         validate_fn
                     ),
                     None,
@@ -4896,19 +4797,12 @@ fn cfn_type_to_carina_type_with_enum(
             } else if prop.format.is_some() {
                 // Format-only float (e.g., double) - informational, no range validation
                 (
-                    r#"AttributeType::Custom {
-                identity: None,
-                pattern: None,
-                length: None,
-                base: Box::new(AttributeType::Float),
-                validate: noop_validator(),
-                to_dsl: None,
-            }"#
+                    r#"AttributeType::custom(None, AttributeType::float(), None, None, noop_validator(), None)"#
                     .to_string(),
                     None,
                 )
             } else {
-                ("AttributeType::Float".to_string(), None)
+                ("AttributeType::float()".to_string(), None)
             }
         }
         Some("array") => {
@@ -4942,28 +4836,21 @@ fn cfn_type_to_carina_type_with_enum(
                     // caller can register it. The item type uses String as a placeholder;
                     // the actual enum type will be substituted when the enum is registered.
                     let effective_item_type = if item_enum.is_some() {
-                        "AttributeType::String".to_string()
+                        "AttributeType::string()".to_string()
                     } else {
                         item_type
                     };
                     (format!("{}({})", list_ctor, effective_item_type), item_enum)
                 }
             } else {
-                (format!("{}(AttributeType::String)", list_ctor), None)
+                (format!("{}(AttributeType::string())", list_ctor), None)
             };
             // Wrap in Custom type if minItems/maxItems constraints exist
             if prop.min_items.is_some() || prop.max_items.is_some() {
                 let validate_fn = list_items_fn_name(prop.min_items, prop.max_items);
                 (
                     format!(
-                        r#"AttributeType::Custom {{
-                identity: None,
-                pattern: None,
-                length: None,
-                base: Box::new({}),
-                validate: legacy_validator({}),
-                to_dsl: None,
-            }}"#,
+                        r#"AttributeType::custom(None, {}, None, None, legacy_validator({}), None)"#,
                         list_type, validate_fn
                     ),
                     item_enum,
@@ -4999,17 +4886,14 @@ fn cfn_type_to_carina_type_with_enum(
                 let struct_name = prop_name.to_pascal_case();
                 return (
                     format!(
-                        r#"AttributeType::Struct {{
-                    name: "{}".to_string(),
-                    fields: vec![],
-                }}"#,
+                        r#"AttributeType::struct_("{}".to_string(), vec![])"#,
                         struct_name
                     ),
                     None,
                 );
             }
             (
-                "AttributeType::map(AttributeType::String)".to_string(),
+                "AttributeType::map(AttributeType::string())".to_string(),
                 None,
             )
         }
@@ -5018,7 +4902,7 @@ fn cfn_type_to_carina_type_with_enum(
             if let Some(inferred) = infer_string_type(prop_name, &schema.type_name) {
                 (inferred, None)
             } else {
-                ("AttributeType::String".to_string(), None)
+                ("AttributeType::string()".to_string(), None)
             }
         }
     }
@@ -5103,7 +4987,7 @@ fn tags_type_helper() -> &'static str {
     r#"
 /// Tags type for AWS resources
 pub fn tags_type() -> AttributeType {
-    AttributeType::map(AttributeType::String)
+    AttributeType::map(AttributeType::string())
 }
 "#
 }
@@ -5839,7 +5723,7 @@ mod tests {
             &BTreeMap::new(),
         );
         assert_eq!(
-            type_str, "AttributeType::Int",
+            type_str, "AttributeType::int()",
             "SecondaryPrivateIpAddressCount should stay Int"
         );
     }
@@ -6590,12 +6474,12 @@ mod tests {
             &BTreeMap::new(),
         );
         assert!(
-            type_str.contains("AttributeType::Custom"),
+            type_str.contains("AttributeType::custom("),
             "Integer with min/max should produce Custom type, got: {}",
             type_str
         );
         assert!(
-            type_str.contains("Box::new(AttributeType::Int)"),
+            type_str.contains("AttributeType::int()"),
             "Custom should wrap Int base, got: {}",
             type_str
         );
@@ -6646,7 +6530,7 @@ mod tests {
         };
         let (type_str, _) =
             cfn_type_to_carina_type_with_enum(&prop, "SomeCount", &schema, "", &BTreeMap::new());
-        assert_eq!(type_str, "AttributeType::Int");
+        assert_eq!(type_str, "AttributeType::int()");
     }
 
     #[test]
@@ -6691,12 +6575,12 @@ mod tests {
         let (type_str, _) =
             cfn_type_to_carina_type_with_enum(&prop, "SomeCount", &schema, "", &BTreeMap::new());
         assert!(
-            type_str.contains("AttributeType::Custom"),
+            type_str.contains("AttributeType::custom("),
             "Integer with only minimum should produce Custom type, got: {}",
             type_str
         );
         assert!(
-            type_str.contains("Box::new(AttributeType::Int)"),
+            type_str.contains("AttributeType::int()"),
             "Custom should wrap Int base, got: {}",
             type_str
         );
@@ -6744,12 +6628,12 @@ mod tests {
         let (type_str, _) =
             cfn_type_to_carina_type_with_enum(&prop, "SomeCount", &schema, "", &BTreeMap::new());
         assert!(
-            type_str.contains("AttributeType::Custom"),
+            type_str.contains("AttributeType::custom("),
             "Integer with only maximum should produce Custom type, got: {}",
             type_str
         );
         assert!(
-            type_str.contains("Box::new(AttributeType::Int)"),
+            type_str.contains("AttributeType::int()"),
             "Custom should wrap Int base, got: {}",
             type_str
         );
@@ -6808,12 +6692,12 @@ mod tests {
             &BTreeMap::new(),
         );
         assert!(
-            type_str.contains("AttributeType::Custom"),
+            type_str.contains("AttributeType::custom("),
             "Integer enum should produce Custom type, got: {}",
             type_str
         );
         assert!(
-            type_str.contains("Box::new(AttributeType::Int)"),
+            type_str.contains("AttributeType::int()"),
             "Custom should wrap Int base, got: {}",
             type_str
         );
@@ -7143,7 +7027,7 @@ mod tests {
             type_str
         );
         assert!(
-            type_str.contains("Box::new(AttributeType::Int)"),
+            type_str.contains("AttributeType::int()"),
             "FromPort override should wrap Int base, got: {}",
             type_str
         );
@@ -7257,7 +7141,7 @@ mod tests {
             type_str
         );
         assert!(
-            type_str.contains("AttributeType::Float"),
+            type_str.contains("AttributeType::float()"),
             "Number type should use AttributeType::Float base, got: {}",
             type_str
         );
@@ -7999,7 +7883,7 @@ mod tests {
         let generated = generate_schema_code(&schema, "AWS::EC2::IPAMPool").unwrap();
 
         assert!(
-            generated.contains("AttributeType::StringEnum {"),
+            generated.contains("AttributeType::string_enum("),
             "enum-like strings should be emitted as StringEnum: {generated}"
         );
         assert!(
@@ -8109,13 +7993,13 @@ mod tests {
         let generated = generate_schema_code(&schema, "AWS::EC2::TestResource").unwrap();
 
         assert!(
-            generated.contains("AttributeType::StringEnum {"),
+            generated.contains("AttributeType::string_enum("),
             "struct field enums should be emitted as StringEnum: {generated}"
         );
         // Should have a structured identity (post-#3222, `namespace`
         // was replaced by `identity: Some(string_enum_identity(...))`).
         assert!(
-            generated.contains("identity: Some(carina_core::schema::string_enum_identity("),
+            generated.contains("Some(carina_core::schema::string_enum_identity("),
             "StringEnum should include structured identity: {generated}"
         );
         // Should handle hyphens in values via dsl_aliases. Per #199 / D7,
@@ -8377,7 +8261,7 @@ mod tests {
         };
         let generated = generate_schema_code(&schema, "AWS::S3::Bucket").unwrap();
         assert!(
-            generated.contains("AttributeType::list(AttributeType::StringEnum"),
+            generated.contains("AttributeType::list(AttributeType::string_enum("),
             "array with enum items should generate list(StringEnum): {generated}"
         );
     }
@@ -9227,7 +9111,7 @@ mod tests {
             &BTreeMap::new(),
         );
         assert!(
-            type_str.contains("AttributeType::Custom"),
+            type_str.contains("AttributeType::custom("),
             "String with pattern should produce Custom type, got: {}",
             type_str
         );
@@ -9356,7 +9240,7 @@ mod tests {
             &enums,
         );
         assert!(
-            type_str.contains("Custom"),
+            type_str.contains("custom("),
             "array with minItems/maxItems should produce Custom type: {type_str}"
         );
         assert!(
@@ -9405,7 +9289,7 @@ mod tests {
             &enums,
         );
         assert!(
-            type_str.contains("Custom"),
+            type_str.contains("custom("),
             "array with only minItems should produce Custom type: {type_str}"
         );
         assert!(
@@ -9450,7 +9334,7 @@ mod tests {
             &enums,
         );
         assert!(
-            !type_str.contains("Custom"),
+            !type_str.contains("custom("),
             "array without minItems/maxItems should not produce Custom type: {type_str}"
         );
         assert!(
@@ -9574,7 +9458,7 @@ mod tests {
 
         // Should use AttributeType::Custom wrapping String
         assert!(
-            generated.contains("base: Box::new(AttributeType::String)"),
+            generated.contains(", AttributeType::string(),"),
             "Should wrap String in Custom type with length constraint: {generated}"
         );
 
@@ -9800,7 +9684,7 @@ mod tests {
             &BTreeMap::new(),
         );
         assert!(
-            type_str.contains("AttributeType::Custom"),
+            type_str.contains("AttributeType::custom("),
             "Ref to string definition with pattern should produce Custom type, got: {}",
             type_str
         );
@@ -10314,11 +10198,11 @@ mod tests {
         let (type_str, _) =
             cfn_type_to_carina_type_with_enum(&prop, "SomeValue", &schema, "", &BTreeMap::new());
         assert!(
-            type_str.contains("AttributeType::Custom"),
+            type_str.contains("AttributeType::custom("),
             "int64 format should produce Custom type: {type_str}"
         );
         assert!(
-            type_str.contains("Box::new(AttributeType::Int)"),
+            type_str.contains("AttributeType::int()"),
             "int64 format should wrap Int base: {type_str}"
         );
     }
@@ -10381,11 +10265,11 @@ mod tests {
         let (type_str, _) =
             cfn_type_to_carina_type_with_enum(&prop, "Url", &schema, "", &BTreeMap::new());
         assert!(
-            type_str.contains("AttributeType::Custom"),
+            type_str.contains("AttributeType::custom("),
             "uri format should produce Custom type: {type_str}"
         );
         assert!(
-            type_str.contains("Box::new(AttributeType::String)"),
+            type_str.contains("AttributeType::string()"),
             "uri format should wrap String base: {type_str}"
         );
     }
@@ -10454,7 +10338,7 @@ mod tests {
             &BTreeMap::new(),
         );
         assert!(
-            type_str.contains("pattern: Some(\"[0-9]+\".to_string())"),
+            type_str.contains("Some(\"[0-9]+\".to_string())"),
             "Numeric string pattern should be captured in Custom.pattern: {type_str}"
         );
         assert!(
@@ -10562,7 +10446,7 @@ mod tests {
             "Should reference range validator fn: {type_str}"
         );
         assert!(
-            type_str.contains("Box::new(AttributeType::Int)"),
+            type_str.contains("AttributeType::int()"),
             "Should wrap Int base: {type_str}"
         );
     }
@@ -10602,7 +10486,7 @@ mod tests {
         );
         // Should mention both constraints
         assert!(
-            type_str.contains("pattern: Some(\"[0-9]+\".to_string())"),
+            type_str.contains("Some(\"[0-9]+\".to_string())"),
             "Should capture pattern: {type_str}"
         );
         assert!(
@@ -10642,7 +10526,7 @@ mod tests {
             cfn_type_to_carina_type_with_enum(&prop, "SomeName", &schema, "", &BTreeMap::new());
         // Should mention both constraints
         assert!(
-            type_str.contains("pattern: Some(\"^[a-z]+$\".to_string())"),
+            type_str.contains("Some(\"^[a-z]+$\".to_string())"),
             "Should capture pattern: {type_str}"
         );
         assert!(
@@ -11833,12 +11717,12 @@ mod tests {
         let generated =
             generate_schema_code(&schema, "AWS::CloudFront::OriginAccessControl").unwrap();
         assert!(
-            generated.contains("AttributeType::StringEnum {"),
+            generated.contains("AttributeType::string_enum("),
             "alternation pattern should produce StringEnum: {generated}"
         );
         // Must not fall back to a Custom { pattern, ... } emission.
         assert!(
-            !generated.contains("pattern: Some(\"^(s3|mediastore|lambda|mediapackagev2)$\""),
+            !generated.contains("Some(\"^(s3|mediastore|lambda|mediapackagev2)$\""),
             "alternation pattern should not flow through Custom: {generated}"
         );
         assert!(
@@ -11980,7 +11864,7 @@ mod tests {
         let generated = generate_schema_code(&schema, "AWS::CloudFront::Distribution").unwrap();
         // The struct field must emit as StringEnum, not String.
         assert!(
-            generated.contains("StructField::new(\"price_class\", AttributeType::StringEnum"),
+            generated.contains("StructField::new(\"price_class\", AttributeType::string_enum("),
             "nested-field overlay should promote price_class to StringEnum: {generated}"
         );
         // All three documented values must be present.
@@ -12106,15 +11990,16 @@ mod tests {
         // post-carina#3093 the list is `unordered_list` (the overlay
         // still wraps a list — only the ordering flag changed).
         assert!(
-            generated.contains("AttributeType::unordered_list(AttributeType::StringEnum"),
+            generated.contains("AttributeType::unordered_list(AttributeType::string_enum("),
             "nested list-of-string overlay should produce unordered_list(StringEnum) \
              for AllowedMethods (carina#3093): {generated}"
         );
         // No plain `String`-element list for this field, ordered or not.
         assert!(
-            !generated.contains("\"allowed_methods\", AttributeType::list(AttributeType::String)")
+            !generated
+                .contains("\"allowed_methods\", AttributeType::list(AttributeType::string())")
                 && !generated.contains(
-                    "\"allowed_methods\", AttributeType::unordered_list(AttributeType::String)"
+                    "\"allowed_methods\", AttributeType::unordered_list(AttributeType::string())"
                 ),
             "list(String) must be replaced for overridden list field: {generated}"
         );

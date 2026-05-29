@@ -89,25 +89,13 @@ pub fn organizations_organization_config() -> AwsccSchemaConfig {
                 .with_provider_name("Arn"),
         )
         .attribute(
-            AttributeSchema::new("feature_set", AttributeType::StringEnum {
-                name: "FeatureSet".to_string(),
-                values: vec!["ALL".to_string(), "CONSOLIDATED_BILLING".to_string()],
-                identity: Some(carina_core::schema::string_enum_identity("FeatureSet", Some("awscc.organizations.Organization"))),
-                dsl_aliases: vec![("ALL".to_string(), "all".to_string()), ("CONSOLIDATED_BILLING".to_string(), "consolidated_billing".to_string())],
-            })
+            AttributeSchema::new("feature_set", AttributeType::string_enum("FeatureSet".to_string(), vec!["ALL".to_string(), "CONSOLIDATED_BILLING".to_string()], Some(carina_core::schema::string_enum_identity("FeatureSet", Some("awscc.organizations.Organization"))), vec![("ALL".to_string(), "all".to_string()), ("CONSOLIDATED_BILLING".to_string(), "consolidated_billing".to_string())]))
                 .with_description("Specifies the feature set supported by the new organization. Each feature set supports different levels of functionality.")
                 .with_provider_name("FeatureSet")
                 .with_default(Value::Concrete(ConcreteValue::String("ALL".to_string()))),
         )
         .attribute(
-            AttributeSchema::new("id", AttributeType::Custom {
-                identity: None,
-                pattern: Some("^o-[a-z0-9]{10,32}$".to_string()),
-                length: None,
-                base: Box::new(AttributeType::String),
-                validate: legacy_validator(validate_string_pattern_2fd01fd52b67fc75),
-                to_dsl: None,
-            })
+            AttributeSchema::new("id", AttributeType::custom(None, AttributeType::string(), Some("^o-[a-z0-9]{10,32}$".to_string()), None, legacy_validator(validate_string_pattern_2fd01fd52b67fc75), None))
                 .read_only()
                 .with_description("The unique identifier (ID) of an organization. (read-only)")
                 .with_provider_name("Id"),
@@ -119,14 +107,7 @@ pub fn organizations_organization_config() -> AwsccSchemaConfig {
                 .with_provider_name("ManagementAccountArn"),
         )
         .attribute(
-            AttributeSchema::new("management_account_email", AttributeType::Custom {
-                identity: None,
-                pattern: Some("[^\\s@]+@[^\\s@]+\\.[^\\s@]+".to_string()),
-                length: Some((Some(6), Some(64))),
-                base: Box::new(AttributeType::String),
-                validate: legacy_validator(validate_string_pattern_ec4d9bee0dcd262b_len_6_64),
-                to_dsl: None,
-            })
+            AttributeSchema::new("management_account_email", AttributeType::custom(None, AttributeType::string(), Some("[^\\s@]+@[^\\s@]+\\.[^\\s@]+".to_string()), Some((Some(6), Some(64))), legacy_validator(validate_string_pattern_ec4d9bee0dcd262b_len_6_64), None))
                 .read_only()
                 .with_description("The email address that is associated with the AWS account that is designated as the management account for the organization. (read-only)")
                 .with_provider_name("ManagementAccountEmail"),
@@ -138,14 +119,7 @@ pub fn organizations_organization_config() -> AwsccSchemaConfig {
                 .with_provider_name("ManagementAccountId"),
         )
         .attribute(
-            AttributeSchema::new("root_id", AttributeType::Custom {
-                identity: None,
-                pattern: Some("^r-[0-9a-z]{4,32}$".to_string()),
-                length: Some((None, Some(64))),
-                base: Box::new(AttributeType::String),
-                validate: legacy_validator(validate_string_pattern_0cb01cbc89d38ae3_len_max_64),
-                to_dsl: None,
-            })
+            AttributeSchema::new("root_id", AttributeType::custom(None, AttributeType::string(), Some("^r-[0-9a-z]{4,32}$".to_string()), Some((None, Some(64))), legacy_validator(validate_string_pattern_0cb01cbc89d38ae3_len_max_64), None))
                 .read_only()
                 .with_description("The unique identifier (ID) for the root. (read-only)")
                 .with_provider_name("RootId"),

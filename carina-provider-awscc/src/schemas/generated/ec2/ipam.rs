@@ -57,41 +57,29 @@ pub fn ec2_ipam_config() -> AwsccSchemaConfig {
                 .with_provider_name("Arn"),
         )
         .attribute(
-            AttributeSchema::new("default_resource_discovery_association_id", AttributeType::String)
+            AttributeSchema::new("default_resource_discovery_association_id", AttributeType::string())
                 .read_only()
                 .with_description("The Id of the default association to the default resource discovery, created with this IPAM. (read-only)")
                 .with_provider_name("DefaultResourceDiscoveryAssociationId"),
         )
         .attribute(
-            AttributeSchema::new("default_resource_discovery_id", AttributeType::String)
+            AttributeSchema::new("default_resource_discovery_id", AttributeType::string())
                 .read_only()
                 .with_description("The Id of the default resource discovery, created with this IPAM. (read-only)")
                 .with_provider_name("DefaultResourceDiscoveryId"),
         )
         .attribute(
-            AttributeSchema::new("default_resource_discovery_organizational_unit_exclusions", AttributeType::unordered_list(AttributeType::Struct {
-                    name: "IpamOrganizationalUnitExclusion".to_string(),
-                    fields: vec![
-                    StructField::new("organizations_entity_path", AttributeType::Custom {
-                identity: None,
-                pattern: None,
-                length: Some((Some(1), None)),
-                base: Box::new(AttributeType::String),
-                validate: legacy_validator(validate_string_length_min_1),
-                to_dsl: None,
-            }).required().with_description("An AWS Organizations entity path. Build the path for the OU(s) using AWS Organizations IDs separated by a '/'. Include all child OUs by ending the path with '/*'.").with_provider_name("OrganizationsEntityPath")
-                    ],
-                }))
+            AttributeSchema::new("default_resource_discovery_organizational_unit_exclusions", AttributeType::unordered_list(AttributeType::struct_("IpamOrganizationalUnitExclusion".to_string(), vec![StructField::new("organizations_entity_path", AttributeType::custom(None, AttributeType::string(), None, Some((Some(1), None)), legacy_validator(validate_string_length_min_1), None)).required().with_description("An AWS Organizations entity path. Build the path for the OU(s) using AWS Organizations IDs separated by a '/'. Include all child OUs by ending the path with '/*'.").with_provider_name("OrganizationsEntityPath")])))
                 .with_description("A set of organizational unit (OU) exclusions for the default resource discovery, created with this IPAM.")
                 .with_provider_name("DefaultResourceDiscoveryOrganizationalUnitExclusions")
                 .with_block_name("default_resource_discovery_organizational_unit_exclusion"),
         )
         .attribute(
-            AttributeSchema::new("description", AttributeType::String)
+            AttributeSchema::new("description", AttributeType::string())
                 .with_provider_name("Description"),
         )
         .attribute(
-            AttributeSchema::new("enable_private_gua", AttributeType::Bool)
+            AttributeSchema::new("enable_private_gua", AttributeType::bool())
                 .with_description("Enable provisioning of GUA space in private pools.")
                 .with_provider_name("EnablePrivateGua"),
         )
@@ -102,53 +90,36 @@ pub fn ec2_ipam_config() -> AwsccSchemaConfig {
                 .with_provider_name("IpamId"),
         )
         .attribute(
-            AttributeSchema::new("metered_account", AttributeType::StringEnum {
-                name: "MeteredAccount".to_string(),
-                values: vec!["ipam-owner".to_string(), "resource-owner".to_string()],
-                identity: Some(carina_core::schema::string_enum_identity("MeteredAccount", Some("awscc.ec2.Ipam"))),
-                dsl_aliases: vec![("ipam-owner".to_string(), "ipam_owner".to_string()), ("resource-owner".to_string(), "resource_owner".to_string())],
-            })
+            AttributeSchema::new("metered_account", AttributeType::string_enum("MeteredAccount".to_string(), vec!["ipam-owner".to_string(), "resource-owner".to_string()], Some(carina_core::schema::string_enum_identity("MeteredAccount", Some("awscc.ec2.Ipam"))), vec![("ipam-owner".to_string(), "ipam_owner".to_string()), ("resource-owner".to_string(), "resource_owner".to_string())]))
                 .with_description("A metered account is an account that is charged for active IP addresses managed in IPAM")
                 .with_provider_name("MeteredAccount"),
         )
         .attribute(
-            AttributeSchema::new("operating_regions", AttributeType::unordered_list(AttributeType::Struct {
-                    name: "IpamOperatingRegion".to_string(),
-                    fields: vec![
-                    StructField::new("region_name", super::awscc_region()).required().with_description("The name of the region.").with_provider_name("RegionName")
-                    ],
-                }))
+            AttributeSchema::new("operating_regions", AttributeType::unordered_list(AttributeType::struct_("IpamOperatingRegion".to_string(), vec![StructField::new("region_name", super::awscc_region()).required().with_description("The name of the region.").with_provider_name("RegionName")])))
                 .with_description("The regions IPAM is enabled for. Allows pools to be created in these regions, as well as enabling monitoring")
                 .with_provider_name("OperatingRegions")
                 .with_block_name("operating_region"),
         )
         .attribute(
-            AttributeSchema::new("private_default_scope_id", AttributeType::String)
+            AttributeSchema::new("private_default_scope_id", AttributeType::string())
                 .read_only()
                 .with_description("The Id of the default scope for publicly routable IP space, created with this IPAM. (read-only)")
                 .with_provider_name("PrivateDefaultScopeId"),
         )
         .attribute(
-            AttributeSchema::new("public_default_scope_id", AttributeType::Custom {
-                identity: None,
-                pattern: None,
-                length: Some((None, Some(255))),
-                base: Box::new(AttributeType::String),
-                validate: legacy_validator(validate_string_length_max_255),
-                to_dsl: None,
-            })
+            AttributeSchema::new("public_default_scope_id", AttributeType::custom(None, AttributeType::string(), None, Some((None, Some(255))), legacy_validator(validate_string_length_max_255), None))
                 .read_only()
                 .with_description("The Id of the default scope for publicly routable IP space, created with this IPAM. (read-only)")
                 .with_provider_name("PublicDefaultScopeId"),
         )
         .attribute(
-            AttributeSchema::new("resource_discovery_association_count", AttributeType::Int)
+            AttributeSchema::new("resource_discovery_association_count", AttributeType::int())
                 .read_only()
                 .with_description("The count of resource discoveries associated with this IPAM. (read-only)")
                 .with_provider_name("ResourceDiscoveryAssociationCount"),
         )
         .attribute(
-            AttributeSchema::new("scope_count", AttributeType::Int)
+            AttributeSchema::new("scope_count", AttributeType::int())
                 .read_only()
                 .with_description("The number of scopes that currently exist in this IPAM. (read-only)")
                 .with_provider_name("ScopeCount"),
@@ -159,12 +130,7 @@ pub fn ec2_ipam_config() -> AwsccSchemaConfig {
                 .with_provider_name("Tags"),
         )
         .attribute(
-            AttributeSchema::new("tier", AttributeType::StringEnum {
-                name: "Tier".to_string(),
-                values: vec!["free".to_string(), "advanced".to_string()],
-                identity: Some(carina_core::schema::string_enum_identity("Tier", Some("awscc.ec2.Ipam"))),
-                dsl_aliases: vec![("free".to_string(), "free".to_string()), ("advanced".to_string(), "advanced".to_string())],
-            })
+            AttributeSchema::new("tier", AttributeType::string_enum("Tier".to_string(), vec!["free".to_string(), "advanced".to_string()], Some(carina_core::schema::string_enum_identity("Tier", Some("awscc.ec2.Ipam"))), vec![("free".to_string(), "free".to_string()), ("advanced".to_string(), "advanced".to_string())]))
                 .with_description("The tier of the IPAM.")
                 .with_provider_name("Tier"),
         )

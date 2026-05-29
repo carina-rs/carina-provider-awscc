@@ -33,14 +33,7 @@ pub fn ec2_vpn_gateway_config() -> AwsccSchemaConfig {
         schema: ResourceSchema::new("ec2.VpnGateway")
         .with_description("Specifies a virtual private gateway. A virtual private gateway is the endpoint on the VPC side of your VPN connection. You can create a virtual private gateway before creating the VPC itself.  For more information, see [](https://docs.aws.amazon.com/vpn/latest/s2svpn/VPC_VPN.html) in the *User Guide*.")
         .attribute(
-            AttributeSchema::new("amazon_side_asn", AttributeType::Custom {
-                identity: None,
-                pattern: None,
-                length: None,
-                base: Box::new(AttributeType::Int),
-                validate: legacy_validator(validate_amazon_side_asn_range),
-                to_dsl: None,
-            })
+            AttributeSchema::new("amazon_side_asn", AttributeType::custom(None, AttributeType::int(), None, None, legacy_validator(validate_amazon_side_asn_range), None))
                 .create_only()
                 .with_description("The private Autonomous System Number (ASN) for the Amazon side of a BGP session.")
                 .with_provider_name("AmazonSideAsn"),
@@ -51,12 +44,7 @@ pub fn ec2_vpn_gateway_config() -> AwsccSchemaConfig {
                 .with_provider_name("Tags"),
         )
         .attribute(
-            AttributeSchema::new("type", AttributeType::StringEnum {
-                name: "Type".to_string(),
-                values: vec!["ipsec.1".to_string()],
-                identity: Some(carina_core::schema::string_enum_identity("Type", Some("awscc.ec2.VpnGateway"))),
-                dsl_aliases: vec![("ipsec.1".to_string(), "ipsec_1".to_string())],
-            })
+            AttributeSchema::new("type", AttributeType::string_enum("Type".to_string(), vec!["ipsec.1".to_string()], Some(carina_core::schema::string_enum_identity("Type", Some("awscc.ec2.VpnGateway"))), vec![("ipsec.1".to_string(), "ipsec_1".to_string())]))
                 .required()
                 .create_only()
                 .with_description("The type of VPN connection the virtual private gateway supports.")

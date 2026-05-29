@@ -102,37 +102,26 @@ impl ProviderFactory for AwsccProviderFactory {
         let mut types = HashMap::new();
         types.insert(
             "region".to_string(),
-            AttributeType::StringEnum {
-                name: "Region".to_string(),
-                values: carina_aws_types::REGIONS
+            AttributeType::string_enum(
+                "Region".to_string(),
+                carina_aws_types::REGIONS
                     .iter()
                     .map(|(code, _)| code.to_string())
                     .collect(),
-                identity: Some(carina_core::schema::string_enum_identity(
+                Some(carina_core::schema::string_enum_identity(
                     "Region",
                     Some("awscc"),
                 )),
-                // Region API spellings carry hyphens (`ap-northeast-1`)
-                // but the DSL spelling uses underscores
-                // (`ap_northeast_1`). Materialize the alias table so it
-                // is data, not a `fn` pointer — the latter cannot cross
-                // the WASM boundary (carina#2831).
-                dsl_aliases: carina_aws_types::region_dsl_aliases(),
-            },
+                carina_aws_types::region_dsl_aliases(),
+            ),
         );
         types.insert(
             "allowed_account_ids".to_string(),
-            AttributeType::List {
-                inner: Box::new(AttributeType::String),
-                ordered: false,
-            },
+            AttributeType::unordered_list(AttributeType::string()),
         );
         types.insert(
             "forbidden_account_ids".to_string(),
-            AttributeType::List {
-                inner: Box::new(AttributeType::String),
-                ordered: false,
-            },
+            AttributeType::unordered_list(AttributeType::string()),
         );
         types.insert("assume_role".to_string(), assume_role_attribute_type());
         types
@@ -263,20 +252,20 @@ pub(crate) fn extract_provider_config(attributes: &IndexMap<String, Value>) -> A
 /// credential chain (awscc#260).
 fn assume_role_attribute_type() -> carina_core::schema::AttributeType {
     use carina_core::schema::{AttributeType, StructField};
-    AttributeType::Struct {
-        name: "AssumeRole".to_string(),
-        fields: vec![
-            StructField::new("role_arn", AttributeType::String)
+    AttributeType::struct_(
+        "AssumeRole".to_string(),
+        vec![
+            StructField::new("role_arn", AttributeType::string())
                 .required()
                 .with_description("IAM role ARN to assume."),
-            StructField::new("session_name", AttributeType::String)
+            StructField::new("session_name", AttributeType::string())
                 .with_description("STS session name to associate with the assumed-role session."),
-            StructField::new("external_id", AttributeType::String)
+            StructField::new("external_id", AttributeType::string())
                 .with_description("External ID required by the trust policy of the assumed role."),
-            StructField::new("duration", AttributeType::Duration)
+            StructField::new("duration", AttributeType::duration())
                 .with_description("Assumed-role session duration (e.g., 30min, 1h, 15s)."),
         ],
-    }
+    )
 }
 
 /// Extract a `list(string)` provider config attribute. Non-string
@@ -456,13 +445,14 @@ mod tests {
     fn provider_config_attribute_types_declares_account_id_lists() {
         let factory = AwsccProviderFactory;
         let types = factory.provider_config_attribute_types();
+        let defs = carina_core::schema::empty_defs();
         assert!(matches!(
-            types.get("allowed_account_ids"),
-            Some(carina_core::schema::AttributeType::List { .. })
+            types.get("allowed_account_ids").map(|t| t.shape(defs)),
+            Some(carina_core::schema::Shape::List { .. })
         ));
         assert!(matches!(
-            types.get("forbidden_account_ids"),
-            Some(carina_core::schema::AttributeType::List { .. })
+            types.get("forbidden_account_ids").map(|t| t.shape(defs)),
+            Some(carina_core::schema::Shape::List { .. })
         ));
     }
 
@@ -479,8 +469,8 @@ mod tests {
         let ty = types
             .get("assume_role")
             .expect("assume_role must be declared as a provider config attribute");
-        match ty {
-            carina_core::schema::AttributeType::Struct { name, fields } => {
+        match ty.shape(carina_core::schema::empty_defs()) {
+            carina_core::schema::Shape::Struct { name, fields } => {
                 assert_eq!(name, "AssumeRole");
                 let role_arn = fields
                     .iter()
@@ -618,7 +608,7 @@ mod tests {
     /// actually reached the emitted `AttributeType`.
     #[test]
     fn cloudfront_distribution_methods_are_unordered_lists() {
-        use carina_core::schema::AttributeType;
+        use carina_core::schema::{AttributeType, RawShape};
 
         let factory = AwsccProviderFactory;
         let schema = factory
@@ -629,10 +619,12 @@ mod tests {
 
         // Recursively collect the `ordered` flag of every List whose
         // owning struct field is named allowed_methods/cached_methods.
-        // carina#3340: the walker resolves `AttributeType::Ref` against
+        // carina#3340: this walker resolves `AttributeType::Ref` against
         // `schema.defs` so cycle-broken / shared struct subtrees stay
-        // reachable. A `seen` set guards against infinite recursion on
-        // genuine cycles.
+        // reachable. carina#3349 + #3352: use `raw_shape()` (the
+        // Ref-preserving projection) so we can short-circuit on the
+        // second visit; `shape(defs)` would auto-resolve and infinite-loop
+        // on a self-referential `Ref("X") -> Struct { ..Ref("X").. }`.
         fn collect(
             at: &AttributeType,
             field: Option<&str>,
@@ -640,26 +632,26 @@ mod tests {
             seen: &mut std::collections::HashSet<String>,
             out: &mut Vec<(String, bool)>,
         ) {
-            match at {
-                AttributeType::List { inner, ordered } => {
-                    if matches!(field, Some("allowed_methods" | "cached_methods")) {
-                        out.push((field.unwrap().to_string(), *ordered));
-                    }
-                    collect(inner, None, defs, seen, out);
-                }
-                AttributeType::Struct { fields, .. } => {
-                    for f in fields {
-                        collect(&f.field_type, Some(f.name.as_str()), defs, seen, out);
-                    }
-                }
-                AttributeType::Map { value, .. } => collect(value, None, defs, seen, out),
-                AttributeType::Ref(name) => {
-                    if seen.insert(name.clone())
+            match at.raw_shape() {
+                RawShape::Ref(name) => {
+                    if seen.insert(name.to_string())
                         && let Some(target) = defs.get(name)
                     {
                         collect(target, field, defs, seen, out);
                     }
                 }
+                RawShape::List { inner, ordered } => {
+                    if matches!(field, Some("allowed_methods" | "cached_methods")) {
+                        out.push((field.unwrap().to_string(), ordered));
+                    }
+                    collect(inner, None, defs, seen, out);
+                }
+                RawShape::Struct { fields, .. } => {
+                    for f in fields {
+                        collect(&f.field_type, Some(f.name.as_str()), defs, seen, out);
+                    }
+                }
+                RawShape::Map { value, .. } => collect(value, None, defs, seen, out),
                 _ => {}
             }
         }
