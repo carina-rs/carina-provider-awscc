@@ -397,6 +397,19 @@ struct CfnDefinition {
     /// Maximum string length constraint (for string-typed definitions)
     #[serde(default, rename = "maxLength")]
     max_length: Option<u64>,
+    /// Minimum value constraint (for integer/number-typed definitions).
+    /// CloudFormation factors scalar fields like `RulePriority`/`RateLimit`
+    /// into shared `$ref` definitions that carry their own range; this lets
+    /// a scalar `$ref` reproduce the same ranged int/float a direct property
+    /// would (awscc#291).
+    #[serde(default)]
+    minimum: Option<i64>,
+    /// Maximum value constraint (for integer/number-typed definitions).
+    #[serde(default)]
+    maximum: Option<i64>,
+    /// Format constraint (e.g., "int64", "double") for scalar definitions.
+    #[serde(default)]
+    format: Option<String>,
 }
 
 /// Compute module name from CloudFormation type name
@@ -822,6 +835,16 @@ fn type_display_string(
                 .unwrap_or(false)
         {
             format!("[Struct({})](#{})", def_name, def_name.to_lowercase())
+        } else if let Some(scalar_prop) =
+            resolve_ref(schema, ref_path).and_then(scalar_property_from_def)
+        {
+            // Scalar-typed $ref definition (awscc#291). Mirrors the codegen
+            // branch in `cfn_type_to_carina_type_with_enum`: WAFv2 WebACL's
+            // `Priority`/`Limit` are $refs to scalar integer defs, and
+            // without this the doc rendered them as `String` (the heuristic
+            // fallback below). Recurse so the same Int/Float/Bool display
+            // (with the def's own range) is used.
+            type_display_string(prop_name, &scalar_prop, schema, enums)
         } else {
             // Apply name-based heuristics for unresolvable $ref
             infer_string_type_display(prop_name, &schema.type_name)
@@ -961,6 +984,19 @@ fn type_display_string(
                                     enums[prop_name].type_name,
                                     prop_name.to_snake_case(),
                                     enums[prop_name].type_name.to_lowercase()
+                                )
+                            } else if let Some(scalar_prop) =
+                                resolve_ref(schema, ref_path).and_then(scalar_property_from_def)
+                            {
+                                // List items that $ref a scalar def (awscc#291):
+                                // mirror the non-list scalar-ref branch so a
+                                // List<RateLimit-style> renders as List<Int>,
+                                // not List<String>. Schema-code already does
+                                // this via its recursing array branch.
+                                list_element_type_display(
+                                    &scalar_prop,
+                                    prop_name,
+                                    &schema.type_name,
                                 )
                             } else {
                                 "`List<String>`".to_string()
@@ -3005,6 +3041,32 @@ fn ref_def_name(ref_path: &str) -> Option<&str> {
     ref_path.strip_prefix("#/definitions/")
 }
 
+/// If a resolved `$ref` definition is a scalar (`integer` / `number` /
+/// `boolean`), reconstruct an equivalent inline `CfnProperty` so callers can
+/// recurse through the normal property-typing logic instead of treating the
+/// def as a struct.
+///
+/// CloudFormation factors recurring scalar fields into shared definitions —
+/// e.g. WAFv2 WebACL's `Rule.Priority` and `RateBasedStatement.Limit` are
+/// `$ref`s to the `RulePriority` / `RateLimit` integer defs. Without this,
+/// both the schema-code and markdown `$ref` branches fall through to the
+/// String fallback and mistype the field, so the resource is rejected at
+/// apply (awscc#291). Returns `None` for non-scalar defs, leaving the
+/// existing struct/array/string-pattern handling untouched.
+fn scalar_property_from_def(def: &CfnDefinition) -> Option<CfnProperty> {
+    match def.def_type.as_deref() {
+        Some(scalar @ ("integer" | "number" | "boolean")) => Some(CfnProperty {
+            prop_type: Some(TypeValue::Single(scalar.to_string())),
+            minimum: def.minimum,
+            maximum: def.maximum,
+            format: def.format.clone(),
+            enum_values: def.enum_values.clone(),
+            ..Default::default()
+        }),
+        _ => None,
+    }
+}
+
 /// Generate Rust code for an AttributeType::Struct from a set of properties
 fn generate_struct_type(
     def_name: &str,
@@ -4557,6 +4619,22 @@ fn cfn_type_to_carina_type_with_enum(
                         None,
                     );
                 }
+            }
+            // Handle scalar-typed $ref definitions (integer / number /
+            // boolean) by recursing through the normal scalar mapping with a
+            // reconstructed inline property, so the field gets the exact same
+            // int/float/bool type — including the def's own min/max range —
+            // a direct property would. Without this the $ref falls through to
+            // the String fallback below and the resource is rejected at apply
+            // (awscc#291).
+            if let Some(scalar_prop) = scalar_property_from_def(def) {
+                return cfn_type_to_carina_type_with_enum(
+                    &scalar_prop,
+                    prop_name,
+                    schema,
+                    namespace,
+                    enums,
+                );
             }
         }
         // Apply name-based heuristics for unresolvable $ref
@@ -6175,6 +6253,91 @@ mod tests {
             type_display_string("Items", &prop, &schema, &enums),
             "`List<String>`"
         );
+    }
+
+    #[test]
+    fn test_type_display_scalar_integer_ref_shows_int_not_string() {
+        // awscc#291 markdown sibling: a $ref to a scalar integer def
+        // (WAFv2 `RateLimit`) must display as an Int range, not String.
+        let mut definitions = BTreeMap::new();
+        definitions.insert(
+            "RateLimit".to_string(),
+            CfnDefinition {
+                def_type: Some("integer".to_string()),
+                minimum: Some(10),
+                maximum: Some(2_000_000_000),
+                ..Default::default()
+            },
+        );
+        let prop = CfnProperty {
+            ref_path: Some("#/definitions/RateLimit".to_string()),
+            ..Default::default()
+        };
+        let schema = CfnSchema {
+            type_name: "AWS::WAFv2::WebACL".to_string(),
+            description: None,
+            properties: BTreeMap::new(),
+            required: vec![],
+            read_only_properties: vec![],
+            create_only_properties: vec![],
+            write_only_properties: vec![],
+            primary_identifier: None,
+            definitions: Some(definitions),
+            tagging: None,
+            one_of: vec![],
+            any_of: vec![],
+            handlers: BTreeMap::new(),
+        };
+        let enums = BTreeMap::new();
+        let display = type_display_string("Limit", &prop, &schema, &enums);
+        assert!(
+            display.starts_with("Int"),
+            "scalar integer $ref must display as Int, got: {display}"
+        );
+        assert_ne!(display, "String");
+    }
+
+    #[test]
+    fn test_type_display_list_of_scalar_integer_ref_shows_list_int() {
+        // awscc#291 markdown list sibling: an array whose items $ref a scalar
+        // integer def must display as `List<Int>`, not `List<String>`. The
+        // schema-code path already produces list(int) via its recursing array
+        // branch; the markdown array branch inlined its own ref handling and
+        // would otherwise diverge.
+        let mut definitions = BTreeMap::new();
+        definitions.insert(
+            "Weight".to_string(),
+            CfnDefinition {
+                def_type: Some("integer".to_string()),
+                ..Default::default()
+            },
+        );
+        let prop = CfnProperty {
+            prop_type: Some(TypeValue::Single("array".to_string())),
+            items: Some(Box::new(CfnProperty {
+                ref_path: Some("#/definitions/Weight".to_string()),
+                ..Default::default()
+            })),
+            ..Default::default()
+        };
+        let schema = CfnSchema {
+            type_name: "AWS::Example::Thing".to_string(),
+            description: None,
+            properties: BTreeMap::new(),
+            required: vec![],
+            read_only_properties: vec![],
+            create_only_properties: vec![],
+            write_only_properties: vec![],
+            primary_identifier: None,
+            definitions: Some(definitions),
+            tagging: None,
+            one_of: vec![],
+            any_of: vec![],
+            handlers: BTreeMap::new(),
+        };
+        let enums = BTreeMap::new();
+        let display = type_display_string("Weights", &prop, &schema, &enums);
+        assert_eq!(display, "`List<Int>`", "got: {display}");
     }
 
     #[test]
@@ -7979,6 +8142,9 @@ mod tests {
                 enum_values: None,
                 min_length: None,
                 max_length: None,
+                minimum: None,
+                maximum: None,
+                format: None,
             },
         );
 
@@ -8153,6 +8319,9 @@ mod tests {
                 ]),
                 min_length: None,
                 max_length: None,
+                minimum: None,
+                maximum: None,
+                format: None,
             },
         );
         let prop = CfnProperty {
@@ -8215,6 +8384,9 @@ mod tests {
                 enum_values: None,
                 min_length: None,
                 max_length: None,
+                minimum: None,
+                maximum: None,
+                format: None,
             },
         );
         let prop = CfnProperty {
@@ -8256,6 +8428,271 @@ mod tests {
         assert_eq!(info.values.len(), 2);
         assert!(info.values.contains(&"NONE".to_string()));
         assert!(info.values.contains(&"SSE-C".to_string()));
+    }
+
+    #[test]
+    fn test_ref_to_scalar_integer_definition_yields_int_not_string() {
+        // awscc#291: WAFv2 WebACL types `Priority`/`Limit` via $ref to
+        // scalar integer definitions (`RulePriority`, `RateLimit`). The
+        // $ref branch previously fell through to the String fallback for
+        // scalar defs, so the field generated as `AttributeType::string()`
+        // and the resource became un-appliable (AWS requires Integer).
+        // A $ref to a scalar integer def must resolve to an int attribute,
+        // honoring the def's own minimum/maximum range constraints.
+        let mut definitions = BTreeMap::new();
+        definitions.insert(
+            "RateLimit".to_string(),
+            CfnDefinition {
+                def_type: Some("integer".to_string()),
+                minimum: Some(10),
+                maximum: Some(2_000_000_000),
+                ..Default::default()
+            },
+        );
+        let prop = CfnProperty {
+            ref_path: Some("#/definitions/RateLimit".to_string()),
+            ..Default::default()
+        };
+        let schema = CfnSchema {
+            type_name: "AWS::WAFv2::WebACL".to_string(),
+            description: None,
+            properties: BTreeMap::new(),
+            required: vec![],
+            read_only_properties: vec![],
+            create_only_properties: vec![],
+            write_only_properties: vec![],
+            primary_identifier: None,
+            definitions: Some(definitions),
+            tagging: None,
+            one_of: vec![],
+            any_of: vec![],
+            handlers: BTreeMap::new(),
+        };
+        let enums = BTreeMap::new();
+        let (type_str, _) = cfn_type_to_carina_type_with_enum(
+            &prop,
+            "Limit",
+            &schema,
+            "awscc.wafv2.WebAcl",
+            &enums,
+        );
+        assert!(
+            type_str.contains("AttributeType::int()") || type_str.contains("AttributeType::int(),"),
+            "scalar integer $ref must yield an int attribute, got: {type_str}"
+        );
+        assert!(
+            !type_str.contains("AttributeType::string()"),
+            "scalar integer $ref must not fall back to string: {type_str}"
+        );
+    }
+
+    #[test]
+    fn test_ref_to_scalar_number_definition_yields_float_not_string() {
+        // Sibling of the integer case: a $ref to a scalar `number` def must
+        // resolve to a float attribute, not the String fallback.
+        let mut definitions = BTreeMap::new();
+        definitions.insert(
+            "Weight".to_string(),
+            CfnDefinition {
+                def_type: Some("number".to_string()),
+                ..Default::default()
+            },
+        );
+        let prop = CfnProperty {
+            ref_path: Some("#/definitions/Weight".to_string()),
+            ..Default::default()
+        };
+        let schema = CfnSchema {
+            type_name: "AWS::Example::Thing".to_string(),
+            description: None,
+            properties: BTreeMap::new(),
+            required: vec![],
+            read_only_properties: vec![],
+            create_only_properties: vec![],
+            write_only_properties: vec![],
+            primary_identifier: None,
+            definitions: Some(definitions),
+            tagging: None,
+            one_of: vec![],
+            any_of: vec![],
+            handlers: BTreeMap::new(),
+        };
+        let enums = BTreeMap::new();
+        let (type_str, _) = cfn_type_to_carina_type_with_enum(
+            &prop,
+            "Weight",
+            &schema,
+            "awscc.example.Thing",
+            &enums,
+        );
+        assert!(
+            type_str.contains("AttributeType::float()"),
+            "scalar number $ref must yield a float attribute, got: {type_str}"
+        );
+    }
+
+    #[test]
+    fn test_ref_to_scalar_boolean_definition_yields_bool_not_string() {
+        // Sibling of the integer case: a $ref to a scalar `boolean` def
+        // must resolve to a bool attribute, not the String fallback.
+        let mut definitions = BTreeMap::new();
+        definitions.insert(
+            "Toggle".to_string(),
+            CfnDefinition {
+                def_type: Some("boolean".to_string()),
+                ..Default::default()
+            },
+        );
+        let prop = CfnProperty {
+            ref_path: Some("#/definitions/Toggle".to_string()),
+            ..Default::default()
+        };
+        let schema = CfnSchema {
+            type_name: "AWS::Example::Thing".to_string(),
+            description: None,
+            properties: BTreeMap::new(),
+            required: vec![],
+            read_only_properties: vec![],
+            create_only_properties: vec![],
+            write_only_properties: vec![],
+            primary_identifier: None,
+            definitions: Some(definitions),
+            tagging: None,
+            one_of: vec![],
+            any_of: vec![],
+            handlers: BTreeMap::new(),
+        };
+        let enums = BTreeMap::new();
+        let (type_str, _) = cfn_type_to_carina_type_with_enum(
+            &prop,
+            "Toggle",
+            &schema,
+            "awscc.example.Thing",
+            &enums,
+        );
+        assert_eq!(type_str, "AttributeType::bool()");
+    }
+
+    #[test]
+    fn test_struct_field_scalar_ref_integer_generates_int_in_schema_code() {
+        // awscc#291 end-to-end: a struct field whose type is a $ref to a
+        // scalar integer def (the real WAFv2 `Rule.Priority -> RulePriority`
+        // shape) must generate as an int attribute in the final schema code,
+        // not a string. This is the symptom site: the mistype lived on a
+        // *nested struct field*, and apply rejected the resulting String.
+        let mut def_props = BTreeMap::new();
+        def_props.insert(
+            "Priority".to_string(),
+            CfnProperty {
+                ref_path: Some("#/definitions/RulePriority".to_string()),
+                ..Default::default()
+            },
+        );
+        let mut definitions = BTreeMap::new();
+        definitions.insert(
+            "Rule".to_string(),
+            CfnDefinition {
+                def_type: Some("object".to_string()),
+                properties: Some(def_props),
+                required: vec!["Priority".to_string()],
+                ..Default::default()
+            },
+        );
+        definitions.insert(
+            "RulePriority".to_string(),
+            CfnDefinition {
+                def_type: Some("integer".to_string()),
+                minimum: Some(0),
+                ..Default::default()
+            },
+        );
+        let mut properties = BTreeMap::new();
+        properties.insert(
+            "Rule".to_string(),
+            CfnProperty {
+                ref_path: Some("#/definitions/Rule".to_string()),
+                ..Default::default()
+            },
+        );
+        let schema = CfnSchema {
+            type_name: "AWS::WAFv2::WebACL".to_string(),
+            description: None,
+            properties,
+            required: vec![],
+            read_only_properties: vec![],
+            create_only_properties: vec![],
+            write_only_properties: vec![],
+            primary_identifier: None,
+            definitions: Some(definitions),
+            tagging: None,
+            one_of: vec![],
+            any_of: vec![],
+            handlers: BTreeMap::new(),
+        };
+        let generated = generate_schema_code(&schema, "AWS::WAFv2::WebACL").unwrap();
+        assert!(
+            generated.contains(
+                "StructField::new(\"priority\", AttributeType::custom(None, AttributeType::int()"
+            ),
+            "nested struct field via scalar integer $ref must generate as int: {generated}"
+        );
+        assert!(
+            !generated.contains("StructField::new(\"priority\", AttributeType::string()"),
+            "nested struct field via scalar integer $ref must not generate as string: {generated}"
+        );
+    }
+
+    #[test]
+    fn test_list_of_scalar_integer_ref_generates_list_of_int_in_schema_code() {
+        // awscc#291 schema-code list sibling: a top-level array property whose
+        // items $ref a scalar integer def must generate `list(int())`, not
+        // `list(string())`. The schema-code array branch recurses through the
+        // scalar-ref handling; this locks that path (the markdown list path is
+        // covered by test_type_display_list_of_scalar_integer_ref_shows_list_int).
+        let mut definitions = BTreeMap::new();
+        definitions.insert(
+            "Weight".to_string(),
+            CfnDefinition {
+                def_type: Some("integer".to_string()),
+                ..Default::default()
+            },
+        );
+        let mut properties = BTreeMap::new();
+        properties.insert(
+            "Weights".to_string(),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("array".to_string())),
+                items: Some(Box::new(CfnProperty {
+                    ref_path: Some("#/definitions/Weight".to_string()),
+                    ..Default::default()
+                })),
+                ..Default::default()
+            },
+        );
+        let schema = CfnSchema {
+            type_name: "AWS::Example::Thing".to_string(),
+            description: None,
+            properties,
+            required: vec![],
+            read_only_properties: vec![],
+            create_only_properties: vec![],
+            write_only_properties: vec![],
+            primary_identifier: None,
+            definitions: Some(definitions),
+            tagging: None,
+            one_of: vec![],
+            any_of: vec![],
+            handlers: BTreeMap::new(),
+        };
+        let generated = generate_schema_code(&schema, "AWS::Example::Thing").unwrap();
+        assert!(
+            generated.contains("AttributeType::list(AttributeType::int())"),
+            "list of scalar integer $ref must generate list(int()): {generated}"
+        );
+        assert!(
+            !generated.contains("AttributeType::list(AttributeType::string())"),
+            "list of scalar integer $ref must not generate list(string()): {generated}"
+        );
     }
 
     #[test]
@@ -8326,6 +8763,9 @@ mod tests {
                 pattern: None,
                 min_length: None,
                 max_length: None,
+                minimum: None,
+                maximum: None,
+                format: None,
             },
         );
 
@@ -8391,6 +8831,9 @@ mod tests {
                 pattern: None,
                 min_length: None,
                 max_length: None,
+                minimum: None,
+                maximum: None,
+                format: None,
             },
         );
         definitions.insert(
@@ -8408,6 +8851,9 @@ mod tests {
                 pattern: None,
                 min_length: None,
                 max_length: None,
+                minimum: None,
+                maximum: None,
+                format: None,
             },
         );
 
@@ -8490,6 +8936,9 @@ mod tests {
                 pattern: None,
                 min_length: None,
                 max_length: None,
+                minimum: None,
+                maximum: None,
+                format: None,
             },
         );
         definitions.insert(
@@ -8504,6 +8953,9 @@ mod tests {
                 pattern: None,
                 min_length: None,
                 max_length: None,
+                minimum: None,
+                maximum: None,
+                format: None,
             },
         );
         definitions.insert(
@@ -8521,6 +8973,9 @@ mod tests {
                 pattern: None,
                 min_length: None,
                 max_length: None,
+                minimum: None,
+                maximum: None,
+                format: None,
             },
         );
 
@@ -8635,6 +9090,9 @@ mod tests {
                 pattern: None,
                 min_length: None,
                 max_length: None,
+                minimum: None,
+                maximum: None,
+                format: None,
             },
         );
         definitions.insert(
@@ -8649,6 +9107,9 @@ mod tests {
                 pattern: None,
                 min_length: None,
                 max_length: None,
+                minimum: None,
+                maximum: None,
+                format: None,
             },
         );
 
@@ -8752,6 +9213,9 @@ mod tests {
                 pattern: None,
                 min_length: None,
                 max_length: None,
+                minimum: None,
+                maximum: None,
+                format: None,
             },
         );
 
@@ -9437,6 +9901,9 @@ mod tests {
                 enum_values: None,
                 min_length: None,
                 max_length: None,
+                minimum: None,
+                maximum: None,
+                format: None,
             },
         );
 
@@ -10185,6 +10652,9 @@ mod tests {
                 pattern: None,
                 min_length: None,
                 max_length: None,
+                minimum: None,
+                maximum: None,
+                format: None,
             },
         );
 
