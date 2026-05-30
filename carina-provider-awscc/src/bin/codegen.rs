@@ -362,7 +362,7 @@ struct CfnProperty {
     format: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(dead_code)]
 struct CfnOneOfVariant {
@@ -809,8 +809,8 @@ fn type_display_string(
         let is_ref_array = prop
             .ref_path
             .as_ref()
-            .and_then(|ref_path| resolve_ref(schema, ref_path))
-            .map(|def| def.def_type.as_deref() == Some("array"))
+            .and_then(|ref_path| resolve_ref_classified(schema, ref_path))
+            .map(|def| matches!(def, ResolvedDef::Array { .. }))
             .unwrap_or(false);
         if is_array || is_ref_array {
             format!("List\\<{}\\>", enum_link)
@@ -822,32 +822,36 @@ fn type_display_string(
     } else if let Some(ref_path) = &prop.ref_path {
         if ref_path.contains("/Tag") {
             "`Map<String, String>`".to_string()
-        } else if let Some(def_name) = ref_def_name(ref_path)
-            && resolve_ref(schema, ref_path)
-                .and_then(|d| d.properties.as_ref())
-                .map(|p| !p.is_empty())
-                .unwrap_or(false)
-        {
-            format!("[Struct({})](#{})", def_name, def_name.to_lowercase())
-        } else if let Some(def_name) = ref_def_name(ref_path)
-            && resolve_ref(schema, ref_path)
-                .map(|d| !d.one_of.is_empty())
-                .unwrap_or(false)
-        {
-            format!("[Struct({})](#{})", def_name, def_name.to_lowercase())
-        } else if let Some(scalar_prop) =
-            resolve_ref(schema, ref_path).and_then(scalar_property_from_def)
-        {
-            // Scalar-typed $ref definition (awscc#291). Mirrors the codegen
-            // branch in `cfn_type_to_carina_type_with_enum`: WAFv2 WebACL's
-            // `Priority`/`Limit` are $refs to scalar integer defs, and
-            // without this the doc rendered them as `String` (the heuristic
-            // fallback below). Recurse so the same Int/Float/Bool display
-            // (with the def's own range) is used.
-            type_display_string(prop_name, &scalar_prop, schema, enums)
         } else {
-            // Apply name-based heuristics for unresolvable $ref
-            infer_string_type_display(prop_name, &schema.type_name)
+            // Classify the resolved def once. Only Struct/OneOf (rendered as a
+            // struct link) and Scalar (awscc#291: WAFv2 `Priority`/`Limit` are
+            // $refs to scalar integer defs — recurse for the Int/Float/Bool
+            // display with the def's range) get a non-string display; every
+            // other shape falls back to the name-based heuristic, as before.
+            match resolve_ref_classified(schema, ref_path) {
+                Some(ResolvedDef::Struct { .. } | ResolvedDef::OneOf { .. }) => {
+                    let def_name = ref_def_name(ref_path).unwrap_or(prop_name);
+                    format!("[Struct({})](#{})", def_name, def_name.to_lowercase())
+                }
+                Some(scalar @ ResolvedDef::Scalar { .. }) => {
+                    let scalar_prop = scalar
+                        .scalar_as_property()
+                        .expect("Scalar variant always rebuilds a scalar property");
+                    type_display_string(prop_name, &scalar_prop, schema, enums)
+                }
+                Some(
+                    ResolvedDef::Enum { .. }
+                    | ResolvedDef::Array { .. }
+                    | ResolvedDef::StringPattern { .. }
+                    | ResolvedDef::Opaque,
+                )
+                | None => {
+                    // These shapes have no dedicated non-list scalar display
+                    // here; apply the name-based heuristic. Listed explicitly
+                    // (no `_`) so a new shape forces a decision at this site.
+                    infer_string_type_display(prop_name, &schema.type_name)
+                }
+            }
         }
     } else {
         match prop.prop_type.as_ref().and_then(|t| t.as_str()) {
@@ -971,11 +975,15 @@ fn type_display_string(
                 let base_display = if let Some(items) = &prop.items {
                     if let Some(ref_path) = &items.ref_path {
                         if !ref_path.contains("/Tag") {
-                            if let Some(def_name) = ref_def_name(ref_path)
-                                && resolve_ref(schema, ref_path)
-                                    .and_then(|d| d.properties.as_ref())
-                                    .map(|p| !p.is_empty())
-                                    .unwrap_or(false)
+                            // Classify the item def once. Struct items link to
+                            // the struct; a registered enum (keyed on the
+                            // property name) renders List<Enum>; scalar items
+                            // (awscc#291) render List<Int>/Float/Bool to mirror
+                            // the schema-code array branch; anything else falls
+                            // back to List<String>.
+                            let item_def = resolve_ref_classified(schema, ref_path);
+                            if let Some(ResolvedDef::Struct { .. }) = item_def
+                                && let Some(def_name) = ref_def_name(ref_path)
                             {
                                 format!("[List\\<{}\\>](#{})", def_name, def_name.to_lowercase())
                             } else if enums.contains_key(prop_name) {
@@ -986,13 +994,11 @@ fn type_display_string(
                                     enums[prop_name].type_name.to_lowercase()
                                 )
                             } else if let Some(scalar_prop) =
-                                resolve_ref(schema, ref_path).and_then(scalar_property_from_def)
+                                item_def.as_ref().and_then(ResolvedDef::scalar_as_property)
                             {
                                 // List items that $ref a scalar def (awscc#291):
-                                // mirror the non-list scalar-ref branch so a
-                                // List<RateLimit-style> renders as List<Int>,
-                                // not List<String>. Schema-code already does
-                                // this via its recursing array branch.
+                                // render List<Int>/Float/Bool, mirroring the
+                                // schema-code array branch.
                                 list_element_type_display(
                                     &scalar_prop,
                                     prop_name,
@@ -1310,75 +1316,89 @@ fn collect_struct_defs(
     schema: &CfnSchema,
     struct_defs: &mut BTreeMap<String, StructDefInfo>,
 ) {
-    // Handle $ref
+    // Handle $ref. Only struct-shaped defs (inline properties, or a oneOf
+    // merged into one struct) contribute a struct def; the other shapes carry
+    // no nested structs to collect.
     if let Some(ref_path) = &prop.ref_path
         && !ref_path.contains("/Tag")
         && let Some(def_name) = ref_def_name(ref_path)
-        && let Some(def) = resolve_ref(schema, ref_path)
+        && let Some(resolved) = resolve_ref_classified(schema, ref_path)
     {
-        if let Some(props) = &def.properties
-            && !props.is_empty()
-        {
-            if !struct_defs.contains_key(def_name) {
-                struct_defs.insert(
-                    def_name.to_string(),
-                    StructDefInfo {
-                        def_name: def_name.to_string(),
-                        properties: props.clone(),
-                        required: def.required.clone(),
-                    },
-                );
-                // Recursively collect nested struct defs
-                for (field_name, field_prop) in props {
-                    collect_struct_defs(field_prop, field_name, schema, struct_defs);
-                }
-            }
-        } else if !def.one_of.is_empty() {
-            // Merge oneOf variant properties into a single struct
-            let mut merged_props = BTreeMap::new();
-            for variant in &def.one_of {
-                if let Some(props) = &variant.properties {
-                    for (k, v) in props {
-                        merged_props.insert(k.clone(), v.clone());
+        match resolved {
+            ResolvedDef::Struct {
+                properties,
+                required,
+            } => {
+                if !struct_defs.contains_key(def_name) {
+                    struct_defs.insert(
+                        def_name.to_string(),
+                        StructDefInfo {
+                            def_name: def_name.to_string(),
+                            properties: properties.clone(),
+                            required: required.to_vec(),
+                        },
+                    );
+                    // Recursively collect nested struct defs
+                    for (field_name, field_prop) in properties {
+                        collect_struct_defs(field_prop, field_name, schema, struct_defs);
                     }
                 }
             }
-            if !merged_props.is_empty() && !struct_defs.contains_key(def_name) {
-                struct_defs.insert(
-                    def_name.to_string(),
-                    StructDefInfo {
-                        def_name: def_name.to_string(),
-                        properties: merged_props.clone(),
-                        required: vec![], // oneOf variants are mutually exclusive
-                    },
-                );
-                // Recursively collect struct defs from merged properties
-                for (field_name, field_prop) in &merged_props {
-                    collect_struct_defs(field_prop, field_name, schema, struct_defs);
+            ResolvedDef::OneOf { variants } => {
+                // Merge oneOf variant properties into a single struct
+                let mut merged_props = BTreeMap::new();
+                for variant in variants {
+                    if let Some(props) = &variant.properties {
+                        for (k, v) in props {
+                            merged_props.insert(k.clone(), v.clone());
+                        }
+                    }
                 }
+                if !merged_props.is_empty() && !struct_defs.contains_key(def_name) {
+                    struct_defs.insert(
+                        def_name.to_string(),
+                        StructDefInfo {
+                            def_name: def_name.to_string(),
+                            properties: merged_props.clone(),
+                            required: vec![], // oneOf variants are mutually exclusive
+                        },
+                    );
+                    // Recursively collect struct defs from merged properties
+                    for (field_name, field_prop) in &merged_props {
+                        collect_struct_defs(field_prop, field_name, schema, struct_defs);
+                    }
+                }
+            }
+            ResolvedDef::Enum { .. }
+            | ResolvedDef::Array { .. }
+            | ResolvedDef::StringPattern { .. }
+            | ResolvedDef::Scalar { .. }
+            | ResolvedDef::Opaque => {
+                // No struct body to collect for these shapes.
             }
         }
     }
-    // Handle array items with $ref
+    // Handle array items with $ref. Only struct-shaped items contribute.
     if let Some(items) = &prop.items
         && let Some(ref_path) = &items.ref_path
         && !ref_path.contains("/Tag")
         && let Some(def_name) = ref_def_name(ref_path)
-        && let Some(def) = resolve_ref(schema, ref_path)
-        && let Some(props) = &def.properties
-        && !props.is_empty()
+        && let Some(ResolvedDef::Struct {
+            properties,
+            required,
+        }) = resolve_ref_classified(schema, ref_path)
         && !struct_defs.contains_key(def_name)
     {
         struct_defs.insert(
             def_name.to_string(),
             StructDefInfo {
                 def_name: def_name.to_string(),
-                properties: props.clone(),
-                required: def.required.clone(),
+                properties: properties.clone(),
+                required: required.to_vec(),
             },
         );
         // Recursively collect nested struct defs
-        for (field_name, field_prop) in props {
+        for (field_name, field_prop) in properties {
             collect_struct_defs(field_prop, field_name, schema, struct_defs);
         }
     }
@@ -1683,11 +1703,14 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
                 .or_else(|| {
                     prop.ref_path
                         .as_ref()
-                        .and_then(|ref_path| resolve_ref(schema, ref_path))
-                        .and_then(|def| {
-                            def.pattern
-                                .as_ref()
-                                .map(|p| (p.clone(), def.min_length, def.max_length))
+                        .and_then(|ref_path| resolve_ref_classified(schema, ref_path))
+                        .and_then(|def| match def {
+                            ResolvedDef::StringPattern {
+                                pattern,
+                                min_length,
+                                max_length,
+                            } => Some((pattern.to_string(), min_length, max_length)),
+                            _ => None,
                         })
                 })
                 .or_else(|| {
@@ -1806,9 +1829,11 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
                     }
                     // Collect pattern constraints from $ref to string definitions with patterns
                     if let Some(ref_path) = &field_prop.ref_path
-                        && let Some(ref_def) = resolve_ref(schema, ref_path)
-                        && ref_def.def_type.as_deref() == Some("string")
-                        && let Some(pattern) = &ref_def.pattern
+                        && let Some(ResolvedDef::StringPattern {
+                            pattern,
+                            min_length,
+                            max_length,
+                        }) = resolve_ref_classified(schema, ref_path)
                         && !patterns.contains_key(field_name)
                     {
                         let (field_type, _) = cfn_type_to_carina_type_with_enum(
@@ -1816,19 +1841,18 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
                         );
                         if field_type.contains("validate_") && field_type.contains("_pattern") {
                             // Check length constraints from the $ref definition
-                            let effective_min = ref_def.min_length.filter(|&m| m > 0);
-                            let has_length =
-                                effective_min.is_some() || ref_def.max_length.is_some();
+                            let effective_min = min_length.filter(|&m| m > 0);
+                            let has_length = effective_min.is_some() || max_length.is_some();
                             if has_length {
                                 pattern_with_lengths.insert((
-                                    pattern.clone(),
+                                    pattern.to_string(),
                                     effective_min,
-                                    ref_def.max_length,
+                                    max_length,
                                 ));
                             } else {
-                                patterns_used_standalone.insert(pattern.clone());
+                                patterns_used_standalone.insert(pattern.to_string());
                             }
-                            patterns.insert(field_name.clone(), pattern.clone());
+                            patterns.insert(field_name.clone(), pattern.to_string());
                         }
                     }
                 }
@@ -2288,8 +2312,8 @@ pub fn {}() -> AwsccSchemaConfig {{
             let is_ref_array = prop
                 .ref_path
                 .as_ref()
-                .and_then(|ref_path| resolve_ref(schema, ref_path))
-                .map(|def| def.def_type.as_deref() == Some("array"))
+                .and_then(|ref_path| resolve_ref_classified(schema, ref_path))
+                .map(|def| matches!(def, ResolvedDef::Array { .. }))
                 .unwrap_or(false);
             if is_array || is_ref_array {
                 let list_ctor = list_constructor(
@@ -3028,8 +3052,16 @@ fn deduplicate_enum_values(values: Vec<String>) -> Option<Vec<String>> {
     }
 }
 
-/// Resolve a $ref path to a CfnDefinition
+/// Resolve a `$ref` path to the raw `CfnDefinition`.
 /// e.g., "#/definitions/Ingress" -> Some(&CfnDefinition)
+///
+/// Prefer [`resolve_ref_classified`] in consumers: the raw `CfnDefinition`
+/// exposes the open `def_type: Option<String>` discriminant, and
+/// hand-dispatching on it is exactly what let a scalar `$ref` be silently
+/// typed as `String` (awscc#291). This raw resolver exists only as the
+/// building block `resolve_ref_classified` is built on; new code that needs
+/// to act on a `$ref`'s shape should go through the classifier so the
+/// compiler forces every shape (including `Scalar`) to be handled.
 fn resolve_ref<'a>(schema: &'a CfnSchema, ref_path: &str) -> Option<&'a CfnDefinition> {
     let def_name = ref_path.strip_prefix("#/definitions/")?;
     schema.definitions.as_ref()?.get(def_name)
@@ -3041,29 +3073,177 @@ fn ref_def_name(ref_path: &str) -> Option<&str> {
     ref_path.strip_prefix("#/definitions/")
 }
 
-/// If a resolved `$ref` definition is a scalar (`integer` / `number` /
-/// `boolean`), reconstruct an equivalent inline `CfnProperty` so callers can
-/// recurse through the normal property-typing logic instead of treating the
-/// def as a struct.
+/// The scalar kinds a `$ref` definition can carry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ScalarKind {
+    Integer,
+    Number,
+    Boolean,
+}
+
+impl ScalarKind {
+    /// The CloudFormation `"type"` string this kind came from. Used to
+    /// reconstruct an inline `CfnProperty` whose typing goes through the same
+    /// path a direct property would.
+    fn cfn_type(self) -> &'static str {
+        match self {
+            ScalarKind::Integer => "integer",
+            ScalarKind::Number => "number",
+            ScalarKind::Boolean => "boolean",
+        }
+    }
+}
+
+/// A `$ref` definition (`CfnDefinition`) classified into the one shape it
+/// actually represents.
 ///
-/// CloudFormation factors recurring scalar fields into shared definitions —
-/// e.g. WAFv2 WebACL's `Rule.Priority` and `RateBasedStatement.Limit` are
-/// `$ref`s to the `RulePriority` / `RateLimit` integer defs. Without this,
-/// both the schema-code and markdown `$ref` branches fall through to the
-/// String fallback and mistype the field, so the resource is rejected at
-/// apply (awscc#291). Returns `None` for non-scalar defs, leaving the
-/// existing struct/array/string-pattern handling untouched.
-fn scalar_property_from_def(def: &CfnDefinition) -> Option<CfnProperty> {
-    match def.def_type.as_deref() {
-        Some(scalar @ ("integer" | "number" | "boolean")) => Some(CfnProperty {
-            prop_type: Some(TypeValue::Single(scalar.to_string())),
+/// `CfnDefinition` is a flat serde DTO whose `def_type` is an open
+/// `Option<String>` — nothing in the type system forces a consumer that
+/// dispatches on it to handle every shape, so a missed arm silently falls
+/// back to `String` (this is exactly how awscc#291 happened: scalar `$ref`s
+/// were never matched and became `String`). `classify_def` is the **single
+/// source of truth** for that dispatch: it runs the canonical precedence
+/// once, and every consumer `match`es the result exhaustively, so the
+/// compiler refuses to let a new consumer (or a new shape) drop a case.
+///
+/// Borrows from the `CfnDefinition` so no cloning happens at classification
+/// time; callers clone only the slices they keep.
+enum ResolvedDef<'a> {
+    /// Object with inline properties.
+    Struct {
+        properties: &'a BTreeMap<String, CfnProperty>,
+        required: &'a [String],
+    },
+    /// `oneOf` union of variants.
+    OneOf { variants: &'a [CfnOneOfVariant] },
+    /// Enum-only def (a fixed list of values, no properties). Takes
+    /// precedence over `Scalar` so an integer-typed enum (e.g. WAFv2
+    /// `EvaluationWindowSec`) is treated as an enum, matching the canonical
+    /// codegen precedence.
+    Enum { values: &'a [EnumValue] },
+    /// Array def carrying an item schema.
+    Array { items: &'a CfnProperty },
+    /// String def constrained by a regex pattern (with optional length).
+    StringPattern {
+        pattern: &'a str,
+        min_length: Option<u64>,
+        max_length: Option<u64>,
+    },
+    /// Scalar (`integer` / `number` / `boolean`) def, carrying its own range
+    /// and format so a `$ref` to it reproduces the ranged int/float/bool a
+    /// direct property would (awscc#291).
+    Scalar {
+        kind: ScalarKind,
+        minimum: Option<i64>,
+        maximum: Option<i64>,
+        format: Option<&'a str>,
+    },
+    /// None of the known shapes — the def has no inline properties, oneOf,
+    /// enum, array items, string pattern, or scalar type. Consumers fall back
+    /// to name-based string heuristics for these (e.g. an opaque object whose
+    /// fields are not modelled). Made an explicit variant — rather than a
+    /// catch-all `_` — so adding a new shape forces every consumer to decide
+    /// where it belongs instead of silently landing here.
+    Opaque,
+}
+
+/// Classify a resolved `$ref` definition into the single shape it represents.
+///
+/// The precedence below is the canonical order the schema-code `$ref` branch
+/// has always used: properties → oneOf → enum → array → string-pattern →
+/// scalar → opaque. It is the one place that order lives; every `ResolvedDef`
+/// consumer inherits it by matching the result. Preserving this order keeps
+/// generated output byte-identical (e.g. an integer-typed enum classifies as
+/// `Enum`, not `Scalar`, because the enum arm comes first).
+fn classify_def(def: &CfnDefinition) -> ResolvedDef<'_> {
+    if let Some(props) = &def.properties
+        && !props.is_empty()
+    {
+        return ResolvedDef::Struct {
+            properties: props,
+            required: &def.required,
+        };
+    }
+    if !def.one_of.is_empty() {
+        return ResolvedDef::OneOf {
+            variants: &def.one_of,
+        };
+    }
+    if let Some(values) = &def.enum_values
+        && !values.is_empty()
+    {
+        return ResolvedDef::Enum { values };
+    }
+    if def.def_type.as_deref() == Some("array")
+        && let Some(items) = &def.items
+    {
+        return ResolvedDef::Array { items };
+    }
+    if def.def_type.as_deref() == Some("string")
+        && let Some(pattern) = &def.pattern
+    {
+        return ResolvedDef::StringPattern {
+            pattern,
+            min_length: def.min_length,
+            max_length: def.max_length,
+        };
+    }
+    let scalar_kind = match def.def_type.as_deref() {
+        Some("integer") => Some(ScalarKind::Integer),
+        Some("number") => Some(ScalarKind::Number),
+        Some("boolean") => Some(ScalarKind::Boolean),
+        _ => None,
+    };
+    if let Some(kind) = scalar_kind {
+        return ResolvedDef::Scalar {
+            kind,
             minimum: def.minimum,
             maximum: def.maximum,
-            format: def.format.clone(),
-            enum_values: def.enum_values.clone(),
-            ..Default::default()
-        }),
-        _ => None,
+            format: def.format.as_deref(),
+        };
+    }
+    ResolvedDef::Opaque
+}
+
+/// Resolve a `$ref` path and classify the target in one step.
+///
+/// The primary entry point for `$ref` consumers: returns `None` only when the
+/// path does not resolve to a known definition. A resolved-but-unrecognized
+/// def yields `ResolvedDef::Opaque`, never a silent `None`.
+fn resolve_ref_classified<'a>(schema: &'a CfnSchema, ref_path: &str) -> Option<ResolvedDef<'a>> {
+    resolve_ref(schema, ref_path).map(classify_def)
+}
+
+impl ResolvedDef<'_> {
+    /// If this is a `Scalar`, reconstruct an equivalent inline `CfnProperty`
+    /// so callers can recurse through the normal property-typing logic instead
+    /// of treating the def as a struct.
+    ///
+    /// CloudFormation factors recurring scalar fields into shared definitions
+    /// — e.g. WAFv2 WebACL's `Rule.Priority` and `RateBasedStatement.Limit`
+    /// are `$ref`s to the `RulePriority` / `RateLimit` integer defs. Without
+    /// this, the `$ref` branches fall through to the String fallback and
+    /// mistype the field, so the resource is rejected at apply (awscc#291).
+    /// Returns `None` for every non-scalar shape.
+    fn scalar_as_property(&self) -> Option<CfnProperty> {
+        match self {
+            ResolvedDef::Scalar {
+                kind,
+                minimum,
+                maximum,
+                format,
+            } => Some(CfnProperty {
+                prop_type: Some(TypeValue::Single(kind.cfn_type().to_string())),
+                minimum: *minimum,
+                maximum: *maximum,
+                format: format.map(str::to_string),
+                // A scalar def with enum values classifies as `Enum`, not
+                // `Scalar`, so the reconstructed property never needs to carry
+                // enum values — they are handled by the enum branch upstream.
+                ..Default::default()
+            }),
+            _ => None,
+        }
     }
 }
 
@@ -4491,153 +4671,161 @@ fn cfn_type_to_carina_type_with_enum(
                 );
             }
         }
-        // Try to resolve the $ref to a definition and generate Struct type
-        if let Some(def) = resolve_ref(schema, ref_path) {
-            if let Some(props) = &def.properties
-                && !props.is_empty()
-            {
-                let def_name = ref_def_name(ref_path).unwrap_or(prop_name);
-                // Push onto the expansion stack so a nested re-entry
-                // emits a Ref instead of recursing infinitely. The
-                // body is generated under this guard, then popped.
-                IN_PROGRESS_DEFS.with(|s| {
-                    s.borrow_mut().insert(def_name.to_string());
-                });
-                let body =
-                    generate_struct_type(def_name, props, &def.required, schema, namespace, enums);
-                IN_PROGRESS_DEFS.with(|s| {
-                    s.borrow_mut().remove(def_name);
-                });
-                // Record the def's body so the resource emitter can
-                // populate `ResourceSchema.defs` with it (only useful
-                // when this def is actually cycle-target; storing
-                // unconditionally is fine because non-cycle defs are
-                // never referenced via `Ref(_)`).
-                EMITTED_DEFS.with(|s| {
-                    s.borrow_mut().insert(def_name.to_string(), body.clone());
-                });
-                return (body, None);
-            }
-            // Handle oneOf: merge all variant properties into a single struct
-            if !def.one_of.is_empty() {
-                let mut merged_props = BTreeMap::new();
-                // oneOf variants are mutually exclusive, so no field is required
-                for variant in &def.one_of {
-                    if let Some(props) = &variant.properties {
-                        for (k, v) in props {
-                            merged_props.insert(k.clone(), v.clone());
-                        }
-                    }
-                }
-                if !merged_props.is_empty() {
+        // Try to resolve the $ref to a definition and type it by shape.
+        // `classify_def` runs the canonical precedence once; every arm below
+        // matches a `ResolvedDef` variant, so a future shape cannot be
+        // silently dropped to the String fallback.
+        if let Some(resolved) = resolve_ref_classified(schema, ref_path) {
+            match resolved {
+                ResolvedDef::Struct {
+                    properties,
+                    required,
+                } => {
                     let def_name = ref_def_name(ref_path).unwrap_or(prop_name);
-                    // Same cycle-guarded shape as the `properties`
-                    // branch above (carina#3340).
+                    // Push onto the expansion stack so a nested re-entry
+                    // emits a Ref instead of recursing infinitely. The
+                    // body is generated under this guard, then popped.
                     IN_PROGRESS_DEFS.with(|s| {
                         s.borrow_mut().insert(def_name.to_string());
                     });
                     let body = generate_struct_type(
-                        def_name,
-                        &merged_props,
-                        &[], // no required fields - variants are mutually exclusive
-                        schema,
-                        namespace,
-                        enums,
+                        def_name, properties, required, schema, namespace, enums,
                     );
                     IN_PROGRESS_DEFS.with(|s| {
                         s.borrow_mut().remove(def_name);
                     });
+                    // Record the def's body so the resource emitter can
+                    // populate `ResourceSchema.defs` with it (only useful
+                    // when this def is actually cycle-target; storing
+                    // unconditionally is fine because non-cycle defs are
+                    // never referenced via `Ref(_)`).
                     EMITTED_DEFS.with(|s| {
                         s.borrow_mut().insert(def_name.to_string(), body.clone());
                     });
                     return (body, None);
                 }
-            }
-            // Handle enum-only $ref definitions (no properties, just enum values)
-            if let Some(enum_values) = &def.enum_values
-                && !enum_values.is_empty()
-            {
-                let def_name = ref_def_name(ref_path).unwrap_or(prop_name);
-                let type_name = def_name.to_pascal_case();
-                let string_values: Vec<String> =
-                    enum_values.iter().map(|v| v.to_string_value()).collect();
-                let deduped =
-                    deduplicate_enum_values(string_values.clone()).unwrap_or(string_values);
-                let enum_info = EnumInfo {
-                    type_name,
-                    values: deduped,
-                };
-                return ("/* enum */".to_string(), Some(enum_info));
-            }
-            // Handle array-typed $ref definitions (e.g., BlockedEncryptionTypeList)
-            if def.def_type.as_deref() == Some("array")
-                && let Some(items) = &def.items
-            {
-                let (item_type, item_enum) =
-                    cfn_type_to_carina_type_with_enum(items, prop_name, schema, namespace, enums);
-                // Propagate item_enum so callers can register the enum type.
-                let effective_item_type = if item_enum.is_some() {
-                    "AttributeType::string()".to_string()
-                } else {
-                    item_type
-                };
-                let list_ctor = list_constructor(
-                    prop.insertion_order,
-                    override_forces_unordered(schema.type_name.as_str(), prop_name),
-                );
-                return (format!("{}({})", list_ctor, effective_item_type), item_enum);
-            }
-            // Handle string-typed $ref definitions with pattern constraints
-            if def.def_type.as_deref() == Some("string")
-                && let Some(pattern) = &def.pattern
-            {
-                // Check if name-based heuristics would override the type
-                if infer_string_type(prop_name, &schema.type_name).is_none() {
-                    // Promote alternation-only patterns to a real StringEnum.
-                    // See awscc#245.
-                    if let Some(values) = extract_enum_from_alternation_pattern(pattern) {
-                        let type_name = prop_name.to_pascal_case();
-                        let enum_info = EnumInfo { type_name, values };
-                        return ("/* enum */".to_string(), Some(enum_info));
+                ResolvedDef::OneOf { variants } => {
+                    // Merge all variant properties into a single struct.
+                    let mut merged_props = BTreeMap::new();
+                    // oneOf variants are mutually exclusive, so no field is required
+                    for variant in variants {
+                        if let Some(props) = &variant.properties {
+                            for (k, v) in props {
+                                merged_props.insert(k.clone(), v.clone());
+                            }
+                        }
                     }
-                    let effective_min = def.min_length.filter(|&m| m > 0);
-                    let has_length = effective_min.is_some() || def.max_length.is_some();
-                    let validate_fn = if has_length {
-                        record_pattern_with_length(pattern, effective_min, def.max_length);
-                        pattern_and_length_fn_name(pattern, effective_min, def.max_length)
-                    } else {
-                        record_standalone_pattern(pattern);
-                        pattern_fn_name(pattern)
+                    if !merged_props.is_empty() {
+                        let def_name = ref_def_name(ref_path).unwrap_or(prop_name);
+                        // Same cycle-guarded shape as the `Struct` arm
+                        // above (carina#3340).
+                        IN_PROGRESS_DEFS.with(|s| {
+                            s.borrow_mut().insert(def_name.to_string());
+                        });
+                        let body = generate_struct_type(
+                            def_name,
+                            &merged_props,
+                            &[], // no required fields - variants are mutually exclusive
+                            schema,
+                            namespace,
+                            enums,
+                        );
+                        IN_PROGRESS_DEFS.with(|s| {
+                            s.borrow_mut().remove(def_name);
+                        });
+                        EMITTED_DEFS.with(|s| {
+                            s.borrow_mut().insert(def_name.to_string(), body.clone());
+                        });
+                        return (body, None);
+                    }
+                }
+                ResolvedDef::Enum { values } => {
+                    let def_name = ref_def_name(ref_path).unwrap_or(prop_name);
+                    let type_name = def_name.to_pascal_case();
+                    let string_values: Vec<String> =
+                        values.iter().map(|v| v.to_string_value()).collect();
+                    let deduped =
+                        deduplicate_enum_values(string_values.clone()).unwrap_or(string_values);
+                    let enum_info = EnumInfo {
+                        type_name,
+                        values: deduped,
                     };
-                    let pattern_expr = emit_pattern_option(Some(pattern));
-                    let length_expr = emit_length_option(effective_min, def.max_length);
-                    return (
-                        format!(
-                            r#"AttributeType::custom(None, AttributeType::string(), {}, {}, legacy_validator({}), None)"#,
-                            pattern_expr, length_expr, validate_fn
-                        ),
-                        None,
+                    return ("/* enum */".to_string(), Some(enum_info));
+                }
+                ResolvedDef::Array { items } => {
+                    // e.g., BlockedEncryptionTypeList
+                    let (item_type, item_enum) = cfn_type_to_carina_type_with_enum(
+                        items, prop_name, schema, namespace, enums,
                     );
+                    // Propagate item_enum so callers can register the enum type.
+                    let effective_item_type = if item_enum.is_some() {
+                        "AttributeType::string()".to_string()
+                    } else {
+                        item_type
+                    };
+                    let list_ctor = list_constructor(
+                        prop.insertion_order,
+                        override_forces_unordered(schema.type_name.as_str(), prop_name),
+                    );
+                    return (format!("{}({})", list_ctor, effective_item_type), item_enum);
+                }
+                ResolvedDef::StringPattern {
+                    pattern,
+                    min_length,
+                    max_length,
+                } => {
+                    // Check if name-based heuristics would override the type.
+                    // When they would, fall through to the heuristic fallback
+                    // below (do NOT return here).
+                    if infer_string_type(prop_name, &schema.type_name).is_none() {
+                        // Promote alternation-only patterns to a real StringEnum.
+                        // See awscc#245.
+                        if let Some(values) = extract_enum_from_alternation_pattern(pattern) {
+                            let type_name = prop_name.to_pascal_case();
+                            let enum_info = EnumInfo { type_name, values };
+                            return ("/* enum */".to_string(), Some(enum_info));
+                        }
+                        let effective_min = min_length.filter(|&m| m > 0);
+                        let has_length = effective_min.is_some() || max_length.is_some();
+                        let validate_fn = if has_length {
+                            record_pattern_with_length(pattern, effective_min, max_length);
+                            pattern_and_length_fn_name(pattern, effective_min, max_length)
+                        } else {
+                            record_standalone_pattern(pattern);
+                            pattern_fn_name(pattern)
+                        };
+                        let pattern_expr = emit_pattern_option(Some(pattern));
+                        let length_expr = emit_length_option(effective_min, max_length);
+                        return (
+                            format!(
+                                r#"AttributeType::custom(None, AttributeType::string(), {}, {}, legacy_validator({}), None)"#,
+                                pattern_expr, length_expr, validate_fn
+                            ),
+                            None,
+                        );
+                    }
+                }
+                scalar @ ResolvedDef::Scalar { .. } => {
+                    // Reconstruct an inline scalar property and recurse through
+                    // the normal scalar mapping, so the field gets the exact
+                    // same int/float/bool type — including the def's own
+                    // min/max range — a direct property would (awscc#291).
+                    if let Some(scalar_prop) = scalar.scalar_as_property() {
+                        return cfn_type_to_carina_type_with_enum(
+                            &scalar_prop,
+                            prop_name,
+                            schema,
+                            namespace,
+                            enums,
+                        );
+                    }
+                }
+                ResolvedDef::Opaque => {
+                    // No known shape — fall through to the heuristic fallback.
                 }
             }
-            // Handle scalar-typed $ref definitions (integer / number /
-            // boolean) by recursing through the normal scalar mapping with a
-            // reconstructed inline property, so the field gets the exact same
-            // int/float/bool type — including the def's own min/max range —
-            // a direct property would. Without this the $ref falls through to
-            // the String fallback below and the resource is rejected at apply
-            // (awscc#291).
-            if let Some(scalar_prop) = scalar_property_from_def(def) {
-                return cfn_type_to_carina_type_with_enum(
-                    &scalar_prop,
-                    prop_name,
-                    schema,
-                    namespace,
-                    enums,
-                );
-            }
         }
-        // Apply name-based heuristics for unresolvable $ref
+        // Apply name-based heuristics for unresolvable / opaque $ref
         if let Some(inferred) = infer_string_type(prop_name, &schema.type_name) {
             return (inferred, None);
         }
@@ -4923,21 +5111,19 @@ fn cfn_type_to_carina_type_with_enum(
                 override_forces_unordered(schema.type_name.as_str(), prop_name),
             );
             let (list_type, item_enum) = if let Some(items) = &prop.items {
-                // Check if items has a $ref to a definition
+                // Struct-shaped $ref items are inlined as a list-of-struct;
+                // every other item shape (scalar/enum/array/string/opaque)
+                // falls through to the normal recursion below.
                 if let Some(ref_path) = &items.ref_path
                     && !ref_path.contains("/Tag")
-                    && let Some(def) = resolve_ref(schema, ref_path)
-                    && let Some(props) = &def.properties
-                    && !props.is_empty()
+                    && let Some(ResolvedDef::Struct {
+                        properties,
+                        required,
+                    }) = resolve_ref_classified(schema, ref_path)
                 {
                     let def_name = ref_def_name(ref_path).unwrap_or(prop_name);
                     let struct_type = generate_struct_type(
-                        def_name,
-                        props,
-                        &def.required,
-                        schema,
-                        namespace,
-                        enums,
+                        def_name, properties, required, schema, namespace, enums,
                     );
                     (format!("{}({})", list_ctor, struct_type), None)
                 } else {
@@ -5124,6 +5310,172 @@ fn collapse_whitespace(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Build a `CfnDefinition` for classification tests, overriding only the
+    /// fields a case cares about.
+    fn def(
+        def_type: Option<&str>,
+        properties: Option<BTreeMap<String, CfnProperty>>,
+        one_of: Vec<CfnOneOfVariant>,
+        enum_values: Option<Vec<EnumValue>>,
+        items: Option<CfnProperty>,
+        pattern: Option<&str>,
+    ) -> CfnDefinition {
+        CfnDefinition {
+            def_type: def_type.map(str::to_string),
+            properties,
+            one_of,
+            enum_values,
+            items: items.map(Box::new),
+            pattern: pattern.map(str::to_string),
+            ..Default::default()
+        }
+    }
+
+    fn one_prop() -> BTreeMap<String, CfnProperty> {
+        let mut m = BTreeMap::new();
+        m.insert("Field".to_string(), CfnProperty::default());
+        m
+    }
+
+    #[test]
+    fn test_classify_def_precedence_matches_canonical_order() {
+        // classify_def is the single source of truth for $ref shape dispatch
+        // (awscc#293). These cases pin the canonical precedence
+        // properties > oneOf > enum > array > string-pattern > scalar > opaque
+        // so generated output stays byte-identical and a future reorder is
+        // caught.
+
+        // Struct wins even if other shape-fields are also present.
+        assert!(matches!(
+            classify_def(&def(
+                Some("object"),
+                Some(one_prop()),
+                vec![CfnOneOfVariant::default()],
+                Some(vec![EnumValue::Str("x".into())]),
+                None,
+                None,
+            )),
+            ResolvedDef::Struct { .. }
+        ));
+
+        // oneOf wins over enum/array/etc when there are no inline properties.
+        assert!(matches!(
+            classify_def(&def(
+                Some("object"),
+                None,
+                vec![CfnOneOfVariant::default()],
+                Some(vec![EnumValue::Str("x".into())]),
+                None,
+                None,
+            )),
+            ResolvedDef::OneOf { .. }
+        ));
+
+        // An integer-typed enum classifies as Enum, NOT Scalar — this is the
+        // precedence that keeps WAFv2 `EvaluationWindowSec` an enum.
+        assert!(matches!(
+            classify_def(&def(
+                Some("integer"),
+                None,
+                vec![],
+                Some(vec![EnumValue::Int(60), EnumValue::Int(120)]),
+                None,
+                None,
+            )),
+            ResolvedDef::Enum { .. }
+        ));
+
+        // Array (type=array + items) beats a stray string-pattern/scalar.
+        assert!(matches!(
+            classify_def(&def(
+                Some("array"),
+                None,
+                vec![],
+                None,
+                Some(CfnProperty::default()),
+                None,
+            )),
+            ResolvedDef::Array { .. }
+        ));
+
+        // String + pattern -> StringPattern.
+        assert!(matches!(
+            classify_def(&def(Some("string"), None, vec![], None, None, Some("^a$"))),
+            ResolvedDef::StringPattern { .. }
+        ));
+
+        // Bare scalar (no enum) -> Scalar with the right kind.
+        assert!(matches!(
+            classify_def(&def(Some("integer"), None, vec![], None, None, None)),
+            ResolvedDef::Scalar {
+                kind: ScalarKind::Integer,
+                ..
+            }
+        ));
+        assert!(matches!(
+            classify_def(&def(Some("number"), None, vec![], None, None, None)),
+            ResolvedDef::Scalar {
+                kind: ScalarKind::Number,
+                ..
+            }
+        ));
+        assert!(matches!(
+            classify_def(&def(Some("boolean"), None, vec![], None, None, None)),
+            ResolvedDef::Scalar {
+                kind: ScalarKind::Boolean,
+                ..
+            }
+        ));
+
+        // Empty properties is NOT a struct — falls through to Opaque.
+        assert!(matches!(
+            classify_def(&def(
+                Some("object"),
+                Some(BTreeMap::new()),
+                vec![],
+                None,
+                None,
+                None,
+            )),
+            ResolvedDef::Opaque
+        ));
+
+        // A typeless def with none of the shape markers -> Opaque (the
+        // explicit fallback that replaced the silent String drop).
+        assert!(matches!(
+            classify_def(&def(None, None, vec![], None, None, None)),
+            ResolvedDef::Opaque
+        ));
+
+        // String type with no pattern is not StringPattern -> Opaque.
+        assert!(matches!(
+            classify_def(&def(Some("string"), None, vec![], None, None, None)),
+            ResolvedDef::Opaque
+        ));
+    }
+
+    #[test]
+    fn test_classify_def_scalar_carries_range_and_format() {
+        let mut d = def(Some("integer"), None, vec![], None, None, None);
+        d.minimum = Some(10);
+        d.maximum = Some(2_000_000_000);
+        d.format = Some("int64".to_string());
+        match classify_def(&d) {
+            ResolvedDef::Scalar {
+                kind,
+                minimum,
+                maximum,
+                format,
+            } => {
+                assert_eq!(kind, ScalarKind::Integer);
+                assert_eq!(minimum, Some(10));
+                assert_eq!(maximum, Some(2_000_000_000));
+                assert_eq!(format, Some("int64"));
+            }
+            _ => panic!("expected Scalar"),
+        }
+    }
 
     /// carina#3093: `list_constructor` must let an override force
     /// `unordered_list` even when CFN `insertionOrder` is unspecified
