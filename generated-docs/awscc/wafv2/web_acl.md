@@ -600,7 +600,7 @@ Shorthand formats: `match` or `UriFragmentFallbackBehavior.match`
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `custom_response_body_key` | String | No | Custom response body key. |
-| `response_code` | String | Yes |  |
+| `response_code` | Int(200..=599) | Yes |  |
 | `response_headers` | [List\<CustomHTTPHeader\>](#customhttpheader) (items: 1..) | No | Collection of HTTP headers. |
 
 ### DataProtectionConfig
@@ -803,7 +803,7 @@ Shorthand formats: `match` or `UriFragmentFallbackBehavior.match`
 | `custom_keys` | [List\<RateBasedStatementCustomKey\>](#ratebasedstatementcustomkey) (items: ..=5) | No | Specifies the aggregate keys to use in a rate-base rule. |
 | `evaluation_window_sec` | [Enum (RateBasedStatementEvaluationWindowSec)](#evaluation_window_sec-ratebasedstatementevaluationwindowsec) | No |  |
 | `forwarded_ip_config` | [Struct(ForwardedIPConfiguration)](#forwardedipconfiguration) | No |  |
-| `limit` | String | Yes |  |
+| `limit` | Int(10..=2000000000) | Yes |  |
 | `scope_down_statement` | [Struct(Statement)](#statement) | No |  |
 
 ### RateBasedStatementCustomKey
@@ -957,7 +957,7 @@ Shorthand formats: `match` or `UriFragmentFallbackBehavior.match`
 | `challenge_config` | [Struct(ChallengeConfig)](#challengeconfig) | No |  |
 | `name` | String | Yes |  |
 | `override_action` | [Struct(OverrideAction)](#overrideaction) | No |  |
-| `priority` | String | Yes |  |
+| `priority` | Int(0..) | Yes |  |
 | `rule_labels` | [List\<Label\>](#label) | No | Collection of Rule Labels. |
 | `statement` | [Struct(Statement)](#statement) | Yes |  |
 | `visibility_config` | [Struct(VisibilityConfig)](#visibilityconfig) | Yes |  |
@@ -1041,7 +1041,7 @@ Shorthand formats: `match` or `UriFragmentFallbackBehavior.match`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `priority` | String | Yes |  |
+| `priority` | Int(0..) | Yes |  |
 | `type` | [Enum (TextTransformationTextTransformationType)](#type-texttransformationtexttransformationtype) | Yes |  |
 
 ### UriFragment
