@@ -47,7 +47,7 @@ pub fn resolve_enum_identifiers_impl(resources: &mut [Resource]) {
                 let struct_fields = struct_fields_for(&attr_schema.attr_type, &config.schema.defs);
 
                 if let Some(fields) = struct_fields {
-                    let resolved = resolve_struct_enum_values(value, fields);
+                    let resolved = resolve_struct_enum_values(value, fields, &config.schema.defs);
                     resolved_attrs.insert(key.clone(), resolved);
                     continue;
                 }
@@ -82,12 +82,24 @@ fn struct_fields_for<'a>(
 /// Resolve enum identifiers within struct field values.
 /// Recurses into List and Map values, resolving bare/shorthand enum values
 /// for struct fields that have StringEnum type with namespace.
-fn resolve_struct_enum_values(value: &Value, fields: &[StructField]) -> Value {
+///
+/// `defs` is the owning resource's `ResourceSchema::defs` map and must be
+/// threaded through every recursion. The cyclic-schema Ref codegen
+/// (awscc#281, carina#3340) emits `AttributeType::Ref(name)` inside struct
+/// fields (e.g. WebACL's recursive `Statement` graph, CloudFront's
+/// `forwarded_values`); peeling those `Ref`s requires the same `defs` map
+/// the top-level attribute carries. Passing `empty_defs()` here panics in
+/// `AttributeType::shape` on the first such field (awscc#286 / awscc#288).
+fn resolve_struct_enum_values(
+    value: &Value,
+    fields: &[StructField],
+    defs: &std::collections::BTreeMap<String, AttributeType>,
+) -> Value {
     match value {
         Value::Concrete(ConcreteValue::List(items)) => {
             let resolved_items: Vec<Value> = items
                 .iter()
-                .map(|item| resolve_struct_enum_values(item, fields))
+                .map(|item| resolve_struct_enum_values(item, fields, defs))
                 .collect();
             Value::Concrete(ConcreteValue::List(resolved_items))
         }
@@ -103,14 +115,7 @@ fn resolve_struct_enum_values(value: &Value, fields: &[StructField]) -> Value {
                         resolved_map.insert(field_key.clone(), resolved);
                         continue;
                     }
-                    // List(StringEnum): resolve each element. The inner
-                    // `Ref` peel uses `empty_defs()` because nested struct
-                    // fields do not carry their own `defs` map; awscc
-                    // codegen inlines all struct types instead of using
-                    // cyclic `Ref` inside fields, so this is safe in
-                    // practice. If a future codegen change starts emitting
-                    // `Ref` inside struct fields, thread `defs` through.
-                    let defs = carina_core::schema::empty_defs();
+                    // List(StringEnum): resolve each element.
                     if let Shape::List { inner, .. } = field.field_type.shape(defs)
                         && let Some(parts) = inner.namespaced_enum_parts()
                         && let Value::Concrete(ConcreteValue::List(items)) = field_value
@@ -133,7 +138,7 @@ fn resolve_struct_enum_values(value: &Value, fields: &[StructField]) -> Value {
                     if let Some(nested) = nested_fields {
                         resolved_map.insert(
                             field_key.clone(),
-                            resolve_struct_enum_values(field_value, nested),
+                            resolve_struct_enum_values(field_value, nested, defs),
                         );
                         continue;
                     }
@@ -184,7 +189,7 @@ pub fn normalize_state_enums_impl(current_states: &mut HashMap<ResourceId, State
                 let struct_fields = struct_fields_for(&attr_schema.attr_type, &config.schema.defs);
 
                 if let Some(fields) = struct_fields {
-                    let resolved = resolve_struct_enum_values(value, fields);
+                    let resolved = resolve_struct_enum_values(value, fields, &config.schema.defs);
                     resolved_attrs.insert(key.clone(), resolved);
                     continue;
                 }
@@ -640,7 +645,8 @@ mod tests {
             ConcreteValue::Map(map),
         )]));
 
-        let resolved = resolve_struct_enum_values(&value, &fields);
+        let resolved =
+            resolve_struct_enum_values(&value, &fields, carina_core::schema::empty_defs());
         if let Value::Concrete(ConcreteValue::List(items)) = resolved {
             if let Value::Concrete(ConcreteValue::Map(m)) = &items[0] {
                 match &m["ip_protocol"] {
@@ -670,7 +676,8 @@ mod tests {
             ConcreteValue::Map(map),
         )]));
 
-        let resolved = resolve_struct_enum_values(&value, &fields);
+        let resolved =
+            resolve_struct_enum_values(&value, &fields, carina_core::schema::empty_defs());
         if let Value::Concrete(ConcreteValue::List(items)) = resolved {
             if let Value::Concrete(ConcreteValue::Map(m)) = &items[0] {
                 match &m["ip_protocol"] {
@@ -701,7 +708,8 @@ mod tests {
             ConcreteValue::Map(map),
         )]));
 
-        let resolved = resolve_struct_enum_values(&value, &fields);
+        let resolved =
+            resolve_struct_enum_values(&value, &fields, carina_core::schema::empty_defs());
         if let Value::Concrete(ConcreteValue::List(items)) = resolved {
             if let Value::Concrete(ConcreteValue::Map(m)) = &items[0] {
                 match &m["ip_protocol"] {
@@ -967,7 +975,8 @@ mod tests {
         let value = Value::Concrete(ConcreteValue::List(vec![Value::Concrete(
             ConcreteValue::Map(map),
         )]));
-        let resolved = resolve_struct_enum_values(&value, &fields);
+        let resolved =
+            resolve_struct_enum_values(&value, &fields, carina_core::schema::empty_defs());
 
         // Verify the nested enum was resolved
         if let Value::Concrete(ConcreteValue::List(items)) = &resolved {
@@ -1174,6 +1183,165 @@ mod tests {
             state.attributes.get("attr"),
             Some(&Value::Concrete(ConcreteValue::String("x".to_string()))),
             "unknown resource types pass through unchanged"
+        );
+    }
+
+    // --- cyclic-schema Ref normalization (awscc#286 / awscc#288) ---
+    //
+    // `resolve_struct_enum_values` recurses through nested struct fields
+    // to resolve schema-level string enums. After the cyclic-schema Ref
+    // codegen (awscc#281, carina#3340) the generated schemas emit
+    // `AttributeType::Ref(name)` *inside* struct fields (e.g. WebACL's
+    // recursive `Statement` graph, CloudFront's `forwarded_values`).
+    // When the recursion reaches such a field it must peel the `Ref`
+    // against this resource's `defs` map; peeling against `empty_defs()`
+    // panics with "Ref(...) not found in schema defs", which poisons the
+    // WASM instance and silently strips `default_tags`.
+
+    #[test]
+    fn resolve_struct_enum_values_threads_defs_for_webacl_ref() {
+        // A WebACL rule carrying `captcha_config`, a `Ref("CaptchaConfig")`
+        // field of the generated `Rule` struct (awscc#286). The recursion
+        // must peel this `Ref` against the WebACL's `defs` map.
+        let mut resource = Resource::with_provider("awscc", "wafv2.WebAcl", "test-acl", None);
+
+        let mut immunity = IndexMap::new();
+        immunity.insert(
+            "immunity_time".to_string(),
+            Value::Concrete(ConcreteValue::Int(60)),
+        );
+        let mut captcha_config = IndexMap::new();
+        captcha_config.insert(
+            "immunity_time_property".to_string(),
+            Value::Concrete(ConcreteValue::Map(immunity)),
+        );
+
+        let mut rule = IndexMap::new();
+        rule.insert(
+            "name".to_string(),
+            Value::Concrete(ConcreteValue::String("common-rule-set".to_string())),
+        );
+        rule.insert(
+            "captcha_config".to_string(),
+            Value::Concrete(ConcreteValue::Map(captcha_config)),
+        );
+
+        resource.set_attr(
+            "rules".to_string(),
+            Value::Concrete(ConcreteValue::List(vec![Value::Concrete(
+                ConcreteValue::Map(rule),
+            )])),
+        );
+
+        let mut resources = vec![resource];
+        // Before the fix this panics: the recursion peels the
+        // `Ref("CaptchaConfig")` field against `empty_defs()`.
+        resolve_enum_identifiers_impl(&mut resources);
+
+        let Value::Concrete(ConcreteValue::List(rules)) = resources[0].get_attr("rules").unwrap()
+        else {
+            panic!("expected rules list");
+        };
+        let Value::Concrete(ConcreteValue::Map(rule)) = &rules[0] else {
+            panic!("expected rule map");
+        };
+        // The walk descends through the `Ref("CaptchaConfig")` field and
+        // its nested `Ref("ImmunityTimeProperty")`, leaving the leaf value
+        // intact — proving the recursion produced correct output, not just
+        // that it did not panic.
+        let Value::Concrete(ConcreteValue::Map(captcha_config)) = &rule["captcha_config"] else {
+            panic!("expected captcha_config map");
+        };
+        let Value::Concrete(ConcreteValue::Map(immunity)) =
+            &captcha_config["immunity_time_property"]
+        else {
+            panic!("expected immunity_time_property map");
+        };
+        assert_eq!(
+            immunity["immunity_time"],
+            Value::Concrete(ConcreteValue::Int(60)),
+            "leaf value preserved through the Ref-peeled captcha_config"
+        );
+    }
+
+    #[test]
+    fn resolve_struct_enum_values_threads_defs_for_distribution_forwarded_values() {
+        // A CloudFront Distribution whose
+        // `distribution_config.default_cache_behavior.forwarded_values`
+        // is a `Ref("ForwardedValues")` field (awscc#288). The state
+        // path runs the same `resolve_struct_enum_values` recursion.
+        let mut cookies = IndexMap::new();
+        cookies.insert(
+            "forward".to_string(),
+            Value::Concrete(ConcreteValue::String("none".to_string())),
+        );
+
+        let mut forwarded_values = IndexMap::new();
+        forwarded_values.insert(
+            "query_string".to_string(),
+            Value::Concrete(ConcreteValue::Bool(false)),
+        );
+        forwarded_values.insert(
+            "cookies".to_string(),
+            Value::Concrete(ConcreteValue::Map(cookies)),
+        );
+
+        let mut default_cache_behavior = IndexMap::new();
+        default_cache_behavior.insert(
+            "target_origin_id".to_string(),
+            Value::Concrete(ConcreteValue::String("origin".to_string())),
+        );
+        default_cache_behavior.insert(
+            "forwarded_values".to_string(),
+            Value::Concrete(ConcreteValue::Map(forwarded_values)),
+        );
+
+        let mut distribution_config = IndexMap::new();
+        distribution_config.insert(
+            "enabled".to_string(),
+            Value::Concrete(ConcreteValue::Bool(true)),
+        );
+        distribution_config.insert(
+            "default_cache_behavior".to_string(),
+            Value::Concrete(ConcreteValue::Map(default_cache_behavior)),
+        );
+
+        let (id, mut state) = make_state("awscc", "cloudfront.Distribution", "test-dist", vec![]);
+        state.attributes.insert(
+            "distribution_config".to_string(),
+            Value::Concrete(ConcreteValue::Map(distribution_config)),
+        );
+        let mut current_states: HashMap<ResourceId, State> = HashMap::new();
+        current_states.insert(id.clone(), state);
+
+        // Before the fix this panics on `Ref("ForwardedValues")`.
+        normalize_state_enums_impl(&mut current_states);
+
+        let Value::Concrete(ConcreteValue::Map(cfg)) = current_states[&id]
+            .attributes
+            .get("distribution_config")
+            .unwrap()
+        else {
+            panic!("expected distribution_config map");
+        };
+        // The walk descends through the `Ref("ForwardedValues")` field and
+        // resolves the nested `cookies.forward` StringEnum, proving the
+        // recursion produced correct output (not merely "did not panic").
+        let Value::Concrete(ConcreteValue::Map(dcb)) = &cfg["default_cache_behavior"] else {
+            panic!("expected default_cache_behavior map");
+        };
+        let Value::Concrete(ConcreteValue::Map(fv)) = &dcb["forwarded_values"] else {
+            panic!("expected forwarded_values map");
+        };
+        let Value::Concrete(ConcreteValue::Map(cookies)) = &fv["cookies"] else {
+            panic!("expected cookies map");
+        };
+        assert_eq!(
+            cookies["forward"],
+            Value::Concrete(ConcreteValue::String(
+                "awscc.cloudfront.Distribution.CookiesForward.none".to_string()
+            )),
+            "nested CookiesForward.none resolved through the Ref-peeled forwarded_values"
         );
     }
 }
