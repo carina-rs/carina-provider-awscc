@@ -445,13 +445,16 @@ mod tests {
     fn provider_config_attribute_types_declares_account_id_lists() {
         let factory = AwsccProviderFactory;
         let types = factory.provider_config_attribute_types();
-        let defs = carina_core::schema::empty_defs();
         assert!(matches!(
-            types.get("allowed_account_ids").map(|t| t.shape(defs)),
+            types.get("allowed_account_ids").map(|t| t
+                .shape_ref_free()
+                .expect("provider config types are Ref-free")),
             Some(carina_core::schema::Shape::List { .. })
         ));
         assert!(matches!(
-            types.get("forbidden_account_ids").map(|t| t.shape(defs)),
+            types.get("forbidden_account_ids").map(|t| t
+                .shape_ref_free()
+                .expect("provider config types are Ref-free")),
             Some(carina_core::schema::Shape::List { .. })
         ));
     }
@@ -469,7 +472,10 @@ mod tests {
         let ty = types
             .get("assume_role")
             .expect("assume_role must be declared as a provider config attribute");
-        match ty.shape(carina_core::schema::empty_defs()) {
+        match ty
+            .shape_ref_free()
+            .expect("provider config types are Ref-free")
+        {
             carina_core::schema::Shape::Struct { name, fields } => {
                 assert_eq!(name, "AssumeRole");
                 let role_arn = fields

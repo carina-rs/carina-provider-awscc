@@ -8,7 +8,7 @@ use std::collections::HashMap;
 
 use carina_core::provider::{ProviderError, ProviderResult, UpdatePatch};
 use carina_core::resource::{ConcreteValue, Directives, Resource, ResourceId, State, Value};
-use carina_core::schema::{AttributeSchema, AttributeType, Shape};
+use carina_core::schema::{AttributeSchema, AttributeType, Schema, Shape};
 use indexmap::IndexMap;
 use serde_json::json;
 
@@ -275,6 +275,7 @@ fn map_aws_props_to_attributes(
     defs: &std::collections::BTreeMap<String, AttributeType>,
 ) -> HashMap<String, Value> {
     let mut attributes = HashMap::new();
+    let schema_view = Schema::with_defs(defs.clone());
 
     for (dsl_name, attr_schema) in schema_attributes {
         if dsl_name == "tags" {
@@ -296,7 +297,7 @@ fn map_aws_props_to_attributes(
                 }
             }
             None if !attr_schema.required && !attr_schema.write_only => {
-                match attr_schema.attr_type.shape(defs) {
+                match schema_view.shape_of(&attr_schema.attr_type) {
                     Shape::List { .. } => {
                         attributes.insert(
                             dsl_name.clone(),
@@ -387,7 +388,7 @@ mod tests {
             &props,
             &attrs,
             "iam.Role",
-            carina_core::schema::empty_defs(),
+            &std::collections::BTreeMap::new(),
         );
 
         assert_eq!(
@@ -412,7 +413,7 @@ mod tests {
             &props,
             &attrs,
             "some.Resource",
-            carina_core::schema::empty_defs(),
+            &std::collections::BTreeMap::new(),
         );
 
         assert_eq!(
@@ -440,7 +441,7 @@ mod tests {
             &props,
             &attrs,
             "some.Resource",
-            carina_core::schema::empty_defs(),
+            &std::collections::BTreeMap::new(),
         );
 
         assert!(
@@ -466,7 +467,7 @@ mod tests {
             &props,
             &attrs,
             "some.Resource",
-            carina_core::schema::empty_defs(),
+            &std::collections::BTreeMap::new(),
         );
 
         assert!(
@@ -492,7 +493,7 @@ mod tests {
             &props,
             &attrs,
             "iam.Role",
-            carina_core::schema::empty_defs(),
+            &std::collections::BTreeMap::new(),
         );
 
         assert_eq!(
@@ -520,7 +521,7 @@ mod tests {
             &props,
             &attrs,
             "some.Resource",
-            carina_core::schema::empty_defs(),
+            &std::collections::BTreeMap::new(),
         );
 
         assert!(
