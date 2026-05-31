@@ -13,25 +13,6 @@ use serde_json::json;
 use crate::schemas::generated::canonicalize_enum_value;
 use carina_core::utils::{convert_enum_value, extract_enum_value_with_values};
 
-/// Convert AWS value to DSL value (no cyclic-struct defs).
-/// Used by tests; production callers should prefer
-/// [`aws_value_to_dsl_with_defs`].
-#[allow(dead_code)]
-pub(crate) fn aws_value_to_dsl(
-    dsl_name: &str,
-    value: &serde_json::Value,
-    attr_type: &AttributeType,
-    resource_type: &str,
-) -> Option<Value> {
-    aws_value_to_dsl_with_defs(
-        dsl_name,
-        value,
-        attr_type,
-        resource_type,
-        carina_core::schema::empty_defs(),
-    )
-}
-
 /// carina#3340: schema-aware variant that takes the enclosing
 /// [`ResourceSchema::defs`] map so `AttributeType::Ref` chains can be
 /// resolved during the value-tree walk. Callers that hold a resource
@@ -233,23 +214,6 @@ pub(crate) fn json_to_value(value: &serde_json::Value) -> Option<Value> {
         }
         _ => None,
     }
-}
-
-/// Convert DSL value to AWS JSON value
-#[allow(dead_code)]
-pub(crate) fn dsl_value_to_aws(
-    value: &Value,
-    attr_type: &AttributeType,
-    resource_type: &str,
-    attr_name: &str,
-) -> Option<serde_json::Value> {
-    dsl_value_to_aws_with_defs(
-        value,
-        attr_type,
-        resource_type,
-        attr_name,
-        carina_core::schema::empty_defs(),
-    )
 }
 
 /// carina#3340: schema-aware variant — see [`aws_value_to_dsl_with_defs`]
@@ -490,11 +454,12 @@ mod tests {
         );
 
         // CloudControl returns the API-canonical hyphen form.
-        let from_api = aws_value_to_dsl(
+        let from_api = aws_value_to_dsl_with_defs(
             "viewer_protocol_policy",
             &json!("redirect-to-https"),
             &attr_type,
             "cloudfront.Distribution",
+            carina_core::schema::empty_defs(),
         )
         .expect("read should succeed");
         assert_eq!(
@@ -505,11 +470,12 @@ mod tests {
 
         // If the API ever echoes the DSL-alias spelling, it must still be
         // canonicalized to the API form so state is stable.
-        let from_alias = aws_value_to_dsl(
+        let from_alias = aws_value_to_dsl_with_defs(
             "viewer_protocol_policy",
             &json!("redirect_to_https"),
             &attr_type,
             "cloudfront.Distribution",
+            carina_core::schema::empty_defs(),
         )
         .expect("read should succeed");
         assert_eq!(
@@ -613,11 +579,12 @@ mod tests {
             "Status": "Enabled",
         });
 
-        let result = aws_value_to_dsl(
+        let result = aws_value_to_dsl_with_defs(
             "versioning_configuration",
             &json_val,
             &attr_type,
             "AWS::S3::Bucket",
+            carina_core::schema::empty_defs(),
         );
         let result = result.expect("Should return Some");
 
@@ -650,11 +617,12 @@ mod tests {
         );
         let dsl_value = Value::Concrete(ConcreteValue::Map(map));
 
-        let result = dsl_value_to_aws(
+        let result = dsl_value_to_aws_with_defs(
             &dsl_value,
             &attr_type,
             "AWS::S3::Bucket",
             "versioning_configuration",
+            carina_core::schema::empty_defs(),
         );
         let result = result.expect("Should return Some");
 
@@ -684,11 +652,12 @@ mod tests {
             ConcreteValue::Map(map),
         )]));
 
-        let result = dsl_value_to_aws(
+        let result = dsl_value_to_aws_with_defs(
             &dsl_value,
             &attr_type,
             "AWS::S3::Bucket",
             "versioning_configuration",
+            carina_core::schema::empty_defs(),
         );
         let result = result.expect("Should return Some");
 
@@ -710,11 +679,12 @@ mod tests {
         let aws_json = serde_json::json!({ "Status": "Enabled" });
 
         // Read path: convert AWS JSON to DSL value
-        let dsl_value = aws_value_to_dsl(
+        let dsl_value = aws_value_to_dsl_with_defs(
             "versioning_configuration",
             &aws_json,
             &attr_type,
             "AWS::S3::Bucket",
+            carina_core::schema::empty_defs(),
         )
         .expect("read should succeed");
 
@@ -733,11 +703,12 @@ mod tests {
         );
 
         // Write path: convert DSL value back to AWS JSON
-        let written_json = dsl_value_to_aws(
+        let written_json = dsl_value_to_aws_with_defs(
             &dsl_value,
             &attr_type,
             "AWS::S3::Bucket",
             "versioning_configuration",
+            carina_core::schema::empty_defs(),
         )
         .expect("write should succeed");
 
@@ -786,11 +757,12 @@ mod tests {
 
         // 2. AWS read-back side.
         let aws_json = serde_json::json!("Gateway");
-        let aws_dsl = aws_value_to_dsl(
+        let aws_dsl = aws_value_to_dsl_with_defs(
             "vpc_endpoint_type",
             &aws_json,
             &attr_schema.attr_type,
             "ec2.VpcEndpoint",
+            carina_core::schema::empty_defs(),
         )
         .expect("aws_value_to_dsl should return Some");
 
@@ -831,7 +803,14 @@ mod tests {
         let value = Value::Concrete(ConcreteValue::String(
             "awscc.logs.LogGroup.LogGroupClass.INFREQUENT_ACCESS".to_string(),
         ));
-        let result = dsl_value_to_aws(&value, &attr_type, "logs.LogGroup", "log_group_class");
+        let result = dsl_value_to_aws_with_defs(
+            &value,
+            &attr_type,
+            "logs.LogGroup",
+            "log_group_class",
+            carina_core::schema::empty_defs(),
+        );
+
         assert_eq!(result, Some(json!("INFREQUENT_ACCESS")));
     }
 
@@ -846,7 +825,14 @@ mod tests {
         let value = Value::Concrete(ConcreteValue::String(
             "awscc.Region.ap_northeast_1".to_string(),
         ));
-        let result = dsl_value_to_aws(&value, &attr_type, "logs.LogGroup", "region");
+        let result = dsl_value_to_aws_with_defs(
+            &value,
+            &attr_type,
+            "logs.LogGroup",
+            "region",
+            carina_core::schema::empty_defs(),
+        );
+
         assert_eq!(result, Some(json!("ap-northeast-1")));
     }
 
@@ -870,7 +856,14 @@ mod tests {
                 "awscc.s3.Bucket.AllowedMethod.PUT".to_string(),
             )),
         ]));
-        let result = dsl_value_to_aws(&value, &attr_type, "s3.Bucket", "allowed_methods");
+        let result = dsl_value_to_aws_with_defs(
+            &value,
+            &attr_type,
+            "s3.Bucket",
+            "allowed_methods",
+            carina_core::schema::empty_defs(),
+        );
+
         assert_eq!(result, Some(json!(["GET", "PUT"])));
     }
 
@@ -887,7 +880,14 @@ mod tests {
         );
         let attr_type = AttributeType::list(inner);
         let json_val = json!(["GET", "PUT"]);
-        let result = aws_value_to_dsl("allowed_methods", &json_val, &attr_type, "s3.Bucket");
+        let result = aws_value_to_dsl_with_defs(
+            "allowed_methods",
+            &json_val,
+            &attr_type,
+            "s3.Bucket",
+            carina_core::schema::empty_defs(),
+        );
+
         assert_eq!(
             result,
             Some(Value::Concrete(ConcreteValue::List(vec![
@@ -911,10 +911,22 @@ mod tests {
         let attr_type = AttributeType::list(inner);
 
         let aws_json = json!(["GET", "PUT"]);
-        let dsl = aws_value_to_dsl("allowed_methods", &aws_json, &attr_type, "s3.Bucket")
-            .expect("read should succeed");
-        let written = dsl_value_to_aws(&dsl, &attr_type, "s3.Bucket", "allowed_methods")
-            .expect("write should succeed");
+        let dsl = aws_value_to_dsl_with_defs(
+            "allowed_methods",
+            &aws_json,
+            &attr_type,
+            "s3.Bucket",
+            carina_core::schema::empty_defs(),
+        )
+        .expect("read should succeed");
+        let written = dsl_value_to_aws_with_defs(
+            &dsl,
+            &attr_type,
+            "s3.Bucket",
+            "allowed_methods",
+            carina_core::schema::empty_defs(),
+        )
+        .expect("write should succeed");
         assert_eq!(written, aws_json, "Round-trip should produce original JSON");
     }
 
@@ -935,7 +947,14 @@ mod tests {
         let value = Value::Concrete(ConcreteValue::String(
             "awscc.ec2.Sg.Protocol.tcp".to_string(),
         ));
-        let result = dsl_value_to_aws(&value, &attr_type, "ec2.Sg", "protocol");
+        let result = dsl_value_to_aws_with_defs(
+            &value,
+            &attr_type,
+            "ec2.Sg",
+            "protocol",
+            carina_core::schema::empty_defs(),
+        );
+
         assert_eq!(result, Some(json!("tcp")));
     }
 
@@ -954,7 +973,14 @@ mod tests {
         );
         let dsl_value = Value::Concrete(ConcreteValue::Map(map));
 
-        let result = dsl_value_to_aws(&dsl_value, &attr_type, "s3.Bucket", "tags");
+        let result = dsl_value_to_aws_with_defs(
+            &dsl_value,
+            &attr_type,
+            "s3.Bucket",
+            "tags",
+            carina_core::schema::empty_defs(),
+        );
+
         let result = result.expect("Should return Some");
 
         if let serde_json::Value::Object(obj) = &result {
@@ -989,7 +1015,14 @@ mod tests {
         );
         let dsl_value = Value::Concrete(ConcreteValue::Map(map));
 
-        let result = dsl_value_to_aws(&dsl_value, &attr_type, "test.resource", "status_map");
+        let result = dsl_value_to_aws_with_defs(
+            &dsl_value,
+            &attr_type,
+            "test.resource",
+            "status_map",
+            carina_core::schema::empty_defs(),
+        );
+
         let result = result.expect("Should return Some");
 
         if let serde_json::Value::Object(obj) = &result {
@@ -1008,7 +1041,14 @@ mod tests {
             "another-key": "value2"
         });
 
-        let result = aws_value_to_dsl("tags", &aws_json, &attr_type, "s3.Bucket");
+        let result = aws_value_to_dsl_with_defs(
+            "tags",
+            &aws_json,
+            &attr_type,
+            "s3.Bucket",
+            carina_core::schema::empty_defs(),
+        );
+
         let result = result.expect("Should return Some");
 
         if let Value::Concrete(ConcreteValue::Map(map)) = &result {
@@ -1045,7 +1085,14 @@ mod tests {
             AttributeType::string(),
         ]);
         let json_val = json!("tcp");
-        let result = aws_value_to_dsl("protocol", &json_val, &attr_type, "ec2.Sg");
+        let result = aws_value_to_dsl_with_defs(
+            "protocol",
+            &json_val,
+            &attr_type,
+            "ec2.Sg",
+            carina_core::schema::empty_defs(),
+        );
+
         assert_eq!(
             result,
             Some(Value::Concrete(ConcreteValue::String("tcp".to_string())))
@@ -1067,7 +1114,14 @@ mod tests {
             AttributeType::int(),
         ]);
         let json_val = json!(42);
-        let result = aws_value_to_dsl("protocol", &json_val, &attr_type, "ec2.Sg");
+        let result = aws_value_to_dsl_with_defs(
+            "protocol",
+            &json_val,
+            &attr_type,
+            "ec2.Sg",
+            carina_core::schema::empty_defs(),
+        );
+
         assert_eq!(result, Some(Value::Concrete(ConcreteValue::Int(42))));
     }
 
@@ -1121,11 +1175,12 @@ mod tests {
             .collect(),
         ));
 
-        let result = dsl_value_to_aws(
+        let result = dsl_value_to_aws_with_defs(
             &value,
             &attr_type,
             "iam.Role",
             "assume_role_policy_document",
+            carina_core::schema::empty_defs(),
         );
         let result = result.expect("Should return Some");
 
@@ -1211,8 +1266,14 @@ mod tests {
             .collect(),
         ));
 
-        let result = dsl_value_to_aws(&value, &attr_type, "iam.RolePolicy", "policy_document")
-            .expect("Should return Some");
+        let result = dsl_value_to_aws_with_defs(
+            &value,
+            &attr_type,
+            "iam.RolePolicy",
+            "policy_document",
+            carina_core::schema::empty_defs(),
+        )
+        .expect("Should return Some");
         let obj = result.as_object().expect("Expected JSON Object");
         assert_eq!(
             obj.get("Version"),
@@ -1253,11 +1314,12 @@ mod tests {
             }]
         });
 
-        let result = aws_value_to_dsl(
+        let result = aws_value_to_dsl_with_defs(
             "assume_role_policy_document",
             &aws_json,
             &attr_type,
             "iam.Role",
+            carina_core::schema::empty_defs(),
         );
         let result = result.expect("Should return Some");
 
@@ -1330,11 +1392,12 @@ mod tests {
                 "Action": "sts:AssumeRole"
             }]
         });
-        let read_side = aws_value_to_dsl(
+        let read_side = aws_value_to_dsl_with_defs(
             "assume_role_policy_document",
             &aws_json,
             &attr_type,
             "iam.Role",
+            carina_core::schema::empty_defs(),
         )
         .expect("read conversion should return Some");
 
@@ -1422,7 +1485,14 @@ mod tests {
         ));
         let json_val = json!([{"RegionName": "ap-northeast-1"}]);
 
-        let result = aws_value_to_dsl("operating_regions", &json_val, &attr_type, "ec2.Ipam");
+        let result = aws_value_to_dsl_with_defs(
+            "operating_regions",
+            &json_val,
+            &attr_type,
+            "ec2.Ipam",
+            carina_core::schema::empty_defs(),
+        );
+
         let expected = Value::Concrete(ConcreteValue::List(vec![Value::Concrete(
             ConcreteValue::Map(IndexMap::from([(
                 "region_name".to_string(),
@@ -1445,7 +1515,14 @@ mod tests {
         );
         let json_val = json!("ipsec.1");
 
-        let result = aws_value_to_dsl("type", &json_val, &attr_type, "ec2.VpnGateway");
+        let result = aws_value_to_dsl_with_defs(
+            "type",
+            &json_val,
+            &attr_type,
+            "ec2.VpnGateway",
+            carina_core::schema::empty_defs(),
+        );
+
         // The dotted tail (`ipsec.1`) is the API value itself, not a
         // namespace separator — it must survive verbatim.
         assert_eq!(
@@ -1471,7 +1548,14 @@ mod tests {
             "awscc.ec2.VpnGateway.Type.ipsec.1".to_string(),
         ));
 
-        let result = dsl_value_to_aws(&value, &attr_type, "ec2.VpnGateway", "type");
+        let result = dsl_value_to_aws_with_defs(
+            &value,
+            &attr_type,
+            "ec2.VpnGateway",
+            "type",
+            carina_core::schema::empty_defs(),
+        );
+
         assert_eq!(result, Some(json!("ipsec.1")));
     }
 
@@ -1488,7 +1572,14 @@ mod tests {
         );
         let value = Value::Concrete(ConcreteValue::String("ipsec.1".to_string()));
 
-        let result = dsl_value_to_aws(&value, &attr_type, "ec2.VpnGateway", "type");
+        let result = dsl_value_to_aws_with_defs(
+            &value,
+            &attr_type,
+            "ec2.VpnGateway",
+            "type",
+            carina_core::schema::empty_defs(),
+        );
+
         assert_eq!(result, Some(json!("ipsec.1")));
     }
 
@@ -1505,7 +1596,14 @@ mod tests {
         );
 
         let aws_val = json!("ipsec.1");
-        let dsl_val = aws_value_to_dsl("type", &aws_val, &attr_type, "ec2.VpnGateway");
+        let dsl_val = aws_value_to_dsl_with_defs(
+            "type",
+            &aws_val,
+            &attr_type,
+            "ec2.VpnGateway",
+            carina_core::schema::empty_defs(),
+        );
+
         assert_eq!(
             dsl_val,
             Some(Value::Concrete(ConcreteValue::String(
@@ -1513,7 +1611,14 @@ mod tests {
             )))
         );
 
-        let back_to_aws = dsl_value_to_aws(&dsl_val.unwrap(), &attr_type, "ec2.VpnGateway", "type");
+        let back_to_aws = dsl_value_to_aws_with_defs(
+            &dsl_val.unwrap(),
+            &attr_type,
+            "ec2.VpnGateway",
+            "type",
+            carina_core::schema::empty_defs(),
+        );
+
         assert_eq!(back_to_aws, Some(json!("ipsec.1")));
     }
 
@@ -1575,7 +1680,14 @@ mod tests {
     fn test_aws_value_to_dsl_list_with_null_drops_null_items() {
         let json = serde_json::json!(["a", null, "b"]);
         let attr_type = AttributeType::list(AttributeType::string());
-        let result = aws_value_to_dsl("test_attr", &json, &attr_type, "test.resource");
+        let result = aws_value_to_dsl_with_defs(
+            "test_attr",
+            &json,
+            &attr_type,
+            "test.resource",
+            carina_core::schema::empty_defs(),
+        );
+
         let expected = Value::Concrete(ConcreteValue::List(vec![
             Value::Concrete(ConcreteValue::String("a".to_string())),
             Value::Concrete(ConcreteValue::String("b".to_string())),
@@ -1792,21 +1904,23 @@ mod tests {
         );
 
         // Round-trip: DSL snake_case -> AWS API spelling.
-        let aws_json = dsl_value_to_aws(
+        let aws_json = dsl_value_to_aws_with_defs(
             &snake_case_value,
             &object_ownership.field_type,
             "s3.Bucket",
             "object_ownership",
+            carina_core::schema::empty_defs(),
         )
         .expect("dsl_value_to_aws must succeed");
         assert_eq!(aws_json, json!("BucketOwnerEnforced"));
 
         // On read the AWS spelling is persisted verbatim, then lifted.
-        let dsl = aws_value_to_dsl(
+        let dsl = aws_value_to_dsl_with_defs(
             "object_ownership",
             &json!("BucketOwnerEnforced"),
             &object_ownership.field_type,
             "s3.Bucket",
+            carina_core::schema::empty_defs(),
         )
         .expect("aws_value_to_dsl must succeed");
         assert_eq!(
@@ -1834,7 +1948,14 @@ mod tests {
             Value::Concrete(ConcreteValue::Float(2.0)),
         ]));
         let attr_type = AttributeType::list(AttributeType::float());
-        let result = dsl_value_to_aws(&value, &attr_type, "test.resource", "test_attr");
+        let result = dsl_value_to_aws_with_defs(
+            &value,
+            &attr_type,
+            "test.resource",
+            "test_attr",
+            carina_core::schema::empty_defs(),
+        );
+
         let expected = serde_json::json!([1.0, 2.0]);
         assert_eq!(result, Some(expected));
     }
@@ -1850,7 +1971,14 @@ mod tests {
             Some(|s: &str| s.strip_suffix('.').unwrap_or(s).to_string()),
         );
         let json_val = serde_json::json!("carina-rs.dev.");
-        let result = aws_value_to_dsl("name", &json_val, &attr_type, "route53.HostedZone");
+        let result = aws_value_to_dsl_with_defs(
+            "name",
+            &json_val,
+            &attr_type,
+            "route53.HostedZone",
+            carina_core::schema::empty_defs(),
+        );
+
         assert_eq!(
             result,
             Some(Value::Concrete(ConcreteValue::String(
@@ -1870,7 +1998,14 @@ mod tests {
             None,
         );
         let json_val = serde_json::json!("carina-rs.dev.");
-        let result = aws_value_to_dsl("name", &json_val, &attr_type, "route53.HostedZone");
+        let result = aws_value_to_dsl_with_defs(
+            "name",
+            &json_val,
+            &attr_type,
+            "route53.HostedZone",
+            carina_core::schema::empty_defs(),
+        );
+
         assert_eq!(
             result,
             Some(Value::Concrete(ConcreteValue::String(
