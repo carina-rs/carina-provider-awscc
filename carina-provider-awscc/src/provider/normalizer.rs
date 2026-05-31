@@ -7,7 +7,7 @@ use indexmap::IndexMap;
 use std::collections::HashMap;
 
 use carina_core::resource::{ConcreteValue, Resource, ResourceId, State, Value};
-use carina_core::schema::{AttributeType, Shape, StructField};
+use carina_core::schema::{AttributeType, ResourceSchema, Shape, StructField};
 
 /// Resolve enum identifiers in resources to their fully-qualified DSL format.
 ///
@@ -44,10 +44,10 @@ pub fn resolve_enum_identifiers_impl(resources: &mut [Resource]) {
 
             // Handle struct fields containing schema-level string enums.
             if let Some(attr_schema) = config.schema.attributes.get(key.as_str()) {
-                let struct_fields = struct_fields_for(&attr_schema.attr_type, &config.schema.defs);
+                let struct_fields = struct_fields_for(&attr_schema.attr_type, &config.schema);
 
                 if let Some(fields) = struct_fields {
-                    let resolved = resolve_struct_enum_values(value, fields, &config.schema.defs);
+                    let resolved = resolve_struct_enum_values(value, fields, &config.schema);
                     resolved_attrs.insert(key.clone(), resolved);
                     continue;
                 }
@@ -67,10 +67,10 @@ pub fn resolve_enum_identifiers_impl(resources: &mut [Resource]) {
 /// correctly (carina#3340).
 fn struct_fields_for<'a>(
     attr_type: &'a AttributeType,
-    defs: &'a std::collections::BTreeMap<String, AttributeType>,
+    schema: &'a ResourceSchema,
 ) -> Option<&'a [StructField]> {
-    match attr_type.shape(defs) {
-        Shape::List { inner, .. } => match inner.shape(defs) {
+    match schema.shape_of(attr_type) {
+        Shape::List { inner, .. } => match schema.shape_of(inner) {
             Shape::Struct { fields, .. } => Some(fields),
             _ => None,
         },
@@ -88,18 +88,18 @@ fn struct_fields_for<'a>(
 /// (awscc#281, carina#3340) emits `AttributeType::Ref(name)` inside struct
 /// fields (e.g. WebACL's recursive `Statement` graph, CloudFront's
 /// `forwarded_values`); peeling those `Ref`s requires the same `defs` map
-/// the top-level attribute carries. Passing `empty_defs()` here panics in
+/// the top-level attribute carries. Passing an empty definition map here panics in
 /// `AttributeType::shape` on the first such field (awscc#286 / awscc#288).
 fn resolve_struct_enum_values(
     value: &Value,
     fields: &[StructField],
-    defs: &std::collections::BTreeMap<String, AttributeType>,
+    schema: &ResourceSchema,
 ) -> Value {
     match value {
         Value::Concrete(ConcreteValue::List(items)) => {
             let resolved_items: Vec<Value> = items
                 .iter()
-                .map(|item| resolve_struct_enum_values(item, fields, defs))
+                .map(|item| resolve_struct_enum_values(item, fields, schema))
                 .collect();
             Value::Concrete(ConcreteValue::List(resolved_items))
         }
@@ -116,7 +116,7 @@ fn resolve_struct_enum_values(
                         continue;
                     }
                     // List(StringEnum): resolve each element.
-                    if let Shape::List { inner, .. } = field.field_type.shape(defs)
+                    if let Shape::List { inner, .. } = schema.shape_of(&field.field_type)
                         && let Some(parts) = inner.namespaced_enum_parts()
                         && let Value::Concrete(ConcreteValue::List(items)) = field_value
                     {
@@ -134,11 +134,11 @@ fn resolve_struct_enum_values(
                         continue;
                     }
                     // Recurse into nested Struct or List(Struct) fields
-                    let nested_fields = struct_fields_for(&field.field_type, defs);
+                    let nested_fields = struct_fields_for(&field.field_type, schema);
                     if let Some(nested) = nested_fields {
                         resolved_map.insert(
                             field_key.clone(),
-                            resolve_struct_enum_values(field_value, nested, defs),
+                            resolve_struct_enum_values(field_value, nested, schema),
                         );
                         continue;
                     }
@@ -186,10 +186,10 @@ pub fn normalize_state_enums_impl(current_states: &mut HashMap<ResourceId, State
 
             // Handle struct fields containing schema-level string enums.
             if let Some(attr_schema) = config.schema.attributes.get(key.as_str()) {
-                let struct_fields = struct_fields_for(&attr_schema.attr_type, &config.schema.defs);
+                let struct_fields = struct_fields_for(&attr_schema.attr_type, &config.schema);
 
                 if let Some(fields) = struct_fields {
-                    let resolved = resolve_struct_enum_values(value, fields, &config.schema.defs);
+                    let resolved = resolve_struct_enum_values(value, fields, &config.schema);
                     resolved_attrs.insert(key.clone(), resolved);
                     continue;
                 }
@@ -225,7 +225,7 @@ pub fn canonicalize_string_or_list_states_impl(current_states: &mut HashMap<Reso
         // so cyclic CFN attributes (`AttributeType::Ref`) resolve
         // against this resource's def map. The defs-less
         // `carina_core::value::canonicalize_with_type` wrapper this
-        // replaced silently used `empty_defs()` and panicked on every
+        // replaced silently used an empty definition map and panicked on every
         // Ref-containing attribute (carina#3345 Symptom B —
         // `ec2_vpc_endpoint/{gateway,interface}` plan-verify).
         let schema_view = carina_core::schema::Schema::with_defs(config.schema.defs.clone());
@@ -277,6 +277,10 @@ pub fn restore_unreturned_attrs_impl(
 mod tests {
     use super::*;
     use carina_core::schema::noop_validator;
+
+    fn test_resource_schema() -> ResourceSchema {
+        ResourceSchema::new("test.Resource")
+    }
 
     #[test]
     fn test_resolve_enum_identifiers_bare_ident() {
@@ -645,8 +649,8 @@ mod tests {
             ConcreteValue::Map(map),
         )]));
 
-        let resolved =
-            resolve_struct_enum_values(&value, &fields, carina_core::schema::empty_defs());
+        let schema = test_resource_schema();
+        let resolved = resolve_struct_enum_values(&value, &fields, &schema);
         if let Value::Concrete(ConcreteValue::List(items)) = resolved {
             if let Value::Concrete(ConcreteValue::Map(m)) = &items[0] {
                 match &m["ip_protocol"] {
@@ -676,8 +680,8 @@ mod tests {
             ConcreteValue::Map(map),
         )]));
 
-        let resolved =
-            resolve_struct_enum_values(&value, &fields, carina_core::schema::empty_defs());
+        let schema = test_resource_schema();
+        let resolved = resolve_struct_enum_values(&value, &fields, &schema);
         if let Value::Concrete(ConcreteValue::List(items)) = resolved {
             if let Value::Concrete(ConcreteValue::Map(m)) = &items[0] {
                 match &m["ip_protocol"] {
@@ -708,8 +712,8 @@ mod tests {
             ConcreteValue::Map(map),
         )]));
 
-        let resolved =
-            resolve_struct_enum_values(&value, &fields, carina_core::schema::empty_defs());
+        let schema = test_resource_schema();
+        let resolved = resolve_struct_enum_values(&value, &fields, &schema);
         if let Value::Concrete(ConcreteValue::List(items)) = resolved {
             if let Value::Concrete(ConcreteValue::Map(m)) = &items[0] {
                 match &m["ip_protocol"] {
@@ -791,7 +795,7 @@ mod tests {
             .get("ip_protocol")
             .expect("ip_protocol attribute not found");
         if let carina_core::schema::Shape::StringEnum { values, .. } =
-            ip_protocol.attr_type.shape(&config.schema.defs)
+            config.schema.shape_of(&ip_protocol.attr_type)
         {
             assert!(
                 values.contains(&"all".to_string()),
@@ -812,7 +816,7 @@ mod tests {
             .get("ip_protocol")
             .expect("ip_protocol attribute not found");
         if let carina_core::schema::Shape::StringEnum { values, .. } =
-            ip_protocol.attr_type.shape(&config.schema.defs)
+            config.schema.shape_of(&ip_protocol.attr_type)
         {
             assert!(
                 values.contains(&"all".to_string()),
@@ -834,17 +838,16 @@ mod tests {
             .expect("security_group_egress attribute not found");
         // Drill into List -> Struct -> ip_protocol field
         if let carina_core::schema::Shape::List { inner, .. } =
-            egress.attr_type.shape(&config.schema.defs)
+            config.schema.shape_of(&egress.attr_type)
         {
-            if let carina_core::schema::Shape::Struct { fields, .. } =
-                inner.shape(&config.schema.defs)
+            if let carina_core::schema::Shape::Struct { fields, .. } = config.schema.shape_of(inner)
             {
                 let ip_field = fields
                     .iter()
                     .find(|f| f.name == "ip_protocol")
                     .expect("ip_protocol field not found in egress struct");
                 if let carina_core::schema::Shape::StringEnum { values, .. } =
-                    ip_field.field_type.shape(&config.schema.defs)
+                    config.schema.shape_of(&ip_field.field_type)
                 {
                     assert!(
                         values.contains(&"all".to_string()),
@@ -871,17 +874,16 @@ mod tests {
             .get("security_group_ingress")
             .expect("security_group_ingress attribute not found");
         if let carina_core::schema::Shape::List { inner, .. } =
-            ingress.attr_type.shape(&config.schema.defs)
+            config.schema.shape_of(&ingress.attr_type)
         {
-            if let carina_core::schema::Shape::Struct { fields, .. } =
-                inner.shape(&config.schema.defs)
+            if let carina_core::schema::Shape::Struct { fields, .. } = config.schema.shape_of(inner)
             {
                 let ip_field = fields
                     .iter()
                     .find(|f| f.name == "ip_protocol")
                     .expect("ip_protocol field not found in ingress struct");
                 if let carina_core::schema::Shape::StringEnum { values, .. } =
-                    ip_field.field_type.shape(&config.schema.defs)
+                    config.schema.shape_of(&ip_field.field_type)
                 {
                     assert!(
                         values.contains(&"all".to_string()),
@@ -975,8 +977,8 @@ mod tests {
         let value = Value::Concrete(ConcreteValue::List(vec![Value::Concrete(
             ConcreteValue::Map(map),
         )]));
-        let resolved =
-            resolve_struct_enum_values(&value, &fields, carina_core::schema::empty_defs());
+        let schema = test_resource_schema();
+        let resolved = resolve_struct_enum_values(&value, &fields, &schema);
 
         // Verify the nested enum was resolved
         if let Value::Concrete(ConcreteValue::List(items)) = &resolved {
@@ -1194,7 +1196,7 @@ mod tests {
     // `AttributeType::Ref(name)` *inside* struct fields (e.g. WebACL's
     // recursive `Statement` graph, CloudFront's `forwarded_values`).
     // When the recursion reaches such a field it must peel the `Ref`
-    // against this resource's `defs` map; peeling against `empty_defs()`
+    // against this resource's `defs` map; peeling against an empty map
     // panics with "Ref(...) not found in schema defs", which poisons the
     // WASM instance and silently strips `default_tags`.
 
@@ -1235,7 +1237,7 @@ mod tests {
 
         let mut resources = vec![resource];
         // Before the fix this panics: the recursion peels the
-        // `Ref("CaptchaConfig")` field against `empty_defs()`.
+        // `Ref("CaptchaConfig")` field against an empty definition map.
         resolve_enum_identifiers_impl(&mut resources);
 
         let Value::Concrete(ConcreteValue::List(rules)) = resources[0].get_attr("rules").unwrap()

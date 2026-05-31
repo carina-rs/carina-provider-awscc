@@ -7,7 +7,7 @@
 use indexmap::IndexMap;
 
 use carina_core::resource::{ConcreteValue, Value};
-use carina_core::schema::{AttributeType, Shape};
+use carina_core::schema::{AttributeType, Schema, Shape};
 use serde_json::json;
 
 use crate::schemas::generated::canonicalize_enum_value;
@@ -30,7 +30,8 @@ pub(crate) fn aws_value_to_dsl_with_defs(
     // Struct / List / Map / ... underneath. `Shape` has no `Ref`
     // variant, so the wildcard fallthrough cannot silently swallow a
     // `Ref` (carina#3349).
-    let shape = attr_type.shape(defs);
+    let schema = Schema::with_defs(defs.clone());
+    let shape = schema.shape_of(attr_type);
 
     // This feeds the read/import path, whose result is written to
     // state. State must hold the provider-side (API) value, NOT a
@@ -225,7 +226,8 @@ pub(crate) fn dsl_value_to_aws_with_defs(
     attr_name: &str,
     defs: &std::collections::BTreeMap<String, AttributeType>,
 ) -> Option<serde_json::Value> {
-    let shape = attr_type.shape(defs);
+    let schema = Schema::with_defs(defs.clone());
+    let shape = schema.shape_of(attr_type);
     // For schema-level string enums, convert namespaced DSL values back to provider values.
     // The gate is "has a populated namespace identity": StringEnum with
     // `identity: Some(_)`, or CustomEnum (always namespaced).
@@ -459,7 +461,7 @@ mod tests {
             &json!("redirect-to-https"),
             &attr_type,
             "cloudfront.Distribution",
-            carina_core::schema::empty_defs(),
+            &std::collections::BTreeMap::new(),
         )
         .expect("read should succeed");
         assert_eq!(
@@ -475,7 +477,7 @@ mod tests {
             &json!("redirect_to_https"),
             &attr_type,
             "cloudfront.Distribution",
-            carina_core::schema::empty_defs(),
+            &std::collections::BTreeMap::new(),
         )
         .expect("read should succeed");
         assert_eq!(
@@ -584,7 +586,7 @@ mod tests {
             &json_val,
             &attr_type,
             "AWS::S3::Bucket",
-            carina_core::schema::empty_defs(),
+            &std::collections::BTreeMap::new(),
         );
         let result = result.expect("Should return Some");
 
@@ -622,7 +624,7 @@ mod tests {
             &attr_type,
             "AWS::S3::Bucket",
             "versioning_configuration",
-            carina_core::schema::empty_defs(),
+            &std::collections::BTreeMap::new(),
         );
         let result = result.expect("Should return Some");
 
@@ -657,7 +659,7 @@ mod tests {
             &attr_type,
             "AWS::S3::Bucket",
             "versioning_configuration",
-            carina_core::schema::empty_defs(),
+            &std::collections::BTreeMap::new(),
         );
         let result = result.expect("Should return Some");
 
@@ -684,7 +686,7 @@ mod tests {
             &aws_json,
             &attr_type,
             "AWS::S3::Bucket",
-            carina_core::schema::empty_defs(),
+            &std::collections::BTreeMap::new(),
         )
         .expect("read should succeed");
 
@@ -708,7 +710,7 @@ mod tests {
             &attr_type,
             "AWS::S3::Bucket",
             "versioning_configuration",
-            carina_core::schema::empty_defs(),
+            &std::collections::BTreeMap::new(),
         )
         .expect("write should succeed");
 
@@ -762,7 +764,7 @@ mod tests {
             &aws_json,
             &attr_schema.attr_type,
             "ec2.VpcEndpoint",
-            carina_core::schema::empty_defs(),
+            &std::collections::BTreeMap::new(),
         )
         .expect("aws_value_to_dsl should return Some");
 
@@ -808,7 +810,7 @@ mod tests {
             &attr_type,
             "logs.LogGroup",
             "log_group_class",
-            carina_core::schema::empty_defs(),
+            &std::collections::BTreeMap::new(),
         );
 
         assert_eq!(result, Some(json!("INFREQUENT_ACCESS")));
@@ -830,7 +832,7 @@ mod tests {
             &attr_type,
             "logs.LogGroup",
             "region",
-            carina_core::schema::empty_defs(),
+            &std::collections::BTreeMap::new(),
         );
 
         assert_eq!(result, Some(json!("ap-northeast-1")));
@@ -861,7 +863,7 @@ mod tests {
             &attr_type,
             "s3.Bucket",
             "allowed_methods",
-            carina_core::schema::empty_defs(),
+            &std::collections::BTreeMap::new(),
         );
 
         assert_eq!(result, Some(json!(["GET", "PUT"])));
@@ -885,7 +887,7 @@ mod tests {
             &json_val,
             &attr_type,
             "s3.Bucket",
-            carina_core::schema::empty_defs(),
+            &std::collections::BTreeMap::new(),
         );
 
         assert_eq!(
@@ -916,7 +918,7 @@ mod tests {
             &aws_json,
             &attr_type,
             "s3.Bucket",
-            carina_core::schema::empty_defs(),
+            &std::collections::BTreeMap::new(),
         )
         .expect("read should succeed");
         let written = dsl_value_to_aws_with_defs(
@@ -924,7 +926,7 @@ mod tests {
             &attr_type,
             "s3.Bucket",
             "allowed_methods",
-            carina_core::schema::empty_defs(),
+            &std::collections::BTreeMap::new(),
         )
         .expect("write should succeed");
         assert_eq!(written, aws_json, "Round-trip should produce original JSON");
@@ -952,7 +954,7 @@ mod tests {
             &attr_type,
             "ec2.Sg",
             "protocol",
-            carina_core::schema::empty_defs(),
+            &std::collections::BTreeMap::new(),
         );
 
         assert_eq!(result, Some(json!("tcp")));
@@ -978,7 +980,7 @@ mod tests {
             &attr_type,
             "s3.Bucket",
             "tags",
-            carina_core::schema::empty_defs(),
+            &std::collections::BTreeMap::new(),
         );
 
         let result = result.expect("Should return Some");
@@ -1020,7 +1022,7 @@ mod tests {
             &attr_type,
             "test.resource",
             "status_map",
-            carina_core::schema::empty_defs(),
+            &std::collections::BTreeMap::new(),
         );
 
         let result = result.expect("Should return Some");
@@ -1046,7 +1048,7 @@ mod tests {
             &aws_json,
             &attr_type,
             "s3.Bucket",
-            carina_core::schema::empty_defs(),
+            &std::collections::BTreeMap::new(),
         );
 
         let result = result.expect("Should return Some");
@@ -1090,7 +1092,7 @@ mod tests {
             &json_val,
             &attr_type,
             "ec2.Sg",
-            carina_core::schema::empty_defs(),
+            &std::collections::BTreeMap::new(),
         );
 
         assert_eq!(
@@ -1119,7 +1121,7 @@ mod tests {
             &json_val,
             &attr_type,
             "ec2.Sg",
-            carina_core::schema::empty_defs(),
+            &std::collections::BTreeMap::new(),
         );
 
         assert_eq!(result, Some(Value::Concrete(ConcreteValue::Int(42))));
@@ -1180,7 +1182,7 @@ mod tests {
             &attr_type,
             "iam.Role",
             "assume_role_policy_document",
-            carina_core::schema::empty_defs(),
+            &std::collections::BTreeMap::new(),
         );
         let result = result.expect("Should return Some");
 
@@ -1271,7 +1273,7 @@ mod tests {
             &attr_type,
             "iam.RolePolicy",
             "policy_document",
-            carina_core::schema::empty_defs(),
+            &std::collections::BTreeMap::new(),
         )
         .expect("Should return Some");
         let obj = result.as_object().expect("Expected JSON Object");
@@ -1319,7 +1321,7 @@ mod tests {
             &aws_json,
             &attr_type,
             "iam.Role",
-            carina_core::schema::empty_defs(),
+            &std::collections::BTreeMap::new(),
         );
         let result = result.expect("Should return Some");
 
@@ -1397,7 +1399,7 @@ mod tests {
             &aws_json,
             &attr_type,
             "iam.Role",
-            carina_core::schema::empty_defs(),
+            &std::collections::BTreeMap::new(),
         )
         .expect("read conversion should return Some");
 
@@ -1490,7 +1492,7 @@ mod tests {
             &json_val,
             &attr_type,
             "ec2.Ipam",
-            carina_core::schema::empty_defs(),
+            &std::collections::BTreeMap::new(),
         );
 
         let expected = Value::Concrete(ConcreteValue::List(vec![Value::Concrete(
@@ -1520,7 +1522,7 @@ mod tests {
             &json_val,
             &attr_type,
             "ec2.VpnGateway",
-            carina_core::schema::empty_defs(),
+            &std::collections::BTreeMap::new(),
         );
 
         // The dotted tail (`ipsec.1`) is the API value itself, not a
@@ -1553,7 +1555,7 @@ mod tests {
             &attr_type,
             "ec2.VpnGateway",
             "type",
-            carina_core::schema::empty_defs(),
+            &std::collections::BTreeMap::new(),
         );
 
         assert_eq!(result, Some(json!("ipsec.1")));
@@ -1577,7 +1579,7 @@ mod tests {
             &attr_type,
             "ec2.VpnGateway",
             "type",
-            carina_core::schema::empty_defs(),
+            &std::collections::BTreeMap::new(),
         );
 
         assert_eq!(result, Some(json!("ipsec.1")));
@@ -1601,7 +1603,7 @@ mod tests {
             &aws_val,
             &attr_type,
             "ec2.VpnGateway",
-            carina_core::schema::empty_defs(),
+            &std::collections::BTreeMap::new(),
         );
 
         assert_eq!(
@@ -1616,7 +1618,7 @@ mod tests {
             &attr_type,
             "ec2.VpnGateway",
             "type",
-            carina_core::schema::empty_defs(),
+            &std::collections::BTreeMap::new(),
         );
 
         assert_eq!(back_to_aws, Some(json!("ipsec.1")));
@@ -1685,7 +1687,7 @@ mod tests {
             &json,
             &attr_type,
             "test.resource",
-            carina_core::schema::empty_defs(),
+            &std::collections::BTreeMap::new(),
         );
 
         let expected = Value::Concrete(ConcreteValue::List(vec![
@@ -1857,18 +1859,18 @@ mod tests {
         // carina#3340: reuse-via-Ref may produce `AttributeType::Ref`
         // at this position; resolve through `schema.defs` so the test
         // still sees the underlying Struct.
-        let defs = &config.schema.defs;
-        let Shape::Struct { fields, .. } = ownership_controls.attr_type.shape(defs) else {
+        let Shape::Struct { fields, .. } = config.schema.shape_of(&ownership_controls.attr_type)
+        else {
             panic!("ownership_controls is a Struct");
         };
         let rules = fields.iter().find(|f| f.name == "rules").unwrap();
-        let Shape::List { inner, .. } = rules.field_type.shape(defs) else {
+        let Shape::List { inner, .. } = config.schema.shape_of(&rules.field_type) else {
             panic!("rules is a List");
         };
         let Shape::Struct {
             fields: rule_fields,
             ..
-        } = inner.shape(defs)
+        } = config.schema.shape_of(inner)
         else {
             panic!("rules.inner is a Struct");
         };
@@ -1909,7 +1911,7 @@ mod tests {
             &object_ownership.field_type,
             "s3.Bucket",
             "object_ownership",
-            carina_core::schema::empty_defs(),
+            &std::collections::BTreeMap::new(),
         )
         .expect("dsl_value_to_aws must succeed");
         assert_eq!(aws_json, json!("BucketOwnerEnforced"));
@@ -1920,7 +1922,7 @@ mod tests {
             &json!("BucketOwnerEnforced"),
             &object_ownership.field_type,
             "s3.Bucket",
-            carina_core::schema::empty_defs(),
+            &std::collections::BTreeMap::new(),
         )
         .expect("aws_value_to_dsl must succeed");
         assert_eq!(
@@ -1953,7 +1955,7 @@ mod tests {
             &attr_type,
             "test.resource",
             "test_attr",
-            carina_core::schema::empty_defs(),
+            &std::collections::BTreeMap::new(),
         );
 
         let expected = serde_json::json!([1.0, 2.0]);
@@ -1976,7 +1978,7 @@ mod tests {
             &json_val,
             &attr_type,
             "route53.HostedZone",
-            carina_core::schema::empty_defs(),
+            &std::collections::BTreeMap::new(),
         );
 
         assert_eq!(
@@ -2003,7 +2005,7 @@ mod tests {
             &json_val,
             &attr_type,
             "route53.HostedZone",
-            carina_core::schema::empty_defs(),
+            &std::collections::BTreeMap::new(),
         );
 
         assert_eq!(
