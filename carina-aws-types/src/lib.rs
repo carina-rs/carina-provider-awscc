@@ -1427,19 +1427,17 @@ fn string_or_principal_struct() -> AttributeType {
 /// users can write `effect = allow` as a bare identifier, matching the
 /// bare-identifier convention used by every other enum field in the
 /// same `.crn` file. The namespace also makes the fully-qualified form
-/// `aws.iam.PolicyDocument.Effect.allow` parse and resolve: the
+/// `awscc.iam.PolicyDocument.Effect.allow` parse and resolve: the
 /// resolver's canonical shape is namespace then type_name then value,
 /// so `type_name` is the trailing `Effect` segment and `namespace` is
-/// `aws.iam.PolicyDocument`. Mirrors carina-provider-aws #311 so the
-/// shared `iam_policy_document()` Struct canonicalizes identically on
-/// both providers (aws#313).
+/// `awscc.iam.PolicyDocument`.
 fn iam_policy_effect() -> AttributeType {
     AttributeType::string_enum(
         "Effect".to_string(),
         vec!["Allow".to_string(), "Deny".to_string()],
         Some(carina_core::schema::string_enum_identity(
             "Effect",
-            Some("aws.iam.PolicyDocument"),
+            Some("awscc.iam.PolicyDocument"),
         )),
         vec![
             ("Allow".to_string(), "allow".to_string()),
@@ -1452,21 +1450,19 @@ fn iam_policy_effect() -> AttributeType {
 /// `2008-10-17` (AWS canonical) with snake_case DSL aliases
 /// `2012_10_17` / `2008_10_17`, so users can write `version` as
 /// `2012_10_17`. The fully-qualified form
-/// `aws.iam.PolicyDocument.Version.2012_10_17` parses via the
+/// `awscc.iam.PolicyDocument.Version.2012_10_17` parses via the
 /// `namespaced_id` numeric-tail extension from `carina-rs/carina#3051`
 /// and resolves through this namespace: the resolver's canonical shape
 /// is namespace then type_name then value, so `type_name` is the
 /// trailing `Version` segment and `namespace` is
-/// `aws.iam.PolicyDocument`. Mirrors carina-provider-aws #311 so the
-/// shared `iam_policy_document()` Struct canonicalizes identically on
-/// both providers (aws#313).
+/// `awscc.iam.PolicyDocument`.
 fn iam_policy_version() -> AttributeType {
     AttributeType::string_enum(
         "Version".to_string(),
         vec!["2012-10-17".to_string(), "2008-10-17".to_string()],
         Some(carina_core::schema::string_enum_identity(
             "Version",
-            Some("aws.iam.PolicyDocument"),
+            Some("awscc.iam.PolicyDocument"),
         )),
         vec![
             ("2012-10-17".to_string(), "2012_10_17".to_string()),
@@ -2681,6 +2677,60 @@ mod tests {
             .collect(),
         ));
         assert!(validate_iam_policy_document(&doc).is_err());
+    }
+
+    #[test]
+    fn iam_policy_document_version_identity_uses_awscc_namespace() {
+        let t = iam_policy_version();
+        let RawShape::StringEnum {
+            identity: Some(identity),
+            ..
+        } = t.raw_shape()
+        else {
+            panic!("iam_policy_version() should be a StringEnum with identity");
+        };
+
+        assert!(
+            carina_core::utils::validate_enum_namespace(
+                "awscc.iam.PolicyDocument.Version.2012_10_17",
+                identity
+            )
+            .is_ok()
+        );
+        assert!(
+            carina_core::utils::validate_enum_namespace(
+                "aws.iam.PolicyDocument.Version.2012_10_17",
+                identity
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn iam_policy_document_effect_identity_uses_awscc_namespace() {
+        let t = iam_policy_effect();
+        let RawShape::StringEnum {
+            identity: Some(identity),
+            ..
+        } = t.raw_shape()
+        else {
+            panic!("iam_policy_effect() should be a StringEnum with identity");
+        };
+
+        assert!(
+            carina_core::utils::validate_enum_namespace(
+                "awscc.iam.PolicyDocument.Effect.allow",
+                identity
+            )
+            .is_ok()
+        );
+        assert!(
+            carina_core::utils::validate_enum_namespace(
+                "aws.iam.PolicyDocument.Effect.allow",
+                identity
+            )
+            .is_err()
+        );
     }
 
     #[test]
