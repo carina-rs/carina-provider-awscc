@@ -921,7 +921,7 @@ fn type_display_string(
         match prop.prop_type.as_ref().and_then(|t| t.as_str()) {
             Some("string") => {
                 if prop_name.ends_with("PolicyDocument") {
-                    "IamPolicyDocument".to_string()
+                    "PolicyDocument".to_string()
                 } else {
                     let base = infer_string_type_display(prop_name, &schema.type_name);
                     if base != "String" {
@@ -1094,7 +1094,7 @@ fn type_display_string(
                 {
                     format!("[Struct({})](#{})", prop_name, prop_name.to_lowercase())
                 } else if prop_name.ends_with("PolicyDocument") {
-                    "IamPolicyDocument".to_string()
+                    "PolicyDocument".to_string()
                 } else {
                     "`Map<String, String>`".to_string()
                 }

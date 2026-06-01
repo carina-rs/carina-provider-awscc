@@ -173,7 +173,7 @@ mod tests {
                 // hand-written iam_policy_document() helper and are intentionally
                 // reused across all policy-document fields.
                 if identity == "awscc.iam.PolicyDocument.Version"
-                    || identity == "awscc.iam.PolicyDocument.Effect"
+                    || identity == "awscc.iam.PolicyDocument.Statement.Effect"
                 {
                     collector.stack.remove(&ptr);
                     return;

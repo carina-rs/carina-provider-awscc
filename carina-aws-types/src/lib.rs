@@ -1409,7 +1409,7 @@ fn string_or_principal_struct() -> AttributeType {
     // Value::Map against String incorrectly.
     AttributeType::union(vec![
         AttributeType::struct_(
-            "IamPolicyPrincipal".to_string(),
+            "Principal".to_string(),
             vec![
                 StructField::new("service", string_or_list_of_strings())
                     .with_provider_name("Service"),
@@ -1427,17 +1427,17 @@ fn string_or_principal_struct() -> AttributeType {
 /// users can write `effect = allow` as a bare identifier, matching the
 /// bare-identifier convention used by every other enum field in the
 /// same `.crn` file. The namespace also makes the fully-qualified form
-/// `awscc.iam.PolicyDocument.Effect.allow` parse and resolve: the
+/// `awscc.iam.PolicyDocument.Statement.Effect.allow` parse and resolve: the
 /// resolver's canonical shape is namespace then type_name then value,
 /// so `type_name` is the trailing `Effect` segment and `namespace` is
-/// `awscc.iam.PolicyDocument`.
+/// `awscc.iam.PolicyDocument.Statement`.
 fn iam_policy_effect() -> AttributeType {
     AttributeType::string_enum(
         "Effect".to_string(),
         vec!["Allow".to_string(), "Deny".to_string()],
         Some(carina_core::schema::string_enum_identity(
             "Effect",
-            Some("awscc.iam.PolicyDocument"),
+            Some("awscc.iam.PolicyDocument.Statement"),
         )),
         vec![
             ("Allow".to_string(), "allow".to_string()),
@@ -1494,7 +1494,7 @@ fn condition_type() -> AttributeType {
 /// IAM Policy Statement struct type
 fn iam_policy_statement() -> AttributeType {
     AttributeType::struct_(
-        "IamPolicyStatement".to_string(),
+        "Statement".to_string(),
         vec![
             StructField::new("sid", AttributeType::string()).with_provider_name("Sid"),
             StructField::new("effect", iam_policy_effect()).with_provider_name("Effect"),
@@ -1522,7 +1522,7 @@ fn iam_policy_statement() -> AttributeType {
 /// (e.g., `version` <-> `Version`, `statement` <-> `Statement`).
 pub fn iam_policy_document() -> AttributeType {
     AttributeType::struct_(
-        "IamPolicyDocument".to_string(),
+        "PolicyDocument".to_string(),
         vec![
             StructField::new("version", iam_policy_version()).with_provider_name("Version"),
             StructField::new("id", AttributeType::string()).with_provider_name("Id"),
@@ -2717,20 +2717,83 @@ mod tests {
             panic!("iam_policy_effect() should be a StringEnum with identity");
         };
 
+        assert_eq!(
+            identity.to_string(),
+            "awscc.iam.PolicyDocument.Statement.Effect"
+        );
         assert!(
             carina_core::utils::validate_enum_namespace(
-                "awscc.iam.PolicyDocument.Effect.allow",
+                "awscc.iam.PolicyDocument.Statement.Effect.allow",
                 identity
             )
             .is_ok()
         );
         assert!(
             carina_core::utils::validate_enum_namespace(
-                "aws.iam.PolicyDocument.Effect.allow",
+                "awscc.iam.PolicyDocument.Effect.allow",
                 identity
             )
             .is_err()
         );
+        assert!(
+            carina_core::utils::validate_enum_namespace(
+                "aws.iam.PolicyDocument.Statement.Effect.allow",
+                identity
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn iam_policy_document_struct_type_names_use_plain_structural_names() {
+        let doc = iam_policy_document();
+        let RawShape::Struct {
+            name: doc_name,
+            fields,
+        } = doc.raw_shape()
+        else {
+            panic!("iam_policy_document() should be a Struct");
+        };
+        assert_eq!(doc_name, "PolicyDocument");
+
+        let statement = fields
+            .iter()
+            .find(|field| field.name == "statement")
+            .expect("policy document must include statement field");
+        let RawShape::List {
+            inner: element_type,
+            ..
+        } = statement.field_type.raw_shape()
+        else {
+            panic!("statement field should be a List");
+        };
+        let RawShape::Struct {
+            name: statement_name,
+            fields,
+        } = element_type.raw_shape()
+        else {
+            panic!("statement list element should be a Struct");
+        };
+        assert_eq!(statement_name, "Statement");
+
+        let principal = fields
+            .iter()
+            .find(|field| field.name == "principal")
+            .expect("statement must include principal field");
+        let RawShape::Union(variants) = principal.field_type.raw_shape() else {
+            panic!("principal field should be a Union");
+        };
+        let RawShape::Struct {
+            name: principal_name,
+            ..
+        } = variants
+            .first()
+            .expect("principal union should include struct variant")
+            .raw_shape()
+        else {
+            panic!("principal union first variant should be a Struct");
+        };
+        assert_eq!(principal_name, "Principal");
     }
 
     #[test]

@@ -38,7 +38,7 @@ awscc.iam.Role {
 
 ### `assume_role_policy_document`
 
-- **Type:** IamPolicyDocument
+- **Type:** PolicyDocument
 - **Required:** Yes
 
 The trust policy that is associated with this role. Trust policies define which entities can assume the role. You can associate only one trust policy with a role. For an example of a policy that can be used to assume a role, see [Template Examples](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-iam-role.html#aws-resource-iam-role--examples). For more information about the elements that you can use in an IAM policy, see [Policy Elements Reference](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements.html) in the *User Guide*.
@@ -108,7 +108,7 @@ A list of tags that are attached to the role. For more information about tagging
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `policy_document` | IamPolicyDocument | Yes | The entire contents of the policy that defines permissions. For more information, see [Overview of JSON policies](https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies.html#access_policies-json). |
+| `policy_document` | PolicyDocument | Yes | The entire contents of the policy that defines permissions. For more information, see [Overview of JSON policies](https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies.html#access_policies-json). |
 | `policy_name` | String | Yes | The friendly name (not ARN) identifying the policy. |
 
 ## Attribute Reference
