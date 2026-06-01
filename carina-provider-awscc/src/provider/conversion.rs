@@ -1237,7 +1237,7 @@ mod tests {
                 (
                     "version".to_string(),
                     Value::Concrete(ConcreteValue::EnumIdentifier(
-                        "aws.iam.PolicyDocument.Version.2012_10_17".to_string(),
+                        "awscc.iam.PolicyDocument.Version.2012_10_17".to_string(),
                     )),
                 ),
                 (

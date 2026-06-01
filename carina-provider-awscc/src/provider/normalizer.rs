@@ -347,7 +347,7 @@ mod tests {
     /// the already-fully-qualified `version` path. The desired side
     /// must resolve to the same fully-qualified DSL form that the
     /// AWS-read side produces from raw `"Allow"`
-    /// (`aws.iam.PolicyDocument.Effect.allow`), or the differ diverges.
+    /// (`awscc.iam.PolicyDocument.Effect.allow`), or the differ diverges.
     #[test]
     fn test_aws313_bare_effect_desired_resolves_to_namespaced() {
         use indexmap::IndexMap;
@@ -365,7 +365,7 @@ mod tests {
         policy.insert(
             "version".to_string(),
             Value::Concrete(ConcreteValue::String(
-                "aws.iam.PolicyDocument.Version.2012_10_17".to_string(),
+                "awscc.iam.PolicyDocument.Version.2012_10_17".to_string(),
             )),
         );
         policy.insert(
@@ -397,7 +397,7 @@ mod tests {
         assert_eq!(
             s0.get("effect"),
             Some(&Value::Concrete(ConcreteValue::String(
-                "aws.iam.PolicyDocument.Effect.allow".to_string()
+                "awscc.iam.PolicyDocument.Effect.allow".to_string()
             ))),
             "bare `effect = allow` desired must resolve to the same \
              fully-qualified form the read side produces from \"Allow\""

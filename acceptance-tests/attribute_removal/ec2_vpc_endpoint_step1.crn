@@ -21,7 +21,7 @@ awscc.ec2.VpcEndpoint {
   route_table_ids   = [rt.route_table_id]
 
   policy_document = {
-    version = aws.iam.PolicyDocument.Version.2012_10_17
+    version = awscc.iam.PolicyDocument.Version.2012_10_17
     statement {
       effect    = 'Allow'
       principal = '*'

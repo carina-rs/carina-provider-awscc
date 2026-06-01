@@ -168,6 +168,16 @@ mod tests {
                     collector.stack.remove(&ptr);
                     return;
                 }
+                // This invariant catches distinct generated enum fields that collapse
+                // to one identity. These IAM identities come from the single
+                // hand-written iam_policy_document() helper and are intentionally
+                // reused across all policy-document fields.
+                if identity == "awscc.iam.PolicyDocument.Version"
+                    || identity == "awscc.iam.PolicyDocument.Effect"
+                {
+                    collector.stack.remove(&ptr);
+                    return;
+                }
                 let occurrence = EnumIdentityOccurrence {
                     defining_site: defining_site.to_string(),
                 };
