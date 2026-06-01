@@ -88,31 +88,31 @@ The ID of the VPC for the security group.
 
 ## Enum Values
 
-### ip_protocol (EgressIpProtocol)
+### ip_protocol (IpProtocol)
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `tcp` | `awscc.ec2.SecurityGroup.EgressIpProtocol.tcp` |
-| `udp` | `awscc.ec2.SecurityGroup.EgressIpProtocol.udp` |
-| `icmp` | `awscc.ec2.SecurityGroup.EgressIpProtocol.icmp` |
-| `icmpv6` | `awscc.ec2.SecurityGroup.EgressIpProtocol.icmpv6` |
-| `-1` | `awscc.ec2.SecurityGroup.EgressIpProtocol.all` |
-| `all` | `awscc.ec2.SecurityGroup.EgressIpProtocol.all` |
+| `tcp` | `awscc.ec2.SecurityGroup.Egress.IpProtocol.tcp` |
+| `udp` | `awscc.ec2.SecurityGroup.Egress.IpProtocol.udp` |
+| `icmp` | `awscc.ec2.SecurityGroup.Egress.IpProtocol.icmp` |
+| `icmpv6` | `awscc.ec2.SecurityGroup.Egress.IpProtocol.icmpv6` |
+| `-1` | `awscc.ec2.SecurityGroup.Egress.IpProtocol.all` |
+| `all` | `awscc.ec2.SecurityGroup.Egress.IpProtocol.all` |
 
-Shorthand formats: `tcp` or `EgressIpProtocol.tcp`
+Shorthand formats: `tcp` or `IpProtocol.tcp`
 
-### ip_protocol (IngressIpProtocol)
+### ip_protocol (IpProtocol)
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `tcp` | `awscc.ec2.SecurityGroup.IngressIpProtocol.tcp` |
-| `udp` | `awscc.ec2.SecurityGroup.IngressIpProtocol.udp` |
-| `icmp` | `awscc.ec2.SecurityGroup.IngressIpProtocol.icmp` |
-| `icmpv6` | `awscc.ec2.SecurityGroup.IngressIpProtocol.icmpv6` |
-| `-1` | `awscc.ec2.SecurityGroup.IngressIpProtocol.all` |
-| `all` | `awscc.ec2.SecurityGroup.IngressIpProtocol.all` |
+| `tcp` | `awscc.ec2.SecurityGroup.Ingress.IpProtocol.tcp` |
+| `udp` | `awscc.ec2.SecurityGroup.Ingress.IpProtocol.udp` |
+| `icmp` | `awscc.ec2.SecurityGroup.Ingress.IpProtocol.icmp` |
+| `icmpv6` | `awscc.ec2.SecurityGroup.Ingress.IpProtocol.icmpv6` |
+| `-1` | `awscc.ec2.SecurityGroup.Ingress.IpProtocol.all` |
+| `all` | `awscc.ec2.SecurityGroup.Ingress.IpProtocol.all` |
 
-Shorthand formats: `tcp` or `IngressIpProtocol.tcp`
+Shorthand formats: `tcp` or `IpProtocol.tcp`
 
 ## Struct Definitions
 
@@ -126,7 +126,7 @@ Shorthand formats: `tcp` or `IngressIpProtocol.tcp`
 | `destination_prefix_list_id` | PrefixListId | No |  |
 | `destination_security_group_id` | SecurityGroupId | No |  |
 | `from_port` | Int(-1..=65535) | No |  |
-| `ip_protocol` | [Enum (EgressIpProtocol)](#ip_protocol-egressipprotocol) | Yes |  |
+| `ip_protocol` | [Enum (IpProtocol)](#ip_protocol-ipprotocol) | Yes |  |
 | `to_port` | Int(-1..=65535) | No |  |
 
 ### Ingress
@@ -137,7 +137,7 @@ Shorthand formats: `tcp` or `IngressIpProtocol.tcp`
 | `cidr_ipv6` | Ipv6Cidr | No |  |
 | `description` | String | No |  |
 | `from_port` | Int(-1..=65535) | No |  |
-| `ip_protocol` | [Enum (IngressIpProtocol)](#ip_protocol-ingressipprotocol) | Yes |  |
+| `ip_protocol` | [Enum (IpProtocol)](#ip_protocol-ipprotocol) | Yes |  |
 | `source_prefix_list_id` | PrefixListId | No |  |
 | `source_security_group_id` | SecurityGroupId | No |  |
 | `source_security_group_name` | String | No |  |

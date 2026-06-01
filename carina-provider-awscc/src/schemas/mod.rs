@@ -13,3 +13,257 @@ pub fn all_schemas() -> Vec<ResourceSchema> {
         .map(|c| c.schema.clone())
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::{BTreeMap, BTreeSet};
+
+    use carina_core::schema::{AttributeType, RawShape, ResourceSchema, Shape};
+
+    #[test]
+    fn generated_s3_lifecycle_rule_omits_deprecated_transition_fields() {
+        let config = super::generated::s3::bucket::s3_bucket_config();
+        let lifecycle = config
+            .schema
+            .attributes
+            .get("lifecycle_configuration")
+            .expect("s3 bucket should expose lifecycle_configuration");
+        let Shape::Struct { fields, .. } = config.schema.shape_of(&lifecycle.attr_type) else {
+            panic!("lifecycle_configuration should be a struct");
+        };
+        let rules = fields
+            .iter()
+            .find(|field| field.name == "rules")
+            .expect("lifecycle_configuration should expose rules");
+        let Shape::List { inner, .. } = config.schema.shape_of(&rules.field_type) else {
+            panic!("rules should be a list");
+        };
+        let Shape::Struct { fields, .. } = config.schema.shape_of(inner) else {
+            panic!("rules should contain lifecycle rule structs");
+        };
+
+        assert!(fields.iter().any(|field| field.name == "transitions"));
+        assert!(
+            fields
+                .iter()
+                .any(|field| field.name == "noncurrent_version_transitions")
+        );
+        assert!(!fields.iter().any(|field| field.name == "transition"));
+        assert!(
+            !fields
+                .iter()
+                .any(|field| field.name == "noncurrent_version_transition")
+        );
+        assert!(
+            !fields
+                .iter()
+                .any(|field| field.name == "noncurrent_version_expiration_in_days")
+        );
+    }
+
+    #[test]
+    fn generated_string_enum_identities_are_unique_within_each_resource() {
+        let mut failures = Vec::new();
+
+        for schema in super::all_schemas() {
+            let mut collector = StringEnumIdentityCollector::new();
+
+            for (def_name, def) in &schema.defs {
+                if collector.duplicates.len() >= 20 {
+                    break;
+                }
+                collect_string_enum_identities(
+                    &schema,
+                    def,
+                    &format!("def:{def_name}"),
+                    Some(def_name),
+                    &mut collector,
+                    0,
+                );
+            }
+
+            for (attr_name, attr) in &schema.attributes {
+                if collector.duplicates.len() >= 20 {
+                    break;
+                }
+                collect_string_enum_identities(
+                    &schema,
+                    &attr.attr_type,
+                    &format!("inline:{attr_name}"),
+                    None,
+                    &mut collector,
+                    0,
+                );
+            }
+
+            if !collector.duplicates.is_empty() {
+                if collector.duplicates.len() == 20 {
+                    collector
+                        .duplicates
+                        .push("... more duplicates omitted".to_string());
+                }
+                failures.push(format!(
+                    "{}:\n  {}",
+                    schema.resource_type,
+                    collector.duplicates.join("\n  ")
+                ));
+            }
+        }
+
+        assert!(
+            failures.is_empty(),
+            "duplicate generated StringEnum identities:\n{}",
+            failures.join("\n")
+        );
+    }
+
+    struct StringEnumIdentityCollector {
+        first_occurrence_by_identity: BTreeMap<String, EnumIdentityOccurrence>,
+        duplicates: Vec<String>,
+        stack: BTreeSet<usize>,
+    }
+
+    impl StringEnumIdentityCollector {
+        fn new() -> Self {
+            Self {
+                first_occurrence_by_identity: BTreeMap::new(),
+                duplicates: Vec::new(),
+                stack: BTreeSet::new(),
+            }
+        }
+    }
+
+    #[derive(Clone)]
+    struct EnumIdentityOccurrence {
+        defining_site: String,
+    }
+
+    fn collect_string_enum_identities(
+        schema: &ResourceSchema,
+        ty: &AttributeType,
+        defining_site: &str,
+        current_named_def: Option<&str>,
+        collector: &mut StringEnumIdentityCollector,
+        depth: usize,
+    ) {
+        if collector.duplicates.len() >= 20 {
+            return;
+        }
+        if depth > 80 {
+            return;
+        }
+
+        let ptr = ty as *const AttributeType as usize;
+        if !collector.stack.insert(ptr) {
+            return;
+        }
+
+        match ty.raw_shape() {
+            RawShape::StringEnum {
+                identity: Some(identity),
+                ..
+            } => {
+                let identity = identity.to_string();
+                if !identity.starts_with("awscc.") {
+                    collector.stack.remove(&ptr);
+                    return;
+                }
+                let occurrence = EnumIdentityOccurrence {
+                    defining_site: defining_site.to_string(),
+                };
+                if let Some(first) = collector
+                    .first_occurrence_by_identity
+                    .get(identity.as_str())
+                {
+                    if first.defining_site != occurrence.defining_site {
+                        collector.duplicates.push(format!(
+                            "{identity}: {} and {}",
+                            first.defining_site, occurrence.defining_site
+                        ));
+                    }
+                } else {
+                    collector
+                        .first_occurrence_by_identity
+                        .insert(identity, occurrence);
+                }
+            }
+            RawShape::StringEnum { identity: None, .. } => {}
+            RawShape::Custom { base, .. } | RawShape::CustomEnum { base, .. } => {
+                collect_string_enum_identities(
+                    schema,
+                    base,
+                    defining_site,
+                    current_named_def,
+                    collector,
+                    depth + 1,
+                );
+            }
+            RawShape::List { inner, .. } => {
+                let inner_defining_site = format!("{defining_site}[]");
+                collect_string_enum_identities(
+                    schema,
+                    inner,
+                    &inner_defining_site,
+                    current_named_def,
+                    collector,
+                    depth + 1,
+                );
+            }
+            RawShape::Map { value, .. } => {
+                let value_defining_site = format!("{defining_site}.*");
+                collect_string_enum_identities(
+                    schema,
+                    value,
+                    &value_defining_site,
+                    current_named_def,
+                    collector,
+                    depth + 1,
+                );
+            }
+            RawShape::Struct { name, fields } => {
+                if schema.defs.contains_key(name) && current_named_def != Some(name) {
+                    collector.stack.remove(&ptr);
+                    return;
+                }
+                for field in fields {
+                    if collector.duplicates.len() >= 20 {
+                        break;
+                    }
+                    let field_defining_site = format!("{defining_site}.{}", field.name);
+                    collect_string_enum_identities(
+                        schema,
+                        &field.field_type,
+                        &field_defining_site,
+                        current_named_def,
+                        collector,
+                        depth + 1,
+                    );
+                }
+            }
+            RawShape::Union(members) => {
+                for (index, member) in members.iter().enumerate() {
+                    if collector.duplicates.len() >= 20 {
+                        break;
+                    }
+                    let member_defining_site = format!("{defining_site}|{index}");
+                    collect_string_enum_identities(
+                        schema,
+                        member,
+                        &member_defining_site,
+                        current_named_def,
+                        collector,
+                        depth + 1,
+                    );
+                }
+            }
+            RawShape::Ref(_) => {}
+            RawShape::String
+            | RawShape::Int
+            | RawShape::Float
+            | RawShape::Bool
+            | RawShape::Duration => {}
+        }
+
+        collector.stack.remove(&ptr);
+    }
+}

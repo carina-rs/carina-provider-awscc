@@ -763,8 +763,8 @@ mod tests {
                 match &m["ip_protocol"] {
                     Value::Concrete(ConcreteValue::String(s)) => {
                         assert_eq!(
-                            s, "awscc.ec2.SecurityGroup.EgressIpProtocol.all",
-                            "Expected namespaced EgressIpProtocol.all in struct field, got: {}",
+                            s, "awscc.ec2.SecurityGroup.Egress.IpProtocol.all",
+                            "Expected namespaced Egress.IpProtocol.all in struct field, got: {}",
                             s
                         );
                     }
@@ -1341,7 +1341,7 @@ mod tests {
         assert_eq!(
             cookies["forward"],
             Value::Concrete(ConcreteValue::String(
-                "awscc.cloudfront.Distribution.CookiesForward.none".to_string()
+                "awscc.cloudfront.Distribution.DistributionConfig.CacheBehavior.ForwardedValues.Cookies.Forward.none".to_string()
             )),
             "nested CookiesForward.none resolved through the Ref-peeled forwarded_values"
         );

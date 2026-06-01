@@ -21,34 +21,34 @@ The origin access control.
 
 ## Enum Values
 
-### origin_access_control_origin_type (OriginAccessControlConfigOriginAccessControlOriginType)
+### origin_access_control_origin_type (OriginAccessControlOriginType)
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `s3` | `awscc.cloudfront.OriginAccessControl.OriginAccessControlConfigOriginAccessControlOriginType.s3` |
-| `mediastore` | `awscc.cloudfront.OriginAccessControl.OriginAccessControlConfigOriginAccessControlOriginType.mediastore` |
-| `lambda` | `awscc.cloudfront.OriginAccessControl.OriginAccessControlConfigOriginAccessControlOriginType.lambda` |
-| `mediapackagev2` | `awscc.cloudfront.OriginAccessControl.OriginAccessControlConfigOriginAccessControlOriginType.mediapackagev2` |
+| `s3` | `awscc.cloudfront.OriginAccessControl.OriginAccessControlConfig.OriginAccessControlOriginType.s3` |
+| `mediastore` | `awscc.cloudfront.OriginAccessControl.OriginAccessControlConfig.OriginAccessControlOriginType.mediastore` |
+| `lambda` | `awscc.cloudfront.OriginAccessControl.OriginAccessControlConfig.OriginAccessControlOriginType.lambda` |
+| `mediapackagev2` | `awscc.cloudfront.OriginAccessControl.OriginAccessControlConfig.OriginAccessControlOriginType.mediapackagev2` |
 
-Shorthand formats: `s3` or `OriginAccessControlConfigOriginAccessControlOriginType.s3`
+Shorthand formats: `s3` or `OriginAccessControlOriginType.s3`
 
-### signing_behavior (OriginAccessControlConfigSigningBehavior)
-
-| Value | DSL Identifier |
-|-------|----------------|
-| `always` | `awscc.cloudfront.OriginAccessControl.OriginAccessControlConfigSigningBehavior.always` |
-| `never` | `awscc.cloudfront.OriginAccessControl.OriginAccessControlConfigSigningBehavior.never` |
-| `no-override` | `awscc.cloudfront.OriginAccessControl.OriginAccessControlConfigSigningBehavior.no_override` |
-
-Shorthand formats: `always` or `OriginAccessControlConfigSigningBehavior.always`
-
-### signing_protocol (OriginAccessControlConfigSigningProtocol)
+### signing_behavior (SigningBehavior)
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `sigv4` | `awscc.cloudfront.OriginAccessControl.OriginAccessControlConfigSigningProtocol.sigv4` |
+| `always` | `awscc.cloudfront.OriginAccessControl.OriginAccessControlConfig.SigningBehavior.always` |
+| `never` | `awscc.cloudfront.OriginAccessControl.OriginAccessControlConfig.SigningBehavior.never` |
+| `no-override` | `awscc.cloudfront.OriginAccessControl.OriginAccessControlConfig.SigningBehavior.no_override` |
 
-Shorthand formats: `sigv4` or `OriginAccessControlConfigSigningProtocol.sigv4`
+Shorthand formats: `always` or `SigningBehavior.always`
+
+### signing_protocol (SigningProtocol)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `sigv4` | `awscc.cloudfront.OriginAccessControl.OriginAccessControlConfig.SigningProtocol.sigv4` |
+
+Shorthand formats: `sigv4` or `SigningProtocol.sigv4`
 
 ## Struct Definitions
 
@@ -58,9 +58,9 @@ Shorthand formats: `sigv4` or `OriginAccessControlConfigSigningProtocol.sigv4`
 |-------|------|----------|-------------|
 | `description` | String | No | A description of the origin access control. |
 | `name` | String | Yes | A name to identify the origin access control. You can specify up to 64 characters. |
-| `origin_access_control_origin_type` | [Enum (OriginAccessControlConfigOriginAccessControlOriginType)](#origin_access_control_origin_type-originaccesscontrolconfigoriginaccesscontrolorigintype) | Yes | The type of origin that this origin access control is for. |
-| `signing_behavior` | [Enum (OriginAccessControlConfigSigningBehavior)](#signing_behavior-originaccesscontrolconfigsigningbehavior) | Yes | Specifies which requests CloudFront signs (adds authentication information to). Specify ``always`` for the most common use case. For more information, see [origin access control advanced settings](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-restricting-access-to-s3.html#oac-advanced-settings) in the *Amazon CloudFront Developer Guide*. This field can have one of the following values: + ``always`` – CloudFront signs all origin requests, overwriting the ``Authorization`` header from the viewer request if one exists. + ``never`` – CloudFront doesn't sign any origin requests. This value turns off origin access control for all origins in all distributions that use this origin access control. + ``no-override`` – If the viewer request doesn't contain the ``Authorization`` header, then CloudFront signs the origin request. If the viewer request contains the ``Authorization`` header, then CloudFront doesn't sign the origin request and instead passes along the ``Authorization`` header from the viewer request. *WARNING: To pass along the Authorization header from the viewer request, you must add the Authorization header to a cache policy for all cache behaviors that use origins associated with this origin access control.* |
-| `signing_protocol` | [Enum (OriginAccessControlConfigSigningProtocol)](#signing_protocol-originaccesscontrolconfigsigningprotocol) | Yes | The signing protocol of the origin access control, which determines how CloudFront signs (authenticates) requests. The only valid value is ``sigv4``. |
+| `origin_access_control_origin_type` | [Enum (OriginAccessControlOriginType)](#origin_access_control_origin_type-originaccesscontrolorigintype) | Yes | The type of origin that this origin access control is for. |
+| `signing_behavior` | [Enum (SigningBehavior)](#signing_behavior-signingbehavior) | Yes | Specifies which requests CloudFront signs (adds authentication information to). Specify ``always`` for the most common use case. For more information, see [origin access control advanced settings](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-restricting-access-to-s3.html#oac-advanced-settings) in the *Amazon CloudFront Developer Guide*. This field can have one of the following values: + ``always`` – CloudFront signs all origin requests, overwriting the ``Authorization`` header from the viewer request if one exists. + ``never`` – CloudFront doesn't sign any origin requests. This value turns off origin access control for all origins in all distributions that use this origin access control. + ``no-override`` – If the viewer request doesn't contain the ``Authorization`` header, then CloudFront signs the origin request. If the viewer request contains the ``Authorization`` header, then CloudFront doesn't sign the origin request and instead passes along the ``Authorization`` header from the viewer request. *WARNING: To pass along the Authorization header from the viewer request, you must add the Authorization header to a cache policy for all cache behaviors that use origins associated with this origin access control.* |
+| `signing_protocol` | [Enum (SigningProtocol)](#signing_protocol-signingprotocol) | Yes | The signing protocol of the origin access control, which determines how CloudFront signs (authenticates) requests. The only valid value is ``sigv4``. |
 
 ## Attribute Reference
 

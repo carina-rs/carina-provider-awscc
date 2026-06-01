@@ -61,7 +61,8 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
         .attribute(
             AttributeSchema::new("allocation_resource_tags", AttributeType::unordered_list(tags_type()))
                 .with_description("When specified, an allocation will not be allowed unless a resource has a matching set of tags.")
-                .with_provider_name("AllocationResourceTags"),
+                .with_provider_name("AllocationResourceTags")
+                .with_block_name("allocation_resource_tag"),
         )
         .attribute(
             AttributeSchema::new("arn", super::arn())
@@ -174,7 +175,8 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
         .attribute(
             AttributeSchema::new("tags", tags_type())
                 .with_description("An array of key-value pairs to apply to this resource.")
-                .with_provider_name("Tags"),
+                .with_provider_name("Tags")
+                .with_block_name("tag"),
         )
         .with_operation_config(OperationConfig {
             delete_timeout_secs: Some(1800),

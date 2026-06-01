@@ -95,276 +95,276 @@ Collection of Rules.
 
 ## Enum Values
 
-### sensitivity_to_block (AWSManagedRulesAntiDDoSRuleSetSensitivityToAct)
+### sensitivity_to_block (SensitivityToAct)
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `LOW` | `awscc.wafv2.WebAcl.AWSManagedRulesAntiDDoSRuleSetSensitivityToAct.low` |
-| `MEDIUM` | `awscc.wafv2.WebAcl.AWSManagedRulesAntiDDoSRuleSetSensitivityToAct.medium` |
-| `HIGH` | `awscc.wafv2.WebAcl.AWSManagedRulesAntiDDoSRuleSetSensitivityToAct.high` |
+| `LOW` | `awscc.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.SensitivityToAct.low` |
+| `MEDIUM` | `awscc.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.SensitivityToAct.medium` |
+| `HIGH` | `awscc.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.SensitivityToAct.high` |
 
-Shorthand formats: `low` or `AWSManagedRulesAntiDDoSRuleSetSensitivityToAct.low`
+Shorthand formats: `low` or `SensitivityToAct.low`
 
-### inspection_level (AWSManagedRulesBotControlRuleSetInspectionLevel)
-
-| Value | DSL Identifier |
-|-------|----------------|
-| `COMMON` | `awscc.wafv2.WebAcl.AWSManagedRulesBotControlRuleSetInspectionLevel.common` |
-| `TARGETED` | `awscc.wafv2.WebAcl.AWSManagedRulesBotControlRuleSetInspectionLevel.targeted` |
-
-Shorthand formats: `common` or `AWSManagedRulesBotControlRuleSetInspectionLevel.common`
-
-### oversize_handling (BodyOversizeHandling)
+### inspection_level (InspectionLevel)
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `CONTINUE` | `awscc.wafv2.WebAcl.BodyOversizeHandling.continue` |
-| `MATCH` | `awscc.wafv2.WebAcl.BodyOversizeHandling.match` |
-| `NO_MATCH` | `awscc.wafv2.WebAcl.BodyOversizeHandling.no_match` |
+| `COMMON` | `awscc.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesBotControlRuleSet.InspectionLevel.common` |
+| `TARGETED` | `awscc.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesBotControlRuleSet.InspectionLevel.targeted` |
 
-Shorthand formats: `continue` or `BodyOversizeHandling.continue`
+Shorthand formats: `common` or `InspectionLevel.common`
 
-### positional_constraint (ByteMatchStatementPositionalConstraint)
-
-| Value | DSL Identifier |
-|-------|----------------|
-| `EXACTLY` | `awscc.wafv2.WebAcl.ByteMatchStatementPositionalConstraint.exactly` |
-| `STARTS_WITH` | `awscc.wafv2.WebAcl.ByteMatchStatementPositionalConstraint.starts_with` |
-| `ENDS_WITH` | `awscc.wafv2.WebAcl.ByteMatchStatementPositionalConstraint.ends_with` |
-| `CONTAINS` | `awscc.wafv2.WebAcl.ByteMatchStatementPositionalConstraint.contains` |
-| `CONTAINS_WORD` | `awscc.wafv2.WebAcl.ByteMatchStatementPositionalConstraint.contains_word` |
-
-Shorthand formats: `exactly` or `ByteMatchStatementPositionalConstraint.exactly`
-
-### sensitivity (ClientSideActionSensitivityToAct)
+### oversize_handling (OversizeHandling)
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `LOW` | `awscc.wafv2.WebAcl.ClientSideActionSensitivityToAct.low` |
-| `MEDIUM` | `awscc.wafv2.WebAcl.ClientSideActionSensitivityToAct.medium` |
-| `HIGH` | `awscc.wafv2.WebAcl.ClientSideActionSensitivityToAct.high` |
+| `CONTINUE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Body.OversizeHandling.continue` |
+| `MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Body.OversizeHandling.match` |
+| `NO_MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Body.OversizeHandling.no_match` |
 
-Shorthand formats: `low` or `ClientSideActionSensitivityToAct.low`
+Shorthand formats: `continue` or `OversizeHandling.continue`
 
-### usage_of_action (ClientSideActionUsageOfAction)
-
-| Value | DSL Identifier |
-|-------|----------------|
-| `ENABLED` | `awscc.wafv2.WebAcl.ClientSideActionUsageOfAction.enabled` |
-| `DISABLED` | `awscc.wafv2.WebAcl.ClientSideActionUsageOfAction.disabled` |
-
-Shorthand formats: `enabled` or `ClientSideActionUsageOfAction.enabled`
-
-### match_scope (CookiesMapMatchScope)
+### positional_constraint (PositionalConstraint)
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `ALL` | `awscc.wafv2.WebAcl.CookiesMapMatchScope.all` |
-| `KEY` | `awscc.wafv2.WebAcl.CookiesMapMatchScope.key` |
-| `VALUE` | `awscc.wafv2.WebAcl.CookiesMapMatchScope.value` |
+| `EXACTLY` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.PositionalConstraint.exactly` |
+| `STARTS_WITH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.PositionalConstraint.starts_with` |
+| `ENDS_WITH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.PositionalConstraint.ends_with` |
+| `CONTAINS` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.PositionalConstraint.contains` |
+| `CONTAINS_WORD` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.PositionalConstraint.contains_word` |
 
-Shorthand formats: `all` or `CookiesMapMatchScope.all`
+Shorthand formats: `exactly` or `PositionalConstraint.exactly`
 
-### oversize_handling (CookiesOversizeHandling)
-
-| Value | DSL Identifier |
-|-------|----------------|
-| `CONTINUE` | `awscc.wafv2.WebAcl.CookiesOversizeHandling.continue` |
-| `MATCH` | `awscc.wafv2.WebAcl.CookiesOversizeHandling.match` |
-| `NO_MATCH` | `awscc.wafv2.WebAcl.CookiesOversizeHandling.no_match` |
-
-Shorthand formats: `continue` or `CookiesOversizeHandling.continue`
-
-### fallback_behavior (ForwardedIPConfigurationFallbackBehavior)
+### sensitivity (SensitivityToAct)
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `MATCH` | `awscc.wafv2.WebAcl.ForwardedIPConfigurationFallbackBehavior.match` |
-| `NO_MATCH` | `awscc.wafv2.WebAcl.ForwardedIPConfigurationFallbackBehavior.no_match` |
+| `LOW` | `awscc.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.ClientSideActionConfig.ClientSideAction.SensitivityToAct.low` |
+| `MEDIUM` | `awscc.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.ClientSideActionConfig.ClientSideAction.SensitivityToAct.medium` |
+| `HIGH` | `awscc.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.ClientSideActionConfig.ClientSideAction.SensitivityToAct.high` |
 
-Shorthand formats: `match` or `ForwardedIPConfigurationFallbackBehavior.match`
+Shorthand formats: `low` or `SensitivityToAct.low`
 
-### oversize_handling (HeaderOrderOversizeHandling)
-
-| Value | DSL Identifier |
-|-------|----------------|
-| `CONTINUE` | `awscc.wafv2.WebAcl.HeaderOrderOversizeHandling.continue` |
-| `MATCH` | `awscc.wafv2.WebAcl.HeaderOrderOversizeHandling.match` |
-| `NO_MATCH` | `awscc.wafv2.WebAcl.HeaderOrderOversizeHandling.no_match` |
-
-Shorthand formats: `continue` or `HeaderOrderOversizeHandling.continue`
-
-### match_scope (HeadersMapMatchScope)
+### usage_of_action (UsageOfAction)
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `ALL` | `awscc.wafv2.WebAcl.HeadersMapMatchScope.all` |
-| `KEY` | `awscc.wafv2.WebAcl.HeadersMapMatchScope.key` |
-| `VALUE` | `awscc.wafv2.WebAcl.HeadersMapMatchScope.value` |
+| `ENABLED` | `awscc.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.ClientSideActionConfig.ClientSideAction.UsageOfAction.enabled` |
+| `DISABLED` | `awscc.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.ClientSideActionConfig.ClientSideAction.UsageOfAction.disabled` |
 
-Shorthand formats: `all` or `HeadersMapMatchScope.all`
+Shorthand formats: `enabled` or `UsageOfAction.enabled`
 
-### oversize_handling (HeadersOversizeHandling)
-
-| Value | DSL Identifier |
-|-------|----------------|
-| `CONTINUE` | `awscc.wafv2.WebAcl.HeadersOversizeHandling.continue` |
-| `MATCH` | `awscc.wafv2.WebAcl.HeadersOversizeHandling.match` |
-| `NO_MATCH` | `awscc.wafv2.WebAcl.HeadersOversizeHandling.no_match` |
-
-Shorthand formats: `continue` or `HeadersOversizeHandling.continue`
-
-### fallback_behavior (IPSetForwardedIPConfigurationFallbackBehavior)
+### match_scope (MapMatchScope)
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `MATCH` | `awscc.wafv2.WebAcl.IPSetForwardedIPConfigurationFallbackBehavior.match` |
-| `NO_MATCH` | `awscc.wafv2.WebAcl.IPSetForwardedIPConfigurationFallbackBehavior.no_match` |
+| `ALL` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Cookies.MapMatchScope.all` |
+| `KEY` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Cookies.MapMatchScope.key` |
+| `VALUE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Cookies.MapMatchScope.value` |
 
-Shorthand formats: `match` or `IPSetForwardedIPConfigurationFallbackBehavior.match`
+Shorthand formats: `all` or `MapMatchScope.all`
 
-### position (IPSetForwardedIPConfigurationPosition)
-
-| Value | DSL Identifier |
-|-------|----------------|
-| `FIRST` | `awscc.wafv2.WebAcl.IPSetForwardedIPConfigurationPosition.first` |
-| `LAST` | `awscc.wafv2.WebAcl.IPSetForwardedIPConfigurationPosition.last` |
-| `ANY` | `awscc.wafv2.WebAcl.IPSetForwardedIPConfigurationPosition.any` |
-
-Shorthand formats: `first` or `IPSetForwardedIPConfigurationPosition.first`
-
-### fallback_behavior (JA3FingerprintFallbackBehavior)
+### oversize_handling (OversizeHandling)
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `MATCH` | `awscc.wafv2.WebAcl.JA3FingerprintFallbackBehavior.match` |
-| `NO_MATCH` | `awscc.wafv2.WebAcl.JA3FingerprintFallbackBehavior.no_match` |
+| `CONTINUE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Cookies.OversizeHandling.continue` |
+| `MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Cookies.OversizeHandling.match` |
+| `NO_MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Cookies.OversizeHandling.no_match` |
 
-Shorthand formats: `match` or `JA3FingerprintFallbackBehavior.match`
+Shorthand formats: `continue` or `OversizeHandling.continue`
 
-### fallback_behavior (JA4FingerprintFallbackBehavior)
-
-| Value | DSL Identifier |
-|-------|----------------|
-| `MATCH` | `awscc.wafv2.WebAcl.JA4FingerprintFallbackBehavior.match` |
-| `NO_MATCH` | `awscc.wafv2.WebAcl.JA4FingerprintFallbackBehavior.no_match` |
-
-Shorthand formats: `match` or `JA4FingerprintFallbackBehavior.match`
-
-### invalid_fallback_behavior (JsonBodyBodyParsingFallbackBehavior)
+### fallback_behavior (FallbackBehavior)
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `MATCH` | `awscc.wafv2.WebAcl.JsonBodyBodyParsingFallbackBehavior.match` |
-| `NO_MATCH` | `awscc.wafv2.WebAcl.JsonBodyBodyParsingFallbackBehavior.no_match` |
-| `EVALUATE_AS_STRING` | `awscc.wafv2.WebAcl.JsonBodyBodyParsingFallbackBehavior.evaluate_as_string` |
+| `MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.AsnMatchStatement.ForwardedIpConfiguration.FallbackBehavior.match` |
+| `NO_MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.AsnMatchStatement.ForwardedIpConfiguration.FallbackBehavior.no_match` |
 
-Shorthand formats: `match` or `JsonBodyBodyParsingFallbackBehavior.match`
+Shorthand formats: `match` or `FallbackBehavior.match`
 
-### match_scope (JsonBodyJsonMatchScope)
-
-| Value | DSL Identifier |
-|-------|----------------|
-| `ALL` | `awscc.wafv2.WebAcl.JsonBodyJsonMatchScope.all` |
-| `KEY` | `awscc.wafv2.WebAcl.JsonBodyJsonMatchScope.key` |
-| `VALUE` | `awscc.wafv2.WebAcl.JsonBodyJsonMatchScope.value` |
-
-Shorthand formats: `all` or `JsonBodyJsonMatchScope.all`
-
-### oversize_handling (JsonBodyOversizeHandling)
+### oversize_handling (OversizeHandling)
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `CONTINUE` | `awscc.wafv2.WebAcl.JsonBodyOversizeHandling.continue` |
-| `MATCH` | `awscc.wafv2.WebAcl.JsonBodyOversizeHandling.match` |
-| `NO_MATCH` | `awscc.wafv2.WebAcl.JsonBodyOversizeHandling.no_match` |
+| `CONTINUE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.HeaderOrder.OversizeHandling.continue` |
+| `MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.HeaderOrder.OversizeHandling.match` |
+| `NO_MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.HeaderOrder.OversizeHandling.no_match` |
 
-Shorthand formats: `continue` or `JsonBodyOversizeHandling.continue`
+Shorthand formats: `continue` or `OversizeHandling.continue`
 
-### scope (LabelMatchStatementLabelMatchScope)
-
-| Value | DSL Identifier |
-|-------|----------------|
-| `LABEL` | `awscc.wafv2.WebAcl.LabelMatchStatementLabelMatchScope.label` |
-| `NAMESPACE` | `awscc.wafv2.WebAcl.LabelMatchStatementLabelMatchScope.namespace` |
-
-Shorthand formats: `label` or `LabelMatchStatementLabelMatchScope.label`
-
-### payload_type (ManagedRuleGroupConfigPayloadType)
+### match_scope (MapMatchScope)
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `JSON` | `awscc.wafv2.WebAcl.ManagedRuleGroupConfigPayloadType.json` |
-| `FORM_ENCODED` | `awscc.wafv2.WebAcl.ManagedRuleGroupConfigPayloadType.form_encoded` |
+| `ALL` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Headers.MapMatchScope.all` |
+| `KEY` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Headers.MapMatchScope.key` |
+| `VALUE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Headers.MapMatchScope.value` |
 
-Shorthand formats: `json` or `ManagedRuleGroupConfigPayloadType.json`
+Shorthand formats: `all` or `MapMatchScope.all`
 
-### alb_low_reputation_mode (OnSourceDDoSProtectionConfigAlbLowReputationMode)
-
-| Value | DSL Identifier |
-|-------|----------------|
-| `ACTIVE_UNDER_DDOS` | `awscc.wafv2.WebAcl.OnSourceDDoSProtectionConfigAlbLowReputationMode.active_under_ddos` |
-| `ALWAYS_ON` | `awscc.wafv2.WebAcl.OnSourceDDoSProtectionConfigAlbLowReputationMode.always_on` |
-
-Shorthand formats: `active_under_ddos` or `OnSourceDDoSProtectionConfigAlbLowReputationMode.active_under_ddos`
-
-### aggregate_key_type (RateBasedStatementAggregateKeyType)
+### oversize_handling (OversizeHandling)
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `CONSTANT` | `awscc.wafv2.WebAcl.RateBasedStatementAggregateKeyType.constant` |
-| `IP` | `awscc.wafv2.WebAcl.RateBasedStatementAggregateKeyType.ip` |
-| `FORWARDED_IP` | `awscc.wafv2.WebAcl.RateBasedStatementAggregateKeyType.forwarded_ip` |
-| `CUSTOM_KEYS` | `awscc.wafv2.WebAcl.RateBasedStatementAggregateKeyType.custom_keys` |
+| `CONTINUE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Headers.OversizeHandling.continue` |
+| `MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Headers.OversizeHandling.match` |
+| `NO_MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Headers.OversizeHandling.no_match` |
 
-Shorthand formats: `constant` or `RateBasedStatementAggregateKeyType.constant`
+Shorthand formats: `continue` or `OversizeHandling.continue`
 
-### evaluation_window_sec (RateBasedStatementEvaluationWindowSec)
-
-| Value | DSL Identifier |
-|-------|----------------|
-| `60` | `awscc.wafv2.WebAcl.RateBasedStatementEvaluationWindowSec.60` |
-| `120` | `awscc.wafv2.WebAcl.RateBasedStatementEvaluationWindowSec.120` |
-| `300` | `awscc.wafv2.WebAcl.RateBasedStatementEvaluationWindowSec.300` |
-| `600` | `awscc.wafv2.WebAcl.RateBasedStatementEvaluationWindowSec.600` |
-
-Shorthand formats: `60` or `RateBasedStatementEvaluationWindowSec.60`
-
-### fallback_behavior (RateLimitJA3FingerprintFallbackBehavior)
+### fallback_behavior (FallbackBehavior)
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `MATCH` | `awscc.wafv2.WebAcl.RateLimitJA3FingerprintFallbackBehavior.match` |
-| `NO_MATCH` | `awscc.wafv2.WebAcl.RateLimitJA3FingerprintFallbackBehavior.no_match` |
+| `MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.IpSetReferenceStatement.IpSetForwardedIpConfiguration.FallbackBehavior.match` |
+| `NO_MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.IpSetReferenceStatement.IpSetForwardedIpConfiguration.FallbackBehavior.no_match` |
 
-Shorthand formats: `match` or `RateLimitJA3FingerprintFallbackBehavior.match`
+Shorthand formats: `match` or `FallbackBehavior.match`
 
-### fallback_behavior (RateLimitJA4FingerprintFallbackBehavior)
-
-| Value | DSL Identifier |
-|-------|----------------|
-| `MATCH` | `awscc.wafv2.WebAcl.RateLimitJA4FingerprintFallbackBehavior.match` |
-| `NO_MATCH` | `awscc.wafv2.WebAcl.RateLimitJA4FingerprintFallbackBehavior.no_match` |
-
-Shorthand formats: `match` or `RateLimitJA4FingerprintFallbackBehavior.match`
-
-### payload_type (RequestInspectionPayloadType)
+### position (Position)
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `JSON` | `awscc.wafv2.WebAcl.RequestInspectionPayloadType.json` |
-| `FORM_ENCODED` | `awscc.wafv2.WebAcl.RequestInspectionPayloadType.form_encoded` |
+| `FIRST` | `awscc.wafv2.WebAcl.Rule.Statement.IpSetReferenceStatement.IpSetForwardedIpConfiguration.Position.first` |
+| `LAST` | `awscc.wafv2.WebAcl.Rule.Statement.IpSetReferenceStatement.IpSetForwardedIpConfiguration.Position.last` |
+| `ANY` | `awscc.wafv2.WebAcl.Rule.Statement.IpSetReferenceStatement.IpSetForwardedIpConfiguration.Position.any` |
 
-Shorthand formats: `json` or `RequestInspectionPayloadType.json`
+Shorthand formats: `first` or `Position.first`
 
-### payload_type (RequestInspectionACFPPayloadType)
+### fallback_behavior (FallbackBehavior)
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `JSON` | `awscc.wafv2.WebAcl.RequestInspectionACFPPayloadType.json` |
-| `FORM_ENCODED` | `awscc.wafv2.WebAcl.RequestInspectionACFPPayloadType.form_encoded` |
+| `MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Ja3Fingerprint.FallbackBehavior.match` |
+| `NO_MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Ja3Fingerprint.FallbackBehavior.no_match` |
 
-Shorthand formats: `json` or `RequestInspectionACFPPayloadType.json`
+Shorthand formats: `match` or `FallbackBehavior.match`
+
+### fallback_behavior (FallbackBehavior)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Ja4Fingerprint.FallbackBehavior.match` |
+| `NO_MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Ja4Fingerprint.FallbackBehavior.no_match` |
+
+Shorthand formats: `match` or `FallbackBehavior.match`
+
+### invalid_fallback_behavior (BodyParsingFallbackBehavior)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.BodyParsingFallbackBehavior.match` |
+| `NO_MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.BodyParsingFallbackBehavior.no_match` |
+| `EVALUATE_AS_STRING` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.BodyParsingFallbackBehavior.evaluate_as_string` |
+
+Shorthand formats: `match` or `BodyParsingFallbackBehavior.match`
+
+### match_scope (JsonMatchScope)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `ALL` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.JsonMatchScope.all` |
+| `KEY` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.JsonMatchScope.key` |
+| `VALUE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.JsonMatchScope.value` |
+
+Shorthand formats: `all` or `JsonMatchScope.all`
+
+### oversize_handling (OversizeHandling)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `CONTINUE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.OversizeHandling.continue` |
+| `MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.OversizeHandling.match` |
+| `NO_MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.OversizeHandling.no_match` |
+
+Shorthand formats: `continue` or `OversizeHandling.continue`
+
+### scope (LabelMatchScope)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `LABEL` | `awscc.wafv2.WebAcl.Rule.Statement.LabelMatchStatement.LabelMatchScope.label` |
+| `NAMESPACE` | `awscc.wafv2.WebAcl.Rule.Statement.LabelMatchStatement.LabelMatchScope.namespace` |
+
+Shorthand formats: `label` or `LabelMatchScope.label`
+
+### payload_type (PayloadType)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `JSON` | `awscc.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.PayloadType.json` |
+| `FORM_ENCODED` | `awscc.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.PayloadType.form_encoded` |
+
+Shorthand formats: `json` or `PayloadType.json`
+
+### alb_low_reputation_mode (AlbLowReputationMode)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `ACTIVE_UNDER_DDOS` | `awscc.wafv2.WebAcl.OnSourceDDoSProtectionConfig.AlbLowReputationMode.active_under_ddos` |
+| `ALWAYS_ON` | `awscc.wafv2.WebAcl.OnSourceDDoSProtectionConfig.AlbLowReputationMode.always_on` |
+
+Shorthand formats: `active_under_ddos` or `AlbLowReputationMode.active_under_ddos`
+
+### aggregate_key_type (AggregateKeyType)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `CONSTANT` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.AggregateKeyType.constant` |
+| `IP` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.AggregateKeyType.ip` |
+| `FORWARDED_IP` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.AggregateKeyType.forwarded_ip` |
+| `CUSTOM_KEYS` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.AggregateKeyType.custom_keys` |
+
+Shorthand formats: `constant` or `AggregateKeyType.constant`
+
+### evaluation_window_sec (EvaluationWindowSec)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `60` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.EvaluationWindowSec.60` |
+| `120` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.EvaluationWindowSec.120` |
+| `300` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.EvaluationWindowSec.300` |
+| `600` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.EvaluationWindowSec.600` |
+
+Shorthand formats: `60` or `EvaluationWindowSec.60`
+
+### fallback_behavior (FallbackBehavior)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitJa3Fingerprint.FallbackBehavior.match` |
+| `NO_MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitJa3Fingerprint.FallbackBehavior.no_match` |
+
+Shorthand formats: `match` or `FallbackBehavior.match`
+
+### fallback_behavior (FallbackBehavior)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitJa4Fingerprint.FallbackBehavior.match` |
+| `NO_MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitJa4Fingerprint.FallbackBehavior.no_match` |
+
+Shorthand formats: `match` or `FallbackBehavior.match`
+
+### payload_type (PayloadType)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `JSON` | `awscc.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAtpRuleSet.RequestInspection.PayloadType.json` |
+| `FORM_ENCODED` | `awscc.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAtpRuleSet.RequestInspection.PayloadType.form_encoded` |
+
+Shorthand formats: `json` or `PayloadType.json`
+
+### payload_type (PayloadType)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `JSON` | `awscc.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAcfpRuleSet.RequestInspectionAcfp.PayloadType.json` |
+| `FORM_ENCODED` | `awscc.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAcfpRuleSet.RequestInspectionAcfp.PayloadType.form_encoded` |
+
+Shorthand formats: `json` or `PayloadType.json`
 
 ### scope (Scope)
 
@@ -375,64 +375,64 @@ Shorthand formats: `json` or `RequestInspectionACFPPayloadType.json`
 
 Shorthand formats: `cloudfront` or `Scope.cloudfront`
 
-### comparison_operator (SizeConstraintStatementComparisonOperator)
+### comparison_operator (ComparisonOperator)
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `EQ` | `awscc.wafv2.WebAcl.SizeConstraintStatementComparisonOperator.eq` |
-| `NE` | `awscc.wafv2.WebAcl.SizeConstraintStatementComparisonOperator.ne` |
-| `LE` | `awscc.wafv2.WebAcl.SizeConstraintStatementComparisonOperator.le` |
-| `LT` | `awscc.wafv2.WebAcl.SizeConstraintStatementComparisonOperator.lt` |
-| `GE` | `awscc.wafv2.WebAcl.SizeConstraintStatementComparisonOperator.ge` |
-| `GT` | `awscc.wafv2.WebAcl.SizeConstraintStatementComparisonOperator.gt` |
+| `EQ` | `awscc.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.ComparisonOperator.eq` |
+| `NE` | `awscc.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.ComparisonOperator.ne` |
+| `LE` | `awscc.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.ComparisonOperator.le` |
+| `LT` | `awscc.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.ComparisonOperator.lt` |
+| `GE` | `awscc.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.ComparisonOperator.ge` |
+| `GT` | `awscc.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.ComparisonOperator.gt` |
 
-Shorthand formats: `eq` or `SizeConstraintStatementComparisonOperator.eq`
+Shorthand formats: `eq` or `ComparisonOperator.eq`
 
-### sensitivity_level (SqliMatchStatementSensitivityLevel)
-
-| Value | DSL Identifier |
-|-------|----------------|
-| `LOW` | `awscc.wafv2.WebAcl.SqliMatchStatementSensitivityLevel.low` |
-| `HIGH` | `awscc.wafv2.WebAcl.SqliMatchStatementSensitivityLevel.high` |
-
-Shorthand formats: `low` or `SqliMatchStatementSensitivityLevel.low`
-
-### type (TextTransformationTextTransformationType)
+### sensitivity_level (SensitivityLevel)
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `NONE` | `awscc.wafv2.WebAcl.TextTransformationTextTransformationType.none` |
-| `COMPRESS_WHITE_SPACE` | `awscc.wafv2.WebAcl.TextTransformationTextTransformationType.compress_white_space` |
-| `HTML_ENTITY_DECODE` | `awscc.wafv2.WebAcl.TextTransformationTextTransformationType.html_entity_decode` |
-| `LOWERCASE` | `awscc.wafv2.WebAcl.TextTransformationTextTransformationType.lowercase` |
-| `CMD_LINE` | `awscc.wafv2.WebAcl.TextTransformationTextTransformationType.cmd_line` |
-| `URL_DECODE` | `awscc.wafv2.WebAcl.TextTransformationTextTransformationType.url_decode` |
-| `BASE64_DECODE` | `awscc.wafv2.WebAcl.TextTransformationTextTransformationType.base64_decode` |
-| `HEX_DECODE` | `awscc.wafv2.WebAcl.TextTransformationTextTransformationType.hex_decode` |
-| `MD5` | `awscc.wafv2.WebAcl.TextTransformationTextTransformationType.md5` |
-| `REPLACE_COMMENTS` | `awscc.wafv2.WebAcl.TextTransformationTextTransformationType.replace_comments` |
-| `ESCAPE_SEQ_DECODE` | `awscc.wafv2.WebAcl.TextTransformationTextTransformationType.escape_seq_decode` |
-| `SQL_HEX_DECODE` | `awscc.wafv2.WebAcl.TextTransformationTextTransformationType.sql_hex_decode` |
-| `CSS_DECODE` | `awscc.wafv2.WebAcl.TextTransformationTextTransformationType.css_decode` |
-| `JS_DECODE` | `awscc.wafv2.WebAcl.TextTransformationTextTransformationType.js_decode` |
-| `NORMALIZE_PATH` | `awscc.wafv2.WebAcl.TextTransformationTextTransformationType.normalize_path` |
-| `NORMALIZE_PATH_WIN` | `awscc.wafv2.WebAcl.TextTransformationTextTransformationType.normalize_path_win` |
-| `REMOVE_NULLS` | `awscc.wafv2.WebAcl.TextTransformationTextTransformationType.remove_nulls` |
-| `REPLACE_NULLS` | `awscc.wafv2.WebAcl.TextTransformationTextTransformationType.replace_nulls` |
-| `BASE64_DECODE_EXT` | `awscc.wafv2.WebAcl.TextTransformationTextTransformationType.base64_decode_ext` |
-| `URL_DECODE_UNI` | `awscc.wafv2.WebAcl.TextTransformationTextTransformationType.url_decode_uni` |
-| `UTF8_TO_UNICODE` | `awscc.wafv2.WebAcl.TextTransformationTextTransformationType.utf8_to_unicode` |
+| `LOW` | `awscc.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.SensitivityLevel.low` |
+| `HIGH` | `awscc.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.SensitivityLevel.high` |
 
-Shorthand formats: `none` or `TextTransformationTextTransformationType.none`
+Shorthand formats: `low` or `SensitivityLevel.low`
 
-### fallback_behavior (UriFragmentFallbackBehavior)
+### type (TextTransformationType)
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `MATCH` | `awscc.wafv2.WebAcl.UriFragmentFallbackBehavior.match` |
-| `NO_MATCH` | `awscc.wafv2.WebAcl.UriFragmentFallbackBehavior.no_match` |
+| `NONE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.none` |
+| `COMPRESS_WHITE_SPACE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.compress_white_space` |
+| `HTML_ENTITY_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.html_entity_decode` |
+| `LOWERCASE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.lowercase` |
+| `CMD_LINE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.cmd_line` |
+| `URL_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.url_decode` |
+| `BASE64_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.base64_decode` |
+| `HEX_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.hex_decode` |
+| `MD5` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.md5` |
+| `REPLACE_COMMENTS` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.replace_comments` |
+| `ESCAPE_SEQ_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.escape_seq_decode` |
+| `SQL_HEX_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.sql_hex_decode` |
+| `CSS_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.css_decode` |
+| `JS_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.js_decode` |
+| `NORMALIZE_PATH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.normalize_path` |
+| `NORMALIZE_PATH_WIN` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.normalize_path_win` |
+| `REMOVE_NULLS` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.remove_nulls` |
+| `REPLACE_NULLS` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.replace_nulls` |
+| `BASE64_DECODE_EXT` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.base64_decode_ext` |
+| `URL_DECODE_UNI` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.url_decode_uni` |
+| `UTF8_TO_UNICODE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.utf8_to_unicode` |
 
-Shorthand formats: `match` or `UriFragmentFallbackBehavior.match`
+Shorthand formats: `none` or `TextTransformationType.none`
+
+### fallback_behavior (FallbackBehavior)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.UriFragment.FallbackBehavior.match` |
+| `NO_MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.UriFragment.FallbackBehavior.no_match` |
+
+Shorthand formats: `match` or `FallbackBehavior.match`
 
 ## Struct Definitions
 
@@ -460,14 +460,14 @@ Shorthand formats: `match` or `UriFragmentFallbackBehavior.match`
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `client_side_action_config` | [Struct(ClientSideActionConfig)](#clientsideactionconfig) | Yes |  |
-| `sensitivity_to_block` | [Enum (AWSManagedRulesAntiDDoSRuleSetSensitivityToAct)](#sensitivity_to_block-awsmanagedrulesantiddosrulesetsensitivitytoact) | No |  |
+| `sensitivity_to_block` | [Enum (SensitivityToAct)](#sensitivity_to_block-sensitivitytoact) | No |  |
 
 ### AWSManagedRulesBotControlRuleSet
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `enable_machine_learning` | Bool | No |  |
-| `inspection_level` | [Enum (AWSManagedRulesBotControlRuleSetInspectionLevel)](#inspection_level-awsmanagedrulesbotcontrolrulesetinspectionlevel) | Yes |  |
+| `inspection_level` | [Enum (InspectionLevel)](#inspection_level-inspectionlevel) | Yes |  |
 
 ### AllowAction
 
@@ -510,14 +510,14 @@ Shorthand formats: `match` or `UriFragmentFallbackBehavior.match`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `oversize_handling` | [Enum (BodyOversizeHandling)](#oversize_handling-bodyoversizehandling) | No |  |
+| `oversize_handling` | [Enum (OversizeHandling)](#oversize_handling-oversizehandling) | No |  |
 
 ### ByteMatchStatement
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `field_to_match` | [Struct(FieldToMatch)](#fieldtomatch) | Yes |  |
-| `positional_constraint` | [Enum (ByteMatchStatementPositionalConstraint)](#positional_constraint-bytematchstatementpositionalconstraint) | Yes |  |
+| `positional_constraint` | [Enum (PositionalConstraint)](#positional_constraint-positionalconstraint) | Yes |  |
 | `search_string` | String | No |  |
 | `search_string_base64` | String | No |  |
 | `text_transformations` | [List\<TextTransformation\>](#texttransformation) | Yes |  |
@@ -551,8 +551,8 @@ Shorthand formats: `match` or `UriFragmentFallbackBehavior.match`
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `exempt_uri_regular_expressions` | String | No |  |
-| `sensitivity` | [Enum (ClientSideActionSensitivityToAct)](#sensitivity-clientsideactionsensitivitytoact) | No |  |
-| `usage_of_action` | [Enum (ClientSideActionUsageOfAction)](#usage_of_action-clientsideactionusageofaction) | Yes |  |
+| `sensitivity` | [Enum (SensitivityToAct)](#sensitivity-sensitivitytoact) | No |  |
+| `usage_of_action` | [Enum (UsageOfAction)](#usage_of_action-usageofaction) | Yes |  |
 
 ### ClientSideActionConfig
 
@@ -573,8 +573,8 @@ Shorthand formats: `match` or `UriFragmentFallbackBehavior.match`
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `match_pattern` | [Struct(CookieMatchPattern)](#cookiematchpattern) | Yes |  |
-| `match_scope` | [Enum (CookiesMapMatchScope)](#match_scope-cookiesmapmatchscope) | Yes |  |
-| `oversize_handling` | [Enum (CookiesOversizeHandling)](#oversize_handling-cookiesoversizehandling) | Yes |  |
+| `match_scope` | [Enum (MapMatchScope)](#match_scope-mapmatchscope) | Yes |  |
+| `oversize_handling` | [Enum (OversizeHandling)](#oversize_handling-oversizehandling) | Yes |  |
 
 ### CountAction
 
@@ -651,7 +651,7 @@ Shorthand formats: `match` or `UriFragmentFallbackBehavior.match`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `fallback_behavior` | [Enum (ForwardedIPConfigurationFallbackBehavior)](#fallback_behavior-forwardedipconfigurationfallbackbehavior) | Yes |  |
+| `fallback_behavior` | [Enum (FallbackBehavior)](#fallback_behavior-fallbackbehavior) | Yes |  |
 | `header_name` | String | Yes |  |
 
 ### GeoMatchStatement
@@ -673,23 +673,23 @@ Shorthand formats: `match` or `UriFragmentFallbackBehavior.match`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `oversize_handling` | [Enum (HeaderOrderOversizeHandling)](#oversize_handling-headerorderoversizehandling) | Yes |  |
+| `oversize_handling` | [Enum (OversizeHandling)](#oversize_handling-oversizehandling) | Yes |  |
 
 ### Headers
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `match_pattern` | [Struct(HeaderMatchPattern)](#headermatchpattern) | Yes |  |
-| `match_scope` | [Enum (HeadersMapMatchScope)](#match_scope-headersmapmatchscope) | Yes |  |
-| `oversize_handling` | [Enum (HeadersOversizeHandling)](#oversize_handling-headersoversizehandling) | Yes |  |
+| `match_scope` | [Enum (MapMatchScope)](#match_scope-mapmatchscope) | Yes |  |
+| `oversize_handling` | [Enum (OversizeHandling)](#oversize_handling-oversizehandling) | Yes |  |
 
 ### IPSetForwardedIPConfiguration
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `fallback_behavior` | [Enum (IPSetForwardedIPConfigurationFallbackBehavior)](#fallback_behavior-ipsetforwardedipconfigurationfallbackbehavior) | Yes |  |
+| `fallback_behavior` | [Enum (FallbackBehavior)](#fallback_behavior-fallbackbehavior) | Yes |  |
 | `header_name` | String | Yes |  |
-| `position` | [Enum (IPSetForwardedIPConfigurationPosition)](#position-ipsetforwardedipconfigurationposition) | Yes |  |
+| `position` | [Enum (Position)](#position-position) | Yes |  |
 
 ### IPSetReferenceStatement
 
@@ -708,22 +708,22 @@ Shorthand formats: `match` or `UriFragmentFallbackBehavior.match`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `fallback_behavior` | [Enum (JA3FingerprintFallbackBehavior)](#fallback_behavior-ja3fingerprintfallbackbehavior) | Yes |  |
+| `fallback_behavior` | [Enum (FallbackBehavior)](#fallback_behavior-fallbackbehavior) | Yes |  |
 
 ### JA4Fingerprint
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `fallback_behavior` | [Enum (JA4FingerprintFallbackBehavior)](#fallback_behavior-ja4fingerprintfallbackbehavior) | Yes |  |
+| `fallback_behavior` | [Enum (FallbackBehavior)](#fallback_behavior-fallbackbehavior) | Yes |  |
 
 ### JsonBody
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `invalid_fallback_behavior` | [Enum (JsonBodyBodyParsingFallbackBehavior)](#invalid_fallback_behavior-jsonbodybodyparsingfallbackbehavior) | No |  |
+| `invalid_fallback_behavior` | [Enum (BodyParsingFallbackBehavior)](#invalid_fallback_behavior-bodyparsingfallbackbehavior) | No |  |
 | `match_pattern` | [Struct(JsonMatchPattern)](#jsonmatchpattern) | Yes |  |
-| `match_scope` | [Enum (JsonBodyJsonMatchScope)](#match_scope-jsonbodyjsonmatchscope) | Yes |  |
-| `oversize_handling` | [Enum (JsonBodyOversizeHandling)](#oversize_handling-jsonbodyoversizehandling) | No |  |
+| `match_scope` | [Enum (JsonMatchScope)](#match_scope-jsonmatchscope) | Yes |  |
+| `oversize_handling` | [Enum (OversizeHandling)](#oversize_handling-oversizehandling) | No |  |
 
 ### JsonMatchPattern
 
@@ -743,7 +743,7 @@ Shorthand formats: `match` or `UriFragmentFallbackBehavior.match`
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `key` | String | Yes |  |
-| `scope` | [Enum (LabelMatchStatementLabelMatchScope)](#scope-labelmatchstatementlabelmatchscope) | Yes |  |
+| `scope` | [Enum (LabelMatchScope)](#scope-labelmatchscope) | Yes |  |
 
 ### ManagedRuleGroupConfig
 
@@ -755,7 +755,7 @@ Shorthand formats: `match` or `UriFragmentFallbackBehavior.match`
 | `aws_managed_rules_bot_control_rule_set` | [Struct(AWSManagedRulesBotControlRuleSet)](#awsmanagedrulesbotcontrolruleset) | No |  |
 | `login_path` | String(pattern, len: 1..=256) | No |  |
 | `password_field` | [Struct(FieldIdentifier)](#fieldidentifier) | No |  |
-| `payload_type` | [Enum (ManagedRuleGroupConfigPayloadType)](#payload_type-managedrulegroupconfigpayloadtype) | No |  |
+| `payload_type` | [Enum (PayloadType)](#payload_type-payloadtype) | No |  |
 | `username_field` | [Struct(FieldIdentifier)](#fieldidentifier) | No |  |
 
 ### ManagedRuleGroupStatement
@@ -780,7 +780,7 @@ Shorthand formats: `match` or `UriFragmentFallbackBehavior.match`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `alb_low_reputation_mode` | [Enum (OnSourceDDoSProtectionConfigAlbLowReputationMode)](#alb_low_reputation_mode-onsourceddosprotectionconfigalblowreputationmode) | Yes |  |
+| `alb_low_reputation_mode` | [Enum (AlbLowReputationMode)](#alb_low_reputation_mode-alblowreputationmode) | Yes |  |
 
 ### OrStatement
 
@@ -799,9 +799,9 @@ Shorthand formats: `match` or `UriFragmentFallbackBehavior.match`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `aggregate_key_type` | [Enum (RateBasedStatementAggregateKeyType)](#aggregate_key_type-ratebasedstatementaggregatekeytype) | Yes |  |
+| `aggregate_key_type` | [Enum (AggregateKeyType)](#aggregate_key_type-aggregatekeytype) | Yes |  |
 | `custom_keys` | [List\<RateBasedStatementCustomKey\>](#ratebasedstatementcustomkey) (items: ..=5) | No | Specifies the aggregate keys to use in a rate-base rule. |
-| `evaluation_window_sec` | [Enum (RateBasedStatementEvaluationWindowSec)](#evaluation_window_sec-ratebasedstatementevaluationwindowsec) | No |  |
+| `evaluation_window_sec` | [Enum (EvaluationWindowSec)](#evaluation_window_sec-evaluationwindowsec) | No |  |
 | `forwarded_ip_config` | [Struct(ForwardedIPConfiguration)](#forwardedipconfiguration) | No |  |
 | `limit` | Int(10..=2000000000) | Yes |  |
 | `scope_down_statement` | [Struct(Statement)](#statement) | No |  |
@@ -841,13 +841,13 @@ Shorthand formats: `match` or `UriFragmentFallbackBehavior.match`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `fallback_behavior` | [Enum (RateLimitJA3FingerprintFallbackBehavior)](#fallback_behavior-ratelimitja3fingerprintfallbackbehavior) | Yes |  |
+| `fallback_behavior` | [Enum (FallbackBehavior)](#fallback_behavior-fallbackbehavior) | Yes |  |
 
 ### RateLimitJA4Fingerprint
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `fallback_behavior` | [Enum (RateLimitJA4FingerprintFallbackBehavior)](#fallback_behavior-ratelimitja4fingerprintfallbackbehavior) | Yes |  |
+| `fallback_behavior` | [Enum (FallbackBehavior)](#fallback_behavior-fallbackbehavior) | Yes |  |
 
 ### RateLimitLabelNamespace
 
@@ -895,7 +895,7 @@ Shorthand formats: `match` or `UriFragmentFallbackBehavior.match`
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `password_field` | [Struct(FieldIdentifier)](#fieldidentifier) | Yes |  |
-| `payload_type` | [Enum (RequestInspectionPayloadType)](#payload_type-requestinspectionpayloadtype) | Yes |  |
+| `payload_type` | [Enum (PayloadType)](#payload_type-payloadtype) | Yes |  |
 | `username_field` | [Struct(FieldIdentifier)](#fieldidentifier) | Yes |  |
 
 ### RequestInspectionACFP
@@ -905,7 +905,7 @@ Shorthand formats: `match` or `UriFragmentFallbackBehavior.match`
 | `address_fields` | `List<String>` | No |  |
 | `email_field` | [Struct(FieldIdentifier)](#fieldidentifier) | No |  |
 | `password_field` | [Struct(FieldIdentifier)](#fieldidentifier) | No |  |
-| `payload_type` | [Enum (RequestInspectionACFPPayloadType)](#payload_type-requestinspectionacfppayloadtype) | Yes |  |
+| `payload_type` | [Enum (PayloadType)](#payload_type-payloadtype) | Yes |  |
 | `phone_number_fields` | `List<String>` | No |  |
 | `username_field` | [Struct(FieldIdentifier)](#fieldidentifier) | No |  |
 
@@ -1003,7 +1003,7 @@ Shorthand formats: `match` or `UriFragmentFallbackBehavior.match`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `comparison_operator` | [Enum (SizeConstraintStatementComparisonOperator)](#comparison_operator-sizeconstraintstatementcomparisonoperator) | Yes |  |
+| `comparison_operator` | [Enum (ComparisonOperator)](#comparison_operator-comparisonoperator) | Yes |  |
 | `field_to_match` | [Struct(FieldToMatch)](#fieldtomatch) | Yes |  |
 | `size` | Float(0..=21474836480) | Yes |  |
 | `text_transformations` | [List\<TextTransformation\>](#texttransformation) | Yes |  |
@@ -1013,7 +1013,7 @@ Shorthand formats: `match` or `UriFragmentFallbackBehavior.match`
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `field_to_match` | [Struct(FieldToMatch)](#fieldtomatch) | Yes |  |
-| `sensitivity_level` | [Enum (SqliMatchStatementSensitivityLevel)](#sensitivity_level-sqlimatchstatementsensitivitylevel) | No |  |
+| `sensitivity_level` | [Enum (SensitivityLevel)](#sensitivity_level-sensitivitylevel) | No |  |
 | `text_transformations` | [List\<TextTransformation\>](#texttransformation) | Yes |  |
 
 ### Statement
@@ -1042,13 +1042,13 @@ Shorthand formats: `match` or `UriFragmentFallbackBehavior.match`
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `priority` | Int(0..) | Yes |  |
-| `type` | [Enum (TextTransformationTextTransformationType)](#type-texttransformationtexttransformationtype) | Yes |  |
+| `type` | [Enum (TextTransformationType)](#type-texttransformationtype) | Yes |  |
 
 ### UriFragment
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `fallback_behavior` | [Enum (UriFragmentFallbackBehavior)](#fallback_behavior-urifragmentfallbackbehavior) | No |  |
+| `fallback_behavior` | [Enum (FallbackBehavior)](#fallback_behavior-fallbackbehavior) | No |  |
 
 ### VisibilityConfig
 

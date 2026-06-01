@@ -41,7 +41,8 @@ pub fn ec2_vpn_gateway_config() -> AwsccSchemaConfig {
         .attribute(
             AttributeSchema::new("tags", tags_type())
                 .with_description("Any tags assigned to the virtual private gateway.")
-                .with_provider_name("Tags"),
+                .with_provider_name("Tags")
+                .with_block_name("tag"),
         )
         .attribute(
             AttributeSchema::new("type", AttributeType::string_enum("Type".to_string(), vec!["ipsec.1".to_string()], Some(carina_core::schema::string_enum_identity("Type", Some("awscc.ec2.VpnGateway"))), vec![("ipsec.1".to_string(), "ipsec_1".to_string())]))

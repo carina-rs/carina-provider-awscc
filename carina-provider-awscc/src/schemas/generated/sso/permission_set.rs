@@ -247,7 +247,8 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
         )
         .attribute(
             AttributeSchema::new("tags", tags_type())
-                .with_provider_name("Tags"),
+                .with_provider_name("Tags")
+                .with_block_name("tag"),
         )
         .with_validator(|attrs| {
             let mut errors = Vec::new();

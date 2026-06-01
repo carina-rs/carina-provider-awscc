@@ -125,14 +125,14 @@ The type of traffic to log. You can log traffic that the resource accepts or rej
 
 ## Enum Values
 
-### file_format (DestinationOptionsFileFormat)
+### file_format (FileFormat)
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `plain-text` | `awscc.ec2.FlowLog.DestinationOptionsFileFormat.plain_text` |
-| `parquet` | `awscc.ec2.FlowLog.DestinationOptionsFileFormat.parquet` |
+| `plain-text` | `awscc.ec2.FlowLog.DestinationOptions.FileFormat.plain_text` |
+| `parquet` | `awscc.ec2.FlowLog.DestinationOptions.FileFormat.parquet` |
 
-Shorthand formats: `plain_text` or `DestinationOptionsFileFormat.plain_text`
+Shorthand formats: `plain_text` or `FileFormat.plain_text`
 
 ### log_destination_type (LogDestinationType)
 
@@ -173,7 +173,7 @@ Shorthand formats: `accept` or `TrafficType.accept`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `file_format` | [Enum (DestinationOptionsFileFormat)](#file_format-destinationoptionsfileformat) | Yes |  |
+| `file_format` | [Enum (FileFormat)](#file_format-fileformat) | Yes |  |
 | `hive_compatible_partitions` | Bool | Yes |  |
 | `per_hour_partition` | Bool | Yes |  |
 

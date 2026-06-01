@@ -26,7 +26,8 @@ pub fn ec2_internet_gateway_config() -> AwsccSchemaConfig {
         .attribute(
             AttributeSchema::new("tags", tags_type())
                 .with_description("Any tags to assign to the internet gateway.")
-                .with_provider_name("Tags"),
+                .with_provider_name("Tags")
+                .with_block_name("tag"),
         )
         .force_replace()
         .with_validator(|attrs| {

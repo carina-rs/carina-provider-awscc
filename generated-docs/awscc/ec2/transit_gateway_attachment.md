@@ -69,41 +69,41 @@ The options for the transit gateway vpc attachment.
 
 ## Enum Values
 
-### appliance_mode_support (OptionsApplianceModeSupport)
+### appliance_mode_support (ApplianceModeSupport)
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `enable` | `awscc.ec2.TransitGatewayAttachment.OptionsApplianceModeSupport.enable` |
-| `disable` | `awscc.ec2.TransitGatewayAttachment.OptionsApplianceModeSupport.disable` |
+| `enable` | `awscc.ec2.TransitGatewayAttachment.Options.ApplianceModeSupport.enable` |
+| `disable` | `awscc.ec2.TransitGatewayAttachment.Options.ApplianceModeSupport.disable` |
 
-Shorthand formats: `enable` or `OptionsApplianceModeSupport.enable`
+Shorthand formats: `enable` or `ApplianceModeSupport.enable`
 
-### dns_support (OptionsDnsSupport)
-
-| Value | DSL Identifier |
-|-------|----------------|
-| `enable` | `awscc.ec2.TransitGatewayAttachment.OptionsDnsSupport.enable` |
-| `disable` | `awscc.ec2.TransitGatewayAttachment.OptionsDnsSupport.disable` |
-
-Shorthand formats: `enable` or `OptionsDnsSupport.enable`
-
-### ipv6_support (OptionsIpv6Support)
+### dns_support (DnsSupport)
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `enable` | `awscc.ec2.TransitGatewayAttachment.OptionsIpv6Support.enable` |
-| `disable` | `awscc.ec2.TransitGatewayAttachment.OptionsIpv6Support.disable` |
+| `enable` | `awscc.ec2.TransitGatewayAttachment.Options.DnsSupport.enable` |
+| `disable` | `awscc.ec2.TransitGatewayAttachment.Options.DnsSupport.disable` |
 
-Shorthand formats: `enable` or `OptionsIpv6Support.enable`
+Shorthand formats: `enable` or `DnsSupport.enable`
 
-### security_group_referencing_support (OptionsSecurityGroupReferencingSupport)
+### ipv6_support (Ipv6Support)
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `enable` | `awscc.ec2.TransitGatewayAttachment.OptionsSecurityGroupReferencingSupport.enable` |
-| `disable` | `awscc.ec2.TransitGatewayAttachment.OptionsSecurityGroupReferencingSupport.disable` |
+| `enable` | `awscc.ec2.TransitGatewayAttachment.Options.Ipv6Support.enable` |
+| `disable` | `awscc.ec2.TransitGatewayAttachment.Options.Ipv6Support.disable` |
 
-Shorthand formats: `enable` or `OptionsSecurityGroupReferencingSupport.enable`
+Shorthand formats: `enable` or `Ipv6Support.enable`
+
+### security_group_referencing_support (SecurityGroupReferencingSupport)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `enable` | `awscc.ec2.TransitGatewayAttachment.Options.SecurityGroupReferencingSupport.enable` |
+| `disable` | `awscc.ec2.TransitGatewayAttachment.Options.SecurityGroupReferencingSupport.disable` |
+
+Shorthand formats: `enable` or `SecurityGroupReferencingSupport.enable`
 
 ## Struct Definitions
 
@@ -111,10 +111,10 @@ Shorthand formats: `enable` or `OptionsSecurityGroupReferencingSupport.enable`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `appliance_mode_support` | [Enum (OptionsApplianceModeSupport)](#appliance_mode_support-optionsappliancemodesupport) | No | Indicates whether to enable Ipv6 Support for Vpc Attachment. Valid Values: enable | disable |
-| `dns_support` | [Enum (OptionsDnsSupport)](#dns_support-optionsdnssupport) | No | Indicates whether to enable DNS Support for Vpc Attachment. Valid Values: enable | disable |
-| `ipv6_support` | [Enum (OptionsIpv6Support)](#ipv6_support-optionsipv6support) | No | Indicates whether to enable Ipv6 Support for Vpc Attachment. Valid Values: enable | disable |
-| `security_group_referencing_support` | [Enum (OptionsSecurityGroupReferencingSupport)](#security_group_referencing_support-optionssecuritygroupreferencingsupport) | No | Indicates whether to enable Security Group referencing support for Vpc Attachment. Valid Values: enable | disable |
+| `appliance_mode_support` | [Enum (ApplianceModeSupport)](#appliance_mode_support-appliancemodesupport) | No | Indicates whether to enable Ipv6 Support for Vpc Attachment. Valid Values: enable | disable |
+| `dns_support` | [Enum (DnsSupport)](#dns_support-dnssupport) | No | Indicates whether to enable DNS Support for Vpc Attachment. Valid Values: enable | disable |
+| `ipv6_support` | [Enum (Ipv6Support)](#ipv6_support-ipv6support) | No | Indicates whether to enable Ipv6 Support for Vpc Attachment. Valid Values: enable | disable |
+| `security_group_referencing_support` | [Enum (SecurityGroupReferencingSupport)](#security_group_referencing_support-securitygroupreferencingsupport) | No | Indicates whether to enable Security Group referencing support for Vpc Attachment. Valid Values: enable | disable |
 
 ## Attribute Reference
 

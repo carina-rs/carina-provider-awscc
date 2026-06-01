@@ -645,10 +645,74 @@ fn main() -> Result<()> {
 struct StructDefInfo {
     /// Definition name (e.g., "Ingress")
     def_name: String,
+    /// Structural path from the resource root to this definition.
+    struct_path: Vec<String>,
     /// Properties of the definition
     properties: BTreeMap<String, CfnProperty>,
     /// Required fields
     required: Vec<String>,
+}
+
+fn extend_struct_path(struct_path: &[String], struct_name: &str) -> Vec<String> {
+    let segment = struct_name.to_pascal_case();
+    let existing: Vec<usize> = struct_path
+        .iter()
+        .enumerate()
+        .filter_map(|(index, existing)| (existing == &segment).then_some(index))
+        .collect();
+    if existing.len() >= 2 {
+        let index = *existing.last().expect("existing is non-empty");
+        return struct_path[..=index].to_vec();
+    }
+
+    let mut extended = struct_path.to_vec();
+    extended.push(segment);
+    extended
+}
+
+fn namespace_with_struct_path(namespace: &str, struct_path: &[String]) -> String {
+    if struct_path.is_empty() {
+        namespace.to_string()
+    } else {
+        format!("{}.{}", namespace, struct_path.join("."))
+    }
+}
+
+fn is_deprecated_property(prop: &CfnProperty) -> bool {
+    prop.description
+        .as_deref()
+        .is_some_and(|description| description.starts_with("(Deprecated.)"))
+}
+
+fn is_struct_property(prop: &CfnProperty, schema: &CfnSchema) -> bool {
+    if prop
+        .properties
+        .as_ref()
+        .is_some_and(|properties| !properties.is_empty())
+    {
+        return true;
+    }
+    prop.ref_path.as_ref().is_some_and(|ref_path| {
+        matches!(
+            resolve_ref_classified(schema, ref_path),
+            Some(ResolvedDef::Struct { .. } | ResolvedDef::OneOf { .. })
+        )
+    })
+}
+
+fn is_list_of_struct_property(prop: &CfnProperty, schema: &CfnSchema) -> bool {
+    if prop.prop_type.as_ref().and_then(|t| t.as_str()) == Some("array") {
+        return prop
+            .items
+            .as_ref()
+            .is_some_and(|items| is_struct_property(items, schema));
+    }
+    prop.ref_path.as_ref().is_some_and(|ref_path| {
+        matches!(
+            resolve_ref_classified(schema, ref_path),
+            Some(ResolvedDef::Array { items }) if is_struct_property(items, schema)
+        )
+    })
 }
 
 /// Display string for List element types based on items property type and property name.
@@ -1074,18 +1138,24 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str) -> Result<String> {
     let mut struct_defs: BTreeMap<String, StructDefInfo> = BTreeMap::new();
 
     for (prop_name, prop) in &schema.properties {
+        if is_deprecated_property(prop) {
+            continue;
+        }
         let (_, enum_info) =
             cfn_type_to_carina_type_with_enum(prop, prop_name, schema, &namespace, &enums);
         if let Some(info) = enum_info {
             enums.insert(prop_name.clone(), info);
         }
         // Collect struct definitions from $ref
-        collect_struct_defs(prop, prop_name, schema, &mut struct_defs);
+        collect_struct_defs(prop, prop_name, schema, &[], &mut struct_defs);
     }
 
     // Scan struct definition fields for enum info (const values, $ref to enum-only definitions)
     for (def_name, def_info) in &struct_defs {
         for (field_name, field_prop) in &def_info.properties {
+            if is_deprecated_property(field_prop) {
+                continue;
+            }
             let composite_key = format!("{}.{}", def_name, field_name);
             // Apply nested-field enum overlay (awscc#246) — same lookup as
             // `generate_schema_code`, so the markdown's enum tables stay in
@@ -1099,8 +1169,13 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str) -> Result<String> {
                 );
                 continue;
             }
-            let (_, enum_info) = cfn_type_to_carina_type_with_enum(
-                field_prop, field_name, schema, &namespace, &enums,
+            let (_, enum_info) = cfn_type_to_carina_type_with_enum_with_struct_path(
+                field_prop,
+                field_name,
+                schema,
+                &namespace,
+                &enums,
+                &def_info.struct_path,
             );
             if let Some(info) = enum_info {
                 enums.insert(composite_key, info);
@@ -1123,6 +1198,9 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str) -> Result<String> {
     md.push_str("## Argument Reference\n\n");
 
     for (prop_name, prop) in &schema.properties {
+        if is_deprecated_property(prop) {
+            continue;
+        }
         if read_only.contains(prop_name) {
             continue;
         }
@@ -1161,11 +1239,20 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str) -> Result<String> {
     if !enums.is_empty() {
         let aliases = known_enum_aliases();
         md.push_str("## Enum Values\n\n");
-        let mut rendered_enums: HashSet<(String, Vec<String>)> = HashSet::new();
+        let mut rendered_enums: HashSet<(String, String, Vec<String>)> = HashSet::new();
         for (prop_name, enum_info) in &enums {
             // Skip duplicate enum types with identical values
             // (e.g., Ingress.IpProtocol and Egress.IpProtocol share the same type and values)
-            let key = (enum_info.type_name.clone(), enum_info.values.clone());
+            let enum_namespace = prop_name
+                .split_once('.')
+                .and_then(|(def_name, _)| struct_defs.get(def_name))
+                .map(|def_info| namespace_with_struct_path(&namespace, &def_info.struct_path))
+                .unwrap_or_else(|| namespace.clone());
+            let key = (
+                enum_namespace.clone(),
+                enum_info.type_name.clone(),
+                enum_info.values.clone(),
+            );
             if !rendered_enums.insert(key) {
                 continue;
             }
@@ -1193,7 +1280,7 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str) -> Result<String> {
             md.push_str("|-------|----------------|\n");
             for value in &enum_info.values {
                 let dsl_value = dsl_for(value);
-                let dsl_id = format!("{}.{}.{}", namespace, enum_info.type_name, dsl_value);
+                let dsl_id = format!("{}.{}.{}", enum_namespace, enum_info.type_name, dsl_value);
                 md.push_str(&format!("| `{}` | `{}` |\n", value, dsl_id));
             }
             md.push('\n');
@@ -1218,6 +1305,9 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str) -> Result<String> {
                 def_info.required.iter().map(|s| s.as_str()).collect();
             let overrides = known_enum_overrides();
             for (field_name, field_prop) in &def_info.properties {
+                if is_deprecated_property(field_prop) {
+                    continue;
+                }
                 let snake_name = field_name.to_snake_case();
                 let is_req = required_set.contains(field_name.as_str());
                 let composite_key = format!("{}.{}", def_info.def_name, field_name);
@@ -1314,6 +1404,7 @@ fn collect_struct_defs(
     prop: &CfnProperty,
     prop_name: &str,
     schema: &CfnSchema,
+    struct_path: &[String],
     struct_defs: &mut BTreeMap<String, StructDefInfo>,
 ) {
     // Handle $ref. Only struct-shaped defs (inline properties, or a oneOf
@@ -1329,18 +1420,23 @@ fn collect_struct_defs(
                 properties,
                 required,
             } => {
+                let def_path = extend_struct_path(struct_path, def_name);
                 if !struct_defs.contains_key(def_name) {
                     struct_defs.insert(
                         def_name.to_string(),
                         StructDefInfo {
                             def_name: def_name.to_string(),
+                            struct_path: def_path.clone(),
                             properties: properties.clone(),
                             required: required.to_vec(),
                         },
                     );
                     // Recursively collect nested struct defs
                     for (field_name, field_prop) in properties {
-                        collect_struct_defs(field_prop, field_name, schema, struct_defs);
+                        if is_deprecated_property(field_prop) {
+                            continue;
+                        }
+                        collect_struct_defs(field_prop, field_name, schema, &def_path, struct_defs);
                     }
                 }
             }
@@ -1354,18 +1450,23 @@ fn collect_struct_defs(
                         }
                     }
                 }
+                let def_path = extend_struct_path(struct_path, def_name);
                 if !merged_props.is_empty() && !struct_defs.contains_key(def_name) {
                     struct_defs.insert(
                         def_name.to_string(),
                         StructDefInfo {
                             def_name: def_name.to_string(),
+                            struct_path: def_path.clone(),
                             properties: merged_props.clone(),
                             required: vec![], // oneOf variants are mutually exclusive
                         },
                     );
                     // Recursively collect struct defs from merged properties
                     for (field_name, field_prop) in &merged_props {
-                        collect_struct_defs(field_prop, field_name, schema, struct_defs);
+                        if is_deprecated_property(field_prop) {
+                            continue;
+                        }
+                        collect_struct_defs(field_prop, field_name, schema, &def_path, struct_defs);
                     }
                 }
             }
@@ -1389,17 +1490,22 @@ fn collect_struct_defs(
         }) = resolve_ref_classified(schema, ref_path)
         && !struct_defs.contains_key(def_name)
     {
+        let def_path = extend_struct_path(struct_path, def_name);
         struct_defs.insert(
             def_name.to_string(),
             StructDefInfo {
                 def_name: def_name.to_string(),
+                struct_path: def_path.clone(),
                 properties: properties.clone(),
                 required: required.to_vec(),
             },
         );
         // Recursively collect nested struct defs
         for (field_name, field_prop) in properties {
-            collect_struct_defs(field_prop, field_name, schema, struct_defs);
+            if is_deprecated_property(field_prop) {
+                continue;
+            }
+            collect_struct_defs(field_prop, field_name, schema, &def_path, struct_defs);
         }
     }
     // Handle inline object with properties
@@ -1409,17 +1515,22 @@ fn collect_struct_defs(
         && !props.is_empty()
         && !struct_defs.contains_key(prop_name)
     {
+        let def_path = extend_struct_path(struct_path, prop_name);
         struct_defs.insert(
             prop_name.to_string(),
             StructDefInfo {
                 def_name: prop_name.to_string(),
+                struct_path: def_path.clone(),
                 properties: props.clone(),
                 required: prop.required.clone(),
             },
         );
         // Recursively collect nested struct defs
         for (field_name, field_prop) in props {
-            collect_struct_defs(field_prop, field_name, schema, struct_defs);
+            if is_deprecated_property(field_prop) {
+                continue;
+            }
+            collect_struct_defs(field_prop, field_name, schema, &def_path, struct_defs);
         }
     }
 }
@@ -1590,6 +1701,9 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
     let mut patterns_used_standalone: HashSet<String> = HashSet::new();
 
     for (prop_name, prop) in &schema.properties {
+        if is_deprecated_property(prop) {
+            continue;
+        }
         let (attr_type, enum_info) =
             cfn_type_to_carina_type_with_enum(prop, prop_name, schema, &namespace, &enums);
         if attr_type.contains("types::") {
@@ -1741,6 +1855,9 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
         for def in definitions.values() {
             if let Some(props) = &def.properties {
                 for (field_name, field_prop) in props {
+                    if is_deprecated_property(field_prop) {
+                        continue;
+                    }
                     let prop_type = field_prop.prop_type.as_ref().and_then(|t| t.as_str());
                     if matches!(prop_type, Some("integer") | Some("number")) {
                         // Collect ranges from definitions (including one-sided ranges)
@@ -1872,6 +1989,9 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
             }
             if let Some(props) = &def.properties {
                 for (field_name, field_prop) in props {
+                    if is_deprecated_property(field_prop) {
+                        continue;
+                    }
                     collect_string_length_constraints(field_name, field_prop, &mut ranged_strings);
                 }
             }
@@ -1879,6 +1999,9 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
     }
     // Also scan top-level array items for string length constraints
     for (prop_name, prop) in &schema.properties {
+        if is_deprecated_property(prop) {
+            continue;
+        }
         if let Some(items) = &prop.items {
             collect_string_length_constraints(prop_name, items, &mut ranged_strings);
         }
@@ -1892,6 +2015,9 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
         for (def_name, def) in definitions {
             if let Some(props) = &def.properties {
                 for (field_name, field_prop) in props {
+                    if is_deprecated_property(field_prop) {
+                        continue;
+                    }
                     let composite_key = format!("{}.{}", def_name, field_name);
                     // Curated nested-field enum overlay (awscc#246). Wins over
                     // the natural cfn_type inference so that fields the CFN
@@ -2393,7 +2519,8 @@ pub fn {}() -> AwsccSchemaConfig {{
         // Even if the singular form conflicts with an existing field name,
         // resolve_block_names distinguishes block syntax (Value::List) from
         // attribute assignment (Value::Map) so the block_name is safe to add.
-        if attr_type.contains("list(AttributeType::struct_")
+        if (attr_type.contains("list(AttributeType::struct_")
+            || is_list_of_struct_property(prop, schema))
             && let Some(singular) = compute_block_name(&attr_name)
         {
             attr_code.push_str(&format!(
@@ -2722,6 +2849,15 @@ fn {fn_name}(value: &Value) -> Result<(), String> {{
 
     // Header is built last so import selection can scan the body for
     // `legacy_validator(` / `noop_validator(` actually-emitted mentions.
+    if body.contains("AttributeType::") {
+        needs_attribute_type = true;
+    }
+    if body.contains("StructField::") {
+        needs_struct_field = true;
+    }
+    if body.contains("types::") {
+        needs_types = true;
+    }
     let mut schema_imports = vec!["AttributeSchema", "ResourceSchema"];
     if needs_attribute_type {
         schema_imports.insert(1, "AttributeType");
@@ -2971,60 +3107,14 @@ fn extract_enum_from_description(description: &str) -> Option<Vec<String>> {
     None
 }
 
-/// Qualify nested struct-field enum `type_name`s with their parent struct
-/// name so no two nested enums share a [`TypeIdentity`] by construction.
+/// Preserve enum kind names exactly as detected.
 ///
-/// Keys in `enums` follow two shapes:
-///
-/// - `"FieldName"` — a top-level resource property enum. Left untouched;
-///   the field name is already unique at the resource root.
-/// - `"DefName.FieldName"` — a nested struct-field enum. Rewritten so that
-///   `type_name` becomes `DefName + type_name` (e.g.
-///   `"VersioningConfiguration.Status"` → `"VersioningConfigurationStatus"`).
-///
-/// Unconditional prefixing (rather than only-on-collision) is deliberate:
-/// every CloudFormation type that nests a struct named `Status` /
-/// `Protocol` / `RuleStatus` etc. used to silently collapse onto a single
-/// bare `TypeIdentity`, which let the DSL validator accept a value
-/// authored against a sibling enum (carina#3350). Prefixing by
-/// construction makes that class of bug unrepresentable for nested
-/// fields — a future schema regeneration cannot reintroduce it by
-/// adding a new nested enum that happens to share its sibling's value
-/// set.
-///
-/// Scope note: the guarantee is "no two *nested* enums share a
-/// `type_name` if their parent structs differ". A top-level prop whose
-/// name happens to equal `<DefName><FieldName>` would still collide
-/// because top-level keys are not qualified; the debug-assert below
-/// turns that case into a build-time failure rather than a silent
-/// runtime collision.
+/// Nested enum identity is no longer represented by inflating
+/// `EnumInfo::type_name`. The generated `TypeIdentity` now uses the enum's
+/// own plain kind plus a structural namespace assembled from the enclosing
+/// struct type path.
 fn qualify_nested_enum_type_names(enums: &mut BTreeMap<String, EnumInfo>) {
-    for (key, info) in enums.iter_mut() {
-        if let Some(dot_pos) = key.find('.') {
-            let parent_struct = &key[..dot_pos];
-            info.type_name = format!("{}{}", parent_struct, info.type_name);
-        }
-    }
-
-    // Load-bearing invariant: after qualification, every distinct
-    // `type_name` corresponds to exactly one value set. If two entries
-    // end up with the same `type_name` but different `values`, the
-    // emitted `TypeIdentity` is still ambiguous and the carina#3350
-    // class of bug is back. Debug-assert here so a future schema
-    // regen (or a future codegen change that adds a new path into
-    // `enums`) fails the build rather than silently degrading.
-    if cfg!(debug_assertions) {
-        let mut by_name: BTreeMap<&str, &Vec<String>> = BTreeMap::new();
-        for info in enums.values() {
-            if let Some(prior) = by_name.insert(info.type_name.as_str(), &info.values) {
-                debug_assert_eq!(
-                    prior, &info.values,
-                    "enum TypeIdentity collision after qualification: {} has two value sets",
-                    info.type_name,
-                );
-            }
-        }
-    }
+    let _ = enums;
 }
 
 /// Deduplicate enum values while preserving order.
@@ -3255,16 +3345,27 @@ fn generate_struct_type(
     schema: &CfnSchema,
     namespace: &str,
     enums: &BTreeMap<String, EnumInfo>,
+    struct_path: &[String],
 ) -> String {
+    let current_struct_path = extend_struct_path(struct_path, def_name);
+    let enum_namespace = namespace_with_struct_path(namespace, &current_struct_path);
     let required_set: HashSet<&str> = required.iter().map(|s| s.as_str()).collect();
     let aliases = known_enum_aliases();
 
     let fields: Vec<String> = properties
         .iter()
+        .filter(|(_, field_prop)| !is_deprecated_property(field_prop))
         .map(|(field_name, field_prop)| {
             let snake_name = field_name.to_snake_case();
             let (field_type, mut enum_info) =
-                cfn_type_to_carina_type_with_enum(field_prop, field_name, schema, namespace, enums);
+                cfn_type_to_carina_type_with_enum_with_struct_path(
+                    field_prop,
+                    field_name,
+                    schema,
+                    namespace,
+                    enums,
+                    &current_struct_path,
+                );
             // Apply nested-field enum overlay (awscc#246). When the resource
             // schema does not annotate a struct field as an enum but we have
             // a curated value list in `resource_type_overrides()` keyed by
@@ -3308,7 +3409,7 @@ fn generate_struct_type(
                         enum_info.type_name,
                         values_str,
                         enum_info.type_name,
-                        namespace,
+                        enum_namespace,
                         dsl_aliases_code
                     )
                 } else {
@@ -3317,9 +3418,8 @@ fn generate_struct_type(
                     // no longer skips struct fields whose name snake-cases
                     // to a top-level prop, so reaching this branch is rare
                     // — but we still apply the same parent-qualification
-                    // rule as `qualify_nested_enum_type_names` so the
-                    // emitted `TypeIdentity` is uniquely scoped to its
-                    // enclosing struct (carina#3350).
+                    // emitted `TypeIdentity` is still scoped to its
+                    // enclosing struct path.
                     let prop_aliases = aliases.get(field_name.as_str());
                     let dsl_aliases_code = dsl_aliases_code(&local_enum_info.values, prop_aliases);
                     let values_str = local_enum_info
@@ -3328,14 +3428,12 @@ fn generate_struct_type(
                         .map(|v| format!("\"{}\".to_string()", v))
                         .collect::<Vec<_>>()
                         .join(", ");
-                    let qualified_type_name =
-                        format!("{}{}", def_name, local_enum_info.type_name);
                     format!(
                         r#"AttributeType::string_enum("{}".to_string(), vec![{}], Some(carina_core::schema::string_enum_identity("{}", Some("{}"))), {})"#,
-                        qualified_type_name,
+                        local_enum_info.type_name,
                         values_str,
-                        qualified_type_name,
-                        namespace,
+                        local_enum_info.type_name,
+                        enum_namespace,
                         dsl_aliases_code
                     )
                 };
@@ -3371,7 +3469,8 @@ fn generate_struct_type(
             // Even if the singular form conflicts with an existing field name,
             // resolve_block_names distinguishes block syntax (Value::List) from
             // attribute assignment (Value::Map) so the block_name is safe to add.
-            if field_type.contains("list(AttributeType::struct_")
+            if (field_type.contains("list(AttributeType::struct_")
+                || is_list_of_struct_property(field_prop, schema))
                 && let Some(singular) = compute_block_name(&snake_name)
             {
                 field_code.push_str(&format!(".with_block_name(\"{}\")", singular));
@@ -4621,6 +4720,24 @@ fn cfn_type_to_carina_type_with_enum(
     namespace: &str,
     enums: &BTreeMap<String, EnumInfo>,
 ) -> (String, Option<EnumInfo>) {
+    cfn_type_to_carina_type_with_enum_with_struct_path(
+        prop,
+        prop_name,
+        schema,
+        namespace,
+        enums,
+        &[],
+    )
+}
+
+fn cfn_type_to_carina_type_with_enum_with_struct_path(
+    prop: &CfnProperty,
+    prop_name: &str,
+    schema: &CfnSchema,
+    namespace: &str,
+    enums: &BTreeMap<String, EnumInfo>,
+    struct_path: &[String],
+) -> (String, Option<EnumInfo>) {
     // Tags property is special - it's a Map in Carina (Terraform-style)
     if prop_name == "Tags" {
         return ("tags_type()".to_string(), None);
@@ -4645,22 +4762,7 @@ fn cfn_type_to_carina_type_with_enum(
         if ref_path.contains("/Tag") {
             return ("tags_type()".to_string(), None);
         }
-        // carina#3340: cycle guard + reuse-via-Ref. Two cases emit
-        // `AttributeType::Ref(<name>)` instead of recursing into the
-        // resolved body:
-        //   1. The def name is already on the expansion stack — a
-        //      true cycle that would otherwise recurse infinitely.
-        //   2. The def has already been emitted once during this
-        //      resource's generation pass. Inlining the body again
-        //      at every reuse site (WAFv2 `Statement` is referenced
-        //      from 6 parent fields and itself contains thousands
-        //      of nested struct/list nodes) explodes both the
-        //      generated source size AND the runtime stack at
-        //      `ResourceSchema::new()` construction. The factored
-        //      shape is also the design `defs` exists for —
-        //      sharing a single canonical instance via `Ref`.
-        // Either way, the body is in `EMITTED_DEFS` and the host
-        // resolves the `Ref` at walk-time.
+
         if let Some(def_name) = ref_def_name(ref_path) {
             let already_known = IN_PROGRESS_DEFS.with(|s| s.borrow().contains(def_name))
                 || EMITTED_DEFS.with(|s| s.borrow().contains_key(def_name));
@@ -4671,10 +4773,7 @@ fn cfn_type_to_carina_type_with_enum(
                 );
             }
         }
-        // Try to resolve the $ref to a definition and type it by shape.
-        // `classify_def` runs the canonical precedence once; every arm below
-        // matches a `ResolvedDef` variant, so a future shape cannot be
-        // silently dropped to the String fallback.
+
         if let Some(resolved) = resolve_ref_classified(schema, ref_path) {
             match resolved {
                 ResolvedDef::Struct {
@@ -4682,53 +4781,51 @@ fn cfn_type_to_carina_type_with_enum(
                     required,
                 } => {
                     let def_name = ref_def_name(ref_path).unwrap_or(prop_name);
-                    // Push onto the expansion stack so a nested re-entry
-                    // emits a Ref instead of recursing infinitely. The
-                    // body is generated under this guard, then popped.
                     IN_PROGRESS_DEFS.with(|s| {
                         s.borrow_mut().insert(def_name.to_string());
                     });
                     let body = generate_struct_type(
-                        def_name, properties, required, schema, namespace, enums,
+                        def_name,
+                        properties,
+                        required,
+                        schema,
+                        namespace,
+                        enums,
+                        struct_path,
                     );
                     IN_PROGRESS_DEFS.with(|s| {
                         s.borrow_mut().remove(def_name);
                     });
-                    // Record the def's body so the resource emitter can
-                    // populate `ResourceSchema.defs` with it (only useful
-                    // when this def is actually cycle-target; storing
-                    // unconditionally is fine because non-cycle defs are
-                    // never referenced via `Ref(_)`).
                     EMITTED_DEFS.with(|s| {
                         s.borrow_mut().insert(def_name.to_string(), body.clone());
                     });
                     return (body, None);
                 }
                 ResolvedDef::OneOf { variants } => {
-                    // Merge all variant properties into a single struct.
                     let mut merged_props = BTreeMap::new();
-                    // oneOf variants are mutually exclusive, so no field is required
                     for variant in variants {
                         if let Some(props) = &variant.properties {
                             for (k, v) in props {
+                                if is_deprecated_property(v) {
+                                    continue;
+                                }
                                 merged_props.insert(k.clone(), v.clone());
                             }
                         }
                     }
                     if !merged_props.is_empty() {
                         let def_name = ref_def_name(ref_path).unwrap_or(prop_name);
-                        // Same cycle-guarded shape as the `Struct` arm
-                        // above (carina#3340).
                         IN_PROGRESS_DEFS.with(|s| {
                             s.borrow_mut().insert(def_name.to_string());
                         });
                         let body = generate_struct_type(
                             def_name,
                             &merged_props,
-                            &[], // no required fields - variants are mutually exclusive
+                            &[],
                             schema,
                             namespace,
                             enums,
+                            struct_path,
                         );
                         IN_PROGRESS_DEFS.with(|s| {
                             s.borrow_mut().remove(def_name);
@@ -4753,11 +4850,14 @@ fn cfn_type_to_carina_type_with_enum(
                     return ("/* enum */".to_string(), Some(enum_info));
                 }
                 ResolvedDef::Array { items } => {
-                    // e.g., BlockedEncryptionTypeList
-                    let (item_type, item_enum) = cfn_type_to_carina_type_with_enum(
-                        items, prop_name, schema, namespace, enums,
+                    let (item_type, item_enum) = cfn_type_to_carina_type_with_enum_with_struct_path(
+                        items,
+                        prop_name,
+                        schema,
+                        namespace,
+                        enums,
+                        struct_path,
                     );
-                    // Propagate item_enum so callers can register the enum type.
                     let effective_item_type = if item_enum.is_some() {
                         "AttributeType::string()".to_string()
                     } else {
@@ -4774,12 +4874,7 @@ fn cfn_type_to_carina_type_with_enum(
                     min_length,
                     max_length,
                 } => {
-                    // Check if name-based heuristics would override the type.
-                    // When they would, fall through to the heuristic fallback
-                    // below (do NOT return here).
                     if infer_string_type(prop_name, &schema.type_name).is_none() {
-                        // Promote alternation-only patterns to a real StringEnum.
-                        // See awscc#245.
                         if let Some(values) = extract_enum_from_alternation_pattern(pattern) {
                             let type_name = prop_name.to_pascal_case();
                             let enum_info = EnumInfo { type_name, values };
@@ -4806,26 +4901,20 @@ fn cfn_type_to_carina_type_with_enum(
                     }
                 }
                 scalar @ ResolvedDef::Scalar { .. } => {
-                    // Reconstruct an inline scalar property and recurse through
-                    // the normal scalar mapping, so the field gets the exact
-                    // same int/float/bool type — including the def's own
-                    // min/max range — a direct property would (awscc#291).
                     if let Some(scalar_prop) = scalar.scalar_as_property() {
-                        return cfn_type_to_carina_type_with_enum(
+                        return cfn_type_to_carina_type_with_enum_with_struct_path(
                             &scalar_prop,
                             prop_name,
                             schema,
                             namespace,
                             enums,
+                            struct_path,
                         );
                     }
                 }
-                ResolvedDef::Opaque => {
-                    // No known shape — fall through to the heuristic fallback.
-                }
+                ResolvedDef::Opaque => {}
             }
         }
-        // Apply name-based heuristics for unresolvable / opaque $ref
         if let Some(inferred) = infer_string_type(prop_name, &schema.type_name) {
             return (inferred, None);
         }
@@ -5123,12 +5212,23 @@ fn cfn_type_to_carina_type_with_enum(
                 {
                     let def_name = ref_def_name(ref_path).unwrap_or(prop_name);
                     let struct_type = generate_struct_type(
-                        def_name, properties, required, schema, namespace, enums,
+                        def_name,
+                        properties,
+                        required,
+                        schema,
+                        namespace,
+                        enums,
+                        struct_path,
                     );
                     (format!("{}({})", list_ctor, struct_type), None)
                 } else {
-                    let (item_type, item_enum) = cfn_type_to_carina_type_with_enum(
-                        items, prop_name, schema, namespace, enums,
+                    let (item_type, item_enum) = cfn_type_to_carina_type_with_enum_with_struct_path(
+                        items,
+                        prop_name,
+                        schema,
+                        namespace,
+                        enums,
+                        struct_path,
                     );
                     // If array items have enum values, propagate the enum info so the
                     // caller can register it. The item type uses String as a placeholder;
@@ -5170,6 +5270,7 @@ fn cfn_type_to_carina_type_with_enum(
                         schema,
                         namespace,
                         enums,
+                        struct_path,
                     ),
                     None,
                 );
@@ -9147,9 +9248,8 @@ mod tests {
         };
 
         let md = generate_markdown(&schema, "AWS::S3::Bucket").unwrap();
-        // Parent-qualified TypeIdentity per carina#3350.
         assert!(
-            md.contains("Enum (ObjectLockConfigurationObjectLockEnabled)"),
+            md.contains("Enum (ObjectLockEnabled)"),
             "Struct field with const_value should display as Enum in markdown, got:\n{}",
             md.lines()
                 .filter(|l| l.contains("object_lock_enabled"))
@@ -9235,11 +9335,8 @@ mod tests {
         };
 
         let md = generate_markdown(&schema, "AWS::S3::Bucket").unwrap();
-        // Parent-qualified TypeIdentity per carina#3350. Even though the
-        // enum is factored as a shared `RetentionMode` definition in CFN,
-        // the field is identified by its enclosing struct (`DefaultRetention`).
         assert!(
-            md.contains("Enum (DefaultRetentionRetentionMode)"),
+            md.contains("Enum (RetentionMode)"),
             "Struct field with $ref to enum-only definition should display as Enum, got:\n{}",
             md.lines()
                 .filter(|l| l.contains("mode"))
@@ -9372,12 +9469,16 @@ mod tests {
         };
 
         let md = generate_markdown(&schema, "AWS::EC2::SecurityGroup").unwrap();
-        let egress_count = md.matches("### ip_protocol (EgressIpProtocol)").count();
-        let ingress_count = md.matches("### ip_protocol (IngressIpProtocol)").count();
+        let egress_count = md
+            .matches("awscc.ec2.SecurityGroup.Egress.IpProtocol.tcp")
+            .count();
+        let ingress_count = md
+            .matches("awscc.ec2.SecurityGroup.Ingress.IpProtocol.tcp")
+            .count();
         assert_eq!(
             egress_count,
             1,
-            "Expected one EgressIpProtocol section, got {}.\nEnum sections:\n{}",
+            "Expected one Egress structural enum identifier, got {}.\nEnum sections:\n{}",
             egress_count,
             md.lines()
                 .filter(|l| l.contains("IpProtocol"))
@@ -9387,7 +9488,7 @@ mod tests {
         assert_eq!(
             ingress_count,
             1,
-            "Expected one IngressIpProtocol section, got {}.\nEnum sections:\n{}",
+            "Expected one Ingress structural enum identifier, got {}.\nEnum sections:\n{}",
             ingress_count,
             md.lines()
                 .filter(|l| l.contains("IpProtocol"))
@@ -9396,8 +9497,8 @@ mod tests {
         );
         assert_eq!(
             md.matches("### ip_protocol (IpProtocol)").count(),
-            0,
-            "Bare 'IpProtocol' identity must not leak into markdown: parent-qualification is unconditional.",
+            2,
+            "The enum kind remains plain while the namespace carries the struct path.",
         );
     }
 
@@ -9499,39 +9600,28 @@ mod tests {
 
         let md = generate_markdown(&schema, "AWS::Test::Resource").unwrap();
 
-        // With disambiguation, the two Status enums should have different type names
+        // With structural disambiguation, the two Status enums keep the same
+        // plain kind and differ by namespace.
         assert!(
-            md.contains("### status (ConfigAStatus)"),
-            "Expected ConfigAStatus heading.\nEnum Values section:\n{}",
+            md.contains("awscc.test.Resource.ConfigA.Status.disabled"),
+            "Expected ConfigA structural DSL identifier.\nEnum Values section:\n{}",
             md.lines()
                 .filter(|l| l.contains("Status") || l.contains("status"))
                 .collect::<Vec<_>>()
                 .join("\n")
         );
         assert!(
-            md.contains("### status (ConfigBStatus)"),
-            "Expected ConfigBStatus heading.\nEnum Values section:\n{}",
+            md.contains("awscc.test.Resource.ConfigB.Status.suspended"),
+            "Expected ConfigB structural DSL identifier.\nEnum Values section:\n{}",
             md.lines()
                 .filter(|l| l.contains("Status") || l.contains("status"))
                 .collect::<Vec<_>>()
                 .join("\n")
         );
 
-        // DSL identifiers should also be disambiguated.
-        // Per #199 / D7, the DSL spelling is snake_case.
         assert!(
-            md.contains("awscc.test.Resource.ConfigAStatus.disabled"),
-            "Expected disambiguated DSL identifier for ConfigA: {md}"
-        );
-        assert!(
-            md.contains("awscc.test.Resource.ConfigBStatus.suspended"),
-            "Expected disambiguated DSL identifier for ConfigB: {md}"
-        );
-
-        // Old ambiguous format should NOT appear
-        assert!(
-            !md.contains("### status (Status)"),
-            "Should not have ambiguous '### status (Status)' heading"
+            !md.contains("awscc.test.Resource.Status."),
+            "Should not have ambiguous root-scoped Status identifiers"
         );
     }
 
@@ -9599,11 +9689,8 @@ mod tests {
         let md = generate_markdown(&schema, "AWS::Test::Resource").unwrap();
 
         // The struct field table should contain a link, not plain "Enum".
-        // The enum's `TypeIdentity` is unconditionally parent-qualified
-        // (`MyConfig` + `Status` = `MyConfigStatus`) so the link spelling
-        // tracks the qualified name (carina#3350).
         assert!(
-            md.contains("[Enum (MyConfigStatus)]"),
+            md.contains("[Enum (Status)]"),
             "Expected linked enum type in struct field table, got plain 'Enum'.\nStruct lines:\n{}",
             md.lines()
                 .filter(|l| l.contains("status") || l.contains("Enum"))
@@ -11477,11 +11564,8 @@ mod tests {
 
     #[test]
     fn test_qualify_prefixes_colliding_struct_field_enums() {
-        // When multiple struct field enums share the same type_name with
-        // different value sets, prefixing the parent struct name keeps each
-        // identity distinct (VersioningConfiguration.Status vs
-        // IntelligentTieringConfiguration.Status).
-        // See: https://github.com/carina-rs/carina/issues/640
+        // Structural identity keeps the enum kind plain. The enclosing
+        // struct path now lives in the namespace emitted at each use site.
         let mut enums = BTreeMap::new();
 
         enums.insert(
@@ -11503,25 +11587,20 @@ mod tests {
 
         let versioning = enums.get("VersioningConfiguration.Status").unwrap();
         assert_eq!(
-            versioning.type_name, "VersioningConfigurationStatus",
-            "Nested struct field enum should be prefixed with parent struct name"
+            versioning.type_name, "Status",
+            "Nested struct field enum kind should stay plain"
         );
         let tiering = enums.get("IntelligentTieringConfiguration.Status").unwrap();
         assert_eq!(
-            tiering.type_name, "IntelligentTieringConfigurationStatus",
-            "Nested struct field enum should be prefixed with parent struct name"
+            tiering.type_name, "Status",
+            "Nested struct field enum kind should stay plain"
         );
     }
 
     #[test]
     fn test_qualify_prefixes_even_when_values_match() {
-        // Long-term type-safety guard: nested struct field enums get the
-        // parent-struct-qualified TypeIdentity regardless of whether their
-        // values collide with a sibling. carina#3350: two nested `Status`
-        // enums with identical values silently collapsed onto a single bare
-        // `Status` identity, letting the validator accept a value that
-        // belonged to the wrong enum context. Prefixing unconditionally
-        // makes every nested identity unique by construction.
+        // Long-term type-safety guard: nested struct field enums keep their
+        // own kind; the parent struct path is emitted in the namespace.
         let mut enums = BTreeMap::new();
         enums.insert(
             "DeleteMarkerReplication.Status".to_string(),
@@ -11545,11 +11624,11 @@ mod tests {
                 .get("DeleteMarkerReplication.Status")
                 .unwrap()
                 .type_name,
-            "DeleteMarkerReplicationStatus",
+            "Status",
         );
         assert_eq!(
             enums.get("ReplicationTime.Status").unwrap().type_name,
-            "ReplicationTimeStatus",
+            "Status",
         );
     }
 
@@ -11573,14 +11652,9 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "enum TypeIdentity collision after qualification")]
-    fn test_qualify_debug_asserts_on_value_set_collision() {
-        // Load-bearing guard: if two entries end up sharing a qualified
-        // `type_name` with *different* value sets, the emitted
-        // `TypeIdentity` is ambiguous and carina#3350 is back. The
-        // debug-assert turns that into a build-time failure. Identical
-        // value sets are still allowed (they map to the same identity
-        // semantically).
+    fn test_qualify_keeps_plain_kind_for_value_set_collision() {
+        // Different value sets may share a plain kind because their emitted
+        // TypeIdentity namespace is structural at the use site.
         let mut enums = BTreeMap::new();
         enums.insert(
             "A.Same".to_string(),
@@ -11589,8 +11663,6 @@ mod tests {
                 values: vec!["X".to_string()],
             },
         );
-        // Manually injected duplicate qualified name with a different
-        // value set. The post-qualification debug-assert must catch it.
         enums.insert(
             "Other".to_string(),
             EnumInfo {
@@ -11600,6 +11672,9 @@ mod tests {
         );
 
         qualify_nested_enum_type_names(&mut enums);
+
+        assert_eq!(enums.get("A.Same").unwrap().type_name, "Same");
+        assert_eq!(enums.get("Other").unwrap().type_name, "ASame");
     }
 
     #[test]

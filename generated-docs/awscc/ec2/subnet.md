@@ -169,24 +169,24 @@ The ID of the VPC the subnet is in. If you update this property, you must also u
 
 ## Enum Values
 
-### internet_gateway_block_mode (BlockPublicAccessStatesInternetGatewayBlockMode)
+### internet_gateway_block_mode (InternetGatewayBlockMode)
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `off` | `awscc.ec2.Subnet.BlockPublicAccessStatesInternetGatewayBlockMode.off` |
-| `block-bidirectional` | `awscc.ec2.Subnet.BlockPublicAccessStatesInternetGatewayBlockMode.block_bidirectional` |
-| `block-ingress` | `awscc.ec2.Subnet.BlockPublicAccessStatesInternetGatewayBlockMode.block_ingress` |
+| `off` | `awscc.ec2.Subnet.BlockPublicAccessStates.InternetGatewayBlockMode.off` |
+| `block-bidirectional` | `awscc.ec2.Subnet.BlockPublicAccessStates.InternetGatewayBlockMode.block_bidirectional` |
+| `block-ingress` | `awscc.ec2.Subnet.BlockPublicAccessStates.InternetGatewayBlockMode.block_ingress` |
 
-Shorthand formats: `off` or `BlockPublicAccessStatesInternetGatewayBlockMode.off`
+Shorthand formats: `off` or `InternetGatewayBlockMode.off`
 
-### hostname_type (PrivateDnsNameOptionsOnLaunchHostnameType)
+### hostname_type (HostnameType)
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `ip-name` | `awscc.ec2.Subnet.PrivateDnsNameOptionsOnLaunchHostnameType.ip_name` |
-| `resource-name` | `awscc.ec2.Subnet.PrivateDnsNameOptionsOnLaunchHostnameType.resource_name` |
+| `ip-name` | `awscc.ec2.Subnet.PrivateDnsNameOptionsOnLaunch.HostnameType.ip_name` |
+| `resource-name` | `awscc.ec2.Subnet.PrivateDnsNameOptionsOnLaunch.HostnameType.resource_name` |
 
-Shorthand formats: `ip_name` or `PrivateDnsNameOptionsOnLaunchHostnameType.ip_name`
+Shorthand formats: `ip_name` or `HostnameType.ip_name`
 
 ## Struct Definitions
 
@@ -194,7 +194,7 @@ Shorthand formats: `ip_name` or `PrivateDnsNameOptionsOnLaunchHostnameType.ip_na
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `internet_gateway_block_mode` | [Enum (BlockPublicAccessStatesInternetGatewayBlockMode)](#internet_gateway_block_mode-blockpublicaccessstatesinternetgatewayblockmode) | No | The mode of VPC BPA. Options here are off, block-bidirectional, block-ingress  |
+| `internet_gateway_block_mode` | [Enum (InternetGatewayBlockMode)](#internet_gateway_block_mode-internetgatewayblockmode) | No | The mode of VPC BPA. Options here are off, block-bidirectional, block-ingress  |
 
 ### PrivateDnsNameOptionsOnLaunch
 
@@ -202,7 +202,7 @@ Shorthand formats: `ip_name` or `PrivateDnsNameOptionsOnLaunchHostnameType.ip_na
 |-------|------|----------|-------------|
 | `enable_resource_name_dns_aaaa_record` | Bool | No |  |
 | `enable_resource_name_dns_a_record` | Bool | No |  |
-| `hostname_type` | [Enum (PrivateDnsNameOptionsOnLaunchHostnameType)](#hostname_type-privatednsnameoptionsonlaunchhostnametype) | No |  |
+| `hostname_type` | [Enum (HostnameType)](#hostname_type-hostnametype) | No |  |
 
 ## Attribute Reference
 
