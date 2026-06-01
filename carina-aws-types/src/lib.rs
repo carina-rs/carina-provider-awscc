@@ -1427,17 +1427,17 @@ fn string_or_principal_struct() -> AttributeType {
 /// users can write `effect = allow` as a bare identifier, matching the
 /// bare-identifier convention used by every other enum field in the
 /// same `.crn` file. The namespace also makes the fully-qualified form
-/// `awscc.iam.PolicyDocument.Effect.allow` parse and resolve: the
+/// `awscc.iam.PolicyDocument.Statement.Effect.allow` parse and resolve: the
 /// resolver's canonical shape is namespace then type_name then value,
 /// so `type_name` is the trailing `Effect` segment and `namespace` is
-/// `awscc.iam.PolicyDocument`.
+/// `awscc.iam.PolicyDocument.Statement`.
 fn iam_policy_effect() -> AttributeType {
     AttributeType::string_enum(
         "Effect".to_string(),
         vec!["Allow".to_string(), "Deny".to_string()],
         Some(carina_core::schema::string_enum_identity(
             "Effect",
-            Some("awscc.iam.PolicyDocument"),
+            Some("awscc.iam.PolicyDocument.Statement"),
         )),
         vec![
             ("Allow".to_string(), "allow".to_string()),
@@ -2717,16 +2717,27 @@ mod tests {
             panic!("iam_policy_effect() should be a StringEnum with identity");
         };
 
+        assert_eq!(
+            identity.to_string(),
+            "awscc.iam.PolicyDocument.Statement.Effect"
+        );
         assert!(
             carina_core::utils::validate_enum_namespace(
-                "awscc.iam.PolicyDocument.Effect.allow",
+                "awscc.iam.PolicyDocument.Statement.Effect.allow",
                 identity
             )
             .is_ok()
         );
         assert!(
             carina_core::utils::validate_enum_namespace(
-                "aws.iam.PolicyDocument.Effect.allow",
+                "awscc.iam.PolicyDocument.Effect.allow",
+                identity
+            )
+            .is_err()
+        );
+        assert!(
+            carina_core::utils::validate_enum_namespace(
+                "aws.iam.PolicyDocument.Statement.Effect.allow",
                 identity
             )
             .is_err()

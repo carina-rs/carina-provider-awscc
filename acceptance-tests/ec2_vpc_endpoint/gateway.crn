@@ -23,7 +23,7 @@ awscc.ec2.VpcEndpoint {
   policy_document = {
     version = awscc.iam.PolicyDocument.Version.2012_10_17
     statement {
-      effect    = awscc.iam.PolicyDocument.Effect.allow
+      effect    = awscc.iam.PolicyDocument.Statement.Effect.allow
       principal = '*'
       action    = 's3:GetObject'
       resource  = 'arn:aws:s3:::*'
