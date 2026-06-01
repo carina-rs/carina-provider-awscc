@@ -235,7 +235,11 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
                 )
                 .with_provider_name("SecurityGroupReferencingSupport"),
             )
-            .attribute(AttributeSchema::new("tags", tags_type()).with_provider_name("Tags"))
+            .attribute(
+                AttributeSchema::new("tags", tags_type())
+                    .with_provider_name("Tags")
+                    .with_block_name("tag"),
+            )
             .attribute(
                 AttributeSchema::new("transit_gateway_arn", super::arn())
                     .read_only()

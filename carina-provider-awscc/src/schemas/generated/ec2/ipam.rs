@@ -127,7 +127,8 @@ pub fn ec2_ipam_config() -> AwsccSchemaConfig {
         .attribute(
             AttributeSchema::new("tags", tags_type())
                 .with_description("An array of key-value pairs to apply to this resource.")
-                .with_provider_name("Tags"),
+                .with_provider_name("Tags")
+                .with_block_name("tag"),
         )
         .attribute(
             AttributeSchema::new("tier", AttributeType::string_enum("Tier".to_string(), vec!["free".to_string(), "advanced".to_string()], Some(carina_core::schema::string_enum_identity("Tier", Some("awscc.ec2.Ipam"))), vec![("free".to_string(), "free".to_string()), ("advanced".to_string(), "advanced".to_string())]))

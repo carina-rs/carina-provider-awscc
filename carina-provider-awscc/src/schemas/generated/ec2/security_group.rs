@@ -80,7 +80,7 @@ pub fn ec2_security_group_config() -> AwsccSchemaConfig {
                     StructField::new("destination_prefix_list_id", super::prefix_list_id()).with_provider_name("DestinationPrefixListId"),
                     StructField::new("destination_security_group_id", super::security_group_id()).with_provider_name("DestinationSecurityGroupId"),
                     StructField::new("from_port", AttributeType::custom(None, AttributeType::int(), None, None, legacy_validator(validate_from_port_range), None)).with_provider_name("FromPort"),
-                    StructField::new("ip_protocol", AttributeType::string_enum("EgressIpProtocol".to_string(), vec!["tcp".to_string(), "udp".to_string(), "icmp".to_string(), "icmpv6".to_string(), "-1".to_string(), "all".to_string()], Some(carina_core::schema::string_enum_identity("EgressIpProtocol", Some("awscc.ec2.SecurityGroup"))), vec![("tcp".to_string(), "tcp".to_string()), ("udp".to_string(), "udp".to_string()), ("icmp".to_string(), "icmp".to_string()), ("icmpv6".to_string(), "icmpv6".to_string()), ("-1".to_string(), "all".to_string()), ("all".to_string(), "all".to_string())])).required().with_provider_name("IpProtocol"),
+                    StructField::new("ip_protocol", AttributeType::string_enum("IpProtocol".to_string(), vec!["tcp".to_string(), "udp".to_string(), "icmp".to_string(), "icmpv6".to_string(), "-1".to_string(), "all".to_string()], Some(carina_core::schema::string_enum_identity("IpProtocol", Some("awscc.ec2.SecurityGroup.Egress"))), vec![("tcp".to_string(), "tcp".to_string()), ("udp".to_string(), "udp".to_string()), ("icmp".to_string(), "icmp".to_string()), ("icmpv6".to_string(), "icmpv6".to_string()), ("-1".to_string(), "all".to_string()), ("all".to_string(), "all".to_string())])).required().with_provider_name("IpProtocol"),
                     StructField::new("to_port", AttributeType::custom(None, AttributeType::int(), None, None, legacy_validator(validate_to_port_range), None)).with_provider_name("ToPort")])))
                 .with_description("[VPC only] The outbound rules associated with the security group. There is a short interruption during which you cannot connect to the security group.")
                 .with_provider_name("SecurityGroupEgress")
@@ -91,7 +91,7 @@ pub fn ec2_security_group_config() -> AwsccSchemaConfig {
                     StructField::new("cidr_ipv6", types::ipv6_cidr()).with_provider_name("CidrIpv6"),
                     StructField::new("description", AttributeType::string()).with_provider_name("Description"),
                     StructField::new("from_port", AttributeType::custom(None, AttributeType::int(), None, None, legacy_validator(validate_from_port_range), None)).with_provider_name("FromPort"),
-                    StructField::new("ip_protocol", AttributeType::string_enum("IngressIpProtocol".to_string(), vec!["tcp".to_string(), "udp".to_string(), "icmp".to_string(), "icmpv6".to_string(), "-1".to_string(), "all".to_string()], Some(carina_core::schema::string_enum_identity("IngressIpProtocol", Some("awscc.ec2.SecurityGroup"))), vec![("tcp".to_string(), "tcp".to_string()), ("udp".to_string(), "udp".to_string()), ("icmp".to_string(), "icmp".to_string()), ("icmpv6".to_string(), "icmpv6".to_string()), ("-1".to_string(), "all".to_string()), ("all".to_string(), "all".to_string())])).required().with_provider_name("IpProtocol"),
+                    StructField::new("ip_protocol", AttributeType::string_enum("IpProtocol".to_string(), vec!["tcp".to_string(), "udp".to_string(), "icmp".to_string(), "icmpv6".to_string(), "-1".to_string(), "all".to_string()], Some(carina_core::schema::string_enum_identity("IpProtocol", Some("awscc.ec2.SecurityGroup.Ingress"))), vec![("tcp".to_string(), "tcp".to_string()), ("udp".to_string(), "udp".to_string()), ("icmp".to_string(), "icmp".to_string()), ("icmpv6".to_string(), "icmpv6".to_string()), ("-1".to_string(), "all".to_string()), ("all".to_string(), "all".to_string())])).required().with_provider_name("IpProtocol"),
                     StructField::new("source_prefix_list_id", super::prefix_list_id()).with_provider_name("SourcePrefixListId"),
                     StructField::new("source_security_group_id", super::security_group_id()).with_provider_name("SourceSecurityGroupId"),
                     StructField::new("source_security_group_name", AttributeType::string()).with_provider_name("SourceSecurityGroupName"),
@@ -104,7 +104,8 @@ pub fn ec2_security_group_config() -> AwsccSchemaConfig {
         .attribute(
             AttributeSchema::new("tags", tags_type())
                 .with_description("Any tags assigned to the security group.")
-                .with_provider_name("Tags"),
+                .with_provider_name("Tags")
+                .with_block_name("tag"),
         )
         .attribute(
             AttributeSchema::new("vpc_id", super::vpc_id())

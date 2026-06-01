@@ -124,7 +124,8 @@ pub fn sso_instance_config() -> AwsccSchemaConfig {
         )
         .attribute(
             AttributeSchema::new("tags", tags_type())
-                .with_provider_name("Tags"),
+                .with_provider_name("Tags")
+                .with_block_name("tag"),
         )
         .with_validator(|attrs| {
             let mut errors = Vec::new();

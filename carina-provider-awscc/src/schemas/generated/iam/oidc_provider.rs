@@ -88,7 +88,11 @@ pub fn iam_oidc_provider_config() -> AwsccSchemaConfig {
                 )
                 .with_provider_name("ClientIdList"),
             )
-            .attribute(AttributeSchema::new("tags", tags_type()).with_provider_name("Tags"))
+            .attribute(
+                AttributeSchema::new("tags", tags_type())
+                    .with_provider_name("Tags")
+                    .with_block_name("tag"),
+            )
             .attribute(
                 AttributeSchema::new(
                     "thumbprint_list",
