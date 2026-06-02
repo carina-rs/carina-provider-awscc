@@ -2067,11 +2067,6 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
     let has_ranged_lists = !ranged_lists.is_empty();
     let has_patterns = !patterns.is_empty();
     let has_ranged_strings = !ranged_strings.is_empty();
-    let has_defaults = schema.properties.values().any(|p| {
-        p.default_value
-            .as_ref()
-            .is_some_and(|v| json_default_to_value_code(v).is_some())
-    });
     // Enums use AttributeType::Custom with AttributeType::String base
     if has_enums {
         needs_attribute_type = true;
@@ -2505,9 +2500,14 @@ pub fn {}() -> AwsccSchemaConfig {{
             prop_name
         ));
 
-        // Add default value if defined in CloudFormation schema
+        // Add default value if defined in CloudFormation schema. A CFN JSON scalar
+        // default whose shape does not match the resolved Carina type (for example
+        // a JSON-string default on a structured policy document) would cause a
+        // perpetual phantom diff. Policy document fields follow the IAM Role
+        // convention: omit the Carina default and let AWS apply its server default.
         if let Some(default_val) = &prop.default_value
             && let Some(default_code) = json_default_to_value_code(default_val)
+            && attr_type_accepts_scalar_default(&attr_type)
         {
             attr_code.push_str(&format!(
                 "\n                .with_default({})",
@@ -2898,6 +2898,7 @@ use super::AwsccSchemaConfig;
 "#,
         resource, type_name, schema_imports_str
     ));
+    let has_defaults = body.contains(".with_default(");
     if has_ranged_ints
         || has_ranged_floats
         || has_int_enums
@@ -2998,6 +2999,12 @@ fn looks_like_enum_value(s: &str) -> bool {
         return false;
     }
     if s.contains(' ') {
+        return false;
+    }
+    // Real enum identifiers always include at least one ASCII alphanumeric
+    // character. Backticked punctuation in CFN descriptions is usually an
+    // allowed-character list, not an enum member.
+    if !s.chars().any(|c| c.is_ascii_alphanumeric()) {
         return false;
     }
     // CFN descriptions use double-backticks for both enum members and code-style
@@ -3934,6 +3941,11 @@ fn resource_type_overrides() -> &'static HashMap<(&'static str, &'static str), T
             m.insert(
                 ("AWS::IAM::Role", "RoleId"),
                 TypeOverride::StringType("super::iam_role_id()"),
+            );
+            // KMS KeyPolicy is an IAM policy document, though CFN types it object|string.
+            m.insert(
+                ("AWS::KMS::Key", "KeyPolicy"),
+                TypeOverride::StringType("super::iam_policy_document()"),
             );
             // EC2 Route's GatewayId accepts both igw-* and vgw-*
             m.insert(
@@ -5258,6 +5270,14 @@ fn cfn_type_to_carina_type_with_enum_with_struct_path(
             }
         }
         Some("object") => {
+            // Check known string type overrides first, mirroring the string branch
+            // for CFN union types whose first type is object.
+            let res_override =
+                resource_type_overrides().get(&(schema.type_name.as_str(), prop_name));
+            if let Some(TypeOverride::StringType(override_type)) = res_override {
+                return (override_type.to_string(), None);
+            }
+
             // Check if this object has inline properties -> Struct
             if let Some(props) = &prop.properties
                 && !props.is_empty()
@@ -5329,6 +5349,19 @@ fn json_default_to_value_code(val: &serde_json::Value) -> Option<String> {
         }
         _ => None,
     }
+}
+
+fn attr_type_accepts_scalar_default(attr_type: &str) -> bool {
+    ![
+        "iam_policy_document",
+        "struct_",
+        "::map(",
+        "::map (",
+        "list(",
+        "ref_(",
+    ]
+    .iter()
+    .any(|non_scalar| attr_type.contains(non_scalar))
 }
 
 /// Convert a JSON default value to a display string for markdown documentation.
@@ -5666,6 +5699,19 @@ mod tests {
     }
 
     #[test]
+    fn test_looks_like_enum_value_rejects_lone_punctuation() {
+        for value in ["_", "=", "+", "@", "-", "\""] {
+            assert!(
+                !looks_like_enum_value(value),
+                "lone punctuation token {value:?} must not be treated as an enum value"
+            );
+        }
+
+        assert!(looks_like_enum_value("ENCRYPT_DECRYPT"));
+        assert!(looks_like_enum_value("SIGN_VERIFY"));
+    }
+
+    #[test]
     fn test_extract_enum_from_description_instance_tenancy() {
         let description = r#"The allowed tenancy of instances launched into the VPC.
   +  ``default``: An instance launched into the VPC runs on shared hardware by default.
@@ -5677,6 +5723,26 @@ mod tests {
         assert!(result.is_some());
         let values = result.unwrap();
         assert_eq!(values, vec!["default", "dedicated", "host"]);
+    }
+
+    #[test]
+    fn test_extract_enum_from_description_rejects_kms_tag_allowed_punctuation() {
+        let description = r#"The key of the tag. The allowed characters are Unicode letters,
+            digits, whitespace, ``_``, ``.``, ``:``, ``/``, ``=``, ``+``, ``@``, ``-``,
+            and ``"``."#;
+        let result = extract_enum_from_description(description);
+        if let Some(values) = &result {
+            assert!(
+                !values
+                    .iter()
+                    .any(|v| matches!(v.as_str(), "\"" | "_" | "=")),
+                "KMS tag punctuation must not be extracted as enum values (got {values:?})"
+            );
+        }
+        assert!(
+            result.is_none() || result.as_ref().is_some_and(|values| values.is_empty()),
+            "KMS tag allowed-character punctuation must not form an enum (got {result:?})"
+        );
     }
 
     #[test]
@@ -8216,6 +8282,44 @@ mod tests {
     }
 
     #[test]
+    fn test_kms_key_policy_object_string_uses_iam_policy_document_override() {
+        let prop = CfnProperty {
+            prop_type: Some(TypeValue::Multiple(vec![
+                "object".to_string(),
+                "string".to_string(),
+            ])),
+            ..Default::default()
+        };
+        let schema = CfnSchema {
+            type_name: "AWS::KMS::Key".to_string(),
+            description: None,
+            properties: BTreeMap::new(),
+            required: vec![],
+            read_only_properties: vec![],
+            create_only_properties: vec![],
+            write_only_properties: vec![],
+            primary_identifier: None,
+            definitions: None,
+            tagging: None,
+            one_of: vec![],
+            any_of: vec![],
+            handlers: BTreeMap::new(),
+        };
+
+        let (carina_type, enum_info) = cfn_type_to_carina_type_with_enum_with_struct_path(
+            &prop,
+            "KeyPolicy",
+            &schema,
+            "",
+            &BTreeMap::new(),
+            &[],
+        );
+
+        assert_eq!(carina_type, "super::iam_policy_document()");
+        assert!(enum_info.is_none());
+    }
+
+    #[test]
     fn test_iam_oidc_provider_arn_override() {
         // IAM OIDCProvider's Arn should use iam_oidc_provider_arn(), not generic arn
         assert_eq!(
@@ -9821,6 +9925,88 @@ mod tests {
         assert!(
             generated.contains(".with_default(Value::Concrete(ConcreteValue::Int(3)))"),
             "Should emit .with_default() for integer default value: {generated}"
+        );
+    }
+
+    #[test]
+    fn test_attr_type_accepts_scalar_default() {
+        assert!(attr_type_accepts_scalar_default("AttributeType::bool()"));
+        assert!(attr_type_accepts_scalar_default("AttributeType::int()"));
+        assert!(attr_type_accepts_scalar_default("AttributeType::float()"));
+        assert!(attr_type_accepts_scalar_default(
+            "AttributeType::string_enum(VALID_KEY_USAGE)"
+        ));
+        assert!(
+            attr_type_accepts_scalar_default("super::prefix_list_id()"),
+            "scalar string types whose name merely contains 'list' must still accept defaults"
+        );
+        assert!(attr_type_accepts_scalar_default(
+            "AttributeType::custom(None, AttributeType::int(), None, None, legacy_validator(f), None)"
+        ));
+        assert!(attr_type_accepts_scalar_default("super::arn()"));
+        assert!(!attr_type_accepts_scalar_default(
+            "super::iam_policy_document()"
+        ));
+        assert!(!attr_type_accepts_scalar_default(
+            "AttributeType::struct_(\"Config\")"
+        ));
+        assert!(!attr_type_accepts_scalar_default(
+            "AttributeType::unordered_list(AttributeType::string())"
+        ));
+        assert!(!attr_type_accepts_scalar_default(
+            "AttributeType::map(AttributeType::string())"
+        ));
+        assert!(!attr_type_accepts_scalar_default(
+            "AttributeType::list(AttributeType::string())"
+        ));
+        assert!(!attr_type_accepts_scalar_default(
+            "AttributeType::ref_(\"Other\")"
+        ));
+    }
+
+    #[test]
+    fn test_generate_schema_code_suppresses_default_for_iam_policy_document() {
+        let mut properties = BTreeMap::new();
+        properties.insert(
+            "KeyPolicy".to_string(),
+            CfnProperty {
+                prop_type: Some(TypeValue::Multiple(vec![
+                    "object".to_string(),
+                    "string".to_string(),
+                ])),
+                default_value: Some(serde_json::Value::String(
+                    r#"{"Version":"2012-10-17","Statement":[]}"#.to_string(),
+                )),
+                ..Default::default()
+            },
+        );
+
+        let schema = CfnSchema {
+            type_name: "AWS::KMS::Key".to_string(),
+            description: None,
+            properties,
+            required: vec![],
+            read_only_properties: vec![],
+            create_only_properties: vec![],
+            write_only_properties: vec![],
+            primary_identifier: None,
+            definitions: None,
+            tagging: None,
+            one_of: vec![],
+            any_of: vec![],
+            handlers: BTreeMap::new(),
+        };
+
+        let generated = generate_schema_code(&schema, "AWS::KMS::Key").unwrap();
+
+        assert!(
+            generated
+                .contains(r#"AttributeSchema::new("key_policy", super::iam_policy_document())"#),
+            "Should resolve KeyPolicy to iam_policy_document: {generated}"
+        );
+        assert!(
+            !generated.contains(".with_default("),
+            "Should not emit scalar JSON defaults for structured policy documents: {generated}"
         );
     }
 
