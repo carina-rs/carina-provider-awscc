@@ -90,6 +90,30 @@ jobs:
             exit 1
           fi
 
+  # docs-drift and docs-check cover different gaps: docs-drift verifies each
+  # schema has a tracked doc and catches missing/orphan files via a directory
+  # scan, while docs-check regenerates docs and uses git diff to catch tracked
+  # content drift.
+  docs-check:
+    name: Check Docs Content
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: Run docs generation (from committed cache, no AWS calls)
+        run: ./scripts/generate-docs.sh --from-cache-only
+      - name: Verify no uncommitted changes
+        run: |
+          if ! git diff --exit-code; then
+            echo "::error::Docs generation produced uncommitted changes. Run 'aws-vault exec <profile> -- ./scripts/generate-docs.sh' locally and commit the regenerated generated-docs/."
+            exit 1
+          fi
+
   wasm-build:
     name: WASM Build
     runs-on: ubuntu-latest
