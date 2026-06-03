@@ -85,20 +85,28 @@ equality as if every create field comes back unchanged on real AWS — that
 is a mock artifact, not real AWS behaviour (see below). State this
 limitation in the test's module doc comment.
 
-### 2. Reconcile mock behaviour with real AWS, and file winterbaume issues
+### 2. Reconcile mock behaviour with real AWS, and file a winterbaume issue **per resource**
 
 The generic winterbaume mock does **not** reproduce real AWS CloudControl
 behaviours that the CloudFormation resource-type schema drives:
 write-only field stripping, read-only field synthesis (e.g. `Arn`),
 schema-default fill-in, and value normalization. For each new resource,
-check the actual AWS behaviour (against live AWS, or AWS docs/schema) and
-compare it to what the mock does.
+verify the actual AWS behaviour by creating it on a live account and
+capturing the real `GetResource` output, then compare it to what the mock
+returns.
 
-Where the mock diverges from real AWS in a way that matters for testing
-this provider, file an issue on
-[`moriyoshi/winterbaume`](https://github.com/moriyoshi/winterbaume) so the
-mock can grow to cover it (the umbrella divergence is tracked as
-winterbaume #6).
+File a **separate winterbaume issue for each new resource** — do **not**
+fold it into a single umbrella issue. Even though every case shares the
+same root cause (the CloudControl layer returns the create-time
+`DesiredState` verbatim without consulting any CFN schema), *which*
+read-only and default properties real AWS fills in is **different for
+every resource type**, so the fix can only be verified against a
+concrete, resource-specific `DesiredState → real GetResource` diff. This
+is the precedent the existing reports already follow: winterbaume #6
+(`AWS::KMS::Key`) and #7 (`AWS::DynamoDB::Table`) are separate issues for
+the same root cause, each carrying its own captured diff. A new resource
+gets its own issue, cross-linked to the existing ones (e.g. "same root
+cause as #6 / #7"), not a comment on them.
 
 When filing, follow winterbaume's own agent skill —
 `skills/winterbaume-bug/SKILL.md` in that repo — **verbatim**. It mandates
