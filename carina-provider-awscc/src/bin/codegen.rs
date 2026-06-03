@@ -3075,19 +3075,70 @@ fn looks_like_enum_value(s: &str) -> bool {
     true
 }
 
+fn description_accepts_custom_values(description: &str) -> bool {
+    let normalized = description.to_lowercase();
+    ["the name of a custom", "name of a custom"]
+        .iter()
+        .any(|marker| normalized.contains(marker))
+}
+
+fn filtered_backtick_values(text: &str, backtick_re: &Regex) -> Vec<String> {
+    backtick_re
+        .captures_iter(text)
+        .map(|cap| cap[1].to_string())
+        .filter(|v| !looks_like_property_name(v) && looks_like_enum_value(v))
+        .collect()
+}
+
 /// Extract enum values from description text.
 /// Looks for patterns like ``value`` (double backticks) which CloudFormation uses
 /// to indicate allowed values in descriptions.
 fn extract_enum_from_description(description: &str) -> Option<Vec<String>> {
-    // Strategy 1: Look for double-backtick values (existing behavior)
-    let backtick_re = Regex::new(r"``([^`]+)``").ok()?;
-    let mut values: Vec<String> = backtick_re
-        .captures_iter(description)
-        .map(|cap| cap[1].to_string())
-        .filter(|v| !looks_like_property_name(v) && looks_like_enum_value(v))
-        .collect();
+    if description_accepts_custom_values(description) {
+        return None;
+    }
 
-    // If we found enum values with backticks, use them
+    let backtick_re = Regex::new(r"``([^`]+)``").ok()?;
+
+    // Prefer list members introduced as a leading ``value``: entry. Other
+    // backticked identifiers in the list body are examples or property names.
+    let lower_description = description.to_lowercase();
+    if (lower_description.contains("following") || lower_description.contains("available"))
+        && let Ok(bullet_leader_re) =
+            Regex::new(r"(?m)(?:^|\n)\s*(?:[+*]|\d+[.)])?\s*``([^`]+)``\s*:")
+    {
+        let values: Vec<String> = bullet_leader_re
+            .captures_iter(description)
+            .map(|cap| cap[1].to_string())
+            .filter(|v| !looks_like_property_name(v) && looks_like_enum_value(v))
+            .collect();
+
+        if values.len() >= 2 {
+            return deduplicate_enum_values(values);
+        }
+    }
+
+    // Scope "supported values are ..." / "valid values: ..." backtick lists to
+    // the clause sentence so later code-style mentions are not treated as values.
+    if let Ok(scoped_values_re) = Regex::new(
+        r"(?is)(?:supported values?\s+(?:are|is)|valid values?):\s*(.+?)(?:\.|\n|$)|(?:supported values?\s+(?:are|is))\s+(.+?)(?:\.|\n|$)",
+    ) {
+        for cap in scoped_values_re.captures_iter(description) {
+            let clause = cap
+                .get(1)
+                .or_else(|| cap.get(2))
+                .map(|m| m.as_str())
+                .unwrap_or("");
+            let values = filtered_backtick_values(clause, &backtick_re);
+            if values.len() >= 2 {
+                return deduplicate_enum_values(values);
+            }
+        }
+    }
+
+    // Strategy 1: Look for double-backtick values (existing fallback behavior)
+    let mut values: Vec<String> = filtered_backtick_values(description, &backtick_re);
+
     if values.len() >= 2 {
         return deduplicate_enum_values(values);
     }
@@ -5886,6 +5937,99 @@ mod tests {
         assert!(result.is_some());
         let values = result.unwrap();
         assert_eq!(values, vec!["default", "dedicated", "host"]);
+    }
+
+    #[test]
+    fn test_extract_enum_from_description_ecs_cluster_settings_value_scopes_supported_values() {
+        let description = r#"The value to set for the cluster setting. The supported values are ``enhanced``, ``enabled``, and ``disabled``.
+ To use Container Insights with enhanced observability, set the ``containerInsights`` account setting to ``enhanced``.
+ To use Container Insights, set the ``containerInsights`` account setting to ``enabled``.
+ If a cluster value is specified, it will override the ``containerInsights`` value set with [PutAccountSetting](https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_PutAccountSetting.html) or [PutAccountSettingDefault](https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_PutAccountSettingDefault.html)."#;
+
+        assert_eq!(
+            extract_enum_from_description(description),
+            Some(vec![
+                "enhanced".to_string(),
+                "enabled".to_string(),
+                "disabled".to_string()
+            ])
+        );
+    }
+
+    #[test]
+    fn test_extract_enum_from_description_ecs_execute_command_logging_uses_bullet_leaders() {
+        let description = r#"The log setting to use for redirecting logs for your execute command results. The following log settings are available.
+  +  ``NONE``: The execute command session is not logged.
+  +  ``DEFAULT``: The ``awslogs`` configuration in the task definition is used. If no logging parameter is specified, it defaults to this value. If no ``awslogs`` log driver is configured in the task definition, the output won't be logged.
+  +  ``OVERRIDE``: Specify the logging details as a part of ``logConfiguration``. If the ``OVERRIDE`` logging option is specified, the ``logConfiguration`` is required."#;
+
+        assert_eq!(
+            extract_enum_from_description(description),
+            Some(vec![
+                "NONE".to_string(),
+                "DEFAULT".to_string(),
+                "OVERRIDE".to_string()
+            ])
+        );
+    }
+
+    #[test]
+    fn test_extract_enum_from_description_ecs_capacity_provider_allows_custom_names() {
+        let description = r#"The short name of the capacity provider. This can be either an AWS managed capacity provider (``FARGATE`` or ``FARGATE_SPOT``) or the name of a custom capacity provider that you created."#;
+
+        assert_eq!(extract_enum_from_description(description), None);
+    }
+
+    #[test]
+    fn test_extract_enum_from_description_regression_dynamodb_billing_mode() {
+        let description = r#"Specify how you are charged for read and write throughput and how you manage capacity.
+ Valid values include:
+  +  ``PAY_PER_REQUEST`` - We recommend using ``PAY_PER_REQUEST`` for most DynamoDB workloads. ``PAY_PER_REQUEST`` sets the billing mode to [On-demand capacity mode](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/on-demand-capacity-mode.html).
+  +  ``PROVISIONED`` - We recommend using ``PROVISIONED`` for steady workloads with predictable growth where capacity requirements can be reliably forecasted. ``PROVISIONED`` sets the billing mode to [Provisioned capacity mode](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/provisioned-capacity-mode.html).
+
+ If not specified, the default is ``PROVISIONED``."#;
+
+        assert_eq!(
+            extract_enum_from_description(description),
+            Some(vec![
+                "PAY_PER_REQUEST".to_string(),
+                "PROVISIONED".to_string()
+            ])
+        );
+    }
+
+    #[test]
+    fn test_extract_enum_from_description_regression_cloudfront_viewer_protocol_policy() {
+        let description = r#"The protocol that viewers can use to access the files in the origin specified by ``TargetOriginId`` when a request matches the path pattern in ``PathPattern``. You can specify the following options:
+  +  ``allow-all``: Viewers can use HTTP or HTTPS.
+  +  ``redirect-to-https``: If a viewer submits an HTTP request, CloudFront returns an HTTP status code of 301 (Moved Permanently) to the viewer along with the HTTPS URL. The viewer then resubmits the request using the new URL.
+  +  ``https-only``: If a viewer sends an HTTP request, CloudFront returns an HTTP status code of 403 (Forbidden)."#;
+
+        assert_eq!(
+            extract_enum_from_description(description),
+            Some(vec![
+                "allow-all".to_string(),
+                "redirect-to-https".to_string(),
+                "https-only".to_string()
+            ])
+        );
+    }
+
+    #[test]
+    fn test_extract_enum_from_description_regression_ec2_ip_protocol() {
+        let description = r#"The IP protocol name (``tcp``, ``udp``, ``icmp``, ``icmpv6``) or number (see [Protocol Numbers](https://docs.aws.amazon.com/http://www.iana.org/assignments/protocol-numbers/protocol-numbers.xhtml)).
+ Use ``-1`` to specify all protocols. When authorizing security group rules, specifying ``-1`` or a protocol number other than ``tcp``, ``udp``, ``icmp``, or ``icmpv6`` allows traffic on all ports, regardless of any port range you specify. For ``tcp``, ``udp``, and ``icmp``, you must specify a port range. For ``icmpv6``, the port range is optional; if you omit the port range, traffic for all types and codes is allowed."#;
+
+        assert_eq!(
+            extract_enum_from_description(description),
+            Some(vec![
+                "tcp".to_string(),
+                "udp".to_string(),
+                "icmp".to_string(),
+                "icmpv6".to_string(),
+                "-1".to_string()
+            ])
+        );
     }
 
     #[test]
