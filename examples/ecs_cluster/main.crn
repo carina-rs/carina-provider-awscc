@@ -1,0 +1,22 @@
+# ECS Cluster Example
+#
+# Creates a Fargate-ready ECS cluster with Container Insights enabled.
+
+provider awscc {
+  region = awscc.Region.ap_northeast_1
+}
+
+awscc.ecs.Cluster {
+  cluster_name       = 'registry-fargate'
+  capacity_providers = ['FARGATE', 'FARGATE_SPOT']
+
+  cluster_setting {
+    name  = 'containerInsights'
+    value = enabled
+  }
+
+  tags = {
+    Environment = 'example'
+    Workload    = 'registry'
+  }
+}

@@ -64,6 +64,66 @@ Resource definitions are generated from CloudFormation resource type schemas:
 cargo run --bin codegen -- <schema-path>
 ```
 
+## Adding a Resource: Required Tests
+
+When adding a new resource (see `CODEGEN.md` for the codegen steps), two
+testing obligations apply on top of the generated schema:
+
+### 1. Add a winterbaume CloudControl round-trip test
+
+Every new resource must get an integration test under
+`carina-provider-awscc/tests/<service>_<resource>_cloudcontrol_roundtrip.rs`
+that drives the real `Provider` trait (`Provider::create` then
+`Provider::read`) against an in-process winterbaume CloudControl mock
+(`winterbaume_core::MockAws` + `winterbaume_cloudcontrol::CloudControlService`).
+Mirror the existing `dynamodb_table_cloudcontrol_roundtrip.rs`.
+
+The mock returns the desired (create) state **verbatim**. So the test
+proves only what the mock can prove: that create -> read *wiring*
+round-trips the resource's **structured** fields through CloudControl
+serialization — list-of-string and list-of-struct fields survive as
+structured `List`/`Map` values instead of being flattened or
+stringified. Scope the assertions to that. Do **not** assert full-field
+equality as if every create field comes back unchanged on real AWS — that
+is a mock artifact, not real AWS behaviour (see below). State this
+limitation in the test's module doc comment.
+
+### 2. Reconcile mock behaviour with real AWS, and file a winterbaume issue **per resource**
+
+The generic winterbaume mock does **not** reproduce real AWS CloudControl
+behaviours that the CloudFormation resource-type schema drives:
+write-only field stripping, read-only field synthesis (e.g. `Arn`),
+schema-default fill-in, and value normalization. For each new resource,
+verify the actual AWS behaviour by creating it on a live account and
+capturing the real `GetResource` output, then compare it to what the mock
+returns.
+
+File a **separate winterbaume issue for each new resource** — do **not**
+fold it into a single umbrella issue. Even though every case shares the
+same root cause (the CloudControl layer returns the create-time
+`DesiredState` verbatim without consulting any CFN schema), *which*
+read-only and default properties real AWS fills in is **different for
+every resource type**, so the fix can only be verified against a
+concrete, resource-specific `DesiredState → real GetResource` diff. This
+is the precedent the existing reports already follow: winterbaume #6
+(`AWS::KMS::Key`) and #7 (`AWS::DynamoDB::Table`) are separate issues for
+the same root cause, each carrying its own captured diff. A new resource
+gets its own issue, cross-linked to the existing ones (e.g. "same root
+cause as #6 / #7"), not a comment on them.
+
+When filing, follow winterbaume's own agent skill —
+`skills/winterbaume-bug/SKILL.md` in that repo — **verbatim**. It mandates
+a fixed `### Affected AWS service / Summary / Reproduction / Expected /
+Actual / version` layout that an auto-label GitHub Action parses; a
+free-form body silently breaks labelling. The skill also requires a real,
+actually-executed reproduction (run it and paste the output — never invent
+one), a reported duplicate search, and `git rev-parse HEAD` for the
+version field. winterbaume is **not** a `carina-rs` repository, so the
+external-repo rule in `CLAUDE.local.md` also applies: draft the issue per
+that skill, then get explicit confirmation before `gh issue create`. The
+AWS-specific behaviours themselves must be verified against live AWS, not
+asserted in the mock round-trip test.
+
 ## Git Workflow
 
 ### Worktree-Based Development

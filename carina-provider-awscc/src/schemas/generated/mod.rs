@@ -13,6 +13,7 @@ pub use super::awscc_types::*;
 pub mod cloudfront;
 pub mod dynamodb;
 pub mod ec2;
+pub mod ecs;
 pub mod iam;
 pub mod identitystore;
 pub mod kms;
@@ -81,6 +82,7 @@ static ENUM_VALID_VALUES: LazyLock<
         wafv2::web_acl::enum_valid_values(),
         kms::key::enum_valid_values(),
         dynamodb::table::enum_valid_values(),
+        ecs::cluster::enum_valid_values(),
     ];
     let mut map: HashMap<&str, HashMap<&str, &[&str]>> = HashMap::new();
     for (rt, attrs) in modules {
@@ -135,6 +137,7 @@ fn build_configs() -> Vec<AwsccSchemaConfig> {
         wafv2::web_acl::wafv2_web_acl_config(),
         kms::key::kms_key_config(),
         dynamodb::table::dynamodb_table_config(),
+        ecs::cluster::ecs_cluster_config(),
     ]
 }
 

@@ -80,6 +80,7 @@ RESOURCE_TYPES=(
     "AWS::WAFv2::WebACL"
     "AWS::KMS::Key"
     "AWS::DynamoDB::Table"
+    "AWS::ECS::Cluster"
 )
 
 echo "Generating awscc provider schemas..."
