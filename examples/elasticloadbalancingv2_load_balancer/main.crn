@@ -1,0 +1,20 @@
+# Elastic Load Balancing v2 Load Balancer Example
+#
+# Creates an internet-facing application load balancer for registry traffic.
+
+provider awscc {
+  region = awscc.Region.ap_northeast_1
+}
+
+awscc.elasticloadbalancingv2.LoadBalancer {
+  name            = 'registry-alb'
+  type            = 'application'
+  scheme          = 'internet-facing'
+  subnets         = ['subnet-aaaa1111', 'subnet-bbbb2222']
+  security_groups = ['sg-cccc3333']
+
+  tag {
+    Environment = 'example'
+    Workload    = 'registry'
+  }
+}

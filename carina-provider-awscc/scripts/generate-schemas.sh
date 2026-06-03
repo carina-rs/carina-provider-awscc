@@ -81,6 +81,9 @@ RESOURCE_TYPES=(
     "AWS::KMS::Key"
     "AWS::DynamoDB::Table"
     "AWS::ECS::Cluster"
+    "AWS::ElasticLoadBalancingV2::LoadBalancer"
+    "AWS::ElasticLoadBalancingV2::Listener"
+    "AWS::ElasticLoadBalancingV2::TargetGroup"
 )
 
 echo "Generating awscc provider schemas..."

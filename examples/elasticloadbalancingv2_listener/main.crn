@@ -1,0 +1,22 @@
+# Elastic Load Balancing v2 Listener Example
+#
+# Creates an HTTPS listener forwarding registry traffic to a target group.
+
+provider awscc {
+  region = awscc.Region.ap_northeast_1
+}
+
+awscc.elasticloadbalancingv2.Listener {
+  load_balancer_arn = 'arn:aws:elasticloadbalancing:ap-northeast-1:123456789012:loadbalancer/app/registry-alb/abc123'
+  port              = 443
+  protocol          = 'HTTPS'
+
+  certificate {
+    certificate_arn = 'arn:aws:acm:ap-northeast-1:123456789012:certificate/aaaa-bbbb'
+  }
+
+  default_action {
+    type             = 'forward'
+    target_group_arn = 'arn:aws:elasticloadbalancing:ap-northeast-1:123456789012:targetgroup/registry-tg/def456'
+  }
+}

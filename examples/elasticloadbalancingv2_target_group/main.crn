@@ -1,0 +1,26 @@
+# Elastic Load Balancing v2 Target Group Example
+#
+# Creates an HTTP IP target group for registry traffic.
+
+provider awscc {
+  region = awscc.Region.ap_northeast_1
+}
+
+awscc.elasticloadbalancingv2.TargetGroup {
+  name              = 'registry-tg'
+  protocol          = 'HTTP'
+  port              = 8080
+  vpc_id            = 'vpc-dddd4444'
+  target_type       = 'ip'
+  health_check_path = '/health'
+
+  target {
+    id   = '10.0.1.10'
+    port = 8080
+  }
+
+  tag {
+    Environment = 'example'
+    Workload    = 'registry'
+  }
+}

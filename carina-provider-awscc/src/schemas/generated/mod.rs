@@ -14,6 +14,7 @@ pub mod cloudfront;
 pub mod dynamodb;
 pub mod ec2;
 pub mod ecs;
+pub mod elasticloadbalancingv2;
 pub mod iam;
 pub mod identitystore;
 pub mod kms;
@@ -83,6 +84,9 @@ static ENUM_VALID_VALUES: LazyLock<
         kms::key::enum_valid_values(),
         dynamodb::table::enum_valid_values(),
         ecs::cluster::enum_valid_values(),
+        elasticloadbalancingv2::load_balancer::enum_valid_values(),
+        elasticloadbalancingv2::listener::enum_valid_values(),
+        elasticloadbalancingv2::target_group::enum_valid_values(),
     ];
     let mut map: HashMap<&str, HashMap<&str, &[&str]>> = HashMap::new();
     for (rt, attrs) in modules {
@@ -138,6 +142,9 @@ fn build_configs() -> Vec<AwsccSchemaConfig> {
         kms::key::kms_key_config(),
         dynamodb::table::dynamodb_table_config(),
         ecs::cluster::ecs_cluster_config(),
+        elasticloadbalancingv2::load_balancer::elasticloadbalancingv2_load_balancer_config(),
+        elasticloadbalancingv2::listener::elasticloadbalancingv2_listener_config(),
+        elasticloadbalancingv2::target_group::elasticloadbalancingv2_target_group_config(),
     ]
 }
 
