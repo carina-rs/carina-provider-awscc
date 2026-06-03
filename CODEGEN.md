@@ -139,7 +139,7 @@ String types are inferred from property names (e.g., `SubnetId` maps to `subnet_
 
 ## Schema Cache
 
-Downloaded CloudFormation schemas are cached in `carina-provider-awscc/cfn-schema-cache/` with filenames like `AWS__EC2__VPC.json`. This directory is gitignored. Use `--refresh-cache` to force re-download.
+Downloaded CloudFormation schemas are cached in `carina-provider-awscc/cfn-schema-cache/` with filenames like `AWS__EC2__VPC.json`. This directory is committed to the repository so codegen is reproducible without AWS access. Use `--refresh-cache` to force re-download.
 
 ## Generating Documentation
 
