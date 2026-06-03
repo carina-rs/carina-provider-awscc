@@ -3090,6 +3090,47 @@ fn filtered_backtick_values(text: &str, backtick_re: &Regex) -> Vec<String> {
         .collect()
 }
 
+/// Return true when all enum-looking backticked values are governed by a
+/// negated "specify" clause. For example, the ELBv2 listener JWT claim name
+/// description says you can't specify ``exp``, ``iss``, ``nbf``, or ``iat``;
+/// those are forbidden values, not an allow-list enum. The negated clause is
+/// bounded at semicolon, period, or newline boundaries so a following
+/// allow-list clause is not swallowed.
+fn description_negates_all_backtick_values(description: &str, backtick_re: &Regex) -> bool {
+    let candidate_spans: Vec<(usize, usize)> = backtick_re
+        .captures_iter(description)
+        .filter_map(|cap| {
+            let value = cap.get(1)?.as_str();
+            if looks_like_property_name(value) || !looks_like_enum_value(value) {
+                return None;
+            }
+            cap.get(0).map(|m| (m.start(), m.end()))
+        })
+        .collect();
+
+    if candidate_spans.is_empty() {
+        return false;
+    }
+
+    let Ok(negated_specify_re) = Regex::new(r"(?is)(?:can't|cannot|can not)\s+specify\b[^.;\n]*")
+    else {
+        return false;
+    };
+    let negated_spans: Vec<(usize, usize)> = negated_specify_re
+        .find_iter(description)
+        .map(|m| (m.start(), m.end()))
+        .collect();
+
+    !negated_spans.is_empty()
+        && candidate_spans
+            .iter()
+            .all(|(candidate_start, candidate_end)| {
+                negated_spans.iter().any(|(negated_start, negated_end)| {
+                    negated_start <= candidate_start && candidate_end <= negated_end
+                })
+            })
+}
+
 /// Extract enum values from description text.
 /// Looks for patterns like ``value`` (double backticks) which CloudFormation uses
 /// to indicate allowed values in descriptions.
@@ -3099,6 +3140,9 @@ fn extract_enum_from_description(description: &str) -> Option<Vec<String>> {
     }
 
     let backtick_re = Regex::new(r"``([^`]+)``").ok()?;
+    if description_negates_all_backtick_values(description, &backtick_re) {
+        return None;
+    }
 
     // Prefer list members introduced as a leading ``value``: entry. Other
     // backticked identifiers in the list body are examples or property names.
@@ -3118,10 +3162,11 @@ fn extract_enum_from_description(description: &str) -> Option<Vec<String>> {
         }
     }
 
-    // Scope "supported values are ..." / "valid values: ..." backtick lists to
-    // the clause sentence so later code-style mentions are not treated as values.
+    // Scope "supported values are ..." / "valid values are ..." /
+    // "valid values: ..." backtick lists to the clause sentence so later
+    // code-style mentions are not treated as values.
     if let Ok(scoped_values_re) = Regex::new(
-        r"(?is)(?:supported values?\s+(?:are|is)|valid values?):\s*(.+?)(?:\.|\n|$)|(?:supported values?\s+(?:are|is))\s+(.+?)(?:\.|\n|$)",
+        r"(?is)(?:supported values?\s+(?:are|is)|valid values?):\s*(.+?)(?:\.|\n|$)|(?:supported values?|valid values?)\s+(?:are|is)\s+(.+?)(?:\.|\n|$)",
     ) {
         for cap in scoped_values_re.captures_iter(description) {
             let clause = cap
@@ -5978,6 +6023,25 @@ mod tests {
         let description = r#"The short name of the capacity provider. This can be either an AWS managed capacity provider (``FARGATE`` or ``FARGATE_SPOT``) or the name of a custom capacity provider that you created."#;
 
         assert_eq!(extract_enum_from_description(description), None);
+    }
+
+    #[test]
+    fn test_extract_enum_from_description_jwt_claim_name_negation_is_not_enum() {
+        // CFN says these backticked values are FORBIDDEN ("you can't specify ..."),
+        // so they must NOT be scraped as allowed enum members.
+        let description = r#"The name of the claim. You can't specify ``exp``, ``iss``, ``nbf``, or ``iat`` because we validate them by default."#;
+        assert_eq!(extract_enum_from_description(description), None);
+    }
+
+    #[test]
+    fn test_extract_enum_negation_followed_by_allowlist_same_sentence_still_extracts() {
+        // A "can't specify" clause must NOT swallow a following allow-list that
+        // shares the line via a semicolon boundary. The allow-list is a real enum.
+        let description = r#"You can't specify ``internal`` for this; valid values are ``ipv4`` or ``dualstack``."#;
+        assert_eq!(
+            extract_enum_from_description(description),
+            Some(vec!["ipv4".to_string(), "dualstack".to_string()])
+        );
     }
 
     #[test]

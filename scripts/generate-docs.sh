@@ -50,6 +50,7 @@ service_display_name() {
         organizations) echo "Organizations" ;;
         cloudfront)    echo "CloudFront" ;;
         wafv2)         echo "WAFv2" ;;
+        elasticloadbalancingv2) echo "Elastic Load Balancing v2" ;;
         *)             echo "$1" | tr '[:lower:]' '[:upper:]' ;;
     esac
 }
