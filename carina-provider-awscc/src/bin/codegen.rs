@@ -35,6 +35,22 @@ type PatternWithLength = (String, Option<u64>, Option<u64>);
 /// range validators accumulated by the recursion guard.
 type RangeValidator = (Option<i64>, Option<i64>, bool);
 
+struct RustStrLit<'a>(&'a str);
+
+impl std::fmt::Display for RustStrLit<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("\"")?;
+        for ch in self.0.escape_default() {
+            write!(f, "{ch}")?;
+        }
+        f.write_str("\"")
+    }
+}
+
+fn rust_lit(s: &str) -> RustStrLit<'_> {
+    RustStrLit(s)
+}
+
 // `HashSet::new()` is not `const fn`, so clippy's
 // `missing_const_for_thread_local` suggestion is rejected for the
 // HashSet-typed cells by rustc. The BTree-typed cells can use `const`
@@ -573,7 +589,11 @@ fn dsl_aliases_code(
     let pairs: Vec<String> = entries
         .iter()
         .map(|(canonical, alias)| {
-            format!("(\"{}\".to_string(), \"{}\".to_string())", canonical, alias)
+            format!(
+                "({}.to_string(), {}.to_string())",
+                rust_lit(canonical),
+                rust_lit(alias)
+            )
         })
         .collect();
     format!("vec![{}]", pairs.join(", "))
@@ -2113,7 +2133,7 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
         let values_str = enum_info
             .values
             .iter()
-            .map(|v| format!("\"{}\"", v))
+            .map(|v| rust_lit(v).to_string())
             .collect::<Vec<_>>()
             .join(", ");
         body.push_str(&format!(
@@ -2231,7 +2251,7 @@ fn {}(value: &Value) -> Result<(), String> {{
                 "        static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {\n",
             );
             body.push_str(&format!(
-                "            Regex::new(\"{}\").expect(\"invalid pattern regex\")\n",
+                "            Regex::new(\"{}\").expect(\"invalid pattern regex\")\n", // rust-lit-guard: allow (already escaped; preserves regex syntax)
                 escaped_for_rust
             ));
             body.push_str("        });\n");
@@ -2379,7 +2399,7 @@ pub fn {}() -> AwsccSchemaConfig {{
             .replace('"', "\\\"")
             .replace('\n', " ");
         body.push_str(&format!(
-            "        .with_description(\"{}\")\n",
+            "        .with_description(\"{}\")\n", // rust-lit-guard: allow (already escaped and newline-collapsed)
             escaped_desc
         ));
     }
@@ -2415,12 +2435,16 @@ pub fn {}() -> AwsccSchemaConfig {{
             let values_str = enum_info
                 .values
                 .iter()
-                .map(|v| format!("\"{}\".to_string()", v))
+                .map(|v| format!("{}.to_string()", rust_lit(v)))
                 .collect::<Vec<_>>()
                 .join(", ");
             let enum_type = format!(
-                r#"AttributeType::string_enum("{}".to_string(), vec![{}], Some(carina_core::schema::string_enum_identity("{}", Some("{}"))), {})"#,
-                enum_info.type_name, values_str, enum_info.type_name, namespace, dsl_aliases_code
+                r#"AttributeType::string_enum({}.to_string(), vec![{}], Some(carina_core::schema::string_enum_identity({}, Some({}))), {})"#,
+                rust_lit(&enum_info.type_name),
+                values_str,
+                rust_lit(&enum_info.type_name),
+                rust_lit(&namespace),
+                dsl_aliases_code
             );
             // Wrap in List if the property is an array type
             let is_array = prop
@@ -2452,7 +2476,7 @@ pub fn {}() -> AwsccSchemaConfig {{
         };
 
         let mut attr_code = format!(
-            "        .attribute(\n            AttributeSchema::new(\"{}\", {})",
+            "        .attribute(\n            AttributeSchema::new(\"{}\", {})", // rust-lit-guard: allow (snake_case output cannot contain " or \\)
             attr_name, attr_type
         );
 
@@ -2489,15 +2513,15 @@ pub fn {}() -> AwsccSchemaConfig {{
             );
             let suffix = if is_read_only { " (read-only)" } else { "" };
             attr_code.push_str(&format!(
-                "\n                .with_description(\"{}{}\")",
+                "\n                .with_description(\"{}{}\")", // rust-lit-guard: allow (already escaped and newline-collapsed)
                 escaped, suffix
             ));
         }
 
         // Add provider_name mapping (AWS property name)
         attr_code.push_str(&format!(
-            "\n                .with_provider_name(\"{}\")",
-            prop_name
+            "\n                .with_provider_name({})",
+            rust_lit(prop_name)
         ));
 
         // Add default value if defined in CloudFormation schema. A CFN JSON scalar
@@ -2524,8 +2548,8 @@ pub fn {}() -> AwsccSchemaConfig {{
             && let Some(singular) = compute_block_name(&attr_name)
         {
             attr_code.push_str(&format!(
-                "\n                .with_block_name(\"{}\")",
-                singular
+                "\n                .with_block_name({})",
+                rust_lit(&singular)
             ));
         }
 
@@ -2549,11 +2573,15 @@ pub fn {}() -> AwsccSchemaConfig {{
                 .replace('\n', " "),
         );
         body.push_str(&format!(
-            "        .attribute(\n            \
-             AttributeSchema::new(\"{}\", {})\n                \
-             .read_only()\n                \
-             .with_description(\"{} (read-only)\"),\n        )\n",
-            synth.attr_name, synth.attr_type, escaped,
+            concat!(
+                "        .attribute(\n",
+                "            AttributeSchema::new({}, {})\n",
+                "                .read_only()\n",
+                "                .with_description(\"{} (read-only)\"),\n        )\n", // rust-lit-guard: allow (already escaped and newline-collapsed)
+            ),
+            rust_lit(synth.attr_name),
+            synth.attr_type,
+            escaped,
         ));
     }
 
@@ -2576,7 +2604,7 @@ pub fn {}() -> AwsccSchemaConfig {{
             if is_string {
                 let attr_name = prop_path.to_snake_case();
                 body.push_str(&format!(
-                    "        .with_name_attribute(\"{}\")\n",
+                    "        .with_name_attribute(\"{}\")\n", // rust-lit-guard: allow (snake_case output cannot contain " or \\)
                     attr_name
                 ));
             }
@@ -2607,7 +2635,10 @@ pub fn {}() -> AwsccSchemaConfig {{
     for group in &exclusive_groups {
         let fields_str = group
             .iter()
-            .map(|f| format!("\"{}\"", f.to_snake_case()))
+            .map(|f| {
+                let snake = f.to_snake_case();
+                rust_lit(&snake).to_string()
+            })
             .collect::<Vec<_>>()
             .join(", ");
         body.push_str(&format!("        .exclusive_required(&[{}])\n", fields_str));
@@ -2635,8 +2666,9 @@ pub fn {}() -> AwsccSchemaConfig {{
     let defs = take_emitted_defs();
     for (def_name, def_body) in &defs {
         body.push_str(&format!(
-            "        .with_def(\"{}\", {})\n",
-            def_name, def_body
+            "        .with_def({}, {})\n",
+            rust_lit(def_name),
+            def_body
         ));
     }
 
@@ -2815,9 +2847,9 @@ fn {fn_name}(value: &Value) -> Result<(), String> {{
         "\n/// Returns the resource type name and all enum valid values for this module\n\
          pub fn enum_valid_values() -> (&'static str, &'static [(&'static str, &'static [&'static str])]) {{\n\
          {}\
-         }}\n",
+        }}\n",
         if enums.is_empty() {
-            format!("    (\"{}\", &[])\n", dsl_resource)
+            format!("    ({}, &[])\n", rust_lit(&dsl_resource))
         } else {
             let entries: Vec<String> = enums
                 .keys()
@@ -2831,12 +2863,12 @@ fn {fn_name}(value: &Value) -> Result<(), String> {{
                     // Constant name uses the full composite key for uniqueness
                     let const_name =
                         format!("VALID_{}", prop_name.to_snake_case().to_uppercase());
-                    format!("        (\"{}\", {}),", attr_name, const_name)
+                    format!("        (\"{}\", {}),", attr_name, const_name) // rust-lit-guard: allow (snake_case output cannot contain " or \\)
                 })
                 .collect();
             format!(
-                "    (\"{}\", &[\n{}\n    ])\n",
-                dsl_resource,
+                "    ({}, &[\n{}\n    ])\n",
+                rust_lit(&dsl_resource),
                 entries.join("\n")
             )
         }
@@ -3408,15 +3440,15 @@ fn generate_struct_type(
                     let values_str = enum_info
                         .values
                         .iter()
-                        .map(|v| format!("\"{}\".to_string()", v))
+                        .map(|v| format!("{}.to_string()", rust_lit(v)))
                         .collect::<Vec<_>>()
                         .join(", ");
                     format!(
-                        r#"AttributeType::string_enum("{}".to_string(), vec![{}], Some(carina_core::schema::string_enum_identity("{}", Some("{}"))), {})"#,
-                        enum_info.type_name,
+                        r#"AttributeType::string_enum({}.to_string(), vec![{}], Some(carina_core::schema::string_enum_identity({}, Some({}))), {})"#,
+                        rust_lit(&enum_info.type_name),
                         values_str,
-                        enum_info.type_name,
-                        enum_namespace,
+                        rust_lit(&enum_info.type_name),
+                        rust_lit(&enum_namespace),
                         dsl_aliases_code
                     )
                 } else {
@@ -3432,15 +3464,15 @@ fn generate_struct_type(
                     let values_str = local_enum_info
                         .values
                         .iter()
-                        .map(|v| format!("\"{}\".to_string()", v))
+                        .map(|v| format!("{}.to_string()", rust_lit(v)))
                         .collect::<Vec<_>>()
                         .join(", ");
                     format!(
-                        r#"AttributeType::string_enum("{}".to_string(), vec![{}], Some(carina_core::schema::string_enum_identity("{}", Some("{}"))), {})"#,
-                        local_enum_info.type_name,
+                        r#"AttributeType::string_enum({}.to_string(), vec![{}], Some(carina_core::schema::string_enum_identity({}, Some({}))), {})"#,
+                        rust_lit(&local_enum_info.type_name),
                         values_str,
-                        local_enum_info.type_name,
-                        enum_namespace,
+                        rust_lit(&local_enum_info.type_name),
+                        rust_lit(&enum_namespace),
                         dsl_aliases_code
                     )
                 };
@@ -3457,7 +3489,8 @@ fn generate_struct_type(
             };
             let is_required = required_set.contains(field_name.as_str());
 
-            let mut field_code = format!("StructField::new(\"{}\", {})", snake_name, field_type);
+            let mut field_code =
+                format!("StructField::new({}, {})", rust_lit(&snake_name), field_type);
             if is_required {
                 field_code.push_str(".required()");
             }
@@ -3468,9 +3501,9 @@ fn generate_struct_type(
                         .replace('"', "\\\"")
                         .replace('\n', " "),
                 );
-                field_code.push_str(&format!(".with_description(\"{}\")", escaped));
+                field_code.push_str(&format!(".with_description(\"{}\")", escaped)); // rust-lit-guard: allow (already escaped and newline-collapsed)
             }
-            field_code.push_str(&format!(".with_provider_name(\"{}\")", field_name));
+            field_code.push_str(&format!(".with_provider_name({})", rust_lit(field_name)));
 
             // Add block_name for List(Struct) fields with a natural singular form.
             // Even if the singular form conflicts with an existing field name,
@@ -3480,7 +3513,7 @@ fn generate_struct_type(
                 || is_list_of_struct_property(field_prop, schema))
                 && let Some(singular) = compute_block_name(&snake_name)
             {
-                field_code.push_str(&format!(".with_block_name(\"{}\")", singular));
+                field_code.push_str(&format!(".with_block_name({})", rust_lit(&singular)));
             }
 
             field_code
@@ -3489,8 +3522,9 @@ fn generate_struct_type(
 
     let fields_str = fields.join(",\n                    ");
     format!(
-        "AttributeType::struct_(\"{}\".to_string(), vec![{}])",
-        def_name, fields_str
+        "AttributeType::struct_({}.to_string(), vec![{}])",
+        rust_lit(def_name),
+        fields_str
     )
 }
 
@@ -3794,7 +3828,7 @@ fn emit_pattern_option(pattern: Option<&str>) -> String {
     match pattern {
         Some(p) => {
             let escaped = p.replace('\\', "\\\\").replace('"', "\\\"");
-            format!("Some(\"{}\".to_string())", escaped)
+            format!("Some(\"{}\".to_string())", escaped) // rust-lit-guard: allow (already escaped; pattern text is not escape_default-normalized)
         }
         None => "None".to_string(),
     }
@@ -4780,7 +4814,7 @@ fn cfn_type_to_carina_type_with_enum_with_struct_path(
                 || EMITTED_DEFS.with(|s| s.borrow().contains_key(def_name));
             if already_known {
                 return (
-                    format!("AttributeType::ref_(\"{}\".to_string())", def_name),
+                    format!("AttributeType::ref_({}.to_string())", rust_lit(def_name)),
                     None,
                 );
             }
@@ -5305,8 +5339,8 @@ fn cfn_type_to_carina_type_with_enum_with_struct_path(
                 let struct_name = prop_name.to_pascal_case();
                 return (
                     format!(
-                        r#"AttributeType::struct_("{}".to_string(), vec![])"#,
-                        struct_name
+                        r#"AttributeType::struct_({}.to_string(), vec![])"#,
+                        rust_lit(&struct_name)
                     ),
                     None,
                 );
@@ -5334,7 +5368,7 @@ fn json_default_to_value_code(val: &serde_json::Value) -> Option<String> {
         serde_json::Value::String(s) => {
             let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
             Some(format!(
-                "Value::Concrete(ConcreteValue::String(\"{}\".to_string()))",
+                "Value::Concrete(ConcreteValue::String(\"{}\".to_string()))", // rust-lit-guard: allow (already escaped JSON default)
                 escaped
             ))
         }
@@ -5368,7 +5402,7 @@ fn attr_type_accepts_scalar_default(attr_type: &str) -> bool {
 /// Returns `None` for unsupported types (arrays, objects, null).
 fn json_default_to_markdown(val: &serde_json::Value) -> Option<String> {
     match val {
-        serde_json::Value::String(s) => Some(format!("\"{}\"", s)),
+        serde_json::Value::String(s) => Some(format!("\"{}\"", s)), // rust-lit-guard: allow (markdown display, not Rust emission)
         serde_json::Value::Bool(b) => Some(format!("{}", b)),
         serde_json::Value::Number(n) => Some(format!("{}", n)),
         _ => None,
@@ -5470,6 +5504,56 @@ mod tests {
         let mut m = BTreeMap::new();
         m.insert("Field".to_string(), CfnProperty::default());
         m
+    }
+
+    #[test]
+    fn test_rust_lit_escapes_rust_string_literals() {
+        assert_eq!(rust_lit("plain").to_string(), "\"plain\"");
+        assert_eq!(rust_lit("a\"b").to_string(), "\"a\\\"b\"");
+        assert_eq!(rust_lit(r"a\b").to_string(), "\"a\\\\b\"");
+        assert_eq!(rust_lit("a\nb").to_string(), "\"a\\nb\"");
+        assert_eq!(rust_lit("a\tb").to_string(), "\"a\\tb\"");
+    }
+
+    #[test]
+    fn test_codegen_raw_string_literal_emissions_are_guarded() {
+        let source = include_str!("codegen.rs");
+        let escaped_literal_shape = "\\\"{}\\\""; // rust-lit-guard: allow
+        let raw_literal_shapes = [
+            r#""{}".to_string()"#,       // rust-lit-guard: allow
+            r#"string_enum("{}"#,        // rust-lit-guard: allow
+            r#"struct_("{}"#,            // rust-lit-guard: allow
+            r#"ref_("{}"#,               // rust-lit-guard: allow
+            r#"StructField::new("{}"#,   // rust-lit-guard: allow
+            r#"with_provider_name("{}"#, // rust-lit-guard: allow
+            r#"with_block_name("{}"#,    // rust-lit-guard: allow
+            r#"with_description("{}"#,   // rust-lit-guard: allow
+        ];
+
+        let offenders: Vec<String> = source
+            .lines()
+            .enumerate()
+            .filter_map(|(idx, line)| {
+                if line.contains("rust-lit-guard: allow") {
+                    return None;
+                }
+                let has_escaped_literal_shape = line.contains(escaped_literal_shape);
+                let has_raw_literal_shape = raw_literal_shapes.iter().any(|shape| {
+                    line.contains(shape) || line.contains(&shape.replace('"', "\\\""))
+                });
+                if has_escaped_literal_shape || has_raw_literal_shape {
+                    Some(format!("{}: {}", idx + 1, line.trim()))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        assert!(
+            offenders.is_empty(),
+            "raw Rust string literal emission site(s) must use rust_lit or be explicitly allowed:\n{}",
+            offenders.join("\n")
+        );
     }
 
     #[test]
@@ -12966,7 +13050,7 @@ mod tests {
         // All four literals must appear in the StringEnum values list.
         for v in ["s3", "mediastore", "lambda", "mediapackagev2"] {
             assert!(
-                generated.contains(&format!("\"{}\".to_string()", v)),
+                generated.contains(&format!("\"{}\".to_string()", v)), // rust-lit-guard: allow
                 "missing enum value {v} in: {generated}"
             );
         }
@@ -13104,7 +13188,7 @@ mod tests {
         // All three documented values must be present.
         for v in ["PriceClass_100", "PriceClass_200", "PriceClass_All"] {
             assert!(
-                generated.contains(&format!("\"{}\"", v)),
+                generated.contains(&format!("\"{}\"", v)), // rust-lit-guard: allow
                 "missing override value {v}: {generated}"
             );
         }
@@ -13239,7 +13323,7 @@ mod tests {
         );
         for v in ["GET", "HEAD", "OPTIONS", "PUT", "PATCH", "POST", "DELETE"] {
             assert!(
-                generated.contains(&format!("\"{}\".to_string()", v)),
+                generated.contains(&format!("\"{}\".to_string()", v)), // rust-lit-guard: allow
                 "missing override value {v}: {generated}"
             );
         }
