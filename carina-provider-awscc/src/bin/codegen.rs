@@ -261,10 +261,10 @@ struct CfnSchema {
     tagging: Option<CfnTagging>,
     /// Top-level oneOf variants (mutually exclusive required field groups)
     #[serde(default, rename = "oneOf")]
-    one_of: Vec<CfnOneOfVariant>,
+    one_of: Vec<CfnProperty>,
     /// Top-level anyOf variants
     #[serde(default, rename = "anyOf")]
-    any_of: Vec<CfnOneOfVariant>,
+    any_of: Vec<CfnProperty>,
     /// Cloud Control handlers (create/read/update/delete/list).
     /// Absent or empty means the type is NON_PROVISIONABLE and cannot be
     /// managed via Cloud Control API.
@@ -376,15 +376,12 @@ struct CfnProperty {
     /// Format constraint (e.g., "int64", "uri", "double")
     #[serde(default)]
     format: Option<String>,
-}
-
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[allow(dead_code)]
-struct CfnOneOfVariant {
-    properties: Option<BTreeMap<String, CfnProperty>>,
+    /// Property-level oneOf variants (union types)
+    #[serde(default, rename = "oneOf")]
+    one_of: Vec<CfnProperty>,
     #[serde(default)]
-    required: Vec<String>,
+    #[serde(rename = "anyOf")]
+    any_of: Vec<CfnProperty>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -398,7 +395,7 @@ struct CfnDefinition {
     required: Vec<String>,
     /// oneOf variants (union types)
     #[serde(default, rename = "oneOf")]
-    one_of: Vec<CfnOneOfVariant>,
+    one_of: Vec<CfnProperty>,
     /// Array item schema (for array-typed definitions)
     items: Option<Box<CfnProperty>>,
     /// Enum values (for enum-only definitions)
@@ -903,6 +900,31 @@ fn type_display_string(
         }
     } else if prop_name == "Tags" {
         "`Map<String, String>`".to_string()
+    } else if !prop.one_of.is_empty() {
+        if let Some(array_variant) = prop
+            .one_of
+            .iter()
+            .find(|variant| property_resolves_to_array(variant, schema))
+        {
+            return type_display_string(prop_name, array_variant, schema, enums);
+        }
+
+        let has_mergeable_object_variant = prop.one_of.iter().any(|variant| {
+            variant
+                .properties
+                .as_ref()
+                .is_some_and(|props| !props.is_empty())
+        });
+        if !has_mergeable_object_variant {
+            let variant_types: Vec<Vec<String>> =
+                prop.one_of.iter().map(property_type_values).collect();
+            panic!(
+                "unresolved oneOf for {}.{}: variants {:?}",
+                schema.type_name, prop_name, variant_types
+            );
+        }
+
+        "String".to_string()
     } else if let Some(ref_path) = &prop.ref_path {
         if ref_path.contains("/Tag") {
             "`Map<String, String>`".to_string()
@@ -3244,7 +3266,7 @@ enum ResolvedDef<'a> {
         required: &'a [String],
     },
     /// `oneOf` union of variants.
-    OneOf { variants: &'a [CfnOneOfVariant] },
+    OneOf { variants: &'a [CfnProperty] },
     /// Enum-only def (a fixed list of values, no properties). Takes
     /// precedence over `Scalar` so an integer-typed enum (e.g. WAFv2
     /// `EvaluationWindowSec`) is treated as an enum, matching the canonical
@@ -4776,6 +4798,31 @@ fn cfn_type_to_carina_type_with_enum(
     )
 }
 
+fn property_type_values(prop: &CfnProperty) -> Vec<String> {
+    let mut values = match &prop.prop_type {
+        Some(TypeValue::Single(value)) => vec![value.clone()],
+        Some(TypeValue::Multiple(values)) => values.clone(),
+        None => Vec::new(),
+    };
+
+    if let Some(ref_path) = &prop.ref_path {
+        values.push(format!("$ref:{ref_path}"));
+    }
+
+    values
+}
+
+fn property_resolves_to_array(prop: &CfnProperty, schema: &CfnSchema) -> bool {
+    if property_type_values(prop).iter().any(|ty| ty == "array") {
+        return true;
+    }
+
+    prop.ref_path
+        .as_deref()
+        .and_then(|ref_path| resolve_ref_classified(schema, ref_path))
+        .is_some_and(|resolved| matches!(resolved, ResolvedDef::Array { .. }))
+}
+
 fn cfn_type_to_carina_type_with_enum_with_struct_path(
     prop: &CfnProperty,
     prop_name: &str,
@@ -4801,6 +4848,38 @@ fn cfn_type_to_carina_type_with_enum_with_struct_path(
             values: vec![value_str],
         };
         return ("/* enum */".to_string(), Some(enum_info));
+    }
+
+    if !prop.one_of.is_empty() {
+        if let Some(array_variant) = prop
+            .one_of
+            .iter()
+            .find(|variant| property_resolves_to_array(variant, schema))
+        {
+            return cfn_type_to_carina_type_with_enum_with_struct_path(
+                array_variant,
+                prop_name,
+                schema,
+                namespace,
+                enums,
+                struct_path,
+            );
+        }
+
+        let has_mergeable_object_variant = prop.one_of.iter().any(|variant| {
+            variant
+                .properties
+                .as_ref()
+                .is_some_and(|props| !props.is_empty())
+        });
+        if !has_mergeable_object_variant {
+            let variant_types: Vec<Vec<String>> =
+                prop.one_of.iter().map(property_type_values).collect();
+            panic!(
+                "unresolved oneOf for {}.{}: variants {:?}",
+                schema.type_name, prop_name, variant_types
+            );
+        }
     }
 
     // Handle $ref
@@ -5484,7 +5563,7 @@ mod tests {
     fn def(
         def_type: Option<&str>,
         properties: Option<BTreeMap<String, CfnProperty>>,
-        one_of: Vec<CfnOneOfVariant>,
+        one_of: Vec<CfnProperty>,
         enum_values: Option<Vec<EnumValue>>,
         items: Option<CfnProperty>,
         pattern: Option<&str>,
@@ -5569,7 +5648,7 @@ mod tests {
             classify_def(&def(
                 Some("object"),
                 Some(one_prop()),
-                vec![CfnOneOfVariant::default()],
+                vec![CfnProperty::default()],
                 Some(vec![EnumValue::Str("x".into())]),
                 None,
                 None,
@@ -5582,7 +5661,7 @@ mod tests {
             classify_def(&def(
                 Some("object"),
                 None,
-                vec![CfnOneOfVariant::default()],
+                vec![CfnProperty::default()],
                 Some(vec![EnumValue::Str("x".into())]),
                 None,
                 None,
@@ -6021,6 +6100,7 @@ mod tests {
             min_length: None,
             max_length: None,
             format: None,
+            ..Default::default()
         };
         let schema = CfnSchema {
             type_name: "AWS::EC2::SecurityGroupIngress".to_string(),
@@ -6098,6 +6178,7 @@ mod tests {
             min_length: None,
             max_length: None,
             format: None,
+            ..Default::default()
         };
         let schema = CfnSchema {
             type_name: "AWS::CloudFront::Distribution".to_string(),
@@ -6221,6 +6302,7 @@ mod tests {
             min_length: None,
             max_length: None,
             format: None,
+            ..Default::default()
         };
         let schema = CfnSchema {
             type_name: "AWS::EC2::SecurityGroupIngress".to_string(),
@@ -6268,6 +6350,7 @@ mod tests {
             min_length: None,
             max_length: None,
             format: None,
+            ..Default::default()
         };
         let schema = CfnSchema {
             type_name: "AWS::EC2::SecurityGroupIngress".to_string(),
@@ -6315,6 +6398,7 @@ mod tests {
             min_length: None,
             max_length: None,
             format: None,
+            ..Default::default()
         };
         let schema = CfnSchema {
             type_name: "AWS::EC2::NatGateway".to_string(),
@@ -6367,6 +6451,7 @@ mod tests {
             min_length: None,
             max_length: None,
             format: None,
+            ..Default::default()
         };
         let schema = CfnSchema {
             type_name: "AWS::EC2::EIP".to_string(),
@@ -6414,6 +6499,7 @@ mod tests {
             min_length: None,
             max_length: None,
             format: None,
+            ..Default::default()
         };
         let schema = CfnSchema {
             type_name: "AWS::EC2::NatGateway".to_string(),
@@ -6465,6 +6551,7 @@ mod tests {
             min_length: None,
             max_length: None,
             format: None,
+            ..Default::default()
         };
         let schema = CfnSchema {
             type_name: "AWS::EC2::Subnet".to_string(),
@@ -6573,6 +6660,7 @@ mod tests {
             min_length: None,
             max_length: None,
             format: None,
+            ..Default::default()
         };
         assert_eq!(
             list_element_type_display(&prop, "GenericProp", ""),
@@ -6600,6 +6688,7 @@ mod tests {
             min_length: None,
             max_length: None,
             format: None,
+            ..Default::default()
         };
         assert_eq!(
             list_element_type_display(&prop, "GenericProp", ""),
@@ -6627,6 +6716,7 @@ mod tests {
             min_length: None,
             max_length: None,
             format: None,
+            ..Default::default()
         };
         assert_eq!(
             list_element_type_display(&prop, "GenericProp", ""),
@@ -6654,6 +6744,7 @@ mod tests {
             min_length: None,
             max_length: None,
             format: None,
+            ..Default::default()
         };
         assert_eq!(
             list_element_type_display(&prop, "GenericProp", ""),
@@ -6683,6 +6774,7 @@ mod tests {
             min_length: None,
             max_length: None,
             format: None,
+            ..Default::default()
         };
         assert_eq!(
             list_element_type_display(&prop, "SubnetIds", ""),
@@ -6753,6 +6845,7 @@ mod tests {
                 min_length: None,
                 max_length: None,
                 format: None,
+                ..Default::default()
             })),
             ref_path: None,
             insertion_order: None,
@@ -6769,6 +6862,7 @@ mod tests {
             min_length: None,
             max_length: None,
             format: None,
+            ..Default::default()
         };
         let schema = CfnSchema {
             type_name: "AWS::EC2::VPC".to_string(),
@@ -6819,6 +6913,7 @@ mod tests {
                 min_length: None,
                 max_length: None,
                 format: None,
+                ..Default::default()
             })),
             ref_path: None,
             insertion_order: None,
@@ -6835,6 +6930,7 @@ mod tests {
             min_length: None,
             max_length: None,
             format: None,
+            ..Default::default()
         };
         let schema = CfnSchema {
             type_name: "AWS::EC2::VPC".to_string(),
@@ -6966,6 +7062,7 @@ mod tests {
             min_length: None,
             max_length: None,
             format: None,
+            ..Default::default()
         };
         let schema = CfnSchema {
             type_name: "AWS::EC2::VPC".to_string(),
@@ -7023,6 +7120,7 @@ mod tests {
                 min_length: None,
                 max_length: None,
                 format: None,
+                ..Default::default()
             };
             let result = list_element_type_display(&prop, "GenericProp", "");
             assert!(
@@ -7076,6 +7174,7 @@ mod tests {
             min_length: None,
             max_length: None,
             format: None,
+            ..Default::default()
         };
         let result = type_display_string("Prop1", &prop, &schema, &enums);
         assert_ne!(
@@ -7108,6 +7207,7 @@ mod tests {
                 min_length: None,
                 max_length: None,
                 format: None,
+                ..Default::default()
             })),
             ref_path: None,
             insertion_order: None,
@@ -7124,6 +7224,7 @@ mod tests {
             min_length: None,
             max_length: None,
             format: None,
+            ..Default::default()
         };
         let result = type_display_string("Prop2", &prop, &schema, &enums);
         assert_ne!(
@@ -7156,6 +7257,7 @@ mod tests {
                 min_length: None,
                 max_length: None,
                 format: None,
+                ..Default::default()
             })),
             ref_path: None,
             insertion_order: None,
@@ -7172,6 +7274,7 @@ mod tests {
             min_length: None,
             max_length: None,
             format: None,
+            ..Default::default()
         };
         let result = type_display_string("Prop3", &prop, &schema, &enums);
         assert_ne!(
@@ -7204,6 +7307,7 @@ mod tests {
                 min_length: None,
                 max_length: None,
                 format: None,
+                ..Default::default()
             })),
             ref_path: None,
             insertion_order: None,
@@ -7220,6 +7324,7 @@ mod tests {
             min_length: None,
             max_length: None,
             format: None,
+            ..Default::default()
         };
         let result = type_display_string("Prop4", &prop, &schema, &enums);
         assert_ne!(
@@ -7250,6 +7355,7 @@ mod tests {
             min_length: None,
             max_length: None,
             format: None,
+            ..Default::default()
         };
         let schema = CfnSchema {
             type_name: "AWS::EC2::VPC".to_string(),
@@ -7312,6 +7418,7 @@ mod tests {
             min_length: None,
             max_length: None,
             format: None,
+            ..Default::default()
         };
         let schema = CfnSchema {
             type_name: "AWS::EC2::VPC".to_string(),
@@ -7356,6 +7463,7 @@ mod tests {
             min_length: None,
             max_length: None,
             format: None,
+            ..Default::default()
         };
         let schema = CfnSchema {
             type_name: "AWS::EC2::VPC".to_string(),
@@ -7409,6 +7517,7 @@ mod tests {
             min_length: None,
             max_length: None,
             format: None,
+            ..Default::default()
         };
         let schema = CfnSchema {
             type_name: "AWS::EC2::VPC".to_string(),
@@ -7468,6 +7577,7 @@ mod tests {
             min_length: None,
             max_length: None,
             format: None,
+            ..Default::default()
         };
         let schema = CfnSchema {
             type_name: "AWS::Logs::LogGroup".to_string(),
@@ -7530,6 +7640,7 @@ mod tests {
             min_length: None,
             max_length: None,
             format: None,
+            ..Default::default()
         };
         let schema = CfnSchema {
             type_name: "AWS::EC2::NatGateway".to_string(),
@@ -7578,6 +7689,7 @@ mod tests {
             min_length: None,
             max_length: None,
             format: None,
+            ..Default::default()
         };
         let schema = CfnSchema {
             type_name: "AWS::SomeService::Resource".to_string(),
@@ -7626,6 +7738,7 @@ mod tests {
             min_length: None,
             max_length: None,
             format: None,
+            ..Default::default()
         };
         let schema = CfnSchema {
             type_name: "AWS::Logs::LogGroup".to_string(),
@@ -7673,6 +7786,7 @@ mod tests {
             min_length: None,
             max_length: None,
             format: None,
+            ..Default::default()
         };
         let schema = CfnSchema {
             type_name: "AWS::EC2::VPC".to_string(),
@@ -7754,6 +7868,7 @@ mod tests {
             min_length: None,
             max_length: None,
             format: None,
+            ..Default::default()
         };
         let schema = CfnSchema {
             type_name: "AWS::EC2::VPC".to_string(),
@@ -7803,6 +7918,7 @@ mod tests {
             min_length: None,
             max_length: None,
             format: None,
+            ..Default::default()
         };
         let schema = CfnSchema {
             type_name: "AWS::EC2::SecurityGroupIngress".to_string(),
@@ -7856,6 +7972,7 @@ mod tests {
             min_length: None,
             max_length: None,
             format: None,
+            ..Default::default()
         };
         let schema = CfnSchema {
             type_name: "AWS::S3::Bucket".to_string(),
@@ -7917,6 +8034,7 @@ mod tests {
             min_length: None,
             max_length: None,
             format: None,
+            ..Default::default()
         };
         let schema = CfnSchema {
             type_name: "AWS::EC2::SecurityGroupIngress".to_string(),
@@ -8404,6 +8522,130 @@ mod tests {
     }
 
     #[test]
+    fn test_property_oneof_array_ref_maps_to_list_of_struct() {
+        let mut key_schema_props = BTreeMap::new();
+        key_schema_props.insert(
+            "AttributeName".to_string(),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("string".to_string())),
+                ..Default::default()
+            },
+        );
+        key_schema_props.insert(
+            "KeyType".to_string(),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("string".to_string())),
+                enum_values: Some(vec![
+                    EnumValue::Str("HASH".to_string()),
+                    EnumValue::Str("RANGE".to_string()),
+                ]),
+                ..Default::default()
+            },
+        );
+
+        let mut definitions = BTreeMap::new();
+        definitions.insert(
+            "KeySchema".to_string(),
+            CfnDefinition {
+                def_type: Some("object".to_string()),
+                properties: Some(key_schema_props),
+                required: vec!["AttributeName".to_string(), "KeyType".to_string()],
+                ..Default::default()
+            },
+        );
+
+        let prop = CfnProperty {
+            one_of: vec![
+                CfnProperty {
+                    prop_type: Some(TypeValue::Single("array".to_string())),
+                    items: Some(Box::new(CfnProperty {
+                        ref_path: Some("#/definitions/KeySchema".to_string()),
+                        ..Default::default()
+                    })),
+                    ..Default::default()
+                },
+                CfnProperty {
+                    prop_type: Some(TypeValue::Single("object".to_string())),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+        let schema = CfnSchema {
+            type_name: "AWS::DynamoDB::Table".to_string(),
+            description: None,
+            properties: BTreeMap::new(),
+            required: vec![],
+            read_only_properties: vec![],
+            create_only_properties: vec![],
+            write_only_properties: vec![],
+            primary_identifier: None,
+            definitions: Some(definitions),
+            tagging: None,
+            one_of: vec![],
+            any_of: vec![],
+            handlers: BTreeMap::new(),
+        };
+
+        let (carina_type, enum_info) = cfn_type_to_carina_type_with_enum_with_struct_path(
+            &prop,
+            "KeySchema",
+            &schema,
+            "",
+            &BTreeMap::new(),
+            &[],
+        );
+
+        assert!(enum_info.is_none());
+        assert!(carina_type.contains("AttributeType::list("));
+        assert!(carina_type.contains(r#"AttributeType::struct_("KeySchema""#));
+        assert!(carina_type.contains("attribute_name"));
+        assert!(carina_type.contains("key_type"));
+    }
+
+    #[test]
+    #[should_panic(expected = "unresolved oneOf")]
+    fn test_property_oneof_unhandled_scalar_union_panics() {
+        let prop = CfnProperty {
+            one_of: vec![
+                CfnProperty {
+                    prop_type: Some(TypeValue::Single("string".to_string())),
+                    ..Default::default()
+                },
+                CfnProperty {
+                    prop_type: Some(TypeValue::Single("integer".to_string())),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+        let schema = CfnSchema {
+            type_name: "AWS::Test::Resource".to_string(),
+            description: None,
+            properties: BTreeMap::new(),
+            required: vec![],
+            read_only_properties: vec![],
+            create_only_properties: vec![],
+            write_only_properties: vec![],
+            primary_identifier: None,
+            definitions: None,
+            tagging: None,
+            one_of: vec![],
+            any_of: vec![],
+            handlers: BTreeMap::new(),
+        };
+
+        let _ = cfn_type_to_carina_type_with_enum_with_struct_path(
+            &prop,
+            "UnionProperty",
+            &schema,
+            "",
+            &BTreeMap::new(),
+            &[],
+        );
+    }
+
+    #[test]
     fn test_iam_oidc_provider_arn_override() {
         // IAM OIDCProvider's Arn should use iam_oidc_provider_arn(), not generic arn
         assert_eq!(
@@ -8699,6 +8941,7 @@ mod tests {
                 min_length: None,
                 max_length: None,
                 format: None,
+                ..Default::default()
             },
         );
 
@@ -8767,6 +9010,7 @@ mod tests {
                 min_length: None,
                 max_length: None,
                 format: None,
+                ..Default::default()
             },
         );
 
@@ -8812,6 +9056,7 @@ mod tests {
                 min_length: None,
                 max_length: None,
                 format: None,
+                ..Default::default()
             },
         );
 
@@ -12065,13 +12310,13 @@ mod tests {
     fn test_detect_exclusive_from_oneof_two_variants() {
         let mut schema = make_schema_with_props(BTreeMap::new());
         schema.one_of = vec![
-            CfnOneOfVariant {
-                properties: None,
+            CfnProperty {
                 required: vec!["FieldA".to_string()],
+                ..Default::default()
             },
-            CfnOneOfVariant {
-                properties: None,
+            CfnProperty {
                 required: vec!["FieldB".to_string()],
+                ..Default::default()
             },
         ];
         let groups = detect_exclusive_from_oneof(&schema);
@@ -12085,17 +12330,17 @@ mod tests {
     fn test_detect_exclusive_from_oneof_three_variants() {
         let mut schema = make_schema_with_props(BTreeMap::new());
         schema.one_of = vec![
-            CfnOneOfVariant {
-                properties: None,
+            CfnProperty {
                 required: vec!["A".to_string()],
+                ..Default::default()
             },
-            CfnOneOfVariant {
-                properties: None,
+            CfnProperty {
                 required: vec!["B".to_string()],
+                ..Default::default()
             },
-            CfnOneOfVariant {
-                properties: None,
+            CfnProperty {
                 required: vec!["C".to_string()],
+                ..Default::default()
             },
         ];
         let groups = detect_exclusive_from_oneof(&schema);
@@ -12110,13 +12355,13 @@ mod tests {
         // Variants with multiple required fields are not simple exclusive groups
         let mut schema = make_schema_with_props(BTreeMap::new());
         schema.one_of = vec![
-            CfnOneOfVariant {
-                properties: None,
+            CfnProperty {
                 required: vec!["A".to_string(), "B".to_string()],
+                ..Default::default()
             },
-            CfnOneOfVariant {
-                properties: None,
+            CfnProperty {
                 required: vec!["C".to_string()],
+                ..Default::default()
             },
         ];
         let groups = detect_exclusive_from_oneof(&schema);
@@ -12134,13 +12379,13 @@ mod tests {
     fn test_detect_exclusive_from_anyof() {
         let mut schema = make_schema_with_props(BTreeMap::new());
         schema.any_of = vec![
-            CfnOneOfVariant {
-                properties: None,
+            CfnProperty {
                 required: vec!["X".to_string()],
+                ..Default::default()
             },
-            CfnOneOfVariant {
-                properties: None,
+            CfnProperty {
                 required: vec!["Y".to_string()],
+                ..Default::default()
             },
         ];
         let groups = detect_exclusive_from_oneof(&schema);
@@ -12255,13 +12500,13 @@ mod tests {
         let mut schema = make_schema_with_props(props);
         // Also add oneOf that detects the same group
         schema.one_of = vec![
-            CfnOneOfVariant {
-                properties: None,
+            CfnProperty {
                 required: vec!["FieldA".to_string()],
+                ..Default::default()
             },
-            CfnOneOfVariant {
-                properties: None,
+            CfnProperty {
                 required: vec!["FieldB".to_string()],
+                ..Default::default()
             },
         ];
         let groups = detect_exclusive_fields(&schema, "AWS::Test::Resource");
@@ -12677,6 +12922,7 @@ mod tests {
                 min_length: None,
                 max_length: None,
                 format: None,
+                ..Default::default()
             },
         );
         let schema = CfnSchema {
@@ -12751,6 +12997,7 @@ mod tests {
                 min_length: None,
                 max_length: None,
                 format: None,
+                ..Default::default()
             },
         );
         let schema = CfnSchema {
@@ -12806,6 +13053,7 @@ mod tests {
                 min_length: None,
                 max_length: None,
                 format: None,
+                ..Default::default()
             },
         );
         let schema = CfnSchema {
@@ -12881,6 +13129,7 @@ mod tests {
                 min_length: None,
                 max_length: None,
                 format: None,
+                ..Default::default()
             },
         );
         let schema = CfnSchema {
@@ -13015,6 +13264,7 @@ mod tests {
                 min_length: None,
                 max_length: None,
                 format: None,
+                ..Default::default()
             },
         );
         let schema = CfnSchema {
@@ -13128,6 +13378,7 @@ mod tests {
                 min_length: None,
                 max_length: None,
                 format: None,
+                ..Default::default()
             },
         );
         let mut definitions = BTreeMap::new();
@@ -13162,6 +13413,7 @@ mod tests {
                 min_length: None,
                 max_length: None,
                 format: None,
+                ..Default::default()
             },
         );
         let schema = CfnSchema {
@@ -13235,6 +13487,7 @@ mod tests {
                     min_length: None,
                     max_length: None,
                     format: None,
+                    ..Default::default()
                 })),
                 ref_path: None,
                 insertion_order: None,
@@ -13251,6 +13504,7 @@ mod tests {
                 min_length: None,
                 max_length: None,
                 format: None,
+                ..Default::default()
             },
         );
         let mut definitions = BTreeMap::new();
@@ -13285,6 +13539,7 @@ mod tests {
                 min_length: None,
                 max_length: None,
                 format: None,
+                ..Default::default()
             },
         );
         let schema = CfnSchema {

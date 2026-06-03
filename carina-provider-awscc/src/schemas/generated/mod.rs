@@ -11,6 +11,7 @@ use std::sync::LazyLock;
 pub use super::awscc_types::*;
 
 pub mod cloudfront;
+pub mod dynamodb;
 pub mod ec2;
 pub mod iam;
 pub mod identitystore;
@@ -79,6 +80,7 @@ static ENUM_VALID_VALUES: LazyLock<
         cloudfront::origin_access_control::enum_valid_values(),
         wafv2::web_acl::enum_valid_values(),
         kms::key::enum_valid_values(),
+        dynamodb::table::enum_valid_values(),
     ];
     let mut map: HashMap<&str, HashMap<&str, &[&str]>> = HashMap::new();
     for (rt, attrs) in modules {
@@ -132,6 +134,7 @@ fn build_configs() -> Vec<AwsccSchemaConfig> {
         cloudfront::origin_access_control::cloudfront_origin_access_control_config(),
         wafv2::web_acl::wafv2_web_acl_config(),
         kms::key::kms_key_config(),
+        dynamodb::table::dynamodb_table_config(),
     ]
 }
 
