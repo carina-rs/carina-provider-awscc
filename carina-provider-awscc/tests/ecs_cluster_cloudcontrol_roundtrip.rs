@@ -1,9 +1,18 @@
-//! Integration coverage for ECS cluster CloudControl create -> read behavior
+//! Integration coverage for the awscc provider's real Provider-trait apply path
 //! against an in-process winterbaume CloudControl mock.
 //!
-//! This test covers the fields needed by registry Publish API clusters:
-//! `cluster_name`, Fargate capacity providers, Container Insights cluster
-//! settings, and tags.
+//! This test proves that create -> read wiring round-trips ECS cluster
+//! structured list serialization through CloudControl. In particular,
+//! `capacity_providers` survives as a list of strings and `cluster_settings`
+//! survives as a list of maps instead of being flattened into a string.
+//!
+//! This test deliberately does not assert write-only stripping, read-only
+//! synthesis such as `arn`, schema-default fill-in, or normalization. Those are
+//! real AWS CloudControl behaviours driven by the CloudFormation resource-type
+//! schema; the generic winterbaume mock returns the desired state verbatim and
+//! does not reproduce them because it does not consult CFN schemas. That
+//! winterbaume behavior is tracked upstream as moriyoshi/winterbaume issue #6.
+//! The AWS behaviours should be verified separately against live AWS, not here.
 
 use aws_config::{BehaviorVersion, Region};
 use carina_core::provider::{CreateRequest, Provider, ReadRequest};
@@ -100,8 +109,31 @@ fn assert_single_map_list(
     }
 }
 
+fn assert_string_list(attributes: &HashMap<String, Value>, attribute_name: &str, expected: Value) {
+    let value = attributes
+        .get(attribute_name)
+        .unwrap_or_else(|| panic!("read-back state must include {attribute_name}"));
+    let items = match value {
+        Value::Concrete(ConcreteValue::List(items)) => items,
+        other => panic!("{attribute_name} must round-trip as List(String), got {other:?}"),
+    };
+
+    assert_eq!(
+        items.len(),
+        2,
+        "{attribute_name} must contain two structured string elements"
+    );
+    assert_eq!(value, &expected);
+    assert!(
+        items
+            .iter()
+            .all(|item| matches!(item, Value::Concrete(ConcreteValue::String(_)))),
+        "{attribute_name} must contain only string elements"
+    );
+}
+
 #[tokio::test]
-async fn ecs_cluster_create_then_read_round_trips_fargate_cluster_fields() {
+async fn ecs_cluster_create_then_read_round_trips_structured_list_fields() {
     let provider = winterbaume_provider().await;
     let resource = ecs_cluster_resource();
     let id = resource.id.clone();
@@ -124,9 +156,11 @@ async fn ecs_cluster_create_then_read_round_trips_fargate_cluster_fields() {
         read.attributes.get("cluster_name"),
         Some(&string("registry-fargate"))
     );
-    assert_eq!(
-        read.attributes.get("capacity_providers"),
-        Some(&list([string("FARGATE"), string("FARGATE_SPOT")]))
+    let expected_capacity_providers = list([string("FARGATE"), string("FARGATE_SPOT")]);
+    assert_string_list(
+        &read.attributes,
+        "capacity_providers",
+        expected_capacity_providers,
     );
     assert_single_map_list(
         &read.attributes,
