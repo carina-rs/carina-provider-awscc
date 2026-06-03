@@ -12,6 +12,39 @@ The ``AWS::DynamoDB::Table`` resource creates a DDB table. For more information,
   
    Our guidance is to use the latest schema documented for your CFNlong templates. This schema supports the provisioning of all table settings below. When using this schema in your CFNlong templates, please ensure that your Identity and Access Management (IAM) policies are updated with appropriate permissions to allow for the authorization of these setting changes.
 
+## Example
+
+```crn
+awscc.dynamodb.Table {
+  table_name   = 'jti-store'
+  billing_mode = awscc.dynamodb.Table.BillingMode.pay_per_request
+
+  attribute_definition {
+    attribute_name = 'jti'
+    attribute_type = s
+  }
+
+  key_schema {
+    attribute_name = 'jti'
+    key_type       = hash
+  }
+
+  time_to_live_specification = {
+    enabled        = true
+    attribute_name = 'ttl'
+  }
+
+  point_in_time_recovery_specification = {
+    point_in_time_recovery_enabled = true
+  }
+
+  tags = {
+    Environment = 'example'
+    Workload    = 'registry'
+  }
+}
+```
+
 ## Argument Reference
 
 ### `attribute_definitions`
