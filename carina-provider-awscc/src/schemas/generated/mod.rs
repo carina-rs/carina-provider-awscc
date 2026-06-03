@@ -14,6 +14,7 @@ pub mod cloudfront;
 pub mod ec2;
 pub mod iam;
 pub mod identitystore;
+pub mod kms;
 pub mod logs;
 pub mod organizations;
 pub mod route53;
@@ -77,6 +78,7 @@ static ENUM_VALID_VALUES: LazyLock<
         cloudfront::distribution::enum_valid_values(),
         cloudfront::origin_access_control::enum_valid_values(),
         wafv2::web_acl::enum_valid_values(),
+        kms::key::enum_valid_values(),
     ];
     let mut map: HashMap<&str, HashMap<&str, &[&str]>> = HashMap::new();
     for (rt, attrs) in modules {
@@ -129,6 +131,7 @@ fn build_configs() -> Vec<AwsccSchemaConfig> {
         cloudfront::distribution::cloudfront_distribution_config(),
         cloudfront::origin_access_control::cloudfront_origin_access_control_config(),
         wafv2::web_acl::wafv2_web_acl_config(),
+        kms::key::kms_key_config(),
     ]
 }
 

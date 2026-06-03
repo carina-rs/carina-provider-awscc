@@ -109,7 +109,11 @@ impl AwsccProvider {
     /// CloudControl call.
     pub async fn new_with_config(region: &str, cfg: &AwsccProviderConfig) -> Self {
         let config = Self::build_config(region, cfg.assume_role.as_ref()).await;
+        Self::from_sdk_config(config, cfg).await
+    }
 
+    /// Create a new AwsccProvider from a prebuilt AWS SDK configuration.
+    pub async fn from_sdk_config(config: aws_config::SdkConfig, cfg: &AwsccProviderConfig) -> Self {
         let init_error =
             if cfg.allowed_account_ids.is_empty() && cfg.forbidden_account_ids.is_empty() {
                 None

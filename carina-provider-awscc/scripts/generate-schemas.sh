@@ -78,6 +78,7 @@ RESOURCE_TYPES=(
     "AWS::CloudFront::Distribution"
     "AWS::CloudFront::OriginAccessControl"
     "AWS::WAFv2::WebACL"
+    "AWS::KMS::Key"
 )
 
 echo "Generating awscc provider schemas..."

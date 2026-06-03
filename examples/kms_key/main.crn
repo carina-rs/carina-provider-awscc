@@ -1,0 +1,33 @@
+# KMS Key Example
+
+provider awscc {
+  region = awscc.Region.ap_northeast_1
+}
+
+awscc.kms.Key {
+  description = 'Example signing key'
+
+  key_policy = {
+    version = '2012-10-17'
+    statement {
+      sid    = 'AllowRootAccountAccess'
+      effect = 'Allow'
+
+      principal = {
+        aws = 'arn:aws:iam::111122223333:root'
+      }
+
+      action   = 'kms:*'
+      resource = '*'
+    }
+  }
+
+  key_usage              = awscc.kms.Key.KeyUsage.sign_verify
+  key_spec               = awscc.kms.Key.KeySpec.ecc_nist_p256
+  enable_key_rotation    = false
+  pending_window_in_days = 7
+
+  tags = {
+    Environment = 'example'
+  }
+}
