@@ -1,18 +1,14 @@
 //! Integration coverage for the awscc provider's real Provider-trait apply path
 //! against an in-process winterbaume CloudControl mock.
 //!
-//! This test proves that create -> read wiring round-trips the provider's
-//! serialization and conversion with no network. In particular, `key_policy`
-//! survives as a structured policy document, which is PR #313's core
-//! `key_policy` = `iam_policy_document` design.
+//! winterbaume-cloudcontrol 1.0.0 fixes moriyoshi/winterbaume issue #6: the
+//! mock now reproduces CloudFormation-schema shaping, including write-only
+//! stripping, read-only synthesis, and schema-default fill-in. This test sends
+//! one create request and asserts the full CFN-schema-shaped read state
+//! round-trips through the awscc provider's serialization and conversion.
 //!
-//! This test deliberately does not assert write-only stripping, read-only
-//! synthesis, or schema-default fill-in. Those are real AWS CloudControl
-//! behaviours driven by the CloudFormation resource-type schema; the generic
-//! winterbaume mock returns the desired state verbatim and does not reproduce
-//! them because it does not consult CFN schemas. That winterbaume behavior is
-//! tracked upstream as moriyoshi/winterbaume issue #6. The AWS behaviours were
-//! verified separately against live AWS, not here.
+//! In particular, `key_policy` survives as a structured policy document, which
+//! is PR #313's core `key_policy` = `iam_policy_document` design.
 
 use aws_config::{BehaviorVersion, Region};
 use carina_core::provider::{CreateRequest, Provider, ReadRequest};
@@ -20,6 +16,7 @@ use carina_core::resource::{ConcreteValue, Resource, Value};
 use carina_provider_awscc::AwsccProvider;
 use carina_provider_awscc::provider::AwsccProviderConfig;
 use indexmap::IndexMap;
+use std::collections::HashMap;
 use winterbaume_cloudcontrol::CloudControlService;
 use winterbaume_core::MockAws;
 
@@ -92,16 +89,40 @@ async fn winterbaume_provider() -> AwsccProvider {
     AwsccProvider::from_sdk_config(config, &AwsccProviderConfig::default()).await
 }
 
+fn attributes(entries: impl IntoIterator<Item = (&'static str, Value)>) -> HashMap<String, Value> {
+    entries
+        .into_iter()
+        .map(|(key, value)| (key.to_string(), value))
+        .collect()
+}
+
+fn concrete_string_attribute<'a>(
+    attributes: &'a HashMap<String, Value>,
+    attribute_name: &str,
+) -> &'a str {
+    match attributes.get(attribute_name) {
+        Some(Value::Concrete(ConcreteValue::String(value))) => value,
+        other => panic!("{attribute_name} must be a String, got {other:?}"),
+    }
+}
+
+fn is_uuidish(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    value.len() == 36
+        && [8, 13, 18, 23]
+            .into_iter()
+            .all(|index| bytes[index] == b'-')
+        && value
+            .chars()
+            .enumerate()
+            .all(|(index, ch)| [8, 13, 18, 23].contains(&index) || ch.is_ascii_hexdigit())
+}
+
 #[tokio::test]
 async fn kms_key_create_then_read_round_trips_structured_key_policy() {
     let provider = winterbaume_provider().await;
     let resource = kms_key_resource();
     let id = resource.id.clone();
-    let desired_policy = resource
-        .attributes
-        .get("key_policy")
-        .expect("test resource has key_policy")
-        .clone();
 
     let created = Provider::create(&provider, &id, CreateRequest { resource })
         .await
@@ -117,32 +138,42 @@ async fn kms_key_create_then_read_round_trips_structured_key_policy() {
 
     assert!(read.exists, "read-back state must exist");
     assert_eq!(read.identifier.as_deref(), Some(identifier));
-    assert_eq!(
-        read.attributes.get("description"),
-        Some(&string("Winterbaume signing key"))
+    assert!(
+        !read.attributes.contains_key("pending_window_in_days"),
+        "write-only pending_window_in_days must be stripped"
     );
+    let key_id = concrete_string_attribute(&read.attributes, "key_id");
+    assert!(is_uuidish(key_id), "key_id must be uuid-shaped: {key_id}");
     assert_eq!(
-        read.attributes.get("key_usage"),
-        Some(&string("SIGN_VERIFY"))
+        concrete_string_attribute(&read.attributes, "arn"),
+        format!("arn:aws:kms:us-east-1:123456789012:key/{key_id}")
     );
+
+    let expected = attributes([
+        ("description", string("Winterbaume signing key")),
+        ("key_usage", string("SIGN_VERIFY")),
+        ("key_spec", string("ECC_NIST_P256")),
+        ("enable_key_rotation", bool_(false)),
+        ("enabled", bool_(true)),
+        ("multi_region", bool_(false)),
+        ("origin", string("AWS_KMS")),
+        ("key_policy", key_policy()),
+        ("tags", map([("Environment", string("test"))])),
+        ("key_id", string(key_id)),
+        (
+            "arn",
+            string(&format!("arn:aws:kms:us-east-1:123456789012:key/{key_id}")),
+        ),
+    ]);
     assert_eq!(
-        read.attributes.get("key_spec"),
-        Some(&string("ECC_NIST_P256"))
+        &read.attributes, &expected,
+        "read-back attributes must exactly match the full shaped KMS key state"
     );
-    assert_eq!(
-        read.attributes.get("enable_key_rotation"),
-        Some(&bool_(false))
-    );
-    assert_eq!(read.attributes.get("key_policy"), Some(&desired_policy));
     assert!(
         matches!(
             read.attributes.get("key_policy"),
             Some(Value::Concrete(ConcreteValue::Map(_)))
         ),
         "key_policy must remain a structured policy document"
-    );
-    assert_eq!(
-        read.attributes.get("tags"),
-        Some(&map([("Environment", string("test"))]))
     );
 }

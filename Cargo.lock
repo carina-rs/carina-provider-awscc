@@ -2617,9 +2617,9 @@ checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
 
 [[package]]
 name = "winterbaume-cloudcontrol"
-version = "0.2.0"
+version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f523567ebf224c464d7064b47ef241a642942db50871fb8944d138da7db691fa"
+checksum = "d1e180b012bf8d8825361a931ef11a163b2ae8069ba12ba9fcc9e89effb92e2b"
 dependencies = [
  "bytes",
  "chrono",

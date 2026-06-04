@@ -76,53 +76,70 @@ Every new resource must get an integration test under
 that drives the real `Provider` trait (`Provider::create` then
 `Provider::read`) against an in-process winterbaume CloudControl mock
 (`winterbaume_core::MockAws` + `winterbaume_cloudcontrol::CloudControlService`).
-Mirror the existing `dynamodb_table_cloudcontrol_roundtrip.rs`.
 
-The mock returns the desired (create) state **verbatim**. So the test
-proves only what the mock can prove: that create -> read *wiring*
-round-trips the resource's **structured** fields through CloudControl
-serialization — list-of-string and list-of-struct fields survive as
-structured `List`/`Map` values instead of being flattened or
-stringified. Scope the assertions to that. Do **not** assert full-field
-equality as if every create field comes back unchanged on real AWS — that
-is a mock artifact, not real AWS behaviour (see below). State this
-limitation in the test's module doc comment.
+winterbaume-cloudcontrol shapes the `GetResource` read model **per registered
+CloudFormation resource type**. As of winterbaume-cloudcontrol 1.0.0, the
+registered set is exactly:
 
-### 2. Reconcile mock behaviour with real AWS, and file a winterbaume issue **per resource**
+- `AWS::KMS::Key` - winterbaume #6, closed/shaped
+- `AWS::DynamoDB::Table` - winterbaume #7, closed/shaped
+- `AWS::ECS::Cluster` - winterbaume #8, closed/shaped
 
-The generic winterbaume mock does **not** reproduce real AWS CloudControl
-behaviours that the CloudFormation resource-type schema drives:
-write-only field stripping, read-only field synthesis (e.g. `Arn`),
-schema-default fill-in, and value normalization. For each new resource,
-verify the actual AWS behaviour by creating it on a live account and
-capturing the real `GetResource` output, then compare it to what the mock
-returns.
+Registered types reproduce the real AWS CloudControl schema shaping:
+write-only field stripping, read-only field synthesis (for example `Arn`), and
+schema-default fill-in. Unregistered types fall back to returning the
+create-time `DesiredState` verbatim, which is the old mock behaviour.
 
-File a **separate winterbaume issue for each new resource** — do **not**
-fold it into a single umbrella issue. Even though every case shares the
-same root cause (the CloudControl layer returns the create-time
-`DesiredState` verbatim without consulting any CFN schema), *which*
-read-only and default properties real AWS fills in is **different for
-every resource type**, so the fix can only be verified against a
-concrete, resource-specific `DesiredState → real GetResource` diff. This
-is the precedent the existing reports already follow: winterbaume #6
-(`AWS::KMS::Key`) and #7 (`AWS::DynamoDB::Table`) are separate issues for
-the same root cause, each carrying its own captured diff. A new resource
-gets its own issue, cross-linked to the existing ones (e.g. "same root
-cause as #6 / #7"), not a comment on them.
+The round-trip test's assertions therefore depend on whether the resource is in
+that shaping registry.
 
-When filing, follow winterbaume's own agent skill —
-`skills/winterbaume-bug/SKILL.md` in that repo — **verbatim**. It mandates
-a fixed `### Affected AWS service / Summary / Reproduction / Expected /
-Actual / version` layout that an auto-label GitHub Action parses; a
-free-form body silently breaks labelling. The skill also requires a real,
-actually-executed reproduction (run it and paste the output — never invent
-one), a reported duplicate search, and `git rev-parse HEAD` for the
-version field. winterbaume is **not** a `carina-rs` repository, so the
-external-repo rule in `CLAUDE.local.md` also applies: draft the issue per
-that skill, then get explicit confirmation before `gh issue create`. The
-AWS-specific behaviours themselves must be verified against live AWS, not
-asserted in the mock round-trip test.
+For a **registered** resource, assert the full CFN-schema-shaped read state
+exhaustively. Build the expected attribute map from the real `GetResource`
+shape and compare the whole map so missing keys, extra keys, wrong defaults,
+and incorrectly preserved write-only fields all fail. Use
+`kms_key_cloudcontrol_roundtrip.rs` (including its generated-UUID `arn` /
+`key_id` handling) and `ecs_cluster_cloudcontrol_roundtrip.rs` as the
+templates. To prove the test really exercises shaping, and is not passing by
+accident, it must fail against the pre-shaping verbatim mock and pass against
+the shaping mock.
+
+For an **unregistered** resource, the mock still returns the create-time
+`DesiredState` verbatim. Assert only structural preservation: list-of-string
+and list-of-struct fields survive as structured `List`/`Map` values instead of
+being flattened or stringified. Do **not** assert full shaped equality for an
+unregistered resource, because that would lock in a mock artifact rather than
+real AWS behaviour. State this limitation in the test's module doc comment.
+The ELBv2 round-trip tests are the templates for this case; winterbaume #9,
+#10, and #11 track those ELBv2 resources and are still open/unshaped.
+
+### 2. For unregistered resources, reconcile with real AWS and file a winterbaume issue **per resource**
+
+For an unregistered new resource, verify the actual AWS behaviour by creating
+it on a live account, capturing the real `GetResource` output, and comparing
+that to the mock's verbatim read state. Then file a **separate winterbaume issue
+for each resource** so the resource can get a shaper. Do **not** fold multiple
+resources into a single umbrella issue. Which read-only and default properties
+real AWS fills in differs per resource type, so each fix needs its own captured
+`DesiredState` -> real `GetResource` diff. Cross-link to the existing examples:
+#6 (`AWS::KMS::Key`), #7 (`AWS::DynamoDB::Table`), and #8
+(`AWS::ECS::Cluster`) are closed/shaped; #9/#10/#11 are the open/unshaped ELBv2
+follow-ups.
+
+When filing, follow winterbaume's own agent skill,
+`skills/winterbaume-bug/SKILL.md` in that repo, **verbatim**. It mandates a
+fixed `### Affected AWS service / Summary / Reproduction / Expected / Actual /
+version` layout that an auto-label GitHub Action parses; a free-form body
+silently breaks labelling. The skill also requires a real, actually-executed
+reproduction (run it and paste the output; never invent one), a reported
+duplicate search, and `git rev-parse HEAD` for the version field. winterbaume
+is **not** a `carina-rs` repository, so the external-repo rule in
+`CLAUDE.local.md` also applies: draft the issue per that skill, then get
+explicit confirmation before `gh issue create`.
+
+Once winterbaume registers the resource and releases it, upgrade that
+resource's round-trip test from structural-only assertions to full shaped
+equality. The dependency bump plus the KMS, DynamoDB, and ECS test
+strengthening in the winterbaume 1.0.0 work is the model for that upgrade.
 
 ## Git Workflow
 
