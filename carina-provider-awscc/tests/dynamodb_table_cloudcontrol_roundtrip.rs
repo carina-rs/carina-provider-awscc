@@ -1,19 +1,15 @@
 //! Integration coverage for the awscc provider's real Provider-trait apply path
 //! against an in-process winterbaume CloudControl mock.
 //!
-//! This test proves that create -> read wiring round-trips DynamoDB table
-//! list-of-struct serialization through CloudControl. In particular,
-//! `key_schema`, whose generated type is selected through oneOf resolution,
-//! survives the real apply path as a structured list of maps instead of being
-//! flattened into a string.
+//! winterbaume-cloudcontrol 1.0.0 fixes moriyoshi/winterbaume issue #7: the
+//! mock now reproduces CloudFormation-schema shaping, including write-only
+//! stripping, read-only synthesis, and schema-default fill-in. This test sends
+//! one create request and asserts the full CFN-schema-shaped read state
+//! round-trips through the awscc provider's serialization and conversion.
 //!
-//! This test deliberately does not assert write-only stripping, read-only
-//! synthesis, or schema-default fill-in. Those are real AWS CloudControl
-//! behaviours driven by the CloudFormation resource-type schema; the generic
-//! winterbaume mock returns the desired state verbatim and does not reproduce
-//! them because it does not consult CFN schemas. That winterbaume behavior is
-//! tracked upstream as moriyoshi/winterbaume issue #6. The AWS behaviours
-//! should be verified separately against live AWS, not here.
+//! In particular, `key_schema`, whose generated type is selected through oneOf
+//! resolution, survives the real apply path as a structured list of maps instead
+//! of being flattened into a string.
 
 use aws_config::{BehaviorVersion, Region};
 use carina_core::provider::{CreateRequest, Provider, ReadRequest};
@@ -29,7 +25,6 @@ fn string(value: &str) -> Value {
     Value::Concrete(ConcreteValue::String(value.to_string()))
 }
 
-#[allow(dead_code)]
 fn int(value: i64) -> Value {
     Value::Concrete(ConcreteValue::Int(value))
 }
@@ -94,35 +89,11 @@ async fn winterbaume_provider() -> AwsccProvider {
     AwsccProvider::from_sdk_config(config, &AwsccProviderConfig::default()).await
 }
 
-fn assert_single_map_list(
-    attributes: &HashMap<String, Value>,
-    attribute_name: &str,
-    expected_entries: &[(&str, Value)],
-) {
-    let value = attributes
-        .get(attribute_name)
-        .unwrap_or_else(|| panic!("read-back state must include {attribute_name}"));
-    let items = match value {
-        Value::Concrete(ConcreteValue::List(items)) => items,
-        other => panic!("{attribute_name} must round-trip as List(Map), got {other:?}"),
-    };
-    assert_eq!(
-        items.len(),
-        1,
-        "{attribute_name} must contain one structured element"
-    );
-    let item = match &items[0] {
-        Value::Concrete(ConcreteValue::Map(item)) => item,
-        other => panic!("{attribute_name}[0] must round-trip as Map, got {other:?}"),
-    };
-
-    for (key, expected_value) in expected_entries {
-        assert_eq!(
-            item.get(*key),
-            Some(expected_value),
-            "{attribute_name}[0].{key} must round-trip"
-        );
-    }
+fn attributes(entries: impl IntoIterator<Item = (&'static str, Value)>) -> HashMap<String, Value> {
+    entries
+        .into_iter()
+        .map(|(key, value)| (key.to_string(), value))
+        .collect()
 }
 
 #[tokio::test]
@@ -145,32 +116,54 @@ async fn dynamodb_table_create_then_read_round_trips_list_of_struct_fields() {
 
     assert!(read.exists, "read-back state must exist");
     assert_eq!(read.identifier.as_deref(), Some(identifier));
+    let expected = attributes([
+        ("table_name", string("jti-store")),
+        ("billing_mode", string("PAY_PER_REQUEST")),
+        (
+            "attribute_definitions",
+            list([map([
+                ("attribute_name", string("jti")),
+                ("attribute_type", string("S")),
+            ])]),
+        ),
+        (
+            "key_schema",
+            list([map([
+                ("attribute_name", string("jti")),
+                ("key_type", string("HASH")),
+            ])]),
+        ),
+        (
+            "time_to_live_specification",
+            map([("attribute_name", string("ttl")), ("enabled", bool_(true))]),
+        ),
+        (
+            "point_in_time_recovery_specification",
+            map([("point_in_time_recovery_enabled", bool_(true))]),
+        ),
+        ("tags", map([("Environment", string("test"))])),
+        ("sse_specification", map([("sse_enabled", bool_(false))])),
+        (
+            "contributor_insights_specification",
+            map([("enabled", bool_(false))]),
+        ),
+        ("deletion_protection_enabled", bool_(false)),
+        ("local_secondary_indexes", list([])),
+        ("global_secondary_indexes", list([])),
+        (
+            "warm_throughput",
+            map([
+                ("read_units_per_second", int(12000)),
+                ("write_units_per_second", int(4000)),
+            ]),
+        ),
+        (
+            "arn",
+            string("arn:aws:dynamodb:us-east-1:123456789012:table/jti-store"),
+        ),
+    ]);
     assert_eq!(
-        read.attributes.get("table_name"),
-        Some(&string("jti-store"))
-    );
-    assert_eq!(
-        read.attributes.get("billing_mode"),
-        Some(&string("PAY_PER_REQUEST"))
-    );
-    assert_single_map_list(
-        &read.attributes,
-        "key_schema",
-        &[
-            ("attribute_name", string("jti")),
-            ("key_type", string("HASH")),
-        ],
-    );
-    assert_single_map_list(
-        &read.attributes,
-        "attribute_definitions",
-        &[
-            ("attribute_name", string("jti")),
-            ("attribute_type", string("S")),
-        ],
-    );
-    assert_eq!(
-        read.attributes.get("tags"),
-        Some(&map([("Environment", string("test"))]))
+        &read.attributes, &expected,
+        "read-back attributes must exactly match the full shaped DynamoDB table state"
     );
 }

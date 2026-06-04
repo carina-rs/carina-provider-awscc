@@ -1,18 +1,15 @@
 //! Integration coverage for the awscc provider's real Provider-trait apply path
 //! against an in-process winterbaume CloudControl mock.
 //!
-//! This test proves that create -> read wiring round-trips ECS cluster
-//! structured list serialization through CloudControl. In particular,
-//! `capacity_providers` survives as a list of strings and `cluster_settings`
-//! survives as a list of maps instead of being flattened into a string.
+//! winterbaume-cloudcontrol 1.0.0 fixes moriyoshi/winterbaume issue #8: the
+//! mock now reproduces CloudFormation-schema shaping, including write-only
+//! stripping, read-only synthesis, and schema-default fill-in. This test sends
+//! one create request and asserts the full CFN-schema-shaped read state
+//! round-trips through the awscc provider's serialization and conversion.
 //!
-//! This test deliberately does not assert write-only stripping, read-only
-//! synthesis such as `arn`, schema-default fill-in, or normalization. Those are
-//! real AWS CloudControl behaviours driven by the CloudFormation resource-type
-//! schema; the generic winterbaume mock returns the desired state verbatim and
-//! does not reproduce them because it does not consult CFN schemas. That
-//! winterbaume behavior is tracked upstream as moriyoshi/winterbaume issue #6.
-//! The AWS behaviours should be verified separately against live AWS, not here.
+//! In particular, `capacity_providers` survives as a list of strings and
+//! `cluster_settings` survives as a list of maps instead of being flattened into
+//! a string.
 
 use aws_config::{BehaviorVersion, Region};
 use carina_core::provider::{CreateRequest, Provider, ReadRequest};
@@ -78,58 +75,11 @@ async fn winterbaume_provider() -> AwsccProvider {
     AwsccProvider::from_sdk_config(config, &AwsccProviderConfig::default()).await
 }
 
-fn assert_single_map_list(
-    attributes: &HashMap<String, Value>,
-    attribute_name: &str,
-    expected_entries: &[(&str, Value)],
-) {
-    let value = attributes
-        .get(attribute_name)
-        .unwrap_or_else(|| panic!("read-back state must include {attribute_name}"));
-    let items = match value {
-        Value::Concrete(ConcreteValue::List(items)) => items,
-        other => panic!("{attribute_name} must round-trip as List(Map), got {other:?}"),
-    };
-    assert_eq!(
-        items.len(),
-        1,
-        "{attribute_name} must contain one structured element"
-    );
-    let item = match &items[0] {
-        Value::Concrete(ConcreteValue::Map(item)) => item,
-        other => panic!("{attribute_name}[0] must round-trip as Map, got {other:?}"),
-    };
-
-    for (key, expected_value) in expected_entries {
-        assert_eq!(
-            item.get(*key),
-            Some(expected_value),
-            "{attribute_name}[0].{key} must round-trip"
-        );
-    }
-}
-
-fn assert_string_list(attributes: &HashMap<String, Value>, attribute_name: &str, expected: Value) {
-    let value = attributes
-        .get(attribute_name)
-        .unwrap_or_else(|| panic!("read-back state must include {attribute_name}"));
-    let items = match value {
-        Value::Concrete(ConcreteValue::List(items)) => items,
-        other => panic!("{attribute_name} must round-trip as List(String), got {other:?}"),
-    };
-
-    assert_eq!(
-        items.len(),
-        2,
-        "{attribute_name} must contain two structured string elements"
-    );
-    assert_eq!(value, &expected);
-    assert!(
-        items
-            .iter()
-            .all(|item| matches!(item, Value::Concrete(ConcreteValue::String(_)))),
-        "{attribute_name} must contain only string elements"
-    );
+fn attributes(entries: impl IntoIterator<Item = (&'static str, Value)>) -> HashMap<String, Value> {
+    entries
+        .into_iter()
+        .map(|(key, value)| (key.to_string(), value))
+        .collect()
 }
 
 #[tokio::test]
@@ -152,29 +102,34 @@ async fn ecs_cluster_create_then_read_round_trips_structured_list_fields() {
 
     assert!(read.exists, "read-back state must exist");
     assert_eq!(read.identifier.as_deref(), Some(identifier));
+    let expected = attributes([
+        ("cluster_name", string("registry-fargate")),
+        (
+            "capacity_providers",
+            list([string("FARGATE"), string("FARGATE_SPOT")]),
+        ),
+        (
+            "cluster_settings",
+            list([map([
+                ("name", string("containerInsights")),
+                ("value", string("enabled")),
+            ])]),
+        ),
+        (
+            "tags",
+            map([
+                ("Environment", string("test")),
+                ("Workload", string("registry")),
+            ]),
+        ),
+        ("default_capacity_provider_strategy", list([])),
+        (
+            "arn",
+            string("arn:aws:ecs:us-east-1:123456789012:cluster/registry-fargate"),
+        ),
+    ]);
     assert_eq!(
-        read.attributes.get("cluster_name"),
-        Some(&string("registry-fargate"))
-    );
-    let expected_capacity_providers = list([string("FARGATE"), string("FARGATE_SPOT")]);
-    assert_string_list(
-        &read.attributes,
-        "capacity_providers",
-        expected_capacity_providers,
-    );
-    assert_single_map_list(
-        &read.attributes,
-        "cluster_settings",
-        &[
-            ("name", string("containerInsights")),
-            ("value", string("enabled")),
-        ],
-    );
-    assert_eq!(
-        read.attributes.get("tags"),
-        Some(&map([
-            ("Environment", string("test")),
-            ("Workload", string("registry")),
-        ]))
+        &read.attributes, &expected,
+        "read-back attributes must exactly match the full shaped ECS cluster state"
     );
 }
