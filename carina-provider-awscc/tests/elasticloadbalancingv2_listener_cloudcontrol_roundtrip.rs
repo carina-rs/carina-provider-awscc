@@ -1,18 +1,13 @@
 //! Integration coverage for the awscc provider's real Provider-trait apply path
 //! against an in-process winterbaume CloudControl mock.
 //!
-//! This test proves that create -> read wiring round-trips Elastic Load
-//! Balancing v2 listener structured list serialization through CloudControl. In
-//! particular, `certificates` and `default_actions` survive as lists of maps
-//! instead of being flattened into strings.
-//!
-//! This test deliberately does not assert write-only stripping, read-only
-//! synthesis such as `arn`, schema-default fill-in, or normalization. Those are
-//! real AWS CloudControl behaviours driven by the CloudFormation resource-type
-//! schema; the generic winterbaume mock returns the desired state verbatim and
-//! does not reproduce them because it does not consult CFN schemas. That
-//! winterbaume behavior is tracked upstream as moriyoshi/winterbaume issue #6.
-//! The AWS behaviours should be verified separately against live AWS, not here.
+//! winterbaume-cloudcontrol 1.0.1 fixes moriyoshi/winterbaume issue #11: the
+//! mock now reproduces CloudFormation-schema shaping for
+//! AWS::ElasticLoadBalancingV2::Listener, including write-only stripping,
+//! read-only synthesis (for example `ListenerArn`), schema-default fill-in, and
+//! enriched sub-structures. This test sends one create request and asserts the
+//! full CFN-schema-shaped read state round-trips through the awscc provider's
+//! serialization and conversion.
 
 use aws_config::{BehaviorVersion, Region};
 use carina_core::provider::{CreateRequest, Provider, ReadRequest};
@@ -32,6 +27,10 @@ fn int(value: i64) -> Value {
     Value::Concrete(ConcreteValue::Int(value))
 }
 
+fn bool_(value: bool) -> Value {
+    Value::Concrete(ConcreteValue::Bool(value))
+}
+
 fn map(entries: impl IntoIterator<Item = (&'static str, Value)>) -> Value {
     Value::Concrete(ConcreteValue::Map(
         entries
@@ -43,6 +42,10 @@ fn map(entries: impl IntoIterator<Item = (&'static str, Value)>) -> Value {
 
 fn list(items: impl IntoIterator<Item = Value>) -> Value {
     Value::Concrete(ConcreteValue::List(items.into_iter().collect()))
+}
+
+fn key_value(key: &'static str, value: &'static str) -> Value {
+    map([("key", string(key)), ("value", string(value))])
 }
 
 fn listener_resource() -> Resource {
@@ -95,39 +98,72 @@ async fn winterbaume_provider() -> AwsccProvider {
     AwsccProvider::from_sdk_config(config, &AwsccProviderConfig::default()).await
 }
 
-fn assert_single_map_list(
-    attributes: &HashMap<String, Value>,
-    attribute_name: &str,
-    expected_entries: &[(&str, Value)],
-) {
-    let value = attributes
-        .get(attribute_name)
-        .unwrap_or_else(|| panic!("read-back state must include {attribute_name}"));
-    let items = match value {
-        Value::Concrete(ConcreteValue::List(items)) => items,
-        other => panic!("{attribute_name} must round-trip as List(Map), got {other:?}"),
-    };
-    assert_eq!(
-        items.len(),
-        1,
-        "{attribute_name} must contain one structured element"
-    );
-    let item = match &items[0] {
-        Value::Concrete(ConcreteValue::Map(item)) => item,
-        other => panic!("{attribute_name}[0] must round-trip as Map, got {other:?}"),
-    };
+fn attributes(entries: impl IntoIterator<Item = (&'static str, Value)>) -> HashMap<String, Value> {
+    entries
+        .into_iter()
+        .map(|(key, value)| (key.to_string(), value))
+        .collect()
+}
 
-    for (key, expected_value) in expected_entries {
-        assert_eq!(
-            item.get(*key),
-            Some(expected_value),
-            "{attribute_name}[0].{key} must round-trip"
-        );
+fn concrete_string_attribute<'a>(
+    attributes: &'a HashMap<String, Value>,
+    attribute_name: &str,
+) -> &'a str {
+    match attributes.get(attribute_name) {
+        Some(Value::Concrete(ConcreteValue::String(value))) => value,
+        other => panic!("{attribute_name} must be a String, got {other:?}"),
     }
 }
 
+fn is_lower_hex16(value: &str) -> bool {
+    value.len() == 16 && value.chars().all(|ch| ch.is_ascii_hexdigit())
+}
+
+fn listener_attributes() -> Value {
+    list([
+        key_value("routing.http.response.server.enabled", "true"),
+        key_value(
+            "routing.http.response.access_control_allow_headers.header_value",
+            "",
+        ),
+        key_value("routing.http.response.x_frame_options.header_value", ""),
+        key_value(
+            "routing.http.response.access_control_allow_methods.header_value",
+            "",
+        ),
+        key_value(
+            "routing.http.response.access_control_allow_origin.header_value",
+            "",
+        ),
+        key_value(
+            "routing.http.response.access_control_allow_credentials.header_value",
+            "",
+        ),
+        key_value(
+            "routing.http.response.x_content_type_options.header_value",
+            "",
+        ),
+        key_value(
+            "routing.http.response.content_security_policy.header_value",
+            "",
+        ),
+        key_value(
+            "routing.http.response.access_control_expose_headers.header_value",
+            "",
+        ),
+        key_value(
+            "routing.http.response.strict_transport_security.header_value",
+            "",
+        ),
+        key_value(
+            "routing.http.response.access_control_max_age.header_value",
+            "",
+        ),
+    ])
+}
+
 #[tokio::test]
-async fn listener_create_then_read_round_trips_structured_list_fields() {
+async fn listener_create_then_read_round_trips_full_shaped_state() {
     let provider = winterbaume_provider().await;
     let resource = listener_resource();
     let id = resource.id.clone();
@@ -146,23 +182,65 @@ async fn listener_create_then_read_round_trips_structured_list_fields() {
 
     assert!(read.exists, "read-back state must exist");
     assert_eq!(read.identifier.as_deref(), Some(identifier));
+
+    let listener_arn = concrete_string_attribute(&read.attributes, "listener_arn");
+    let suffix = listener_arn
+        .strip_prefix(
+            "arn:aws:elasticloadbalancing:ap-northeast-1:123456789012:listener/app/registry-alb/abc123/",
+        )
+        .expect("listener_arn must derive from load_balancer_arn and append a listener suffix");
+    assert!(
+        is_lower_hex16(suffix),
+        "listener_arn suffix must be 16 hex characters: {suffix}"
+    );
+
+    let target_group_arn =
+        "arn:aws:elasticloadbalancing:ap-northeast-1:123456789012:targetgroup/registry-tg/def456";
+    let expected = attributes([
+        (
+            "load_balancer_arn",
+            string(
+                "arn:aws:elasticloadbalancing:ap-northeast-1:123456789012:loadbalancer/app/registry-alb/abc123",
+            ),
+        ),
+        ("port", int(443)),
+        ("protocol", string("HTTPS")),
+        (
+            "certificates",
+            list([map([(
+                "certificate_arn",
+                string("arn:aws:acm:ap-northeast-1:123456789012:certificate/aaaa-bbbb"),
+            )])]),
+        ),
+        ("alpn_policy", list([])),
+        (
+            "default_actions",
+            list([map([
+                ("type", string("forward")),
+                ("target_group_arn", string(target_group_arn)),
+                (
+                    "forward_config",
+                    map([
+                        (
+                            "target_group_stickiness_config",
+                            map([("enabled", bool_(false))]),
+                        ),
+                        (
+                            "target_groups",
+                            list([map([
+                                ("target_group_arn", string(target_group_arn)),
+                                ("weight", int(1)),
+                            ])]),
+                        ),
+                    ]),
+                ),
+            ])]),
+        ),
+        ("listener_arn", string(listener_arn)),
+        ("listener_attributes", listener_attributes()),
+    ]);
     assert_eq!(
-        read.attributes.get("load_balancer_arn"),
-        Some(&string(
-            "arn:aws:elasticloadbalancing:ap-northeast-1:123456789012:loadbalancer/app/registry-alb/abc123",
-        ))
-    );
-    assert_single_map_list(
-        &read.attributes,
-        "certificates",
-        &[(
-            "certificate_arn",
-            string("arn:aws:acm:ap-northeast-1:123456789012:certificate/aaaa-bbbb"),
-        )],
-    );
-    assert_single_map_list(
-        &read.attributes,
-        "default_actions",
-        &[("type", string("forward"))],
+        &read.attributes, &expected,
+        "read-back attributes must exactly match the full shaped ELBv2 listener state"
     );
 }
