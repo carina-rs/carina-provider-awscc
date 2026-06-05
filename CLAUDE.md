@@ -78,12 +78,15 @@ that drives the real `Provider` trait (`Provider::create` then
 (`winterbaume_core::MockAws` + `winterbaume_cloudcontrol::CloudControlService`).
 
 winterbaume-cloudcontrol shapes the `GetResource` read model **per registered
-CloudFormation resource type**. As of winterbaume-cloudcontrol 1.0.0, the
+CloudFormation resource type**. As of winterbaume-cloudcontrol 1.0.1, the
 registered set is exactly:
 
 - `AWS::KMS::Key` - winterbaume #6, closed/shaped
 - `AWS::DynamoDB::Table` - winterbaume #7, closed/shaped
 - `AWS::ECS::Cluster` - winterbaume #8, closed/shaped
+- `AWS::ElasticLoadBalancingV2::TargetGroup` - winterbaume #9, closed/shaped
+- `AWS::ElasticLoadBalancingV2::LoadBalancer` - winterbaume #10, closed/shaped
+- `AWS::ElasticLoadBalancingV2::Listener` - winterbaume #11, closed/shaped
 
 Registered types reproduce the real AWS CloudControl schema shaping:
 write-only field stripping, read-only field synthesis (for example `Arn`), and
@@ -109,8 +112,8 @@ and list-of-struct fields survive as structured `List`/`Map` values instead of
 being flattened or stringified. Do **not** assert full shaped equality for an
 unregistered resource, because that would lock in a mock artifact rather than
 real AWS behaviour. State this limitation in the test's module doc comment.
-The ELBv2 round-trip tests are the templates for this case; winterbaume #9,
-#10, and #11 track those ELBv2 resources and are still open/unshaped.
+Use this pattern only until the resource gets a winterbaume shaper; after that,
+upgrade the test to full shaped equality.
 
 ### 2. For unregistered resources, reconcile with real AWS and file a winterbaume issue **per resource**
 
@@ -121,9 +124,10 @@ for each resource** so the resource can get a shaper. Do **not** fold multiple
 resources into a single umbrella issue. Which read-only and default properties
 real AWS fills in differs per resource type, so each fix needs its own captured
 `DesiredState` -> real `GetResource` diff. Cross-link to the existing examples:
-#6 (`AWS::KMS::Key`), #7 (`AWS::DynamoDB::Table`), and #8
-(`AWS::ECS::Cluster`) are closed/shaped; #9/#10/#11 are the open/unshaped ELBv2
-follow-ups.
+#6 (`AWS::KMS::Key`), #7 (`AWS::DynamoDB::Table`), #8
+(`AWS::ECS::Cluster`), #9 (`AWS::ElasticLoadBalancingV2::TargetGroup`), #10
+(`AWS::ElasticLoadBalancingV2::LoadBalancer`), and #11
+(`AWS::ElasticLoadBalancingV2::Listener`) are closed/shaped.
 
 When filing, follow winterbaume's own agent skill,
 `skills/winterbaume-bug/SKILL.md` in that repo, **verbatim**. It mandates a

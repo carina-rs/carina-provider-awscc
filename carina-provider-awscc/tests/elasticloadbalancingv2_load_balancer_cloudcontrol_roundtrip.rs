@@ -1,18 +1,13 @@
 //! Integration coverage for the awscc provider's real Provider-trait apply path
 //! against an in-process winterbaume CloudControl mock.
 //!
-//! This test proves that create -> read wiring round-trips Elastic Load
-//! Balancing v2 load balancer structured list serialization through
-//! CloudControl. In particular, `subnets` survives as a list of strings instead
-//! of being flattened into a string.
-//!
-//! This test deliberately does not assert write-only stripping, read-only
-//! synthesis such as `arn`, schema-default fill-in, or normalization. Those are
-//! real AWS CloudControl behaviours driven by the CloudFormation resource-type
-//! schema; the generic winterbaume mock returns the desired state verbatim and
-//! does not reproduce them because it does not consult CFN schemas. That
-//! winterbaume behavior is tracked upstream as moriyoshi/winterbaume issue #6.
-//! The AWS behaviours should be verified separately against live AWS, not here.
+//! winterbaume-cloudcontrol 1.0.1 fixes moriyoshi/winterbaume issue #10: the
+//! mock now reproduces CloudFormation-schema shaping for
+//! AWS::ElasticLoadBalancingV2::LoadBalancer, including write-only stripping,
+//! read-only synthesis (for example `LoadBalancerArn`), schema-default fill-in,
+//! and derived sub-structures. This test sends one create request and asserts
+//! the full CFN-schema-shaped read state round-trips through the awscc
+//! provider's serialization and conversion.
 
 use aws_config::{BehaviorVersion, Region};
 use carina_core::provider::{CreateRequest, Provider, ReadRequest};
@@ -39,6 +34,10 @@ fn map(entries: impl IntoIterator<Item = (&'static str, Value)>) -> Value {
 
 fn list(items: impl IntoIterator<Item = Value>) -> Value {
     Value::Concrete(ConcreteValue::List(items.into_iter().collect()))
+}
+
+fn key_value(key: &'static str, value: &'static str) -> Value {
+    map([("key", string(key)), ("value", string(value))])
 }
 
 fn load_balancer_resource() -> Resource {
@@ -79,31 +78,63 @@ async fn winterbaume_provider() -> AwsccProvider {
     AwsccProvider::from_sdk_config(config, &AwsccProviderConfig::default()).await
 }
 
-fn assert_string_list(attributes: &HashMap<String, Value>, attribute_name: &str, expected: Value) {
-    let value = attributes
-        .get(attribute_name)
-        .unwrap_or_else(|| panic!("read-back state must include {attribute_name}"));
-    let items = match value {
-        Value::Concrete(ConcreteValue::List(items)) => items,
-        other => panic!("{attribute_name} must round-trip as List(String), got {other:?}"),
-    };
+fn attributes(entries: impl IntoIterator<Item = (&'static str, Value)>) -> HashMap<String, Value> {
+    entries
+        .into_iter()
+        .map(|(key, value)| (key.to_string(), value))
+        .collect()
+}
 
-    assert_eq!(
-        items.len(),
-        2,
-        "{attribute_name} must contain two structured string elements"
-    );
-    assert_eq!(value, &expected);
-    assert!(
-        items
-            .iter()
-            .all(|item| matches!(item, Value::Concrete(ConcreteValue::String(_)))),
-        "{attribute_name} must contain only string elements"
-    );
+fn concrete_string_attribute<'a>(
+    attributes: &'a HashMap<String, Value>,
+    attribute_name: &str,
+) -> &'a str {
+    match attributes.get(attribute_name) {
+        Some(Value::Concrete(ConcreteValue::String(value))) => value,
+        other => panic!("{attribute_name} must be a String, got {other:?}"),
+    }
+}
+
+fn is_lower_hex16(value: &str) -> bool {
+    value.len() == 16 && value.chars().all(|ch| ch.is_ascii_hexdigit())
+}
+
+fn is_decimal10(value: &str) -> bool {
+    value.len() == 10 && value.chars().all(|ch| ch.is_ascii_digit())
+}
+
+fn load_balancer_attributes() -> Value {
+    list([
+        key_value("access_logs.s3.prefix", ""),
+        key_value("routing.http.xff_header_processing.mode", "append"),
+        key_value("routing.http2.enabled", "true"),
+        key_value("waf.fail_open.enabled", "false"),
+        key_value("connection_logs.s3.bucket", ""),
+        key_value("access_logs.s3.enabled", "false"),
+        key_value("zonal_shift.config.enabled", "false"),
+        key_value("routing.http.desync_mitigation_mode", "defensive"),
+        key_value("connection_logs.s3.prefix", ""),
+        key_value("health_check_logs.s3.prefix", ""),
+        key_value(
+            "routing.http.x_amzn_tls_version_and_cipher_suite.enabled",
+            "false",
+        ),
+        key_value("routing.http.preserve_host_header.enabled", "false"),
+        key_value("load_balancing.cross_zone.enabled", "true"),
+        key_value("health_check_logs.s3.enabled", "false"),
+        key_value("health_check_logs.s3.bucket", ""),
+        key_value("routing.http.xff_client_port.enabled", "false"),
+        key_value("access_logs.s3.bucket", ""),
+        key_value("deletion_protection.enabled", "false"),
+        key_value("client_keep_alive.seconds", "3600"),
+        key_value("routing.http.drop_invalid_header_fields.enabled", "false"),
+        key_value("connection_logs.s3.enabled", "false"),
+        key_value("idle_timeout.timeout_seconds", "60"),
+    ])
 }
 
 #[tokio::test]
-async fn load_balancer_create_then_read_round_trips_structured_list_fields() {
+async fn load_balancer_create_then_read_round_trips_full_shaped_state() {
     let provider = winterbaume_provider().await;
     let resource = load_balancer_resource();
     let id = resource.id.clone();
@@ -124,36 +155,68 @@ async fn load_balancer_create_then_read_round_trips_structured_list_fields() {
 
     assert!(read.exists, "read-back state must exist");
     assert_eq!(read.identifier.as_deref(), Some(identifier));
-    assert_eq!(read.attributes.get("name"), Some(&string("registry-alb")));
-    let expected_subnets = list([string("subnet-aaaa1111"), string("subnet-bbbb2222")]);
-    assert_string_list(&read.attributes, "subnets", expected_subnets);
 
-    let security_groups = read
-        .attributes
-        .get("security_groups")
-        .expect("read-back state must include security_groups");
-    let security_group_items = match security_groups {
-        Value::Concrete(ConcreteValue::List(items)) => items,
-        other => panic!("security_groups must round-trip as List(String), got {other:?}"),
-    };
-    assert_eq!(
-        security_group_items.len(),
-        1,
-        "security_groups must contain one structured string element"
-    );
-    assert_eq!(security_groups, &list([string("sg-cccc3333")]));
+    let load_balancer_arn = concrete_string_attribute(&read.attributes, "load_balancer_arn");
+    let load_balancer_full_name =
+        concrete_string_attribute(&read.attributes, "load_balancer_full_name");
+    let suffix = load_balancer_full_name
+        .strip_prefix("app/registry-alb/")
+        .expect("load_balancer_full_name must use app/<name>/<suffix>");
     assert!(
-        security_group_items
-            .iter()
-            .all(|item| matches!(item, Value::Concrete(ConcreteValue::String(_)))),
-        "security_groups must contain only string elements"
+        is_lower_hex16(suffix),
+        "load_balancer_full_name suffix must be 16 hex characters: {suffix}"
+    );
+    assert_eq!(
+        load_balancer_arn,
+        format!(
+            "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/{load_balancer_full_name}"
+        )
     );
 
+    let dns_name = concrete_string_attribute(&read.attributes, "dns_name");
+    let dns_suffix = dns_name
+        .strip_prefix("registry-alb-")
+        .and_then(|rest| rest.strip_suffix(".us-east-1.elb.amazonaws.com"))
+        .expect("dns_name must use <name>-<10digits>.<region>.elb.amazonaws.com");
+    assert!(
+        is_decimal10(dns_suffix),
+        "dns_name suffix must be 10 decimal digits: {dns_suffix}"
+    );
+
+    let expected = attributes([
+        ("name", string("registry-alb")),
+        ("type", string("application")),
+        ("scheme", string("internet-facing")),
+        (
+            "subnets",
+            list([string("subnet-aaaa1111"), string("subnet-bbbb2222")]),
+        ),
+        ("security_groups", list([string("sg-cccc3333")])),
+        (
+            "tags",
+            map([
+                ("Environment", string("test")),
+                ("Workload", string("registry")),
+            ]),
+        ),
+        ("load_balancer_name", string("registry-alb")),
+        ("load_balancer_full_name", string(load_balancer_full_name)),
+        ("load_balancer_arn", string(load_balancer_arn)),
+        ("dns_name", string(dns_name)),
+        ("canonical_hosted_zone_id", string("Z35SXDOTRQ7X7K")),
+        ("ip_address_type", string("ipv4")),
+        ("enable_prefix_for_ipv6_source_nat", string("off")),
+        ("load_balancer_attributes", load_balancer_attributes()),
+        (
+            "subnet_mappings",
+            list([
+                map([("subnet_id", string("subnet-aaaa1111"))]),
+                map([("subnet_id", string("subnet-bbbb2222"))]),
+            ]),
+        ),
+    ]);
     assert_eq!(
-        read.attributes.get("tags"),
-        Some(&map([
-            ("Environment", string("test")),
-            ("Workload", string("registry")),
-        ]))
+        &read.attributes, &expected,
+        "read-back attributes must exactly match the full shaped ELBv2 load balancer state"
     );
 }
