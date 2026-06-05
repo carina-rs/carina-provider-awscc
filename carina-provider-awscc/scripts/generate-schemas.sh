@@ -116,6 +116,44 @@ resource_module_name() {
     "$CODEGEN_BIN" --type-name "$1" --print-module-name
 }
 
+# Helper-only virtual modules used by generated override references. These are
+# not managed resources, so they must stay out of GENERATED_TYPES/configs().
+emit_virtual_helper_modules() {
+    mkdir -p "$OUTPUT_DIR/iam"
+    cat > "$OUTPUT_DIR/iam/policy.rs" << 'EOF'
+//! Auto-generated helper schema module for AWSCC IAM Policy identifiers
+//!
+//! DO NOT EDIT MANUALLY - regenerate with carina-codegen
+
+use carina_core::resource::{ConcreteValue, Value};
+use carina_core::schema::{AttributeType, legacy_validator};
+
+pub fn arn() -> AttributeType {
+    AttributeType::custom(
+        Some(super::provider_type("iam", "Policy", "Arn")),
+        super::arn(),
+        Some("^arn:(aws|aws-cn|aws-us-gov):iam::[^:]*:policy/.+$".to_string()),
+        None,
+        legacy_validator(|value| {
+            if let Value::Concrete(ConcreteValue::String(s)) = value {
+                super::validate_iam_arn(s, "policy/")
+                    .map_err(|reason| format!("Invalid IAM Policy ARN '{}': {}", s, reason))
+            } else {
+                Err("Expected string".to_string())
+            }
+        }),
+        None,
+    )
+}
+EOF
+}
+
+virtual_modules_for_service() {
+    case "$1" in
+        iam) echo "policy" ;;
+    esac
+}
+
 # Remove old flat-structure files (migration from flat to service/resource layout)
 for TYPE_NAME in "${RESOURCE_TYPES[@]}"; do
     FLAT_NAME=$("$CODEGEN_BIN" --type-name "$TYPE_NAME" --print-full-resource-name)
@@ -194,6 +232,8 @@ for TYPE_NAME in "${GENERATED_TYPES[@]}"; do
 done
 SERVICES=$(echo "$SERVICES" | tr ' ' '\n' | sort | tr '\n' ' ')
 
+emit_virtual_helper_modules
+
 # Remove directories for services whose resources were all skipped this run.
 for DIR in "$OUTPUT_DIR"/*/; do
     [ -d "$DIR" ] || continue
@@ -226,6 +266,20 @@ EOF
         if [ "$TYPE_SVC" = "$SVC" ]; then
             RESOURCE=$(resource_module_name "$TYPE_NAME")
             echo "pub mod ${RESOURCE};" >> "$SVC_MOD"
+        fi
+    done
+
+    # Add module declarations for virtual helper modules in this service.
+    for VIRTUAL_MODULE in $(virtual_modules_for_service "$SVC"); do
+        DECLARED=false
+        for TYPE_NAME in "${GENERATED_TYPES[@]}"; do
+            TYPE_SVC=$(service_name "$TYPE_NAME")
+            if [ "$TYPE_SVC" = "$SVC" ] && [ "$(resource_module_name "$TYPE_NAME")" = "$VIRTUAL_MODULE" ]; then
+                DECLARED=true
+            fi
+        done
+        if [ "$DECLARED" = false ]; then
+            echo "pub mod ${VIRTUAL_MODULE};" >> "$SVC_MOD"
         fi
     done
 done

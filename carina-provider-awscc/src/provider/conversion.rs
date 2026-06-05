@@ -819,7 +819,7 @@ mod tests {
     #[test]
     fn test_dsl_value_to_aws_converts_underscores_for_region() {
         let attr_type = AttributeType::custom_enum(
-            carina_core::schema::TypeIdentity::new(Some("awscc"), Vec::<String>::new(), "Region"),
+            carina_aws_types::provider_bare_type(&[], "Region"),
             AttributeType::string(),
             noop_validator(),
             None,

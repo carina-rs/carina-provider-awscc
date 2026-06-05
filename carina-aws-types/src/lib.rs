@@ -11,6 +11,8 @@ use carina_core::schema::{
     AttributeType, CompletionValue, StructField, TypeIdentity, legacy_validator,
 };
 
+const PROVIDER_NAME: &str = "awscc";
+
 /// Structured identity for an AWS resource-scoped custom type.
 ///
 /// `service` + `resource` become the namespace segments and `kind` the
@@ -19,8 +21,8 @@ use carina_core::schema::{
 /// the type distinct from any same-named type a future non-AWS
 /// provider might define; the service/resource axis distinguishes
 /// `aws.iam.Role.Arn` from `aws.acm.Certificate.Arn`.
-fn aws_type(service: &str, resource: &str, kind: &str) -> TypeIdentity {
-    TypeIdentity::new(Some("aws"), [service, resource], kind)
+pub fn provider_type(service: &str, resource: &str, kind: &str) -> TypeIdentity {
+    TypeIdentity::new(Some(PROVIDER_NAME), [service, resource], kind)
 }
 
 /// Structured identity for an AWS custom type with no service axis.
@@ -28,8 +30,8 @@ fn aws_type(service: &str, resource: &str, kind: &str) -> TypeIdentity {
 /// Used for `AvailabilityZone` (a cross-service concept) and for the
 /// fully-generic provider-scoped types (`aws.Arn`, `aws.ResourceId`,
 /// `aws.AccountId`), which pass an empty `segments` slice.
-fn aws_bare_type(segments: &[&str], kind: &str) -> TypeIdentity {
-    TypeIdentity::new(Some("aws"), segments.iter().copied(), kind)
+pub fn provider_bare_type(segments: &[&str], kind: &str) -> TypeIdentity {
+    TypeIdentity::new(Some(PROVIDER_NAME), segments.iter().copied(), kind)
 }
 
 // ========== Enum helpers ==========
@@ -247,7 +249,7 @@ pub fn validate_prefixed_resource_id(id: &str, expected_prefix: &str) -> Result<
 #[allow(dead_code)]
 pub fn aws_resource_id() -> AttributeType {
     AttributeType::custom(
-        Some(aws_bare_type(&[], "ResourceId")),
+        Some(provider_bare_type(&[], "ResourceId")),
         AttributeType::string(),
         None,
         None,
@@ -266,7 +268,7 @@ pub fn aws_resource_id() -> AttributeType {
 /// VPC ID type (e.g., "vpc-1a2b3c4d")
 pub fn vpc_id() -> AttributeType {
     AttributeType::custom(
-        Some(aws_type("ec2", "Vpc", "Id")),
+        Some(provider_type("ec2", "Vpc", "Id")),
         aws_resource_id(),
         None,
         None,
@@ -285,7 +287,7 @@ pub fn vpc_id() -> AttributeType {
 /// Subnet ID type (e.g., "subnet-0123456789abcdef0")
 pub fn subnet_id() -> AttributeType {
     AttributeType::custom(
-        Some(aws_type("ec2", "Subnet", "Id")),
+        Some(provider_type("ec2", "Subnet", "Id")),
         aws_resource_id(),
         None,
         None,
@@ -304,7 +306,7 @@ pub fn subnet_id() -> AttributeType {
 /// Security Group ID type (e.g., "sg-12345678")
 pub fn security_group_id() -> AttributeType {
     AttributeType::custom(
-        Some(aws_type("ec2", "SecurityGroup", "Id")),
+        Some(provider_type("ec2", "SecurityGroup", "Id")),
         aws_resource_id(),
         None,
         None,
@@ -323,7 +325,7 @@ pub fn security_group_id() -> AttributeType {
 /// Internet Gateway ID type (e.g., "igw-12345678")
 pub fn internet_gateway_id() -> AttributeType {
     AttributeType::custom(
-        Some(aws_type("ec2", "InternetGateway", "Id")),
+        Some(provider_type("ec2", "InternetGateway", "Id")),
         aws_resource_id(),
         None,
         None,
@@ -342,7 +344,7 @@ pub fn internet_gateway_id() -> AttributeType {
 /// Route Table ID type (e.g., "rtb-abcdef12")
 pub fn route_table_id() -> AttributeType {
     AttributeType::custom(
-        Some(aws_type("ec2", "RouteTable", "Id")),
+        Some(provider_type("ec2", "RouteTable", "Id")),
         aws_resource_id(),
         None,
         None,
@@ -361,7 +363,7 @@ pub fn route_table_id() -> AttributeType {
 /// NAT Gateway ID type (e.g., "nat-12345678")
 pub fn nat_gateway_id() -> AttributeType {
     AttributeType::custom(
-        Some(aws_type("ec2", "NatGateway", "Id")),
+        Some(provider_type("ec2", "NatGateway", "Id")),
         aws_resource_id(),
         None,
         None,
@@ -380,7 +382,7 @@ pub fn nat_gateway_id() -> AttributeType {
 /// VPC Peering Connection ID type (e.g., "pcx-12345678")
 pub fn vpc_peering_connection_id() -> AttributeType {
     AttributeType::custom(
-        Some(aws_type("ec2", "VpcPeeringConnection", "Id")),
+        Some(provider_type("ec2", "VpcPeeringConnection", "Id")),
         aws_resource_id(),
         None,
         None,
@@ -400,7 +402,7 @@ pub fn vpc_peering_connection_id() -> AttributeType {
 /// Transit Gateway ID type (e.g., "tgw-12345678")
 pub fn transit_gateway_id() -> AttributeType {
     AttributeType::custom(
-        Some(aws_type("ec2", "TransitGateway", "Id")),
+        Some(provider_type("ec2", "TransitGateway", "Id")),
         aws_resource_id(),
         None,
         None,
@@ -419,7 +421,7 @@ pub fn transit_gateway_id() -> AttributeType {
 /// VPC CIDR Block Association ID type (e.g., "vpc-cidr-assoc-12345678")
 pub fn vpc_cidr_block_association_id() -> AttributeType {
     AttributeType::custom(
-        Some(aws_type("ec2", "VpcCidrBlockAssociation", "Id")),
+        Some(provider_type("ec2", "VpcCidrBlockAssociation", "Id")),
         aws_resource_id(),
         None,
         None,
@@ -439,7 +441,7 @@ pub fn vpc_cidr_block_association_id() -> AttributeType {
 /// Transit Gateway Route Table ID type (e.g., "tgw-rtb-12345678")
 pub fn tgw_route_table_id() -> AttributeType {
     AttributeType::custom(
-        Some(aws_type("ec2", "TransitGatewayRouteTable", "Id")),
+        Some(provider_type("ec2", "TransitGatewayRouteTable", "Id")),
         aws_resource_id(),
         None,
         None,
@@ -458,7 +460,7 @@ pub fn tgw_route_table_id() -> AttributeType {
 /// VPN Gateway ID type (e.g., "vgw-12345678")
 pub fn vpn_gateway_id() -> AttributeType {
     AttributeType::custom(
-        Some(aws_type("ec2", "VpnGateway", "Id")),
+        Some(provider_type("ec2", "VpnGateway", "Id")),
         aws_resource_id(),
         None,
         None,
@@ -482,7 +484,7 @@ pub fn gateway_id() -> AttributeType {
 /// Egress Only Internet Gateway ID type (e.g., "eigw-12345678")
 pub fn egress_only_internet_gateway_id() -> AttributeType {
     AttributeType::custom(
-        Some(aws_type("ec2", "EgressOnlyInternetGateway", "Id")),
+        Some(provider_type("ec2", "EgressOnlyInternetGateway", "Id")),
         aws_resource_id(),
         None,
         None,
@@ -505,7 +507,7 @@ pub fn egress_only_internet_gateway_id() -> AttributeType {
 /// VPC Endpoint ID type (e.g., "vpce-12345678")
 pub fn vpc_endpoint_id() -> AttributeType {
     AttributeType::custom(
-        Some(aws_type("ec2", "VpcEndpoint", "Id")),
+        Some(provider_type("ec2", "VpcEndpoint", "Id")),
         aws_resource_id(),
         None,
         None,
@@ -524,7 +526,7 @@ pub fn vpc_endpoint_id() -> AttributeType {
 /// Instance ID type (e.g., "i-0123456789abcdef0")
 pub fn instance_id() -> AttributeType {
     AttributeType::custom(
-        Some(aws_type("ec2", "Instance", "Id")),
+        Some(provider_type("ec2", "Instance", "Id")),
         aws_resource_id(),
         None,
         None,
@@ -543,7 +545,7 @@ pub fn instance_id() -> AttributeType {
 /// Network Interface ID type (e.g., "eni-0123456789abcdef0")
 pub fn network_interface_id() -> AttributeType {
     AttributeType::custom(
-        Some(aws_type("ec2", "NetworkInterface", "Id")),
+        Some(provider_type("ec2", "NetworkInterface", "Id")),
         aws_resource_id(),
         None,
         None,
@@ -563,7 +565,7 @@ pub fn network_interface_id() -> AttributeType {
 #[allow(dead_code)]
 pub fn allocation_id() -> AttributeType {
     AttributeType::custom(
-        Some(aws_type("ec2", "Eip", "AllocationId")),
+        Some(provider_type("ec2", "Eip", "AllocationId")),
         aws_resource_id(),
         None,
         None,
@@ -582,7 +584,7 @@ pub fn allocation_id() -> AttributeType {
 /// Prefix List ID type (e.g., "pl-0123456789abcdef0")
 pub fn prefix_list_id() -> AttributeType {
     AttributeType::custom(
-        Some(aws_type("ec2", "PrefixList", "Id")),
+        Some(provider_type("ec2", "PrefixList", "Id")),
         aws_resource_id(),
         None,
         None,
@@ -601,7 +603,7 @@ pub fn prefix_list_id() -> AttributeType {
 /// Carrier Gateway ID type (e.g., "cagw-0123456789abcdef0")
 pub fn carrier_gateway_id() -> AttributeType {
     AttributeType::custom(
-        Some(aws_type("ec2", "CarrierGateway", "Id")),
+        Some(provider_type("ec2", "CarrierGateway", "Id")),
         aws_resource_id(),
         None,
         None,
@@ -620,7 +622,7 @@ pub fn carrier_gateway_id() -> AttributeType {
 /// Local Gateway ID type (e.g., "lgw-0123456789abcdef0")
 pub fn local_gateway_id() -> AttributeType {
     AttributeType::custom(
-        Some(aws_type("ec2", "LocalGateway", "Id")),
+        Some(provider_type("ec2", "LocalGateway", "Id")),
         aws_resource_id(),
         None,
         None,
@@ -640,7 +642,7 @@ pub fn local_gateway_id() -> AttributeType {
 #[allow(dead_code)]
 pub fn network_acl_id() -> AttributeType {
     AttributeType::custom(
-        Some(aws_type("ec2", "NetworkAcl", "Id")),
+        Some(provider_type("ec2", "NetworkAcl", "Id")),
         aws_resource_id(),
         None,
         None,
@@ -659,7 +661,7 @@ pub fn network_acl_id() -> AttributeType {
 /// Transit Gateway Attachment ID type (e.g., "tgw-attach-0123456789abcdef0")
 pub fn transit_gateway_attachment_id() -> AttributeType {
     AttributeType::custom(
-        Some(aws_type("ec2", "TransitGatewayAttachment", "Id")),
+        Some(provider_type("ec2", "TransitGatewayAttachment", "Id")),
         aws_resource_id(),
         None,
         None,
@@ -679,7 +681,7 @@ pub fn transit_gateway_attachment_id() -> AttributeType {
 /// Flow Log ID type (e.g., "fl-0123456789abcdef0")
 pub fn flow_log_id() -> AttributeType {
     AttributeType::custom(
-        Some(aws_type("ec2", "FlowLog", "Id")),
+        Some(provider_type("ec2", "FlowLog", "Id")),
         aws_resource_id(),
         None,
         None,
@@ -698,7 +700,7 @@ pub fn flow_log_id() -> AttributeType {
 /// IPAM ID type (e.g., "ipam-0123456789abcdef0")
 pub fn ipam_id() -> AttributeType {
     AttributeType::custom(
-        Some(aws_type("ec2", "Ipam", "Id")),
+        Some(provider_type("ec2", "Ipam", "Id")),
         aws_resource_id(),
         None,
         None,
@@ -717,7 +719,7 @@ pub fn ipam_id() -> AttributeType {
 /// Subnet Route Table Association ID type (e.g., "rtbassoc-0123456789abcdef0")
 pub fn subnet_route_table_association_id() -> AttributeType {
     AttributeType::custom(
-        Some(aws_type("ec2", "SubnetRouteTableAssociation", "Id")),
+        Some(provider_type("ec2", "SubnetRouteTableAssociation", "Id")),
         aws_resource_id(),
         None,
         None,
@@ -740,7 +742,7 @@ pub fn subnet_route_table_association_id() -> AttributeType {
 /// Security Group Rule ID type (e.g., "sgr-0123456789abcdef0")
 pub fn security_group_rule_id() -> AttributeType {
     AttributeType::custom(
-        Some(aws_type("ec2", "SecurityGroupRule", "Id")),
+        Some(provider_type("ec2", "SecurityGroupRule", "Id")),
         aws_resource_id(),
         None,
         None,
@@ -773,7 +775,7 @@ pub fn validate_iam_role_id(id: &str) -> Result<(), String> {
 /// IAM Role ID type (e.g., "AROAEXAMPLEID")
 pub fn iam_role_id() -> AttributeType {
     AttributeType::custom(
-        Some(aws_type("iam", "Role", "Id")),
+        Some(provider_type("iam", "Role", "Id")),
         aws_resource_id(),
         None,
         None,
@@ -808,7 +810,7 @@ pub fn validate_aws_account_id(id: &str) -> Result<(), String> {
 /// AWS Account ID type (12-digit numeric string, e.g., "123456789012")
 pub fn aws_account_id() -> AttributeType {
     AttributeType::custom(
-        Some(aws_bare_type(&[], "AccountId")),
+        Some(provider_bare_type(&[], "AccountId")),
         AttributeType::string(),
         None,
         None,
@@ -842,7 +844,7 @@ pub fn validate_sso_principal_id(id: &str) -> Result<(), String> {
 /// SSO PrincipalId type (user or group id from IdentityStore).
 pub fn sso_principal_id() -> AttributeType {
     AttributeType::custom(
-        Some(aws_type("sso", "Principal", "Id")),
+        Some(provider_type("sso", "Principal", "Id")),
         AttributeType::string(),
         None,
         None,
@@ -877,7 +879,7 @@ pub fn validate_sso_instance_arn(arn: &str) -> Result<(), String> {
 /// SSO Instance ARN type (e.g., "arn:aws:sso:::instance/ssoins-xxxxxxxx").
 pub fn sso_instance_arn() -> AttributeType {
     AttributeType::custom(
-        Some(aws_type("sso", "Instance", "Arn")),
+        Some(provider_type("sso", "Instance", "Arn")),
         arn(),
         None,
         None,
@@ -913,7 +915,7 @@ pub fn validate_identity_store_id(id: &str) -> Result<(), String> {
 /// IdentityStore identity store id (`d-...` or UUID).
 pub fn identity_store_id() -> AttributeType {
     AttributeType::custom(
-        Some(aws_type("identitystore", "Store", "Id")),
+        Some(provider_type("identitystore", "Store", "Id")),
         AttributeType::string(),
         None,
         None,
@@ -945,7 +947,7 @@ pub fn validate_sso_permission_set_arn(arn: &str) -> Result<(), String> {
 /// SSO PermissionSet ARN type.
 pub fn sso_permission_set_arn() -> AttributeType {
     AttributeType::custom(
-        Some(aws_type("sso", "PermissionSet", "Arn")),
+        Some(provider_type("sso", "PermissionSet", "Arn")),
         arn(),
         None,
         None,
@@ -1083,93 +1085,13 @@ pub fn validate_iam_arn(arn: &str, resource_prefix: &str) -> Result<(), String> 
 /// ARN type (e.g., "arn:aws:s3:::my-bucket")
 pub fn arn() -> AttributeType {
     AttributeType::custom(
-        Some(aws_bare_type(&[], "Arn")),
+        Some(provider_bare_type(&[], "Arn")),
         AttributeType::string(),
         None,
         None,
         legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
                 validate_arn(s).map_err(|reason| format!("Invalid ARN '{}': {}", s, reason))
-            } else {
-                Err("Expected string".to_string())
-            }
-        }),
-        None,
-    )
-}
-
-/// IAM Role ARN type (e.g., "arn:aws:iam::123456789012:role/MyRole")
-#[allow(dead_code)]
-pub fn iam_role_arn() -> AttributeType {
-    AttributeType::custom(
-        Some(aws_type("iam", "Role", "Arn")),
-        arn(),
-        None,
-        None,
-        legacy_validator(|value| {
-            if let Value::Concrete(ConcreteValue::String(s)) = value {
-                validate_iam_arn(s, "role/")
-                    .map_err(|reason| format!("Invalid IAM Role ARN '{}': {}", s, reason))
-            } else {
-                Err("Expected string".to_string())
-            }
-        }),
-        None,
-    )
-}
-
-/// IAM Policy ARN type (e.g., "arn:aws:iam::123456789012:policy/MyPolicy")
-#[allow(dead_code)]
-pub fn iam_policy_arn() -> AttributeType {
-    AttributeType::custom(
-        Some(aws_type("iam", "Policy", "Arn")),
-        arn(),
-        None,
-        None,
-        legacy_validator(|value| {
-            if let Value::Concrete(ConcreteValue::String(s)) = value {
-                validate_iam_arn(s, "policy/")
-                    .map_err(|reason| format!("Invalid IAM Policy ARN '{}': {}", s, reason))
-            } else {
-                Err("Expected string".to_string())
-            }
-        }),
-        None,
-    )
-}
-
-/// IAM OIDC Provider ARN type (e.g., `arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com`)
-#[allow(dead_code)]
-pub fn iam_oidc_provider_arn() -> AttributeType {
-    AttributeType::custom(
-        Some(aws_type("iam", "OidcProvider", "Arn")),
-        arn(),
-        None,
-        None,
-        legacy_validator(|value| {
-            if let Value::Concrete(ConcreteValue::String(s)) = value {
-                validate_iam_arn(s, "oidc-provider/")
-                    .map_err(|reason| format!("Invalid IAM OIDC Provider ARN '{}': {}", s, reason))
-            } else {
-                Err("Expected string".to_string())
-            }
-        }),
-        None,
-    )
-}
-
-/// KMS Key ARN type (e.g., "arn:aws:kms:us-east-1:123456789012:key/...")
-#[allow(dead_code)]
-pub fn kms_key_arn() -> AttributeType {
-    AttributeType::custom(
-        Some(aws_type("kms", "Key", "Arn")),
-        arn(),
-        None,
-        None,
-        legacy_validator(|value| {
-            if let Value::Concrete(ConcreteValue::String(s)) = value {
-                validate_service_arn(s, "kms", Some("key/"))
-                    .map_err(|reason| format!("Invalid KMS Key ARN '{}': {}", s, reason))
             } else {
                 Err("Expected string".to_string())
             }
@@ -1231,7 +1153,7 @@ pub fn validate_kms_key_id(value: &str) -> Result<(), String> {
 #[allow(dead_code)]
 pub fn kms_key_id() -> AttributeType {
     AttributeType::custom(
-        Some(aws_type("kms", "Key", "Id")),
+        Some(provider_type("kms", "Key", "Id")),
         aws_resource_id(),
         None,
         None,
@@ -1266,7 +1188,7 @@ pub fn validate_ipam_pool_id(id: &str) -> Result<(), String> {
 /// IPAM Pool ID type (e.g., "ipam-pool-0123456789abcdef0")
 pub fn ipam_pool_id() -> AttributeType {
     AttributeType::custom(
-        Some(aws_type("ec2", "IpamPool", "Id")),
+        Some(provider_type("ec2", "IpamPool", "Id")),
         aws_resource_id(),
         None,
         None,
@@ -1374,7 +1296,7 @@ pub fn validate_availability_zone_id(az_id: &str) -> Result<(), String> {
 /// Availability Zone ID type (e.g., "use1-az1", "usw2-az2", "apne1-az4")
 pub fn availability_zone_id() -> AttributeType {
     AttributeType::custom(
-        Some(aws_bare_type(&["AvailabilityZone"], "ZoneId")),
+        Some(provider_bare_type(&["AvailabilityZone"], "ZoneId")),
         AttributeType::string(),
         None,
         None,
@@ -1959,6 +1881,28 @@ pub fn validate_iam_policy_document(value: &Value) -> Result<(), String> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn provider_type_uses_awscc_provider_axis() {
+        assert_eq!(
+            provider_type("s3", "Bucket", "Arn").to_string(),
+            "awscc.s3.Bucket.Arn"
+        );
+    }
+
+    #[test]
+    fn carina_aws_types_no_longer_exports_resource_arn_helpers() {
+        let source =
+            std::fs::read_to_string(format!("{}/src/lib.rs", env!("CARGO_MANIFEST_DIR"))).unwrap();
+        for helper in [
+            "iam_role_arn",
+            "iam_policy_arn",
+            "iam_oidc_provider_arn",
+            "kms_key_arn",
+        ] {
+            assert!(!source.contains(&format!("pub fn {helper}")));
+        }
+    }
+
     // ARN tests
 
     #[test]
@@ -2498,92 +2442,6 @@ mod tests {
             err.contains("IAM Role ARN"),
             "Error should say 'IAM Role ARN': {err}"
         );
-    }
-
-    // --- IAM OIDC Provider ARN tests ---
-
-    #[test]
-    fn iam_oidc_provider_arn_identity() {
-        let t = iam_oidc_provider_arn();
-        let RawShape::Custom { identity, .. } = t.raw_shape() else {
-            panic!("iam_oidc_provider_arn() should be a Custom type");
-        };
-        assert_eq!(
-            identity.map(|id| id.to_string()).as_deref(),
-            Some("aws.iam.OidcProvider.Arn")
-        );
-    }
-
-    #[test]
-    fn iam_oidc_provider_arn_accepts_valid() {
-        let t = iam_oidc_provider_arn();
-        let RawShape::Custom { validate, .. } = t.raw_shape() else {
-            panic!("iam_oidc_provider_arn() should be a Custom type");
-        };
-        let v = Value::Concrete(ConcreteValue::String(
-            "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"
-                .to_string(),
-        ));
-        assert!(validate(&v).is_ok());
-    }
-
-    #[test]
-    fn iam_oidc_provider_arn_rejects_wrong_resource() {
-        let t = iam_oidc_provider_arn();
-        let RawShape::Custom { validate, .. } = t.raw_shape() else {
-            panic!("iam_oidc_provider_arn() should be a Custom type");
-        };
-        let v = Value::Concrete(ConcreteValue::String(
-            "arn:aws:iam::123456789012:role/MyRole".to_string(),
-        ));
-        assert!(validate(&v).is_err());
-    }
-
-    #[test]
-    fn iam_oidc_provider_arn_rejects_non_iam_service() {
-        let t = iam_oidc_provider_arn();
-        let RawShape::Custom { validate, .. } = t.raw_shape() else {
-            panic!("iam_oidc_provider_arn() should be a Custom type");
-        };
-        let v = Value::Concrete(ConcreteValue::String("arn:aws:s3:::my-bucket".to_string()));
-        assert!(validate(&v).is_err());
-    }
-
-    #[test]
-    fn iam_oidc_provider_arn_rejects_empty_provider_name() {
-        let t = iam_oidc_provider_arn();
-        let RawShape::Custom { validate, .. } = t.raw_shape() else {
-            panic!("iam_oidc_provider_arn() should be a Custom type");
-        };
-        let v = Value::Concrete(ConcreteValue::String(
-            "arn:aws:iam::123456789012:oidc-provider/".to_string(),
-        ));
-        assert!(validate(&v).is_err());
-    }
-
-    #[test]
-    fn iam_oidc_provider_arn_accepts_eks_multi_segment() {
-        let t = iam_oidc_provider_arn();
-        let RawShape::Custom { validate, .. } = t.raw_shape() else {
-            panic!("iam_oidc_provider_arn() should be a Custom type");
-        };
-        let v = Value::Concrete(ConcreteValue::String(
-            "arn:aws:iam::123456789012:oidc-provider/oidc.eks.us-east-1.amazonaws.com/id/AAAAAAAA000000"
-                .to_string(),
-        ));
-        assert!(validate(&v).is_ok());
-    }
-
-    #[test]
-    fn iam_oidc_provider_arn_accepts_china_partition() {
-        let t = iam_oidc_provider_arn();
-        let RawShape::Custom { validate, .. } = t.raw_shape() else {
-            panic!("iam_oidc_provider_arn() should be a Custom type");
-        };
-        let v = Value::Concrete(ConcreteValue::String(
-            "arn:aws-cn:iam::123456789012:oidc-provider/foo.example.com".to_string(),
-        ));
-        assert!(validate(&v).is_ok());
     }
 
     // UUID tests

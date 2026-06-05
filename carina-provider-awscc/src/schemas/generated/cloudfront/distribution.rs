@@ -7,7 +7,28 @@
 use super::AwsccSchemaConfig;
 use super::tags_type;
 use super::validate_tags_map;
-use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField};
+use carina_core::resource::{ConcreteValue, Value};
+use carina_core::schema::{
+    AttributeSchema, AttributeType, ResourceSchema, StructField, legacy_validator,
+};
+
+pub fn arn() -> AttributeType {
+    AttributeType::custom(
+        Some(super::provider_type("cloudfront", "Distribution", "Arn")),
+        super::arn(),
+        Some("^arn:(aws|aws-cn|aws-us-gov):cloudfront::[^:]*:distribution/.+$".to_string()),
+        None,
+        legacy_validator(|value| {
+            if let Value::Concrete(ConcreteValue::String(s)) = value {
+                super::validate_service_arn(s, "cloudfront", Some("distribution/"))
+                    .map_err(|reason| format!("Invalid cloudfront ARN '{}': {}", s, reason))
+            } else {
+                Err("Expected string".to_string())
+            }
+        }),
+        None,
+    )
+}
 
 const VALID_CACHE_BEHAVIOR_ALLOWED_METHODS: &[&str] =
     &["GET", "HEAD", "OPTIONS", "PUT", "PATCH", "POST", "DELETE"];
@@ -250,7 +271,7 @@ pub fn cloudfront_distribution_config() -> AwsccSchemaConfig {
                 .with_block_name("tag"),
         )
         .attribute(
-            AttributeSchema::new("arn", super::arn())
+            AttributeSchema::new("arn", self::arn())
                 .read_only()
                 .with_description("The ARN of the CloudFront distribution. Synthesized by the provider from the distribution id; CloudFront's CloudFormation type does not expose ARN through the Cloud Control API. (read-only)"),
         )

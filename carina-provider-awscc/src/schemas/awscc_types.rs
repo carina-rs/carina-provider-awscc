@@ -10,7 +10,7 @@ use std::collections::HashMap;
 
 use carina_core::parser::ValidatorFn;
 use carina_core::resource::{ConcreteValue, Value};
-use carina_core::schema::{AttributeType, ResourceSchema, TypeIdentity, legacy_validator};
+use carina_core::schema::{AttributeType, ResourceSchema, legacy_validator};
 use carina_core::utils::{extract_enum_value, validate_enum_namespace};
 
 /// AWS Cloud Control schema configuration
@@ -144,11 +144,11 @@ pub(crate) fn validate_namespaced_enum(
 /// - Shorthand: ap_northeast_1
 pub fn awscc_region() -> AttributeType {
     AttributeType::custom_enum(
-        TypeIdentity::new(Some("awscc"), Vec::<String>::new(), "Region"),
+        carina_aws_types::provider_bare_type(&[], "Region"),
         AttributeType::string(),
         legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
-                let id = TypeIdentity::new(Some("awscc"), Vec::<String>::new(), "Region");
+                let id = carina_aws_types::provider_bare_type(&[], "Region");
                 validate_enum_namespace(s, &id)
                     .map_err(|reason| format!("Invalid region '{}': {}", s, reason))?;
                 let normalized = extract_enum_value(s).replace('_', "-");
@@ -173,11 +173,11 @@ pub fn awscc_region() -> AttributeType {
 /// Validates format: region + single letter zone identifier
 pub fn availability_zone() -> AttributeType {
     AttributeType::custom_enum(
-        TypeIdentity::new(Some("awscc"), ["AvailabilityZone"], "ZoneName"),
+        carina_aws_types::provider_bare_type(&["AvailabilityZone"], "ZoneName"),
         AttributeType::string(),
         legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
-                let id = TypeIdentity::new(Some("awscc"), ["AvailabilityZone"], "ZoneName");
+                let id = carina_aws_types::provider_bare_type(&["AvailabilityZone"], "ZoneName");
                 validate_enum_namespace(s, &id)
                     .map_err(|reason| format!("Invalid availability zone '{}': {}", s, reason))?;
                 let extracted = extract_enum_value(s);

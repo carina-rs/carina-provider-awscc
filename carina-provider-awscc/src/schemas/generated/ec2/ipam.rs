@@ -12,6 +12,24 @@ use carina_core::schema::{
     AttributeSchema, AttributeType, OperationConfig, ResourceSchema, StructField, legacy_validator,
 };
 
+pub fn arn() -> AttributeType {
+    AttributeType::custom(
+        Some(super::provider_type("ec2", "Ipam", "Arn")),
+        super::arn(),
+        Some("^arn:(aws|aws-cn|aws-us-gov):ec2:.*$".to_string()),
+        None,
+        legacy_validator(|value| {
+            if let Value::Concrete(ConcreteValue::String(s)) = value {
+                super::validate_service_arn(s, "ec2", None)
+                    .map_err(|reason| format!("Invalid ec2 ARN '{}': {}", s, reason))
+            } else {
+                Err("Expected string".to_string())
+            }
+        }),
+        None,
+    )
+}
+
 const VALID_METERED_ACCOUNT: &[&str] = &["ipam-owner", "resource-owner"];
 
 const VALID_TIER: &[&str] = &["free", "advanced"];
@@ -51,7 +69,7 @@ pub fn ec2_ipam_config() -> AwsccSchemaConfig {
         schema: ResourceSchema::new("ec2.Ipam")
         .with_description("Resource Schema of AWS::EC2::IPAM Type")
         .attribute(
-            AttributeSchema::new("arn", super::arn())
+            AttributeSchema::new("arn", self::arn())
                 .read_only()
                 .with_description("The Amazon Resource Name (ARN) of the IPAM. (read-only)")
                 .with_provider_name("Arn"),

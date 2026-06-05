@@ -9,6 +9,24 @@ use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, legacy_validator};
 use regex::Regex;
 
+pub fn arn() -> AttributeType {
+    AttributeType::custom(
+        Some(super::provider_type("organizations", "Organization", "Arn")),
+        super::arn(),
+        Some("^arn:(aws|aws-cn|aws-us-gov):organizations:.*$".to_string()),
+        None,
+        legacy_validator(|value| {
+            if let Value::Concrete(ConcreteValue::String(s)) = value {
+                super::validate_service_arn(s, "organizations", None)
+                    .map_err(|reason| format!("Invalid organizations ARN '{}': {}", s, reason))
+            } else {
+                Err("Expected string".to_string())
+            }
+        }),
+        None,
+    )
+}
+
 const VALID_FEATURE_SET: &[&str] = &["ALL", "CONSOLIDATED_BILLING"];
 
 #[allow(dead_code)]
@@ -83,7 +101,7 @@ pub fn organizations_organization_config() -> AwsccSchemaConfig {
         schema: ResourceSchema::new("organizations.Organization")
         .with_description("Resource schema for AWS::Organizations::Organization")
         .attribute(
-            AttributeSchema::new("arn", super::arn())
+            AttributeSchema::new("arn", self::arn())
                 .read_only()
                 .with_description("The Amazon Resource Name (ARN) of an organization. (read-only)")
                 .with_provider_name("Arn"),

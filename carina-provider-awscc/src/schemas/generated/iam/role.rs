@@ -12,6 +12,24 @@ use carina_core::schema::{
     AttributeSchema, AttributeType, ResourceSchema, StructField, legacy_validator,
 };
 
+pub fn arn() -> AttributeType {
+    AttributeType::custom(
+        Some(super::provider_type("iam", "Role", "Arn")),
+        super::arn(),
+        Some("^arn:(aws|aws-cn|aws-us-gov):iam::[^:]*:role/.+$".to_string()),
+        None,
+        legacy_validator(|value| {
+            if let Value::Concrete(ConcreteValue::String(s)) = value {
+                super::validate_iam_arn(s, "role/")
+                    .map_err(|reason| format!("Invalid IAM Role ARN '{}': {}", s, reason))
+            } else {
+                Err("Expected string".to_string())
+            }
+        }),
+        None,
+    )
+}
+
 fn validate_max_session_duration_range(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::Int(n)) = value {
         if *n < 3600 || *n > 43200 {
@@ -33,7 +51,7 @@ pub fn iam_role_config() -> AwsccSchemaConfig {
         schema: ResourceSchema::new("iam.Role")
         .with_description("Creates a new role for your AWS-account.   For more information about roles, see [IAM roles](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html) in the *IAM User Guide*. For information about quotas for role names and the number of roles you can create, see [IAM and quotas](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_iam-quotas.html) in the *IAM User Guide*.")
         .attribute(
-            AttributeSchema::new("arn", super::iam_role_arn())
+            AttributeSchema::new("arn", self::arn())
                 .read_only()
                 .with_description(" (read-only)")
                 .with_provider_name("Arn"),
@@ -50,7 +68,7 @@ pub fn iam_role_config() -> AwsccSchemaConfig {
                 .with_provider_name("Description"),
         )
         .attribute(
-            AttributeSchema::new("managed_policy_arns", AttributeType::unordered_list(super::iam_policy_arn()))
+            AttributeSchema::new("managed_policy_arns", AttributeType::unordered_list(super::super::iam::policy::arn()))
                 .with_description("A list of Amazon Resource Names (ARNs) of the IAM managed policies that you want to attach to the role. For more information about ARNs, see [Amazon Resource Names (ARNs) and Service Namespaces](https://docs.aws.amazon.com/general/latest/gr/aws-arns-and-namespaces.html) in the *General Reference*.")
                 .with_provider_name("ManagedPolicyArns"),
         )
@@ -67,7 +85,7 @@ pub fn iam_role_config() -> AwsccSchemaConfig {
                 .with_default(Value::Concrete(ConcreteValue::String("/".to_string()))),
         )
         .attribute(
-            AttributeSchema::new("permissions_boundary", super::iam_policy_arn())
+            AttributeSchema::new("permissions_boundary", super::super::iam::policy::arn())
                 .with_description("The ARN of the policy used to set the permissions boundary for the role. For more information about permissions boundaries, see [Permissions boundaries for IAM identities](https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies_boundaries.html) in the *IAM User Guide*.")
                 .with_provider_name("PermissionsBoundary"),
         )

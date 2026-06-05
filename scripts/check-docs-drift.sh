@@ -16,6 +16,9 @@ for rs_file in "$SCHEMAS_DIR"/*/*.rs; do
     [ "$(basename "$rs_file")" = "mod.rs" ] && continue
     svc=$(basename "$(dirname "$rs_file")")
     resource=$(basename "$rs_file" .rs)
+    # Helper-only virtual modules expose cross-resource custom types but
+    # are not CloudFormation resource schemas and do not have docs pages.
+    [ "$svc/$resource" = "iam/policy" ] && continue
     schema_resources+=("$svc/$resource")
 done
 

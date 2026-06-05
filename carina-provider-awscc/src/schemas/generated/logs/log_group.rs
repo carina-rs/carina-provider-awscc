@@ -11,6 +11,24 @@ use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, legacy_validator};
 use regex::Regex;
 
+pub fn arn() -> AttributeType {
+    AttributeType::custom(
+        Some(super::provider_type("logs", "LogGroup", "Arn")),
+        super::arn(),
+        Some("^arn:(aws|aws-cn|aws-us-gov):logs:[^:]*:[^:]*:log-group:.+$".to_string()),
+        None,
+        legacy_validator(|value| {
+            if let Value::Concrete(ConcreteValue::String(s)) = value {
+                super::validate_service_arn(s, "logs", Some("log-group:"))
+                    .map_err(|reason| format!("Invalid logs ARN '{}': {}", s, reason))
+            } else {
+                Err("Expected string".to_string())
+            }
+        }),
+        None,
+    )
+}
+
 const VALID_LOG_GROUP_CLASS: &[&str] = &["STANDARD", "INFREQUENT_ACCESS", "DELIVERY"];
 
 const VALID_RETENTION_IN_DAYS_VALUES: &[i64] = &[
@@ -61,7 +79,7 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
         schema: ResourceSchema::new("logs.LogGroup")
         .with_description("The ``AWS::Logs::LogGroup`` resource specifies a log group. A log group defines common properties for log streams, such as their retention and access control rules. Each log stream must belong to one log group.  You can create up to 1,000,000 log groups per Region per account. You must use the following guidelines when naming a log group:   +  Log group names must be unique within a Region for an AWS account.   +  Log group names can be between 1 and 512 characters long.   +  Log group names consist of the following characters: a-z, A-Z, 0-9, '_' (underscore), '-' (hyphen), '/' (forward slash), and '.' (period).")
         .attribute(
-            AttributeSchema::new("arn", super::arn())
+            AttributeSchema::new("arn", self::arn())
                 .read_only()
                 .with_description(" (read-only)")
                 .with_provider_name("Arn"),
@@ -83,7 +101,7 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
                 .with_provider_name("FieldIndexPolicies"),
         )
         .attribute(
-            AttributeSchema::new("kms_key_id", super::kms_key_arn())
+            AttributeSchema::new("kms_key_id", super::super::kms::key::arn())
                 .with_description("The Amazon Resource Name (ARN) of the KMS key to use when encrypting log data. To associate an KMS key with the log group, specify the ARN of that KMS key here. If you do so, ingested data is encrypted using this key. This association is stored as long as the data encrypted with the KMS key is still within CWL. This enables CWL to decrypt this data whenever it is requested. If you attempt to associate a KMS key with the log group but the KMS key doesn't exist or is deactivated, you will receive an ``InvalidParameterException`` error. Log group data is always encrypted in CWL. If you omit this key, the encryption does not use KMS. For more information, see [Encrypt log data in using](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/encrypt-log-data-kms.html)")
                 .with_provider_name("KmsKeyId"),
         )
