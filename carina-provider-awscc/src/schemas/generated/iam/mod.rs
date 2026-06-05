@@ -7,5 +7,6 @@
 pub use super::*;
 
 pub mod oidc_provider;
+pub mod policy;
 pub mod role;
 pub mod role_policy;

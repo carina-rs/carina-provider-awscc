@@ -11,6 +11,24 @@ use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, legacy_validator};
 use regex::Regex;
 
+pub fn arn() -> AttributeType {
+    AttributeType::custom(
+        Some(super::provider_type("iam", "OidcProvider", "Arn")),
+        super::arn(),
+        Some("^arn:(aws|aws-cn|aws-us-gov):iam::[^:]*:oidc-provider/.+$".to_string()),
+        None,
+        legacy_validator(|value| {
+            if let Value::Concrete(ConcreteValue::String(s)) = value {
+                super::validate_iam_arn(s, "oidc-provider/")
+                    .map_err(|reason| format!("Invalid IAM OIDC Provider ARN '{}': {}", s, reason))
+            } else {
+                Err("Expected string".to_string())
+            }
+        }),
+        None,
+    )
+}
+
 #[allow(dead_code)]
 fn validate_list_items_max_5(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::List(items)) = value {
@@ -69,7 +87,7 @@ pub fn iam_oidc_provider_config() -> AwsccSchemaConfig {
         schema: ResourceSchema::new("iam.OidcProvider")
             .with_description("Resource Type definition for AWS::IAM::OIDCProvider")
             .attribute(
-                AttributeSchema::new("arn", super::iam_oidc_provider_arn())
+                AttributeSchema::new("arn", self::arn())
                     .read_only()
                     .with_description("Amazon Resource Name (ARN) of the OIDC provider (read-only)")
                     .with_provider_name("Arn"),

@@ -12,6 +12,24 @@ use carina_core::schema::{
     AttributeSchema, AttributeType, ResourceSchema, StructField, legacy_validator,
 };
 
+pub fn arn() -> AttributeType {
+    AttributeType::custom(
+        Some(super::provider_type("dynamodb", "Table", "Arn")),
+        super::arn(),
+        Some("^arn:(aws|aws-cn|aws-us-gov):dynamodb:[^:]*:[^:]*:table/.+$".to_string()),
+        None,
+        legacy_validator(|value| {
+            if let Value::Concrete(ConcreteValue::String(s)) = value {
+                super::validate_service_arn(s, "dynamodb", Some("table/"))
+                    .map_err(|reason| format!("Invalid dynamodb ARN '{}': {}", s, reason))
+            } else {
+                Err("Expected string".to_string())
+            }
+        }),
+        None,
+    )
+}
+
 const VALID_ATTRIBUTE_DEFINITION_ATTRIBUTE_TYPE: &[&str] = &["S", "N", "B"];
 
 const VALID_BILLING_MODE: &[&str] = &["PAY_PER_REQUEST", "PROVISIONED"];
@@ -102,7 +120,7 @@ pub fn dynamodb_table_config() -> AwsccSchemaConfig {
         schema: ResourceSchema::new("dynamodb.Table")
         .with_description("The ``AWS::DynamoDB::Table`` resource creates a DDB table. For more information, see [CreateTable](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_CreateTable.html) in the *API Reference*.  You should be aware of the following behaviors when working with DDB tables:   +  CFNlong typically creates DDB tables in parallel. However, if your template includes multiple DDB tables with indexes, you must declare dependencies so that the tables are created sequentially. DDBlong limits the number of tables with secondary indexes that are in the creating state. If you create multiple tables with indexes at the same time, DDB returns an error and the stack operation fails. For an example, see [DynamoDB Table with a DependsOn Attribute](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-dynamodb-table.html#aws-resource-dynamodb-table--examples--DynamoDB_Table_with_a_DependsOn_Attribute).       Our guidance is to use the latest schema documented for your CFNlong templates. This schema supports the provisioning of all table settings below. When using this schema in your CFNlong templates, please ensure that your Identity and Access Management (IAM) policies are updated with appropriate permissions to allow for the authorization of these setting changes.")
         .attribute(
-            AttributeSchema::new("arn", super::arn())
+            AttributeSchema::new("arn", self::arn())
                 .read_only()
                 .with_description(" (read-only)")
                 .with_provider_name("Arn"),

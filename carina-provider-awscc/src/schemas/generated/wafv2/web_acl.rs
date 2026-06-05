@@ -13,6 +13,24 @@ use carina_core::schema::{
 };
 use regex::Regex;
 
+pub fn arn() -> AttributeType {
+    AttributeType::custom(
+        Some(super::provider_type("wafv2", "WebAcl", "Arn")),
+        super::arn(),
+        Some("^arn:(aws|aws-cn|aws-us-gov):wafv2:.*$".to_string()),
+        None,
+        legacy_validator(|value| {
+            if let Value::Concrete(ConcreteValue::String(s)) = value {
+                super::validate_service_arn(s, "wafv2", None)
+                    .map_err(|reason| format!("Invalid wafv2 ARN '{}': {}", s, reason))
+            } else {
+                Err("Expected string".to_string())
+            }
+        }),
+        None,
+    )
+}
+
 const VALID_AWS_MANAGED_RULES_ANTI_D_DO_S_RULE_SET_SENSITIVITY_TO_BLOCK: &[&str] =
     &["LOW", "MEDIUM", "HIGH"];
 
@@ -491,7 +509,7 @@ pub fn wafv2_web_acl_config() -> AwsccSchemaConfig {
                 .with_block_name("application_config"),
         )
         .attribute(
-            AttributeSchema::new("arn", super::arn())
+            AttributeSchema::new("arn", self::arn())
                 .read_only()
                 .with_provider_name("Arn"),
         )

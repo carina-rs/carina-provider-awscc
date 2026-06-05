@@ -175,7 +175,7 @@ const EXIT_SKIPPED: i32 = 2;
 /// for a specific (resource_type, property_name) pair.
 #[derive(Debug, Clone, PartialEq)]
 enum TypeOverride {
-    /// Override to a specific string type (e.g., "super::iam_role_arn()")
+    /// Override to a specific string type (e.g., "super::super::iam::role::arn()")
     StringType(&'static str),
     /// Override to an enum with specific values
     Enum(Vec<&'static str>),
@@ -202,6 +202,238 @@ struct EnumInfo {
     type_name: String,
     /// Valid enum values (e.g., ["default", "dedicated", "host"])
     values: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ArnEmitChoice {
+    PerKind(&'static ArnValidation),
+    ServicePrefix(&'static str),
+    Generic,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ArnValidation {
+    service: &'static str,
+    resource: &'static str,
+    regex: &'static str,
+    validator: ArnValidator,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ArnValidator {
+    Iam {
+        prefix: &'static str,
+        label: &'static str,
+    },
+    Service {
+        service: &'static str,
+        prefix: Option<&'static str>,
+        label: &'static str,
+    },
+}
+
+static ARN_VALIDATIONS: &[ArnValidation] = &[
+    ArnValidation {
+        service: "iam",
+        resource: "Role",
+        regex: "^arn:(aws|aws-cn|aws-us-gov):iam::[^:]*:role/.+$",
+        validator: ArnValidator::Iam {
+            prefix: "role/",
+            label: "IAM Role",
+        },
+    },
+    ArnValidation {
+        service: "iam",
+        resource: "Policy",
+        regex: "^arn:(aws|aws-cn|aws-us-gov):iam::[^:]*:policy/.+$",
+        validator: ArnValidator::Iam {
+            prefix: "policy/",
+            label: "IAM Policy",
+        },
+    },
+    ArnValidation {
+        service: "iam",
+        resource: "OidcProvider",
+        regex: "^arn:(aws|aws-cn|aws-us-gov):iam::[^:]*:oidc-provider/.+$",
+        validator: ArnValidator::Iam {
+            prefix: "oidc-provider/",
+            label: "IAM OIDC Provider",
+        },
+    },
+    ArnValidation {
+        service: "kms",
+        resource: "Key",
+        regex: "^arn:(aws|aws-cn|aws-us-gov):kms:[^:]*:[^:]*:key/.+$",
+        validator: ArnValidator::Service {
+            service: "kms",
+            prefix: Some("key/"),
+            label: "KMS Key",
+        },
+    },
+    ArnValidation {
+        service: "s3",
+        resource: "Bucket",
+        regex: "^arn:(aws|aws-cn|aws-us-gov):s3:::.+$",
+        validator: ArnValidator::Service {
+            service: "s3",
+            prefix: None,
+            label: "s3",
+        },
+    },
+    ArnValidation {
+        service: "cloudfront",
+        resource: "Distribution",
+        regex: "^arn:(aws|aws-cn|aws-us-gov):cloudfront::[^:]*:distribution/.+$",
+        validator: ArnValidator::Service {
+            service: "cloudfront",
+            prefix: Some("distribution/"),
+            label: "cloudfront",
+        },
+    },
+    ArnValidation {
+        service: "ecs",
+        resource: "Cluster",
+        regex: "^arn:(aws|aws-cn|aws-us-gov):ecs:[^:]*:[^:]*:cluster/.+$",
+        validator: ArnValidator::Service {
+            service: "ecs",
+            prefix: Some("cluster/"),
+            label: "ecs",
+        },
+    },
+    ArnValidation {
+        service: "dynamodb",
+        resource: "Table",
+        regex: "^arn:(aws|aws-cn|aws-us-gov):dynamodb:[^:]*:[^:]*:table/.+$",
+        validator: ArnValidator::Service {
+            service: "dynamodb",
+            prefix: Some("table/"),
+            label: "dynamodb",
+        },
+    },
+    ArnValidation {
+        service: "logs",
+        resource: "LogGroup",
+        regex: "^arn:(aws|aws-cn|aws-us-gov):logs:[^:]*:[^:]*:log-group:.+$",
+        validator: ArnValidator::Service {
+            service: "logs",
+            prefix: Some("log-group:"),
+            label: "logs",
+        },
+    },
+];
+
+static KNOWN_SERVICES: &[&str] = &[
+    "cloudfront",
+    "dynamodb",
+    "ec2",
+    "ecs",
+    "iam",
+    "kms",
+    "logs",
+    "organizations",
+    "s3",
+    "wafv2",
+];
+
+fn arn_emit_choice(service: &str, resource: &str) -> ArnEmitChoice {
+    if let Some(entry) = ARN_VALIDATIONS
+        .iter()
+        .find(|v| v.service == service && v.resource == resource)
+    {
+        ArnEmitChoice::PerKind(entry)
+    } else if let Some(&known) = KNOWN_SERVICES.iter().find(|&&known| known == service) {
+        ArnEmitChoice::ServicePrefix(known)
+    } else {
+        ArnEmitChoice::Generic
+    }
+}
+
+fn resource_identity_parts(name: &str) -> Option<(&str, &str)> {
+    name.split_once('.')
+}
+
+fn arn_validator_for(validator: ArnValidator) -> String {
+    match validator {
+        ArnValidator::Iam { prefix, label } => format!(
+            r#"|value| {{
+            if let Value::Concrete(ConcreteValue::String(s)) = value {{
+                super::validate_iam_arn(s, {prefix:?})
+                    .map_err(|reason| format!("Invalid {label} ARN '{{}}': {{}}", s, reason))
+            }} else {{
+                Err("Expected string".to_string())
+            }}
+        }}"#
+        ),
+        ArnValidator::Service {
+            service,
+            prefix,
+            label,
+        } => {
+            let prefix_expr = match prefix {
+                Some(prefix) => format!("Some({prefix:?})"),
+                None => "None".to_string(),
+            };
+            format!(
+                r#"|value| {{
+            if let Value::Concrete(ConcreteValue::String(s)) = value {{
+                super::validate_service_arn(s, {service:?}, {prefix_expr})
+                    .map_err(|reason| format!("Invalid {label} ARN '{{}}': {{}}", s, reason))
+            }} else {{
+                Err("Expected string".to_string())
+            }}
+        }}"#
+            )
+        }
+    }
+}
+
+fn arn_validator_expression(choice: ArnEmitChoice) -> String {
+    match choice {
+        ArnEmitChoice::PerKind(entry) => arn_validator_for(entry.validator),
+        ArnEmitChoice::ServicePrefix(service) => format!(
+            r#"|value| {{
+            if let Value::Concrete(ConcreteValue::String(s)) = value {{
+                super::validate_service_arn(s, {service:?}, None)
+                    .map_err(|reason| format!("Invalid {service} ARN '{{}}': {{}}", s, reason))
+            }} else {{
+                Err("Expected string".to_string())
+            }}
+        }}"#
+        ),
+        ArnEmitChoice::Generic => unreachable!("generic ARN helper has no validator expression"),
+    }
+}
+
+fn emit_arn_helper(service: &str, resource: &str, choice: ArnEmitChoice) -> String {
+    if matches!(choice, ArnEmitChoice::Generic) {
+        return "pub fn arn() -> AttributeType {\n    super::arn()\n}\n\n".to_string();
+    }
+
+    let regex_expr = match choice {
+        ArnEmitChoice::PerKind(entry) => format!("Some({:?}.to_string())", entry.regex),
+        ArnEmitChoice::ServicePrefix(service) => {
+            format!(
+                "Some(\"^arn:(aws|aws-cn|aws-us-gov):{}:.*$\".to_string())",
+                service
+            )
+        }
+        ArnEmitChoice::Generic => unreachable!("handled above"),
+    };
+    let validator_expr = arn_validator_expression(choice);
+    format!(
+        r#"pub fn arn() -> AttributeType {{
+    AttributeType::custom(
+        Some(super::provider_type("{service}", "{resource}", "Arn")),
+        super::arn(),
+        {regex_expr},
+        None,
+        legacy_validator({validator_expr}),
+        None,
+    )
+}}
+
+"#
+    )
 }
 
 #[derive(Parser, Debug)]
@@ -830,10 +1062,12 @@ fn override_type_to_display_name(override_type: &str) -> &str {
     match override_type {
         "super::security_group_id()" => "SecurityGroupId",
         "super::aws_resource_id()" => "AwsResourceId",
-        "super::iam_role_arn()" => "IamRoleArn",
-        "super::iam_policy_arn()" => "IamPolicyArn",
-        "super::iam_oidc_provider_arn()" => "IamOidcProviderArn",
-        "super::kms_key_arn()" => "KmsKeyArn",
+        "super::iam_role_arn()" | "super::super::iam::role::arn()" => "IamRoleArn",
+        "super::iam_policy_arn()" | "super::super::iam::policy::arn()" => "IamPolicyArn",
+        "super::iam_oidc_provider_arn()" | "super::super::iam::oidc_provider::arn()" => {
+            "IamOidcProviderArn"
+        }
+        "super::kms_key_arn()" | "super::super::kms::key::arn()" => "KmsKeyArn",
         "super::kms_key_id()" => "KmsKeyId",
         "super::gateway_id()" => "GatewayId",
         "super::network_acl_id()" => "NetworkAclId",
@@ -1701,6 +1935,15 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
     let dsl_resource = dsl_resource_name_from_type(type_name)?;
     // Namespace for enums: awscc.ec2.Vpc
     let namespace = format!("awscc.{}", dsl_resource);
+    let arn_helper = resource_identity_parts(&dsl_resource).and_then(|(service, resource)| {
+        let has_schema_arn = schema.properties.contains_key("Arn");
+        let has_synthetic_arn = synthetic_attributes()
+            .iter()
+            .any(|synth| synth.cfn_type == type_name && synth.attr_name == "arn");
+        (has_schema_arn || has_synthetic_arn)
+            .then(|| emit_arn_helper(service, resource, arn_emit_choice(service, resource)))
+    });
+    let has_arn_helper = arn_helper.is_some();
 
     // Build read-only properties set
     let read_only: HashSet<String> = schema
@@ -2141,6 +2384,9 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
     // enums lower to `types::*` rather than to `Custom`). The header — including
     // all `use` lines — is constructed at the end.
     let mut body = String::new();
+    if let Some(helper) = &arn_helper {
+        body.push_str(helper);
+    }
 
     // Aliases feed the `dsl_aliases` table on each `StringEnum` below.
     let aliases = known_enum_aliases();
@@ -2445,7 +2691,9 @@ pub fn {}() -> AwsccSchemaConfig {{
         let is_identity = identity_properties().contains(&(type_name, prop_name));
         let is_deferred_populate = deferred_populate_properties().contains(&(type_name, prop_name));
 
-        let attr_type = if let Some(enum_info) = enums.get(prop_name) {
+        let attr_type = if has_arn_helper && prop_name == "Arn" {
+            "self::arn()".to_string()
+        } else if let Some(enum_info) = enums.get(prop_name) {
             // Use shared schema enum type for constrained strings.
             // Emit a `dsl_aliases` data table mapping every canonical value
             // to its snake_case DSL spelling per naming-conventions design
@@ -2602,7 +2850,11 @@ pub fn {}() -> AwsccSchemaConfig {{
                 "                .with_description(\"{} (read-only)\"),\n        )\n", // rust-lit-guard: allow (already escaped and newline-collapsed)
             ),
             rust_lit(synth.attr_name),
-            synth.attr_type,
+            if has_arn_helper && synth.attr_name == "arn" {
+                "self::arn()"
+            } else {
+                synth.attr_type
+            },
             escaped,
         ));
     }
@@ -2960,6 +3212,7 @@ use super::AwsccSchemaConfig;
         || has_ranged_strings
         || has_defaults
         || has_patterns
+        || body.contains("Value::")
     {
         code.push_str("use carina_core::resource::{ConcreteValue, Value};\n");
     }
@@ -4048,15 +4301,15 @@ fn known_string_type_overrides() -> &'static HashMap<&'static str, &'static str>
         let mut m = HashMap::new();
         m.insert("DefaultSecurityGroup", "super::security_group_id()");
         m.insert("DefaultNetworkAcl", "super::network_acl_id()");
-        m.insert("DeliverCrossAccountRole", "super::iam_role_arn()");
-        m.insert("DeliverLogsPermissionArn", "super::iam_role_arn()");
-        m.insert("PeerRoleArn", "super::iam_role_arn()");
-        m.insert("PermissionsBoundary", "super::iam_policy_arn()");
-        m.insert("ManagedPolicyArns", "super::iam_policy_arn()");
-        m.insert("KmsKeyId", "super::kms_key_arn()");
+        m.insert("DeliverCrossAccountRole", "super::super::iam::role::arn()");
+        m.insert("DeliverLogsPermissionArn", "super::super::iam::role::arn()");
+        m.insert("PeerRoleArn", "super::super::iam::role::arn()");
+        m.insert("PermissionsBoundary", "super::super::iam::policy::arn()");
+        m.insert("ManagedPolicyArns", "super::super::iam::policy::arn()");
+        m.insert("KmsKeyId", "super::super::kms::key::arn()");
         m.insert("KMSMasterKeyID", "super::kms_key_id()");
         m.insert("ReplicaKmsKeyID", "super::kms_key_id()");
-        m.insert("KmsKeyArn", "super::kms_key_arn()");
+        m.insert("KmsKeyArn", "super::super::kms::key::arn()");
         m.insert("IpamId", "super::ipam_id()");
         m.insert("Locale", "super::awscc_region()");
         m.insert("BucketAccountId", "super::aws_account_id()");
@@ -4082,12 +4335,12 @@ fn resource_type_overrides() -> &'static HashMap<(&'static str, &'static str), T
             // IAM Role's Arn is always an IAM Role ARN
             m.insert(
                 ("AWS::IAM::Role", "Arn"),
-                TypeOverride::StringType("super::iam_role_arn()"),
+                TypeOverride::StringType("super::super::iam::role::arn()"),
             );
             // IAM OIDCProvider's Arn is always an IAM OIDC Provider ARN
             m.insert(
                 ("AWS::IAM::OIDCProvider", "Arn"),
-                TypeOverride::StringType("super::iam_oidc_provider_arn()"),
+                TypeOverride::StringType("super::super::iam::oidc_provider::arn()"),
             );
             // IAM Role's RoleId uses AROA prefix pattern
             m.insert(
@@ -4167,7 +4420,7 @@ fn resource_type_overrides() -> &'static HashMap<(&'static str, &'static str), T
             // S3 Bucket replication role is an IAM Role ARN
             m.insert(
                 ("AWS::S3::Bucket", "Role"),
-                TypeOverride::StringType("super::iam_role_arn()"),
+                TypeOverride::StringType("super::super::iam::role::arn()"),
             );
             // S3 Bucket replication destination account
             m.insert(
@@ -5653,6 +5906,14 @@ fn collapse_whitespace(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn cfn_schema_for_codegen_tests(type_name: &str) -> CfnSchema {
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../cfn-schema-cache")
+            .join(format!("{}.json", type_name.replace("::", "__")));
+        let raw = std::fs::read_to_string(path).expect("cached CFN schema");
+        serde_json::from_str(&raw).expect("cached CFN schema parses")
+    }
 
     /// Build a `CfnDefinition` for classification tests, overriding only the
     /// fields a case cares about.
@@ -8035,10 +8296,16 @@ mod tests {
         );
         assert_eq!(
             overrides.get("DeliverLogsPermissionArn"),
-            Some(&"super::iam_role_arn()")
+            Some(&"super::super::iam::role::arn()")
         );
-        assert_eq!(overrides.get("KmsKeyId"), Some(&"super::kms_key_arn()"));
-        assert_eq!(overrides.get("KmsKeyArn"), Some(&"super::kms_key_arn()"));
+        assert_eq!(
+            overrides.get("KmsKeyId"),
+            Some(&"super::super::kms::key::arn()")
+        );
+        assert_eq!(
+            overrides.get("KmsKeyArn"),
+            Some(&"super::super::kms::key::arn()")
+        );
         assert_eq!(
             overrides.get("KMSMasterKeyID"),
             Some(&"super::kms_key_id()")
@@ -8049,8 +8316,64 @@ mod tests {
         );
         assert_eq!(
             overrides.get("PermissionsBoundary"),
-            Some(&"super::iam_policy_arn()")
+            Some(&"super::super::iam::policy::arn()")
         );
+    }
+
+    #[test]
+    fn arn_overrides_point_to_resource_modules() {
+        let overrides = known_string_type_overrides();
+        assert_eq!(
+            overrides.get("DeliverLogsPermissionArn"),
+            Some(&"super::super::iam::role::arn()")
+        );
+        assert_eq!(
+            overrides.get("KmsKeyArn"),
+            Some(&"super::super::kms::key::arn()")
+        );
+        assert_eq!(
+            override_type_to_display_name("super::super::iam::oidc_provider::arn()"),
+            "IamOidcProviderArn"
+        );
+    }
+
+    #[test]
+    fn arn_emit_choice_has_table_service_and_generic_paths() {
+        assert!(matches!(
+            arn_emit_choice("iam", "OidcProvider"),
+            ArnEmitChoice::PerKind(entry) if entry.validator
+                == ArnValidator::Iam {
+                    prefix: "oidc-provider/",
+                    label: "IAM OIDC Provider",
+                }
+        ));
+        assert!(matches!(
+            arn_emit_choice("organizations", "Account"),
+            ArnEmitChoice::ServicePrefix("organizations")
+        ));
+        assert!(matches!(
+            arn_emit_choice("unknownservice", "Thing"),
+            ArnEmitChoice::Generic
+        ));
+    }
+
+    #[test]
+    fn generated_s3_bucket_owns_arn_helper() {
+        let schema = cfn_schema_for_codegen_tests("AWS::S3::Bucket");
+        let generated =
+            generate_schema_code(&schema, "AWS::S3::Bucket").expect("generate s3 bucket");
+        assert!(generated.contains("pub fn arn() -> AttributeType"));
+        assert!(generated.contains("Some(super::provider_type(\"s3\", \"Bucket\", \"Arn\"))"));
+        assert!(generated.contains("AttributeSchema::new(\"arn\", self::arn())"));
+    }
+
+    #[test]
+    fn generated_organizations_account_gets_service_prefix_arn_helper() {
+        let schema = cfn_schema_for_codegen_tests("AWS::Organizations::Account");
+        let generated = generate_schema_code(&schema, "AWS::Organizations::Account")
+            .expect("generate organizations account");
+        assert!(generated.contains("pub fn arn() -> AttributeType"));
+        assert!(generated.contains("validate_service_arn(s, \"organizations\", None)"));
     }
 
     #[test]
@@ -8664,10 +8987,10 @@ mod tests {
 
     #[test]
     fn test_resource_type_overrides_string_type() {
-        // IAM Role's Arn should use iam_role_arn, not generic arn
+        // IAM Role's Arn should use the schema-owned Role ARN helper, not generic arn
         assert_eq!(
             infer_string_type("Arn", "AWS::IAM::Role"),
-            Some("super::iam_role_arn()".to_string())
+            Some("super::super::iam::role::arn()".to_string())
         );
         // Other resources' Arn should use generic arn
         assert_eq!(
@@ -8855,10 +9178,10 @@ mod tests {
 
     #[test]
     fn test_iam_oidc_provider_arn_override() {
-        // IAM OIDCProvider's Arn should use iam_oidc_provider_arn(), not generic arn
+        // IAM OIDCProvider's Arn should use the schema-owned OIDC Provider ARN helper.
         assert_eq!(
             infer_string_type("Arn", "AWS::IAM::OIDCProvider"),
-            Some("super::iam_oidc_provider_arn()".to_string())
+            Some("super::super::iam::oidc_provider::arn()".to_string())
         );
         assert_eq!(
             infer_string_type_display("Arn", "AWS::IAM::OIDCProvider"),

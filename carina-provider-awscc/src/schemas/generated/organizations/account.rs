@@ -13,6 +13,24 @@ use carina_core::schema::{
 };
 use regex::Regex;
 
+pub fn arn() -> AttributeType {
+    AttributeType::custom(
+        Some(super::provider_type("organizations", "Account", "Arn")),
+        super::arn(),
+        Some("^arn:(aws|aws-cn|aws-us-gov):organizations:.*$".to_string()),
+        None,
+        legacy_validator(|value| {
+            if let Value::Concrete(ConcreteValue::String(s)) = value {
+                super::validate_service_arn(s, "organizations", None)
+                    .map_err(|reason| format!("Invalid organizations ARN '{}': {}", s, reason))
+            } else {
+                Err("Expected string".to_string())
+            }
+        }),
+        None,
+    )
+}
+
 const VALID_JOINED_METHOD: &[&str] = &["INVITED", "CREATED"];
 
 const VALID_STATE: &[&str] = &[
@@ -165,7 +183,7 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
                 .with_provider_name("AccountName"),
         )
         .attribute(
-            AttributeSchema::new("arn", super::arn())
+            AttributeSchema::new("arn", self::arn())
                 .read_only()
                 .with_description("The Amazon Resource Name (ARN) of the account. (read-only)")
                 .with_provider_name("Arn"),

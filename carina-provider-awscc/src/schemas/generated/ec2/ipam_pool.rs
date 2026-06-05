@@ -7,9 +7,29 @@
 use super::AwsccSchemaConfig;
 use super::tags_type;
 use super::validate_tags_map;
+use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{
-    AttributeSchema, AttributeType, OperationConfig, ResourceSchema, StructField, types,
+    AttributeSchema, AttributeType, OperationConfig, ResourceSchema, StructField, legacy_validator,
+    types,
 };
+
+pub fn arn() -> AttributeType {
+    AttributeType::custom(
+        Some(super::provider_type("ec2", "IpamPool", "Arn")),
+        super::arn(),
+        Some("^arn:(aws|aws-cn|aws-us-gov):ec2:.*$".to_string()),
+        None,
+        legacy_validator(|value| {
+            if let Value::Concrete(ConcreteValue::String(s)) = value {
+                super::validate_service_arn(s, "ec2", None)
+                    .map_err(|reason| format!("Invalid ec2 ARN '{}': {}", s, reason))
+            } else {
+                Err("Expected string".to_string())
+            }
+        }),
+        None,
+    )
+}
 
 const VALID_ADDRESS_FAMILY: &[&str] = &["IPv4", "IPv6"];
 
@@ -65,7 +85,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
                 .with_block_name("allocation_resource_tag"),
         )
         .attribute(
-            AttributeSchema::new("arn", super::arn())
+            AttributeSchema::new("arn", self::arn())
                 .read_only()
                 .with_description("The Amazon Resource Name (ARN) of the IPAM Pool. (read-only)")
                 .with_provider_name("Arn"),
