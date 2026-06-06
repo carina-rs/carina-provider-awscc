@@ -1,23 +1,26 @@
 use std::collections::HashMap;
 
 mod convert;
-use carina_plugin_sdk::{BoxFuture, CarinaProvider};
+use carina_plugin_sdk::CarinaProvider;
 use carina_provider_protocol::types as proto;
 
 use carina_core::provider::{
     CreateRequest as CoreCreateRequest, DeleteRequest as CoreDeleteRequest, Provider,
-    ProviderError as CoreProviderError, ReadRequest as CoreReadRequest, SavedAttrs,
-    UpdateRequest as CoreUpdateRequest, merge_default_tags_for_provider,
+    ProviderError as CoreProviderError, ProviderNormalizer, ReadRequest as CoreReadRequest,
+    SavedAttrs, UpdateRequest as CoreUpdateRequest,
 };
 use carina_core::resource::{
     ConcreteValue, ResourceId as CoreResourceId, State as CoreState, Value as CoreValue,
 };
 
+use carina_provider_awscc::AwsccNormalizer;
 use carina_provider_awscc::provider::{AwsccProvider, AwsccProviderConfig};
 use carina_provider_awscc::schemas;
 
 struct AwsccProcessProvider {
+    runtime: tokio::runtime::Runtime,
     provider: Option<AwsccProvider>,
+    normalizer: AwsccNormalizer,
 }
 
 impl Default for AwsccProcessProvider {
@@ -28,7 +31,18 @@ impl Default for AwsccProcessProvider {
 
 impl AwsccProcessProvider {
     fn new() -> Self {
-        Self { provider: None }
+        #[cfg(not(target_arch = "wasm32"))]
+        let runtime = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
+        #[cfg(target_arch = "wasm32")]
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .expect("Failed to create tokio runtime");
+        Self {
+            runtime,
+            provider: None,
+            normalizer: AwsccNormalizer,
+        }
     }
 
     fn convert_error(e: CoreProviderError) -> proto::ProviderError {
@@ -124,10 +138,7 @@ impl CarinaProvider for AwsccProcessProvider {
         Ok(())
     }
 
-    fn initialize<'a>(
-        &'a mut self,
-        attrs: &'a HashMap<String, proto::Value>,
-    ) -> BoxFuture<'a, Result<(), String>> {
+    fn initialize(&mut self, attrs: &HashMap<String, proto::Value>) -> Result<(), String> {
         let core_attrs = convert::proto_to_core_value_map(attrs);
         let region = if let Some(CoreValue::Concrete(ConcreteValue::String(region))) =
             core_attrs.get("region")
@@ -136,19 +147,19 @@ impl CarinaProvider for AwsccProcessProvider {
         } else {
             "ap-northeast-1".to_string()
         };
-        Box::pin(async move {
-            let cfg = extract_account_guard_config(&core_attrs)?;
-            let provider = AwsccProvider::new_with_config(&region, &cfg).await;
-            // Surface the account-guard rejection eagerly: if the caller's
-            // AWS account violates allowed_account_ids / forbidden_account_ids,
-            // initialize() must fail so the host aborts before any plan,
-            // refresh, or apply step.
-            if let Some(err) = provider.init_error() {
-                return Err(err.to_string());
-            }
-            self.provider = Some(provider);
-            Ok(())
-        })
+        let cfg = extract_account_guard_config(&core_attrs)?;
+        let provider = self
+            .runtime
+            .block_on(AwsccProvider::new_with_config(&region, &cfg));
+        // Surface the account-guard rejection eagerly: if the caller's
+        // AWS account violates allowed_account_ids / forbidden_account_ids,
+        // initialize() must fail so the host aborts before any plan,
+        // refresh, or apply step.
+        if let Some(err) = provider.init_error() {
+            return Err(err.to_string());
+        }
+        self.provider = Some(provider);
+        Ok(())
     }
 
     fn config_completions(&self) -> HashMap<String, Vec<proto::CompletionValue>> {
@@ -199,57 +210,48 @@ impl CarinaProvider for AwsccProcessProvider {
         id: &proto::ResourceId,
         identifier: Option<&str>,
         _request: proto::ReadRequest,
-    ) -> BoxFuture<'_, Result<proto::State, proto::ProviderError>> {
+    ) -> Result<proto::State, proto::ProviderError> {
         let core_id = convert::proto_to_core_resource_id(id);
-        let identifier = identifier.map(str::to_string);
-        Box::pin(async move {
-            let result = self
-                .provider()
-                .read(&core_id, identifier.as_deref(), CoreReadRequest)
-                .await;
-            match result {
-                Ok(state) => Ok(convert::core_to_proto_state(&state)),
-                Err(e) => Err(Self::convert_error(e)),
-            }
-        })
+        let result =
+            self.runtime
+                .block_on(self.provider().read(&core_id, identifier, CoreReadRequest));
+        match result {
+            Ok(state) => Ok(convert::core_to_proto_state(&state)),
+            Err(e) => Err(Self::convert_error(e)),
+        }
     }
 
     fn read_data_source(
         &self,
         resource: &proto::Resource,
-    ) -> BoxFuture<'_, Result<proto::State, proto::ProviderError>> {
+    ) -> Result<proto::State, proto::ProviderError> {
         let core_data_source = convert::proto_to_core_data_source(resource);
-        Box::pin(async move {
-            let result = self.provider().read_data_source(&core_data_source).await;
-            match result {
-                Ok(state) => Ok(convert::core_to_proto_state(&state)),
-                Err(e) => Err(Self::convert_error(e)),
-            }
-        })
+        let result = self
+            .runtime
+            .block_on(self.provider().read_data_source(&core_data_source));
+        match result {
+            Ok(state) => Ok(convert::core_to_proto_state(&state)),
+            Err(e) => Err(Self::convert_error(e)),
+        }
     }
 
     fn create(
         &self,
         id: &proto::ResourceId,
         request: proto::CreateRequest,
-    ) -> BoxFuture<'_, Result<proto::State, proto::ProviderError>> {
+    ) -> Result<proto::State, proto::ProviderError> {
         let core_id = convert::proto_to_core_resource_id(id);
         let core_resource = convert::proto_to_core_resource(&request.resource);
-        Box::pin(async move {
-            let result = self
-                .provider()
-                .create(
-                    &core_id,
-                    CoreCreateRequest {
-                        resource: core_resource,
-                    },
-                )
-                .await;
-            match result {
-                Ok(state) => Ok(convert::core_to_proto_state(&state)),
-                Err(e) => Err(Self::convert_error(e)),
-            }
-        })
+        let result = self.runtime.block_on(self.provider().create(
+            &core_id,
+            CoreCreateRequest {
+                resource: core_resource,
+            },
+        ));
+        match result {
+            Ok(state) => Ok(convert::core_to_proto_state(&state)),
+            Err(e) => Err(Self::convert_error(e)),
+        }
     }
 
     fn update(
@@ -257,28 +259,22 @@ impl CarinaProvider for AwsccProcessProvider {
         id: &proto::ResourceId,
         identifier: &str,
         request: proto::UpdateRequest,
-    ) -> BoxFuture<'_, Result<proto::State, proto::ProviderError>> {
+    ) -> Result<proto::State, proto::ProviderError> {
         let core_id = convert::proto_to_core_resource_id(id);
-        let identifier = identifier.to_string();
         let core_from = convert::proto_to_core_state(&request.from);
         let core_patch = convert::proto_to_core_update_patch(&request.patch);
-        Box::pin(async move {
-            let result = self
-                .provider()
-                .update(
-                    &core_id,
-                    &identifier,
-                    CoreUpdateRequest {
-                        from: core_from,
-                        patch: core_patch,
-                    },
-                )
-                .await;
-            match result {
-                Ok(state) => Ok(convert::core_to_proto_state(&state)),
-                Err(e) => Err(Self::convert_error(e)),
-            }
-        })
+        let result = self.runtime.block_on(self.provider().update(
+            &core_id,
+            identifier,
+            CoreUpdateRequest {
+                from: core_from,
+                patch: core_patch,
+            },
+        ));
+        match result {
+            Ok(state) => Ok(convert::core_to_proto_state(&state)),
+            Err(e) => Err(Self::convert_error(e)),
+        }
     }
 
     fn delete(
@@ -286,9 +282,8 @@ impl CarinaProvider for AwsccProcessProvider {
         id: &proto::ResourceId,
         identifier: &str,
         request: proto::DeleteRequest,
-    ) -> BoxFuture<'_, Result<(), proto::ProviderError>> {
+    ) -> Result<(), proto::ProviderError> {
         let core_id = convert::proto_to_core_resource_id(id);
-        let identifier = identifier.to_string();
         let core_directives = carina_core::resource::Directives {
             force_delete: request.directives.force_delete,
             create_before_destroy: request.directives.create_before_destroy,
@@ -296,22 +291,17 @@ impl CarinaProvider for AwsccProcessProvider {
             depends_on: Vec::new(),
             provider_instance: None,
         };
-        Box::pin(async move {
-            let result = self
-                .provider()
-                .delete(
-                    &core_id,
-                    &identifier,
-                    CoreDeleteRequest {
-                        directives: core_directives,
-                    },
-                )
-                .await;
-            match result {
-                Ok(()) => Ok(()),
-                Err(e) => Err(Self::convert_error(e)),
-            }
-        })
+        let result = self.runtime.block_on(self.provider().delete(
+            &core_id,
+            identifier,
+            CoreDeleteRequest {
+                directives: core_directives,
+            },
+        ));
+        match result {
+            Ok(()) => Ok(()),
+            Err(e) => Err(Self::convert_error(e)),
+        }
     }
 
     fn normalize_desired(&self, resources: Vec<proto::Resource>) -> Vec<proto::Resource> {
@@ -319,7 +309,12 @@ impl CarinaProvider for AwsccProcessProvider {
             .iter()
             .map(convert::proto_to_core_resource)
             .collect();
-        carina_provider_awscc::provider::resolve_enum_identifiers_impl(&mut core_resources);
+        // Guest-side: drive the now-async normalizer on the guest's own
+        // outermost runtime — same pattern as the guest's `Provider`
+        // CRUD methods. Not a nested runtime: the host drives the WASM
+        // call, the guest drives its internal async (carina#3112).
+        self.runtime
+            .block_on(self.normalizer.normalize_desired(&mut core_resources));
         core_resources
             .iter()
             .map(convert::core_to_proto_resource)
@@ -337,8 +332,8 @@ impl CarinaProvider for AwsccProcessProvider {
                 (core_state.id.clone(), core_state)
             })
             .collect();
-        carina_provider_awscc::provider::normalize_state_enums_impl(&mut core_states);
-        carina_provider_awscc::provider::canonicalize_string_or_list_states_impl(&mut core_states);
+        self.runtime
+            .block_on(self.normalizer.normalize_state(&mut core_states));
         core_states
             .iter()
             .map(|(id, state)| (id.to_string(), convert::core_to_proto_state(state)))
@@ -371,9 +366,9 @@ impl CarinaProvider for AwsccProcessProvider {
                 Some((id, attrs))
             })
             .collect();
-        carina_provider_awscc::provider::restore_unreturned_attrs_impl(
-            &mut core_states,
-            &core_saved,
+        self.runtime.block_on(
+            self.normalizer
+                .hydrate_read_state(&mut core_states, &core_saved),
         );
         *states = core_states
             .iter()
@@ -399,7 +394,11 @@ impl CarinaProvider for AwsccProcessProvider {
         for s in proto_schemas {
             registry.insert("awscc", convert::proto_to_core_schema(s));
         }
-        merge_default_tags_for_provider("awscc", &mut core_resources, &core_tags, &registry);
+        self.runtime.block_on(self.normalizer.merge_default_tags(
+            &mut core_resources,
+            &core_tags,
+            &registry,
+        ));
         *resources = core_resources
             .iter()
             .map(convert::core_to_proto_resource)
