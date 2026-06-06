@@ -17,6 +17,7 @@ use carina_provider_awscc::provider::{AwsccProvider, AwsccProviderConfig};
 use carina_provider_awscc::schemas;
 
 struct AwsccProcessProvider {
+    runtime: tokio::runtime::Runtime,
     provider: Option<AwsccProvider>,
 }
 
@@ -28,7 +29,14 @@ impl Default for AwsccProcessProvider {
 
 impl AwsccProcessProvider {
     fn new() -> Self {
-        Self { provider: None }
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .expect("failed to build tokio runtime for AWS SDK");
+        Self {
+            runtime,
+            provider: None,
+        }
     }
 
     fn convert_error(e: CoreProviderError) -> proto::ProviderError {
@@ -137,6 +145,7 @@ impl CarinaProvider for AwsccProcessProvider {
             "ap-northeast-1".to_string()
         };
         Box::pin(async move {
+            let _enter = self.runtime.enter();
             let cfg = extract_account_guard_config(&core_attrs)?;
             let provider = AwsccProvider::new_with_config(&region, &cfg).await;
             // Surface the account-guard rejection eagerly: if the caller's
@@ -203,6 +212,7 @@ impl CarinaProvider for AwsccProcessProvider {
         let core_id = convert::proto_to_core_resource_id(id);
         let identifier = identifier.map(str::to_string);
         Box::pin(async move {
+            let _enter = self.runtime.enter();
             let result = self
                 .provider()
                 .read(&core_id, identifier.as_deref(), CoreReadRequest)
@@ -220,6 +230,7 @@ impl CarinaProvider for AwsccProcessProvider {
     ) -> BoxFuture<'_, Result<proto::State, proto::ProviderError>> {
         let core_data_source = convert::proto_to_core_data_source(resource);
         Box::pin(async move {
+            let _enter = self.runtime.enter();
             let result = self.provider().read_data_source(&core_data_source).await;
             match result {
                 Ok(state) => Ok(convert::core_to_proto_state(&state)),
@@ -236,6 +247,7 @@ impl CarinaProvider for AwsccProcessProvider {
         let core_id = convert::proto_to_core_resource_id(id);
         let core_resource = convert::proto_to_core_resource(&request.resource);
         Box::pin(async move {
+            let _enter = self.runtime.enter();
             let result = self
                 .provider()
                 .create(
@@ -263,6 +275,7 @@ impl CarinaProvider for AwsccProcessProvider {
         let core_from = convert::proto_to_core_state(&request.from);
         let core_patch = convert::proto_to_core_update_patch(&request.patch);
         Box::pin(async move {
+            let _enter = self.runtime.enter();
             let result = self
                 .provider()
                 .update(
@@ -297,6 +310,7 @@ impl CarinaProvider for AwsccProcessProvider {
             provider_instance: None,
         };
         Box::pin(async move {
+            let _enter = self.runtime.enter();
             let result = self
                 .provider()
                 .delete(
