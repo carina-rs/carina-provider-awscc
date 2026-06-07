@@ -108,7 +108,7 @@ pub fn ec2_ipam_config() -> AwsccSchemaConfig {
                 .with_provider_name("IpamId"),
         )
         .attribute(
-            AttributeSchema::new("metered_account", AttributeType::string_enum("MeteredAccount".to_string(), vec!["ipam-owner".to_string(), "resource-owner".to_string()], Some(carina_core::schema::string_enum_identity("MeteredAccount", Some("awscc.ec2.Ipam"))), vec![("ipam-owner".to_string(), "ipam_owner".to_string()), ("resource-owner".to_string(), "resource_owner".to_string())]))
+            AttributeSchema::new("metered_account", AttributeType::enum_(carina_core::schema::enum_identity("MeteredAccount", Some("awscc.ec2.Ipam")), Some(vec!["ipam-owner".to_string(), "resource-owner".to_string()]), vec![("ipam-owner".to_string(), "ipam_owner".to_string()), ("resource-owner".to_string(), "resource_owner".to_string())], None, None))
                 .with_description("A metered account is an account that is charged for active IP addresses managed in IPAM")
                 .with_provider_name("MeteredAccount"),
         )
@@ -149,7 +149,7 @@ pub fn ec2_ipam_config() -> AwsccSchemaConfig {
                 .with_block_name("tag"),
         )
         .attribute(
-            AttributeSchema::new("tier", AttributeType::string_enum("Tier".to_string(), vec!["free".to_string(), "advanced".to_string()], Some(carina_core::schema::string_enum_identity("Tier", Some("awscc.ec2.Ipam"))), vec![("free".to_string(), "free".to_string()), ("advanced".to_string(), "advanced".to_string())]))
+            AttributeSchema::new("tier", AttributeType::enum_(carina_core::schema::enum_identity("Tier", Some("awscc.ec2.Ipam")), Some(vec!["free".to_string(), "advanced".to_string()]), vec![("free".to_string(), "free".to_string()), ("advanced".to_string(), "advanced".to_string())], None, None))
                 .with_description("The tier of the IPAM.")
                 .with_provider_name("Tier"),
         )

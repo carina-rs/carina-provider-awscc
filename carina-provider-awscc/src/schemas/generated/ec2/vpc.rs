@@ -69,7 +69,7 @@ pub fn ec2_vpc_config() -> AwsccSchemaConfig {
                 .with_provider_name("EnableDnsSupport"),
         )
         .attribute(
-            AttributeSchema::new("instance_tenancy", AttributeType::string_enum("InstanceTenancy".to_string(), vec!["default".to_string(), "dedicated".to_string(), "host".to_string()], Some(carina_core::schema::string_enum_identity("InstanceTenancy", Some("awscc.ec2.Vpc"))), vec![("default".to_string(), "default".to_string()), ("dedicated".to_string(), "dedicated".to_string()), ("host".to_string(), "host".to_string())]))
+            AttributeSchema::new("instance_tenancy", AttributeType::enum_(carina_core::schema::enum_identity("InstanceTenancy", Some("awscc.ec2.Vpc")), Some(vec!["default".to_string(), "dedicated".to_string(), "host".to_string()]), vec![("default".to_string(), "default".to_string()), ("dedicated".to_string(), "dedicated".to_string()), ("host".to_string(), "host".to_string())], None, None))
                 .with_description("The allowed tenancy of instances launched into the VPC. + ``default``: An instance launched into the VPC runs on shared hardware by default, unless you explicitly specify a different tenancy during instance launch. + ``dedicated``: An instance launched into the VPC runs on dedicated hardware by default, unless you explicitly specify a tenancy of ``host`` during instance launch. You cannot specify a tenancy of ``default`` during instance launch. Updating ``InstanceTenancy`` requires no replacement only if you are updating its value from ``dedicated`` to ``default``. Updating ``InstanceTenancy`` from ``default`` to ``dedicated`` requires replacement.")
                 .with_provider_name("InstanceTenancy"),
         )

@@ -56,7 +56,7 @@ pub fn ec2_nat_gateway_config() -> AwsccSchemaConfig {
                 .with_provider_name("AutoScalingIps"),
         )
         .attribute(
-            AttributeSchema::new("availability_mode", AttributeType::string_enum("AvailabilityMode".to_string(), vec!["zonal".to_string(), "regional".to_string()], Some(carina_core::schema::string_enum_identity("AvailabilityMode", Some("awscc.ec2.NatGateway"))), vec![("zonal".to_string(), "zonal".to_string()), ("regional".to_string(), "regional".to_string())]))
+            AttributeSchema::new("availability_mode", AttributeType::enum_(carina_core::schema::enum_identity("AvailabilityMode", Some("awscc.ec2.NatGateway")), Some(vec!["zonal".to_string(), "regional".to_string()]), vec![("zonal".to_string(), "zonal".to_string()), ("regional".to_string(), "regional".to_string())], None, None))
                 .create_only()
                 .with_description("Indicates whether this is a zonal (single-AZ) or regional (multi-AZ) NAT gateway. A zonal NAT gateway is a NAT Gateway that provides redundancy and scalability within a single availability zone. A regional NAT gateway is a single NAT Gateway that works across multiple availability zones (AZs) in your VPC, providing redundancy, scalability and availability across all the AZs in a Region. For more information, see [Regional NAT gateways for automatic multi-AZ expansion](https://docs.aws.amazon.com/vpc/latest/userguide/nat-gateways-regional.html) in the *Amazon VPC User Guide*.")
                 .with_provider_name("AvailabilityMode"),
@@ -70,7 +70,7 @@ pub fn ec2_nat_gateway_config() -> AwsccSchemaConfig {
                 .with_block_name("availability_zone_address"),
         )
         .attribute(
-            AttributeSchema::new("connectivity_type", AttributeType::string_enum("ConnectivityType".to_string(), vec!["public".to_string(), "private".to_string()], Some(carina_core::schema::string_enum_identity("ConnectivityType", Some("awscc.ec2.NatGateway"))), vec![("public".to_string(), "public".to_string()), ("private".to_string(), "private".to_string())]))
+            AttributeSchema::new("connectivity_type", AttributeType::enum_(carina_core::schema::enum_identity("ConnectivityType", Some("awscc.ec2.NatGateway")), Some(vec!["public".to_string(), "private".to_string()]), vec![("public".to_string(), "public".to_string()), ("private".to_string(), "private".to_string())], None, None))
                 .create_only()
                 .with_description("Indicates whether the NAT gateway supports public or private connectivity. The default is public connectivity.")
                 .with_provider_name("ConnectivityType"),

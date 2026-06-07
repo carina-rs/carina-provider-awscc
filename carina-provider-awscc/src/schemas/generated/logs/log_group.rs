@@ -106,7 +106,7 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
                 .with_provider_name("KmsKeyId"),
         )
         .attribute(
-            AttributeSchema::new("log_group_class", AttributeType::string_enum("LogGroupClass".to_string(), vec!["STANDARD".to_string(), "INFREQUENT_ACCESS".to_string(), "DELIVERY".to_string()], Some(carina_core::schema::string_enum_identity("LogGroupClass", Some("awscc.logs.LogGroup"))), vec![("STANDARD".to_string(), "standard".to_string()), ("INFREQUENT_ACCESS".to_string(), "infrequent_access".to_string()), ("DELIVERY".to_string(), "delivery".to_string())]))
+            AttributeSchema::new("log_group_class", AttributeType::enum_(carina_core::schema::enum_identity("LogGroupClass", Some("awscc.logs.LogGroup")), Some(vec!["STANDARD".to_string(), "INFREQUENT_ACCESS".to_string(), "DELIVERY".to_string()]), vec![("STANDARD".to_string(), "standard".to_string()), ("INFREQUENT_ACCESS".to_string(), "infrequent_access".to_string()), ("DELIVERY".to_string(), "delivery".to_string())], None, None))
                 .with_description("Specifies the log group class for this log group. There are two classes: + The ``Standard`` log class supports all CWL features. + The ``Infrequent Access`` log class supports a subset of CWL features and incurs lower costs. For details about the features supported by each class, see [Log classes](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/CloudWatch_Logs_Log_Classes.html)")
                 .with_provider_name("LogGroupClass")
                 .with_default(Value::Concrete(ConcreteValue::String("STANDARD".to_string()))),

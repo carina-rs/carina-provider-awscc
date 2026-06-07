@@ -107,7 +107,7 @@ pub fn organizations_organization_config() -> AwsccSchemaConfig {
                 .with_provider_name("Arn"),
         )
         .attribute(
-            AttributeSchema::new("feature_set", AttributeType::string_enum("FeatureSet".to_string(), vec!["ALL".to_string(), "CONSOLIDATED_BILLING".to_string()], Some(carina_core::schema::string_enum_identity("FeatureSet", Some("awscc.organizations.Organization"))), vec![("ALL".to_string(), "all".to_string()), ("CONSOLIDATED_BILLING".to_string(), "consolidated_billing".to_string())]))
+            AttributeSchema::new("feature_set", AttributeType::enum_(carina_core::schema::enum_identity("FeatureSet", Some("awscc.organizations.Organization")), Some(vec!["ALL".to_string(), "CONSOLIDATED_BILLING".to_string()]), vec![("ALL".to_string(), "all".to_string()), ("CONSOLIDATED_BILLING".to_string(), "consolidated_billing".to_string())], None, None))
                 .with_description("Specifies the feature set supported by the new organization. Each feature set supports different levels of functionality.")
                 .with_provider_name("FeatureSet")
                 .with_default(Value::Concrete(ConcreteValue::String("ALL".to_string()))),

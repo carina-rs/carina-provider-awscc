@@ -57,7 +57,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
         schema: ResourceSchema::new("ec2.IpamPool")
         .with_description("Resource Schema of AWS::EC2::IPAMPool Type")
         .attribute(
-            AttributeSchema::new("address_family", AttributeType::string_enum("AddressFamily".to_string(), vec!["IPv4".to_string(), "IPv6".to_string()], Some(carina_core::schema::string_enum_identity("AddressFamily", Some("awscc.ec2.IpamPool"))), vec![("IPv4".to_string(), "ipv4".to_string()), ("IPv6".to_string(), "ipv6".to_string())]))
+            AttributeSchema::new("address_family", AttributeType::enum_(carina_core::schema::enum_identity("AddressFamily", Some("awscc.ec2.IpamPool")), Some(vec!["IPv4".to_string(), "IPv6".to_string()]), vec![("IPv4".to_string(), "ipv4".to_string()), ("IPv6".to_string(), "ipv6".to_string())], None, None))
                 .required()
                 .create_only()
                 .with_description("The address family of the address space in this pool. Either IPv4 or IPv6.")
@@ -96,7 +96,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
                 .with_provider_name("AutoImport"),
         )
         .attribute(
-            AttributeSchema::new("aws_service", AttributeType::string_enum("AwsService".to_string(), vec!["ec2".to_string(), "global-services".to_string()], Some(carina_core::schema::string_enum_identity("AwsService", Some("awscc.ec2.IpamPool"))), vec![("ec2".to_string(), "ec2".to_string()), ("global-services".to_string(), "global_services".to_string())]))
+            AttributeSchema::new("aws_service", AttributeType::enum_(carina_core::schema::enum_identity("AwsService", Some("awscc.ec2.IpamPool")), Some(vec!["ec2".to_string(), "global-services".to_string()]), vec![("ec2".to_string(), "ec2".to_string()), ("global-services".to_string(), "global_services".to_string())], None, None))
                 .create_only()
                 .with_description("Limits which service in Amazon Web Services that the pool can be used in.")
                 .with_provider_name("AwsService"),
@@ -131,7 +131,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
                 .with_provider_name("IpamScopeId"),
         )
         .attribute(
-            AttributeSchema::new("ipam_scope_type", AttributeType::string_enum("IpamScopeType".to_string(), vec!["public".to_string(), "private".to_string()], Some(carina_core::schema::string_enum_identity("IpamScopeType", Some("awscc.ec2.IpamPool"))), vec![("public".to_string(), "public".to_string()), ("private".to_string(), "private".to_string())]))
+            AttributeSchema::new("ipam_scope_type", AttributeType::enum_(carina_core::schema::enum_identity("IpamScopeType", Some("awscc.ec2.IpamPool")), Some(vec!["public".to_string(), "private".to_string()]), vec![("public".to_string(), "public".to_string()), ("private".to_string(), "private".to_string())], None, None))
                 .read_only()
                 .with_description("Determines whether this scope contains publicly routable space or space for a private network (read-only)")
                 .with_provider_name("IpamScopeType"),
@@ -155,7 +155,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
                 .with_block_name("provisioned_cidr"),
         )
         .attribute(
-            AttributeSchema::new("public_ip_source", AttributeType::string_enum("PublicIpSource".to_string(), vec!["byoip".to_string(), "amazon".to_string()], Some(carina_core::schema::string_enum_identity("PublicIpSource", Some("awscc.ec2.IpamPool"))), vec![("byoip".to_string(), "byoip".to_string()), ("amazon".to_string(), "amazon".to_string())]))
+            AttributeSchema::new("public_ip_source", AttributeType::enum_(carina_core::schema::enum_identity("PublicIpSource", Some("awscc.ec2.IpamPool")), Some(vec!["byoip".to_string(), "amazon".to_string()]), vec![("byoip".to_string(), "byoip".to_string()), ("amazon".to_string(), "amazon".to_string())], None, None))
                 .create_only()
                 .with_description("The IP address source for pools in the public scope. Only used for provisioning IP address CIDRs to pools in the public scope. Default is `byoip`.")
                 .with_provider_name("PublicIpSource"),
@@ -181,7 +181,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
                 .with_provider_name("SourceResource"),
         )
         .attribute(
-            AttributeSchema::new("state", AttributeType::string_enum("State".to_string(), vec!["create-in-progress".to_string(), "create-complete".to_string(), "modify-in-progress".to_string(), "modify-complete".to_string(), "delete-in-progress".to_string(), "delete-complete".to_string()], Some(carina_core::schema::string_enum_identity("State", Some("awscc.ec2.IpamPool"))), vec![("create-in-progress".to_string(), "create_in_progress".to_string()), ("create-complete".to_string(), "create_complete".to_string()), ("modify-in-progress".to_string(), "modify_in_progress".to_string()), ("modify-complete".to_string(), "modify_complete".to_string()), ("delete-in-progress".to_string(), "delete_in_progress".to_string()), ("delete-complete".to_string(), "delete_complete".to_string())]))
+            AttributeSchema::new("state", AttributeType::enum_(carina_core::schema::enum_identity("State", Some("awscc.ec2.IpamPool")), Some(vec!["create-in-progress".to_string(), "create-complete".to_string(), "modify-in-progress".to_string(), "modify-complete".to_string(), "delete-in-progress".to_string(), "delete-complete".to_string()]), vec![("create-in-progress".to_string(), "create_in_progress".to_string()), ("create-complete".to_string(), "create_complete".to_string()), ("modify-in-progress".to_string(), "modify_in_progress".to_string()), ("modify-complete".to_string(), "modify_complete".to_string()), ("delete-in-progress".to_string(), "delete_in_progress".to_string()), ("delete-complete".to_string(), "delete_complete".to_string())], None, None))
                 .read_only()
                 .with_description("The state of this pool. This can be one of the following values: \"create-in-progress\", \"create-complete\", \"modify-in-progress\", \"modify-complete\", \"delete-in-progress\", or \"delete-complete\" (read-only)")
                 .with_provider_name("State"),

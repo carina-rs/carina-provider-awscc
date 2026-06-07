@@ -18,7 +18,7 @@ pub fn all_schemas() -> Vec<ResourceSchema> {
 mod tests {
     use std::collections::{BTreeMap, BTreeSet};
 
-    use carina_core::schema::{AttributeType, RawShape, ResourceSchema, Shape};
+    use carina_core::schema::{AttributeType, RawShape, ResourceSchema, Shape, ShapeWalkBudget};
 
     #[test]
     fn generated_s3_lifecycle_rule_omits_deprecated_transition_fields() {
@@ -28,9 +28,13 @@ mod tests {
             .attributes
             .get("lifecycle_configuration")
             .expect("s3 bucket should expose lifecycle_configuration");
-        let Shape::Struct { fields, .. } = config.schema.shape_of(&lifecycle.attr_type) else {
+        let Shape::Struct { .. } = config.schema.shape_of(&lifecycle.attr_type) else {
             panic!("lifecycle_configuration should be a struct");
         };
+        let fields = config
+            .schema
+            .struct_fields_with_budget(&lifecycle.attr_type, &mut ShapeWalkBudget::new(256))
+            .expect("lifecycle_configuration should expose fields");
         let rules = fields
             .iter()
             .find(|field| field.name == "rules")
@@ -38,9 +42,13 @@ mod tests {
         let Shape::List { inner, .. } = config.schema.shape_of(&rules.field_type) else {
             panic!("rules should be a list");
         };
-        let Shape::Struct { fields, .. } = config.schema.shape_of(inner) else {
+        let Shape::Struct { .. } = config.schema.shape_of(inner) else {
             panic!("rules should contain lifecycle rule structs");
         };
+        let fields = config
+            .schema
+            .struct_fields_with_budget(inner, &mut ShapeWalkBudget::new(256))
+            .expect("rules should expose fields");
 
         assert!(fields.iter().any(|field| field.name == "transitions"));
         assert!(
@@ -159,8 +167,9 @@ mod tests {
         }
 
         match ty.raw_shape() {
-            RawShape::StringEnum {
-                identity: Some(identity),
+            RawShape::Enum {
+                identity,
+                values: Some(_),
                 ..
             } => {
                 let identity = identity.to_string();
@@ -197,8 +206,10 @@ mod tests {
                         .insert(identity, occurrence);
                 }
             }
-            RawShape::StringEnum { identity: None, .. } => {}
-            RawShape::Custom { base, .. } | RawShape::CustomEnum { base, .. } => {
+            RawShape::Enum {
+                values: None, base, ..
+            }
+            | RawShape::Custom { base, .. } => {
                 collect_string_enum_identities(
                     schema,
                     base,

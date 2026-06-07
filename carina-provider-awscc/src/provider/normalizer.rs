@@ -7,7 +7,7 @@ use indexmap::IndexMap;
 use std::collections::HashMap;
 
 use carina_core::resource::{ConcreteValue, Resource, ResourceId, State, Value};
-use carina_core::schema::{AttributeType, ResourceSchema, Shape, StructField};
+use carina_core::schema::{AttributeType, ResourceSchema, Shape, ShapeWalkBudget, StructField};
 
 /// Resolve enum identifiers in resources to their fully-qualified DSL format.
 ///
@@ -32,7 +32,7 @@ pub fn resolve_enum_identifiers_impl(resources: &mut [Resource]) {
         let mut resolved_attrs = HashMap::new();
         for (key, value) in &resource.attributes {
             if let Some(attr_schema) = config.schema.attributes.get(key.as_str())
-                && let Some(parts) = attr_schema.attr_type.namespaced_enum_parts()
+                && let Some(parts) = attr_schema.attr_type.enum_parts()
             {
                 if let Some(resolved) = carina_core::utils::resolve_enum_value(value, &parts) {
                     resolved_attrs.insert(key.clone(), resolved);
@@ -70,11 +70,12 @@ fn struct_fields_for<'a>(
     schema: &'a ResourceSchema,
 ) -> Option<&'a [StructField]> {
     match schema.shape_of(attr_type) {
-        Shape::List { inner, .. } => match schema.shape_of(inner) {
-            Shape::Struct { fields, .. } => Some(fields),
-            _ => None,
-        },
-        Shape::Struct { fields, .. } => Some(fields),
+        Shape::List { inner, .. } => {
+            schema.struct_fields_with_budget(inner, &mut ShapeWalkBudget::new(256))
+        }
+        Shape::Struct { .. } => {
+            schema.struct_fields_with_budget(attr_type, &mut ShapeWalkBudget::new(256))
+        }
         _ => None,
     }
 }
@@ -108,7 +109,7 @@ fn resolve_struct_enum_values(
             for (field_key, field_value) in map {
                 if let Some(field) = fields.iter().find(|f| f.name == *field_key) {
                     // Direct enum field (String value)
-                    if let Some(parts) = field.field_type.namespaced_enum_parts()
+                    if let Some(parts) = field.field_type.enum_parts()
                         && let Some(resolved) =
                             carina_core::utils::resolve_enum_value(field_value, &parts)
                     {
@@ -117,7 +118,7 @@ fn resolve_struct_enum_values(
                     }
                     // List(StringEnum): resolve each element.
                     if let Shape::List { inner, .. } = schema.shape_of(&field.field_type)
-                        && let Some(parts) = inner.namespaced_enum_parts()
+                        && let Some(parts) = inner.enum_parts()
                         && let Value::Concrete(ConcreteValue::List(items)) = field_value
                     {
                         let resolved_items: Vec<Value> = items
@@ -173,7 +174,7 @@ pub fn normalize_state_enums_impl(current_states: &mut HashMap<ResourceId, State
         let mut resolved_attrs = HashMap::new();
         for (key, value) in &state.attributes {
             if let Some(attr_schema) = config.schema.attributes.get(key.as_str())
-                && let Some(parts) = attr_schema.attr_type.namespaced_enum_parts()
+                && let Some(parts) = attr_schema.attr_type.enum_parts()
             {
                 // AWSCC state normalization: only resolve bare values (no dots)
                 if let Some(resolved) = carina_core::utils::resolve_enum_value(value, &parts) {
@@ -276,7 +277,7 @@ pub fn restore_unreturned_attrs_impl(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use carina_core::schema::noop_validator;
+    use carina_core::schema::legacy_validator;
 
     fn test_resource_schema() -> ResourceSchema {
         ResourceSchema::new("test.Resource")
@@ -608,23 +609,21 @@ mod tests {
         }
     }
 
-    /// Helper to create struct fields with a Custom enum type for testing
+    /// Helper to create struct fields with an enum type for testing
     fn test_ip_protocol_fields() -> Vec<StructField> {
         vec![
             StructField::new(
                 "ip_protocol",
-                AttributeType::custom_enum(
+                AttributeType::enum_(
                     carina_core::schema::TypeIdentity::new(
                         Some("awscc"),
                         ["ec2", "SecurityGroup"],
                         "IpProtocol",
                     ),
-                    AttributeType::string(),
-                    noop_validator(),
-                    Some(|s: &str| match s {
-                        "-1" => "all".to_string(),
-                        _ => s.to_string(),
-                    }),
+                    None,
+                    vec![],
+                    Some(legacy_validator(|_| Ok(()))),
+                    Some(crate::ip_protocol_all_to_dsl),
                 ),
             )
             .with_provider_name("IpProtocol"),
@@ -794,16 +793,18 @@ mod tests {
             .attributes
             .get("ip_protocol")
             .expect("ip_protocol attribute not found");
-        if let carina_core::schema::Shape::StringEnum { values, .. } =
-            config.schema.shape_of(&ip_protocol.attr_type)
+        if let carina_core::schema::Shape::Enum {
+            values: Some(values),
+            ..
+        } = config.schema.shape_of(&ip_protocol.attr_type)
         {
             assert!(
                 values.contains(&"all".to_string()),
-                "StringEnum values must include 'all': {:?}",
+                "Enum values must include 'all': {:?}",
                 values
             );
         } else {
-            panic!("ip_protocol should be StringEnum");
+            panic!("ip_protocol should be Enum");
         }
     }
 
@@ -815,16 +816,18 @@ mod tests {
             .attributes
             .get("ip_protocol")
             .expect("ip_protocol attribute not found");
-        if let carina_core::schema::Shape::StringEnum { values, .. } =
-            config.schema.shape_of(&ip_protocol.attr_type)
+        if let carina_core::schema::Shape::Enum {
+            values: Some(values),
+            ..
+        } = config.schema.shape_of(&ip_protocol.attr_type)
         {
             assert!(
                 values.contains(&"all".to_string()),
-                "StringEnum values must include 'all': {:?}",
+                "Enum values must include 'all': {:?}",
                 values
             );
         } else {
-            panic!("ip_protocol should be StringEnum");
+            panic!("ip_protocol should be Enum");
         }
     }
 
@@ -840,22 +843,27 @@ mod tests {
         if let carina_core::schema::Shape::List { inner, .. } =
             config.schema.shape_of(&egress.attr_type)
         {
-            if let carina_core::schema::Shape::Struct { fields, .. } = config.schema.shape_of(inner)
-            {
+            if let carina_core::schema::Shape::Struct { .. } = config.schema.shape_of(inner) {
+                let fields = config
+                    .schema
+                    .struct_fields_with_budget(inner, &mut ShapeWalkBudget::new(256))
+                    .expect("egress struct should expose fields");
                 let ip_field = fields
                     .iter()
                     .find(|f| f.name == "ip_protocol")
                     .expect("ip_protocol field not found in egress struct");
-                if let carina_core::schema::Shape::StringEnum { values, .. } =
-                    config.schema.shape_of(&ip_field.field_type)
+                if let carina_core::schema::Shape::Enum {
+                    values: Some(values),
+                    ..
+                } = config.schema.shape_of(&ip_field.field_type)
                 {
                     assert!(
                         values.contains(&"all".to_string()),
-                        "StringEnum values must include 'all': {:?}",
+                        "Enum values must include 'all': {:?}",
                         values
                     );
                 } else {
-                    panic!("ip_protocol should be StringEnum");
+                    panic!("ip_protocol should be Enum");
                 }
             } else {
                 panic!("Expected Struct inside List");
@@ -876,22 +884,27 @@ mod tests {
         if let carina_core::schema::Shape::List { inner, .. } =
             config.schema.shape_of(&ingress.attr_type)
         {
-            if let carina_core::schema::Shape::Struct { fields, .. } = config.schema.shape_of(inner)
-            {
+            if let carina_core::schema::Shape::Struct { .. } = config.schema.shape_of(inner) {
+                let fields = config
+                    .schema
+                    .struct_fields_with_budget(inner, &mut ShapeWalkBudget::new(256))
+                    .expect("ingress struct should expose fields");
                 let ip_field = fields
                     .iter()
                     .find(|f| f.name == "ip_protocol")
                     .expect("ip_protocol field not found in ingress struct");
-                if let carina_core::schema::Shape::StringEnum { values, .. } =
-                    config.schema.shape_of(&ip_field.field_type)
+                if let carina_core::schema::Shape::Enum {
+                    values: Some(values),
+                    ..
+                } = config.schema.shape_of(&ip_field.field_type)
                 {
                     assert!(
                         values.contains(&"all".to_string()),
-                        "StringEnum values must include 'all': {:?}",
+                        "Enum values must include 'all': {:?}",
                         values
                     );
                 } else {
-                    panic!("ip_protocol should be StringEnum");
+                    panic!("ip_protocol should be Enum");
                 }
             } else {
                 panic!("Expected Struct inside List");
@@ -901,24 +914,22 @@ mod tests {
         }
     }
 
-    /// Nested struct: a Struct field containing another Struct with a StringEnum.
+    /// Nested struct: a Struct field containing another Struct with an enum.
     /// Reproduces the S3 bucket_encryption issue where
-    /// blocked_encryption_types.encryption_type is a List(StringEnum) inside a nested Struct.
+    /// blocked_encryption_types.encryption_type is a List(Enum) inside a nested Struct.
     #[test]
     fn test_resolve_struct_enum_values_nested_struct() {
         let inner_fields = vec![StructField::new(
             "encryption_type",
-            AttributeType::list(AttributeType::string_enum(
-                "EncryptionType".to_string(),
-                vec!["NONE".to_string(), "SSE-C".to_string()],
-                Some(carina_core::schema::string_enum_identity(
-                    "EncryptionType",
-                    Some("awscc.s3.Bucket"),
-                )),
+            AttributeType::list(AttributeType::enum_(
+                carina_core::schema::enum_identity("EncryptionType", Some("awscc.s3.Bucket")),
+                Some(vec!["NONE".to_string(), "SSE-C".to_string()]),
                 vec![
                     ("NONE".to_string(), "none".to_string()),
                     ("SSE-C".to_string(), "sse_c".to_string()),
                 ],
+                None,
+                None,
             )),
         )];
 
@@ -934,14 +945,15 @@ mod tests {
                     "ServerSideEncryptionByDefault".to_string(),
                     vec![StructField::new(
                         "sse_algorithm",
-                        AttributeType::string_enum(
-                            "SseAlgorithm".to_string(),
-                            vec!["AES256".to_string()],
-                            Some(carina_core::schema::string_enum_identity(
+                        AttributeType::enum_(
+                            carina_core::schema::enum_identity(
                                 "SseAlgorithm",
                                 Some("awscc.s3.Bucket"),
-                            )),
+                            ),
+                            Some(vec!["AES256".to_string()]),
                             vec![("AES256".to_string(), "aes256".to_string())],
+                            None,
+                            None,
                         ),
                     )],
                 ),

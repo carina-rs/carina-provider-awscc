@@ -2083,6 +2083,10 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
                         && !prop_name.ends_with("PolicyDocument")
                         && prop_name != "Tags"
                         && prop.pattern.is_none()
+                        && !matches!(
+                            resource_type_overrides().get(&(schema.type_name.as_str(), prop_name)),
+                            Some(TypeOverride::ToDsl(_))
+                        )
                     {
                         ranged_strings.insert(prop_name.clone(), (effective_min, prop.max_length));
                     }
@@ -2379,7 +2383,7 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
     let exclusive_groups = detect_exclusive_fields(schema, type_name);
 
     // Build the body into a separate buffer so import selection can scan it
-    // for `legacy_validator(` / `noop_validator(` mentions instead of
+    // for `legacy_validator(` mentions instead of
     // approximating from `has_*` flags (which over-included for files whose
     // enums lower to `types::*` rather than to `Custom`). The header — including
     // all `use` lines — is constructed at the end.
@@ -2709,11 +2713,10 @@ pub fn {}() -> AwsccSchemaConfig {{
                 .collect::<Vec<_>>()
                 .join(", ");
             let enum_type = format!(
-                r#"AttributeType::string_enum({}.to_string(), vec![{}], Some(carina_core::schema::string_enum_identity({}, Some({}))), {})"#,
-                rust_lit(&enum_info.type_name),
-                values_str,
+                r#"AttributeType::enum_(carina_core::schema::enum_identity({}, Some({})), Some(vec![{}]), {}, None, None)"#,
                 rust_lit(&enum_info.type_name),
                 rust_lit(&namespace),
+                values_str,
                 dsl_aliases_code
             );
             // Wrap in List if the property is an array type
@@ -3151,10 +3154,10 @@ fn {fn_name}(value: &Value) -> Result<(), String> {{
     // `enum_alias_reverse()` / `enum_alias_entries()` are no longer
     // emitted. DSL → API canonical conversion is now done through
     // `DslMap::api_for` against the exhaustive `dsl_aliases` table on
-    // each `StringEnum`, sourced from a single place (see awscc#220).
+    // each enum, sourced from a single place (see awscc#220).
 
     // Header is built last so import selection can scan the body for
-    // `legacy_validator(` / `noop_validator(` actually-emitted mentions.
+    // `legacy_validator(` actually-emitted mentions.
     if body.contains("AttributeType::") {
         needs_attribute_type = true;
     }
@@ -3176,9 +3179,6 @@ fn {fn_name}(value: &Value) -> Result<(), String> {{
     }
     if body.contains("legacy_validator(") {
         schema_imports.push("legacy_validator");
-    }
-    if body.contains("noop_validator(") {
-        schema_imports.push("noop_validator");
     }
     const OPERATION_CONFIG_TYPES: &[&str] = &[
         "AWS::EC2::TransitGateway",
@@ -3815,11 +3815,10 @@ fn generate_struct_type(
                         .collect::<Vec<_>>()
                         .join(", ");
                     format!(
-                        r#"AttributeType::string_enum({}.to_string(), vec![{}], Some(carina_core::schema::string_enum_identity({}, Some({}))), {})"#,
-                        rust_lit(&enum_info.type_name),
-                        values_str,
+                        r#"AttributeType::enum_(carina_core::schema::enum_identity({}, Some({})), Some(vec![{}]), {}, None, None)"#,
                         rust_lit(&enum_info.type_name),
                         rust_lit(&enum_namespace),
+                        values_str,
                         dsl_aliases_code
                     )
                 } else {
@@ -3839,11 +3838,10 @@ fn generate_struct_type(
                         .collect::<Vec<_>>()
                         .join(", ");
                     format!(
-                        r#"AttributeType::string_enum({}.to_string(), vec![{}], Some(carina_core::schema::string_enum_identity({}, Some({}))), {})"#,
-                        rust_lit(&local_enum_info.type_name),
-                        values_str,
+                        r#"AttributeType::enum_(carina_core::schema::enum_identity({}, Some({})), Some(vec![{}]), {}, None, None)"#,
                         rust_lit(&local_enum_info.type_name),
                         rust_lit(&enum_namespace),
+                        values_str,
                         dsl_aliases_code
                     )
                 };
@@ -4638,9 +4636,7 @@ fn resource_type_overrides() -> &'static HashMap<(&'static str, &'static str), T
             // Route 53 HostedZone Name: AWS returns FQDN with trailing dot
             m.insert(
                 ("AWS::Route53::HostedZone", "Name"),
-                TypeOverride::ToDsl(
-                    r#"Some(|s: &str| s.strip_suffix('.').unwrap_or(s).to_string())"#,
-                ),
+                TypeOverride::ToDsl(r#"Some(crate::strip_trailing_dot)"#),
             );
 
             m
@@ -5457,6 +5453,20 @@ fn cfn_type_to_carina_type_with_enum_with_struct_path(
     // Handle type
     match prop.prop_type.as_ref().and_then(|t| t.as_str()) {
         Some("string") => {
+            if let Some(TypeOverride::ToDsl(to_dsl)) =
+                resource_type_overrides().get(&(schema.type_name.as_str(), prop_name))
+            {
+                return (
+                    format!(
+                        r#"AttributeType::enum_(carina_core::schema::enum_identity({}, Some({})), None, vec![], None, {})"#,
+                        rust_lit(&prop_name.to_pascal_case()),
+                        rust_lit(namespace),
+                        to_dsl
+                    ),
+                    None,
+                );
+            }
+
             // Check known string type overrides first (includes CIDR, IP, AZ,
             // ARN, resource IDs, IPAM Pool IDs, and owner IDs)
             if let Some(inferred) = infer_string_type(prop_name, &schema.type_name) {
@@ -5542,7 +5552,7 @@ fn cfn_type_to_carina_type_with_enum_with_struct_path(
             // Check for string format constraint (e.g., "uri", "date-time")
             if prop.format.is_some() {
                 return (
-                    r#"AttributeType::custom(None, AttributeType::string(), None, None, noop_validator(), None)"#
+                    r#"AttributeType::custom(None, AttributeType::string(), None, None, legacy_validator(|_| Ok(())), None)"#
                     .to_string(),
                     None,
                 );
@@ -5614,7 +5624,7 @@ fn cfn_type_to_carina_type_with_enum_with_struct_path(
             } else if prop.format.is_some() {
                 // Format-only integer (e.g., int64) - informational, no range validation
                 (
-                    r#"AttributeType::custom(None, AttributeType::int(), None, None, noop_validator(), None)"#
+                    r#"AttributeType::custom(None, AttributeType::int(), None, None, legacy_validator(|_| Ok(())), None)"#
                     .to_string(),
                     None,
                 )
@@ -5660,7 +5670,7 @@ fn cfn_type_to_carina_type_with_enum_with_struct_path(
             } else if prop.format.is_some() {
                 // Format-only float (e.g., double) - informational, no range validation
                 (
-                    r#"AttributeType::custom(None, AttributeType::float(), None, None, noop_validator(), None)"#
+                    r#"AttributeType::custom(None, AttributeType::float(), None, None, legacy_validator(|_| Ok(())), None)"#
                     .to_string(),
                     None,
                 )
@@ -9495,12 +9505,12 @@ mod tests {
         let generated = generate_schema_code(&schema, "AWS::EC2::IPAMPool").unwrap();
 
         assert!(
-            generated.contains("AttributeType::string_enum("),
-            "enum-like strings should be emitted as StringEnum: {generated}"
+            generated.contains("AttributeType::enum_("),
+            "enum-like strings should be emitted as Enum: {generated}"
         );
         assert!(
             !generated.contains("validate_address_family"),
-            "StringEnum generation should not fall back to per-attribute validators: {generated}"
+            "Enum generation should not fall back to per-attribute validators: {generated}"
         );
         assert!(
             !generated.contains(".with_completions("),
@@ -9509,11 +9519,11 @@ mod tests {
     }
 
     #[test]
-    fn test_struct_field_enum_emits_string_enum_not_enum() {
+    fn test_struct_field_enum_emits_enum_not_string() {
         // Simulate a resource with a struct property whose field has an enum.
         // The struct comes from a $ref definition. If the definition's enum field
         // was not picked up during pre-scanning (e.g., due to snake_case conflict),
-        // the fallback should still emit StringEnum, not Enum.
+        // the fallback should still emit Enum, not String.
         let mut def_props = BTreeMap::new();
         def_props.insert(
             "Mode".to_string(),
@@ -9610,14 +9620,14 @@ mod tests {
         let generated = generate_schema_code(&schema, "AWS::EC2::TestResource").unwrap();
 
         assert!(
-            generated.contains("AttributeType::string_enum("),
-            "struct field enums should be emitted as StringEnum: {generated}"
+            generated.contains("AttributeType::enum_("),
+            "struct field enums should be emitted as Enum: {generated}"
         );
         // Should have a structured identity (post-#3222, `namespace`
-        // was replaced by `identity: Some(string_enum_identity(...))`).
+        // was replaced by `identity: Some(enum_identity(...))`).
         assert!(
-            generated.contains("Some(carina_core::schema::string_enum_identity("),
-            "StringEnum should include structured identity: {generated}"
+            generated.contains("carina_core::schema::enum_identity("),
+            "Enum should include structured identity: {generated}"
         );
         // Should handle hyphens in values via dsl_aliases. Per #199 / D7,
         // the generated alias table maps each canonical value to its
@@ -10149,8 +10159,8 @@ mod tests {
         };
         let generated = generate_schema_code(&schema, "AWS::S3::Bucket").unwrap();
         assert!(
-            generated.contains("AttributeType::list(AttributeType::string_enum("),
-            "array with enum items should generate list(StringEnum): {generated}"
+            generated.contains("AttributeType::list(AttributeType::enum_("),
+            "array with enum items should generate list(Enum): {generated}"
         );
     }
 
@@ -10794,7 +10804,7 @@ mod tests {
         assert!(attr_type_accepts_scalar_default("AttributeType::int()"));
         assert!(attr_type_accepts_scalar_default("AttributeType::float()"));
         assert!(attr_type_accepts_scalar_default(
-            "AttributeType::string_enum(VALID_KEY_USAGE)"
+            "AttributeType::enum_(VALID_KEY_USAGE)"
         ));
         assert!(
             attr_type_accepts_scalar_default("super::prefix_list_id()"),
@@ -13816,8 +13826,8 @@ mod tests {
         let generated =
             generate_schema_code(&schema, "AWS::CloudFront::OriginAccessControl").unwrap();
         assert!(
-            generated.contains("AttributeType::string_enum("),
-            "alternation pattern should produce StringEnum: {generated}"
+            generated.contains("AttributeType::enum_("),
+            "alternation pattern should produce Enum: {generated}"
         );
         // Must not fall back to a Custom { pattern, ... } emission.
         assert!(
@@ -13963,10 +13973,10 @@ mod tests {
             handlers: BTreeMap::new(),
         };
         let generated = generate_schema_code(&schema, "AWS::CloudFront::Distribution").unwrap();
-        // The struct field must emit as StringEnum, not String.
+        // The struct field must emit as Enum, not String.
         assert!(
-            generated.contains("StructField::new(\"price_class\", AttributeType::string_enum("),
-            "nested-field overlay should promote price_class to StringEnum: {generated}"
+            generated.contains("StructField::new(\"price_class\", AttributeType::enum_("),
+            "nested-field overlay should promote price_class to Enum: {generated}"
         );
         // All three documented values must be present.
         for v in ["PriceClass_100", "PriceClass_200", "PriceClass_All"] {
@@ -14090,12 +14100,12 @@ mod tests {
         };
         let generated = generate_schema_code(&schema, "AWS::CloudFront::Distribution").unwrap();
         // The list wrapping is kept and the element promoted to
-        // StringEnum. `AllowedMethods` is an order-insensitive set, so
+        // Enum. `AllowedMethods` is an order-insensitive set, so
         // post-carina#3093 the list is `unordered_list` (the overlay
         // still wraps a list — only the ordering flag changed).
         assert!(
-            generated.contains("AttributeType::unordered_list(AttributeType::string_enum("),
-            "nested list-of-string overlay should produce unordered_list(StringEnum) \
+            generated.contains("AttributeType::unordered_list(AttributeType::enum_("),
+            "nested list-of-string overlay should produce unordered_list(Enum) \
              for AllowedMethods (carina#3093): {generated}"
         );
         // No plain `String`-element list for this field, ordered or not.

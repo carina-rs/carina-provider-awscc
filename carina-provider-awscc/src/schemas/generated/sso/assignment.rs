@@ -43,17 +43,18 @@ pub fn sso_assignment_config() -> AwsccSchemaConfig {
             .attribute(
                 AttributeSchema::new(
                     "principal_type",
-                    AttributeType::string_enum(
-                        "PrincipalType".to_string(),
-                        vec!["USER".to_string(), "GROUP".to_string()],
-                        Some(carina_core::schema::string_enum_identity(
+                    AttributeType::enum_(
+                        carina_core::schema::enum_identity(
                             "PrincipalType",
                             Some("awscc.sso.Assignment"),
-                        )),
+                        ),
+                        Some(vec!["USER".to_string(), "GROUP".to_string()]),
                         vec![
                             ("USER".to_string(), "user".to_string()),
                             ("GROUP".to_string(), "group".to_string()),
                         ],
+                        None,
+                        None,
                     ),
                 )
                 .required()
@@ -71,14 +72,15 @@ pub fn sso_assignment_config() -> AwsccSchemaConfig {
             .attribute(
                 AttributeSchema::new(
                     "target_type",
-                    AttributeType::string_enum(
-                        "TargetType".to_string(),
-                        vec!["AWS_ACCOUNT".to_string()],
-                        Some(carina_core::schema::string_enum_identity(
+                    AttributeType::enum_(
+                        carina_core::schema::enum_identity(
                             "TargetType",
                             Some("awscc.sso.Assignment"),
-                        )),
+                        ),
+                        Some(vec!["AWS_ACCOUNT".to_string()]),
                         vec![("AWS_ACCOUNT".to_string(), "aws_account".to_string())],
+                        None,
+                        None,
                     ),
                 )
                 .required()
