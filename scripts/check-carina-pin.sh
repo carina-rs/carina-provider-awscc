@@ -6,13 +6,10 @@
 # Two recurring failure modes this catches:
 #
 #   1. INCONSISTENT pin — different revs across the workspace's
-#      Cargo.toml files. Local workspace crates (`carina-awscc-types`
-#      and `carina-provider-awscc`) must pin the SAME carina-core rev;
-#      a mismatch links two
+#      Cargo.toml files. carina-aws-types and carina-provider-awscc
+#      must pin the SAME carina-core rev; a mismatch links two
 #      carina-core crates and silently breaks type identity
 #      (documented hazard, awscc#255). Always a bug. Hard-fail.
-#      The upstream `carina-aws-types` dependency has its own pin in
-#      carina-provider-aws; this script does not inspect that repo.
 #
 #   2. STALE pin — the pinned rev predates a carina-core fix this
 #      provider's correctness now depends on. `.carina-core-min-rev`

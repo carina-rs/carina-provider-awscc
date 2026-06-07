@@ -1,13 +1,8 @@
-//! AWSCC-specific type definitions and validators
+//! Shared AWS type definitions and validators
 //!
-//! This crate holds CloudControl/awscc-specific types (region with namespace,
-//! schema config structs, AWSCC-only validators).
-//!
-//! Canonical AWS identities that AWS treats as a single global concept
-//! (`aws_account_id`, `iam_role_arn`, `iam_policy_arn`,
-//! `iam_oidc_provider_arn`) are re-exported from `carina-aws-types`
-//! (carina-provider-aws) so awscc emits the same TypeIdentity as the aws
-//! provider — see carina#3413.
+//! This module contains type validators shared between `carina-provider-aws`
+//! and `carina-provider-awscc`. Provider-specific types (region with namespace,
+//! schema config structs) remain in their respective crates.
 
 use carina_core::resource::{ConcreteValue, Value};
 #[cfg(test)]
@@ -15,8 +10,6 @@ use carina_core::schema::RawShape;
 use carina_core::schema::{
     AttributeType, CompletionValue, StructField, TypeIdentity, legacy_validator,
 };
-
-pub use carina_aws_types::{aws_account_id, iam_oidc_provider_arn, iam_policy_arn, iam_role_arn};
 
 const PROVIDER_NAME: &str = "awscc";
 
@@ -812,6 +805,25 @@ pub fn validate_aws_account_id(id: &str) -> Result<(), String> {
         return Err("must contain only digits".to_string());
     }
     Ok(())
+}
+
+/// AWS Account ID type (12-digit numeric string, e.g., "123456789012")
+pub fn aws_account_id() -> AttributeType {
+    AttributeType::custom(
+        Some(provider_bare_type(&[], "AccountId")),
+        AttributeType::string(),
+        None,
+        None,
+        legacy_validator(|value| {
+            if let Value::Concrete(ConcreteValue::String(s)) = value {
+                validate_aws_account_id(s)
+                    .map_err(|reason| format!("Invalid AWS Account ID '{}': {}", s, reason))
+            } else {
+                Err("Expected string".to_string())
+            }
+        }),
+        None,
+    )
 }
 
 // ========== SSO / Identity Center helpers ==========
@@ -1878,11 +1890,10 @@ mod tests {
     }
 
     #[test]
-    fn carina_awscc_types_no_longer_exports_resource_arn_helpers() {
+    fn carina_aws_types_no_longer_exports_resource_arn_helpers() {
         let source =
             std::fs::read_to_string(format!("{}/src/lib.rs", env!("CARGO_MANIFEST_DIR"))).unwrap();
         for helper in [
-            "aws_account_id",
             "iam_role_arn",
             "iam_policy_arn",
             "iam_oidc_provider_arn",
