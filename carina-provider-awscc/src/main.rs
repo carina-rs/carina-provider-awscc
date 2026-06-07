@@ -87,7 +87,7 @@ impl CarinaProvider for AwsccProcessProvider {
             "region".to_string(),
             proto::AttributeType::StringEnum {
                 name: "Region".to_string(),
-                values: carina_aws_types::REGIONS
+                values: carina_awscc_types::REGIONS
                     .iter()
                     .map(|(code, _)| code.to_string())
                     .collect(),
@@ -99,7 +99,7 @@ impl CarinaProvider for AwsccProcessProvider {
                 // but the DSL spelling uses underscores. Materialize
                 // the alias pairs as data; a `fn` pointer would not
                 // cross the WASM boundary (carina#2831).
-                dsl_aliases: carina_aws_types::region_dsl_aliases(),
+                dsl_aliases: carina_awscc_types::region_dsl_aliases(),
             },
         );
         types.insert(
@@ -165,7 +165,7 @@ impl CarinaProvider for AwsccProcessProvider {
     fn config_completions(&self) -> HashMap<String, Vec<proto::CompletionValue>> {
         HashMap::from([(
             "region".to_string(),
-            carina_aws_types::region_completions("awscc")
+            carina_awscc_types::region_completions("awscc")
                 .into_iter()
                 .map(|c| proto::CompletionValue {
                     value: c.value,

@@ -155,7 +155,7 @@ pub(crate) fn aws_value_to_dsl_with_defs(
                     );
                 }
                 let key = if is_condition {
-                    carina_aws_types::condition_operator_to_snake(k).unwrap_or_else(|| k.clone())
+                    carina_awscc_types::condition_operator_to_snake(k).unwrap_or_else(|| k.clone())
                 } else {
                     k.clone()
                 };
@@ -386,7 +386,7 @@ pub(crate) fn dsl_value_to_aws_with_defs(
                     );
                 }
                 let key = if is_condition {
-                    carina_aws_types::condition_operator_to_aws(k).unwrap_or_else(|| k.clone())
+                    carina_awscc_types::condition_operator_to_aws(k).unwrap_or_else(|| k.clone())
                 } else {
                     k.clone()
                 };
@@ -854,7 +854,7 @@ mod tests {
     #[test]
     fn test_dsl_value_to_aws_converts_underscores_for_region() {
         let attr_type = AttributeType::enum_(
-            carina_aws_types::provider_bare_type(&[], "Region"),
+            carina_awscc_types::provider_bare_type(&[], "Region"),
             None,
             vec![],
             Some(legacy_validator(|_| Ok(()))),
@@ -1165,7 +1165,7 @@ mod tests {
 
     #[test]
     fn test_dsl_value_to_aws_iam_policy_document_uses_pascal_case() {
-        use carina_aws_types::iam_policy_document;
+        use carina_awscc_types::iam_policy_document;
 
         let attr_type = iam_policy_document();
         let value = Value::Concrete(ConcreteValue::Map(
@@ -1265,7 +1265,7 @@ mod tests {
     /// (`"2012-10-17"`, `"Allow"`).
     #[test]
     fn test_dsl_value_to_aws_iam_policy_document_canonicalizes_namespaced_and_alias_enums() {
-        use carina_aws_types::iam_policy_document;
+        use carina_awscc_types::iam_policy_document;
 
         let attr_type = iam_policy_document();
         let value = Value::Concrete(ConcreteValue::Map(
@@ -1338,7 +1338,7 @@ mod tests {
 
     #[test]
     fn test_aws_value_to_dsl_iam_policy_document_uses_snake_case() {
-        use carina_aws_types::iam_policy_document;
+        use carina_awscc_types::iam_policy_document;
 
         let attr_type = iam_policy_document();
         let aws_json = json!({
@@ -1419,7 +1419,7 @@ mod tests {
     /// contract.
     #[test]
     fn test_aws313_iam_policy_doc_read_is_api_canonical_and_lifts() {
-        use carina_aws_types::iam_policy_document;
+        use carina_awscc_types::iam_policy_document;
 
         let attr_type = iam_policy_document();
 

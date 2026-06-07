@@ -4,7 +4,7 @@ This file provides guidance to Claude Code when working with the carina-provider
 
 ## Repository Overview
 
-This is the AWS Cloud Control provider for [Carina](https://github.com/carina-rs/carina), split out as a standalone repository. It uses the AWS Cloud Control API to manage resources via CloudFormation resource type schemas. It depends on carina-core, carina-plugin-sdk, and carina-provider-protocol via git dependencies from the main carina repository. `carina-aws-types` lives in this repository (a local copy, not shared from the main repo).
+This is the AWS Cloud Control provider for [Carina](https://github.com/carina-rs/carina), split out as a standalone repository. It uses the AWS Cloud Control API to manage resources via CloudFormation resource type schemas. It depends on carina-core, carina-plugin-sdk, and carina-provider-protocol via git dependencies from the main carina repository. `carina-awscc-types` (awscc-specific types) lives in this repository, and it re-exports canonical AWS identity types from `carina-aws-types` (a `git` dependency on carina-provider-aws) so cross-namespace identity values share a single TypeIdentity per carina#3413.
 
 ## Build and Test Commands
 
@@ -34,7 +34,7 @@ aws-vault exec <profile> -- cargo test
 ## Crate Structure
 
 - **carina-provider-awscc**: The AWSCC provider implementation. Includes a `codegen` binary for generating resource definitions from CloudFormation schemas. Builds as both a native binary and a WASM component.
-- **carina-aws-types**: AWS-specific type definitions. A local copy lives in this repo (the same crate is duplicated in `carina-provider-aws`; it is not shared from the main carina repository).
+- **carina-awscc-types**: AWSCC-specific type definitions. Lives in this repo. Re-exports canonical AWS identities (`aws_account_id`, `iam_role_arn`, `iam_policy_arn`, `iam_oidc_provider_arn`) from `carina-aws-types` (a `git` dependency on carina-provider-aws) per carina#3413, so awscc and aws emit the same TypeIdentity for those values.
 
 ## Dependencies on carina (main repo)
 
@@ -52,9 +52,14 @@ carina-plugin-sdk = { path = "../carina/carina-plugin-sdk" }
 carina-provider-protocol = { path = "../carina/carina-provider-protocol" }
 ```
 
-`carina-aws-types` is **not** a main-repo dependency — it is a local crate in
+`carina-awscc-types` is **not** a main-repo dependency — it is a local crate in
 this repository (`carina-provider-awscc/Cargo.toml` references it as
-`{ path = "../carina-aws-types" }`), so it needs no patch entry.
+`{ path = "../carina-awscc-types" }`), so it needs no patch entry.
+
+`carina-aws-types` is a separate `git` dependency on `carina-provider-aws` used
+for canonical AWS identity constructors. It is not patched by the
+`github.com/carina-rs/carina` block above; update its pinned `rev` in the
+awscc Cargo.toml files when changing the shared identity dependency.
 
 ## Code Generation
 

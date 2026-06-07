@@ -13,21 +13,7 @@ use carina_core::schema::{
 };
 
 pub fn arn() -> AttributeType {
-    AttributeType::custom(
-        Some(super::provider_type("iam", "Role", "Arn")),
-        super::arn(),
-        Some("^arn:(aws|aws-cn|aws-us-gov):iam::[^:]*:role/.+$".to_string()),
-        None,
-        legacy_validator(|value| {
-            if let Value::Concrete(ConcreteValue::String(s)) = value {
-                super::validate_iam_arn(s, "role/")
-                    .map_err(|reason| format!("Invalid IAM Role ARN '{}': {}", s, reason))
-            } else {
-                Err("Expected string".to_string())
-            }
-        }),
-        None,
-    )
+    super::iam_role_arn()
 }
 
 fn validate_max_session_duration_range(value: &Value) -> Result<(), String> {
