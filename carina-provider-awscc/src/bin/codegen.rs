@@ -405,15 +405,6 @@ fn arn_validator_expression(choice: ArnEmitChoice) -> String {
 }
 
 fn emit_arn_helper(service: &str, resource: &str, choice: ArnEmitChoice) -> String {
-    if let Some(canonical_type) = match (service, resource) {
-        ("iam", "Role") => Some("super::iam_role_arn()"),
-        ("iam", "Policy") => Some("super::iam_policy_arn()"),
-        ("iam", "OidcProvider") => Some("super::iam_oidc_provider_arn()"),
-        _ => None,
-    } {
-        return format!("pub fn arn() -> AttributeType {{\n    {canonical_type}\n}}\n\n");
-    }
-
     if matches!(choice, ArnEmitChoice::Generic) {
         return "pub fn arn() -> AttributeType {\n    super::arn()\n}\n\n".to_string();
     }
@@ -1049,8 +1040,6 @@ fn infer_string_type_display(prop_name: &str, resource_type: &str) -> String {
         "AvailabilityZoneId".to_string()
     } else if prop_lower.ends_with("region") || prop_lower == "regionname" {
         "Region".to_string()
-    } else if let Some(override_type) = iam_canonical_arn_override(resource_type, singular_name) {
-        override_type_to_display_name(override_type).to_string()
     } else if prop_lower.ends_with("arn")
         || prop_lower.ends_with("arns")
         || prop_lower.contains("_arn")
@@ -4344,17 +4333,12 @@ fn resource_type_overrides() -> &'static HashMap<(&'static str, &'static str), T
             // IAM Role's Arn is always an IAM Role ARN
             m.insert(
                 ("AWS::IAM::Role", "Arn"),
-                TypeOverride::StringType("super::iam_role_arn()"),
-            );
-            // IAM Policy's Arn is always an IAM Policy ARN
-            m.insert(
-                ("AWS::IAM::Policy", "Arn"),
-                TypeOverride::StringType("super::iam_policy_arn()"),
+                TypeOverride::StringType("super::super::iam::role::arn()"),
             );
             // IAM OIDCProvider's Arn is always an IAM OIDC Provider ARN
             m.insert(
                 ("AWS::IAM::OIDCProvider", "Arn"),
-                TypeOverride::StringType("super::iam_oidc_provider_arn()"),
+                TypeOverride::StringType("super::super::iam::oidc_provider::arn()"),
             );
             // IAM Role's RoleId uses AROA prefix pattern
             m.insert(
@@ -4821,12 +4805,6 @@ fn infer_string_type(prop_name: &str, resource_type: &str) -> Option<String> {
         return Some("super::awscc_region()".to_string());
     }
 
-    // Canonical IAM ARN identities. These are explicit resource-type matches
-    // because generic ARN naming does not identify the IAM resource kind.
-    if let Some(override_type) = iam_canonical_arn_override(resource_type, singular_name) {
-        return Some(override_type.to_string());
-    }
-
     // Check ARN pattern
     if prop_lower.ends_with("arn") || prop_lower.ends_with("arns") || prop_lower.contains("_arn") {
         return Some("super::arn()".to_string());
@@ -4856,19 +4834,6 @@ fn infer_string_type(prop_name: &str, resource_type: &str) -> Option<String> {
     }
 
     None
-}
-
-fn iam_canonical_arn_override(resource_type: &str, prop_name: &str) -> Option<&'static str> {
-    if !prop_name.eq_ignore_ascii_case("Arn") {
-        return None;
-    }
-
-    match resource_type {
-        "AWS::IAM::Role" => Some("super::iam_role_arn()"),
-        "AWS::IAM::Policy" => Some("super::iam_policy_arn()"),
-        "AWS::IAM::OIDCProvider" => Some("super::iam_oidc_provider_arn()"),
-        _ => None,
-    }
 }
 
 /// Check if a property name represents an email address.
@@ -8415,23 +8380,6 @@ mod tests {
     }
 
     #[test]
-    fn generated_iam_arn_helpers_delegate_to_canonical_helpers() {
-        let role_schema = cfn_schema_for_codegen_tests("AWS::IAM::Role");
-        let generated_role =
-            generate_schema_code(&role_schema, "AWS::IAM::Role").expect("generate iam role");
-        assert!(generated_role.contains("pub fn arn() -> AttributeType"));
-        assert!(generated_role.contains("super::iam_role_arn()"));
-        assert!(!generated_role.contains("provider_type(\"iam\", \"Role\", \"Arn\")"));
-
-        let oidc_schema = cfn_schema_for_codegen_tests("AWS::IAM::OIDCProvider");
-        let generated_oidc = generate_schema_code(&oidc_schema, "AWS::IAM::OIDCProvider")
-            .expect("generate iam oidc provider");
-        assert!(generated_oidc.contains("pub fn arn() -> AttributeType"));
-        assert!(generated_oidc.contains("super::iam_oidc_provider_arn()"));
-        assert!(!generated_oidc.contains("provider_type(\"iam\", \"OidcProvider\", \"Arn\")"));
-    }
-
-    #[test]
     fn generated_organizations_account_gets_service_prefix_arn_helper() {
         let schema = cfn_schema_for_codegen_tests("AWS::Organizations::Account");
         let generated = generate_schema_code(&schema, "AWS::Organizations::Account")
@@ -9054,7 +9002,7 @@ mod tests {
         // IAM Role's Arn should use the schema-owned Role ARN helper, not generic arn
         assert_eq!(
             infer_string_type("Arn", "AWS::IAM::Role"),
-            Some("super::iam_role_arn()".to_string())
+            Some("super::super::iam::role::arn()".to_string())
         );
         // Other resources' Arn should use generic arn
         assert_eq!(
@@ -9241,35 +9189,11 @@ mod tests {
     }
 
     #[test]
-    fn test_iam_role_arn_override() {
-        assert_eq!(
-            infer_string_type("Arn", "AWS::IAM::Role"),
-            Some("super::iam_role_arn()".to_string())
-        );
-        assert_eq!(
-            infer_string_type_display("Arn", "AWS::IAM::Role"),
-            "IamRoleArn"
-        );
-    }
-
-    #[test]
-    fn test_iam_policy_arn_override() {
-        assert_eq!(
-            infer_string_type("Arn", "AWS::IAM::Policy"),
-            Some("super::iam_policy_arn()".to_string())
-        );
-        assert_eq!(
-            infer_string_type_display("Arn", "AWS::IAM::Policy"),
-            "IamPolicyArn"
-        );
-    }
-
-    #[test]
     fn test_iam_oidc_provider_arn_override() {
         // IAM OIDCProvider's Arn should use the schema-owned OIDC Provider ARN helper.
         assert_eq!(
             infer_string_type("Arn", "AWS::IAM::OIDCProvider"),
-            Some("super::iam_oidc_provider_arn()".to_string())
+            Some("super::super::iam::oidc_provider::arn()".to_string())
         );
         assert_eq!(
             infer_string_type_display("Arn", "AWS::IAM::OIDCProvider"),

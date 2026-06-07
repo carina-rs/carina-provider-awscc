@@ -1,5 +1,5 @@
 [package]
-name = "carina-awscc-types"
+name = "carina-aws-types"
 version = "0.4.0"
 edition = "2024"
 license = "MIT"
@@ -14,5 +14,4 @@ doctest = false
 indexmap = "2"
 
 [dependencies]
-carina-aws-types = { git = "https://github.com/carina-rs/carina-provider-aws", rev = "0883f60174b189eaef3b31256ae8bb9e0454a2fe" }
 carina-core = { git = "https://github.com/carina-rs/carina", rev = "31f62d0140e754fcf6867b67d7c1e1aab008acf7" }

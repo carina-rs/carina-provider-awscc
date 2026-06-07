@@ -629,16 +629,7 @@ dependencies = [
 [[package]]
 name = "carina-aws-types"
 version = "0.4.0"
-source = "git+https://github.com/carina-rs/carina-provider-aws?rev=0883f60174b189eaef3b31256ae8bb9e0454a2fe#0883f60174b189eaef3b31256ae8bb9e0454a2fe"
 dependencies = [
- "carina-core",
-]
-
-[[package]]
-name = "carina-awscc-types"
-version = "0.4.0"
-dependencies = [
- "carina-aws-types",
  "carina-core",
  "indexmap",
 ]
@@ -692,7 +683,6 @@ dependencies = [
  "aws-smithy-runtime-api",
  "aws-smithy-types",
  "carina-aws-types",
- "carina-awscc-types",
  "carina-core",
  "carina-plugin-sdk",
  "carina-provider-protocol",

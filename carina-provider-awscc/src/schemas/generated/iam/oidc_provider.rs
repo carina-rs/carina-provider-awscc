@@ -12,7 +12,21 @@ use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, legacy
 use regex::Regex;
 
 pub fn arn() -> AttributeType {
-    super::iam_oidc_provider_arn()
+    AttributeType::custom(
+        Some(super::provider_type("iam", "OidcProvider", "Arn")),
+        super::arn(),
+        Some("^arn:(aws|aws-cn|aws-us-gov):iam::[^:]*:oidc-provider/.+$".to_string()),
+        None,
+        legacy_validator(|value| {
+            if let Value::Concrete(ConcreteValue::String(s)) = value {
+                super::validate_iam_arn(s, "oidc-provider/")
+                    .map_err(|reason| format!("Invalid IAM OIDC Provider ARN '{}': {}", s, reason))
+            } else {
+                Err("Expected string".to_string())
+            }
+        }),
+        None,
+    )
 }
 
 #[allow(dead_code)]

@@ -105,12 +105,12 @@ impl ProviderFactory for AwsccProviderFactory {
             AttributeType::enum_(
                 carina_core::schema::enum_identity("Region", Some("awscc")),
                 Some(
-                    carina_awscc_types::REGIONS
+                    carina_aws_types::REGIONS
                         .iter()
                         .map(|(code, _)| code.to_string())
                         .collect(),
                 ),
-                carina_awscc_types::region_dsl_aliases(),
+                carina_aws_types::region_dsl_aliases(),
                 None,
                 None,
             ),
@@ -208,7 +208,7 @@ impl ProviderFactory for AwsccProviderFactory {
     ) -> std::collections::HashMap<String, Vec<carina_core::schema::CompletionValue>> {
         std::collections::HashMap::from([(
             "region".to_string(),
-            carina_awscc_types::region_completions("awscc"),
+            carina_aws_types::region_completions("awscc"),
         )])
     }
 

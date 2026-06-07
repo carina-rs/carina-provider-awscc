@@ -1,10 +1,10 @@
 //! AWS Cloud Control type definitions and validators
 //!
-//! This module re-exports shared AWS type validators from `carina-awscc-types`
+//! This module re-exports shared AWS type validators from `carina-aws-types`
 //! and defines provider-specific types (region, availability zone, schema config,
 //! IAM policy document).
 
-pub use carina_awscc_types::*;
+pub use carina_aws_types::*;
 
 use std::collections::HashMap;
 
@@ -51,7 +51,7 @@ macro_rules! register_validators {
 /// Return all AWSCC type validators for registration in ProviderContext.
 ///
 /// These validators are keyed by type name (matching the names used in fn/module
-/// type annotations) and wrap the validation functions from `carina-awscc-types`.
+/// type annotations) and wrap the validation functions from `carina-aws-types`.
 pub fn awscc_validators() -> HashMap<String, ValidatorFn> {
     register_validators! {
         simple {
@@ -144,12 +144,12 @@ pub(crate) fn validate_namespaced_enum(
 /// - Shorthand: ap_northeast_1
 pub fn awscc_region() -> AttributeType {
     AttributeType::enum_(
-        carina_awscc_types::provider_bare_type(&[], "Region"),
+        carina_aws_types::provider_bare_type(&[], "Region"),
         None,
         vec![],
         Some(legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
-                let id = carina_awscc_types::provider_bare_type(&[], "Region");
+                let id = carina_aws_types::provider_bare_type(&[], "Region");
                 validate_enum_namespace(s, &id)
                     .map_err(|reason| format!("Invalid region '{}': {}", s, reason))?;
                 let normalized = extract_enum_value(s).replace('_', "-");
@@ -174,12 +174,12 @@ pub fn awscc_region() -> AttributeType {
 /// Validates format: region + single letter zone identifier
 pub fn availability_zone() -> AttributeType {
     AttributeType::enum_(
-        carina_awscc_types::provider_bare_type(&["AvailabilityZone"], "ZoneName"),
+        carina_aws_types::provider_bare_type(&["AvailabilityZone"], "ZoneName"),
         None,
         vec![],
         Some(legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
-                let id = carina_awscc_types::provider_bare_type(&["AvailabilityZone"], "ZoneName");
+                let id = carina_aws_types::provider_bare_type(&["AvailabilityZone"], "ZoneName");
                 validate_enum_namespace(s, &id)
                     .map_err(|reason| format!("Invalid availability zone '{}': {}", s, reason))?;
                 let extracted = extract_enum_value(s);
@@ -195,7 +195,7 @@ pub fn availability_zone() -> AttributeType {
 }
 
 // iam_policy_document() and validate_iam_policy_document() are provided by
-// `pub use carina_awscc_types::*` above
+// `pub use carina_aws_types::*` above
 
 #[cfg(test)]
 mod tests {
