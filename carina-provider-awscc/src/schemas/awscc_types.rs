@@ -166,7 +166,7 @@ pub fn awscc_region() -> AttributeType {
                 Err("Expected string".to_string())
             }
         })),
-        Some(crate::hyphen_to_underscore),
+        Some(carina_core::schema::DslTransform::HyphenToUnderscore),
     )
 }
 
@@ -190,7 +190,7 @@ pub fn availability_zone() -> AttributeType {
                 Err("Expected string".to_string())
             }
         })),
-        Some(crate::hyphen_to_underscore),
+        Some(carina_core::schema::DslTransform::HyphenToUnderscore),
     )
 }
 
@@ -277,9 +277,9 @@ mod tests {
         // path), not a structural Custom.
         let t = availability_zone();
         if let carina_core::schema::RawShape::Enum { to_dsl, .. } = t.raw_shape() {
-            let f = to_dsl.unwrap();
-            assert_eq!(f("us-east-1a"), "us_east_1a");
-            assert_eq!(f("ap-northeast-1c"), "ap_northeast_1c");
+            let transform = to_dsl.unwrap();
+            assert_eq!(transform.apply("us-east-1a"), "us_east_1a");
+            assert_eq!(transform.apply("ap-northeast-1c"), "ap_northeast_1c");
         } else {
             panic!("Expected Enum type");
         }

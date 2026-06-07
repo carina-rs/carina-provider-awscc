@@ -4,7 +4,7 @@
 //! needed because carina-plugin-host depends on wasmtime which cannot
 //! compile to wasm32-wasip2.
 
-use std::{collections::HashMap, sync::LazyLock};
+use std::collections::HashMap;
 
 use carina_core::provider::{
     PatchOp as CorePatchOp, PatchOpKind as CorePatchOpKind, ProviderError as CoreProviderError,
@@ -292,16 +292,13 @@ fn proto_attr_type_to_core(t: &ProtoAttributeType) -> CoreAttributeType {
         } => {
             let identity = carina_core::schema::enum_identity(name, Some(namespace.as_str()));
             let base = proto_attr_type_to_core(base);
-            let to_dsl = dsl_transform
-                .as_deref()
-                .and_then(carina_core::schema::dsl_transform_for);
             if matches!(base.raw_shape(), CoreRawShape::String) {
                 CoreAttributeType::enum_(
                     identity,
                     None,
                     vec![],
                     Some(legacy_validator(|_| Ok(()))),
-                    to_dsl,
+                    dsl_transform.clone(),
                 )
             } else {
                 CoreAttributeType::enum_with_base(
@@ -310,7 +307,7 @@ fn proto_attr_type_to_core(t: &ProtoAttributeType) -> CoreAttributeType {
                     None,
                     vec![],
                     Some(legacy_validator(|_| Ok(()))),
-                    to_dsl,
+                    dsl_transform.clone(),
                 )
             }
         }
@@ -442,7 +439,7 @@ fn core_to_proto_attribute_type(t: &CoreAttributeType) -> ProtoAttributeType {
                     name: identity.kind.clone(),
                     base: Box::new(core_to_proto_attribute_type(base)),
                     namespace: identity.dotted_prefix().unwrap_or_default(),
-                    dsl_transform: enum_dsl_transform_name(identity, to_dsl).map(str::to_string),
+                    dsl_transform: to_dsl.cloned(),
                 }
             }
         }
@@ -481,32 +478,6 @@ fn core_to_proto_attribute_type(t: &CoreAttributeType) -> ProtoAttributeType {
             name: name.to_string(),
         },
     }
-}
-
-type DslTransformFn = fn(&str) -> String;
-
-fn enum_dsl_transform_name(
-    _identity: &carina_core::schema::TypeIdentity,
-    to_dsl: Option<DslTransformFn>,
-) -> Option<&'static str> {
-    static TRANSFORM_NAMES: LazyLock<HashMap<DslTransformFn, &'static str>> = LazyLock::new(|| {
-        HashMap::from([
-            (
-                carina_provider_awscc::strip_trailing_dot as DslTransformFn,
-                carina_provider_awscc::STRIP_TRAILING_DOT_TRANSFORM,
-            ),
-            (
-                carina_provider_awscc::hyphen_to_underscore as DslTransformFn,
-                carina_provider_awscc::HYPHEN_TO_UNDERSCORE_TRANSFORM,
-            ),
-            (
-                carina_provider_awscc::ip_protocol_all_to_dsl as DslTransformFn,
-                carina_provider_awscc::IP_PROTOCOL_ALL_TRANSFORM,
-            ),
-        ])
-    });
-
-    to_dsl.and_then(|f| TRANSFORM_NAMES.get(&(f as DslTransformFn)).copied())
 }
 
 fn core_to_proto_struct_field(f: &CoreStructField) -> ProtoStructField {
@@ -637,6 +608,8 @@ pub fn core_to_proto_provider_error(e: CoreProviderError) -> ProtoProviderError 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use carina_core::schema::DslTransform;
+    use carina_provider_protocol::types::DslTransform as ProtoDslTransform;
 
     fn test_enum(
         name: &str,
@@ -835,19 +808,12 @@ mod tests {
     }
 
     #[test]
-    fn custom_enum_dsl_transform_name_lifts_state_value() {
-        carina_provider_awscc::register_dsl_transforms();
-        let registered = carina_core::schema::dsl_transform_for(
-            carina_provider_awscc::STRIP_TRAILING_DOT_TRANSFORM,
-        )
-        .expect("strip_trailing_dot should be registered");
-        assert_eq!(registered("example.com."), "example.com");
-
+    fn custom_enum_dsl_transform_data_lifts_state_value() {
         let proto_type = ProtoAttributeType::CustomEnum {
             name: "DnsName".to_string(),
             base: Box::new(ProtoAttributeType::String),
             namespace: "awscc.route53.HostedZone".to_string(),
-            dsl_transform: Some(carina_provider_awscc::STRIP_TRAILING_DOT_TRANSFORM.to_string()),
+            dsl_transform: Some(ProtoDslTransform::StripSuffix(".".to_string())),
         };
         let core_type = proto_attr_type_to_core(&proto_type);
         let lifted = carina_core::utils::lift_enum_leaves(
@@ -865,7 +831,6 @@ mod tests {
 
     #[test]
     fn dns_name_substring_identity_does_not_get_strip_trailing_dot_transform() {
-        carina_provider_awscc::register_dsl_transforms();
         let core_type = CoreAttributeType::enum_(
             carina_core::schema::enum_identity(
                 "HostnameType",
@@ -874,15 +839,15 @@ mod tests {
             None,
             vec![],
             None,
-            Some(carina_provider_awscc::hyphen_to_underscore),
+            Some(DslTransform::HyphenToUnderscore),
         );
 
         let proto_type = core_to_proto_attribute_type(&core_type);
         match &proto_type {
             ProtoAttributeType::CustomEnum { dsl_transform, .. } => {
                 assert_eq!(
-                    dsl_transform.as_deref(),
-                    Some(carina_provider_awscc::HYPHEN_TO_UNDERSCORE_TRANSFORM)
+                    dsl_transform.as_ref(),
+                    Some(&ProtoDslTransform::HyphenToUnderscore)
                 );
             }
             other => panic!("Expected CustomEnum, got {other:?}"),

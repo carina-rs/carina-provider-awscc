@@ -69,7 +69,7 @@ pub fn route53_hosted_zone_config() -> AwsccSchemaConfig {
                 .with_provider_name("Id"),
         )
         .attribute(
-            AttributeSchema::new("name", AttributeType::enum_(carina_core::schema::enum_identity("Name", Some("awscc.route53.HostedZone")), None, vec![], None, Some(crate::strip_trailing_dot)))
+            AttributeSchema::new("name", AttributeType::enum_(carina_core::schema::enum_identity("Name", Some("awscc.route53.HostedZone")), None, vec![], None, Some(carina_core::schema::DslTransform::StripSuffix(".".to_string()))))
                 .create_only()
                 .with_description("The name of the domain. Specify a fully qualified domain name, for example, *www.example.com*. The trailing dot is optional; Amazon Route 53 assumes that the domain name is fully qualified. This means that Route 53 treats *www.example.com* (without a trailing dot) and *www.example.com.* (with a trailing dot) as identical. If you're creating a public hosted zone, this is the name you have registered with your DNS registrar. If your domain name is registered with a registrar other than Route 53, change the name servers for your domain to the set of ``NameServers`` that are returned by the ``Fn::GetAtt`` intrinsic function.")
                 .with_provider_name("Name"),
