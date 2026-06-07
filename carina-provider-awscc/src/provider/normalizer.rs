@@ -7,7 +7,9 @@ use indexmap::IndexMap;
 use std::collections::HashMap;
 
 use carina_core::resource::{ConcreteValue, Resource, ResourceId, State, Value};
-use carina_core::schema::{AttributeType, ResourceSchema, Shape, ShapeWalkBudget, StructField};
+use carina_core::schema::{
+    AttributeType, RawShape, ResourceSchema, Shape, ShapeWalkBudget, StructField,
+};
 
 /// Resolve enum identifiers in resources to their fully-qualified DSL format.
 ///
@@ -174,6 +176,13 @@ pub fn normalize_state_enums_impl(current_states: &mut HashMap<ResourceId, State
         let mut resolved_attrs = HashMap::new();
         for (key, value) in &state.attributes {
             if let Some(attr_schema) = config.schema.attributes.get(key.as_str())
+                && let Some(transformed) = apply_enum_dsl_transform(value, &attr_schema.attr_type)
+            {
+                resolved_attrs.insert(key.clone(), transformed);
+                continue;
+            }
+
+            if let Some(attr_schema) = config.schema.attributes.get(key.as_str())
                 && let Some(parts) = attr_schema.attr_type.enum_parts()
             {
                 // AWSCC state normalization: only resolve bare values (no dots)
@@ -200,6 +209,21 @@ pub fn normalize_state_enums_impl(current_states: &mut HashMap<ResourceId, State
         }
         state.attributes = resolved_attrs;
     }
+}
+
+fn apply_enum_dsl_transform(value: &Value, attr_type: &AttributeType) -> Option<Value> {
+    let RawShape::Enum {
+        to_dsl: Some(transform),
+        ..
+    } = attr_type.raw_shape()
+    else {
+        return None;
+    };
+    let Value::Concrete(ConcreteValue::String(s)) = value else {
+        return None;
+    };
+    let transformed = transform.apply(s);
+    (transformed != *s).then(|| Value::Concrete(ConcreteValue::String(transformed)))
 }
 
 /// Canonicalize attributes of every awscc state whose declared schema
@@ -564,6 +588,44 @@ mod tests {
     }
 
     #[test]
+    fn route53_hosted_zone_name_trailing_dot_has_no_diff_without_registration() {
+        let config = crate::schemas::generated::get_config_by_type("route53.HostedZone")
+            .expect("route53.HostedZone schema should exist");
+        let desired = Resource::with_provider("awscc", "route53.HostedZone", "example", None)
+            .with_attribute(
+                "name",
+                Value::Concrete(ConcreteValue::String("example.com".to_string())),
+            );
+        let mut current_states = HashMap::from([(
+            desired.id.clone(),
+            State::existing(
+                desired.id.clone(),
+                HashMap::from([(
+                    "name".to_string(),
+                    Value::Concrete(ConcreteValue::String("example.com.".to_string())),
+                )]),
+            ),
+        )]);
+
+        normalize_state_enums_impl(&mut current_states);
+
+        let current = current_states
+            .get(&desired.id)
+            .expect("normalized state should still exist");
+        assert_eq!(
+            current.attributes.get("name"),
+            Some(&Value::Concrete(ConcreteValue::String(
+                "example.com".to_string()
+            )))
+        );
+        let diff = carina_core::differ::diff(&desired, current, None, None, Some(&config.schema));
+        assert!(
+            matches!(diff, carina_core::differ::Diff::NoChange(_)),
+            "expected no diff for Route53 HostedZone name with trailing dot, got {diff:?}"
+        );
+    }
+
+    #[test]
     fn test_resolve_enum_identifiers_ip_protocol_all_alias() {
         let mut resource =
             Resource::with_provider("awscc", "ec2.SecurityGroupEgress", "test", None);
@@ -623,7 +685,10 @@ mod tests {
                     None,
                     vec![],
                     Some(legacy_validator(|_| Ok(()))),
-                    Some(crate::ip_protocol_all_to_dsl),
+                    Some(carina_core::schema::DslTransform::ReplaceTable(vec![(
+                        "-1".to_string(),
+                        "all".to_string(),
+                    )])),
                 ),
             )
             .with_provider_name("IpProtocol"),

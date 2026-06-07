@@ -4636,7 +4636,9 @@ fn resource_type_overrides() -> &'static HashMap<(&'static str, &'static str), T
             // Route 53 HostedZone Name: AWS returns FQDN with trailing dot
             m.insert(
                 ("AWS::Route53::HostedZone", "Name"),
-                TypeOverride::ToDsl(r#"Some(crate::strip_trailing_dot)"#),
+                TypeOverride::ToDsl(
+                    r#"Some(carina_core::schema::DslTransform::StripSuffix(".".to_string()))"#,
+                ),
             );
 
             m

@@ -98,7 +98,6 @@ impl ProviderFactory for AwsccProviderFactory {
     fn provider_config_attribute_types(
         &self,
     ) -> HashMap<String, carina_core::schema::AttributeType> {
-        register_dsl_transforms();
         use carina_core::schema::AttributeType;
         let mut types = HashMap::new();
         types.insert(
@@ -129,7 +128,6 @@ impl ProviderFactory for AwsccProviderFactory {
     }
 
     fn validate_config(&self, attributes: &IndexMap<String, Value>) -> Result<(), String> {
-        register_dsl_transforms();
         // Cross-account guardrail: when `assume_role.role_arn` parses to
         // an account id that is not in `allowed_account_ids` (when that
         // list is configured), refuse the configuration. Avoids the
@@ -149,7 +147,6 @@ impl ProviderFactory for AwsccProviderFactory {
         identity: &carina_core::schema::TypeIdentity,
         value: &str,
     ) -> Result<(), String> {
-        register_dsl_transforms();
         use carina_core::parser::ValidatorFn;
         use std::sync::OnceLock;
         static VALIDATORS: OnceLock<HashMap<String, ValidatorFn>> = OnceLock::new();
@@ -167,7 +164,6 @@ impl ProviderFactory for AwsccProviderFactory {
     }
 
     fn extract_region(&self, attributes: &IndexMap<String, Value>) -> String {
-        register_dsl_transforms();
         if let Some(Value::Concrete(ConcreteValue::String(region))) = attributes.get("region") {
             return carina_core::utils::convert_region_value(region);
         }
@@ -179,7 +175,6 @@ impl ProviderFactory for AwsccProviderFactory {
         _binding: Option<&str>,
         attributes: &IndexMap<String, Value>,
     ) -> BoxFuture<'_, Result<Box<dyn Provider>, carina_core::provider::ProviderError>> {
-        register_dsl_transforms();
         // `_binding` is intentionally unused: the AWS Cloud Control
         // factory does not cache instances, so each call already
         // produces an independent `AwsccProvider`. The host uses the
@@ -197,12 +192,10 @@ impl ProviderFactory for AwsccProviderFactory {
         _binding: Option<&str>,
         _attributes: &IndexMap<String, Value>,
     ) -> BoxFuture<'_, Box<dyn ProviderNormalizer>> {
-        register_dsl_transforms();
         Box::pin(async { Box::new(AwsccNormalizer) as Box<dyn ProviderNormalizer> })
     }
 
     fn schemas(&self) -> Vec<carina_core::schema::ResourceSchema> {
-        register_dsl_transforms();
         schemas::all_schemas()
     }
 
@@ -213,7 +206,6 @@ impl ProviderFactory for AwsccProviderFactory {
     fn config_completions(
         &self,
     ) -> std::collections::HashMap<String, Vec<carina_core::schema::CompletionValue>> {
-        register_dsl_transforms();
         std::collections::HashMap::from([(
             "region".to_string(),
             carina_aws_types::region_completions("awscc"),
@@ -226,34 +218,6 @@ impl ProviderFactory for AwsccProviderFactory {
     // exhaustive `dsl_aliases` table on each StringEnum. The legacy
     // string-keyed dispatch (`(resource_type, attr_name)`) was
     // removed in awscc#223 / awscc#220.
-}
-
-pub const STRIP_TRAILING_DOT_TRANSFORM: &str = "strip_trailing_dot";
-pub const IP_PROTOCOL_ALL_TRANSFORM: &str = "ip_protocol_all";
-pub const HYPHEN_TO_UNDERSCORE_TRANSFORM: &str = "hyphen_to_underscore";
-
-pub fn strip_trailing_dot(s: &str) -> String {
-    s.strip_suffix('.').unwrap_or(s).to_string()
-}
-
-pub fn hyphen_to_underscore(s: &str) -> String {
-    s.replace('-', "_")
-}
-
-pub fn ip_protocol_all_to_dsl(s: &str) -> String {
-    match s {
-        "-1" => "all".to_string(),
-        _ => s.to_string(),
-    }
-}
-
-pub fn register_dsl_transforms() {
-    carina_core::schema::register_dsl_transform(STRIP_TRAILING_DOT_TRANSFORM, strip_trailing_dot);
-    carina_core::schema::register_dsl_transform(
-        HYPHEN_TO_UNDERSCORE_TRANSFORM,
-        hyphen_to_underscore,
-    );
-    carina_core::schema::register_dsl_transform(IP_PROTOCOL_ALL_TRANSFORM, ip_protocol_all_to_dsl);
 }
 
 // =============================================================================
