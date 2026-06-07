@@ -3,7 +3,7 @@ mod common;
 #[test]
 fn arn_identity_is_provider_scoped() {
     common::assert_arn_identity(
-        carina_provider_awscc::schemas::generated::iam::role::arn(),
-        "aws.iam.Role.Arn",
+        carina_provider_awscc::schemas::generated::iam::policy::arn(),
+        "aws.iam.Policy.Arn",
     );
 }
