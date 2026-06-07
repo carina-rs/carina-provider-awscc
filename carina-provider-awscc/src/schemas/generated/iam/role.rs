@@ -13,7 +13,7 @@ use carina_core::schema::{
 };
 
 pub fn arn() -> AttributeType {
-    super::iam_role_arn()
+    carina_aws_types::iam_role_arn()
 }
 
 fn validate_max_session_duration_range(value: &Value) -> Result<(), String> {

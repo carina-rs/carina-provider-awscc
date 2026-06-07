@@ -63,7 +63,7 @@ pub fn sso_assignment_config() -> AwsccSchemaConfig {
                 .with_provider_name("PrincipalType"),
             )
             .attribute(
-                AttributeSchema::new("target_id", super::aws_account_id())
+                AttributeSchema::new("target_id", carina_aws_types::aws_account_id())
                     .required()
                     .create_only()
                     .with_description("The account id to be provisioned.")

@@ -128,7 +128,7 @@ emit_virtual_helper_modules() {
 use carina_core::schema::AttributeType;
 
 pub fn arn() -> AttributeType {
-    super::iam_policy_arn()
+    carina_aws_types::iam_policy_arn()
 }
 EOF
 }

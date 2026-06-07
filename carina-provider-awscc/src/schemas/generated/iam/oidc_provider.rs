@@ -12,7 +12,7 @@ use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, legacy
 use regex::Regex;
 
 pub fn arn() -> AttributeType {
-    super::iam_oidc_provider_arn()
+    carina_aws_types::iam_oidc_provider_arn()
 }
 
 #[allow(dead_code)]

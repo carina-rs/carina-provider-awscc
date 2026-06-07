@@ -95,7 +95,7 @@ pub fn ec2_security_group_config() -> AwsccSchemaConfig {
                     StructField::new("source_prefix_list_id", super::prefix_list_id()).with_provider_name("SourcePrefixListId"),
                     StructField::new("source_security_group_id", super::security_group_id()).with_provider_name("SourceSecurityGroupId"),
                     StructField::new("source_security_group_name", AttributeType::string()).with_provider_name("SourceSecurityGroupName"),
-                    StructField::new("source_security_group_owner_id", super::aws_account_id()).with_provider_name("SourceSecurityGroupOwnerId"),
+                    StructField::new("source_security_group_owner_id", carina_aws_types::aws_account_id()).with_provider_name("SourceSecurityGroupOwnerId"),
                     StructField::new("to_port", AttributeType::custom(None, AttributeType::int(), None, None, legacy_validator(validate_to_port_range), None)).with_provider_name("ToPort")])))
                 .with_description("The inbound rules associated with the security group. There is a short interruption during which you cannot connect to the security group.")
                 .with_provider_name("SecurityGroupIngress")

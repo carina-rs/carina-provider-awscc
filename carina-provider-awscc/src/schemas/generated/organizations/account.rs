@@ -171,7 +171,7 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
         schema: ResourceSchema::new("organizations.Account")
         .with_description("You can use AWS::Organizations::Account to manage accounts in organization.")
         .attribute(
-            AttributeSchema::new("account_id", super::aws_account_id())
+            AttributeSchema::new("account_id", carina_aws_types::aws_account_id())
                 .read_only()
                 .with_description("If the account was created successfully, the unique identifier (ID) of the new account. (read-only)")
                 .with_provider_name("AccountId"),

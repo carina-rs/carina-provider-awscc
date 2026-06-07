@@ -2,12 +2,6 @@
 //!
 //! This crate holds CloudControl/awscc-specific types (region with namespace,
 //! schema config structs, AWSCC-only validators).
-//!
-//! Canonical AWS identities that AWS treats as a single global concept
-//! (`aws_account_id`, `iam_role_arn`, `iam_policy_arn`,
-//! `iam_oidc_provider_arn`) are re-exported from `carina-aws-types`
-//! (carina-provider-aws) so awscc emits the same TypeIdentity as the aws
-//! provider — see carina#3413.
 
 use carina_core::resource::{ConcreteValue, Value};
 #[cfg(test)]
@@ -15,8 +9,6 @@ use carina_core::schema::RawShape;
 use carina_core::schema::{
     AttributeType, CompletionValue, StructField, TypeIdentity, legacy_validator,
 };
-
-pub use carina_aws_types::{aws_account_id, iam_oidc_provider_arn, iam_policy_arn, iam_role_arn};
 
 const PROVIDER_NAME: &str = "awscc";
 

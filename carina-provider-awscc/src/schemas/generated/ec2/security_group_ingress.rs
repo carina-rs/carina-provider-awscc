@@ -111,7 +111,7 @@ pub fn ec2_security_group_ingress_config() -> AwsccSchemaConfig {
                 .with_provider_name("SourceSecurityGroupName"),
         )
         .attribute(
-            AttributeSchema::new("source_security_group_owner_id", super::aws_account_id())
+            AttributeSchema::new("source_security_group_owner_id", carina_aws_types::aws_account_id())
                 .create_only()
                 .with_description("[nondefault VPC] The AWS account ID that owns the source security group. You can't specify this property with an IP address range. If you specify SourceSecurityGroupName or SourceSecurityGroupId and that security group is owned by a different account than the account creating the stack, you must specify the SourceSecurityGroupOwnerId; otherwise, this property is optional.")
                 .with_provider_name("SourceSecurityGroupOwnerId"),

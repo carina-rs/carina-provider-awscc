@@ -111,7 +111,7 @@ pub fn sso_instance_config() -> AwsccSchemaConfig {
                 .with_provider_name("Name"),
         )
         .attribute(
-            AttributeSchema::new("owner_account_id", super::aws_account_id())
+            AttributeSchema::new("owner_account_id", carina_aws_types::aws_account_id())
                 .read_only()
                 .with_description("The AWS accountId of the owner of the Identity Center (SSO) Instance (read-only)")
                 .with_provider_name("OwnerAccountId"),

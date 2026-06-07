@@ -131,7 +131,7 @@ pub fn organizations_organization_config() -> AwsccSchemaConfig {
                 .with_provider_name("ManagementAccountEmail"),
         )
         .attribute(
-            AttributeSchema::new("management_account_id", super::aws_account_id())
+            AttributeSchema::new("management_account_id", carina_aws_types::aws_account_id())
                 .read_only()
                 .with_description("The unique identifier (ID) of the management account of an organization. (read-only)")
                 .with_provider_name("ManagementAccountId"),
