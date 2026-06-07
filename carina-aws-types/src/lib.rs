@@ -1354,17 +1354,15 @@ fn string_or_principal_struct() -> AttributeType {
 /// so `type_name` is the trailing `Effect` segment and `namespace` is
 /// `awscc.iam.PolicyDocument.Statement`.
 fn iam_policy_effect() -> AttributeType {
-    AttributeType::string_enum(
-        "Effect".to_string(),
-        vec!["Allow".to_string(), "Deny".to_string()],
-        Some(carina_core::schema::string_enum_identity(
-            "Effect",
-            Some("awscc.iam.PolicyDocument.Statement"),
-        )),
+    AttributeType::enum_(
+        carina_core::schema::enum_identity("Effect", Some("awscc.iam.PolicyDocument.Statement")),
+        Some(vec!["Allow".to_string(), "Deny".to_string()]),
         vec![
             ("Allow".to_string(), "allow".to_string()),
             ("Deny".to_string(), "deny".to_string()),
         ],
+        None,
+        None,
     )
 }
 
@@ -1379,17 +1377,15 @@ fn iam_policy_effect() -> AttributeType {
 /// trailing `Version` segment and `namespace` is
 /// `awscc.iam.PolicyDocument`.
 fn iam_policy_version() -> AttributeType {
-    AttributeType::string_enum(
-        "Version".to_string(),
-        vec!["2012-10-17".to_string(), "2008-10-17".to_string()],
-        Some(carina_core::schema::string_enum_identity(
-            "Version",
-            Some("awscc.iam.PolicyDocument"),
-        )),
+    AttributeType::enum_(
+        carina_core::schema::enum_identity("Version", Some("awscc.iam.PolicyDocument")),
+        Some(vec!["2012-10-17".to_string(), "2008-10-17".to_string()]),
         vec![
             ("2012-10-17".to_string(), "2012_10_17".to_string()),
             ("2008-10-17".to_string(), "2008_10_17".to_string()),
         ],
+        None,
+        None,
     )
 }
 
@@ -1403,11 +1399,15 @@ fn iam_policy_version() -> AttributeType {
 fn condition_type() -> AttributeType {
     let operator_values: Vec<String> = all_condition_operator_snake_forms();
     AttributeType::map_with_key(
-        AttributeType::string_enum(
-            "ConditionOperator".to_string(),
-            operator_values,
-            None,
+        AttributeType::enum_(
+            carina_core::schema::enum_identity(
+                "ConditionOperator",
+                Some("aws.iam.PolicyDocument.Statement.Condition"),
+            ),
+            Some(operator_values),
             vec![],
+            None,
+            None,
         ),
         AttributeType::map(string_or_list_of_strings()),
     )
@@ -2540,12 +2540,8 @@ mod tests {
     #[test]
     fn iam_policy_document_version_identity_uses_awscc_namespace() {
         let t = iam_policy_version();
-        let RawShape::StringEnum {
-            identity: Some(identity),
-            ..
-        } = t.raw_shape()
-        else {
-            panic!("iam_policy_version() should be a StringEnum with identity");
+        let RawShape::Enum { identity, .. } = t.raw_shape() else {
+            panic!("iam_policy_version() should be an Enum with identity");
         };
 
         assert!(
@@ -2567,12 +2563,8 @@ mod tests {
     #[test]
     fn iam_policy_document_effect_identity_uses_awscc_namespace() {
         let t = iam_policy_effect();
-        let RawShape::StringEnum {
-            identity: Some(identity),
-            ..
-        } = t.raw_shape()
-        else {
-            panic!("iam_policy_effect() should be a StringEnum with identity");
+        let RawShape::Enum { identity, .. } = t.raw_shape() else {
+            panic!("iam_policy_effect() should be an Enum with identity");
         };
 
         assert_eq!(
@@ -3087,8 +3079,12 @@ mod tests {
         let RawShape::Map { key, .. } = cond.raw_shape() else {
             panic!("condition_type() should be a Map");
         };
-        let RawShape::StringEnum { values, .. } = key.raw_shape() else {
-            panic!("condition_type() key should be a StringEnum");
+        let RawShape::Enum {
+            values: Some(values),
+            ..
+        } = key.raw_shape()
+        else {
+            panic!("condition_type() key should be an Enum");
         };
         for expected in [
             "string_equals",
@@ -3101,7 +3097,7 @@ mod tests {
         ] {
             assert!(
                 values.iter().any(|v| v == expected),
-                "ConditionOperator StringEnum should include {expected:?}; got {values:?}"
+                "ConditionOperator Enum should include {expected:?}; got {values:?}"
             );
         }
         for v in values {

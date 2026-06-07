@@ -143,10 +143,11 @@ pub(crate) fn validate_namespaced_enum(
 /// - AWS string format: "ap-northeast-1"
 /// - Shorthand: ap_northeast_1
 pub fn awscc_region() -> AttributeType {
-    AttributeType::custom_enum(
+    AttributeType::enum_(
         carina_aws_types::provider_bare_type(&[], "Region"),
-        AttributeType::string(),
-        legacy_validator(|value| {
+        None,
+        vec![],
+        Some(legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
                 let id = carina_aws_types::provider_bare_type(&[], "Region");
                 validate_enum_namespace(s, &id)
@@ -164,18 +165,19 @@ pub fn awscc_region() -> AttributeType {
             } else {
                 Err("Expected string".to_string())
             }
-        }),
-        Some(|s: &str| s.replace('-', "_")),
+        })),
+        Some(crate::hyphen_to_underscore),
     )
 }
 
 /// Availability Zone type (e.g., "us-east-1a", "ap-northeast-1c")
 /// Validates format: region + single letter zone identifier
 pub fn availability_zone() -> AttributeType {
-    AttributeType::custom_enum(
+    AttributeType::enum_(
         carina_aws_types::provider_bare_type(&["AvailabilityZone"], "ZoneName"),
-        AttributeType::string(),
-        legacy_validator(|value| {
+        None,
+        vec![],
+        Some(legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
                 let id = carina_aws_types::provider_bare_type(&["AvailabilityZone"], "ZoneName");
                 validate_enum_namespace(s, &id)
@@ -187,8 +189,8 @@ pub fn availability_zone() -> AttributeType {
             } else {
                 Err("Expected string".to_string())
             }
-        }),
-        Some(|s: &str| s.replace('-', "_")),
+        })),
+        Some(crate::hyphen_to_underscore),
     )
 }
 
@@ -274,12 +276,12 @@ mod tests {
         // Post-#3222: AZ is a CustomEnum (the namespaced shorthand
         // path), not a structural Custom.
         let t = availability_zone();
-        if let carina_core::schema::RawShape::CustomEnum { to_dsl, .. } = t.raw_shape() {
+        if let carina_core::schema::RawShape::Enum { to_dsl, .. } = t.raw_shape() {
             let f = to_dsl.unwrap();
             assert_eq!(f("us-east-1a"), "us_east_1a");
             assert_eq!(f("ap-northeast-1c"), "ap_northeast_1c");
         } else {
-            panic!("Expected CustomEnum type");
+            panic!("Expected Enum type");
         }
     }
 

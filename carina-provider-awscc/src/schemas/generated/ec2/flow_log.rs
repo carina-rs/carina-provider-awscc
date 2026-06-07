@@ -60,7 +60,7 @@ pub fn ec2_flow_log_config() -> AwsccSchemaConfig {
                 .with_provider_name("DeliverLogsPermissionArn"),
         )
         .attribute(
-            AttributeSchema::new("destination_options", AttributeType::struct_("DestinationOptions".to_string(), vec![StructField::new("file_format", AttributeType::string_enum("FileFormat".to_string(), vec!["plain-text".to_string(), "parquet".to_string()], Some(carina_core::schema::string_enum_identity("FileFormat", Some("awscc.ec2.FlowLog.DestinationOptions"))), vec![("plain-text".to_string(), "plain_text".to_string()), ("parquet".to_string(), "parquet".to_string())])).required().with_provider_name("FileFormat"),
+            AttributeSchema::new("destination_options", AttributeType::struct_("DestinationOptions".to_string(), vec![StructField::new("file_format", AttributeType::enum_(carina_core::schema::enum_identity("FileFormat", Some("awscc.ec2.FlowLog.DestinationOptions")), Some(vec!["plain-text".to_string(), "parquet".to_string()]), vec![("plain-text".to_string(), "plain_text".to_string()), ("parquet".to_string(), "parquet".to_string())], None, None)).required().with_provider_name("FileFormat"),
                     StructField::new("hive_compatible_partitions", AttributeType::bool()).required().with_provider_name("HiveCompatiblePartitions"),
                     StructField::new("per_hour_partition", AttributeType::bool()).required().with_provider_name("PerHourPartition")]))
                 .create_only()
@@ -79,7 +79,7 @@ pub fn ec2_flow_log_config() -> AwsccSchemaConfig {
                 .with_provider_name("LogDestination"),
         )
         .attribute(
-            AttributeSchema::new("log_destination_type", AttributeType::string_enum("LogDestinationType".to_string(), vec!["cloud-watch-logs".to_string(), "s3".to_string(), "kinesis-data-firehose".to_string()], Some(carina_core::schema::string_enum_identity("LogDestinationType", Some("awscc.ec2.FlowLog"))), vec![("cloud-watch-logs".to_string(), "cloud_watch_logs".to_string()), ("s3".to_string(), "s3".to_string()), ("kinesis-data-firehose".to_string(), "kinesis_data_firehose".to_string())]))
+            AttributeSchema::new("log_destination_type", AttributeType::enum_(carina_core::schema::enum_identity("LogDestinationType", Some("awscc.ec2.FlowLog")), Some(vec!["cloud-watch-logs".to_string(), "s3".to_string(), "kinesis-data-firehose".to_string()]), vec![("cloud-watch-logs".to_string(), "cloud_watch_logs".to_string()), ("s3".to_string(), "s3".to_string()), ("kinesis-data-firehose".to_string(), "kinesis_data_firehose".to_string())], None, None))
                 .create_only()
                 .with_description("Specifies the type of destination to which the flow log data is to be published. Flow log data can be published to CloudWatch Logs or Amazon S3.")
                 .with_provider_name("LogDestinationType"),
@@ -110,7 +110,7 @@ pub fn ec2_flow_log_config() -> AwsccSchemaConfig {
                 .with_provider_name("ResourceId"),
         )
         .attribute(
-            AttributeSchema::new("resource_type", AttributeType::string_enum("ResourceType".to_string(), vec!["NetworkInterface".to_string(), "Subnet".to_string(), "VPC".to_string(), "TransitGateway".to_string(), "TransitGatewayAttachment".to_string(), "RegionalNatGateway".to_string()], Some(carina_core::schema::string_enum_identity("ResourceType", Some("awscc.ec2.FlowLog"))), vec![("NetworkInterface".to_string(), "network_interface".to_string()), ("Subnet".to_string(), "subnet".to_string()), ("VPC".to_string(), "vpc".to_string()), ("TransitGateway".to_string(), "transit_gateway".to_string()), ("TransitGatewayAttachment".to_string(), "transit_gateway_attachment".to_string()), ("RegionalNatGateway".to_string(), "regional_nat_gateway".to_string())]))
+            AttributeSchema::new("resource_type", AttributeType::enum_(carina_core::schema::enum_identity("ResourceType", Some("awscc.ec2.FlowLog")), Some(vec!["NetworkInterface".to_string(), "Subnet".to_string(), "VPC".to_string(), "TransitGateway".to_string(), "TransitGatewayAttachment".to_string(), "RegionalNatGateway".to_string()]), vec![("NetworkInterface".to_string(), "network_interface".to_string()), ("Subnet".to_string(), "subnet".to_string()), ("VPC".to_string(), "vpc".to_string()), ("TransitGateway".to_string(), "transit_gateway".to_string()), ("TransitGatewayAttachment".to_string(), "transit_gateway_attachment".to_string()), ("RegionalNatGateway".to_string(), "regional_nat_gateway".to_string())], None, None))
                 .required()
                 .create_only()
                 .with_description("The type of resource for which to create the flow log. For example, if you specified a VPC ID for the ResourceId property, specify VPC for this property.")
@@ -123,7 +123,7 @@ pub fn ec2_flow_log_config() -> AwsccSchemaConfig {
                 .with_block_name("tag"),
         )
         .attribute(
-            AttributeSchema::new("traffic_type", AttributeType::string_enum("TrafficType".to_string(), vec!["ACCEPT".to_string(), "ALL".to_string(), "REJECT".to_string()], Some(carina_core::schema::string_enum_identity("TrafficType", Some("awscc.ec2.FlowLog"))), vec![("ACCEPT".to_string(), "accept".to_string()), ("ALL".to_string(), "all".to_string()), ("REJECT".to_string(), "reject".to_string())]))
+            AttributeSchema::new("traffic_type", AttributeType::enum_(carina_core::schema::enum_identity("TrafficType", Some("awscc.ec2.FlowLog")), Some(vec!["ACCEPT".to_string(), "ALL".to_string(), "REJECT".to_string()]), vec![("ACCEPT".to_string(), "accept".to_string()), ("ALL".to_string(), "all".to_string()), ("REJECT".to_string(), "reject".to_string())], None, None))
                 .create_only()
                 .with_description("The type of traffic to log. You can log traffic that the resource accepts or rejects, or all traffic.")
                 .with_provider_name("TrafficType"),

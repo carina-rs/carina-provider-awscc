@@ -117,7 +117,7 @@ pub fn sso_instance_config() -> AwsccSchemaConfig {
                 .with_provider_name("OwnerAccountId"),
         )
         .attribute(
-            AttributeSchema::new("status", AttributeType::string_enum("Status".to_string(), vec!["CREATE_IN_PROGRESS".to_string(), "DELETE_IN_PROGRESS".to_string(), "ACTIVE".to_string()], Some(carina_core::schema::string_enum_identity("Status", Some("awscc.sso.Instance"))), vec![("CREATE_IN_PROGRESS".to_string(), "create_in_progress".to_string()), ("DELETE_IN_PROGRESS".to_string(), "delete_in_progress".to_string()), ("ACTIVE".to_string(), "active".to_string())]))
+            AttributeSchema::new("status", AttributeType::enum_(carina_core::schema::enum_identity("Status", Some("awscc.sso.Instance")), Some(vec!["CREATE_IN_PROGRESS".to_string(), "DELETE_IN_PROGRESS".to_string(), "ACTIVE".to_string()]), vec![("CREATE_IN_PROGRESS".to_string(), "create_in_progress".to_string()), ("DELETE_IN_PROGRESS".to_string(), "delete_in_progress".to_string()), ("ACTIVE".to_string(), "active".to_string())], None, None))
                 .read_only()
                 .with_description("The status of the Identity Center (SSO) Instance, create_in_progress/delete_in_progress/active (read-only)")
                 .with_provider_name("Status"),

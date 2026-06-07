@@ -195,7 +195,7 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
                 .with_provider_name("Email"),
         )
         .attribute(
-            AttributeSchema::new("joined_method", AttributeType::string_enum("JoinedMethod".to_string(), vec!["INVITED".to_string(), "CREATED".to_string()], Some(carina_core::schema::string_enum_identity("JoinedMethod", Some("awscc.organizations.Account"))), vec![("INVITED".to_string(), "invited".to_string()), ("CREATED".to_string(), "created".to_string())]))
+            AttributeSchema::new("joined_method", AttributeType::enum_(carina_core::schema::enum_identity("JoinedMethod", Some("awscc.organizations.Account")), Some(vec!["INVITED".to_string(), "CREATED".to_string()]), vec![("INVITED".to_string(), "invited".to_string()), ("CREATED".to_string(), "created".to_string())], None, None))
                 .read_only()
                 .with_description("The method by which the account joined the organization. (read-only)")
                 .with_provider_name("JoinedMethod"),
@@ -225,13 +225,13 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
                 .with_default(Value::Concrete(ConcreteValue::String("OrganizationAccountAccessRole".to_string()))),
         )
         .attribute(
-            AttributeSchema::new("state", AttributeType::string_enum("State".to_string(), vec!["PENDING_ACTIVATION".to_string(), "ACTIVE".to_string(), "SUSPENDED".to_string(), "PENDING_CLOSURE".to_string(), "CLOSED".to_string()], Some(carina_core::schema::string_enum_identity("State", Some("awscc.organizations.Account"))), vec![("PENDING_ACTIVATION".to_string(), "pending_activation".to_string()), ("ACTIVE".to_string(), "active".to_string()), ("SUSPENDED".to_string(), "suspended".to_string()), ("PENDING_CLOSURE".to_string(), "pending_closure".to_string()), ("CLOSED".to_string(), "closed".to_string())]))
+            AttributeSchema::new("state", AttributeType::enum_(carina_core::schema::enum_identity("State", Some("awscc.organizations.Account")), Some(vec!["PENDING_ACTIVATION".to_string(), "ACTIVE".to_string(), "SUSPENDED".to_string(), "PENDING_CLOSURE".to_string(), "CLOSED".to_string()]), vec![("PENDING_ACTIVATION".to_string(), "pending_activation".to_string()), ("ACTIVE".to_string(), "active".to_string()), ("SUSPENDED".to_string(), "suspended".to_string()), ("PENDING_CLOSURE".to_string(), "pending_closure".to_string()), ("CLOSED".to_string(), "closed".to_string())], None, None))
                 .read_only()
                 .with_description("The state of the account in the organization. (read-only)")
                 .with_provider_name("State"),
         )
         .attribute(
-            AttributeSchema::new("status", AttributeType::string_enum("Status".to_string(), vec!["ACTIVE".to_string(), "SUSPENDED".to_string(), "PENDING_CLOSURE".to_string()], Some(carina_core::schema::string_enum_identity("Status", Some("awscc.organizations.Account"))), vec![("ACTIVE".to_string(), "active".to_string()), ("SUSPENDED".to_string(), "suspended".to_string()), ("PENDING_CLOSURE".to_string(), "pending_closure".to_string())]))
+            AttributeSchema::new("status", AttributeType::enum_(carina_core::schema::enum_identity("Status", Some("awscc.organizations.Account")), Some(vec!["ACTIVE".to_string(), "SUSPENDED".to_string(), "PENDING_CLOSURE".to_string()]), vec![("ACTIVE".to_string(), "active".to_string()), ("SUSPENDED".to_string(), "suspended".to_string()), ("PENDING_CLOSURE".to_string(), "pending_closure".to_string())], None, None))
                 .read_only()
                 .with_description("The status of the account in the organization. (read-only)")
                 .with_provider_name("Status"),

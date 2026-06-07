@@ -37,19 +37,6 @@ fn validate_string_length_max_128(value: &Value) -> Result<(), String> {
     }
 }
 
-fn validate_string_length_max_1024(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::String(s)) = value {
-        let len = s.chars().count();
-        if len > 1024 {
-            Err(format!("String length {} is out of range ..=1024", len))
-        } else {
-            Ok(())
-        }
-    } else {
-        Ok(())
-    }
-}
-
 /// Returns the schema config for route53_hosted_zone (AWS::Route53::HostedZone)
 pub fn route53_hosted_zone_config() -> AwsccSchemaConfig {
     AwsccSchemaConfig {
@@ -82,7 +69,7 @@ pub fn route53_hosted_zone_config() -> AwsccSchemaConfig {
                 .with_provider_name("Id"),
         )
         .attribute(
-            AttributeSchema::new("name", AttributeType::custom(None, AttributeType::string(), None, Some((None, Some(1024))), legacy_validator(validate_string_length_max_1024), Some(|s: &str| s.strip_suffix('.').unwrap_or(s).to_string())))
+            AttributeSchema::new("name", AttributeType::enum_(carina_core::schema::enum_identity("Name", Some("awscc.route53.HostedZone")), None, vec![], None, Some(crate::strip_trailing_dot)))
                 .create_only()
                 .with_description("The name of the domain. Specify a fully qualified domain name, for example, *www.example.com*. The trailing dot is optional; Amazon Route 53 assumes that the domain name is fully qualified. This means that Route 53 treats *www.example.com* (without a trailing dot) and *www.example.com.* (with a trailing dot) as identical. If you're creating a public hosted zone, this is the name you have registered with your DNS registrar. If your domain name is registered with a registrar other than Route 53, change the name servers for your domain to the set of ``NameServers`` that are returned by the ``Fn::GetAtt`` intrinsic function.")
                 .with_provider_name("Name"),
