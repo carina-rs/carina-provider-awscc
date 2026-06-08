@@ -101,8 +101,8 @@ awscc.ec2.TransitGateway {
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `enable` | `awscc.ec2.TransitGateway.AutoAcceptSharedAttachments.enable` |
-| `disable` | `awscc.ec2.TransitGateway.AutoAcceptSharedAttachments.disable` |
+| `enable` | `aws.ec2.TransitGateway.AutoAcceptSharedAttachments.enable` |
+| `disable` | `aws.ec2.TransitGateway.AutoAcceptSharedAttachments.disable` |
 
 Shorthand formats: `enable` or `AutoAcceptSharedAttachments.enable`
 
@@ -110,8 +110,8 @@ Shorthand formats: `enable` or `AutoAcceptSharedAttachments.enable`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `enable` | `awscc.ec2.TransitGateway.DefaultRouteTableAssociation.enable` |
-| `disable` | `awscc.ec2.TransitGateway.DefaultRouteTableAssociation.disable` |
+| `enable` | `aws.ec2.TransitGateway.DefaultRouteTableAssociation.enable` |
+| `disable` | `aws.ec2.TransitGateway.DefaultRouteTableAssociation.disable` |
 
 Shorthand formats: `enable` or `DefaultRouteTableAssociation.enable`
 
@@ -119,8 +119,8 @@ Shorthand formats: `enable` or `DefaultRouteTableAssociation.enable`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `enable` | `awscc.ec2.TransitGateway.DefaultRouteTablePropagation.enable` |
-| `disable` | `awscc.ec2.TransitGateway.DefaultRouteTablePropagation.disable` |
+| `enable` | `aws.ec2.TransitGateway.DefaultRouteTablePropagation.enable` |
+| `disable` | `aws.ec2.TransitGateway.DefaultRouteTablePropagation.disable` |
 
 Shorthand formats: `enable` or `DefaultRouteTablePropagation.enable`
 
@@ -128,8 +128,8 @@ Shorthand formats: `enable` or `DefaultRouteTablePropagation.enable`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `enable` | `awscc.ec2.TransitGateway.DnsSupport.enable` |
-| `disable` | `awscc.ec2.TransitGateway.DnsSupport.disable` |
+| `enable` | `aws.ec2.TransitGateway.DnsSupport.enable` |
+| `disable` | `aws.ec2.TransitGateway.DnsSupport.disable` |
 
 Shorthand formats: `enable` or `DnsSupport.enable`
 
@@ -137,8 +137,8 @@ Shorthand formats: `enable` or `DnsSupport.enable`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `disable` | `awscc.ec2.TransitGateway.EncryptionSupport.disable` |
-| `enable` | `awscc.ec2.TransitGateway.EncryptionSupport.enable` |
+| `disable` | `aws.ec2.TransitGateway.EncryptionSupport.disable` |
+| `enable` | `aws.ec2.TransitGateway.EncryptionSupport.enable` |
 
 Shorthand formats: `disable` or `EncryptionSupport.disable`
 
@@ -146,8 +146,8 @@ Shorthand formats: `disable` or `EncryptionSupport.disable`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `disable` | `awscc.ec2.TransitGateway.EncryptionSupportState.disable` |
-| `enable` | `awscc.ec2.TransitGateway.EncryptionSupportState.enable` |
+| `disable` | `aws.ec2.TransitGateway.EncryptionSupportState.disable` |
+| `enable` | `aws.ec2.TransitGateway.EncryptionSupportState.enable` |
 
 Shorthand formats: `disable` or `EncryptionSupportState.disable`
 
@@ -155,8 +155,8 @@ Shorthand formats: `disable` or `EncryptionSupportState.disable`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `enable` | `awscc.ec2.TransitGateway.MulticastSupport.enable` |
-| `disable` | `awscc.ec2.TransitGateway.MulticastSupport.disable` |
+| `enable` | `aws.ec2.TransitGateway.MulticastSupport.enable` |
+| `disable` | `aws.ec2.TransitGateway.MulticastSupport.disable` |
 
 Shorthand formats: `enable` or `MulticastSupport.enable`
 
@@ -164,8 +164,8 @@ Shorthand formats: `enable` or `MulticastSupport.enable`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `enable` | `awscc.ec2.TransitGateway.SecurityGroupReferencingSupport.enable` |
-| `disable` | `awscc.ec2.TransitGateway.SecurityGroupReferencingSupport.disable` |
+| `enable` | `aws.ec2.TransitGateway.SecurityGroupReferencingSupport.enable` |
+| `disable` | `aws.ec2.TransitGateway.SecurityGroupReferencingSupport.disable` |
 
 Shorthand formats: `enable` or `SecurityGroupReferencingSupport.enable`
 
@@ -173,8 +173,8 @@ Shorthand formats: `enable` or `SecurityGroupReferencingSupport.enable`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `enable` | `awscc.ec2.TransitGateway.VpnEcmpSupport.enable` |
-| `disable` | `awscc.ec2.TransitGateway.VpnEcmpSupport.disable` |
+| `enable` | `aws.ec2.TransitGateway.VpnEcmpSupport.enable` |
+| `disable` | `aws.ec2.TransitGateway.VpnEcmpSupport.disable` |
 
 Shorthand formats: `enable` or `VpnEcmpSupport.enable`
 

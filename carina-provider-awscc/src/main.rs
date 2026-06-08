@@ -94,7 +94,7 @@ impl CarinaProvider for AwsccProcessProvider {
                 // proto's StringEnum still carries the flat namespace
                 // string for the wire form; only the core form was
                 // restructured in carina#3222.
-                namespace: Some("awscc".to_string()),
+                namespace: Some("aws".to_string()),
                 // Region API spellings carry hyphens (`ap-northeast-1`)
                 // but the DSL spelling uses underscores. Materialize
                 // the alias pairs as data; a `fn` pointer would not
@@ -193,7 +193,7 @@ impl CarinaProvider for AwsccProcessProvider {
         use carina_core::parser::ValidatorFn;
         use std::sync::OnceLock;
         static VALIDATORS: OnceLock<HashMap<String, ValidatorFn>> = OnceLock::new();
-        let validators = VALIDATORS.get_or_init(schemas::awscc_types::awscc_validators);
+        let validators = VALIDATORS.get_or_init(schemas::config::awscc_validators);
         // Inner map is still snake-cased; project the kind once at the
         // boundary. Provider-axis collisions are filtered by the host
         // before the call reaches us.

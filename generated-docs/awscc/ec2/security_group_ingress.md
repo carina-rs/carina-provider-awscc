@@ -133,12 +133,12 @@ The end of port range for the TCP and UDP protocols, or an ICMP/ICMPv6 code. A v
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `tcp` | `awscc.ec2.SecurityGroupIngress.IpProtocol.tcp` |
-| `udp` | `awscc.ec2.SecurityGroupIngress.IpProtocol.udp` |
-| `icmp` | `awscc.ec2.SecurityGroupIngress.IpProtocol.icmp` |
-| `icmpv6` | `awscc.ec2.SecurityGroupIngress.IpProtocol.icmpv6` |
-| `-1` | `awscc.ec2.SecurityGroupIngress.IpProtocol.all` |
-| `all` | `awscc.ec2.SecurityGroupIngress.IpProtocol.all` |
+| `tcp` | `aws.ec2.SecurityGroupIngress.IpProtocol.tcp` |
+| `udp` | `aws.ec2.SecurityGroupIngress.IpProtocol.udp` |
+| `icmp` | `aws.ec2.SecurityGroupIngress.IpProtocol.icmp` |
+| `icmpv6` | `aws.ec2.SecurityGroupIngress.IpProtocol.icmpv6` |
+| `-1` | `aws.ec2.SecurityGroupIngress.IpProtocol.all` |
+| `all` | `aws.ec2.SecurityGroupIngress.IpProtocol.all` |
 
 Shorthand formats: `tcp` or `IpProtocol.tcp`
 

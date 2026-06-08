@@ -6,7 +6,7 @@ use carina_core::resource::{ConcreteValue, Value};
 fn arn_identity_is_provider_scoped() {
     common::assert_arn_identity(
         carina_provider_awscc::schemas::generated::iam::oidc_provider::arn(),
-        "awscc.iam.OidcProvider.Arn",
+        "aws.iam.OidcProvider.Arn",
     );
 }
 

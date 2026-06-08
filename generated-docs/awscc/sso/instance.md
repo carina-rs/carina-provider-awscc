@@ -28,9 +28,9 @@ The name you want to assign to this Identity Center (SSO) Instance
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `CREATE_IN_PROGRESS` | `awscc.sso.Instance.Status.create_in_progress` |
-| `DELETE_IN_PROGRESS` | `awscc.sso.Instance.Status.delete_in_progress` |
-| `ACTIVE` | `awscc.sso.Instance.Status.active` |
+| `CREATE_IN_PROGRESS` | `aws.sso.Instance.Status.create_in_progress` |
+| `DELETE_IN_PROGRESS` | `aws.sso.Instance.Status.delete_in_progress` |
+| `ACTIVE` | `aws.sso.Instance.Status.active` |
 
 Shorthand formats: `create_in_progress` or `Status.create_in_progress`
 

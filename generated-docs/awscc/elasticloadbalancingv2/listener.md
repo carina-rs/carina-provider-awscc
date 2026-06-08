@@ -99,11 +99,11 @@ The protocol for connections from clients to the load balancer. For Application 
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `text/plain` | `awscc.elasticloadbalancingv2.Listener.Action.FixedResponseConfig.ContentType.text/plain` |
-| `text/css` | `awscc.elasticloadbalancingv2.Listener.Action.FixedResponseConfig.ContentType.text/css` |
-| `text/html` | `awscc.elasticloadbalancingv2.Listener.Action.FixedResponseConfig.ContentType.text/html` |
-| `application/javascript` | `awscc.elasticloadbalancingv2.Listener.Action.FixedResponseConfig.ContentType.application/javascript` |
-| `application/json` | `awscc.elasticloadbalancingv2.Listener.Action.FixedResponseConfig.ContentType.application/json` |
+| `text/plain` | `aws.elasticloadbalancingv2.Listener.Action.FixedResponseConfig.ContentType.text/plain` |
+| `text/css` | `aws.elasticloadbalancingv2.Listener.Action.FixedResponseConfig.ContentType.text/css` |
+| `text/html` | `aws.elasticloadbalancingv2.Listener.Action.FixedResponseConfig.ContentType.text/html` |
+| `application/javascript` | `aws.elasticloadbalancingv2.Listener.Action.FixedResponseConfig.ContentType.application/javascript` |
+| `application/json` | `aws.elasticloadbalancingv2.Listener.Action.FixedResponseConfig.ContentType.application/json` |
 
 Shorthand formats: `text/plain` or `ContentType.text/plain`
 
@@ -111,9 +111,9 @@ Shorthand formats: `text/plain` or `ContentType.text/plain`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `off` | `awscc.elasticloadbalancingv2.Listener.MutualAuthentication.Mode.off` |
-| `passthrough` | `awscc.elasticloadbalancingv2.Listener.MutualAuthentication.Mode.passthrough` |
-| `verify` | `awscc.elasticloadbalancingv2.Listener.MutualAuthentication.Mode.verify` |
+| `off` | `aws.elasticloadbalancingv2.Listener.MutualAuthentication.Mode.off` |
+| `passthrough` | `aws.elasticloadbalancingv2.Listener.MutualAuthentication.Mode.passthrough` |
+| `verify` | `aws.elasticloadbalancingv2.Listener.MutualAuthentication.Mode.verify` |
 
 Shorthand formats: `off` or `Mode.off`
 

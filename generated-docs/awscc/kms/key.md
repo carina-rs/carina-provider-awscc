@@ -165,23 +165,23 @@ Assigns one or more tags to the replica key. Tagging or untagging a KMS key can 
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `SYMMETRIC_DEFAULT` | `awscc.kms.Key.KeySpec.symmetric_default` |
-| `RSA_2048` | `awscc.kms.Key.KeySpec.rsa_2048` |
-| `RSA_3072` | `awscc.kms.Key.KeySpec.rsa_3072` |
-| `RSA_4096` | `awscc.kms.Key.KeySpec.rsa_4096` |
-| `ECC_NIST_P256` | `awscc.kms.Key.KeySpec.ecc_nist_p256` |
-| `ECC_NIST_P384` | `awscc.kms.Key.KeySpec.ecc_nist_p384` |
-| `ECC_NIST_P521` | `awscc.kms.Key.KeySpec.ecc_nist_p521` |
-| `ECC_SECG_P256K1` | `awscc.kms.Key.KeySpec.ecc_secg_p256k1` |
-| `HMAC_224` | `awscc.kms.Key.KeySpec.hmac_224` |
-| `HMAC_256` | `awscc.kms.Key.KeySpec.hmac_256` |
-| `HMAC_384` | `awscc.kms.Key.KeySpec.hmac_384` |
-| `HMAC_512` | `awscc.kms.Key.KeySpec.hmac_512` |
-| `SM2` | `awscc.kms.Key.KeySpec.sm2` |
-| `ML_DSA_44` | `awscc.kms.Key.KeySpec.ml_dsa_44` |
-| `ML_DSA_65` | `awscc.kms.Key.KeySpec.ml_dsa_65` |
-| `ML_DSA_87` | `awscc.kms.Key.KeySpec.ml_dsa_87` |
-| `ECC_NIST_EDWARDS25519` | `awscc.kms.Key.KeySpec.ecc_nist_edwards25519` |
+| `SYMMETRIC_DEFAULT` | `aws.kms.Key.KeySpec.symmetric_default` |
+| `RSA_2048` | `aws.kms.Key.KeySpec.rsa_2048` |
+| `RSA_3072` | `aws.kms.Key.KeySpec.rsa_3072` |
+| `RSA_4096` | `aws.kms.Key.KeySpec.rsa_4096` |
+| `ECC_NIST_P256` | `aws.kms.Key.KeySpec.ecc_nist_p256` |
+| `ECC_NIST_P384` | `aws.kms.Key.KeySpec.ecc_nist_p384` |
+| `ECC_NIST_P521` | `aws.kms.Key.KeySpec.ecc_nist_p521` |
+| `ECC_SECG_P256K1` | `aws.kms.Key.KeySpec.ecc_secg_p256k1` |
+| `HMAC_224` | `aws.kms.Key.KeySpec.hmac_224` |
+| `HMAC_256` | `aws.kms.Key.KeySpec.hmac_256` |
+| `HMAC_384` | `aws.kms.Key.KeySpec.hmac_384` |
+| `HMAC_512` | `aws.kms.Key.KeySpec.hmac_512` |
+| `SM2` | `aws.kms.Key.KeySpec.sm2` |
+| `ML_DSA_44` | `aws.kms.Key.KeySpec.ml_dsa_44` |
+| `ML_DSA_65` | `aws.kms.Key.KeySpec.ml_dsa_65` |
+| `ML_DSA_87` | `aws.kms.Key.KeySpec.ml_dsa_87` |
+| `ECC_NIST_EDWARDS25519` | `aws.kms.Key.KeySpec.ecc_nist_edwards25519` |
 
 Shorthand formats: `symmetric_default` or `KeySpec.symmetric_default`
 
@@ -189,10 +189,10 @@ Shorthand formats: `symmetric_default` or `KeySpec.symmetric_default`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `ENCRYPT_DECRYPT` | `awscc.kms.Key.KeyUsage.encrypt_decrypt` |
-| `SIGN_VERIFY` | `awscc.kms.Key.KeyUsage.sign_verify` |
-| `GENERATE_VERIFY_MAC` | `awscc.kms.Key.KeyUsage.generate_verify_mac` |
-| `KEY_AGREEMENT` | `awscc.kms.Key.KeyUsage.key_agreement` |
+| `ENCRYPT_DECRYPT` | `aws.kms.Key.KeyUsage.encrypt_decrypt` |
+| `SIGN_VERIFY` | `aws.kms.Key.KeyUsage.sign_verify` |
+| `GENERATE_VERIFY_MAC` | `aws.kms.Key.KeyUsage.generate_verify_mac` |
+| `KEY_AGREEMENT` | `aws.kms.Key.KeyUsage.key_agreement` |
 
 Shorthand formats: `encrypt_decrypt` or `KeyUsage.encrypt_decrypt`
 
@@ -200,8 +200,8 @@ Shorthand formats: `encrypt_decrypt` or `KeyUsage.encrypt_decrypt`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `AWS_KMS` | `awscc.kms.Key.Origin.aws_kms` |
-| `EXTERNAL` | `awscc.kms.Key.Origin.external` |
+| `AWS_KMS` | `aws.kms.Key.Origin.aws_kms` |
+| `EXTERNAL` | `aws.kms.Key.Origin.external` |
 
 Shorthand formats: `aws_kms` or `Origin.aws_kms`
 

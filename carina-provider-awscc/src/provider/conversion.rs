@@ -10,7 +10,7 @@ use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{AttributeType, ResourceSchema, Shape, ShapeWalkBudget, StructField};
 use serde_json::json;
 
-use crate::schemas::generated::canonicalize_enum_value;
+use carina_aws_types::canonicalize_enum_value;
 use carina_core::utils::{convert_enum_value, extract_enum_value_with_values};
 
 fn struct_fields_for<'a>(
@@ -478,7 +478,7 @@ mod tests {
             ],
             Some(carina_core::schema::enum_identity(
                 "ViewerProtocolPolicy",
-                Some("awscc.cloudfront.Distribution"),
+                Some("aws.cloudfront.Distribution"),
             )),
             vec![(
                 "redirect-to-https".to_string(),
@@ -519,7 +519,7 @@ mod tests {
     }
 
     // awscc#254 literal reproduction: read the real generated
-    // `awscc.cloudfront.Distribution` `distribution_config` from a
+    // `aws.cloudfront.Distribution` `distribution_config` from a
     // CloudControl-shaped response (PascalCase keys, raw API enum
     // values) and assert the nested enum leaves are persisted as the
     // API-canonical value, then lift to the canonical fully-qualified identifier
@@ -585,7 +585,7 @@ mod tests {
         assert_eq!(
             lifted_top.get("price_class"),
             Some(&Value::Concrete(ConcreteValue::EnumIdentifier(
-                "awscc.cloudfront.Distribution.DistributionConfig.PriceClass.price_class_200"
+                "aws.cloudfront.Distribution.DistributionConfig.PriceClass.price_class_200"
                     .to_string()
             )))
         );
@@ -597,7 +597,7 @@ mod tests {
         assert_eq!(
             lifted_dcb.get("viewer_protocol_policy"),
             Some(&Value::Concrete(ConcreteValue::EnumIdentifier(
-                "awscc.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.ViewerProtocolPolicy.redirect_to_https"
+                "aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.ViewerProtocolPolicy.redirect_to_https"
                     .to_string()
             )))
         );
@@ -785,7 +785,7 @@ mod tests {
         assert_eq!(
             dsl_resolved,
             Value::Concrete(ConcreteValue::String(
-                "awscc.ec2.VpcEndpoint.VpcEndpointType.gateway".to_string()
+                "aws.ec2.VpcEndpoint.VpcEndpointType.gateway".to_string()
             )),
             "DSL bare ident `Gateway` should resolve to snake_case namespaced form"
         );
@@ -816,7 +816,7 @@ mod tests {
         assert_eq!(
             lifted,
             Value::Concrete(ConcreteValue::EnumIdentifier(
-                "awscc.ec2.VpcEndpoint.VpcEndpointType.gateway".to_string()
+                "aws.ec2.VpcEndpoint.VpcEndpointType.gateway".to_string()
             )),
             "state-lift must reduce the API value to the canonical fully-qualified identifier"
         );
@@ -833,12 +833,12 @@ mod tests {
             ],
             Some(carina_core::schema::enum_identity(
                 "LogGroupClass",
-                Some("awscc.logs.LogGroup"),
+                Some("aws.logs.LogGroup"),
             )),
             vec![],
         );
         let value = Value::Concrete(ConcreteValue::String(
-            "awscc.logs.LogGroup.LogGroupClass.INFREQUENT_ACCESS".to_string(),
+            "aws.logs.LogGroup.LogGroupClass.INFREQUENT_ACCESS".to_string(),
         ));
         let result = dsl_value_to_aws_with_defs(
             &value,
@@ -861,7 +861,7 @@ mod tests {
             None,
         );
         let value = Value::Concrete(ConcreteValue::String(
-            "awscc.Region.ap_northeast_1".to_string(),
+            "aws.Region.ap_northeast_1".to_string(),
         ));
         let result = dsl_value_to_aws_with_defs(
             &value,
@@ -881,17 +881,17 @@ mod tests {
             vec!["GET".to_string(), "PUT".to_string(), "DELETE".to_string()],
             Some(carina_core::schema::enum_identity(
                 "AllowedMethod",
-                Some("awscc.s3.Bucket"),
+                Some("aws.s3.Bucket"),
             )),
             vec![],
         );
         let attr_type = AttributeType::list(inner);
         let value = Value::Concrete(ConcreteValue::List(vec![
             Value::Concrete(ConcreteValue::String(
-                "awscc.s3.Bucket.AllowedMethod.GET".to_string(),
+                "aws.s3.Bucket.AllowedMethod.GET".to_string(),
             )),
             Value::Concrete(ConcreteValue::String(
-                "awscc.s3.Bucket.AllowedMethod.PUT".to_string(),
+                "aws.s3.Bucket.AllowedMethod.PUT".to_string(),
             )),
         ]));
         let result = dsl_value_to_aws_with_defs(
@@ -912,7 +912,7 @@ mod tests {
             vec!["GET".to_string(), "PUT".to_string(), "DELETE".to_string()],
             Some(carina_core::schema::enum_identity(
                 "AllowedMethod",
-                Some("awscc.s3.Bucket"),
+                Some("aws.s3.Bucket"),
             )),
             vec![],
         );
@@ -942,7 +942,7 @@ mod tests {
             vec!["GET".to_string(), "PUT".to_string()],
             Some(carina_core::schema::enum_identity(
                 "AllowedMethod",
-                Some("awscc.s3.Bucket"),
+                Some("aws.s3.Bucket"),
             )),
             vec![],
         );
@@ -976,15 +976,13 @@ mod tests {
                 vec!["tcp".to_string(), "udp".to_string()],
                 Some(carina_core::schema::enum_identity(
                     "Protocol",
-                    Some("awscc.ec2.Sg"),
+                    Some("aws.ec2.Sg"),
                 )),
                 vec![],
             ),
             AttributeType::string(),
         ]);
-        let value = Value::Concrete(ConcreteValue::String(
-            "awscc.ec2.Sg.Protocol.tcp".to_string(),
-        ));
+        let value = Value::Concrete(ConcreteValue::String("aws.ec2.Sg.Protocol.tcp".to_string()));
         let result = dsl_value_to_aws_with_defs(
             &value,
             &attr_type,
@@ -1038,7 +1036,7 @@ mod tests {
             vec!["Active".to_string(), "Inactive".to_string()],
             Some(carina_core::schema::enum_identity(
                 "Status",
-                Some("awscc.test.resource"),
+                Some("aws.test.resource"),
             )),
             vec![],
         );
@@ -1048,7 +1046,7 @@ mod tests {
         map.insert(
             "item_one".to_string(),
             Value::Concrete(ConcreteValue::String(
-                "awscc.test.resource.Status.Active".to_string(),
+                "aws.test.resource.Status.Active".to_string(),
             )),
         );
         let dsl_value = Value::Concrete(ConcreteValue::Map(map));
@@ -1116,7 +1114,7 @@ mod tests {
                 vec!["tcp".to_string(), "udp".to_string()],
                 Some(carina_core::schema::enum_identity(
                     "Protocol",
-                    Some("awscc.ec2.Sg"),
+                    Some("aws.ec2.Sg"),
                 )),
                 vec![],
             ),
@@ -1145,7 +1143,7 @@ mod tests {
                 vec!["tcp".to_string(), "udp".to_string()],
                 Some(carina_core::schema::enum_identity(
                     "Protocol",
-                    Some("awscc.ec2.Sg"),
+                    Some("aws.ec2.Sg"),
                 )),
                 vec![],
             ),
@@ -1273,7 +1271,7 @@ mod tests {
                 (
                     "version".to_string(),
                     Value::Concrete(ConcreteValue::EnumIdentifier(
-                        "awscc.iam.PolicyDocument.Version.2012_10_17".to_string(),
+                        "aws.iam.PolicyDocument.Version.2012_10_17".to_string(),
                     )),
                 ),
                 (
@@ -1489,7 +1487,7 @@ mod tests {
         assert_eq!(
             lifted_map.get("version"),
             Some(&Value::Concrete(ConcreteValue::EnumIdentifier(
-                "awscc.iam.PolicyDocument.Version.2012_10_17".to_string()
+                "aws.iam.PolicyDocument.Version.2012_10_17".to_string()
             )))
         );
         let Some(Value::Concrete(ConcreteValue::List(stmts))) = lifted_map.get("statement") else {
@@ -1501,7 +1499,7 @@ mod tests {
         assert_eq!(
             stmt.get("effect"),
             Some(&Value::Concrete(ConcreteValue::EnumIdentifier(
-                "awscc.iam.PolicyDocument.Statement.Effect.allow".to_string()
+                "aws.iam.PolicyDocument.Statement.Effect.allow".to_string()
             )))
         );
     }
@@ -1510,10 +1508,10 @@ mod tests {
     // is persisted as the hyphen API form, not a DSL string.
     #[test]
     fn test_aws_value_to_dsl_region_in_struct_is_api_canonical() {
-        use crate::schemas::awscc_types::awscc_region;
+        use carina_aws_types::aws_region;
 
         let fields = vec![
-            StructField::new("region_name", awscc_region())
+            StructField::new("region_name", aws_region())
                 .required()
                 .with_provider_name("RegionName"),
         ];
@@ -1547,7 +1545,7 @@ mod tests {
             vec!["ipsec.1".to_string()],
             Some(carina_core::schema::enum_identity(
                 "Type",
-                Some("awscc.ec2.VpnGateway"),
+                Some("aws.ec2.VpnGateway"),
             )),
             vec![],
         );
@@ -1578,12 +1576,12 @@ mod tests {
             vec!["ipsec.1".to_string()],
             Some(carina_core::schema::enum_identity(
                 "Type",
-                Some("awscc.ec2.VpnGateway"),
+                Some("aws.ec2.VpnGateway"),
             )),
             vec![],
         );
         let value = Value::Concrete(ConcreteValue::String(
-            "awscc.ec2.VpnGateway.Type.ipsec.1".to_string(),
+            "aws.ec2.VpnGateway.Type.ipsec.1".to_string(),
         ));
 
         let result = dsl_value_to_aws_with_defs(
@@ -1604,7 +1602,7 @@ mod tests {
             vec!["ipsec.1".to_string()],
             Some(carina_core::schema::enum_identity(
                 "Type",
-                Some("awscc.ec2.VpnGateway"),
+                Some("aws.ec2.VpnGateway"),
             )),
             vec![],
         );
@@ -1628,7 +1626,7 @@ mod tests {
             vec!["ipsec.1".to_string()],
             Some(carina_core::schema::enum_identity(
                 "Type",
-                Some("awscc.ec2.VpnGateway"),
+                Some("aws.ec2.VpnGateway"),
             )),
             vec![],
         );
@@ -1879,7 +1877,7 @@ mod tests {
 
     /// Regression for #199: a snake_case DSL enum value (here
     /// `bucket_owner_enforced`) must validate against the regenerated
-    /// `awscc.s3.Bucket.OwnershipControls.OwnershipControlsRule.ObjectOwnership` schema,
+    /// `aws.s3.Bucket.OwnershipControls.OwnershipControlsRule.ObjectOwnership` schema,
     /// and `dsl_value_to_aws` must round-trip it back to the AWS
     /// spelling (`BucketOwnerEnforced`).
     #[test]
@@ -1926,7 +1924,7 @@ mod tests {
         // `EnumIdentifier`; a `String` here would route to
         // `StringLiteralExpectedEnum`.
         let snake_case_value = Value::Concrete(ConcreteValue::EnumIdentifier(
-            "awscc.s3.Bucket.OwnershipControls.OwnershipControlsRule.ObjectOwnership.bucket_owner_enforced"
+            "aws.s3.Bucket.OwnershipControls.OwnershipControlsRule.ObjectOwnership.bucket_owner_enforced"
                 .to_string(),
         ));
         let ownership_schema =
@@ -1940,7 +1938,7 @@ mod tests {
         // rejected. State JSON still flows through `aws_value_to_dsl`
         // separately, so this only gates DSL-source values.
         let pascal_value = Value::Concrete(ConcreteValue::EnumIdentifier(
-            "awscc.s3.Bucket.OwnershipControls.OwnershipControlsRule.ObjectOwnership.BucketOwnerEnforced".to_string(),
+            "aws.s3.Bucket.OwnershipControls.OwnershipControlsRule.ObjectOwnership.BucketOwnerEnforced".to_string(),
         ));
         assert!(
             ownership_schema.validate(&pascal_value).is_err(),
@@ -1977,7 +1975,7 @@ mod tests {
         assert_eq!(
             lifted,
             Value::Concrete(ConcreteValue::EnumIdentifier(
-                "awscc.s3.Bucket.OwnershipControls.OwnershipControlsRule.ObjectOwnership.bucket_owner_enforced"
+                "aws.s3.Bucket.OwnershipControls.OwnershipControlsRule.ObjectOwnership.bucket_owner_enforced"
                     .to_string()
             )),
             "state-lift must reduce the API value to the canonical fully-qualified identifier"

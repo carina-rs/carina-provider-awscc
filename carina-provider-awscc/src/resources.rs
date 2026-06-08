@@ -2,7 +2,8 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::schemas::generated::{AwsccSchemaConfig, configs, get_config_by_type};
+    use crate::schemas::config::AwsccSchemaConfig;
+    use crate::schemas::generated::{configs, get_config_by_type};
 
     /// Helper to find a config by resource type. O(1) via cached HashMap.
     fn get_config(resource_type: &str) -> Option<&'static AwsccSchemaConfig> {

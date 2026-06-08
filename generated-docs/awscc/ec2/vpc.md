@@ -87,9 +87,9 @@ The tags for the VPC.
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `default` | `awscc.ec2.Vpc.InstanceTenancy.default` |
-| `dedicated` | `awscc.ec2.Vpc.InstanceTenancy.dedicated` |
-| `host` | `awscc.ec2.Vpc.InstanceTenancy.host` |
+| `default` | `aws.ec2.Vpc.InstanceTenancy.default` |
+| `dedicated` | `aws.ec2.Vpc.InstanceTenancy.dedicated` |
+| `host` | `aws.ec2.Vpc.InstanceTenancy.host` |
 
 Shorthand formats: `default` or `InstanceTenancy.default`
 

@@ -32,7 +32,7 @@ use aws_sdk_sts::Client as StsClient;
 use carina_core::provider::{ProviderError, ProviderResult};
 use tokio::sync::OnceCell;
 
-use crate::schemas::generated::AwsccSchemaConfig;
+use crate::schemas::config::AwsccSchemaConfig;
 
 // Re-export public API
 pub use normalizer::{

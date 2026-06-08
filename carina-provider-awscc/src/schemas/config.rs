@@ -1,17 +1,17 @@
 //! AWS Cloud Control type definitions and validators
 //!
-//! This module re-exports shared AWS type validators from `carina-aws-types`
-//! and defines provider-specific types (region, availability zone, schema config,
-//! IAM policy document).
+//! This module defines provider-specific schema config and validator
+//! registration for shared AWS types from `carina-aws-types`.
 
-pub use carina_aws_types::*;
-
-use std::collections::HashMap;
-
+#[cfg(test)]
+use carina_aws_types::find_matching_enum_value;
 use carina_core::parser::ValidatorFn;
+#[cfg(test)]
 use carina_core::resource::{ConcreteValue, Value};
-use carina_core::schema::{AttributeType, ResourceSchema, legacy_validator};
+use carina_core::schema::ResourceSchema;
+#[cfg(test)]
 use carina_core::utils::{extract_enum_value, validate_enum_namespace};
+use std::collections::HashMap;
 
 /// AWS Cloud Control schema configuration
 ///
@@ -53,6 +53,8 @@ macro_rules! register_validators {
 /// These validators are keyed by type name (matching the names used in fn/module
 /// type annotations) and wrap the validation functions from `carina-aws-types`.
 pub fn awscc_validators() -> HashMap<String, ValidatorFn> {
+    use carina_aws_types::*;
+
     register_validators! {
         simple {
             arn => validate_arn,
@@ -137,194 +139,19 @@ pub(crate) fn validate_namespaced_enum(
     }
 }
 
-/// AWSCC region type with custom validation
-/// Accepts:
-/// - DSL format: awscc.Region.ap_northeast_1
-/// - AWS string format: "ap-northeast-1"
-/// - Shorthand: ap_northeast_1
-pub fn awscc_region() -> AttributeType {
-    AttributeType::enum_(
-        carina_aws_types::provider_bare_type(&[], "Region"),
-        None,
-        vec![],
-        Some(legacy_validator(|value| {
-            if let Value::Concrete(ConcreteValue::String(s)) = value {
-                let id = carina_aws_types::provider_bare_type(&[], "Region");
-                validate_enum_namespace(s, &id)
-                    .map_err(|reason| format!("Invalid region '{}': {}", s, reason))?;
-                let normalized = extract_enum_value(s).replace('_', "-");
-                if is_valid_region(&normalized) {
-                    Ok(())
-                } else {
-                    Err(format!(
-                        "Invalid region '{}', expected one of: {} or DSL format like awscc.Region.ap_northeast_1",
-                        s,
-                        valid_regions_display()
-                    ))
-                }
-            } else {
-                Err("Expected string".to_string())
-            }
-        })),
-        Some(carina_core::schema::DslTransform::HyphenToUnderscore),
-    )
-}
-
-/// Availability Zone type (e.g., "us-east-1a", "ap-northeast-1c")
-/// Validates format: region + single letter zone identifier
-pub fn availability_zone() -> AttributeType {
-    AttributeType::enum_(
-        carina_aws_types::provider_bare_type(&["AvailabilityZone"], "ZoneName"),
-        None,
-        vec![],
-        Some(legacy_validator(|value| {
-            if let Value::Concrete(ConcreteValue::String(s)) = value {
-                let id = carina_aws_types::provider_bare_type(&["AvailabilityZone"], "ZoneName");
-                validate_enum_namespace(s, &id)
-                    .map_err(|reason| format!("Invalid availability zone '{}': {}", s, reason))?;
-                let extracted = extract_enum_value(s);
-                let normalized = extracted.replace('_', "-");
-                validate_availability_zone(&normalized)
-                    .map_err(|reason| format!("Invalid availability zone '{}': {}", s, reason))
-            } else {
-                Err("Expected string".to_string())
-            }
-        })),
-        Some(carina_core::schema::DslTransform::HyphenToUnderscore),
-    )
-}
-
-// iam_policy_document() and validate_iam_policy_document() are provided by
-// `pub use carina_aws_types::*` above
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn validate_availability_zone_namespace_expanded() {
-        let t = availability_zone();
-        // Full namespace format — under the structured identity the
-        // type lives at `awscc.AvailabilityZone.ZoneName`, so the value
-        // form carries the kind segment as well.
-        assert!(
-            carina_core::schema::Schema::flat(t.clone())
-                .validate(&Value::Concrete(ConcreteValue::String(
-                    "awscc.AvailabilityZone.ZoneName.us_east_1a".to_string()
-                )))
-                .is_ok()
-        );
-        // 2-part shorthand: TypeName matches the identity's kind.
-        assert!(
-            carina_core::schema::Schema::flat(t.clone())
-                .validate(&Value::Concrete(ConcreteValue::String(
-                    "ZoneName.us_east_1a".to_string()
-                )))
-                .is_ok()
-        );
-        // Shorthand format
-        assert!(
-            carina_core::schema::Schema::flat(t.clone())
-                .validate(&Value::Concrete(ConcreteValue::String(
-                    "us_east_1a".to_string()
-                )))
-                .is_ok()
-        );
-        // AWS format
-        assert!(
-            carina_core::schema::Schema::flat(t.clone())
-                .validate(&Value::Concrete(ConcreteValue::String(
-                    "us-east-1a".to_string()
-                )))
-                .is_ok()
-        );
-    }
-
-    #[test]
-    fn validate_availability_zone_rejects_wrong_namespace() {
-        let t = availability_zone();
-        assert!(
-            carina_core::schema::Schema::flat(t.clone())
-                .validate(&Value::Concrete(ConcreteValue::String(
-                    "aws.AvailabilityZone.us_east_1a".to_string()
-                )))
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn validate_availability_zone_rejects_invalid() {
-        let t = availability_zone();
-        assert!(
-            carina_core::schema::Schema::flat(t.clone())
-                .validate(&Value::Concrete(ConcreteValue::String(
-                    "us-east-1".to_string()
-                )))
-                .is_err()
-        ); // no zone letter
-        assert!(
-            carina_core::schema::Schema::flat(t.clone())
-                .validate(&Value::Concrete(ConcreteValue::String(
-                    "invalid".to_string()
-                )))
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn validate_availability_zone_to_dsl() {
-        // Post-#3222: AZ is a CustomEnum (the namespaced shorthand
-        // path), not a structural Custom.
-        let t = availability_zone();
-        if let carina_core::schema::RawShape::Enum { to_dsl, .. } = t.raw_shape() {
-            let transform = to_dsl.unwrap();
-            assert_eq!(transform.apply("us-east-1a"), "us_east_1a");
-            assert_eq!(transform.apply("ap-northeast-1c"), "ap_northeast_1c");
-        } else {
-            panic!("Expected Enum type");
-        }
-    }
-
-    #[test]
-    fn awscc_region_accepts_awscc_namespace() {
-        let region_type = awscc_region();
-        let schema = carina_core::schema::Schema::flat(region_type);
-        assert!(
-            schema
-                .validate(&Value::Concrete(ConcreteValue::String(
-                    "awscc.Region.ap_northeast_1".to_string()
-                )))
-                .is_ok()
-        );
-        assert!(
-            schema
-                .validate(&Value::Concrete(ConcreteValue::String(
-                    "ap-northeast-1".to_string()
-                )))
-                .is_ok()
-        );
-    }
-
-    #[test]
-    fn awscc_region_rejects_aws_namespace() {
-        let region_type = awscc_region();
-        assert!(
-            carina_core::schema::Schema::flat(region_type)
-                .validate(&Value::Concrete(ConcreteValue::String(
-                    "aws.Region.ap_northeast_1".to_string()
-                )))
-                .is_err()
-        );
-    }
+    use carina_aws_types::validate_iam_policy_document;
 
     #[test]
     fn validate_namespaced_enum_basic() {
         let result = validate_namespaced_enum(
             &Value::Concrete(ConcreteValue::String(
-                "awscc.ec2.Vpc.InstanceTenancy.default".to_string(),
+                "aws.ec2.Vpc.InstanceTenancy.default".to_string(),
             )),
             "InstanceTenancy",
-            "awscc.ec2.Vpc",
+            "aws.ec2.Vpc",
             &["default", "dedicated", "host"],
         );
         assert!(result.is_ok());

@@ -129,8 +129,8 @@ The type of traffic to log. You can log traffic that the resource accepts or rej
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `plain-text` | `awscc.ec2.FlowLog.DestinationOptions.FileFormat.plain_text` |
-| `parquet` | `awscc.ec2.FlowLog.DestinationOptions.FileFormat.parquet` |
+| `plain-text` | `aws.ec2.FlowLog.DestinationOptions.FileFormat.plain_text` |
+| `parquet` | `aws.ec2.FlowLog.DestinationOptions.FileFormat.parquet` |
 
 Shorthand formats: `plain_text` or `FileFormat.plain_text`
 
@@ -138,9 +138,9 @@ Shorthand formats: `plain_text` or `FileFormat.plain_text`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `cloud-watch-logs` | `awscc.ec2.FlowLog.LogDestinationType.cloud_watch_logs` |
-| `s3` | `awscc.ec2.FlowLog.LogDestinationType.s3` |
-| `kinesis-data-firehose` | `awscc.ec2.FlowLog.LogDestinationType.kinesis_data_firehose` |
+| `cloud-watch-logs` | `aws.ec2.FlowLog.LogDestinationType.cloud_watch_logs` |
+| `s3` | `aws.ec2.FlowLog.LogDestinationType.s3` |
+| `kinesis-data-firehose` | `aws.ec2.FlowLog.LogDestinationType.kinesis_data_firehose` |
 
 Shorthand formats: `cloud_watch_logs` or `LogDestinationType.cloud_watch_logs`
 
@@ -148,12 +148,12 @@ Shorthand formats: `cloud_watch_logs` or `LogDestinationType.cloud_watch_logs`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `NetworkInterface` | `awscc.ec2.FlowLog.ResourceType.network_interface` |
-| `Subnet` | `awscc.ec2.FlowLog.ResourceType.subnet` |
-| `VPC` | `awscc.ec2.FlowLog.ResourceType.vpc` |
-| `TransitGateway` | `awscc.ec2.FlowLog.ResourceType.transit_gateway` |
-| `TransitGatewayAttachment` | `awscc.ec2.FlowLog.ResourceType.transit_gateway_attachment` |
-| `RegionalNatGateway` | `awscc.ec2.FlowLog.ResourceType.regional_nat_gateway` |
+| `NetworkInterface` | `aws.ec2.FlowLog.ResourceType.network_interface` |
+| `Subnet` | `aws.ec2.FlowLog.ResourceType.subnet` |
+| `VPC` | `aws.ec2.FlowLog.ResourceType.vpc` |
+| `TransitGateway` | `aws.ec2.FlowLog.ResourceType.transit_gateway` |
+| `TransitGatewayAttachment` | `aws.ec2.FlowLog.ResourceType.transit_gateway_attachment` |
+| `RegionalNatGateway` | `aws.ec2.FlowLog.ResourceType.regional_nat_gateway` |
 
 Shorthand formats: `network_interface` or `ResourceType.network_interface`
 
@@ -161,9 +161,9 @@ Shorthand formats: `network_interface` or `ResourceType.network_interface`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `ACCEPT` | `awscc.ec2.FlowLog.TrafficType.accept` |
-| `ALL` | `awscc.ec2.FlowLog.TrafficType.all` |
-| `REJECT` | `awscc.ec2.FlowLog.TrafficType.reject` |
+| `ACCEPT` | `aws.ec2.FlowLog.TrafficType.accept` |
+| `ALL` | `aws.ec2.FlowLog.TrafficType.all` |
+| `REJECT` | `aws.ec2.FlowLog.TrafficType.reject` |
 
 Shorthand formats: `accept` or `TrafficType.accept`
 

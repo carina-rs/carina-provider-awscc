@@ -196,9 +196,9 @@ Represents the warm throughput (in read units per second and write units per sec
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `S` | `awscc.dynamodb.Table.AttributeDefinition.AttributeType.s` |
-| `N` | `awscc.dynamodb.Table.AttributeDefinition.AttributeType.n` |
-| `B` | `awscc.dynamodb.Table.AttributeDefinition.AttributeType.b` |
+| `S` | `aws.dynamodb.Table.AttributeDefinition.AttributeType.s` |
+| `N` | `aws.dynamodb.Table.AttributeDefinition.AttributeType.n` |
+| `B` | `aws.dynamodb.Table.AttributeDefinition.AttributeType.b` |
 
 Shorthand formats: `s` or `AttributeType.s`
 
@@ -206,8 +206,8 @@ Shorthand formats: `s` or `AttributeType.s`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `PAY_PER_REQUEST` | `awscc.dynamodb.Table.BillingMode.pay_per_request` |
-| `PROVISIONED` | `awscc.dynamodb.Table.BillingMode.provisioned` |
+| `PAY_PER_REQUEST` | `aws.dynamodb.Table.BillingMode.pay_per_request` |
+| `PROVISIONED` | `aws.dynamodb.Table.BillingMode.provisioned` |
 
 Shorthand formats: `pay_per_request` or `BillingMode.pay_per_request`
 
@@ -215,8 +215,8 @@ Shorthand formats: `pay_per_request` or `BillingMode.pay_per_request`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `ACCESSED_AND_THROTTLED_KEYS` | `awscc.dynamodb.Table.ContributorInsightsSpecification.Mode.accessed_and_throttled_keys` |
-| `THROTTLED_KEYS` | `awscc.dynamodb.Table.ContributorInsightsSpecification.Mode.throttled_keys` |
+| `ACCESSED_AND_THROTTLED_KEYS` | `aws.dynamodb.Table.ContributorInsightsSpecification.Mode.accessed_and_throttled_keys` |
+| `THROTTLED_KEYS` | `aws.dynamodb.Table.ContributorInsightsSpecification.Mode.throttled_keys` |
 
 Shorthand formats: `accessed_and_throttled_keys` or `Mode.accessed_and_throttled_keys`
 
@@ -224,9 +224,9 @@ Shorthand formats: `accessed_and_throttled_keys` or `Mode.accessed_and_throttled
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `CSV` | `awscc.dynamodb.Table.ImportSourceSpecification.InputFormat.csv` |
-| `DYNAMODB_JSON` | `awscc.dynamodb.Table.ImportSourceSpecification.InputFormat.dynamodb_json` |
-| `ION` | `awscc.dynamodb.Table.ImportSourceSpecification.InputFormat.ion` |
+| `CSV` | `aws.dynamodb.Table.ImportSourceSpecification.InputFormat.csv` |
+| `DYNAMODB_JSON` | `aws.dynamodb.Table.ImportSourceSpecification.InputFormat.dynamodb_json` |
+| `ION` | `aws.dynamodb.Table.ImportSourceSpecification.InputFormat.ion` |
 
 Shorthand formats: `csv` or `InputFormat.csv`
 
@@ -234,8 +234,8 @@ Shorthand formats: `csv` or `InputFormat.csv`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `HASH` | `awscc.dynamodb.Table.GlobalSecondaryIndex.KeySchema.KeyType.hash` |
-| `RANGE` | `awscc.dynamodb.Table.GlobalSecondaryIndex.KeySchema.KeyType.range` |
+| `HASH` | `aws.dynamodb.Table.GlobalSecondaryIndex.KeySchema.KeyType.hash` |
+| `RANGE` | `aws.dynamodb.Table.GlobalSecondaryIndex.KeySchema.KeyType.range` |
 
 Shorthand formats: `hash` or `KeyType.hash`
 
@@ -243,8 +243,8 @@ Shorthand formats: `hash` or `KeyType.hash`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `MICROSECOND` | `awscc.dynamodb.Table.KinesisStreamSpecification.ApproximateCreationDateTimePrecision.microsecond` |
-| `MILLISECOND` | `awscc.dynamodb.Table.KinesisStreamSpecification.ApproximateCreationDateTimePrecision.millisecond` |
+| `MICROSECOND` | `aws.dynamodb.Table.KinesisStreamSpecification.ApproximateCreationDateTimePrecision.microsecond` |
+| `MILLISECOND` | `aws.dynamodb.Table.KinesisStreamSpecification.ApproximateCreationDateTimePrecision.millisecond` |
 
 Shorthand formats: `microsecond` or `ApproximateCreationDateTimePrecision.microsecond`
 
@@ -252,9 +252,9 @@ Shorthand formats: `microsecond` or `ApproximateCreationDateTimePrecision.micros
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `KEYS_ONLY` | `awscc.dynamodb.Table.GlobalSecondaryIndex.Projection.ProjectionType.keys_only` |
-| `INCLUDE` | `awscc.dynamodb.Table.GlobalSecondaryIndex.Projection.ProjectionType.include` |
-| `ALL` | `awscc.dynamodb.Table.GlobalSecondaryIndex.Projection.ProjectionType.all` |
+| `KEYS_ONLY` | `aws.dynamodb.Table.GlobalSecondaryIndex.Projection.ProjectionType.keys_only` |
+| `INCLUDE` | `aws.dynamodb.Table.GlobalSecondaryIndex.Projection.ProjectionType.include` |
+| `ALL` | `aws.dynamodb.Table.GlobalSecondaryIndex.Projection.ProjectionType.all` |
 
 Shorthand formats: `keys_only` or `ProjectionType.keys_only`
 
@@ -262,10 +262,10 @@ Shorthand formats: `keys_only` or `ProjectionType.keys_only`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `KEYS_ONLY` | `awscc.dynamodb.Table.StreamSpecification.StreamViewType.keys_only` |
-| `NEW_IMAGE` | `awscc.dynamodb.Table.StreamSpecification.StreamViewType.new_image` |
-| `OLD_IMAGE` | `awscc.dynamodb.Table.StreamSpecification.StreamViewType.old_image` |
-| `NEW_AND_OLD_IMAGES` | `awscc.dynamodb.Table.StreamSpecification.StreamViewType.new_and_old_images` |
+| `KEYS_ONLY` | `aws.dynamodb.Table.StreamSpecification.StreamViewType.keys_only` |
+| `NEW_IMAGE` | `aws.dynamodb.Table.StreamSpecification.StreamViewType.new_image` |
+| `OLD_IMAGE` | `aws.dynamodb.Table.StreamSpecification.StreamViewType.old_image` |
+| `NEW_AND_OLD_IMAGES` | `aws.dynamodb.Table.StreamSpecification.StreamViewType.new_and_old_images` |
 
 Shorthand formats: `keys_only` or `StreamViewType.keys_only`
 
@@ -273,8 +273,8 @@ Shorthand formats: `keys_only` or `StreamViewType.keys_only`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `STANDARD` | `awscc.dynamodb.Table.TableClass.standard` |
-| `STANDARD_INFREQUENT_ACCESS` | `awscc.dynamodb.Table.TableClass.standard_infrequent_access` |
+| `STANDARD` | `aws.dynamodb.Table.TableClass.standard` |
+| `STANDARD_INFREQUENT_ACCESS` | `aws.dynamodb.Table.TableClass.standard_infrequent_access` |
 
 Shorthand formats: `standard` or `TableClass.standard`
 

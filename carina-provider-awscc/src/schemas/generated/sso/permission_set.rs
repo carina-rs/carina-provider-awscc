@@ -4,9 +4,7 @@
 //!
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
-use super::AwsccSchemaConfig;
-use super::tags_type;
-use super::validate_tags_map;
+use crate::schemas::config::AwsccSchemaConfig;
 use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{
     AttributeSchema, AttributeType, ResourceSchema, StructField, legacy_validator,
@@ -206,7 +204,7 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
                 .with_provider_name("InlinePolicy"),
         )
         .attribute(
-            AttributeSchema::new("instance_arn", super::sso_instance_arn())
+            AttributeSchema::new("instance_arn", carina_aws_types::sso_instance_arn())
                 .required()
                 .create_only()
                 .with_description("The sso instance arn that the permission set is owned.")
@@ -224,7 +222,7 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
                 .with_provider_name("Name"),
         )
         .attribute(
-            AttributeSchema::new("permission_set_arn", super::sso_permission_set_arn())
+            AttributeSchema::new("permission_set_arn", carina_aws_types::sso_permission_set_arn())
                 .read_only()
                 .with_description("The permission set that the policy will be attached to (read-only)")
                 .with_provider_name("PermissionSetArn"),
@@ -232,7 +230,7 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
         .attribute(
             AttributeSchema::new("permissions_boundary", AttributeType::struct_("PermissionsBoundary".to_string(), vec![StructField::new("customer_managed_policy_reference", AttributeType::struct_("CustomerManagedPolicyReference".to_string(), vec![StructField::new("name", AttributeType::custom(None, AttributeType::string(), Some("[\\w+=,.@-]+".to_string()), Some((Some(1), Some(128))), legacy_validator(validate_string_pattern_9b83f4f8f3673df5_len_1_128), None)).required().with_provider_name("Name"),
                     StructField::new("path", AttributeType::custom(None, AttributeType::string(), Some("((/[A-Za-z0-9\\.,\\+@=_-]+)*)/".to_string()), Some((Some(1), Some(512))), legacy_validator(validate_string_pattern_b84fa12576539ca9_len_1_512), None)).with_provider_name("Path")])).with_provider_name("CustomerManagedPolicyReference"),
-                    StructField::new("managed_policy_arn", super::arn()).with_provider_name("ManagedPolicyArn")]))
+                    StructField::new("managed_policy_arn", carina_aws_types::arn()).with_provider_name("ManagedPolicyArn")]))
                 .with_provider_name("PermissionsBoundary"),
         )
         .attribute(
@@ -246,13 +244,13 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
                 .with_provider_name("SessionDuration"),
         )
         .attribute(
-            AttributeSchema::new("tags", tags_type())
+            AttributeSchema::new("tags", carina_aws_types::tags_type())
                 .with_provider_name("Tags")
                 .with_block_name("tag"),
         )
         .with_validator(|attrs| {
             let mut errors = Vec::new();
-            if let Err(mut e) = validate_tags_map(attrs) {
+            if let Err(mut e) = carina_aws_types::validate_tags_map(attrs) {
                 errors.append(&mut e);
             }
             if errors.is_empty() { Ok(()) } else { Err(errors) }
@@ -261,7 +259,7 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
                     StructField::new("path", AttributeType::custom(None, AttributeType::string(), Some("((/[A-Za-z0-9\\.,\\+@=_-]+)*)/".to_string()), Some((Some(1), Some(512))), legacy_validator(validate_string_pattern_b84fa12576539ca9_len_1_512), None)).with_provider_name("Path")]))
         .with_def("PermissionsBoundary", AttributeType::struct_("PermissionsBoundary".to_string(), vec![StructField::new("customer_managed_policy_reference", AttributeType::struct_("CustomerManagedPolicyReference".to_string(), vec![StructField::new("name", AttributeType::custom(None, AttributeType::string(), Some("[\\w+=,.@-]+".to_string()), Some((Some(1), Some(128))), legacy_validator(validate_string_pattern_9b83f4f8f3673df5_len_1_128), None)).required().with_provider_name("Name"),
                     StructField::new("path", AttributeType::custom(None, AttributeType::string(), Some("((/[A-Za-z0-9\\.,\\+@=_-]+)*)/".to_string()), Some((Some(1), Some(512))), legacy_validator(validate_string_pattern_b84fa12576539ca9_len_1_512), None)).with_provider_name("Path")])).with_provider_name("CustomerManagedPolicyReference"),
-                    StructField::new("managed_policy_arn", super::arn()).with_provider_name("ManagedPolicyArn")]))
+                    StructField::new("managed_policy_arn", carina_aws_types::arn()).with_provider_name("ManagedPolicyArn")]))
     }
 }
 

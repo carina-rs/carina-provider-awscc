@@ -92,12 +92,12 @@ The ID of the VPC for the security group.
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `tcp` | `awscc.ec2.SecurityGroup.Egress.IpProtocol.tcp` |
-| `udp` | `awscc.ec2.SecurityGroup.Egress.IpProtocol.udp` |
-| `icmp` | `awscc.ec2.SecurityGroup.Egress.IpProtocol.icmp` |
-| `icmpv6` | `awscc.ec2.SecurityGroup.Egress.IpProtocol.icmpv6` |
-| `-1` | `awscc.ec2.SecurityGroup.Egress.IpProtocol.all` |
-| `all` | `awscc.ec2.SecurityGroup.Egress.IpProtocol.all` |
+| `tcp` | `aws.ec2.SecurityGroup.Egress.IpProtocol.tcp` |
+| `udp` | `aws.ec2.SecurityGroup.Egress.IpProtocol.udp` |
+| `icmp` | `aws.ec2.SecurityGroup.Egress.IpProtocol.icmp` |
+| `icmpv6` | `aws.ec2.SecurityGroup.Egress.IpProtocol.icmpv6` |
+| `-1` | `aws.ec2.SecurityGroup.Egress.IpProtocol.all` |
+| `all` | `aws.ec2.SecurityGroup.Egress.IpProtocol.all` |
 
 Shorthand formats: `tcp` or `IpProtocol.tcp`
 
@@ -105,12 +105,12 @@ Shorthand formats: `tcp` or `IpProtocol.tcp`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `tcp` | `awscc.ec2.SecurityGroup.Ingress.IpProtocol.tcp` |
-| `udp` | `awscc.ec2.SecurityGroup.Ingress.IpProtocol.udp` |
-| `icmp` | `awscc.ec2.SecurityGroup.Ingress.IpProtocol.icmp` |
-| `icmpv6` | `awscc.ec2.SecurityGroup.Ingress.IpProtocol.icmpv6` |
-| `-1` | `awscc.ec2.SecurityGroup.Ingress.IpProtocol.all` |
-| `all` | `awscc.ec2.SecurityGroup.Ingress.IpProtocol.all` |
+| `tcp` | `aws.ec2.SecurityGroup.Ingress.IpProtocol.tcp` |
+| `udp` | `aws.ec2.SecurityGroup.Ingress.IpProtocol.udp` |
+| `icmp` | `aws.ec2.SecurityGroup.Ingress.IpProtocol.icmp` |
+| `icmpv6` | `aws.ec2.SecurityGroup.Ingress.IpProtocol.icmpv6` |
+| `-1` | `aws.ec2.SecurityGroup.Ingress.IpProtocol.all` |
+| `all` | `aws.ec2.SecurityGroup.Ingress.IpProtocol.all` |
 
 Shorthand formats: `tcp` or `IpProtocol.tcp`
 

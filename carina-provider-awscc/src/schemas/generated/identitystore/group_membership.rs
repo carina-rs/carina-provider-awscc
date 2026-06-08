@@ -4,7 +4,7 @@
 //!
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
-use super::AwsccSchemaConfig;
+use crate::schemas::config::AwsccSchemaConfig;
 use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{
     AttributeSchema, AttributeType, ResourceSchema, StructField, legacy_validator,
@@ -42,14 +42,14 @@ pub fn identitystore_group_membership_config() -> AwsccSchemaConfig {
         schema: ResourceSchema::new("identitystore.GroupMembership")
         .with_description("Resource Type Definition for AWS:IdentityStore::GroupMembership")
         .attribute(
-            AttributeSchema::new("group_id", super::sso_principal_id())
+            AttributeSchema::new("group_id", carina_aws_types::sso_principal_id())
                 .required()
                 .create_only()
                 .with_description("The unique identifier for a group in the identity store.")
                 .with_provider_name("GroupId"),
         )
         .attribute(
-            AttributeSchema::new("identity_store_id", super::identity_store_id())
+            AttributeSchema::new("identity_store_id", carina_aws_types::identity_store_id())
                 .required()
                 .create_only()
                 .with_description("The globally unique identifier for the identity store.")

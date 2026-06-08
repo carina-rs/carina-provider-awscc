@@ -4,9 +4,7 @@
 //!
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
-use super::AwsccSchemaConfig;
-use super::tags_type;
-use super::validate_tags_map;
+use crate::schemas::config::AwsccSchemaConfig;
 use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, legacy_validator};
 use regex::Regex;
@@ -94,13 +92,13 @@ pub fn sso_instance_config() -> AwsccSchemaConfig {
         schema: ResourceSchema::new("sso.Instance")
         .with_description("Resource Type definition for Identity Center (SSO) Instance")
         .attribute(
-            AttributeSchema::new("identity_store_id", super::identity_store_id())
+            AttributeSchema::new("identity_store_id", carina_aws_types::identity_store_id())
                 .read_only()
                 .with_description("The ID of the identity store associated with the created Identity Center (SSO) Instance (read-only)")
                 .with_provider_name("IdentityStoreId"),
         )
         .attribute(
-            AttributeSchema::new("instance_arn", super::sso_instance_arn())
+            AttributeSchema::new("instance_arn", carina_aws_types::sso_instance_arn())
                 .read_only()
                 .with_description("The SSO Instance ARN that is returned upon creation of the Identity Center (SSO) Instance (read-only)")
                 .with_provider_name("InstanceArn"),
@@ -111,25 +109,25 @@ pub fn sso_instance_config() -> AwsccSchemaConfig {
                 .with_provider_name("Name"),
         )
         .attribute(
-            AttributeSchema::new("owner_account_id", super::aws_account_id())
+            AttributeSchema::new("owner_account_id", carina_aws_types::aws_account_id())
                 .read_only()
                 .with_description("The AWS accountId of the owner of the Identity Center (SSO) Instance (read-only)")
                 .with_provider_name("OwnerAccountId"),
         )
         .attribute(
-            AttributeSchema::new("status", AttributeType::enum_(carina_core::schema::enum_identity("Status", Some("awscc.sso.Instance")), Some(vec!["CREATE_IN_PROGRESS".to_string(), "DELETE_IN_PROGRESS".to_string(), "ACTIVE".to_string()]), vec![("CREATE_IN_PROGRESS".to_string(), "create_in_progress".to_string()), ("DELETE_IN_PROGRESS".to_string(), "delete_in_progress".to_string()), ("ACTIVE".to_string(), "active".to_string())], None, None))
+            AttributeSchema::new("status", AttributeType::enum_(carina_core::schema::enum_identity("Status", Some("aws.sso.Instance")), Some(vec!["CREATE_IN_PROGRESS".to_string(), "DELETE_IN_PROGRESS".to_string(), "ACTIVE".to_string()]), vec![("CREATE_IN_PROGRESS".to_string(), "create_in_progress".to_string()), ("DELETE_IN_PROGRESS".to_string(), "delete_in_progress".to_string()), ("ACTIVE".to_string(), "active".to_string())], None, None))
                 .read_only()
                 .with_description("The status of the Identity Center (SSO) Instance, create_in_progress/delete_in_progress/active (read-only)")
                 .with_provider_name("Status"),
         )
         .attribute(
-            AttributeSchema::new("tags", tags_type())
+            AttributeSchema::new("tags", carina_aws_types::tags_type())
                 .with_provider_name("Tags")
                 .with_block_name("tag"),
         )
         .with_validator(|attrs| {
             let mut errors = Vec::new();
-            if let Err(mut e) = validate_tags_map(attrs) {
+            if let Err(mut e) = carina_aws_types::validate_tags_map(attrs) {
                 errors.append(&mut e);
             }
             if errors.is_empty() { Ok(()) } else { Err(errors) }

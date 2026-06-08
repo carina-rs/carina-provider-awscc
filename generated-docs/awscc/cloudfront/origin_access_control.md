@@ -25,10 +25,10 @@ The origin access control.
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `s3` | `awscc.cloudfront.OriginAccessControl.OriginAccessControlConfig.OriginAccessControlOriginType.s3` |
-| `mediastore` | `awscc.cloudfront.OriginAccessControl.OriginAccessControlConfig.OriginAccessControlOriginType.mediastore` |
-| `lambda` | `awscc.cloudfront.OriginAccessControl.OriginAccessControlConfig.OriginAccessControlOriginType.lambda` |
-| `mediapackagev2` | `awscc.cloudfront.OriginAccessControl.OriginAccessControlConfig.OriginAccessControlOriginType.mediapackagev2` |
+| `s3` | `aws.cloudfront.OriginAccessControl.OriginAccessControlConfig.OriginAccessControlOriginType.s3` |
+| `mediastore` | `aws.cloudfront.OriginAccessControl.OriginAccessControlConfig.OriginAccessControlOriginType.mediastore` |
+| `lambda` | `aws.cloudfront.OriginAccessControl.OriginAccessControlConfig.OriginAccessControlOriginType.lambda` |
+| `mediapackagev2` | `aws.cloudfront.OriginAccessControl.OriginAccessControlConfig.OriginAccessControlOriginType.mediapackagev2` |
 
 Shorthand formats: `s3` or `OriginAccessControlOriginType.s3`
 
@@ -36,9 +36,9 @@ Shorthand formats: `s3` or `OriginAccessControlOriginType.s3`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `always` | `awscc.cloudfront.OriginAccessControl.OriginAccessControlConfig.SigningBehavior.always` |
-| `never` | `awscc.cloudfront.OriginAccessControl.OriginAccessControlConfig.SigningBehavior.never` |
-| `no-override` | `awscc.cloudfront.OriginAccessControl.OriginAccessControlConfig.SigningBehavior.no_override` |
+| `always` | `aws.cloudfront.OriginAccessControl.OriginAccessControlConfig.SigningBehavior.always` |
+| `never` | `aws.cloudfront.OriginAccessControl.OriginAccessControlConfig.SigningBehavior.never` |
+| `no-override` | `aws.cloudfront.OriginAccessControl.OriginAccessControlConfig.SigningBehavior.no_override` |
 
 Shorthand formats: `always` or `SigningBehavior.always`
 
@@ -46,7 +46,7 @@ Shorthand formats: `always` or `SigningBehavior.always`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `sigv4` | `awscc.cloudfront.OriginAccessControl.OriginAccessControlConfig.SigningProtocol.sigv4` |
+| `sigv4` | `aws.cloudfront.OriginAccessControl.OriginAccessControlConfig.SigningProtocol.sigv4` |
 
 Shorthand formats: `sigv4` or `SigningProtocol.sigv4`
 

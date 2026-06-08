@@ -4,9 +4,7 @@
 //!
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
-use super::AwsccSchemaConfig;
-use super::tags_type;
-use super::validate_tags_map;
+use crate::schemas::config::AwsccSchemaConfig;
 use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{
     AttributeSchema, AttributeType, ResourceSchema, StructField, legacy_validator,
@@ -14,13 +12,13 @@ use carina_core::schema::{
 
 pub fn arn() -> AttributeType {
     AttributeType::custom(
-        Some(super::provider_type("iam", "Role", "Arn")),
-        super::arn(),
+        Some(carina_aws_types::provider_type("iam", "Role", "Arn")),
+        carina_aws_types::arn(),
         Some("^arn:(aws|aws-cn|aws-us-gov):iam::[^:]*:role/.+$".to_string()),
         None,
         legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
-                super::validate_iam_arn(s, "role/")
+                carina_aws_types::validate_iam_arn(s, "role/")
                     .map_err(|reason| format!("Invalid IAM Role ARN '{}': {}", s, reason))
             } else {
                 Err("Expected string".to_string())
@@ -57,7 +55,7 @@ pub fn iam_role_config() -> AwsccSchemaConfig {
                 .with_provider_name("Arn"),
         )
         .attribute(
-            AttributeSchema::new("assume_role_policy_document", super::iam_policy_document())
+            AttributeSchema::new("assume_role_policy_document", carina_aws_types::iam_policy_document())
                 .required()
                 .with_description("The trust policy that is associated with this role. Trust policies define which entities can assume the role. You can associate only one trust policy with a role. For an example of a policy that can be used to assume a role, see [Template Examples](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-iam-role.html#aws-resource-iam-role--examples). For more information about the elements that you can use in an IAM policy, see [Policy Elements Reference](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements.html) in the *User Guide*.")
                 .with_provider_name("AssumeRolePolicyDocument"),
@@ -90,14 +88,14 @@ pub fn iam_role_config() -> AwsccSchemaConfig {
                 .with_provider_name("PermissionsBoundary"),
         )
         .attribute(
-            AttributeSchema::new("policies", AttributeType::unordered_list(AttributeType::struct_("Policy".to_string(), vec![StructField::new("policy_document", super::iam_policy_document()).required().with_description("The entire contents of the policy that defines permissions. For more information, see [Overview of JSON policies](https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies.html#access_policies-json).").with_provider_name("PolicyDocument"),
+            AttributeSchema::new("policies", AttributeType::unordered_list(AttributeType::struct_("Policy".to_string(), vec![StructField::new("policy_document", carina_aws_types::iam_policy_document()).required().with_description("The entire contents of the policy that defines permissions. For more information, see [Overview of JSON policies](https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies.html#access_policies-json).").with_provider_name("PolicyDocument"),
                     StructField::new("policy_name", AttributeType::string()).required().with_description("The friendly name (not ARN) identifying the policy.").with_provider_name("PolicyName")])))
                 .with_description("Adds or updates an inline policy document that is embedded in the specified IAM role. When you embed an inline policy in a role, the inline policy is used as part of the role's access (permissions) policy. The role's trust policy is created at the same time as the role. You can update a role's trust policy later. For more information about IAM roles, go to [Using Roles to Delegate Permissions and Federate Identities](https://docs.aws.amazon.com/IAM/latest/UserGuide/roles-toplevel.html). A role can also have an attached managed policy. For information about policies, see [Managed Policies and Inline Policies](https://docs.aws.amazon.com/IAM/latest/UserGuide/policies-managed-vs-inline.html) in the *User Guide*. For information about limits on the number of inline policies that you can embed with a role, see [Limitations on Entities](https://docs.aws.amazon.com/IAM/latest/UserGuide/LimitationsOnEntities.html) in the *User Guide*. If an external policy (such as ``AWS::IAM::Policy`` or ``AWS::IAM::ManagedPolicy``) has a ``Ref`` to a role and if a resource (such as ``AWS::ECS::Service``) also has a ``Ref`` to the same role, add a ``DependsOn`` attribute to the resource to make the resource depend on the external policy. This dependency ensures that the role's policy is available throughout the resource's lifecycle. For example, when you delete a stack with an ``AWS::ECS::Service`` resource, the ``DependsOn`` attribute ensures that CFN deletes the ``AWS::ECS::Service`` resource before deleting its role's policy.")
                 .with_provider_name("Policies")
                 .with_block_name("policy"),
         )
         .attribute(
-            AttributeSchema::new("role_id", super::iam_role_id())
+            AttributeSchema::new("role_id", carina_aws_types::iam_role_id())
                 .read_only()
                 .with_description(" (read-only)")
                 .with_provider_name("RoleId"),
@@ -109,7 +107,7 @@ pub fn iam_role_config() -> AwsccSchemaConfig {
                 .with_provider_name("RoleName"),
         )
         .attribute(
-            AttributeSchema::new("tags", tags_type())
+            AttributeSchema::new("tags", carina_aws_types::tags_type())
                 .with_description("A list of tags that are attached to the role. For more information about tagging, see [Tagging IAM resources](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_tags.html) in the *IAM User Guide*.")
                 .with_provider_name("Tags")
                 .with_block_name("tag"),
@@ -117,7 +115,7 @@ pub fn iam_role_config() -> AwsccSchemaConfig {
         .with_name_attribute("role_name")
         .with_validator(|attrs| {
             let mut errors = Vec::new();
-            if let Err(mut e) = validate_tags_map(attrs) {
+            if let Err(mut e) = carina_aws_types::validate_tags_map(attrs) {
                 errors.append(&mut e);
             }
             if errors.is_empty() { Ok(()) } else { Err(errors) }

@@ -4,9 +4,7 @@
 //!
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
-use super::AwsccSchemaConfig;
-use super::tags_type;
-use super::validate_tags_map;
+use crate::schemas::config::AwsccSchemaConfig;
 use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{
     AttributeSchema, AttributeType, OperationConfig, ResourceSchema, legacy_validator, types,
@@ -68,7 +66,7 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
             .attribute(
                 AttributeSchema::new(
                     "association_default_route_table_id",
-                    super::tgw_route_table_id(),
+                    carina_aws_types::tgw_route_table_id(),
                 )
                 .with_provider_name("AssociationDefaultRouteTableId"),
             )
@@ -78,7 +76,7 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
                     AttributeType::enum_(
                         carina_core::schema::enum_identity(
                             "AutoAcceptSharedAttachments",
-                            Some("awscc.ec2.TransitGateway"),
+                            Some("aws.ec2.TransitGateway"),
                         ),
                         Some(vec!["enable".to_string(), "disable".to_string()]),
                         vec![
@@ -97,7 +95,7 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
                     AttributeType::enum_(
                         carina_core::schema::enum_identity(
                             "DefaultRouteTableAssociation",
-                            Some("awscc.ec2.TransitGateway"),
+                            Some("aws.ec2.TransitGateway"),
                         ),
                         Some(vec!["enable".to_string(), "disable".to_string()]),
                         vec![
@@ -116,7 +114,7 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
                     AttributeType::enum_(
                         carina_core::schema::enum_identity(
                             "DefaultRouteTablePropagation",
-                            Some("awscc.ec2.TransitGateway"),
+                            Some("aws.ec2.TransitGateway"),
                         ),
                         Some(vec!["enable".to_string(), "disable".to_string()]),
                         vec![
@@ -139,7 +137,7 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
                     AttributeType::enum_(
                         carina_core::schema::enum_identity(
                             "DnsSupport",
-                            Some("awscc.ec2.TransitGateway"),
+                            Some("aws.ec2.TransitGateway"),
                         ),
                         Some(vec!["enable".to_string(), "disable".to_string()]),
                         vec![
@@ -158,7 +156,7 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
                     AttributeType::enum_(
                         carina_core::schema::enum_identity(
                             "EncryptionSupport",
-                            Some("awscc.ec2.TransitGateway"),
+                            Some("aws.ec2.TransitGateway"),
                         ),
                         Some(vec!["disable".to_string(), "enable".to_string()]),
                         vec![
@@ -178,7 +176,7 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
                     AttributeType::enum_(
                         carina_core::schema::enum_identity(
                             "EncryptionSupportState",
-                            Some("awscc.ec2.TransitGateway"),
+                            Some("aws.ec2.TransitGateway"),
                         ),
                         Some(vec!["disable".to_string(), "enable".to_string()]),
                         vec![
@@ -193,7 +191,7 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
                 .with_provider_name("EncryptionSupportState"),
             )
             .attribute(
-                AttributeSchema::new("id", super::transit_gateway_id())
+                AttributeSchema::new("id", carina_aws_types::transit_gateway_id())
                     .read_only()
                     .with_provider_name("Id"),
             )
@@ -203,7 +201,7 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
                     AttributeType::enum_(
                         carina_core::schema::enum_identity(
                             "MulticastSupport",
-                            Some("awscc.ec2.TransitGateway"),
+                            Some("aws.ec2.TransitGateway"),
                         ),
                         Some(vec!["enable".to_string(), "disable".to_string()]),
                         vec![
@@ -220,7 +218,7 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
             .attribute(
                 AttributeSchema::new(
                     "propagation_default_route_table_id",
-                    super::tgw_route_table_id(),
+                    carina_aws_types::tgw_route_table_id(),
                 )
                 .with_provider_name("PropagationDefaultRouteTableId"),
             )
@@ -230,7 +228,7 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
                     AttributeType::enum_(
                         carina_core::schema::enum_identity(
                             "SecurityGroupReferencingSupport",
-                            Some("awscc.ec2.TransitGateway"),
+                            Some("aws.ec2.TransitGateway"),
                         ),
                         Some(vec!["enable".to_string(), "disable".to_string()]),
                         vec![
@@ -244,12 +242,12 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
                 .with_provider_name("SecurityGroupReferencingSupport"),
             )
             .attribute(
-                AttributeSchema::new("tags", tags_type())
+                AttributeSchema::new("tags", carina_aws_types::tags_type())
                     .with_provider_name("Tags")
                     .with_block_name("tag"),
             )
             .attribute(
-                AttributeSchema::new("transit_gateway_arn", super::arn())
+                AttributeSchema::new("transit_gateway_arn", carina_aws_types::arn())
                     .read_only()
                     .with_provider_name("TransitGatewayArn"),
             )
@@ -266,7 +264,7 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
                     AttributeType::enum_(
                         carina_core::schema::enum_identity(
                             "VpnEcmpSupport",
-                            Some("awscc.ec2.TransitGateway"),
+                            Some("aws.ec2.TransitGateway"),
                         ),
                         Some(vec!["enable".to_string(), "disable".to_string()]),
                         vec![
@@ -287,7 +285,7 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
             })
             .with_validator(|attrs| {
                 let mut errors = Vec::new();
-                if let Err(mut e) = validate_tags_map(attrs) {
+                if let Err(mut e) = carina_aws_types::validate_tags_map(attrs) {
                     errors.append(&mut e);
                 }
                 if errors.is_empty() {

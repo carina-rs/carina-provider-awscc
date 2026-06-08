@@ -4,9 +4,7 @@
 //!
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
-use super::AwsccSchemaConfig;
-use super::tags_type;
-use super::validate_tags_map;
+use crate::schemas::config::AwsccSchemaConfig;
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, types};
 
 const VALID_DOMAIN: &[&str] = &["vpc", "standard"];
@@ -27,23 +25,23 @@ pub fn ec2_eip_config() -> AwsccSchemaConfig {
                 .with_provider_name("Address"),
         )
         .attribute(
-            AttributeSchema::new("allocation_id", super::allocation_id())
+            AttributeSchema::new("allocation_id", carina_aws_types::allocation_id())
                 .read_only()
                 .with_description(" (read-only)")
                 .with_provider_name("AllocationId"),
         )
         .attribute(
-            AttributeSchema::new("domain", AttributeType::enum_(carina_core::schema::enum_identity("Domain", Some("awscc.ec2.Eip")), Some(vec!["vpc".to_string(), "standard".to_string()]), vec![("vpc".to_string(), "vpc".to_string()), ("standard".to_string(), "standard".to_string())], None, None))
+            AttributeSchema::new("domain", AttributeType::enum_(carina_core::schema::enum_identity("Domain", Some("aws.ec2.Eip")), Some(vec!["vpc".to_string(), "standard".to_string()]), vec![("vpc".to_string(), "vpc".to_string()), ("standard".to_string(), "standard".to_string())], None, None))
                 .with_description("The network (``vpc``). If you define an Elastic IP address and associate it with a VPC that is defined in the same template, you must declare a dependency on the VPC-gateway attachment by using the [DependsOn Attribute](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-attribute-dependson.html) on this resource.")
                 .with_provider_name("Domain"),
         )
         .attribute(
-            AttributeSchema::new("instance_id", super::instance_id())
+            AttributeSchema::new("instance_id", carina_aws_types::instance_id())
                 .with_description("The ID of the instance. Updates to the ``InstanceId`` property may require *some interruptions*. Updates on an EIP reassociates the address on its associated resource.")
                 .with_provider_name("InstanceId"),
         )
         .attribute(
-            AttributeSchema::new("ipam_pool_id", super::ipam_pool_id())
+            AttributeSchema::new("ipam_pool_id", carina_aws_types::ipam_pool_id())
                 .create_only()
                 .write_only()
                 .with_description("")
@@ -67,7 +65,7 @@ pub fn ec2_eip_config() -> AwsccSchemaConfig {
                 .with_provider_name("PublicIpv4Pool"),
         )
         .attribute(
-            AttributeSchema::new("tags", tags_type())
+            AttributeSchema::new("tags", carina_aws_types::tags_type())
                 .with_description("Any tags assigned to the Elastic IP address. Updates to the ``Tags`` property may require *some interruptions*. Updates on an EIP reassociates the address on its associated resource.")
                 .with_provider_name("Tags")
                 .with_block_name("tag"),
@@ -81,7 +79,7 @@ pub fn ec2_eip_config() -> AwsccSchemaConfig {
         )
         .with_validator(|attrs| {
             let mut errors = Vec::new();
-            if let Err(mut e) = validate_tags_map(attrs) {
+            if let Err(mut e) = carina_aws_types::validate_tags_map(attrs) {
                 errors.append(&mut e);
             }
             if errors.is_empty() { Ok(()) } else { Err(errors) }

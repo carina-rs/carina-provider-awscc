@@ -140,8 +140,8 @@ The ID of the VPC in which the NAT gateway is located.
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `zonal` | `awscc.ec2.NatGateway.AvailabilityMode.zonal` |
-| `regional` | `awscc.ec2.NatGateway.AvailabilityMode.regional` |
+| `zonal` | `aws.ec2.NatGateway.AvailabilityMode.zonal` |
+| `regional` | `aws.ec2.NatGateway.AvailabilityMode.regional` |
 
 Shorthand formats: `zonal` or `AvailabilityMode.zonal`
 
@@ -149,8 +149,8 @@ Shorthand formats: `zonal` or `AvailabilityMode.zonal`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `public` | `awscc.ec2.NatGateway.ConnectivityType.public` |
-| `private` | `awscc.ec2.NatGateway.ConnectivityType.private` |
+| `public` | `aws.ec2.NatGateway.ConnectivityType.public` |
+| `private` | `aws.ec2.NatGateway.ConnectivityType.private` |
 
 Shorthand formats: `public` or `ConnectivityType.public`
 

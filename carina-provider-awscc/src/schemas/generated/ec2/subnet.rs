@@ -4,9 +4,7 @@
 //!
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
-use super::AwsccSchemaConfig;
-use super::tags_type;
-use super::validate_tags_map;
+use crate::schemas::config::AwsccSchemaConfig;
 use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{
     AttributeSchema, AttributeType, ResourceSchema, StructField, legacy_validator, types,
@@ -50,19 +48,19 @@ pub fn ec2_subnet_config() -> AwsccSchemaConfig {
                 .with_provider_name("AssignIpv6AddressOnCreation"),
         )
         .attribute(
-            AttributeSchema::new("availability_zone", super::availability_zone())
+            AttributeSchema::new("availability_zone", carina_aws_types::availability_zone())
                 .create_only()
                 .with_description("The Availability Zone of the subnet. If you update this property, you must also update the ``CidrBlock`` property.")
                 .with_provider_name("AvailabilityZone"),
         )
         .attribute(
-            AttributeSchema::new("availability_zone_id", super::availability_zone_id())
+            AttributeSchema::new("availability_zone_id", carina_aws_types::availability_zone_id())
                 .create_only()
                 .with_description("The AZ ID of the subnet.")
                 .with_provider_name("AvailabilityZoneId"),
         )
         .attribute(
-            AttributeSchema::new("block_public_access_states", AttributeType::struct_("BlockPublicAccessStates".to_string(), vec![StructField::new("internet_gateway_block_mode", AttributeType::enum_(carina_core::schema::enum_identity("InternetGatewayBlockMode", Some("awscc.ec2.Subnet.BlockPublicAccessStates")), Some(vec!["off".to_string(), "block-bidirectional".to_string(), "block-ingress".to_string()]), vec![("off".to_string(), "off".to_string()), ("block-bidirectional".to_string(), "block_bidirectional".to_string()), ("block-ingress".to_string(), "block_ingress".to_string())], None, None)).with_description("The mode of VPC BPA. Options here are off, block-bidirectional, block-ingress ").with_provider_name("InternetGatewayBlockMode")]))
+            AttributeSchema::new("block_public_access_states", AttributeType::struct_("BlockPublicAccessStates".to_string(), vec![StructField::new("internet_gateway_block_mode", AttributeType::enum_(carina_core::schema::enum_identity("InternetGatewayBlockMode", Some("aws.ec2.Subnet.BlockPublicAccessStates")), Some(vec!["off".to_string(), "block-bidirectional".to_string(), "block-ingress".to_string()]), vec![("off".to_string(), "off".to_string()), ("block-bidirectional".to_string(), "block_bidirectional".to_string()), ("block-ingress".to_string(), "block_ingress".to_string())], None, None)).with_description("The mode of VPC BPA. Options here are off, block-bidirectional, block-ingress ").with_provider_name("InternetGatewayBlockMode")]))
                 .read_only()
                 .with_description(" (read-only)")
                 .with_provider_name("BlockPublicAccessStates"),
@@ -85,7 +83,7 @@ pub fn ec2_subnet_config() -> AwsccSchemaConfig {
                 .with_provider_name("EnableLniAtDeviceIndex"),
         )
         .attribute(
-            AttributeSchema::new("ipv4_ipam_pool_id", super::ipam_pool_id())
+            AttributeSchema::new("ipv4_ipam_pool_id", carina_aws_types::ipam_pool_id())
                 .create_only()
                 .write_only()
                 .with_description("An IPv4 IPAM pool ID for the subnet.")
@@ -110,7 +108,7 @@ pub fn ec2_subnet_config() -> AwsccSchemaConfig {
                 .with_provider_name("Ipv6CidrBlocks"),
         )
         .attribute(
-            AttributeSchema::new("ipv6_ipam_pool_id", super::ipam_pool_id())
+            AttributeSchema::new("ipv6_ipam_pool_id", carina_aws_types::ipam_pool_id())
                 .create_only()
                 .write_only()
                 .with_description("An IPv6 IPAM pool ID for the subnet.")
@@ -141,7 +139,7 @@ pub fn ec2_subnet_config() -> AwsccSchemaConfig {
                 .with_provider_name("NetworkAclAssociationId"),
         )
         .attribute(
-            AttributeSchema::new("outpost_arn", super::arn())
+            AttributeSchema::new("outpost_arn", carina_aws_types::arn())
                 .create_only()
                 .with_description("The Amazon Resource Name (ARN) of the Outpost.")
                 .with_provider_name("OutpostArn"),
@@ -149,24 +147,24 @@ pub fn ec2_subnet_config() -> AwsccSchemaConfig {
         .attribute(
             AttributeSchema::new("private_dns_name_options_on_launch", AttributeType::struct_("PrivateDnsNameOptionsOnLaunch".to_string(), vec![StructField::new("enable_resource_name_dns_aaaa_record", AttributeType::bool()).with_provider_name("EnableResourceNameDnsAAAARecord"),
                     StructField::new("enable_resource_name_dns_a_record", AttributeType::bool()).with_provider_name("EnableResourceNameDnsARecord"),
-                    StructField::new("hostname_type", AttributeType::enum_(carina_core::schema::enum_identity("HostnameType", Some("awscc.ec2.Subnet.PrivateDnsNameOptionsOnLaunch")), Some(vec!["ip-name".to_string(), "resource-name".to_string()]), vec![("ip-name".to_string(), "ip_name".to_string()), ("resource-name".to_string(), "resource_name".to_string())], None, None)).with_provider_name("HostnameType")]))
+                    StructField::new("hostname_type", AttributeType::enum_(carina_core::schema::enum_identity("HostnameType", Some("aws.ec2.Subnet.PrivateDnsNameOptionsOnLaunch")), Some(vec!["ip-name".to_string(), "resource-name".to_string()]), vec![("ip-name".to_string(), "ip_name".to_string()), ("resource-name".to_string(), "resource_name".to_string())], None, None)).with_provider_name("HostnameType")]))
                 .with_description("The hostname type for EC2 instances launched into this subnet and how DNS A and AAAA record queries to the instances should be handled. For more information, see [Amazon EC2 instance hostname types](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-naming.html) in the *User Guide*. Available options: + EnableResourceNameDnsAAAARecord (true | false) + EnableResourceNameDnsARecord (true | false) + HostnameType (ip-name | resource-name)")
                 .with_provider_name("PrivateDnsNameOptionsOnLaunch"),
         )
         .attribute(
-            AttributeSchema::new("subnet_id", super::subnet_id())
+            AttributeSchema::new("subnet_id", carina_aws_types::subnet_id())
                 .read_only()
                 .with_description(" (read-only)")
                 .with_provider_name("SubnetId"),
         )
         .attribute(
-            AttributeSchema::new("tags", tags_type())
+            AttributeSchema::new("tags", carina_aws_types::tags_type())
                 .with_description("Any tags assigned to the subnet.")
                 .with_provider_name("Tags")
                 .with_block_name("tag"),
         )
         .attribute(
-            AttributeSchema::new("vpc_id", super::vpc_id())
+            AttributeSchema::new("vpc_id", carina_aws_types::vpc_id())
                 .required()
                 .create_only()
                 .with_description("The ID of the VPC the subnet is in. If you update this property, you must also update the ``CidrBlock`` property.")
@@ -174,7 +172,7 @@ pub fn ec2_subnet_config() -> AwsccSchemaConfig {
         )
         .with_validator(|attrs| {
             let mut errors = Vec::new();
-            if let Err(mut e) = validate_tags_map(attrs) {
+            if let Err(mut e) = carina_aws_types::validate_tags_map(attrs) {
                 errors.append(&mut e);
             }
             if errors.is_empty() { Ok(()) } else { Err(errors) }

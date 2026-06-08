@@ -4,9 +4,7 @@
 //!
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
-use super::AwsccSchemaConfig;
-use super::tags_type;
-use super::validate_tags_map;
+use crate::schemas::config::AwsccSchemaConfig;
 use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{
     AttributeSchema, AttributeType, OperationConfig, ResourceSchema, StructField, legacy_validator,
@@ -15,13 +13,13 @@ use carina_core::schema::{
 
 pub fn arn() -> AttributeType {
     AttributeType::custom(
-        Some(super::provider_type("ec2", "IpamPool", "Arn")),
-        super::arn(),
+        Some(carina_aws_types::provider_type("ec2", "IpamPool", "Arn")),
+        carina_aws_types::arn(),
         Some("^arn:(aws|aws-cn|aws-us-gov):ec2:.*$".to_string()),
         None,
         legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
-                super::validate_service_arn(s, "ec2", None)
+                carina_aws_types::validate_service_arn(s, "ec2", None)
                     .map_err(|reason| format!("Invalid ec2 ARN '{}': {}", s, reason))
             } else {
                 Err("Expected string".to_string())
@@ -57,7 +55,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
         schema: ResourceSchema::new("ec2.IpamPool")
         .with_description("Resource Schema of AWS::EC2::IPAMPool Type")
         .attribute(
-            AttributeSchema::new("address_family", AttributeType::enum_(carina_core::schema::enum_identity("AddressFamily", Some("awscc.ec2.IpamPool")), Some(vec!["IPv4".to_string(), "IPv6".to_string()]), vec![("IPv4".to_string(), "ipv4".to_string()), ("IPv6".to_string(), "ipv6".to_string())], None, None))
+            AttributeSchema::new("address_family", AttributeType::enum_(carina_core::schema::enum_identity("AddressFamily", Some("aws.ec2.IpamPool")), Some(vec!["IPv4".to_string(), "IPv6".to_string()]), vec![("IPv4".to_string(), "ipv4".to_string()), ("IPv6".to_string(), "ipv6".to_string())], None, None))
                 .required()
                 .create_only()
                 .with_description("The address family of the address space in this pool. Either IPv4 or IPv6.")
@@ -79,7 +77,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
                 .with_provider_name("AllocationMinNetmaskLength"),
         )
         .attribute(
-            AttributeSchema::new("allocation_resource_tags", AttributeType::unordered_list(tags_type()))
+            AttributeSchema::new("allocation_resource_tags", AttributeType::unordered_list(carina_aws_types::tags_type()))
                 .with_description("When specified, an allocation will not be allowed unless a resource has a matching set of tags.")
                 .with_provider_name("AllocationResourceTags")
                 .with_block_name("allocation_resource_tag"),
@@ -96,7 +94,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
                 .with_provider_name("AutoImport"),
         )
         .attribute(
-            AttributeSchema::new("aws_service", AttributeType::enum_(carina_core::schema::enum_identity("AwsService", Some("awscc.ec2.IpamPool")), Some(vec!["ec2".to_string(), "global-services".to_string()]), vec![("ec2".to_string(), "ec2".to_string()), ("global-services".to_string(), "global_services".to_string())], None, None))
+            AttributeSchema::new("aws_service", AttributeType::enum_(carina_core::schema::enum_identity("AwsService", Some("aws.ec2.IpamPool")), Some(vec!["ec2".to_string(), "global-services".to_string()]), vec![("ec2".to_string(), "ec2".to_string()), ("global-services".to_string(), "global_services".to_string())], None, None))
                 .create_only()
                 .with_description("Limits which service in Amazon Web Services that the pool can be used in.")
                 .with_provider_name("AwsService"),
@@ -106,19 +104,19 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
                 .with_provider_name("Description"),
         )
         .attribute(
-            AttributeSchema::new("ipam_arn", super::arn())
+            AttributeSchema::new("ipam_arn", carina_aws_types::arn())
                 .read_only()
                 .with_description("The Amazon Resource Name (ARN) of the IPAM this pool is a part of. (read-only)")
                 .with_provider_name("IpamArn"),
         )
         .attribute(
-            AttributeSchema::new("ipam_pool_id", super::ipam_pool_id())
+            AttributeSchema::new("ipam_pool_id", carina_aws_types::ipam_pool_id())
                 .read_only()
                 .with_description("Id of the IPAM Pool. (read-only)")
                 .with_provider_name("IpamPoolId"),
         )
         .attribute(
-            AttributeSchema::new("ipam_scope_arn", super::arn())
+            AttributeSchema::new("ipam_scope_arn", carina_aws_types::arn())
                 .read_only()
                 .with_description("The Amazon Resource Name (ARN) of the scope this pool is a part of. (read-only)")
                 .with_provider_name("IpamScopeArn"),
@@ -131,13 +129,13 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
                 .with_provider_name("IpamScopeId"),
         )
         .attribute(
-            AttributeSchema::new("ipam_scope_type", AttributeType::enum_(carina_core::schema::enum_identity("IpamScopeType", Some("awscc.ec2.IpamPool")), Some(vec!["public".to_string(), "private".to_string()]), vec![("public".to_string(), "public".to_string()), ("private".to_string(), "private".to_string())], None, None))
+            AttributeSchema::new("ipam_scope_type", AttributeType::enum_(carina_core::schema::enum_identity("IpamScopeType", Some("aws.ec2.IpamPool")), Some(vec!["public".to_string(), "private".to_string()]), vec![("public".to_string(), "public".to_string()), ("private".to_string(), "private".to_string())], None, None))
                 .read_only()
                 .with_description("Determines whether this scope contains publicly routable space or space for a private network (read-only)")
                 .with_provider_name("IpamScopeType"),
         )
         .attribute(
-            AttributeSchema::new("locale", super::awscc_region())
+            AttributeSchema::new("locale", carina_aws_types::aws_region())
                 .create_only()
                 .with_description("The region of this pool. If not set, this will default to \"None\" which will disable non-custom allocations. If the locale has been specified for the source pool, this value must match.")
                 .with_provider_name("Locale"),
@@ -155,7 +153,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
                 .with_block_name("provisioned_cidr"),
         )
         .attribute(
-            AttributeSchema::new("public_ip_source", AttributeType::enum_(carina_core::schema::enum_identity("PublicIpSource", Some("awscc.ec2.IpamPool")), Some(vec!["byoip".to_string(), "amazon".to_string()]), vec![("byoip".to_string(), "byoip".to_string()), ("amazon".to_string(), "amazon".to_string())], None, None))
+            AttributeSchema::new("public_ip_source", AttributeType::enum_(carina_core::schema::enum_identity("PublicIpSource", Some("aws.ec2.IpamPool")), Some(vec!["byoip".to_string(), "amazon".to_string()]), vec![("byoip".to_string(), "byoip".to_string()), ("amazon".to_string(), "amazon".to_string())], None, None))
                 .create_only()
                 .with_description("The IP address source for pools in the public scope. Only used for provisioning IP address CIDRs to pools in the public scope. Default is `byoip`.")
                 .with_provider_name("PublicIpSource"),
@@ -167,7 +165,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
                 .with_provider_name("PubliclyAdvertisable"),
         )
         .attribute(
-            AttributeSchema::new("source_ipam_pool_id", super::ipam_pool_id())
+            AttributeSchema::new("source_ipam_pool_id", carina_aws_types::ipam_pool_id())
                 .create_only()
                 .with_description("The Id of this pool's source. If set, all space provisioned in this pool must be free space provisioned in the parent pool.")
                 .with_provider_name("SourceIpamPoolId"),
@@ -175,13 +173,13 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
         .attribute(
             AttributeSchema::new("source_resource", AttributeType::struct_("SourceResource".to_string(), vec![StructField::new("resource_id", AttributeType::string()).required().with_provider_name("ResourceId"),
                     StructField::new("resource_owner", AttributeType::string()).required().with_provider_name("ResourceOwner"),
-                    StructField::new("resource_region", super::awscc_region()).required().with_provider_name("ResourceRegion"),
+                    StructField::new("resource_region", carina_aws_types::aws_region()).required().with_provider_name("ResourceRegion"),
                     StructField::new("resource_type", AttributeType::string()).required().with_provider_name("ResourceType")]))
                 .create_only()
                 .with_provider_name("SourceResource"),
         )
         .attribute(
-            AttributeSchema::new("state", AttributeType::enum_(carina_core::schema::enum_identity("State", Some("awscc.ec2.IpamPool")), Some(vec!["create-in-progress".to_string(), "create-complete".to_string(), "modify-in-progress".to_string(), "modify-complete".to_string(), "delete-in-progress".to_string(), "delete-complete".to_string()]), vec![("create-in-progress".to_string(), "create_in_progress".to_string()), ("create-complete".to_string(), "create_complete".to_string()), ("modify-in-progress".to_string(), "modify_in_progress".to_string()), ("modify-complete".to_string(), "modify_complete".to_string()), ("delete-in-progress".to_string(), "delete_in_progress".to_string()), ("delete-complete".to_string(), "delete_complete".to_string())], None, None))
+            AttributeSchema::new("state", AttributeType::enum_(carina_core::schema::enum_identity("State", Some("aws.ec2.IpamPool")), Some(vec!["create-in-progress".to_string(), "create-complete".to_string(), "modify-in-progress".to_string(), "modify-complete".to_string(), "delete-in-progress".to_string(), "delete-complete".to_string()]), vec![("create-in-progress".to_string(), "create_in_progress".to_string()), ("create-complete".to_string(), "create_complete".to_string()), ("modify-in-progress".to_string(), "modify_in_progress".to_string()), ("modify-complete".to_string(), "modify_complete".to_string()), ("delete-in-progress".to_string(), "delete_in_progress".to_string()), ("delete-complete".to_string(), "delete_complete".to_string())], None, None))
                 .read_only()
                 .with_description("The state of this pool. This can be one of the following values: \"create-in-progress\", \"create-complete\", \"modify-in-progress\", \"modify-complete\", \"delete-in-progress\", or \"delete-complete\" (read-only)")
                 .with_provider_name("State"),
@@ -193,7 +191,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
                 .with_provider_name("StateMessage"),
         )
         .attribute(
-            AttributeSchema::new("tags", tags_type())
+            AttributeSchema::new("tags", carina_aws_types::tags_type())
                 .with_description("An array of key-value pairs to apply to this resource.")
                 .with_provider_name("Tags")
                 .with_block_name("tag"),
@@ -206,14 +204,14 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
         })
         .with_validator(|attrs| {
             let mut errors = Vec::new();
-            if let Err(mut e) = validate_tags_map(attrs) {
+            if let Err(mut e) = carina_aws_types::validate_tags_map(attrs) {
                 errors.append(&mut e);
             }
             if errors.is_empty() { Ok(()) } else { Err(errors) }
         })
         .with_def("SourceResource", AttributeType::struct_("SourceResource".to_string(), vec![StructField::new("resource_id", AttributeType::string()).required().with_provider_name("ResourceId"),
                     StructField::new("resource_owner", AttributeType::string()).required().with_provider_name("ResourceOwner"),
-                    StructField::new("resource_region", super::awscc_region()).required().with_provider_name("ResourceRegion"),
+                    StructField::new("resource_region", carina_aws_types::aws_region()).required().with_provider_name("ResourceRegion"),
                     StructField::new("resource_type", AttributeType::string()).required().with_provider_name("ResourceType")]))
     }
 }

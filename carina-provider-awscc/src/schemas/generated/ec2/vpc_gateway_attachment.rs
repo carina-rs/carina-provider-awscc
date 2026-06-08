@@ -4,7 +4,7 @@
 //!
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
-use super::AwsccSchemaConfig;
+use crate::schemas::config::AwsccSchemaConfig;
 use carina_core::schema::{AttributeSchema, AttributeType, OperationConfig, ResourceSchema};
 
 /// Returns the schema config for ec2_vpc_gateway_attachment (AWS::EC2::VPCGatewayAttachment)
@@ -22,19 +22,19 @@ pub fn ec2_vpc_gateway_attachment_config() -> AwsccSchemaConfig {
                 .with_provider_name("AttachmentType"),
         )
         .attribute(
-            AttributeSchema::new("internet_gateway_id", super::internet_gateway_id())
+            AttributeSchema::new("internet_gateway_id", carina_aws_types::internet_gateway_id())
                 .with_description("The ID of the internet gateway. You must specify either InternetGatewayId or VpnGatewayId, but not both.")
                 .with_provider_name("InternetGatewayId"),
         )
         .attribute(
-            AttributeSchema::new("vpc_id", super::vpc_id())
+            AttributeSchema::new("vpc_id", carina_aws_types::vpc_id())
                 .required()
                 .create_only()
                 .with_description("The ID of the VPC.")
                 .with_provider_name("VpcId"),
         )
         .attribute(
-            AttributeSchema::new("vpn_gateway_id", super::vpn_gateway_id())
+            AttributeSchema::new("vpn_gateway_id", carina_aws_types::vpn_gateway_id())
                 .with_description("The ID of the virtual private gateway. You must specify either InternetGatewayId or VpnGatewayId, but not both.")
                 .with_provider_name("VpnGatewayId"),
         )

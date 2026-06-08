@@ -24,8 +24,8 @@ Specifies the feature set supported by the new organization. Each feature set su
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `ALL` | `awscc.organizations.Organization.FeatureSet.all` |
-| `CONSOLIDATED_BILLING` | `awscc.organizations.Organization.FeatureSet.consolidated_billing` |
+| `ALL` | `aws.organizations.Organization.FeatureSet.all` |
+| `CONSOLIDATED_BILLING` | `aws.organizations.Organization.FeatureSet.consolidated_billing` |
 
 Shorthand formats: `all` or `FeatureSet.all`
 

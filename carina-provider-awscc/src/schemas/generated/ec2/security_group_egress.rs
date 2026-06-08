@@ -4,7 +4,7 @@
 //!
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
-use super::AwsccSchemaConfig;
+use crate::schemas::config::AwsccSchemaConfig;
 use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{
     AttributeSchema, AttributeType, ResourceSchema, legacy_validator, types,
@@ -62,13 +62,13 @@ pub fn ec2_security_group_egress_config() -> AwsccSchemaConfig {
                 .with_provider_name("Description"),
         )
         .attribute(
-            AttributeSchema::new("destination_prefix_list_id", super::prefix_list_id())
+            AttributeSchema::new("destination_prefix_list_id", carina_aws_types::prefix_list_id())
                 .create_only()
                 .with_description("The prefix list IDs for an AWS service. This is the AWS service to access through a VPC endpoint from instances associated with the security group. You must specify exactly one of the following: ``CidrIp``, ``CidrIpv6``, ``DestinationPrefixListId``, or ``DestinationSecurityGroupId``.")
                 .with_provider_name("DestinationPrefixListId"),
         )
         .attribute(
-            AttributeSchema::new("destination_security_group_id", super::security_group_id())
+            AttributeSchema::new("destination_security_group_id", carina_aws_types::security_group_id())
                 .create_only()
                 .with_description("The ID of the security group. You must specify exactly one of the following: ``CidrIp``, ``CidrIpv6``, ``DestinationPrefixListId``, or ``DestinationSecurityGroupId``.")
                 .with_provider_name("DestinationSecurityGroupId"),
@@ -80,7 +80,7 @@ pub fn ec2_security_group_egress_config() -> AwsccSchemaConfig {
                 .with_provider_name("FromPort"),
         )
         .attribute(
-            AttributeSchema::new("group_id", super::security_group_id())
+            AttributeSchema::new("group_id", carina_aws_types::security_group_id())
                 .required()
                 .create_only()
                 .with_description("The ID of the security group. You must specify either the security group ID or the security group name in the request. For security groups in a nondefault VPC, you must specify the security group ID.")
@@ -93,7 +93,7 @@ pub fn ec2_security_group_egress_config() -> AwsccSchemaConfig {
                 .with_provider_name("Id"),
         )
         .attribute(
-            AttributeSchema::new("ip_protocol", AttributeType::enum_(carina_core::schema::enum_identity("IpProtocol", Some("awscc.ec2.SecurityGroupEgress")), Some(vec!["tcp".to_string(), "udp".to_string(), "icmp".to_string(), "icmpv6".to_string(), "-1".to_string(), "all".to_string()]), vec![("tcp".to_string(), "tcp".to_string()), ("udp".to_string(), "udp".to_string()), ("icmp".to_string(), "icmp".to_string()), ("icmpv6".to_string(), "icmpv6".to_string()), ("-1".to_string(), "all".to_string()), ("all".to_string(), "all".to_string())], None, None))
+            AttributeSchema::new("ip_protocol", AttributeType::enum_(carina_core::schema::enum_identity("IpProtocol", Some("aws.ec2.SecurityGroupEgress")), Some(vec!["tcp".to_string(), "udp".to_string(), "icmp".to_string(), "icmpv6".to_string(), "-1".to_string(), "all".to_string()]), vec![("tcp".to_string(), "tcp".to_string()), ("udp".to_string(), "udp".to_string()), ("icmp".to_string(), "icmp".to_string()), ("icmpv6".to_string(), "icmpv6".to_string()), ("-1".to_string(), "all".to_string()), ("all".to_string(), "all".to_string())], None, None))
                 .required()
                 .create_only()
                 .with_description("The IP protocol name (``tcp``, ``udp``, ``icmp``, ``icmpv6``) or number (see [Protocol Numbers](https://docs.aws.amazon.com/http://www.iana.org/assignments/protocol-numbers/protocol-numbers.xhtml)). Use ``-1`` to specify all protocols. When authorizing security group rules, specifying ``-1`` or a protocol number other than ``tcp``, ``udp``, ``icmp``, or ``icmpv6`` allows traffic on all ports, regardless of any port range you specify. For ``tcp``, ``udp``, and ``icmp``, you must specify a port range. For ``icmpv6``, the port range is optional; if you omit the port range, traffic for all types and codes is allowed.")

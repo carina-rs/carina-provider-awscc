@@ -4,9 +4,7 @@
 //!
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
-use super::AwsccSchemaConfig;
-use super::tags_type;
-use super::validate_tags_map;
+use crate::schemas::config::AwsccSchemaConfig;
 use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{
     AttributeSchema, AttributeType, ResourceSchema, legacy_validator, types,
@@ -15,13 +13,17 @@ use regex::Regex;
 
 pub fn arn() -> AttributeType {
     AttributeType::custom(
-        Some(super::provider_type("organizations", "Account", "Arn")),
-        super::arn(),
+        Some(carina_aws_types::provider_type(
+            "organizations",
+            "Account",
+            "Arn",
+        )),
+        carina_aws_types::arn(),
         Some("^arn:(aws|aws-cn|aws-us-gov):organizations:.*$".to_string()),
         None,
         legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
-                super::validate_service_arn(s, "organizations", None)
+                carina_aws_types::validate_service_arn(s, "organizations", None)
                     .map_err(|reason| format!("Invalid organizations ARN '{}': {}", s, reason))
             } else {
                 Err("Expected string".to_string())
@@ -171,7 +173,7 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
         schema: ResourceSchema::new("organizations.Account")
         .with_description("You can use AWS::Organizations::Account to manage accounts in organization.")
         .attribute(
-            AttributeSchema::new("account_id", super::aws_account_id())
+            AttributeSchema::new("account_id", carina_aws_types::aws_account_id())
                 .read_only()
                 .with_description("If the account was created successfully, the unique identifier (ID) of the new account. (read-only)")
                 .with_provider_name("AccountId"),
@@ -195,7 +197,7 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
                 .with_provider_name("Email"),
         )
         .attribute(
-            AttributeSchema::new("joined_method", AttributeType::enum_(carina_core::schema::enum_identity("JoinedMethod", Some("awscc.organizations.Account")), Some(vec!["INVITED".to_string(), "CREATED".to_string()]), vec![("INVITED".to_string(), "invited".to_string()), ("CREATED".to_string(), "created".to_string())], None, None))
+            AttributeSchema::new("joined_method", AttributeType::enum_(carina_core::schema::enum_identity("JoinedMethod", Some("aws.organizations.Account")), Some(vec!["INVITED".to_string(), "CREATED".to_string()]), vec![("INVITED".to_string(), "invited".to_string()), ("CREATED".to_string(), "created".to_string())], None, None))
                 .read_only()
                 .with_description("The method by which the account joined the organization. (read-only)")
                 .with_provider_name("JoinedMethod"),
@@ -225,26 +227,26 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
                 .with_default(Value::Concrete(ConcreteValue::String("OrganizationAccountAccessRole".to_string()))),
         )
         .attribute(
-            AttributeSchema::new("state", AttributeType::enum_(carina_core::schema::enum_identity("State", Some("awscc.organizations.Account")), Some(vec!["PENDING_ACTIVATION".to_string(), "ACTIVE".to_string(), "SUSPENDED".to_string(), "PENDING_CLOSURE".to_string(), "CLOSED".to_string()]), vec![("PENDING_ACTIVATION".to_string(), "pending_activation".to_string()), ("ACTIVE".to_string(), "active".to_string()), ("SUSPENDED".to_string(), "suspended".to_string()), ("PENDING_CLOSURE".to_string(), "pending_closure".to_string()), ("CLOSED".to_string(), "closed".to_string())], None, None))
+            AttributeSchema::new("state", AttributeType::enum_(carina_core::schema::enum_identity("State", Some("aws.organizations.Account")), Some(vec!["PENDING_ACTIVATION".to_string(), "ACTIVE".to_string(), "SUSPENDED".to_string(), "PENDING_CLOSURE".to_string(), "CLOSED".to_string()]), vec![("PENDING_ACTIVATION".to_string(), "pending_activation".to_string()), ("ACTIVE".to_string(), "active".to_string()), ("SUSPENDED".to_string(), "suspended".to_string()), ("PENDING_CLOSURE".to_string(), "pending_closure".to_string()), ("CLOSED".to_string(), "closed".to_string())], None, None))
                 .read_only()
                 .with_description("The state of the account in the organization. (read-only)")
                 .with_provider_name("State"),
         )
         .attribute(
-            AttributeSchema::new("status", AttributeType::enum_(carina_core::schema::enum_identity("Status", Some("awscc.organizations.Account")), Some(vec!["ACTIVE".to_string(), "SUSPENDED".to_string(), "PENDING_CLOSURE".to_string()]), vec![("ACTIVE".to_string(), "active".to_string()), ("SUSPENDED".to_string(), "suspended".to_string()), ("PENDING_CLOSURE".to_string(), "pending_closure".to_string())], None, None))
+            AttributeSchema::new("status", AttributeType::enum_(carina_core::schema::enum_identity("Status", Some("aws.organizations.Account")), Some(vec!["ACTIVE".to_string(), "SUSPENDED".to_string(), "PENDING_CLOSURE".to_string()]), vec![("ACTIVE".to_string(), "active".to_string()), ("SUSPENDED".to_string(), "suspended".to_string()), ("PENDING_CLOSURE".to_string(), "pending_closure".to_string())], None, None))
                 .read_only()
                 .with_description("The status of the account in the organization. (read-only)")
                 .with_provider_name("Status"),
         )
         .attribute(
-            AttributeSchema::new("tags", tags_type())
+            AttributeSchema::new("tags", carina_aws_types::tags_type())
                 .with_description("A list of tags that you want to attach to the newly created account. For each tag in the list, you must specify both a tag key and a value.")
                 .with_provider_name("Tags")
                 .with_block_name("tag"),
         )
         .with_validator(|attrs| {
             let mut errors = Vec::new();
-            if let Err(mut e) = validate_tags_map(attrs) {
+            if let Err(mut e) = carina_aws_types::validate_tags_map(attrs) {
                 errors.append(&mut e);
             }
             if errors.is_empty() { Ok(()) } else { Err(errors) }

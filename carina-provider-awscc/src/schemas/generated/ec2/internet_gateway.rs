@@ -4,9 +4,7 @@
 //!
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
-use super::AwsccSchemaConfig;
-use super::tags_type;
-use super::validate_tags_map;
+use crate::schemas::config::AwsccSchemaConfig;
 use carina_core::schema::{AttributeSchema, ResourceSchema};
 
 /// Returns the schema config for ec2_internet_gateway (AWS::EC2::InternetGateway)
@@ -18,13 +16,13 @@ pub fn ec2_internet_gateway_config() -> AwsccSchemaConfig {
         schema: ResourceSchema::new("ec2.InternetGateway")
         .with_description("Allocates an internet gateway for use with a VPC. After creating the Internet gateway, you then attach it to a VPC.")
         .attribute(
-            AttributeSchema::new("internet_gateway_id", super::internet_gateway_id())
+            AttributeSchema::new("internet_gateway_id", carina_aws_types::internet_gateway_id())
                 .read_only()
                 .with_description(" (read-only)")
                 .with_provider_name("InternetGatewayId"),
         )
         .attribute(
-            AttributeSchema::new("tags", tags_type())
+            AttributeSchema::new("tags", carina_aws_types::tags_type())
                 .with_description("Any tags to assign to the internet gateway.")
                 .with_provider_name("Tags")
                 .with_block_name("tag"),
@@ -32,7 +30,7 @@ pub fn ec2_internet_gateway_config() -> AwsccSchemaConfig {
         .force_replace()
         .with_validator(|attrs| {
             let mut errors = Vec::new();
-            if let Err(mut e) = validate_tags_map(attrs) {
+            if let Err(mut e) = carina_aws_types::validate_tags_map(attrs) {
                 errors.append(&mut e);
             }
             if errors.is_empty() { Ok(()) } else { Err(errors) }

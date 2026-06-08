@@ -30,13 +30,13 @@ A complex type that contains zero or more ``Tag`` elements.
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `GET` | `awscc.cloudfront.Distribution.DistributionConfig.CacheBehavior.AllowedMethods.get` |
-| `HEAD` | `awscc.cloudfront.Distribution.DistributionConfig.CacheBehavior.AllowedMethods.head` |
-| `OPTIONS` | `awscc.cloudfront.Distribution.DistributionConfig.CacheBehavior.AllowedMethods.options` |
-| `PUT` | `awscc.cloudfront.Distribution.DistributionConfig.CacheBehavior.AllowedMethods.put` |
-| `PATCH` | `awscc.cloudfront.Distribution.DistributionConfig.CacheBehavior.AllowedMethods.patch` |
-| `POST` | `awscc.cloudfront.Distribution.DistributionConfig.CacheBehavior.AllowedMethods.post` |
-| `DELETE` | `awscc.cloudfront.Distribution.DistributionConfig.CacheBehavior.AllowedMethods.delete` |
+| `GET` | `aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.AllowedMethods.get` |
+| `HEAD` | `aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.AllowedMethods.head` |
+| `OPTIONS` | `aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.AllowedMethods.options` |
+| `PUT` | `aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.AllowedMethods.put` |
+| `PATCH` | `aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.AllowedMethods.patch` |
+| `POST` | `aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.AllowedMethods.post` |
+| `DELETE` | `aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.AllowedMethods.delete` |
 
 Shorthand formats: `get` or `AllowedMethods.get`
 
@@ -44,9 +44,9 @@ Shorthand formats: `get` or `AllowedMethods.get`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `GET` | `awscc.cloudfront.Distribution.DistributionConfig.CacheBehavior.CachedMethods.get` |
-| `HEAD` | `awscc.cloudfront.Distribution.DistributionConfig.CacheBehavior.CachedMethods.head` |
-| `OPTIONS` | `awscc.cloudfront.Distribution.DistributionConfig.CacheBehavior.CachedMethods.options` |
+| `GET` | `aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.CachedMethods.get` |
+| `HEAD` | `aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.CachedMethods.head` |
+| `OPTIONS` | `aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.CachedMethods.options` |
 
 Shorthand formats: `get` or `CachedMethods.get`
 
@@ -54,9 +54,9 @@ Shorthand formats: `get` or `CachedMethods.get`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `allow-all` | `awscc.cloudfront.Distribution.DistributionConfig.CacheBehavior.ViewerProtocolPolicy.allow_all` |
-| `redirect-to-https` | `awscc.cloudfront.Distribution.DistributionConfig.CacheBehavior.ViewerProtocolPolicy.redirect_to_https` |
-| `https-only` | `awscc.cloudfront.Distribution.DistributionConfig.CacheBehavior.ViewerProtocolPolicy.https_only` |
+| `allow-all` | `aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.ViewerProtocolPolicy.allow_all` |
+| `redirect-to-https` | `aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.ViewerProtocolPolicy.redirect_to_https` |
+| `https-only` | `aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.ViewerProtocolPolicy.https_only` |
 
 Shorthand formats: `allow_all` or `ViewerProtocolPolicy.allow_all`
 
@@ -64,9 +64,9 @@ Shorthand formats: `allow_all` or `ViewerProtocolPolicy.allow_all`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `all` | `awscc.cloudfront.Distribution.DistributionConfig.CacheBehavior.ForwardedValues.Cookies.Forward.all` |
-| `none` | `awscc.cloudfront.Distribution.DistributionConfig.CacheBehavior.ForwardedValues.Cookies.Forward.none` |
-| `whitelist` | `awscc.cloudfront.Distribution.DistributionConfig.CacheBehavior.ForwardedValues.Cookies.Forward.whitelist` |
+| `all` | `aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.ForwardedValues.Cookies.Forward.all` |
+| `none` | `aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.ForwardedValues.Cookies.Forward.none` |
+| `whitelist` | `aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.ForwardedValues.Cookies.Forward.whitelist` |
 
 Shorthand formats: `all` or `Forward.all`
 
@@ -74,9 +74,9 @@ Shorthand formats: `all` or `Forward.all`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `ipv4` | `awscc.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.IpAddressType.ipv4` |
-| `ipv6` | `awscc.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.IpAddressType.ipv6` |
-| `dualstack` | `awscc.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.IpAddressType.dualstack` |
+| `ipv4` | `aws.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.IpAddressType.ipv4` |
+| `ipv6` | `aws.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.IpAddressType.ipv6` |
+| `dualstack` | `aws.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.IpAddressType.dualstack` |
 
 Shorthand formats: `ipv4` or `IpAddressType.ipv4`
 
@@ -84,9 +84,9 @@ Shorthand formats: `ipv4` or `IpAddressType.ipv4`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `http-only` | `awscc.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginProtocolPolicy.http_only` |
-| `match-viewer` | `awscc.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginProtocolPolicy.match_viewer` |
-| `https-only` | `awscc.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginProtocolPolicy.https_only` |
+| `http-only` | `aws.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginProtocolPolicy.http_only` |
+| `match-viewer` | `aws.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginProtocolPolicy.match_viewer` |
+| `https-only` | `aws.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginProtocolPolicy.https_only` |
 
 Shorthand formats: `http_only` or `OriginProtocolPolicy.http_only`
 
@@ -94,14 +94,14 @@ Shorthand formats: `http_only` or `OriginProtocolPolicy.http_only`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `SSLv3` | `awscc.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginSslProtocols.sslv3` |
-| `TLSv1` | `awscc.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginSslProtocols.tlsv1` |
-| `TLSv1.1` | `awscc.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginSslProtocols.tlsv1_1` |
-| `TLSv1.2` | `awscc.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginSslProtocols.tlsv1_2` |
-| `sslv3` | `awscc.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginSslProtocols.sslv3` |
-| `tlsv1` | `awscc.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginSslProtocols.tlsv1` |
-| `tlsv1_1` | `awscc.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginSslProtocols.tlsv1_1` |
-| `tlsv1_2` | `awscc.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginSslProtocols.tlsv1_2` |
+| `SSLv3` | `aws.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginSslProtocols.sslv3` |
+| `TLSv1` | `aws.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginSslProtocols.tlsv1` |
+| `TLSv1.1` | `aws.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginSslProtocols.tlsv1_1` |
+| `TLSv1.2` | `aws.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginSslProtocols.tlsv1_2` |
+| `sslv3` | `aws.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginSslProtocols.sslv3` |
+| `tlsv1` | `aws.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginSslProtocols.tlsv1` |
+| `tlsv1_1` | `aws.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginSslProtocols.tlsv1_1` |
+| `tlsv1_2` | `aws.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginSslProtocols.tlsv1_2` |
 
 Shorthand formats: `sslv3` or `OriginSslProtocols.sslv3`
 
@@ -109,13 +109,13 @@ Shorthand formats: `sslv3` or `OriginSslProtocols.sslv3`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `GET` | `awscc.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.AllowedMethods.get` |
-| `HEAD` | `awscc.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.AllowedMethods.head` |
-| `OPTIONS` | `awscc.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.AllowedMethods.options` |
-| `PUT` | `awscc.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.AllowedMethods.put` |
-| `PATCH` | `awscc.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.AllowedMethods.patch` |
-| `POST` | `awscc.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.AllowedMethods.post` |
-| `DELETE` | `awscc.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.AllowedMethods.delete` |
+| `GET` | `aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.AllowedMethods.get` |
+| `HEAD` | `aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.AllowedMethods.head` |
+| `OPTIONS` | `aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.AllowedMethods.options` |
+| `PUT` | `aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.AllowedMethods.put` |
+| `PATCH` | `aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.AllowedMethods.patch` |
+| `POST` | `aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.AllowedMethods.post` |
+| `DELETE` | `aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.AllowedMethods.delete` |
 
 Shorthand formats: `get` or `AllowedMethods.get`
 
@@ -123,9 +123,9 @@ Shorthand formats: `get` or `AllowedMethods.get`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `GET` | `awscc.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.CachedMethods.get` |
-| `HEAD` | `awscc.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.CachedMethods.head` |
-| `OPTIONS` | `awscc.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.CachedMethods.options` |
+| `GET` | `aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.CachedMethods.get` |
+| `HEAD` | `aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.CachedMethods.head` |
+| `OPTIONS` | `aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.CachedMethods.options` |
 
 Shorthand formats: `get` or `CachedMethods.get`
 
@@ -133,9 +133,9 @@ Shorthand formats: `get` or `CachedMethods.get`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `allow-all` | `awscc.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.ViewerProtocolPolicy.allow_all` |
-| `redirect-to-https` | `awscc.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.ViewerProtocolPolicy.redirect_to_https` |
-| `https-only` | `awscc.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.ViewerProtocolPolicy.https_only` |
+| `allow-all` | `aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.ViewerProtocolPolicy.allow_all` |
+| `redirect-to-https` | `aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.ViewerProtocolPolicy.redirect_to_https` |
+| `https-only` | `aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.ViewerProtocolPolicy.https_only` |
 
 Shorthand formats: `allow_all` or `ViewerProtocolPolicy.allow_all`
 
@@ -143,8 +143,8 @@ Shorthand formats: `allow_all` or `ViewerProtocolPolicy.allow_all`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `direct` | `awscc.cloudfront.Distribution.DistributionConfig.ConnectionMode.direct` |
-| `tenant-only` | `awscc.cloudfront.Distribution.DistributionConfig.ConnectionMode.tenant_only` |
+| `direct` | `aws.cloudfront.Distribution.DistributionConfig.ConnectionMode.direct` |
+| `tenant-only` | `aws.cloudfront.Distribution.DistributionConfig.ConnectionMode.tenant_only` |
 
 Shorthand formats: `direct` or `ConnectionMode.direct`
 
@@ -152,10 +152,10 @@ Shorthand formats: `direct` or `ConnectionMode.direct`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `http1.1` | `awscc.cloudfront.Distribution.DistributionConfig.HttpVersion.http1_1` |
-| `http2` | `awscc.cloudfront.Distribution.DistributionConfig.HttpVersion.http2` |
-| `http2and3` | `awscc.cloudfront.Distribution.DistributionConfig.HttpVersion.http2and3` |
-| `http3` | `awscc.cloudfront.Distribution.DistributionConfig.HttpVersion.http3` |
+| `http1.1` | `aws.cloudfront.Distribution.DistributionConfig.HttpVersion.http1_1` |
+| `http2` | `aws.cloudfront.Distribution.DistributionConfig.HttpVersion.http2` |
+| `http2and3` | `aws.cloudfront.Distribution.DistributionConfig.HttpVersion.http2and3` |
+| `http3` | `aws.cloudfront.Distribution.DistributionConfig.HttpVersion.http3` |
 
 Shorthand formats: `http1_1` or `HttpVersion.http1_1`
 
@@ -163,9 +163,9 @@ Shorthand formats: `http1_1` or `HttpVersion.http1_1`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `PriceClass_100` | `awscc.cloudfront.Distribution.DistributionConfig.PriceClass.price_class_100` |
-| `PriceClass_200` | `awscc.cloudfront.Distribution.DistributionConfig.PriceClass.price_class_200` |
-| `PriceClass_All` | `awscc.cloudfront.Distribution.DistributionConfig.PriceClass.price_class_all` |
+| `PriceClass_100` | `aws.cloudfront.Distribution.DistributionConfig.PriceClass.price_class_100` |
+| `PriceClass_200` | `aws.cloudfront.Distribution.DistributionConfig.PriceClass.price_class_200` |
+| `PriceClass_All` | `aws.cloudfront.Distribution.DistributionConfig.PriceClass.price_class_all` |
 
 Shorthand formats: `price_class_100` or `PriceClass.price_class_100`
 
@@ -173,10 +173,10 @@ Shorthand formats: `price_class_100` or `PriceClass.price_class_100`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `viewer-request` | `awscc.cloudfront.Distribution.DistributionConfig.CacheBehavior.FunctionAssociation.EventType.viewer_request` |
-| `viewer-response` | `awscc.cloudfront.Distribution.DistributionConfig.CacheBehavior.FunctionAssociation.EventType.viewer_response` |
-| `origin-request` | `awscc.cloudfront.Distribution.DistributionConfig.CacheBehavior.FunctionAssociation.EventType.origin_request` |
-| `origin-response` | `awscc.cloudfront.Distribution.DistributionConfig.CacheBehavior.FunctionAssociation.EventType.origin_response` |
+| `viewer-request` | `aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.FunctionAssociation.EventType.viewer_request` |
+| `viewer-response` | `aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.FunctionAssociation.EventType.viewer_response` |
+| `origin-request` | `aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.FunctionAssociation.EventType.origin_request` |
+| `origin-response` | `aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.FunctionAssociation.EventType.origin_response` |
 
 Shorthand formats: `viewer_request` or `EventType.viewer_request`
 
@@ -184,9 +184,9 @@ Shorthand formats: `viewer_request` or `EventType.viewer_request`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `none` | `awscc.cloudfront.Distribution.DistributionConfig.Restrictions.GeoRestriction.RestrictionType.none` |
-| `blacklist` | `awscc.cloudfront.Distribution.DistributionConfig.Restrictions.GeoRestriction.RestrictionType.blacklist` |
-| `whitelist` | `awscc.cloudfront.Distribution.DistributionConfig.Restrictions.GeoRestriction.RestrictionType.whitelist` |
+| `none` | `aws.cloudfront.Distribution.DistributionConfig.Restrictions.GeoRestriction.RestrictionType.none` |
+| `blacklist` | `aws.cloudfront.Distribution.DistributionConfig.Restrictions.GeoRestriction.RestrictionType.blacklist` |
+| `whitelist` | `aws.cloudfront.Distribution.DistributionConfig.Restrictions.GeoRestriction.RestrictionType.whitelist` |
 
 Shorthand formats: `none` or `RestrictionType.none`
 
@@ -194,10 +194,10 @@ Shorthand formats: `none` or `RestrictionType.none`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `viewer-request` | `awscc.cloudfront.Distribution.DistributionConfig.CacheBehavior.LambdaFunctionAssociation.EventType.viewer_request` |
-| `origin-request` | `awscc.cloudfront.Distribution.DistributionConfig.CacheBehavior.LambdaFunctionAssociation.EventType.origin_request` |
-| `origin-response` | `awscc.cloudfront.Distribution.DistributionConfig.CacheBehavior.LambdaFunctionAssociation.EventType.origin_response` |
-| `viewer-response` | `awscc.cloudfront.Distribution.DistributionConfig.CacheBehavior.LambdaFunctionAssociation.EventType.viewer_response` |
+| `viewer-request` | `aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.LambdaFunctionAssociation.EventType.viewer_request` |
+| `origin-request` | `aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.LambdaFunctionAssociation.EventType.origin_request` |
+| `origin-response` | `aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.LambdaFunctionAssociation.EventType.origin_response` |
+| `viewer-response` | `aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.LambdaFunctionAssociation.EventType.viewer_response` |
 
 Shorthand formats: `viewer_request` or `EventType.viewer_request`
 
@@ -205,9 +205,9 @@ Shorthand formats: `viewer_request` or `EventType.viewer_request`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `http-only` | `awscc.cloudfront.Distribution.DistributionConfig.LegacyCustomOrigin.OriginProtocolPolicy.http_only` |
-| `https-only` | `awscc.cloudfront.Distribution.DistributionConfig.LegacyCustomOrigin.OriginProtocolPolicy.https_only` |
-| `match-viewer` | `awscc.cloudfront.Distribution.DistributionConfig.LegacyCustomOrigin.OriginProtocolPolicy.match_viewer` |
+| `http-only` | `aws.cloudfront.Distribution.DistributionConfig.LegacyCustomOrigin.OriginProtocolPolicy.http_only` |
+| `https-only` | `aws.cloudfront.Distribution.DistributionConfig.LegacyCustomOrigin.OriginProtocolPolicy.https_only` |
+| `match-viewer` | `aws.cloudfront.Distribution.DistributionConfig.LegacyCustomOrigin.OriginProtocolPolicy.match_viewer` |
 
 Shorthand formats: `http_only` or `OriginProtocolPolicy.http_only`
 
@@ -215,14 +215,14 @@ Shorthand formats: `http_only` or `OriginProtocolPolicy.http_only`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `SSLv3` | `awscc.cloudfront.Distribution.DistributionConfig.LegacyCustomOrigin.OriginSslProtocols.sslv3` |
-| `TLSv1` | `awscc.cloudfront.Distribution.DistributionConfig.LegacyCustomOrigin.OriginSslProtocols.tlsv1` |
-| `TLSv1.1` | `awscc.cloudfront.Distribution.DistributionConfig.LegacyCustomOrigin.OriginSslProtocols.tlsv1_1` |
-| `TLSv1.2` | `awscc.cloudfront.Distribution.DistributionConfig.LegacyCustomOrigin.OriginSslProtocols.tlsv1_2` |
-| `sslv3` | `awscc.cloudfront.Distribution.DistributionConfig.LegacyCustomOrigin.OriginSslProtocols.sslv3` |
-| `tlsv1` | `awscc.cloudfront.Distribution.DistributionConfig.LegacyCustomOrigin.OriginSslProtocols.tlsv1` |
-| `tlsv1_1` | `awscc.cloudfront.Distribution.DistributionConfig.LegacyCustomOrigin.OriginSslProtocols.tlsv1_1` |
-| `tlsv1_2` | `awscc.cloudfront.Distribution.DistributionConfig.LegacyCustomOrigin.OriginSslProtocols.tlsv1_2` |
+| `SSLv3` | `aws.cloudfront.Distribution.DistributionConfig.LegacyCustomOrigin.OriginSslProtocols.sslv3` |
+| `TLSv1` | `aws.cloudfront.Distribution.DistributionConfig.LegacyCustomOrigin.OriginSslProtocols.tlsv1` |
+| `TLSv1.1` | `aws.cloudfront.Distribution.DistributionConfig.LegacyCustomOrigin.OriginSslProtocols.tlsv1_1` |
+| `TLSv1.2` | `aws.cloudfront.Distribution.DistributionConfig.LegacyCustomOrigin.OriginSslProtocols.tlsv1_2` |
+| `sslv3` | `aws.cloudfront.Distribution.DistributionConfig.LegacyCustomOrigin.OriginSslProtocols.sslv3` |
+| `tlsv1` | `aws.cloudfront.Distribution.DistributionConfig.LegacyCustomOrigin.OriginSslProtocols.tlsv1` |
+| `tlsv1_1` | `aws.cloudfront.Distribution.DistributionConfig.LegacyCustomOrigin.OriginSslProtocols.tlsv1_1` |
+| `tlsv1_2` | `aws.cloudfront.Distribution.DistributionConfig.LegacyCustomOrigin.OriginSslProtocols.tlsv1_2` |
 
 Shorthand formats: `sslv3` or `OriginSslProtocols.sslv3`
 
@@ -230,8 +230,8 @@ Shorthand formats: `sslv3` or `OriginSslProtocols.sslv3`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `default` | `awscc.cloudfront.Distribution.DistributionConfig.OriginGroups.OriginGroup.OriginGroupSelectionCriteria.default` |
-| `media-quality-based` | `awscc.cloudfront.Distribution.DistributionConfig.OriginGroups.OriginGroup.OriginGroupSelectionCriteria.media_quality_based` |
+| `default` | `aws.cloudfront.Distribution.DistributionConfig.OriginGroups.OriginGroup.OriginGroupSelectionCriteria.default` |
+| `media-quality-based` | `aws.cloudfront.Distribution.DistributionConfig.OriginGroups.OriginGroup.OriginGroupSelectionCriteria.media_quality_based` |
 
 Shorthand formats: `default` or `OriginGroupSelectionCriteria.default`
 
@@ -239,20 +239,20 @@ Shorthand formats: `default` or `OriginGroupSelectionCriteria.default`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `SSLv3` | `awscc.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.sslv3` |
-| `TLSv1` | `awscc.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.tlsv1` |
-| `TLSv1_2016` | `awscc.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.tlsv1_2016` |
-| `TLSv1.1_2016` | `awscc.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.tlsv1_1_2016` |
-| `TLSv1.2_2018` | `awscc.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.tlsv1_2_2018` |
-| `TLSv1.2_2019` | `awscc.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.tlsv1_2_2019` |
-| `TLSv1.2_2021` | `awscc.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.tlsv1_2_2021` |
-| `sslv3` | `awscc.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.sslv3` |
-| `tlsv1` | `awscc.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.tlsv1` |
-| `tlsv1_2016` | `awscc.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.tlsv1_2016` |
-| `tlsv1_1_2016` | `awscc.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.tlsv1_1_2016` |
-| `tlsv1_2_2018` | `awscc.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.tlsv1_2_2018` |
-| `tlsv1_2_2019` | `awscc.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.tlsv1_2_2019` |
-| `tlsv1_2_2021` | `awscc.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.tlsv1_2_2021` |
+| `SSLv3` | `aws.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.sslv3` |
+| `TLSv1` | `aws.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.tlsv1` |
+| `TLSv1_2016` | `aws.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.tlsv1_2016` |
+| `TLSv1.1_2016` | `aws.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.tlsv1_1_2016` |
+| `TLSv1.2_2018` | `aws.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.tlsv1_2_2018` |
+| `TLSv1.2_2019` | `aws.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.tlsv1_2_2019` |
+| `TLSv1.2_2021` | `aws.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.tlsv1_2_2021` |
+| `sslv3` | `aws.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.sslv3` |
+| `tlsv1` | `aws.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.tlsv1` |
+| `tlsv1_2016` | `aws.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.tlsv1_2016` |
+| `tlsv1_1_2016` | `aws.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.tlsv1_1_2016` |
+| `tlsv1_2_2018` | `aws.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.tlsv1_2_2018` |
+| `tlsv1_2_2019` | `aws.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.tlsv1_2_2019` |
+| `tlsv1_2_2021` | `aws.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.tlsv1_2_2021` |
 
 Shorthand formats: `sslv3` or `MinimumProtocolVersion.sslv3`
 
@@ -260,9 +260,9 @@ Shorthand formats: `sslv3` or `MinimumProtocolVersion.sslv3`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `sni-only` | `awscc.cloudfront.Distribution.DistributionConfig.ViewerCertificate.SslSupportMethod.sni_only` |
-| `vip` | `awscc.cloudfront.Distribution.DistributionConfig.ViewerCertificate.SslSupportMethod.vip` |
-| `static-ip` | `awscc.cloudfront.Distribution.DistributionConfig.ViewerCertificate.SslSupportMethod.static_ip` |
+| `sni-only` | `aws.cloudfront.Distribution.DistributionConfig.ViewerCertificate.SslSupportMethod.sni_only` |
+| `vip` | `aws.cloudfront.Distribution.DistributionConfig.ViewerCertificate.SslSupportMethod.vip` |
+| `static-ip` | `aws.cloudfront.Distribution.DistributionConfig.ViewerCertificate.SslSupportMethod.static_ip` |
 
 Shorthand formats: `sni_only` or `SslSupportMethod.sni_only`
 
@@ -270,9 +270,9 @@ Shorthand formats: `sni_only` or `SslSupportMethod.sni_only`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `required` | `awscc.cloudfront.Distribution.DistributionConfig.ViewerMtlsConfig.ViewerMtlsMode.required` |
-| `optional` | `awscc.cloudfront.Distribution.DistributionConfig.ViewerMtlsConfig.ViewerMtlsMode.optional` |
-| `passthrough` | `awscc.cloudfront.Distribution.DistributionConfig.ViewerMtlsConfig.ViewerMtlsMode.passthrough` |
+| `required` | `aws.cloudfront.Distribution.DistributionConfig.ViewerMtlsConfig.ViewerMtlsMode.required` |
+| `optional` | `aws.cloudfront.Distribution.DistributionConfig.ViewerMtlsConfig.ViewerMtlsMode.optional` |
+| `passthrough` | `aws.cloudfront.Distribution.DistributionConfig.ViewerMtlsConfig.ViewerMtlsMode.passthrough` |
 
 Shorthand formats: `required` or `ViewerMtlsMode.required`
 

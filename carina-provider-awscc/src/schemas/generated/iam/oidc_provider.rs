@@ -4,22 +4,24 @@
 //!
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
-use super::AwsccSchemaConfig;
-use super::tags_type;
-use super::validate_tags_map;
+use crate::schemas::config::AwsccSchemaConfig;
 use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, legacy_validator};
 use regex::Regex;
 
 pub fn arn() -> AttributeType {
     AttributeType::custom(
-        Some(super::provider_type("iam", "OidcProvider", "Arn")),
-        super::arn(),
+        Some(carina_aws_types::provider_type(
+            "iam",
+            "OidcProvider",
+            "Arn",
+        )),
+        carina_aws_types::arn(),
         Some("^arn:(aws|aws-cn|aws-us-gov):iam::[^:]*:oidc-provider/.+$".to_string()),
         None,
         legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
-                super::validate_iam_arn(s, "oidc-provider/")
+                carina_aws_types::validate_iam_arn(s, "oidc-provider/")
                     .map_err(|reason| format!("Invalid IAM OIDC Provider ARN '{}': {}", s, reason))
             } else {
                 Err("Expected string".to_string())
@@ -107,7 +109,7 @@ pub fn iam_oidc_provider_config() -> AwsccSchemaConfig {
                 .with_provider_name("ClientIdList"),
             )
             .attribute(
-                AttributeSchema::new("tags", tags_type())
+                AttributeSchema::new("tags", carina_aws_types::tags_type())
                     .with_provider_name("Tags")
                     .with_block_name("tag"),
             )
@@ -149,7 +151,7 @@ pub fn iam_oidc_provider_config() -> AwsccSchemaConfig {
             )
             .with_validator(|attrs| {
                 let mut errors = Vec::new();
-                if let Err(mut e) = validate_tags_map(attrs) {
+                if let Err(mut e) = carina_aws_types::validate_tags_map(attrs) {
                     errors.append(&mut e);
                 }
                 if errors.is_empty() {

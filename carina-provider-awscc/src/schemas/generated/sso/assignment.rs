@@ -4,7 +4,7 @@
 //!
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
-use super::AwsccSchemaConfig;
+use crate::schemas::config::AwsccSchemaConfig;
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema};
 
 const VALID_PRINCIPAL_TYPE: &[&str] = &["USER", "GROUP"];
@@ -20,21 +20,24 @@ pub fn sso_assignment_config() -> AwsccSchemaConfig {
         schema: ResourceSchema::new("sso.Assignment")
             .with_description("Resource Type definition for SSO assignmet")
             .attribute(
-                AttributeSchema::new("instance_arn", super::sso_instance_arn())
+                AttributeSchema::new("instance_arn", carina_aws_types::sso_instance_arn())
                     .required()
                     .create_only()
                     .with_description("The sso instance that the permission set is owned.")
                     .with_provider_name("InstanceArn"),
             )
             .attribute(
-                AttributeSchema::new("permission_set_arn", super::sso_permission_set_arn())
-                    .required()
-                    .create_only()
-                    .with_description("The permission set that the assignment will be assigned")
-                    .with_provider_name("PermissionSetArn"),
+                AttributeSchema::new(
+                    "permission_set_arn",
+                    carina_aws_types::sso_permission_set_arn(),
+                )
+                .required()
+                .create_only()
+                .with_description("The permission set that the assignment will be assigned")
+                .with_provider_name("PermissionSetArn"),
             )
             .attribute(
-                AttributeSchema::new("principal_id", super::sso_principal_id())
+                AttributeSchema::new("principal_id", carina_aws_types::sso_principal_id())
                     .required()
                     .create_only()
                     .with_description("The assignee's identifier, user id/group id")
@@ -46,7 +49,7 @@ pub fn sso_assignment_config() -> AwsccSchemaConfig {
                     AttributeType::enum_(
                         carina_core::schema::enum_identity(
                             "PrincipalType",
-                            Some("awscc.sso.Assignment"),
+                            Some("aws.sso.Assignment"),
                         ),
                         Some(vec!["USER".to_string(), "GROUP".to_string()]),
                         vec![
@@ -63,7 +66,7 @@ pub fn sso_assignment_config() -> AwsccSchemaConfig {
                 .with_provider_name("PrincipalType"),
             )
             .attribute(
-                AttributeSchema::new("target_id", super::aws_account_id())
+                AttributeSchema::new("target_id", carina_aws_types::aws_account_id())
                     .required()
                     .create_only()
                     .with_description("The account id to be provisioned.")
@@ -75,7 +78,7 @@ pub fn sso_assignment_config() -> AwsccSchemaConfig {
                     AttributeType::enum_(
                         carina_core::schema::enum_identity(
                             "TargetType",
-                            Some("awscc.sso.Assignment"),
+                            Some("aws.sso.Assignment"),
                         ),
                         Some(vec!["AWS_ACCOUNT".to_string()]),
                         vec![("AWS_ACCOUNT".to_string(), "aws_account".to_string())],

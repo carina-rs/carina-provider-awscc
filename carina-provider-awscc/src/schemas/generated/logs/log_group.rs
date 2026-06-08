@@ -4,22 +4,20 @@
 //!
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
-use super::AwsccSchemaConfig;
-use super::tags_type;
-use super::validate_tags_map;
+use crate::schemas::config::AwsccSchemaConfig;
 use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, legacy_validator};
 use regex::Regex;
 
 pub fn arn() -> AttributeType {
     AttributeType::custom(
-        Some(super::provider_type("logs", "LogGroup", "Arn")),
-        super::arn(),
+        Some(carina_aws_types::provider_type("logs", "LogGroup", "Arn")),
+        carina_aws_types::arn(),
         Some("^arn:(aws|aws-cn|aws-us-gov):logs:[^:]*:[^:]*:log-group:.+$".to_string()),
         None,
         legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
-                super::validate_service_arn(s, "logs", Some("log-group:"))
+                carina_aws_types::validate_service_arn(s, "logs", Some("log-group:"))
                     .map_err(|reason| format!("Invalid logs ARN '{}': {}", s, reason))
             } else {
                 Err("Expected string".to_string())
@@ -106,7 +104,7 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
                 .with_provider_name("KmsKeyId"),
         )
         .attribute(
-            AttributeSchema::new("log_group_class", AttributeType::enum_(carina_core::schema::enum_identity("LogGroupClass", Some("awscc.logs.LogGroup")), Some(vec!["STANDARD".to_string(), "INFREQUENT_ACCESS".to_string(), "DELIVERY".to_string()]), vec![("STANDARD".to_string(), "standard".to_string()), ("INFREQUENT_ACCESS".to_string(), "infrequent_access".to_string()), ("DELIVERY".to_string(), "delivery".to_string())], None, None))
+            AttributeSchema::new("log_group_class", AttributeType::enum_(carina_core::schema::enum_identity("LogGroupClass", Some("aws.logs.LogGroup")), Some(vec!["STANDARD".to_string(), "INFREQUENT_ACCESS".to_string(), "DELIVERY".to_string()]), vec![("STANDARD".to_string(), "standard".to_string()), ("INFREQUENT_ACCESS".to_string(), "infrequent_access".to_string()), ("DELIVERY".to_string(), "delivery".to_string())], None, None))
                 .with_description("Specifies the log group class for this log group. There are two classes: + The ``Standard`` log class supports all CWL features. + The ``Infrequent Access`` log class supports a subset of CWL features and incurs lower costs. For details about the features supported by each class, see [Log classes](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/CloudWatch_Logs_Log_Classes.html)")
                 .with_provider_name("LogGroupClass")
                 .with_default(Value::Concrete(ConcreteValue::String("STANDARD".to_string()))),
@@ -118,7 +116,7 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
                 .with_provider_name("LogGroupName"),
         )
         .attribute(
-            AttributeSchema::new("resource_policy_document", super::iam_policy_document())
+            AttributeSchema::new("resource_policy_document", carina_aws_types::iam_policy_document())
                 .with_description("Creates or updates a resource policy for the specified log group that allows other services to put log events to this account. A LogGroup can have 1 resource policy.")
                 .with_provider_name("ResourcePolicyDocument"),
         )
@@ -128,7 +126,7 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
                 .with_provider_name("RetentionInDays"),
         )
         .attribute(
-            AttributeSchema::new("tags", tags_type())
+            AttributeSchema::new("tags", carina_aws_types::tags_type())
                 .with_description("An array of key-value pairs to apply to the log group. For more information, see [Tag](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-resource-tags.html).")
                 .with_provider_name("Tags")
                 .with_block_name("tag"),
@@ -136,7 +134,7 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
         .with_name_attribute("log_group_name")
         .with_validator(|attrs| {
             let mut errors = Vec::new();
-            if let Err(mut e) = validate_tags_map(attrs) {
+            if let Err(mut e) = carina_aws_types::validate_tags_map(attrs) {
                 errors.append(&mut e);
             }
             if errors.is_empty() { Ok(()) } else { Err(errors) }
