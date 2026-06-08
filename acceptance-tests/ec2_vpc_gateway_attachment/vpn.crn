@@ -12,7 +12,7 @@ let vpc = awscc.ec2.Vpc {
 }
 
 let vpn_gw = awscc.ec2.VpnGateway {
-  type = awscc.ec2.VpnGateway.Type.ipsec_1
+  type = aws.ec2.VpnGateway.Type.ipsec_1
 }
 
 awscc.ec2.VpcGatewayAttachment {

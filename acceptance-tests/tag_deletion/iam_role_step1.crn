@@ -11,9 +11,9 @@ awscc.iam.Role {
   role_name_prefix = 'carina-acc-test-tag-del-'
 
   assume_role_policy_document = {
-    version = awscc.iam.PolicyDocument.Version.2012_10_17
+    version = aws.iam.PolicyDocument.Version.2012_10_17
     statement {
-      effect = awscc.iam.PolicyDocument.Statement.Effect.allow
+      effect = aws.iam.PolicyDocument.Statement.Effect.allow
 
       principal = {
         service = 'lambda.amazonaws.com'

@@ -7,7 +7,7 @@ provider awscc {
 }
 
 awscc.ec2.VpnGateway {
-  type = awscc.ec2.VpnGateway.Type.ipsec_1
+  type = aws.ec2.VpnGateway.Type.ipsec_1
 
   tags = {
     Environment = 'acceptance-test'

@@ -20,9 +20,9 @@ let flow_log_role = awscc.iam.Role {
   role_name = 'acceptance-test-flow-log-role'
 
   assume_role_policy_document = {
-    version = awscc.iam.PolicyDocument.Version.2012_10_17
+    version = aws.iam.PolicyDocument.Version.2012_10_17
     statement {
-      effect = awscc.iam.PolicyDocument.Statement.Effect.allow
+      effect = aws.iam.PolicyDocument.Statement.Effect.allow
 
       principal = {
         service = 'vpc-flow-logs.amazonaws.com'
@@ -35,7 +35,7 @@ let flow_log_role = awscc.iam.Role {
 
 awscc.ec2.FlowLog {
   resource_id                 = vpc.vpc_id
-  resource_type               = awscc.ec2.FlowLog.ResourceType.vpc
+  resource_type               = aws.ec2.FlowLog.ResourceType.vpc
   traffic_type                = all
   log_destination_type        = cloud_watch_logs
   log_group_name              = log_group.log_group_name

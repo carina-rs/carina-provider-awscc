@@ -21,9 +21,9 @@ awscc.ec2.VpcEndpoint {
   route_table_ids   = [rt.route_table_id]
 
   policy_document = {
-    version = awscc.iam.PolicyDocument.Version.2012_10_17
+    version = aws.iam.PolicyDocument.Version.2012_10_17
     statement {
-      effect    = awscc.iam.PolicyDocument.Statement.Effect.allow
+      effect    = aws.iam.PolicyDocument.Statement.Effect.allow
       principal = '*'
       action    = 's3:GetObject'
       resource  = 'arn:aws:s3:::*'
