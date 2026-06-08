@@ -3,7 +3,7 @@
 # Tests: create route 10.1.0.0/16 via Internet Gateway
 
 provider awscc {
-  region = awscc.Region.ap_northeast_1
+  region = aws.Region.ap_northeast_1
 }
 
 let vpc = awscc.ec2.Vpc {

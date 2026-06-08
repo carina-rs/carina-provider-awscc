@@ -3,7 +3,7 @@
 # Tests: log_group_name_prefix, log_group_class, retention_in_days
 
 provider awscc {
-  region = awscc.Region.ap_northeast_1
+  region = aws.Region.ap_northeast_1
 }
 
 awscc.logs.LogGroup {

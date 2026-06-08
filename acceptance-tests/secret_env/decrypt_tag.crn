@@ -1,5 +1,5 @@
 provider awscc {
-  region = awscc.Region.ap_northeast_1
+  region = aws.Region.ap_northeast_1
 }
 
 # KMS-encrypted value (encrypted with alias/carina-test key in carina-test-000 account)

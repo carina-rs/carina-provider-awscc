@@ -7,7 +7,7 @@
 #        destroy cleans up the bucket.
 
 provider awscc {
-  region = awscc.Region.ap_northeast_1
+  region = aws.Region.ap_northeast_1
 }
 
 awscc.s3.Bucket {

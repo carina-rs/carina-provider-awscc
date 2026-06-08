@@ -4,7 +4,7 @@
 # that CloudControl "remove" patch is used for the removed key.
 
 provider awscc {
-  region = awscc.Region.ap_northeast_1
+  region = aws.Region.ap_northeast_1
 }
 
 awscc.s3.Bucket {

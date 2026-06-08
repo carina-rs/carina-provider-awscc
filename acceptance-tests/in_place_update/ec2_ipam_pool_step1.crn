@@ -3,7 +3,7 @@
 # Tests: create IPAM and IPAM pool with initial description
 
 provider awscc {
-  region = awscc.Region.ap_northeast_1
+  region = aws.Region.ap_northeast_1
 }
 
 let ipam = awscc.ec2.Ipam {

@@ -4,7 +4,7 @@
 # Case B: schema has no create-only properties at all
 
 provider awscc {
-  region = awscc.Region.ap_northeast_1
+  region = aws.Region.ap_northeast_1
 }
 
 awscc.ec2.Ipam {

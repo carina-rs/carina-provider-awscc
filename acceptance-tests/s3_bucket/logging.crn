@@ -6,7 +6,7 @@
 #        destroy cleans up both buckets.
 
 provider awscc {
-  region = awscc.Region.ap_northeast_1
+  region = aws.Region.ap_northeast_1
 }
 
 let log_bucket = awscc.s3.Bucket {

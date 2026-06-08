@@ -3,7 +3,7 @@
 # Tests: create transit gateway attachment with initial tags
 
 provider awscc {
-  region = awscc.Region.ap_northeast_1
+  region = aws.Region.ap_northeast_1
 }
 
 let vpc = awscc.ec2.Vpc {
