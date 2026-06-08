@@ -8,6 +8,6 @@ provider awscc {
 
 awscc.logs.LogGroup {
   log_group_name_prefix = '/carina/acc-test-'
-  log_group_class       = awscc.logs.LogGroup.LogGroupClass.infrequent_access
+  log_group_class       = aws.logs.LogGroup.LogGroupClass.infrequent_access
   retention_in_days     = 1
 }
