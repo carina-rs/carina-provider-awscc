@@ -3,7 +3,7 @@
 # Tests: update tags (in-place update)
 
 provider awscc {
-  region = awscc.Region.ap_northeast_1
+  region = aws.Region.ap_northeast_1
 }
 
 awscc.ec2.Eip {

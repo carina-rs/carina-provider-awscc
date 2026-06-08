@@ -7,7 +7,7 @@
 # error naming both the expected list and the actual account ID.
 
 provider awscc {
-  region              = awscc.Region.ap_northeast_1
+  region              = aws.Region.ap_northeast_1
   allowed_account_ids = ['000000000000']
 }
 

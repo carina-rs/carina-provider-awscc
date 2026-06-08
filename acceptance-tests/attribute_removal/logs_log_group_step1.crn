@@ -3,7 +3,7 @@
 # Tests: create log group with retention_in_days set
 
 provider awscc {
-  region = awscc.Region.ap_northeast_1
+  region = aws.Region.ap_northeast_1
 }
 
 awscc.logs.LogGroup {

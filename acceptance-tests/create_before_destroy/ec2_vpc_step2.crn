@@ -5,7 +5,7 @@
 # This tests that replacement works correctly without the temp name feature.
 
 provider awscc {
-  region = awscc.Region.ap_northeast_1
+  region = aws.Region.ap_northeast_1
 }
 
 awscc.ec2.Vpc {

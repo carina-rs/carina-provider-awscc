@@ -3,7 +3,7 @@
 # Tests: module use, argument passing, intra-module resource references
 
 provider awscc {
-  region = awscc.Region.ap_northeast_1
+  region = aws.Region.ap_northeast_1
 }
 
 let network = use { source = './modules/network' }

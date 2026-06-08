@@ -14,7 +14,7 @@
 # - VPC Endpoints (ecr.dkr, ecr.api, s3, logs, ssm, ssmmessages)
 
 provider awscc {
-  region = awscc.Region.ap_northeast_1
+  region = aws.Region.ap_northeast_1
 }
 
 # --- VPC and Internet Gateway ---

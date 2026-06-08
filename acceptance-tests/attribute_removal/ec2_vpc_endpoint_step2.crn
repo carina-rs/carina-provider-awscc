@@ -3,7 +3,7 @@
 # Tests: remove policy_document entirely (attribute removal)
 
 provider awscc {
-  region = awscc.Region.ap_northeast_1
+  region = aws.Region.ap_northeast_1
 }
 
 let vpc = awscc.ec2.Vpc {

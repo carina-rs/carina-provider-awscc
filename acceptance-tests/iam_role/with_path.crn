@@ -3,7 +3,7 @@
 # Tests: role_name_prefix, assume_role_policy_document, path (create_only), tags
 
 provider awscc {
-  region = awscc.Region.ap_northeast_1
+  region = aws.Region.ap_northeast_1
 }
 
 awscc.iam.Role {

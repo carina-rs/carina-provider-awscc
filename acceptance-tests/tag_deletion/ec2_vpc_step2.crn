@@ -5,7 +5,7 @@
 # patch and plan should show no changes (idempotent).
 
 provider awscc {
-  region = awscc.Region.ap_northeast_1
+  region = aws.Region.ap_northeast_1
 }
 
 awscc.ec2.Vpc {

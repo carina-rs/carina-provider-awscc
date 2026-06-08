@@ -5,7 +5,7 @@
 # replacement because transit_gateway_id is a create-only property.
 
 provider awscc {
-  region = awscc.Region.ap_northeast_1
+  region = aws.Region.ap_northeast_1
 }
 
 let vpc = awscc.ec2.Vpc {

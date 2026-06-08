@@ -15,7 +15,7 @@
 # - IPAM Pool deletion times out via CloudControl API.
 
 provider awscc {
-  region = awscc.Region.ap_northeast_1
+  region = aws.Region.ap_northeast_1
 }
 
 provider aws {
