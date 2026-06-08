@@ -162,11 +162,11 @@ The ID of the VPC.
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `ipv4` | `awscc.ec2.VpcEndpoint.DnsOptionsSpecification.DnsRecordIpType.ipv4` |
-| `ipv6` | `awscc.ec2.VpcEndpoint.DnsOptionsSpecification.DnsRecordIpType.ipv6` |
-| `dualstack` | `awscc.ec2.VpcEndpoint.DnsOptionsSpecification.DnsRecordIpType.dualstack` |
-| `service-defined` | `awscc.ec2.VpcEndpoint.DnsOptionsSpecification.DnsRecordIpType.service_defined` |
-| `not-specified` | `awscc.ec2.VpcEndpoint.DnsOptionsSpecification.DnsRecordIpType.not_specified` |
+| `ipv4` | `aws.ec2.VpcEndpoint.DnsOptionsSpecification.DnsRecordIpType.ipv4` |
+| `ipv6` | `aws.ec2.VpcEndpoint.DnsOptionsSpecification.DnsRecordIpType.ipv6` |
+| `dualstack` | `aws.ec2.VpcEndpoint.DnsOptionsSpecification.DnsRecordIpType.dualstack` |
+| `service-defined` | `aws.ec2.VpcEndpoint.DnsOptionsSpecification.DnsRecordIpType.service_defined` |
+| `not-specified` | `aws.ec2.VpcEndpoint.DnsOptionsSpecification.DnsRecordIpType.not_specified` |
 
 Shorthand formats: `ipv4` or `DnsRecordIpType.ipv4`
 
@@ -174,9 +174,9 @@ Shorthand formats: `ipv4` or `DnsRecordIpType.ipv4`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `OnlyInboundResolver` | `awscc.ec2.VpcEndpoint.DnsOptionsSpecification.PrivateDnsOnlyForInboundResolverEndpoint.only_inbound_resolver` |
-| `AllResolvers` | `awscc.ec2.VpcEndpoint.DnsOptionsSpecification.PrivateDnsOnlyForInboundResolverEndpoint.all_resolvers` |
-| `NotSpecified` | `awscc.ec2.VpcEndpoint.DnsOptionsSpecification.PrivateDnsOnlyForInboundResolverEndpoint.not_specified` |
+| `OnlyInboundResolver` | `aws.ec2.VpcEndpoint.DnsOptionsSpecification.PrivateDnsOnlyForInboundResolverEndpoint.only_inbound_resolver` |
+| `AllResolvers` | `aws.ec2.VpcEndpoint.DnsOptionsSpecification.PrivateDnsOnlyForInboundResolverEndpoint.all_resolvers` |
+| `NotSpecified` | `aws.ec2.VpcEndpoint.DnsOptionsSpecification.PrivateDnsOnlyForInboundResolverEndpoint.not_specified` |
 
 Shorthand formats: `only_inbound_resolver` or `PrivateDnsOnlyForInboundResolverEndpoint.only_inbound_resolver`
 
@@ -184,10 +184,10 @@ Shorthand formats: `only_inbound_resolver` or `PrivateDnsOnlyForInboundResolverE
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `VERIFIED_DOMAINS_ONLY` | `awscc.ec2.VpcEndpoint.DnsOptionsSpecification.PrivateDnsPreference.verified_domains_only` |
-| `ALL_DOMAINS` | `awscc.ec2.VpcEndpoint.DnsOptionsSpecification.PrivateDnsPreference.all_domains` |
-| `VERIFIED_DOMAINS_AND_SPECIFIED_DOMAINS` | `awscc.ec2.VpcEndpoint.DnsOptionsSpecification.PrivateDnsPreference.verified_domains_and_specified_domains` |
-| `SPECIFIED_DOMAINS_ONLY` | `awscc.ec2.VpcEndpoint.DnsOptionsSpecification.PrivateDnsPreference.specified_domains_only` |
+| `VERIFIED_DOMAINS_ONLY` | `aws.ec2.VpcEndpoint.DnsOptionsSpecification.PrivateDnsPreference.verified_domains_only` |
+| `ALL_DOMAINS` | `aws.ec2.VpcEndpoint.DnsOptionsSpecification.PrivateDnsPreference.all_domains` |
+| `VERIFIED_DOMAINS_AND_SPECIFIED_DOMAINS` | `aws.ec2.VpcEndpoint.DnsOptionsSpecification.PrivateDnsPreference.verified_domains_and_specified_domains` |
+| `SPECIFIED_DOMAINS_ONLY` | `aws.ec2.VpcEndpoint.DnsOptionsSpecification.PrivateDnsPreference.specified_domains_only` |
 
 Shorthand formats: `verified_domains_only` or `PrivateDnsPreference.verified_domains_only`
 
@@ -195,10 +195,10 @@ Shorthand formats: `verified_domains_only` or `PrivateDnsPreference.verified_dom
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `ipv4` | `awscc.ec2.VpcEndpoint.IpAddressType.ipv4` |
-| `ipv6` | `awscc.ec2.VpcEndpoint.IpAddressType.ipv6` |
-| `dualstack` | `awscc.ec2.VpcEndpoint.IpAddressType.dualstack` |
-| `not-specified` | `awscc.ec2.VpcEndpoint.IpAddressType.not_specified` |
+| `ipv4` | `aws.ec2.VpcEndpoint.IpAddressType.ipv4` |
+| `ipv6` | `aws.ec2.VpcEndpoint.IpAddressType.ipv6` |
+| `dualstack` | `aws.ec2.VpcEndpoint.IpAddressType.dualstack` |
+| `not-specified` | `aws.ec2.VpcEndpoint.IpAddressType.not_specified` |
 
 Shorthand formats: `ipv4` or `IpAddressType.ipv4`
 
@@ -206,11 +206,11 @@ Shorthand formats: `ipv4` or `IpAddressType.ipv4`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `Interface` | `awscc.ec2.VpcEndpoint.VpcEndpointType.interface` |
-| `Gateway` | `awscc.ec2.VpcEndpoint.VpcEndpointType.gateway` |
-| `GatewayLoadBalancer` | `awscc.ec2.VpcEndpoint.VpcEndpointType.gateway_load_balancer` |
-| `ServiceNetwork` | `awscc.ec2.VpcEndpoint.VpcEndpointType.service_network` |
-| `Resource` | `awscc.ec2.VpcEndpoint.VpcEndpointType.resource` |
+| `Interface` | `aws.ec2.VpcEndpoint.VpcEndpointType.interface` |
+| `Gateway` | `aws.ec2.VpcEndpoint.VpcEndpointType.gateway` |
+| `GatewayLoadBalancer` | `aws.ec2.VpcEndpoint.VpcEndpointType.gateway_load_balancer` |
+| `ServiceNetwork` | `aws.ec2.VpcEndpoint.VpcEndpointType.service_network` |
+| `Resource` | `aws.ec2.VpcEndpoint.VpcEndpointType.resource` |
 
 Shorthand formats: `interface` or `VpcEndpointType.interface`
 

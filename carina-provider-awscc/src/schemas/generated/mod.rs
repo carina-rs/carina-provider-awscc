@@ -6,9 +6,7 @@
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
-// Re-export all types and validators from awscc_types so that
-// generated schema files can use `super::` to access them.
-pub use super::awscc_types::*;
+use super::config::AwsccSchemaConfig;
 
 pub mod cloudfront;
 pub mod dynamodb;

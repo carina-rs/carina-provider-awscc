@@ -73,8 +73,8 @@ The options for the transit gateway vpc attachment.
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `enable` | `awscc.ec2.TransitGatewayAttachment.Options.ApplianceModeSupport.enable` |
-| `disable` | `awscc.ec2.TransitGatewayAttachment.Options.ApplianceModeSupport.disable` |
+| `enable` | `aws.ec2.TransitGatewayAttachment.Options.ApplianceModeSupport.enable` |
+| `disable` | `aws.ec2.TransitGatewayAttachment.Options.ApplianceModeSupport.disable` |
 
 Shorthand formats: `enable` or `ApplianceModeSupport.enable`
 
@@ -82,8 +82,8 @@ Shorthand formats: `enable` or `ApplianceModeSupport.enable`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `enable` | `awscc.ec2.TransitGatewayAttachment.Options.DnsSupport.enable` |
-| `disable` | `awscc.ec2.TransitGatewayAttachment.Options.DnsSupport.disable` |
+| `enable` | `aws.ec2.TransitGatewayAttachment.Options.DnsSupport.enable` |
+| `disable` | `aws.ec2.TransitGatewayAttachment.Options.DnsSupport.disable` |
 
 Shorthand formats: `enable` or `DnsSupport.enable`
 
@@ -91,8 +91,8 @@ Shorthand formats: `enable` or `DnsSupport.enable`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `enable` | `awscc.ec2.TransitGatewayAttachment.Options.Ipv6Support.enable` |
-| `disable` | `awscc.ec2.TransitGatewayAttachment.Options.Ipv6Support.disable` |
+| `enable` | `aws.ec2.TransitGatewayAttachment.Options.Ipv6Support.enable` |
+| `disable` | `aws.ec2.TransitGatewayAttachment.Options.Ipv6Support.disable` |
 
 Shorthand formats: `enable` or `Ipv6Support.enable`
 
@@ -100,8 +100,8 @@ Shorthand formats: `enable` or `Ipv6Support.enable`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `enable` | `awscc.ec2.TransitGatewayAttachment.Options.SecurityGroupReferencingSupport.enable` |
-| `disable` | `awscc.ec2.TransitGatewayAttachment.Options.SecurityGroupReferencingSupport.disable` |
+| `enable` | `aws.ec2.TransitGatewayAttachment.Options.SecurityGroupReferencingSupport.enable` |
+| `disable` | `aws.ec2.TransitGatewayAttachment.Options.SecurityGroupReferencingSupport.disable` |
 
 Shorthand formats: `enable` or `SecurityGroupReferencingSupport.enable`
 

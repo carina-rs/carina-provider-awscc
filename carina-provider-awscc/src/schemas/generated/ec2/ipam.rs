@@ -4,9 +4,7 @@
 //!
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
-use super::AwsccSchemaConfig;
-use super::tags_type;
-use super::validate_tags_map;
+use crate::schemas::config::AwsccSchemaConfig;
 use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{
     AttributeSchema, AttributeType, OperationConfig, ResourceSchema, StructField, legacy_validator,
@@ -14,13 +12,13 @@ use carina_core::schema::{
 
 pub fn arn() -> AttributeType {
     AttributeType::custom(
-        Some(super::provider_type("ec2", "Ipam", "Arn")),
-        super::arn(),
+        Some(carina_aws_types::provider_type("ec2", "Ipam", "Arn")),
+        carina_aws_types::arn(),
         Some("^arn:(aws|aws-cn|aws-us-gov):ec2:.*$".to_string()),
         None,
         legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
-                super::validate_service_arn(s, "ec2", None)
+                carina_aws_types::validate_service_arn(s, "ec2", None)
                     .map_err(|reason| format!("Invalid ec2 ARN '{}': {}", s, reason))
             } else {
                 Err("Expected string".to_string())
@@ -102,18 +100,18 @@ pub fn ec2_ipam_config() -> AwsccSchemaConfig {
                 .with_provider_name("EnablePrivateGua"),
         )
         .attribute(
-            AttributeSchema::new("ipam_id", super::ipam_id())
+            AttributeSchema::new("ipam_id", carina_aws_types::ipam_id())
                 .read_only()
                 .with_description("Id of the IPAM. (read-only)")
                 .with_provider_name("IpamId"),
         )
         .attribute(
-            AttributeSchema::new("metered_account", AttributeType::enum_(carina_core::schema::enum_identity("MeteredAccount", Some("awscc.ec2.Ipam")), Some(vec!["ipam-owner".to_string(), "resource-owner".to_string()]), vec![("ipam-owner".to_string(), "ipam_owner".to_string()), ("resource-owner".to_string(), "resource_owner".to_string())], None, None))
+            AttributeSchema::new("metered_account", AttributeType::enum_(carina_core::schema::enum_identity("MeteredAccount", Some("aws.ec2.Ipam")), Some(vec!["ipam-owner".to_string(), "resource-owner".to_string()]), vec![("ipam-owner".to_string(), "ipam_owner".to_string()), ("resource-owner".to_string(), "resource_owner".to_string())], None, None))
                 .with_description("A metered account is an account that is charged for active IP addresses managed in IPAM")
                 .with_provider_name("MeteredAccount"),
         )
         .attribute(
-            AttributeSchema::new("operating_regions", AttributeType::unordered_list(AttributeType::struct_("IpamOperatingRegion".to_string(), vec![StructField::new("region_name", super::awscc_region()).required().with_description("The name of the region.").with_provider_name("RegionName")])))
+            AttributeSchema::new("operating_regions", AttributeType::unordered_list(AttributeType::struct_("IpamOperatingRegion".to_string(), vec![StructField::new("region_name", carina_aws_types::aws_region()).required().with_description("The name of the region.").with_provider_name("RegionName")])))
                 .with_description("The regions IPAM is enabled for. Allows pools to be created in these regions, as well as enabling monitoring")
                 .with_provider_name("OperatingRegions")
                 .with_block_name("operating_region"),
@@ -143,13 +141,13 @@ pub fn ec2_ipam_config() -> AwsccSchemaConfig {
                 .with_provider_name("ScopeCount"),
         )
         .attribute(
-            AttributeSchema::new("tags", tags_type())
+            AttributeSchema::new("tags", carina_aws_types::tags_type())
                 .with_description("An array of key-value pairs to apply to this resource.")
                 .with_provider_name("Tags")
                 .with_block_name("tag"),
         )
         .attribute(
-            AttributeSchema::new("tier", AttributeType::enum_(carina_core::schema::enum_identity("Tier", Some("awscc.ec2.Ipam")), Some(vec!["free".to_string(), "advanced".to_string()]), vec![("free".to_string(), "free".to_string()), ("advanced".to_string(), "advanced".to_string())], None, None))
+            AttributeSchema::new("tier", AttributeType::enum_(carina_core::schema::enum_identity("Tier", Some("aws.ec2.Ipam")), Some(vec!["free".to_string(), "advanced".to_string()]), vec![("free".to_string(), "free".to_string()), ("advanced".to_string(), "advanced".to_string())], None, None))
                 .with_description("The tier of the IPAM.")
                 .with_provider_name("Tier"),
         )
@@ -162,7 +160,7 @@ pub fn ec2_ipam_config() -> AwsccSchemaConfig {
         })
         .with_validator(|attrs| {
             let mut errors = Vec::new();
-            if let Err(mut e) = validate_tags_map(attrs) {
+            if let Err(mut e) = carina_aws_types::validate_tags_map(attrs) {
                 errors.append(&mut e);
             }
             if errors.is_empty() { Ok(()) } else { Err(errors) }

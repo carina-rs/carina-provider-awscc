@@ -99,9 +99,9 @@ Collection of Rules.
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `LOW` | `awscc.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.SensitivityToAct.low` |
-| `MEDIUM` | `awscc.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.SensitivityToAct.medium` |
-| `HIGH` | `awscc.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.SensitivityToAct.high` |
+| `LOW` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.SensitivityToAct.low` |
+| `MEDIUM` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.SensitivityToAct.medium` |
+| `HIGH` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.SensitivityToAct.high` |
 
 Shorthand formats: `low` or `SensitivityToAct.low`
 
@@ -109,8 +109,8 @@ Shorthand formats: `low` or `SensitivityToAct.low`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `COMMON` | `awscc.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesBotControlRuleSet.InspectionLevel.common` |
-| `TARGETED` | `awscc.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesBotControlRuleSet.InspectionLevel.targeted` |
+| `COMMON` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesBotControlRuleSet.InspectionLevel.common` |
+| `TARGETED` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesBotControlRuleSet.InspectionLevel.targeted` |
 
 Shorthand formats: `common` or `InspectionLevel.common`
 
@@ -118,9 +118,9 @@ Shorthand formats: `common` or `InspectionLevel.common`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `CONTINUE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Body.OversizeHandling.continue` |
-| `MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Body.OversizeHandling.match` |
-| `NO_MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Body.OversizeHandling.no_match` |
+| `CONTINUE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Body.OversizeHandling.continue` |
+| `MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Body.OversizeHandling.match` |
+| `NO_MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Body.OversizeHandling.no_match` |
 
 Shorthand formats: `continue` or `OversizeHandling.continue`
 
@@ -128,11 +128,11 @@ Shorthand formats: `continue` or `OversizeHandling.continue`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `EXACTLY` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.PositionalConstraint.exactly` |
-| `STARTS_WITH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.PositionalConstraint.starts_with` |
-| `ENDS_WITH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.PositionalConstraint.ends_with` |
-| `CONTAINS` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.PositionalConstraint.contains` |
-| `CONTAINS_WORD` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.PositionalConstraint.contains_word` |
+| `EXACTLY` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.PositionalConstraint.exactly` |
+| `STARTS_WITH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.PositionalConstraint.starts_with` |
+| `ENDS_WITH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.PositionalConstraint.ends_with` |
+| `CONTAINS` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.PositionalConstraint.contains` |
+| `CONTAINS_WORD` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.PositionalConstraint.contains_word` |
 
 Shorthand formats: `exactly` or `PositionalConstraint.exactly`
 
@@ -140,9 +140,9 @@ Shorthand formats: `exactly` or `PositionalConstraint.exactly`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `LOW` | `awscc.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.ClientSideActionConfig.ClientSideAction.SensitivityToAct.low` |
-| `MEDIUM` | `awscc.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.ClientSideActionConfig.ClientSideAction.SensitivityToAct.medium` |
-| `HIGH` | `awscc.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.ClientSideActionConfig.ClientSideAction.SensitivityToAct.high` |
+| `LOW` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.ClientSideActionConfig.ClientSideAction.SensitivityToAct.low` |
+| `MEDIUM` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.ClientSideActionConfig.ClientSideAction.SensitivityToAct.medium` |
+| `HIGH` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.ClientSideActionConfig.ClientSideAction.SensitivityToAct.high` |
 
 Shorthand formats: `low` or `SensitivityToAct.low`
 
@@ -150,8 +150,8 @@ Shorthand formats: `low` or `SensitivityToAct.low`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `ENABLED` | `awscc.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.ClientSideActionConfig.ClientSideAction.UsageOfAction.enabled` |
-| `DISABLED` | `awscc.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.ClientSideActionConfig.ClientSideAction.UsageOfAction.disabled` |
+| `ENABLED` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.ClientSideActionConfig.ClientSideAction.UsageOfAction.enabled` |
+| `DISABLED` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.ClientSideActionConfig.ClientSideAction.UsageOfAction.disabled` |
 
 Shorthand formats: `enabled` or `UsageOfAction.enabled`
 
@@ -159,9 +159,9 @@ Shorthand formats: `enabled` or `UsageOfAction.enabled`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `ALL` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Cookies.MapMatchScope.all` |
-| `KEY` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Cookies.MapMatchScope.key` |
-| `VALUE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Cookies.MapMatchScope.value` |
+| `ALL` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Cookies.MapMatchScope.all` |
+| `KEY` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Cookies.MapMatchScope.key` |
+| `VALUE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Cookies.MapMatchScope.value` |
 
 Shorthand formats: `all` or `MapMatchScope.all`
 
@@ -169,9 +169,9 @@ Shorthand formats: `all` or `MapMatchScope.all`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `CONTINUE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Cookies.OversizeHandling.continue` |
-| `MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Cookies.OversizeHandling.match` |
-| `NO_MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Cookies.OversizeHandling.no_match` |
+| `CONTINUE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Cookies.OversizeHandling.continue` |
+| `MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Cookies.OversizeHandling.match` |
+| `NO_MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Cookies.OversizeHandling.no_match` |
 
 Shorthand formats: `continue` or `OversizeHandling.continue`
 
@@ -179,8 +179,8 @@ Shorthand formats: `continue` or `OversizeHandling.continue`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.AsnMatchStatement.ForwardedIpConfiguration.FallbackBehavior.match` |
-| `NO_MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.AsnMatchStatement.ForwardedIpConfiguration.FallbackBehavior.no_match` |
+| `MATCH` | `aws.wafv2.WebAcl.Rule.Statement.AsnMatchStatement.ForwardedIpConfiguration.FallbackBehavior.match` |
+| `NO_MATCH` | `aws.wafv2.WebAcl.Rule.Statement.AsnMatchStatement.ForwardedIpConfiguration.FallbackBehavior.no_match` |
 
 Shorthand formats: `match` or `FallbackBehavior.match`
 
@@ -188,9 +188,9 @@ Shorthand formats: `match` or `FallbackBehavior.match`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `CONTINUE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.HeaderOrder.OversizeHandling.continue` |
-| `MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.HeaderOrder.OversizeHandling.match` |
-| `NO_MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.HeaderOrder.OversizeHandling.no_match` |
+| `CONTINUE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.HeaderOrder.OversizeHandling.continue` |
+| `MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.HeaderOrder.OversizeHandling.match` |
+| `NO_MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.HeaderOrder.OversizeHandling.no_match` |
 
 Shorthand formats: `continue` or `OversizeHandling.continue`
 
@@ -198,9 +198,9 @@ Shorthand formats: `continue` or `OversizeHandling.continue`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `ALL` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Headers.MapMatchScope.all` |
-| `KEY` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Headers.MapMatchScope.key` |
-| `VALUE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Headers.MapMatchScope.value` |
+| `ALL` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Headers.MapMatchScope.all` |
+| `KEY` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Headers.MapMatchScope.key` |
+| `VALUE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Headers.MapMatchScope.value` |
 
 Shorthand formats: `all` or `MapMatchScope.all`
 
@@ -208,9 +208,9 @@ Shorthand formats: `all` or `MapMatchScope.all`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `CONTINUE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Headers.OversizeHandling.continue` |
-| `MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Headers.OversizeHandling.match` |
-| `NO_MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Headers.OversizeHandling.no_match` |
+| `CONTINUE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Headers.OversizeHandling.continue` |
+| `MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Headers.OversizeHandling.match` |
+| `NO_MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Headers.OversizeHandling.no_match` |
 
 Shorthand formats: `continue` or `OversizeHandling.continue`
 
@@ -218,8 +218,8 @@ Shorthand formats: `continue` or `OversizeHandling.continue`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.IpSetReferenceStatement.IpSetForwardedIpConfiguration.FallbackBehavior.match` |
-| `NO_MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.IpSetReferenceStatement.IpSetForwardedIpConfiguration.FallbackBehavior.no_match` |
+| `MATCH` | `aws.wafv2.WebAcl.Rule.Statement.IpSetReferenceStatement.IpSetForwardedIpConfiguration.FallbackBehavior.match` |
+| `NO_MATCH` | `aws.wafv2.WebAcl.Rule.Statement.IpSetReferenceStatement.IpSetForwardedIpConfiguration.FallbackBehavior.no_match` |
 
 Shorthand formats: `match` or `FallbackBehavior.match`
 
@@ -227,9 +227,9 @@ Shorthand formats: `match` or `FallbackBehavior.match`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `FIRST` | `awscc.wafv2.WebAcl.Rule.Statement.IpSetReferenceStatement.IpSetForwardedIpConfiguration.Position.first` |
-| `LAST` | `awscc.wafv2.WebAcl.Rule.Statement.IpSetReferenceStatement.IpSetForwardedIpConfiguration.Position.last` |
-| `ANY` | `awscc.wafv2.WebAcl.Rule.Statement.IpSetReferenceStatement.IpSetForwardedIpConfiguration.Position.any` |
+| `FIRST` | `aws.wafv2.WebAcl.Rule.Statement.IpSetReferenceStatement.IpSetForwardedIpConfiguration.Position.first` |
+| `LAST` | `aws.wafv2.WebAcl.Rule.Statement.IpSetReferenceStatement.IpSetForwardedIpConfiguration.Position.last` |
+| `ANY` | `aws.wafv2.WebAcl.Rule.Statement.IpSetReferenceStatement.IpSetForwardedIpConfiguration.Position.any` |
 
 Shorthand formats: `first` or `Position.first`
 
@@ -237,8 +237,8 @@ Shorthand formats: `first` or `Position.first`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Ja3Fingerprint.FallbackBehavior.match` |
-| `NO_MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Ja3Fingerprint.FallbackBehavior.no_match` |
+| `MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Ja3Fingerprint.FallbackBehavior.match` |
+| `NO_MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Ja3Fingerprint.FallbackBehavior.no_match` |
 
 Shorthand formats: `match` or `FallbackBehavior.match`
 
@@ -246,8 +246,8 @@ Shorthand formats: `match` or `FallbackBehavior.match`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Ja4Fingerprint.FallbackBehavior.match` |
-| `NO_MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Ja4Fingerprint.FallbackBehavior.no_match` |
+| `MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Ja4Fingerprint.FallbackBehavior.match` |
+| `NO_MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Ja4Fingerprint.FallbackBehavior.no_match` |
 
 Shorthand formats: `match` or `FallbackBehavior.match`
 
@@ -255,9 +255,9 @@ Shorthand formats: `match` or `FallbackBehavior.match`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.BodyParsingFallbackBehavior.match` |
-| `NO_MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.BodyParsingFallbackBehavior.no_match` |
-| `EVALUATE_AS_STRING` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.BodyParsingFallbackBehavior.evaluate_as_string` |
+| `MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.BodyParsingFallbackBehavior.match` |
+| `NO_MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.BodyParsingFallbackBehavior.no_match` |
+| `EVALUATE_AS_STRING` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.BodyParsingFallbackBehavior.evaluate_as_string` |
 
 Shorthand formats: `match` or `BodyParsingFallbackBehavior.match`
 
@@ -265,9 +265,9 @@ Shorthand formats: `match` or `BodyParsingFallbackBehavior.match`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `ALL` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.JsonMatchScope.all` |
-| `KEY` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.JsonMatchScope.key` |
-| `VALUE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.JsonMatchScope.value` |
+| `ALL` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.JsonMatchScope.all` |
+| `KEY` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.JsonMatchScope.key` |
+| `VALUE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.JsonMatchScope.value` |
 
 Shorthand formats: `all` or `JsonMatchScope.all`
 
@@ -275,9 +275,9 @@ Shorthand formats: `all` or `JsonMatchScope.all`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `CONTINUE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.OversizeHandling.continue` |
-| `MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.OversizeHandling.match` |
-| `NO_MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.OversizeHandling.no_match` |
+| `CONTINUE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.OversizeHandling.continue` |
+| `MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.OversizeHandling.match` |
+| `NO_MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.OversizeHandling.no_match` |
 
 Shorthand formats: `continue` or `OversizeHandling.continue`
 
@@ -285,8 +285,8 @@ Shorthand formats: `continue` or `OversizeHandling.continue`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `LABEL` | `awscc.wafv2.WebAcl.Rule.Statement.LabelMatchStatement.LabelMatchScope.label` |
-| `NAMESPACE` | `awscc.wafv2.WebAcl.Rule.Statement.LabelMatchStatement.LabelMatchScope.namespace` |
+| `LABEL` | `aws.wafv2.WebAcl.Rule.Statement.LabelMatchStatement.LabelMatchScope.label` |
+| `NAMESPACE` | `aws.wafv2.WebAcl.Rule.Statement.LabelMatchStatement.LabelMatchScope.namespace` |
 
 Shorthand formats: `label` or `LabelMatchScope.label`
 
@@ -294,8 +294,8 @@ Shorthand formats: `label` or `LabelMatchScope.label`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `JSON` | `awscc.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.PayloadType.json` |
-| `FORM_ENCODED` | `awscc.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.PayloadType.form_encoded` |
+| `JSON` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.PayloadType.json` |
+| `FORM_ENCODED` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.PayloadType.form_encoded` |
 
 Shorthand formats: `json` or `PayloadType.json`
 
@@ -303,8 +303,8 @@ Shorthand formats: `json` or `PayloadType.json`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `ACTIVE_UNDER_DDOS` | `awscc.wafv2.WebAcl.OnSourceDDoSProtectionConfig.AlbLowReputationMode.active_under_ddos` |
-| `ALWAYS_ON` | `awscc.wafv2.WebAcl.OnSourceDDoSProtectionConfig.AlbLowReputationMode.always_on` |
+| `ACTIVE_UNDER_DDOS` | `aws.wafv2.WebAcl.OnSourceDDoSProtectionConfig.AlbLowReputationMode.active_under_ddos` |
+| `ALWAYS_ON` | `aws.wafv2.WebAcl.OnSourceDDoSProtectionConfig.AlbLowReputationMode.always_on` |
 
 Shorthand formats: `active_under_ddos` or `AlbLowReputationMode.active_under_ddos`
 
@@ -312,10 +312,10 @@ Shorthand formats: `active_under_ddos` or `AlbLowReputationMode.active_under_ddo
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `CONSTANT` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.AggregateKeyType.constant` |
-| `IP` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.AggregateKeyType.ip` |
-| `FORWARDED_IP` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.AggregateKeyType.forwarded_ip` |
-| `CUSTOM_KEYS` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.AggregateKeyType.custom_keys` |
+| `CONSTANT` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.AggregateKeyType.constant` |
+| `IP` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.AggregateKeyType.ip` |
+| `FORWARDED_IP` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.AggregateKeyType.forwarded_ip` |
+| `CUSTOM_KEYS` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.AggregateKeyType.custom_keys` |
 
 Shorthand formats: `constant` or `AggregateKeyType.constant`
 
@@ -323,10 +323,10 @@ Shorthand formats: `constant` or `AggregateKeyType.constant`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `60` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.EvaluationWindowSec.60` |
-| `120` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.EvaluationWindowSec.120` |
-| `300` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.EvaluationWindowSec.300` |
-| `600` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.EvaluationWindowSec.600` |
+| `60` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.EvaluationWindowSec.60` |
+| `120` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.EvaluationWindowSec.120` |
+| `300` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.EvaluationWindowSec.300` |
+| `600` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.EvaluationWindowSec.600` |
 
 Shorthand formats: `60` or `EvaluationWindowSec.60`
 
@@ -334,8 +334,8 @@ Shorthand formats: `60` or `EvaluationWindowSec.60`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitJa3Fingerprint.FallbackBehavior.match` |
-| `NO_MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitJa3Fingerprint.FallbackBehavior.no_match` |
+| `MATCH` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitJa3Fingerprint.FallbackBehavior.match` |
+| `NO_MATCH` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitJa3Fingerprint.FallbackBehavior.no_match` |
 
 Shorthand formats: `match` or `FallbackBehavior.match`
 
@@ -343,8 +343,8 @@ Shorthand formats: `match` or `FallbackBehavior.match`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitJa4Fingerprint.FallbackBehavior.match` |
-| `NO_MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitJa4Fingerprint.FallbackBehavior.no_match` |
+| `MATCH` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitJa4Fingerprint.FallbackBehavior.match` |
+| `NO_MATCH` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitJa4Fingerprint.FallbackBehavior.no_match` |
 
 Shorthand formats: `match` or `FallbackBehavior.match`
 
@@ -352,8 +352,8 @@ Shorthand formats: `match` or `FallbackBehavior.match`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `JSON` | `awscc.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAtpRuleSet.RequestInspection.PayloadType.json` |
-| `FORM_ENCODED` | `awscc.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAtpRuleSet.RequestInspection.PayloadType.form_encoded` |
+| `JSON` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAtpRuleSet.RequestInspection.PayloadType.json` |
+| `FORM_ENCODED` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAtpRuleSet.RequestInspection.PayloadType.form_encoded` |
 
 Shorthand formats: `json` or `PayloadType.json`
 
@@ -361,8 +361,8 @@ Shorthand formats: `json` or `PayloadType.json`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `JSON` | `awscc.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAcfpRuleSet.RequestInspectionAcfp.PayloadType.json` |
-| `FORM_ENCODED` | `awscc.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAcfpRuleSet.RequestInspectionAcfp.PayloadType.form_encoded` |
+| `JSON` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAcfpRuleSet.RequestInspectionAcfp.PayloadType.json` |
+| `FORM_ENCODED` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAcfpRuleSet.RequestInspectionAcfp.PayloadType.form_encoded` |
 
 Shorthand formats: `json` or `PayloadType.json`
 
@@ -370,8 +370,8 @@ Shorthand formats: `json` or `PayloadType.json`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `CLOUDFRONT` | `awscc.wafv2.WebAcl.Scope.cloudfront` |
-| `REGIONAL` | `awscc.wafv2.WebAcl.Scope.regional` |
+| `CLOUDFRONT` | `aws.wafv2.WebAcl.Scope.cloudfront` |
+| `REGIONAL` | `aws.wafv2.WebAcl.Scope.regional` |
 
 Shorthand formats: `cloudfront` or `Scope.cloudfront`
 
@@ -379,12 +379,12 @@ Shorthand formats: `cloudfront` or `Scope.cloudfront`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `EQ` | `awscc.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.ComparisonOperator.eq` |
-| `NE` | `awscc.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.ComparisonOperator.ne` |
-| `LE` | `awscc.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.ComparisonOperator.le` |
-| `LT` | `awscc.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.ComparisonOperator.lt` |
-| `GE` | `awscc.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.ComparisonOperator.ge` |
-| `GT` | `awscc.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.ComparisonOperator.gt` |
+| `EQ` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.ComparisonOperator.eq` |
+| `NE` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.ComparisonOperator.ne` |
+| `LE` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.ComparisonOperator.le` |
+| `LT` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.ComparisonOperator.lt` |
+| `GE` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.ComparisonOperator.ge` |
+| `GT` | `aws.wafv2.WebAcl.Rule.Statement.SizeConstraintStatement.ComparisonOperator.gt` |
 
 Shorthand formats: `eq` or `ComparisonOperator.eq`
 
@@ -392,8 +392,8 @@ Shorthand formats: `eq` or `ComparisonOperator.eq`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `LOW` | `awscc.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.SensitivityLevel.low` |
-| `HIGH` | `awscc.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.SensitivityLevel.high` |
+| `LOW` | `aws.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.SensitivityLevel.low` |
+| `HIGH` | `aws.wafv2.WebAcl.Rule.Statement.SqliMatchStatement.SensitivityLevel.high` |
 
 Shorthand formats: `low` or `SensitivityLevel.low`
 
@@ -401,27 +401,27 @@ Shorthand formats: `low` or `SensitivityLevel.low`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `NONE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.none` |
-| `COMPRESS_WHITE_SPACE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.compress_white_space` |
-| `HTML_ENTITY_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.html_entity_decode` |
-| `LOWERCASE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.lowercase` |
-| `CMD_LINE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.cmd_line` |
-| `URL_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.url_decode` |
-| `BASE64_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.base64_decode` |
-| `HEX_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.hex_decode` |
-| `MD5` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.md5` |
-| `REPLACE_COMMENTS` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.replace_comments` |
-| `ESCAPE_SEQ_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.escape_seq_decode` |
-| `SQL_HEX_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.sql_hex_decode` |
-| `CSS_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.css_decode` |
-| `JS_DECODE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.js_decode` |
-| `NORMALIZE_PATH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.normalize_path` |
-| `NORMALIZE_PATH_WIN` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.normalize_path_win` |
-| `REMOVE_NULLS` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.remove_nulls` |
-| `REPLACE_NULLS` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.replace_nulls` |
-| `BASE64_DECODE_EXT` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.base64_decode_ext` |
-| `URL_DECODE_UNI` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.url_decode_uni` |
-| `UTF8_TO_UNICODE` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.utf8_to_unicode` |
+| `NONE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.none` |
+| `COMPRESS_WHITE_SPACE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.compress_white_space` |
+| `HTML_ENTITY_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.html_entity_decode` |
+| `LOWERCASE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.lowercase` |
+| `CMD_LINE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.cmd_line` |
+| `URL_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.url_decode` |
+| `BASE64_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.base64_decode` |
+| `HEX_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.hex_decode` |
+| `MD5` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.md5` |
+| `REPLACE_COMMENTS` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.replace_comments` |
+| `ESCAPE_SEQ_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.escape_seq_decode` |
+| `SQL_HEX_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.sql_hex_decode` |
+| `CSS_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.css_decode` |
+| `JS_DECODE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.js_decode` |
+| `NORMALIZE_PATH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.normalize_path` |
+| `NORMALIZE_PATH_WIN` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.normalize_path_win` |
+| `REMOVE_NULLS` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.remove_nulls` |
+| `REPLACE_NULLS` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.replace_nulls` |
+| `BASE64_DECODE_EXT` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.base64_decode_ext` |
+| `URL_DECODE_UNI` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.url_decode_uni` |
+| `UTF8_TO_UNICODE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.TextTransformation.TextTransformationType.utf8_to_unicode` |
 
 Shorthand formats: `none` or `TextTransformationType.none`
 
@@ -429,8 +429,8 @@ Shorthand formats: `none` or `TextTransformationType.none`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.UriFragment.FallbackBehavior.match` |
-| `NO_MATCH` | `awscc.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.UriFragment.FallbackBehavior.no_match` |
+| `MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.UriFragment.FallbackBehavior.match` |
+| `NO_MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.UriFragment.FallbackBehavior.no_match` |
 
 Shorthand formats: `match` or `FallbackBehavior.match`
 

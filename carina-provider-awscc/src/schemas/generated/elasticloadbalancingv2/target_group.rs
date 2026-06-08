@@ -4,9 +4,7 @@
 //!
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
-use super::AwsccSchemaConfig;
-use super::tags_type;
-use super::validate_tags_map;
+use crate::schemas::config::AwsccSchemaConfig;
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField};
 
 /// Returns the schema config for elasticloadbalancingv2_target_group (AWS::ElasticLoadBalancingV2::TargetGroup)
@@ -59,7 +57,7 @@ pub fn elasticloadbalancingv2_target_group_config() -> AwsccSchemaConfig {
                 .with_provider_name("IpAddressType"),
         )
         .attribute(
-            AttributeSchema::new("load_balancer_arns", AttributeType::unordered_list(super::arn()))
+            AttributeSchema::new("load_balancer_arns", AttributeType::unordered_list(carina_aws_types::arn()))
                 .read_only()
                 .with_description("The Amazon Resource Names (ARNs) of the load balancers that route traffic to this target group. (read-only)")
                 .with_provider_name("LoadBalancerArns"),
@@ -95,7 +93,7 @@ pub fn elasticloadbalancingv2_target_group_config() -> AwsccSchemaConfig {
                 .with_provider_name("ProtocolVersion"),
         )
         .attribute(
-            AttributeSchema::new("tags", tags_type())
+            AttributeSchema::new("tags", carina_aws_types::tags_type())
                 .with_description("The tags.")
                 .with_provider_name("Tags")
                 .with_block_name("tag"),
@@ -106,7 +104,7 @@ pub fn elasticloadbalancingv2_target_group_config() -> AwsccSchemaConfig {
                 .with_provider_name("TargetControlPort"),
         )
         .attribute(
-            AttributeSchema::new("target_group_arn", super::arn())
+            AttributeSchema::new("target_group_arn", carina_aws_types::arn())
                 .read_only()
                 .with_description("The ARN of the Target Group (read-only)")
                 .with_provider_name("TargetGroupArn"),
@@ -137,7 +135,7 @@ pub fn elasticloadbalancingv2_target_group_config() -> AwsccSchemaConfig {
                 .with_provider_name("TargetType"),
         )
         .attribute(
-            AttributeSchema::new("targets", AttributeType::unordered_list(AttributeType::struct_("TargetDescription".to_string(), vec![StructField::new("availability_zone", super::availability_zone()).with_description("An Availability Zone or all. This determines whether the target receives traffic from the load balancer nodes in the specified Availability Zone or from all enabled Availability Zones for the load balancer.").with_provider_name("AvailabilityZone"),
+            AttributeSchema::new("targets", AttributeType::unordered_list(AttributeType::struct_("TargetDescription".to_string(), vec![StructField::new("availability_zone", carina_aws_types::availability_zone()).with_description("An Availability Zone or all. This determines whether the target receives traffic from the load balancer nodes in the specified Availability Zone or from all enabled Availability Zones for the load balancer.").with_provider_name("AvailabilityZone"),
                     StructField::new("id", AttributeType::string()).required().with_description("The ID of the target. If the target type of the target group is instance, specify an instance ID. If the target type is ip, specify an IP address. If the target type is lambda, specify the ARN of the Lambda function. If the target type is alb, specify the ARN of the Application Load Balancer target. ").with_provider_name("Id"),
                     StructField::new("port", AttributeType::int()).with_description("The port on which the target is listening. If the target group protocol is GENEVE, the supported port is 6081. If the target type is alb, the targeted Application Load Balancer must have at least one listener whose port matches the target group port. Not used if the target is a Lambda function.").with_provider_name("Port"),
                     StructField::new("quic_server_id", AttributeType::string()).with_description("The Server ID used by targets when using QUIC or TCP_QUIC protocols.").with_provider_name("QuicServerId")])))
@@ -151,14 +149,14 @@ pub fn elasticloadbalancingv2_target_group_config() -> AwsccSchemaConfig {
                 .with_provider_name("UnhealthyThresholdCount"),
         )
         .attribute(
-            AttributeSchema::new("vpc_id", super::vpc_id())
+            AttributeSchema::new("vpc_id", carina_aws_types::vpc_id())
                 .create_only()
                 .with_description("The identifier of the virtual private cloud (VPC). If the target is a Lambda function, this parameter does not apply.")
                 .with_provider_name("VpcId"),
         )
         .with_validator(|attrs| {
             let mut errors = Vec::new();
-            if let Err(mut e) = validate_tags_map(attrs) {
+            if let Err(mut e) = carina_aws_types::validate_tags_map(attrs) {
                 errors.append(&mut e);
             }
             if errors.is_empty() { Ok(()) } else { Err(errors) }

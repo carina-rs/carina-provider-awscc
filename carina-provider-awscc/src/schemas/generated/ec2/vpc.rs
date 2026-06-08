@@ -4,9 +4,7 @@
 //!
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
-use super::AwsccSchemaConfig;
-use super::tags_type;
-use super::validate_tags_map;
+use crate::schemas::config::AwsccSchemaConfig;
 use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{
     AttributeSchema, AttributeType, ResourceSchema, legacy_validator, types,
@@ -41,19 +39,19 @@ pub fn ec2_vpc_config() -> AwsccSchemaConfig {
                 .with_provider_name("CidrBlock"),
         )
         .attribute(
-            AttributeSchema::new("cidr_block_associations", AttributeType::unordered_list(super::vpc_cidr_block_association_id()))
+            AttributeSchema::new("cidr_block_associations", AttributeType::unordered_list(carina_aws_types::vpc_cidr_block_association_id()))
                 .read_only()
                 .with_description(" (read-only)")
                 .with_provider_name("CidrBlockAssociations"),
         )
         .attribute(
-            AttributeSchema::new("default_network_acl", super::network_acl_id())
+            AttributeSchema::new("default_network_acl", carina_aws_types::network_acl_id())
                 .read_only()
                 .with_description(" (read-only)")
                 .with_provider_name("DefaultNetworkAcl"),
         )
         .attribute(
-            AttributeSchema::new("default_security_group", super::security_group_id())
+            AttributeSchema::new("default_security_group", carina_aws_types::security_group_id())
                 .read_only()
                 .with_description(" (read-only)")
                 .with_provider_name("DefaultSecurityGroup"),
@@ -69,12 +67,12 @@ pub fn ec2_vpc_config() -> AwsccSchemaConfig {
                 .with_provider_name("EnableDnsSupport"),
         )
         .attribute(
-            AttributeSchema::new("instance_tenancy", AttributeType::enum_(carina_core::schema::enum_identity("InstanceTenancy", Some("awscc.ec2.Vpc")), Some(vec!["default".to_string(), "dedicated".to_string(), "host".to_string()]), vec![("default".to_string(), "default".to_string()), ("dedicated".to_string(), "dedicated".to_string()), ("host".to_string(), "host".to_string())], None, None))
+            AttributeSchema::new("instance_tenancy", AttributeType::enum_(carina_core::schema::enum_identity("InstanceTenancy", Some("aws.ec2.Vpc")), Some(vec!["default".to_string(), "dedicated".to_string(), "host".to_string()]), vec![("default".to_string(), "default".to_string()), ("dedicated".to_string(), "dedicated".to_string()), ("host".to_string(), "host".to_string())], None, None))
                 .with_description("The allowed tenancy of instances launched into the VPC. + ``default``: An instance launched into the VPC runs on shared hardware by default, unless you explicitly specify a different tenancy during instance launch. + ``dedicated``: An instance launched into the VPC runs on dedicated hardware by default, unless you explicitly specify a tenancy of ``host`` during instance launch. You cannot specify a tenancy of ``default`` during instance launch. Updating ``InstanceTenancy`` requires no replacement only if you are updating its value from ``dedicated`` to ``default``. Updating ``InstanceTenancy`` from ``default`` to ``dedicated`` requires replacement.")
                 .with_provider_name("InstanceTenancy"),
         )
         .attribute(
-            AttributeSchema::new("ipv4_ipam_pool_id", super::ipam_pool_id())
+            AttributeSchema::new("ipv4_ipam_pool_id", carina_aws_types::ipam_pool_id())
                 .create_only()
                 .write_only()
                 .with_description("The ID of an IPv4 IPAM pool you want to use for allocating this VPC's CIDR. For more information, see [What is IPAM?](https://docs.aws.amazon.com//vpc/latest/ipam/what-is-it-ipam.html) in the *Amazon VPC IPAM User Guide*. You must specify either``CidrBlock`` or ``Ipv4IpamPoolId``.")
@@ -94,13 +92,13 @@ pub fn ec2_vpc_config() -> AwsccSchemaConfig {
                 .with_provider_name("Ipv6CidrBlocks"),
         )
         .attribute(
-            AttributeSchema::new("tags", tags_type())
+            AttributeSchema::new("tags", carina_aws_types::tags_type())
                 .with_description("The tags for the VPC.")
                 .with_provider_name("Tags")
                 .with_block_name("tag"),
         )
         .attribute(
-            AttributeSchema::new("vpc_id", super::vpc_id())
+            AttributeSchema::new("vpc_id", carina_aws_types::vpc_id())
                 .read_only()
                 .with_description(" (read-only)")
                 .with_provider_name("VpcId"),
@@ -108,7 +106,7 @@ pub fn ec2_vpc_config() -> AwsccSchemaConfig {
         .exclusive_required(&["cidr_block", "ipv4_ipam_pool_id"])
         .with_validator(|attrs| {
             let mut errors = Vec::new();
-            if let Err(mut e) = validate_tags_map(attrs) {
+            if let Err(mut e) = carina_aws_types::validate_tags_map(attrs) {
                 errors.append(&mut e);
             }
             if errors.is_empty() { Ok(()) } else { Err(errors) }

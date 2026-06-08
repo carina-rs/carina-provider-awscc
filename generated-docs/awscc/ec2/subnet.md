@@ -173,9 +173,9 @@ The ID of the VPC the subnet is in. If you update this property, you must also u
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `off` | `awscc.ec2.Subnet.BlockPublicAccessStates.InternetGatewayBlockMode.off` |
-| `block-bidirectional` | `awscc.ec2.Subnet.BlockPublicAccessStates.InternetGatewayBlockMode.block_bidirectional` |
-| `block-ingress` | `awscc.ec2.Subnet.BlockPublicAccessStates.InternetGatewayBlockMode.block_ingress` |
+| `off` | `aws.ec2.Subnet.BlockPublicAccessStates.InternetGatewayBlockMode.off` |
+| `block-bidirectional` | `aws.ec2.Subnet.BlockPublicAccessStates.InternetGatewayBlockMode.block_bidirectional` |
+| `block-ingress` | `aws.ec2.Subnet.BlockPublicAccessStates.InternetGatewayBlockMode.block_ingress` |
 
 Shorthand formats: `off` or `InternetGatewayBlockMode.off`
 
@@ -183,8 +183,8 @@ Shorthand formats: `off` or `InternetGatewayBlockMode.off`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `ip-name` | `awscc.ec2.Subnet.PrivateDnsNameOptionsOnLaunch.HostnameType.ip_name` |
-| `resource-name` | `awscc.ec2.Subnet.PrivateDnsNameOptionsOnLaunch.HostnameType.resource_name` |
+| `ip-name` | `aws.ec2.Subnet.PrivateDnsNameOptionsOnLaunch.HostnameType.ip_name` |
+| `resource-name` | `aws.ec2.Subnet.PrivateDnsNameOptionsOnLaunch.HostnameType.resource_name` |
 
 Shorthand formats: `ip_name` or `HostnameType.ip_name`
 

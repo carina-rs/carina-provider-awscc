@@ -53,8 +53,8 @@ A list of tags that you want to attach to the newly created account. For each ta
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `INVITED` | `awscc.organizations.Account.JoinedMethod.invited` |
-| `CREATED` | `awscc.organizations.Account.JoinedMethod.created` |
+| `INVITED` | `aws.organizations.Account.JoinedMethod.invited` |
+| `CREATED` | `aws.organizations.Account.JoinedMethod.created` |
 
 Shorthand formats: `invited` or `JoinedMethod.invited`
 
@@ -62,11 +62,11 @@ Shorthand formats: `invited` or `JoinedMethod.invited`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `PENDING_ACTIVATION` | `awscc.organizations.Account.State.pending_activation` |
-| `ACTIVE` | `awscc.organizations.Account.State.active` |
-| `SUSPENDED` | `awscc.organizations.Account.State.suspended` |
-| `PENDING_CLOSURE` | `awscc.organizations.Account.State.pending_closure` |
-| `CLOSED` | `awscc.organizations.Account.State.closed` |
+| `PENDING_ACTIVATION` | `aws.organizations.Account.State.pending_activation` |
+| `ACTIVE` | `aws.organizations.Account.State.active` |
+| `SUSPENDED` | `aws.organizations.Account.State.suspended` |
+| `PENDING_CLOSURE` | `aws.organizations.Account.State.pending_closure` |
+| `CLOSED` | `aws.organizations.Account.State.closed` |
 
 Shorthand formats: `pending_activation` or `State.pending_activation`
 
@@ -74,9 +74,9 @@ Shorthand formats: `pending_activation` or `State.pending_activation`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `ACTIVE` | `awscc.organizations.Account.Status.active` |
-| `SUSPENDED` | `awscc.organizations.Account.Status.suspended` |
-| `PENDING_CLOSURE` | `awscc.organizations.Account.Status.pending_closure` |
+| `ACTIVE` | `aws.organizations.Account.Status.active` |
+| `SUSPENDED` | `aws.organizations.Account.Status.suspended` |
+| `PENDING_CLOSURE` | `aws.organizations.Account.Status.pending_closure` |
 
 Shorthand formats: `active` or `Status.active`
 

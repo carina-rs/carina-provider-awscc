@@ -1,6 +1,6 @@
 //! AWS Cloud Control resource schema definitions
 
-pub mod awscc_types;
+pub mod config;
 pub mod generated;
 
 use carina_core::schema::ResourceSchema;
@@ -173,7 +173,7 @@ mod tests {
                 ..
             } => {
                 let identity = identity.to_string();
-                if !identity.starts_with("awscc.") {
+                if !identity.starts_with("aws.") {
                     collector.stack.remove(&ptr);
                     return;
                 }
@@ -181,8 +181,8 @@ mod tests {
                 // to one identity. These IAM identities come from the single
                 // hand-written iam_policy_document() helper and are intentionally
                 // reused across all policy-document fields.
-                if identity == "awscc.iam.PolicyDocument.Version"
-                    || identity == "awscc.iam.PolicyDocument.Statement.Effect"
+                if identity == "aws.iam.PolicyDocument.Version"
+                    || identity == "aws.iam.PolicyDocument.Statement.Effect"
                 {
                     collector.stack.remove(&ptr);
                     return;

@@ -160,8 +160,8 @@ An array of key-value pairs to apply to this resource.
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `IPv4` | `awscc.ec2.IpamPool.AddressFamily.ipv4` |
-| `IPv6` | `awscc.ec2.IpamPool.AddressFamily.ipv6` |
+| `IPv4` | `aws.ec2.IpamPool.AddressFamily.ipv4` |
+| `IPv6` | `aws.ec2.IpamPool.AddressFamily.ipv6` |
 
 Shorthand formats: `ipv4` or `AddressFamily.ipv4`
 
@@ -169,8 +169,8 @@ Shorthand formats: `ipv4` or `AddressFamily.ipv4`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `ec2` | `awscc.ec2.IpamPool.AwsService.ec2` |
-| `global-services` | `awscc.ec2.IpamPool.AwsService.global_services` |
+| `ec2` | `aws.ec2.IpamPool.AwsService.ec2` |
+| `global-services` | `aws.ec2.IpamPool.AwsService.global_services` |
 
 Shorthand formats: `ec2` or `AwsService.ec2`
 
@@ -178,8 +178,8 @@ Shorthand formats: `ec2` or `AwsService.ec2`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `public` | `awscc.ec2.IpamPool.IpamScopeType.public` |
-| `private` | `awscc.ec2.IpamPool.IpamScopeType.private` |
+| `public` | `aws.ec2.IpamPool.IpamScopeType.public` |
+| `private` | `aws.ec2.IpamPool.IpamScopeType.private` |
 
 Shorthand formats: `public` or `IpamScopeType.public`
 
@@ -187,8 +187,8 @@ Shorthand formats: `public` or `IpamScopeType.public`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `byoip` | `awscc.ec2.IpamPool.PublicIpSource.byoip` |
-| `amazon` | `awscc.ec2.IpamPool.PublicIpSource.amazon` |
+| `byoip` | `aws.ec2.IpamPool.PublicIpSource.byoip` |
+| `amazon` | `aws.ec2.IpamPool.PublicIpSource.amazon` |
 
 Shorthand formats: `byoip` or `PublicIpSource.byoip`
 
@@ -196,12 +196,12 @@ Shorthand formats: `byoip` or `PublicIpSource.byoip`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `create-in-progress` | `awscc.ec2.IpamPool.State.create_in_progress` |
-| `create-complete` | `awscc.ec2.IpamPool.State.create_complete` |
-| `modify-in-progress` | `awscc.ec2.IpamPool.State.modify_in_progress` |
-| `modify-complete` | `awscc.ec2.IpamPool.State.modify_complete` |
-| `delete-in-progress` | `awscc.ec2.IpamPool.State.delete_in_progress` |
-| `delete-complete` | `awscc.ec2.IpamPool.State.delete_complete` |
+| `create-in-progress` | `aws.ec2.IpamPool.State.create_in_progress` |
+| `create-complete` | `aws.ec2.IpamPool.State.create_complete` |
+| `modify-in-progress` | `aws.ec2.IpamPool.State.modify_in_progress` |
+| `modify-complete` | `aws.ec2.IpamPool.State.modify_complete` |
+| `delete-in-progress` | `aws.ec2.IpamPool.State.delete_in_progress` |
+| `delete-complete` | `aws.ec2.IpamPool.State.delete_complete` |
 
 Shorthand formats: `create_in_progress` or `State.create_in_progress`
 

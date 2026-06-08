@@ -86,9 +86,9 @@ The metadata that you apply to the cluster to help you categorize and organize t
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `enhanced` | `awscc.ecs.Cluster.ClusterSettings.Value.enhanced` |
-| `enabled` | `awscc.ecs.Cluster.ClusterSettings.Value.enabled` |
-| `disabled` | `awscc.ecs.Cluster.ClusterSettings.Value.disabled` |
+| `enhanced` | `aws.ecs.Cluster.ClusterSettings.Value.enhanced` |
+| `enabled` | `aws.ecs.Cluster.ClusterSettings.Value.enabled` |
+| `disabled` | `aws.ecs.Cluster.ClusterSettings.Value.disabled` |
 
 Shorthand formats: `enhanced` or `Value.enhanced`
 
@@ -96,9 +96,9 @@ Shorthand formats: `enhanced` or `Value.enhanced`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `NONE` | `awscc.ecs.Cluster.ClusterConfiguration.ExecuteCommandConfiguration.Logging.none` |
-| `DEFAULT` | `awscc.ecs.Cluster.ClusterConfiguration.ExecuteCommandConfiguration.Logging.default` |
-| `OVERRIDE` | `awscc.ecs.Cluster.ClusterConfiguration.ExecuteCommandConfiguration.Logging.override` |
+| `NONE` | `aws.ecs.Cluster.ClusterConfiguration.ExecuteCommandConfiguration.Logging.none` |
+| `DEFAULT` | `aws.ecs.Cluster.ClusterConfiguration.ExecuteCommandConfiguration.Logging.default` |
+| `OVERRIDE` | `aws.ecs.Cluster.ClusterConfiguration.ExecuteCommandConfiguration.Logging.override` |
 
 Shorthand formats: `none` or `Logging.none`
 

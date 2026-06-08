@@ -372,7 +372,7 @@ mod tests {
     /// the already-fully-qualified `version` path. The desired side
     /// must resolve to the same fully-qualified DSL form that the
     /// AWS-read side produces from raw `"Allow"`
-    /// (`awscc.iam.PolicyDocument.Statement.Effect.allow`), or the differ diverges.
+    /// (`aws.iam.PolicyDocument.Statement.Effect.allow`), or the differ diverges.
     #[test]
     fn test_aws313_bare_effect_desired_resolves_to_namespaced() {
         use indexmap::IndexMap;
@@ -390,7 +390,7 @@ mod tests {
         policy.insert(
             "version".to_string(),
             Value::Concrete(ConcreteValue::String(
-                "awscc.iam.PolicyDocument.Version.2012_10_17".to_string(),
+                "aws.iam.PolicyDocument.Version.2012_10_17".to_string(),
             )),
         );
         policy.insert(
@@ -422,7 +422,7 @@ mod tests {
         assert_eq!(
             s0.get("effect"),
             Some(&Value::Concrete(ConcreteValue::String(
-                "awscc.iam.PolicyDocument.Statement.Effect.allow".to_string()
+                "aws.iam.PolicyDocument.Statement.Effect.allow".to_string()
             ))),
             "bare `effect = allow` desired must resolve to the same \
              fully-qualified form the read side produces from \"Allow\""
@@ -442,7 +442,7 @@ mod tests {
         match resources[0].get_attr("log_destination_type").unwrap() {
             Value::Concrete(ConcreteValue::String(s)) => {
                 assert_eq!(
-                    s, "awscc.ec2.FlowLog.LogDestinationType.cloud_watch_logs",
+                    s, "aws.ec2.FlowLog.LogDestinationType.cloud_watch_logs",
                     "Expected underscored namespaced enum, got: {}",
                     s
                 );
@@ -464,7 +464,7 @@ mod tests {
         match resources[0].get_attr("log_destination_type").unwrap() {
             Value::Concrete(ConcreteValue::String(s)) => {
                 assert_eq!(
-                    s, "awscc.ec2.FlowLog.LogDestinationType.cloud_watch_logs",
+                    s, "aws.ec2.FlowLog.LogDestinationType.cloud_watch_logs",
                     "Hyphenated string should be converted to underscore form, got: {}",
                     s
                 );
@@ -562,7 +562,7 @@ mod tests {
         state.attributes.insert(
             "ip_protocol".to_string(),
             Value::Concrete(ConcreteValue::String(
-                "awscc.ec2.SecurityGroupEgress.IpProtocol.all".to_string(),
+                "aws.ec2.SecurityGroupEgress.IpProtocol.all".to_string(),
             )),
         );
 
@@ -639,7 +639,7 @@ mod tests {
         match resources[0].get_attr("ip_protocol").unwrap() {
             Value::Concrete(ConcreteValue::String(s)) => {
                 assert_eq!(
-                    s, "awscc.ec2.SecurityGroupEgress.IpProtocol.all",
+                    s, "aws.ec2.SecurityGroupEgress.IpProtocol.all",
                     "Expected namespaced IpProtocol.all, got: {}",
                     s
                 );
@@ -662,7 +662,7 @@ mod tests {
         match resources[0].get_attr("ip_protocol").unwrap() {
             Value::Concrete(ConcreteValue::String(s)) => {
                 assert_eq!(
-                    s, "awscc.ec2.SecurityGroupEgress.IpProtocol.tcp",
+                    s, "aws.ec2.SecurityGroupEgress.IpProtocol.tcp",
                     "Expected namespaced IpProtocol.tcp, got: {}",
                     s
                 );
@@ -678,7 +678,7 @@ mod tests {
                 "ip_protocol",
                 AttributeType::enum_(
                     carina_core::schema::TypeIdentity::new(
-                        Some("awscc"),
+                        Some("aws"),
                         ["ec2", "SecurityGroup"],
                         "IpProtocol",
                     ),
@@ -719,7 +719,7 @@ mod tests {
             if let Value::Concrete(ConcreteValue::Map(m)) = &items[0] {
                 match &m["ip_protocol"] {
                     Value::Concrete(ConcreteValue::String(s)) => {
-                        assert_eq!(s, "awscc.ec2.SecurityGroup.IpProtocol.all");
+                        assert_eq!(s, "aws.ec2.SecurityGroup.IpProtocol.all");
                     }
                     other => panic!("Expected String, got: {:?}", other),
                 }
@@ -750,7 +750,7 @@ mod tests {
             if let Value::Concrete(ConcreteValue::Map(m)) = &items[0] {
                 match &m["ip_protocol"] {
                     Value::Concrete(ConcreteValue::String(s)) => {
-                        assert_eq!(s, "awscc.ec2.SecurityGroup.IpProtocol.tcp");
+                        assert_eq!(s, "aws.ec2.SecurityGroup.IpProtocol.tcp");
                     }
                     other => panic!("Expected String, got: {:?}", other),
                 }
@@ -769,7 +769,7 @@ mod tests {
         map.insert(
             "ip_protocol".to_string(),
             Value::Concrete(ConcreteValue::String(
-                "awscc.ec2.SecurityGroup.IpProtocol.tcp".to_string(),
+                "aws.ec2.SecurityGroup.IpProtocol.tcp".to_string(),
             )),
         );
         let value = Value::Concrete(ConcreteValue::List(vec![Value::Concrete(
@@ -782,7 +782,7 @@ mod tests {
             if let Value::Concrete(ConcreteValue::Map(m)) = &items[0] {
                 match &m["ip_protocol"] {
                     Value::Concrete(ConcreteValue::String(s)) => {
-                        assert_eq!(s, "awscc.ec2.SecurityGroup.IpProtocol.tcp");
+                        assert_eq!(s, "aws.ec2.SecurityGroup.IpProtocol.tcp");
                     }
                     other => panic!("Expected String, got: {:?}", other),
                 }
@@ -827,7 +827,7 @@ mod tests {
                 match &m["ip_protocol"] {
                     Value::Concrete(ConcreteValue::String(s)) => {
                         assert_eq!(
-                            s, "awscc.ec2.SecurityGroup.Egress.IpProtocol.all",
+                            s, "aws.ec2.SecurityGroup.Egress.IpProtocol.all",
                             "Expected namespaced Egress.IpProtocol.all in struct field, got: {}",
                             s
                         );
@@ -987,7 +987,7 @@ mod tests {
         let inner_fields = vec![StructField::new(
             "encryption_type",
             AttributeType::list(AttributeType::enum_(
-                carina_core::schema::enum_identity("EncryptionType", Some("awscc.s3.Bucket")),
+                carina_core::schema::enum_identity("EncryptionType", Some("aws.s3.Bucket")),
                 Some(vec!["NONE".to_string(), "SSE-C".to_string()]),
                 vec![
                     ("NONE".to_string(), "none".to_string()),
@@ -1013,7 +1013,7 @@ mod tests {
                         AttributeType::enum_(
                             carina_core::schema::enum_identity(
                                 "SseAlgorithm",
-                                Some("awscc.s3.Bucket"),
+                                Some("aws.s3.Bucket"),
                             ),
                             Some(vec!["AES256".to_string()]),
                             vec![("AES256".to_string(), "aes256".to_string())],
@@ -1067,7 +1067,7 @@ mod tests {
                         assert_eq!(
                             types[0],
                             Value::Concrete(ConcreteValue::String(
-                                "awscc.s3.Bucket.EncryptionType.sse_c".to_string()
+                                "aws.s3.Bucket.EncryptionType.sse_c".to_string()
                             )),
                             "Nested struct enum should be resolved to its snake_case DSL form"
                         );
@@ -1086,7 +1086,7 @@ mod tests {
                     assert_eq!(
                         sse["sse_algorithm"],
                         Value::Concrete(ConcreteValue::String(
-                            "awscc.s3.Bucket.SseAlgorithm.aes256".to_string()
+                            "aws.s3.Bucket.SseAlgorithm.aes256".to_string()
                         )),
                         "Sibling struct enum should also be resolved to its snake_case DSL form"
                     );
@@ -1418,7 +1418,7 @@ mod tests {
         assert_eq!(
             cookies["forward"],
             Value::Concrete(ConcreteValue::String(
-                "awscc.cloudfront.Distribution.DistributionConfig.CacheBehavior.ForwardedValues.Cookies.Forward.none".to_string()
+                "aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.ForwardedValues.Cookies.Forward.none".to_string()
             )),
             "nested CookiesForward.none resolved through the Ref-peeled forwarded_values"
         );

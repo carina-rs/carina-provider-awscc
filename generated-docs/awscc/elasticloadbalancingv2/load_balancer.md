@@ -136,8 +136,8 @@ The type of load balancer. The default is ``application``.
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `dualstack` | `awscc.elasticloadbalancingv2.LoadBalancer.EnablePrefixForIpv6SourceNat.dualstack` |
-| `off` | `awscc.elasticloadbalancingv2.LoadBalancer.EnablePrefixForIpv6SourceNat.off` |
+| `dualstack` | `aws.elasticloadbalancingv2.LoadBalancer.EnablePrefixForIpv6SourceNat.dualstack` |
+| `off` | `aws.elasticloadbalancingv2.LoadBalancer.EnablePrefixForIpv6SourceNat.off` |
 
 Shorthand formats: `dualstack` or `EnablePrefixForIpv6SourceNat.dualstack`
 
@@ -145,9 +145,9 @@ Shorthand formats: `dualstack` or `EnablePrefixForIpv6SourceNat.dualstack`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `ipv4` | `awscc.elasticloadbalancingv2.LoadBalancer.IpAddressType.ipv4` |
-| `dualstack` | `awscc.elasticloadbalancingv2.LoadBalancer.IpAddressType.dualstack` |
-| `dualstack-without-public-ipv4` | `awscc.elasticloadbalancingv2.LoadBalancer.IpAddressType.dualstack_without_public_ipv4` |
+| `ipv4` | `aws.elasticloadbalancingv2.LoadBalancer.IpAddressType.ipv4` |
+| `dualstack` | `aws.elasticloadbalancingv2.LoadBalancer.IpAddressType.dualstack` |
+| `dualstack-without-public-ipv4` | `aws.elasticloadbalancingv2.LoadBalancer.IpAddressType.dualstack_without_public_ipv4` |
 
 Shorthand formats: `ipv4` or `IpAddressType.ipv4`
 
@@ -155,19 +155,19 @@ Shorthand formats: `ipv4` or `IpAddressType.ipv4`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `true` | `awscc.elasticloadbalancingv2.LoadBalancer.LoadBalancerAttribute.Key.true` |
-| `false` | `awscc.elasticloadbalancingv2.LoadBalancer.LoadBalancerAttribute.Key.false` |
-| `monitor` | `awscc.elasticloadbalancingv2.LoadBalancer.LoadBalancerAttribute.Key.monitor` |
-| `defensive` | `awscc.elasticloadbalancingv2.LoadBalancer.LoadBalancerAttribute.Key.defensive` |
-| `strictest` | `awscc.elasticloadbalancingv2.LoadBalancer.LoadBalancerAttribute.Key.strictest` |
-| `x-amzn-tls-version` | `awscc.elasticloadbalancingv2.LoadBalancer.LoadBalancerAttribute.Key.x_amzn_tls_version` |
-| `x-amzn-tls-cipher-suite` | `awscc.elasticloadbalancingv2.LoadBalancer.LoadBalancerAttribute.Key.x_amzn_tls_cipher_suite` |
-| `append` | `awscc.elasticloadbalancingv2.LoadBalancer.LoadBalancerAttribute.Key.append` |
-| `preserve` | `awscc.elasticloadbalancingv2.LoadBalancer.LoadBalancerAttribute.Key.preserve` |
-| `remove` | `awscc.elasticloadbalancingv2.LoadBalancer.LoadBalancerAttribute.Key.remove` |
-| `availability_zone_affinity` | `awscc.elasticloadbalancingv2.LoadBalancer.LoadBalancerAttribute.Key.availability_zone_affinity` |
-| `partial_availability_zone_affinity` | `awscc.elasticloadbalancingv2.LoadBalancer.LoadBalancerAttribute.Key.partial_availability_zone_affinity` |
-| `any_availability_zone` | `awscc.elasticloadbalancingv2.LoadBalancer.LoadBalancerAttribute.Key.any_availability_zone` |
+| `true` | `aws.elasticloadbalancingv2.LoadBalancer.LoadBalancerAttribute.Key.true` |
+| `false` | `aws.elasticloadbalancingv2.LoadBalancer.LoadBalancerAttribute.Key.false` |
+| `monitor` | `aws.elasticloadbalancingv2.LoadBalancer.LoadBalancerAttribute.Key.monitor` |
+| `defensive` | `aws.elasticloadbalancingv2.LoadBalancer.LoadBalancerAttribute.Key.defensive` |
+| `strictest` | `aws.elasticloadbalancingv2.LoadBalancer.LoadBalancerAttribute.Key.strictest` |
+| `x-amzn-tls-version` | `aws.elasticloadbalancingv2.LoadBalancer.LoadBalancerAttribute.Key.x_amzn_tls_version` |
+| `x-amzn-tls-cipher-suite` | `aws.elasticloadbalancingv2.LoadBalancer.LoadBalancerAttribute.Key.x_amzn_tls_cipher_suite` |
+| `append` | `aws.elasticloadbalancingv2.LoadBalancer.LoadBalancerAttribute.Key.append` |
+| `preserve` | `aws.elasticloadbalancingv2.LoadBalancer.LoadBalancerAttribute.Key.preserve` |
+| `remove` | `aws.elasticloadbalancingv2.LoadBalancer.LoadBalancerAttribute.Key.remove` |
+| `availability_zone_affinity` | `aws.elasticloadbalancingv2.LoadBalancer.LoadBalancerAttribute.Key.availability_zone_affinity` |
+| `partial_availability_zone_affinity` | `aws.elasticloadbalancingv2.LoadBalancer.LoadBalancerAttribute.Key.partial_availability_zone_affinity` |
+| `any_availability_zone` | `aws.elasticloadbalancingv2.LoadBalancer.LoadBalancerAttribute.Key.any_availability_zone` |
 
 Shorthand formats: `true` or `Key.true`
 

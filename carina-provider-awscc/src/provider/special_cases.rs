@@ -11,7 +11,7 @@ use carina_core::resource::{ConcreteValue, Resource, ResourceId, Value};
 use serde_json::json;
 
 use super::AwsccProvider;
-use crate::schemas::generated::AwsccSchemaConfig;
+use crate::schemas::config::AwsccSchemaConfig;
 
 impl AwsccProvider {
     /// Handle special attributes that don't follow standard mapping

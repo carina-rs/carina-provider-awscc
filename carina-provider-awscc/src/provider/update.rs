@@ -13,7 +13,7 @@ use carina_core::resource::{ConcreteValue, Value};
 use serde_json::json;
 
 use super::conversion::dsl_value_to_aws_with_defs;
-use crate::schemas::generated::AwsccSchemaConfig;
+use crate::schemas::config::AwsccSchemaConfig;
 
 /// Parse a JSON string from CloudControl API response into a `serde_json::Value`.
 ///
@@ -212,11 +212,11 @@ mod tests {
     }
 
     /// Regression test for `carina-rs/carina#2559`: a user `.crn` that
-    /// changes only `tags` on `awscc.iam.Role` must produce exactly one
+    /// changes only `tags` on `aws.iam.Role` must produce exactly one
     /// JSON Patch op (`add /Tags`). It must NOT also emit a
     /// `remove /Policies` (or any other `remove`) for fields the user
     /// never specified, because that clobbers sibling
-    /// `awscc.iam.RolePolicy` resources.
+    /// `aws.iam.RolePolicy` resources.
     #[test]
     fn issue_2559_tags_only_patch_does_not_touch_other_fields() {
         let config = get_schema_config("iam.Role").expect("iam.role schema should exist");
@@ -271,7 +271,7 @@ mod tests {
             ops: vec![replace(
                 "instance_tenancy",
                 Value::Concrete(ConcreteValue::String(
-                    "awscc.ec2.Vpc.InstanceTenancy.dedicated".to_string(),
+                    "aws.ec2.Vpc.InstanceTenancy.dedicated".to_string(),
                 )),
             )],
         };

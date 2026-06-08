@@ -80,8 +80,8 @@ The tier of the IPAM.
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `ipam-owner` | `awscc.ec2.Ipam.MeteredAccount.ipam_owner` |
-| `resource-owner` | `awscc.ec2.Ipam.MeteredAccount.resource_owner` |
+| `ipam-owner` | `aws.ec2.Ipam.MeteredAccount.ipam_owner` |
+| `resource-owner` | `aws.ec2.Ipam.MeteredAccount.resource_owner` |
 
 Shorthand formats: `ipam_owner` or `MeteredAccount.ipam_owner`
 
@@ -89,8 +89,8 @@ Shorthand formats: `ipam_owner` or `MeteredAccount.ipam_owner`
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `free` | `awscc.ec2.Ipam.Tier.free` |
-| `advanced` | `awscc.ec2.Ipam.Tier.advanced` |
+| `free` | `aws.ec2.Ipam.Tier.free` |
+| `advanced` | `aws.ec2.Ipam.Tier.advanced` |
 
 Shorthand formats: `free` or `Tier.free`
 

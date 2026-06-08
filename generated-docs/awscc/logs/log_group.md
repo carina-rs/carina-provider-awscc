@@ -99,9 +99,9 @@ An array of key-value pairs to apply to the log group. For more information, see
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `STANDARD` | `awscc.logs.LogGroup.LogGroupClass.standard` |
-| `INFREQUENT_ACCESS` | `awscc.logs.LogGroup.LogGroupClass.infrequent_access` |
-| `DELIVERY` | `awscc.logs.LogGroup.LogGroupClass.delivery` |
+| `STANDARD` | `aws.logs.LogGroup.LogGroupClass.standard` |
+| `INFREQUENT_ACCESS` | `aws.logs.LogGroup.LogGroupClass.infrequent_access` |
+| `DELIVERY` | `aws.logs.LogGroup.LogGroupClass.delivery` |
 
 Shorthand formats: `standard` or `LogGroupClass.standard`
 

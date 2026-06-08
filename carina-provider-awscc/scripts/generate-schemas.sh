@@ -130,13 +130,13 @@ use carina_core::schema::{AttributeType, legacy_validator};
 
 pub fn arn() -> AttributeType {
     AttributeType::custom(
-        Some(super::provider_type("iam", "Policy", "Arn")),
-        super::arn(),
+        Some(carina_aws_types::provider_type("iam", "Policy", "Arn")),
+        carina_aws_types::arn(),
         Some("^arn:(aws|aws-cn|aws-us-gov):iam::[^:]*:policy/.+$".to_string()),
         None,
         legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
-                super::validate_iam_arn(s, "policy/")
+                carina_aws_types::validate_iam_arn(s, "policy/")
                     .map_err(|reason| format!("Invalid IAM Policy ARN '{}': {}", s, reason))
             } else {
                 Err("Expected string".to_string())
@@ -255,9 +255,6 @@ for SVC in $SERVICES; do
 //! Regenerate with:
 //!   aws-vault exec <profile> -- ./carina-provider-awscc/scripts/generate-schemas.sh
 
-// Re-export parent types so resource modules can use `super::` to access them.
-pub use super::*;
-
 EOF
 
     # Add module declarations for resources in this service
@@ -297,9 +294,7 @@ cat > "$OUTPUT_DIR/mod.rs" << 'EOF'
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
-// Re-export all types and validators from awscc_types so that
-// generated schema files can use `super::` to access them.
-pub use super::awscc_types::*;
+use super::config::AwsccSchemaConfig;
 
 EOF
 

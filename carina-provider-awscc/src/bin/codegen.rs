@@ -357,7 +357,7 @@ fn arn_validator_for(validator: ArnValidator) -> String {
         ArnValidator::Iam { prefix, label } => format!(
             r#"|value| {{
             if let Value::Concrete(ConcreteValue::String(s)) = value {{
-                super::validate_iam_arn(s, {prefix:?})
+                carina_aws_types::validate_iam_arn(s, {prefix:?})
                     .map_err(|reason| format!("Invalid {label} ARN '{{}}': {{}}", s, reason))
             }} else {{
                 Err("Expected string".to_string())
@@ -376,7 +376,7 @@ fn arn_validator_for(validator: ArnValidator) -> String {
             format!(
                 r#"|value| {{
             if let Value::Concrete(ConcreteValue::String(s)) = value {{
-                super::validate_service_arn(s, {service:?}, {prefix_expr})
+                carina_aws_types::validate_service_arn(s, {service:?}, {prefix_expr})
                     .map_err(|reason| format!("Invalid {label} ARN '{{}}': {{}}", s, reason))
             }} else {{
                 Err("Expected string".to_string())
@@ -393,7 +393,7 @@ fn arn_validator_expression(choice: ArnEmitChoice) -> String {
         ArnEmitChoice::ServicePrefix(service) => format!(
             r#"|value| {{
             if let Value::Concrete(ConcreteValue::String(s)) = value {{
-                super::validate_service_arn(s, {service:?}, None)
+                carina_aws_types::validate_service_arn(s, {service:?}, None)
                     .map_err(|reason| format!("Invalid {service} ARN '{{}}': {{}}", s, reason))
             }} else {{
                 Err("Expected string".to_string())
@@ -406,7 +406,7 @@ fn arn_validator_expression(choice: ArnEmitChoice) -> String {
 
 fn emit_arn_helper(service: &str, resource: &str, choice: ArnEmitChoice) -> String {
     if matches!(choice, ArnEmitChoice::Generic) {
-        return "pub fn arn() -> AttributeType {\n    super::arn()\n}\n\n".to_string();
+        return "pub fn arn() -> AttributeType {\n    carina_aws_types::arn()\n}\n\n".to_string();
     }
 
     let regex_expr = match choice {
@@ -423,8 +423,8 @@ fn emit_arn_helper(service: &str, resource: &str, choice: ArnEmitChoice) -> Stri
     format!(
         r#"pub fn arn() -> AttributeType {{
     AttributeType::custom(
-        Some(super::provider_type("{service}", "{resource}", "Arn")),
-        super::arn(),
+        Some(carina_aws_types::provider_type("{service}", "{resource}", "Arn")),
+        carina_aws_types::arn(),
         {regex_expr},
         None,
         legacy_validator({validator_expr}),
@@ -964,6 +964,13 @@ fn is_list_of_struct_property(prop: &CfnProperty, schema: &CfnSchema) -> bool {
     })
 }
 
+fn uses_core_schema_types_path(s: &str) -> bool {
+    s.contains("types::ipv4_")
+        || s.contains("types::ipv6_")
+        || s.contains("types::cidr()")
+        || s.contains("types::email()")
+}
+
 /// Display string for List element types based on items property type and property name.
 /// The `prop_name` is used for name-based type inference (e.g., SubnetIds -> `List<SubnetId>`).
 fn list_element_type_display(items: &CfnProperty, prop_name: &str, resource_type: &str) -> String {
@@ -993,8 +1000,8 @@ fn infer_string_type_display(prop_name: &str, resource_type: &str) -> String {
     let string_overrides = known_string_type_overrides();
     if let Some(&override_type) = string_overrides.get(prop_name) {
         // Extract display name from override type string
-        // e.g., "super::security_group_id()" -> "SecurityGroupId"
-        //       "super::iam_role_arn()" -> "IamRoleArn"
+        // e.g., "carina_aws_types::security_group_id()" -> "SecurityGroupId"
+        //       "carina_aws_types::iam_role_arn()" -> "IamRoleArn"
         return override_type_to_display_name(override_type).to_string();
     }
 
@@ -1057,42 +1064,42 @@ fn infer_string_type_display(prop_name: &str, resource_type: &str) -> String {
 }
 
 /// Convert an override type string to a display name
-/// e.g., "super::security_group_id()" -> "SecurityGroupId"
+/// e.g., "carina_aws_types::security_group_id()" -> "SecurityGroupId"
 fn override_type_to_display_name(override_type: &str) -> &str {
     match override_type {
-        "super::security_group_id()" => "SecurityGroupId",
-        "super::aws_resource_id()" => "AwsResourceId",
-        "super::iam_role_arn()" | "super::super::iam::role::arn()" => "IamRoleArn",
-        "super::iam_policy_arn()" | "super::super::iam::policy::arn()" => "IamPolicyArn",
-        "super::iam_oidc_provider_arn()" | "super::super::iam::oidc_provider::arn()" => {
+        "carina_aws_types::security_group_id()" => "SecurityGroupId",
+        "carina_aws_types::aws_resource_id()" => "AwsResourceId",
+        "carina_aws_types::iam_role_arn()" | "super::super::iam::role::arn()" => "IamRoleArn",
+        "carina_aws_types::iam_policy_arn()" | "super::super::iam::policy::arn()" => "IamPolicyArn",
+        "carina_aws_types::iam_oidc_provider_arn()" | "super::super::iam::oidc_provider::arn()" => {
             "IamOidcProviderArn"
         }
-        "super::kms_key_arn()" | "super::super::kms::key::arn()" => "KmsKeyArn",
-        "super::kms_key_id()" => "KmsKeyId",
-        "super::gateway_id()" => "GatewayId",
-        "super::network_acl_id()" => "NetworkAclId",
-        "super::aws_account_id()" => "AwsAccountId",
-        "super::instance_id()" => "InstanceId",
-        "super::network_interface_id()" => "NetworkInterfaceId",
-        "super::allocation_id()" => "AllocationId",
-        "super::prefix_list_id()" => "PrefixListId",
-        "super::carrier_gateway_id()" => "CarrierGatewayId",
-        "super::local_gateway_id()" => "LocalGatewayId",
-        "super::egress_only_internet_gateway_id()" => "EgressOnlyInternetGatewayId",
-        "super::transit_gateway_id()" => "TransitGatewayId",
-        "super::vpc_peering_connection_id()" => "VpcPeeringConnectionId",
-        "super::vpc_endpoint_id()" => "VpcEndpointId",
-        "super::transit_gateway_attachment_id()" => "TransitGatewayAttachmentId",
-        "super::flow_log_id()" => "FlowLogId",
-        "super::subnet_route_table_association_id()" => "SubnetRouteTableAssociationId",
-        "super::ipam_id()" => "IpamId",
-        "super::iam_role_id()" => "IamRoleId",
-        "super::awscc_region()" => "Region",
+        "carina_aws_types::kms_key_arn()" | "super::super::kms::key::arn()" => "KmsKeyArn",
+        "carina_aws_types::kms_key_id()" => "KmsKeyId",
+        "carina_aws_types::gateway_id()" => "GatewayId",
+        "carina_aws_types::network_acl_id()" => "NetworkAclId",
+        "carina_aws_types::aws_account_id()" => "AwsAccountId",
+        "carina_aws_types::instance_id()" => "InstanceId",
+        "carina_aws_types::network_interface_id()" => "NetworkInterfaceId",
+        "carina_aws_types::allocation_id()" => "AllocationId",
+        "carina_aws_types::prefix_list_id()" => "PrefixListId",
+        "carina_aws_types::carrier_gateway_id()" => "CarrierGatewayId",
+        "carina_aws_types::local_gateway_id()" => "LocalGatewayId",
+        "carina_aws_types::egress_only_internet_gateway_id()" => "EgressOnlyInternetGatewayId",
+        "carina_aws_types::transit_gateway_id()" => "TransitGatewayId",
+        "carina_aws_types::vpc_peering_connection_id()" => "VpcPeeringConnectionId",
+        "carina_aws_types::vpc_endpoint_id()" => "VpcEndpointId",
+        "carina_aws_types::transit_gateway_attachment_id()" => "TransitGatewayAttachmentId",
+        "carina_aws_types::flow_log_id()" => "FlowLogId",
+        "carina_aws_types::subnet_route_table_association_id()" => "SubnetRouteTableAssociationId",
+        "carina_aws_types::ipam_id()" => "IpamId",
+        "carina_aws_types::iam_role_id()" => "IamRoleId",
+        "carina_aws_types::aws_region()" => "Region",
         "types::ipv4_address()" => "Ipv4Address",
-        "super::arn()" => "Arn",
-        "super::ipam_pool_id()" => "IpamPoolId",
-        "super::vpc_cidr_block_association_id()" => "VpcCidrBlockAssociationId",
-        "super::tgw_route_table_id()" => "TgwRouteTableId",
+        "carina_aws_types::arn()" => "Arn",
+        "carina_aws_types::ipam_pool_id()" => "IpamPoolId",
+        "carina_aws_types::vpc_cidr_block_association_id()" => "VpcCidrBlockAssociationId",
+        "carina_aws_types::tgw_route_table_id()" => "TgwRouteTableId",
         "types::cidr()" => "Cidr",
         "types::email()" => "Email",
         "AttributeType::string()" => "String",
@@ -1384,7 +1391,7 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str) -> Result<String> {
     let mut md = String::new();
 
     let dsl_resource = dsl_resource_name_from_type(type_name)?;
-    let namespace = format!("awscc.{}", dsl_resource);
+    let namespace = format!("aws.{}", dsl_resource);
 
     // Build read-only properties set
     let read_only: HashSet<String> = schema
@@ -1933,8 +1940,8 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
     let resource = parts[2].to_snake_case();
     let full_resource = full_resource_name_from_type(type_name)?;
     let dsl_resource = dsl_resource_name_from_type(type_name)?;
-    // Namespace for enums: awscc.ec2.Vpc
-    let namespace = format!("awscc.{}", dsl_resource);
+    // Namespace for AWS type identities: aws.ec2.Vpc
+    let namespace = format!("aws.{}", dsl_resource);
     let arn_helper = resource_identity_parts(&dsl_resource).and_then(|(service, resource)| {
         let has_schema_arn = schema.properties.contains_key("Arn");
         let has_synthetic_arn = synthetic_attributes()
@@ -1971,7 +1978,6 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
     // Pre-scan properties to determine which imports are needed and collect enum info
     let mut needs_types = false;
     let mut needs_attribute_type = false;
-    let mut needs_tags_type = false;
     let mut needs_struct_field = false;
     let mut enums: BTreeMap<String, EnumInfo> = BTreeMap::new();
     let mut ranged_ints: BTreeMap<String, (Option<i64>, Option<i64>)> = BTreeMap::new();
@@ -1991,14 +1997,11 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
         }
         let (attr_type, enum_info) =
             cfn_type_to_carina_type_with_enum(prop, prop_name, schema, &namespace, &enums);
-        if attr_type.contains("types::") {
+        if uses_core_schema_types_path(&attr_type) {
             needs_types = true;
         }
         if attr_type.contains("AttributeType::") {
             needs_attribute_type = true;
-        }
-        if attr_type.contains("tags_type()") {
-            needs_tags_type = true;
         }
         if attr_type.contains("StructField::") {
             needs_struct_field = true;
@@ -2927,7 +2930,7 @@ pub fn {}() -> AwsccSchemaConfig {{
     if has_tags {
         body.push_str("        .with_validator(|attrs| {\n");
         body.push_str("            let mut errors = Vec::new();\n");
-        body.push_str("            if let Err(mut e) = validate_tags_map(attrs) {\n                errors.append(&mut e);\n            }\n");
+        body.push_str("            if let Err(mut e) = carina_aws_types::validate_tags_map(attrs) {\n                errors.append(&mut e);\n            }\n");
         body.push_str(
             "            if errors.is_empty() { Ok(()) } else { Err(errors) }\n        })\n",
         );
@@ -3164,7 +3167,7 @@ fn {fn_name}(value: &Value) -> Result<(), String> {{
     if body.contains("StructField::") {
         needs_struct_field = true;
     }
-    if body.contains("types::") {
+    if uses_core_schema_types_path(&body) {
         needs_types = true;
     }
     let mut schema_imports = vec!["AttributeSchema", "ResourceSchema"];
@@ -3200,7 +3203,7 @@ fn {fn_name}(value: &Value) -> Result<(), String> {{
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
 use carina_core::schema::{{{}}};
-use super::AwsccSchemaConfig;
+use crate::schemas::config::AwsccSchemaConfig;
 "#,
         resource, type_name, schema_imports_str
     ));
@@ -3218,12 +3221,6 @@ use super::AwsccSchemaConfig;
     }
     if has_patterns {
         code.push_str("use regex::Regex;\n");
-    }
-    if needs_tags_type {
-        code.push_str("use super::tags_type;\n");
-    }
-    if has_tags {
-        code.push_str("use super::validate_tags_map;\n");
     }
     code.push('\n');
     code.push_str(&body);
@@ -4297,20 +4294,23 @@ fn known_int_range_overrides() -> &'static HashMap<&'static str, (i64, i64)> {
 fn known_string_type_overrides() -> &'static HashMap<&'static str, &'static str> {
     static OVERRIDES: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
         let mut m = HashMap::new();
-        m.insert("DefaultSecurityGroup", "super::security_group_id()");
-        m.insert("DefaultNetworkAcl", "super::network_acl_id()");
+        m.insert(
+            "DefaultSecurityGroup",
+            "carina_aws_types::security_group_id()",
+        );
+        m.insert("DefaultNetworkAcl", "carina_aws_types::network_acl_id()");
         m.insert("DeliverCrossAccountRole", "super::super::iam::role::arn()");
         m.insert("DeliverLogsPermissionArn", "super::super::iam::role::arn()");
         m.insert("PeerRoleArn", "super::super::iam::role::arn()");
         m.insert("PermissionsBoundary", "super::super::iam::policy::arn()");
         m.insert("ManagedPolicyArns", "super::super::iam::policy::arn()");
         m.insert("KmsKeyId", "super::super::kms::key::arn()");
-        m.insert("KMSMasterKeyID", "super::kms_key_id()");
-        m.insert("ReplicaKmsKeyID", "super::kms_key_id()");
+        m.insert("KMSMasterKeyID", "carina_aws_types::kms_key_id()");
+        m.insert("ReplicaKmsKeyID", "carina_aws_types::kms_key_id()");
         m.insert("KmsKeyArn", "super::super::kms::key::arn()");
-        m.insert("IpamId", "super::ipam_id()");
-        m.insert("Locale", "super::awscc_region()");
-        m.insert("BucketAccountId", "super::aws_account_id()");
+        m.insert("IpamId", "carina_aws_types::ipam_id()");
+        m.insert("Locale", "carina_aws_types::aws_region()");
+        m.insert("BucketAccountId", "carina_aws_types::aws_account_id()");
         m
     });
     &OVERRIDES
@@ -4343,50 +4343,50 @@ fn resource_type_overrides() -> &'static HashMap<(&'static str, &'static str), T
             // IAM Role's RoleId uses AROA prefix pattern
             m.insert(
                 ("AWS::IAM::Role", "RoleId"),
-                TypeOverride::StringType("super::iam_role_id()"),
+                TypeOverride::StringType("carina_aws_types::iam_role_id()"),
             );
             // KMS KeyPolicy is an IAM policy document, though CFN types it object|string.
             m.insert(
                 ("AWS::KMS::Key", "KeyPolicy"),
-                TypeOverride::StringType("super::iam_policy_document()"),
+                TypeOverride::StringType("carina_aws_types::iam_policy_document()"),
             );
             // EC2 Route's GatewayId accepts both igw-* and vgw-*
             m.insert(
                 ("AWS::EC2::Route", "GatewayId"),
-                TypeOverride::StringType("super::gateway_id()"),
+                TypeOverride::StringType("carina_aws_types::gateway_id()"),
             );
             // Generic "Id" attributes on resources where the specific ID type is known
             m.insert(
                 ("AWS::EC2::EgressOnlyInternetGateway", "Id"),
-                TypeOverride::StringType("super::egress_only_internet_gateway_id()"),
+                TypeOverride::StringType("carina_aws_types::egress_only_internet_gateway_id()"),
             );
             m.insert(
                 ("AWS::EC2::TransitGateway", "Id"),
-                TypeOverride::StringType("super::transit_gateway_id()"),
+                TypeOverride::StringType("carina_aws_types::transit_gateway_id()"),
             );
             m.insert(
                 ("AWS::EC2::VPCPeeringConnection", "Id"),
-                TypeOverride::StringType("super::vpc_peering_connection_id()"),
+                TypeOverride::StringType("carina_aws_types::vpc_peering_connection_id()"),
             );
             m.insert(
                 ("AWS::EC2::VPCEndpoint", "Id"),
-                TypeOverride::StringType("super::vpc_endpoint_id()"),
+                TypeOverride::StringType("carina_aws_types::vpc_endpoint_id()"),
             );
             m.insert(
                 ("AWS::EC2::SecurityGroup", "Id"),
-                TypeOverride::StringType("super::security_group_id()"),
+                TypeOverride::StringType("carina_aws_types::security_group_id()"),
             );
             m.insert(
                 ("AWS::EC2::TransitGatewayAttachment", "Id"),
-                TypeOverride::StringType("super::transit_gateway_attachment_id()"),
+                TypeOverride::StringType("carina_aws_types::transit_gateway_attachment_id()"),
             );
             m.insert(
                 ("AWS::EC2::FlowLog", "Id"),
-                TypeOverride::StringType("super::flow_log_id()"),
+                TypeOverride::StringType("carina_aws_types::flow_log_id()"),
             );
             m.insert(
                 ("AWS::EC2::SubnetRouteTableAssociation", "Id"),
-                TypeOverride::StringType("super::subnet_route_table_association_id()"),
+                TypeOverride::StringType("carina_aws_types::subnet_route_table_association_id()"),
             );
             // EIP Address and TransferAddress are IPv4 addresses
             m.insert(
@@ -4400,20 +4400,20 @@ fn resource_type_overrides() -> &'static HashMap<(&'static str, &'static str), T
             // FlowLog LogDestination is an ARN (S3 bucket, CloudWatch log group, or Firehose)
             m.insert(
                 ("AWS::EC2::FlowLog", "LogDestination"),
-                TypeOverride::StringType("super::arn()"),
+                TypeOverride::StringType("carina_aws_types::arn()"),
             );
             // S3 Bucket notification ARNs
             m.insert(
                 ("AWS::S3::Bucket", "Function"),
-                TypeOverride::StringType("super::arn()"),
+                TypeOverride::StringType("carina_aws_types::arn()"),
             );
             m.insert(
                 ("AWS::S3::Bucket", "Queue"),
-                TypeOverride::StringType("super::arn()"),
+                TypeOverride::StringType("carina_aws_types::arn()"),
             );
             m.insert(
                 ("AWS::S3::Bucket", "Topic"),
-                TypeOverride::StringType("super::arn()"),
+                TypeOverride::StringType("carina_aws_types::arn()"),
             );
             // S3 Bucket replication role is an IAM Role ARN
             m.insert(
@@ -4423,21 +4423,21 @@ fn resource_type_overrides() -> &'static HashMap<(&'static str, &'static str), T
             // S3 Bucket replication destination account
             m.insert(
                 ("AWS::S3::Bucket", "Account"),
-                TypeOverride::StringType("super::aws_account_id()"),
+                TypeOverride::StringType("carina_aws_types::aws_account_id()"),
             );
             // VPC CidrBlockAssociations are association IDs (vpc-cidr-assoc-xxx), not CIDRs
             m.insert(
                 ("AWS::EC2::VPC", "CidrBlockAssociations"),
-                TypeOverride::StringType("super::vpc_cidr_block_association_id()"),
+                TypeOverride::StringType("carina_aws_types::vpc_cidr_block_association_id()"),
             );
             // Transit Gateway route table IDs use tgw-rtb- prefix, not rtb-
             m.insert(
                 ("AWS::EC2::TransitGateway", "AssociationDefaultRouteTableId"),
-                TypeOverride::StringType("super::tgw_route_table_id()"),
+                TypeOverride::StringType("carina_aws_types::tgw_route_table_id()"),
             );
             m.insert(
                 ("AWS::EC2::TransitGateway", "PropagationDefaultRouteTableId"),
-                TypeOverride::StringType("super::tgw_route_table_id()"),
+                TypeOverride::StringType("carina_aws_types::tgw_route_table_id()"),
             );
             // Transit Gateway CIDR blocks support both IPv4 and IPv6
             m.insert(
@@ -4460,19 +4460,19 @@ fn resource_type_overrides() -> &'static HashMap<(&'static str, &'static str), T
             // Sinks (consumers in assignments, permission sets):
             m.insert(
                 ("AWS::SSO::Assignment", "TargetId"),
-                TypeOverride::StringType("super::aws_account_id()"),
+                TypeOverride::StringType("carina_aws_types::aws_account_id()"),
             );
             m.insert(
                 ("AWS::SSO::Assignment", "PrincipalId"),
-                TypeOverride::StringType("super::sso_principal_id()"),
+                TypeOverride::StringType("carina_aws_types::sso_principal_id()"),
             );
             m.insert(
                 ("AWS::SSO::Assignment", "InstanceArn"),
-                TypeOverride::StringType("super::sso_instance_arn()"),
+                TypeOverride::StringType("carina_aws_types::sso_instance_arn()"),
             );
             m.insert(
                 ("AWS::SSO::PermissionSet", "InstanceArn"),
-                TypeOverride::StringType("super::sso_instance_arn()"),
+                TypeOverride::StringType("carina_aws_types::sso_instance_arn()"),
             );
             //
             // Sources (produced by SSO/IdentityStore resources themselves).
@@ -4481,35 +4481,35 @@ fn resource_type_overrides() -> &'static HashMap<(&'static str, &'static str), T
             // fail with "expected SsoInstanceArn, got Arn".
             m.insert(
                 ("AWS::SSO::Instance", "InstanceArn"),
-                TypeOverride::StringType("super::sso_instance_arn()"),
+                TypeOverride::StringType("carina_aws_types::sso_instance_arn()"),
             );
             m.insert(
                 ("AWS::SSO::Instance", "IdentityStoreId"),
-                TypeOverride::StringType("super::identity_store_id()"),
+                TypeOverride::StringType("carina_aws_types::identity_store_id()"),
             );
             m.insert(
                 ("AWS::SSO::PermissionSet", "PermissionSetArn"),
-                TypeOverride::StringType("super::sso_permission_set_arn()"),
+                TypeOverride::StringType("carina_aws_types::sso_permission_set_arn()"),
             );
             m.insert(
                 ("AWS::SSO::Assignment", "PermissionSetArn"),
-                TypeOverride::StringType("super::sso_permission_set_arn()"),
+                TypeOverride::StringType("carina_aws_types::sso_permission_set_arn()"),
             );
             m.insert(
                 ("AWS::IdentityStore::Group", "GroupId"),
-                TypeOverride::StringType("super::sso_principal_id()"),
+                TypeOverride::StringType("carina_aws_types::sso_principal_id()"),
             );
             m.insert(
                 ("AWS::IdentityStore::Group", "IdentityStoreId"),
-                TypeOverride::StringType("super::identity_store_id()"),
+                TypeOverride::StringType("carina_aws_types::identity_store_id()"),
             );
             m.insert(
                 ("AWS::IdentityStore::GroupMembership", "IdentityStoreId"),
-                TypeOverride::StringType("super::identity_store_id()"),
+                TypeOverride::StringType("carina_aws_types::identity_store_id()"),
             );
             m.insert(
                 ("AWS::IdentityStore::GroupMembership", "GroupId"),
-                TypeOverride::StringType("super::sso_principal_id()"),
+                TypeOverride::StringType("carina_aws_types::sso_principal_id()"),
             );
 
             // === Enum overrides ===
@@ -4719,7 +4719,7 @@ fn synthetic_attributes() -> &'static [SyntheticAttribute] {
         vec![SyntheticAttribute {
             cfn_type: "AWS::CloudFront::Distribution",
             attr_name: "arn",
-            attr_type: "super::arn()",
+            attr_type: "carina_aws_types::arn()",
             description: "The ARN of the CloudFront distribution. Synthesized by the provider \
                  from the distribution id; CloudFront's CloudFormation type does not \
                  expose ARN through the Cloud Control API.",
@@ -4792,27 +4792,27 @@ fn infer_string_type(prop_name: &str, resource_type: &str) -> Option<String> {
 
     // Availability zone (but not AvailabilityZoneId which uses AZ ID format like "use1-az1")
     if prop_lower == "availabilityzone" || prop_lower == "availabilityzones" {
-        return Some("super::availability_zone()".to_string());
+        return Some("carina_aws_types::availability_zone()".to_string());
     }
 
     // Availability zone ID (e.g., "use1-az1", "usw2-az2")
     if prop_lower == "availabilityzoneid" || prop_lower == "availabilityzoneids" {
-        return Some("super::availability_zone_id()".to_string());
+        return Some("carina_aws_types::availability_zone_id()".to_string());
     }
 
     // Region types (e.g., PeerRegion, ServiceRegion, RegionName, ResourceRegion)
     if prop_lower.ends_with("region") || prop_lower == "regionname" {
-        return Some("super::awscc_region()".to_string());
+        return Some("carina_aws_types::aws_region()".to_string());
     }
 
     // Check ARN pattern
     if prop_lower.ends_with("arn") || prop_lower.ends_with("arns") || prop_lower.contains("_arn") {
-        return Some("super::arn()".to_string());
+        return Some("carina_aws_types::arn()".to_string());
     }
 
     // IPAM Pool IDs
     if is_ipam_pool_id_property(singular_name) {
-        return Some("super::ipam_pool_id()".to_string());
+        return Some("carina_aws_types::ipam_pool_id()".to_string());
     }
 
     // Check resource ID pattern
@@ -4822,7 +4822,7 @@ fn infer_string_type(prop_name: &str, resource_type: &str) -> Option<String> {
 
     // AWS Account ID (owner IDs and account IDs are 12-digit account IDs)
     if prop_lower.ends_with("ownerid") || prop_lower.ends_with("accountid") {
-        return Some("super::aws_account_id()".to_string());
+        return Some("carina_aws_types::aws_account_id()".to_string());
     }
 
     // Email addresses. Conservative match: property name is exactly "Email"
@@ -5032,31 +5032,33 @@ fn classify_resource_id(prop_name: &str, resource_type: Option<&str>) -> Resourc
 }
 
 /// Get the specific resource ID type function for a property name.
-/// Returns the function name (e.g., "super::vpc_id()") or generic aws_resource_id.
+/// Returns the function name (e.g., "carina_aws_types::vpc_id()") or generic aws_resource_id.
 ///
 /// `resource_type` is the CloudFormation type name of the enclosing resource; see
 /// `classify_resource_id`.
 fn get_resource_id_type(prop_name: &str, resource_type: Option<&str>) -> &'static str {
     match classify_resource_id(prop_name, resource_type) {
-        ResourceIdKind::VpcId => "super::vpc_id()",
-        ResourceIdKind::SubnetId => "super::subnet_id()",
-        ResourceIdKind::SecurityGroupId => "super::security_group_id()",
-        ResourceIdKind::EgressOnlyInternetGatewayId => "super::egress_only_internet_gateway_id()",
-        ResourceIdKind::InternetGatewayId => "super::internet_gateway_id()",
-        ResourceIdKind::RouteTableId => "super::route_table_id()",
-        ResourceIdKind::NatGatewayId => "super::nat_gateway_id()",
-        ResourceIdKind::VpcPeeringConnectionId => "super::vpc_peering_connection_id()",
-        ResourceIdKind::TransitGatewayId => "super::transit_gateway_id()",
-        ResourceIdKind::VpnGatewayId => "super::vpn_gateway_id()",
-        ResourceIdKind::VpcEndpointId => "super::vpc_endpoint_id()",
-        ResourceIdKind::InstanceId => "super::instance_id()",
-        ResourceIdKind::NetworkInterfaceId => "super::network_interface_id()",
-        ResourceIdKind::AllocationId => "super::allocation_id()",
-        ResourceIdKind::PrefixListId => "super::prefix_list_id()",
-        ResourceIdKind::CarrierGatewayId => "super::carrier_gateway_id()",
-        ResourceIdKind::LocalGatewayId => "super::local_gateway_id()",
-        ResourceIdKind::NetworkAclId => "super::network_acl_id()",
-        ResourceIdKind::Generic => "super::aws_resource_id()",
+        ResourceIdKind::VpcId => "carina_aws_types::vpc_id()",
+        ResourceIdKind::SubnetId => "carina_aws_types::subnet_id()",
+        ResourceIdKind::SecurityGroupId => "carina_aws_types::security_group_id()",
+        ResourceIdKind::EgressOnlyInternetGatewayId => {
+            "carina_aws_types::egress_only_internet_gateway_id()"
+        }
+        ResourceIdKind::InternetGatewayId => "carina_aws_types::internet_gateway_id()",
+        ResourceIdKind::RouteTableId => "carina_aws_types::route_table_id()",
+        ResourceIdKind::NatGatewayId => "carina_aws_types::nat_gateway_id()",
+        ResourceIdKind::VpcPeeringConnectionId => "carina_aws_types::vpc_peering_connection_id()",
+        ResourceIdKind::TransitGatewayId => "carina_aws_types::transit_gateway_id()",
+        ResourceIdKind::VpnGatewayId => "carina_aws_types::vpn_gateway_id()",
+        ResourceIdKind::VpcEndpointId => "carina_aws_types::vpc_endpoint_id()",
+        ResourceIdKind::InstanceId => "carina_aws_types::instance_id()",
+        ResourceIdKind::NetworkInterfaceId => "carina_aws_types::network_interface_id()",
+        ResourceIdKind::AllocationId => "carina_aws_types::allocation_id()",
+        ResourceIdKind::PrefixListId => "carina_aws_types::prefix_list_id()",
+        ResourceIdKind::CarrierGatewayId => "carina_aws_types::carrier_gateway_id()",
+        ResourceIdKind::LocalGatewayId => "carina_aws_types::local_gateway_id()",
+        ResourceIdKind::NetworkAclId => "carina_aws_types::network_acl_id()",
+        ResourceIdKind::Generic => "carina_aws_types::aws_resource_id()",
     }
 }
 
@@ -5180,7 +5182,7 @@ fn cfn_type_to_carina_type_with_enum_with_struct_path(
 ) -> (String, Option<EnumInfo>) {
     // Tags property is special - it's a Map in Carina (Terraform-style)
     if prop_name == "Tags" {
-        return ("tags_type()".to_string(), None);
+        return ("carina_aws_types::tags_type()".to_string(), None);
     }
 
     // Handle const values - generate single-value enum
@@ -5232,7 +5234,7 @@ fn cfn_type_to_carina_type_with_enum_with_struct_path(
     // Handle $ref
     if let Some(ref_path) = &prop.ref_path {
         if ref_path.contains("/Tag") {
-            return ("tags_type()".to_string(), None);
+            return ("carina_aws_types::tags_type()".to_string(), None);
         }
 
         if let Some(def_name) = ref_def_name(ref_path) {
@@ -5477,7 +5479,7 @@ fn cfn_type_to_carina_type_with_enum_with_struct_path(
 
             // Check if this is a policy document field (CFN sometimes types these as "string")
             if prop_name.ends_with("PolicyDocument") {
-                return ("super::iam_policy_document()".to_string(), None);
+                return ("carina_aws_types::iam_policy_document()".to_string(), None);
             }
 
             // Try to extract enum values from description
@@ -5771,7 +5773,7 @@ fn cfn_type_to_carina_type_with_enum_with_struct_path(
             }
             // Check if this is an IAM policy document
             if prop_name.ends_with("PolicyDocument") {
-                return ("super::iam_policy_document()".to_string(), None);
+                return ("carina_aws_types::iam_policy_document()".to_string(), None);
             }
             // Empty object with no or empty properties and additionalProperties: false
             // -> empty Struct (e.g., SimplePrefix)
@@ -7050,7 +7052,7 @@ mod tests {
             handlers: BTreeMap::new(),
         };
 
-        // AvailabilityZone should use super::availability_zone()
+        // AvailabilityZone should use carina_aws_types::availability_zone()
         let (type_str, _) = cfn_type_to_carina_type_with_enum(
             &prop,
             "AvailabilityZone",
@@ -7058,9 +7060,9 @@ mod tests {
             "",
             &BTreeMap::new(),
         );
-        assert_eq!(type_str, "super::availability_zone()");
+        assert_eq!(type_str, "carina_aws_types::availability_zone()");
 
-        // AvailabilityZoneId should use super::availability_zone_id()
+        // AvailabilityZoneId should use carina_aws_types::availability_zone_id()
         let (type_str, _) = cfn_type_to_carina_type_with_enum(
             &prop,
             "AvailabilityZoneId",
@@ -7068,7 +7070,7 @@ mod tests {
             "",
             &BTreeMap::new(),
         );
-        assert_eq!(type_str, "super::availability_zone_id()");
+        assert_eq!(type_str, "carina_aws_types::availability_zone_id()");
     }
 
     #[test]
@@ -8304,7 +8306,7 @@ mod tests {
         let overrides = known_string_type_overrides();
         assert_eq!(
             overrides.get("DefaultSecurityGroup"),
-            Some(&"super::security_group_id()")
+            Some(&"carina_aws_types::security_group_id()")
         );
         assert_eq!(
             overrides.get("DeliverLogsPermissionArn"),
@@ -8320,11 +8322,11 @@ mod tests {
         );
         assert_eq!(
             overrides.get("KMSMasterKeyID"),
-            Some(&"super::kms_key_id()")
+            Some(&"carina_aws_types::kms_key_id()")
         );
         assert_eq!(
             overrides.get("ReplicaKmsKeyID"),
-            Some(&"super::kms_key_id()")
+            Some(&"carina_aws_types::kms_key_id()")
         );
         assert_eq!(
             overrides.get("PermissionsBoundary"),
@@ -8375,7 +8377,10 @@ mod tests {
         let generated =
             generate_schema_code(&schema, "AWS::S3::Bucket").expect("generate s3 bucket");
         assert!(generated.contains("pub fn arn() -> AttributeType"));
-        assert!(generated.contains("Some(super::provider_type(\"s3\", \"Bucket\", \"Arn\"))"));
+        assert!(
+            generated
+                .contains("Some(carina_aws_types::provider_type(\"s3\", \"Bucket\", \"Arn\"))")
+        );
         assert!(generated.contains("AttributeSchema::new(\"arn\", self::arn())"));
     }
 
@@ -8435,7 +8440,7 @@ mod tests {
             "",
             &BTreeMap::new(),
         );
-        assert_eq!(type_str, "super::security_group_id()");
+        assert_eq!(type_str, "carina_aws_types::security_group_id()");
     }
 
     #[test]
@@ -8534,7 +8539,7 @@ mod tests {
         };
         let (type_str, _) =
             cfn_type_to_carina_type_with_enum(&prop, "Arn", &schema, "", &BTreeMap::new());
-        assert_eq!(type_str, "super::arn()");
+        assert_eq!(type_str, "carina_aws_types::arn()");
     }
 
     #[test]
@@ -8610,33 +8615,39 @@ mod tests {
 
     #[test]
     fn test_get_resource_id_type_vpc_id() {
-        assert_eq!(get_resource_id_type("VpcId", None), "super::vpc_id()");
+        assert_eq!(
+            get_resource_id_type("VpcId", None),
+            "carina_aws_types::vpc_id()"
+        );
     }
 
     #[test]
     fn test_get_resource_id_type_subnet_id() {
-        assert_eq!(get_resource_id_type("SubnetId", None), "super::subnet_id()");
+        assert_eq!(
+            get_resource_id_type("SubnetId", None),
+            "carina_aws_types::subnet_id()"
+        );
     }
 
     #[test]
     fn test_get_resource_id_type_security_group_id() {
         assert_eq!(
             get_resource_id_type("SecurityGroupId", None),
-            "super::security_group_id()"
+            "carina_aws_types::security_group_id()"
         );
         assert_eq!(
             get_resource_id_type("DestinationSecurityGroupId", None),
-            "super::security_group_id()"
+            "carina_aws_types::security_group_id()"
         );
         assert_eq!(
             get_resource_id_type("SourceSecurityGroupId", None),
-            "super::security_group_id()"
+            "carina_aws_types::security_group_id()"
         );
         // Bare "GroupId" should NOT match SecurityGroupId without a resource-type hint
         // — it's too broad and catches non-EC2 identifiers.
         assert_eq!(
             get_resource_id_type("GroupId", None),
-            "super::aws_resource_id()"
+            "carina_aws_types::aws_resource_id()"
         );
     }
 
@@ -8651,7 +8662,7 @@ mod tests {
         ] {
             assert_eq!(
                 get_resource_id_type("GroupId", Some(resource_type)),
-                "super::security_group_id()",
+                "carina_aws_types::security_group_id()",
                 "GroupId on {resource_type} should be SecurityGroupId",
             );
         }
@@ -8661,7 +8672,7 @@ mod tests {
         // (e.g., identitystore false-positive from issue #128).
         assert_eq!(
             get_resource_id_type("GroupId", Some("AWS::IdentityStore::Group")),
-            "super::aws_resource_id()",
+            "carina_aws_types::aws_resource_id()",
         );
     }
 
@@ -8669,7 +8680,7 @@ mod tests {
     fn test_get_resource_id_type_egress_only_internet_gateway_id() {
         assert_eq!(
             get_resource_id_type("EgressOnlyInternetGatewayId", None),
-            "super::egress_only_internet_gateway_id()"
+            "carina_aws_types::egress_only_internet_gateway_id()"
         );
     }
 
@@ -8677,7 +8688,7 @@ mod tests {
     fn test_get_resource_id_type_internet_gateway_id() {
         assert_eq!(
             get_resource_id_type("InternetGatewayId", None),
-            "super::internet_gateway_id()"
+            "carina_aws_types::internet_gateway_id()"
         );
     }
 
@@ -8685,7 +8696,7 @@ mod tests {
     fn test_get_resource_id_type_route_table_id() {
         assert_eq!(
             get_resource_id_type("RouteTableId", None),
-            "super::route_table_id()"
+            "carina_aws_types::route_table_id()"
         );
     }
 
@@ -8693,7 +8704,7 @@ mod tests {
     fn test_get_resource_id_type_nat_gateway_id() {
         assert_eq!(
             get_resource_id_type("NatGatewayId", None),
-            "super::nat_gateway_id()"
+            "carina_aws_types::nat_gateway_id()"
         );
     }
 
@@ -8701,7 +8712,7 @@ mod tests {
     fn test_get_resource_id_type_vpc_peering_connection_id() {
         assert_eq!(
             get_resource_id_type("VpcPeeringConnectionId", None),
-            "super::vpc_peering_connection_id()"
+            "carina_aws_types::vpc_peering_connection_id()"
         );
     }
 
@@ -8709,7 +8720,7 @@ mod tests {
     fn test_get_resource_id_type_transit_gateway_id() {
         assert_eq!(
             get_resource_id_type("TransitGatewayId", None),
-            "super::transit_gateway_id()"
+            "carina_aws_types::transit_gateway_id()"
         );
     }
 
@@ -8717,7 +8728,7 @@ mod tests {
     fn test_get_resource_id_type_vpn_gateway_id() {
         assert_eq!(
             get_resource_id_type("VpnGatewayId", None),
-            "super::vpn_gateway_id()"
+            "carina_aws_types::vpn_gateway_id()"
         );
     }
 
@@ -8725,7 +8736,7 @@ mod tests {
     fn test_get_resource_id_type_vpc_endpoint_id() {
         assert_eq!(
             get_resource_id_type("VpcEndpointId", None),
-            "super::vpc_endpoint_id()"
+            "carina_aws_types::vpc_endpoint_id()"
         );
     }
 
@@ -8735,7 +8746,7 @@ mod tests {
         // Previously, due to operator precedence, anything ending with "endpointid" matched
         assert_eq!(
             get_resource_id_type("ServiceEndpointId", None),
-            "super::aws_resource_id()"
+            "carina_aws_types::aws_resource_id()"
         );
     }
 
@@ -8743,7 +8754,7 @@ mod tests {
     fn test_get_resource_id_type_fallback() {
         assert_eq!(
             get_resource_id_type("SomeUnknownId", None),
-            "super::aws_resource_id()"
+            "carina_aws_types::aws_resource_id()"
         );
     }
 
@@ -8984,7 +8995,8 @@ mod tests {
         for input in &test_inputs {
             let kind = classify_resource_id(input, None);
             let is_generic = kind == ResourceIdKind::Generic;
-            let type_is_generic = get_resource_id_type(input, None) == "super::aws_resource_id()";
+            let type_is_generic =
+                get_resource_id_type(input, None) == "carina_aws_types::aws_resource_id()";
             let display_is_generic = get_resource_id_display_name(input, None) == "AwsResourceId";
             assert_eq!(
                 is_generic, type_is_generic,
@@ -9007,22 +9019,22 @@ mod tests {
         // Other resources' Arn should use generic arn
         assert_eq!(
             infer_string_type("Arn", "AWS::S3::Bucket"),
-            Some("super::arn()".to_string())
+            Some("carina_aws_types::arn()".to_string())
         );
         // Non-overridden properties are unaffected
         assert_eq!(
             infer_string_type("VpcId", "AWS::IAM::Role"),
-            Some("super::vpc_id()".to_string())
+            Some("carina_aws_types::vpc_id()".to_string())
         );
         // EC2 Route's GatewayId should use gateway_id (union), not generic aws_resource_id
         assert_eq!(
             infer_string_type("GatewayId", "AWS::EC2::Route"),
-            Some("super::gateway_id()".to_string())
+            Some("carina_aws_types::gateway_id()".to_string())
         );
         // Other resources' GatewayId should use generic resource ID type
         assert_eq!(
             infer_string_type("GatewayId", "AWS::EC2::VPNGatewayRoutePropagation"),
-            Some("super::aws_resource_id()".to_string())
+            Some("carina_aws_types::aws_resource_id()".to_string())
         );
     }
 
@@ -9060,7 +9072,7 @@ mod tests {
             &[],
         );
 
-        assert_eq!(carina_type, "super::iam_policy_document()");
+        assert_eq!(carina_type, "carina_aws_types::iam_policy_document()");
         assert!(enum_info.is_none());
     }
 
@@ -9300,12 +9312,12 @@ mod tests {
     fn test_infer_string_type_availability_zone() {
         assert_eq!(
             infer_string_type("AvailabilityZone", ""),
-            Some("super::availability_zone()".to_string())
+            Some("carina_aws_types::availability_zone()".to_string())
         );
         // AvailabilityZoneId should use availability_zone_id()
         assert_eq!(
             infer_string_type("AvailabilityZoneId", ""),
-            Some("super::availability_zone_id()".to_string())
+            Some("carina_aws_types::availability_zone_id()".to_string())
         );
     }
 
@@ -9313,11 +9325,11 @@ mod tests {
     fn test_infer_string_type_owner_id() {
         assert_eq!(
             infer_string_type("SourceSecurityGroupOwnerId", ""),
-            Some("super::aws_account_id()".to_string())
+            Some("carina_aws_types::aws_account_id()".to_string())
         );
         assert_eq!(
             infer_string_type("PeerOwnerId", ""),
-            Some("super::aws_account_id()".to_string())
+            Some("carina_aws_types::aws_account_id()".to_string())
         );
     }
 
@@ -9325,35 +9337,35 @@ mod tests {
     fn test_infer_string_type_new_resource_ids() {
         assert_eq!(
             infer_string_type("InstanceId", ""),
-            Some("super::instance_id()".to_string())
+            Some("carina_aws_types::instance_id()".to_string())
         );
         assert_eq!(
             infer_string_type("NetworkInterfaceId", ""),
-            Some("super::network_interface_id()".to_string())
+            Some("carina_aws_types::network_interface_id()".to_string())
         );
         assert_eq!(
             infer_string_type("EniId", ""),
-            Some("super::network_interface_id()".to_string())
+            Some("carina_aws_types::network_interface_id()".to_string())
         );
         assert_eq!(
             infer_string_type("AllocationId", ""),
-            Some("super::allocation_id()".to_string())
+            Some("carina_aws_types::allocation_id()".to_string())
         );
         assert_eq!(
             infer_string_type("PrefixListId", ""),
-            Some("super::prefix_list_id()".to_string())
+            Some("carina_aws_types::prefix_list_id()".to_string())
         );
         assert_eq!(
             infer_string_type("DestinationPrefixListId", ""),
-            Some("super::prefix_list_id()".to_string())
+            Some("carina_aws_types::prefix_list_id()".to_string())
         );
         assert_eq!(
             infer_string_type("CarrierGatewayId", ""),
-            Some("super::carrier_gateway_id()".to_string())
+            Some("carina_aws_types::carrier_gateway_id()".to_string())
         );
         assert_eq!(
             infer_string_type("LocalGatewayId", ""),
-            Some("super::local_gateway_id()".to_string())
+            Some("carina_aws_types::local_gateway_id()".to_string())
         );
     }
 
@@ -9361,11 +9373,11 @@ mod tests {
     fn test_infer_string_type_ipam_pool_id() {
         assert_eq!(
             infer_string_type("IpamPoolId", ""),
-            Some("super::ipam_pool_id()".to_string())
+            Some("carina_aws_types::ipam_pool_id()".to_string())
         );
         assert_eq!(
             infer_string_type("Ipv4IpamPoolId", ""),
-            Some("super::ipam_pool_id()".to_string())
+            Some("carina_aws_types::ipam_pool_id()".to_string())
         );
     }
 
@@ -9373,7 +9385,7 @@ mod tests {
     fn test_infer_string_type_default_network_acl() {
         assert_eq!(
             infer_string_type("DefaultNetworkAcl", ""),
-            Some("super::network_acl_id()".to_string())
+            Some("carina_aws_types::network_acl_id()".to_string())
         );
     }
 
@@ -9668,7 +9680,7 @@ mod tests {
             &prop,
             "OutputSchemaVersion",
             &schema,
-            "awscc.s3.Bucket",
+            "aws.s3.Bucket",
             &enums,
         );
         assert!(enum_info.is_some(), "const value should produce enum info");
@@ -9714,7 +9726,7 @@ mod tests {
             &prop,
             "AllowedMethods",
             &schema,
-            "awscc.s3.Bucket",
+            "aws.s3.Bucket",
             &enums,
         );
         assert!(
@@ -9777,7 +9789,7 @@ mod tests {
             &prop,
             "HttpMethod",
             &schema,
-            "awscc.s3.Bucket",
+            "aws.s3.Bucket",
             &enums,
         );
         assert!(
@@ -9842,7 +9854,7 @@ mod tests {
             &prop,
             "BlockedEncryptionTypes",
             &schema,
-            "awscc.s3.Bucket",
+            "aws.s3.Bucket",
             &enums,
         );
         assert!(
@@ -9898,13 +9910,8 @@ mod tests {
             handlers: BTreeMap::new(),
         };
         let enums = BTreeMap::new();
-        let (type_str, _) = cfn_type_to_carina_type_with_enum(
-            &prop,
-            "Limit",
-            &schema,
-            "awscc.wafv2.WebAcl",
-            &enums,
-        );
+        let (type_str, _) =
+            cfn_type_to_carina_type_with_enum(&prop, "Limit", &schema, "aws.wafv2.WebAcl", &enums);
         assert!(
             type_str.contains("AttributeType::int()") || type_str.contains("AttributeType::int(),"),
             "scalar integer $ref must yield an int attribute, got: {type_str}"
@@ -9951,7 +9958,7 @@ mod tests {
             &prop,
             "Weight",
             &schema,
-            "awscc.example.Thing",
+            "aws.example.Thing",
             &enums,
         );
         assert!(
@@ -9996,7 +10003,7 @@ mod tests {
             &prop,
             "Toggle",
             &schema,
-            "awscc.example.Thing",
+            "aws.example.Thing",
             &enums,
         );
         assert_eq!(type_str, "AttributeType::bool()");
@@ -10446,10 +10453,10 @@ mod tests {
 
         let md = generate_markdown(&schema, "AWS::EC2::SecurityGroup").unwrap();
         let egress_count = md
-            .matches("awscc.ec2.SecurityGroup.Egress.IpProtocol.tcp")
+            .matches("aws.ec2.SecurityGroup.Egress.IpProtocol.tcp")
             .count();
         let ingress_count = md
-            .matches("awscc.ec2.SecurityGroup.Ingress.IpProtocol.tcp")
+            .matches("aws.ec2.SecurityGroup.Ingress.IpProtocol.tcp")
             .count();
         assert_eq!(
             egress_count,
@@ -10579,7 +10586,7 @@ mod tests {
         // With structural disambiguation, the two Status enums keep the same
         // plain kind and differ by namespace.
         assert!(
-            md.contains("awscc.test.Resource.ConfigA.Status.disabled"),
+            md.contains("aws.test.Resource.ConfigA.Status.disabled"),
             "Expected ConfigA structural DSL identifier.\nEnum Values section:\n{}",
             md.lines()
                 .filter(|l| l.contains("Status") || l.contains("status"))
@@ -10587,7 +10594,7 @@ mod tests {
                 .join("\n")
         );
         assert!(
-            md.contains("awscc.test.Resource.ConfigB.Status.suspended"),
+            md.contains("aws.test.Resource.ConfigB.Status.suspended"),
             "Expected ConfigB structural DSL identifier.\nEnum Values section:\n{}",
             md.lines()
                 .filter(|l| l.contains("Status") || l.contains("status"))
@@ -10596,7 +10603,7 @@ mod tests {
         );
 
         assert!(
-            !md.contains("awscc.test.Resource.Status."),
+            !md.contains("aws.test.Resource.Status."),
             "Should not have ambiguous root-scoped Status identifiers"
         );
     }
@@ -10809,15 +10816,15 @@ mod tests {
             "AttributeType::enum_(VALID_KEY_USAGE)"
         ));
         assert!(
-            attr_type_accepts_scalar_default("super::prefix_list_id()"),
+            attr_type_accepts_scalar_default("carina_aws_types::prefix_list_id()"),
             "scalar string types whose name merely contains 'list' must still accept defaults"
         );
         assert!(attr_type_accepts_scalar_default(
             "AttributeType::custom(None, AttributeType::int(), None, None, legacy_validator(f), None)"
         ));
-        assert!(attr_type_accepts_scalar_default("super::arn()"));
+        assert!(attr_type_accepts_scalar_default("carina_aws_types::arn()"));
         assert!(!attr_type_accepts_scalar_default(
-            "super::iam_policy_document()"
+            "carina_aws_types::iam_policy_document()"
         ));
         assert!(!attr_type_accepts_scalar_default(
             "AttributeType::struct_(\"Config\")"
@@ -10872,8 +10879,9 @@ mod tests {
         let generated = generate_schema_code(&schema, "AWS::KMS::Key").unwrap();
 
         assert!(
-            generated
-                .contains(r#"AttributeSchema::new("key_policy", super::iam_policy_document())"#),
+            generated.contains(
+                r#"AttributeSchema::new("key_policy", carina_aws_types::iam_policy_document())"#
+            ),
             "Should resolve KeyPolicy to iam_policy_document: {generated}"
         );
         assert!(
@@ -11130,7 +11138,7 @@ mod tests {
             &prop,
             "LogGroupName",
             &schema,
-            "awscc.logs.LogGroup",
+            "aws.logs.LogGroup",
             &BTreeMap::new(),
         );
         assert!(
@@ -11173,7 +11181,7 @@ mod tests {
             &prop,
             "KmsKeyId",
             &schema,
-            "awscc.logs.LogGroup",
+            "aws.logs.LogGroup",
             &BTreeMap::new(),
         );
         // KmsKeyId should be resolved to a specific ARN type, not pattern-validated
@@ -11259,7 +11267,7 @@ mod tests {
             &prop,
             "PrivateDnsSpecifiedDomains",
             &schema,
-            "awscc.ec2.VpcEndpoint",
+            "aws.ec2.VpcEndpoint",
             &enums,
         );
         assert!(
@@ -11308,7 +11316,7 @@ mod tests {
             &prop,
             "SomeArray",
             &schema,
-            "awscc.ec2.VpcEndpoint",
+            "aws.ec2.VpcEndpoint",
             &enums,
         );
         assert!(
@@ -11353,7 +11361,7 @@ mod tests {
             &prop,
             "SomeArray",
             &schema,
-            "awscc.ec2.VpcEndpoint",
+            "aws.ec2.VpcEndpoint",
             &enums,
         );
         assert!(
@@ -11706,7 +11714,7 @@ mod tests {
             &prop,
             "ExpirationDate",
             &schema,
-            "awscc.s3.Bucket",
+            "aws.s3.Bucket",
             &BTreeMap::new(),
         );
         assert!(
@@ -13693,12 +13701,12 @@ mod tests {
         let md = generate_markdown(&schema, "AWS::S3::Bucket").unwrap();
         // DSL Identifier column must use snake_case
         assert!(
-            md.contains("`awscc.s3.Bucket.ObjectOwnership.bucket_owner_enforced`"),
+            md.contains("`aws.s3.Bucket.ObjectOwnership.bucket_owner_enforced`"),
             "DSL Identifier column must use snake_case: {md}"
         );
         // The PascalCase form must NOT appear as the DSL Identifier
         assert!(
-            !md.contains("`awscc.s3.Bucket.ObjectOwnership.BucketOwnerEnforced`"),
+            !md.contains("`aws.s3.Bucket.ObjectOwnership.BucketOwnerEnforced`"),
             "DSL Identifier column must not use the API spelling: {md}"
         );
         // Shorthand formats line must use snake_case (first value: ObjectWriter -> object_writer).

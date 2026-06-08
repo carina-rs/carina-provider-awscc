@@ -93,8 +93,8 @@ The Elastic IP address you are accepting for transfer. You can only accept one t
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `vpc` | `awscc.ec2.Eip.Domain.vpc` |
-| `standard` | `awscc.ec2.Eip.Domain.standard` |
+| `vpc` | `aws.ec2.Eip.Domain.vpc` |
+| `standard` | `aws.ec2.Eip.Domain.standard` |
 
 Shorthand formats: `vpc` or `Domain.vpc`
 

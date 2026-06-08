@@ -4,7 +4,7 @@
 //!
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
-use super::AwsccSchemaConfig;
+use crate::schemas::config::AwsccSchemaConfig;
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema};
 
 /// Returns the schema config for s3_bucket_policy (AWS::S3::BucketPolicy)
@@ -23,7 +23,7 @@ pub fn s3_bucket_policy_config() -> AwsccSchemaConfig {
                 .with_provider_name("Bucket"),
         )
         .attribute(
-            AttributeSchema::new("policy_document", super::iam_policy_document())
+            AttributeSchema::new("policy_document", carina_aws_types::iam_policy_document())
                 .required()
                 .with_description("A policy document containing permissions to add to the specified bucket. In IAM, you must provide policy documents in JSON format. However, in CloudFormation you can provide the policy in JSON or YAML format because CloudFormation converts YAML to JSON before submitting it to IAM. For more information, see the AWS::IAM::Policy [PolicyDocument](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-iam-policy.html#cfn-iam-policy-policydocument) resource description in this guide and [Access Policy Language Overview](https://docs.aws.amazon.com/AmazonS3/latest/dev/access-policy-language-overview.html) in the *Amazon S3 User Guide*.")
                 .with_provider_name("PolicyDocument"),

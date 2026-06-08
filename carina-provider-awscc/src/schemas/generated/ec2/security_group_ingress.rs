@@ -4,7 +4,7 @@
 //!
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
-use super::AwsccSchemaConfig;
+use crate::schemas::config::AwsccSchemaConfig;
 use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{
     AttributeSchema, AttributeType, ResourceSchema, legacy_validator, types,
@@ -68,7 +68,7 @@ pub fn ec2_security_group_ingress_config() -> AwsccSchemaConfig {
                 .with_provider_name("FromPort"),
         )
         .attribute(
-            AttributeSchema::new("group_id", super::security_group_id())
+            AttributeSchema::new("group_id", carina_aws_types::security_group_id())
                 .create_only()
                 .with_description("The ID of the security group. You must specify either the security group ID or the security group name in the request. For security groups in a nondefault VPC, you must specify the security group ID. You must specify the GroupName property or the GroupId property. For security groups that are in a VPC, you must use the GroupId property.")
                 .with_provider_name("GroupId"),
@@ -86,20 +86,20 @@ pub fn ec2_security_group_ingress_config() -> AwsccSchemaConfig {
                 .with_provider_name("Id"),
         )
         .attribute(
-            AttributeSchema::new("ip_protocol", AttributeType::enum_(carina_core::schema::enum_identity("IpProtocol", Some("awscc.ec2.SecurityGroupIngress")), Some(vec!["tcp".to_string(), "udp".to_string(), "icmp".to_string(), "icmpv6".to_string(), "-1".to_string(), "all".to_string()]), vec![("tcp".to_string(), "tcp".to_string()), ("udp".to_string(), "udp".to_string()), ("icmp".to_string(), "icmp".to_string()), ("icmpv6".to_string(), "icmpv6".to_string()), ("-1".to_string(), "all".to_string()), ("all".to_string(), "all".to_string())], None, None))
+            AttributeSchema::new("ip_protocol", AttributeType::enum_(carina_core::schema::enum_identity("IpProtocol", Some("aws.ec2.SecurityGroupIngress")), Some(vec!["tcp".to_string(), "udp".to_string(), "icmp".to_string(), "icmpv6".to_string(), "-1".to_string(), "all".to_string()]), vec![("tcp".to_string(), "tcp".to_string()), ("udp".to_string(), "udp".to_string()), ("icmp".to_string(), "icmp".to_string()), ("icmpv6".to_string(), "icmpv6".to_string()), ("-1".to_string(), "all".to_string()), ("all".to_string(), "all".to_string())], None, None))
                 .required()
                 .create_only()
                 .with_description("The IP protocol name (tcp, udp, icmp, icmpv6) or number (see Protocol Numbers). [VPC only] Use -1 to specify all protocols. When authorizing security group rules, specifying -1 or a protocol number other than tcp, udp, icmp, or icmpv6 allows traffic on all ports, regardless of any port range you specify. For tcp, udp, and icmp, you must specify a port range. For icmpv6, the port range is optional; if you omit the port range, traffic for all types and codes is allowed.")
                 .with_provider_name("IpProtocol"),
         )
         .attribute(
-            AttributeSchema::new("source_prefix_list_id", super::prefix_list_id())
+            AttributeSchema::new("source_prefix_list_id", carina_aws_types::prefix_list_id())
                 .create_only()
                 .with_description("[EC2-VPC only] The ID of a prefix list. ")
                 .with_provider_name("SourcePrefixListId"),
         )
         .attribute(
-            AttributeSchema::new("source_security_group_id", super::security_group_id())
+            AttributeSchema::new("source_security_group_id", carina_aws_types::security_group_id())
                 .create_only()
                 .with_description("The ID of the security group. You must specify either the security group ID or the security group name. For security groups in a nondefault VPC, you must specify the security group ID.")
                 .with_provider_name("SourceSecurityGroupId"),
@@ -111,7 +111,7 @@ pub fn ec2_security_group_ingress_config() -> AwsccSchemaConfig {
                 .with_provider_name("SourceSecurityGroupName"),
         )
         .attribute(
-            AttributeSchema::new("source_security_group_owner_id", super::aws_account_id())
+            AttributeSchema::new("source_security_group_owner_id", carina_aws_types::aws_account_id())
                 .create_only()
                 .with_description("[nondefault VPC] The AWS account ID that owns the source security group. You can't specify this property with an IP address range. If you specify SourceSecurityGroupName or SourceSecurityGroupId and that security group is owned by a different account than the account creating the stack, you must specify the SourceSecurityGroupOwnerId; otherwise, this property is optional.")
                 .with_provider_name("SourceSecurityGroupOwnerId"),

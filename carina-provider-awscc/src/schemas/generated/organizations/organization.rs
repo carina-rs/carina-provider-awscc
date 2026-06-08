@@ -4,20 +4,24 @@
 //!
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
-use super::AwsccSchemaConfig;
+use crate::schemas::config::AwsccSchemaConfig;
 use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, legacy_validator};
 use regex::Regex;
 
 pub fn arn() -> AttributeType {
     AttributeType::custom(
-        Some(super::provider_type("organizations", "Organization", "Arn")),
-        super::arn(),
+        Some(carina_aws_types::provider_type(
+            "organizations",
+            "Organization",
+            "Arn",
+        )),
+        carina_aws_types::arn(),
         Some("^arn:(aws|aws-cn|aws-us-gov):organizations:.*$".to_string()),
         None,
         legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
-                super::validate_service_arn(s, "organizations", None)
+                carina_aws_types::validate_service_arn(s, "organizations", None)
                     .map_err(|reason| format!("Invalid organizations ARN '{}': {}", s, reason))
             } else {
                 Err("Expected string".to_string())
@@ -107,7 +111,7 @@ pub fn organizations_organization_config() -> AwsccSchemaConfig {
                 .with_provider_name("Arn"),
         )
         .attribute(
-            AttributeSchema::new("feature_set", AttributeType::enum_(carina_core::schema::enum_identity("FeatureSet", Some("awscc.organizations.Organization")), Some(vec!["ALL".to_string(), "CONSOLIDATED_BILLING".to_string()]), vec![("ALL".to_string(), "all".to_string()), ("CONSOLIDATED_BILLING".to_string(), "consolidated_billing".to_string())], None, None))
+            AttributeSchema::new("feature_set", AttributeType::enum_(carina_core::schema::enum_identity("FeatureSet", Some("aws.organizations.Organization")), Some(vec!["ALL".to_string(), "CONSOLIDATED_BILLING".to_string()]), vec![("ALL".to_string(), "all".to_string()), ("CONSOLIDATED_BILLING".to_string(), "consolidated_billing".to_string())], None, None))
                 .with_description("Specifies the feature set supported by the new organization. Each feature set supports different levels of functionality.")
                 .with_provider_name("FeatureSet")
                 .with_default(Value::Concrete(ConcreteValue::String("ALL".to_string()))),
@@ -119,7 +123,7 @@ pub fn organizations_organization_config() -> AwsccSchemaConfig {
                 .with_provider_name("Id"),
         )
         .attribute(
-            AttributeSchema::new("management_account_arn", super::arn())
+            AttributeSchema::new("management_account_arn", carina_aws_types::arn())
                 .read_only()
                 .with_description("The Amazon Resource Name (ARN) of the account that is designated as the management account for the organization. (read-only)")
                 .with_provider_name("ManagementAccountArn"),
@@ -131,7 +135,7 @@ pub fn organizations_organization_config() -> AwsccSchemaConfig {
                 .with_provider_name("ManagementAccountEmail"),
         )
         .attribute(
-            AttributeSchema::new("management_account_id", super::aws_account_id())
+            AttributeSchema::new("management_account_id", carina_aws_types::aws_account_id())
                 .read_only()
                 .with_description("The unique identifier (ID) of the management account of an organization. (read-only)")
                 .with_provider_name("ManagementAccountId"),

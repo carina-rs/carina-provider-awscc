@@ -4,9 +4,7 @@
 //!
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
-use super::AwsccSchemaConfig;
-use super::tags_type;
-use super::validate_tags_map;
+use crate::schemas::config::AwsccSchemaConfig;
 use carina_core::schema::{AttributeSchema, ResourceSchema};
 
 /// Returns the schema config for ec2_egress_only_internet_gateway (AWS::EC2::EgressOnlyInternetGateway)
@@ -18,7 +16,7 @@ pub fn ec2_egress_only_internet_gateway_config() -> AwsccSchemaConfig {
         schema: ResourceSchema::new("ec2.EgressOnlyInternetGateway")
             .with_description("Resource Type definition for AWS::EC2::EgressOnlyInternetGateway")
             .attribute(
-                AttributeSchema::new("id", super::egress_only_internet_gateway_id())
+                AttributeSchema::new("id", carina_aws_types::egress_only_internet_gateway_id())
                     .read_only()
                     .with_description(
                         "Service Generated ID of the EgressOnlyInternetGateway (read-only)",
@@ -26,13 +24,13 @@ pub fn ec2_egress_only_internet_gateway_config() -> AwsccSchemaConfig {
                     .with_provider_name("Id"),
             )
             .attribute(
-                AttributeSchema::new("tags", tags_type())
+                AttributeSchema::new("tags", carina_aws_types::tags_type())
                     .with_description("Any tags assigned to the egress only internet gateway.")
                     .with_provider_name("Tags")
                     .with_block_name("tag"),
             )
             .attribute(
-                AttributeSchema::new("vpc_id", super::vpc_id())
+                AttributeSchema::new("vpc_id", carina_aws_types::vpc_id())
                     .required()
                     .create_only()
                     .with_description(
@@ -42,7 +40,7 @@ pub fn ec2_egress_only_internet_gateway_config() -> AwsccSchemaConfig {
             )
             .with_validator(|attrs| {
                 let mut errors = Vec::new();
-                if let Err(mut e) = validate_tags_map(attrs) {
+                if let Err(mut e) = carina_aws_types::validate_tags_map(attrs) {
                     errors.append(&mut e);
                 }
                 if errors.is_empty() {

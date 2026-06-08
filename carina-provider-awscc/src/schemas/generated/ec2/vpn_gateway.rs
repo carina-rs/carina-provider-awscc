@@ -4,9 +4,7 @@
 //!
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
-use super::AwsccSchemaConfig;
-use super::tags_type;
-use super::validate_tags_map;
+use crate::schemas::config::AwsccSchemaConfig;
 use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, legacy_validator};
 
@@ -39,27 +37,27 @@ pub fn ec2_vpn_gateway_config() -> AwsccSchemaConfig {
                 .with_provider_name("AmazonSideAsn"),
         )
         .attribute(
-            AttributeSchema::new("tags", tags_type())
+            AttributeSchema::new("tags", carina_aws_types::tags_type())
                 .with_description("Any tags assigned to the virtual private gateway.")
                 .with_provider_name("Tags")
                 .with_block_name("tag"),
         )
         .attribute(
-            AttributeSchema::new("type", AttributeType::enum_(carina_core::schema::enum_identity("Type", Some("awscc.ec2.VpnGateway")), Some(vec!["ipsec.1".to_string()]), vec![("ipsec.1".to_string(), "ipsec_1".to_string())], None, None))
+            AttributeSchema::new("type", AttributeType::enum_(carina_core::schema::enum_identity("Type", Some("aws.ec2.VpnGateway")), Some(vec!["ipsec.1".to_string()]), vec![("ipsec.1".to_string(), "ipsec_1".to_string())], None, None))
                 .required()
                 .create_only()
                 .with_description("The type of VPN connection the virtual private gateway supports.")
                 .with_provider_name("Type"),
         )
         .attribute(
-            AttributeSchema::new("vpn_gateway_id", super::vpn_gateway_id())
+            AttributeSchema::new("vpn_gateway_id", carina_aws_types::vpn_gateway_id())
                 .read_only()
                 .with_description(" (read-only)")
                 .with_provider_name("VPNGatewayId"),
         )
         .with_validator(|attrs| {
             let mut errors = Vec::new();
-            if let Err(mut e) = validate_tags_map(attrs) {
+            if let Err(mut e) = carina_aws_types::validate_tags_map(attrs) {
                 errors.append(&mut e);
             }
             if errors.is_empty() { Ok(()) } else { Err(errors) }

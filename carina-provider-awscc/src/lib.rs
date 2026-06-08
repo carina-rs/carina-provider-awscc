@@ -103,7 +103,7 @@ impl ProviderFactory for AwsccProviderFactory {
         types.insert(
             "region".to_string(),
             AttributeType::enum_(
-                carina_core::schema::enum_identity("Region", Some("awscc")),
+                carina_core::schema::enum_identity("Region", Some("aws")),
                 Some(
                     carina_aws_types::REGIONS
                         .iter()
@@ -150,7 +150,7 @@ impl ProviderFactory for AwsccProviderFactory {
         use carina_core::parser::ValidatorFn;
         use std::sync::OnceLock;
         static VALIDATORS: OnceLock<HashMap<String, ValidatorFn>> = OnceLock::new();
-        let validators = VALIDATORS.get_or_init(schemas::awscc_types::awscc_validators);
+        let validators = VALIDATORS.get_or_init(schemas::config::awscc_validators);
         // The inner map is still keyed on snake-cased semantic names —
         // project the identity's kind through `pascal_to_snake` at this
         // single boundary. Provider-axis collisions are already

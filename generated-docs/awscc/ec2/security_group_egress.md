@@ -111,12 +111,12 @@ If the protocol is TCP or UDP, this is the end of the port range. If the protoco
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `tcp` | `awscc.ec2.SecurityGroupEgress.IpProtocol.tcp` |
-| `udp` | `awscc.ec2.SecurityGroupEgress.IpProtocol.udp` |
-| `icmp` | `awscc.ec2.SecurityGroupEgress.IpProtocol.icmp` |
-| `icmpv6` | `awscc.ec2.SecurityGroupEgress.IpProtocol.icmpv6` |
-| `-1` | `awscc.ec2.SecurityGroupEgress.IpProtocol.all` |
-| `all` | `awscc.ec2.SecurityGroupEgress.IpProtocol.all` |
+| `tcp` | `aws.ec2.SecurityGroupEgress.IpProtocol.tcp` |
+| `udp` | `aws.ec2.SecurityGroupEgress.IpProtocol.udp` |
+| `icmp` | `aws.ec2.SecurityGroupEgress.IpProtocol.icmp` |
+| `icmpv6` | `aws.ec2.SecurityGroupEgress.IpProtocol.icmpv6` |
+| `-1` | `aws.ec2.SecurityGroupEgress.IpProtocol.all` |
+| `all` | `aws.ec2.SecurityGroupEgress.IpProtocol.all` |
 
 Shorthand formats: `tcp` or `IpProtocol.tcp`
 

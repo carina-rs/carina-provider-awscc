@@ -633,7 +633,7 @@ mod tests {
             vec!["Enabled".to_string(), "Suspended".to_string()],
             Some(carina_core::schema::enum_identity(
                 "VersioningStatus",
-                Some("awscc.s3.Bucket"),
+                Some("aws.s3.Bucket"),
             )),
             vec![],
         );
@@ -650,7 +650,7 @@ mod tests {
             } => {
                 assert_eq!(name, "VersioningStatus");
                 assert_eq!(values.len(), 2);
-                assert_eq!(namespace.as_deref(), Some("awscc.s3.Bucket"));
+                assert_eq!(namespace.as_deref(), Some("aws.s3.Bucket"));
                 assert!(dsl_aliases.is_empty());
             }
             _ => panic!("Expected StringEnum"),
@@ -782,7 +782,7 @@ mod tests {
             ],
             Some(carina_core::schema::enum_identity(
                 "ObjectOwnership",
-                Some("awscc.s3.Bucket"),
+                Some("aws.s3.Bucket"),
             )),
             aliases.clone(),
         );
@@ -812,7 +812,7 @@ mod tests {
         let proto_type = ProtoAttributeType::CustomEnum {
             name: "DnsName".to_string(),
             base: Box::new(ProtoAttributeType::String),
-            namespace: "awscc.route53.HostedZone".to_string(),
+            namespace: "aws.route53.HostedZone".to_string(),
             dsl_transform: Some(ProtoDslTransform::StripSuffix(".".to_string())),
         };
         let core_type = proto_attr_type_to_core(&proto_type);
@@ -824,7 +824,7 @@ mod tests {
         assert_eq!(
             lifted,
             CoreValue::Concrete(ConcreteValue::EnumIdentifier(
-                "awscc.route53.HostedZone.DnsName.example".to_string()
+                "aws.route53.HostedZone.DnsName.example".to_string()
             ))
         );
     }
@@ -834,7 +834,7 @@ mod tests {
         let core_type = CoreAttributeType::enum_(
             carina_core::schema::enum_identity(
                 "HostnameType",
-                Some("awscc.ec2.Subnet.PrivateDnsNameOptionsOnLaunch"),
+                Some("aws.ec2.Subnet.PrivateDnsNameOptionsOnLaunch"),
             ),
             None,
             vec![],
@@ -862,7 +862,7 @@ mod tests {
         assert_eq!(
             lifted,
             CoreValue::Concrete(ConcreteValue::EnumIdentifier(
-                "awscc.ec2.Subnet.PrivateDnsNameOptionsOnLaunch.HostnameType.ip_name".to_string()
+                "aws.ec2.Subnet.PrivateDnsNameOptionsOnLaunch.HostnameType.ip_name".to_string()
             ))
         );
     }
