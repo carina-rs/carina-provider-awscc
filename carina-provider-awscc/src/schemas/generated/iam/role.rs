@@ -28,6 +28,7 @@ pub fn arn() -> AttributeType {
     )
 }
 
+#[allow(dead_code)]
 fn validate_max_session_duration_range(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::Int(n)) = value {
         if *n < 3600 || *n > 43200 {
@@ -71,7 +72,7 @@ pub fn iam_role_config() -> AwsccSchemaConfig {
                 .with_provider_name("ManagedPolicyArns"),
         )
         .attribute(
-            AttributeSchema::new("max_session_duration", AttributeType::custom(None, AttributeType::int(), None, None, legacy_validator(validate_max_session_duration_range), None))
+            AttributeSchema::new("max_session_duration", AttributeType::refined_int(None, Some((Some(3600), Some(43200)))))
                 .with_description("The maximum session duration (in seconds) that you want to set for the specified role. If you do not specify a value for this setting, the default value of one hour is applied. This setting can have a value from 1 hour to 12 hours. Anyone who assumes the role from the CLI or API can use the ``DurationSeconds`` API parameter or the ``duration-seconds``CLI parameter to request a longer session. The ``MaxSessionDuration`` setting determines the maximum duration that can be requested using the ``DurationSeconds`` parameter. If users don't specify a value for the ``DurationSeconds`` parameter, their security credentials are valid for one hour by default. This applies when you use the ``AssumeRole*`` API operations or the ``assume-role*``CLI operations but does not apply when you use those operations to create a console URL. For more information, see [Using IAM roles](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_use.html) in the *IAM User Guide*.")
                 .with_provider_name("MaxSessionDuration"),
         )

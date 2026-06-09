@@ -6,12 +6,11 @@
 
 use crate::schemas::config::AwsccSchemaConfig;
 use carina_core::resource::{ConcreteValue, Value};
-use carina_core::schema::{
-    AttributeSchema, AttributeType, ResourceSchema, legacy_validator, types,
-};
+use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, types};
 
 const VALID_IP_PROTOCOL: &[&str] = &["tcp", "udp", "icmp", "icmpv6", "-1", "all"];
 
+#[allow(dead_code)]
 fn validate_from_port_range(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::Int(n)) = value {
         if *n < -1 || *n > 65535 {
@@ -24,6 +23,7 @@ fn validate_from_port_range(value: &Value) -> Result<(), String> {
     }
 }
 
+#[allow(dead_code)]
 fn validate_to_port_range(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::Int(n)) = value {
         if *n < -1 || *n > 65535 {
@@ -62,7 +62,7 @@ pub fn ec2_security_group_ingress_config() -> AwsccSchemaConfig {
                 .with_provider_name("Description"),
         )
         .attribute(
-            AttributeSchema::new("from_port", AttributeType::custom(None, AttributeType::int(), None, None, legacy_validator(validate_from_port_range), None))
+            AttributeSchema::new("from_port", AttributeType::refined_int(None, Some((Some(-1), Some(65535)))))
                 .create_only()
                 .with_description("The start of port range for the TCP and UDP protocols, or an ICMP/ICMPv6 type number. A value of -1 indicates all ICMP/ICMPv6 types. If you specify all ICMP/ICMPv6 types, you must specify all codes. Use this for ICMP and any protocol that uses ports.")
                 .with_provider_name("FromPort"),
@@ -117,7 +117,7 @@ pub fn ec2_security_group_ingress_config() -> AwsccSchemaConfig {
                 .with_provider_name("SourceSecurityGroupOwnerId"),
         )
         .attribute(
-            AttributeSchema::new("to_port", AttributeType::custom(None, AttributeType::int(), None, None, legacy_validator(validate_to_port_range), None))
+            AttributeSchema::new("to_port", AttributeType::refined_int(None, Some((Some(-1), Some(65535)))))
                 .create_only()
                 .with_description("The end of port range for the TCP and UDP protocols, or an ICMP/ICMPv6 code. A value of -1 indicates all ICMP/ICMPv6 codes for the specified ICMP type. If you specify all ICMP/ICMPv6 types, you must specify all codes. Use this for ICMP and any protocol that uses ports.")
                 .with_provider_name("ToPort"),

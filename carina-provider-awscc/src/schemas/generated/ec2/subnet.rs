@@ -6,10 +6,9 @@
 
 use crate::schemas::config::AwsccSchemaConfig;
 use carina_core::resource::{ConcreteValue, Value};
-use carina_core::schema::{
-    AttributeSchema, AttributeType, ResourceSchema, StructField, legacy_validator, types,
-};
+use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField, types};
 
+#[allow(dead_code)]
 fn validate_ipv4_netmask_length_range(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::Int(n)) = value {
         if *n < 0 || *n > 32 {
@@ -22,6 +21,7 @@ fn validate_ipv4_netmask_length_range(value: &Value) -> Result<(), String> {
     }
 }
 
+#[allow(dead_code)]
 fn validate_ipv6_netmask_length_range(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::Int(n)) = value {
         if *n < 0 || *n > 128 {
@@ -90,7 +90,7 @@ pub fn ec2_subnet_config() -> AwsccSchemaConfig {
                 .with_provider_name("Ipv4IpamPoolId"),
         )
         .attribute(
-            AttributeSchema::new("ipv4_netmask_length", AttributeType::custom(None, AttributeType::int(), None, None, legacy_validator(validate_ipv4_netmask_length_range), None))
+            AttributeSchema::new("ipv4_netmask_length", AttributeType::refined_int(None, Some((Some(0), Some(32)))))
                 .create_only()
                 .write_only()
                 .with_description("An IPv4 netmask length for the subnet.")
@@ -121,7 +121,7 @@ pub fn ec2_subnet_config() -> AwsccSchemaConfig {
                 .with_provider_name("Ipv6Native"),
         )
         .attribute(
-            AttributeSchema::new("ipv6_netmask_length", AttributeType::custom(None, AttributeType::int(), None, None, legacy_validator(validate_ipv6_netmask_length_range), None))
+            AttributeSchema::new("ipv6_netmask_length", AttributeType::refined_int(None, Some((Some(0), Some(128)))))
                 .create_only()
                 .write_only()
                 .with_description("An IPv6 netmask length for the subnet.")

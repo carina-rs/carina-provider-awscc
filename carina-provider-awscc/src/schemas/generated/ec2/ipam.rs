@@ -32,6 +32,7 @@ const VALID_METERED_ACCOUNT: &[&str] = &["ipam-owner", "resource-owner"];
 
 const VALID_TIER: &[&str] = &["free", "advanced"];
 
+#[allow(dead_code)]
 fn validate_string_length_min_1(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
         let len = s.chars().count();
@@ -45,6 +46,7 @@ fn validate_string_length_min_1(value: &Value) -> Result<(), String> {
     }
 }
 
+#[allow(dead_code)]
 fn validate_string_length_max_255(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
         let len = s.chars().count();
@@ -85,7 +87,7 @@ pub fn ec2_ipam_config() -> AwsccSchemaConfig {
                 .with_provider_name("DefaultResourceDiscoveryId"),
         )
         .attribute(
-            AttributeSchema::new("default_resource_discovery_organizational_unit_exclusions", AttributeType::unordered_list(AttributeType::struct_("IpamOrganizationalUnitExclusion".to_string(), vec![StructField::new("organizations_entity_path", AttributeType::custom(None, AttributeType::string(), None, Some((Some(1), None)), legacy_validator(validate_string_length_min_1), None)).required().with_description("An AWS Organizations entity path. Build the path for the OU(s) using AWS Organizations IDs separated by a '/'. Include all child OUs by ending the path with '/*'.").with_provider_name("OrganizationsEntityPath")])))
+            AttributeSchema::new("default_resource_discovery_organizational_unit_exclusions", AttributeType::unordered_list(AttributeType::struct_("IpamOrganizationalUnitExclusion".to_string(), vec![StructField::new("organizations_entity_path", AttributeType::refined_string(None, None, Some((Some(1), None)), None)).required().with_description("An AWS Organizations entity path. Build the path for the OU(s) using AWS Organizations IDs separated by a '/'. Include all child OUs by ending the path with '/*'.").with_provider_name("OrganizationsEntityPath")])))
                 .with_description("A set of organizational unit (OU) exclusions for the default resource discovery, created with this IPAM.")
                 .with_provider_name("DefaultResourceDiscoveryOrganizationalUnitExclusions")
                 .with_block_name("default_resource_discovery_organizational_unit_exclusion"),
@@ -123,7 +125,7 @@ pub fn ec2_ipam_config() -> AwsccSchemaConfig {
                 .with_provider_name("PrivateDefaultScopeId"),
         )
         .attribute(
-            AttributeSchema::new("public_default_scope_id", AttributeType::custom(None, AttributeType::string(), None, Some((None, Some(255))), legacy_validator(validate_string_length_max_255), None))
+            AttributeSchema::new("public_default_scope_id", AttributeType::refined_string(None, None, Some((None, Some(255))), None))
                 .read_only()
                 .with_description("The Id of the default scope for publicly routable IP space, created with this IPAM. (read-only)")
                 .with_provider_name("PublicDefaultScopeId"),

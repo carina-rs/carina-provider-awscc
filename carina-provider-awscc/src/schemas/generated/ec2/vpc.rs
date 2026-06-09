@@ -6,12 +6,11 @@
 
 use crate::schemas::config::AwsccSchemaConfig;
 use carina_core::resource::{ConcreteValue, Value};
-use carina_core::schema::{
-    AttributeSchema, AttributeType, ResourceSchema, legacy_validator, types,
-};
+use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, types};
 
 const VALID_INSTANCE_TENANCY: &[&str] = &["default", "dedicated", "host"];
 
+#[allow(dead_code)]
 fn validate_ipv4_netmask_length_range(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::Int(n)) = value {
         if *n < 0 || *n > 32 {
@@ -79,7 +78,7 @@ pub fn ec2_vpc_config() -> AwsccSchemaConfig {
                 .with_provider_name("Ipv4IpamPoolId"),
         )
         .attribute(
-            AttributeSchema::new("ipv4_netmask_length", AttributeType::custom(None, AttributeType::int(), None, None, legacy_validator(validate_ipv4_netmask_length_range), None))
+            AttributeSchema::new("ipv4_netmask_length", AttributeType::refined_int(None, Some((Some(0), Some(32)))))
                 .create_only()
                 .write_only()
                 .with_description("The netmask length of the IPv4 CIDR you want to allocate to this VPC from an Amazon VPC IP Address Manager (IPAM) pool. For more information about IPAM, see [What is IPAM?](https://docs.aws.amazon.com//vpc/latest/ipam/what-is-it-ipam.html) in the *Amazon VPC IPAM User Guide*.")

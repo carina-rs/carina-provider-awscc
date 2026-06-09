@@ -39,7 +39,11 @@ mod tests {
             .iter()
             .find(|field| field.name == "rules")
             .expect("lifecycle_configuration should expose rules");
-        let Shape::List { inner, .. } = config.schema.shape_of(&rules.field_type) else {
+        let Shape::List {
+            element_type: inner,
+            ..
+        } = config.schema.shape_of(&rules.field_type)
+        else {
             panic!("rules should be a list");
         };
         let Shape::Struct { .. } = config.schema.shape_of(inner) else {
@@ -208,8 +212,7 @@ mod tests {
             }
             RawShape::Enum {
                 values: None, base, ..
-            }
-            | RawShape::Custom { base, .. } => {
+            } => {
                 collect_string_enum_identities(
                     schema,
                     base,
@@ -219,7 +222,10 @@ mod tests {
                     depth + 1,
                 );
             }
-            RawShape::List { inner, .. } => {
+            RawShape::List {
+                element_type: inner,
+                ..
+            } => {
                 let inner_defining_site = format!("{defining_site}[]");
                 collect_string_enum_identities(
                     schema,
@@ -278,9 +284,9 @@ mod tests {
                 }
             }
             RawShape::Ref(_) => {}
-            RawShape::String
-            | RawShape::Int
-            | RawShape::Float
+            RawShape::String { .. }
+            | RawShape::Int { .. }
+            | RawShape::Float { .. }
             | RawShape::Bool
             | RawShape::Duration => {}
         }

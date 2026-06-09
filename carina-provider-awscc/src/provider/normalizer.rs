@@ -72,9 +72,10 @@ fn struct_fields_for<'a>(
     schema: &'a ResourceSchema,
 ) -> Option<&'a [StructField]> {
     match schema.shape_of(attr_type) {
-        Shape::List { inner, .. } => {
-            schema.struct_fields_with_budget(inner, &mut ShapeWalkBudget::new(256))
-        }
+        Shape::List {
+            element_type: inner,
+            ..
+        } => schema.struct_fields_with_budget(inner, &mut ShapeWalkBudget::new(256)),
         Shape::Struct { .. } => {
             schema.struct_fields_with_budget(attr_type, &mut ShapeWalkBudget::new(256))
         }
@@ -119,7 +120,10 @@ fn resolve_struct_enum_values(
                         continue;
                     }
                     // List(StringEnum): resolve each element.
-                    if let Shape::List { inner, .. } = schema.shape_of(&field.field_type)
+                    if let Shape::List {
+                        element_type: inner,
+                        ..
+                    } = schema.shape_of(&field.field_type)
                         && let Some(parts) = inner.enum_parts()
                         && let Value::Concrete(ConcreteValue::List(items)) = field_value
                     {
@@ -212,18 +216,22 @@ pub fn normalize_state_enums_impl(current_states: &mut HashMap<ResourceId, State
 }
 
 fn apply_enum_dsl_transform(value: &Value, attr_type: &AttributeType) -> Option<Value> {
-    let RawShape::Enum {
-        to_dsl: Some(transform),
-        ..
-    } = attr_type.raw_shape()
-    else {
-        return None;
+    let transform = match attr_type.raw_shape() {
+        RawShape::Enum {
+            to_dsl: Some(transform),
+            ..
+        }
+        | RawShape::String {
+            to_dsl: Some(transform),
+            ..
+        } => transform,
+        _ => return None,
     };
     let Value::Concrete(ConcreteValue::String(s)) = value else {
         return None;
     };
     let transformed = transform.apply(s);
-    (transformed != *s).then(|| Value::Concrete(ConcreteValue::String(transformed)))
+    (transformed != *s).then(|| Value::Concrete(ConcreteValue::String(transformed.into_owned())))
 }
 
 /// Canonicalize attributes of every awscc state whose declared schema
@@ -905,8 +913,10 @@ mod tests {
             .get("security_group_egress")
             .expect("security_group_egress attribute not found");
         // Drill into List -> Struct -> ip_protocol field
-        if let carina_core::schema::Shape::List { inner, .. } =
-            config.schema.shape_of(&egress.attr_type)
+        if let carina_core::schema::Shape::List {
+            element_type: inner,
+            ..
+        } = config.schema.shape_of(&egress.attr_type)
         {
             if let carina_core::schema::Shape::Struct { .. } = config.schema.shape_of(inner) {
                 let fields = config
@@ -946,8 +956,10 @@ mod tests {
             .attributes
             .get("security_group_ingress")
             .expect("security_group_ingress attribute not found");
-        if let carina_core::schema::Shape::List { inner, .. } =
-            config.schema.shape_of(&ingress.attr_type)
+        if let carina_core::schema::Shape::List {
+            element_type: inner,
+            ..
+        } = config.schema.shape_of(&ingress.attr_type)
         {
             if let carina_core::schema::Shape::Struct { .. } = config.schema.shape_of(inner) {
                 let fields = config

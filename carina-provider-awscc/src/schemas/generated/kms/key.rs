@@ -55,6 +55,7 @@ const VALID_KEY_USAGE: &[&str] = &[
 
 const VALID_ORIGIN: &[&str] = &["AWS_KMS", "EXTERNAL"];
 
+#[allow(dead_code)]
 fn validate_pending_window_in_days_range(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::Int(n)) = value {
         if *n < 7 || *n > 30 {
@@ -67,6 +68,7 @@ fn validate_pending_window_in_days_range(value: &Value) -> Result<(), String> {
     }
 }
 
+#[allow(dead_code)]
 fn validate_rotation_period_in_days_range(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::Int(n)) = value {
         if *n < 90 || *n > 2560 {
@@ -79,6 +81,7 @@ fn validate_rotation_period_in_days_range(value: &Value) -> Result<(), String> {
     }
 }
 
+#[allow(dead_code)]
 fn validate_string_length_max_8192(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
         let len = s.chars().count();
@@ -114,7 +117,7 @@ pub fn kms_key_config() -> AwsccSchemaConfig {
                 .with_default(Value::Concrete(ConcreteValue::Bool(false))),
         )
         .attribute(
-            AttributeSchema::new("description", AttributeType::custom(None, AttributeType::string(), None, Some((None, Some(8192))), legacy_validator(validate_string_length_max_8192), None))
+            AttributeSchema::new("description", AttributeType::refined_string(None, None, Some((None, Some(8192))), None))
                 .with_description("A description of the KMS key. Use a description that helps you to distinguish this KMS key from others in the account, such as its intended use.")
                 .with_provider_name("Description"),
         )
@@ -164,13 +167,13 @@ pub fn kms_key_config() -> AwsccSchemaConfig {
                 .with_default(Value::Concrete(ConcreteValue::String("AWS_KMS".to_string()))),
         )
         .attribute(
-            AttributeSchema::new("pending_window_in_days", AttributeType::custom(None, AttributeType::int(), None, None, legacy_validator(validate_pending_window_in_days_range), None))
+            AttributeSchema::new("pending_window_in_days", AttributeType::refined_int(None, Some((Some(7), Some(30)))))
                 .write_only()
                 .with_description("Specifies the number of days in the waiting period before KMS deletes a KMS key that has been removed from a CloudFormation stack. Enter a value between 7 and 30 days. The default value is 30 days. When you remove a KMS key from a CloudFormation stack, KMS schedules the KMS key for deletion and starts the mandatory waiting period. The ``PendingWindowInDays`` property determines the length of waiting period. During the waiting period, the key state of KMS key is ``Pending Deletion`` or ``Pending Replica Deletion``, which prevents the KMS key from being used in cryptographic operations. When the waiting period expires, KMS permanently deletes the KMS key. KMS will not delete a [multi-Region primary key](https://docs.aws.amazon.com/kms/latest/developerguide/multi-region-keys-overview.html) that has replica keys. If you remove a multi-Region primary key from a CloudFormation stack, its key state changes to ``PendingReplicaDeletion`` so it cannot be replicated or used in cryptographic operations. This state can persist indefinitely. When the last of its replica keys is deleted, the key state of the primary key changes to ``PendingDeletion`` and the waiting period specified by ``PendingWindowInDays`` begins. When this waiting period expires, KMS deletes the primary key. For details, see [Deleting multi-Region keys](https://docs.aws.amazon.com/kms/latest/developerguide/multi-region-keys-delete.html) in the *Developer Guide*. You cannot use a CloudFormation template to cancel deletion of the KMS key after you remove it from the stack, regardless of the waiting period. If you specify a KMS key in your template, even one with the same name, CloudFormation creates a new KMS key. To cancel deletion of a KMS key, use the KMS console or the [CancelKeyDeletion](https://docs.aws.amazon.com/kms/latest/APIReference/API_CancelKeyDeletion.html) operation. For information about the ``Pending Deletion`` and ``Pending Replica Deletion`` key states, see [Key state: Effect on your KMS key](https://docs.aws.amazon.com/kms/latest/developerguide/key-state.html) in the *Developer Guide*. For more information about deleting KMS keys, see the [ScheduleKeyDeletion](https://docs.aws.amazon.com/kms/latest/APIReference/API_ScheduleKeyDeletion.html) operation in the *API Reference* and [Deleting KMS keys](https://docs.aws.amazon.com/kms/latest/developerguide/deleting-keys.html) in the *Developer Guide*.")
                 .with_provider_name("PendingWindowInDays"),
         )
         .attribute(
-            AttributeSchema::new("rotation_period_in_days", AttributeType::custom(None, AttributeType::int(), None, None, legacy_validator(validate_rotation_period_in_days_range), None))
+            AttributeSchema::new("rotation_period_in_days", AttributeType::refined_int(None, Some((Some(90), Some(2560)))))
                 .write_only()
                 .with_description("Specifies a custom period of time between each rotation date. If no value is specified, the default value is 365 days. The rotation period defines the number of days after you enable automatic key rotation that KMS will rotate your key material, and the number of days between each automatic rotation thereafter. You can use the [kms:RotationPeriodInDays](https://docs.aws.amazon.com/kms/latest/developerguide/conditions-kms.html#conditions-kms-rotation-period-in-days) condition key to further constrain the values that principals can specify in the ``RotationPeriodInDays`` parameter. For more information about rotating KMS keys and automatic rotation, see [Rotating keys](https://docs.aws.amazon.com/kms/latest/developerguide/rotate-keys.html) in the *Developer Guide*.")
                 .with_provider_name("RotationPeriodInDays")

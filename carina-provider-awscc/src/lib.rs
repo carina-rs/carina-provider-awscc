@@ -652,7 +652,11 @@ mod tests {
                         collect(target, field, defs, seen, out);
                     }
                 }
-                RawShape::List { inner, ordered } => {
+                RawShape::List {
+                    element_type: inner,
+                    ordered,
+                    ..
+                } => {
                     if matches!(field, Some("allowed_methods" | "cached_methods")) {
                         out.push((field.unwrap().to_string(), ordered));
                     }
