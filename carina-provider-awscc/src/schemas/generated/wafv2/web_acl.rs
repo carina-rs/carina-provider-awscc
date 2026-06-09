@@ -1553,6 +1553,21 @@ fn validate_response_code_range(value: &Value) -> Result<(), String> {
 }
 
 #[allow(dead_code)]
+fn validate_string_pattern_6fd4a12c0ce64c08(value: &Value) -> Result<(), String> {
+    if let Value::Concrete(ConcreteValue::String(s)) = value {
+        static RE: std::sync::LazyLock<Regex> =
+            std::sync::LazyLock::new(|| Regex::new("^[\\w\\-]+$").expect("invalid pattern regex"));
+        if RE.is_match(s) {
+            Ok(())
+        } else {
+            Err(format!("Value '{}' does not match pattern ^[\\w\\-]+$", s))
+        }
+    } else {
+        Err("Expected string".to_string())
+    }
+}
+
+#[allow(dead_code)]
 fn validate_string_pattern_2d93cc844f6d4014(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
         static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
@@ -1563,45 +1578,6 @@ fn validate_string_pattern_2d93cc844f6d4014(value: &Value) -> Result<(), String>
         } else {
             Err(format!(
                 "Value '{}' does not match pattern ^[a-zA-Z0-9-]+{{1,255}}$",
-                s
-            ))
-        }
-    } else {
-        Err("Expected string".to_string())
-    }
-}
-
-#[allow(dead_code)]
-fn validate_string_pattern_b3fc65b549fb77bd(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::String(s)) = value {
-        static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-            Regex::new("^[0-9A-Za-z_:-]{1,1024}$").expect("invalid pattern regex")
-        });
-        if RE.is_match(s) {
-            Ok(())
-        } else {
-            Err(format!(
-                "Value '{}' does not match pattern ^[0-9A-Za-z_:-]{{1,1024}}$",
-                s
-            ))
-        }
-    } else {
-        Err("Expected string".to_string())
-    }
-}
-
-#[allow(dead_code)]
-fn validate_string_pattern_d04f4c3802439b73(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::String(s)) = value {
-        static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-            Regex::new("^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$")
-                .expect("invalid pattern regex")
-        });
-        if RE.is_match(s) {
-            Ok(())
-        } else {
-            Err(format!(
-                "Value '{}' does not match pattern ^[0-9a-f]{{8}}-(?:[0-9a-f]{{4}}-){{3}}[0-9a-f]{{12}}$",
                 s
             ))
         }
@@ -1633,14 +1609,37 @@ fn validate_string_pattern_eef4eb302f1cdd5a(value: &Value) -> Result<(), String>
 }
 
 #[allow(dead_code)]
-fn validate_string_pattern_6fd4a12c0ce64c08(value: &Value) -> Result<(), String> {
+fn validate_string_pattern_b3fc65b549fb77bd(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
-        static RE: std::sync::LazyLock<Regex> =
-            std::sync::LazyLock::new(|| Regex::new("^[\\w\\-]+$").expect("invalid pattern regex"));
+        static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+            Regex::new("^[0-9A-Za-z_:-]{1,1024}$").expect("invalid pattern regex")
+        });
         if RE.is_match(s) {
             Ok(())
         } else {
-            Err(format!("Value '{}' does not match pattern ^[\\w\\-]+$", s))
+            Err(format!(
+                "Value '{}' does not match pattern ^[0-9A-Za-z_:-]{{1,1024}}$",
+                s
+            ))
+        }
+    } else {
+        Err("Expected string".to_string())
+    }
+}
+
+#[allow(dead_code)]
+fn validate_string_pattern_c77cf75cf1a75ade(value: &Value) -> Result<(), String> {
+    if let Value::Concrete(ConcreteValue::String(s)) = value {
+        static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+            Regex::new("^[\\/]+([^~]*(~[01])*)*{1,512}$").expect("invalid pattern regex")
+        });
+        if RE.is_match(s) {
+            Ok(())
+        } else {
+            Err(format!(
+                "Value '{}' does not match pattern ^[\\/]+([^~]*(~[01])*)*{{1,512}}$",
+                s
+            ))
         }
     } else {
         Err("Expected string".to_string())
@@ -1667,16 +1666,17 @@ fn validate_string_pattern_42f7eceb887966ad(value: &Value) -> Result<(), String>
 }
 
 #[allow(dead_code)]
-fn validate_string_pattern_c77cf75cf1a75ade(value: &Value) -> Result<(), String> {
+fn validate_string_pattern_d04f4c3802439b73(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
         static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-            Regex::new("^[\\/]+([^~]*(~[01])*)*{1,512}$").expect("invalid pattern regex")
+            Regex::new("^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$")
+                .expect("invalid pattern regex")
         });
         if RE.is_match(s) {
             Ok(())
         } else {
             Err(format!(
-                "Value '{}' does not match pattern ^[\\/]+([^~]*(~[01])*)*{{1,512}}$",
+                "Value '{}' does not match pattern ^[0-9a-f]{{8}}-(?:[0-9a-f]{{4}}-){{3}}[0-9a-f]{{12}}$",
                 s
             ))
         }
