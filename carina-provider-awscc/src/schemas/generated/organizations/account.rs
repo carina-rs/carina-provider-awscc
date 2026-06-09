@@ -216,6 +216,25 @@ fn validate_string_pattern_253e7eb79a4beec5_len_1_64(value: &Value) -> Result<()
 }
 
 #[allow(dead_code)]
+fn validate_string_pattern_f777bea2efc17af6(value: &Value) -> Result<(), String> {
+    if let Value::Concrete(ConcreteValue::String(s)) = value {
+        static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+            Regex::new("^(o-[a-z0-9]{10,32}/r-[0-9a-z]{4,32}(/ou-[0-9a-z]{4,32}-[a-z0-9]{8,32})*(/\\d{12})*)/").expect("invalid pattern regex")
+        });
+        if RE.is_match(s) {
+            Ok(())
+        } else {
+            Err(format!(
+                "Value '{}' does not match pattern ^(o-[a-z0-9]{{10,32}}/r-[0-9a-z]{{4,32}}(/ou-[0-9a-z]{{4,32}}-[a-z0-9]{{8,32}})*(/\\d{{12}})*)/",
+                s
+            ))
+        }
+    } else {
+        Err("Expected string".to_string())
+    }
+}
+
+#[allow(dead_code)]
 fn validate_string_pattern_6fa92970742ee8e6(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
         static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
@@ -227,25 +246,6 @@ fn validate_string_pattern_6fa92970742ee8e6(value: &Value) -> Result<(), String>
         } else {
             Err(format!(
                 "Value '{}' does not match pattern ^(r-[0-9a-z]{{4,32}})|(ou-[0-9a-z]{{4,32}}-[a-z0-9]{{8,32}})$",
-                s
-            ))
-        }
-    } else {
-        Err("Expected string".to_string())
-    }
-}
-
-#[allow(dead_code)]
-fn validate_string_pattern_f777bea2efc17af6(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::String(s)) = value {
-        static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-            Regex::new("^(o-[a-z0-9]{10,32}/r-[0-9a-z]{4,32}(/ou-[0-9a-z]{4,32}-[a-z0-9]{8,32})*(/\\d{12})*)/").expect("invalid pattern regex")
-        });
-        if RE.is_match(s) {
-            Ok(())
-        } else {
-            Err(format!(
-                "Value '{}' does not match pattern ^(o-[a-z0-9]{{10,32}}/r-[0-9a-z]{{4,32}}(/ou-[0-9a-z]{{4,32}}-[a-z0-9]{{8,32}})*(/\\d{{12}})*)/",
                 s
             ))
         }

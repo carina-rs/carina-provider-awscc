@@ -81,7 +81,8 @@ thread_local! {
     static EMITTED_PATTERNS_WITH_LENGTHS: RefCell<BTreeSet<PatternWithLength>> =
         RefCell::new(BTreeSet::new());
     #[allow(clippy::missing_const_for_thread_local)]
-    static EMITTED_STANDALONE_PATTERNS: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
+    static EMITTED_STANDALONE_PATTERNS: RefCell<BTreeSet<String>> =
+        RefCell::new(BTreeSet::new());
     /// `(prop_name -> (min, max, is_float))` for integer/number range
     /// validators referenced by the recursive cycle expansion. Same
     /// rationale as `EMITTED_PATTERNS_WITH_LENGTHS`: the existing
@@ -139,7 +140,7 @@ fn take_emitted_patterns_with_lengths() -> BTreeSet<(String, Option<u64>, Option
     EMITTED_PATTERNS_WITH_LENGTHS.with(|s| std::mem::take(&mut *s.borrow_mut()))
 }
 
-fn take_emitted_standalone_patterns() -> HashSet<String> {
+fn take_emitted_standalone_patterns() -> BTreeSet<String> {
     EMITTED_STANDALONE_PATTERNS.with(|s| std::mem::take(&mut *s.borrow_mut()))
 }
 
@@ -1989,7 +1990,7 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
     // Combined pattern + length constraints: (pattern, min_length, max_length) set
     let mut pattern_with_lengths: BTreeSet<(String, Option<u64>, Option<u64>)> = BTreeSet::new();
     // Patterns that are used standalone (without length constraints)
-    let mut patterns_used_standalone: HashSet<String> = HashSet::new();
+    let mut patterns_used_standalone: BTreeSet<String> = BTreeSet::new();
 
     for (prop_name, prop) in &schema.properties {
         if is_deprecated_property(prop) {
