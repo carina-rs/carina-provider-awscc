@@ -6,14 +6,13 @@
 
 use crate::schemas::config::AwsccSchemaConfig;
 use carina_core::resource::{ConcreteValue, Value};
-use carina_core::schema::{
-    AttributeSchema, AttributeType, ResourceSchema, StructField, legacy_validator, types,
-};
+use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField, types};
 
 const VALID_EGRESS_IP_PROTOCOL: &[&str] = &["tcp", "udp", "icmp", "icmpv6", "-1", "all"];
 
 const VALID_INGRESS_IP_PROTOCOL: &[&str] = &["tcp", "udp", "icmp", "icmpv6", "-1", "all"];
 
+#[allow(dead_code)]
 fn validate_from_port_range(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::Int(n)) = value {
         if *n < -1 || *n > 65535 {
@@ -26,6 +25,7 @@ fn validate_from_port_range(value: &Value) -> Result<(), String> {
     }
 }
 
+#[allow(dead_code)]
 fn validate_to_port_range(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::Int(n)) = value {
         if *n < -1 || *n > 65535 {
@@ -77,9 +77,9 @@ pub fn ec2_security_group_config() -> AwsccSchemaConfig {
                     StructField::new("description", AttributeType::string()).with_provider_name("Description"),
                     StructField::new("destination_prefix_list_id", carina_aws_types::prefix_list_id()).with_provider_name("DestinationPrefixListId"),
                     StructField::new("destination_security_group_id", carina_aws_types::security_group_id()).with_provider_name("DestinationSecurityGroupId"),
-                    StructField::new("from_port", AttributeType::custom(None, AttributeType::int(), None, None, legacy_validator(validate_from_port_range), None)).with_provider_name("FromPort"),
+                    StructField::new("from_port", AttributeType::refined_int(None, Some((Some(-1), Some(65535))))).with_provider_name("FromPort"),
                     StructField::new("ip_protocol", AttributeType::enum_(carina_core::schema::enum_identity("IpProtocol", Some("aws.ec2.SecurityGroup.Egress")), Some(vec!["tcp".to_string(), "udp".to_string(), "icmp".to_string(), "icmpv6".to_string(), "-1".to_string(), "all".to_string()]), vec![("tcp".to_string(), "tcp".to_string()), ("udp".to_string(), "udp".to_string()), ("icmp".to_string(), "icmp".to_string()), ("icmpv6".to_string(), "icmpv6".to_string()), ("-1".to_string(), "all".to_string()), ("all".to_string(), "all".to_string())], None, None)).required().with_provider_name("IpProtocol"),
-                    StructField::new("to_port", AttributeType::custom(None, AttributeType::int(), None, None, legacy_validator(validate_to_port_range), None)).with_provider_name("ToPort")])))
+                    StructField::new("to_port", AttributeType::refined_int(None, Some((Some(-1), Some(65535))))).with_provider_name("ToPort")])))
                 .with_description("[VPC only] The outbound rules associated with the security group. There is a short interruption during which you cannot connect to the security group.")
                 .with_provider_name("SecurityGroupEgress")
                 .with_block_name("security_group_egress"),
@@ -88,13 +88,13 @@ pub fn ec2_security_group_config() -> AwsccSchemaConfig {
             AttributeSchema::new("security_group_ingress", AttributeType::unordered_list(AttributeType::struct_("Ingress".to_string(), vec![StructField::new("cidr_ip", types::ipv4_cidr()).with_provider_name("CidrIp"),
                     StructField::new("cidr_ipv6", types::ipv6_cidr()).with_provider_name("CidrIpv6"),
                     StructField::new("description", AttributeType::string()).with_provider_name("Description"),
-                    StructField::new("from_port", AttributeType::custom(None, AttributeType::int(), None, None, legacy_validator(validate_from_port_range), None)).with_provider_name("FromPort"),
+                    StructField::new("from_port", AttributeType::refined_int(None, Some((Some(-1), Some(65535))))).with_provider_name("FromPort"),
                     StructField::new("ip_protocol", AttributeType::enum_(carina_core::schema::enum_identity("IpProtocol", Some("aws.ec2.SecurityGroup.Ingress")), Some(vec!["tcp".to_string(), "udp".to_string(), "icmp".to_string(), "icmpv6".to_string(), "-1".to_string(), "all".to_string()]), vec![("tcp".to_string(), "tcp".to_string()), ("udp".to_string(), "udp".to_string()), ("icmp".to_string(), "icmp".to_string()), ("icmpv6".to_string(), "icmpv6".to_string()), ("-1".to_string(), "all".to_string()), ("all".to_string(), "all".to_string())], None, None)).required().with_provider_name("IpProtocol"),
                     StructField::new("source_prefix_list_id", carina_aws_types::prefix_list_id()).with_provider_name("SourcePrefixListId"),
                     StructField::new("source_security_group_id", carina_aws_types::security_group_id()).with_provider_name("SourceSecurityGroupId"),
                     StructField::new("source_security_group_name", AttributeType::string()).with_provider_name("SourceSecurityGroupName"),
                     StructField::new("source_security_group_owner_id", carina_aws_types::aws_account_id()).with_provider_name("SourceSecurityGroupOwnerId"),
-                    StructField::new("to_port", AttributeType::custom(None, AttributeType::int(), None, None, legacy_validator(validate_to_port_range), None)).with_provider_name("ToPort")])))
+                    StructField::new("to_port", AttributeType::refined_int(None, Some((Some(-1), Some(65535))))).with_provider_name("ToPort")])))
                 .with_description("The inbound rules associated with the security group. There is a short interruption during which you cannot connect to the security group.")
                 .with_provider_name("SecurityGroupIngress")
                 .with_block_name("security_group_ingress"),

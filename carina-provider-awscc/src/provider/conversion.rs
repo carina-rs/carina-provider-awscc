@@ -79,7 +79,10 @@ pub(crate) fn aws_value_to_dsl_with_defs(
     }
 
     // For List types, recurse into each item with the inner type for type-aware conversion
-    if let Shape::List { inner, .. } = shape
+    if let Shape::List {
+        element_type: inner,
+        ..
+    } = shape
         && let Some(arr) = value.as_array()
     {
         let items: Vec<Value> = arr
@@ -165,20 +168,22 @@ pub(crate) fn aws_value_to_dsl_with_defs(
         return Some(Value::Concrete(ConcreteValue::Map(map)));
     }
 
-    // For structural Custom types carrying a `to_dsl` normalization
-    // closure, apply the transformation on read. This handles cases
+    // For refined string types carrying a `to_dsl` normalization
+    // transform, apply the transformation on read. This handles cases
     // like Route 53 DNS names where the API returns a normalized form
     // (trailing dot) that differs from user input. Post-#3230, the
     // enum-shorthand path lives on `CustomEnum.to_dsl`; `Custom.to_dsl`
     // is restricted to structural state→DSL normalization, so the
     // pre-#3222 `namespace: None` gate is no longer needed.
-    if let Shape::Custom {
+    if let Shape::String {
         to_dsl: Some(transform),
         ..
     } = shape
         && let Some(s) = value.as_str()
     {
-        return Some(Value::Concrete(ConcreteValue::String(transform(s))));
+        return Some(Value::Concrete(ConcreteValue::String(
+            transform.apply(s).into_owned(),
+        )));
     }
 
     json_to_value(value)
@@ -286,7 +291,10 @@ pub(crate) fn dsl_value_to_aws_with_defs(
             }
             _ => value_to_json(value),
         }
-    } else if let Shape::List { inner, .. } = shape
+    } else if let Shape::List {
+        element_type: inner,
+        ..
+    } = shape
         && let Value::Concrete(ConcreteValue::List(items)) = value
     {
         // Recurse into list items with inner type for type-aware conversion
@@ -450,7 +458,7 @@ pub(crate) fn value_to_json(value: &Value) -> Option<serde_json::Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use carina_core::schema::{StructField, legacy_validator};
+    use carina_core::schema::{DslTransform, StructField, legacy_validator};
 
     fn test_enum(
         name: &str,
@@ -1904,7 +1912,11 @@ mod tests {
             )
             .expect("ownership_controls exposes fields");
         let rules = fields.iter().find(|f| f.name == "rules").unwrap();
-        let Shape::List { inner, .. } = config.schema.shape_of(&rules.field_type) else {
+        let Shape::List {
+            element_type: inner,
+            ..
+        } = config.schema.shape_of(&rules.field_type)
+        else {
             panic!("rules is a List");
         };
         let Shape::Struct { .. } = config.schema.shape_of(inner) else {
@@ -2003,14 +2015,12 @@ mod tests {
     }
 
     #[test]
-    fn test_aws_value_to_dsl_custom_to_dsl_strips_trailing_dot() {
-        let attr_type = AttributeType::custom(
-            Some(carina_core::schema::TypeIdentity::bare("DnsName")),
-            AttributeType::string(),
+    fn test_aws_value_to_dsl_refined_string_to_dsl_strips_trailing_dot() {
+        let attr_type = AttributeType::refined_string(
             None,
             None,
-            legacy_validator(|_| Ok(())),
-            Some(|s: &str| s.strip_suffix('.').unwrap_or(s).to_string()),
+            None,
+            Some(DslTransform::StripSuffix(".".to_string())),
         );
         let json_val = serde_json::json!("carina-rs.dev.");
         let result = aws_value_to_dsl_with_defs(

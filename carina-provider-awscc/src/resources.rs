@@ -84,7 +84,10 @@ mod tests {
                         check_field(field, path, missing, defs, seen);
                     }
                 }
-                RawShape::List { inner, .. } => {
+                RawShape::List {
+                    element_type: inner,
+                    ..
+                } => {
                     check_type(inner, path, missing, defs, seen);
                 }
                 RawShape::Map { value: inner, .. } => {
@@ -143,7 +146,11 @@ mod tests {
                 },
                 other => other,
             };
-            let RawShape::List { inner, .. } = peeled else {
+            let RawShape::List {
+                element_type: inner,
+                ..
+            } = peeled
+            else {
                 return false;
             };
             matches!(

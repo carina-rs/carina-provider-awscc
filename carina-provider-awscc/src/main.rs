@@ -105,15 +105,19 @@ impl CarinaProvider for AwsccProcessProvider {
         types.insert(
             "allowed_account_ids".to_string(),
             proto::AttributeType::List {
-                inner: Box::new(proto::AttributeType::String),
+                element_type: Box::new(proto_string_attribute_type()),
                 ordered: false,
+                length: None,
+                validate: None,
             },
         );
         types.insert(
             "forbidden_account_ids".to_string(),
             proto::AttributeType::List {
-                inner: Box::new(proto::AttributeType::String),
+                element_type: Box::new(proto_string_attribute_type()),
                 ordered: false,
+                length: None,
+                validate: None,
             },
         );
         types.insert("assume_role".to_string(), assume_role_attribute_type());
@@ -452,7 +456,7 @@ fn assume_role_attribute_type() -> proto::AttributeType {
         fields: vec![
             proto::StructField {
                 name: "role_arn".to_string(),
-                field_type: proto::AttributeType::String,
+                field_type: proto_string_attribute_type(),
                 required: true,
                 description: Some("IAM role ARN to assume.".to_string()),
                 block_name: None,
@@ -460,7 +464,7 @@ fn assume_role_attribute_type() -> proto::AttributeType {
             },
             proto::StructField {
                 name: "session_name".to_string(),
-                field_type: proto::AttributeType::String,
+                field_type: proto_string_attribute_type(),
                 required: false,
                 description: Some(
                     "STS session name to associate with the assumed-role session.".to_string(),
@@ -470,7 +474,7 @@ fn assume_role_attribute_type() -> proto::AttributeType {
             },
             proto::StructField {
                 name: "external_id".to_string(),
-                field_type: proto::AttributeType::String,
+                field_type: proto_string_attribute_type(),
                 required: false,
                 description: Some(
                     "External ID required by the trust policy of the assumed role.".to_string(),
@@ -502,6 +506,16 @@ carina_plugin_sdk::export_provider!(AwsccProcessProvider, http);
 
 #[cfg(target_arch = "wasm32")]
 fn main() {}
+
+fn proto_string_attribute_type() -> proto::AttributeType {
+    proto::AttributeType::String {
+        pattern: None,
+        length: None,
+        validate: None,
+        to_dsl: None,
+        identity: None,
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -569,7 +583,7 @@ mod tests {
                         .find(|f| f.name == opt)
                         .unwrap_or_else(|| panic!("assume_role.{opt} must be declared"));
                     assert!(!f.required, "assume_role.{opt} must be optional");
-                    assert!(matches!(f.field_type, proto::AttributeType::String));
+                    assert!(matches!(f.field_type, proto::AttributeType::String { .. }));
                 }
                 let duration = fields
                     .iter()

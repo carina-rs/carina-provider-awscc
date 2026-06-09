@@ -6,9 +6,7 @@
 
 use crate::schemas::config::AwsccSchemaConfig;
 use carina_core::resource::{ConcreteValue, Value};
-use carina_core::schema::{
-    AttributeSchema, AttributeType, OperationConfig, ResourceSchema, legacy_validator, types,
-};
+use carina_core::schema::{AttributeSchema, AttributeType, OperationConfig, ResourceSchema, types};
 
 const VALID_AUTO_ACCEPT_SHARED_ATTACHMENTS: &[&str] = &["enable", "disable"];
 
@@ -28,6 +26,7 @@ const VALID_SECURITY_GROUP_REFERENCING_SUPPORT: &[&str] = &["enable", "disable"]
 
 const VALID_VPN_ECMP_SUPPORT: &[&str] = &["enable", "disable"];
 
+#[allow(dead_code)]
 fn validate_amazon_side_asn_range(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::Int(n)) = value {
         if *n < 1 || *n > 4294967294 {
@@ -51,14 +50,7 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
             .attribute(
                 AttributeSchema::new(
                     "amazon_side_asn",
-                    AttributeType::custom(
-                        None,
-                        AttributeType::int(),
-                        None,
-                        None,
-                        legacy_validator(validate_amazon_side_asn_range),
-                        None,
-                    ),
+                    AttributeType::refined_int(None, Some((Some(1), Some(4294967294)))),
                 )
                 .create_only()
                 .with_provider_name("AmazonSideAsn"),

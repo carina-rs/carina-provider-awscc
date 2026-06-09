@@ -6,32 +6,8 @@
 
 use crate::schemas::config::AwsccSchemaConfig;
 use carina_core::resource::{ConcreteValue, Value};
-use carina_core::schema::{
-    AttributeSchema, AttributeType, ResourceSchema, StructField, legacy_validator,
-};
+use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField};
 use regex::Regex;
-
-#[allow(dead_code)]
-fn validate_string_pattern_2a77a2e32f71b5f3_len_1_47(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::String(s)) = value {
-        static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-            Regex::new("^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$").expect("invalid pattern regex")
-        });
-        if !RE.is_match(s) {
-            return Err(format!(
-                "Value '{}' does not match pattern ^([0-9a-f]{{10}}-|)[A-Fa-f0-9]{{8}}-[A-Fa-f0-9]{{4}}-[A-Fa-f0-9]{{4}}-[A-Fa-f0-9]{{4}}-[A-Fa-f0-9]{{12}}$",
-                s
-            ));
-        }
-        let len = s.chars().count();
-        if !(1..=47).contains(&len) {
-            return Err(format!("String length {} is out of range 1..=47", len));
-        }
-        Ok(())
-    } else {
-        Err("Expected string".to_string())
-    }
-}
 
 /// Returns the schema config for identitystore_group_membership (AWS::IdentityStore::GroupMembership)
 pub fn identitystore_group_membership_config() -> AwsccSchemaConfig {
@@ -56,19 +32,41 @@ pub fn identitystore_group_membership_config() -> AwsccSchemaConfig {
                 .with_provider_name("IdentityStoreId"),
         )
         .attribute(
-            AttributeSchema::new("member_id", AttributeType::struct_("MemberId".to_string(), vec![StructField::new("user_id", AttributeType::custom(None, AttributeType::string(), Some("^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$".to_string()), Some((Some(1), Some(47))), legacy_validator(validate_string_pattern_2a77a2e32f71b5f3_len_1_47), None)).required().with_description("The identifier for a user in the identity store.").with_provider_name("UserId")]))
+            AttributeSchema::new("member_id", AttributeType::struct_("MemberId".to_string(), vec![StructField::new("user_id", AttributeType::refined_string(None, Some("^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$".to_string()), Some((Some(1), Some(47))), None)).required().with_description("The identifier for a user in the identity store.").with_provider_name("UserId")]))
                 .required()
                 .create_only()
                 .with_description("An object containing the identifier of a group member.")
                 .with_provider_name("MemberId"),
         )
         .attribute(
-            AttributeSchema::new("membership_id", AttributeType::custom(None, AttributeType::string(), Some("^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$".to_string()), Some((Some(1), Some(47))), legacy_validator(validate_string_pattern_2a77a2e32f71b5f3_len_1_47), None))
+            AttributeSchema::new("membership_id", AttributeType::refined_string(None, Some("^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$".to_string()), Some((Some(1), Some(47))), None))
                 .read_only()
                 .with_description("The identifier for a GroupMembership in the identity store. (read-only)")
                 .with_provider_name("MembershipId"),
         )
-        .with_def("MemberId", AttributeType::struct_("MemberId".to_string(), vec![StructField::new("user_id", AttributeType::custom(None, AttributeType::string(), Some("^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$".to_string()), Some((Some(1), Some(47))), legacy_validator(validate_string_pattern_2a77a2e32f71b5f3_len_1_47), None)).required().with_description("The identifier for a user in the identity store.").with_provider_name("UserId")]))
+        .with_def("MemberId", AttributeType::struct_("MemberId".to_string(), vec![StructField::new("user_id", AttributeType::refined_string(None, Some("^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$".to_string()), Some((Some(1), Some(47))), None)).required().with_description("The identifier for a user in the identity store.").with_provider_name("UserId")]))
+    }
+}
+
+#[allow(dead_code)]
+fn validate_string_pattern_2a77a2e32f71b5f3_len_1_47(value: &Value) -> Result<(), String> {
+    if let Value::Concrete(ConcreteValue::String(s)) = value {
+        static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+            Regex::new("^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$").expect("invalid pattern regex")
+        });
+        if !RE.is_match(s) {
+            return Err(format!(
+                "Value '{}' does not match pattern ^([0-9a-f]{{10}}-|)[A-Fa-f0-9]{{8}}-[A-Fa-f0-9]{{4}}-[A-Fa-f0-9]{{4}}-[A-Fa-f0-9]{{4}}-[A-Fa-f0-9]{{12}}$",
+                s
+            ));
+        }
+        let len = s.chars().count();
+        if !(1..=47).contains(&len) {
+            return Err(format!("String length {} is out of range 1..=47", len));
+        }
+        Ok(())
+    } else {
+        Err("Expected string".to_string())
     }
 }
 

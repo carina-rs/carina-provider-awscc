@@ -45,6 +45,7 @@ fn validate_list_items_max_5(value: &Value) -> Result<(), String> {
     }
 }
 
+#[allow(dead_code)]
 fn validate_string_length_1_255(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
         let len = s.chars().count();
@@ -55,6 +56,78 @@ fn validate_string_length_1_255(value: &Value) -> Result<(), String> {
         }
     } else {
         Ok(())
+    }
+}
+
+/// Returns the schema config for iam_oidc_provider (AWS::IAM::OIDCProvider)
+pub fn iam_oidc_provider_config() -> AwsccSchemaConfig {
+    AwsccSchemaConfig {
+        aws_type_name: "AWS::IAM::OIDCProvider",
+        resource_type_name: "iam.OidcProvider",
+        has_tags: true,
+        schema: ResourceSchema::new("iam.OidcProvider")
+            .with_description("Resource Type definition for AWS::IAM::OIDCProvider")
+            .attribute(
+                AttributeSchema::new("arn", self::arn())
+                    .read_only()
+                    .with_description("Amazon Resource Name (ARN) of the OIDC provider (read-only)")
+                    .with_provider_name("Arn"),
+            )
+            .attribute(
+                AttributeSchema::new(
+                    "client_id_list",
+                    AttributeType::unordered_list(AttributeType::refined_string(
+                        None,
+                        None,
+                        Some((Some(1), Some(255))),
+                        None,
+                    )),
+                )
+                .with_provider_name("ClientIdList"),
+            )
+            .attribute(
+                AttributeSchema::new("tags", carina_aws_types::tags_type())
+                    .with_provider_name("Tags")
+                    .with_block_name("tag"),
+            )
+            .attribute(
+                AttributeSchema::new(
+                    "thumbprint_list",
+                    AttributeType::custom(
+                        None,
+                        AttributeType::unordered_list(AttributeType::refined_string(
+                            None,
+                            Some("[0-9A-Fa-f]{40}".to_string()),
+                            Some((Some(40), Some(40))),
+                            None,
+                        )),
+                        None,
+                        None,
+                        legacy_validator(validate_list_items_max_5),
+                        None,
+                    ),
+                )
+                .with_provider_name("ThumbprintList"),
+            )
+            .attribute(
+                AttributeSchema::new(
+                    "url",
+                    AttributeType::refined_string(None, None, Some((Some(1), Some(255))), None),
+                )
+                .create_only()
+                .with_provider_name("Url"),
+            )
+            .with_validator(|attrs| {
+                let mut errors = Vec::new();
+                if let Err(mut e) = carina_aws_types::validate_tags_map(attrs) {
+                    errors.append(&mut e);
+                }
+                if errors.is_empty() {
+                    Ok(())
+                } else {
+                    Err(errors)
+                }
+            }),
     }
 }
 
@@ -77,89 +150,6 @@ fn validate_string_pattern_57ee0c44b504b839_len_40_40(value: &Value) -> Result<(
         Ok(())
     } else {
         Err("Expected string".to_string())
-    }
-}
-
-/// Returns the schema config for iam_oidc_provider (AWS::IAM::OIDCProvider)
-pub fn iam_oidc_provider_config() -> AwsccSchemaConfig {
-    AwsccSchemaConfig {
-        aws_type_name: "AWS::IAM::OIDCProvider",
-        resource_type_name: "iam.OidcProvider",
-        has_tags: true,
-        schema: ResourceSchema::new("iam.OidcProvider")
-            .with_description("Resource Type definition for AWS::IAM::OIDCProvider")
-            .attribute(
-                AttributeSchema::new("arn", self::arn())
-                    .read_only()
-                    .with_description("Amazon Resource Name (ARN) of the OIDC provider (read-only)")
-                    .with_provider_name("Arn"),
-            )
-            .attribute(
-                AttributeSchema::new(
-                    "client_id_list",
-                    AttributeType::unordered_list(AttributeType::custom(
-                        None,
-                        AttributeType::string(),
-                        None,
-                        Some((Some(1), Some(255))),
-                        legacy_validator(validate_string_length_1_255),
-                        None,
-                    )),
-                )
-                .with_provider_name("ClientIdList"),
-            )
-            .attribute(
-                AttributeSchema::new("tags", carina_aws_types::tags_type())
-                    .with_provider_name("Tags")
-                    .with_block_name("tag"),
-            )
-            .attribute(
-                AttributeSchema::new(
-                    "thumbprint_list",
-                    AttributeType::custom(
-                        None,
-                        AttributeType::unordered_list(AttributeType::custom(
-                            None,
-                            AttributeType::string(),
-                            Some("[0-9A-Fa-f]{40}".to_string()),
-                            Some((Some(40), Some(40))),
-                            legacy_validator(validate_string_pattern_57ee0c44b504b839_len_40_40),
-                            None,
-                        )),
-                        None,
-                        None,
-                        legacy_validator(validate_list_items_max_5),
-                        None,
-                    ),
-                )
-                .with_provider_name("ThumbprintList"),
-            )
-            .attribute(
-                AttributeSchema::new(
-                    "url",
-                    AttributeType::custom(
-                        None,
-                        AttributeType::string(),
-                        None,
-                        Some((Some(1), Some(255))),
-                        legacy_validator(validate_string_length_1_255),
-                        None,
-                    ),
-                )
-                .create_only()
-                .with_provider_name("Url"),
-            )
-            .with_validator(|attrs| {
-                let mut errors = Vec::new();
-                if let Err(mut e) = carina_aws_types::validate_tags_map(attrs) {
-                    errors.append(&mut e);
-                }
-                if errors.is_empty() {
-                    Ok(())
-                } else {
-                    Err(errors)
-                }
-            }),
     }
 }
 

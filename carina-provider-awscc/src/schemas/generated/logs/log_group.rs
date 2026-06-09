@@ -29,11 +29,13 @@ pub fn arn() -> AttributeType {
 
 const VALID_LOG_GROUP_CLASS: &[&str] = &["STANDARD", "INFREQUENT_ACCESS", "DELIVERY"];
 
+#[allow(dead_code)]
 const VALID_RETENTION_IN_DAYS_VALUES: &[i64] = &[
     1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096, 1827, 2192, 2557, 2922,
     3288, 3653,
 ];
 
+#[allow(dead_code)]
 fn validate_retention_in_days_int_enum(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::Int(n)) = value {
         if VALID_RETENTION_IN_DAYS_VALUES.contains(n) {
@@ -43,28 +45,6 @@ fn validate_retention_in_days_int_enum(value: &Value) -> Result<(), String> {
         }
     } else {
         Err("Expected integer".to_string())
-    }
-}
-
-#[allow(dead_code)]
-fn validate_string_pattern_b6dfbc56753dfe38_len_1_512(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::String(s)) = value {
-        static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-            Regex::new("^[.\\-_/#A-Za-z0-9]{1,512}\\z").expect("invalid pattern regex")
-        });
-        if !RE.is_match(s) {
-            return Err(format!(
-                "Value '{}' does not match pattern ^[.\\-_/#A-Za-z0-9]{{1,512}}\\z",
-                s
-            ));
-        }
-        let len = s.chars().count();
-        if !(1..=512).contains(&len) {
-            return Err(format!("String length {} is out of range 1..=512", len));
-        }
-        Ok(())
-    } else {
-        Err("Expected string".to_string())
     }
 }
 
@@ -110,7 +90,7 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
                 .with_default(Value::Concrete(ConcreteValue::String("STANDARD".to_string()))),
         )
         .attribute(
-            AttributeSchema::new("log_group_name", AttributeType::custom(None, AttributeType::string(), Some("^[.\\-_/#A-Za-z0-9]{1,512}\\Z".to_string()), Some((Some(1), Some(512))), legacy_validator(validate_string_pattern_b6dfbc56753dfe38_len_1_512), None))
+            AttributeSchema::new("log_group_name", AttributeType::refined_string(None, Some("^[.\\-_/#A-Za-z0-9]{1,512}\\Z".to_string()), Some((Some(1), Some(512))), None))
                 .create_only()
                 .with_description("The name of the log group. If you don't specify a name, CFNlong generates a unique ID for the log group.")
                 .with_provider_name("LogGroupName"),
@@ -139,6 +119,28 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
             }
             if errors.is_empty() { Ok(()) } else { Err(errors) }
         })
+    }
+}
+
+#[allow(dead_code)]
+fn validate_string_pattern_b6dfbc56753dfe38_len_1_512(value: &Value) -> Result<(), String> {
+    if let Value::Concrete(ConcreteValue::String(s)) = value {
+        static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+            Regex::new("^[.\\-_/#A-Za-z0-9]{1,512}\\z").expect("invalid pattern regex")
+        });
+        if !RE.is_match(s) {
+            return Err(format!(
+                "Value '{}' does not match pattern ^[.\\-_/#A-Za-z0-9]{{1,512}}\\z",
+                s
+            ));
+        }
+        let len = s.chars().count();
+        if !(1..=512).contains(&len) {
+            return Err(format!("String length {} is out of range 1..=512", len));
+        }
+        Ok(())
+    } else {
+        Err("Expected string".to_string())
     }
 }
 

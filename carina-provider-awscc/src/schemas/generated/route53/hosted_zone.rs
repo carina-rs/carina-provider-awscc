@@ -6,10 +6,9 @@
 
 use crate::schemas::config::AwsccSchemaConfig;
 use carina_core::resource::{ConcreteValue, Value};
-use carina_core::schema::{
-    AttributeSchema, AttributeType, ResourceSchema, StructField, legacy_validator,
-};
+use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField};
 
+#[allow(dead_code)]
 fn validate_string_length_max_256(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
         let len = s.chars().count();
@@ -23,6 +22,7 @@ fn validate_string_length_max_256(value: &Value) -> Result<(), String> {
     }
 }
 
+#[allow(dead_code)]
 fn validate_string_length_max_128(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
         let len = s.chars().count();
@@ -45,7 +45,7 @@ pub fn route53_hosted_zone_config() -> AwsccSchemaConfig {
         schema: ResourceSchema::new("route53.HostedZone")
         .with_description("Creates a new public or private hosted zone. You create records in a public hosted zone to define how you want to route traffic on the internet for a domain, such as example.com, and its subdomains (apex.example.com, acme.example.com). You create records in a private hosted zone to define how you want to route traffic for a domain and its subdomains within one or more Amazon Virtual Private Clouds (Amazon VPCs).    You can't convert a public hosted zone to a private hosted zone or vice versa. Instead, you must create a new hosted zone with the same name and create new resource record sets.   For more information about charges for hosted zones, see [Amazon Route 53 Pricing](https://docs.aws.amazon.com/route53/pricing/).  Note the following:   +  You can't create a hosted zone for a top-level domain (TLD) such as .com.   +  If your domain is registered with a registrar other than Route 53, you must update the name servers with your registrar to make Route 53 the DNS service for the domain. For more information, see [Migrating DNS Service for an Existing Domain to Amazon Route 53](https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/MigratingDNS.html) in the *Amazon Route 53 Developer Guide*.      When you submit a ``CreateHostedZone`` request, the initial status of the hosted zone is ``PENDING``. For public hosted zones, this means that the NS and SOA records are not yet available on all Route 53 DNS servers. When the NS and SOA records are available, the status of the zone changes to ``INSYNC``.  The ``CreateHostedZone`` request requires the caller to have an ``ec2:DescribeVpcs`` permission.   When creating private hosted zones, the Amazon VPC must belong to the same partition where the hosted zone is created. A partition is a group of AWS-Regions. Each AWS-account is scoped to one partition.  The following are the supported partitions:   +  ``aws`` - AWS-Regions   +  ``aws-cn`` - China Regions   +  ``aws-us-gov`` - govcloud-us-region     For more information, see [Access Management](https://docs.aws.amazon.com/general/latest/gr/aws-arns-and-namespaces.html) in the *General Reference*.")
         .attribute(
-            AttributeSchema::new("hosted_zone_config", AttributeType::struct_("HostedZoneConfig".to_string(), vec![StructField::new("comment", AttributeType::custom(None, AttributeType::string(), None, Some((None, Some(256))), legacy_validator(validate_string_length_max_256), None)).with_description("Any comments that you want to include about the hosted zone.").with_provider_name("Comment")]))
+            AttributeSchema::new("hosted_zone_config", AttributeType::struct_("HostedZoneConfig".to_string(), vec![StructField::new("comment", AttributeType::refined_string(None, None, Some((None, Some(256))), None)).with_description("Any comments that you want to include about the hosted zone.").with_provider_name("Comment")]))
                 .with_description("A complex type that contains an optional comment. If you don't want to specify a comment, omit the ``HostedZoneConfig`` and ``Comment`` elements.")
                 .with_provider_name("HostedZoneConfig"),
         )
@@ -55,8 +55,8 @@ pub fn route53_hosted_zone_config() -> AwsccSchemaConfig {
                 .with_provider_name("HostedZoneFeatures"),
         )
         .attribute(
-            AttributeSchema::new("hosted_zone_tags", AttributeType::unordered_list(AttributeType::struct_("HostedZoneTag".to_string(), vec![StructField::new("key", AttributeType::custom(None, AttributeType::string(), None, Some((None, Some(128))), legacy_validator(validate_string_length_max_128), None)).required().with_description("The value of ``Key`` depends on the operation that you want to perform: + *Add a tag to a health check or hosted zone*: ``Key`` is the name that you want to give the new tag. + *Edit a tag*: ``Key`` is the name of the tag that you want to change the ``Value`` for. + *Delete a key*: ``Key`` is the name of the tag you want to remove. + *Give a name to a health check*: Edit the default ``Name`` tag. In the Amazon Route 53 console, the list of your health checks includes a *Name* column that lets you see the name that you've given to each health check.").with_provider_name("Key"),
-                    StructField::new("value", AttributeType::custom(None, AttributeType::string(), None, Some((None, Some(256))), legacy_validator(validate_string_length_max_256), None)).required().with_description("The value of ``Value`` depends on the operation that you want to perform: + *Add a tag to a health check or hosted zone*: ``Value`` is the value that you want to give the new tag. + *Edit a tag*: ``Value`` is the new value that you want to assign the tag.").with_provider_name("Value")])))
+            AttributeSchema::new("hosted_zone_tags", AttributeType::unordered_list(AttributeType::struct_("HostedZoneTag".to_string(), vec![StructField::new("key", AttributeType::refined_string(None, None, Some((None, Some(128))), None)).required().with_description("The value of ``Key`` depends on the operation that you want to perform: + *Add a tag to a health check or hosted zone*: ``Key`` is the name that you want to give the new tag. + *Edit a tag*: ``Key`` is the name of the tag that you want to change the ``Value`` for. + *Delete a key*: ``Key`` is the name of the tag you want to remove. + *Give a name to a health check*: Edit the default ``Name`` tag. In the Amazon Route 53 console, the list of your health checks includes a *Name* column that lets you see the name that you've given to each health check.").with_provider_name("Key"),
+                    StructField::new("value", AttributeType::refined_string(None, None, Some((None, Some(256))), None)).required().with_description("The value of ``Value`` depends on the operation that you want to perform: + *Add a tag to a health check or hosted zone*: ``Value`` is the value that you want to give the new tag. + *Edit a tag*: ``Value`` is the new value that you want to assign the tag.").with_provider_name("Value")])))
                 .with_description("Adds, edits, or deletes tags for a health check or a hosted zone. For information about using tags for cost allocation, see [Using Cost Allocation Tags](https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/cost-alloc-tags.html) in the *User Guide*.")
                 .with_provider_name("HostedZoneTags")
                 .with_block_name("hosted_zone_tag"),
@@ -68,7 +68,7 @@ pub fn route53_hosted_zone_config() -> AwsccSchemaConfig {
                 .with_provider_name("Id"),
         )
         .attribute(
-            AttributeSchema::new("name", AttributeType::enum_(carina_core::schema::enum_identity("Name", Some("aws.route53.HostedZone")), None, vec![], None, Some(carina_core::schema::DslTransform::StripSuffix(".".to_string()))))
+            AttributeSchema::new("name", AttributeType::refined_string(None, None, Some((None, Some(1024))), Some(carina_core::schema::DslTransform::StripSuffix(".".to_string()))))
                 .create_only()
                 .with_description("The name of the domain. Specify a fully qualified domain name, for example, *www.example.com*. The trailing dot is optional; Amazon Route 53 assumes that the domain name is fully qualified. This means that Route 53 treats *www.example.com* (without a trailing dot) and *www.example.com.* (with a trailing dot) as identical. If you're creating a public hosted zone, this is the name you have registered with your DNS registrar. If your domain name is registered with a registrar other than Route 53, change the name servers for your domain to the set of ``NameServers`` that are returned by the ``Fn::GetAtt`` intrinsic function.")
                 .with_provider_name("Name"),
@@ -98,7 +98,7 @@ pub fn route53_hosted_zone_config() -> AwsccSchemaConfig {
             }
             if errors.is_empty() { Ok(()) } else { Err(errors) }
         })
-        .with_def("HostedZoneConfig", AttributeType::struct_("HostedZoneConfig".to_string(), vec![StructField::new("comment", AttributeType::custom(None, AttributeType::string(), None, Some((None, Some(256))), legacy_validator(validate_string_length_max_256), None)).with_description("Any comments that you want to include about the hosted zone.").with_provider_name("Comment")]))
+        .with_def("HostedZoneConfig", AttributeType::struct_("HostedZoneConfig".to_string(), vec![StructField::new("comment", AttributeType::refined_string(None, None, Some((None, Some(256))), None)).with_description("Any comments that you want to include about the hosted zone.").with_provider_name("Comment")]))
         .with_def("HostedZoneFeatures", AttributeType::struct_("HostedZoneFeatures".to_string(), vec![StructField::new("enable_accelerated_recovery", AttributeType::bool()).with_description("").with_provider_name("EnableAcceleratedRecovery")]))
         .with_def("QueryLoggingConfig", AttributeType::struct_("QueryLoggingConfig".to_string(), vec![StructField::new("cloud_watch_logs_log_group_arn", carina_aws_types::arn()).required().with_description("The Amazon Resource Name (ARN) of the CloudWatch Logs log group that Amazon Route 53 is publishing logs to.").with_provider_name("CloudWatchLogsLogGroupArn")]))
     }

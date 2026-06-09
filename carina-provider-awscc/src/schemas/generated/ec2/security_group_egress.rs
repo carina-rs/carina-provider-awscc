@@ -6,12 +6,11 @@
 
 use crate::schemas::config::AwsccSchemaConfig;
 use carina_core::resource::{ConcreteValue, Value};
-use carina_core::schema::{
-    AttributeSchema, AttributeType, ResourceSchema, legacy_validator, types,
-};
+use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, types};
 
 const VALID_IP_PROTOCOL: &[&str] = &["tcp", "udp", "icmp", "icmpv6", "-1", "all"];
 
+#[allow(dead_code)]
 fn validate_from_port_range(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::Int(n)) = value {
         if *n < -1 || *n > 65535 {
@@ -24,6 +23,7 @@ fn validate_from_port_range(value: &Value) -> Result<(), String> {
     }
 }
 
+#[allow(dead_code)]
 fn validate_to_port_range(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::Int(n)) = value {
         if *n < -1 || *n > 65535 {
@@ -74,7 +74,7 @@ pub fn ec2_security_group_egress_config() -> AwsccSchemaConfig {
                 .with_provider_name("DestinationSecurityGroupId"),
         )
         .attribute(
-            AttributeSchema::new("from_port", AttributeType::custom(None, AttributeType::int(), None, None, legacy_validator(validate_from_port_range), None))
+            AttributeSchema::new("from_port", AttributeType::refined_int(None, Some((Some(-1), Some(65535)))))
                 .create_only()
                 .with_description("If the protocol is TCP or UDP, this is the start of the port range. If the protocol is ICMP or ICMPv6, this is the ICMP type or -1 (all ICMP types).")
                 .with_provider_name("FromPort"),
@@ -100,7 +100,7 @@ pub fn ec2_security_group_egress_config() -> AwsccSchemaConfig {
                 .with_provider_name("IpProtocol"),
         )
         .attribute(
-            AttributeSchema::new("to_port", AttributeType::custom(None, AttributeType::int(), None, None, legacy_validator(validate_to_port_range), None))
+            AttributeSchema::new("to_port", AttributeType::refined_int(None, Some((Some(-1), Some(65535)))))
                 .create_only()
                 .with_description("If the protocol is TCP or UDP, this is the end of the port range. If the protocol is ICMP or ICMPv6, this is the ICMP code or -1 (all ICMP codes). If the start port is -1 (all ICMP types), then the end port must be -1 (all ICMP codes).")
                 .with_provider_name("ToPort"),

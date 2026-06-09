@@ -218,9 +218,35 @@ pub fn proto_to_core_data_source(r: &ProtoResource) -> CoreDataSource {
 
 fn proto_attr_type_to_core(t: &ProtoAttributeType) -> CoreAttributeType {
     match t {
-        ProtoAttributeType::String => CoreAttributeType::string(),
-        ProtoAttributeType::Int => CoreAttributeType::int(),
-        ProtoAttributeType::Float => CoreAttributeType::float(),
+        ProtoAttributeType::String {
+            pattern,
+            length,
+            to_dsl,
+            identity,
+            ..
+        } => CoreAttributeType::refined_string(
+            identity
+                .as_deref()
+                .filter(|s| !s.is_empty())
+                .map(carina_core::schema::TypeIdentity::from_dotted),
+            pattern.clone(),
+            *length,
+            to_dsl.clone(),
+        ),
+        ProtoAttributeType::Int { range, identity } => CoreAttributeType::refined_int(
+            identity
+                .as_deref()
+                .filter(|s| !s.is_empty())
+                .map(carina_core::schema::TypeIdentity::from_dotted),
+            *range,
+        ),
+        ProtoAttributeType::Float { range, identity } => CoreAttributeType::refined_float(
+            identity
+                .as_deref()
+                .filter(|s| !s.is_empty())
+                .map(carina_core::schema::TypeIdentity::from_dotted),
+            *range,
+        ),
         ProtoAttributeType::Bool => CoreAttributeType::bool(),
         ProtoAttributeType::Duration => CoreAttributeType::duration(),
         ProtoAttributeType::StringEnum {
@@ -242,12 +268,25 @@ fn proto_attr_type_to_core(t: &ProtoAttributeType) -> CoreAttributeType {
             None,
             None,
         ),
-        ProtoAttributeType::List { inner, ordered } => {
-            if *ordered {
-                CoreAttributeType::list(proto_attr_type_to_core(inner))
+        ProtoAttributeType::List {
+            element_type,
+            ordered,
+            length,
+            ..
+        } => {
+            let base = if *ordered {
+                CoreAttributeType::list(proto_attr_type_to_core(element_type))
             } else {
-                CoreAttributeType::unordered_list(proto_attr_type_to_core(inner))
-            }
+                CoreAttributeType::unordered_list(proto_attr_type_to_core(element_type))
+            };
+            CoreAttributeType::custom(
+                None,
+                base,
+                None,
+                *length,
+                legacy_validator(|_| Ok(())),
+                None,
+            )
         }
         ProtoAttributeType::Map { inner, key } => CoreAttributeType::map_with_key(
             proto_attr_type_to_core(key),
@@ -265,13 +304,15 @@ fn proto_attr_type_to_core(t: &ProtoAttributeType) -> CoreAttributeType {
             base,
             pattern,
             length,
+            to_dsl,
+            ..
         } => CoreAttributeType::custom(
             if name.is_empty() {
                 None
             } else {
                 Some(carina_core::schema::TypeIdentity::from_dotted(name))
             },
-            proto_attr_type_to_core(base),
+            custom_base_to_core(base, to_dsl.clone()),
             // carina#3364: carry the schema `pattern`/`length` so the
             // host's `validate_custom` can enforce them; dropping them
             // here is why a violating value only failed at `apply`.
@@ -292,7 +333,7 @@ fn proto_attr_type_to_core(t: &ProtoAttributeType) -> CoreAttributeType {
         } => {
             let identity = carina_core::schema::enum_identity(name, Some(namespace.as_str()));
             let base = proto_attr_type_to_core(base);
-            if matches!(base.raw_shape(), CoreRawShape::String) {
+            if matches!(base.raw_shape(), CoreRawShape::String { .. }) {
                 CoreAttributeType::enum_(
                     identity,
                     None,
@@ -408,9 +449,31 @@ fn core_to_proto_attribute_type(t: &CoreAttributeType) -> ProtoAttributeType {
     // WAFv2 WebACL.Statement); the wire form must transmit Ref verbatim
     // so the receiver can rebuild from its own copy of `defs`.
     match t.raw_shape() {
-        CoreRawShape::String => ProtoAttributeType::String,
-        CoreRawShape::Int => ProtoAttributeType::Int,
-        CoreRawShape::Float => ProtoAttributeType::Float,
+        CoreRawShape::String {
+            identity,
+            pattern,
+            length,
+            to_dsl,
+            ..
+        } => ProtoAttributeType::String {
+            pattern: pattern.map(|s| s.to_string()),
+            length,
+            validate: None,
+            to_dsl: to_dsl.cloned(),
+            identity: identity.map(|id| id.to_string()),
+        },
+        CoreRawShape::Int {
+            identity, range, ..
+        } => ProtoAttributeType::Int {
+            range,
+            identity: identity.map(|id| id.to_string()),
+        },
+        CoreRawShape::Float {
+            identity, range, ..
+        } => ProtoAttributeType::Float {
+            range,
+            identity: identity.map(|id| id.to_string()),
+        },
         CoreRawShape::Bool => ProtoAttributeType::Bool,
         // `Duration` is now a first-class proto variant (carina#3166) so
         // providers can declare Duration-typed schema attributes and the
@@ -443,9 +506,16 @@ fn core_to_proto_attribute_type(t: &CoreAttributeType) -> ProtoAttributeType {
                 }
             }
         }
-        CoreRawShape::List { inner, ordered } => ProtoAttributeType::List {
-            inner: Box::new(core_to_proto_attribute_type(inner)),
+        CoreRawShape::List {
+            element_type,
             ordered,
+            length,
+            ..
+        } => ProtoAttributeType::List {
+            element_type: Box::new(core_to_proto_attribute_type(element_type)),
+            ordered,
+            length,
+            validate: None,
         },
         CoreRawShape::Map { key, value: inner } => ProtoAttributeType::Map {
             inner: Box::new(core_to_proto_attribute_type(inner)),
@@ -455,20 +525,6 @@ fn core_to_proto_attribute_type(t: &CoreAttributeType) -> ProtoAttributeType {
             name: name.to_string(),
             fields: fields.iter().map(core_to_proto_struct_field).collect(),
         },
-        CoreRawShape::Custom {
-            identity,
-            base,
-            pattern,
-            length,
-            ..
-        } => ProtoAttributeType::Custom {
-            name: identity.map(|id| id.to_string()).unwrap_or_default(),
-            base: Box::new(core_to_proto_attribute_type(base)),
-            // carina#3364: carry the schema `pattern`/`length` across the
-            // wire so the host can enforce them at validate/plan time.
-            pattern: pattern.map(|s| s.to_string()),
-            length,
-        },
         CoreRawShape::Union(members) => ProtoAttributeType::Union {
             members: members.iter().map(core_to_proto_attribute_type).collect(),
         },
@@ -477,6 +533,20 @@ fn core_to_proto_attribute_type(t: &CoreAttributeType) -> ProtoAttributeType {
         CoreRawShape::Ref(name) => ProtoAttributeType::Ref {
             name: name.to_string(),
         },
+    }
+}
+
+fn custom_base_to_core(
+    base: &ProtoAttributeType,
+    to_dsl: Option<carina_core::schema::DslTransform>,
+) -> CoreAttributeType {
+    match base {
+        ProtoAttributeType::String { .. } => {
+            CoreAttributeType::refined_string(None, None, None, to_dsl)
+        }
+        ProtoAttributeType::Int { .. } => CoreAttributeType::int(),
+        ProtoAttributeType::Float { .. } => CoreAttributeType::float(),
+        _ => proto_attr_type_to_core(base),
     }
 }
 
@@ -670,7 +740,7 @@ mod tests {
         }
     }
 
-    /// Regression for awscc#297 / carina#3364: a `Custom` attribute's
+    /// Regression for awscc#297 / carina#3364: a refined string attribute's
     /// schema `pattern` and `length` constraints MUST cross the WASM
     /// boundary in BOTH directions. If they are dropped, `carina
     /// validate` cannot enforce them (e.g. the WebACL `description`
@@ -695,7 +765,7 @@ mod tests {
         // core -> proto: the constraint must reach the wire form.
         let proto_type = core_to_proto_attribute_type(&core_type);
         match &proto_type {
-            ProtoAttributeType::Custom {
+            ProtoAttributeType::String {
                 pattern: proto_pattern,
                 length: proto_length,
                 ..
@@ -703,13 +773,13 @@ mod tests {
                 assert_eq!(proto_pattern.as_deref(), Some(pattern));
                 assert_eq!(*proto_length, Some(length));
             }
-            other => panic!("Expected Custom, got {other:?}"),
+            other => panic!("Expected String, got {other:?}"),
         }
 
         // proto -> core round-trip: the constraint must survive.
         let roundtripped = proto_to_core_attribute_type(&proto_type);
         match roundtripped.raw_shape() {
-            CoreRawShape::Custom {
+            CoreRawShape::String {
                 pattern: rt_pattern,
                 length: rt_length,
                 ..
@@ -717,12 +787,12 @@ mod tests {
                 assert_eq!(rt_pattern, Some(pattern));
                 assert_eq!(rt_length, Some(length));
             }
-            other => panic!("Expected Custom, got {other:?}"),
+            other => panic!("Expected String, got {other:?}"),
         }
     }
 
     /// The real `awscc.wafv2.WebAcl.description` (`EntityDescription`)
-    /// is an anonymous pattern-only `Custom` — `identity: None`, no
+    /// is an anonymous pattern-only refined String — `identity: None`, no
     /// `length`. That is the exact production shape carina#3364 reported,
     /// and the `identity: None` path crosses the boundary via the
     /// `name.is_empty()` branch, so it gets its own coverage.
@@ -742,7 +812,7 @@ mod tests {
         let proto_type = core_to_proto_attribute_type(&core_type);
         let roundtripped = proto_to_core_attribute_type(&proto_type);
         match roundtripped.raw_shape() {
-            CoreRawShape::Custom {
+            CoreRawShape::String {
                 identity,
                 pattern: rt_pattern,
                 length: rt_length,
@@ -752,7 +822,7 @@ mod tests {
                 assert_eq!(rt_pattern, Some(pattern));
                 assert_eq!(rt_length, None);
             }
-            other => panic!("Expected Custom, got {other:?}"),
+            other => panic!("Expected String, got {other:?}"),
         }
     }
 
@@ -811,7 +881,13 @@ mod tests {
     fn custom_enum_dsl_transform_data_lifts_state_value() {
         let proto_type = ProtoAttributeType::CustomEnum {
             name: "DnsName".to_string(),
-            base: Box::new(ProtoAttributeType::String),
+            base: Box::new(ProtoAttributeType::String {
+                pattern: None,
+                length: None,
+                validate: None,
+                to_dsl: None,
+                identity: None,
+            }),
             namespace: "aws.route53.HostedZone".to_string(),
             dsl_transform: Some(ProtoDslTransform::StripSuffix(".".to_string())),
         };

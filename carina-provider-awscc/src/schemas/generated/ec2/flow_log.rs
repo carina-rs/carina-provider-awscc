@@ -23,8 +23,10 @@ const VALID_RESOURCE_TYPE: &[&str] = &[
 
 const VALID_TRAFFIC_TYPE: &[&str] = &["ACCEPT", "ALL", "REJECT"];
 
+#[allow(dead_code)]
 const VALID_MAX_AGGREGATION_INTERVAL_VALUES: &[i64] = &[60, 600];
 
+#[allow(dead_code)]
 fn validate_max_aggregation_interval_int_enum(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::Int(n)) = value {
         if VALID_MAX_AGGREGATION_INTERVAL_VALUES.contains(n) {

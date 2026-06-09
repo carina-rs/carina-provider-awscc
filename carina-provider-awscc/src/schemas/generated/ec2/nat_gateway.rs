@@ -7,14 +7,14 @@
 use crate::schemas::config::AwsccSchemaConfig;
 use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{
-    AttributeSchema, AttributeType, OperationConfig, ResourceSchema, StructField, legacy_validator,
-    types,
+    AttributeSchema, AttributeType, OperationConfig, ResourceSchema, StructField, types,
 };
 
 const VALID_AVAILABILITY_MODE: &[&str] = &["zonal", "regional"];
 
 const VALID_CONNECTIVITY_TYPE: &[&str] = &["public", "private"];
 
+#[allow(dead_code)]
 fn validate_secondary_private_ip_address_count_range(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::Int(n)) = value {
         if *n < 1 {
@@ -109,7 +109,7 @@ pub fn ec2_nat_gateway_config() -> AwsccSchemaConfig {
                 .with_provider_name("SecondaryAllocationIds"),
         )
         .attribute(
-            AttributeSchema::new("secondary_private_ip_address_count", AttributeType::custom(None, AttributeType::int(), None, None, legacy_validator(validate_secondary_private_ip_address_count_range), None))
+            AttributeSchema::new("secondary_private_ip_address_count", AttributeType::refined_int(None, Some((Some(1), None))))
                 .with_description("[Private NAT gateway only] The number of secondary private IPv4 addresses you want to assign to the NAT gateway. For more information about secondary addresses, see [Create a NAT gateway](https://docs.aws.amazon.com/vpc/latest/userguide/vpc-nat-gateway.html#nat-gateway-creating) in the *Amazon Virtual Private Cloud User Guide*. ``SecondaryPrivateIpAddressCount`` and ``SecondaryPrivateIpAddresses`` cannot be set at the same time.")
                 .with_provider_name("SecondaryPrivateIpAddressCount"),
         )
