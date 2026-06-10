@@ -22,7 +22,7 @@ use indexmap::IndexMap;
 use carina_core::provider::{
     BoxFuture, CreateRequest, DeleteRequest, Provider, ProviderError, ProviderFactory,
     ProviderNormalizer, ProviderResult, ReadRequest, SavedAttrs, UpdateRequest,
-    merge_default_tags_for_provider,
+    merge_default_tags_for_provider, ready_noop,
 };
 use carina_core::resource::{ConcreteValue, DataSource, Resource, ResourceId, State, Value};
 use carina_core::schema::SchemaRegistry;
@@ -31,20 +31,16 @@ use crate::provider::AwsccProviderConfig;
 
 /// Schema extension for the AWSCC provider.
 ///
-/// Handles plan-time normalization of enum identifiers and hydration of
-/// unreturned attributes from saved state.
+/// Handles provider-local state normalization and hydration of unreturned
+/// attributes from saved state.
 pub struct AwsccNormalizer;
 
 impl ProviderNormalizer for AwsccNormalizer {
-    // The trait is async (carina#3112) only so the WASM host impl can
-    // `.await` the guest directly. These bodies are pure (enum
-    // resolution, state canonicalization, attr hydration, tag merge —
-    // no I/O), so wrapping the existing sync logic in a ready future is
-    // sufficient; no logic change.
-    fn normalize_desired<'a>(&'a self, resources: &'a mut [Resource]) -> BoxFuture<'a, ()> {
-        Box::pin(async move {
-            crate::provider::resolve_enum_identifiers_impl(resources);
-        })
+    // Desired-side enum canonicalization is owned by the host. Keeping
+    // provider-side enum re-derivation here can re-namespace host-canonical
+    // open-enum API values and leak DSL strings to AWS.
+    fn normalize_desired<'a>(&'a self, _resources: &'a mut [Resource]) -> BoxFuture<'a, ()> {
+        ready_noop()
     }
 
     fn normalize_state<'a>(
