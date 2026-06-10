@@ -227,11 +227,14 @@ fn apply_enum_dsl_transform(value: &Value, attr_type: &AttributeType) -> Option<
         } => transform,
         _ => return None,
     };
-    let Value::Concrete(ConcreteValue::String(s)) = value else {
-        return None;
+    let s = match value {
+        Value::Concrete(ConcreteValue::String(s)) => s.as_str(),
+        Value::Concrete(ConcreteValue::EnumIdentifier(s)) => s.as_str(),
+        Value::Concrete(ConcreteValue::CanonicalEnum(c)) => c.api_value(),
+        _ => return None,
     };
     let transformed = transform.apply(s);
-    (transformed != *s).then(|| Value::Concrete(ConcreteValue::String(transformed.into_owned())))
+    (transformed != s).then(|| Value::Concrete(ConcreteValue::String(transformed.into_owned())))
 }
 
 /// Canonicalize attributes of every awscc state whose declared schema
@@ -388,7 +391,7 @@ mod tests {
         let mut stmt = IndexMap::new();
         stmt.insert(
             "effect".to_string(),
-            Value::Concrete(ConcreteValue::EnumIdentifier("allow".to_string())),
+            Value::Concrete(ConcreteValue::enum_identifier("allow")),
         );
         stmt.insert(
             "action".to_string(),

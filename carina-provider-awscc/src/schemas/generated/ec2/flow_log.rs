@@ -97,7 +97,7 @@ pub fn ec2_flow_log_config() -> AwsccSchemaConfig {
                 .with_provider_name("LogGroupName"),
         )
         .attribute(
-            AttributeSchema::new("max_aggregation_interval", AttributeType::custom(None, AttributeType::int(), None, None, legacy_validator(validate_max_aggregation_interval_int_enum), None))
+            AttributeSchema::new("max_aggregation_interval", AttributeType::refined_int_with_validator(None, None, legacy_validator(validate_max_aggregation_interval_int_enum)))
                 .create_only()
                 .with_description("The maximum interval of time during which a flow of packets is captured and aggregated into a flow log record. You can specify 60 seconds (1 minute) or 600 seconds (10 minutes).")
                 .with_provider_name("MaxAggregationInterval"),

@@ -271,7 +271,7 @@ mod tests {
             vec![
                 (
                     "version".to_string(),
-                    Value::Concrete(ConcreteValue::EnumIdentifier("2012_10_17".to_string())),
+                    Value::Concrete(ConcreteValue::enum_identifier("2012_10_17")),
                 ),
                 (
                     "statement".to_string(),
@@ -280,9 +280,7 @@ mod tests {
                             vec![
                                 (
                                     "effect".to_string(),
-                                    Value::Concrete(ConcreteValue::EnumIdentifier(
-                                        "allow".to_string(),
-                                    )),
+                                    Value::Concrete(ConcreteValue::enum_identifier("allow")),
                                 ),
                                 (
                                     "action".to_string(),

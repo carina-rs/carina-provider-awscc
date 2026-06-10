@@ -11,9 +11,8 @@ use carina_core::schema::{
 };
 
 pub fn arn() -> AttributeType {
-    AttributeType::custom(
+    AttributeType::refined_string_with_validator(
         Some(carina_aws_types::provider_type("ecs", "Cluster", "Arn")),
-        carina_aws_types::arn(),
         Some("^arn:(aws|aws-cn|aws-us-gov):ecs:[^:]*:[^:]*:cluster/.+$".to_string()),
         None,
         legacy_validator(|value| {

@@ -10,9 +10,8 @@ use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, legacy
 use regex::Regex;
 
 pub fn arn() -> AttributeType {
-    AttributeType::custom(
+    AttributeType::refined_string_with_validator(
         Some(carina_aws_types::provider_type("logs", "LogGroup", "Arn")),
-        carina_aws_types::arn(),
         Some("^arn:(aws|aws-cn|aws-us-gov):logs:[^:]*:[^:]*:log-group:.+$".to_string()),
         None,
         legacy_validator(|value| {
@@ -101,7 +100,7 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
                 .with_provider_name("ResourcePolicyDocument"),
         )
         .attribute(
-            AttributeSchema::new("retention_in_days", AttributeType::custom(None, AttributeType::int(), None, None, legacy_validator(validate_retention_in_days_int_enum), None))
+            AttributeSchema::new("retention_in_days", AttributeType::refined_int_with_validator(None, None, legacy_validator(validate_retention_in_days_int_enum)))
                 .with_description("The number of days to retain the log events in the specified log group. Possible values are: 1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096, 1827, 2192, 2557, 2922, 3288, and 3653. To set a log group so that its log events do not expire, do not specify this property.")
                 .with_provider_name("RetentionInDays"),
         )

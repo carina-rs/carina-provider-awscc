@@ -12,9 +12,8 @@ use carina_core::schema::{
 use regex::Regex;
 
 pub fn arn() -> AttributeType {
-    AttributeType::custom(
+    AttributeType::refined_string_with_validator(
         Some(carina_aws_types::provider_type("s3", "Bucket", "Arn")),
-        carina_aws_types::arn(),
         Some("^arn:(aws|aws-cn|aws-us-gov):s3:::.+$".to_string()),
         None,
         legacy_validator(|value| {
