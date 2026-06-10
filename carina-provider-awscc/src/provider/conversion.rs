@@ -11,7 +11,7 @@ use carina_core::schema::{AttributeType, ResourceSchema, Shape, ShapeWalkBudget,
 use serde_json::json;
 
 use carina_aws_types::canonicalize_enum_value;
-use carina_core::utils::{convert_enum_value, extract_enum_value_with_values};
+use carina_core::utils::canonicalize_enum_to_api;
 
 fn struct_fields_for<'a>(
     schema: &'a ResourceSchema,
@@ -257,20 +257,12 @@ pub(crate) fn dsl_value_to_aws_with_defs(
     let is_namespaced_enum = matches!(shape, Shape::Enum { identity: _, .. });
     if is_namespaced_enum {
         match value {
-            // Phase 3 of carina#2986 routes DSL-source enum values to
-            // `EnumIdentifier`; the same text payload also still arrives
-            // as `String` from state-loader / aws_value_to_dsl paths
-            // that haven't been promoted yet. Accept both — the
-            // namespace-strip / `api_for` lookup below is text-based
-            // and shape-agnostic.
+            // Listed enum `String` values can arrive from read/state JSON
+            // conversion or older saved state. Keep schema-aware
+            // canonicalization for those closed enums. Validator-only enums
+            // have no positional fallback after host canonicalization; pass
+            // strings through unchanged so schema desync stays visible.
             Value::Concrete(ConcreteValue::String(s)) => {
-                // For value-listed enums: extract the trailing segment (handling
-                // dotted values like the legacy `ipsec.1` shape that may
-                // still arrive from older state) and look up the
-                // API-canonical spelling via `DslMap::api_for`. The
-                // alias table is now exhaustive (carina-rs/carina#2980 /
-                // awscc#222) so every DSL spelling — including identity
-                // rows — round-trips through this single lookup.
                 let resolved = if let Shape::Enum {
                     values: Some(values),
                     dsl_aliases,
@@ -278,24 +270,17 @@ pub(crate) fn dsl_value_to_aws_with_defs(
                 } = shape
                 {
                     let valid: Vec<&str> = values.iter().map(String::as_str).collect();
-                    let raw_extracted = extract_enum_value_with_values(s, &valid);
-                    carina_core::schema::DslMap::new(dsl_aliases, None).api_for(raw_extracted)
+                    canonicalize_enum_to_api(
+                        s,
+                        &valid,
+                        &carina_core::schema::DslMap::new(dsl_aliases, None),
+                    )
                 } else {
-                    // Validator-only enum shorthands (e.g. Region)
-                    // use a closure-shaped DslMap; the convention there is
-                    // underscores in DSL, hyphens in the AWS API.
-                    convert_enum_value(s).replace('_', "-")
+                    s.clone()
                 };
                 Some(json!(resolved))
             }
             Value::Concrete(ConcreteValue::EnumIdentifier(s)) => {
-                // For value-listed enums: extract the trailing segment (handling
-                // dotted values like the legacy `ipsec.1` shape that may
-                // still arrive from older state) and look up the
-                // API-canonical spelling via `DslMap::api_for`. The
-                // alias table is now exhaustive (carina-rs/carina#2980 /
-                // awscc#222) so every DSL spelling — including identity
-                // rows — round-trips through this single lookup.
                 let resolved = if let Shape::Enum {
                     values: Some(values),
                     dsl_aliases,
@@ -303,13 +288,17 @@ pub(crate) fn dsl_value_to_aws_with_defs(
                 } = shape
                 {
                     let valid: Vec<&str> = values.iter().map(String::as_str).collect();
-                    let raw_extracted = extract_enum_value_with_values(s.as_str(), &valid);
-                    carina_core::schema::DslMap::new(dsl_aliases, None).api_for(raw_extracted)
+                    canonicalize_enum_to_api(
+                        s.as_str(),
+                        &valid,
+                        &carina_core::schema::DslMap::new(dsl_aliases, None),
+                    )
                 } else {
-                    // Validator-only enum shorthands (e.g. Region)
-                    // use a closure-shaped DslMap; the convention there is
-                    // underscores in DSL, hyphens in the AWS API.
-                    convert_enum_value(s.as_str()).replace('_', "-")
+                    // Raw EnumIdentifier at a validator-only enum position
+                    // means the host did not canonicalize it; pass it through
+                    // so AWS-side rejection is visible instead of silently
+                    // mis-splitting.
+                    s.as_str().to_string()
                 };
                 Some(json!(resolved))
             }
@@ -804,39 +793,7 @@ mod tests {
         let config = crate::schemas::generated::ec2::vpc_endpoint::ec2_vpc_endpoint_config();
         let attr_schema = config.schema.attributes.get("vpc_endpoint_type").unwrap();
 
-        // 1. DSL side: resolve_enum_identifiers_impl converts bare `Gateway` ident
-        let mut resource = carina_core::resource::Resource::with_provider(
-            "awscc",
-            "ec2.VpcEndpoint",
-            "test",
-            None,
-        );
-        resource.set_attr(
-            "vpc_id".to_string(),
-            Value::Concrete(ConcreteValue::String("vpc-123".to_string())),
-        );
-        resource.set_attr(
-            "vpc_endpoint_type".to_string(),
-            Value::Concrete(ConcreteValue::String("Gateway".to_string())),
-        );
-
-        let mut resources = vec![resource];
-        crate::provider::resolve_enum_identifiers_impl(&mut resources);
-
-        let dsl_resolved = resources[0].attributes["vpc_endpoint_type"].clone();
-        // Per naming-conventions design D7 / issue #199, the DSL spelling is
-        // snake_case; the bare ident `Gateway` is accepted (transition
-        // convenience) but resolves to the snake_case namespaced form, since
-        // `resolve_enum_identifiers_impl` runs `to_dsl` on the input.
-        assert_eq!(
-            dsl_resolved,
-            Value::Concrete(ConcreteValue::String(
-                "aws.ec2.VpcEndpoint.VpcEndpointType.gateway".to_string()
-            )),
-            "DSL bare ident `Gateway` should resolve to snake_case namespaced form"
-        );
-
-        // 2. AWS read-back side.
+        // AWS read-back side.
         let aws_json = serde_json::json!("Gateway");
         let aws_dsl = aws_value_to_dsl_with_defs(
             "vpc_endpoint_type",
@@ -853,7 +810,7 @@ mod tests {
             "AWS read-back must persist the API-canonical value"
         );
 
-        // 3. No false diff: reconciliation now happens in carina-core
+        // No false diff: reconciliation happens in carina-core
         // (state-lift + differ), not by the provider emitting identical
         // strings on both sides. Assert the awscc-owned half — the
         // persisted API value lifts to the canonical fully-qualified identifier.
@@ -892,7 +849,7 @@ mod tests {
     }
 
     #[test]
-    fn test_dsl_value_to_aws_converts_underscores_for_region() {
+    fn test_dsl_value_to_aws_passes_through_validator_only_string() {
         let attr_type = AttributeType::enum_(
             carina_aws_types::provider_bare_type(&[], "Region"),
             None,
@@ -911,7 +868,29 @@ mod tests {
             &std::collections::BTreeMap::new(),
         );
 
-        assert_eq!(result, Some(json!("ap-northeast-1")));
+        assert_eq!(result, Some(json!("aws.Region.ap_northeast_1")));
+    }
+
+    #[test]
+    fn test_dsl_value_to_aws_raw_enum_identifier_passes_through_verbatim() {
+        let attr_type = AttributeType::enum_(
+            carina_aws_types::provider_bare_type(&[], "Region"),
+            None,
+            vec![],
+            Some(legacy_validator(|_| Ok(()))),
+            None,
+        );
+        let raw = "aws.Region.ap_northeast_1";
+        let value = Value::Concrete(ConcreteValue::enum_identifier(raw));
+        let result = dsl_value_to_aws_with_defs(
+            &value,
+            &attr_type,
+            "logs.LogGroup",
+            "region",
+            &std::collections::BTreeMap::new(),
+        );
+
+        assert_eq!(result, Some(json!(raw)));
     }
 
     #[test]
@@ -1298,9 +1277,9 @@ mod tests {
     /// the **same `EnumIdentifier` shape** (namespaced for `version`, bare
     /// alias for `effect`) to prove awscc has no parallel gap:
     /// `dsl_value_to_aws` accepts both `String | EnumIdentifier` at the
-    /// StringEnum branch and resolves via `DslMap::api_for`, so the Cloud
-    /// Control `desired_state` payload still gets the AWS wire form
-    /// (`"2012-10-17"`, `"Allow"`).
+    /// StringEnum branch and resolves via `canonicalize_enum_to_api`, so
+    /// the Cloud Control `desired_state` payload still gets the AWS wire
+    /// form (`"2012-10-17"`, `"Allow"`).
     #[test]
     fn test_dsl_value_to_aws_iam_policy_document_canonicalizes_namespaced_and_alias_enums() {
         use carina_aws_types::iam_policy_document;

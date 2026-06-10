@@ -1,67 +1,15 @@
-//! Plan-time normalization of enum identifiers and state hydration.
+//! State normalization and state hydration.
 //!
-//! This module contains standalone functions used by `ProviderNormalizer` to resolve
-//! enum identifiers in resources and restore unreturned attributes from saved state.
+//! This module contains standalone functions used by `ProviderNormalizer` to normalize
+//! read state and restore unreturned attributes from saved state.
 
 use indexmap::IndexMap;
 use std::collections::HashMap;
 
-use carina_core::resource::{ConcreteValue, Resource, ResourceId, State, Value};
+use carina_core::resource::{ConcreteValue, ResourceId, State, Value};
 use carina_core::schema::{
     AttributeType, RawShape, ResourceSchema, Shape, ShapeWalkBudget, StructField,
 };
-
-/// Resolve enum identifiers in resources to their fully-qualified DSL format.
-///
-/// For each awscc resource, looks up the schema and resolves bare identifiers
-/// (e.g., `advanced`) or TypeName.value identifiers (e.g., `Tier.advanced`)
-/// into fully-qualified namespaced strings (e.g., `awscc.ec2.Ipam.Tier.advanced`).
-pub fn resolve_enum_identifiers_impl(resources: &mut [Resource]) {
-    for resource in resources.iter_mut() {
-        // Only handle awscc resources
-        if resource.id.provider != "awscc" {
-            continue;
-        }
-
-        // Find the matching schema config via cached O(1) lookup
-        let config = match crate::schemas::generated::get_config_by_type(&resource.id.resource_type)
-        {
-            Some(c) => c,
-            None => continue,
-        };
-
-        // Resolve enum attributes
-        let mut resolved_attrs = HashMap::new();
-        for (key, value) in &resource.attributes {
-            if let Some(attr_schema) = config.schema.attributes.get(key.as_str())
-                && let Some(parts) = attr_schema.attr_type.enum_parts()
-            {
-                if let Some(resolved) = carina_core::utils::resolve_enum_value(value, &parts) {
-                    resolved_attrs.insert(key.clone(), resolved);
-                } else {
-                    resolved_attrs.insert(key.clone(), value.clone());
-                }
-                continue;
-            }
-
-            // Handle struct fields containing schema-level string enums.
-            if let Some(attr_schema) = config.schema.attributes.get(key.as_str()) {
-                let struct_fields = struct_fields_for(&attr_schema.attr_type, &config.schema);
-
-                if let Some(fields) = struct_fields {
-                    let resolved = resolve_struct_enum_values(value, fields, &config.schema);
-                    resolved_attrs.insert(key.clone(), resolved);
-                    continue;
-                }
-            }
-
-            resolved_attrs.insert(key.clone(), value.clone());
-        }
-        for (key, value) in resolved_attrs {
-            resource.set_attr(key, value);
-        }
-    }
-}
 
 /// Extract the struct-field slice an attribute type advertises, looking
 /// through a single `List` wrapper. Returns `None` for any other shape.
@@ -161,10 +109,9 @@ fn resolve_struct_enum_values(
 /// Normalize enum values in current states to their fully-qualified DSL format.
 ///
 /// State files store raw AWS values (e.g., `"ap-northeast-1a"`, `"default"`).
-/// After `normalize_desired()` converts desired values to DSL enum format
-/// (e.g., `"awscc.ec2.Subnet.AvailabilityZone.ap_northeast_1a"`), the differ
-/// would see a false diff. This function normalizes state values the same way
-/// so that both sides use the same representation.
+/// The host owns desired/state enum canonicalization for schema-known enum
+/// positions, but this provider still applies awscc-specific read/state
+/// transforms and legacy state normalization here.
 pub fn normalize_state_enums_impl(current_states: &mut HashMap<ResourceId, State>) {
     for (resource_id, state) in current_states.iter_mut() {
         if !state.exists || resource_id.provider != "awscc" {
@@ -312,176 +259,34 @@ pub fn restore_unreturned_attrs_impl(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use carina_core::provider::ProviderNormalizer;
+    use carina_core::resource::Resource;
     use carina_core::schema::legacy_validator;
 
     fn test_resource_schema() -> ResourceSchema {
         ResourceSchema::new("test.Resource")
     }
 
-    #[test]
-    fn test_resolve_enum_identifiers_bare_ident() {
-        let mut resource = Resource::with_provider("awscc", "ec2.Vpc", "test", None);
+    #[tokio::test]
+    async fn normalize_desired_preserves_host_canonical_enum_strings() {
+        let mut resource = Resource::with_provider("awscc", "ec2.Subnet", "test", None);
         resource.set_attr(
-            "instance_tenancy".to_string(),
-            Value::Concrete(ConcreteValue::String("dedicated".to_string())),
+            "availability_zone".to_string(),
+            Value::Concrete(ConcreteValue::String("ap-northeast-1a".to_string())),
         );
-
         let mut resources = vec![resource];
-        resolve_enum_identifiers_impl(&mut resources);
-        match resources[0].get_attr("instance_tenancy").unwrap() {
-            Value::Concrete(ConcreteValue::String(s)) => assert!(
-                s.contains("InstanceTenancy") && s.contains("dedicated"),
-                "Expected namespaced enum, got: {}",
-                s
-            ),
-            other => panic!("Expected String, got: {:?}", other),
-        }
-    }
 
-    #[test]
-    fn test_resolve_enum_identifiers_typename_value() {
-        let mut resource = Resource::with_provider("awscc", "ec2.Vpc", "test", None);
-        resource.set_attr(
-            "instance_tenancy".to_string(),
-            Value::Concrete(ConcreteValue::String(
-                "InstanceTenancy.dedicated".to_string(),
-            )),
-        );
+        crate::AwsccNormalizer
+            .normalize_desired(&mut resources)
+            .await;
 
-        let mut resources = vec![resource];
-        resolve_enum_identifiers_impl(&mut resources);
-        match resources[0].get_attr("instance_tenancy").unwrap() {
-            Value::Concrete(ConcreteValue::String(s)) => assert!(
-                s.contains("InstanceTenancy") && s.contains("dedicated"),
-                "Expected namespaced enum, got: {}",
-                s
-            ),
-            other => panic!("Expected String, got: {:?}", other),
-        }
-    }
-
-    #[test]
-    fn test_resolve_enum_identifiers_skips_non_awscc() {
-        let mut resource = Resource::with_provider("aws", "s3.Bucket", "test", None);
-        resource.set_attr(
-            "instance_tenancy".to_string(),
-            Value::Concrete(ConcreteValue::String("dedicated".to_string())),
-        );
-
-        let mut resources = vec![resource];
-        resolve_enum_identifiers_impl(&mut resources);
-        assert!(matches!(
-            resources[0].get_attr("instance_tenancy").unwrap(),
-            Value::Concrete(ConcreteValue::String(_))
-        ));
-    }
-
-    /// aws#313 bare-`effect` path: the issue notes `effect` is
-    /// typically written bare (`effect = allow`) — the parser emits
-    /// `ConcreteValue::EnumIdentifier("allow")`, which exercises
-    /// `resolve_enum_value` Case 1 (no dots), a different branch than
-    /// the already-fully-qualified `version` path. The desired side
-    /// must resolve to the same fully-qualified DSL form that the
-    /// AWS-read side produces from raw `"Allow"`
-    /// (`aws.iam.PolicyDocument.Statement.Effect.allow`), or the differ diverges.
-    #[test]
-    fn test_aws313_bare_effect_desired_resolves_to_namespaced() {
-        use indexmap::IndexMap;
-
-        let mut stmt = IndexMap::new();
-        stmt.insert(
-            "effect".to_string(),
-            Value::Concrete(ConcreteValue::enum_identifier("allow")),
-        );
-        stmt.insert(
-            "action".to_string(),
-            Value::Concrete(ConcreteValue::String("sts:AssumeRole".to_string())),
-        );
-        let mut policy = IndexMap::new();
-        policy.insert(
-            "version".to_string(),
-            Value::Concrete(ConcreteValue::String(
-                "aws.iam.PolicyDocument.Version.2012_10_17".to_string(),
-            )),
-        );
-        policy.insert(
-            "statement".to_string(),
-            Value::Concrete(ConcreteValue::List(vec![Value::Concrete(
-                ConcreteValue::Map(stmt),
-            )])),
-        );
-        let mut resource = Resource::with_provider("awscc", "iam.Role", "rd-role", None);
-        resource.set_attr(
-            "assume_role_policy_document".to_string(),
-            Value::Concrete(ConcreteValue::Map(policy)),
-        );
-
-        let mut resources = vec![resource];
-        resolve_enum_identifiers_impl(&mut resources);
-
-        let Some(Value::Concrete(ConcreteValue::Map(doc))) =
-            resources[0].get_attr("assume_role_policy_document")
-        else {
-            panic!("expected assume_role_policy_document Map");
-        };
-        let Some(Value::Concrete(ConcreteValue::List(stmts))) = doc.get("statement") else {
-            panic!("expected statement List");
-        };
-        let Some(Value::Concrete(ConcreteValue::Map(s0))) = stmts.first() else {
-            panic!("expected statement[0] Map");
-        };
         assert_eq!(
-            s0.get("effect"),
+            resources[0].get_attr("availability_zone"),
             Some(&Value::Concrete(ConcreteValue::String(
-                "aws.iam.PolicyDocument.Statement.Effect.allow".to_string()
+                "ap-northeast-1a".to_string()
             ))),
-            "bare `effect = allow` desired must resolve to the same \
-             fully-qualified form the read side produces from \"Allow\""
+            "host-canonical open-enum API values must not be re-namespaced"
         );
-    }
-
-    #[test]
-    fn test_resolve_enum_identifiers_hyphen_to_underscore() {
-        let mut resource = Resource::with_provider("awscc", "ec2.FlowLog", "test", None);
-        resource.set_attr(
-            "log_destination_type".to_string(),
-            Value::Concrete(ConcreteValue::String("cloud_watch_logs".to_string())),
-        );
-
-        let mut resources = vec![resource];
-        resolve_enum_identifiers_impl(&mut resources);
-        match resources[0].get_attr("log_destination_type").unwrap() {
-            Value::Concrete(ConcreteValue::String(s)) => {
-                assert_eq!(
-                    s, "aws.ec2.FlowLog.LogDestinationType.cloud_watch_logs",
-                    "Expected underscored namespaced enum, got: {}",
-                    s
-                );
-            }
-            other => panic!("Expected String, got: {:?}", other),
-        }
-    }
-
-    #[test]
-    fn test_resolve_enum_identifiers_hyphen_string_to_underscore() {
-        let mut resource = Resource::with_provider("awscc", "ec2.FlowLog", "test", None);
-        resource.set_attr(
-            "log_destination_type".to_string(),
-            Value::Concrete(ConcreteValue::String("cloud-watch-logs".to_string())),
-        );
-
-        let mut resources = vec![resource];
-        resolve_enum_identifiers_impl(&mut resources);
-        match resources[0].get_attr("log_destination_type").unwrap() {
-            Value::Concrete(ConcreteValue::String(s)) => {
-                assert_eq!(
-                    s, "aws.ec2.FlowLog.LogDestinationType.cloud_watch_logs",
-                    "Hyphenated string should be converted to underscore form, got: {}",
-                    s
-                );
-            }
-            other => panic!("Expected String, got: {:?}", other),
-        }
     }
 
     #[test]
@@ -636,52 +441,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_resolve_enum_identifiers_ip_protocol_all_alias() {
-        let mut resource =
-            Resource::with_provider("awscc", "ec2.SecurityGroupEgress", "test", None);
-        resource.set_attr(
-            "ip_protocol".to_string(),
-            Value::Concrete(ConcreteValue::String("all".to_string())),
-        );
-
-        let mut resources = vec![resource];
-        resolve_enum_identifiers_impl(&mut resources);
-        match resources[0].get_attr("ip_protocol").unwrap() {
-            Value::Concrete(ConcreteValue::String(s)) => {
-                assert_eq!(
-                    s, "aws.ec2.SecurityGroupEgress.IpProtocol.all",
-                    "Expected namespaced IpProtocol.all, got: {}",
-                    s
-                );
-            }
-            other => panic!("Expected String, got: {:?}", other),
-        }
-    }
-
-    #[test]
-    fn test_resolve_enum_identifiers_ip_protocol_tcp() {
-        let mut resource =
-            Resource::with_provider("awscc", "ec2.SecurityGroupEgress", "test", None);
-        resource.set_attr(
-            "ip_protocol".to_string(),
-            Value::Concrete(ConcreteValue::String("tcp".to_string())),
-        );
-
-        let mut resources = vec![resource];
-        resolve_enum_identifiers_impl(&mut resources);
-        match resources[0].get_attr("ip_protocol").unwrap() {
-            Value::Concrete(ConcreteValue::String(s)) => {
-                assert_eq!(
-                    s, "aws.ec2.SecurityGroupEgress.IpProtocol.tcp",
-                    "Expected namespaced IpProtocol.tcp, got: {}",
-                    s
-                );
-            }
-            other => panic!("Expected String, got: {:?}", other),
-        }
-    }
-
     /// Helper to create struct fields with an enum type for testing
     fn test_ip_protocol_fields() -> Vec<StructField> {
         vec![
@@ -802,58 +561,6 @@ mod tests {
             }
         } else {
             panic!("Expected List");
-        }
-    }
-
-    #[test]
-    fn test_resolve_enum_identifiers_impl_struct_field() {
-        let mut resource = Resource::with_provider("awscc", "ec2.SecurityGroup", "test-sg", None);
-        resource.set_attr(
-            "group_description".to_string(),
-            Value::Concrete(ConcreteValue::String("test".to_string())),
-        );
-        let mut egress_map = IndexMap::new();
-        egress_map.insert(
-            "ip_protocol".to_string(),
-            Value::Concrete(ConcreteValue::String("all".to_string())),
-        );
-        egress_map.insert(
-            "cidr_ip".to_string(),
-            Value::Concrete(ConcreteValue::String("0.0.0.0/0".to_string())),
-        );
-        resource.set_attr(
-            "security_group_egress".to_string(),
-            Value::Concrete(ConcreteValue::List(vec![Value::Concrete(
-                ConcreteValue::Map(egress_map),
-            )])),
-        );
-
-        let mut resources = vec![resource];
-        resolve_enum_identifiers_impl(&mut resources);
-
-        if let Value::Concrete(ConcreteValue::List(items)) =
-            resources[0].get_attr("security_group_egress").unwrap()
-        {
-            if let Value::Concrete(ConcreteValue::Map(m)) = &items[0] {
-                match &m["ip_protocol"] {
-                    Value::Concrete(ConcreteValue::String(s)) => {
-                        assert_eq!(
-                            s, "aws.ec2.SecurityGroup.Egress.IpProtocol.all",
-                            "Expected namespaced Egress.IpProtocol.all in struct field, got: {}",
-                            s
-                        );
-                    }
-                    other => panic!("Expected String for ip_protocol, got: {:?}", other),
-                }
-                match &m["cidr_ip"] {
-                    Value::Concrete(ConcreteValue::String(s)) => assert_eq!(s, "0.0.0.0/0"),
-                    other => panic!("Expected String for cidr_ip, got: {:?}", other),
-                }
-            } else {
-                panic!("Expected Map in egress list");
-            }
-        } else {
-            panic!("Expected List for security_group_egress");
         }
     }
 
@@ -1297,8 +1004,6 @@ mod tests {
         // A WebACL rule carrying `captcha_config`, a `Ref("CaptchaConfig")`
         // field of the generated `Rule` struct (awscc#286). The recursion
         // must peel this `Ref` against the WebACL's `defs` map.
-        let mut resource = Resource::with_provider("awscc", "wafv2.WebAcl", "test-acl", None);
-
         let mut immunity = IndexMap::new();
         immunity.insert(
             "immunity_time".to_string(),
@@ -1320,20 +1025,17 @@ mod tests {
             Value::Concrete(ConcreteValue::Map(captcha_config)),
         );
 
-        resource.set_attr(
-            "rules".to_string(),
-            Value::Concrete(ConcreteValue::List(vec![Value::Concrete(
-                ConcreteValue::Map(rule),
-            )])),
-        );
-
-        let mut resources = vec![resource];
+        let value = Value::Concrete(ConcreteValue::List(vec![Value::Concrete(
+            ConcreteValue::Map(rule),
+        )]));
+        let config = crate::schemas::generated::wafv2::web_acl::wafv2_web_acl_config();
+        let attr_schema = config.schema.attributes.get("rules").unwrap();
+        let fields = struct_fields_for(&attr_schema.attr_type, &config.schema).unwrap();
         // Before the fix this panics: the recursion peels the
         // `Ref("CaptchaConfig")` field against an empty definition map.
-        resolve_enum_identifiers_impl(&mut resources);
+        let resolved = resolve_struct_enum_values(&value, fields, &config.schema);
 
-        let Value::Concrete(ConcreteValue::List(rules)) = resources[0].get_attr("rules").unwrap()
-        else {
+        let Value::Concrete(ConcreteValue::List(rules)) = &resolved else {
             panic!("expected rules list");
         };
         let Value::Concrete(ConcreteValue::Map(rule)) = &rules[0] else {

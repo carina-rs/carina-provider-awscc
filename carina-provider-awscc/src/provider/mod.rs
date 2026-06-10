@@ -7,7 +7,7 @@
 //!
 //! - `cloudcontrol` - Low-level Cloud Control API methods and retry/error handling
 //! - `conversion` - Value conversion between DSL and AWS JSON formats
-//! - `normalizer` - Plan-time enum resolution and state hydration
+//! - `normalizer` - State normalization and hydration
 //! - `operations` - High-level resource operations (read, create, update, delete)
 //! - `s3` - S3-specific operations (empty bucket for force_delete)
 //! - `special_cases` - Resource-type-specific attribute handling
@@ -37,7 +37,7 @@ use crate::schemas::config::AwsccSchemaConfig;
 // Re-export public API
 pub use normalizer::{
     canonicalize_string_or_list_states_impl, normalize_state_enums_impl,
-    resolve_enum_identifiers_impl, restore_unreturned_attrs_impl,
+    restore_unreturned_attrs_impl,
 };
 pub(crate) use update::parse_resource_properties;
 
