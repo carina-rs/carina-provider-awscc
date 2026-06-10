@@ -52,8 +52,13 @@ pub fn core_to_proto_value(v: &CoreValue) -> ProtoValue {
         // emit it as `ProtoValue::String` — identical to the `String`
         // arm. The shape distinction is consumed at the validator entry
         // before reaching this conversion.
-        CoreValue::Concrete(ConcreteValue::String(s))
-        | CoreValue::Concrete(ConcreteValue::EnumIdentifier(s)) => ProtoValue::String(s.clone()),
+        CoreValue::Concrete(ConcreteValue::String(s)) => ProtoValue::String(s.clone()),
+        CoreValue::Concrete(ConcreteValue::EnumIdentifier(s)) => {
+            ProtoValue::String(s.as_str().to_string())
+        }
+        CoreValue::Concrete(ConcreteValue::CanonicalEnum(c)) => {
+            ProtoValue::String(c.api_value().to_string())
+        }
         CoreValue::Concrete(ConcreteValue::Int(i)) => ProtoValue::Int(*i),
         CoreValue::Concrete(ConcreteValue::Float(f)) => ProtoValue::Float(*f),
         CoreValue::Concrete(ConcreteValue::Bool(b)) => ProtoValue::Bool(*b),
@@ -273,21 +278,12 @@ fn proto_attr_type_to_core(t: &ProtoAttributeType) -> CoreAttributeType {
             ordered,
             length,
             ..
-        } => {
-            let base = if *ordered {
-                CoreAttributeType::list(proto_attr_type_to_core(element_type))
-            } else {
-                CoreAttributeType::unordered_list(proto_attr_type_to_core(element_type))
-            };
-            CoreAttributeType::custom(
-                None,
-                base,
-                None,
-                *length,
-                legacy_validator(|_| Ok(())),
-                None,
-            )
-        }
+        } => CoreAttributeType::refined_list(
+            proto_attr_type_to_core(element_type),
+            *ordered,
+            *length,
+            legacy_validator(|_| Ok(())),
+        ),
         ProtoAttributeType::Map { inner, key } => CoreAttributeType::map_with_key(
             proto_attr_type_to_core(key),
             proto_attr_type_to_core(inner),
@@ -306,25 +302,38 @@ fn proto_attr_type_to_core(t: &ProtoAttributeType) -> CoreAttributeType {
             length,
             to_dsl,
             ..
-        } => CoreAttributeType::custom(
-            if name.is_empty() {
+        } => {
+            let identity = if name.is_empty() {
                 None
             } else {
                 Some(carina_core::schema::TypeIdentity::from_dotted(name))
-            },
-            custom_base_to_core(base, to_dsl.clone()),
-            // carina#3364: carry the schema `pattern`/`length` so the
-            // host's `validate_custom` can enforce them; dropping them
-            // here is why a violating value only failed at `apply`.
-            pattern.clone(),
-            *length,
-            legacy_validator(|_| Ok(())),
-            // The wire form drops `to_dsl` because `fn` pointers
-            // cannot cross the WASM boundary; structural state
-            // normalization for plugin-provided types is registered
-            // separately on the host.
-            None,
-        ),
+            };
+            let base = proto_attr_type_to_core(base);
+            match base.raw_shape() {
+                CoreRawShape::String { .. } => CoreAttributeType::refined_string(
+                    identity,
+                    pattern.clone(),
+                    *length,
+                    to_dsl.clone(),
+                ),
+                CoreRawShape::Int { .. } => CoreAttributeType::refined_int(
+                    identity,
+                    length.map(|(min, max)| (min.map(|v| v as i64), max.map(|v| v as i64))),
+                ),
+                CoreRawShape::Float { .. } => CoreAttributeType::refined_float(identity, None),
+                CoreRawShape::List {
+                    element_type,
+                    ordered,
+                    ..
+                } => CoreAttributeType::refined_list(
+                    element_type.clone(),
+                    ordered,
+                    *length,
+                    legacy_validator(|_| Ok(())),
+                ),
+                other => panic!("unsupported Custom base in provider protocol: {other:?}"),
+            }
+        }
         ProtoAttributeType::CustomEnum {
             name,
             base,
@@ -536,20 +545,6 @@ fn core_to_proto_attribute_type(t: &CoreAttributeType) -> ProtoAttributeType {
     }
 }
 
-fn custom_base_to_core(
-    base: &ProtoAttributeType,
-    to_dsl: Option<carina_core::schema::DslTransform>,
-) -> CoreAttributeType {
-    match base {
-        ProtoAttributeType::String { .. } => {
-            CoreAttributeType::refined_string(None, None, None, to_dsl)
-        }
-        ProtoAttributeType::Int { .. } => CoreAttributeType::int(),
-        ProtoAttributeType::Float { .. } => CoreAttributeType::float(),
-        _ => proto_attr_type_to_core(base),
-    }
-}
-
 fn core_to_proto_struct_field(f: &CoreStructField) -> ProtoStructField {
     ProtoStructField {
         name: f.name.clone(),
@@ -751,11 +746,10 @@ mod tests {
     fn custom_pattern_and_length_cross_proto_boundary_both_ways() {
         let pattern = "^[a-z]+$";
         let length = (Some(1u64), Some(256u64));
-        let core_type = CoreAttributeType::custom(
+        let core_type = CoreAttributeType::refined_string_with_validator(
             Some(carina_core::schema::TypeIdentity::from_dotted(
                 "awscc.wafv2.WebACL.EntityDescription",
             )),
-            CoreAttributeType::string(),
             Some(pattern.to_string()),
             Some(length),
             legacy_validator(|_| Ok(())),
@@ -800,9 +794,8 @@ mod tests {
     fn anonymous_custom_pattern_only_crosses_proto_boundary() {
         let pattern =
             "^[a-zA-Z0-9=:#@/\\-,.][a-zA-Z0-9+=:#@/\\-,.\\s]+[a-zA-Z0-9+=:#@/\\-,.]{1,256}$";
-        let core_type = CoreAttributeType::custom(
+        let core_type = CoreAttributeType::refined_string_with_validator(
             None,
-            CoreAttributeType::string(),
             Some(pattern.to_string()),
             None,
             legacy_validator(|_| Ok(())),
@@ -897,12 +890,13 @@ mod tests {
             &core_type,
         )
         .expect("state value should lift through named transform");
-        assert_eq!(
-            lifted,
-            CoreValue::Concrete(ConcreteValue::EnumIdentifier(
-                "aws.route53.HostedZone.DnsName.example".to_string()
-            ))
-        );
+        match lifted {
+            CoreValue::Concrete(ConcreteValue::CanonicalEnum(c)) => {
+                assert_eq!(c.identity().to_string(), "aws.route53.HostedZone.DnsName");
+                assert_eq!(c.api_value(), "example");
+            }
+            other => panic!("expected CanonicalEnum, got {other:?}"),
+        }
     }
 
     #[test]
@@ -935,12 +929,16 @@ mod tests {
             &roundtripped,
         )
         .expect("state value should lift through hyphen_to_underscore");
-        assert_eq!(
-            lifted,
-            CoreValue::Concrete(ConcreteValue::EnumIdentifier(
-                "aws.ec2.Subnet.PrivateDnsNameOptionsOnLaunch.HostnameType.ip_name".to_string()
-            ))
-        );
+        match lifted {
+            CoreValue::Concrete(ConcreteValue::CanonicalEnum(c)) => {
+                assert_eq!(
+                    c.identity().to_string(),
+                    "aws.ec2.Subnet.PrivateDnsNameOptionsOnLaunch.HostnameType"
+                );
+                assert_eq!(c.api_value(), "ip-name");
+            }
+            other => panic!("expected CanonicalEnum, got {other:?}"),
+        }
     }
 
     #[test]

@@ -10,13 +10,12 @@ use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, legacy
 use regex::Regex;
 
 pub fn arn() -> AttributeType {
-    AttributeType::custom(
+    AttributeType::refined_string_with_validator(
         Some(carina_aws_types::provider_type(
             "iam",
             "OidcProvider",
             "Arn",
         )),
-        carina_aws_types::arn(),
         Some("^arn:(aws|aws-cn|aws-us-gov):iam::[^:]*:oidc-provider/.+$".to_string()),
         None,
         legacy_validator(|value| {
@@ -93,18 +92,16 @@ pub fn iam_oidc_provider_config() -> AwsccSchemaConfig {
             .attribute(
                 AttributeSchema::new(
                     "thumbprint_list",
-                    AttributeType::custom(
-                        None,
-                        AttributeType::unordered_list(AttributeType::refined_string(
+                    AttributeType::refined_list(
+                        AttributeType::refined_string(
                             None,
                             Some("[0-9A-Fa-f]{40}".to_string()),
                             Some((Some(40), Some(40))),
                             None,
-                        )),
-                        None,
+                        ),
+                        false,
                         None,
                         legacy_validator(validate_list_items_max_5),
-                        None,
                     ),
                 )
                 .with_provider_name("ThumbprintList"),

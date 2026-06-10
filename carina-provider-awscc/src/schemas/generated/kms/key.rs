@@ -9,9 +9,8 @@ use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, legacy_validator};
 
 pub fn arn() -> AttributeType {
-    AttributeType::custom(
+    AttributeType::refined_string_with_validator(
         Some(carina_aws_types::provider_type("kms", "Key", "Arn")),
-        carina_aws_types::arn(),
         Some("^arn:(aws|aws-cn|aws-us-gov):kms:[^:]*:[^:]*:key/.+$".to_string()),
         None,
         legacy_validator(|value| {

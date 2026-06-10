@@ -263,8 +263,7 @@ pub(crate) fn dsl_value_to_aws_with_defs(
             // that haven't been promoted yet. Accept both — the
             // namespace-strip / `api_for` lookup below is text-based
             // and shape-agnostic.
-            Value::Concrete(ConcreteValue::String(s))
-            | Value::Concrete(ConcreteValue::EnumIdentifier(s)) => {
+            Value::Concrete(ConcreteValue::String(s)) => {
                 // For value-listed enums: extract the trailing segment (handling
                 // dotted values like the legacy `ipsec.1` shape that may
                 // still arrive from older state) and look up the
@@ -289,6 +288,32 @@ pub(crate) fn dsl_value_to_aws_with_defs(
                 };
                 Some(json!(resolved))
             }
+            Value::Concrete(ConcreteValue::EnumIdentifier(s)) => {
+                // For value-listed enums: extract the trailing segment (handling
+                // dotted values like the legacy `ipsec.1` shape that may
+                // still arrive from older state) and look up the
+                // API-canonical spelling via `DslMap::api_for`. The
+                // alias table is now exhaustive (carina-rs/carina#2980 /
+                // awscc#222) so every DSL spelling — including identity
+                // rows — round-trips through this single lookup.
+                let resolved = if let Shape::Enum {
+                    values: Some(values),
+                    dsl_aliases,
+                    ..
+                } = shape
+                {
+                    let valid: Vec<&str> = values.iter().map(String::as_str).collect();
+                    let raw_extracted = extract_enum_value_with_values(s.as_str(), &valid);
+                    carina_core::schema::DslMap::new(dsl_aliases, None).api_for(raw_extracted)
+                } else {
+                    // Validator-only enum shorthands (e.g. Region)
+                    // use a closure-shaped DslMap; the convention there is
+                    // underscores in DSL, hyphens in the AWS API.
+                    convert_enum_value(s.as_str()).replace('_', "-")
+                };
+                Some(json!(resolved))
+            }
+            Value::Concrete(ConcreteValue::CanonicalEnum(c)) => Some(json!(c.api_value())),
             _ => value_to_json(value),
         }
     } else if let Shape::List {
@@ -410,8 +435,9 @@ pub(crate) fn dsl_value_to_aws_with_defs(
 /// Convert DSL Value to JSON value
 pub(crate) fn value_to_json(value: &Value) -> Option<serde_json::Value> {
     match value {
-        Value::Concrete(ConcreteValue::String(s))
-        | Value::Concrete(ConcreteValue::EnumIdentifier(s)) => Some(json!(s)),
+        Value::Concrete(ConcreteValue::String(s)) => Some(json!(s)),
+        Value::Concrete(ConcreteValue::EnumIdentifier(s)) => Some(json!(s.as_str())),
+        Value::Concrete(ConcreteValue::CanonicalEnum(c)) => Some(json!(c.api_value())),
         Value::Concrete(ConcreteValue::Bool(b)) => Some(json!(b)),
         Value::Concrete(ConcreteValue::Int(i)) => Some(json!(i)),
         Value::Concrete(ConcreteValue::Float(f)) if f.is_finite() => Some(json!(f)),
@@ -473,6 +499,22 @@ mod tests {
             None,
             None,
         )
+    }
+
+    fn assert_canonical_enum(value: &Value, identity: &str, api_value: &str) {
+        match value {
+            Value::Concrete(ConcreteValue::CanonicalEnum(c)) => {
+                assert_eq!(c.identity().to_string(), identity);
+                assert_eq!(c.api_value(), api_value);
+            }
+            other => panic!("expected CanonicalEnum({identity}, {api_value}), got {other:?}"),
+        }
+    }
+
+    fn assert_canonical_enum_ref(value: Option<&Value>, identity: &str, api_value: &str) {
+        let value = value
+            .unwrap_or_else(|| panic!("expected CanonicalEnum({identity}, {api_value}), got None"));
+        assert_canonical_enum(value, identity, api_value);
     }
 
     #[test]
@@ -590,24 +632,20 @@ mod tests {
         let Value::Concrete(ConcreteValue::Map(lifted_top)) = &lifted else {
             panic!("expected lifted distribution_config to be a Map, got {lifted:?}");
         };
-        assert_eq!(
+        assert_canonical_enum_ref(
             lifted_top.get("price_class"),
-            Some(&Value::Concrete(ConcreteValue::EnumIdentifier(
-                "aws.cloudfront.Distribution.DistributionConfig.PriceClass.price_class_200"
-                    .to_string()
-            )))
+            "aws.cloudfront.Distribution.DistributionConfig.PriceClass",
+            "PriceClass_200",
         );
         let Some(Value::Concrete(ConcreteValue::Map(lifted_dcb))) =
             lifted_top.get("default_cache_behavior")
         else {
             panic!("expected lifted default_cache_behavior map");
         };
-        assert_eq!(
+        assert_canonical_enum_ref(
             lifted_dcb.get("viewer_protocol_policy"),
-            Some(&Value::Concrete(ConcreteValue::EnumIdentifier(
-                "aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.ViewerProtocolPolicy.redirect_to_https"
-                    .to_string()
-            )))
+            "aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.ViewerProtocolPolicy",
+            "redirect-to-https",
         );
     }
 
@@ -821,13 +859,7 @@ mod tests {
         // persisted API value lifts to the canonical fully-qualified identifier.
         let lifted = carina_core::utils::lift_enum_leaves(&aws_dsl, &attr_schema.attr_type)
             .expect("API-canonical state value must lift to an EnumIdentifier");
-        assert_eq!(
-            lifted,
-            Value::Concrete(ConcreteValue::EnumIdentifier(
-                "aws.ec2.VpcEndpoint.VpcEndpointType.gateway".to_string()
-            )),
-            "state-lift must reduce the API value to the canonical fully-qualified identifier"
-        );
+        assert_canonical_enum(&lifted, "aws.ec2.VpcEndpoint.VpcEndpointType", "Gateway");
     }
 
     #[test]
@@ -1278,8 +1310,8 @@ mod tests {
             vec![
                 (
                     "version".to_string(),
-                    Value::Concrete(ConcreteValue::EnumIdentifier(
-                        "aws.iam.PolicyDocument.Version.2012_10_17".to_string(),
+                    Value::Concrete(ConcreteValue::enum_identifier(
+                        "aws.iam.PolicyDocument.Version.2012_10_17",
                     )),
                 ),
                 (
@@ -1289,9 +1321,7 @@ mod tests {
                             vec![
                                 (
                                     "effect".to_string(),
-                                    Value::Concrete(ConcreteValue::EnumIdentifier(
-                                        "allow".to_string(),
-                                    )),
+                                    Value::Concrete(ConcreteValue::enum_identifier("allow")),
                                 ),
                                 (
                                     "action".to_string(),
@@ -1492,11 +1522,10 @@ mod tests {
         let Value::Concrete(ConcreteValue::Map(lifted_map)) = &lifted else {
             panic!("expected lifted policy doc to be a Map, got {lifted:?}");
         };
-        assert_eq!(
+        assert_canonical_enum_ref(
             lifted_map.get("version"),
-            Some(&Value::Concrete(ConcreteValue::EnumIdentifier(
-                "aws.iam.PolicyDocument.Version.2012_10_17".to_string()
-            )))
+            "aws.iam.PolicyDocument.Version",
+            "2012-10-17",
         );
         let Some(Value::Concrete(ConcreteValue::List(stmts))) = lifted_map.get("statement") else {
             panic!("expected statement list");
@@ -1504,11 +1533,10 @@ mod tests {
         let Some(Value::Concrete(ConcreteValue::Map(stmt))) = stmts.first() else {
             panic!("expected statement map");
         };
-        assert_eq!(
+        assert_canonical_enum_ref(
             stmt.get("effect"),
-            Some(&Value::Concrete(ConcreteValue::EnumIdentifier(
-                "aws.iam.PolicyDocument.Statement.Effect.allow".to_string()
-            )))
+            "aws.iam.PolicyDocument.Statement.Effect",
+            "Allow",
         );
     }
 
@@ -1690,6 +1718,28 @@ mod tests {
         let result = value_to_json(&value);
         assert!(result.is_some());
         assert_eq!(result.unwrap(), serde_json::json!(1.5));
+    }
+
+    #[test]
+    fn test_value_to_json_canonical_enum_uses_api_value() {
+        let attr_type = AttributeType::enum_(
+            carina_core::schema::enum_identity("Effect", Some("aws.iam.PolicyDocument")),
+            Some(vec!["Allow".to_string(), "Deny".to_string()]),
+            vec![
+                ("Allow".to_string(), "allow".to_string()),
+                ("Deny".to_string(), "deny".to_string()),
+            ],
+            None,
+            None,
+        );
+        let schema = carina_core::schema::Schema::flat(attr_type);
+        let value = schema.canonicalize(Value::Concrete(ConcreteValue::enum_identifier("allow")));
+
+        assert!(matches!(
+            value,
+            Value::Concrete(ConcreteValue::CanonicalEnum(_))
+        ));
+        assert_eq!(value_to_json(&value), Some(json!("Allow")));
     }
 
     #[test]
@@ -1935,9 +1985,8 @@ mod tests {
         // Phase 4 of carina#2986: DSL-source enum values arrive as
         // `EnumIdentifier`; a `String` here would route to
         // `StringLiteralExpectedEnum`.
-        let snake_case_value = Value::Concrete(ConcreteValue::EnumIdentifier(
-            "aws.s3.Bucket.OwnershipControls.OwnershipControlsRule.ObjectOwnership.bucket_owner_enforced"
-                .to_string(),
+        let snake_case_value = Value::Concrete(ConcreteValue::enum_identifier(
+            "aws.s3.Bucket.OwnershipControls.OwnershipControlsRule.ObjectOwnership.bucket_owner_enforced",
         ));
         let ownership_schema =
             carina_core::schema::Schema::flat(object_ownership.field_type.clone());
@@ -1949,8 +1998,8 @@ mod tests {
         // strict on DSL input — the PascalCase API spelling is
         // rejected. State JSON still flows through `aws_value_to_dsl`
         // separately, so this only gates DSL-source values.
-        let pascal_value = Value::Concrete(ConcreteValue::EnumIdentifier(
-            "aws.s3.Bucket.OwnershipControls.OwnershipControlsRule.ObjectOwnership.BucketOwnerEnforced".to_string(),
+        let pascal_value = Value::Concrete(ConcreteValue::enum_identifier(
+            "aws.s3.Bucket.OwnershipControls.OwnershipControlsRule.ObjectOwnership.BucketOwnerEnforced",
         ));
         assert!(
             ownership_schema.validate(&pascal_value).is_err(),
@@ -1984,13 +2033,10 @@ mod tests {
         );
         let lifted = carina_core::utils::lift_enum_leaves(&dsl, &object_ownership.field_type)
             .expect("API-canonical state value must lift");
-        assert_eq!(
-            lifted,
-            Value::Concrete(ConcreteValue::EnumIdentifier(
-                "aws.s3.Bucket.OwnershipControls.OwnershipControlsRule.ObjectOwnership.bucket_owner_enforced"
-                    .to_string()
-            )),
-            "state-lift must reduce the API value to the canonical fully-qualified identifier"
+        assert_canonical_enum(
+            &lifted,
+            "aws.s3.Bucket.OwnershipControls.OwnershipControlsRule.ObjectOwnership",
+            "BucketOwnerEnforced",
         );
     }
 
@@ -2041,9 +2087,8 @@ mod tests {
 
     #[test]
     fn test_aws_value_to_dsl_custom_without_to_dsl_passes_through() {
-        let attr_type = AttributeType::custom(
+        let attr_type = AttributeType::refined_string_with_validator(
             Some(carina_core::schema::TypeIdentity::bare("DnsName")),
-            AttributeType::string(),
             None,
             None,
             legacy_validator(|_| Ok(())),

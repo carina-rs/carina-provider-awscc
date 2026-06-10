@@ -423,9 +423,8 @@ fn emit_arn_helper(service: &str, resource: &str, choice: ArnEmitChoice) -> Stri
     let validator_expr = arn_validator_expression(choice);
     format!(
         r#"pub fn arn() -> AttributeType {{
-    AttributeType::custom(
+    AttributeType::refined_string_with_validator(
         Some(carina_aws_types::provider_type("{service}", "{resource}", "Arn")),
-        carina_aws_types::arn(),
         {regex_expr},
         None,
         legacy_validator({validator_expr}),
@@ -4232,8 +4231,20 @@ fn refined_int_type(identity: &str, range: &str) -> String {
     format!("AttributeType::refined_int({identity}, {range})")
 }
 
+fn refined_int_type_with_validator(identity: &str, range: &str, validator: &str) -> String {
+    format!(
+        "AttributeType::refined_int_with_validator({identity}, {range}, legacy_validator({validator}))"
+    )
+}
+
 fn refined_float_type(identity: &str, range: &str) -> String {
     format!("AttributeType::refined_float({identity}, {range})")
+}
+
+fn refined_list_type(element_type: &str, ordered: bool, length: &str, validator: &str) -> String {
+    format!(
+        "AttributeType::refined_list({element_type}, {ordered}, {length}, legacy_validator({validator}))"
+    )
 }
 
 fn emit_int_range_option(min: Option<i64>, max: Option<i64>) -> String {
@@ -5448,10 +5459,7 @@ fn cfn_type_to_carina_type_with_enum_with_struct_path(
             let _ = values;
             let validate_fn = format!("validate_{}_int_enum", prop_name.to_snake_case());
             return (
-                format!(
-                    r#"AttributeType::custom(None, AttributeType::int(), None, None, legacy_validator({}), None)"#,
-                    validate_fn
-                ),
+                refined_int_type_with_validator("None", "None", &validate_fn),
                 None,
             );
         }
@@ -5610,10 +5618,7 @@ fn cfn_type_to_carina_type_with_enum_with_struct_path(
                 record_int_enum(prop_name, values);
                 let validate_fn = format!("validate_{}_int_enum", prop_name.to_snake_case());
                 return (
-                    format!(
-                        r#"AttributeType::custom(None, AttributeType::int(), None, None, legacy_validator({}), None)"#,
-                        validate_fn
-                    ),
+                    refined_int_type_with_validator("None", "None", &validate_fn),
                     None,
                 );
             }
@@ -5726,11 +5731,17 @@ fn cfn_type_to_carina_type_with_enum_with_struct_path(
             // Wrap in Custom type if minItems/maxItems constraints exist
             if prop.min_items.is_some() || prop.max_items.is_some() {
                 let validate_fn = list_items_fn_name(prop.min_items, prop.max_items);
+                let ordered = list_ctor == "AttributeType::list";
+                let inner = list_type
+                    .strip_prefix(&format!("{list_ctor}("))
+                    .and_then(|s| s.strip_suffix(')'))
+                    .unwrap_or("AttributeType::string()");
+                let length = emit_length_option(
+                    prop.min_items.and_then(|v| u64::try_from(v).ok()),
+                    prop.max_items.and_then(|v| u64::try_from(v).ok()),
+                );
                 (
-                    format!(
-                        r#"AttributeType::custom(None, {}, None, None, legacy_validator({}), None)"#,
-                        list_type, validate_fn
-                    ),
+                    refined_list_type(inner, ordered, &length, &validate_fn),
                     item_enum,
                 )
             } else {
@@ -8077,13 +8088,13 @@ mod tests {
             &BTreeMap::new(),
         );
         assert!(
-            type_str.contains("AttributeType::custom("),
-            "Integer enum should produce Custom type, got: {}",
+            type_str.contains("AttributeType::refined_int_with_validator("),
+            "Integer enum should produce refined int type, got: {}",
             type_str
         );
         assert!(
-            type_str.contains("AttributeType::int()"),
-            "Custom should wrap Int base, got: {}",
+            type_str.contains("legacy_validator("),
+            "Refined int should carry a validator, got: {}",
             type_str
         );
         assert!(
@@ -10811,7 +10822,7 @@ mod tests {
             "scalar string types whose name merely contains 'list' must still accept defaults"
         );
         assert!(attr_type_accepts_scalar_default(
-            "AttributeType::custom(None, AttributeType::int(), None, None, legacy_validator(f), None)"
+            "AttributeType::refined_int_with_validator(None, None, legacy_validator(f))"
         ));
         assert!(attr_type_accepts_scalar_default("carina_aws_types::arn()"));
         assert!(!attr_type_accepts_scalar_default(
@@ -11262,12 +11273,12 @@ mod tests {
             &enums,
         );
         assert!(
-            type_str.contains("custom("),
-            "array with minItems/maxItems should produce Custom type: {type_str}"
+            type_str.contains("AttributeType::refined_list("),
+            "array with minItems/maxItems should produce refined list type: {type_str}"
         );
         assert!(
-            type_str.contains("AttributeType::list(") || type_str.contains("AttributeType::List"),
-            "Custom type should wrap a List: {type_str}"
+            type_str.contains("AttributeType::string(), true, Some((Some(1), Some(10)))"),
+            "refined list should carry element type, ordering, and length: {type_str}"
         );
         assert!(
             type_str.contains("validate_list_items_1_10"),
@@ -11311,8 +11322,8 @@ mod tests {
             &enums,
         );
         assert!(
-            type_str.contains("custom("),
-            "array with only minItems should produce Custom type: {type_str}"
+            type_str.contains("AttributeType::refined_list("),
+            "array with only minItems should produce refined list type: {type_str}"
         );
         assert!(
             type_str.contains("validate_list_items_min_1"),
