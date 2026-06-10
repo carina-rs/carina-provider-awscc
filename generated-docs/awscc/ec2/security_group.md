@@ -97,7 +97,6 @@ The ID of the VPC for the security group.
 | `icmp` | `aws.ec2.SecurityGroup.Egress.IpProtocol.icmp` |
 | `icmpv6` | `aws.ec2.SecurityGroup.Egress.IpProtocol.icmpv6` |
 | `-1` | `aws.ec2.SecurityGroup.Egress.IpProtocol.all` |
-| `all` | `aws.ec2.SecurityGroup.Egress.IpProtocol.all` |
 
 Shorthand formats: `tcp` or `IpProtocol.tcp`
 
@@ -110,7 +109,6 @@ Shorthand formats: `tcp` or `IpProtocol.tcp`
 | `icmp` | `aws.ec2.SecurityGroup.Ingress.IpProtocol.icmp` |
 | `icmpv6` | `aws.ec2.SecurityGroup.Ingress.IpProtocol.icmpv6` |
 | `-1` | `aws.ec2.SecurityGroup.Ingress.IpProtocol.all` |
-| `all` | `aws.ec2.SecurityGroup.Ingress.IpProtocol.all` |
 
 Shorthand formats: `tcp` or `IpProtocol.tcp`
 

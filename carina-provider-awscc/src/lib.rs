@@ -48,7 +48,7 @@ impl ProviderNormalizer for AwsccNormalizer {
         current_states: &'a mut HashMap<ResourceId, State>,
     ) -> BoxFuture<'a, ()> {
         Box::pin(async move {
-            crate::provider::normalize_state_enums_impl(current_states);
+            crate::provider::normalize_state_string_dsl_transforms_impl(current_states);
             // Canonicalize `Union[String, list(String)]` typed values
             // (IAM-style `string_or_list_of_strings`) so AWS's silent
             // scalar normalization no longer leaks past the provider

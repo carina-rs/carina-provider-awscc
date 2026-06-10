@@ -116,7 +116,6 @@ If the protocol is TCP or UDP, this is the end of the port range. If the protoco
 | `icmp` | `aws.ec2.SecurityGroupEgress.IpProtocol.icmp` |
 | `icmpv6` | `aws.ec2.SecurityGroupEgress.IpProtocol.icmpv6` |
 | `-1` | `aws.ec2.SecurityGroupEgress.IpProtocol.all` |
-| `all` | `aws.ec2.SecurityGroupEgress.IpProtocol.all` |
 
 Shorthand formats: `tcp` or `IpProtocol.tcp`
 

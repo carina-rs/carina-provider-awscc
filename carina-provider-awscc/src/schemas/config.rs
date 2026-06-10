@@ -10,7 +10,7 @@ use carina_core::parser::ValidatorFn;
 use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::ResourceSchema;
 #[cfg(test)]
-use carina_core::utils::{extract_enum_value, validate_enum_namespace};
+use carina_core::utils::validate_enum_namespace;
 use std::collections::HashMap;
 
 /// AWS Cloud Control schema configuration
@@ -26,6 +26,19 @@ pub struct AwsccSchemaConfig {
     pub has_tags: bool,
     /// The resource schema with attribute definitions
     pub schema: ResourceSchema,
+}
+
+#[cfg(test)]
+fn strip_enum_identity_prefix<'a>(
+    value: &'a str,
+    identity: &carina_core::schema::TypeIdentity,
+) -> &'a str {
+    let full_prefix = format!("{identity}.");
+    let shorthand_prefix = format!("{}.", identity.kind);
+    value
+        .strip_prefix(full_prefix.as_str())
+        .or_else(|| value.strip_prefix(shorthand_prefix.as_str()))
+        .unwrap_or(value)
 }
 
 /// Register AWSCC type validators declaratively.
@@ -128,7 +141,7 @@ pub(crate) fn validate_namespaced_enum(
         };
         validate_enum_namespace(s, &identity)?;
 
-        let normalized = extract_enum_value(s);
+        let normalized = strip_enum_identity_prefix(s, &identity);
         if find_matching_enum_value(normalized, valid_values).is_some() {
             Ok(())
         } else {
