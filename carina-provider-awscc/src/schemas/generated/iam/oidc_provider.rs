@@ -100,7 +100,7 @@ pub fn iam_oidc_provider_config() -> AwsccSchemaConfig {
                             None,
                         ),
                         false,
-                        None,
+                        Some((None, Some(5))),
                         legacy_validator(validate_list_items_max_5),
                     ),
                 )

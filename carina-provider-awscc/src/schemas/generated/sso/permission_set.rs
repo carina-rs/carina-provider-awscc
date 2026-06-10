@@ -49,7 +49,7 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
         .with_description("Resource Type definition for SSO PermissionSet")
         .attribute(
             AttributeSchema::new("customer_managed_policy_references", AttributeType::refined_list(AttributeType::struct_("CustomerManagedPolicyReference".to_string(), vec![StructField::new("name", AttributeType::refined_string(None, Some("[\\w+=,.@-]+".to_string()), Some((Some(1), Some(128))), None)).required().with_provider_name("Name"),
-                    StructField::new("path", AttributeType::refined_string(None, Some("((/[A-Za-z0-9\\.,\\+@=_-]+)*)/".to_string()), Some((Some(1), Some(512))), None)).with_provider_name("Path")]), false, None, legacy_validator(validate_list_items_max_20)))
+                    StructField::new("path", AttributeType::refined_string(None, Some("((/[A-Za-z0-9\\.,\\+@=_-]+)*)/".to_string()), Some((Some(1), Some(512))), None)).with_provider_name("Path")]), false, Some((None, Some(20))), legacy_validator(validate_list_items_max_20)))
                 .with_provider_name("CustomerManagedPolicyReferences")
                 .with_block_name("customer_managed_policy_reference"),
         )
@@ -71,7 +71,7 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
                 .with_provider_name("InstanceArn"),
         )
         .attribute(
-            AttributeSchema::new("managed_policies", AttributeType::refined_list(AttributeType::string(), false, None, legacy_validator(validate_list_items_max_20)))
+            AttributeSchema::new("managed_policies", AttributeType::refined_list(AttributeType::string(), false, Some((None, Some(20))), legacy_validator(validate_list_items_max_20)))
                 .with_provider_name("ManagedPolicies"),
         )
         .attribute(
