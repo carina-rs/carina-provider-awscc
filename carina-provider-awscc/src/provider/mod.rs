@@ -36,7 +36,7 @@ use crate::schemas::config::AwsccSchemaConfig;
 
 // Re-export public API
 pub use normalizer::{
-    canonicalize_string_or_list_states_impl, normalize_state_enums_impl,
+    canonicalize_string_or_list_states_impl, normalize_state_string_dsl_transforms_impl,
     restore_unreturned_attrs_impl,
 };
 pub(crate) use update::parse_resource_properties;

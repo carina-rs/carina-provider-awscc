@@ -2403,8 +2403,9 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
     for (prop_name, enum_info) in &enums {
         let const_name = format!("VALID_{}", prop_name.to_snake_case().to_uppercase());
 
-        // Generate constant from enum_info.values (which already includes alias
-        // DSL values injected during EnumInfo construction).
+        // Generate constants from canonical AWS wire values only. DSL spellings
+        // live in `dsl_aliases`; mixing them into `VALID_*` makes the host treat
+        // aliases as API-canonical.
         let values_str = enum_info
             .values
             .iter()
@@ -3993,22 +3994,13 @@ fn known_enum_aliases() -> &'static HashMap<&'static str, Vec<(&'static str, &'s
 /// Build an `EnumInfo` for a curated nested-field override
 /// (`resource_type_overrides()` Enum entries; awscc#246).
 ///
-/// Mirrors the logic at the `known_enum_overrides` call site: take the
-/// canonical AWS values and append any `known_enum_aliases` DSL spellings
-/// not already present, so `dsl_aliases_code` and the resulting
-/// `VALID_*` constant carry the full union of accepted spellings.
+/// Mirrors the logic at the `known_enum_overrides` call site: keep the
+/// canonical AWS values in `EnumInfo::values`. DSL spellings are emitted
+/// separately through `dsl_aliases_code`.
 fn enum_info_for_override(field_name: &str, values: &[&'static str]) -> EnumInfo {
-    let mut enum_values: Vec<String> = values.iter().map(|s| s.to_string()).collect();
-    if let Some(alias_list) = known_enum_aliases().get(field_name) {
-        for (_, alias) in alias_list {
-            if !enum_values.iter().any(|v| v == alias) {
-                enum_values.push(alias.to_string());
-            }
-        }
-    }
     EnumInfo {
         type_name: field_name.to_pascal_case(),
-        values: enum_values,
+        values: values.iter().map(|s| s.to_string()).collect(),
     }
 }
 
@@ -5480,21 +5472,9 @@ fn cfn_type_to_carina_type_with_enum_with_struct_path(
     let overrides = known_enum_overrides();
     if let Some(values) = overrides.get(prop_name) {
         let type_name = prop_name.to_pascal_case();
-        // Start with canonical AWS values from overrides
-        let mut enum_values: Vec<String> = values.iter().map(|s| s.to_string()).collect();
-        // Inject DSL alias values from known_enum_aliases so that users can write
-        // e.g., IpProtocol.all instead of IpProtocol.-1
-        let aliases = known_enum_aliases();
-        if let Some(alias_list) = aliases.get(prop_name) {
-            for (_, alias) in alias_list {
-                if !enum_values.iter().any(|v| v == alias) {
-                    enum_values.push(alias.to_string());
-                }
-            }
-        }
         let enum_info = EnumInfo {
             type_name,
-            values: enum_values,
+            values: values.iter().map(|s| s.to_string()).collect(),
         };
         return ("/* enum */".to_string(), Some(enum_info));
     }
@@ -6611,10 +6591,7 @@ mod tests {
         );
         let info = enum_info.unwrap();
         assert_eq!(info.type_name, "IpProtocol");
-        assert_eq!(
-            info.values,
-            vec!["tcp", "udp", "icmp", "icmpv6", "-1", "all"]
-        );
+        assert_eq!(info.values, vec!["tcp", "udp", "icmp", "icmpv6", "-1"]);
     }
 
     #[test]
@@ -6715,9 +6692,7 @@ mod tests {
             );
         }
         // The DSL aliases registered in known_enum_aliases for this property
-        // are merged into `values` (mirroring the existing IpProtocol "all"
-        // injection at codegen.rs:3929-3938) so the strict-DSL validator
-        // accepts both spellings.
+        // stay out of `values`; they are accepted through dsl_aliases.
         for alias in [
             "tlsv1_2_2021",
             "tlsv1_2_2019",
@@ -6728,8 +6703,8 @@ mod tests {
             "sslv3",
         ] {
             assert!(
-                info.values.iter().any(|v| v == alias),
-                "MinimumProtocolVersion alias {alias} must be merged into values; got {:?}",
+                !info.values.iter().any(|v| v == alias),
+                "MinimumProtocolVersion alias {alias} must stay out of values; got {:?}",
                 info.values
             );
         }
@@ -9403,14 +9378,17 @@ mod tests {
     }
 
     #[test]
-    fn test_known_enum_aliases_included_in_valid_values() {
-        // Verify that known_enum_overrides + known_enum_aliases produces correct VALID_* content
+    fn test_known_enum_aliases_kept_out_of_valid_values() {
+        // VALID_* content stays API-canonical; aliases are emitted through dsl_aliases.
         let overrides = known_enum_overrides();
         let aliases = known_enum_aliases();
 
-        // IpProtocol should have "all" in the combined list
         let ip_protocol_values = overrides.get("IpProtocol").unwrap();
         assert!(ip_protocol_values.contains(&"-1"), "Should have -1");
+        assert!(
+            !ip_protocol_values.contains(&"all"),
+            "'all' must stay alias-only"
+        );
 
         let ip_protocol_aliases = aliases.get("IpProtocol").unwrap();
         let alias_values: Vec<&str> = ip_protocol_aliases.iter().map(|(_, a)| *a).collect();

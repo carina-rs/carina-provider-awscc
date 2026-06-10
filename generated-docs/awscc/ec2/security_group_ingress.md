@@ -138,7 +138,6 @@ The end of port range for the TCP and UDP protocols, or an ICMP/ICMPv6 code. A v
 | `icmp` | `aws.ec2.SecurityGroupIngress.IpProtocol.icmp` |
 | `icmpv6` | `aws.ec2.SecurityGroupIngress.IpProtocol.icmpv6` |
 | `-1` | `aws.ec2.SecurityGroupIngress.IpProtocol.all` |
-| `all` | `aws.ec2.SecurityGroupIngress.IpProtocol.all` |
 
 Shorthand formats: `tcp` or `IpProtocol.tcp`
 

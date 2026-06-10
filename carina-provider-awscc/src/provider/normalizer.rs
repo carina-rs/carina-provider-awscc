@@ -3,116 +3,17 @@
 //! This module contains standalone functions used by `ProviderNormalizer` to normalize
 //! read state and restore unreturned attributes from saved state.
 
-use indexmap::IndexMap;
 use std::collections::HashMap;
 
 use carina_core::resource::{ConcreteValue, ResourceId, State, Value};
-use carina_core::schema::{
-    AttributeType, RawShape, ResourceSchema, Shape, ShapeWalkBudget, StructField,
-};
+use carina_core::schema::RawShape;
 
-/// Extract the struct-field slice an attribute type advertises, looking
-/// through a single `List` wrapper. Returns `None` for any other shape.
-/// `defs` is used to peel `Ref` chains so cyclic-schema resources resolve
-/// correctly (carina#3340).
-fn struct_fields_for<'a>(
-    attr_type: &'a AttributeType,
-    schema: &'a ResourceSchema,
-) -> Option<&'a [StructField]> {
-    match schema.shape_of(attr_type) {
-        Shape::List {
-            element_type: inner,
-            ..
-        } => schema.struct_fields_with_budget(inner, &mut ShapeWalkBudget::new(256)),
-        Shape::Struct { .. } => {
-            schema.struct_fields_with_budget(attr_type, &mut ShapeWalkBudget::new(256))
-        }
-        _ => None,
-    }
-}
-
-/// Resolve enum identifiers within struct field values.
-/// Recurses into List and Map values, resolving bare/shorthand enum values
-/// for struct fields that have StringEnum type with namespace.
+/// Apply provider-local string state transforms.
 ///
-/// `defs` is the owning resource's `ResourceSchema::defs` map and must be
-/// threaded through every recursion. The cyclic-schema Ref codegen
-/// (awscc#281, carina#3340) emits `AttributeType::Ref(name)` inside struct
-/// fields (e.g. WebACL's recursive `Statement` graph, CloudFront's
-/// `forwarded_values`); peeling those `Ref`s requires the same `defs` map
-/// the top-level attribute carries. Passing an empty definition map here panics in
-/// `AttributeType::shape` on the first such field (awscc#286 / awscc#288).
-fn resolve_struct_enum_values(
-    value: &Value,
-    fields: &[StructField],
-    schema: &ResourceSchema,
-) -> Value {
-    match value {
-        Value::Concrete(ConcreteValue::List(items)) => {
-            let resolved_items: Vec<Value> = items
-                .iter()
-                .map(|item| resolve_struct_enum_values(item, fields, schema))
-                .collect();
-            Value::Concrete(ConcreteValue::List(resolved_items))
-        }
-        Value::Concrete(ConcreteValue::Map(map)) => {
-            let mut resolved_map = IndexMap::new();
-            for (field_key, field_value) in map {
-                if let Some(field) = fields.iter().find(|f| f.name == *field_key) {
-                    // Direct enum field (String value)
-                    if let Some(parts) = field.field_type.enum_parts()
-                        && let Some(resolved) =
-                            carina_core::utils::resolve_enum_value(field_value, &parts)
-                    {
-                        resolved_map.insert(field_key.clone(), resolved);
-                        continue;
-                    }
-                    // List(StringEnum): resolve each element.
-                    if let Shape::List {
-                        element_type: inner,
-                        ..
-                    } = schema.shape_of(&field.field_type)
-                        && let Some(parts) = inner.enum_parts()
-                        && let Value::Concrete(ConcreteValue::List(items)) = field_value
-                    {
-                        let resolved_items: Vec<Value> = items
-                            .iter()
-                            .map(|item| {
-                                carina_core::utils::resolve_enum_value(item, &parts)
-                                    .unwrap_or_else(|| item.clone())
-                            })
-                            .collect();
-                        resolved_map.insert(
-                            field_key.clone(),
-                            Value::Concrete(ConcreteValue::List(resolved_items)),
-                        );
-                        continue;
-                    }
-                    // Recurse into nested Struct or List(Struct) fields
-                    let nested_fields = struct_fields_for(&field.field_type, schema);
-                    if let Some(nested) = nested_fields {
-                        resolved_map.insert(
-                            field_key.clone(),
-                            resolve_struct_enum_values(field_value, nested, schema),
-                        );
-                        continue;
-                    }
-                }
-                resolved_map.insert(field_key.clone(), field_value.clone());
-            }
-            Value::Concrete(ConcreteValue::Map(resolved_map))
-        }
-        _ => value.clone(),
-    }
-}
-
-/// Normalize enum values in current states to their fully-qualified DSL format.
-///
-/// State files store raw AWS values (e.g., `"ap-northeast-1a"`, `"default"`).
-/// The host owns desired/state enum canonicalization for schema-known enum
-/// positions, but this provider still applies awscc-specific read/state
-/// transforms and legacy state normalization here.
-pub fn normalize_state_enums_impl(current_states: &mut HashMap<ResourceId, State>) {
+/// The host owns state enum canonicalization. This pass intentionally keeps
+/// enum values untouched and only applies non-enum string transforms such as
+/// Route53 hosted-zone trailing-dot stripping.
+pub fn normalize_state_string_dsl_transforms_impl(current_states: &mut HashMap<ResourceId, State>) {
     for (resource_id, state) in current_states.iter_mut() {
         if !state.exists || resource_id.provider != "awscc" {
             continue;
@@ -127,31 +28,18 @@ pub fn normalize_state_enums_impl(current_states: &mut HashMap<ResourceId, State
         let mut resolved_attrs = HashMap::new();
         for (key, value) in &state.attributes {
             if let Some(attr_schema) = config.schema.attributes.get(key.as_str())
-                && let Some(transformed) = apply_enum_dsl_transform(value, &attr_schema.attr_type)
+                && let RawShape::String {
+                    to_dsl: Some(transform),
+                    ..
+                } = attr_schema.attr_type.raw_shape()
+                && let Value::Concrete(ConcreteValue::String(s)) = value
             {
-                resolved_attrs.insert(key.clone(), transformed);
-                continue;
-            }
-
-            if let Some(attr_schema) = config.schema.attributes.get(key.as_str())
-                && let Some(parts) = attr_schema.attr_type.enum_parts()
-            {
-                // AWSCC state normalization: only resolve bare values (no dots)
-                if let Some(resolved) = carina_core::utils::resolve_enum_value(value, &parts) {
-                    resolved_attrs.insert(key.clone(), resolved);
-                } else {
-                    resolved_attrs.insert(key.clone(), value.clone());
-                }
-                continue;
-            }
-
-            // Handle struct fields containing schema-level string enums.
-            if let Some(attr_schema) = config.schema.attributes.get(key.as_str()) {
-                let struct_fields = struct_fields_for(&attr_schema.attr_type, &config.schema);
-
-                if let Some(fields) = struct_fields {
-                    let resolved = resolve_struct_enum_values(value, fields, &config.schema);
-                    resolved_attrs.insert(key.clone(), resolved);
+                let transformed = transform.apply(s);
+                if transformed != s.as_str() {
+                    resolved_attrs.insert(
+                        key.clone(),
+                        Value::Concrete(ConcreteValue::String(transformed.into_owned())),
+                    );
                     continue;
                 }
             }
@@ -160,28 +48,6 @@ pub fn normalize_state_enums_impl(current_states: &mut HashMap<ResourceId, State
         }
         state.attributes = resolved_attrs;
     }
-}
-
-fn apply_enum_dsl_transform(value: &Value, attr_type: &AttributeType) -> Option<Value> {
-    let transform = match attr_type.raw_shape() {
-        RawShape::Enum {
-            to_dsl: Some(transform),
-            ..
-        }
-        | RawShape::String {
-            to_dsl: Some(transform),
-            ..
-        } => transform,
-        _ => return None,
-    };
-    let s = match value {
-        Value::Concrete(ConcreteValue::String(s)) => s.as_str(),
-        Value::Concrete(ConcreteValue::EnumIdentifier(s)) => s.as_str(),
-        Value::Concrete(ConcreteValue::CanonicalEnum(c)) => c.api_value(),
-        _ => return None,
-    };
-    let transformed = transform.apply(s);
-    (transformed != s).then(|| Value::Concrete(ConcreteValue::String(transformed.into_owned())))
 }
 
 /// Canonicalize attributes of every awscc state whose declared schema
@@ -261,11 +127,8 @@ mod tests {
     use super::*;
     use carina_core::provider::ProviderNormalizer;
     use carina_core::resource::Resource;
-    use carina_core::schema::legacy_validator;
-
-    fn test_resource_schema() -> ResourceSchema {
-        ResourceSchema::new("test.Resource")
-    }
+    use carina_core::schema::ShapeWalkBudget;
+    use indexmap::IndexMap;
 
     #[tokio::test]
     async fn normalize_desired_preserves_host_canonical_enum_strings() {
@@ -286,6 +149,70 @@ mod tests {
                 "ap-northeast-1a".to_string()
             ))),
             "host-canonical open-enum API values must not be re-namespaced"
+        );
+    }
+
+    #[tokio::test]
+    async fn normalize_state_keeps_api_enum_spellings_out_of_dsl_string_form() {
+        let id = ResourceId::with_provider("awscc", "ec2.SecurityGroupEgress", "test", None);
+        let attrs = HashMap::from([(
+            "ip_protocol".to_string(),
+            Value::Concrete(ConcreteValue::String("-1".to_string())),
+        )]);
+        let mut current_states = HashMap::from([(id.clone(), State::existing(id.clone(), attrs))]);
+
+        crate::AwsccNormalizer
+            .normalize_state(&mut current_states)
+            .await;
+
+        // The string-transform pass leaves the raw API string alone; the
+        // following `canonicalize_string_or_list_states_impl` pass calls
+        // `Schema::canonicalize_attr`, which host-lifts schema-known enums
+        // to CanonicalEnum. The bug guard is that this must not become a
+        // DSL-namespaced String.
+        match current_states[&id].attributes.get("ip_protocol") {
+            Some(Value::Concrete(ConcreteValue::CanonicalEnum(c))) => {
+                assert_eq!(
+                    c.identity().to_string(),
+                    "aws.ec2.SecurityGroupEgress.IpProtocol"
+                );
+                assert_eq!(c.api_value(), "-1");
+            }
+            Some(Value::Concrete(ConcreteValue::String(s))) => {
+                assert_ne!(s, "aws.ec2.SecurityGroupEgress.IpProtocol.all");
+                assert_eq!(s, "-1");
+            }
+            other => panic!("expected CanonicalEnum(-1) or raw String(-1), got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn normalize_state_does_not_downgrade_canonical_enum_values() {
+        let config = crate::schemas::generated::get_config_by_type("ec2.SecurityGroupEgress")
+            .expect("ec2.SecurityGroupEgress schema should exist");
+        let ip_protocol_attr = config
+            .schema
+            .attributes
+            .get("ip_protocol")
+            .expect("ec2.SecurityGroupEgress.ip_protocol should exist");
+        let canonical = carina_core::utils::lift_enum_leaves(
+            &Value::Concrete(ConcreteValue::String("-1".to_string())),
+            &ip_protocol_attr.attr_type,
+        )
+        .expect("host should lift ip_protocol to CanonicalEnum");
+
+        let id = ResourceId::with_provider("awscc", "ec2.SecurityGroupEgress", "test", None);
+        let attrs = HashMap::from([("ip_protocol".to_string(), canonical.clone())]);
+        let mut current_states = HashMap::from([(id.clone(), State::existing(id.clone(), attrs))]);
+
+        crate::AwsccNormalizer
+            .normalize_state(&mut current_states)
+            .await;
+
+        assert_eq!(
+            current_states[&id].attributes.get("ip_protocol"),
+            Some(&canonical),
+            "provider state normalization must not downgrade CanonicalEnum to String"
         );
     }
 
@@ -423,7 +350,7 @@ mod tests {
             ),
         )]);
 
-        normalize_state_enums_impl(&mut current_states);
+        normalize_state_string_dsl_transforms_impl(&mut current_states);
 
         let current = current_states
             .get(&desired.id)
@@ -441,133 +368,10 @@ mod tests {
         );
     }
 
-    /// Helper to create struct fields with an enum type for testing
-    fn test_ip_protocol_fields() -> Vec<StructField> {
-        vec![
-            StructField::new(
-                "ip_protocol",
-                AttributeType::enum_(
-                    carina_core::schema::TypeIdentity::new(
-                        Some("aws"),
-                        ["ec2", "SecurityGroup"],
-                        "IpProtocol",
-                    ),
-                    None,
-                    vec![],
-                    Some(legacy_validator(|_| Ok(()))),
-                    Some(carina_core::schema::DslTransform::ReplaceTable(vec![(
-                        "-1".to_string(),
-                        "all".to_string(),
-                    )])),
-                ),
-            )
-            .with_provider_name("IpProtocol"),
-            StructField::new("from_port", AttributeType::int()).with_provider_name("FromPort"),
-            StructField::new("cidr_ip", AttributeType::string()).with_provider_name("CidrIp"),
-        ]
-    }
+    // --- ip_protocol enum canonical values and aliases ---
 
     #[test]
-    fn test_resolve_struct_enum_values_bare_ident() {
-        let fields = test_ip_protocol_fields();
-        let mut map = IndexMap::new();
-        map.insert(
-            "ip_protocol".to_string(),
-            Value::Concrete(ConcreteValue::String("all".to_string())),
-        );
-        map.insert(
-            "from_port".to_string(),
-            Value::Concrete(ConcreteValue::Int(443)),
-        );
-        let value = Value::Concrete(ConcreteValue::List(vec![Value::Concrete(
-            ConcreteValue::Map(map),
-        )]));
-
-        let schema = test_resource_schema();
-        let resolved = resolve_struct_enum_values(&value, &fields, &schema);
-        if let Value::Concrete(ConcreteValue::List(items)) = resolved {
-            if let Value::Concrete(ConcreteValue::Map(m)) = &items[0] {
-                match &m["ip_protocol"] {
-                    Value::Concrete(ConcreteValue::String(s)) => {
-                        assert_eq!(s, "aws.ec2.SecurityGroup.IpProtocol.all");
-                    }
-                    other => panic!("Expected String, got: {:?}", other),
-                }
-                assert_eq!(m["from_port"], Value::Concrete(ConcreteValue::Int(443)));
-            } else {
-                panic!("Expected Map");
-            }
-        } else {
-            panic!("Expected List");
-        }
-    }
-
-    #[test]
-    fn test_resolve_struct_enum_values_typename_dot_value() {
-        let fields = test_ip_protocol_fields();
-        let mut map = IndexMap::new();
-        map.insert(
-            "ip_protocol".to_string(),
-            Value::Concrete(ConcreteValue::String("IpProtocol.tcp".to_string())),
-        );
-        let value = Value::Concrete(ConcreteValue::List(vec![Value::Concrete(
-            ConcreteValue::Map(map),
-        )]));
-
-        let schema = test_resource_schema();
-        let resolved = resolve_struct_enum_values(&value, &fields, &schema);
-        if let Value::Concrete(ConcreteValue::List(items)) = resolved {
-            if let Value::Concrete(ConcreteValue::Map(m)) = &items[0] {
-                match &m["ip_protocol"] {
-                    Value::Concrete(ConcreteValue::String(s)) => {
-                        assert_eq!(s, "aws.ec2.SecurityGroup.IpProtocol.tcp");
-                    }
-                    other => panic!("Expected String, got: {:?}", other),
-                }
-            } else {
-                panic!("Expected Map");
-            }
-        } else {
-            panic!("Expected List");
-        }
-    }
-
-    #[test]
-    fn test_resolve_struct_enum_values_string_passthrough() {
-        let fields = test_ip_protocol_fields();
-        let mut map = IndexMap::new();
-        map.insert(
-            "ip_protocol".to_string(),
-            Value::Concrete(ConcreteValue::String(
-                "aws.ec2.SecurityGroup.IpProtocol.tcp".to_string(),
-            )),
-        );
-        let value = Value::Concrete(ConcreteValue::List(vec![Value::Concrete(
-            ConcreteValue::Map(map),
-        )]));
-
-        let schema = test_resource_schema();
-        let resolved = resolve_struct_enum_values(&value, &fields, &schema);
-        if let Value::Concrete(ConcreteValue::List(items)) = resolved {
-            if let Value::Concrete(ConcreteValue::Map(m)) = &items[0] {
-                match &m["ip_protocol"] {
-                    Value::Concrete(ConcreteValue::String(s)) => {
-                        assert_eq!(s, "aws.ec2.SecurityGroup.IpProtocol.tcp");
-                    }
-                    other => panic!("Expected String, got: {:?}", other),
-                }
-            } else {
-                panic!("Expected Map");
-            }
-        } else {
-            panic!("Expected List");
-        }
-    }
-
-    // --- ip_protocol enum "all" variant tests (issue #1428) ---
-
-    #[test]
-    fn test_security_group_egress_schema_includes_all_variant() {
+    fn test_security_group_egress_schema_keeps_all_as_alias_only() {
         let config =
             crate::schemas::generated::ec2::security_group_egress::ec2_security_group_egress_config(
             );
@@ -582,8 +386,8 @@ mod tests {
         } = config.schema.shape_of(&ip_protocol.attr_type)
         {
             assert!(
-                values.contains(&"all".to_string()),
-                "Enum values must include 'all': {:?}",
+                values.contains(&"-1".to_string()) && !values.contains(&"all".to_string()),
+                "enum values must include '-1' and exclude alias 'all': {:?}",
                 values
             );
         } else {
@@ -592,7 +396,7 @@ mod tests {
     }
 
     #[test]
-    fn test_security_group_ingress_schema_includes_all_variant() {
+    fn test_security_group_ingress_schema_keeps_all_as_alias_only() {
         let config = crate::schemas::generated::ec2::security_group_ingress::ec2_security_group_ingress_config();
         let ip_protocol = config
             .schema
@@ -605,8 +409,8 @@ mod tests {
         } = config.schema.shape_of(&ip_protocol.attr_type)
         {
             assert!(
-                values.contains(&"all".to_string()),
-                "Enum values must include 'all': {:?}",
+                values.contains(&"-1".to_string()) && !values.contains(&"all".to_string()),
+                "enum values must include '-1' and exclude alias 'all': {:?}",
                 values
             );
         } else {
@@ -615,7 +419,7 @@ mod tests {
     }
 
     #[test]
-    fn test_security_group_egress_struct_schema_includes_all_variant() {
+    fn test_security_group_egress_struct_schema_keeps_all_as_alias_only() {
         let config = crate::schemas::generated::ec2::security_group::ec2_security_group_config();
         let egress = config
             .schema
@@ -643,8 +447,8 @@ mod tests {
                 } = config.schema.shape_of(&ip_field.field_type)
                 {
                     assert!(
-                        values.contains(&"all".to_string()),
-                        "Enum values must include 'all': {:?}",
+                        values.contains(&"-1".to_string()) && !values.contains(&"all".to_string()),
+                        "enum values must include '-1' and exclude alias 'all': {:?}",
                         values
                     );
                 } else {
@@ -659,7 +463,7 @@ mod tests {
     }
 
     #[test]
-    fn test_security_group_ingress_struct_schema_includes_all_variant() {
+    fn test_security_group_ingress_struct_schema_keeps_all_as_alias_only() {
         let config = crate::schemas::generated::ec2::security_group::ec2_security_group_config();
         let ingress = config
             .schema
@@ -686,8 +490,8 @@ mod tests {
                 } = config.schema.shape_of(&ip_field.field_type)
                 {
                     assert!(
-                        values.contains(&"all".to_string()),
-                        "Enum values must include 'all': {:?}",
+                        values.contains(&"-1".to_string()) && !values.contains(&"all".to_string()),
+                        "enum values must include '-1' and exclude alias 'all': {:?}",
                         values
                     );
                 } else {
@@ -698,128 +502,6 @@ mod tests {
             }
         } else {
             panic!("Expected List for security_group_ingress");
-        }
-    }
-
-    /// Nested struct: a Struct field containing another Struct with an enum.
-    /// Reproduces the S3 bucket_encryption issue where
-    /// blocked_encryption_types.encryption_type is a List(Enum) inside a nested Struct.
-    #[test]
-    fn test_resolve_struct_enum_values_nested_struct() {
-        let inner_fields = vec![StructField::new(
-            "encryption_type",
-            AttributeType::list(AttributeType::enum_(
-                carina_core::schema::enum_identity("EncryptionType", Some("aws.s3.Bucket")),
-                Some(vec!["NONE".to_string(), "SSE-C".to_string()]),
-                vec![
-                    ("NONE".to_string(), "none".to_string()),
-                    ("SSE-C".to_string(), "sse_c".to_string()),
-                ],
-                None,
-                None,
-            )),
-        )];
-
-        let fields = vec![
-            StructField::new(
-                "blocked_encryption_types",
-                AttributeType::struct_("BlockedEncryptionTypes".to_string(), inner_fields),
-            ),
-            StructField::new("bucket_key_enabled", AttributeType::bool()),
-            StructField::new(
-                "server_side_encryption_by_default",
-                AttributeType::struct_(
-                    "ServerSideEncryptionByDefault".to_string(),
-                    vec![StructField::new(
-                        "sse_algorithm",
-                        AttributeType::enum_(
-                            carina_core::schema::enum_identity(
-                                "SseAlgorithm",
-                                Some("aws.s3.Bucket"),
-                            ),
-                            Some(vec!["AES256".to_string()]),
-                            vec![("AES256".to_string(), "aes256".to_string())],
-                            None,
-                            None,
-                        ),
-                    )],
-                ),
-            ),
-        ];
-
-        let mut inner_map = IndexMap::new();
-        inner_map.insert(
-            "encryption_type".to_string(),
-            Value::Concrete(ConcreteValue::List(vec![Value::Concrete(
-                ConcreteValue::String("SSE-C".to_string()),
-            )])),
-        );
-        let mut map = IndexMap::new();
-        map.insert(
-            "blocked_encryption_types".to_string(),
-            Value::Concrete(ConcreteValue::Map(inner_map)),
-        );
-        map.insert(
-            "bucket_key_enabled".to_string(),
-            Value::Concrete(ConcreteValue::Bool(false)),
-        );
-        let mut sse_map = IndexMap::new();
-        sse_map.insert(
-            "sse_algorithm".to_string(),
-            Value::Concrete(ConcreteValue::String("AES256".to_string())),
-        );
-        map.insert(
-            "server_side_encryption_by_default".to_string(),
-            Value::Concrete(ConcreteValue::Map(sse_map)),
-        );
-
-        let value = Value::Concrete(ConcreteValue::List(vec![Value::Concrete(
-            ConcreteValue::Map(map),
-        )]));
-        let schema = test_resource_schema();
-        let resolved = resolve_struct_enum_values(&value, &fields, &schema);
-
-        // Verify the nested enum was resolved
-        if let Value::Concrete(ConcreteValue::List(items)) = &resolved {
-            if let Value::Concrete(ConcreteValue::Map(m)) = &items[0] {
-                if let Value::Concrete(ConcreteValue::Map(blocked)) = &m["blocked_encryption_types"]
-                {
-                    if let Value::Concrete(ConcreteValue::List(types)) = &blocked["encryption_type"]
-                    {
-                        assert_eq!(
-                            types[0],
-                            Value::Concrete(ConcreteValue::String(
-                                "aws.s3.Bucket.EncryptionType.sse_c".to_string()
-                            )),
-                            "Nested struct enum should be resolved to its snake_case DSL form"
-                        );
-                    } else {
-                        panic!("Expected List for encryption_type");
-                    }
-                } else {
-                    panic!("Expected Map for blocked_encryption_types");
-                }
-                // Also verify sse_algorithm in sibling struct.
-                // SHOUTY_SNAKE values follow the same D7 transform: API
-                // `AES256` -> DSL `aes256`.
-                if let Value::Concrete(ConcreteValue::Map(sse)) =
-                    &m["server_side_encryption_by_default"]
-                {
-                    assert_eq!(
-                        sse["sse_algorithm"],
-                        Value::Concrete(ConcreteValue::String(
-                            "aws.s3.Bucket.SseAlgorithm.aes256".to_string()
-                        )),
-                        "Sibling struct enum should also be resolved to its snake_case DSL form"
-                    );
-                } else {
-                    panic!("Expected Map for server_side_encryption_by_default");
-                }
-            } else {
-                panic!("Expected Map");
-            }
-        } else {
-            panic!("Expected List");
         }
     }
 
@@ -984,160 +666,6 @@ mod tests {
             state.attributes.get("attr"),
             Some(&Value::Concrete(ConcreteValue::String("x".to_string()))),
             "unknown resource types pass through unchanged"
-        );
-    }
-
-    // --- cyclic-schema Ref normalization (awscc#286 / awscc#288) ---
-    //
-    // `resolve_struct_enum_values` recurses through nested struct fields
-    // to resolve schema-level string enums. After the cyclic-schema Ref
-    // codegen (awscc#281, carina#3340) the generated schemas emit
-    // `AttributeType::Ref(name)` *inside* struct fields (e.g. WebACL's
-    // recursive `Statement` graph, CloudFront's `forwarded_values`).
-    // When the recursion reaches such a field it must peel the `Ref`
-    // against this resource's `defs` map; peeling against an empty map
-    // panics with "Ref(...) not found in schema defs", which poisons the
-    // WASM instance and silently strips `default_tags`.
-
-    #[test]
-    fn resolve_struct_enum_values_threads_defs_for_webacl_ref() {
-        // A WebACL rule carrying `captcha_config`, a `Ref("CaptchaConfig")`
-        // field of the generated `Rule` struct (awscc#286). The recursion
-        // must peel this `Ref` against the WebACL's `defs` map.
-        let mut immunity = IndexMap::new();
-        immunity.insert(
-            "immunity_time".to_string(),
-            Value::Concrete(ConcreteValue::Int(60)),
-        );
-        let mut captcha_config = IndexMap::new();
-        captcha_config.insert(
-            "immunity_time_property".to_string(),
-            Value::Concrete(ConcreteValue::Map(immunity)),
-        );
-
-        let mut rule = IndexMap::new();
-        rule.insert(
-            "name".to_string(),
-            Value::Concrete(ConcreteValue::String("common-rule-set".to_string())),
-        );
-        rule.insert(
-            "captcha_config".to_string(),
-            Value::Concrete(ConcreteValue::Map(captcha_config)),
-        );
-
-        let value = Value::Concrete(ConcreteValue::List(vec![Value::Concrete(
-            ConcreteValue::Map(rule),
-        )]));
-        let config = crate::schemas::generated::wafv2::web_acl::wafv2_web_acl_config();
-        let attr_schema = config.schema.attributes.get("rules").unwrap();
-        let fields = struct_fields_for(&attr_schema.attr_type, &config.schema).unwrap();
-        // Before the fix this panics: the recursion peels the
-        // `Ref("CaptchaConfig")` field against an empty definition map.
-        let resolved = resolve_struct_enum_values(&value, fields, &config.schema);
-
-        let Value::Concrete(ConcreteValue::List(rules)) = &resolved else {
-            panic!("expected rules list");
-        };
-        let Value::Concrete(ConcreteValue::Map(rule)) = &rules[0] else {
-            panic!("expected rule map");
-        };
-        // The walk descends through the `Ref("CaptchaConfig")` field and
-        // its nested `Ref("ImmunityTimeProperty")`, leaving the leaf value
-        // intact — proving the recursion produced correct output, not just
-        // that it did not panic.
-        let Value::Concrete(ConcreteValue::Map(captcha_config)) = &rule["captcha_config"] else {
-            panic!("expected captcha_config map");
-        };
-        let Value::Concrete(ConcreteValue::Map(immunity)) =
-            &captcha_config["immunity_time_property"]
-        else {
-            panic!("expected immunity_time_property map");
-        };
-        assert_eq!(
-            immunity["immunity_time"],
-            Value::Concrete(ConcreteValue::Int(60)),
-            "leaf value preserved through the Ref-peeled captcha_config"
-        );
-    }
-
-    #[test]
-    fn resolve_struct_enum_values_threads_defs_for_distribution_forwarded_values() {
-        // A CloudFront Distribution whose
-        // `distribution_config.default_cache_behavior.forwarded_values`
-        // is a `Ref("ForwardedValues")` field (awscc#288). The state
-        // path runs the same `resolve_struct_enum_values` recursion.
-        let mut cookies = IndexMap::new();
-        cookies.insert(
-            "forward".to_string(),
-            Value::Concrete(ConcreteValue::String("none".to_string())),
-        );
-
-        let mut forwarded_values = IndexMap::new();
-        forwarded_values.insert(
-            "query_string".to_string(),
-            Value::Concrete(ConcreteValue::Bool(false)),
-        );
-        forwarded_values.insert(
-            "cookies".to_string(),
-            Value::Concrete(ConcreteValue::Map(cookies)),
-        );
-
-        let mut default_cache_behavior = IndexMap::new();
-        default_cache_behavior.insert(
-            "target_origin_id".to_string(),
-            Value::Concrete(ConcreteValue::String("origin".to_string())),
-        );
-        default_cache_behavior.insert(
-            "forwarded_values".to_string(),
-            Value::Concrete(ConcreteValue::Map(forwarded_values)),
-        );
-
-        let mut distribution_config = IndexMap::new();
-        distribution_config.insert(
-            "enabled".to_string(),
-            Value::Concrete(ConcreteValue::Bool(true)),
-        );
-        distribution_config.insert(
-            "default_cache_behavior".to_string(),
-            Value::Concrete(ConcreteValue::Map(default_cache_behavior)),
-        );
-
-        let (id, mut state) = make_state("awscc", "cloudfront.Distribution", "test-dist", vec![]);
-        state.attributes.insert(
-            "distribution_config".to_string(),
-            Value::Concrete(ConcreteValue::Map(distribution_config)),
-        );
-        let mut current_states: HashMap<ResourceId, State> = HashMap::new();
-        current_states.insert(id.clone(), state);
-
-        // Before the fix this panics on `Ref("ForwardedValues")`.
-        normalize_state_enums_impl(&mut current_states);
-
-        let Value::Concrete(ConcreteValue::Map(cfg)) = current_states[&id]
-            .attributes
-            .get("distribution_config")
-            .unwrap()
-        else {
-            panic!("expected distribution_config map");
-        };
-        // The walk descends through the `Ref("ForwardedValues")` field and
-        // resolves the nested `cookies.forward` StringEnum, proving the
-        // recursion produced correct output (not merely "did not panic").
-        let Value::Concrete(ConcreteValue::Map(dcb)) = &cfg["default_cache_behavior"] else {
-            panic!("expected default_cache_behavior map");
-        };
-        let Value::Concrete(ConcreteValue::Map(fv)) = &dcb["forwarded_values"] else {
-            panic!("expected forwarded_values map");
-        };
-        let Value::Concrete(ConcreteValue::Map(cookies)) = &fv["cookies"] else {
-            panic!("expected cookies map");
-        };
-        assert_eq!(
-            cookies["forward"],
-            Value::Concrete(ConcreteValue::String(
-                "aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.ForwardedValues.Cookies.Forward.none".to_string()
-            )),
-            "nested CookiesForward.none resolved through the Ref-peeled forwarded_values"
         );
     }
 }

@@ -98,10 +98,6 @@ Shorthand formats: `http_only` or `OriginProtocolPolicy.http_only`
 | `TLSv1` | `aws.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginSslProtocols.tlsv1` |
 | `TLSv1.1` | `aws.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginSslProtocols.tlsv1_1` |
 | `TLSv1.2` | `aws.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginSslProtocols.tlsv1_2` |
-| `sslv3` | `aws.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginSslProtocols.sslv3` |
-| `tlsv1` | `aws.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginSslProtocols.tlsv1` |
-| `tlsv1_1` | `aws.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginSslProtocols.tlsv1_1` |
-| `tlsv1_2` | `aws.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginSslProtocols.tlsv1_2` |
 
 Shorthand formats: `sslv3` or `OriginSslProtocols.sslv3`
 
@@ -219,10 +215,6 @@ Shorthand formats: `http_only` or `OriginProtocolPolicy.http_only`
 | `TLSv1` | `aws.cloudfront.Distribution.DistributionConfig.LegacyCustomOrigin.OriginSslProtocols.tlsv1` |
 | `TLSv1.1` | `aws.cloudfront.Distribution.DistributionConfig.LegacyCustomOrigin.OriginSslProtocols.tlsv1_1` |
 | `TLSv1.2` | `aws.cloudfront.Distribution.DistributionConfig.LegacyCustomOrigin.OriginSslProtocols.tlsv1_2` |
-| `sslv3` | `aws.cloudfront.Distribution.DistributionConfig.LegacyCustomOrigin.OriginSslProtocols.sslv3` |
-| `tlsv1` | `aws.cloudfront.Distribution.DistributionConfig.LegacyCustomOrigin.OriginSslProtocols.tlsv1` |
-| `tlsv1_1` | `aws.cloudfront.Distribution.DistributionConfig.LegacyCustomOrigin.OriginSslProtocols.tlsv1_1` |
-| `tlsv1_2` | `aws.cloudfront.Distribution.DistributionConfig.LegacyCustomOrigin.OriginSslProtocols.tlsv1_2` |
 
 Shorthand formats: `sslv3` or `OriginSslProtocols.sslv3`
 
@@ -246,13 +238,6 @@ Shorthand formats: `default` or `OriginGroupSelectionCriteria.default`
 | `TLSv1.2_2018` | `aws.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.tlsv1_2_2018` |
 | `TLSv1.2_2019` | `aws.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.tlsv1_2_2019` |
 | `TLSv1.2_2021` | `aws.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.tlsv1_2_2021` |
-| `sslv3` | `aws.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.sslv3` |
-| `tlsv1` | `aws.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.tlsv1` |
-| `tlsv1_2016` | `aws.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.tlsv1_2016` |
-| `tlsv1_1_2016` | `aws.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.tlsv1_1_2016` |
-| `tlsv1_2_2018` | `aws.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.tlsv1_2_2018` |
-| `tlsv1_2_2019` | `aws.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.tlsv1_2_2019` |
-| `tlsv1_2_2021` | `aws.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion.tlsv1_2_2021` |
 
 Shorthand formats: `sslv3` or `MinimumProtocolVersion.sslv3`
 
