@@ -2897,13 +2897,6 @@ pub fn {}() -> AwsccSchemaConfig {{
         }
     }
 
-    // Resource types where CloudControl API rejects updates despite the schema
-    // having an update handler. These must be replaced instead of updated.
-    const FORCE_REPLACE_TYPES: &[&str] = &["AWS::EC2::InternetGateway", "AWS::EC2::IPAM"];
-    if FORCE_REPLACE_TYPES.contains(&type_name) {
-        body.push_str("        .force_replace()\n");
-    }
-
     // Per-resource operational config for resources with slow CloudControl operations.
     let op_config = operation_config_for_type(type_name);
     if let Some(cfg) = op_config {

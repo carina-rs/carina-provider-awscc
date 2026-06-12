@@ -181,15 +181,6 @@ impl AwsccProvider {
                 .for_resource(id.clone())
         })?;
 
-        // Reject updates for resource types marked as force_replace in the schema
-        if config.schema.force_replace {
-            return Err(ProviderError::invalid_input(format!(
-                "Update not supported for {}, delete and recreate",
-                id.resource_type
-            ))
-            .for_resource(id));
-        }
-
         let patch_ops = build_update_patches(config, &id.resource_type, patch);
 
         self.cc_update_resource(config.aws_type_name, identifier, patch_ops)
