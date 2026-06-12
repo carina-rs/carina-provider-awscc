@@ -16,9 +16,83 @@ pub fn all_schemas() -> Vec<ResourceSchema> {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{BTreeMap, BTreeSet};
+    use std::collections::{BTreeMap, BTreeSet, HashMap};
 
+    use carina_core::differ::create_plan;
+    use carina_core::effect::Effect;
+    use carina_core::resource::{ConcreteValue, Resource, ResourceId, State, Value};
     use carina_core::schema::{AttributeType, RawShape, ResourceSchema, Shape, ShapeWalkBudget};
+    use carina_core::schema::{SchemaKind, SchemaRegistry};
+    use indexmap::IndexMap;
+
+    #[test]
+    fn internet_gateway_tag_change_plans_update() {
+        assert_tag_change_plans_update(
+            super::generated::ec2::internet_gateway::ec2_internet_gateway_config().schema,
+        );
+    }
+
+    #[test]
+    fn ipam_tag_change_plans_update() {
+        assert_tag_change_plans_update(super::generated::ec2::ipam::ec2_ipam_config().schema);
+    }
+
+    fn assert_tag_change_plans_update(schema: ResourceSchema) {
+        let resource_type = schema.resource_type.clone();
+        let resource_id = ResourceId::with_provider("awscc", resource_type.clone(), "test", None);
+        let resources = vec![
+            Resource::with_provider("awscc", resource_type, "test", None)
+                .with_attribute("tags", tags_value("new-name")),
+        ];
+
+        let mut current_states = HashMap::new();
+        current_states.insert(
+            resource_id.clone(),
+            State::existing(
+                resource_id.clone(),
+                HashMap::from([("tags".to_string(), tags_value("old-name"))]),
+            ),
+        );
+
+        let mut schemas = SchemaRegistry::new();
+        schemas.insert("awscc", schema);
+        assert!(
+            schemas
+                .get(
+                    &resource_id.provider,
+                    &resource_id.resource_type,
+                    SchemaKind::Resource,
+                )
+                .is_some(),
+            "schema must be resolvable under the key the differ uses"
+        );
+
+        let plan = create_plan(
+            &resources,
+            &[],
+            &current_states,
+            &HashMap::new(),
+            &schemas,
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
+            &[],
+        );
+
+        assert_eq!(plan.effects().len(), 1);
+        assert!(
+            matches!(plan.effects()[0], Effect::Update { .. }),
+            "expected tag-only change to plan Update, got {:?}",
+            plan.effects()[0]
+        );
+    }
+
+    fn tags_value(name: &str) -> Value {
+        Value::Concrete(ConcreteValue::Map(IndexMap::from([(
+            "Name".to_string(),
+            Value::Concrete(ConcreteValue::String(name.to_string())),
+        )])))
+    }
 
     #[test]
     fn generated_s3_lifecycle_rule_omits_deprecated_transition_fields() {
