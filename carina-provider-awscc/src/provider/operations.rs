@@ -76,7 +76,7 @@ impl AwsccProvider {
     }
 
     /// Create a resource using its configuration
-    pub async fn create_resource(&self, resource: Resource) -> ProviderResult<State> {
+    pub async fn create_resource(&self, resource: &Resource) -> ProviderResult<State> {
         let config = get_schema_config(&resource.id.resource_type).ok_or_else(|| {
             ProviderError::internal(format!(
                 "Unknown resource type: {}",
@@ -110,7 +110,7 @@ impl AwsccProvider {
         }
 
         // Handle special cases for create
-        self.create_special_attributes(&resource, &mut desired_state);
+        self.create_special_attributes(resource, &mut desired_state);
 
         // Handle tags
         if config.has_tags {

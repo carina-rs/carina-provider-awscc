@@ -246,10 +246,23 @@ impl CarinaProvider for AwsccProcessProvider {
     ) -> Result<proto::State, proto::ProviderError> {
         let core_id = convert::proto_to_core_resource_id(id);
         let core_resource = convert::proto_to_core_resource(&request.resource);
+        let mut registry = carina_core::schema::SchemaRegistry::new();
+        for config in schemas::generated::configs() {
+            registry.insert("awscc", config.schema.clone());
+        }
+        let normalized_resource = self.runtime.block_on(
+            carina_core::executor::normalized::apply_desired_normalization(
+                core_resource,
+                &[],
+                &self.normalizer,
+                &[],
+                &registry,
+            ),
+        );
         let result = self.runtime.block_on(self.provider().create(
             &core_id,
             CoreCreateRequest {
-                resource: core_resource,
+                resource: normalized_resource,
             },
         ));
         match result {

@@ -11,6 +11,8 @@
 //! resolution, survives the real apply path as a structured list of maps instead
 //! of being flattened into a string.
 
+mod common;
+
 use aws_config::{BehaviorVersion, Region};
 use carina_core::provider::{CreateRequest, Provider, ReadRequest};
 use carina_core::resource::{ConcreteValue, Resource, Value};
@@ -101,6 +103,7 @@ async fn dynamodb_table_create_then_read_round_trips_list_of_struct_fields() {
     let provider = winterbaume_provider().await;
     let resource = dynamodb_table_resource();
     let id = resource.id.clone();
+    let resource = common::normalize_resource(resource).await;
 
     let created = Provider::create(&provider, &id, CreateRequest { resource })
         .await

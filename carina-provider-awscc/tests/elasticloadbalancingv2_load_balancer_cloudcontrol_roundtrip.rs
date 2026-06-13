@@ -9,6 +9,8 @@
 //! the full CFN-schema-shaped read state round-trips through the awscc
 //! provider's serialization and conversion.
 
+mod common;
+
 use aws_config::{BehaviorVersion, Region};
 use carina_core::provider::{CreateRequest, Provider, ReadRequest};
 use carina_core::resource::{ConcreteValue, Resource, Value};
@@ -138,6 +140,7 @@ async fn load_balancer_create_then_read_round_trips_full_shaped_state() {
     let provider = winterbaume_provider().await;
     let resource = load_balancer_resource();
     let id = resource.id.clone();
+    let resource = common::normalize_resource(resource).await;
 
     let created = Provider::create(&provider, &id, CreateRequest { resource })
         .await
