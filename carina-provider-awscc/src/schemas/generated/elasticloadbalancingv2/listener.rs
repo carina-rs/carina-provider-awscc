@@ -7,6 +7,15 @@
 use crate::schemas::config::AwsccSchemaConfig;
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField};
 
+const VALID_ACTION_TYPE: &[&str] = &[
+    "forward",
+    "authenticate-oidc",
+    "authenticate-cognito",
+    "redirect",
+    "fixed-response",
+    "jwt-validation",
+];
+
 const VALID_FIXED_RESPONSE_CONFIG_CONTENT_TYPE: &[&str] = &[
     "text/plain",
     "text/css",
@@ -77,7 +86,7 @@ pub fn elasticloadbalancingv2_listener_config() -> AwsccSchemaConfig {
                     StructField::new("query", AttributeType::string()).with_description("The query parameters, URL-encoded when necessary, but not percent-encoded. Do not include the leading \"?\", as it is automatically added. You can specify any of the reserved keywords.").with_provider_name("Query"),
                     StructField::new("status_code", AttributeType::string()).required().with_description("The HTTP redirect code. The redirect is either permanent (HTTP 301) or temporary (HTTP 302).").with_provider_name("StatusCode")])).with_description("[Application Load Balancer] Information for creating a redirect action. Specify only when ``Type`` is ``redirect``.").with_provider_name("RedirectConfig"),
                     StructField::new("target_group_arn", carina_aws_types::arn()).with_description("The Amazon Resource Name (ARN) of the target group. Specify only when ``Type`` is ``forward`` and you want to route to a single target group. To route to multiple target groups, you must use ``ForwardConfig`` instead.").with_provider_name("TargetGroupArn"),
-                    StructField::new("type", AttributeType::string()).required().with_description("The type of action.").with_provider_name("Type")])))
+                    StructField::new("type", AttributeType::enum_(carina_core::schema::enum_identity("Type", Some("aws.elasticloadbalancingv2.Listener.Action")), Some(vec!["forward".to_string(), "authenticate-oidc".to_string(), "authenticate-cognito".to_string(), "redirect".to_string(), "fixed-response".to_string(), "jwt-validation".to_string()]), vec![("forward".to_string(), "forward".to_string()), ("authenticate-oidc".to_string(), "authenticate_oidc".to_string()), ("authenticate-cognito".to_string(), "authenticate_cognito".to_string()), ("redirect".to_string(), "redirect".to_string()), ("fixed-response".to_string(), "fixed_response".to_string()), ("jwt-validation".to_string(), "jwt_validation".to_string())], None, None)).required().with_description("The type of action.").with_provider_name("Type")])))
                 .required()
                 .with_description("The actions for the default rule. You cannot define a condition for a default rule. To create additional rules for an Application Load Balancer, use [AWS::ElasticLoadBalancingV2::ListenerRule](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-elasticloadbalancingv2-listenerrule.html).")
                 .with_provider_name("DefaultActions")
@@ -181,6 +190,7 @@ pub fn enum_valid_values() -> (
     (
         "elasticloadbalancingv2.Listener",
         &[
+            ("type", VALID_ACTION_TYPE),
             ("content_type", VALID_FIXED_RESPONSE_CONFIG_CONTENT_TYPE),
             ("mode", VALID_MUTUAL_AUTHENTICATION_MODE),
         ],

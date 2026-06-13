@@ -95,6 +95,19 @@ The protocol for connections from clients to the load balancer. For Application 
 
 ## Enum Values
 
+### type (Type)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `forward` | `aws.elasticloadbalancingv2.Listener.Action.Type.forward` |
+| `authenticate-oidc` | `aws.elasticloadbalancingv2.Listener.Action.Type.authenticate_oidc` |
+| `authenticate-cognito` | `aws.elasticloadbalancingv2.Listener.Action.Type.authenticate_cognito` |
+| `redirect` | `aws.elasticloadbalancingv2.Listener.Action.Type.redirect` |
+| `fixed-response` | `aws.elasticloadbalancingv2.Listener.Action.Type.fixed_response` |
+| `jwt-validation` | `aws.elasticloadbalancingv2.Listener.Action.Type.jwt_validation` |
+
+Shorthand formats: `forward` or `Type.forward`
+
 ### content_type (ContentType)
 
 | Value | DSL Identifier |
@@ -131,7 +144,7 @@ Shorthand formats: `off` or `Mode.off`
 | `order` | Int | No | The order for the action. This value is required for rules with multiple actions. The action with the lowest value for order is performed first. |
 | `redirect_config` | [Struct(RedirectConfig)](#redirectconfig) | No | [Application Load Balancer] Information for creating a redirect action. Specify only when ``Type`` is ``redirect``. |
 | `target_group_arn` | Arn | No | The Amazon Resource Name (ARN) of the target group. Specify only when ``Type`` is ``forward`` and you want to route to a single target group. To route to multiple target groups, you must use ``ForwardConfig`` instead. |
-| `type` | String | Yes | The type of action. |
+| `type` | [Enum (Type)](#type-type) | Yes | The type of action. |
 
 ### AuthenticateCognitoConfig
 
