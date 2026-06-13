@@ -73,6 +73,7 @@ pub fn awscc_validators() -> HashMap<String, ValidatorFn> {
             arn => validate_arn,
             availability_zone => validate_availability_zone,
             aws_resource_id => validate_aws_resource_id,
+            http_response_status_code => validate_http_response_status_code,
             iam_role_id => validate_iam_role_id,
             aws_account_id => validate_aws_account_id,
             kms_key_id => validate_kms_key_id,
@@ -179,6 +180,7 @@ mod tests {
             "arn",
             "availability_zone",
             "aws_resource_id",
+            "http_response_status_code",
             "iam_role_id",
             "aws_account_id",
             "kms_key_id",
@@ -276,6 +278,29 @@ mod tests {
             .is_ok()
         );
         assert!(oidc_validator("arn:aws:iam::123456789012:role/my-role").is_err());
+
+        // Test the HTTP response status code validator (ELBv2 fixed-response).
+        // Pattern: ^(2|4|5)\d{2}$ — exactly 3 digits, leading digit ∈ {2,4,5}.
+        let status_validator = validators.get("http_response_status_code").unwrap();
+        assert!(status_validator("200").is_ok());
+        assert!(status_validator("404").is_ok());
+        assert!(status_validator("503").is_ok());
+        assert!(
+            status_validator("nonsense").is_err(),
+            "non-digit string should be rejected"
+        );
+        assert!(
+            status_validator("301").is_err(),
+            "3XX must be rejected (only 2XX/4XX/5XX)"
+        );
+        assert!(
+            status_validator("99").is_err(),
+            "2-digit code must be rejected"
+        );
+        assert!(
+            status_validator("1000").is_err(),
+            "4-digit code must be rejected"
+        );
     }
 
     #[test]

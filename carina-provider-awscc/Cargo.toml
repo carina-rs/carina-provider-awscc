@@ -24,7 +24,7 @@ native = []
 
 [dependencies]
 carina-core = { git = "https://github.com/carina-rs/carina", rev = "d8947f40a6674a393cad6e96c6c32e4ce905f7f0" }
-carina-aws-types = { git = "https://github.com/carina-rs/carina-provider-aws", rev = "078b4373c855949f2418a5d6690bbed81f510a52" }
+carina-aws-types = { git = "https://github.com/carina-rs/carina-provider-aws", rev = "00012223f342e26123157a12da1211c11ba7da8a" }
 carina-plugin-sdk = { git = "https://github.com/carina-rs/carina", rev = "d8947f40a6674a393cad6e96c6c32e4ce905f7f0" }
 carina-provider-protocol = { git = "https://github.com/carina-rs/carina", rev = "d8947f40a6674a393cad6e96c6c32e4ce905f7f0" }
 indexmap = "2"

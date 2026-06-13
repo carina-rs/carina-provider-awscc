@@ -3747,6 +3747,9 @@ fn generate_struct_type(
             // Check if the original field type was a List (array)
             let is_list_field =
                 field_type.contains("::list(") || field_type.contains("::unordered_list(");
+            // Enum overrides take precedence over StringType overrides; collisions are
+            // impossible because the override map is keyed by (resource, path) with a
+            // single value.
             let field_type = if let Some(local_enum_info) = enum_info {
                 let composite_key = format!("{}.{}", def_name, field_name);
                 let enum_type = if let Some(enum_info) =
@@ -3799,6 +3802,11 @@ fn generate_struct_type(
                 } else {
                     enum_type
                 }
+            } else if let Some(TypeOverride::StringType(s)) = nested_override {
+                // StringType nested override: replaces the inferred scalar type with
+                // the override type for scalar struct fields. The list-typed override
+                // path is handled upstream and is not wired through this branch.
+                s.to_string()
             } else {
                 field_type
             };
@@ -4498,6 +4506,17 @@ fn resource_type_overrides() -> &'static HashMap<(&'static str, &'static str), T
             m.insert(
                 ("AWS::IdentityStore::GroupMembership", "GroupId"),
                 TypeOverride::StringType("carina_aws_types::sso_principal_id()"),
+            );
+
+            // ELBv2 fixed-response status codes are constrained to ^(2|4|5)\d{2}$.
+            // The CFN schema leaves them as plain strings; CloudControl only
+            // catches bad values at apply-time.
+            m.insert(
+                (
+                    "AWS::ElasticLoadBalancingV2::Listener",
+                    "FixedResponseConfig.StatusCode",
+                ),
+                TypeOverride::StringType("carina_aws_types::http_response_status_code()"),
             );
 
             // === Enum overrides ===
