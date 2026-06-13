@@ -6,3 +6,8 @@ resolver = "3"
 
 [workspace.package]
 version = "0.6.0"
+
+# TEMPORARY for carina#3463: use the sibling aws-side worktree until
+# carina-provider-aws is merged and this repo can bump its git rev.
+[patch."https://github.com/carina-rs/carina-provider-aws.git"]
+carina-aws-types = { path = "/Users/mizzy/src/github.com/carina-rs/carina-provider-aws/.worktrees/issue-3463-dsl-enum-value-slash/carina-aws-types" }

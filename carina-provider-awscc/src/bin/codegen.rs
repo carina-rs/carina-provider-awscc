@@ -13,6 +13,7 @@
 //!   carina-codegen --file schema.json --type-name AWS::EC2::VPC
 
 use anyhow::{Context, Result};
+use carina_aws_types::dsl_enum_value;
 use clap::Parser;
 use heck::{ToPascalCase, ToSnakeCase};
 use regex::Regex;
@@ -697,57 +698,6 @@ fn dsl_resource_name_from_type(type_name: &str) -> Result<String> {
     // "Eip") rather than shouty residue.
     let resource = parts[2].to_snake_case().to_pascal_case();
     Ok(format!("{}.{}", service, resource))
-}
-
-/// Convert a CloudFormation-side enum value to its DSL (snake_case) form.
-///
-/// Per naming-conventions design D7:
-/// - SHOUTY_SNAKE (`GROUP`, `AWS_ACCOUNT`) → lowercase (`group`, `aws_account`)
-/// - PascalCase (`Enabled`, `VersioningStatus`) → snake_case (`enabled`,
-///   `versioning_status`)
-/// - Already kebab/snake (`ap-northeast-1`, `ipsec.1`) → `-` to `_` if present
-///   (`ap_northeast_1`), leave `.`-containing values verbatim so they round-trip
-/// - Numeric values pass through unchanged.
-fn dsl_enum_value(value: &str) -> String {
-    if value.is_empty() {
-        return String::new();
-    }
-    // Passthrough for already-numeric or dotted values (e.g. "ipsec.1").
-    if value.chars().all(|c| c.is_ascii_digit() || c == '.') {
-        return value.to_string();
-    }
-    // SHOUTY_SNAKE: uppercase ASCII letters + underscores + optional digits.
-    if value
-        .chars()
-        .all(|c| c.is_ascii_uppercase() || c == '_' || c.is_ascii_digit())
-        && value.chars().any(|c| c.is_ascii_uppercase())
-    {
-        return value.to_ascii_lowercase();
-    }
-    // Already snake / kebab (no uppercase): normalize hyphens, colons,
-    // and dotted-numeric splits (e.g. `cloud-watch-logs` →
-    // `cloud_watch_logs`, `ipsec.1` → `ipsec_1`, `aws:kms` → `aws_kms`).
-    // The strict-DSL validator (carina-rs/carina#2980) gates acceptance
-    // on the DSL spelling, so any non-identifier separator must collapse
-    // to `_` to keep the value reachable as a bare DSL identifier.
-    if !value.chars().any(|c| c.is_ascii_uppercase()) {
-        return value.replace(['-', '.', ':'], "_");
-    }
-    // Special case: acronym + lowercase + digits (e.g. "IPv4", "IPv6").
-    // Heck's snake_case splits these as "i_pv4" which loses the acronym
-    // structure. Treat them as a single all-lowercase word so the DSL
-    // spelling matches the conventional reading "ipv4".
-    if let Some(idx) = value.chars().position(|c| c.is_ascii_lowercase())
-        && idx >= 1
-        && value[..idx].chars().all(|c| c.is_ascii_uppercase())
-        && value[idx..]
-            .chars()
-            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
-    {
-        return value.to_ascii_lowercase();
-    }
-    // PascalCase (or anything else mixed): route through heck's ToSnakeCase.
-    value.to_snake_case()
 }
 
 /// Build the `dsl_aliases: ...` Rust source code for a `StringEnum`'s
@@ -13359,77 +13309,6 @@ mod tests {
     }
 
     // === Issue #199: snake_case DSL spelling for every StringEnum value ===
-
-    #[test]
-    fn test_dsl_enum_value_ipv4_ipv6() {
-        // IPv4/IPv6 are PascalCase-ish but heck's snake_case turns them into
-        // "i_pv4"/"i_pv6" which is wrong. The DSL form should be the all-lowercase
-        // "ipv4"/"ipv6".
-        assert_eq!(dsl_enum_value("IPv4"), "ipv4");
-        assert_eq!(dsl_enum_value("IPv6"), "ipv6");
-    }
-
-    #[test]
-    fn test_dsl_enum_value_pascal_case() {
-        // PascalCase -> snake_case
-        assert_eq!(dsl_enum_value("Enabled"), "enabled");
-        assert_eq!(
-            dsl_enum_value("BucketOwnerEnforced"),
-            "bucket_owner_enforced"
-        );
-        assert_eq!(dsl_enum_value("VersioningStatus"), "versioning_status");
-        assert_eq!(dsl_enum_value("ObjectWriter"), "object_writer");
-    }
-
-    #[test]
-    fn test_dsl_enum_value_shouty_snake() {
-        // SHOUTY_SNAKE -> lowercase
-        assert_eq!(dsl_enum_value("GROUP"), "group");
-        assert_eq!(dsl_enum_value("AES256"), "aes256");
-        assert_eq!(dsl_enum_value("DEEP_ARCHIVE"), "deep_archive");
-        assert_eq!(dsl_enum_value("AWS_ACCOUNT"), "aws_account");
-    }
-
-    #[test]
-    fn test_dsl_enum_value_kebab_to_snake() {
-        // kebab -> snake (replace hyphens with underscores)
-        assert_eq!(dsl_enum_value("ap-northeast-1"), "ap_northeast_1");
-        assert_eq!(dsl_enum_value("cloud-watch-logs"), "cloud_watch_logs");
-    }
-
-    #[test]
-    fn test_dsl_enum_value_already_snake_passthrough() {
-        // Already snake_case stays unchanged
-        assert_eq!(dsl_enum_value("default"), "default");
-        assert_eq!(dsl_enum_value("dedicated"), "dedicated");
-        assert_eq!(dsl_enum_value("ap_northeast_1"), "ap_northeast_1");
-    }
-
-    #[test]
-    fn test_dsl_enum_value_colon_to_snake() {
-        // AWS S3 SSE algorithm values carry a colon (`aws:kms`, `aws:kms:dsse`).
-        // The colon makes the value unwritable as a bare DSL identifier, so
-        // codegen must rewrite it to `_` to keep the value reachable under
-        // the strict-DSL validator (carina-rs/carina#2986). See awscc#230.
-        assert_eq!(dsl_enum_value("aws:kms"), "aws_kms");
-        assert_eq!(dsl_enum_value("aws:kms:dsse"), "aws_kms_dsse");
-    }
-
-    #[test]
-    fn test_dsl_enum_value_dotted_mixed_to_snake() {
-        // Mixed dotted values (letters + `.`) like "ipsec.1" rewrite
-        // to snake_case (`ipsec_1`) so the DSL spelling stays a bare
-        // identifier — the strict-DSL validator
-        // (carina-rs/carina#2980 / awscc#222) gates acceptance on it.
-        assert_eq!(dsl_enum_value("ipsec.1"), "ipsec_1");
-    }
-
-    #[test]
-    fn test_dsl_enum_value_numeric_passthrough() {
-        // Pure numeric stays
-        assert_eq!(dsl_enum_value("1"), "1");
-        assert_eq!(dsl_enum_value("128"), "128");
-    }
 
     #[test]
     fn test_string_enum_emits_snake_case_dsl_aliases_for_pascal_values() {
