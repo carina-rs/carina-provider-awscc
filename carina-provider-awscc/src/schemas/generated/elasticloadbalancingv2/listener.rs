@@ -26,6 +26,14 @@ const VALID_FIXED_RESPONSE_CONFIG_CONTENT_TYPE: &[&str] = &[
 
 const VALID_MUTUAL_AUTHENTICATION_MODE: &[&str] = &["off", "passthrough", "verify"];
 
+const VALID_PROTOCOL: &[&str] = &[
+    "HTTP", "HTTPS", "TCP", "TLS", "UDP", "TCP_UDP", "QUIC", "TCP_QUIC",
+];
+
+const VALID_REDIRECT_CONFIG_PROTOCOL: &[&str] = &["HTTP", "HTTPS"];
+
+const VALID_REDIRECT_CONFIG_STATUS_CODE: &[&str] = &["HTTP_301", "HTTP_302"];
+
 /// Returns the schema config for elasticloadbalancingv2_listener (AWS::ElasticLoadBalancingV2::Listener)
 pub fn elasticloadbalancingv2_listener_config() -> AwsccSchemaConfig {
     AwsccSchemaConfig {
@@ -82,9 +90,9 @@ pub fn elasticloadbalancingv2_listener_config() -> AwsccSchemaConfig {
                     StructField::new("redirect_config", AttributeType::struct_("RedirectConfig".to_string(), vec![StructField::new("host", AttributeType::string()).with_description("The hostname. This component is not percent-encoded. The hostname can contain #{host}.").with_provider_name("Host"),
                     StructField::new("path", AttributeType::string()).with_description("The absolute path, starting with the leading \"/\". This component is not percent-encoded. The path can contain #{host}, #{path}, and #{port}.").with_provider_name("Path"),
                     StructField::new("port", AttributeType::string()).with_description("The port. You can specify a value from 1 to 65535 or #{port}.").with_provider_name("Port"),
-                    StructField::new("protocol", AttributeType::string()).with_description("The protocol. You can specify HTTP, HTTPS, or #{protocol}. You can redirect HTTP to HTTP, HTTP to HTTPS, and HTTPS to HTTPS. You can't redirect HTTPS to HTTP.").with_provider_name("Protocol"),
+                    StructField::new("protocol", AttributeType::enum_(carina_core::schema::enum_identity("Protocol", Some("aws.elasticloadbalancingv2.Listener.Action.RedirectConfig")), Some(vec!["HTTP".to_string(), "HTTPS".to_string()]), vec![("HTTP".to_string(), "http".to_string()), ("HTTPS".to_string(), "https".to_string())], None, None)).with_description("The protocol. You can specify HTTP, HTTPS, or #{protocol}. You can redirect HTTP to HTTP, HTTP to HTTPS, and HTTPS to HTTPS. You can't redirect HTTPS to HTTP.").with_provider_name("Protocol"),
                     StructField::new("query", AttributeType::string()).with_description("The query parameters, URL-encoded when necessary, but not percent-encoded. Do not include the leading \"?\", as it is automatically added. You can specify any of the reserved keywords.").with_provider_name("Query"),
-                    StructField::new("status_code", AttributeType::string()).required().with_description("The HTTP redirect code. The redirect is either permanent (HTTP 301) or temporary (HTTP 302).").with_provider_name("StatusCode")])).with_description("[Application Load Balancer] Information for creating a redirect action. Specify only when ``Type`` is ``redirect``.").with_provider_name("RedirectConfig"),
+                    StructField::new("status_code", AttributeType::enum_(carina_core::schema::enum_identity("StatusCode", Some("aws.elasticloadbalancingv2.Listener.Action.RedirectConfig")), Some(vec!["HTTP_301".to_string(), "HTTP_302".to_string()]), vec![("HTTP_301".to_string(), "http_301".to_string()), ("HTTP_302".to_string(), "http_302".to_string())], None, None)).required().with_description("The HTTP redirect code. The redirect is either permanent (HTTP 301) or temporary (HTTP 302).").with_provider_name("StatusCode")])).with_description("[Application Load Balancer] Information for creating a redirect action. Specify only when ``Type`` is ``redirect``.").with_provider_name("RedirectConfig"),
                     StructField::new("target_group_arn", carina_aws_types::arn()).with_description("The Amazon Resource Name (ARN) of the target group. Specify only when ``Type`` is ``forward`` and you want to route to a single target group. To route to multiple target groups, you must use ``ForwardConfig`` instead.").with_provider_name("TargetGroupArn"),
                     StructField::new("type", AttributeType::enum_(carina_core::schema::enum_identity("Type", Some("aws.elasticloadbalancingv2.Listener.Action")), Some(vec!["forward".to_string(), "authenticate-oidc".to_string(), "authenticate-cognito".to_string(), "redirect".to_string(), "fixed-response".to_string(), "jwt-validation".to_string()]), vec![("forward".to_string(), "forward".to_string()), ("authenticate-oidc".to_string(), "authenticate_oidc".to_string()), ("authenticate-cognito".to_string(), "authenticate_cognito".to_string()), ("redirect".to_string(), "redirect".to_string()), ("fixed-response".to_string(), "fixed_response".to_string()), ("jwt-validation".to_string(), "jwt_validation".to_string())], None, None)).required().with_description("The type of action.").with_provider_name("Type")])))
                 .required()
@@ -126,7 +134,7 @@ pub fn elasticloadbalancingv2_listener_config() -> AwsccSchemaConfig {
                 .with_provider_name("Port"),
         )
         .attribute(
-            AttributeSchema::new("protocol", AttributeType::string())
+            AttributeSchema::new("protocol", AttributeType::enum_(carina_core::schema::enum_identity("Protocol", Some("aws.elasticloadbalancingv2.Listener")), Some(vec!["HTTP".to_string(), "HTTPS".to_string(), "TCP".to_string(), "TLS".to_string(), "UDP".to_string(), "TCP_UDP".to_string(), "QUIC".to_string(), "TCP_QUIC".to_string()]), vec![("HTTP".to_string(), "http".to_string()), ("HTTPS".to_string(), "https".to_string()), ("TCP".to_string(), "tcp".to_string()), ("TLS".to_string(), "tls".to_string()), ("UDP".to_string(), "udp".to_string()), ("TCP_UDP".to_string(), "tcp_udp".to_string()), ("QUIC".to_string(), "quic".to_string()), ("TCP_QUIC".to_string(), "tcp_quic".to_string())], None, None))
                 .with_description("The protocol for connections from clients to the load balancer. For Application Load Balancers, the supported protocols are HTTP and HTTPS. For Network Load Balancers, the supported protocols are TCP, TLS, UDP, TCP_UDP, QUIC, and TCP_QUIC. You can’t specify the UDP, TCP_UDP, QUIC, or TCP_QUIC protocol if dual-stack mode is enabled. You can't specify a protocol for a Gateway Load Balancer.")
                 .with_provider_name("Protocol"),
         )
@@ -174,9 +182,9 @@ pub fn elasticloadbalancingv2_listener_config() -> AwsccSchemaConfig {
         .with_def("RedirectConfig", AttributeType::struct_("RedirectConfig".to_string(), vec![StructField::new("host", AttributeType::string()).with_description("The hostname. This component is not percent-encoded. The hostname can contain #{host}.").with_provider_name("Host"),
                     StructField::new("path", AttributeType::string()).with_description("The absolute path, starting with the leading \"/\". This component is not percent-encoded. The path can contain #{host}, #{path}, and #{port}.").with_provider_name("Path"),
                     StructField::new("port", AttributeType::string()).with_description("The port. You can specify a value from 1 to 65535 or #{port}.").with_provider_name("Port"),
-                    StructField::new("protocol", AttributeType::string()).with_description("The protocol. You can specify HTTP, HTTPS, or #{protocol}. You can redirect HTTP to HTTP, HTTP to HTTPS, and HTTPS to HTTPS. You can't redirect HTTPS to HTTP.").with_provider_name("Protocol"),
+                    StructField::new("protocol", AttributeType::enum_(carina_core::schema::enum_identity("Protocol", Some("aws.elasticloadbalancingv2.Listener.Action.RedirectConfig")), Some(vec!["HTTP".to_string(), "HTTPS".to_string()]), vec![("HTTP".to_string(), "http".to_string()), ("HTTPS".to_string(), "https".to_string())], None, None)).with_description("The protocol. You can specify HTTP, HTTPS, or #{protocol}. You can redirect HTTP to HTTP, HTTP to HTTPS, and HTTPS to HTTPS. You can't redirect HTTPS to HTTP.").with_provider_name("Protocol"),
                     StructField::new("query", AttributeType::string()).with_description("The query parameters, URL-encoded when necessary, but not percent-encoded. Do not include the leading \"?\", as it is automatically added. You can specify any of the reserved keywords.").with_provider_name("Query"),
-                    StructField::new("status_code", AttributeType::string()).required().with_description("The HTTP redirect code. The redirect is either permanent (HTTP 301) or temporary (HTTP 302).").with_provider_name("StatusCode")]))
+                    StructField::new("status_code", AttributeType::enum_(carina_core::schema::enum_identity("StatusCode", Some("aws.elasticloadbalancingv2.Listener.Action.RedirectConfig")), Some(vec!["HTTP_301".to_string(), "HTTP_302".to_string()]), vec![("HTTP_301".to_string(), "http_301".to_string()), ("HTTP_302".to_string(), "http_302".to_string())], None, None)).required().with_description("The HTTP redirect code. The redirect is either permanent (HTTP 301) or temporary (HTTP 302).").with_provider_name("StatusCode")]))
         .with_def("TargetGroupStickinessConfig", AttributeType::struct_("TargetGroupStickinessConfig".to_string(), vec![StructField::new("duration_seconds", AttributeType::int()).with_description("[Application Load Balancers] The time period, in seconds, during which requests from a client should be routed to the same target group. The range is 1-604800 seconds (7 days). You must specify this value when enabling target group stickiness.").with_provider_name("DurationSeconds"),
                     StructField::new("enabled", AttributeType::bool()).with_description("Indicates whether target group stickiness is enabled.").with_provider_name("Enabled")]))
     }
@@ -193,6 +201,9 @@ pub fn enum_valid_values() -> (
             ("type", VALID_ACTION_TYPE),
             ("content_type", VALID_FIXED_RESPONSE_CONFIG_CONTENT_TYPE),
             ("mode", VALID_MUTUAL_AUTHENTICATION_MODE),
+            ("protocol", VALID_PROTOCOL),
+            ("protocol", VALID_REDIRECT_CONFIG_PROTOCOL),
+            ("status_code", VALID_REDIRECT_CONFIG_STATUS_CODE),
         ],
     )
 }

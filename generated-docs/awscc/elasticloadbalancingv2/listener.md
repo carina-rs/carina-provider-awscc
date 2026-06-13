@@ -81,7 +81,7 @@ The port on which the load balancer is listening. You can't specify a port for a
 
 ### `protocol`
 
-- **Type:** String
+- **Type:** [Enum (Protocol)](#protocol-protocol)
 - **Required:** No
 
 The protocol for connections from clients to the load balancer. For Application Load Balancers, the supported protocols are HTTP and HTTPS. For Network Load Balancers, the supported protocols are TCP, TLS, UDP, TCP_UDP, QUIC, and TCP_QUIC. You can’t specify the UDP, TCP_UDP, QUIC, or TCP_QUIC protocol if dual-stack mode is enabled. You can't specify a protocol for a Gateway Load Balancer.
@@ -129,6 +129,39 @@ Shorthand formats: `text_plain` or `ContentType.text_plain`
 | `verify` | `aws.elasticloadbalancingv2.Listener.MutualAuthentication.Mode.verify` |
 
 Shorthand formats: `off` or `Mode.off`
+
+### protocol (Protocol)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `HTTP` | `aws.elasticloadbalancingv2.Listener.Protocol.http` |
+| `HTTPS` | `aws.elasticloadbalancingv2.Listener.Protocol.https` |
+| `TCP` | `aws.elasticloadbalancingv2.Listener.Protocol.tcp` |
+| `TLS` | `aws.elasticloadbalancingv2.Listener.Protocol.tls` |
+| `UDP` | `aws.elasticloadbalancingv2.Listener.Protocol.udp` |
+| `TCP_UDP` | `aws.elasticloadbalancingv2.Listener.Protocol.tcp_udp` |
+| `QUIC` | `aws.elasticloadbalancingv2.Listener.Protocol.quic` |
+| `TCP_QUIC` | `aws.elasticloadbalancingv2.Listener.Protocol.tcp_quic` |
+
+Shorthand formats: `http` or `Protocol.http`
+
+### protocol (Protocol)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `HTTP` | `aws.elasticloadbalancingv2.Listener.Action.RedirectConfig.Protocol.http` |
+| `HTTPS` | `aws.elasticloadbalancingv2.Listener.Action.RedirectConfig.Protocol.https` |
+
+Shorthand formats: `http` or `Protocol.http`
+
+### status_code (StatusCode)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `HTTP_301` | `aws.elasticloadbalancingv2.Listener.Action.RedirectConfig.StatusCode.http_301` |
+| `HTTP_302` | `aws.elasticloadbalancingv2.Listener.Action.RedirectConfig.StatusCode.http_302` |
+
+Shorthand formats: `http_301` or `StatusCode.http_301`
 
 ## Struct Definitions
 
@@ -236,9 +269,9 @@ Shorthand formats: `off` or `Mode.off`
 | `host` | String | No | The hostname. This component is not percent-encoded. The hostname can contain #{host}. |
 | `path` | String | No | The absolute path, starting with the leading "/". This component is not percent-encoded. The path can contain #{host}, #{path}, and #{port}. |
 | `port` | String | No | The port. You can specify a value from 1 to 65535 or #{port}. |
-| `protocol` | String | No | The protocol. You can specify HTTP, HTTPS, or #{protocol}. You can redirect HTTP to HTTP, HTTP to HTTPS, and HTTPS to HTTPS. You can't redirect HTTPS to HTTP. |
+| `protocol` | [Enum (Protocol)](#protocol-protocol) | No | The protocol. You can specify HTTP, HTTPS, or #{protocol}. You can redirect HTTP to HTTP, HTTP to HTTPS, and HTTPS to HTTPS. You can't redirect HTTPS to HTTP. |
 | `query` | String | No | The query parameters, URL-encoded when necessary, but not percent-encoded. Do not include the leading "?", as it is automatically added. You can specify any of the reserved keywords. |
-| `status_code` | String | Yes | The HTTP redirect code. The redirect is either permanent (HTTP 301) or temporary (HTTP 302). |
+| `status_code` | [Enum (StatusCode)](#status_code-statuscode) | Yes | The HTTP redirect code. The redirect is either permanent (HTTP 301) or temporary (HTTP 302). |
 
 ### TargetGroupStickinessConfig
 
