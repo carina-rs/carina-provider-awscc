@@ -3476,17 +3476,28 @@ fn extract_enum_from_description(description: &str) -> Option<Vec<String>> {
 
     // Strategy 4: Look for prose lists like
     // "The possible values are A, B, and C" without backticks or a colon.
-    if let (Ok(possible_values_re), Ok(connector_re)) = (
-        Regex::new(r"(?i)(?:possible|valid) values?\s+(?:are|is)\s+([^\n.]+)"),
+    //
+    // The head noun is gated to a small allowlist
+    // (values / protocols / modes / policies). Plain `supported X are ...`
+    // without one of those nouns is too generic and false-positives on
+    // sentences like "supported features are described in the docs".
+    //
+    // Multiple matching sentences are *unioned* — `Listener.Protocol`
+    // carries two "supported protocols are ..." clauses (ALB vs NLB), and
+    // the legal enum value set is the union over load-balancer types.
+    if let (Ok(prose_values_re), Ok(connector_re)) = (
+        Regex::new(
+            r"(?i)(?:possible|valid|supported)\s+(?:values?|protocols?|modes?|policies)\s+(?:are|is)\s+([^\n.]+)",
+        ),
         Regex::new(r"(?i)\s+(?:and|or)\s+"),
-    ) && let Some(cap) = possible_values_re.captures(description)
-    {
-        let clause = cap[1].trim();
+    ) {
         let mut candidates: Vec<String> = vec![];
-
-        for comma_part in clause.split(',') {
-            for part in connector_re.split(comma_part) {
-                candidates.push(part.trim().to_string());
+        for cap in prose_values_re.captures_iter(description) {
+            let clause = cap[1].trim();
+            for comma_part in clause.split(',') {
+                for part in connector_re.split(comma_part) {
+                    candidates.push(part.trim().to_string());
+                }
             }
         }
 
@@ -4620,6 +4631,37 @@ fn resource_type_overrides() -> &'static HashMap<(&'static str, &'static str), T
                     "fixed-response",
                     "jwt-validation",
                 ]),
+            );
+
+            // ELBv2 Listener RedirectConfig.Protocol (awscc#360). The
+            // description ("You can specify HTTP, HTTPS, or #{protocol}.")
+            // mixes two literal values with a `#{protocol}` placeholder
+            // that lets a redirect inherit the listener's incoming
+            // protocol. The placeholder is NOT an enum identifier — it
+            // does not satisfy `looks_like_enum_value` and would pollute
+            // the generated DSL identifier set — so the static enum
+            // covers the two literal values only. Authoring redirects
+            // with `#{protocol}` is tracked as the remaining open
+            // question in awscc#360 (carina-core placeholder handling).
+            m.insert(
+                (
+                    "AWS::ElasticLoadBalancingV2::Listener",
+                    "RedirectConfig.Protocol",
+                ),
+                TypeOverride::Enum(vec!["HTTP", "HTTPS"]),
+            );
+            // ELBv2 Listener RedirectConfig.StatusCode (awscc#360). The
+            // description ("either permanent (HTTP 301) or temporary
+            // (HTTP 302)") names the values in prose but the CFN string
+            // form uses the underscored variants `HTTP_301` / `HTTP_302`.
+            // No existing matcher recovers this mapping; pin the two
+            // canonical values.
+            m.insert(
+                (
+                    "AWS::ElasticLoadBalancingV2::Listener",
+                    "RedirectConfig.StatusCode",
+                ),
+                TypeOverride::Enum(vec!["HTTP_301", "HTTP_302"]),
             );
 
             // CloudFront Distribution: fields the CFN schema leaves as plain
@@ -6601,26 +6643,98 @@ mod tests {
     }
 
     #[test]
-    fn test_resource_type_overrides_listener_protocol_not_scoped() {
-        // awscc#357: ensure the TargetGroup.Protocol override does NOT leak
-        // to Listener.Protocol via field-name lookup. The listener allows a
-        // wider union including `QUIC` and `TCP_QUIC`, and field-name-only
-        // overrides would silently reject those.
+    fn test_resource_type_overrides_listener_top_level_protocol_listed_via_prose() {
+        // awscc#360: Listener.Protocol is now enum-derived via the
+        // description-scraping path ("supported protocols are HTTP and
+        // HTTPS. ... supported protocols are TCP, TLS, UDP, TCP_UDP, QUIC,
+        // and TCP_QUIC."). The static list is the UNION across all
+        // load-balancer types — apply-time CloudControl enforces the
+        // contextual subset. The resource_type_overrides() table itself
+        // intentionally still does NOT have a top-level Listener.Protocol
+        // entry: the prose matcher carries this case, leaving the overlay
+        // table free to express the negative contract "this is not a
+        // field-name leak from TargetGroup.Protocol".
         let overrides = resource_type_overrides();
         assert!(
             overrides
                 .get(&("AWS::ElasticLoadBalancingV2::Listener", "Protocol"))
                 .is_none(),
-            "Listener.Protocol must not inherit TargetGroup.Protocol's value list"
+            "Listener.Protocol must not be in resource_type_overrides — it is derived from description prose, not the overlay"
         );
+    }
+
+    #[test]
+    fn test_resource_type_overrides_listener_redirect_config_protocol() {
+        // awscc#360: RedirectConfig.Protocol description is
+        // "You can specify HTTP, HTTPS, or #{protocol}." The static enum
+        // covers the two literal values; `#{protocol}` is a redirect
+        // placeholder, not an enum identifier, and stays out of the
+        // static set (a separate axis tracked in awscc#360).
+        let overrides = resource_type_overrides();
+        assert_eq!(
+            overrides.get(&(
+                "AWS::ElasticLoadBalancingV2::Listener",
+                "RedirectConfig.Protocol",
+            )),
+            Some(&TypeOverride::Enum(vec!["HTTP", "HTTPS"]))
+        );
+    }
+
+    #[test]
+    fn test_resource_type_overrides_listener_redirect_config_status_code() {
+        // awscc#360: RedirectConfig.StatusCode description is
+        // "either permanent (HTTP 301) or temporary (HTTP 302)". The CFN
+        // string form uses underscores (`HTTP_301`, `HTTP_302`); no
+        // existing matcher recovers this without a curated mapping.
+        let overrides = resource_type_overrides();
+        assert_eq!(
+            overrides.get(&(
+                "AWS::ElasticLoadBalancingV2::Listener",
+                "RedirectConfig.StatusCode",
+            )),
+            Some(&TypeOverride::Enum(vec!["HTTP_301", "HTTP_302"]))
+        );
+    }
+
+    #[test]
+    fn test_extract_enum_from_description_supported_protocols_are_union() {
+        // awscc#360: Listener.Protocol CFN description verbatim. Two
+        // "supported protocols are" sentences — the matcher must union
+        // both, not return the first only.
+        let description = "The protocol for connections from clients to the load balancer. \
+            For Application Load Balancers, the supported protocols are HTTP and HTTPS. \
+            For Network Load Balancers, the supported protocols are TCP, TLS, UDP, TCP_UDP, QUIC, and TCP_QUIC. \
+            You can't specify the UDP, TCP_UDP, QUIC, or TCP_QUIC protocol if dual-stack mode is enabled. \
+            You can't specify a protocol for a Gateway Load Balancer.";
+        let result = extract_enum_from_description(description);
         assert!(
-            overrides
-                .get(&(
-                    "AWS::ElasticLoadBalancingV2::Listener",
-                    "RedirectConfig.Protocol",
-                ))
-                .is_none(),
-            "RedirectConfig.Protocol must not inherit TargetGroup.Protocol's value list"
+            result.is_some(),
+            "Listener.Protocol prose should be matched"
+        );
+        let values = result.unwrap();
+        // Order: ALB sentence first (HTTP, HTTPS), then NLB sentence
+        // (TCP, TLS, UDP, TCP_UDP, QUIC, TCP_QUIC). Deduplication preserves
+        // first occurrence order.
+        assert_eq!(
+            values,
+            vec![
+                "HTTP", "HTTPS", "TCP", "TLS", "UDP", "TCP_UDP", "QUIC", "TCP_QUIC"
+            ]
+        );
+    }
+
+    #[test]
+    fn test_extract_enum_from_description_supported_values_oxford_comma() {
+        // Same Strategy-5 path, common sibling phrasing.
+        let description =
+            "The block mode. The supported values are off, block-bidirectional, and block-ingress.";
+        assert_eq!(
+            extract_enum_from_description(description),
+            Some(vec![
+                "off".to_string(),
+                "block-bidirectional".to_string(),
+                "block-ingress".to_string()
+            ])
         );
     }
 
