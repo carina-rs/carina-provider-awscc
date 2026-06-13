@@ -4599,6 +4599,29 @@ fn resource_type_overrides() -> &'static HashMap<(&'static str, &'static str), T
                 ]),
             );
 
+            // ELBv2 Listener Action.Type (awscc#359). The CFN description
+            // is literally "The type of action." with no value list, but
+            // the sibling fields' descriptions enumerate the closed set
+            // ("Specify only when ``Type`` is ``forward``" etc.). Real AWS
+            // values: forward, authenticate-oidc, authenticate-cognito,
+            // redirect, fixed-response, jwt-validation.
+            //
+            // Resource-scoped for the same reason as TargetGroup.Protocol:
+            // `Type` is a generic field name (it also shows up on
+            // VPNGateway with a different value set), so a field-name-only
+            // entry would silently clobber sibling resources.
+            m.insert(
+                ("AWS::ElasticLoadBalancingV2::Listener", "Action.Type"),
+                TypeOverride::Enum(vec![
+                    "forward",
+                    "authenticate-oidc",
+                    "authenticate-cognito",
+                    "redirect",
+                    "fixed-response",
+                    "jwt-validation",
+                ]),
+            );
+
             // CloudFront Distribution: fields the CFN schema leaves as plain
             // strings but are documented as a closed value set (awscc#246).
             // Keys use "DefName.FieldName" composite form so the lookup hits
@@ -6598,6 +6621,42 @@ mod tests {
                 ))
                 .is_none(),
             "RedirectConfig.Protocol must not inherit TargetGroup.Protocol's value list"
+        );
+    }
+
+    #[test]
+    fn test_resource_type_overrides_listener_action_type() {
+        // awscc#359: Listener Action.Type carries no value list in its CFN
+        // description ("The type of action."), but the legal set is closed
+        // and small. Keep the canonical values resource-scoped — `Type` is
+        // a field name shared with `VPNGateway.Type` (= `vec!["ipsec.1"]`),
+        // so a field-name-only override would clobber it.
+        let overrides = resource_type_overrides();
+        assert_eq!(
+            overrides.get(&("AWS::ElasticLoadBalancingV2::Listener", "Action.Type")),
+            Some(&TypeOverride::Enum(vec![
+                "forward",
+                "authenticate-oidc",
+                "authenticate-cognito",
+                "redirect",
+                "fixed-response",
+                "jwt-validation",
+            ]))
+        );
+    }
+
+    #[test]
+    fn test_resource_type_overrides_listener_top_level_type_not_scoped() {
+        // awscc#359: ensure the Action.Type override does NOT leak into a
+        // hypothetical top-level `Type` lookup on the listener. The schema
+        // has no top-level `Type` on Listener today, but a field-name-only
+        // override would collide with VPNGateway.Type if one ever appeared.
+        let overrides = resource_type_overrides();
+        assert!(
+            overrides
+                .get(&("AWS::ElasticLoadBalancingV2::Listener", "Type"))
+                .is_none(),
+            "Listener.Type (top-level) must not inherit Action.Type's value list"
         );
     }
 
