@@ -430,7 +430,6 @@ pub fn proto_to_core_schema(s: &ProtoResourceSchema) -> CoreResourceSchema {
         validator: None,
         kind,
         name_attribute: s.name_attribute.clone(),
-        force_replace: s.force_replace,
         operation_config: s.operation_config.as_ref().map(|c| {
             carina_core::schema::OperationConfig {
                 delete_timeout_secs: c.delete_timeout_secs,
@@ -590,7 +589,6 @@ pub fn core_to_proto_schema(s: &CoreResourceSchema) -> ProtoResourceSchema {
         description: s.description.clone(),
         kind,
         name_attribute: s.name_attribute.clone(),
-        force_replace: s.force_replace,
         operation_config: s.operation_config.as_ref().map(|c| {
             carina_provider_protocol::OperationConfig {
                 delete_timeout_secs: c.delete_timeout_secs,
