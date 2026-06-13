@@ -10,6 +10,8 @@
 //! In particular, `key_policy` survives as a structured policy document, which
 //! is PR #313's core `key_policy` = `iam_policy_document` design.
 
+mod common;
+
 use aws_config::{BehaviorVersion, Region};
 use carina_core::provider::{CreateRequest, Provider, ReadRequest};
 use carina_core::resource::{ConcreteValue, Resource, Value};
@@ -123,6 +125,7 @@ async fn kms_key_create_then_read_round_trips_structured_key_policy() {
     let provider = winterbaume_provider().await;
     let resource = kms_key_resource();
     let id = resource.id.clone();
+    let resource = common::normalize_resource(resource).await;
 
     let created = Provider::create(&provider, &id, CreateRequest { resource })
         .await

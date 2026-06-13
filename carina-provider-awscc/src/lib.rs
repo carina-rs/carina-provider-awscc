@@ -333,15 +333,14 @@ impl Provider for AwsccProvider {
     ) -> BoxFuture<'_, ProviderResult<State>> {
         if let Some(err) = self.init_error() {
             let err = err.to_string();
-            let id = request.resource.id.clone();
+            let id = request.resource.as_resource().id.clone();
             return Box::pin(async move {
                 Err(ProviderError::invalid_input(err)
                     .for_provider("awscc")
                     .for_resource(id))
             });
         }
-        let resource = request.resource;
-        Box::pin(async move { self.create_resource(resource).await })
+        Box::pin(async move { self.create_resource(request.resource.as_resource()).await })
     }
 
     fn update(
