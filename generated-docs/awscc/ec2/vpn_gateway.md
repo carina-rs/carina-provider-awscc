@@ -40,11 +40,21 @@ Any tags assigned to the virtual private gateway.
 
 ### `type`
 
-- **Type:** String
+- **Type:** [Enum (Type)](#type-type)
 - **Required:** Yes
 - **Create-only:** Yes
 
 The type of VPN connection the virtual private gateway supports.
+
+## Enum Values
+
+### type (Type)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `ipsec.1` | `aws.ec2.VpnGateway.Type.ipsec_1` |
+
+Shorthand formats: `ipsec_1` or `Type.ipsec_1`
 
 ## Attribute Reference
 

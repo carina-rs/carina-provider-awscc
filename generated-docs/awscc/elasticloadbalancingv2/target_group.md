@@ -84,7 +84,7 @@ The number of consecutive health checks successes required before considering an
 
 ### `ip_address_type`
 
-- **Type:** String
+- **Type:** [Enum (IpAddressType)](#ip_address_type-ipaddresstype)
 - **Required:** No
 - **Create-only:** Yes
 
@@ -115,7 +115,7 @@ The port on which the targets receive traffic. This port is used unless you spec
 
 ### `protocol`
 
-- **Type:** String
+- **Type:** [Enum (Protocol)](#protocol-protocol)
 - **Required:** No
 - **Create-only:** Yes
 
@@ -123,7 +123,7 @@ The protocol to use for routing traffic to the targets.
 
 ### `protocol_version`
 
-- **Type:** String
+- **Type:** [Enum (ProtocolVersion)](#protocol_version-protocolversion)
 - **Required:** No
 - **Create-only:** Yes
 
@@ -152,7 +152,7 @@ The attributes.
 
 ### `target_type`
 
-- **Type:** String
+- **Type:** [Enum (TargetType)](#target_type-targettype)
 - **Required:** No
 - **Create-only:** Yes
 
@@ -179,6 +179,52 @@ The number of consecutive health check failures required before considering a ta
 - **Create-only:** Yes
 
 The identifier of the virtual private cloud (VPC). If the target is a Lambda function, this parameter does not apply.
+
+## Enum Values
+
+### ip_address_type (IpAddressType)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `ipv4` | `aws.elasticloadbalancingv2.TargetGroup.IpAddressType.ipv4` |
+| `ipv6` | `aws.elasticloadbalancingv2.TargetGroup.IpAddressType.ipv6` |
+
+Shorthand formats: `ipv4` or `IpAddressType.ipv4`
+
+### protocol (Protocol)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `HTTP` | `aws.elasticloadbalancingv2.TargetGroup.Protocol.http` |
+| `HTTPS` | `aws.elasticloadbalancingv2.TargetGroup.Protocol.https` |
+| `TCP` | `aws.elasticloadbalancingv2.TargetGroup.Protocol.tcp` |
+| `TLS` | `aws.elasticloadbalancingv2.TargetGroup.Protocol.tls` |
+| `UDP` | `aws.elasticloadbalancingv2.TargetGroup.Protocol.udp` |
+| `TCP_UDP` | `aws.elasticloadbalancingv2.TargetGroup.Protocol.tcp_udp` |
+| `GENEVE` | `aws.elasticloadbalancingv2.TargetGroup.Protocol.geneve` |
+
+Shorthand formats: `http` or `Protocol.http`
+
+### protocol_version (ProtocolVersion)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `GRPC` | `aws.elasticloadbalancingv2.TargetGroup.ProtocolVersion.grpc` |
+| `HTTP1` | `aws.elasticloadbalancingv2.TargetGroup.ProtocolVersion.http1` |
+| `HTTP2` | `aws.elasticloadbalancingv2.TargetGroup.ProtocolVersion.http2` |
+
+Shorthand formats: `grpc` or `ProtocolVersion.grpc`
+
+### target_type (TargetType)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `instance` | `aws.elasticloadbalancingv2.TargetGroup.TargetType.instance` |
+| `ip` | `aws.elasticloadbalancingv2.TargetGroup.TargetType.ip` |
+| `lambda` | `aws.elasticloadbalancingv2.TargetGroup.TargetType.lambda` |
+| `alb` | `aws.elasticloadbalancingv2.TargetGroup.TargetType.alb` |
+
+Shorthand formats: `instance` or `TargetType.instance`
 
 ## Struct Definitions
 
