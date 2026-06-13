@@ -3799,6 +3799,19 @@ fn generate_struct_type(
                 } else {
                     enum_type
                 }
+            // Nested-key StringType overrides: replace the inferred scalar type with the
+            // override type (e.g. http_response_status_code). Enum/EnumUnordered are
+            // handled upstream via enum_info; other variants are caught by the trailing
+            // guard below.
+            } else if let Some(TypeOverride::StringType(s)) = nested_override {
+                s.to_string()
+            } else if let Some(other) = nested_override {
+                panic!(
+                    "nested override {:?} at {} uses TypeOverride variant {:?} that is not wired through generate_struct_type — add a branch here or move the entry to a top-level key",
+                    nested_key,
+                    schema.type_name,
+                    other,
+                );
             } else {
                 field_type
             };
@@ -4498,6 +4511,18 @@ fn resource_type_overrides() -> &'static HashMap<(&'static str, &'static str), T
             m.insert(
                 ("AWS::IdentityStore::GroupMembership", "GroupId"),
                 TypeOverride::StringType("carina_aws_types::sso_principal_id()"),
+            );
+
+            // ELBv2 fixed-response status codes are constrained to ^(2|4|5)\d{2}$.
+            // The CFN schema leaves them as plain strings; CloudControl only catches
+            // bad values at apply-time. http_response_status_code is a carina-core
+            // built-in (TypeIdentity::bare("HttpResponseStatusCode")).
+            m.insert(
+                (
+                    "AWS::ElasticLoadBalancingV2::Listener",
+                    "FixedResponseConfig.StatusCode",
+                ),
+                TypeOverride::StringType("carina_core::schema::types::http_response_status_code()"),
             );
 
             // === Enum overrides ===
