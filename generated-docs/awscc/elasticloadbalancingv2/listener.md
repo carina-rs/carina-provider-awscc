@@ -99,13 +99,13 @@ The protocol for connections from clients to the load balancer. For Application 
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `text/plain` | `aws.elasticloadbalancingv2.Listener.Action.FixedResponseConfig.ContentType.text/plain` |
-| `text/css` | `aws.elasticloadbalancingv2.Listener.Action.FixedResponseConfig.ContentType.text/css` |
-| `text/html` | `aws.elasticloadbalancingv2.Listener.Action.FixedResponseConfig.ContentType.text/html` |
-| `application/javascript` | `aws.elasticloadbalancingv2.Listener.Action.FixedResponseConfig.ContentType.application/javascript` |
-| `application/json` | `aws.elasticloadbalancingv2.Listener.Action.FixedResponseConfig.ContentType.application/json` |
+| `text/plain` | `aws.elasticloadbalancingv2.Listener.Action.FixedResponseConfig.ContentType.text_plain` |
+| `text/css` | `aws.elasticloadbalancingv2.Listener.Action.FixedResponseConfig.ContentType.text_css` |
+| `text/html` | `aws.elasticloadbalancingv2.Listener.Action.FixedResponseConfig.ContentType.text_html` |
+| `application/javascript` | `aws.elasticloadbalancingv2.Listener.Action.FixedResponseConfig.ContentType.application_javascript` |
+| `application/json` | `aws.elasticloadbalancingv2.Listener.Action.FixedResponseConfig.ContentType.application_json` |
 
-Shorthand formats: `text/plain` or `ContentType.text/plain`
+Shorthand formats: `text_plain` or `ContentType.text_plain`
 
 ### mode (Mode)
 
