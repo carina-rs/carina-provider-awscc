@@ -7,6 +7,14 @@
 use crate::schemas::config::AwsccSchemaConfig;
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField};
 
+const VALID_IP_ADDRESS_TYPE: &[&str] = &["ipv4", "ipv6"];
+
+const VALID_PROTOCOL: &[&str] = &["HTTP", "HTTPS", "TCP", "TLS", "UDP", "TCP_UDP", "GENEVE"];
+
+const VALID_PROTOCOL_VERSION: &[&str] = &["GRPC", "HTTP1", "HTTP2"];
+
+const VALID_TARGET_TYPE: &[&str] = &["instance", "ip", "lambda", "alb"];
+
 /// Returns the schema config for elasticloadbalancingv2_target_group (AWS::ElasticLoadBalancingV2::TargetGroup)
 pub fn elasticloadbalancingv2_target_group_config() -> AwsccSchemaConfig {
     AwsccSchemaConfig {
@@ -51,7 +59,7 @@ pub fn elasticloadbalancingv2_target_group_config() -> AwsccSchemaConfig {
                 .with_provider_name("HealthyThresholdCount"),
         )
         .attribute(
-            AttributeSchema::new("ip_address_type", AttributeType::string())
+            AttributeSchema::new("ip_address_type", AttributeType::enum_(carina_core::schema::enum_identity("IpAddressType", Some("aws.elasticloadbalancingv2.TargetGroup")), Some(vec!["ipv4".to_string(), "ipv6".to_string()]), vec![("ipv4".to_string(), "ipv4".to_string()), ("ipv6".to_string(), "ipv6".to_string())], None, None))
                 .create_only()
                 .with_description("The type of IP address used for this target group. The possible values are ipv4 and ipv6. ")
                 .with_provider_name("IpAddressType"),
@@ -81,13 +89,13 @@ pub fn elasticloadbalancingv2_target_group_config() -> AwsccSchemaConfig {
                 .with_provider_name("Port"),
         )
         .attribute(
-            AttributeSchema::new("protocol", AttributeType::string())
+            AttributeSchema::new("protocol", AttributeType::enum_(carina_core::schema::enum_identity("Protocol", Some("aws.elasticloadbalancingv2.TargetGroup")), Some(vec!["HTTP".to_string(), "HTTPS".to_string(), "TCP".to_string(), "TLS".to_string(), "UDP".to_string(), "TCP_UDP".to_string(), "GENEVE".to_string()]), vec![("HTTP".to_string(), "http".to_string()), ("HTTPS".to_string(), "https".to_string()), ("TCP".to_string(), "tcp".to_string()), ("TLS".to_string(), "tls".to_string()), ("UDP".to_string(), "udp".to_string()), ("TCP_UDP".to_string(), "tcp_udp".to_string()), ("GENEVE".to_string(), "geneve".to_string())], None, None))
                 .create_only()
                 .with_description("The protocol to use for routing traffic to the targets.")
                 .with_provider_name("Protocol"),
         )
         .attribute(
-            AttributeSchema::new("protocol_version", AttributeType::string())
+            AttributeSchema::new("protocol_version", AttributeType::enum_(carina_core::schema::enum_identity("ProtocolVersion", Some("aws.elasticloadbalancingv2.TargetGroup")), Some(vec!["GRPC".to_string(), "HTTP1".to_string(), "HTTP2".to_string()]), vec![("GRPC".to_string(), "grpc".to_string()), ("HTTP1".to_string(), "http1".to_string()), ("HTTP2".to_string(), "http2".to_string())], None, None))
                 .create_only()
                 .with_description("[HTTP/HTTPS protocol] The protocol version. The possible values are GRPC, HTTP1, and HTTP2.")
                 .with_provider_name("ProtocolVersion"),
@@ -129,7 +137,7 @@ pub fn elasticloadbalancingv2_target_group_config() -> AwsccSchemaConfig {
                 .with_provider_name("TargetGroupName"),
         )
         .attribute(
-            AttributeSchema::new("target_type", AttributeType::string())
+            AttributeSchema::new("target_type", AttributeType::enum_(carina_core::schema::enum_identity("TargetType", Some("aws.elasticloadbalancingv2.TargetGroup")), Some(vec!["instance".to_string(), "ip".to_string(), "lambda".to_string(), "alb".to_string()]), vec![("instance".to_string(), "instance".to_string()), ("ip".to_string(), "ip".to_string()), ("lambda".to_string(), "lambda".to_string()), ("alb".to_string(), "alb".to_string())], None, None))
                 .create_only()
                 .with_description("The type of target that you must specify when registering targets with this target group. You can't specify targets for a target group using more than one target type.")
                 .with_provider_name("TargetType"),
@@ -171,5 +179,13 @@ pub fn enum_valid_values() -> (
     &'static str,
     &'static [(&'static str, &'static [&'static str])],
 ) {
-    ("elasticloadbalancingv2.TargetGroup", &[])
+    (
+        "elasticloadbalancingv2.TargetGroup",
+        &[
+            ("ip_address_type", VALID_IP_ADDRESS_TYPE),
+            ("protocol", VALID_PROTOCOL),
+            ("protocol_version", VALID_PROTOCOL_VERSION),
+            ("target_type", VALID_TARGET_TYPE),
+        ],
+    )
 }

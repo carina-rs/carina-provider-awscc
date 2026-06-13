@@ -1374,6 +1374,20 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str) -> Result<String> {
         if is_deprecated_property(prop) {
             continue;
         }
+        // Apply resource-scoped enum overlay (awscc#357) for top-level
+        // properties. The nested-struct loop below already does the same
+        // thing for `Struct.Field` keys (awscc#246); without this branch a
+        // top-level Enum override (e.g. `TargetGroup.Protocol`) was
+        // recorded in the schema (`generate_schema_code`) but never
+        // mirrored into the markdown — `cfn_type_to_carina_type_with_enum`
+        // does not consult `resource_type_overrides` itself.
+        if let Some(TypeOverride::Enum(values) | TypeOverride::EnumUnordered(values)) =
+            resource_type_overrides().get(&(type_name, prop_name.as_str()))
+        {
+            enums.insert(prop_name.clone(), enum_info_for_override(prop_name, values));
+            collect_struct_defs(prop, prop_name, schema, &[], &mut struct_defs);
+            continue;
+        }
         let (_, enum_info) =
             cfn_type_to_carina_type_with_enum(prop, prop_name, schema, &namespace, &enums);
         if let Some(info) = enum_info {
@@ -3460,6 +3474,37 @@ fn extract_enum_from_description(description: &str) -> Option<Vec<String>> {
         }
     }
 
+    // Strategy 4: Look for prose lists like
+    // "The possible values are A, B, and C" without backticks or a colon.
+    if let (Ok(possible_values_re), Ok(connector_re)) = (
+        Regex::new(r"(?i)(?:possible|valid) values?\s+(?:are|is)\s+([^\n.]+)"),
+        Regex::new(r"(?i)\s+(?:and|or)\s+"),
+    ) && let Some(cap) = possible_values_re.captures(description)
+    {
+        let clause = cap[1].trim();
+        let mut candidates: Vec<String> = vec![];
+
+        for comma_part in clause.split(',') {
+            for part in connector_re.split(comma_part) {
+                candidates.push(part.trim().to_string());
+            }
+        }
+
+        values = candidates
+            .into_iter()
+            .filter(|v| {
+                !v.is_empty()
+                    && !v.contains(' ')
+                    && looks_like_enum_value(v)
+                    && !looks_like_property_name(v)
+            })
+            .collect();
+
+        if values.len() >= 2 {
+            return deduplicate_enum_values(values);
+        }
+    }
+
     None
 }
 
@@ -4531,6 +4576,27 @@ fn resource_type_overrides() -> &'static HashMap<(&'static str, &'static str), T
             m.insert(
                 ("AWS::EC2::VPNGateway", "Type"),
                 TypeOverride::Enum(vec!["ipsec.1"]),
+            );
+
+            // ELBv2 TargetGroup TargetType / Protocol (awscc#357). The CFN
+            // descriptions carry no value list, so the description-scraping
+            // heuristic in `extract_enum_from_description` returns nothing
+            // and the type would otherwise stay a free-form string.
+            //
+            // Scope these by resource type — `Protocol` is a field name
+            // shared with `Listener.Protocol` and the listener uses a
+            // different value union (it adds `QUIC`/`TCP_QUIC`), so we must
+            // NOT let a field-name-only override (`known_enum_overrides`)
+            // leak this list across resources.
+            m.insert(
+                ("AWS::ElasticLoadBalancingV2::TargetGroup", "TargetType"),
+                TypeOverride::Enum(vec!["instance", "ip", "lambda", "alb"]),
+            );
+            m.insert(
+                ("AWS::ElasticLoadBalancingV2::TargetGroup", "Protocol"),
+                TypeOverride::Enum(vec![
+                    "HTTP", "HTTPS", "TCP", "TLS", "UDP", "TCP_UDP", "GENEVE",
+                ]),
             );
 
             // CloudFront Distribution: fields the CFN schema leaves as plain
@@ -6429,6 +6495,110 @@ mod tests {
         assert!(result.is_some());
         let values = result.unwrap();
         assert_eq!(values, vec!["enabled", "disabled"]);
+    }
+
+    #[test]
+    fn test_extract_enum_from_description_possible_values_are_two_values() {
+        // awscc#357 motivating case: ELBv2 TargetGroup.IpAddressType
+        // description (verbatim from the CFN schema).
+        let description = "The type of IP address used for this target group. The possible values are ipv4 and ipv6.";
+        assert_eq!(
+            extract_enum_from_description(description),
+            Some(vec!["ipv4".to_string(), "ipv6".to_string()])
+        );
+    }
+
+    #[test]
+    fn test_extract_enum_from_description_possible_values_are_oxford_comma() {
+        // awscc#357 motivating case: ELBv2 TargetGroup.ProtocolVersion
+        // description (verbatim from the CFN schema).
+        let description = "[HTTP/HTTPS protocol] The protocol version. The possible values are GRPC, HTTP1, and HTTP2.";
+        assert_eq!(
+            extract_enum_from_description(description),
+            Some(vec![
+                "GRPC".to_string(),
+                "HTTP1".to_string(),
+                "HTTP2".to_string()
+            ])
+        );
+    }
+
+    #[test]
+    fn test_extract_enum_from_description_possible_values_are_no_oxford() {
+        // Same prose shape without the Oxford comma — common variant.
+        let description = "Some flag. The possible values are foo, bar and baz.";
+        assert_eq!(
+            extract_enum_from_description(description),
+            Some(vec![
+                "foo".to_string(),
+                "bar".to_string(),
+                "baz".to_string()
+            ])
+        );
+    }
+
+    #[test]
+    fn test_extract_enum_from_description_possible_values_are_rejects_prose() {
+        // "The possible values are ..." followed by a sentence-shaped clause
+        // (multi-word tokens, no enum-shaped identifiers) must NOT yield an enum.
+        let description = "The mode. The possible values are described in the AWS documentation.";
+        assert_eq!(extract_enum_from_description(description), None);
+    }
+
+    #[test]
+    fn test_resource_type_overrides_target_group_target_type() {
+        // awscc#357: TargetGroup.TargetType has no value list in its CFN
+        // description, so the legal values are kept in the resource-scoped
+        // curated overlay (NOT the field-name-only `known_enum_overrides`
+        // table — `TargetType` collides nowhere today but would the moment
+        // any other resource grows a field of the same name).
+        let overrides = resource_type_overrides();
+        assert_eq!(
+            overrides.get(&("AWS::ElasticLoadBalancingV2::TargetGroup", "TargetType")),
+            Some(&TypeOverride::Enum(vec!["instance", "ip", "lambda", "alb"]))
+        );
+    }
+
+    #[test]
+    fn test_resource_type_overrides_target_group_protocol() {
+        // awscc#357: TargetGroup.Protocol has no value list in its CFN
+        // description. Use the union of all TargetType-dependent values.
+        //
+        // This MUST be resource-scoped, not field-name-scoped:
+        // `Listener.Protocol` shares the name but allows a different value
+        // union (adds `QUIC`/`TCP_QUIC`), so a field-name-only override
+        // would silently reject those at validate.
+        let overrides = resource_type_overrides();
+        assert_eq!(
+            overrides.get(&("AWS::ElasticLoadBalancingV2::TargetGroup", "Protocol")),
+            Some(&TypeOverride::Enum(vec![
+                "HTTP", "HTTPS", "TCP", "TLS", "UDP", "TCP_UDP", "GENEVE"
+            ]))
+        );
+    }
+
+    #[test]
+    fn test_resource_type_overrides_listener_protocol_not_scoped() {
+        // awscc#357: ensure the TargetGroup.Protocol override does NOT leak
+        // to Listener.Protocol via field-name lookup. The listener allows a
+        // wider union including `QUIC` and `TCP_QUIC`, and field-name-only
+        // overrides would silently reject those.
+        let overrides = resource_type_overrides();
+        assert!(
+            overrides
+                .get(&("AWS::ElasticLoadBalancingV2::Listener", "Protocol"))
+                .is_none(),
+            "Listener.Protocol must not inherit TargetGroup.Protocol's value list"
+        );
+        assert!(
+            overrides
+                .get(&(
+                    "AWS::ElasticLoadBalancingV2::Listener",
+                    "RedirectConfig.Protocol",
+                ))
+                .is_none(),
+            "RedirectConfig.Protocol must not inherit TargetGroup.Protocol's value list"
+        );
     }
 
     #[test]
@@ -10835,6 +11005,59 @@ mod tests {
         assert!(
             !generated.contains(".with_default("),
             "Should not emit scalar JSON defaults for structured policy documents: {generated}"
+        );
+    }
+
+    #[test]
+    fn test_generate_markdown_top_level_enum_override_renders_table() {
+        // awscc#357: top-level `Enum` entries in `resource_type_overrides`
+        // must show up in the markdown's `## Enum Values` section. Before
+        // this fix the nested-struct loop consulted `resource_type_overrides`
+        // but the top-level attribute loop did not, so `VPNGateway.Type`
+        // (and the new `TargetGroup.{Protocol,TargetType}`) were silently
+        // rendered as plain `String` even though the generated schema
+        // correctly typed them as enums.
+        let mut properties = BTreeMap::new();
+        properties.insert(
+            "Type".to_string(),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("string".to_string())),
+                description: Some(
+                    "The type of VPN connection the virtual private gateway supports.".to_string(),
+                ),
+                ..Default::default()
+            },
+        );
+
+        let schema = CfnSchema {
+            type_name: "AWS::EC2::VPNGateway".to_string(),
+            description: None,
+            properties,
+            required: vec!["Type".to_string()],
+            read_only_properties: vec![],
+            create_only_properties: vec!["/properties/Type".to_string()],
+            write_only_properties: vec![],
+            primary_identifier: None,
+            definitions: None,
+            tagging: None,
+            one_of: vec![],
+            any_of: vec![],
+            handlers: BTreeMap::new(),
+        };
+
+        let md = generate_markdown(&schema, "AWS::EC2::VPNGateway").unwrap();
+
+        assert!(
+            md.contains("[Enum (Type)](#type-type)"),
+            "top-level enum override should render as an Enum link, not String: {md}"
+        );
+        assert!(
+            md.contains("## Enum Values"),
+            "top-level enum override should add an Enum Values section: {md}"
+        );
+        assert!(
+            md.contains("`ipsec.1`"),
+            "the enum value list should be rendered: {md}"
         );
     }
 
