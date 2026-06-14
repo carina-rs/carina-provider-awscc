@@ -4633,22 +4633,46 @@ fn resource_type_overrides() -> &'static HashMap<(&'static str, &'static str), T
                 ]),
             );
 
-            // ELBv2 Listener RedirectConfig.Protocol (awscc#360). The
-            // description ("You can specify HTTP, HTTPS, or #{protocol}.")
-            // mixes two literal values with a `#{protocol}` placeholder
-            // that lets a redirect inherit the listener's incoming
-            // protocol. The placeholder is NOT an enum identifier — it
-            // does not satisfy `looks_like_enum_value` and would pollute
-            // the generated DSL identifier set — so the static enum
-            // covers the two literal values only. Authoring redirects
-            // with `#{protocol}` is tracked as the remaining open
-            // question in awscc#360 (carina-core placeholder handling).
+            // ELBv2 Listener RedirectConfig placeholders (awscc#363,
+            // carina#3494). Protocol, Host, Port, Path, and Query are
+            // sibling string types in carina-core so each field accepts
+            // its documented `#{...}` placeholder without widening the
+            // others. StatusCode remains a closed enum below because it
+            // has no placeholder form.
             m.insert(
                 (
                     "AWS::ElasticLoadBalancingV2::Listener",
                     "RedirectConfig.Protocol",
                 ),
-                TypeOverride::Enum(vec!["HTTP", "HTTPS"]),
+                TypeOverride::StringType("carina_core::schema::types::redirect_protocol()"),
+            );
+            m.insert(
+                (
+                    "AWS::ElasticLoadBalancingV2::Listener",
+                    "RedirectConfig.Host",
+                ),
+                TypeOverride::StringType("carina_core::schema::types::redirect_host()"),
+            );
+            m.insert(
+                (
+                    "AWS::ElasticLoadBalancingV2::Listener",
+                    "RedirectConfig.Port",
+                ),
+                TypeOverride::StringType("carina_core::schema::types::redirect_port()"),
+            );
+            m.insert(
+                (
+                    "AWS::ElasticLoadBalancingV2::Listener",
+                    "RedirectConfig.Path",
+                ),
+                TypeOverride::StringType("carina_core::schema::types::redirect_path()"),
+            );
+            m.insert(
+                (
+                    "AWS::ElasticLoadBalancingV2::Listener",
+                    "RedirectConfig.Query",
+                ),
+                TypeOverride::StringType("carina_core::schema::types::redirect_query()"),
             );
             // ELBv2 Listener RedirectConfig.StatusCode (awscc#360). The
             // description ("either permanent (HTTP 301) or temporary
@@ -6664,20 +6688,38 @@ mod tests {
     }
 
     #[test]
-    fn test_resource_type_overrides_listener_redirect_config_protocol() {
-        // awscc#360: RedirectConfig.Protocol description is
-        // "You can specify HTTP, HTTPS, or #{protocol}." The static enum
-        // covers the two literal values; `#{protocol}` is a redirect
-        // placeholder, not an enum identifier, and stays out of the
-        // static set (a separate axis tracked in awscc#360).
+    fn test_resource_type_overrides_listener_redirect_config_sibling_string_types() {
+        // awscc#363 / carina#3494: RedirectConfig placeholder fields use
+        // sibling string types so each documented placeholder is scoped to
+        // the field that accepts it.
         let overrides = resource_type_overrides();
-        assert_eq!(
-            overrides.get(&(
-                "AWS::ElasticLoadBalancingV2::Listener",
+        for (field, type_constructor) in [
+            (
                 "RedirectConfig.Protocol",
-            )),
-            Some(&TypeOverride::Enum(vec!["HTTP", "HTTPS"]))
-        );
+                "carina_core::schema::types::redirect_protocol()",
+            ),
+            (
+                "RedirectConfig.Host",
+                "carina_core::schema::types::redirect_host()",
+            ),
+            (
+                "RedirectConfig.Port",
+                "carina_core::schema::types::redirect_port()",
+            ),
+            (
+                "RedirectConfig.Path",
+                "carina_core::schema::types::redirect_path()",
+            ),
+            (
+                "RedirectConfig.Query",
+                "carina_core::schema::types::redirect_query()",
+            ),
+        ] {
+            assert_eq!(
+                overrides.get(&("AWS::ElasticLoadBalancingV2::Listener", field)),
+                Some(&TypeOverride::StringType(type_constructor))
+            );
+        }
     }
 
     #[test]
