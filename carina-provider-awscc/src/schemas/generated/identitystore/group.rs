@@ -97,3 +97,19 @@ pub fn enum_valid_values() -> (
 ) {
     ("identitystore.Group", &[])
 }
+
+/// Returns the IAM permissions declared by the CloudFormation handler for this operation.
+pub fn required_permissions(op: carina_core::effect::PlanOp) -> &'static [&'static str] {
+    match op {
+        carina_core::effect::PlanOp::Create => {
+            &["identitystore:CreateGroup", "identitystore:DescribeGroup"]
+        }
+        carina_core::effect::PlanOp::Read => &["identitystore:DescribeGroup"],
+        carina_core::effect::PlanOp::Update => {
+            &["identitystore:DescribeGroup", "identitystore:UpdateGroup"]
+        }
+        carina_core::effect::PlanOp::Delete => {
+            &["identitystore:DescribeGroup", "identitystore:DeleteGroup"]
+        }
+    }
+}

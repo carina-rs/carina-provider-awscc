@@ -629,7 +629,7 @@ dependencies = [
 [[package]]
 name = "carina-aws-types"
 version = "0.4.0"
-source = "git+https://github.com/carina-rs/carina-provider-aws?rev=0d67b87f02d40fbd38e152a0d8ef6cd4e42ec628#0d67b87f02d40fbd38e152a0d8ef6cd4e42ec628"
+source = "git+https://github.com/carina-rs/carina-provider-aws?rev=da55aa1#da55aa13380f5a3eb1180c3f8f695c698e7a67c8"
 dependencies = [
  "carina-core",
  "heck",
@@ -638,7 +638,7 @@ dependencies = [
 [[package]]
 name = "carina-core"
 version = "0.4.0"
-source = "git+https://github.com/carina-rs/carina?rev=28bc698e2c4aad0875ee44b8ef3372a92e8213a4#28bc698e2c4aad0875ee44b8ef3372a92e8213a4"
+source = "git+https://github.com/carina-rs/carina?rev=156b5e2f#156b5e2f4808bb90c49c4ea26a8e05e0cf9f8265"
 dependencies = [
  "argon2",
  "carina-provider-protocol",
@@ -652,13 +652,14 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tokio",
+ "tokio-util",
  "uuid",
 ]
 
 [[package]]
 name = "carina-plugin-sdk"
 version = "0.4.0"
-source = "git+https://github.com/carina-rs/carina?rev=28bc698e2c4aad0875ee44b8ef3372a92e8213a4#28bc698e2c4aad0875ee44b8ef3372a92e8213a4"
+source = "git+https://github.com/carina-rs/carina?rev=156b5e2f#156b5e2f4808bb90c49c4ea26a8e05e0cf9f8265"
 dependencies = [
  "aws-smithy-runtime-api",
  "aws-smithy-types",
@@ -706,7 +707,7 @@ dependencies = [
 [[package]]
 name = "carina-provider-protocol"
 version = "0.3.0"
-source = "git+https://github.com/carina-rs/carina?rev=28bc698e2c4aad0875ee44b8ef3372a92e8213a4#28bc698e2c4aad0875ee44b8ef3372a92e8213a4"
+source = "git+https://github.com/carina-rs/carina?rev=156b5e2f#156b5e2f4808bb90c49c4ea26a8e05e0cf9f8265"
 dependencies = [
  "serde",
  "serde_json",
@@ -924,7 +925,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]

@@ -70,3 +70,19 @@ pub fn enum_valid_values() -> (
         ],
     )
 }
+
+/// Returns the IAM permissions declared by the CloudFormation handler for this operation.
+pub fn required_permissions(op: carina_core::effect::PlanOp) -> &'static [&'static str] {
+    match op {
+        carina_core::effect::PlanOp::Create => &["cloudfront:CreateOriginAccessControl"],
+        carina_core::effect::PlanOp::Read => &["cloudfront:GetOriginAccessControl"],
+        carina_core::effect::PlanOp::Update => &[
+            "cloudfront:UpdateOriginAccessControl",
+            "cloudfront:GetOriginAccessControl",
+        ],
+        carina_core::effect::PlanOp::Delete => &[
+            "cloudfront:DeleteOriginAccessControl",
+            "cloudfront:GetOriginAccessControl",
+        ],
+    }
+}

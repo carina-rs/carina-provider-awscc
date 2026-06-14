@@ -153,3 +153,57 @@ pub fn enum_valid_values() -> (
         &[("log_group_class", VALID_LOG_GROUP_CLASS)],
     )
 }
+
+/// Returns the IAM permissions declared by the CloudFormation handler for this operation.
+pub fn required_permissions(op: carina_core::effect::PlanOp) -> &'static [&'static str] {
+    match op {
+        carina_core::effect::PlanOp::Create => &[
+            "logs:DescribeLogGroups",
+            "logs:CreateLogGroup",
+            "logs:PutRetentionPolicy",
+            "logs:TagResource",
+            "logs:GetDataProtectionPolicy",
+            "logs:PutDataProtectionPolicy",
+            "logs:CreateLogDelivery",
+            "s3:REST.PUT.OBJECT",
+            "firehose:TagDeliveryStream",
+            "logs:PutResourcePolicy",
+            "logs:DescribeResourcePolicies",
+            "logs:PutIndexPolicy",
+            "logs:DescribeIndexPolicies",
+        ],
+        carina_core::effect::PlanOp::Read => &[
+            "logs:DescribeLogGroups",
+            "logs:ListTagsForResource",
+            "logs:GetDataProtectionPolicy",
+            "logs:DescribeIndexPolicies",
+            "logs:DescribeResourcePolicies",
+        ],
+        carina_core::effect::PlanOp::Update => &[
+            "logs:DescribeLogGroups",
+            "logs:AssociateKmsKey",
+            "logs:DisassociateKmsKey",
+            "logs:PutRetentionPolicy",
+            "logs:DeleteRetentionPolicy",
+            "logs:TagResource",
+            "logs:UntagResource",
+            "logs:ListTagsForResource",
+            "logs:GetDataProtectionPolicy",
+            "logs:PutDataProtectionPolicy",
+            "logs:CreateLogDelivery",
+            "s3:REST.PUT.OBJECT",
+            "firehose:TagDeliveryStream",
+            "logs:PutIndexPolicy",
+            "logs:DeleteIndexPolicy",
+            "logs:PutResourcePolicy",
+            "logs:DescribeResourcePolicies",
+            "logs:DeleteResourcePolicy",
+            "logs:PutLogGroupDeletionProtection",
+        ],
+        carina_core::effect::PlanOp::Delete => &[
+            "logs:DescribeLogGroups",
+            "logs:DeleteLogGroup",
+            "logs:DeleteDataProtectionPolicy",
+        ],
+    }
+}

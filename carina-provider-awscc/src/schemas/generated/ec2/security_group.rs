@@ -134,3 +134,34 @@ pub fn enum_valid_values() -> (
         ],
     )
 }
+
+/// Returns the IAM permissions declared by the CloudFormation handler for this operation.
+pub fn required_permissions(op: carina_core::effect::PlanOp) -> &'static [&'static str] {
+    match op {
+        carina_core::effect::PlanOp::Create => &[
+            "ec2:CreateSecurityGroup",
+            "ec2:DescribeSecurityGroups",
+            "ec2:RevokeSecurityGroupEgress",
+            "ec2:AuthorizeSecurityGroupEgress",
+            "ec2:AuthorizeSecurityGroupIngress",
+            "ec2:CreateTags",
+        ],
+        carina_core::effect::PlanOp::Read => &["ec2:DescribeSecurityGroups"],
+        carina_core::effect::PlanOp::Update => &[
+            "ec2:RevokeSecurityGroupEgress",
+            "ec2:RevokeSecurityGroupIngress",
+            "ec2:DescribeSecurityGroups",
+            "ec2:AuthorizeSecurityGroupEgress",
+            "ec2:AuthorizeSecurityGroupIngress",
+            "ec2:UpdateSecurityGroupRuleDescriptionsIngress",
+            "ec2:UpdateSecurityGroupRuleDescriptionsEgress",
+            "ec2:CreateTags",
+            "ec2:DeleteTags",
+        ],
+        carina_core::effect::PlanOp::Delete => &[
+            "ec2:DescribeSecurityGroups",
+            "ec2:DeleteSecurityGroup",
+            "ec2:DescribeInstances",
+        ],
+    }
+}

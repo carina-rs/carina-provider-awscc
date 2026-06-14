@@ -144,3 +144,34 @@ pub fn enum_valid_values() -> (
         ],
     )
 }
+
+/// Returns the IAM permissions declared by the CloudFormation handler for this operation.
+pub fn required_permissions(op: carina_core::effect::PlanOp) -> &'static [&'static str] {
+    match op {
+        carina_core::effect::PlanOp::Create => &[
+            "ecs:CreateCluster",
+            "ecs:DescribeClusters",
+            "iam:CreateServiceLinkedRole",
+            "ecs:TagResource",
+            "kms:DescribeKey",
+        ],
+        carina_core::effect::PlanOp::Read => &["ecs:DescribeClusters", "kms:DescribeKey"],
+        carina_core::effect::PlanOp::Update => &[
+            "ecs:PutAccountSettingDefault",
+            "ecs:DescribeClusters",
+            "ecs:TagResource",
+            "ecs:UntagResource",
+            "ecs:PutAccountSetting",
+            "ecs:ListTagsForResource",
+            "ecs:UpdateCluster",
+            "ecs:UpdateClusterSettings",
+            "ecs:PutClusterCapacityProviders",
+            "kms:DescribeKey",
+        ],
+        carina_core::effect::PlanOp::Delete => &[
+            "ecs:DeleteCluster",
+            "ecs:DescribeClusters",
+            "kms:DescribeKey",
+        ],
+    }
+}

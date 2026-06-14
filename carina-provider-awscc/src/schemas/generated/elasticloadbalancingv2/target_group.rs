@@ -189,3 +189,37 @@ pub fn enum_valid_values() -> (
         ],
     )
 }
+
+/// Returns the IAM permissions declared by the CloudFormation handler for this operation.
+pub fn required_permissions(op: carina_core::effect::PlanOp) -> &'static [&'static str] {
+    match op {
+        carina_core::effect::PlanOp::Create => &[
+            "elasticloadbalancing:CreateTargetGroup",
+            "elasticloadbalancing:DescribeTargetGroups",
+            "elasticloadbalancing:RegisterTargets",
+            "elasticloadbalancing:ModifyTargetGroupAttributes",
+            "elasticloadbalancing:DescribeTargetHealth",
+            "elasticloadbalancing:AddTags",
+        ],
+        carina_core::effect::PlanOp::Read => &[
+            "elasticloadbalancing:DescribeTargetGroups",
+            "elasticloadbalancing:DescribeTargetGroupAttributes",
+            "elasticloadbalancing:DescribeTargetHealth",
+            "elasticloadbalancing:DescribeTags",
+        ],
+        carina_core::effect::PlanOp::Update => &[
+            "elasticloadbalancing:DescribeTargetGroups",
+            "elasticloadbalancing:ModifyTargetGroup",
+            "elasticloadbalancing:ModifyTargetGroupAttributes",
+            "elasticloadbalancing:RegisterTargets",
+            "elasticloadbalancing:DescribeTargetHealth",
+            "elasticloadbalancing:DeregisterTargets",
+            "elasticloadbalancing:AddTags",
+            "elasticloadbalancing:RemoveTags",
+        ],
+        carina_core::effect::PlanOp::Delete => &[
+            "elasticloadbalancing:DeleteTargetGroup",
+            "elasticloadbalancing:DescribeTargetGroups",
+        ],
+    }
+}

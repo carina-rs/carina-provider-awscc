@@ -120,3 +120,30 @@ pub fn enum_valid_values() -> (
 ) {
     ("ec2.Vpc", &[("instance_tenancy", VALID_INSTANCE_TENANCY)])
 }
+
+/// Returns the IAM permissions declared by the CloudFormation handler for this operation.
+pub fn required_permissions(op: carina_core::effect::PlanOp) -> &'static [&'static str] {
+    match op {
+        carina_core::effect::PlanOp::Create => &[
+            "ec2:CreateVpc",
+            "ec2:DescribeVpcs",
+            "ec2:DescribeVpcAttribute",
+            "ec2:ModifyVpcAttribute",
+            "ec2:CreateTags",
+        ],
+        carina_core::effect::PlanOp::Read => &[
+            "ec2:DescribeVpcs",
+            "ec2:DescribeSecurityGroups",
+            "ec2:DescribeNetworkAcls",
+            "ec2:DescribeVpcAttribute",
+        ],
+        carina_core::effect::PlanOp::Update => &[
+            "ec2:CreateTags",
+            "ec2:ModifyVpcAttribute",
+            "ec2:DescribeVpcAttribute",
+            "ec2:DeleteTags",
+            "ec2:ModifyVpcTenancy",
+        ],
+        carina_core::effect::PlanOp::Delete => &["ec2:DeleteVpc", "ec2:DescribeVpcs"],
+    }
+}

@@ -82,3 +82,26 @@ pub fn enum_valid_values() -> (
 ) {
     ("ec2.VpcPeeringConnection", &[])
 }
+
+/// Returns the IAM permissions declared by the CloudFormation handler for this operation.
+pub fn required_permissions(op: carina_core::effect::PlanOp) -> &'static [&'static str] {
+    match op {
+        carina_core::effect::PlanOp::Create => &[
+            "ec2:CreateVpcPeeringConnection",
+            "ec2:DescribeVpcPeeringConnections",
+            "ec2:AcceptVpcPeeringConnection",
+            "ec2:CreateTags",
+            "sts:AssumeRole",
+        ],
+        carina_core::effect::PlanOp::Read => &["ec2:DescribeVpcPeeringConnections"],
+        carina_core::effect::PlanOp::Update => &[
+            "ec2:CreateTags",
+            "ec2:DeleteTags",
+            "ec2:DescribeVpcPeeringConnections",
+        ],
+        carina_core::effect::PlanOp::Delete => &[
+            "ec2:DeleteVpcPeeringConnection",
+            "ec2:DescribeVpcPeeringConnections",
+        ],
+    }
+}

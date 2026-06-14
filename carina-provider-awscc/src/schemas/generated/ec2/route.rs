@@ -111,3 +111,21 @@ pub fn enum_valid_values() -> (
 ) {
     ("ec2.Route", &[])
 }
+
+/// Returns the IAM permissions declared by the CloudFormation handler for this operation.
+pub fn required_permissions(op: carina_core::effect::PlanOp) -> &'static [&'static str] {
+    match op {
+        carina_core::effect::PlanOp::Create => &[
+            "ec2:CreateRoute",
+            "ec2:DescribeRouteTables",
+            "ec2:DescribeNetworkInterfaces",
+        ],
+        carina_core::effect::PlanOp::Read => &["ec2:DescribeRouteTables"],
+        carina_core::effect::PlanOp::Update => &[
+            "ec2:ReplaceRoute",
+            "ec2:DescribeRouteTables",
+            "ec2:DescribeNetworkInterfaces",
+        ],
+        carina_core::effect::PlanOp::Delete => &["ec2:DeleteRoute", "ec2:DescribeRouteTables"],
+    }
+}

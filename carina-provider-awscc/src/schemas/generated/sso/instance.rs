@@ -142,3 +142,30 @@ pub fn enum_valid_values() -> (
 ) {
     ("sso.Instance", &[("status", VALID_STATUS)])
 }
+
+/// Returns the IAM permissions declared by the CloudFormation handler for this operation.
+pub fn required_permissions(op: carina_core::effect::PlanOp) -> &'static [&'static str] {
+    match op {
+        carina_core::effect::PlanOp::Create => &[
+            "sso:CreateInstance",
+            "sso:DescribeInstance",
+            "sso:TagResource",
+            "iam:CreateServiceLinkedRole",
+            "sso:TagInstance",
+            "sso:ListTagsForResource",
+            "identitystore:CreateIdentityStore",
+        ],
+        carina_core::effect::PlanOp::Read => &["sso:DescribeInstance", "sso:ListTagsForResource"],
+        carina_core::effect::PlanOp::Update => &[
+            "sso:UpdateInstance",
+            "sso:TagResource",
+            "sso:UntagResource",
+            "sso:ListTagsForResource",
+            "sso:TagInstance",
+            "sso:DescribeInstance",
+        ],
+        carina_core::effect::PlanOp::Delete => {
+            &["sso:DeleteInstance", "identitystore:DeleteIdentityStore"]
+        }
+    }
+}

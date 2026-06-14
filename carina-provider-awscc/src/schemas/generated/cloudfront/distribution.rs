@@ -554,3 +554,41 @@ pub fn enum_valid_values() -> (
         ],
     )
 }
+
+/// Returns the IAM permissions declared by the CloudFormation handler for this operation.
+pub fn required_permissions(op: carina_core::effect::PlanOp) -> &'static [&'static str] {
+    match op {
+        carina_core::effect::PlanOp::Create => &[
+            "cloudfront:CreateConnectionGroup",
+            "cloudfront:CreateDistribution",
+            "cloudfront:CreateDistributionWithTags",
+            "cloudfront:GetConnectionGroup",
+            "cloudfront:GetDistribution",
+            "cloudfront:GetDistributionConfig",
+            "cloudfront:GetVpcOrigin",
+            "cloudfront:TagResource",
+        ],
+        carina_core::effect::PlanOp::Read => &[
+            "cloudfront:GetDistribution",
+            "cloudfront:GetDistributionConfig",
+            "cloudfront:ListTagsForResource",
+        ],
+        carina_core::effect::PlanOp::Update => &[
+            "cloudfront:CreateConnectionGroup",
+            "cloudfront:GetConnectionGroup",
+            "cloudfront:GetDistribution",
+            "cloudfront:GetDistributionConfig",
+            "cloudfront:GetVpcOrigin",
+            "cloudfront:UpdateDistribution",
+            "cloudfront:UpdateDistributionWithStagingConfig",
+            "cloudfront:ListTagsForResource",
+            "cloudfront:TagResource",
+            "cloudfront:UntagResource",
+        ],
+        carina_core::effect::PlanOp::Delete => &[
+            "cloudfront:DeleteDistribution",
+            "cloudfront:GetDistribution",
+            "cloudfront:GetDistributionConfig",
+        ],
+    }
+}

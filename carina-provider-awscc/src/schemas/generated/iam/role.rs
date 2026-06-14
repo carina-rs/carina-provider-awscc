@@ -130,3 +130,47 @@ pub fn enum_valid_values() -> (
 ) {
     ("iam.Role", &[])
 }
+
+/// Returns the IAM permissions declared by the CloudFormation handler for this operation.
+pub fn required_permissions(op: carina_core::effect::PlanOp) -> &'static [&'static str] {
+    match op {
+        carina_core::effect::PlanOp::Create => &[
+            "iam:CreateRole",
+            "iam:PutRolePolicy",
+            "iam:AttachRolePolicy",
+            "iam:GetRolePolicy",
+            "iam:TagRole",
+            "iam:UntagRole",
+            "iam:GetRole",
+        ],
+        carina_core::effect::PlanOp::Read => &[
+            "iam:GetRole",
+            "iam:ListAttachedRolePolicies",
+            "iam:ListRolePolicies",
+            "iam:GetRolePolicy",
+        ],
+        carina_core::effect::PlanOp::Update => &[
+            "iam:UpdateRole",
+            "iam:UpdateRoleDescription",
+            "iam:UpdateAssumeRolePolicy",
+            "iam:DetachRolePolicy",
+            "iam:AttachRolePolicy",
+            "iam:DeleteRolePermissionsBoundary",
+            "iam:PutRolePermissionsBoundary",
+            "iam:DeleteRolePolicy",
+            "iam:PutRolePolicy",
+            "iam:TagRole",
+            "iam:UntagRole",
+        ],
+        carina_core::effect::PlanOp::Delete => &[
+            "iam:DeleteRole",
+            "iam:DetachRolePolicy",
+            "iam:DeleteRolePolicy",
+            "iam:GetRole",
+            "iam:ListAttachedRolePolicies",
+            "iam:ListRolePolicies",
+            "iam:TagRole",
+            "iam:UntagRole",
+        ],
+    }
+}

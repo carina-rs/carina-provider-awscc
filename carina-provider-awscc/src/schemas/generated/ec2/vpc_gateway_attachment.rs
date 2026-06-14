@@ -55,3 +55,32 @@ pub fn enum_valid_values() -> (
 ) {
     ("ec2.VpcGatewayAttachment", &[])
 }
+
+/// Returns the IAM permissions declared by the CloudFormation handler for this operation.
+pub fn required_permissions(op: carina_core::effect::PlanOp) -> &'static [&'static str] {
+    match op {
+        carina_core::effect::PlanOp::Create => &[
+            "ec2:AttachInternetGateway",
+            "ec2:AttachVpnGateway",
+            "ec2:DescribeInternetGateways",
+            "ec2:DescribeVpnGateways",
+        ],
+        carina_core::effect::PlanOp::Read => {
+            &["ec2:DescribeInternetGateways", "ec2:DescribeVpnGateways"]
+        }
+        carina_core::effect::PlanOp::Update => &[
+            "ec2:AttachInternetGateway",
+            "ec2:AttachVpnGateway",
+            "ec2:DetachInternetGateway",
+            "ec2:DetachVpnGateway",
+            "ec2:DescribeInternetGateways",
+            "ec2:DescribeVpnGateways",
+        ],
+        carina_core::effect::PlanOp::Delete => &[
+            "ec2:DetachInternetGateway",
+            "ec2:DetachVpnGateway",
+            "ec2:DescribeInternetGateways",
+            "ec2:DescribeVpnGateways",
+        ],
+    }
+}

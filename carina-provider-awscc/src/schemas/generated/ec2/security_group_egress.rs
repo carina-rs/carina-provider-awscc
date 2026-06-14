@@ -118,3 +118,20 @@ pub fn enum_valid_values() -> (
         &[("ip_protocol", VALID_IP_PROTOCOL)],
     )
 }
+
+/// Returns the IAM permissions declared by the CloudFormation handler for this operation.
+pub fn required_permissions(op: carina_core::effect::PlanOp) -> &'static [&'static str] {
+    match op {
+        carina_core::effect::PlanOp::Create => &[
+            "ec2:AuthorizeSecurityGroupEgress",
+            "ec2:RevokeSecurityGroupEgress",
+            "ec2:DescribeSecurityGroupRules",
+        ],
+        carina_core::effect::PlanOp::Read => &["ec2:DescribeSecurityGroupRules"],
+        carina_core::effect::PlanOp::Update => &["ec2:UpdateSecurityGroupRuleDescriptionsEgress"],
+        carina_core::effect::PlanOp::Delete => &[
+            "ec2:RevokeSecurityGroupEgress",
+            "ec2:DescribeSecurityGroupRules",
+        ],
+    }
+}

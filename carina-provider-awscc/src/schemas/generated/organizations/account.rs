@@ -267,3 +267,34 @@ pub fn enum_valid_values() -> (
         ],
     )
 }
+
+/// Returns the IAM permissions declared by the CloudFormation handler for this operation.
+pub fn required_permissions(op: carina_core::effect::PlanOp) -> &'static [&'static str] {
+    match op {
+        carina_core::effect::PlanOp::Create => &[
+            "organizations:CreateAccount",
+            "organizations:DescribeCreateAccountStatus",
+            "organizations:MoveAccount",
+            "organizations:ListAccounts",
+            "organizations:ListParents",
+            "organizations:TagResource",
+            "organizations:DescribeAccount",
+            "organizations:ListTagsForResource",
+        ],
+        carina_core::effect::PlanOp::Read => &[
+            "organizations:DescribeAccount",
+            "organizations:ListParents",
+            "organizations:ListTagsForResource",
+        ],
+        carina_core::effect::PlanOp::Update => &[
+            "organizations:MoveAccount",
+            "organizations:TagResource",
+            "organizations:UntagResource",
+            "organizations:ListRoots",
+            "organizations:DescribeAccount",
+            "organizations:ListParents",
+            "organizations:ListTagsForResource",
+        ],
+        carina_core::effect::PlanOp::Delete => &["organizations:CloseAccount"],
+    }
+}

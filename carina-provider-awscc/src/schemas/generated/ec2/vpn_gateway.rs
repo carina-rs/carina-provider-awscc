@@ -73,3 +73,21 @@ pub fn enum_valid_values() -> (
 ) {
     ("ec2.VpnGateway", &[("type", VALID_TYPE)])
 }
+
+/// Returns the IAM permissions declared by the CloudFormation handler for this operation.
+pub fn required_permissions(op: carina_core::effect::PlanOp) -> &'static [&'static str] {
+    match op {
+        carina_core::effect::PlanOp::Create => &[
+            "ec2:CreateVpnGateway",
+            "ec2:DescribeVpnGateways",
+            "ec2:CreateTags",
+        ],
+        carina_core::effect::PlanOp::Read => &["ec2:DescribeVpnGateways"],
+        carina_core::effect::PlanOp::Update => &[
+            "ec2:DescribeVpnGateways",
+            "ec2:CreateTags",
+            "ec2:DeleteTags",
+        ],
+        carina_core::effect::PlanOp::Delete => &["ec2:DeleteVpnGateway", "ec2:DescribeVpnGateways"],
+    }
+}

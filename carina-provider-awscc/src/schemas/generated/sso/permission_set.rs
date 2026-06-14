@@ -270,3 +270,53 @@ pub fn enum_valid_values() -> (
 ) {
     ("sso.PermissionSet", &[])
 }
+
+/// Returns the IAM permissions declared by the CloudFormation handler for this operation.
+pub fn required_permissions(op: carina_core::effect::PlanOp) -> &'static [&'static str] {
+    match op {
+        carina_core::effect::PlanOp::Create => &[
+            "sso:CreatePermissionSet",
+            "sso:PutInlinePolicyToPermissionSet",
+            "sso:AttachManagedPolicyToPermissionSet",
+            "sso:AttachCustomerManagedPolicyReferenceToPermissionSet",
+            "sso:PutPermissionsBoundaryToPermissionSet",
+            "sso:TagResource",
+            "sso:DescribePermissionSet",
+            "sso:ListTagsForResource",
+            "sso:ListManagedPoliciesInPermissionSet",
+            "sso:ListCustomerManagedPolicyReferencesInPermissionSet",
+            "sso:GetInlinePolicyForPermissionSet",
+            "sso:GetPermissionsBoundaryForPermissionSet",
+        ],
+        carina_core::effect::PlanOp::Read => &[
+            "sso:DescribePermissionSet",
+            "sso:ListTagsForResource",
+            "sso:ListManagedPoliciesInPermissionSet",
+            "sso:ListCustomerManagedPolicyReferencesInPermissionSet",
+            "sso:GetInlinePolicyForPermissionSet",
+            "sso:GetPermissionsBoundaryForPermissionSet",
+        ],
+        carina_core::effect::PlanOp::Update => &[
+            "sso:UpdatePermissionSet",
+            "sso:TagResource",
+            "sso:UntagResource",
+            "sso:ListTagsForResource",
+            "sso:AttachManagedPolicyToPermissionSet",
+            "sso:AttachCustomerManagedPolicyReferenceToPermissionSet",
+            "sso:DetachManagedPolicyFromPermissionSet",
+            "sso:DetachCustomerManagedPolicyReferenceFromPermissionSet",
+            "sso:ListManagedPoliciesInPermissionSet",
+            "sso:ListCustomerManagedPolicyReferencesInPermissionSet",
+            "sso:PutInlinePolicyToPermissionSet",
+            "sso:GetPermissionsBoundaryForPermissionSet",
+            "sso:DeletePermissionsBoundaryFromPermissionSet",
+            "sso:PutPermissionsBoundaryToPermissionSet",
+            "sso:DeleteInlinePolicyFromPermissionSet",
+            "sso:ProvisionPermissionSet",
+            "sso:DescribePermissionSet",
+            "sso:GetInlinePolicyForPermissionSet",
+            "sso:DescribePermissionSetProvisioningStatus",
+        ],
+        carina_core::effect::PlanOp::Delete => &["sso:DeletePermissionSet"],
+    }
+}
