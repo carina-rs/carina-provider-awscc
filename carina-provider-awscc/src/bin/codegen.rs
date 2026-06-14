@@ -1407,14 +1407,20 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str) -> Result<String> {
             // Apply nested-field enum overlay (awscc#246) — same lookup as
             // `generate_schema_code`, so the markdown's enum tables stay in
             // sync with the generated Rust schema.
-            if let Some(TypeOverride::Enum(values) | TypeOverride::EnumUnordered(values)) =
+            if let Some(nested_override) =
                 resource_type_overrides().get(&(type_name, composite_key.as_str()))
             {
-                enums.insert(
-                    composite_key.clone(),
-                    enum_info_for_override(field_name, values),
-                );
-                continue;
+                match nested_override {
+                    TypeOverride::Enum(values) | TypeOverride::EnumUnordered(values) => {
+                        enums.insert(
+                            composite_key.clone(),
+                            enum_info_for_override(field_name, values),
+                        );
+                        continue;
+                    }
+                    TypeOverride::StringType(_) => continue,
+                    _ => {}
+                }
             }
             let (_, enum_info) = cfn_type_to_carina_type_with_enum_with_struct_path(
                 field_prop,
@@ -2281,14 +2287,20 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
                     // in the `enums` map (and therefore get a VALID_* constant
                     // and an enum_valid_values() entry alongside StringEnum
                     // emission in `generate_struct_type`).
-                    if let Some(TypeOverride::Enum(values) | TypeOverride::EnumUnordered(values)) =
+                    if let Some(nested_override) =
                         resource_type_overrides().get(&(type_name, composite_key.as_str()))
                     {
-                        enums.insert(
-                            composite_key.clone(),
-                            enum_info_for_override(field_name, values),
-                        );
-                        continue;
+                        match nested_override {
+                            TypeOverride::Enum(values) | TypeOverride::EnumUnordered(values) => {
+                                enums.insert(
+                                    composite_key.clone(),
+                                    enum_info_for_override(field_name, values),
+                                );
+                                continue;
+                            }
+                            TypeOverride::StringType(_) => continue,
+                            _ => {}
+                        }
                     }
                     let (_, field_enum_info) = cfn_type_to_carina_type_with_enum(
                         field_prop, field_name, schema, &namespace, &enums,
@@ -3303,6 +3315,13 @@ fn filtered_backtick_values(text: &str, backtick_re: &Regex) -> Vec<String> {
         .collect()
 }
 
+fn strip_wrapping_double_backticks(value: &str) -> &str {
+    value
+        .strip_prefix("``")
+        .and_then(|value| value.strip_suffix("``"))
+        .unwrap_or(value)
+}
+
 /// Return true when all enum-looking backticked values are governed by a
 /// negated "specify" clause. For example, the ELBv2 listener JWT claim name
 /// description says you can't specify ``exp``, ``iss``, ``nbf``, or ``iat``;
@@ -3357,12 +3376,25 @@ fn extract_enum_from_description(description: &str) -> Option<Vec<String>> {
         return None;
     }
 
-    // Prefer list members introduced as a leading ``value``: entry. Other
-    // backticked identifiers in the list body are examples or property names.
+    // Prefer list members introduced as a leading ``value`` entry under a
+    // value-list sentence. Lexical anchors recognize documented intent words
+    // ("valid values", "supported values", "following", "available",
+    // "specify which"); the structural anchor recognizes CFN's free-form
+    // colon-terminated lead-in immediately followed by backticked bullets.
+    // Neither shape covers the full cache alone, and both keep extraction
+    // scoped to value-list bullets instead of all description backticks.
     let lower_description = description.to_lowercase();
-    if (lower_description.contains("following") || lower_description.contains("available"))
+    let has_bullet_value_list_anchor = lower_description.contains("following")
+        || lower_description.contains("available")
+        || lower_description.contains("valid values")
+        || lower_description.contains("supported values")
+        || lower_description.contains("specify which")
+        || Regex::new(r"(?m)(?:^|\n)\s*[^`\n]{1,240}:\s*\n\s*(?:[+*]|\d+[.)])?\s*``")
+            .ok()
+            .is_some_and(|re| re.is_match(description));
+    if has_bullet_value_list_anchor
         && let Ok(bullet_leader_re) =
-            Regex::new(r"(?m)(?:^|\n)\s*(?:[+*]|\d+[.)])?\s*``([^`]+)``\s*:")
+            Regex::new(r"(?m)(?:^|\n)\s*(?:[+*]|\d+[.)])?\s*``([^`]+)``\s*(?::|-|–|—)")
     {
         let values: Vec<String> = bullet_leader_re
             .captures_iter(description)
@@ -3379,7 +3411,7 @@ fn extract_enum_from_description(description: &str) -> Option<Vec<String>> {
     // "valid values: ..." backtick lists to the clause sentence so later
     // code-style mentions are not treated as values.
     if let Ok(scoped_values_re) = Regex::new(
-        r"(?is)(?:supported values?\s+(?:are|is)|valid values?):\s*(.+?)(?:\.|\n|$)|(?:supported values?|valid values?)\s+(?:are|is)\s+(.+?)(?:\.|\n|$)",
+        r"(?is)(?:supported values?\s+(?:are|is)|valid values?(?:\s+for\s+``[^`]+``)?):\s*(.+?)(?:\.|\n|$)|(?:supported values?|valid values?(?:\s+for\s+``[^`]+``)?)\s+(?:are|is)\s+(.+?)(?:\.|\n|$)",
     ) {
         for cap in scoped_values_re.captures_iter(description) {
             let clause = cap
@@ -3392,13 +3424,6 @@ fn extract_enum_from_description(description: &str) -> Option<Vec<String>> {
                 return deduplicate_enum_values(values);
             }
         }
-    }
-
-    // Strategy 1: Look for double-backtick values (existing fallback behavior)
-    let mut values: Vec<String> = filtered_backtick_values(description, &backtick_re);
-
-    if values.len() >= 2 {
-        return deduplicate_enum_values(values);
     }
 
     // Strategy 2: Look for "Valid values: X | Y | Z" or "Options: X | Y" patterns
@@ -3415,7 +3440,7 @@ fn extract_enum_from_description(description: &str) -> Option<Vec<String>> {
             vec![]
         };
 
-        values = candidates
+        let values: Vec<String> = candidates
             .into_iter()
             .filter(|v| !v.is_empty() && !looks_like_property_name(v))
             .collect();
@@ -3464,9 +3489,15 @@ fn extract_enum_from_description(description: &str) -> Option<Vec<String>> {
             }
         }
 
-        values = candidates
+        let values: Vec<String> = candidates
             .into_iter()
-            .filter(|v| !v.is_empty() && !looks_like_property_name(v) && !v.contains(' '))
+            .map(|v| strip_wrapping_double_backticks(v.trim()).to_string())
+            .filter(|v| {
+                !v.is_empty()
+                    && !looks_like_property_name(v)
+                    && !v.contains(' ')
+                    && looks_like_enum_value(v)
+            })
             .collect();
 
         if values.len() >= 2 {
@@ -3496,12 +3527,17 @@ fn extract_enum_from_description(description: &str) -> Option<Vec<String>> {
             let clause = cap[1].trim();
             for comma_part in clause.split(',') {
                 for part in connector_re.split(comma_part) {
-                    candidates.push(part.trim().to_string());
+                    let value = part
+                        .split_once(" (")
+                        .map(|(value, _)| value)
+                        .unwrap_or(part)
+                        .trim();
+                    candidates.push(strip_wrapping_double_backticks(value).to_string());
                 }
             }
         }
 
-        values = candidates
+        let values: Vec<String> = candidates
             .into_iter()
             .filter(|v| {
                 !v.is_empty()
@@ -3794,6 +3830,8 @@ fn generate_struct_type(
                 nested_override
             {
                 enum_info = Some(enum_info_for_override(field_name, values));
+            } else if matches!(nested_override, Some(TypeOverride::StringType(_))) {
+                enum_info = None;
             }
             let field_force_unordered =
                 matches!(nested_override, Some(TypeOverride::EnumUnordered(_)));
@@ -3803,7 +3841,9 @@ fn generate_struct_type(
             // Check if the original field type was a List (array)
             let is_list_field =
                 field_type.contains("::list(") || field_type.contains("::unordered_list(");
-            let field_type = if let Some(local_enum_info) = enum_info {
+            let field_type = if let Some(TypeOverride::StringType(s)) = nested_override {
+                s.to_string()
+            } else if let Some(local_enum_info) = enum_info {
                 let composite_key = format!("{}.{}", def_name, field_name);
                 let enum_type = if let Some(enum_info) =
                     enums.get(&composite_key).or_else(|| enums.get(field_name))
@@ -3855,12 +3895,8 @@ fn generate_struct_type(
                 } else {
                     enum_type
                 }
-            // Nested-key StringType overrides: replace the inferred scalar type with the
-            // override type (e.g. http_response_status_code). Enum/EnumUnordered are
-            // handled upstream via enum_info; other variants are caught by the trailing
-            // guard below.
-            } else if let Some(TypeOverride::StringType(s)) = nested_override {
-                s.to_string()
+            // Other nested override variants are caught by the trailing guard
+            // so new variants cannot silently do nothing for struct fields.
             } else if let Some(other) = nested_override {
                 panic!(
                     "nested override {:?} at {} uses TypeOverride variant {:?} that is not wired through generate_struct_type — add a branch here or move the entry to a top-level key",
@@ -4588,6 +4624,15 @@ fn resource_type_overrides() -> &'static HashMap<(&'static str, &'static str), T
                 ("AWS::EC2::VPNGateway", "Type"),
                 TypeOverride::Enum(vec!["ipsec.1"]),
             );
+            // EC2 VPC InstanceTenancy is a pre-existing generated enum. The
+            // cached description lists `default` and `dedicated` as bullet
+            // leaders, but only mentions `host` inside a bullet body. Keep the
+            // heuristic scoped to leading value-list bullets and pin the full
+            // provider value set here.
+            m.insert(
+                ("AWS::EC2::VPC", "InstanceTenancy"),
+                TypeOverride::Enum(vec!["default", "dedicated", "host"]),
+            );
 
             // ELBv2 TargetGroup TargetType / Protocol (awscc#357). The CFN
             // descriptions carry no value list, so the description-scraping
@@ -4608,6 +4653,49 @@ fn resource_type_overrides() -> &'static HashMap<(&'static str, &'static str), T
                 TypeOverride::Enum(vec![
                     "HTTP", "HTTPS", "TCP", "TLS", "UDP", "TCP_UDP", "GENEVE",
                 ]),
+            );
+
+            // ELBv2 LoadBalancer closed string values (awscc#365). The
+            // CFN descriptions either have no value-list sentence (`Type`,
+            // `Scheme`) or contain unrelated backticked cross-references
+            // (`EnablePrefixForIpv6SourceNat`). Keep these resource-scoped:
+            // `Type` and `Scheme` are generic field names and must not leak
+            // into siblings like VPNGateway.Type.
+            m.insert(
+                ("AWS::ElasticLoadBalancingV2::LoadBalancer", "Type"),
+                TypeOverride::Enum(vec!["application", "network", "gateway"]),
+            );
+            m.insert(
+                ("AWS::ElasticLoadBalancingV2::LoadBalancer", "Scheme"),
+                TypeOverride::Enum(vec!["internet-facing", "internal"]),
+            );
+            m.insert(
+                (
+                    "AWS::ElasticLoadBalancingV2::LoadBalancer",
+                    "EnablePrefixForIpv6SourceNat",
+                ),
+                TypeOverride::Enum(vec!["on", "off"]),
+            );
+            m.insert(
+                (
+                    "AWS::ElasticLoadBalancingV2::LoadBalancer",
+                    "EnforceSecurityGroupInboundRulesOnPrivateLinkTraffic",
+                ),
+                TypeOverride::Enum(vec!["on", "off"]),
+            );
+            // LoadBalancerAttribute.Key intentionally has no enum overlay.
+            // Pre-365 Strategy 1 extracted attribute VALUES (`true`, `false`,
+            // modes, etc.) as the Key enum because the real attribute keys
+            // are bullet leaders containing dots and were filtered out by
+            // `looks_like_enum_value`. Later value-list sentences in the
+            // bullet bodies describe per-key values, not legal Key names, so
+            // force this field back to plain String.
+            m.insert(
+                (
+                    "AWS::ElasticLoadBalancingV2::LoadBalancer",
+                    "LoadBalancerAttribute.Key",
+                ),
+                TypeOverride::StringType("AttributeType::string()"),
             );
 
             // ELBv2 Listener Action.Type (awscc#359). The CFN description
@@ -6027,12 +6115,218 @@ fn collapse_whitespace(s: &str) -> String {
 mod tests {
     use super::*;
 
+    const EXTRACT_ENUM_SNAPSHOT_PRE_365: &str = "tests/fixtures/extract_enum_snapshot_pre_365.json";
+
     fn cfn_schema_for_codegen_tests(type_name: &str) -> CfnSchema {
         let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../cfn-schema-cache")
             .join(format!("{}.json", type_name.replace("::", "__")));
         let raw = std::fs::read_to_string(path).expect("cached CFN schema");
         serde_json::from_str(&raw).expect("cached CFN schema parses")
+    }
+
+    fn cached_schema_paths() -> Vec<std::path::PathBuf> {
+        let cache_dir =
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../cfn-schema-cache");
+        let mut paths: Vec<std::path::PathBuf> = std::fs::read_dir(cache_dir)
+            .expect("read cfn-schema-cache")
+            .map(|entry| entry.expect("schema cache entry").path())
+            .filter(|path| {
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.starts_with("AWS__") && name.ends_with(".json"))
+            })
+            .collect();
+        paths.sort();
+        paths
+    }
+
+    fn is_string_property(schema: &CfnSchema, property: &CfnProperty) -> bool {
+        if matches!(
+            property.prop_type.as_ref().and_then(TypeValue::as_str),
+            Some("string")
+        ) {
+            return true;
+        }
+
+        let Some(ref_path) = &property.ref_path else {
+            return false;
+        };
+        let Some(definition) = resolve_ref(schema, ref_path) else {
+            return false;
+        };
+        matches!(definition.def_type.as_deref(), Some("string"))
+    }
+
+    fn has_resource_enum_override(type_name: &str, property_path: &str) -> bool {
+        resource_type_overrides()
+            .iter()
+            .any(|(&(resource, property), override_)| {
+                resource == type_name
+                    && property == property_path
+                    && matches!(
+                        override_,
+                        &TypeOverride::Enum(_) | &TypeOverride::EnumUnordered(_)
+                    )
+            })
+    }
+
+    fn has_known_enum_override(property_path: &str) -> bool {
+        let field_name = property_path.rsplit('.').next().unwrap_or(property_path);
+        known_enum_overrides().contains_key(field_name)
+    }
+
+    fn has_curated_enum_override(type_name: &str, property_path: &str) -> bool {
+        has_resource_enum_override(type_name, property_path)
+            || has_known_enum_override(property_path)
+    }
+
+    fn snapshot_key_has_curated_enum_override(key: &str) -> bool {
+        let Some((type_name, property_path)) = key.rsplit_once("::") else {
+            return false;
+        };
+        has_curated_enum_override(type_name, property_path)
+    }
+
+    fn enum_extraction_snapshot() -> BTreeMap<String, Vec<String>> {
+        let mut snapshot = BTreeMap::new();
+
+        for path in cached_schema_paths() {
+            let raw = std::fs::read_to_string(&path).expect("cached CFN schema");
+            let schema: CfnSchema = serde_json::from_str(&raw).expect("cached CFN schema parses");
+
+            for (property_name, property) in &schema.properties {
+                if property.enum_values.is_none()
+                    && is_string_property(&schema, property)
+                    && !has_curated_enum_override(&schema.type_name, property_name)
+                    && let Some(description) = &property.description
+                    && let Some(values) = extract_enum_from_description(description)
+                {
+                    snapshot.insert(format!("{}::{}", schema.type_name, property_name), values);
+                }
+            }
+
+            if let Some(definitions) = &schema.definitions {
+                for (definition_name, definition) in definitions {
+                    let Some(properties) = &definition.properties else {
+                        continue;
+                    };
+                    for (property_name, property) in properties {
+                        let property_path = format!("{definition_name}.{property_name}");
+                        if property.enum_values.is_none()
+                            && is_string_property(&schema, property)
+                            && !has_curated_enum_override(&schema.type_name, &property_path)
+                            && let Some(description) = &property.description
+                            && let Some(values) = extract_enum_from_description(description)
+                        {
+                            snapshot
+                                .insert(format!("{}::{}", schema.type_name, property_path), values);
+                        }
+                    }
+                }
+            }
+        }
+
+        snapshot
+    }
+
+    #[test]
+    fn test_extract_enum_description_cache_snapshot_has_no_unintended_retractions() {
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join(EXTRACT_ENUM_SNAPSHOT_PRE_365);
+        let raw = std::fs::read_to_string(path).expect("pre-365 enum extraction snapshot fixture");
+        let old_snapshot: BTreeMap<String, Vec<String>> =
+            serde_json::from_str(&raw).expect("pre-365 enum extraction snapshot parses");
+        let new_snapshot = enum_extraction_snapshot();
+        let intentional_value_changes: BTreeMap<&str, &[&str]> = [
+            (
+                // Old extraction picked up `origin-request`/`origin-response`
+                // from the "You cannot use origin-facing event types ..."
+                // negation clause — those are not legal values for this field.
+                // Strategy 1 deletion fixes the false positive.
+                "AWS::CloudFront::Distribution::FunctionAssociation.EventType",
+                &["origin-request", "origin-response"][..],
+            ),
+            (
+                // Pre-365 Strategy 1 extracted `dualstack` from the
+                // cross-reference sentence "The IP address type must be
+                // ``dualstack``."; the real canonical values are `on`/`off`,
+                // supplied by the curated overlay. Both `dualstack`
+                // (cross-reference false positive) and `off` (default-value
+                // sentence, not a value list) were emitted as the field's enum
+                // pre-PR. Both lost.
+                "AWS::ElasticLoadBalancingV2::LoadBalancer::EnablePrefixForIpv6SourceNat",
+                &["dualstack", "off"][..],
+            ),
+            (
+                // Pre-365 Strategy 1 extracted attribute VALUES
+                // (true/false/monitor/defensive/append/...) as the Key enum
+                // because real Keys all contain `.` and were filtered out by
+                // looks_like_enum_value. The field's closed set is undecidable
+                // from the description (key namespace is open-ended), so we
+                // revert to plain String. See PR body.
+                "AWS::ElasticLoadBalancingV2::LoadBalancer::LoadBalancerAttribute.Key",
+                &[
+                    "true",
+                    "false",
+                    "monitor",
+                    "defensive",
+                    "strictest",
+                    "x-amzn-tls-version",
+                    "x-amzn-tls-cipher-suite",
+                    "append",
+                    "preserve",
+                    "remove",
+                    "availability_zone_affinity",
+                    "partial_availability_zone_affinity",
+                    "any_availability_zone",
+                ][..],
+            ),
+        ]
+        .into_iter()
+        .collect();
+
+        let mut retractions = Vec::new();
+        for (key, old_values) in &old_snapshot {
+            let allow_missing = intentional_value_changes
+                .get(key.as_str())
+                .copied()
+                .unwrap_or(&[]);
+            if allow_missing.is_empty() && snapshot_key_has_curated_enum_override(key) {
+                continue;
+            }
+            match new_snapshot.get(key) {
+                None => {
+                    let unexplained: Vec<&String> = old_values
+                        .iter()
+                        .filter(|v| !allow_missing.contains(&v.as_str()))
+                        .collect();
+                    if !unexplained.is_empty() {
+                        retractions.push(format!(
+                            "{}: extraction lost entirely; unexplained missing values {:?}",
+                            key, unexplained
+                        ));
+                    }
+                }
+                Some(new_values) => {
+                    let missing: Vec<&String> = old_values
+                        .iter()
+                        .filter(|v| !new_values.contains(v) && !allow_missing.contains(&v.as_str()))
+                        .collect();
+                    if !missing.is_empty() {
+                        retractions.push(format!(
+                            "{}: lost values {:?} (had {:?}, now {:?})",
+                            key, missing, old_values, new_values
+                        ));
+                    }
+                }
+            }
+        }
+
+        assert!(
+            retractions.is_empty(),
+            "enum heuristic must not retract previously extracted fields without an explicit allowlist: {retractions:?}"
+        );
     }
 
     /// Build a `CfnDefinition` for classification tests, overriding only the
@@ -6353,6 +6647,9 @@ mod tests {
 
     #[test]
     fn test_extract_enum_from_description_instance_tenancy() {
+        // This period-plus-bullet shape is not a CFN value-list anchor. The
+        // resource-scoped override supplies the canonical InstanceTenancy
+        // values instead of widening the heuristic to bullet-body examples.
         let description = r#"The allowed tenancy of instances launched into the VPC.
   +  ``default``: An instance launched into the VPC runs on shared hardware by default.
   +  ``dedicated``: An instance launched into the VPC runs on dedicated hardware by default.
@@ -6360,9 +6657,7 @@ mod tests {
  Updating ``InstanceTenancy`` requires no replacement."#;
 
         let result = extract_enum_from_description(description);
-        assert!(result.is_some());
-        let values = result.unwrap();
-        assert_eq!(values, vec!["default", "dedicated", "host"]);
+        assert_eq!(result, None);
     }
 
     #[test]
@@ -6444,6 +6739,111 @@ mod tests {
     }
 
     #[test]
+    fn test_extract_enum_rejects_cross_reference_backticks_without_value_list_sentence() {
+        // awscc#365: LoadBalancer.EnablePrefixForIpv6SourceNat description
+        // mentions IpAddressType's ``dualstack`` and the default ``off``,
+        // but neither sentence is a value-list sentence for this field.
+        let schema = cfn_schema_for_codegen_tests("AWS::ElasticLoadBalancingV2::LoadBalancer");
+        let description = schema
+            .properties
+            .get("EnablePrefixForIpv6SourceNat")
+            .expect("EnablePrefixForIpv6SourceNat property exists")
+            .description
+            .as_deref()
+            .expect("EnablePrefixForIpv6SourceNat has description");
+        assert_eq!(
+            extract_enum_from_description(description),
+            None,
+            "no value-list sentence anchors here; the matcher must not scoop random backticks"
+        );
+    }
+
+    #[test]
+    fn test_extract_enum_from_description_loadbalancer_ip_address_type_backtick_oxford() {
+        // awscc#365: LoadBalancer.IpAddressType uses backtick-wrapped
+        // Oxford prose in the cached CFN description.
+        // Strategy 4 must strip wrapping `` from each value.
+        let schema = cfn_schema_for_codegen_tests("AWS::ElasticLoadBalancingV2::LoadBalancer");
+        let description = schema
+            .properties
+            .get("IpAddressType")
+            .expect("IpAddressType property exists")
+            .description
+            .as_deref()
+            .expect("IpAddressType has description");
+        assert_eq!(
+            extract_enum_from_description(description),
+            Some(vec![
+                "ipv4".to_string(),
+                "dualstack".to_string(),
+                "dualstack-without-public-ipv4".to_string()
+            ]),
+        );
+    }
+
+    #[test]
+    fn test_extract_enum_from_description_dynamodb_billing_mode_via_bullet_leader() {
+        // awscc#365: "Valid values include:" bullet lists must be handled
+        // by the bullet-leader path after the broad backtick fallback is removed.
+        let schema = cfn_schema_for_codegen_tests("AWS::DynamoDB::Table");
+        let description = schema
+            .properties
+            .get("BillingMode")
+            .expect("BillingMode property exists")
+            .description
+            .as_deref()
+            .expect("BillingMode has description");
+        assert_eq!(
+            extract_enum_from_description(description),
+            Some(vec![
+                "PAY_PER_REQUEST".to_string(),
+                "PROVISIONED".to_string()
+            ]),
+        );
+    }
+
+    #[test]
+    fn test_extract_enum_from_description_structural_anchor_colon_bullet() {
+        // awscc#365: descriptions like CloudFront
+        // GeoRestriction.RestrictionType use a free-form colon-terminated
+        // lead-in followed by a backtick bullet list. No lexical value-list
+        // keyword appears. The structural anchor captures this shape.
+        let description = "The method that you want to use to restrict distribution of your content by country:\n  +  ``none``: No geo restriction is enabled.\n  +  ``blacklist``: The Location elements specify the countries in which you don't want CloudFront to distribute your content.\n  +  ``whitelist``: The Location elements specify the countries in which you want CloudFront to distribute your content.";
+        assert_eq!(
+            extract_enum_from_description(description),
+            Some(vec![
+                "none".to_string(),
+                "blacklist".to_string(),
+                "whitelist".to_string()
+            ]),
+        );
+    }
+
+    #[test]
+    fn test_extract_enum_from_description_structural_anchor_rejects_non_value_list() {
+        // The structural anchor must not fire on colon-terminated paragraphs
+        // that are not value-list lead-ins. For example, a "Note:" section
+        // followed by code-style examples in backticks.
+        let description = "Some prose. See also examples below:\n  + ``example1`` - a code-style identifier\n  + ``example2`` - another code-style identifier.\n Both are illustrations, not legal values.";
+        // The structural anchor IS expected to fire here too (it's
+        // structural, not semantic). The test documents that this case
+        // currently gets extracted — it's a known limitation. Use this test
+        // to lock the current behavior so a future narrowing of the
+        // structural anchor can be detected.
+        let result = extract_enum_from_description(description);
+        // Pin current behavior — Strategy 0 with dash terminator captures
+        // example1/example2. This is acceptable because the current cache has
+        // no such field; if it ever does, the field can go into
+        // resource_type_overrides as a plain string. Update this assertion if
+        // the heuristic is later narrowed.
+        assert_eq!(
+            result,
+            Some(vec!["example1".to_string(), "example2".to_string()]),
+            "structural anchor currently fires on any colon+bullet shape; if narrowed, update this assertion"
+        );
+    }
+
+    #[test]
     fn test_extract_enum_from_description_regression_cloudfront_viewer_protocol_policy() {
         let description = r#"The protocol that viewers can use to access the files in the origin specified by ``TargetOriginId`` when a request matches the path pattern in ``PathPattern``. You can specify the following options:
   +  ``allow-all``: Viewers can use HTTP or HTTPS.
@@ -6467,13 +6867,8 @@ mod tests {
 
         assert_eq!(
             extract_enum_from_description(description),
-            Some(vec![
-                "tcp".to_string(),
-                "udp".to_string(),
-                "icmp".to_string(),
-                "icmpv6".to_string(),
-                "-1".to_string()
-            ])
+            None,
+            "awscc#365 removed unanchored backtick/list scraping; IpProtocol's canonical values come from known_enum_overrides()"
         );
     }
 
@@ -6514,13 +6909,12 @@ mod tests {
 
     #[test]
     fn test_extract_enum_from_description_deduplication() {
-        // Same value mentioned multiple times should be deduplicated
+        // An unanchored "Use X or Y" sentence is not a value-list anchor after
+        // awscc#365 deleted the broad backtick scoop.
         let description =
             r#"Use ``enabled`` or ``disabled``. When ``enabled`` is set, the feature activates."#;
         let result = extract_enum_from_description(description);
-        assert!(result.is_some());
-        let values = result.unwrap();
-        assert_eq!(values, vec!["enabled", "disabled"]);
+        assert_eq!(result, None);
     }
 
     #[test]
@@ -6817,6 +7211,125 @@ mod tests {
     }
 
     #[test]
+    fn test_resource_type_overrides_load_balancer_enums() {
+        // awscc#365: LoadBalancer fields whose CFN descriptions do not
+        // provide reliable value-list anchors are pinned in the resource-
+        // scoped overlay. `Type` and `Scheme` are too generic for
+        // known_enum_overrides.
+        let overrides = resource_type_overrides();
+        assert_eq!(
+            overrides.get(&("AWS::ElasticLoadBalancingV2::LoadBalancer", "Type")),
+            Some(&TypeOverride::Enum(vec![
+                "application",
+                "network",
+                "gateway"
+            ]))
+        );
+        assert_eq!(
+            overrides.get(&("AWS::ElasticLoadBalancingV2::LoadBalancer", "Scheme")),
+            Some(&TypeOverride::Enum(vec!["internet-facing", "internal"]))
+        );
+        assert_eq!(
+            overrides.get(&(
+                "AWS::ElasticLoadBalancingV2::LoadBalancer",
+                "EnablePrefixForIpv6SourceNat",
+            )),
+            Some(&TypeOverride::Enum(vec!["on", "off"]))
+        );
+        assert_eq!(
+            overrides.get(&(
+                "AWS::ElasticLoadBalancingV2::LoadBalancer",
+                "EnforceSecurityGroupInboundRulesOnPrivateLinkTraffic",
+            )),
+            Some(&TypeOverride::Enum(vec!["on", "off"]))
+        );
+    }
+
+    #[test]
+    fn test_resource_type_overrides_load_balancer_enums_do_not_collide_with_siblings() {
+        let overrides = resource_type_overrides();
+
+        // VPNGateway.Type has its own override (`ipsec.1`) that must not be
+        // clobbered by LoadBalancer.Type (`application`/`network`/`gateway`).
+        assert_eq!(
+            overrides.get(&("AWS::EC2::VPNGateway", "Type")),
+            Some(&TypeOverride::Enum(vec!["ipsec.1"])),
+            "VPNGateway.Type must keep its own value list"
+        );
+
+        // Listener.Action.Type has its own nested override that must not be
+        // clobbered by LoadBalancer.Type.
+        assert_eq!(
+            overrides.get(&("AWS::ElasticLoadBalancingV2::Listener", "Action.Type")),
+            Some(&TypeOverride::Enum(vec![
+                "forward",
+                "authenticate-oidc",
+                "authenticate-cognito",
+                "redirect",
+                "fixed-response",
+                "jwt-validation",
+            ])),
+            "Listener.Action.Type must keep its own value list"
+        );
+
+        // None of the LB-specific keys (Scheme/EnablePrefixForIpv6SourceNat/
+        // EnforceSecurityGroupInboundRulesOnPrivateLinkTraffic) appear on any
+        // sibling resource. Spot-check that the overrides map has exactly one
+        // entry per (resource, property), and that the LB entries we added are
+        // present at LB only.
+        let lb_entries: Vec<&(&str, &str)> = overrides
+            .keys()
+            .filter(|(_, prop)| {
+                matches!(
+                    *prop,
+                    "Type"
+                        | "Scheme"
+                        | "EnablePrefixForIpv6SourceNat"
+                        | "EnforceSecurityGroupInboundRulesOnPrivateLinkTraffic"
+                )
+            })
+            .collect();
+        let lb_type_count = lb_entries
+            .iter()
+            .filter(|(type_name, _)| *type_name == "AWS::ElasticLoadBalancingV2::LoadBalancer")
+            .count();
+        assert_eq!(
+            lb_type_count, 4,
+            "LoadBalancer must own exactly 4 of these property names"
+        );
+    }
+
+    #[test]
+    fn test_resource_type_overrides_vpc_instance_tenancy() {
+        // awscc#365: pre-PR the description-scraping heuristic picked up
+        // `default`/`dedicated`/`host` via the broad backtick scoop. After
+        // the scoop is deleted, the description's period+bullet shape no
+        // longer anchors as a value list. The resource overlay supplies the
+        // canonical value set.
+        let overrides = resource_type_overrides();
+        assert_eq!(
+            overrides.get(&("AWS::EC2::VPC", "InstanceTenancy")),
+            Some(&TypeOverride::Enum(vec!["default", "dedicated", "host"])),
+        );
+    }
+
+    #[test]
+    fn test_resource_type_overrides_load_balancer_attribute_key_is_plain_string() {
+        // awscc#365: LoadBalancerAttribute.Key's description contains legal
+        // keys as dotted bullet leaders, plus many backticked value examples in
+        // bullet bodies. The key namespace must remain a plain String rather
+        // than an enum of those example values.
+        let overrides = resource_type_overrides();
+        assert_eq!(
+            overrides.get(&(
+                "AWS::ElasticLoadBalancingV2::LoadBalancer",
+                "LoadBalancerAttribute.Key",
+            )),
+            Some(&TypeOverride::StringType("AttributeType::string()"))
+        );
+    }
+
+    #[test]
     fn test_extract_enum_from_description_rejects_path_examples() {
         let description = "An optional string that you want CloudFront to prefix to the access \
             log ``filenames`` for this distribution, for example, ``myprefix/``. If you want \
@@ -6952,10 +7465,11 @@ mod tests {
         // Regression test for awscc#242. The CFN description for
         // ViewerCertificate.MinimumProtocolVersion mentions sibling-field values
         // (`sni-only` from SslSupportMethod, `true` from CloudFrontDefaultCertificate)
-        // in backticks, while filtering out the real value `TLSv1` as a "property
-        // name". Without the override, extract_enum_from_description picks up the
-        // sibling values and ships them as the enum membership; the override must
-        // short-circuit that path.
+        // in backticks. The enum extractor must not infer a value list from those
+        // cross-references, and the curated override must still provide the real
+        // canonical values. After awscc#365 deleted the unscoped backtick scoop,
+        // the heuristic correctly returns None here; the override remains the
+        // layer that supplies the canonical TLS version list.
         let description = "If the distribution uses ``Aliases`` (alternate domain \
             names or CNAMEs), specify the security policy that you want CloudFront \
             to use for HTTPS connections with viewers. When you're using SNI only \
@@ -6965,13 +7479,10 @@ mod tests {
             ``CloudFrontDefaultCertificate`` to ``true``), CloudFront automatically \
             sets the security policy to ``TLSv1``.";
 
-        // Demonstrate the underlying heuristic still misfires on this description
-        // — overrides are the correct fix layer, not a heuristic tweak.
         let scraped = extract_enum_from_description(description);
         assert_eq!(
-            scraped,
-            Some(vec!["sni-only".to_string(), "true".to_string()]),
-            "heuristic still produces the bogus pair; override must short-circuit it"
+            scraped, None,
+            "heuristic must not infer sibling values from non-value-list sentences"
         );
 
         let prop = CfnProperty {

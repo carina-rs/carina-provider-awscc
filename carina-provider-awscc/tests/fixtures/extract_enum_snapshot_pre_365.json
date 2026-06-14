@@ -1,0 +1,154 @@
+{
+  "AWS::CloudFront::Distribution::CacheBehavior.ViewerProtocolPolicy": [
+    "allow-all",
+    "redirect-to-https",
+    "https-only"
+  ],
+  "AWS::CloudFront::Distribution::CustomOriginConfig.OriginProtocolPolicy": [
+    "http-only",
+    "match-viewer",
+    "https-only"
+  ],
+  "AWS::CloudFront::Distribution::DefaultCacheBehavior.ViewerProtocolPolicy": [
+    "allow-all",
+    "redirect-to-https",
+    "https-only"
+  ],
+  "AWS::CloudFront::Distribution::FunctionAssociation.EventType": [
+    "viewer-request",
+    "viewer-response",
+    "origin-request",
+    "origin-response"
+  ],
+  "AWS::CloudFront::Distribution::GeoRestriction.RestrictionType": [
+    "none",
+    "blacklist",
+    "whitelist"
+  ],
+  "AWS::CloudFront::Distribution::LambdaFunctionAssociation.EventType": [
+    "viewer-request",
+    "origin-request",
+    "origin-response",
+    "viewer-response"
+  ],
+  "AWS::CloudFront::Distribution::ViewerCertificate.SslSupportMethod": [
+    "sni-only",
+    "vip",
+    "static-ip"
+  ],
+  "AWS::CloudFront::OriginAccessControl::OriginAccessControlConfig.SigningBehavior": [
+    "always",
+    "never",
+    "no-override"
+  ],
+  "AWS::DynamoDB::Table::AttributeDefinition.AttributeType": [
+    "S",
+    "N",
+    "B"
+  ],
+  "AWS::DynamoDB::Table::BillingMode": [
+    "PAY_PER_REQUEST",
+    "PROVISIONED"
+  ],
+  "AWS::DynamoDB::Table::ImportSourceSpecification.InputFormat": [
+    "CSV",
+    "DYNAMODB_JSON",
+    "ION"
+  ],
+  "AWS::DynamoDB::Table::KeySchema.KeyType": [
+    "HASH",
+    "RANGE"
+  ],
+  "AWS::DynamoDB::Table::Projection.ProjectionType": [
+    "KEYS_ONLY",
+    "INCLUDE",
+    "ALL"
+  ],
+  "AWS::DynamoDB::Table::StreamSpecification.StreamViewType": [
+    "KEYS_ONLY",
+    "NEW_IMAGE",
+    "OLD_IMAGE",
+    "NEW_AND_OLD_IMAGES"
+  ],
+  "AWS::DynamoDB::Table::TableClass": [
+    "STANDARD",
+    "STANDARD_INFREQUENT_ACCESS"
+  ],
+  "AWS::EC2::SecurityGroupEgress::IpProtocol": [
+    "tcp",
+    "udp",
+    "icmp",
+    "icmpv6",
+    "-1"
+  ],
+  "AWS::EC2::VPC::InstanceTenancy": [
+    "default",
+    "dedicated",
+    "host"
+  ],
+  "AWS::ECS::Cluster::ClusterSettings.Value": [
+    "enhanced",
+    "enabled",
+    "disabled"
+  ],
+  "AWS::ECS::Cluster::ExecuteCommandConfiguration.Logging": [
+    "NONE",
+    "DEFAULT",
+    "OVERRIDE"
+  ],
+  "AWS::ElasticLoadBalancingV2::Listener::FixedResponseConfig.ContentType": [
+    "text/plain",
+    "text/css",
+    "text/html",
+    "application/javascript",
+    "application/json"
+  ],
+  "AWS::ElasticLoadBalancingV2::Listener::MutualAuthentication.Mode": [
+    "off",
+    "passthrough",
+    "verify"
+  ],
+  "AWS::ElasticLoadBalancingV2::Listener::Protocol": [
+    "HTTP",
+    "HTTPS",
+    "TCP",
+    "TLS",
+    "UDP",
+    "TCP_UDP",
+    "QUIC",
+    "TCP_QUIC"
+  ],
+  "AWS::ElasticLoadBalancingV2::LoadBalancer::EnablePrefixForIpv6SourceNat": [
+    "dualstack",
+    "off"
+  ],
+  "AWS::ElasticLoadBalancingV2::LoadBalancer::IpAddressType": [
+    "ipv4",
+    "dualstack",
+    "dualstack-without-public-ipv4"
+  ],
+  "AWS::ElasticLoadBalancingV2::LoadBalancer::LoadBalancerAttribute.Key": [
+    "true",
+    "false",
+    "monitor",
+    "defensive",
+    "strictest",
+    "x-amzn-tls-version",
+    "x-amzn-tls-cipher-suite",
+    "append",
+    "preserve",
+    "remove",
+    "availability_zone_affinity",
+    "partial_availability_zone_affinity",
+    "any_availability_zone"
+  ],
+  "AWS::ElasticLoadBalancingV2::TargetGroup::IpAddressType": [
+    "ipv4",
+    "ipv6"
+  ],
+  "AWS::ElasticLoadBalancingV2::TargetGroup::ProtocolVersion": [
+    "GRPC",
+    "HTTP1",
+    "HTTP2"
+  ]
+}
