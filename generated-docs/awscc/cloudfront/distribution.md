@@ -171,8 +171,6 @@ Shorthand formats: `price_class_100` or `PriceClass.price_class_100`
 |-------|----------------|
 | `viewer-request` | `aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.FunctionAssociation.EventType.viewer_request` |
 | `viewer-response` | `aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.FunctionAssociation.EventType.viewer_response` |
-| `origin-request` | `aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.FunctionAssociation.EventType.origin_request` |
-| `origin-response` | `aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.FunctionAssociation.EventType.origin_response` |
 
 Shorthand formats: `viewer_request` or `EventType.viewer_request`
 
