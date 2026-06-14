@@ -70,6 +70,7 @@ mod tests {
         let plan = create_plan(
             &resources,
             &[],
+            &carina_core::provider::ProviderRouter::new(),
             &current_states,
             &HashMap::new(),
             &schemas,
