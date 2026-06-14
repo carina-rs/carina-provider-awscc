@@ -321,3 +321,34 @@ pub fn enum_valid_values() -> (
         ],
     )
 }
+
+/// Returns the IAM permissions declared by the CloudFormation handler for this operation.
+pub fn required_permissions(op: carina_core::effect::PlanOp) -> &'static [&'static str] {
+    match op {
+        carina_core::effect::PlanOp::Create => &[
+            "ec2:CreateTransitGateway",
+            "ec2:CreateTags",
+            "ec2:DescribeTransitGateways",
+            "ec2:DescribeTags",
+            "ec2:ModifyTransitGateway",
+            "ec2:ModifyTransitGatewayOptions",
+        ],
+        carina_core::effect::PlanOp::Read => &["ec2:DescribeTransitGateways", "ec2:DescribeTags"],
+        carina_core::effect::PlanOp::Update => &[
+            "ec2:CreateTransitGateway",
+            "ec2:CreateTags",
+            "ec2:DescribeTransitGateways",
+            "ec2:DescribeTags",
+            "ec2:DeleteTransitGateway",
+            "ec2:DeleteTags",
+            "ec2:ModifyTransitGateway",
+            "ec2:ModifyTransitGatewayOptions",
+        ],
+        carina_core::effect::PlanOp::Delete => &[
+            "ec2:DescribeTransitGateways",
+            "ec2:DescribeTags",
+            "ec2:DeleteTransitGateway",
+            "ec2:DeleteTags",
+        ],
+    }
+}

@@ -45,3 +45,22 @@ pub fn enum_valid_values() -> (
 ) {
     ("ec2.SubnetRouteTableAssociation", &[])
 }
+
+/// Returns the IAM permissions declared by the CloudFormation handler for this operation.
+pub fn required_permissions(op: carina_core::effect::PlanOp) -> &'static [&'static str] {
+    match op {
+        carina_core::effect::PlanOp::Create => &[
+            "ec2:AssociateRouteTable",
+            "ec2:ReplaceRouteTableAssociation",
+            "ec2:DescribeSubnets",
+            "ec2:DescribeRouteTables",
+        ],
+        carina_core::effect::PlanOp::Read => &["ec2:DescribeRouteTables"],
+        carina_core::effect::PlanOp::Update => &[],
+        carina_core::effect::PlanOp::Delete => &[
+            "ec2:DisassociateRouteTable",
+            "ec2:DescribeSubnets",
+            "ec2:DescribeRouteTables",
+        ],
+    }
+}

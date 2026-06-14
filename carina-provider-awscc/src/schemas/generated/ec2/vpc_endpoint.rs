@@ -219,3 +219,51 @@ pub fn enum_valid_values() -> (
         ],
     )
 }
+
+/// Returns the IAM permissions declared by the CloudFormation handler for this operation.
+pub fn required_permissions(op: carina_core::effect::PlanOp) -> &'static [&'static str] {
+    match op {
+        carina_core::effect::PlanOp::Create => &[
+            "ec2:CreateVpcEndpoint",
+            "ec2:DescribeVpcEndpoints",
+            "ec2:DescribeSubnets",
+            "ec2:DescribeSecurityGroups",
+            "vpc-lattice:CreateServiceNetworkVpcEndpointAssociation",
+            "vpc-lattice:DescribeServiceNetworkVpcEndpointAssociation",
+            "ec2:CreateTags",
+            "ec2:DeleteTags",
+            "vpce:AllowMultiRegion",
+            "ec2:DescribeVpcs",
+        ],
+        carina_core::effect::PlanOp::Read => &[
+            "ec2:DescribeVpcEndpoints",
+            "ec2:DescribeSubnets",
+            "ec2:DescribeSecurityGroups",
+            "vpc-lattice:DescribeServiceNetworkVpcEndpointAssociation",
+            "ec2:DescribeVpcs",
+        ],
+        carina_core::effect::PlanOp::Update => &[
+            "ec2:ModifyVpcEndpoint",
+            "ec2:DescribeVpcEndpoints",
+            "ec2:DescribeSubnets",
+            "ec2:DescribeSecurityGroups",
+            "vpc-lattice:CreateServiceNetworkVpcEndpointAssociation",
+            "vpc-lattice:DescribeServiceNetworkVpcEndpointAssociation",
+            "ec2:CreateTags",
+            "ec2:DeleteTags",
+            "vpce:AllowMultiRegion",
+            "ec2:DescribeVpcs",
+        ],
+        carina_core::effect::PlanOp::Delete => &[
+            "ec2:DeleteVpcEndpoints",
+            "ec2:DescribeVpcEndpoints",
+            "ec2:DescribeSubnets",
+            "ec2:DescribeSecurityGroups",
+            "vpc-lattice:DescribeServiceNetworkVpcEndpointAssociation",
+            "ec2:CreateTags",
+            "ec2:DeleteTags",
+            "vpce:AllowMultiRegion",
+            "ec2:DescribeVpcs",
+        ],
+    }
+}

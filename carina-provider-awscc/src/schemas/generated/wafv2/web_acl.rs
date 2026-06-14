@@ -1774,3 +1774,25 @@ pub fn enum_valid_values() -> (
         ],
     )
 }
+
+/// Returns the IAM permissions declared by the CloudFormation handler for this operation.
+pub fn required_permissions(op: carina_core::effect::PlanOp) -> &'static [&'static str] {
+    match op {
+        carina_core::effect::PlanOp::Create => &[
+            "wafv2:CreateWebACL",
+            "wafv2:GetWebACL",
+            "wafv2:ListTagsForResource",
+            "wafv2:TagResource",
+            "wafv2:UntagResource",
+        ],
+        carina_core::effect::PlanOp::Read => &["wafv2:GetWebACL", "wafv2:ListTagsForResource"],
+        carina_core::effect::PlanOp::Update => &[
+            "wafv2:UpdateWebACL",
+            "wafv2:GetWebACL",
+            "wafv2:ListTagsForResource",
+            "wafv2:TagResource",
+            "wafv2:UntagResource",
+        ],
+        carina_core::effect::PlanOp::Delete => &["wafv2:DeleteWebACL", "wafv2:GetWebACL"],
+    }
+}

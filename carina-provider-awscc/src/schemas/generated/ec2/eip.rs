@@ -94,3 +94,29 @@ pub fn enum_valid_values() -> (
 ) {
     ("ec2.Eip", &[("domain", VALID_DOMAIN)])
 }
+
+/// Returns the IAM permissions declared by the CloudFormation handler for this operation.
+pub fn required_permissions(op: carina_core::effect::PlanOp) -> &'static [&'static str] {
+    match op {
+        carina_core::effect::PlanOp::Create => &[
+            "ec2:AllocateAddress",
+            "ec2:AcceptAddressTransfer",
+            "ec2:DescribeAddresses",
+            "ec2:AssociateAddress",
+            "ec2:CreateTags",
+        ],
+        carina_core::effect::PlanOp::Read => &["ec2:DescribeAddresses"],
+        carina_core::effect::PlanOp::Update => &[
+            "ec2:DescribeAddresses",
+            "ec2:DisassociateAddress",
+            "ec2:DeleteTags",
+            "ec2:CreateTags",
+            "ec2:AssociateAddress",
+        ],
+        carina_core::effect::PlanOp::Delete => &[
+            "ec2:ReleaseAddress",
+            "ec2:DescribeAddresses",
+            "ec2:DisassociateAddress",
+        ],
+    }
+}

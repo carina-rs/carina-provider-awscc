@@ -107,3 +107,33 @@ pub fn enum_valid_values() -> (
         ],
     )
 }
+
+/// Returns the IAM permissions declared by the CloudFormation handler for this operation.
+pub fn required_permissions(op: carina_core::effect::PlanOp) -> &'static [&'static str] {
+    match op {
+        carina_core::effect::PlanOp::Create => &[
+            "sso:CreateAccountAssignment",
+            "sso:DescribeAccountAssignmentCreationStatus",
+            "sso:ListAccountAssignments",
+            "iam:GetSAMLProvider",
+            "iam:CreateSAMLProvider",
+            "iam:AttachRolePolicy",
+            "iam:PutRolePolicy",
+            "iam:CreateRole",
+            "iam:ListRolePolicies",
+        ],
+        carina_core::effect::PlanOp::Read => &[
+            "sso:ListAccountAssignments",
+            "iam:GetSAMLProvider",
+            "iam:ListRolePolicies",
+        ],
+        carina_core::effect::PlanOp::Update => &[],
+        carina_core::effect::PlanOp::Delete => &[
+            "sso:ListAccountAssignments",
+            "sso:DeleteAccountAssignment",
+            "sso:DescribeAccountAssignmentDeletionStatus",
+            "iam:GetSAMLProvider",
+            "iam:ListRolePolicies",
+        ],
+    }
+}

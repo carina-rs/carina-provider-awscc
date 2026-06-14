@@ -59,3 +59,28 @@ pub fn enum_valid_values() -> (
 ) {
     ("ec2.EgressOnlyInternetGateway", &[])
 }
+
+/// Returns the IAM permissions declared by the CloudFormation handler for this operation.
+pub fn required_permissions(op: carina_core::effect::PlanOp) -> &'static [&'static str] {
+    match op {
+        carina_core::effect::PlanOp::Create => &[
+            "ec2:CreateEgressOnlyInternetGateway",
+            "ec2:CreateTags",
+            "ec2:DescribeEgressOnlyInternetGateways",
+        ],
+        carina_core::effect::PlanOp::Read => {
+            &["ec2:DescribeEgressOnlyInternetGateways", "ec2:DescribeTags"]
+        }
+        carina_core::effect::PlanOp::Update => &[
+            "ec2:DeleteTags",
+            "ec2:CreateTags",
+            "ec2:DescribeEgressOnlyInternetGateways",
+        ],
+        carina_core::effect::PlanOp::Delete => &[
+            "ec2:DeleteEgressOnlyInternetGateway",
+            "ec2:DescribeEgressOnlyInternetGateways",
+            "ec2:DescribeVpcs",
+            "ec2:DeleteTags",
+        ],
+    }
+}

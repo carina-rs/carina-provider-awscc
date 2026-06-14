@@ -187,3 +187,25 @@ pub fn enum_valid_values() -> (
 ) {
     ("ec2.Subnet", &[])
 }
+
+/// Returns the IAM permissions declared by the CloudFormation handler for this operation.
+pub fn required_permissions(op: carina_core::effect::PlanOp) -> &'static [&'static str] {
+    match op {
+        carina_core::effect::PlanOp::Create => &[
+            "ec2:DescribeSubnets",
+            "ec2:CreateSubnet",
+            "ec2:CreateTags",
+            "ec2:ModifySubnetAttribute",
+        ],
+        carina_core::effect::PlanOp::Read => &["ec2:DescribeSubnets", "ec2:DescribeNetworkAcls"],
+        carina_core::effect::PlanOp::Update => &[
+            "ec2:DescribeSubnets",
+            "ec2:ModifySubnetAttribute",
+            "ec2:CreateTags",
+            "ec2:DeleteTags",
+            "ec2:AssociateSubnetCidrBlock",
+            "ec2:DisassociateSubnetCidrBlock",
+        ],
+        carina_core::effect::PlanOp::Delete => &["ec2:DescribeSubnets", "ec2:DeleteSubnet"],
+    }
+}

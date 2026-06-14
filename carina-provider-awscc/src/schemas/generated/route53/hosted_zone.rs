@@ -111,3 +111,46 @@ pub fn enum_valid_values() -> (
 ) {
     ("route53.HostedZone", &[])
 }
+
+/// Returns the IAM permissions declared by the CloudFormation handler for this operation.
+pub fn required_permissions(op: carina_core::effect::PlanOp) -> &'static [&'static str] {
+    match op {
+        carina_core::effect::PlanOp::Create => &[
+            "route53:CreateHostedZone",
+            "route53:CreateQueryLoggingConfig",
+            "route53:ChangeTagsForResource",
+            "route53:GetChange",
+            "route53:GetHostedZone",
+            "route53:UpdateHostedZoneFeatures",
+            "route53:AssociateVPCWithHostedZone",
+            "ec2:DescribeVpcs",
+        ],
+        carina_core::effect::PlanOp::Read => &[
+            "route53:GetHostedZone",
+            "route53:ListTagsForResource",
+            "route53:ListQueryLoggingConfigs",
+        ],
+        carina_core::effect::PlanOp::Update => &[
+            "route53:GetChange",
+            "route53:GetHostedZone",
+            "route53:ListTagsForResource",
+            "route53:ListQueryLoggingConfigs",
+            "route53:UpdateHostedZoneComment",
+            "route53:UpdateHostedZoneFeatures",
+            "route53:ChangeTagsForResource",
+            "route53:AssociateVPCWithHostedZone",
+            "route53:DisassociateVPCFromHostedZone",
+            "route53:CreateQueryLoggingConfig",
+            "route53:DeleteQueryLoggingConfig",
+            "ec2:DescribeVpcs",
+        ],
+        carina_core::effect::PlanOp::Delete => &[
+            "route53:DeleteHostedZone",
+            "route53:DeleteQueryLoggingConfig",
+            "route53:ListQueryLoggingConfigs",
+            "route53:UpdateHostedZoneFeatures",
+            "route53:GetHostedZone",
+            "route53:GetChange",
+        ],
+    }
+}

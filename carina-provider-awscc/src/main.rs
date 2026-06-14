@@ -321,6 +321,23 @@ impl CarinaProvider for AwsccProcessProvider {
         }
     }
 
+    fn required_permissions(
+        &self,
+        id: &proto::ResourceId,
+        op: carina_plugin_sdk::PlanOp,
+    ) -> Vec<String> {
+        let op = match op {
+            carina_plugin_sdk::PlanOp::Create => carina_core::effect::PlanOp::Create,
+            carina_plugin_sdk::PlanOp::Read => carina_core::effect::PlanOp::Read,
+            carina_plugin_sdk::PlanOp::Update => carina_core::effect::PlanOp::Update,
+            carina_plugin_sdk::PlanOp::Delete => carina_core::effect::PlanOp::Delete,
+        };
+        schemas::generated::required_permissions(&id.resource_type, op)
+            .iter()
+            .map(|permission| (*permission).to_string())
+            .collect()
+    }
+
     fn normalize_desired(&self, resources: Vec<proto::Resource>) -> Vec<proto::Resource> {
         let mut core_resources: Vec<_> = resources
             .iter()

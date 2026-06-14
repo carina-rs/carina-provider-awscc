@@ -157,3 +157,25 @@ pub fn enum_valid_values() -> (
 ) {
     ("iam.OidcProvider", &[])
 }
+
+/// Returns the IAM permissions declared by the CloudFormation handler for this operation.
+pub fn required_permissions(op: carina_core::effect::PlanOp) -> &'static [&'static str] {
+    match op {
+        carina_core::effect::PlanOp::Create => &[
+            "iam:CreateOpenIDConnectProvider",
+            "iam:TagOpenIDConnectProvider",
+            "iam:GetOpenIDConnectProvider",
+        ],
+        carina_core::effect::PlanOp::Read => &["iam:GetOpenIDConnectProvider"],
+        carina_core::effect::PlanOp::Update => &[
+            "iam:UpdateOpenIDConnectProviderThumbprint",
+            "iam:RemoveClientIDFromOpenIDConnectProvider",
+            "iam:AddClientIDToOpenIDConnectProvider",
+            "iam:GetOpenIDConnectProvider",
+            "iam:TagOpenIDConnectProvider",
+            "iam:UntagOpenIDConnectProvider",
+            "iam:ListOpenIDConnectProviderTags",
+        ],
+        carina_core::effect::PlanOp::Delete => &["iam:DeleteOpenIDConnectProvider"],
+    }
+}

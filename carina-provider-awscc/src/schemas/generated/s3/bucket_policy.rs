@@ -39,3 +39,13 @@ pub fn enum_valid_values() -> (
 ) {
     ("s3.BucketPolicy", &[])
 }
+
+/// Returns the IAM permissions declared by the CloudFormation handler for this operation.
+pub fn required_permissions(op: carina_core::effect::PlanOp) -> &'static [&'static str] {
+    match op {
+        carina_core::effect::PlanOp::Create => &["s3:GetBucketPolicy", "s3:PutBucketPolicy"],
+        carina_core::effect::PlanOp::Read => &["s3:GetBucketPolicy"],
+        carina_core::effect::PlanOp::Update => &["s3:GetBucketPolicy", "s3:PutBucketPolicy"],
+        carina_core::effect::PlanOp::Delete => &["s3:GetBucketPolicy", "s3:DeleteBucketPolicy"],
+    }
+}

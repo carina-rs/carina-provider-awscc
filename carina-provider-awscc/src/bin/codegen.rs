@@ -514,6 +514,35 @@ impl CfnSchema {
     }
 }
 
+fn handler_permissions(schema: &CfnSchema, operation: &str) -> Vec<String> {
+    schema
+        .handlers
+        .get(operation)
+        .and_then(|handler| handler.get("permissions"))
+        .and_then(serde_json::Value::as_array)
+        .map(|permissions| {
+            permissions
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn emit_permissions_slice(permissions: &[String]) -> String {
+    if permissions.is_empty() {
+        "&[]".to_string()
+    } else {
+        let entries = permissions
+            .iter()
+            .map(|permission| format!("        {},", rust_lit(permission)))
+            .collect::<Vec<_>>()
+            .join("\n");
+        format!("&[\n{entries}\n    ]")
+    }
+}
+
 /// CloudFormation Tagging metadata
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -3133,6 +3162,26 @@ fn {fn_name}(value: &Value) -> Result<(), String> {{
     // emitted. DSL → API canonical conversion is now done through
     // `DslMap::api_for` against the exhaustive `dsl_aliases` table on
     // each enum, sourced from a single place (see awscc#220).
+
+    let create_permissions = handler_permissions(schema, "create");
+    let read_permissions = handler_permissions(schema, "read");
+    let update_permissions = handler_permissions(schema, "update");
+    let delete_permissions = handler_permissions(schema, "delete");
+    body.push_str(&format!(
+        "\n/// Returns the IAM permissions declared by the CloudFormation handler for this operation.\n\
+         pub fn required_permissions(op: carina_core::effect::PlanOp) -> &'static [&'static str] {{\n\
+         \x20   match op {{\n\
+         \x20       carina_core::effect::PlanOp::Create => {},\n\
+         \x20       carina_core::effect::PlanOp::Read => {},\n\
+         \x20       carina_core::effect::PlanOp::Update => {},\n\
+         \x20       carina_core::effect::PlanOp::Delete => {},\n\
+         \x20   }}\n\
+         }}\n",
+        emit_permissions_slice(&create_permissions),
+        emit_permissions_slice(&read_permissions),
+        emit_permissions_slice(&update_permissions),
+        emit_permissions_slice(&delete_permissions)
+    ));
 
     // Header is built last so import selection can scan the body for
     // `legacy_validator(` actually-emitted mentions.

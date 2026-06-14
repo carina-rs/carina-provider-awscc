@@ -204,3 +204,30 @@ pub fn enum_valid_values() -> (
         ],
     )
 }
+
+/// Returns the IAM permissions declared by the CloudFormation handler for this operation.
+pub fn required_permissions(op: carina_core::effect::PlanOp) -> &'static [&'static str] {
+    match op {
+        carina_core::effect::PlanOp::Create => &[
+            "elasticloadbalancing:CreateListener",
+            "elasticloadbalancing:DescribeListeners",
+            "cognito-idp:DescribeUserPoolClient",
+            "elasticloadbalancing:ModifyListenerAttributes",
+        ],
+        carina_core::effect::PlanOp::Read => &[
+            "elasticloadbalancing:DescribeListeners",
+            "elasticloadbalancing:DescribeListenerAttributes",
+        ],
+        carina_core::effect::PlanOp::Update => &[
+            "elasticloadbalancing:ModifyListener",
+            "elasticloadbalancing:DescribeListeners",
+            "cognito-idp:DescribeUserPoolClient",
+            "elasticloadbalancing:ModifyListenerAttributes",
+            "elasticloadbalancing:DescribeListenerAttributes",
+        ],
+        carina_core::effect::PlanOp::Delete => &[
+            "elasticloadbalancing:DeleteListener",
+            "elasticloadbalancing:DescribeListeners",
+        ],
+    }
+}

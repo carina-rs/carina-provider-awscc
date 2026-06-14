@@ -293,6 +293,8 @@ cat > "$OUTPUT_DIR/mod.rs" << 'EOF'
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
+use carina_core::effect::PlanOp;
+
 use super::config::AwsccSchemaConfig;
 
 EOF
@@ -373,6 +375,23 @@ pub fn get_config_by_type(resource_type: &str) -> Option<&'static AwsccSchemaCon
     SCHEMA_CONFIG_INDEX
         .get(resource_type)
         .map(|&i| &SCHEMA_CONFIGS[i])
+}
+
+/// Look up the IAM permissions declared by the CloudFormation handler for a resource operation.
+pub fn required_permissions(resource_type: &str, op: PlanOp) -> &'static [&'static str] {
+    match resource_type {
+EOF
+
+for TYPE_NAME in "${GENERATED_TYPES[@]}"; do
+    SVC=$(service_name "$TYPE_NAME")
+    RESOURCE=$(resource_module_name "$TYPE_NAME")
+    DSL_NAME=$("$CODEGEN_BIN" --type-name "$TYPE_NAME" --print-dsl-resource-name)
+    echo "        \"${DSL_NAME}\" => ${SVC}::${RESOURCE}::required_permissions(op)," >> "$OUTPUT_DIR/mod.rs"
+done
+
+cat >> "$OUTPUT_DIR/mod.rs" << 'EOF'
+        _ => &[],
+    }
 }
 
 /// Get valid enum values for a given resource type and attribute name. O(1).

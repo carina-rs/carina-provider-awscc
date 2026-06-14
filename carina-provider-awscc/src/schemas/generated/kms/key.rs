@@ -208,3 +208,35 @@ pub fn enum_valid_values() -> (
         ],
     )
 }
+
+/// Returns the IAM permissions declared by the CloudFormation handler for this operation.
+pub fn required_permissions(op: carina_core::effect::PlanOp) -> &'static [&'static str] {
+    match op {
+        carina_core::effect::PlanOp::Create => &[
+            "kms:CreateKey",
+            "kms:EnableKeyRotation",
+            "kms:DisableKey",
+            "kms:TagResource",
+            "kms:PutKeyPolicy",
+        ],
+        carina_core::effect::PlanOp::Read => &[
+            "kms:DescribeKey",
+            "kms:GetKeyPolicy",
+            "kms:GetKeyRotationStatus",
+            "kms:ListResourceTags",
+        ],
+        carina_core::effect::PlanOp::Update => &[
+            "kms:DescribeKey",
+            "kms:DisableKey",
+            "kms:DisableKeyRotation",
+            "kms:EnableKey",
+            "kms:EnableKeyRotation",
+            "kms:PutKeyPolicy",
+            "kms:TagResource",
+            "kms:UntagResource",
+            "kms:UpdateKeyDescription",
+            "kms:ListResourceTags",
+        ],
+        carina_core::effect::PlanOp::Delete => &["kms:DescribeKey", "kms:ScheduleKeyDeletion"],
+    }
+}

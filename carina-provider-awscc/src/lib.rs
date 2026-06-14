@@ -19,6 +19,7 @@ use std::collections::HashMap;
 
 use indexmap::IndexMap;
 
+use carina_core::effect::PlanOp;
 use carina_core::provider::{
     BoxFuture, CreateRequest, DeleteRequest, Provider, ProviderError, ProviderFactory,
     ProviderNormalizer, ProviderResult, ReadRequest, SavedAttrs, UpdateRequest,
@@ -286,6 +287,13 @@ impl Provider for AwsccProvider {
         "awscc"
     }
 
+    fn required_permissions(&self, id: &ResourceId, op: PlanOp) -> Vec<String> {
+        schemas::generated::required_permissions(&id.resource_type, op)
+            .iter()
+            .map(|permission| (*permission).to_string())
+            .collect()
+    }
+
     fn read(
         &self,
         id: &ResourceId,
@@ -494,6 +502,56 @@ mod tests {
             }
             other => panic!("assume_role must be a Struct, was {other:?}"),
         }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    async fn provider_for_required_permissions_tests() -> AwsccProvider {
+        use aws_config::BehaviorVersion;
+        use aws_config::Region;
+        use winterbaume_cloudcontrol::CloudControlService;
+        use winterbaume_core::MockAws;
+
+        let mock = MockAws::builder()
+            .with_service(CloudControlService::new())
+            .build();
+        let config = aws_config::defaults(BehaviorVersion::latest())
+            .http_client(mock.http_client())
+            .credentials_provider(mock.credentials_provider())
+            .region(Region::new("us-east-1"))
+            .load()
+            .await;
+
+        AwsccProvider::from_sdk_config(config, &AwsccProviderConfig::default()).await
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[tokio::test]
+    async fn required_permissions_returns_cfn_handler_actions_for_known_resource() {
+        let provider = provider_for_required_permissions_tests().await;
+        let id =
+            ResourceId::with_provider("awscc", "elasticloadbalancingv2.LoadBalancer", "test", None);
+
+        let permissions = Provider::required_permissions(&provider, &id, PlanOp::Create);
+
+        assert!(!permissions.is_empty());
+        assert!(
+            permissions
+                .iter()
+                .any(|p| p == "elasticloadbalancing:CreateLoadBalancer"),
+            "expected LoadBalancer create permissions to include \
+             elasticloadbalancing:CreateLoadBalancer, got {permissions:?}"
+        );
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[tokio::test]
+    async fn required_permissions_returns_empty_vec_for_unknown_resource() {
+        let provider = provider_for_required_permissions_tests().await;
+        let id = ResourceId::with_provider("awscc", "example.Unknown", "test", None);
+
+        let permissions = Provider::required_permissions(&provider, &id, PlanOp::Create);
+
+        assert!(permissions.is_empty());
     }
 
     fn list_of(items: &[&str]) -> Value {

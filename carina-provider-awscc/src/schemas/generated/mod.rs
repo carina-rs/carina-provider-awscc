@@ -6,6 +6,8 @@
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
+use carina_core::effect::PlanOp;
+
 use super::config::AwsccSchemaConfig;
 
 pub mod cloudfront;
@@ -156,6 +158,71 @@ pub fn get_config_by_type(resource_type: &str) -> Option<&'static AwsccSchemaCon
     SCHEMA_CONFIG_INDEX
         .get(resource_type)
         .map(|&i| &SCHEMA_CONFIGS[i])
+}
+
+/// Look up the IAM permissions declared by the CloudFormation handler for a resource operation.
+pub fn required_permissions(resource_type: &str, op: PlanOp) -> &'static [&'static str] {
+    match resource_type {
+        "ec2.Vpc" => ec2::vpc::required_permissions(op),
+        "ec2.Subnet" => ec2::subnet::required_permissions(op),
+        "ec2.InternetGateway" => ec2::internet_gateway::required_permissions(op),
+        "ec2.RouteTable" => ec2::route_table::required_permissions(op),
+        "ec2.Route" => ec2::route::required_permissions(op),
+        "ec2.SubnetRouteTableAssociation" => {
+            ec2::subnet_route_table_association::required_permissions(op)
+        }
+        "ec2.Eip" => ec2::eip::required_permissions(op),
+        "ec2.NatGateway" => ec2::nat_gateway::required_permissions(op),
+        "ec2.SecurityGroup" => ec2::security_group::required_permissions(op),
+        "ec2.SecurityGroupIngress" => ec2::security_group_ingress::required_permissions(op),
+        "ec2.SecurityGroupEgress" => ec2::security_group_egress::required_permissions(op),
+        "ec2.VpcEndpoint" => ec2::vpc_endpoint::required_permissions(op),
+        "ec2.VpcGatewayAttachment" => ec2::vpc_gateway_attachment::required_permissions(op),
+        "ec2.FlowLog" => ec2::flow_log::required_permissions(op),
+        "ec2.Ipam" => ec2::ipam::required_permissions(op),
+        "ec2.IpamPool" => ec2::ipam_pool::required_permissions(op),
+        "ec2.VpnGateway" => ec2::vpn_gateway::required_permissions(op),
+        "ec2.TransitGateway" => ec2::transit_gateway::required_permissions(op),
+        "ec2.VpcPeeringConnection" => ec2::vpc_peering_connection::required_permissions(op),
+        "ec2.EgressOnlyInternetGateway" => {
+            ec2::egress_only_internet_gateway::required_permissions(op)
+        }
+        "ec2.TransitGatewayAttachment" => ec2::transit_gateway_attachment::required_permissions(op),
+        "s3.Bucket" => s3::bucket::required_permissions(op),
+        "s3.BucketPolicy" => s3::bucket_policy::required_permissions(op),
+        "iam.Role" => iam::role::required_permissions(op),
+        "iam.RolePolicy" => iam::role_policy::required_permissions(op),
+        "iam.OidcProvider" => iam::oidc_provider::required_permissions(op),
+        "logs.LogGroup" => logs::log_group::required_permissions(op),
+        "organizations.Organization" => organizations::organization::required_permissions(op),
+        "organizations.Account" => organizations::account::required_permissions(op),
+        "sso.Instance" => sso::instance::required_permissions(op),
+        "sso.PermissionSet" => sso::permission_set::required_permissions(op),
+        "sso.Assignment" => sso::assignment::required_permissions(op),
+        "identitystore.Group" => identitystore::group::required_permissions(op),
+        "identitystore.GroupMembership" => {
+            identitystore::group_membership::required_permissions(op)
+        }
+        "route53.HostedZone" => route53::hosted_zone::required_permissions(op),
+        "cloudfront.Distribution" => cloudfront::distribution::required_permissions(op),
+        "cloudfront.OriginAccessControl" => {
+            cloudfront::origin_access_control::required_permissions(op)
+        }
+        "wafv2.WebAcl" => wafv2::web_acl::required_permissions(op),
+        "kms.Key" => kms::key::required_permissions(op),
+        "dynamodb.Table" => dynamodb::table::required_permissions(op),
+        "ecs.Cluster" => ecs::cluster::required_permissions(op),
+        "elasticloadbalancingv2.LoadBalancer" => {
+            elasticloadbalancingv2::load_balancer::required_permissions(op)
+        }
+        "elasticloadbalancingv2.Listener" => {
+            elasticloadbalancingv2::listener::required_permissions(op)
+        }
+        "elasticloadbalancingv2.TargetGroup" => {
+            elasticloadbalancingv2::target_group::required_permissions(op)
+        }
+        _ => &[],
+    }
 }
 
 /// Get valid enum values for a given resource type and attribute name. O(1).
