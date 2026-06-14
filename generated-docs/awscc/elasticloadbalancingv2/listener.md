@@ -145,15 +145,6 @@ Shorthand formats: `off` or `Mode.off`
 
 Shorthand formats: `http` or `Protocol.http`
 
-### protocol (Protocol)
-
-| Value | DSL Identifier |
-|-------|----------------|
-| `HTTP` | `aws.elasticloadbalancingv2.Listener.Action.RedirectConfig.Protocol.http` |
-| `HTTPS` | `aws.elasticloadbalancingv2.Listener.Action.RedirectConfig.Protocol.https` |
-
-Shorthand formats: `http` or `Protocol.http`
-
 ### status_code (StatusCode)
 
 | Value | DSL Identifier |
