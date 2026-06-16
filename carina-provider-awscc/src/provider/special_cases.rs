@@ -11,6 +11,7 @@ use carina_core::resource::{ConcreteValue, Resource, ResourceId, Value};
 use serde_json::json;
 
 use super::AwsccProvider;
+use crate::provider::cloudcontrol::WaitOutcome;
 use crate::schemas::config::AwsccSchemaConfig;
 
 impl AwsccProvider {
@@ -91,7 +92,8 @@ impl AwsccProvider {
                 && !attachments.is_empty()
             {
                 let patch_ops = vec![json!({"op": "remove", "path": "/Attachments"})];
-                self.cc_update_resource(config.aws_type_name, identifier, patch_ops)
+                match self
+                    .cc_update_resource(config.aws_type_name, identifier, patch_ops)
                     .await
                     .map_err(|e| {
                         ProviderError::api_error(
@@ -99,7 +101,16 @@ impl AwsccProvider {
                         )
                         .with_cause(e)
                         .for_resource(id.clone())
-                    })?;
+                    })? {
+                    WaitOutcome::Success { .. } => {}
+                    WaitOutcome::PartialOrFailed { status_message, .. } => {
+                        return Err(ProviderError::api_error(format!(
+                            "Failed to detach Internet Gateway from VPC before deletion: {}",
+                            status_message
+                        ))
+                        .for_resource(id.clone()));
+                    }
+                }
             }
         }
         Ok(())
