@@ -13,6 +13,7 @@ use std::sync::{Arc, Mutex};
 use winterbaume_core::{MockAws, MockRequest, MockResponse, MockService, json_error_response};
 
 const ROLE_NAME: &str = "carina-acc-test-role";
+const ROLE_NAME_PREFIX: &str = "carina-acc-test-";
 const ROLE_PATH: &str = "/foo/";
 const PATH_QUALIFIED_IDENTIFIER: &str = "/foo/carina-acc-test-role";
 const REQUEST_TOKEN: &str = "iam-role-create-token";
@@ -109,7 +110,7 @@ impl IamRoleIdentifierCloudControl {
             .lock()
             .unwrap()
             .push(identifier.clone());
-        if identifier != ROLE_NAME {
+        if identifier != PATH_QUALIFIED_IDENTIFIER && identifier != ROLE_NAME {
             return json_error_response(
                 404,
                 "ResourceNotFoundException",
@@ -182,7 +183,7 @@ fn assume_role_policy_value() -> Value {
 
 fn iam_role_resource() -> Resource {
     Resource::with_provider("awscc", "iam.Role", "role", None)
-        .with_attribute("role_name", string(ROLE_NAME))
+        .with_attribute("role_name_prefix", string(ROLE_NAME_PREFIX))
         .with_attribute("path", string(ROLE_PATH))
         .with_attribute("assume_role_policy_document", assume_role_policy_value())
 }
@@ -200,7 +201,7 @@ async fn provider_with_mock(service: IamRoleIdentifierCloudControl) -> AwsccProv
 }
 
 #[tokio::test]
-async fn iam_role_create_canonicalizes_path_qualified_progress_identifier_to_role_name() {
+async fn iam_role_create_with_role_name_prefix_canonicalizes_identifier_from_read_state() {
     let service = IamRoleIdentifierCloudControl::default();
     let provider = provider_with_mock(service.clone()).await;
     let resource = iam_role_resource();
@@ -218,7 +219,10 @@ async fn iam_role_create_canonicalizes_path_qualified_progress_identifier_to_rol
     };
 
     assert_eq!(created.identifier.as_deref(), Some(ROLE_NAME));
-    assert_eq!(service.get_identifiers(), vec![ROLE_NAME.to_string()]);
+    assert_eq!(
+        service.get_identifiers(),
+        vec![PATH_QUALIFIED_IDENTIFIER.to_string()]
+    );
 
     let read = Provider::read(&provider, &id, created.identifier.as_deref(), ReadRequest)
         .await
@@ -228,6 +232,6 @@ async fn iam_role_create_canonicalizes_path_qualified_progress_identifier_to_rol
     assert_eq!(read.identifier.as_deref(), Some(ROLE_NAME));
     assert_eq!(
         service.get_identifiers(),
-        vec![ROLE_NAME.to_string(), ROLE_NAME.to_string()]
+        vec![PATH_QUALIFIED_IDENTIFIER.to_string(), ROLE_NAME.to_string()]
     );
 }
