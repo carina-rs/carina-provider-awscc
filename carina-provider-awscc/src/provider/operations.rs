@@ -252,14 +252,18 @@ impl AwsccProvider {
                         Ok(UpdateOutcome::Success { state })
                     }
                     Err(read_err) => {
-                        let state =
-                            State::existing(id.clone(), desired).with_identifier(identifier);
                         let missing_attributes = patch
                             .ops
                             .iter()
                             .filter(|op| config.schema.attributes.contains_key(&op.key))
                             .map(|op| op.key.clone())
-                            .collect();
+                            .collect::<Vec<_>>();
+                        let mut state_attributes = desired;
+                        for attr in &missing_attributes {
+                            state_attributes.remove(attr);
+                        }
+                        let state = State::existing(id.clone(), state_attributes)
+                            .with_identifier(identifier);
                         let reason = format!(
                             "handler failed: {}; read error: {}",
                             status_message,
@@ -729,7 +733,10 @@ mod tests {
                 "partial-bucket".to_string()
             )))
         );
-        assert!(state.attributes.contains_key("tags"));
+        assert!(
+            !state.attributes.contains_key("tags"),
+            "missing authored attributes must be absent so the partial-read marker can materialize them as Unknown"
+        );
         assert_eq!(
             diagnostic.reason(),
             "handler failed: post-update read denied; read error: Failed to get resource: AccessDeniedException: read denied"
