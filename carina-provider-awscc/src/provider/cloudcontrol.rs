@@ -661,6 +661,23 @@ mod tests {
     }
 
     #[test]
+    fn classify_failed_progress_with_empty_identifier_as_error() {
+        let progress = progress(
+            OperationStatus::Failed,
+            Some(""),
+            Some("handler failed before useful identifier"),
+        );
+
+        let err = AwsccProvider::classify_progress_event(&progress)
+            .expect_err("empty identifier must not be treated as partial success");
+
+        assert_eq!(
+            err.message(),
+            "Operation failed: handler failed before useful identifier"
+        );
+    }
+
+    #[test]
     fn classify_cancel_complete_with_identifier_as_partial_or_failed() {
         let progress = progress(
             OperationStatus::CancelComplete,
@@ -678,6 +695,23 @@ mod tests {
                 identifier: "created-before-cancel".to_string(),
                 status_message: "operation cancelled after identifier".to_string(),
             }
+        );
+    }
+
+    #[test]
+    fn classify_cancel_complete_without_identifier_as_error() {
+        let progress = progress(
+            OperationStatus::CancelComplete,
+            None,
+            Some("operation cancelled before identifier"),
+        );
+
+        let err = AwsccProvider::classify_progress_event(&progress)
+            .expect_err("cancel without identifier must remain an error");
+
+        assert_eq!(
+            err.message(),
+            "Operation failed: operation cancelled before identifier"
         );
     }
 

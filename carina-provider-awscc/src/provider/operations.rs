@@ -147,13 +147,22 @@ impl AwsccProvider {
                     )
                     .await
                 {
-                    Ok(state) => return Ok(CreateOutcome::Success { state }),
+                    Ok(state) => {
+                        let state = merge_desired_attributes(state, resource, config);
+                        return Ok(CreateOutcome::Success { state });
+                    }
                     Err(read_err) => {
                         let state = State::existing(resource.id.clone(), HashMap::new())
                             .with_identifier(identifier);
-                        let missing_attributes = config.schema.attributes.keys().cloned().collect();
+                        let missing_attributes = config
+                            .schema
+                            .attributes
+                            .keys()
+                            .filter(|name| resource.get_attr(name.as_str()).is_some())
+                            .cloned()
+                            .collect();
                         let reason = format!(
-                            "post-create read failed after handler failure: {}; read error: {}",
+                            "handler failed: {}; read error: {}",
                             status_message,
                             read_err.message(),
                         );
@@ -167,7 +176,7 @@ impl AwsccProvider {
             }
         };
 
-        let mut state = self
+        let state = self
             .read_resource(
                 &resource.id.resource_type,
                 resource.id.name_str(),
@@ -175,17 +184,7 @@ impl AwsccProvider {
             )
             .await?;
 
-        // Preserve desired attributes not returned by CloudControl API.
-        // CloudControl doesn't always return all properties in GetResource responses
-        // (create-only properties, and some normal properties like `description`).
-        // Carry them forward from the desired state.
-        for dsl_name in config.schema.attributes.keys() {
-            if !state.attributes.contains_key(dsl_name)
-                && let Some(value) = resource.get_attr(dsl_name.as_str())
-            {
-                state.attributes.insert(dsl_name.to_string(), value.clone());
-            }
-        }
+        let state = merge_desired_attributes(state, resource, config);
 
         Ok(CreateOutcome::Success { state })
     }
@@ -275,6 +274,25 @@ impl AwsccProvider {
         .await
         .map_err(|e| e.for_resource(id.clone()))
     }
+}
+
+fn merge_desired_attributes(
+    mut state: State,
+    resource: &Resource,
+    config: &crate::schemas::config::AwsccSchemaConfig,
+) -> State {
+    // Preserve desired attributes not returned by CloudControl API.
+    // CloudControl doesn't always return all properties in GetResource responses
+    // (create-only properties, and some normal properties like `description`).
+    // Carry them forward from the desired state.
+    for dsl_name in config.schema.attributes.keys() {
+        if !state.attributes.contains_key(dsl_name)
+            && let Some(value) = resource.get_attr(dsl_name.as_str())
+        {
+            state.attributes.insert(dsl_name.to_string(), value.clone());
+        }
+    }
+    state
 }
 
 /// Map a CloudControl `GetResource` properties payload onto the DSL
@@ -440,7 +458,7 @@ mod tests {
                         self.saw_get_resource.store(true, Ordering::SeqCst);
                         MockResponse::json(
                             200,
-                            r#"{"TypeName":"AWS::S3::Bucket","ResourceDescription":{"Identifier":"partial-bucket","Properties":"{\"BucketName\":\"partial-bucket\"}"}}"#,
+                            r#"{"TypeName":"AWS::S3::Bucket","ResourceDescription":{"Identifier":"partial-bucket","Properties":"{}"}}"#,
                         )
                     }
                     "GetResource" => {
@@ -506,12 +524,11 @@ mod tests {
         assert!(state.attributes.is_empty());
         assert_eq!(
             diagnostic.reason(),
-            "post-create read failed after handler failure: post-create read denied; read error: Failed to get resource: AccessDeniedException: read denied"
+            "handler failed: post-create read denied; read error: Failed to get resource: AccessDeniedException: read denied"
         );
-        assert!(
-            diagnostic
-                .missing_attributes()
-                .contains(&"bucket_name".to_string())
+        assert_eq!(
+            diagnostic.missing_attributes(),
+            &["bucket_name".to_string()]
         );
     }
 
