@@ -17,6 +17,7 @@ use serde_json::json;
 use super::conversion::{aws_value_to_dsl_with_defs, dsl_value_to_aws_with_defs};
 use super::update::build_update_patches;
 use super::{AwsccProvider, get_schema_config};
+use crate::provider::arn_synthesis::SynthesisStatus;
 use crate::provider::cloudcontrol::WaitOutcome;
 
 impl AwsccProvider {
@@ -72,7 +73,8 @@ impl AwsccProvider {
 
         // Synthesize attributes the Cloud Control read does not return
         // (e.g. cloudfront.Distribution.arn). Reads STS once, then caches.
-        self.synthesize_read_attributes(resource_type, &mut attributes)
+        let _ = self
+            .synthesize_read_attributes(resource_type, &mut attributes)
             .await?;
 
         Ok(State::existing(id, attributes).with_identifier(identifier))
@@ -150,7 +152,26 @@ impl AwsccProvider {
                     .await
                 {
                     Ok(state) => {
-                        let state = merge_desired_attributes(state, resource, config);
+                        let mut state = merge_desired_attributes(state, resource, config);
+                        if let Some(missing_attributes) = self
+                            .synthesize_read_attributes(
+                                &resource.id.resource_type,
+                                &mut state.attributes,
+                            )
+                            .await?
+                            .missing_attributes()
+                        {
+                            let reason = format!(
+                                "handler failed: {}; read-back missing synthesized attributes: {}",
+                                status_message,
+                                missing_attributes.join(", ")
+                            );
+                            return Ok(CreateOutcome::partial_success(
+                                state,
+                                reason,
+                                missing_attributes,
+                            ));
+                        }
                         return Ok(CreateOutcome::Success { state });
                     }
                     Err(read_err) => {
@@ -186,9 +207,22 @@ impl AwsccProvider {
             )
             .await?;
 
-        let state = merge_desired_attributes(state, resource, config);
+        let mut state = merge_desired_attributes(state, resource, config);
 
-        Ok(CreateOutcome::Success { state })
+        match self
+            .synthesize_read_attributes(&resource.id.resource_type, &mut state.attributes)
+            .await?
+        {
+            SynthesisStatus::Complete => Ok(CreateOutcome::Success { state }),
+            SynthesisStatus::Missing { attributes } => Ok(CreateOutcome::partial_success(
+                state,
+                format!(
+                    "read-back missing synthesized attributes: {}",
+                    attributes.join(", ")
+                ),
+                attributes,
+            )),
+        }
     }
 
     /// Update a resource by applying an [`UpdatePatch`] to its
@@ -549,6 +583,151 @@ mod tests {
     }
 
     #[derive(Debug)]
+    struct IamRoleCreateCloudControlService {
+        include_role_name_in_read: bool,
+        saw_create_resource: AtomicBool,
+        saw_get_resource: AtomicBool,
+    }
+
+    impl IamRoleCreateCloudControlService {
+        fn new(include_role_name_in_read: bool) -> Arc<Self> {
+            Arc::new(Self {
+                include_role_name_in_read,
+                saw_create_resource: AtomicBool::new(false),
+                saw_get_resource: AtomicBool::new(false),
+            })
+        }
+    }
+
+    impl MockService for IamRoleCreateCloudControlService {
+        fn service_name(&self) -> &str {
+            "cloudcontrolapi"
+        }
+
+        fn url_patterns(&self) -> Vec<&str> {
+            vec![
+                r"https?://cloudcontrolapi\..*\.amazonaws\.com",
+                r"https?://cloudcontrolapi\.amazonaws\.com",
+            ]
+        }
+
+        fn handle(
+            &self,
+            request: MockRequest,
+        ) -> Pin<Box<dyn Future<Output = MockResponse> + Send + '_>> {
+            Box::pin(async move {
+                let action = request
+                    .headers
+                    .get("x-amz-target")
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(|v| v.split('.').next_back())
+                    .unwrap_or_default();
+                match action {
+                    "CreateResource" => {
+                        self.saw_create_resource.store(true, Ordering::SeqCst);
+                        MockResponse::json(
+                            200,
+                            r#"{"ProgressEvent":{"RequestToken":"iam-role-token"}}"#,
+                        )
+                    }
+                    "GetResourceRequestStatus" => MockResponse::json(
+                        200,
+                        r#"{"ProgressEvent":{"RequestToken":"iam-role-token","OperationStatus":"SUCCESS","Identifier":"flow-log-role"}}"#,
+                    ),
+                    "GetResource" => {
+                        self.saw_get_resource.store(true, Ordering::SeqCst);
+                        let properties = if self.include_role_name_in_read {
+                            r#"{"Path":"/service-role/","RoleName":"flow-log-role","RoleId":"AROATESTROLEID"}"#
+                        } else {
+                            r#"{"Path":"/service-role/","RoleId":"AROATESTROLEID"}"#
+                        };
+                        MockResponse::json(
+                            200,
+                            format!(
+                                r#"{{"TypeName":"AWS::IAM::Role","ResourceDescription":{{"Identifier":"flow-log-role","Properties":{properties:?}}}}}"#
+                            ),
+                        )
+                    }
+                    _ => MockResponse::json(
+                        400,
+                        format!(
+                            r#"{{"__type":"InvalidAction","message":"unexpected action {action}"}}"#
+                        ),
+                    ),
+                }
+            })
+        }
+    }
+
+    #[derive(Debug)]
+    struct CallerIdentityService {
+        saw_get_caller_identity: AtomicBool,
+    }
+
+    impl CallerIdentityService {
+        fn new() -> Arc<Self> {
+            Arc::new(Self {
+                saw_get_caller_identity: AtomicBool::new(false),
+            })
+        }
+    }
+
+    impl MockService for CallerIdentityService {
+        fn service_name(&self) -> &str {
+            "sts"
+        }
+
+        fn url_patterns(&self) -> Vec<&str> {
+            vec![
+                r"https?://sts\..*\.amazonaws\.com",
+                r"https?://sts\.amazonaws\.com",
+            ]
+        }
+
+        fn handle(
+            &self,
+            _request: MockRequest,
+        ) -> Pin<Box<dyn Future<Output = MockResponse> + Send + '_>> {
+            Box::pin(async move {
+                self.saw_get_caller_identity.store(true, Ordering::SeqCst);
+                MockResponse::xml(
+                    200,
+                    r#"<GetCallerIdentityResponse xmlns="https://sts.amazonaws.com/doc/2011-06-15/">
+  <GetCallerIdentityResult>
+    <Arn>arn:aws-us-gov:iam::123456789012:user/test</Arn>
+    <UserId>AIDATESTUSER</UserId>
+    <Account>123456789012</Account>
+  </GetCallerIdentityResult>
+  <ResponseMetadata>
+    <RequestId>00000000-0000-0000-0000-000000000000</RequestId>
+  </ResponseMetadata>
+</GetCallerIdentityResponse>"#,
+                )
+            })
+        }
+    }
+
+    async fn provider_with_iam_role_create_service(
+        cloudcontrol: Arc<IamRoleCreateCloudControlService>,
+        sts: Arc<CallerIdentityService>,
+    ) -> AwsccProvider {
+        use aws_config::{BehaviorVersion, Region};
+
+        let mock = MockAws::builder()
+            .with_service(cloudcontrol)
+            .with_service(sts)
+            .build();
+        let config = aws_config::defaults(BehaviorVersion::latest())
+            .http_client(mock.http_client())
+            .credentials_provider(mock.credentials_provider())
+            .region(Region::new("us-gov-west-1"))
+            .load()
+            .await;
+
+        AwsccProvider::from_sdk_config(config, &super::super::AwsccProviderConfig::default()).await
+    }
+
+    #[derive(Debug)]
     struct PartialUpdateCloudControlService {
         wait_succeeds: bool,
         read_succeeds: bool,
@@ -781,6 +960,53 @@ mod tests {
         )
     }
 
+    fn assume_role_policy_document() -> Value {
+        let mut statement = indexmap::IndexMap::new();
+        statement.insert(
+            "Effect".to_string(),
+            Value::Concrete(ConcreteValue::String("Allow".to_string())),
+        );
+        statement.insert(
+            "Action".to_string(),
+            Value::Concrete(ConcreteValue::String("sts:AssumeRole".to_string())),
+        );
+        statement.insert(
+            "Principal".to_string(),
+            Value::Concrete(ConcreteValue::Map(indexmap::IndexMap::from([(
+                "Service".to_string(),
+                Value::Concrete(ConcreteValue::String(
+                    "vpc-flow-logs.amazonaws.com".to_string(),
+                )),
+            )]))),
+        );
+
+        Value::Concrete(ConcreteValue::Map(indexmap::IndexMap::from([
+            (
+                "Version".to_string(),
+                Value::Concrete(ConcreteValue::String("2012-10-17".to_string())),
+            ),
+            (
+                "Statement".to_string(),
+                Value::Concrete(ConcreteValue::List(vec![Value::Concrete(
+                    ConcreteValue::Map(statement),
+                )])),
+            ),
+        ])))
+    }
+
+    fn iam_role_resource(include_role_name: bool) -> Resource {
+        let resource = Resource::with_provider("awscc", "iam.Role", "flow_log_role", None)
+            .with_attribute("assume_role_policy_document", assume_role_policy_document());
+        if include_role_name {
+            resource.with_attribute(
+                "role_name",
+                Value::Concrete(ConcreteValue::String("flow-log-role".to_string())),
+            )
+        } else {
+            resource
+        }
+    }
+
     #[tokio::test]
     async fn create_resource_returns_partial_success_when_failed_identifier_read_fails() {
         let service = PartialCreateCloudControlService::new(false);
@@ -835,6 +1061,93 @@ mod tests {
             Some(&Value::Concrete(ConcreteValue::String(
                 "partial-bucket".to_string()
             )))
+        );
+    }
+
+    #[tokio::test]
+    async fn create_iam_role_synthesizes_arn_when_cloudcontrol_omits_arn() {
+        let cloudcontrol = IamRoleCreateCloudControlService::new(false);
+        let sts = CallerIdentityService::new();
+        let provider =
+            provider_with_iam_role_create_service(cloudcontrol.clone(), sts.clone()).await;
+
+        let outcome = provider
+            .create_resource(&iam_role_resource(true))
+            .await
+            .expect("IAM role create should succeed");
+
+        let CreateOutcome::Success { state } = outcome else {
+            panic!("expected full success when role_name can be carried forward");
+        };
+        assert!(cloudcontrol.saw_create_resource.load(Ordering::SeqCst));
+        assert!(cloudcontrol.saw_get_resource.load(Ordering::SeqCst));
+        assert!(
+            sts.saw_get_caller_identity.load(Ordering::SeqCst),
+            "ARN synthesis must use the existing account lookup"
+        );
+        assert_eq!(
+            state.attributes.get("arn"),
+            Some(&Value::Concrete(ConcreteValue::String(
+                "arn:aws-us-gov:iam::123456789012:role/service-role/flow-log-role".to_string()
+            ))),
+            "synthesis must derive the partition from the provider region instead of hardcoding aws"
+        );
+    }
+
+    #[tokio::test]
+    async fn create_iam_role_synthesizes_arn_from_cloudcontrol_role_name() {
+        let cloudcontrol = IamRoleCreateCloudControlService::new(true);
+        let sts = CallerIdentityService::new();
+        let provider = provider_with_iam_role_create_service(cloudcontrol, sts.clone()).await;
+
+        let outcome = provider
+            .create_resource(&iam_role_resource(false))
+            .await
+            .expect("IAM role create should succeed when read-back includes RoleName");
+
+        let CreateOutcome::Success { state } = outcome else {
+            panic!("expected full success when CloudControl returns RoleName");
+        };
+        assert!(
+            sts.saw_get_caller_identity.load(Ordering::SeqCst),
+            "ARN synthesis must use the existing account lookup"
+        );
+        assert_eq!(
+            state.attributes.get("arn"),
+            Some(&Value::Concrete(ConcreteValue::String(
+                "arn:aws-us-gov:iam::123456789012:role/service-role/flow-log-role".to_string()
+            )))
+        );
+    }
+
+    #[tokio::test]
+    async fn create_iam_role_returns_partial_success_when_role_name_is_unknown() {
+        let cloudcontrol = IamRoleCreateCloudControlService::new(false);
+        let sts = CallerIdentityService::new();
+        let provider = provider_with_iam_role_create_service(cloudcontrol, sts.clone()).await;
+
+        let outcome = provider
+            .create_resource(&iam_role_resource(false))
+            .await
+            .expect("IAM role create should report partial success");
+
+        let CreateOutcome::PartialSuccess { state, diagnostic } = outcome else {
+            panic!("expected partial success when ARN cannot be synthesized");
+        };
+        assert!(state.exists);
+        assert_eq!(state.identifier.as_deref(), Some("flow-log-role"));
+        assert!(
+            !state.attributes.contains_key("arn"),
+            "unknown ARN must not be published as a successful attribute"
+        );
+        assert_eq!(diagnostic.missing_attributes(), &["arn".to_string()]);
+        assert_eq!(
+            diagnostic.reason(),
+            "read-back missing synthesized attributes: arn"
+        );
+        assert!(
+            !sts.saw_get_caller_identity.load(Ordering::SeqCst),
+            "missing role_name should not call STS because the ARN is not synthesizable"
         );
     }
 
