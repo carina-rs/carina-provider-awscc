@@ -44,6 +44,7 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
     AwsccSchemaConfig {
         aws_type_name: "AWS::SSO::PermissionSet",
         resource_type_name: "sso.PermissionSet",
+        primary_identifier: &["InstanceArn", "PermissionSetArn"],
         has_tags: true,
         schema: ResourceSchema::new("sso.PermissionSet")
         .with_description("Resource Type definition for SSO PermissionSet")

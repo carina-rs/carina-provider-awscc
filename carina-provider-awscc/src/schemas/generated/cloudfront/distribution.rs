@@ -102,6 +102,7 @@ pub fn cloudfront_distribution_config() -> AwsccSchemaConfig {
     AwsccSchemaConfig {
         aws_type_name: "AWS::CloudFront::Distribution",
         resource_type_name: "cloudfront.Distribution",
+        primary_identifier: &["Id"],
         has_tags: true,
         schema: ResourceSchema::new("cloudfront.Distribution")
         .with_description("A distribution tells CloudFront where you want content to be delivered from, and the details about how to track and manage content delivery.")

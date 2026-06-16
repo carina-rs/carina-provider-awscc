@@ -50,6 +50,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
     AwsccSchemaConfig {
         aws_type_name: "AWS::EC2::IPAMPool",
         resource_type_name: "ec2.IpamPool",
+        primary_identifier: &["IpamPoolId"],
         has_tags: true,
         schema: ResourceSchema::new("ec2.IpamPool")
         .with_description("Resource Schema of AWS::EC2::IPAMPool Type")

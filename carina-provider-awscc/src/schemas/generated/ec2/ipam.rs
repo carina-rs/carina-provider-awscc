@@ -64,6 +64,7 @@ pub fn ec2_ipam_config() -> AwsccSchemaConfig {
     AwsccSchemaConfig {
         aws_type_name: "AWS::EC2::IPAM",
         resource_type_name: "ec2.Ipam",
+        primary_identifier: &["IpamId"],
         has_tags: true,
         schema: ResourceSchema::new("ec2.Ipam")
         .with_description("Resource Schema of AWS::EC2::IPAM Type")

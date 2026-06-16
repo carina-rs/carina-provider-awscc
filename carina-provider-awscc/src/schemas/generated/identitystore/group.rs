@@ -14,6 +14,7 @@ pub fn identitystore_group_config() -> AwsccSchemaConfig {
     AwsccSchemaConfig {
         aws_type_name: "AWS::IdentityStore::Group",
         resource_type_name: "identitystore.Group",
+        primary_identifier: &["GroupId", "IdentityStoreId"],
         has_tags: false,
         schema: ResourceSchema::new("identitystore.Group")
         .with_description("Resource Type definition for AWS::IdentityStore::Group")

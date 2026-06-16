@@ -52,6 +52,22 @@ fn rust_lit(s: &str) -> RustStrLit<'_> {
     RustStrLit(s)
 }
 
+fn emit_primary_identifier(primary_identifier: Option<&[String]>) -> String {
+    let Some(primary_identifier) = primary_identifier else {
+        return "&[]".to_string();
+    };
+    let props: Vec<String> = primary_identifier
+        .iter()
+        .filter_map(|path| path.strip_prefix("/properties/"))
+        .map(|prop| rust_lit(prop).to_string())
+        .collect();
+    if props.is_empty() {
+        "&[]".to_string()
+    } else {
+        format!("&[{}]", props.join(", "))
+    }
+}
+
 // `HashSet::new()` is not `const fn`, so clippy's
 // `missing_const_for_thread_local` suggestion is rejected for the
 // HashSet-typed cells by rustc. The BTree-typed cells can use `const`
@@ -2672,10 +2688,18 @@ pub fn {}() -> AwsccSchemaConfig {{
     AwsccSchemaConfig {{
         aws_type_name: "{}",
         resource_type_name: "{}",
+        primary_identifier: {},
         has_tags: {},
         schema: ResourceSchema::new("{}")
-"#,
-        full_resource, type_name, config_fn_name, type_name, dsl_resource, has_tags, schema_name
+	"#,
+        full_resource,
+        type_name,
+        config_fn_name,
+        type_name,
+        dsl_resource,
+        emit_primary_identifier(schema.primary_identifier.as_deref()),
+        has_tags,
+        schema_name
     ));
 
     // Add description

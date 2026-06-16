@@ -19,6 +19,7 @@ use super::update::build_update_patches;
 use super::{AwsccProvider, get_schema_config};
 use crate::provider::arn_synthesis::SynthesisStatus;
 use crate::provider::cloudcontrol::WaitOutcome;
+use crate::schemas::config::AwsccSchemaConfig;
 
 impl AwsccProvider {
     /// Read a resource using its configuration
@@ -128,16 +129,18 @@ impl AwsccProvider {
         // Set default values
         self.set_default_values(&resource.id.resource_type, &mut desired_state);
 
+        let desired_state = serde_json::Value::Object(desired_state);
+
         let outcome = self
             .cc_create_resource(
                 config.aws_type_name,
-                serde_json::Value::Object(desired_state),
+                desired_state.clone(),
                 config.schema.operation_config.as_ref(),
             )
             .await
             .map_err(|e| e.for_resource(resource.id.clone()))?;
 
-        let identifier = match outcome {
+        let identifier = match canonicalize_create_identifier(config, &desired_state, outcome) {
             WaitOutcome::Success { identifier } => identifier,
             WaitOutcome::PartialOrFailed {
                 identifier,
@@ -345,6 +348,43 @@ impl AwsccProvider {
         )
         .await
         .map_err(|e| e.for_resource(id.clone()))
+    }
+}
+
+fn canonicalize_create_identifier(
+    config: &AwsccSchemaConfig,
+    desired_state: &serde_json::Value,
+    outcome: WaitOutcome,
+) -> WaitOutcome {
+    match outcome {
+        WaitOutcome::Success { identifier } => WaitOutcome::Success {
+            identifier: primary_identifier_from_desired(config, desired_state)
+                .unwrap_or(identifier),
+        },
+        WaitOutcome::PartialOrFailed {
+            identifier,
+            status_message,
+        } => WaitOutcome::PartialOrFailed {
+            identifier: primary_identifier_from_desired(config, desired_state)
+                .unwrap_or(identifier),
+            status_message,
+        },
+    }
+}
+
+fn primary_identifier_from_desired(
+    config: &AwsccSchemaConfig,
+    desired_state: &serde_json::Value,
+) -> Option<String> {
+    let [field] = config.primary_identifier else {
+        return None;
+    };
+    let value = desired_state.get(*field)?;
+    match value {
+        serde_json::Value::String(s) if !s.is_empty() => Some(s.clone()),
+        serde_json::Value::Number(n) => Some(n.to_string()),
+        serde_json::Value::Bool(b) => Some(b.to_string()),
+        _ => None,
     }
 }
 
