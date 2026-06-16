@@ -165,9 +165,11 @@ impl AwsccProvider {
         type_name: &str,
         identifier: &str,
         patch_ops: Vec<serde_json::Value>,
-    ) -> ProviderResult<()> {
+    ) -> ProviderResult<WaitOutcome> {
         if patch_ops.is_empty() {
-            return Ok(());
+            return Ok(WaitOutcome::Success {
+                identifier: identifier.to_string(),
+            });
         }
 
         let patch_document = serde_json::to_string(&patch_ops)
@@ -187,10 +189,14 @@ impl AwsccProvider {
             })?;
 
         if let Some(request_token) = result.progress_event().and_then(|p| p.request_token()) {
-            self.wait_for_operation(request_token).await?;
+            return self
+                .wait_for_operation_with_attempts(request_token, 120)
+                .await;
         }
 
-        Ok(())
+        Ok(WaitOutcome::Success {
+            identifier: identifier.to_string(),
+        })
     }
 
     /// Delete a resource using Cloud Control API, with retry logic for retryable errors.
@@ -459,19 +465,6 @@ impl AwsccProvider {
         RETRYABLE_STATUS_PATTERNS
             .iter()
             .any(|pattern| status_message.contains(pattern))
-    }
-
-    /// Wait for a Cloud Control operation to complete
-    pub(crate) async fn wait_for_operation(&self, request_token: &str) -> ProviderResult<String> {
-        match self
-            .wait_for_operation_with_attempts(request_token, 120)
-            .await?
-        {
-            WaitOutcome::Success { identifier } => Ok(identifier),
-            WaitOutcome::PartialOrFailed { status_message, .. } => Err(ProviderError::api_error(
-                format!("Operation failed: {}", status_message),
-            )),
-        }
     }
 
     /// Wait for a Cloud Control operation to complete with a configurable number of attempts

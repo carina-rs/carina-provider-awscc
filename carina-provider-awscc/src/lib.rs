@@ -22,8 +22,8 @@ use indexmap::IndexMap;
 use carina_core::effect::PlanOp;
 use carina_core::provider::{
     BoxFuture, CreateOutcome, CreateRequest, DeleteRequest, Provider, ProviderError,
-    ProviderFactory, ProviderNormalizer, ProviderResult, ReadRequest, SavedAttrs, UpdateRequest,
-    merge_default_tags_for_provider, ready_noop,
+    ProviderFactory, ProviderNormalizer, ProviderResult, ReadRequest, SavedAttrs, UpdateOutcome,
+    UpdateRequest, merge_default_tags_for_provider, ready_noop,
 };
 use carina_core::resource::{ConcreteValue, DataSource, Resource, ResourceId, State, Value};
 use carina_core::schema::SchemaRegistry;
@@ -356,7 +356,7 @@ impl Provider for AwsccProvider {
         id: &ResourceId,
         identifier: &str,
         request: UpdateRequest,
-    ) -> BoxFuture<'_, ProviderResult<State>> {
+    ) -> BoxFuture<'_, ProviderResult<UpdateOutcome>> {
         if let Some(err) = self.init_error() {
             let err = err.to_string();
             let id = id.clone();

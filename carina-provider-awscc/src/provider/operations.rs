@@ -6,7 +6,9 @@
 
 use std::collections::HashMap;
 
-use carina_core::provider::{CreateOutcome, ProviderError, ProviderResult, UpdatePatch};
+use carina_core::provider::{
+    CreateOutcome, ProviderError, ProviderResult, UpdateOutcome, UpdatePatch,
+};
 use carina_core::resource::{ConcreteValue, Directives, Resource, ResourceId, State, Value};
 use carina_core::schema::{AttributeSchema, AttributeType, Schema, Shape};
 use indexmap::IndexMap;
@@ -209,7 +211,7 @@ impl AwsccProvider {
         identifier: &str,
         from: &State,
         patch: &UpdatePatch,
-    ) -> ProviderResult<State> {
+    ) -> ProviderResult<UpdateOutcome> {
         let config = get_schema_config(&id.resource_type).ok_or_else(|| {
             ProviderError::internal(format!("Unknown resource type: {}", id.resource_type))
                 .for_resource(id.clone())
@@ -217,13 +219,10 @@ impl AwsccProvider {
 
         let patch_ops = build_update_patches(config, &id.resource_type, patch);
 
-        self.cc_update_resource(config.aws_type_name, identifier, patch_ops)
+        let outcome = self
+            .cc_update_resource(config.aws_type_name, identifier, patch_ops)
             .await
             .map_err(|e| e.for_resource(id.clone()))?;
-
-        let mut state = self
-            .read_resource(&id.resource_type, id.name_str(), Some(identifier))
-            .await?;
 
         // Reconstruct the post-update desired view (current state + the
         // patch we just applied). This is the source of values to carry
@@ -231,15 +230,54 @@ impl AwsccProvider {
         // same logic as `create_resource` but built without a `to:
         // Resource` (which Level 3 deliberately does not pass through).
         let desired = post_update_attributes(from, patch);
-        for dsl_name in config.schema.attributes.keys() {
-            if !state.attributes.contains_key(dsl_name)
-                && let Some(value) = desired.get(dsl_name)
-            {
-                state.attributes.insert(dsl_name.clone(), value.clone());
+
+        match outcome {
+            WaitOutcome::Success { identifier } => {
+                let state = self
+                    .read_resource(&id.resource_type, id.name_str(), Some(&identifier))
+                    .await?;
+                let state = merge_update_desired_attributes(state, &desired, config);
+                Ok(UpdateOutcome::Success { state })
+            }
+            WaitOutcome::PartialOrFailed {
+                identifier,
+                status_message,
+            } => {
+                match self
+                    .read_resource(&id.resource_type, id.name_str(), Some(&identifier))
+                    .await
+                {
+                    Ok(state) => {
+                        let state = merge_update_desired_attributes(state, &desired, config);
+                        Ok(UpdateOutcome::Success { state })
+                    }
+                    Err(read_err) => {
+                        let missing_attributes = patch
+                            .ops
+                            .iter()
+                            .filter(|op| config.schema.attributes.contains_key(&op.key))
+                            .map(|op| op.key.clone())
+                            .collect::<Vec<_>>();
+                        let mut state_attributes = desired;
+                        for attr in &missing_attributes {
+                            state_attributes.remove(attr);
+                        }
+                        let state = State::existing(id.clone(), state_attributes)
+                            .with_identifier(identifier);
+                        let reason = format!(
+                            "handler failed: {}; read error: {}",
+                            status_message,
+                            read_err.message(),
+                        );
+                        Ok(UpdateOutcome::partial_success(
+                            state,
+                            reason,
+                            missing_attributes,
+                        ))
+                    }
+                }
             }
         }
-
-        Ok(state)
     }
 
     /// Delete a resource
@@ -290,6 +328,21 @@ fn merge_desired_attributes(
             && let Some(value) = resource.get_attr(dsl_name.as_str())
         {
             state.attributes.insert(dsl_name.to_string(), value.clone());
+        }
+    }
+    state
+}
+
+fn merge_update_desired_attributes(
+    mut state: State,
+    desired: &HashMap<String, Value>,
+    config: &crate::schemas::config::AwsccSchemaConfig,
+) -> State {
+    for dsl_name in config.schema.attributes.keys() {
+        if !state.attributes.contains_key(dsl_name)
+            && let Some(value) = desired.get(dsl_name)
+        {
+            state.attributes.insert(dsl_name.clone(), value.clone());
         }
     }
     state
@@ -398,7 +451,7 @@ fn post_update_attributes(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use carina_core::provider::CreateOutcome;
+    use carina_core::provider::{CreateOutcome, PatchOp, PatchOpKind, UpdateOutcome};
     use carina_core::schema::AttributeType;
     use serde_json::json;
     use std::future::Future;
@@ -493,6 +546,232 @@ mod tests {
             .await;
 
         AwsccProvider::from_sdk_config(config, &super::super::AwsccProviderConfig::default()).await
+    }
+
+    #[derive(Debug)]
+    struct PartialUpdateCloudControlService {
+        wait_succeeds: bool,
+        read_succeeds: bool,
+        saw_update_resource: AtomicBool,
+        saw_get_resource: AtomicBool,
+    }
+
+    impl PartialUpdateCloudControlService {
+        fn new(wait_succeeds: bool, read_succeeds: bool) -> Arc<Self> {
+            Arc::new(Self {
+                wait_succeeds,
+                read_succeeds,
+                saw_update_resource: AtomicBool::new(false),
+                saw_get_resource: AtomicBool::new(false),
+            })
+        }
+    }
+
+    impl MockService for PartialUpdateCloudControlService {
+        fn service_name(&self) -> &str {
+            "cloudcontrolapi"
+        }
+
+        fn url_patterns(&self) -> Vec<&str> {
+            vec![
+                r"https?://cloudcontrolapi\..*\.amazonaws\.com",
+                r"https?://cloudcontrolapi\.amazonaws\.com",
+            ]
+        }
+
+        fn handle(
+            &self,
+            request: MockRequest,
+        ) -> Pin<Box<dyn Future<Output = MockResponse> + Send + '_>> {
+            Box::pin(async move {
+                let action = request
+                    .headers
+                    .get("x-amz-target")
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(|v| v.split('.').next_back())
+                    .unwrap_or_default();
+                match action {
+                    "UpdateResource" => {
+                        self.saw_update_resource.store(true, Ordering::SeqCst);
+                        MockResponse::json(
+                            200,
+                            r#"{"ProgressEvent":{"RequestToken":"update-token-1"}}"#,
+                        )
+                    }
+                    "GetResourceRequestStatus" if self.wait_succeeds => MockResponse::json(
+                        200,
+                        r#"{"ProgressEvent":{"RequestToken":"update-token-1","OperationStatus":"SUCCESS","Identifier":"partial-bucket"}}"#,
+                    ),
+                    "GetResourceRequestStatus" => MockResponse::json(
+                        200,
+                        r#"{"ProgressEvent":{"RequestToken":"update-token-1","OperationStatus":"FAILED","Identifier":"partial-bucket","StatusMessage":"post-update read denied"}}"#,
+                    ),
+                    "GetResource" if self.read_succeeds => {
+                        self.saw_get_resource.store(true, Ordering::SeqCst);
+                        MockResponse::json(
+                            200,
+                            r#"{"TypeName":"AWS::S3::Bucket","ResourceDescription":{"Identifier":"partial-bucket","Properties":"{}"}}"#,
+                        )
+                    }
+                    "GetResource" => {
+                        self.saw_get_resource.store(true, Ordering::SeqCst);
+                        MockResponse::json(
+                            403,
+                            r#"{"__type":"AccessDeniedException","message":"read denied"}"#,
+                        )
+                    }
+                    _ => MockResponse::json(
+                        400,
+                        format!(
+                            r#"{{"__type":"InvalidAction","message":"unexpected action {action}"}}"#
+                        ),
+                    ),
+                }
+            })
+        }
+    }
+
+    async fn provider_with_partial_update_service(
+        service: Arc<PartialUpdateCloudControlService>,
+    ) -> AwsccProvider {
+        use aws_config::{BehaviorVersion, Region};
+
+        let mock = MockAws::builder().with_service(service).build();
+        let config = aws_config::defaults(BehaviorVersion::latest())
+            .http_client(mock.http_client())
+            .credentials_provider(mock.credentials_provider())
+            .region(Region::new("us-east-1"))
+            .load()
+            .await;
+
+        AwsccProvider::from_sdk_config(config, &super::super::AwsccProviderConfig::default()).await
+    }
+
+    fn partial_update_bucket_state() -> State {
+        State::existing(
+            ResourceId::with_provider("awscc", "s3.Bucket", "partial_bucket", None),
+            HashMap::from([(
+                "bucket_name".to_string(),
+                Value::Concrete(ConcreteValue::String("partial-bucket".to_string())),
+            )]),
+        )
+        .with_identifier("partial-bucket")
+    }
+
+    fn partial_update_bucket_patch() -> UpdatePatch {
+        let mut tags = indexmap::IndexMap::new();
+        tags.insert(
+            "env".to_string(),
+            Value::Concrete(ConcreteValue::String("prod".to_string())),
+        );
+        UpdatePatch {
+            ops: vec![PatchOp {
+                kind: PatchOpKind::Replace,
+                key: "tags".to_string(),
+                value: Some(Value::Concrete(ConcreteValue::Map(tags))),
+            }],
+        }
+    }
+
+    #[tokio::test]
+    async fn update_resource_returns_success_when_wait_success() {
+        let service = PartialUpdateCloudControlService::new(true, true);
+        let provider = provider_with_partial_update_service(service.clone()).await;
+        let from = partial_update_bucket_state();
+        let patch = partial_update_bucket_patch();
+
+        let outcome = provider
+            .update_resource(
+                from.id.clone(),
+                from.identifier.as_deref().expect("identifier"),
+                &from,
+                &patch,
+            )
+            .await
+            .expect("update should succeed");
+
+        let UpdateOutcome::Success { state } = outcome else {
+            panic!("expected success when wait succeeds");
+        };
+        assert!(service.saw_update_resource.load(Ordering::SeqCst));
+        assert!(service.saw_get_resource.load(Ordering::SeqCst));
+        assert!(state.exists);
+        assert_eq!(state.identifier.as_deref(), Some("partial-bucket"));
+        assert!(state.attributes.contains_key("tags"));
+    }
+
+    #[tokio::test]
+    async fn update_resource_returns_partial_success_when_failed_identifier_read_fails() {
+        let service = PartialUpdateCloudControlService::new(false, false);
+        let provider = provider_with_partial_update_service(service.clone()).await;
+        let from = partial_update_bucket_state();
+        let patch = partial_update_bucket_patch();
+
+        let outcome = provider
+            .update_resource(
+                from.id.clone(),
+                from.identifier.as_deref().expect("identifier"),
+                &from,
+                &patch,
+            )
+            .await
+            .expect("update should return a partial outcome instead of error");
+
+        let UpdateOutcome::PartialSuccess { state, diagnostic } = outcome else {
+            panic!("expected partial success when post-update read fails");
+        };
+        assert!(service.saw_update_resource.load(Ordering::SeqCst));
+        assert!(
+            service.saw_get_resource.load(Ordering::SeqCst),
+            "provider must retry read with the identifier from failed progress"
+        );
+        assert!(state.exists);
+        assert_eq!(state.identifier.as_deref(), Some("partial-bucket"));
+        assert_eq!(
+            state.attributes.get("bucket_name"),
+            Some(&Value::Concrete(ConcreteValue::String(
+                "partial-bucket".to_string()
+            )))
+        );
+        assert!(
+            !state.attributes.contains_key("tags"),
+            "missing authored attributes must be absent so the partial-read marker can materialize them as Unknown"
+        );
+        assert_eq!(
+            diagnostic.reason(),
+            "handler failed: post-update read denied; read error: Failed to get resource: AccessDeniedException: read denied"
+        );
+        assert_eq!(diagnostic.missing_attributes(), &["tags".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn update_resource_returns_success_when_failed_identifier_read_succeeds() {
+        let service = PartialUpdateCloudControlService::new(false, true);
+        let provider = provider_with_partial_update_service(service.clone()).await;
+        let from = partial_update_bucket_state();
+        let patch = partial_update_bucket_patch();
+
+        let outcome = provider
+            .update_resource(
+                from.id.clone(),
+                from.identifier.as_deref().expect("identifier"),
+                &from,
+                &patch,
+            )
+            .await
+            .expect("update should recover when post-update read succeeds");
+
+        let UpdateOutcome::Success { state } = outcome else {
+            panic!("expected full success when post-update read succeeds");
+        };
+        assert!(service.saw_update_resource.load(Ordering::SeqCst));
+        assert!(
+            service.saw_get_resource.load(Ordering::SeqCst),
+            "provider must retry read with the identifier from failed progress"
+        );
+        assert!(state.exists);
+        assert_eq!(state.identifier.as_deref(), Some("partial-bucket"));
+        assert!(state.attributes.contains_key("tags"));
     }
 
     fn partial_create_bucket_resource() -> Resource {
