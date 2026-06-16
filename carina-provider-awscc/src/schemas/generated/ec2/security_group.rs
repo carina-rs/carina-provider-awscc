@@ -43,9 +43,10 @@ pub fn ec2_security_group_config() -> AwsccSchemaConfig {
     AwsccSchemaConfig {
         aws_type_name: "AWS::EC2::SecurityGroup",
         resource_type_name: "ec2.SecurityGroup",
+        primary_identifier: &["Id"],
         has_tags: true,
         schema: ResourceSchema::new("ec2.SecurityGroup")
-        .with_description("Resource Type definition for AWS::EC2::SecurityGroup")
+	        .with_description("Resource Type definition for AWS::EC2::SecurityGroup")
         .attribute(
             AttributeSchema::new("group_description", AttributeType::string())
                 .required()

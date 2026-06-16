@@ -14,9 +14,10 @@ pub fn identitystore_group_config() -> AwsccSchemaConfig {
     AwsccSchemaConfig {
         aws_type_name: "AWS::IdentityStore::Group",
         resource_type_name: "identitystore.Group",
+        primary_identifier: &["GroupId", "IdentityStoreId"],
         has_tags: false,
         schema: ResourceSchema::new("identitystore.Group")
-        .with_description("Resource Type definition for AWS::IdentityStore::Group")
+	        .with_description("Resource Type definition for AWS::IdentityStore::Group")
         .attribute(
             AttributeSchema::new("description", AttributeType::refined_string(None, Some("^[\\p{L}\\p{M}\\p{S}\\p{N}\\p{P}\\t\\n\\r  　]+$".to_string()), Some((Some(1), Some(1024))), None))
                 .with_description("A string containing the description of the group.")

@@ -36,9 +36,10 @@ pub fn ecs_cluster_config() -> AwsccSchemaConfig {
     AwsccSchemaConfig {
         aws_type_name: "AWS::ECS::Cluster",
         resource_type_name: "ecs.Cluster",
+        primary_identifier: &["ClusterName"],
         has_tags: true,
         schema: ResourceSchema::new("ecs.Cluster")
-        .with_description("The ``AWS::ECS::Cluster`` resource creates an Amazon Elastic Container Service (Amazon ECS) cluster.")
+	        .with_description("The ``AWS::ECS::Cluster`` resource creates an Amazon Elastic Container Service (Amazon ECS) cluster.")
         .attribute(
             AttributeSchema::new("arn", self::arn())
                 .read_only()

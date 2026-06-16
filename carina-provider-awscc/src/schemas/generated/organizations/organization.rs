@@ -37,9 +37,10 @@ pub fn organizations_organization_config() -> AwsccSchemaConfig {
     AwsccSchemaConfig {
         aws_type_name: "AWS::Organizations::Organization",
         resource_type_name: "organizations.Organization",
+        primary_identifier: &["Id"],
         has_tags: false,
         schema: ResourceSchema::new("organizations.Organization")
-        .with_description("Resource schema for AWS::Organizations::Organization")
+	        .with_description("Resource schema for AWS::Organizations::Organization")
         .attribute(
             AttributeSchema::new("arn", self::arn())
                 .read_only()

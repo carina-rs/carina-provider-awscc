@@ -20,9 +20,10 @@ pub fn elasticloadbalancingv2_target_group_config() -> AwsccSchemaConfig {
     AwsccSchemaConfig {
         aws_type_name: "AWS::ElasticLoadBalancingV2::TargetGroup",
         resource_type_name: "elasticloadbalancingv2.TargetGroup",
+        primary_identifier: &["TargetGroupArn"],
         has_tags: true,
         schema: ResourceSchema::new("elasticloadbalancingv2.TargetGroup")
-        .with_description("Resource Type definition for AWS::ElasticLoadBalancingV2::TargetGroup")
+	        .with_description("Resource Type definition for AWS::ElasticLoadBalancingV2::TargetGroup")
         .attribute(
             AttributeSchema::new("health_check_enabled", AttributeType::bool())
                 .with_description("Indicates whether health checks are enabled. If the target type is lambda, health checks are disabled by default but can be enabled. If the target type is instance, ip, or alb, health checks are always enabled and cannot be disabled.")

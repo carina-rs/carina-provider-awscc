@@ -329,9 +329,10 @@ pub fn wafv2_web_acl_config() -> AwsccSchemaConfig {
     AwsccSchemaConfig {
         aws_type_name: "AWS::WAFv2::WebACL",
         resource_type_name: "wafv2.WebAcl",
+        primary_identifier: &["Name", "Id", "Scope"],
         has_tags: true,
         schema: ResourceSchema::new("wafv2.WebAcl")
-        .with_description("Contains the Rules that identify the requests that you want to allow, block, or count. In a WebACL, you also specify a default action (ALLOW or BLOCK), and the action for each Rule that you add to a WebACL, for example, block requests from specified IP addresses or block requests from specified referrers. You also associate the WebACL with a CloudFront distribution to identify the requests that you want AWS WAF to filter. If you add more than one Rule to a WebACL, a request needs to match only one of the specifications to be allowed, blocked, or counted.")
+	        .with_description("Contains the Rules that identify the requests that you want to allow, block, or count. In a WebACL, you also specify a default action (ALLOW or BLOCK), and the action for each Rule that you add to a WebACL, for example, block requests from specified IP addresses or block requests from specified referrers. You also associate the WebACL with a CloudFront distribution to identify the requests that you want AWS WAF to filter. If you add more than one Rule to a WebACL, a request needs to match only one of the specifications to be allowed, blocked, or counted.")
         .attribute(
             AttributeSchema::new("application_config", AttributeType::struct_("ApplicationConfig".to_string(), vec![StructField::new("attributes", AttributeType::list(AttributeType::struct_("ApplicationAttribute".to_string(), vec![StructField::new("name", AttributeType::refined_string(None, Some("^[\\w\\-]+$".to_string()), Some((Some(1), Some(64))), None)).required().with_provider_name("Name"),
                     StructField::new("values", AttributeType::list(AttributeType::refined_string(None, Some("^[\\w\\-]+$".to_string()), Some((Some(1), Some(64))), None))).required().with_provider_name("Values")]))).required().with_provider_name("Attributes").with_block_name("attribute")]))
