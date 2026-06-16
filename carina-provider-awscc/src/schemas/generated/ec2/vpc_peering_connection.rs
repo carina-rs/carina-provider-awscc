@@ -15,7 +15,7 @@ pub fn ec2_vpc_peering_connection_config() -> AwsccSchemaConfig {
         primary_identifier: &["Id"],
         has_tags: true,
         schema: ResourceSchema::new("ec2.VpcPeeringConnection")
-        .with_description("Resource Type definition for AWS::EC2::VPCPeeringConnection")
+	        .with_description("Resource Type definition for AWS::EC2::VPCPeeringConnection")
         .attribute(
             AttributeSchema::new("assume_role_region", carina_aws_types::aws_region())
                 .create_only()

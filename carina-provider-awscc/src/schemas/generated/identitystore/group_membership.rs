@@ -17,7 +17,7 @@ pub fn identitystore_group_membership_config() -> AwsccSchemaConfig {
         primary_identifier: &["MembershipId", "IdentityStoreId"],
         has_tags: false,
         schema: ResourceSchema::new("identitystore.GroupMembership")
-        .with_description("Resource Type Definition for AWS:IdentityStore::GroupMembership")
+	        .with_description("Resource Type Definition for AWS:IdentityStore::GroupMembership")
         .attribute(
             AttributeSchema::new("group_id", carina_aws_types::sso_principal_id())
                 .required()

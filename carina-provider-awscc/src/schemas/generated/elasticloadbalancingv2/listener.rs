@@ -40,7 +40,7 @@ pub fn elasticloadbalancingv2_listener_config() -> AwsccSchemaConfig {
         primary_identifier: &["ListenerArn"],
         has_tags: false,
         schema: ResourceSchema::new("elasticloadbalancingv2.Listener")
-        .with_description("Specifies a listener for an Application Load Balancer, Network Load Balancer, or Gateway Load Balancer.")
+	        .with_description("Specifies a listener for an Application Load Balancer, Network Load Balancer, or Gateway Load Balancer.")
         .attribute(
             AttributeSchema::new("alpn_policy", AttributeType::list(AttributeType::string()))
                 .with_description("[TLS listener] The name of the Application-Layer Protocol Negotiation (ALPN) policy.")

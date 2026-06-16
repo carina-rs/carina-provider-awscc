@@ -53,7 +53,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
         primary_identifier: &["IpamPoolId"],
         has_tags: true,
         schema: ResourceSchema::new("ec2.IpamPool")
-        .with_description("Resource Schema of AWS::EC2::IPAMPool Type")
+	        .with_description("Resource Schema of AWS::EC2::IPAMPool Type")
         .attribute(
             AttributeSchema::new("address_family", AttributeType::enum_(carina_core::schema::enum_identity("AddressFamily", Some("aws.ec2.IpamPool")), Some(vec!["IPv4".to_string(), "IPv6".to_string()]), vec![("IPv4".to_string(), "ipv4".to_string()), ("IPv6".to_string(), "ipv6".to_string())], None, None))
                 .required()

@@ -105,7 +105,7 @@ pub fn cloudfront_distribution_config() -> AwsccSchemaConfig {
         primary_identifier: &["Id"],
         has_tags: true,
         schema: ResourceSchema::new("cloudfront.Distribution")
-        .with_description("A distribution tells CloudFront where you want content to be delivered from, and the details about how to track and manage content delivery.")
+	        .with_description("A distribution tells CloudFront where you want content to be delivered from, and the details about how to track and manage content delivery.")
         .attribute(
             AttributeSchema::new("distribution_config", AttributeType::struct_("DistributionConfig".to_string(), vec![StructField::new("aliases", AttributeType::list(AttributeType::string())).with_description("This field only supports standard distributions. You can't specify this field for multi-tenant distributions. For more information, see [Unsupported features for SaaS Manager for Amazon CloudFront](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/distribution-config-options.html#unsupported-saas) in the *Amazon CloudFront Developer Guide*. A complex type that contains information about CNAMEs (alternate domain names), if any, for this distribution.").with_provider_name("Aliases"),
                     StructField::new("anycast_ip_list_id", AttributeType::string()).with_description("To use this field for a multi-tenant distribution, use a connection group instead. For more information, see [ConnectionGroup](https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_ConnectionGroup.html). ID of the Anycast static IP list that is associated with the distribution.").with_provider_name("AnycastIpListId"),

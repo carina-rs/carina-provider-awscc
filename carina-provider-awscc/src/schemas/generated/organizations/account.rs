@@ -52,7 +52,7 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
         primary_identifier: &["AccountId"],
         has_tags: true,
         schema: ResourceSchema::new("organizations.Account")
-        .with_description("You can use AWS::Organizations::Account to manage accounts in organization.")
+	        .with_description("You can use AWS::Organizations::Account to manage accounts in organization.")
         .attribute(
             AttributeSchema::new("account_id", carina_aws_types::aws_account_id())
                 .read_only()

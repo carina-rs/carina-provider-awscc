@@ -33,7 +33,7 @@ pub fn sso_instance_config() -> AwsccSchemaConfig {
         primary_identifier: &["InstanceArn"],
         has_tags: true,
         schema: ResourceSchema::new("sso.Instance")
-        .with_description("Resource Type definition for Identity Center (SSO) Instance")
+	        .with_description("Resource Type definition for Identity Center (SSO) Instance")
         .attribute(
             AttributeSchema::new("identity_store_id", carina_aws_types::identity_store_id())
                 .read_only()

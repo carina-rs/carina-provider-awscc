@@ -15,7 +15,7 @@ pub fn ec2_internet_gateway_config() -> AwsccSchemaConfig {
         primary_identifier: &["InternetGatewayId"],
         has_tags: true,
         schema: ResourceSchema::new("ec2.InternetGateway")
-        .with_description("Allocates an internet gateway for use with a VPC. After creating the Internet gateway, you then attach it to a VPC.")
+	        .with_description("Allocates an internet gateway for use with a VPC. After creating the Internet gateway, you then attach it to a VPC.")
         .attribute(
             AttributeSchema::new("internet_gateway_id", carina_aws_types::internet_gateway_id())
                 .read_only()

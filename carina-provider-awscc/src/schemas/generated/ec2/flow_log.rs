@@ -47,7 +47,7 @@ pub fn ec2_flow_log_config() -> AwsccSchemaConfig {
         primary_identifier: &["Id"],
         has_tags: true,
         schema: ResourceSchema::new("ec2.FlowLog")
-        .with_description("Specifies a VPC flow log, which enables you to capture IP traffic for a specific network interface, subnet, or VPC.")
+	        .with_description("Specifies a VPC flow log, which enables you to capture IP traffic for a specific network interface, subnet, or VPC.")
         .attribute(
             AttributeSchema::new("deliver_cross_account_role", super::super::iam::role::arn())
                 .create_only()
