@@ -23,10 +23,10 @@ default = ["native"]
 native = []
 
 [dependencies]
-carina-core = { git = "https://github.com/carina-rs/carina", rev = "9c91c5f89753338b6e41ef8256be6c4cb77059bf" }
-carina-aws-types = { git = "https://github.com/carina-rs/carina-provider-aws", rev = "aeefd2f656666ecde4d9c8feed542e55d51a29e7" }
-carina-plugin-sdk = { git = "https://github.com/carina-rs/carina", rev = "9c91c5f89753338b6e41ef8256be6c4cb77059bf" }
-carina-provider-protocol = { git = "https://github.com/carina-rs/carina", rev = "9c91c5f89753338b6e41ef8256be6c4cb77059bf" }
+carina-core = { git = "https://github.com/carina-rs/carina", rev = "dc9e6cab88799d64c2d5972eee099f5b6a468ab8" }
+carina-aws-types = { git = "https://github.com/carina-rs/carina-provider-aws", rev = "c5ee472b694f6ab4a4819d52fd8fdc253907ddf4" }
+carina-plugin-sdk = { git = "https://github.com/carina-rs/carina", rev = "dc9e6cab88799d64c2d5972eee099f5b6a468ab8" }
+carina-provider-protocol = { git = "https://github.com/carina-rs/carina", rev = "dc9e6cab88799d64c2d5972eee099f5b6a468ab8" }
 indexmap = "2"
 aws-config = { version = "1", default-features = false, features = ["behavior-version-latest", "rt-tokio"] }
 aws-credential-types = { version = "1" }
