@@ -26,6 +26,12 @@ fn string(value: &str) -> Value {
     Value::Concrete(ConcreteValue::String(value.to_string()))
 }
 
+fn string_list(items: impl IntoIterator<Item = &'static str>) -> Value {
+    Value::Concrete(ConcreteValue::StringList(
+        items.into_iter().map(ToString::to_string).collect(),
+    ))
+}
+
 fn int(value: i64) -> Value {
     Value::Concrete(ConcreteValue::Int(value))
 }
@@ -61,6 +67,25 @@ fn key_policy() -> Value {
                 ),
                 ("action", string("kms:*")),
                 ("resource", string("*")),
+            ])]),
+        ),
+    ])
+}
+
+fn expected_key_policy() -> Value {
+    map([
+        ("version", string("2012-10-17")),
+        (
+            "statement",
+            list([map([
+                ("sid", string("AllowRootAccountAccess")),
+                ("effect", string("Allow")),
+                (
+                    "principal",
+                    map([("aws", string_list(["arn:aws:iam::111122223333:root"]))]),
+                ),
+                ("action", string_list(["kms:*"])),
+                ("resource", string_list(["*"])),
             ])]),
         ),
     ])
@@ -169,7 +194,7 @@ async fn kms_key_create_then_read_round_trips_structured_key_policy() {
         ("enabled", bool_(true)),
         ("multi_region", bool_(false)),
         ("origin", string("AWS_KMS")),
-        ("key_policy", key_policy()),
+        ("key_policy", expected_key_policy()),
         ("tags", map([("Environment", string("test"))])),
         ("key_id", string(key_id)),
         (
