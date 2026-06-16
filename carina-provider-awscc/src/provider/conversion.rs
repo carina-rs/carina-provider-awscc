@@ -27,6 +27,64 @@ fn union_members_for<'a>(
     schema.union_members_with_budget(attr_type, &mut ShapeWalkBudget::new(256))
 }
 
+fn string_or_list_of_strings_from_json(
+    schema: &ResourceSchema,
+    members: &[AttributeType],
+    value: &serde_json::Value,
+) -> Option<Value> {
+    let has_string = members
+        .iter()
+        .any(|member| matches!(schema.shape_of(member), Shape::String { .. }));
+    let has_list_of_strings = members.iter().any(|member| {
+        let Shape::List { element_type, .. } = schema.shape_of(member) else {
+            return false;
+        };
+        matches!(schema.shape_of(element_type), Shape::String { .. })
+    });
+
+    if !has_string || !has_list_of_strings {
+        return None;
+    }
+
+    if let Some(s) = value.as_str() {
+        return Some(Value::Concrete(ConcreteValue::StringList(vec![
+            s.to_string(),
+        ])));
+    }
+
+    let arr = value.as_array()?;
+    let items: Option<Vec<String>> = arr
+        .iter()
+        .map(|item| item.as_str().map(ToString::to_string))
+        .collect();
+    items.map(|items| Value::Concrete(ConcreteValue::StringList(items)))
+}
+
+fn json_matches_shape(
+    schema: &ResourceSchema,
+    attr_type: &AttributeType,
+    value: &serde_json::Value,
+) -> bool {
+    match schema.shape_of(attr_type) {
+        Shape::String { .. } | Shape::Enum { .. } => value.is_string(),
+        Shape::Int { .. } => value.as_i64().is_some(),
+        Shape::Float { .. } => value.is_number(),
+        Shape::Bool => value.is_boolean(),
+        Shape::Duration => value.is_string() || value.is_number(),
+        Shape::List { element_type, .. } => value.as_array().is_some_and(|items| {
+            items
+                .iter()
+                .all(|item| json_matches_shape(schema, element_type, item))
+        }),
+        Shape::Map { .. } | Shape::Struct { .. } => value.is_object(),
+        Shape::Union => union_members_for(schema, attr_type).is_some_and(|members| {
+            members
+                .iter()
+                .any(|member| json_matches_shape(schema, member, value))
+        }),
+    }
+}
+
 /// carina#3340: schema-aware variant that takes the enclosing
 /// [`ResourceSchema::defs`] map so `AttributeType::Ref` chains can be
 /// resolved during the value-tree walk. Callers that hold a resource
@@ -106,7 +164,14 @@ pub(crate) fn aws_value_to_dsl_with_defs(
     if let Shape::Union = shape
         && let Some(members) = union_members_for(&schema, attr_type)
     {
-        for member in members {
+        if let Some(result) = string_or_list_of_strings_from_json(&schema, members, value) {
+            return Some(result);
+        }
+
+        for member in members
+            .iter()
+            .filter(|member| json_matches_shape(&schema, member, value))
+        {
             if let Some(result) =
                 aws_value_to_dsl_with_defs(dsl_name, value, member, resource_type, defs)
             {
@@ -1397,18 +1462,18 @@ mod tests {
                     );
                     assert_eq!(
                         stmt.get("action"),
-                        Some(&Value::Concrete(ConcreteValue::String(
+                        Some(&Value::Concrete(ConcreteValue::StringList(vec![
                             "sts:AssumeRole".to_string()
-                        )))
+                        ])))
                     );
                     if let Some(Value::Concrete(ConcreteValue::Map(principal))) =
                         stmt.get("principal")
                     {
                         assert_eq!(
                             principal.get("service"),
-                            Some(&Value::Concrete(ConcreteValue::String(
+                            Some(&Value::Concrete(ConcreteValue::StringList(vec![
                                 "lambda.amazonaws.com".to_string()
-                            )))
+                            ])))
                         );
                     } else {
                         panic!("Expected principal to be a Map");
@@ -1422,6 +1487,104 @@ mod tests {
         } else {
             panic!("Expected Value::Map, got: {:?}", result);
         }
+    }
+
+    #[test]
+    fn test_aws_value_to_dsl_iam_policy_document_canonicalizes_scalar_action_to_string_list() {
+        use carina_aws_types::iam_policy_document;
+
+        let attr_type = iam_policy_document();
+        let aws_json = json!({
+            "Version": "2012-10-17",
+            "Statement": [{
+                "Effect": "Allow",
+                "Action": "s3:GetObject",
+                "Resource": "arn:aws:s3:::*"
+            }]
+        });
+
+        let result = aws_value_to_dsl_with_defs(
+            "policy_document",
+            &aws_json,
+            &attr_type,
+            "ec2.VpcEndpoint",
+            &std::collections::BTreeMap::new(),
+        )
+        .expect("policy document should convert");
+        let Value::Concrete(ConcreteValue::Map(policy_document)) = result else {
+            panic!("Expected policy document map");
+        };
+        let Some(Value::Concrete(ConcreteValue::List(statements))) =
+            policy_document.get("statement")
+        else {
+            panic!("Expected statement list");
+        };
+        let Some(Value::Concrete(ConcreteValue::Map(statement))) = statements.first() else {
+            panic!("Expected statement map");
+        };
+
+        assert_eq!(
+            statement.get("action"),
+            Some(&Value::Concrete(ConcreteValue::StringList(vec![
+                "s3:GetObject".to_string()
+            ])))
+        );
+        assert_eq!(
+            statement.get("resource"),
+            Some(&Value::Concrete(ConcreteValue::StringList(vec![
+                "arn:aws:s3:::*".to_string()
+            ])))
+        );
+    }
+
+    #[test]
+    fn test_aws_value_to_dsl_iam_policy_document_canonicalizes_list_action_to_string_list() {
+        use carina_aws_types::iam_policy_document;
+
+        let attr_type = iam_policy_document();
+        let aws_json = json!({
+            "Version": "2012-10-17",
+            "Statement": [{
+                "Effect": "Allow",
+                "Action": ["s3:GetObject", "s3:PutObject"],
+                "Resource": ["arn:aws:s3:::*", "arn:aws:s3:::example/*"]
+            }]
+        });
+
+        let result = aws_value_to_dsl_with_defs(
+            "policy_document",
+            &aws_json,
+            &attr_type,
+            "ec2.VpcEndpoint",
+            &std::collections::BTreeMap::new(),
+        )
+        .expect("policy document should convert");
+        let Value::Concrete(ConcreteValue::Map(policy_document)) = result else {
+            panic!("Expected policy document map");
+        };
+        let Some(Value::Concrete(ConcreteValue::List(statements))) =
+            policy_document.get("statement")
+        else {
+            panic!("Expected statement list");
+        };
+        let Some(Value::Concrete(ConcreteValue::Map(statement))) = statements.first() else {
+            panic!("Expected statement map");
+        };
+
+        assert_eq!(
+            statement.get("action"),
+            Some(&Value::Concrete(ConcreteValue::StringList(vec![
+                "s3:GetObject".to_string(),
+                "s3:PutObject".to_string()
+            ])))
+        );
+        assert_eq!(
+            statement.get("resource"),
+            Some(&Value::Concrete(ConcreteValue::StringList(vec![
+                "arn:aws:s3:::*".to_string(),
+                "arn:aws:s3:::example/*".to_string()
+            ])))
+        );
     }
 
     /// Regression for aws#313 + awscc#254. aws#313 made the IAM policy
@@ -1471,9 +1634,9 @@ mod tests {
                                 ),
                                 (
                                     "action".to_string(),
-                                    Value::Concrete(ConcreteValue::String(
+                                    Value::Concrete(ConcreteValue::StringList(vec![
                                         "sts:AssumeRole".to_string(),
-                                    )),
+                                    ])),
                                 ),
                             ]
                             .into_iter()
