@@ -6,7 +6,7 @@
 
 use std::time::Duration;
 
-use aws_sdk_cloudcontrol::types::OperationStatus;
+use aws_sdk_cloudcontrol::types::{OperationStatus, ProgressEvent};
 use aws_smithy_runtime_api::client::result::SdkError;
 use aws_smithy_types::error::metadata::ProvideErrorMetadata;
 use carina_core::provider::{ProviderError, ProviderResult};
@@ -16,6 +16,17 @@ use super::{
     CREATE_RETRY_MAX_DELAY_SECS, DELETE_RETRY_INITIAL_DELAY_SECS, DELETE_RETRY_MAX_ATTEMPTS,
     DELETE_RETRY_MAX_DELAY_SECS,
 };
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WaitOutcome {
+    Success {
+        identifier: String,
+    },
+    PartialOrFailed {
+        identifier: String,
+        status_message: String,
+    },
+}
 
 impl AwsccProvider {
     /// Get a resource by identifier using Cloud Control API
@@ -68,7 +79,7 @@ impl AwsccProvider {
         type_name: &str,
         desired_state: serde_json::Value,
         operation_config: Option<&carina_core::schema::OperationConfig>,
-    ) -> ProviderResult<String> {
+    ) -> ProviderResult<WaitOutcome> {
         let mut delay_secs = CREATE_RETRY_INITIAL_DELAY_SECS;
         let max_retry_attempts = operation_config
             .and_then(|c| c.create_max_retries)
@@ -99,7 +110,7 @@ impl AwsccProvider {
                         .wait_for_operation_with_attempts(request_token, max_polling_attempts)
                         .await
                     {
-                        Ok(identifier) => return Ok(identifier),
+                        Ok(outcome) => return Ok(outcome),
                         Err(e)
                             if Self::is_retryable_status_message(e.message())
                                 && attempt < max_retry_attempts =>
@@ -221,7 +232,13 @@ impl AwsccProvider {
                             .wait_for_operation_with_attempts(request_token, max_polling_attempts)
                             .await
                         {
-                            Ok(_) => return Ok(()),
+                            Ok(WaitOutcome::Success { .. }) => return Ok(()),
+                            Ok(WaitOutcome::PartialOrFailed { status_message, .. }) => {
+                                return Err(ProviderError::api_error(format!(
+                                    "Operation failed: {}",
+                                    status_message
+                                )));
+                            }
                             Err(e)
                                 if Self::is_retryable_status_message(e.message())
                                     && attempt < max_retry_attempts =>
@@ -446,16 +463,23 @@ impl AwsccProvider {
 
     /// Wait for a Cloud Control operation to complete
     pub(crate) async fn wait_for_operation(&self, request_token: &str) -> ProviderResult<String> {
-        self.wait_for_operation_with_attempts(request_token, 120)
-            .await
+        match self
+            .wait_for_operation_with_attempts(request_token, 120)
+            .await?
+        {
+            WaitOutcome::Success { identifier } => Ok(identifier),
+            WaitOutcome::PartialOrFailed { status_message, .. } => Err(ProviderError::api_error(
+                format!("Operation failed: {}", status_message),
+            )),
+        }
     }
 
     /// Wait for a Cloud Control operation to complete with a configurable number of attempts
-    async fn wait_for_operation_with_attempts(
+    pub(crate) async fn wait_for_operation_with_attempts(
         &self,
         request_token: &str,
         max_attempts: u32,
-    ) -> ProviderResult<String> {
+    ) -> ProviderResult<WaitOutcome> {
         let delay = Duration::from_secs(5);
 
         for _ in 0..max_attempts {
@@ -469,29 +493,44 @@ impl AwsccProvider {
                     ProviderError::api_error("Failed to get operation status").with_cause(e)
                 })?;
 
-            if let Some(progress) = status.progress_event() {
-                match progress.operation_status() {
-                    Some(OperationStatus::Success) => {
-                        return Ok(progress.identifier().unwrap_or("").to_string());
-                    }
-                    Some(OperationStatus::Failed) => {
-                        let msg = progress.status_message().unwrap_or("Unknown error");
-                        return Err(ProviderError::api_error(format!(
-                            "Operation failed: {}",
-                            msg
-                        )));
-                    }
-                    Some(OperationStatus::CancelComplete) => {
-                        return Err(ProviderError::api_error("Operation was cancelled"));
-                    }
-                    _ => {
-                        tokio::time::sleep(delay).await;
-                    }
-                }
+            if let Some(progress) = status.progress_event()
+                && let Some(outcome) = Self::classify_progress_event(progress)?
+            {
+                return Ok(outcome);
             }
+            tokio::time::sleep(delay).await;
         }
 
         Err(ProviderError::timeout("Operation timed out"))
+    }
+
+    pub(crate) fn classify_progress_event(
+        progress: &ProgressEvent,
+    ) -> ProviderResult<Option<WaitOutcome>> {
+        match progress.operation_status() {
+            Some(OperationStatus::Success) => Ok(Some(WaitOutcome::Success {
+                identifier: progress.identifier().unwrap_or("").to_string(),
+            })),
+            Some(OperationStatus::Failed) | Some(OperationStatus::CancelComplete) => {
+                let msg = progress
+                    .status_message()
+                    .unwrap_or("Unknown error")
+                    .to_string();
+                if let Some(identifier) = progress.identifier()
+                    && !identifier.is_empty()
+                {
+                    return Ok(Some(WaitOutcome::PartialOrFailed {
+                        identifier: identifier.to_string(),
+                        status_message: msg,
+                    }));
+                }
+                Err(ProviderError::api_error(format!(
+                    "Operation failed: {}",
+                    msg
+                )))
+            }
+            _ => Ok(None),
+        }
     }
 }
 
@@ -566,6 +605,114 @@ mod tests {
         aws_smithy_types::error::ErrorMetadata::builder()
             .code(code)
             .build()
+    }
+
+    fn progress(
+        status: OperationStatus,
+        identifier: Option<&str>,
+        message: Option<&str>,
+    ) -> ProgressEvent {
+        let mut builder = ProgressEvent::builder().operation_status(status);
+        if let Some(identifier) = identifier {
+            builder = builder.identifier(identifier);
+        }
+        if let Some(message) = message {
+            builder = builder.status_message(message);
+        }
+        builder.build()
+    }
+
+    #[test]
+    fn classify_failed_progress_with_identifier_as_partial_or_failed() {
+        let progress = progress(
+            OperationStatus::Failed,
+            Some("arn:aws:test:resource/created"),
+            Some("post-create read denied"),
+        );
+
+        let outcome = AwsccProvider::classify_progress_event(&progress)
+            .expect("classification should not fail")
+            .expect("terminal failed progress must produce an outcome");
+
+        assert_eq!(
+            outcome,
+            WaitOutcome::PartialOrFailed {
+                identifier: "arn:aws:test:resource/created".to_string(),
+                status_message: "post-create read denied".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn classify_failed_progress_without_identifier_as_error() {
+        let progress = progress(
+            OperationStatus::Failed,
+            None,
+            Some("handler failed before identifier"),
+        );
+
+        let err = AwsccProvider::classify_progress_event(&progress)
+            .expect_err("failed progress without identifier must remain an error");
+
+        assert_eq!(
+            err.message(),
+            "Operation failed: handler failed before identifier"
+        );
+    }
+
+    #[test]
+    fn classify_failed_progress_with_empty_identifier_as_error() {
+        let progress = progress(
+            OperationStatus::Failed,
+            Some(""),
+            Some("handler failed before useful identifier"),
+        );
+
+        let err = AwsccProvider::classify_progress_event(&progress)
+            .expect_err("empty identifier must not be treated as partial success");
+
+        assert_eq!(
+            err.message(),
+            "Operation failed: handler failed before useful identifier"
+        );
+    }
+
+    #[test]
+    fn classify_cancel_complete_with_identifier_as_partial_or_failed() {
+        let progress = progress(
+            OperationStatus::CancelComplete,
+            Some("created-before-cancel"),
+            Some("operation cancelled after identifier"),
+        );
+
+        let outcome = AwsccProvider::classify_progress_event(&progress)
+            .expect("classification should not fail")
+            .expect("terminal cancelled progress must produce an outcome");
+
+        assert_eq!(
+            outcome,
+            WaitOutcome::PartialOrFailed {
+                identifier: "created-before-cancel".to_string(),
+                status_message: "operation cancelled after identifier".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn classify_cancel_complete_without_identifier_as_error() {
+        let progress = progress(
+            OperationStatus::CancelComplete,
+            None,
+            Some("operation cancelled before identifier"),
+        );
+
+        let err = AwsccProvider::classify_progress_event(&progress)
+            .expect_err("cancel without identifier must remain an error");
+
+        assert_eq!(
+            err.message(),
+            "Operation failed: operation cancelled before identifier"
+        );
     }
 
     #[test]

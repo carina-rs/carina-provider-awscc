@@ -7,8 +7,8 @@
 use std::collections::HashMap;
 
 use carina_core::provider::{
-    PatchOp as CorePatchOp, PatchOpKind as CorePatchOpKind, ProviderError as CoreProviderError,
-    UpdatePatch as CoreUpdatePatch,
+    CreateOutcome as CoreCreateOutcome, PatchOp as CorePatchOp, PatchOpKind as CorePatchOpKind,
+    ProviderError as CoreProviderError, UpdatePatch as CoreUpdatePatch,
 };
 use carina_core::resource::{
     ConcreteValue, DataSource as CoreDataSource, DeferredValue, Directives as CoreDirectives,
@@ -21,11 +21,12 @@ use carina_core::schema::{
 };
 use carina_provider_protocol::types::{
     AttributeSchema as ProtoAttributeSchema, AttributeType as ProtoAttributeType,
-    Directives as ProtoDirectives, PatchOp as ProtoPatchOp, PatchOpKind as ProtoPatchOpKind,
-    ProviderError as ProtoProviderError, ProviderErrorKind as ProtoProviderErrorKind,
-    Resource as ProtoResource, ResourceId as ProtoResourceId,
-    ResourceSchema as ProtoResourceSchema, State as ProtoState, StructField as ProtoStructField,
-    UpdatePatch as ProtoUpdatePatch, Value as ProtoValue,
+    CreateOutcome as ProtoCreateOutcome, Directives as ProtoDirectives,
+    PartialCreateDiagnostic as ProtoPartialCreateDiagnostic, PatchOp as ProtoPatchOp,
+    PatchOpKind as ProtoPatchOpKind, ProviderError as ProtoProviderError,
+    ProviderErrorKind as ProtoProviderErrorKind, Resource as ProtoResource,
+    ResourceId as ProtoResourceId, ResourceSchema as ProtoResourceSchema, State as ProtoState,
+    StructField as ProtoStructField, UpdatePatch as ProtoUpdatePatch, Value as ProtoValue,
 };
 
 // -- ResourceId --
@@ -154,6 +155,25 @@ pub fn proto_to_core_state(s: &ProtoState) -> CoreState {
         state
     } else {
         CoreState::not_found(id)
+    }
+}
+
+// -- CreateOutcome --
+
+pub fn core_to_proto_create_outcome(outcome: CoreCreateOutcome) -> ProtoCreateOutcome {
+    match outcome {
+        CoreCreateOutcome::Success { state } => ProtoCreateOutcome::Success {
+            state: core_to_proto_state(&state),
+        },
+        CoreCreateOutcome::PartialSuccess { state, diagnostic } => {
+            ProtoCreateOutcome::PartialSuccess {
+                state: core_to_proto_state(&state),
+                diagnostic: ProtoPartialCreateDiagnostic {
+                    reason: diagnostic.reason().to_string(),
+                    missing_attributes: diagnostic.missing_attributes().to_vec(),
+                },
+            }
+        }
     }
 }
 

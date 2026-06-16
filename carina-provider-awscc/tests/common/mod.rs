@@ -1,5 +1,7 @@
-use carina_core::executor::normalized::{NormalizedResource, apply_desired_normalization};
-use carina_core::resource::Resource;
+use carina_core::executor::{
+    normalized::apply_desired_normalization, resolve_normalized_for_provider,
+};
+use carina_core::resource::{ResolvedResource, Resource};
 use carina_core::schema::AttributeType;
 use carina_core::schema::SchemaRegistry;
 use carina_provider_awscc::AwsccNormalizer;
@@ -13,6 +15,9 @@ pub fn assert_arn_identity(t: AttributeType, expected: &str) {
 }
 
 #[allow(dead_code)]
-pub async fn normalize_resource(resource: Resource) -> NormalizedResource {
-    apply_desired_normalization(resource, &[], &AwsccNormalizer, &[], &SchemaRegistry::new()).await
+pub async fn normalize_resource(resource: Resource) -> ResolvedResource {
+    let normalized =
+        apply_desired_normalization(resource, &[], &AwsccNormalizer, &[], &SchemaRegistry::new())
+            .await;
+    resolve_normalized_for_provider(normalized).expect("test resource should be fully resolved")
 }
