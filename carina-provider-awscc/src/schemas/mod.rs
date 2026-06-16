@@ -20,7 +20,9 @@ mod tests {
 
     use carina_core::differ::create_plan;
     use carina_core::effect::Effect;
-    use carina_core::resource::{ConcreteValue, Resource, ResourceId, State, Value};
+    use carina_core::resource::{
+        ConcreteValue, PlanInputState, Resource, ResourceId, State, Value,
+    };
     use carina_core::schema::{AttributeType, RawShape, ResourceSchema, Shape, ShapeWalkBudget};
     use carina_core::schema::{SchemaKind, SchemaRegistry};
     use indexmap::IndexMap;
@@ -45,13 +47,14 @@ mod tests {
                 .with_attribute("tags", tags_value("new-name")),
         ];
 
-        let mut current_states = HashMap::new();
+        let mut current_states: HashMap<ResourceId, PlanInputState> = HashMap::new();
         current_states.insert(
             resource_id.clone(),
             State::existing(
                 resource_id.clone(),
                 HashMap::from([("tags".to_string(), tags_value("old-name"))]),
-            ),
+            )
+            .into_plan_input(),
         );
 
         let mut schemas = SchemaRegistry::new();

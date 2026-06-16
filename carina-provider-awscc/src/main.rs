@@ -243,7 +243,7 @@ impl CarinaProvider for AwsccProcessProvider {
         &self,
         id: &proto::ResourceId,
         request: proto::CreateRequest,
-    ) -> Result<proto::State, proto::ProviderError> {
+    ) -> Result<proto::CreateOutcome, proto::ProviderError> {
         let core_id = convert::proto_to_core_resource_id(id);
         let core_resource = convert::proto_to_core_resource(&request.resource);
         let mut registry = carina_core::schema::SchemaRegistry::new();
@@ -259,14 +259,18 @@ impl CarinaProvider for AwsccProcessProvider {
                 &registry,
             ),
         );
+        let resolved_resource = carina_core::executor::resolve_normalized_for_provider(
+            normalized_resource,
+        )
+        .map_err(|e| Self::convert_error(CoreProviderError::invalid_input(e.to_string())))?;
         let result = self.runtime.block_on(self.provider().create(
             &core_id,
             CoreCreateRequest {
-                resource: normalized_resource,
+                resource: resolved_resource,
             },
         ));
         match result {
-            Ok(state) => Ok(convert::core_to_proto_state(&state)),
+            Ok(outcome) => Ok(convert::core_to_proto_create_outcome(outcome)),
             Err(e) => Err(Self::convert_error(e)),
         }
     }

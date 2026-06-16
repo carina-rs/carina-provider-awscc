@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 
-use carina_core::provider::{ProviderError, ProviderResult, UpdatePatch};
+use carina_core::provider::{CreateOutcome, ProviderError, ProviderResult, UpdatePatch};
 use carina_core::resource::{ConcreteValue, Directives, Resource, ResourceId, State, Value};
 use carina_core::schema::{AttributeSchema, AttributeType, Schema, Shape};
 use indexmap::IndexMap;
@@ -15,6 +15,7 @@ use serde_json::json;
 use super::conversion::{aws_value_to_dsl_with_defs, dsl_value_to_aws_with_defs};
 use super::update::build_update_patches;
 use super::{AwsccProvider, get_schema_config};
+use crate::provider::cloudcontrol::WaitOutcome;
 
 impl AwsccProvider {
     /// Read a resource using its configuration
@@ -76,7 +77,7 @@ impl AwsccProvider {
     }
 
     /// Create a resource using its configuration
-    pub async fn create_resource(&self, resource: &Resource) -> ProviderResult<State> {
+    pub async fn create_resource(&self, resource: &Resource) -> ProviderResult<CreateOutcome> {
         let config = get_schema_config(&resource.id.resource_type).ok_or_else(|| {
             ProviderError::internal(format!(
                 "Unknown resource type: {}",
@@ -123,7 +124,7 @@ impl AwsccProvider {
         // Set default values
         self.set_default_values(&resource.id.resource_type, &mut desired_state);
 
-        let identifier = self
+        let outcome = self
             .cc_create_resource(
                 config.aws_type_name,
                 serde_json::Value::Object(desired_state),
@@ -131,6 +132,40 @@ impl AwsccProvider {
             )
             .await
             .map_err(|e| e.for_resource(resource.id.clone()))?;
+
+        let identifier = match outcome {
+            WaitOutcome::Success { identifier } => identifier,
+            WaitOutcome::PartialOrFailed {
+                identifier,
+                status_message,
+            } => {
+                match self
+                    .read_resource(
+                        &resource.id.resource_type,
+                        resource.id.name_str(),
+                        Some(&identifier),
+                    )
+                    .await
+                {
+                    Ok(state) => return Ok(CreateOutcome::Success { state }),
+                    Err(read_err) => {
+                        let state = State::existing(resource.id.clone(), HashMap::new())
+                            .with_identifier(identifier);
+                        let missing_attributes = config.schema.attributes.keys().cloned().collect();
+                        let reason = format!(
+                            "post-create read failed after handler failure: {}; read error: {}",
+                            status_message,
+                            read_err.message(),
+                        );
+                        return Ok(CreateOutcome::partial_success(
+                            state,
+                            reason,
+                            missing_attributes,
+                        ));
+                    }
+                }
+            }
+        };
 
         let mut state = self
             .read_resource(
@@ -152,7 +187,7 @@ impl AwsccProvider {
             }
         }
 
-        Ok(state)
+        Ok(CreateOutcome::Success { state })
     }
 
     /// Update a resource by applying an [`UpdatePatch`] to its
@@ -345,8 +380,167 @@ fn post_update_attributes(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use carina_core::provider::CreateOutcome;
     use carina_core::schema::AttributeType;
     use serde_json::json;
+    use std::future::Future;
+    use std::pin::Pin;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use winterbaume_core::{MockAws, MockRequest, MockResponse, MockService};
+
+    #[derive(Debug)]
+    struct PartialCreateCloudControlService {
+        read_succeeds: bool,
+        saw_get_resource: AtomicBool,
+    }
+
+    impl PartialCreateCloudControlService {
+        fn new(read_succeeds: bool) -> Arc<Self> {
+            Arc::new(Self {
+                read_succeeds,
+                saw_get_resource: AtomicBool::new(false),
+            })
+        }
+    }
+
+    impl MockService for PartialCreateCloudControlService {
+        fn service_name(&self) -> &str {
+            "cloudcontrolapi"
+        }
+
+        fn url_patterns(&self) -> Vec<&str> {
+            vec![
+                r"https?://cloudcontrolapi\..*\.amazonaws\.com",
+                r"https?://cloudcontrolapi\.amazonaws\.com",
+            ]
+        }
+
+        fn handle(
+            &self,
+            request: MockRequest,
+        ) -> Pin<Box<dyn Future<Output = MockResponse> + Send + '_>> {
+            Box::pin(async move {
+                let action = request
+                    .headers
+                    .get("x-amz-target")
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(|v| v.split('.').next_back())
+                    .unwrap_or_default();
+                match action {
+                    "CreateResource" => MockResponse::json(
+                        200,
+                        r#"{"ProgressEvent":{"RequestToken":"request-token-1"}}"#,
+                    ),
+                    "GetResourceRequestStatus" => MockResponse::json(
+                        200,
+                        r#"{"ProgressEvent":{"RequestToken":"request-token-1","OperationStatus":"FAILED","Identifier":"partial-bucket","StatusMessage":"post-create read denied"}}"#,
+                    ),
+                    "GetResource" if self.read_succeeds => {
+                        self.saw_get_resource.store(true, Ordering::SeqCst);
+                        MockResponse::json(
+                            200,
+                            r#"{"TypeName":"AWS::S3::Bucket","ResourceDescription":{"Identifier":"partial-bucket","Properties":"{\"BucketName\":\"partial-bucket\"}"}}"#,
+                        )
+                    }
+                    "GetResource" => {
+                        self.saw_get_resource.store(true, Ordering::SeqCst);
+                        MockResponse::json(
+                            403,
+                            r#"{"__type":"AccessDeniedException","message":"read denied"}"#,
+                        )
+                    }
+                    _ => MockResponse::json(
+                        400,
+                        format!(
+                            r#"{{"__type":"InvalidAction","message":"unexpected action {action}"}}"#
+                        ),
+                    ),
+                }
+            })
+        }
+    }
+
+    async fn provider_with_partial_create_service(
+        service: Arc<PartialCreateCloudControlService>,
+    ) -> AwsccProvider {
+        use aws_config::{BehaviorVersion, Region};
+
+        let mock = MockAws::builder().with_service(service).build();
+        let config = aws_config::defaults(BehaviorVersion::latest())
+            .http_client(mock.http_client())
+            .credentials_provider(mock.credentials_provider())
+            .region(Region::new("us-east-1"))
+            .load()
+            .await;
+
+        AwsccProvider::from_sdk_config(config, &super::super::AwsccProviderConfig::default()).await
+    }
+
+    fn partial_create_bucket_resource() -> Resource {
+        Resource::with_provider("awscc", "s3.Bucket", "partial_bucket", None).with_attribute(
+            "bucket_name",
+            Value::Concrete(ConcreteValue::String("partial-bucket".to_string())),
+        )
+    }
+
+    #[tokio::test]
+    async fn create_resource_returns_partial_success_when_failed_identifier_read_fails() {
+        let service = PartialCreateCloudControlService::new(false);
+        let provider = provider_with_partial_create_service(service.clone()).await;
+
+        let outcome = provider
+            .create_resource(&partial_create_bucket_resource())
+            .await
+            .expect("create should return a partial outcome instead of error");
+
+        let CreateOutcome::PartialSuccess { state, diagnostic } = outcome else {
+            panic!("expected partial success when post-create read fails");
+        };
+        assert!(
+            service.saw_get_resource.load(Ordering::SeqCst),
+            "provider must retry read with the identifier from failed progress"
+        );
+        assert!(state.exists);
+        assert_eq!(state.identifier.as_deref(), Some("partial-bucket"));
+        assert!(state.attributes.is_empty());
+        assert_eq!(
+            diagnostic.reason(),
+            "post-create read failed after handler failure: post-create read denied; read error: Failed to get resource: AccessDeniedException: read denied"
+        );
+        assert!(
+            diagnostic
+                .missing_attributes()
+                .contains(&"bucket_name".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn create_resource_returns_success_when_failed_identifier_read_succeeds() {
+        let service = PartialCreateCloudControlService::new(true);
+        let provider = provider_with_partial_create_service(service.clone()).await;
+
+        let outcome = provider
+            .create_resource(&partial_create_bucket_resource())
+            .await
+            .expect("create should succeed after post-create read recovers");
+
+        let CreateOutcome::Success { state } = outcome else {
+            panic!("expected full success when post-create read succeeds");
+        };
+        assert!(
+            service.saw_get_resource.load(Ordering::SeqCst),
+            "provider must retry read with the identifier from failed progress"
+        );
+        assert!(state.exists);
+        assert_eq!(state.identifier.as_deref(), Some("partial-bucket"));
+        assert_eq!(
+            state.attributes.get("bucket_name"),
+            Some(&Value::Concrete(ConcreteValue::String(
+                "partial-bucket".to_string()
+            )))
+        );
+    }
 
     fn make_schema_attrs(
         entries: Vec<(&str, &str, AttributeType, bool)>,

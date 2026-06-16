@@ -12,7 +12,7 @@
 mod common;
 
 use aws_config::{BehaviorVersion, Region};
-use carina_core::provider::{CreateRequest, Provider, ReadRequest};
+use carina_core::provider::{CreateOutcome, CreateRequest, Provider, ReadRequest};
 use carina_core::resource::{ConcreteValue, Resource, Value};
 use carina_provider_awscc::AwsccProvider;
 use carina_provider_awscc::provider::AwsccProviderConfig;
@@ -174,6 +174,15 @@ async fn listener_create_then_read_round_trips_full_shaped_state() {
     let created = Provider::create(&provider, &id, CreateRequest { resource })
         .await
         .expect("elasticloadbalancingv2.Listener create through Provider::create should succeed");
+    let created = match created {
+        CreateOutcome::Success { state } => state,
+        CreateOutcome::PartialSuccess { diagnostic, .. } => {
+            panic!(
+                "roundtrip create should be full success, got partial: {:?}",
+                diagnostic
+            )
+        }
+    };
     let identifier = created
         .identifier
         .as_deref()

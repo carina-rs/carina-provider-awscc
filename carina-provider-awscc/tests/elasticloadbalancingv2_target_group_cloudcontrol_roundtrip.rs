@@ -11,7 +11,7 @@
 mod common;
 
 use aws_config::{BehaviorVersion, Region};
-use carina_core::provider::{CreateRequest, Provider, ReadRequest};
+use carina_core::provider::{CreateOutcome, CreateRequest, Provider, ReadRequest};
 use carina_core::resource::{ConcreteValue, Resource, Value};
 use carina_provider_awscc::AwsccProvider;
 use carina_provider_awscc::provider::AwsccProviderConfig;
@@ -156,6 +156,15 @@ async fn target_group_create_then_read_round_trips_full_shaped_state() {
         .expect(
             "elasticloadbalancingv2.TargetGroup create through Provider::create should succeed",
         );
+    let created = match created {
+        CreateOutcome::Success { state } => state,
+        CreateOutcome::PartialSuccess { diagnostic, .. } => {
+            panic!(
+                "roundtrip create should be full success, got partial: {:?}",
+                diagnostic
+            )
+        }
+    };
     let identifier = created
         .identifier
         .as_deref()

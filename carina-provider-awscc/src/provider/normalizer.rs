@@ -532,6 +532,7 @@ mod tests {
             attributes,
             exists: true,
             dependency_bindings: BTreeSet::new(),
+            partial_read: None,
         };
         (id, state)
     }
