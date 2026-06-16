@@ -27,6 +27,17 @@ fn union_members_for<'a>(
     schema.union_members_with_budget(attr_type, &mut ShapeWalkBudget::new(256))
 }
 
+fn is_list_of_strings(schema: &ResourceSchema, attr_type: &AttributeType) -> bool {
+    let Shape::List { element_type, .. } = schema.shape_of(attr_type) else {
+        return false;
+    };
+    matches!(schema.shape_of(element_type), Shape::String { .. })
+}
+
+fn string_list_to_json(items: &[String]) -> serde_json::Value {
+    serde_json::Value::Array(items.iter().map(|item| json!(item)).collect())
+}
+
 fn string_or_list_of_strings_from_json(
     schema: &ResourceSchema,
     members: &[AttributeType],
@@ -374,8 +385,17 @@ pub(crate) fn dsl_value_to_aws_with_defs(
         element_type: inner,
         ..
     } = shape
-        && let Value::Concrete(ConcreteValue::List(items)) = value
     {
+        if let Value::Concrete(ConcreteValue::StringList(items)) = value
+            && matches!(schema.shape_of(inner), Shape::String { .. })
+        {
+            return Some(string_list_to_json(items));
+        }
+
+        let Value::Concrete(ConcreteValue::List(items)) = value else {
+            return value_to_json(value);
+        };
+
         // Recurse into list items with inner type for type-aware conversion
         let arr: Vec<serde_json::Value> = items
             .iter()
@@ -395,6 +415,19 @@ pub(crate) fn dsl_value_to_aws_with_defs(
     } else if let Shape::Union = shape
         && let Some(members) = union_members_for(&schema, attr_type)
     {
+        if let Value::Concrete(ConcreteValue::StringList(_)) = value {
+            for member in members
+                .iter()
+                .filter(|member| is_list_of_strings(&schema, member))
+            {
+                if let Some(result) =
+                    dsl_value_to_aws_with_defs(value, member, resource_type, attr_name, defs)
+                {
+                    return Some(result);
+                }
+            }
+        }
+
         // Try each member type; use the first that produces a type-aware result
         for member in members {
             if let Some(result) =
@@ -1332,6 +1365,77 @@ mod tests {
             Some(&json!("lambda.amazonaws.com"))
         );
         assert!(principal_obj.get("service").is_none());
+    }
+
+    #[test]
+    fn test_dsl_value_to_aws_iam_policy_document_serializes_string_list_principal() {
+        use carina_aws_types::iam_policy_document;
+
+        let attr_type = iam_policy_document();
+        let value = Value::Concrete(ConcreteValue::Map(
+            vec![
+                (
+                    "version".to_string(),
+                    Value::Concrete(ConcreteValue::String("2012-10-17".to_string())),
+                ),
+                (
+                    "statement".to_string(),
+                    Value::Concrete(ConcreteValue::List(vec![Value::Concrete(
+                        ConcreteValue::Map(
+                            vec![
+                                (
+                                    "effect".to_string(),
+                                    Value::Concrete(ConcreteValue::String("Allow".to_string())),
+                                ),
+                                (
+                                    "principal".to_string(),
+                                    Value::Concrete(ConcreteValue::Map(
+                                        vec![(
+                                            "service".to_string(),
+                                            Value::Concrete(ConcreteValue::StringList(vec![
+                                                "lambda.amazonaws.com".to_string(),
+                                            ])),
+                                        )]
+                                        .into_iter()
+                                        .collect(),
+                                    )),
+                                ),
+                                (
+                                    "action".to_string(),
+                                    Value::Concrete(ConcreteValue::StringList(vec![
+                                        "sts:AssumeRole".to_string(),
+                                    ])),
+                                ),
+                            ]
+                            .into_iter()
+                            .collect(),
+                        ),
+                    )])),
+                ),
+            ]
+            .into_iter()
+            .collect(),
+        ));
+
+        let result = dsl_value_to_aws_with_defs(
+            &value,
+            &attr_type,
+            "iam.Role",
+            "assume_role_policy_document",
+            &std::collections::BTreeMap::new(),
+        )
+        .expect("Should return Some");
+
+        assert_eq!(
+            result.get("Statement").and_then(|statements| {
+                statements
+                    .as_array()
+                    .and_then(|items| items.first())
+                    .and_then(|statement| statement.get("Principal"))
+                    .and_then(|principal| principal.get("Service"))
+            }),
+            Some(&json!(["lambda.amazonaws.com"]))
+        );
     }
 
     /// Regression for aws#315 (cross-checked on the awscc side): the
