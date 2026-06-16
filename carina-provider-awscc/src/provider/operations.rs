@@ -153,6 +153,15 @@ impl AwsccProvider {
                     .await
                 {
                     Ok(state) => {
+                        if !state.exists {
+                            return Ok(create_read_not_found_outcome(
+                                state,
+                                format!(
+                                    "handler failed: {}; read-back returned not_found",
+                                    status_message
+                                ),
+                            ));
+                        }
                         let mut state = merge_desired_attributes(state, resource, config);
                         let Some(canonical_identifier) =
                             canonicalize_identifier_from_read(config, &state)
@@ -225,6 +234,12 @@ impl AwsccProvider {
             )
             .await?;
 
+        if !state.exists {
+            return Ok(create_read_not_found_outcome(
+                state,
+                "read-back returned not_found",
+            ));
+        }
         let mut state = merge_desired_attributes(state, resource, config);
         let Some(canonical_identifier) = canonicalize_identifier_from_read(config, &state) else {
             let missing_attributes = missing_primary_identifier_attributes(config, &state);
@@ -528,6 +543,10 @@ fn map_aws_props_to_attributes(
     attributes
 }
 
+fn create_read_not_found_outcome(state: State, diagnostic: impl Into<String>) -> CreateOutcome {
+    CreateOutcome::partial_success(state, diagnostic.into(), vec!["state".to_string()])
+}
+
 /// Reconstruct the post-update desired-state attribute map: take the
 /// current provider-side `from` state and apply each patch op on top.
 ///
@@ -659,17 +678,35 @@ mod tests {
         AwsccProvider::from_sdk_config(config, &super::super::AwsccProviderConfig::default()).await
     }
 
+    #[derive(Clone, Copy, Debug)]
+    enum IamRoleReadMode {
+        WithRoleName,
+        WithoutRoleName,
+        NotFound,
+    }
+
     #[derive(Debug)]
     struct IamRoleCreateCloudControlService {
-        include_role_name_in_read: bool,
+        read_mode: IamRoleReadMode,
+        wait_succeeds: bool,
         saw_create_resource: AtomicBool,
         saw_get_resource: AtomicBool,
     }
 
     impl IamRoleCreateCloudControlService {
         fn new(include_role_name_in_read: bool) -> Arc<Self> {
+            let read_mode = if include_role_name_in_read {
+                IamRoleReadMode::WithRoleName
+            } else {
+                IamRoleReadMode::WithoutRoleName
+            };
+            Self::with_read_mode(read_mode, true)
+        }
+
+        fn with_read_mode(read_mode: IamRoleReadMode, wait_succeeds: bool) -> Arc<Self> {
             Arc::new(Self {
-                include_role_name_in_read,
+                read_mode,
+                wait_succeeds,
                 saw_create_resource: AtomicBool::new(false),
                 saw_get_resource: AtomicBool::new(false),
             })
@@ -707,16 +744,29 @@ mod tests {
                             r#"{"ProgressEvent":{"RequestToken":"iam-role-token"}}"#,
                         )
                     }
-                    "GetResourceRequestStatus" => MockResponse::json(
+                    "GetResourceRequestStatus" if self.wait_succeeds => MockResponse::json(
                         200,
                         r#"{"ProgressEvent":{"RequestToken":"iam-role-token","OperationStatus":"SUCCESS","Identifier":"flow-log-role"}}"#,
                     ),
+                    "GetResourceRequestStatus" => MockResponse::json(
+                        200,
+                        r#"{"ProgressEvent":{"RequestToken":"iam-role-token","OperationStatus":"FAILED","Identifier":"flow-log-role","StatusMessage":"post-create validation failed"}}"#,
+                    ),
                     "GetResource" => {
                         self.saw_get_resource.store(true, Ordering::SeqCst);
-                        let properties = if self.include_role_name_in_read {
-                            r#"{"Path":"/service-role/","RoleName":"flow-log-role","RoleId":"AROATESTROLEID"}"#
-                        } else {
-                            r#"{"Path":"/service-role/","RoleId":"AROATESTROLEID"}"#
+                        let properties = match self.read_mode {
+                            IamRoleReadMode::WithRoleName => {
+                                r#"{"Path":"/service-role/","RoleName":"flow-log-role","RoleId":"AROATESTROLEID"}"#
+                            }
+                            IamRoleReadMode::WithoutRoleName => {
+                                r#"{"Path":"/service-role/","RoleId":"AROATESTROLEID"}"#
+                            }
+                            IamRoleReadMode::NotFound => {
+                                return MockResponse::json(
+                                    404,
+                                    r#"{"__type":"ResourceNotFoundException","message":"role not found"}"#,
+                                );
+                            }
                         };
                         MockResponse::json(
                             200,
@@ -1194,6 +1244,67 @@ mod tests {
             Some(&Value::Concrete(ConcreteValue::String(
                 "arn:aws-us-gov:iam::123456789012:role/service-role/flow-log-role".to_string()
             )))
+        );
+    }
+
+    #[tokio::test]
+    async fn create_iam_role_returns_partial_success_when_post_create_read_is_not_found() {
+        let cloudcontrol =
+            IamRoleCreateCloudControlService::with_read_mode(IamRoleReadMode::NotFound, true);
+        let sts = CallerIdentityService::new();
+        let provider =
+            provider_with_iam_role_create_service(cloudcontrol.clone(), sts.clone()).await;
+
+        let outcome = provider
+            .create_resource(&iam_role_resource(true))
+            .await
+            .expect("IAM role create should report partial success");
+
+        let CreateOutcome::PartialSuccess { state, diagnostic } = outcome else {
+            panic!("expected partial success when post-create read returns not_found");
+        };
+        assert!(cloudcontrol.saw_create_resource.load(Ordering::SeqCst));
+        assert!(cloudcontrol.saw_get_resource.load(Ordering::SeqCst));
+        assert!(!state.exists);
+        assert_eq!(state.identifier.as_deref(), None);
+        assert!(state.attributes.is_empty());
+        assert_eq!(diagnostic.reason(), "read-back returned not_found");
+        assert_eq!(diagnostic.missing_attributes(), &["state".to_string()]);
+        assert!(
+            !sts.saw_get_caller_identity.load(Ordering::SeqCst),
+            "not_found read-back must stop before ARN synthesis"
+        );
+    }
+
+    #[tokio::test]
+    async fn create_iam_role_returns_partial_success_when_failed_create_read_back_is_not_found() {
+        let cloudcontrol =
+            IamRoleCreateCloudControlService::with_read_mode(IamRoleReadMode::NotFound, false);
+        let sts = CallerIdentityService::new();
+        let provider =
+            provider_with_iam_role_create_service(cloudcontrol.clone(), sts.clone()).await;
+
+        let outcome = provider
+            .create_resource(&iam_role_resource(true))
+            .await
+            .expect("IAM role create should report partial success");
+
+        let CreateOutcome::PartialSuccess { state, diagnostic } = outcome else {
+            panic!("expected partial success when failed-create read-back returns not_found");
+        };
+        assert!(cloudcontrol.saw_create_resource.load(Ordering::SeqCst));
+        assert!(cloudcontrol.saw_get_resource.load(Ordering::SeqCst));
+        assert!(!state.exists);
+        assert_eq!(state.identifier.as_deref(), None);
+        assert!(state.attributes.is_empty());
+        assert_eq!(
+            diagnostic.reason(),
+            "handler failed: post-create validation failed; read-back returned not_found"
+        );
+        assert_eq!(diagnostic.missing_attributes(), &["state".to_string()]);
+        assert!(
+            !sts.saw_get_caller_identity.load(Ordering::SeqCst),
+            "not_found read-back must stop before ARN synthesis"
         );
     }
 
