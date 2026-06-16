@@ -44,7 +44,7 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
     AwsccSchemaConfig {
         aws_type_name: "AWS::SSO::PermissionSet",
         resource_type_name: "sso.PermissionSet",
-        primary_identifier: &["InstanceArn", "PermissionSetArn"],
+        primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "InstanceArn", dsl_name: "instance_arn" }, crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "PermissionSetArn", dsl_name: "permission_set_arn" }],
         has_tags: true,
         schema: ResourceSchema::new("sso.PermissionSet")
 	        .with_description("Resource Type definition for SSO PermissionSet")

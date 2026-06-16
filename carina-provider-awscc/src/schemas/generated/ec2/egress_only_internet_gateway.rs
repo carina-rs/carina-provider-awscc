@@ -12,7 +12,10 @@ pub fn ec2_egress_only_internet_gateway_config() -> AwsccSchemaConfig {
     AwsccSchemaConfig {
         aws_type_name: "AWS::EC2::EgressOnlyInternetGateway",
         resource_type_name: "ec2.EgressOnlyInternetGateway",
-        primary_identifier: &["Id"],
+        primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute {
+            provider_name: "Id",
+            dsl_name: "id",
+        }],
         has_tags: true,
         schema: ResourceSchema::new("ec2.EgressOnlyInternetGateway")
             .with_description("Resource Type definition for AWS::EC2::EgressOnlyInternetGateway")

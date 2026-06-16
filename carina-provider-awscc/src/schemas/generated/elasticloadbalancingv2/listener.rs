@@ -37,7 +37,7 @@ pub fn elasticloadbalancingv2_listener_config() -> AwsccSchemaConfig {
     AwsccSchemaConfig {
         aws_type_name: "AWS::ElasticLoadBalancingV2::Listener",
         resource_type_name: "elasticloadbalancingv2.Listener",
-        primary_identifier: &["ListenerArn"],
+        primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "ListenerArn", dsl_name: "listener_arn" }],
         has_tags: false,
         schema: ResourceSchema::new("elasticloadbalancingv2.Listener")
 	        .with_description("Specifies a listener for an Application Load Balancer, Network Load Balancer, or Gateway Load Balancer.")

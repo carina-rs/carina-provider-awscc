@@ -30,7 +30,7 @@ pub fn sso_instance_config() -> AwsccSchemaConfig {
     AwsccSchemaConfig {
         aws_type_name: "AWS::SSO::Instance",
         resource_type_name: "sso.Instance",
-        primary_identifier: &["InstanceArn"],
+        primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "InstanceArn", dsl_name: "instance_arn" }],
         has_tags: true,
         schema: ResourceSchema::new("sso.Instance")
 	        .with_description("Resource Type definition for Identity Center (SSO) Instance")

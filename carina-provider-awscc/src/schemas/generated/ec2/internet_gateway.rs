@@ -12,7 +12,7 @@ pub fn ec2_internet_gateway_config() -> AwsccSchemaConfig {
     AwsccSchemaConfig {
         aws_type_name: "AWS::EC2::InternetGateway",
         resource_type_name: "ec2.InternetGateway",
-        primary_identifier: &["InternetGatewayId"],
+        primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "InternetGatewayId", dsl_name: "internet_gateway_id" }],
         has_tags: true,
         schema: ResourceSchema::new("ec2.InternetGateway")
 	        .with_description("Allocates an internet gateway for use with a VPC. After creating the Internet gateway, you then attach it to a VPC.")

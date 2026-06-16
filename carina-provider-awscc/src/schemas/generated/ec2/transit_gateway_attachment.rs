@@ -14,7 +14,7 @@ pub fn ec2_transit_gateway_attachment_config() -> AwsccSchemaConfig {
     AwsccSchemaConfig {
         aws_type_name: "AWS::EC2::TransitGatewayAttachment",
         resource_type_name: "ec2.TransitGatewayAttachment",
-        primary_identifier: &["Id"],
+        primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "Id", dsl_name: "id" }],
         has_tags: true,
         schema: ResourceSchema::new("ec2.TransitGatewayAttachment")
 	        .with_description("Resource Type definition for AWS::EC2::TransitGatewayAttachment")

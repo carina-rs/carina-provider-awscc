@@ -383,10 +383,9 @@ fn canonicalize_identifier_from_read(
     read_state: &State,
 ) -> Option<String> {
     let mut segments = Vec::with_capacity(config.primary_identifier.len());
-    for provider_name in config.primary_identifier {
-        let dsl_name = attribute_name_for_provider_name(config, provider_name)?;
+    for attr in config.primary_identifier {
         segments.push(primary_identifier_segment(
-            read_state.attributes.get(dsl_name)?,
+            read_state.attributes.get(attr.dsl_name)?,
         )?);
     }
     if segments.is_empty() {
@@ -403,30 +402,15 @@ fn missing_primary_identifier_attributes(
     config
         .primary_identifier
         .iter()
-        .filter_map(
-            |provider_name| match attribute_name_for_provider_name(config, provider_name) {
-                Some(dsl_name)
-                    if read_state
-                        .attributes
-                        .get(dsl_name)
-                        .and_then(primary_identifier_segment)
-                        .is_some() =>
-                {
-                    None
-                }
-                _ => Some((*provider_name).to_string()),
-            },
-        )
+        .filter(|attr| {
+            read_state
+                .attributes
+                .get(attr.dsl_name)
+                .and_then(primary_identifier_segment)
+                .is_none()
+        })
+        .map(|attr| attr.provider_name.to_string())
         .collect()
-}
-
-fn attribute_name_for_provider_name<'a>(
-    config: &'a AwsccSchemaConfig,
-    provider_name: &str,
-) -> Option<&'a str> {
-    config.schema.attributes.iter().find_map(|(name, attr)| {
-        (attr.provider_name.as_deref() == Some(provider_name)).then_some(name.as_str())
-    })
 }
 
 fn primary_identifier_segment(value: &Value) -> Option<String> {

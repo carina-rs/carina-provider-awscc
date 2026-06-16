@@ -63,7 +63,10 @@ pub fn iam_oidc_provider_config() -> AwsccSchemaConfig {
     AwsccSchemaConfig {
         aws_type_name: "AWS::IAM::OIDCProvider",
         resource_type_name: "iam.OidcProvider",
-        primary_identifier: &["Arn"],
+        primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute {
+            provider_name: "Arn",
+            dsl_name: "arn",
+        }],
         has_tags: true,
         schema: ResourceSchema::new("iam.OidcProvider")
             .with_description("Resource Type definition for AWS::IAM::OIDCProvider")
