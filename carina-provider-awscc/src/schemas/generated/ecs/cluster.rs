@@ -36,7 +36,7 @@ pub fn ecs_cluster_config() -> AwsccSchemaConfig {
     AwsccSchemaConfig {
         aws_type_name: "AWS::ECS::Cluster",
         resource_type_name: "ecs.Cluster",
-        primary_identifier: &["ClusterName"],
+        primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "ClusterName", dsl_name: "cluster_name" }],
         has_tags: true,
         schema: ResourceSchema::new("ecs.Cluster")
 	        .with_description("The ``AWS::ECS::Cluster`` resource creates an Amazon Elastic Container Service (Amazon ECS) cluster.")

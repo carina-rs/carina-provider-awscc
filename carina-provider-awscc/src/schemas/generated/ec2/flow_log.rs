@@ -44,7 +44,7 @@ pub fn ec2_flow_log_config() -> AwsccSchemaConfig {
     AwsccSchemaConfig {
         aws_type_name: "AWS::EC2::FlowLog",
         resource_type_name: "ec2.FlowLog",
-        primary_identifier: &["Id"],
+        primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "Id", dsl_name: "id" }],
         has_tags: true,
         schema: ResourceSchema::new("ec2.FlowLog")
 	        .with_description("Specifies a VPC flow log, which enables you to capture IP traffic for a specific network interface, subnet, or VPC.")

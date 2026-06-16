@@ -121,17 +121,21 @@ impl IamRoleIdentifierCloudControl {
         let properties = json!({
             "Arn": format!("arn:aws:iam::123456789012:role{ROLE_PATH}{ROLE_NAME}"),
             "AssumeRolePolicyDocument": assume_role_policy_json(),
+            "MaxSessionDuration": 3600,
             "Path": ROLE_PATH,
             "RoleId": "AROATESTROLEID",
             "RoleName": ROLE_NAME
         });
+        let properties = properties.to_string();
         MockResponse::json(
             200,
             json!({
                 "TypeName": "AWS::IAM::Role",
+                "Identifier": PATH_QUALIFIED_IDENTIFIER,
+                "Properties": properties,
                 "ResourceDescription": {
-                    "Identifier": ROLE_NAME,
-                    "Properties": properties.to_string()
+                    "Identifier": PATH_QUALIFIED_IDENTIFIER,
+                    "Properties": properties
                 }
             })
             .to_string(),
@@ -219,6 +223,10 @@ async fn iam_role_create_with_role_name_prefix_canonicalizes_identifier_from_rea
     };
 
     assert_eq!(created.identifier.as_deref(), Some(ROLE_NAME));
+    assert_eq!(
+        created.attributes.get("role_name"),
+        Some(&string(ROLE_NAME))
+    );
     assert_eq!(
         service.get_identifiers(),
         vec![PATH_QUALIFIED_IDENTIFIER.to_string()]

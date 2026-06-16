@@ -52,19 +52,33 @@ fn rust_lit(s: &str) -> RustStrLit<'_> {
     RustStrLit(s)
 }
 
-fn emit_primary_identifier(primary_identifier: Option<&[String]>) -> String {
+fn emit_primary_identifier(
+    primary_identifier: Option<&[String]>,
+    properties: &BTreeMap<String, CfnProperty>,
+) -> Result<String> {
     let Some(primary_identifier) = primary_identifier else {
-        return "&[]".to_string();
+        return Ok("&[]".to_string());
     };
     let props: Vec<String> = primary_identifier
         .iter()
-        .filter_map(|path| path.strip_prefix("/properties/"))
-        .map(|prop| rust_lit(prop).to_string())
-        .collect();
+        .map(|path| {
+            let prop = path.strip_prefix("/properties/").ok_or_else(|| {
+                anyhow::anyhow!("primaryIdentifier path {path:?} is not a property path")
+            })?;
+            if !properties.contains_key(prop) {
+                anyhow::bail!("primaryIdentifier property {prop:?} is not declared in properties");
+            }
+            Ok(format!(
+                "crate::schemas::config::PrimaryIdentifierAttribute {{ provider_name: {}, dsl_name: {} }}",
+                rust_lit(prop),
+                rust_lit(&prop.to_snake_case())
+            ))
+        })
+        .collect::<Result<_>>()?;
     if props.is_empty() {
-        "&[]".to_string()
+        Ok("&[]".to_string())
     } else {
-        format!("&[{}]", props.join(", "))
+        Ok(format!("&[{}]", props.join(", ")))
     }
 }
 
@@ -2681,6 +2695,8 @@ fn {fn_name}(value: &Value) -> Result<(), String> {{
     // The provider name (`awscc`) is supplied separately by
     // `SchemaRegistry::insert("awscc", schema)` on the consumer side.
     let schema_name = dsl_resource.clone();
+    let primary_identifier =
+        emit_primary_identifier(schema.primary_identifier.as_deref(), &schema.properties)?;
 
     body.push_str(&format!(
         r#"/// Returns the schema config for {} ({})
@@ -2697,7 +2713,7 @@ pub fn {}() -> AwsccSchemaConfig {{
         config_fn_name,
         type_name,
         dsl_resource,
-        emit_primary_identifier(schema.primary_identifier.as_deref()),
+        primary_identifier,
         has_tags,
         schema_name
     ));

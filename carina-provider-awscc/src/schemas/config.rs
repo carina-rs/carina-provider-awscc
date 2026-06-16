@@ -22,12 +22,18 @@ pub struct AwsccSchemaConfig {
     pub aws_type_name: &'static str,
     /// Resource type name used in DSL (e.g., "ec2.Vpc")
     pub resource_type_name: &'static str,
-    /// CloudFormation primaryIdentifier property names in provider spelling.
-    pub primary_identifier: &'static [&'static str],
+    /// CloudFormation primaryIdentifier fields and their generated DSL attributes.
+    pub primary_identifier: &'static [PrimaryIdentifierAttribute],
     /// Whether this resource type uses tags
     pub has_tags: bool,
     /// The resource schema with attribute definitions
     pub schema: ResourceSchema,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct PrimaryIdentifierAttribute {
+    pub provider_name: &'static str,
+    pub dsl_name: &'static str,
 }
 
 #[cfg(test)]

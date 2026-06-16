@@ -20,7 +20,7 @@ pub fn elasticloadbalancingv2_target_group_config() -> AwsccSchemaConfig {
     AwsccSchemaConfig {
         aws_type_name: "AWS::ElasticLoadBalancingV2::TargetGroup",
         resource_type_name: "elasticloadbalancingv2.TargetGroup",
-        primary_identifier: &["TargetGroupArn"],
+        primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "TargetGroupArn", dsl_name: "target_group_arn" }],
         has_tags: true,
         schema: ResourceSchema::new("elasticloadbalancingv2.TargetGroup")
 	        .with_description("Resource Type definition for AWS::ElasticLoadBalancingV2::TargetGroup")

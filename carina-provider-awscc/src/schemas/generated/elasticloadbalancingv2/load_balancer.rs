@@ -23,7 +23,7 @@ pub fn elasticloadbalancingv2_load_balancer_config() -> AwsccSchemaConfig {
     AwsccSchemaConfig {
         aws_type_name: "AWS::ElasticLoadBalancingV2::LoadBalancer",
         resource_type_name: "elasticloadbalancingv2.LoadBalancer",
-        primary_identifier: &["LoadBalancerArn"],
+        primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "LoadBalancerArn", dsl_name: "load_balancer_arn" }],
         has_tags: true,
         schema: ResourceSchema::new("elasticloadbalancingv2.LoadBalancer")
 	        .with_description("Specifies an Application Load Balancer, a Network Load Balancer, or a Gateway Load Balancer.")

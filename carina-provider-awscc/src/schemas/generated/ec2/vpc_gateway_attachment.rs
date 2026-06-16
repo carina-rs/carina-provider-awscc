@@ -12,7 +12,7 @@ pub fn ec2_vpc_gateway_attachment_config() -> AwsccSchemaConfig {
     AwsccSchemaConfig {
         aws_type_name: "AWS::EC2::VPCGatewayAttachment",
         resource_type_name: "ec2.VpcGatewayAttachment",
-        primary_identifier: &["AttachmentType", "VpcId"],
+        primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "AttachmentType", dsl_name: "attachment_type" }, crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "VpcId", dsl_name: "vpc_id" }],
         has_tags: false,
         schema: ResourceSchema::new("ec2.VpcGatewayAttachment")
 	        .with_description("Resource Type definition for AWS::EC2::VPCGatewayAttachment")
