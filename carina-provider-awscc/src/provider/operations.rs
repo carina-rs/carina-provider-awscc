@@ -129,18 +129,16 @@ impl AwsccProvider {
         // Set default values
         self.set_default_values(&resource.id.resource_type, &mut desired_state);
 
-        let desired_state = serde_json::Value::Object(desired_state);
-
         let outcome = self
             .cc_create_resource(
                 config.aws_type_name,
-                desired_state.clone(),
+                serde_json::Value::Object(desired_state),
                 config.schema.operation_config.as_ref(),
             )
             .await
             .map_err(|e| e.for_resource(resource.id.clone()))?;
 
-        let identifier = match canonicalize_create_identifier(config, &desired_state, outcome) {
+        let identifier = match outcome {
             WaitOutcome::Success { identifier } => identifier,
             WaitOutcome::PartialOrFailed {
                 identifier,
@@ -156,6 +154,23 @@ impl AwsccProvider {
                 {
                     Ok(state) => {
                         let mut state = merge_desired_attributes(state, resource, config);
+                        let Some(canonical_identifier) =
+                            canonicalize_identifier_from_read(config, &state)
+                        else {
+                            let missing_attributes =
+                                missing_primary_identifier_attributes(config, &state);
+                            let reason = format!(
+                                "handler failed: {}; read-back missing primaryIdentifier attributes: {}",
+                                status_message,
+                                missing_attributes.join(", ")
+                            );
+                            return Ok(CreateOutcome::partial_success(
+                                state,
+                                reason,
+                                missing_attributes,
+                            ));
+                        };
+                        state.identifier = Some(canonical_identifier);
                         if let Some(missing_attributes) = self
                             .synthesize_read_attributes(
                                 &resource.id.resource_type,
@@ -211,6 +226,18 @@ impl AwsccProvider {
             .await?;
 
         let mut state = merge_desired_attributes(state, resource, config);
+        let Some(canonical_identifier) = canonicalize_identifier_from_read(config, &state) else {
+            let missing_attributes = missing_primary_identifier_attributes(config, &state);
+            return Ok(CreateOutcome::partial_success(
+                state,
+                format!(
+                    "read-back missing primaryIdentifier attributes: {}",
+                    missing_attributes.join(", ")
+                ),
+                missing_attributes,
+            ));
+        };
+        state.identifier = Some(canonical_identifier);
 
         match self
             .synthesize_read_attributes(&resource.id.resource_type, &mut state.attributes)
@@ -351,39 +378,65 @@ impl AwsccProvider {
     }
 }
 
-fn canonicalize_create_identifier(
+fn canonicalize_identifier_from_read(
     config: &AwsccSchemaConfig,
-    desired_state: &serde_json::Value,
-    outcome: WaitOutcome,
-) -> WaitOutcome {
-    match outcome {
-        WaitOutcome::Success { identifier } => WaitOutcome::Success {
-            identifier: primary_identifier_from_desired(config, desired_state)
-                .unwrap_or(identifier),
-        },
-        WaitOutcome::PartialOrFailed {
-            identifier,
-            status_message,
-        } => WaitOutcome::PartialOrFailed {
-            identifier: primary_identifier_from_desired(config, desired_state)
-                .unwrap_or(identifier),
-            status_message,
-        },
+    read_state: &State,
+) -> Option<String> {
+    let mut segments = Vec::with_capacity(config.primary_identifier.len());
+    for provider_name in config.primary_identifier {
+        let dsl_name = attribute_name_for_provider_name(config, provider_name)?;
+        segments.push(primary_identifier_segment(
+            read_state.attributes.get(dsl_name)?,
+        )?);
+    }
+    if segments.is_empty() {
+        None
+    } else {
+        Some(segments.join("|"))
     }
 }
 
-fn primary_identifier_from_desired(
+fn missing_primary_identifier_attributes(
     config: &AwsccSchemaConfig,
-    desired_state: &serde_json::Value,
-) -> Option<String> {
-    let [field] = config.primary_identifier else {
-        return None;
-    };
-    let value = desired_state.get(*field)?;
+    read_state: &State,
+) -> Vec<String> {
+    config
+        .primary_identifier
+        .iter()
+        .filter_map(
+            |provider_name| match attribute_name_for_provider_name(config, provider_name) {
+                Some(dsl_name)
+                    if read_state
+                        .attributes
+                        .get(dsl_name)
+                        .and_then(primary_identifier_segment)
+                        .is_some() =>
+                {
+                    None
+                }
+                _ => Some((*provider_name).to_string()),
+            },
+        )
+        .collect()
+}
+
+fn attribute_name_for_provider_name<'a>(
+    config: &'a AwsccSchemaConfig,
+    provider_name: &str,
+) -> Option<&'a str> {
+    config.schema.attributes.iter().find_map(|(name, attr)| {
+        (attr.provider_name.as_deref() == Some(provider_name)).then_some(name.as_str())
+    })
+}
+
+fn primary_identifier_segment(value: &Value) -> Option<String> {
     match value {
-        serde_json::Value::String(s) if !s.is_empty() => Some(s.clone()),
-        serde_json::Value::Number(n) => Some(n.to_string()),
-        serde_json::Value::Bool(b) => Some(b.to_string()),
+        Value::Concrete(ConcreteValue::String(value)) if !value.is_empty() => Some(value.clone()),
+        Value::Concrete(ConcreteValue::EnumIdentifier(value)) => Some(value.to_string()),
+        Value::Concrete(ConcreteValue::CanonicalEnum(value)) => Some(value.to_string()),
+        Value::Concrete(ConcreteValue::Int(value)) => Some(value.to_string()),
+        Value::Concrete(ConcreteValue::Float(value)) => Some(value.to_string()),
+        Value::Concrete(ConcreteValue::Bool(value)) => Some(value.to_string()),
         _ => None,
     }
 }
@@ -1172,7 +1225,7 @@ mod tests {
             .expect("IAM role create should report partial success");
 
         let CreateOutcome::PartialSuccess { state, diagnostic } = outcome else {
-            panic!("expected partial success when ARN cannot be synthesized");
+            panic!("expected partial success when primaryIdentifier cannot be canonicalized");
         };
         assert!(state.exists);
         assert_eq!(state.identifier.as_deref(), Some("flow-log-role"));
@@ -1180,10 +1233,10 @@ mod tests {
             !state.attributes.contains_key("arn"),
             "unknown ARN must not be published as a successful attribute"
         );
-        assert_eq!(diagnostic.missing_attributes(), &["arn".to_string()]);
+        assert_eq!(diagnostic.missing_attributes(), &["RoleName".to_string()]);
         assert_eq!(
             diagnostic.reason(),
-            "read-back missing synthesized attributes: arn"
+            "read-back missing primaryIdentifier attributes: RoleName"
         );
         assert!(
             !sts.saw_get_caller_identity.load(Ordering::SeqCst),
