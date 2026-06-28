@@ -2916,7 +2916,7 @@ pub fn {}() -> AwsccSchemaConfig {{
         ));
     }
 
-    // Determine name_attribute from primaryIdentifier:
+    // Determine unique_name_attribute from primaryIdentifier:
     // If the primary identifier points to a single user-settable (non-read-only) string property,
     // it's the name attribute used for unique name generation during create-before-destroy.
     if let Some(primary_ids) = &schema.primary_identifier
@@ -2935,7 +2935,7 @@ pub fn {}() -> AwsccSchemaConfig {{
             if is_string {
                 let attr_name = prop_path.to_snake_case();
                 body.push_str(&format!(
-                    "        .with_name_attribute(\"{}\")\n", // rust-lit-guard: allow (snake_case output cannot contain " or \\)
+                    "        .with_unique_name_attribute(\"{}\")\n", // rust-lit-guard: allow (snake_case output cannot contain " or \\)
                     attr_name
                 ));
             }

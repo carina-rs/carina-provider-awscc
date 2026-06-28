@@ -41,7 +41,8 @@ mod tests {
 
     fn assert_tag_change_plans_update(schema: ResourceSchema) {
         let resource_type = schema.resource_type.clone();
-        let resource_id = ResourceId::with_provider("awscc", resource_type.clone(), "test", None);
+        let resource_id =
+            ResourceId::with_provider_identity("awscc", resource_type.clone(), "test", None);
         let resources = vec![
             Resource::with_provider("awscc", resource_type, "test", None)
                 .with_attribute("tags", tags_value("new-name")),

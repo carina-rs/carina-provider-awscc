@@ -104,7 +104,7 @@ async fn read_vpc_endpoint(
     policy_document: serde_json::Value,
 ) -> indexmap::IndexMap<String, Value> {
     let provider = provider_with_mock(policy_document).await;
-    let id = ResourceId::with_provider("awscc", "ec2.VpcEndpoint", "gateway", None);
+    let id = ResourceId::with_provider_identity("awscc", "ec2.VpcEndpoint", "gateway", None);
 
     let read = Provider::read(&provider, &id, Some(VPC_ENDPOINT_ID), ReadRequest)
         .await

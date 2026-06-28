@@ -37,12 +37,12 @@ pub fn core_to_proto_resource_id(id: &CoreResourceId) -> ProtoResourceId {
     ProtoResourceId {
         provider: id.provider.clone(),
         resource_type: id.resource_type.clone(),
-        name: id.name.to_string(),
+        identity: id.identity_or_empty().to_string(),
     }
 }
 
 pub fn proto_to_core_resource_id(id: &ProtoResourceId) -> CoreResourceId {
-    CoreResourceId::with_provider(&id.provider, &id.resource_type, &id.name, None)
+    CoreResourceId::with_provider_name_compat(&id.provider, &id.resource_type, &id.identity, None)
 }
 
 // -- Value --
@@ -222,7 +222,7 @@ pub fn core_to_proto_directives(l: &CoreDirectives) -> ProtoDirectives {
 
 pub fn proto_to_core_resource(r: &ProtoResource) -> CoreResource {
     let mut resource =
-        CoreResource::with_provider(&r.id.provider, &r.id.resource_type, &r.id.name, None);
+        CoreResource::with_provider(&r.id.provider, &r.id.resource_type, &r.id.identity, None);
     resource.attributes = r
         .attributes
         .iter()
@@ -244,7 +244,7 @@ pub fn proto_to_core_resource(r: &ProtoResource) -> CoreResource {
 /// projection (carina#3181).
 pub fn proto_to_core_data_source(r: &ProtoResource) -> CoreDataSource {
     let mut data_source =
-        CoreDataSource::with_provider(&r.id.provider, &r.id.resource_type, &r.id.name, None);
+        CoreDataSource::with_provider(&r.id.provider, &r.id.resource_type, &r.id.identity, None);
     data_source.attributes = r
         .attributes
         .iter()
@@ -470,7 +470,7 @@ pub fn proto_to_core_schema(s: &ProtoResourceSchema) -> CoreResourceSchema {
         description: s.description.clone(),
         validator: None,
         kind,
-        name_attribute: s.name_attribute.clone(),
+        unique_name_attribute: s.unique_name_attribute.clone(),
         operation_config: s.operation_config.as_ref().map(|c| {
             carina_core::schema::OperationConfig {
                 delete_timeout_secs: c.delete_timeout_secs,
@@ -629,7 +629,7 @@ pub fn core_to_proto_schema(s: &CoreResourceSchema) -> ProtoResourceSchema {
             .collect(),
         description: s.description.clone(),
         kind,
-        name_attribute: s.name_attribute.clone(),
+        unique_name_attribute: s.unique_name_attribute.clone(),
         operation_config: s.operation_config.as_ref().map(|c| {
             carina_provider_protocol::OperationConfig {
                 delete_timeout_secs: c.delete_timeout_secs,

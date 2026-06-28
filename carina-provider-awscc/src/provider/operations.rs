@@ -29,7 +29,7 @@ impl AwsccProvider {
         name: &str,
         identifier: Option<&str>,
     ) -> ProviderResult<State> {
-        let id = ResourceId::with_provider("awscc", resource_type, name, None);
+        let id = ResourceId::with_provider_name_compat("awscc", resource_type, name, None);
 
         let config = get_schema_config(resource_type).ok_or_else(|| {
             ProviderError::internal(format!("Unknown resource type: {}", resource_type))
@@ -147,7 +147,7 @@ impl AwsccProvider {
                 match self
                     .read_resource(
                         &resource.id.resource_type,
-                        resource.id.name_str(),
+                        resource.id.identity_or_empty(),
                         Some(&identifier),
                     )
                     .await
@@ -229,7 +229,7 @@ impl AwsccProvider {
         let state = self
             .read_resource(
                 &resource.id.resource_type,
-                resource.id.name_str(),
+                resource.id.identity_or_empty(),
                 Some(&identifier),
             )
             .await?;
@@ -313,7 +313,7 @@ impl AwsccProvider {
         match outcome {
             WaitOutcome::Success { identifier } => {
                 let state = self
-                    .read_resource(&id.resource_type, id.name_str(), Some(&identifier))
+                    .read_resource(&id.resource_type, id.identity_or_empty(), Some(&identifier))
                     .await?;
                 let state = merge_update_desired_attributes(state, &desired, config);
                 Ok(UpdateOutcome::Success { state })
@@ -323,7 +323,7 @@ impl AwsccProvider {
                 status_message,
             } => {
                 match self
-                    .read_resource(&id.resource_type, id.name_str(), Some(&identifier))
+                    .read_resource(&id.resource_type, id.identity_or_empty(), Some(&identifier))
                     .await
                 {
                     Ok(state) => {
@@ -955,7 +955,7 @@ mod tests {
 
     fn partial_update_bucket_state() -> State {
         State::existing(
-            ResourceId::with_provider("awscc", "s3.Bucket", "partial_bucket", None),
+            ResourceId::with_provider_identity("awscc", "s3.Bucket", "partial_bucket", None),
             HashMap::from([(
                 "bucket_name".to_string(),
                 Value::Concrete(ConcreteValue::String("partial-bucket".to_string())),
