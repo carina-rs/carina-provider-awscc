@@ -154,7 +154,8 @@ mod tests {
 
     #[tokio::test]
     async fn normalize_state_keeps_api_enum_spellings_out_of_dsl_string_form() {
-        let id = ResourceId::with_provider("awscc", "ec2.SecurityGroupEgress", "test", None);
+        let id =
+            ResourceId::with_provider_identity("awscc", "ec2.SecurityGroupEgress", "test", None);
         let attrs = HashMap::from([(
             "ip_protocol".to_string(),
             Value::Concrete(ConcreteValue::String("-1".to_string())),
@@ -201,7 +202,8 @@ mod tests {
         )
         .expect("host should lift ip_protocol to CanonicalEnum");
 
-        let id = ResourceId::with_provider("awscc", "ec2.SecurityGroupEgress", "test", None);
+        let id =
+            ResourceId::with_provider_identity("awscc", "ec2.SecurityGroupEgress", "test", None);
         let attrs = HashMap::from([("ip_protocol".to_string(), canonical.clone())]);
         let mut current_states = HashMap::from([(id.clone(), State::existing(id.clone(), attrs))]);
 
@@ -218,7 +220,7 @@ mod tests {
 
     #[test]
     fn test_restore_unreturned_attrs_impl_create_only() {
-        let id = ResourceId::with_provider("awscc", "ec2.NatGateway", "test", None);
+        let id = ResourceId::with_provider_identity("awscc", "ec2.NatGateway", "test", None);
         let mut state = State::existing(id.clone(), HashMap::new());
         state.attributes.insert(
             "nat_gateway_id".to_string(),
@@ -248,7 +250,7 @@ mod tests {
 
     #[test]
     fn test_restore_unreturned_attrs_skips_non_awscc() {
-        let id = ResourceId::with_provider("aws", "s3.Bucket", "test", None);
+        let id = ResourceId::with_provider_identity("aws", "s3.Bucket", "test", None);
         let state = State::existing(id.clone(), HashMap::new());
 
         let mut current_states = HashMap::new();
@@ -269,7 +271,7 @@ mod tests {
 
     #[test]
     fn test_restore_unreturned_attrs_skips_already_present() {
-        let id = ResourceId::with_provider("awscc", "ec2.NatGateway", "test", None);
+        let id = ResourceId::with_provider_identity("awscc", "ec2.NatGateway", "test", None);
         let mut attrs = HashMap::new();
         attrs.insert(
             "subnet_id".to_string(),
@@ -300,7 +302,8 @@ mod tests {
 
     #[test]
     fn test_restore_unreturned_attrs_impl_non_create_only() {
-        let id = ResourceId::with_provider("awscc", "ec2.SecurityGroupEgress", "test", None);
+        let id =
+            ResourceId::with_provider_identity("awscc", "ec2.SecurityGroupEgress", "test", None);
         let mut state = State::existing(id.clone(), HashMap::new());
         state.attributes.insert(
             "ip_protocol".to_string(),
@@ -514,14 +517,8 @@ mod tests {
         name: &str,
         attrs: Vec<(&str, Value)>,
     ) -> (ResourceId, State) {
-        use carina_core::resource::ResourceName;
         use std::collections::BTreeSet;
-        let id = ResourceId {
-            provider: provider.to_string(),
-            resource_type: resource_type.to_string(),
-            name: ResourceName::Bound(name.to_string()),
-            provider_instance: None,
-        };
+        let id = ResourceId::with_provider_name_compat(provider, resource_type, name, None);
         let mut attributes = HashMap::new();
         for (k, v) in attrs {
             attributes.insert(k.to_string(), v);

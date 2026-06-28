@@ -312,8 +312,12 @@ impl Provider for AwsccProvider {
         let id = id.clone();
         let identifier = identifier.map(|s| s.to_string());
         Box::pin(async move {
-            self.read_resource(&id.resource_type, id.name_str(), identifier.as_deref())
-                .await
+            self.read_resource(
+                &id.resource_type,
+                id.identity_or_empty(),
+                identifier.as_deref(),
+            )
+            .await
         })
     }
 
@@ -329,7 +333,7 @@ impl Provider for AwsccProvider {
         }
         let id = resource.id.clone();
         Box::pin(async move {
-            self.read_resource(&id.resource_type, id.name_str(), None)
+            self.read_resource(&id.resource_type, id.identity_or_empty(), None)
                 .await
         })
     }
@@ -528,8 +532,12 @@ mod tests {
     #[tokio::test]
     async fn required_permissions_returns_cfn_handler_actions_for_known_resource() {
         let provider = provider_for_required_permissions_tests().await;
-        let id =
-            ResourceId::with_provider("awscc", "elasticloadbalancingv2.LoadBalancer", "test", None);
+        let id = ResourceId::with_provider_identity(
+            "awscc",
+            "elasticloadbalancingv2.LoadBalancer",
+            "test",
+            None,
+        );
 
         let permissions = Provider::required_permissions(&provider, &id, PlanOp::Create);
 
@@ -547,7 +555,7 @@ mod tests {
     #[tokio::test]
     async fn required_permissions_returns_empty_vec_for_unknown_resource() {
         let provider = provider_for_required_permissions_tests().await;
-        let id = ResourceId::with_provider("awscc", "example.Unknown", "test", None);
+        let id = ResourceId::with_provider_identity("awscc", "example.Unknown", "test", None);
 
         let permissions = Provider::required_permissions(&provider, &id, PlanOp::Create);
 
