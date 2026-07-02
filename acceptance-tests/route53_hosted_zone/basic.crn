@@ -7,7 +7,7 @@ provider awscc {
 }
 
 awscc.route53.HostedZone {
-  name = 'acceptance-test.example.com'
+  name = 'carina-acc-test-hosted-zone.carina-rs-test.com.'
 
   hosted_zone_config = {
     comment = 'Carina acceptance test hosted zone'
