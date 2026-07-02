@@ -47,9 +47,8 @@ awscc.s3.BucketPolicy {
         aws = reader_role.arn
       }
 
-      # Object-level '${bucket.arn}/*' is blocked on carina-rs/carina#3665; restore it when fixed.
-      action   = 's3:ListBucket'
-      resource = bucket.arn
+      action   = 's3:GetObject'
+      resource = "${bucket.arn}/*"
     }
   }
 }
