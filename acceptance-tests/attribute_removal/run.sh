@@ -26,15 +26,29 @@ ACTIVE_WORK_DIR=""
 ACTIVE_STEP1=""
 ACTIVE_STEP2=""
 
+# Swap a step config into the single carina target directory.
+# Args: source_crn work_dir
+swap_crn() {
+    local source_crn="$1"
+    local work_dir="$2"
+
+    cp "$source_crn" "$work_dir/main.crn"
+    prepare_work_dir "$work_dir"
+}
+
 signal_cleanup() {
     if [ -n "$ACTIVE_WORK_DIR" ] && [ -d "$ACTIVE_WORK_DIR" ]; then
         set +e
         echo ""
         echo "Interrupted. Cleaning up resources..."
-        cd "$ACTIVE_WORK_DIR" && "$CARINA_BIN" destroy --auto-approve "$ACTIVE_STEP2" 2>&1
-        cd "$ACTIVE_WORK_DIR" && "$CARINA_BIN" destroy --auto-approve "$ACTIVE_STEP1" 2>&1
-        cd "$ACTIVE_WORK_DIR" && "$CARINA_BIN" destroy --auto-approve "$ACTIVE_STEP2" 2>&1
-        cd "$ACTIVE_WORK_DIR" && "$CARINA_BIN" destroy --auto-approve "$ACTIVE_STEP1" 2>&1
+        swap_crn "$ACTIVE_STEP2" "$ACTIVE_WORK_DIR"
+        cd "$ACTIVE_WORK_DIR" && "$CARINA_BIN" destroy --auto-approve . 2>&1
+        swap_crn "$ACTIVE_STEP1" "$ACTIVE_WORK_DIR"
+        cd "$ACTIVE_WORK_DIR" && "$CARINA_BIN" destroy --auto-approve . 2>&1
+        swap_crn "$ACTIVE_STEP2" "$ACTIVE_WORK_DIR"
+        cd "$ACTIVE_WORK_DIR" && "$CARINA_BIN" destroy --auto-approve . 2>&1
+        swap_crn "$ACTIVE_STEP1" "$ACTIVE_WORK_DIR"
+        cd "$ACTIVE_WORK_DIR" && "$CARINA_BIN" destroy --auto-approve . 2>&1
         rm -rf "$ACTIVE_WORK_DIR"
         ACTIVE_WORK_DIR=""
     fi
@@ -47,13 +61,14 @@ run_step() {
     local work_dir="$1"
     local description="$2"
     local command="$3"
-    local crn_file="$4"
+    local source_crn="$4"
     local extra_args="${5:-}"
 
     printf "  %-55s " "$description"
+    swap_crn "$source_crn" "$work_dir"
 
     local output
-    if output=$(cd "$work_dir" && "$CARINA_BIN" $command $extra_args "$crn_file" 2>&1); then
+    if output=$(cd "$work_dir" && "$CARINA_BIN" $command $extra_args . 2>&1); then
         echo "OK"
         TOTAL_PASSED=$((TOTAL_PASSED + 1))
         return 0
@@ -68,13 +83,14 @@ run_step() {
 run_plan_verify() {
     local work_dir="$1"
     local description="$2"
-    local crn_file="$3"
+    local source_crn="$3"
 
     printf "  %-55s " "$description"
+    swap_crn "$source_crn" "$work_dir"
 
     local output
     local rc
-    output=$(cd "$work_dir" && "$CARINA_BIN" plan --detailed-exitcode "$crn_file" 2>&1) || rc=$?
+    output=$(cd "$work_dir" && "$CARINA_BIN" plan --detailed-exitcode . 2>&1) || rc=$?
     rc=${rc:-0}
 
     if [ $rc -eq 2 ]; then
@@ -109,17 +125,21 @@ destroy_work_dir() {
     # Disable set -e to ensure all destroy attempts run
     set +e
     echo "  Cleanup: destroying resources..."
-    if cd "$work_dir" && "$CARINA_BIN" destroy --auto-approve "$step2" 2>&1; then
+    swap_crn "$step2" "$work_dir"
+    if cd "$work_dir" && "$CARINA_BIN" destroy --auto-approve . 2>&1; then
         any_success=true
     fi
-    if cd "$work_dir" && "$CARINA_BIN" destroy --auto-approve "$step1" 2>&1; then
+    swap_crn "$step1" "$work_dir"
+    if cd "$work_dir" && "$CARINA_BIN" destroy --auto-approve . 2>&1; then
         any_success=true
     fi
     # Retry: resources may have dependencies that prevent deletion on first pass
-    if cd "$work_dir" && "$CARINA_BIN" destroy --auto-approve "$step2" 2>&1; then
+    swap_crn "$step2" "$work_dir"
+    if cd "$work_dir" && "$CARINA_BIN" destroy --auto-approve . 2>&1; then
         any_success=true
     fi
-    if cd "$work_dir" && "$CARINA_BIN" destroy --auto-approve "$step1" 2>&1; then
+    swap_crn "$step1" "$work_dir"
+    if cd "$work_dir" && "$CARINA_BIN" destroy --auto-approve . 2>&1; then
         any_success=true
     fi
     set -e
@@ -146,10 +166,6 @@ run_test() {
     local work_dir
     work_dir=$(mktemp -d)
 
-    # Inject provider source into .crn files
-    step1=$(inject_provider_source "$step1")
-    step2=$(inject_provider_source "$step2")
-
     # Register for signal cleanup
     ACTIVE_WORK_DIR="$work_dir"
     ACTIVE_STEP1="$step1"
@@ -162,7 +178,6 @@ run_test() {
     if ! run_step "$work_dir" "step1: apply initial (with attribute)" "apply" "$step1" "--auto-approve"; then
         destroy_work_dir "$work_dir" "$step2" "$step1"
         rm -rf "$work_dir"
-        rm -rf "$step1" "$step2"
         ACTIVE_WORK_DIR=""
         return 1
     fi
@@ -171,7 +186,6 @@ run_test() {
     if ! run_plan_verify "$work_dir" "step1: plan-verify initial" "$step1"; then
         destroy_work_dir "$work_dir" "$step2" "$step1"
         rm -rf "$work_dir"
-        rm -rf "$step1" "$step2"
         ACTIVE_WORK_DIR=""
         return 1
     fi
@@ -180,7 +194,6 @@ run_test() {
     if ! run_step "$work_dir" "step2: apply attribute removal" "apply" "$step2" "--auto-approve"; then
         destroy_work_dir "$work_dir" "$step2" "$step1"
         rm -rf "$work_dir"
-        rm -rf "$step1" "$step2"
         ACTIVE_WORK_DIR=""
         return 1
     fi
@@ -189,7 +202,6 @@ run_test() {
     if ! run_plan_verify "$work_dir" "step3: plan-verify after attribute removal" "$step2"; then
         destroy_work_dir "$work_dir" "$step2" "$step1"
         rm -rf "$work_dir"
-        rm -rf "$step1" "$step2"
         ACTIVE_WORK_DIR=""
         return 1
     fi
@@ -199,14 +211,12 @@ run_test() {
         echo "  WARNING: All destroy attempts failed. Preserving work dir for debugging:"
         echo "    $work_dir"
         TOTAL_FAILED=$((TOTAL_FAILED + 1))
-        rm -rf "$step1" "$step2"
         ACTIVE_WORK_DIR=""
         echo ""
         return 1
     fi
 
     rm -rf "$work_dir"
-    rm -rf "$step1" "$step2"
     ACTIVE_WORK_DIR=""
     echo ""
 }

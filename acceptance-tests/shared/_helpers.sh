@@ -77,11 +77,26 @@ inject_provider_source_dir() {
 TEST_PASSED=0
 TEST_FAILED=0
 
-# prepare_work_dir: Inject provider source into all .crn files in a work directory.
+# work_dir_initialized: Return 0 if carina init already prepared the work dir.
+# Args: work_dir
+work_dir_initialized() {
+    local work_dir="$1"
+    [ -d "$work_dir/.carina/providers" ] || [ -f "$work_dir/carina-backend.lock" ]
+}
+
+# prepare_work_dir: Inject provider source into all .crn files in a work directory
+# and initialize the work dir if needed.
 # Call this after copying .crn files to the work dir but before running carina commands.
 # Args: work_dir
 prepare_work_dir() {
-    inject_provider_source_dir "$1"
+    local work_dir="$1"
+
+    inject_provider_source_dir "$work_dir"
+    if work_dir_initialized "$work_dir"; then
+        return 0
+    fi
+
+    (cd "$work_dir" && "$CARINA_BIN" init . >/dev/null)
 }
 
 ACTIVE_WORK_DIR=""
@@ -92,7 +107,7 @@ cleanup() {
         cd "$ACTIVE_WORK_DIR"
         "$CARINA_BIN" destroy --auto-approve . 2>/dev/null || true
         "$CARINA_BIN" destroy --auto-approve . 2>/dev/null || true
-        rm -f carina.state.json carina.state.lock
+        rm -f carina.state.json carina-backend.lock carina-providers.lock
     fi
 }
 trap cleanup EXIT

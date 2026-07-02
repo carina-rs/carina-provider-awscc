@@ -10,33 +10,69 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-CARINA="cargo run --bin carina --"
-
-# Build provider binaries (not built by cargo run --bin carina since Phase 4)
-cargo build -p carina-provider-awscc --bin carina-provider-awscc --quiet 2>/dev/null || cargo build -p carina-provider-awscc --bin carina-provider-awscc
-cargo build -p carina-provider-aws --bin carina-provider-aws --quiet 2>/dev/null || cargo build -p carina-provider-aws --bin carina-provider-aws
 
 source "$SCRIPT_DIR/../shared/_helpers.sh"
 
-STEP1=$(inject_provider_source "$SCRIPT_DIR/step1.crn")
-STEP2=$(inject_provider_source "$SCRIPT_DIR/step2.crn")
-trap "rm -rf $STEP1 $STEP2" EXIT
+STEP1="$SCRIPT_DIR/step1.crn"
+STEP2="$SCRIPT_DIR/step2.crn"
+WORK_DIR=$(mktemp -d)
+trap 'rm -rf "$WORK_DIR"' EXIT
 
 PASS=0
 FAIL=0
 
+swap_crn() {
+    local source_crn="$1"
+    local work_dir="$2"
+
+    cp "$source_crn" "$work_dir/main.crn"
+    prepare_work_dir "$work_dir"
+}
+
 run_step() {
     local description="$1"
-    local command="$2"
+    local source_crn="$2"
     shift 2
 
     echo "── $description ──"
-    if eval "$command" "$@"; then
+    swap_crn "$source_crn" "$WORK_DIR"
+    if (cd "$WORK_DIR" && "$CARINA_BIN" "$@" .); then
         echo "  ✓ $description"
         PASS=$((PASS + 1))
     else
         echo "  ✗ $description"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+destroy_work_dir() {
+    local any_success=false
+
+    set +e
+    echo "── destroy (cleanup) ──"
+    swap_crn "$STEP2" "$WORK_DIR"
+    if (cd "$WORK_DIR" && "$CARINA_BIN" destroy --auto-approve . 2>&1); then
+        any_success=true
+    fi
+    swap_crn "$STEP1" "$WORK_DIR"
+    if (cd "$WORK_DIR" && "$CARINA_BIN" destroy --auto-approve . 2>&1); then
+        any_success=true
+    fi
+    swap_crn "$STEP2" "$WORK_DIR"
+    if (cd "$WORK_DIR" && "$CARINA_BIN" destroy --auto-approve . 2>&1); then
+        any_success=true
+    fi
+    swap_crn "$STEP1" "$WORK_DIR"
+    if (cd "$WORK_DIR" && "$CARINA_BIN" destroy --auto-approve . 2>&1); then
+        any_success=true
+    fi
+    set -e
+
+    if [ "$any_success" = true ]; then
+        echo "  ✓ destroy (cleanup)"
+        PASS=$((PASS + 1))
+    else
+        echo "  ✗ destroy (cleanup)"
         FAIL=$((FAIL + 1))
     fi
 }
@@ -48,7 +84,7 @@ echo "════════════════════════�
 echo ""
 
 # Step 1: Apply initial state (VPC + SG + Ingress)
-run_step "apply step1 (create VPC + subnet)" "$CARINA apply --auto-approve $STEP1"
+run_step "apply step1 (create VPC + subnet)" "$STEP1" apply --auto-approve
 
 # Step 2: Plan with changed group_description
 # The plan should show:
@@ -56,7 +92,8 @@ run_step "apply step1 (create VPC + subnet)" "$CARINA apply --auto-approve $STEP
 #   ~ ingress rule (cascading update)
 echo ""
 echo "── plan step2 (expect cascade) ──"
-PLAN_OUTPUT=$($CARINA plan "$STEP2" 2>&1) || true
+swap_crn "$STEP2" "$WORK_DIR"
+PLAN_OUTPUT=$(cd "$WORK_DIR" && "$CARINA_BIN" plan . 2>&1) || true
 echo "$PLAN_OUTPUT"
 
 if echo "$PLAN_OUTPUT" | grep -q "create before destroy"; then
@@ -68,12 +105,13 @@ else
 fi
 
 # Step 2: Apply (VPC CBD replace + subnet replace)
-run_step "apply step2 (replace VPC + subnet)" "$CARINA apply --auto-approve $STEP2"
+run_step "apply step2 (replace VPC + subnet)" "$STEP2" apply --auto-approve
 
 # Step 2: Plan verify (should show no changes after apply)
 echo ""
 echo "── plan-verify step2 ──"
-VERIFY_OUTPUT=$($CARINA plan "$STEP2" 2>&1) || true
+swap_crn "$STEP2" "$WORK_DIR"
+VERIFY_OUTPUT=$(cd "$WORK_DIR" && "$CARINA_BIN" plan . 2>&1) || true
 echo "$VERIFY_OUTPUT"
 
 if echo "$VERIFY_OUTPUT" | grep -q "No changes"; then
@@ -85,7 +123,7 @@ else
 fi
 
 # Cleanup: destroy
-run_step "destroy (cleanup)" "$CARINA destroy --auto-approve $STEP2"
+destroy_work_dir
 
 echo ""
 echo "════════════════════════════════════════"
