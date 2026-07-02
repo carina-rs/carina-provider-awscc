@@ -1,0 +1,58 @@
+# CloudFront Distribution - Basic test
+#
+# Tests: disabled minimal distribution with a custom origin and PriceClass_100.
+# This fixture has a custom run.sh because deploy/delete commonly takes 5-15 minutes.
+
+provider awscc {
+  region = aws.Region.ap_northeast_1
+}
+
+awscc.cloudfront.Distribution {
+  distribution_config = {
+    comment         = 'Carina acceptance test distribution'
+    enabled         = false
+    price_class     = price_class_100
+    http_version    = http2
+    ipv6_enabled    = false
+
+    default_cache_behavior = {
+      target_origin_id       = 'example-origin'
+      viewer_protocol_policy = allow_all
+      allowed_methods        = [get, head]
+      cached_methods         = [get, head]
+
+      forwarded_values = {
+        query_string = false
+        cookies = {
+          forward = none
+        }
+      }
+    }
+
+    origin {
+      id          = 'example-origin'
+      domain_name = 'example.com'
+
+      custom_origin_config = {
+        http_port              = 80
+        https_port             = 443
+        origin_protocol_policy = http_only
+        origin_ssl_protocols   = [tlsv1_2]
+      }
+    }
+
+    restrictions = {
+      geo_restriction = {
+        restriction_type = none
+      }
+    }
+
+    viewer_certificate = {
+      cloud_front_default_certificate = true
+    }
+  }
+
+  tags = {
+    Environment = 'acceptance-test'
+  }
+}

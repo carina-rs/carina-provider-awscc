@@ -1,0 +1,20 @@
+# Route53 HostedZone - Basic test
+#
+# Tests: public hosted zone name, config, and hosted zone tags.
+
+provider awscc {
+  region = aws.Region.ap_northeast_1
+}
+
+awscc.route53.HostedZone {
+  name = 'acceptance-test.example.com'
+
+  hosted_zone_config = {
+    comment = 'Carina acceptance test hosted zone'
+  }
+
+  hosted_zone_tag {
+    key   = 'Environment'
+    value = 'acceptance-test'
+  }
+}

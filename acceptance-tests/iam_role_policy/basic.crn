@@ -1,0 +1,42 @@
+# IAM RolePolicy - Basic test
+#
+# Tests: standalone inline role policy attached to a role in the same fixture.
+
+provider awscc {
+  region = aws.Region.ap_northeast_1
+}
+
+let role = awscc.iam.Role {
+  role_name_prefix = 'carina-acc-test-'
+
+  assume_role_policy_document = {
+    version = aws.iam.PolicyDocument.Version.2012_10_17
+    statement {
+      effect = aws.iam.PolicyDocument.Statement.Effect.allow
+
+      principal = {
+        service = 'lambda.amazonaws.com'
+      }
+
+      action = 'sts:AssumeRole'
+    }
+  }
+
+  tags = {
+    Environment = 'acceptance-test'
+  }
+}
+
+awscc.iam.RolePolicy {
+  role_name   = role.role_name
+  policy_name = 'acceptance-test-role-policy'
+
+  policy_document = {
+    version = aws.iam.PolicyDocument.Version.2012_10_17
+    statement {
+      effect   = aws.iam.PolicyDocument.Statement.Effect.allow
+      action   = 'logs:CreateLogGroup'
+      resource = '*'
+    }
+  }
+}

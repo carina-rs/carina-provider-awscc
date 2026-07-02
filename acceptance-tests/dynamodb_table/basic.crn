@@ -1,0 +1,26 @@
+# DynamoDB Table - Basic test
+#
+# Tests: on-demand billing, hash key schema, and tags.
+
+provider awscc {
+  region = aws.Region.ap_northeast_1
+}
+
+awscc.dynamodb.Table {
+  table_name   = 'carina-acc-test-table'
+  billing_mode = pay_per_request
+
+  attribute_definition {
+    attribute_name = 'pk'
+    attribute_type = s
+  }
+
+  key_schema {
+    attribute_name = 'pk'
+    key_type       = hash
+  }
+
+  tags = {
+    Environment = 'acceptance-test'
+  }
+}

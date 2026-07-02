@@ -1,0 +1,54 @@
+# S3 BucketPolicy - Basic test
+#
+# Tests: bucket policy attached to a generated S3 bucket.
+
+provider awscc {
+  region = aws.Region.ap_northeast_1
+}
+
+let bucket = awscc.s3.Bucket {
+  bucket_name_prefix = 'carina-acc-test-'
+
+  directives {
+    force_delete = true
+  }
+}
+
+let reader_role = awscc.iam.Role {
+  role_name_prefix = 'carina-acc-test-'
+
+  assume_role_policy_document = {
+    version = aws.iam.PolicyDocument.Version.2012_10_17
+    statement {
+      effect = aws.iam.PolicyDocument.Statement.Effect.allow
+
+      principal = {
+        service = 'lambda.amazonaws.com'
+      }
+
+      action = 'sts:AssumeRole'
+    }
+  }
+
+  tags = {
+    Environment = 'acceptance-test'
+  }
+}
+
+awscc.s3.BucketPolicy {
+  bucket = bucket.bucket_name
+
+  policy_document = {
+    version = aws.iam.PolicyDocument.Version.2012_10_17
+    statement {
+      effect = aws.iam.PolicyDocument.Statement.Effect.allow
+
+      principal = {
+        aws = reader_role.arn
+      }
+
+      action   = 's3:GetObject'
+      resource = '${bucket.arn}/*'
+    }
+  }
+}

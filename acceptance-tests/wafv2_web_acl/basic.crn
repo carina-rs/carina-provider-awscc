@@ -1,0 +1,27 @@
+# WAFv2 WebACL - Basic test
+#
+# Tests: REGIONAL scope, allow default action, visibility config, and tags.
+
+provider awscc {
+  region = aws.Region.ap_northeast_1
+}
+
+awscc.wafv2.WebAcl {
+  name        = 'carina-acc-test-web-acl'
+  description = 'Carina acceptance test web ACL'
+  scope       = regional
+
+  default_action = {
+    allow = {}
+  }
+
+  visibility_config = {
+    cloud_watch_metrics_enabled = false
+    metric_name                 = 'carinaAccTestWebAcl'
+    sampled_requests_enabled    = false
+  }
+
+  tags = {
+    Environment = 'acceptance-test'
+  }
+}

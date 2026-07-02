@@ -1,0 +1,29 @@
+# ElasticLoadBalancingV2 TargetGroup - Basic test
+#
+# Tests: IP target type target group in a VPC.
+
+provider awscc {
+  region = aws.Region.ap_northeast_1
+}
+
+let vpc = awscc.ec2.Vpc {
+  cidr_block = '10.21.0.0/16'
+
+  tags = {
+    Environment = 'acceptance-test'
+  }
+}
+
+awscc.elasticloadbalancingv2.TargetGroup {
+  name              = 'carina-acc-test-tg'
+  protocol          = http
+  port              = 80
+  target_type       = ip
+  ip_address_type   = ipv4
+  vpc_id            = vpc.vpc_id
+  health_check_path = '/'
+
+  tags = {
+    Environment = 'acceptance-test'
+  }
+}

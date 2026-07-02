@@ -1,0 +1,20 @@
+# ECS Cluster - Basic test
+#
+# Tests: cluster_name, cluster_settings, and tags.
+
+provider awscc {
+  region = aws.Region.ap_northeast_1
+}
+
+awscc.ecs.Cluster {
+  cluster_name = 'carina-acc-test-cluster'
+
+  cluster_setting {
+    name  = 'containerInsights'
+    value = disabled
+  }
+
+  tags = {
+    Environment = 'acceptance-test'
+  }
+}

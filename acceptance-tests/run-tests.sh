@@ -247,6 +247,30 @@ deep_cleanup_account() {
     local account="$1"
     local found=0
 
+    # 0. Delete orphaned ELBv2 load balancers and target groups before VPC cleanup
+    local load_balancers
+    load_balancers=$(with_account_creds "$account" aws elbv2 describe-load-balancers \
+        --query 'LoadBalancers[?contains(LoadBalancerName, `acceptance-test`) || contains(LoadBalancerName, `carina-acc`)].LoadBalancerArn' --output text 2>/dev/null)
+    for lb_arn in $load_balancers; do
+        [ -z "$lb_arn" ] && continue
+        found=$((found + 1))
+        echo "  Cleaning ELBv2 load balancer $lb_arn..."
+        with_account_creds "$account" aws elbv2 delete-load-balancer --load-balancer-arn "$lb_arn" 2>/dev/null || true
+    done
+    if [ -n "$load_balancers" ] && [ "$load_balancers" != "None" ]; then
+        sleep 15
+    fi
+
+    local target_groups
+    target_groups=$(with_account_creds "$account" aws elbv2 describe-target-groups \
+        --query 'TargetGroups[?contains(TargetGroupName, `acceptance-test`) || contains(TargetGroupName, `carina-acc`)].TargetGroupArn' --output text 2>/dev/null)
+    for tg_arn in $target_groups; do
+        [ -z "$tg_arn" ] && continue
+        found=$((found + 1))
+        echo "  Cleaning ELBv2 target group $tg_arn..."
+        with_account_creds "$account" aws elbv2 delete-target-group --target-group-arn "$tg_arn" 2>/dev/null || true
+    done
+
     # 1. Delete non-default VPCs and all dependencies
     local vpcs
     vpcs=$(with_account_creds "$account" aws ec2 describe-vpcs \
@@ -359,7 +383,70 @@ deep_cleanup_account() {
         with_account_creds "$account" aws s3 rb "s3://$bucket" --force 2>/dev/null || true
     done
 
-    # 3. Delete orphaned IAM roles
+    # 3. Delete orphaned DynamoDB tables
+    local ddb_tables
+    ddb_tables=$(with_account_creds "$account" aws dynamodb list-tables \
+        --query 'TableNames[?starts_with(@, `carina-acc-test`) || starts_with(@, `acceptance-test`)]' --output text 2>/dev/null)
+    for table in $ddb_tables; do
+        [ -z "$table" ] && continue
+        found=$((found + 1))
+        echo "  Cleaning DynamoDB table $table..."
+        with_account_creds "$account" aws dynamodb delete-table --table-name "$table" 2>/dev/null || true
+    done
+
+    # 4. Delete orphaned ECS clusters
+    local ecs_clusters
+    ecs_clusters=$(with_account_creds "$account" aws ecs list-clusters \
+        --query 'clusterArns[?contains(@, `acceptance-test`) || contains(@, `carina-acc`)]' --output text 2>/dev/null)
+    for cluster_arn in $ecs_clusters; do
+        [ -z "$cluster_arn" ] && continue
+        found=$((found + 1))
+        echo "  Cleaning ECS cluster $cluster_arn..."
+        with_account_creds "$account" aws ecs delete-cluster --cluster "$cluster_arn" 2>/dev/null || true
+    done
+
+    # 5. Delete orphaned Route 53 hosted zones
+    local hosted_zones
+    hosted_zones=$(with_account_creds "$account" aws route53 list-hosted-zones \
+        --query 'HostedZones[?contains(Name, `acceptance-test`) || contains(Name, `carina-acc`)].Id' --output text 2>/dev/null)
+    for zone_id in $hosted_zones; do
+        [ -z "$zone_id" ] && continue
+        found=$((found + 1))
+        echo "  Cleaning Route 53 hosted zone $zone_id..."
+        with_account_creds "$account" aws route53 delete-hosted-zone --id "$zone_id" 2>/dev/null || true
+    done
+
+    # 6. Delete orphaned regional WAFv2 web ACLs
+    local web_acls
+    web_acls=$(with_account_creds "$account" aws wafv2 list-web-acls --scope REGIONAL \
+        --query 'WebACLs[?contains(Name, `acceptance-test`) || contains(Name, `carina-acc`)].[Name,Id,LockToken]' --output text 2>/dev/null)
+    while read -r acl_name acl_id lock_token; do
+        [ -z "$acl_name" ] && continue
+        found=$((found + 1))
+        echo "  Cleaning WAFv2 web ACL $acl_name..."
+        with_account_creds "$account" aws wafv2 delete-web-acl \
+            --name "$acl_name" --scope REGIONAL --id "$acl_id" --lock-token "$lock_token" 2>/dev/null || true
+    done <<< "$web_acls"
+
+    # 7. Delete orphaned IAM OIDC providers tagged by acceptance tests
+    local oidc_providers
+    oidc_providers=$(with_account_creds "$account" aws iam list-open-id-connect-providers \
+        --query 'OpenIDConnectProviderList[*].Arn' --output text 2>/dev/null)
+    for provider_arn in $oidc_providers; do
+        [ -z "$provider_arn" ] && continue
+        local provider_tags
+        provider_tags=$(with_account_creds "$account" aws iam list-open-id-connect-provider-tags \
+            --open-id-connect-provider-arn "$provider_arn" \
+            --query 'Tags[?Key==`Environment` && Value==`acceptance-test`].Key' --output text 2>/dev/null)
+        if [ -z "$provider_tags" ] || [ "$provider_tags" = "None" ]; then
+            continue
+        fi
+        found=$((found + 1))
+        echo "  Cleaning IAM OIDC provider $provider_arn..."
+        with_account_creds "$account" aws iam delete-open-id-connect-provider --open-id-connect-provider-arn "$provider_arn" 2>/dev/null || true
+    done
+
+    # 8. Delete orphaned IAM roles
     local roles
     roles=$(with_account_creds "$account" aws iam list-roles \
         --query 'Roles[?contains(RoleName, `acceptance-test`) || contains(RoleName, `carina-acc`)].RoleName' --output text 2>/dev/null)
@@ -375,10 +462,61 @@ deep_cleanup_account() {
             [ -z "$policy_arn" ] && continue
             with_account_creds "$account" aws iam detach-role-policy --role-name "$role" --policy-arn "$policy_arn" 2>/dev/null || true
         done
+        local inline_policies
+        inline_policies=$(with_account_creds "$account" aws iam list-role-policies --role-name "$role" \
+            --query 'PolicyNames[*]' --output text 2>/dev/null)
+        for policy_name in $inline_policies; do
+            [ -z "$policy_name" ] && continue
+            with_account_creds "$account" aws iam delete-role-policy --role-name "$role" --policy-name "$policy_name" 2>/dev/null || true
+        done
         with_account_creds "$account" aws iam delete-role --role-name "$role" 2>/dev/null || true
     done
 
-    # 4. Delete orphaned log groups
+    # 9. Delete orphaned IAM customer managed policies
+    local iam_policies
+    iam_policies=$(with_account_creds "$account" aws iam list-policies --scope Local \
+        --query 'Policies[?contains(PolicyName, `acceptance-test`) || contains(PolicyName, `carina-acc`)].Arn' --output text 2>/dev/null)
+    for policy_arn in $iam_policies; do
+        [ -z "$policy_arn" ] && continue
+        found=$((found + 1))
+        echo "  Cleaning IAM policy $policy_arn..."
+
+        local attached_roles
+        attached_roles=$(with_account_creds "$account" aws iam list-entities-for-policy --policy-arn "$policy_arn" \
+            --query 'PolicyRoles[*].RoleName' --output text 2>/dev/null)
+        for role_name in $attached_roles; do
+            [ -z "$role_name" ] && continue
+            with_account_creds "$account" aws iam detach-role-policy --role-name "$role_name" --policy-arn "$policy_arn" 2>/dev/null || true
+        done
+
+        local attached_users
+        attached_users=$(with_account_creds "$account" aws iam list-entities-for-policy --policy-arn "$policy_arn" \
+            --query 'PolicyUsers[*].UserName' --output text 2>/dev/null)
+        for user_name in $attached_users; do
+            [ -z "$user_name" ] && continue
+            with_account_creds "$account" aws iam detach-user-policy --user-name "$user_name" --policy-arn "$policy_arn" 2>/dev/null || true
+        done
+
+        local attached_groups
+        attached_groups=$(with_account_creds "$account" aws iam list-entities-for-policy --policy-arn "$policy_arn" \
+            --query 'PolicyGroups[*].GroupName' --output text 2>/dev/null)
+        for group_name in $attached_groups; do
+            [ -z "$group_name" ] && continue
+            with_account_creds "$account" aws iam detach-group-policy --group-name "$group_name" --policy-arn "$policy_arn" 2>/dev/null || true
+        done
+
+        local policy_versions
+        policy_versions=$(with_account_creds "$account" aws iam list-policy-versions --policy-arn "$policy_arn" \
+            --query 'Versions[?IsDefaultVersion==`false`].VersionId' --output text 2>/dev/null)
+        for version_id in $policy_versions; do
+            [ -z "$version_id" ] && continue
+            with_account_creds "$account" aws iam delete-policy-version --policy-arn "$policy_arn" --version-id "$version_id" 2>/dev/null || true
+        done
+
+        with_account_creds "$account" aws iam delete-policy --policy-arn "$policy_arn" 2>/dev/null || true
+    done
+
+    # 10. Delete orphaned log groups
     local log_groups
     log_groups=$(with_account_creds "$account" aws logs describe-log-groups \
         --log-group-name-prefix "/acceptance-test/" \
@@ -390,7 +528,7 @@ deep_cleanup_account() {
         with_account_creds "$account" aws logs delete-log-group --log-group-name "$lg" 2>/dev/null || true
     done
 
-    # 5. Delete transit gateways
+    # 11. Delete transit gateways
     local tgws
     tgws=$(with_account_creds "$account" aws ec2 describe-transit-gateways \
         --filters "Name=state,Values=available,pending" \
@@ -411,7 +549,7 @@ deep_cleanup_account() {
         with_account_creds "$account" aws ec2 delete-transit-gateway --transit-gateway-id "$tgw_id" 2>/dev/null || true
     done
 
-    # 6. Release Elastic IPs not associated with anything
+    # 12. Release Elastic IPs not associated with anything
     local eips
     eips=$(with_account_creds "$account" aws ec2 describe-addresses \
         --query 'Addresses[?AssociationId==null].AllocationId' --output text 2>/dev/null)
@@ -440,7 +578,7 @@ echo ""
 
 # CARINA_BIN can be set externally (e.g., when running from the monorepo).
 # If not set, look for it in common locations.
-if [ -z "$CARINA_BIN" ]; then
+if [ -z "${CARINA_BIN:-}" ]; then
     # Prefer release build (WASM JIT is much faster with release)
     if [ -f "$PROJECT_ROOT/../carina/target/release/carina" ]; then
         CARINA_BIN="$PROJECT_ROOT/../carina/target/release/carina"
