@@ -14,8 +14,14 @@
 #
 # Tests:
 #   iam_role                      - Replacement with temporary name (name_attribute + other create-only)
-#   ec2_vpc                       - Replacement without temporary name (no name_attribute)
-#   ec2_transit_gateway_attachment - Replacement via transit_gateway_id change (create-only property)
+#   ec2_vpc                       - Replacement succeeds for name-free Coexisting resource
+#   ec2_transit_gateway_attachment - Replacement succeeds for Coexisting TGW/VPC pair change
+#
+# The ec2_vpc and ec2_transit_gateway_attachment cases cover the name-free CBD
+# semantics implemented for carina-rs/carina#3667. ec2.Vpc replacements can
+# coexist directly. ec2.TransitGatewayAttachment replacements change the
+# (transit gateway, VPC) pair, and AWS allows a VPC to have multiple transit
+# gateway attachments during create_before_destroy.
 #
 # Filter (optional): substring to match test names (e.g. "iam_role", "ec2_vpc", "ec2_transit")
 
@@ -151,6 +157,72 @@ assert_identifiers() {
     fi
 }
 
+run_plan_expect_replace() {
+    local work_dir="$1"
+    local description="$2"
+
+    printf "  %-55s " "$description"
+
+    local output
+    local rc=0
+    output=$(cd "$work_dir" && with_account_creds "$CARINA_BIN" plan --detailed-exitcode . 2>&1) || rc=$?
+
+    if [ $rc -ne 2 ]; then
+        echo "FAIL"
+        echo "  ERROR: expected replacement plan with exit code 2, got $rc:"
+        echo "  $output"
+        TOTAL_FAILED=$((TOTAL_FAILED + 1))
+        return 1
+    fi
+
+    if ! grep -Eq "must be replaced|[1-9][0-9]* to replace" <<< "$output"; then
+        echo "FAIL"
+        echo "  ERROR: plan exited with changes but did not show a replacement:"
+        echo "  $output"
+        TOTAL_FAILED=$((TOTAL_FAILED + 1))
+        return 1
+    fi
+
+    echo "OK"
+    TOTAL_PASSED=$((TOTAL_PASSED + 1))
+    return 0
+}
+
+assert_ec2_vpc_state() {
+    local work_dir="$1"
+    local description="$2"
+    local expected_cidr="$3"
+
+    printf "  %-55s " "$description"
+
+    local summary
+    if ! summary=$(jq -r --arg cidr "$expected_cidr" '
+        [.resources[] | select(.resource_type == "ec2.Vpc")] as $vpcs
+        | if (($vpcs | length) == 1 and $vpcs[0].attributes.cidr_block == $cidr) then
+            "ok"
+          else
+            "count=\($vpcs | length) cidrs=\($vpcs | map(.attributes.cidr_block // "<missing>") | join(","))"
+          end
+    ' "$work_dir/carina.state.json" 2>&1); then
+        echo "FAIL"
+        echo "  ERROR: could not inspect state:"
+        echo "  $summary"
+        TOTAL_FAILED=$((TOTAL_FAILED + 1))
+        return 1
+    fi
+
+    if [ "$summary" = "ok" ]; then
+        echo "OK"
+        TOTAL_PASSED=$((TOTAL_PASSED + 1))
+        return 0
+    fi
+
+    echo "FAIL"
+    echo "  ERROR: expected exactly 1 ec2.Vpc with cidr_block=$expected_cidr, got $summary"
+    TOTAL_FAILED=$((TOTAL_FAILED + 1))
+    return 1
+}
+
 run_plan_verify() {
     local work_dir="$1"
     local description="$2"
@@ -273,6 +345,14 @@ run_test() {
     # Swap in step2 config (providers are the same, lock already present)
     swap_crn "$step2" "$work_dir"
 
+    # Step 2a: Plan modified config and verify it is a replacement
+    if ! run_plan_expect_replace "$work_dir" "step2: plan replace"; then
+        destroy_work_dir "$work_dir"
+        rm -rf "$work_dir"
+        ACTIVE_WORK_DIR=""
+        return 1
+    fi
+
     # Step 2: Apply modified config (triggers create_before_destroy replacement)
     if ! run_step "$work_dir" "step2: apply replace (create_before_destroy)" "apply" "--auto-approve"; then
         destroy_work_dir "$work_dir"
@@ -287,6 +367,14 @@ run_test() {
 
     # Assert identifiers changed (create_before_destroy should replace at least one resource)
     if ! assert_identifiers "assert: identifiers changed after replace" "$ids_after_step1" "$ids_after_step2" "different"; then
+        destroy_work_dir "$work_dir"
+        rm -rf "$work_dir"
+        ACTIVE_WORK_DIR=""
+        return 1
+    fi
+
+    # Assert final state has only the replacement VPC
+    if [ "$test_name" = "ec2_vpc" ] && ! assert_ec2_vpc_state "$work_dir" "assert: one VPC with new CIDR" "10.201.0.0/16"; then
         destroy_work_dir "$work_dir"
         rm -rf "$work_dir"
         ACTIVE_WORK_DIR=""
@@ -327,19 +415,19 @@ run_test "iam_role" \
     "$SCRIPT_DIR/iam_role_step2.crn" \
     "Test 1: IAM Role (temporary name generation, can_rename=false)"
 
-# Test 2: EC2 VPC - replacement WITHOUT temporary name
-# No name_attribute, cidr_block is create-only
+# Test 2: EC2 VPC - CBD succeeds for Coexisting name-free replacement
+# ec2.Vpc has no unique-name attribute, but replacements can coexist.
 run_test "ec2_vpc" \
     "$SCRIPT_DIR/ec2_vpc_step1.crn" \
     "$SCRIPT_DIR/ec2_vpc_step2.crn" \
-    "Test 2: EC2 VPC (no name_attribute, no temporary name)"
+    "Test 2: EC2 VPC (coexisting name-free replacement)"
 
-# Test 3: EC2 Transit Gateway Attachment - replacement via transit_gateway_id change
-# transit_gateway_id is create-only; changing it forces replacement
+# Test 3: EC2 Transit Gateway Attachment - Coexisting TGW/VPC pair replacement
+# transit_gateway_id is create-only; changing it forces replacement to a new pair.
 run_test "ec2_transit_gateway_attachment" \
     "$SCRIPT_DIR/ec2_transit_gateway_attachment_step1.crn" \
     "$SCRIPT_DIR/ec2_transit_gateway_attachment_step2.crn" \
-    "Test 3: EC2 Transit Gateway Attachment (transit_gateway_id change)"
+    "Test 3: EC2 Transit Gateway Attachment (coexisting TGW/VPC pair replacement)"
 
 echo "════════════════════════════════════════"
 echo "Total: $TOTAL_PASSED passed, $TOTAL_FAILED failed"

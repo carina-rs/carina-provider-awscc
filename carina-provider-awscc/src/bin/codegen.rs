@@ -237,6 +237,32 @@ struct EnumInfo {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum UniqueNameReplacementClass {
+    Coexisting,
+}
+
+const UNIQUE_NAME_REPLACEMENT_CLASSES: &[(&str, UniqueNameReplacementClass)] = &[
+    ("ec2.Vpc", UniqueNameReplacementClass::Coexisting),
+    // TransitGatewayAttachment replacements are driven by create-only
+    // transit_gateway_id/vpc_id changes. Any reachable replacement targets a
+    // different (transit gateway, VPC) pair than the original; AWS allows a VPC
+    // to attach to multiple transit gateways simultaneously, so the new
+    // attachment can coexist during create_before_destroy. Cascade-driven
+    // replacements also change the pair because the upstream TGW/VPC id changes.
+    (
+        "ec2.TransitGatewayAttachment",
+        UniqueNameReplacementClass::Coexisting,
+    ),
+];
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum UniqueNameEmission {
+    Attribute(String),
+    Coexisting,
+    Conflicting,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ArnEmitChoice {
     PerKind(&'static ArnValidation),
     ServicePrefix(&'static str),
@@ -757,6 +783,64 @@ fn dsl_resource_name_from_type(type_name: &str) -> Result<String> {
     // "Eip") rather than shouty residue.
     let resource = parts[2].to_snake_case().to_pascal_case();
     Ok(format!("{}.{}", service, resource))
+}
+
+fn unique_name_replacement_class(resource_type_name: &str) -> Option<UniqueNameReplacementClass> {
+    UNIQUE_NAME_REPLACEMENT_CLASSES
+        .iter()
+        .find_map(|(name, class)| (*name == resource_type_name).then_some(*class))
+}
+
+fn derive_unique_name_attribute(schema: &CfnSchema) -> Option<String> {
+    let primary_ids = schema.primary_identifier.as_ref()?;
+    if primary_ids.len() != 1 {
+        return None;
+    }
+
+    let prop_path = primary_ids[0].trim_start_matches("/properties/");
+    let is_read_only = schema
+        .read_only_properties
+        .iter()
+        .map(|p| p.trim_start_matches("/properties/"))
+        .any(|p| p == prop_path);
+    if is_read_only {
+        return None;
+    }
+
+    let prop = schema.properties.get(prop_path)?;
+    let is_string = prop
+        .prop_type
+        .as_ref()
+        .and_then(TypeValue::as_str)
+        .map(|t| t == "string")
+        .unwrap_or(false);
+    is_string.then(|| prop_path.to_snake_case())
+}
+
+fn derive_unique_name_emission(resource_type_name: &str, schema: &CfnSchema) -> UniqueNameEmission {
+    if let Some(attribute) = derive_unique_name_attribute(schema) {
+        return UniqueNameEmission::Attribute(attribute);
+    }
+
+    match unique_name_replacement_class(resource_type_name) {
+        Some(UniqueNameReplacementClass::Coexisting) => UniqueNameEmission::Coexisting,
+        None => UniqueNameEmission::Conflicting,
+    }
+}
+
+fn emit_unique_name_builder(code: &mut String, emission: UniqueNameEmission) {
+    match emission {
+        UniqueNameEmission::Attribute(attribute) => {
+            code.push_str(&format!(
+                "        .with_unique_name_attribute({})\n",
+                rust_lit(&attribute)
+            ));
+        }
+        UniqueNameEmission::Coexisting => {
+            code.push_str("        .with_coexisting_replacement()\n");
+        }
+        UniqueNameEmission::Conflicting => {}
+    }
 }
 
 /// Build the `dsl_aliases: ...` Rust source code for a `StringEnum`'s
@@ -2916,31 +3000,7 @@ pub fn {}() -> AwsccSchemaConfig {{
         ));
     }
 
-    // Determine unique_name_attribute from primaryIdentifier:
-    // If the primary identifier points to a single user-settable (non-read-only) string property,
-    // it's the name attribute used for unique name generation during create-before-destroy.
-    if let Some(primary_ids) = &schema.primary_identifier
-        && primary_ids.len() == 1
-    {
-        let prop_path = primary_ids[0].trim_start_matches("/properties/");
-        if !read_only.contains(prop_path)
-            && let Some(prop) = schema.properties.get(prop_path)
-        {
-            let is_string = prop
-                .prop_type
-                .as_ref()
-                .and_then(|t| t.as_str())
-                .map(|t| t == "string")
-                .unwrap_or(false);
-            if is_string {
-                let attr_name = prop_path.to_snake_case();
-                body.push_str(&format!(
-                    "        .with_unique_name_attribute(\"{}\")\n", // rust-lit-guard: allow (snake_case output cannot contain " or \\)
-                    attr_name
-                ));
-            }
-        }
-    }
+    emit_unique_name_builder(&mut body, derive_unique_name_emission(&schema_name, schema));
 
     // Per-resource operational config for resources with slow CloudControl operations.
     let op_config = operation_config_for_type(type_name);
@@ -6493,6 +6553,95 @@ mod tests {
             "raw Rust string literal emission site(s) must use rust_lit or be explicitly allowed:\n{}",
             offenders.join("\n")
         );
+    }
+
+    #[test]
+    fn test_unique_name_emission_covers_attribute_coexisting_and_conflicting() {
+        fn empty_schema(type_name: &str) -> CfnSchema {
+            CfnSchema {
+                type_name: type_name.to_string(),
+                description: None,
+                properties: BTreeMap::new(),
+                required: vec![],
+                read_only_properties: vec![],
+                create_only_properties: vec![],
+                write_only_properties: vec![],
+                primary_identifier: None,
+                definitions: None,
+                tagging: None,
+                one_of: vec![],
+                any_of: vec![],
+                handlers: BTreeMap::new(),
+            }
+        }
+
+        fn emitted(emission: UniqueNameEmission) -> String {
+            let mut code = String::new();
+            emit_unique_name_builder(&mut code, emission);
+            code
+        }
+
+        assert_eq!(
+            UNIQUE_NAME_REPLACEMENT_CLASSES,
+            &[
+                ("ec2.Vpc", UniqueNameReplacementClass::Coexisting),
+                (
+                    "ec2.TransitGatewayAttachment",
+                    UniqueNameReplacementClass::Coexisting
+                ),
+            ]
+        );
+
+        let mut attr_schema = empty_schema("AWS::IAM::Role");
+        attr_schema.properties.insert(
+            "RoleName".to_string(),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("string".to_string())),
+                ..Default::default()
+            },
+        );
+        attr_schema.primary_identifier = Some(vec!["/properties/RoleName".to_string()]);
+        let attr_emission = derive_unique_name_emission("iam.Role", &attr_schema);
+        assert_eq!(
+            attr_emission,
+            UniqueNameEmission::Attribute("role_name".to_string())
+        );
+        assert_eq!(
+            emitted(attr_emission),
+            "        .with_unique_name_attribute(\"role_name\")\n"
+        );
+
+        let mut vpc_schema = empty_schema("AWS::EC2::VPC");
+        vpc_schema.properties.insert(
+            "VpcId".to_string(),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("string".to_string())),
+                ..Default::default()
+            },
+        );
+        vpc_schema.primary_identifier = Some(vec!["/properties/VpcId".to_string()]);
+        vpc_schema.read_only_properties = vec!["/properties/VpcId".to_string()];
+        let coexisting_emission = derive_unique_name_emission("ec2.Vpc", &vpc_schema);
+        assert_eq!(coexisting_emission, UniqueNameEmission::Coexisting);
+        assert_eq!(
+            emitted(coexisting_emission),
+            "        .with_coexisting_replacement()\n"
+        );
+
+        let tgw_attachment_emission = derive_unique_name_emission(
+            "ec2.TransitGatewayAttachment",
+            &empty_schema("AWS::EC2::TransitGatewayAttachment"),
+        );
+        assert_eq!(tgw_attachment_emission, UniqueNameEmission::Coexisting);
+        assert_eq!(
+            emitted(tgw_attachment_emission),
+            "        .with_coexisting_replacement()\n"
+        );
+
+        let conflicting_emission =
+            derive_unique_name_emission("ec2.Route", &empty_schema("AWS::EC2::Route"));
+        assert_eq!(conflicting_emission, UniqueNameEmission::Conflicting);
+        assert_eq!(emitted(conflicting_emission), "");
     }
 
     #[test]

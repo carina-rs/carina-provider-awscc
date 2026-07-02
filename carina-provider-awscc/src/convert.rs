@@ -18,7 +18,7 @@ use carina_core::resource::{
 use carina_core::schema::{
     AttributeSchema as CoreAttributeSchema, AttributeType as CoreAttributeType,
     RawShape as CoreRawShape, ResourceSchema as CoreResourceSchema, StructField as CoreStructField,
-    legacy_validator,
+    UniqueNameSpec as CoreUniqueNameSpec, legacy_validator,
 };
 use carina_provider_protocol::types::{
     AttributeSchema as ProtoAttributeSchema, AttributeType as ProtoAttributeType,
@@ -27,8 +27,8 @@ use carina_provider_protocol::types::{
     PatchOpKind as ProtoPatchOpKind, ProviderError as ProtoProviderError,
     ProviderErrorKind as ProtoProviderErrorKind, Resource as ProtoResource,
     ResourceId as ProtoResourceId, ResourceSchema as ProtoResourceSchema, State as ProtoState,
-    StructField as ProtoStructField, UpdateOutcome as ProtoUpdateOutcome,
-    UpdatePatch as ProtoUpdatePatch, Value as ProtoValue,
+    StructField as ProtoStructField, UniqueNameSpec as ProtoUniqueNameSpec,
+    UpdateOutcome as ProtoUpdateOutcome, UpdatePatch as ProtoUpdatePatch, Value as ProtoValue,
 };
 
 // -- ResourceId --
@@ -470,7 +470,7 @@ pub fn proto_to_core_schema(s: &ProtoResourceSchema) -> CoreResourceSchema {
         description: s.description.clone(),
         validator: None,
         kind,
-        unique_name_attribute: s.unique_name_attribute.clone(),
+        unique_name: proto_to_core_unique_name(&s.unique_name),
         operation_config: s.operation_config.as_ref().map(|c| {
             carina_core::schema::OperationConfig {
                 delete_timeout_secs: c.delete_timeout_secs,
@@ -488,6 +488,16 @@ pub fn proto_to_core_schema(s: &ProtoResourceSchema) -> CoreResourceSchema {
             .iter()
             .map(|(k, v)| (k.clone(), proto_attr_type_to_core(v)))
             .collect(),
+    }
+}
+
+fn proto_to_core_unique_name(spec: &ProtoUniqueNameSpec) -> CoreUniqueNameSpec {
+    match spec {
+        ProtoUniqueNameSpec::Attribute(attribute) => {
+            CoreUniqueNameSpec::Attribute(attribute.clone())
+        }
+        ProtoUniqueNameSpec::Coexisting => CoreUniqueNameSpec::Coexisting,
+        ProtoUniqueNameSpec::Conflicting => CoreUniqueNameSpec::Conflicting,
     }
 }
 
@@ -629,7 +639,7 @@ pub fn core_to_proto_schema(s: &CoreResourceSchema) -> ProtoResourceSchema {
             .collect(),
         description: s.description.clone(),
         kind,
-        unique_name_attribute: s.unique_name_attribute.clone(),
+        unique_name: core_to_proto_unique_name(&s.unique_name),
         operation_config: s.operation_config.as_ref().map(|c| {
             carina_provider_protocol::OperationConfig {
                 delete_timeout_secs: c.delete_timeout_secs,
@@ -646,6 +656,16 @@ pub fn core_to_proto_schema(s: &CoreResourceSchema) -> ProtoResourceSchema {
             .iter()
             .map(|(k, v)| (k.clone(), core_to_proto_attribute_type(v)))
             .collect(),
+    }
+}
+
+fn core_to_proto_unique_name(spec: &CoreUniqueNameSpec) -> ProtoUniqueNameSpec {
+    match spec {
+        CoreUniqueNameSpec::Attribute(attribute) => {
+            ProtoUniqueNameSpec::Attribute(attribute.clone())
+        }
+        CoreUniqueNameSpec::Coexisting => ProtoUniqueNameSpec::Coexisting,
+        CoreUniqueNameSpec::Conflicting => ProtoUniqueNameSpec::Conflicting,
     }
 }
 
