@@ -103,6 +103,7 @@ pub fn ec2_vpc_config() -> AwsccSchemaConfig {
                 .with_description(" (read-only)")
                 .with_provider_name("VpcId"),
         )
+        .with_coexisting_replacement()
         .exclusive_required(&["cidr_block", "ipv4_ipam_pool_id"])
         .with_validator(|attrs| {
             let mut errors = Vec::new();

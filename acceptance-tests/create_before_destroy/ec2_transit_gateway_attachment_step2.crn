@@ -1,9 +1,10 @@
-# EC2 Transit Gateway Attachment - create_before_destroy with transit_gateway_id change (Step 2: Replace)
+# EC2 Transit Gateway Attachment - create_before_destroy Coexisting test (Step 2: Replace)
 #
 # Switches the attachment from tgw_a to tgw_b. Since transit_gateway_id is a
 # create-only property, this forces replacement of the attachment. The
-# create_before_destroy lifecycle means the new attachment (to tgw_b) must be
-# created before the old one (to tgw_a) is deleted.
+# replacement targets a different (transit_gateway_id, vpc_id) pair, so the
+# Coexisting classification lets create_before_destroy create the new
+# attachment before deleting the old one without a temporary name.
 
 provider awscc {
   region = aws.Region.ap_northeast_1

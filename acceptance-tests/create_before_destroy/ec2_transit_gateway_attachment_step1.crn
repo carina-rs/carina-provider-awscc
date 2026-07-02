@@ -1,8 +1,12 @@
-# EC2 Transit Gateway Attachment - create_before_destroy with transit_gateway_id change (Step 1: Initial)
+# EC2 Transit Gateway Attachment - create_before_destroy Coexisting test (Step 1: Initial)
 #
 # Creates a VPC, subnet, two transit gateways (tgw_a and tgw_b), and an
 # attachment to tgw_a. Step 2 switches the attachment to tgw_b, forcing
 # replacement because transit_gateway_id is a create-only property.
+#
+# ec2.TransitGatewayAttachment is declared Coexisting per carina#3667:
+# replacements change the (transit_gateway_id, vpc_id) pair, and AWS allows
+# a VPC to attach to multiple transit gateways simultaneously.
 
 provider awscc {
   region = aws.Region.ap_northeast_1

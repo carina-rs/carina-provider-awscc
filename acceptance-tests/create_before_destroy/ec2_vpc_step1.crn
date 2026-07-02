@@ -1,13 +1,16 @@
-# EC2 VPC - create_before_destroy without name_attribute (Step 1: Initial)
+# EC2 VPC - create_before_destroy positive test (step 1: initial)
 #
-# VPC has no name_attribute, so create_before_destroy replacement should
-# proceed without temporary name generation.
+# Seeds a stable, let-bound VPC for the step-2 replacement attempt. Anonymous
+# resource identities include create-only attributes, so changing cidr_block
+# would route the diff to independent Create+Delete instead of replacement and
+# never exercise the replacement path. ec2.Vpc is declared Coexisting per
+# carina-rs/carina#3667; replacement coexists, so no temporary name is needed.
 
 provider awscc {
   region = aws.Region.ap_northeast_1
 }
 
-awscc.ec2.Vpc {
+let cbd_vpc = awscc.ec2.Vpc {
   cidr_block           = '10.200.0.0/16'
   enable_dns_support   = true
   enable_dns_hostnames = true
