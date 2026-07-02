@@ -15,7 +15,7 @@ fi
 PROJECT_ROOT="$(cd "$HELPERS_DIR/../.." && pwd)"
 
 # CARINA_BIN can be set externally. If not, try common locations.
-if [ -z "$CARINA_BIN" ]; then
+if [ -z "${CARINA_BIN:-}" ]; then
     if [ -f "$PROJECT_ROOT/../carina/target/debug/carina" ]; then
         CARINA_BIN="$PROJECT_ROOT/../carina/target/debug/carina"
     elif command -v carina &>/dev/null; then

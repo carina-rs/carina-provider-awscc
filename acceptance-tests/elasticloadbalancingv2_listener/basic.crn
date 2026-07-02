@@ -1,0 +1,98 @@
+# ElasticLoadBalancingV2 Listener - Basic test
+#
+# Tests: VPC, subnets, internal ALB, target group, and forward listener.
+
+provider awscc {
+  region = aws.Region.ap_northeast_1
+}
+
+let vpc = awscc.ec2.Vpc {
+  cidr_block           = '10.22.0.0/16'
+  enable_dns_support   = true
+  enable_dns_hostnames = true
+
+  tags = {
+    Environment = 'acceptance-test'
+  }
+}
+
+let subnet_a = awscc.ec2.Subnet {
+  vpc_id            = vpc.vpc_id
+  cidr_block        = '10.22.1.0/24'
+  availability_zone = 'ap-northeast-1a'
+
+  tags = {
+    Environment = 'acceptance-test'
+  }
+}
+
+let subnet_c = awscc.ec2.Subnet {
+  vpc_id            = vpc.vpc_id
+  cidr_block        = '10.22.2.0/24'
+  availability_zone = 'ap-northeast-1c'
+
+  tags = {
+    Environment = 'acceptance-test'
+  }
+}
+
+let alb_sg = awscc.ec2.SecurityGroup {
+  vpc_id            = vpc.vpc_id
+  group_description = 'Acceptance test internal ALB listener security group'
+
+  security_group_ingress {
+    ip_protocol = tcp
+    from_port   = 80
+    to_port     = 80
+    cidr_ip     = '10.22.0.0/16'
+    description = 'Allow VPC HTTP'
+  }
+
+  security_group_egress {
+    ip_protocol = all
+    cidr_ip     = '10.22.0.0/16'
+    description = 'Allow VPC egress'
+  }
+
+  tags = {
+    Environment = 'acceptance-test'
+  }
+}
+
+let alb = awscc.elasticloadbalancingv2.LoadBalancer {
+  name            = 'carina-acc-test-listener-alb'
+  type            = application
+  scheme          = internal
+  ip_address_type = ipv4
+  subnets         = [subnet_a.subnet_id, subnet_c.subnet_id]
+  security_groups = [alb_sg.group_id]
+
+  tags = {
+    Environment = 'acceptance-test'
+  }
+}
+
+let target_group = awscc.elasticloadbalancingv2.TargetGroup {
+  name              = 'carina-acc-test-listener-tg'
+  protocol          = http
+  port              = 80
+  target_type       = ip
+  ip_address_type   = ipv4
+  vpc_id            = vpc.vpc_id
+  health_check_path = '/'
+
+  tags = {
+    Environment = 'acceptance-test'
+  }
+}
+
+awscc.elasticloadbalancingv2.Listener {
+  load_balancer_arn = alb.load_balancer_arn
+  port              = 80
+  protocol          = http
+
+  default_action {
+    type             = forward
+    target_group_arn = target_group.target_group_arn
+  }
+}

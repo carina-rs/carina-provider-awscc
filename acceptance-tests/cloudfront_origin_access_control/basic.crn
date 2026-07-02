@@ -1,0 +1,17 @@
+# CloudFront OriginAccessControl - Basic test
+#
+# Tests: required origin access control configuration for S3 origins.
+
+provider awscc {
+  region = aws.Region.ap_northeast_1
+}
+
+awscc.cloudfront.OriginAccessControl {
+  origin_access_control_config = {
+    name                              = 'carina-acc-test-oac'
+    description                       = 'Carina acceptance test origin access control'
+    origin_access_control_origin_type = s3
+    signing_behavior                  = always
+    signing_protocol                  = sigv4
+  }
+}

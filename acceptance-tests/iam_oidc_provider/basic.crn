@@ -1,0 +1,17 @@
+# IAM OIDCProvider - Basic test
+#
+# Tests: URL, client ID list, thumbprint list, and tags.
+
+provider awscc {
+  region = aws.Region.ap_northeast_1
+}
+
+awscc.iam.OidcProvider {
+  url              = 'https://token.actions.githubusercontent.com'
+  client_id_list   = ['sts.amazonaws.com']
+  thumbprint_list  = ['ffffffffffffffffffffffffffffffffffffffff']
+
+  tags = {
+    Environment = 'acceptance-test'
+  }
+}
