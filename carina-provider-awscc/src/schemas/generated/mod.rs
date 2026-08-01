@@ -81,6 +81,7 @@ static ENUM_VALID_VALUES: LazyLock<
         cloudfront::distribution::enum_valid_values(),
         cloudfront::origin_access_control::enum_valid_values(),
         wafv2::web_acl::enum_valid_values(),
+        wafv2::web_acl_association::enum_valid_values(),
         kms::key::enum_valid_values(),
         dynamodb::table::enum_valid_values(),
         ecs::cluster::enum_valid_values(),
@@ -139,6 +140,7 @@ fn build_configs() -> Vec<AwsccSchemaConfig> {
         cloudfront::distribution::cloudfront_distribution_config(),
         cloudfront::origin_access_control::cloudfront_origin_access_control_config(),
         wafv2::web_acl::wafv2_web_acl_config(),
+        wafv2::web_acl_association::wafv2_web_acl_association_config(),
         kms::key::kms_key_config(),
         dynamodb::table::dynamodb_table_config(),
         ecs::cluster::ecs_cluster_config(),
@@ -209,6 +211,7 @@ pub fn required_permissions(resource_type: &str, op: PlanOp) -> &'static [&'stat
             cloudfront::origin_access_control::required_permissions(op)
         }
         "wafv2.WebAcl" => wafv2::web_acl::required_permissions(op),
+        "wafv2.WebAclAssociation" => wafv2::web_acl_association::required_permissions(op),
         "kms.Key" => kms::key::required_permissions(op),
         "dynamodb.Table" => dynamodb::table::required_permissions(op),
         "ecs.Cluster" => ecs::cluster::required_permissions(op),

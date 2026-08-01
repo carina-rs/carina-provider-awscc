@@ -78,6 +78,7 @@ RESOURCE_TYPES=(
     "AWS::CloudFront::Distribution"
     "AWS::CloudFront::OriginAccessControl"
     "AWS::WAFv2::WebACL"
+    "AWS::WAFv2::WebACLAssociation"
     "AWS::KMS::Key"
     "AWS::DynamoDB::Table"
     "AWS::ECS::Cluster"

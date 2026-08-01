@@ -582,6 +582,7 @@ fn post_update_attributes(
 mod tests {
     use super::*;
     use carina_core::provider::{CreateOutcome, PatchOp, PatchOpKind, UpdateOutcome};
+    use carina_core::resource::{DeferredValue, UnknownReason};
     use carina_core::schema::AttributeType;
     use serde_json::json;
     use std::future::Future;
@@ -589,6 +590,84 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
     use winterbaume_core::{MockAws, MockRequest, MockResponse, MockService};
+
+    const WEB_ACL_ASSOCIATION_RESOURCE_ARN: &str = "arn:aws:elasticloadbalancing:ap-northeast-1:123456789012:loadbalancer/app/publish-api/abc123";
+    const WEB_ACL_ASSOCIATION_WEB_ACL_ARN: &str =
+        "arn:aws:wafv2:ap-northeast-1:123456789012:regional/webacl/publish-api/def456";
+
+    fn test_string(value: &str) -> Value {
+        Value::Concrete(ConcreteValue::String(value.to_string()))
+    }
+
+    fn web_acl_association_state(
+        entries: impl IntoIterator<Item = (&'static str, Value)>,
+    ) -> State {
+        let id = ResourceId::with_provider_name_compat(
+            "awscc",
+            "wafv2.WebAclAssociation",
+            "publish_api_waf",
+            None,
+        );
+        State::existing(
+            id,
+            entries
+                .into_iter()
+                .map(|(key, value)| (key.to_string(), value))
+                .collect(),
+        )
+    }
+
+    fn web_acl_association_config() -> AwsccSchemaConfig {
+        crate::schemas::generated::wafv2::web_acl_association::wafv2_web_acl_association_config()
+    }
+
+    #[test]
+    fn canonicalize_identifier_from_read_joins_composite_segments() {
+        let config = web_acl_association_config();
+        let state = web_acl_association_state([
+            (
+                "resource_arn",
+                test_string(WEB_ACL_ASSOCIATION_RESOURCE_ARN),
+            ),
+            ("web_acl_arn", test_string(WEB_ACL_ASSOCIATION_WEB_ACL_ARN)),
+        ]);
+
+        assert_eq!(
+            canonicalize_identifier_from_read(&config, &state),
+            Some(format!(
+                "{}|{}",
+                WEB_ACL_ASSOCIATION_RESOURCE_ARN, WEB_ACL_ASSOCIATION_WEB_ACL_ARN
+            ))
+        );
+    }
+
+    #[test]
+    fn canonicalize_identifier_from_read_returns_none_for_incomplete_composite_identifier() {
+        let config = web_acl_association_config();
+        let missing_segment = web_acl_association_state([(
+            "resource_arn",
+            test_string(WEB_ACL_ASSOCIATION_RESOURCE_ARN),
+        )]);
+        let unknown_segment = web_acl_association_state([
+            (
+                "resource_arn",
+                test_string(WEB_ACL_ASSOCIATION_RESOURCE_ARN),
+            ),
+            (
+                "web_acl_arn",
+                Value::Deferred(DeferredValue::Unknown(UnknownReason::ForValue)),
+            ),
+        ]);
+
+        assert_eq!(
+            canonicalize_identifier_from_read(&config, &missing_segment),
+            None
+        );
+        assert_eq!(
+            canonicalize_identifier_from_read(&config, &unknown_segment),
+            None
+        );
+    }
 
     #[derive(Debug)]
     struct PartialCreateCloudControlService {

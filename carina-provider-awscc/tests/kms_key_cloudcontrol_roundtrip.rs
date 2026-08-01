@@ -133,18 +133,6 @@ fn concrete_string_attribute<'a>(
     }
 }
 
-fn is_uuidish(value: &str) -> bool {
-    let bytes = value.as_bytes();
-    value.len() == 36
-        && [8, 13, 18, 23]
-            .into_iter()
-            .all(|index| bytes[index] == b'-')
-        && value
-            .chars()
-            .enumerate()
-            .all(|(index, ch)| [8, 13, 18, 23].contains(&index) || ch.is_ascii_hexdigit())
-}
-
 #[tokio::test]
 async fn kms_key_create_then_read_round_trips_structured_key_policy() {
     let provider = winterbaume_provider().await;
@@ -180,7 +168,10 @@ async fn kms_key_create_then_read_round_trips_structured_key_policy() {
         "write-only pending_window_in_days must be stripped"
     );
     let key_id = concrete_string_attribute(&read.attributes, "key_id");
-    assert!(is_uuidish(key_id), "key_id must be uuid-shaped: {key_id}");
+    assert!(
+        common::is_uuidish(key_id),
+        "key_id must be uuid-shaped: {key_id}"
+    );
     assert_eq!(
         concrete_string_attribute(&read.attributes, "arn"),
         format!("arn:aws:kms:us-east-1:123456789012:key/{key_id}")

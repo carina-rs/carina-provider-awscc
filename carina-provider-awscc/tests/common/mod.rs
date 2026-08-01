@@ -21,3 +21,12 @@ pub async fn normalize_resource(resource: Resource) -> ResolvedResource {
             .await;
     resolve_normalized_for_provider(normalized).expect("test resource should be fully resolved")
 }
+
+#[allow(dead_code)]
+pub fn is_uuidish(value: &str) -> bool {
+    value.len() == 36
+        && value.bytes().enumerate().all(|(index, byte)| match index {
+            8 | 13 | 18 | 23 => byte == b'-',
+            _ => byte.is_ascii_hexdigit(),
+        })
+}
