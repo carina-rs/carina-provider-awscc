@@ -21,3 +21,19 @@ fixtures yet:
   Identity Center instance in the management account, not in pool accounts.
 - `identitystore.GroupMembership`: group memberships depend on the management
   account identity store and are not creatable in pool accounts.
+
+## Known Deep-Cleanup Gaps
+
+The following resource types have acceptance fixtures but no corresponding pass
+in `deep_cleanup_account()`. Until fixed, they can leave orphaned resources in
+the pooled test accounts. `shell-tests/deep_cleanup_fixture_coverage.sh`
+enforces this list and is where sweep mappings, parent-deletion exceptions, and
+known gaps are maintained.
+
+- `ec2.FlowLog`: tracked by #403.
+- `ec2.EgressOnlyInternetGateway`: tracked by #403.
+- `ec2.Ipam`: tracked by #406.
+- `ec2.IpamPool`: tracked by #406.
+- `kms.Key`: tracked by #407.
+- `cloudfront.Distribution`: tracked by #408.
+- `cloudfront.OriginAccessControl`: tracked by #408.
