@@ -241,11 +241,126 @@ with_account_creds() {
     )
 }
 
+deep_cleanup_list_wafv2_web_acls() {
+    local account="$1"
+    local max_pages=100
+    local page_count=0
+    local next_marker=""
+
+    while [ "$page_count" -lt "$max_pages" ]; do
+        local list_args=(aws wafv2 list-web-acls --scope REGIONAL --limit 100 --output json)
+        if [ -n "$next_marker" ] && [ "$next_marker" != "None" ]; then
+            list_args+=(--next-marker "$next_marker")
+        fi
+
+        local page
+        if ! page=$(with_account_creds "$account" "${list_args[@]}" 2>/dev/null); then
+            return 0
+        fi
+        page_count=$((page_count + 1))
+
+        # ASCII unit separator cannot occur in these AWS fields and, unlike a
+        # tab, preserves an empty LockToken when Bash reads the record.
+        printf '%s\n' "$page" | jq -r '
+            .WebACLs[]?
+            | select((.Name | contains("acceptance-test")) or (.Name | contains("carina-acc")))
+            | [(.Name // ""), (.Id // ""), (.LockToken // ""), (.ARN // "")]
+            | join("\u001f")
+        '
+
+        local returned_marker
+        returned_marker=$(printf '%s\n' "$page" | jq -r '.NextMarker // empty')
+        if [ -z "$returned_marker" ] || [ "$returned_marker" = "None" ]; then
+            return 0
+        fi
+
+        if [ "$returned_marker" = "$next_marker" ]; then
+            echo "  ERROR: WAFv2 WebACL pagination truncated for account $account: repeated NextMarker after $page_count pages" >&2
+            return 0
+        fi
+        next_marker="$returned_marker"
+    done
+
+    echo "  ERROR: WAFv2 WebACL pagination truncated for account $account after $max_pages pages" >&2
+}
+
+deep_cleanup_disassociate_wafv2_web_acls() {
+    local account="$1"
+    local web_acls
+    if ! web_acls=$(deep_cleanup_list_wafv2_web_acls "$account"); then
+        return 0
+    fi
+
+    while IFS=$'\x1f' read -r acl_name _ _ acl_arn; do
+        [ -z "$acl_name" ] && continue
+        [ -z "$acl_arn" ] && continue
+
+        # list-resources-for-web-acl silently defaults to APPLICATION_LOAD_BALANCER,
+        # so enumerate all supported REGIONAL association resource types.
+        local resource_type
+        for resource_type in \
+            APPLICATION_LOAD_BALANCER \
+            API_GATEWAY \
+            APPSYNC \
+            COGNITO_USER_POOL \
+            APP_RUNNER_SERVICE \
+            VERIFIED_ACCESS_INSTANCE \
+            AMPLIFY
+        do
+            local resource_arns
+            if ! resource_arns=$(with_account_creds "$account" aws wafv2 list-resources-for-web-acl \
+                --web-acl-arn "$acl_arn" --resource-type "$resource_type" \
+                --query 'ResourceArns' --output text 2>/dev/null); then
+                continue
+            fi
+
+            local resource_arn
+            for resource_arn in $resource_arns; do
+                [ -z "$resource_arn" ] && continue
+                [ "$resource_arn" = "None" ] && continue
+                echo "  Disassociating WAFv2 web ACL $acl_name from $resource_arn..."
+                with_account_creds "$account" aws wafv2 disassociate-web-acl --resource-arn "$resource_arn" 2>/dev/null || true
+            done
+        done
+    done <<< "$web_acls"
+}
+
+DEEP_CLEANUP_WAFV2_WEB_ACL_DELETE_COUNT=0
+deep_cleanup_delete_wafv2_web_acls() {
+    local account="$1"
+    DEEP_CLEANUP_WAFV2_WEB_ACL_DELETE_COUNT=0
+
+    local web_acls
+    if ! web_acls=$(deep_cleanup_list_wafv2_web_acls "$account"); then
+        return 0
+    fi
+
+    while IFS=$'\x1f' read -r acl_name acl_id lock_token _; do
+        [ -z "$acl_name" ] && continue
+        DEEP_CLEANUP_WAFV2_WEB_ACL_DELETE_COUNT=$((DEEP_CLEANUP_WAFV2_WEB_ACL_DELETE_COUNT + 1))
+        echo "  Cleaning WAFv2 web ACL $acl_name..."
+
+        if [ -z "$lock_token" ]; then
+            echo "  ERROR: Cannot delete WAFv2 web ACL $acl_name: list-web-acls returned no LockToken; the ACL may be updating" >&2
+            continue
+        fi
+
+        local delete_output
+        if ! delete_output=$(with_account_creds "$account" aws wafv2 delete-web-acl \
+            --name "$acl_name" --scope REGIONAL --id "$acl_id" --lock-token "$lock_token" 2>&1); then
+            echo "  ERROR: Failed to delete WAFv2 web ACL $acl_name: $delete_output" >&2
+        fi
+    done <<< "$web_acls"
+}
+
 # ── deep_cleanup_account: scan AWS for orphaned resources ────────────
 # Args: account_profile (e.g., "carina-test-000")
 deep_cleanup_account() {
     local account="$1"
     local found=0
+
+    # Pre-cleanup: disassociate WAFv2 web ACLs before deleting associated resources.
+    deep_cleanup_disassociate_wafv2_web_acls "$account"
 
     # 0. Delete orphaned ELBv2 load balancers and target groups before VPC cleanup
     local load_balancers
@@ -417,16 +532,8 @@ deep_cleanup_account() {
     done
 
     # 6. Delete orphaned regional WAFv2 web ACLs
-    local web_acls
-    web_acls=$(with_account_creds "$account" aws wafv2 list-web-acls --scope REGIONAL \
-        --query 'WebACLs[?contains(Name, `acceptance-test`) || contains(Name, `carina-acc`)].[Name,Id,LockToken]' --output text 2>/dev/null)
-    while read -r acl_name acl_id lock_token; do
-        [ -z "$acl_name" ] && continue
-        found=$((found + 1))
-        echo "  Cleaning WAFv2 web ACL $acl_name..."
-        with_account_creds "$account" aws wafv2 delete-web-acl \
-            --name "$acl_name" --scope REGIONAL --id "$acl_id" --lock-token "$lock_token" 2>/dev/null || true
-    done <<< "$web_acls"
+    deep_cleanup_delete_wafv2_web_acls "$account"
+    found=$((found + DEEP_CLEANUP_WAFV2_WEB_ACL_DELETE_COUNT))
 
     # 7. Delete orphaned IAM OIDC providers tagged by acceptance tests
     local oidc_providers
