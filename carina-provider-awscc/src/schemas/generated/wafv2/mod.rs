@@ -4,3 +4,4 @@
 //!   aws-vault exec <profile> -- ./carina-provider-awscc/scripts/generate-schemas.sh
 
 pub mod web_acl;
+pub mod web_acl_association;
