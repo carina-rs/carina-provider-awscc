@@ -57,6 +57,8 @@ for fn in \
     _deep_cleanup_delete \
     deep_cleanup_delete_resource \
     deep_cleanup_delete_supporting \
+    deep_cleanup_with_timeout \
+    deep_cleanup_wait_for_network_interface \
     deep_cleanup_list_wafv2_web_acls \
     deep_cleanup_disassociate_wafv2_web_acls \
     deep_cleanup_delete_wafv2_web_acls \
@@ -156,32 +158,35 @@ with_account_creds() {
     local command="$*"
     echo "$command" >> "$COMMAND_LOG"
 
-    case "$command" in
-        "aws wafv2 list-web-acls"*)
-            local next_marker
-            next_marker="$(arg_after "--next-marker" "$@" || true)"
-            web_acl_page_json "$next_marker"
-            ;;
-        "aws wafv2 list-resources-for-web-acl"*)
-            local resource_type
-            local web_acl_arn
-            web_acl_arn="$(arg_after "--web-acl-arn" "$@")"
-            resource_type="$(arg_after "--resource-type" "$@")"
-            resource_arns_for_type "$web_acl_arn" "$resource_type"
-            ;;
-        "aws wafv2 delete-web-acl"*)
-            local acl_name
-            acl_name="$(arg_after "--name" "$@")"
-            echo "An error occurred (WAFAssociatedItemException) when calling the DeleteWebACL operation: $acl_name is still associated" >&2
-            return 254
-            ;;
-        "aws elbv2 describe-load-balancers"*)
-            echo "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/acceptance-test-alb/111"
-            ;;
-        *)
-            :
-            ;;
-    esac
+    # Match production's inner credential subshell and its fd inheritance.
+    (
+        case "$command" in
+            "aws wafv2 list-web-acls"*)
+                local next_marker
+                next_marker="$(arg_after "--next-marker" "$@" || true)"
+                web_acl_page_json "$next_marker"
+                ;;
+            "aws wafv2 list-resources-for-web-acl"*)
+                local resource_type
+                local web_acl_arn
+                web_acl_arn="$(arg_after "--web-acl-arn" "$@")"
+                resource_type="$(arg_after "--resource-type" "$@")"
+                resource_arns_for_type "$web_acl_arn" "$resource_type"
+                ;;
+            "aws wafv2 delete-web-acl"*)
+                local acl_name
+                acl_name="$(arg_after "--name" "$@")"
+                echo "An error occurred (WAFAssociatedItemException) when calling the DeleteWebACL operation: $acl_name is still associated" >&2
+                return 254
+                ;;
+            "aws elbv2 describe-load-balancers"*)
+                echo "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/acceptance-test-alb/111"
+                ;;
+            *)
+                :
+                ;;
+        esac
+    )
 }
 
 sleep() {
@@ -201,6 +206,10 @@ declare -F deep_cleanup_delete_resource >/dev/null ||
     fail "deep_cleanup_delete_resource is not defined"
 declare -F deep_cleanup_delete_supporting >/dev/null ||
     fail "deep_cleanup_delete_supporting is not defined"
+declare -F deep_cleanup_with_timeout >/dev/null ||
+    fail "deep_cleanup_with_timeout is not defined"
+declare -F deep_cleanup_wait_for_network_interface >/dev/null ||
+    fail "deep_cleanup_wait_for_network_interface is not defined"
 declare -F deep_cleanup_disassociate_wafv2_web_acls >/dev/null ||
     fail "deep_cleanup_disassociate_wafv2_web_acls is not defined"
 declare -F deep_cleanup_delete_wafv2_web_acls >/dev/null ||
