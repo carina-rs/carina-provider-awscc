@@ -241,11 +241,147 @@ with_account_creds() {
     )
 }
 
+# Writes successful stdout to the named caller variable. Keeping the helper out
+# of a command substitution lets its failure counter remain in this shell.
+deep_cleanup_enumerate() {
+    local account="$1"
+    local resource_type="$2"
+    local output_variable="$3"
+    shift 3
+
+    local enumeration_output=""
+    local enumeration_stderr=""
+    local enumeration_stderr_file
+    local enumeration_status=0
+    local enumeration_succeeded=0
+    if ! enumeration_stderr_file=$(mktemp); then
+        DEEP_CLEANUP_LAST_ENUMERATION_SUCCEEDED=0
+        DEEP_CLEANUP_ENUMERATION_FAILURE_COUNT=$((${DEEP_CLEANUP_ENUMERATION_FAILURE_COUNT:-0} + 1))
+        printf -v "$output_variable" '%s' ""
+        echo "  ERROR: Failed to enumerate $resource_type for account $account: unable to create a temporary stderr file" >&2
+        return 0
+    fi
+
+    # Keep separate read/write descriptions, then unlink the path before the AWS
+    # call. The open file survives long enough to capture stderr, while a killed
+    # cleanup process cannot leave a named temporary file behind.
+    if ! exec 8<"$enumeration_stderr_file"; then
+        rm -f "$enumeration_stderr_file" 2>/dev/null || true
+        DEEP_CLEANUP_LAST_ENUMERATION_SUCCEEDED=0
+        DEEP_CLEANUP_ENUMERATION_FAILURE_COUNT=$((${DEEP_CLEANUP_ENUMERATION_FAILURE_COUNT:-0} + 1))
+        printf -v "$output_variable" '%s' ""
+        echo "  ERROR: Failed to enumerate $resource_type for account $account: unable to open the temporary stderr file for reading" >&2
+        return 0
+    fi
+    if ! exec 9>"$enumeration_stderr_file"; then
+        exec 8<&-
+        rm -f "$enumeration_stderr_file" 2>/dev/null || true
+        DEEP_CLEANUP_LAST_ENUMERATION_SUCCEEDED=0
+        DEEP_CLEANUP_ENUMERATION_FAILURE_COUNT=$((${DEEP_CLEANUP_ENUMERATION_FAILURE_COUNT:-0} + 1))
+        printf -v "$output_variable" '%s' ""
+        echo "  ERROR: Failed to enumerate $resource_type for account $account: unable to open the temporary stderr file for writing" >&2
+        return 0
+    fi
+    if ! rm -f "$enumeration_stderr_file"; then
+        exec 9>&-
+        exec 8<&-
+        DEEP_CLEANUP_LAST_ENUMERATION_SUCCEEDED=0
+        DEEP_CLEANUP_ENUMERATION_FAILURE_COUNT=$((${DEEP_CLEANUP_ENUMERATION_FAILURE_COUNT:-0} + 1))
+        printf -v "$output_variable" '%s' ""
+        echo "  ERROR: Failed to enumerate $resource_type for account $account: unable to unlink the temporary stderr file" >&2
+        return 0
+    fi
+
+    if enumeration_output=$(with_account_creds "$account" "$@" 2>&9); then
+        enumeration_succeeded=1
+    else
+        enumeration_status=$?
+    fi
+    exec 9>&-
+    enumeration_stderr=$(cat <&8) || enumeration_stderr="unable to read captured stderr"
+    exec 8<&-
+
+    if [ "$enumeration_succeeded" -eq 1 ]; then
+        DEEP_CLEANUP_LAST_ENUMERATION_SUCCEEDED=1
+        printf -v "$output_variable" '%s' "$enumeration_output"
+    else
+        DEEP_CLEANUP_LAST_ENUMERATION_SUCCEEDED=0
+        DEEP_CLEANUP_ENUMERATION_FAILURE_COUNT=$((${DEEP_CLEANUP_ENUMERATION_FAILURE_COUNT:-0} + 1))
+        printf -v "$output_variable" '%s' ""
+        local enumeration_diagnostic="$enumeration_stderr"
+        if [ -n "$enumeration_output" ]; then
+            enumeration_diagnostic="${enumeration_diagnostic}${enumeration_diagnostic:+$'\n'}${enumeration_output}"
+        fi
+        if [ -z "$enumeration_diagnostic" ]; then
+            enumeration_diagnostic="no error output"
+        fi
+        echo "  ERROR: Failed to enumerate $resource_type for account $account (exit $enumeration_status): $enumeration_diagnostic" >&2
+    fi
+
+    # Enumeration failure means an empty result for this step, never an aborted sweep.
+    return 0
+}
+
+# Runs one cleanup mutation, reports any failure, and writes 1 or 0 to the
+# named caller variable without propagating the command's non-zero status.
+_deep_cleanup_delete() {
+    local account="$1"
+    local operation="$2"
+    local result_variable="$3"
+    shift 3
+
+    local delete_output
+    local delete_status
+    if delete_output=$(with_account_creds "$account" "$@" 2>&1); then
+        printf -v "$result_variable" '%s' "1"
+    else
+        delete_status=$?
+        printf -v "$result_variable" '%s' "0"
+        echo "  ERROR: Failed to $operation (exit $delete_status): $delete_output" >&2
+    fi
+
+    # A stubborn resource is recorded above but must not prevent later cleanup steps.
+    return 0
+}
+
+deep_cleanup_delete_resource() {
+    local account="$1"
+    local operation="$2"
+    shift 2
+
+    local delete_succeeded=0
+    _deep_cleanup_delete "$account" "$operation" delete_succeeded "$@"
+    if [ "$delete_succeeded" -eq 1 ]; then
+        DEEP_CLEANUP_DELETED_COUNT=$((${DEEP_CLEANUP_DELETED_COUNT:-0} + 1))
+    else
+        DEEP_CLEANUP_FAILED_COUNT=$((${DEEP_CLEANUP_FAILED_COUNT:-0} + 1))
+    fi
+
+    return 0
+}
+
+deep_cleanup_delete_supporting() {
+    local account="$1"
+    local operation="$2"
+    shift 2
+
+    local delete_succeeded=0
+    _deep_cleanup_delete "$account" "$operation" delete_succeeded "$@"
+    if [ "$delete_succeeded" -eq 0 ]; then
+        DEEP_CLEANUP_SUPPORTING_FAILURE_COUNT=$((${DEEP_CLEANUP_SUPPORTING_FAILURE_COUNT:-0} + 1))
+    fi
+
+    return 0
+}
+
 deep_cleanup_list_wafv2_web_acls() {
     local account="$1"
+    local output_variable="${2:-}"
     local max_pages=100
     local page_count=0
     local next_marker=""
+    local listed_web_acls=""
+    local pagination_finished=0
 
     while [ "$page_count" -lt "$max_pages" ]; do
         local list_args=(aws wafv2 list-web-acls --scope REGIONAL --limit 100 --output json)
@@ -254,42 +390,77 @@ deep_cleanup_list_wafv2_web_acls() {
         fi
 
         local page
-        if ! page=$(with_account_creds "$account" "${list_args[@]}" 2>/dev/null); then
-            return 0
+        deep_cleanup_enumerate "$account" "WAFv2 web ACLs" page "${list_args[@]}"
+        if [ "$DEEP_CLEANUP_LAST_ENUMERATION_SUCCEEDED" -eq 0 ]; then
+            pagination_finished=1
+            break
         fi
         page_count=$((page_count + 1))
 
         # ASCII unit separator cannot occur in these AWS fields and, unlike a
         # tab, preserves an empty LockToken when Bash reads the record.
-        printf '%s\n' "$page" | jq -r '
-            .WebACLs[]?
-            | select((.Name | contains("acceptance-test")) or (.Name | contains("carina-acc")))
-            | [(.Name // ""), (.Id // ""), (.LockToken // ""), (.ARN // "")]
-            | join("\u001f")
-        '
+        local page_web_acls=""
+        local jq_status
+        if page_web_acls=$(printf '%s\n' "$page" | jq -r '
+                .WebACLs[]?
+                | select((.Name | contains("acceptance-test")) or (.Name | contains("carina-acc")))
+                | [(.Name // ""), (.Id // ""), (.LockToken // ""), (.ARN // "")]
+                | join("\u001f")
+            ' 2>&1); then
+            :
+        else
+            jq_status=$?
+            DEEP_CLEANUP_ENUMERATION_FAILURE_COUNT=$((${DEEP_CLEANUP_ENUMERATION_FAILURE_COUNT:-0} + 1))
+            echo "  ERROR: Failed to parse WAFv2 web ACL page for account $account (exit $jq_status): $page_web_acls" >&2
+            pagination_finished=1
+            break
+        fi
+        if [ -n "$page_web_acls" ]; then
+            listed_web_acls="${listed_web_acls}${listed_web_acls:+$'\n'}${page_web_acls}"
+        fi
 
-        local returned_marker
-        returned_marker=$(printf '%s\n' "$page" | jq -r '.NextMarker // empty')
+        local returned_marker=""
+        if returned_marker=$(printf '%s\n' "$page" | jq -r '.NextMarker // empty' 2>&1); then
+            :
+        else
+            jq_status=$?
+            DEEP_CLEANUP_ENUMERATION_FAILURE_COUNT=$((${DEEP_CLEANUP_ENUMERATION_FAILURE_COUNT:-0} + 1))
+            echo "  ERROR: Failed to parse WAFv2 NextMarker for account $account (exit $jq_status): $returned_marker" >&2
+            pagination_finished=1
+            break
+        fi
         if [ -z "$returned_marker" ] || [ "$returned_marker" = "None" ]; then
-            return 0
+            pagination_finished=1
+            break
         fi
 
         if [ "$returned_marker" = "$next_marker" ]; then
+            DEEP_CLEANUP_ENUMERATION_FAILURE_COUNT=$((${DEEP_CLEANUP_ENUMERATION_FAILURE_COUNT:-0} + 1))
             echo "  ERROR: WAFv2 WebACL pagination truncated for account $account: repeated NextMarker after $page_count pages" >&2
-            return 0
+            pagination_finished=1
+            break
         fi
         next_marker="$returned_marker"
     done
 
-    echo "  ERROR: WAFv2 WebACL pagination truncated for account $account after $max_pages pages" >&2
+    if [ "$pagination_finished" -eq 0 ]; then
+        DEEP_CLEANUP_ENUMERATION_FAILURE_COUNT=$((${DEEP_CLEANUP_ENUMERATION_FAILURE_COUNT:-0} + 1))
+        echo "  ERROR: WAFv2 WebACL pagination truncated for account $account after $max_pages pages" >&2
+    fi
+
+    if [ -n "$output_variable" ]; then
+        printf -v "$output_variable" '%s' "$listed_web_acls"
+    elif [ -n "$listed_web_acls" ]; then
+        printf '%s\n' "$listed_web_acls"
+    fi
+
+    return 0
 }
 
 deep_cleanup_disassociate_wafv2_web_acls() {
     local account="$1"
-    local web_acls
-    if ! web_acls=$(deep_cleanup_list_wafv2_web_acls "$account"); then
-        return 0
-    fi
+    local web_acls=""
+    deep_cleanup_list_wafv2_web_acls "$account" web_acls
 
     while IFS=$'\x1f' read -r acl_name _ _ acl_arn; do
         [ -z "$acl_name" ] && continue
@@ -308,9 +479,11 @@ deep_cleanup_disassociate_wafv2_web_acls() {
             AMPLIFY
         do
             local resource_arns
-            if ! resource_arns=$(with_account_creds "$account" aws wafv2 list-resources-for-web-acl \
+            deep_cleanup_enumerate "$account" "resources associated with WAFv2 web ACL $acl_name ($resource_type)" resource_arns \
+                aws wafv2 list-resources-for-web-acl \
                 --web-acl-arn "$acl_arn" --resource-type "$resource_type" \
-                --query 'ResourceArns' --output text 2>/dev/null); then
+                --query 'ResourceArns' --output text
+            if [ "$DEEP_CLEANUP_LAST_ENUMERATION_SUCCEEDED" -eq 0 ]; then
                 continue
             fi
 
@@ -319,10 +492,13 @@ deep_cleanup_disassociate_wafv2_web_acls() {
                 [ -z "$resource_arn" ] && continue
                 [ "$resource_arn" = "None" ] && continue
                 echo "  Disassociating WAFv2 web ACL $acl_name from $resource_arn..."
-                with_account_creds "$account" aws wafv2 disassociate-web-acl --resource-arn "$resource_arn" 2>/dev/null || true
+                deep_cleanup_delete_supporting "$account" "disassociate WAFv2 web ACL $acl_name from $resource_arn" \
+                    aws wafv2 disassociate-web-acl --resource-arn "$resource_arn"
             done
         done
     done <<< "$web_acls"
+
+    return 0
 }
 
 DEEP_CLEANUP_WAFV2_WEB_ACL_DELETE_COUNT=0
@@ -330,10 +506,8 @@ deep_cleanup_delete_wafv2_web_acls() {
     local account="$1"
     DEEP_CLEANUP_WAFV2_WEB_ACL_DELETE_COUNT=0
 
-    local web_acls
-    if ! web_acls=$(deep_cleanup_list_wafv2_web_acls "$account"); then
-        return 0
-    fi
+    local web_acls=""
+    deep_cleanup_list_wafv2_web_acls "$account" web_acls
 
     while IFS=$'\x1f' read -r acl_name acl_id lock_token _; do
         [ -z "$acl_name" ] && continue
@@ -341,70 +515,79 @@ deep_cleanup_delete_wafv2_web_acls() {
         echo "  Cleaning WAFv2 web ACL $acl_name..."
 
         if [ -z "$lock_token" ]; then
+            DEEP_CLEANUP_FAILED_COUNT=$((${DEEP_CLEANUP_FAILED_COUNT:-0} + 1))
             echo "  ERROR: Cannot delete WAFv2 web ACL $acl_name: list-web-acls returned no LockToken; the ACL may be updating" >&2
             continue
         fi
 
-        local delete_output
-        if ! delete_output=$(with_account_creds "$account" aws wafv2 delete-web-acl \
-            --name "$acl_name" --scope REGIONAL --id "$acl_id" --lock-token "$lock_token" 2>&1); then
-            echo "  ERROR: Failed to delete WAFv2 web ACL $acl_name: $delete_output" >&2
-        fi
+        deep_cleanup_delete_resource "$account" "delete WAFv2 web ACL $acl_name" \
+            aws wafv2 delete-web-acl \
+            --name "$acl_name" --scope REGIONAL --id "$acl_id" --lock-token "$lock_token"
     done <<< "$web_acls"
+
+    return 0
 }
 
 # ── deep_cleanup_account: scan AWS for orphaned resources ────────────
 # Args: account_profile (e.g., "carina-test-000")
 deep_cleanup_account() {
     local account="$1"
-    local found=0
+    DEEP_CLEANUP_ENUMERATION_FAILURE_COUNT=0
+    DEEP_CLEANUP_LAST_ENUMERATION_SUCCEEDED=1
+    DEEP_CLEANUP_DELETED_COUNT=0
+    DEEP_CLEANUP_FAILED_COUNT=0
+    DEEP_CLEANUP_SUPPORTING_FAILURE_COUNT=0
 
     # Pre-cleanup: disassociate WAFv2 web ACLs before deleting associated resources.
     deep_cleanup_disassociate_wafv2_web_acls "$account"
 
     # 0. Delete orphaned ELBv2 load balancers and target groups before VPC cleanup
     local load_balancers
-    load_balancers=$(with_account_creds "$account" aws elbv2 describe-load-balancers \
-        --query 'LoadBalancers[?contains(LoadBalancerName, `acceptance-test`) || contains(LoadBalancerName, `carina-acc`)].LoadBalancerArn' --output text 2>/dev/null)
+    deep_cleanup_enumerate "$account" "ELBv2 load balancers" load_balancers \
+        aws elbv2 describe-load-balancers \
+        --query 'LoadBalancers[?contains(LoadBalancerName, `acceptance-test`) || contains(LoadBalancerName, `carina-acc`)].LoadBalancerArn' --output text
     for lb_arn in $load_balancers; do
         [ -z "$lb_arn" ] && continue
-        found=$((found + 1))
         echo "  Cleaning ELBv2 load balancer $lb_arn..."
-        with_account_creds "$account" aws elbv2 delete-load-balancer --load-balancer-arn "$lb_arn" 2>/dev/null || true
+        deep_cleanup_delete_resource "$account" "delete ELBv2 load balancer $lb_arn" \
+            aws elbv2 delete-load-balancer --load-balancer-arn "$lb_arn"
     done
     if [ -n "$load_balancers" ] && [ "$load_balancers" != "None" ]; then
         sleep 15
     fi
 
     local target_groups
-    target_groups=$(with_account_creds "$account" aws elbv2 describe-target-groups \
-        --query 'TargetGroups[?contains(TargetGroupName, `acceptance-test`) || contains(TargetGroupName, `carina-acc`)].TargetGroupArn' --output text 2>/dev/null)
+    deep_cleanup_enumerate "$account" "ELBv2 target groups" target_groups \
+        aws elbv2 describe-target-groups \
+        --query 'TargetGroups[?contains(TargetGroupName, `acceptance-test`) || contains(TargetGroupName, `carina-acc`)].TargetGroupArn' --output text
     for tg_arn in $target_groups; do
         [ -z "$tg_arn" ] && continue
-        found=$((found + 1))
         echo "  Cleaning ELBv2 target group $tg_arn..."
-        with_account_creds "$account" aws elbv2 delete-target-group --target-group-arn "$tg_arn" 2>/dev/null || true
+        deep_cleanup_delete_resource "$account" "delete ELBv2 target group $tg_arn" \
+            aws elbv2 delete-target-group --target-group-arn "$tg_arn"
     done
 
     # 1. Delete non-default VPCs and all dependencies
     local vpcs
-    vpcs=$(with_account_creds "$account" aws ec2 describe-vpcs \
+    deep_cleanup_enumerate "$account" "non-default VPCs" vpcs \
+        aws ec2 describe-vpcs \
         --filters "Name=isDefault,Values=false" \
-        --query 'Vpcs[*].VpcId' --output text 2>/dev/null)
+        --query 'Vpcs[*].VpcId' --output text
 
     for vpc_id in $vpcs; do
         [ -z "$vpc_id" ] && continue
-        found=$((found + 1))
         echo "  Cleaning VPC $vpc_id..."
 
         # Delete NAT Gateways (must be first, takes time)
         local nat_gws
-        nat_gws=$(with_account_creds "$account" aws ec2 describe-nat-gateways \
+        deep_cleanup_enumerate "$account" "NAT gateways for VPC $vpc_id" nat_gws \
+            aws ec2 describe-nat-gateways \
             --filter "Name=vpc-id,Values=$vpc_id" "Name=state,Values=available,pending" \
-            --query 'NatGateways[*].NatGatewayId' --output text 2>/dev/null)
+            --query 'NatGateways[*].NatGatewayId' --output text
         for nat_id in $nat_gws; do
             [ -z "$nat_id" ] && continue
-            with_account_creds "$account" aws ec2 delete-nat-gateway --nat-gateway-id "$nat_id" 2>/dev/null || true
+            deep_cleanup_delete_supporting "$account" "delete NAT gateway $nat_id" \
+                aws ec2 delete-nat-gateway --nat-gateway-id "$nat_id"
         done
         # Wait for NAT GWs to delete if any were found
         if [ -n "$nat_gws" ] && [ "$nat_gws" != "None" ]; then
@@ -413,261 +596,330 @@ deep_cleanup_account() {
 
         # Delete VPC endpoints
         local endpoints
-        endpoints=$(with_account_creds "$account" aws ec2 describe-vpc-endpoints \
+        deep_cleanup_enumerate "$account" "VPC endpoints for VPC $vpc_id" endpoints \
+            aws ec2 describe-vpc-endpoints \
             --filters "Name=vpc-id,Values=$vpc_id" \
-            --query 'VpcEndpoints[*].VpcEndpointId' --output text 2>/dev/null)
+            --query 'VpcEndpoints[*].VpcEndpointId' --output text
         for ep_id in $endpoints; do
             [ -z "$ep_id" ] && continue
-            with_account_creds "$account" aws ec2 delete-vpc-endpoints --vpc-endpoint-ids "$ep_id" 2>/dev/null || true
+            deep_cleanup_delete_supporting "$account" "delete VPC endpoint $ep_id" \
+                aws ec2 delete-vpc-endpoints --vpc-endpoint-ids "$ep_id"
         done
 
         # Detach and delete internet gateways
         local igws
-        igws=$(with_account_creds "$account" aws ec2 describe-internet-gateways \
+        deep_cleanup_enumerate "$account" "internet gateways for VPC $vpc_id" igws \
+            aws ec2 describe-internet-gateways \
             --filters "Name=attachment.vpc-id,Values=$vpc_id" \
-            --query 'InternetGateways[*].InternetGatewayId' --output text 2>/dev/null)
+            --query 'InternetGateways[*].InternetGatewayId' --output text
         for igw_id in $igws; do
             [ -z "$igw_id" ] && continue
-            with_account_creds "$account" aws ec2 detach-internet-gateway --internet-gateway-id "$igw_id" --vpc-id "$vpc_id" 2>/dev/null || true
-            with_account_creds "$account" aws ec2 delete-internet-gateway --internet-gateway-id "$igw_id" 2>/dev/null || true
+            deep_cleanup_delete_supporting "$account" "detach internet gateway $igw_id from VPC $vpc_id" \
+                aws ec2 detach-internet-gateway --internet-gateway-id "$igw_id" --vpc-id "$vpc_id"
+            deep_cleanup_delete_supporting "$account" "delete internet gateway $igw_id" \
+                aws ec2 delete-internet-gateway --internet-gateway-id "$igw_id"
         done
 
         # Detach and delete VPN gateways
         local vpn_gws
-        vpn_gws=$(with_account_creds "$account" aws ec2 describe-vpn-gateways \
+        deep_cleanup_enumerate "$account" "VPN gateways for VPC $vpc_id" vpn_gws \
+            aws ec2 describe-vpn-gateways \
             --filters "Name=attachment.vpc-id,Values=$vpc_id" \
-            --query 'VpnGateways[*].VpnGatewayId' --output text 2>/dev/null)
+            --query 'VpnGateways[*].VpnGatewayId' --output text
         for vpn_id in $vpn_gws; do
             [ -z "$vpn_id" ] && continue
-            with_account_creds "$account" aws ec2 detach-vpn-gateway --vpn-gateway-id "$vpn_id" --vpc-id "$vpc_id" 2>/dev/null || true
-            with_account_creds "$account" aws ec2 delete-vpn-gateway --vpn-gateway-id "$vpn_id" 2>/dev/null || true
+            deep_cleanup_delete_supporting "$account" "detach VPN gateway $vpn_id from VPC $vpc_id" \
+                aws ec2 detach-vpn-gateway --vpn-gateway-id "$vpn_id" --vpc-id "$vpc_id"
+            deep_cleanup_delete_supporting "$account" "delete VPN gateway $vpn_id" \
+                aws ec2 delete-vpn-gateway --vpn-gateway-id "$vpn_id"
         done
 
         # Delete subnets
         local subnets
-        subnets=$(with_account_creds "$account" aws ec2 describe-subnets \
+        deep_cleanup_enumerate "$account" "subnets for VPC $vpc_id" subnets \
+            aws ec2 describe-subnets \
             --filters "Name=vpc-id,Values=$vpc_id" \
-            --query 'Subnets[*].SubnetId' --output text 2>/dev/null)
+            --query 'Subnets[*].SubnetId' --output text
         for subnet_id in $subnets; do
             [ -z "$subnet_id" ] && continue
-            with_account_creds "$account" aws ec2 delete-subnet --subnet-id "$subnet_id" 2>/dev/null || true
+            deep_cleanup_delete_supporting "$account" "delete subnet $subnet_id" \
+                aws ec2 delete-subnet --subnet-id "$subnet_id"
         done
 
         # Delete non-main route tables
         local rts
-        rts=$(with_account_creds "$account" aws ec2 describe-route-tables \
+        deep_cleanup_enumerate "$account" "non-main route tables for VPC $vpc_id" rts \
+            aws ec2 describe-route-tables \
             --filters "Name=vpc-id,Values=$vpc_id" \
-            --query 'RouteTables[?Associations[0].Main!=`true`].RouteTableId' --output text 2>/dev/null)
+            --query 'RouteTables[?Associations[0].Main!=`true`].RouteTableId' --output text
         for rt_id in $rts; do
             [ -z "$rt_id" ] && continue
-            with_account_creds "$account" aws ec2 delete-route-table --route-table-id "$rt_id" 2>/dev/null || true
+            deep_cleanup_delete_supporting "$account" "delete route table $rt_id" \
+                aws ec2 delete-route-table --route-table-id "$rt_id"
         done
 
         # Delete non-default security groups
         local sgs
-        sgs=$(with_account_creds "$account" aws ec2 describe-security-groups \
+        deep_cleanup_enumerate "$account" "non-default security groups for VPC $vpc_id" sgs \
+            aws ec2 describe-security-groups \
             --filters "Name=vpc-id,Values=$vpc_id" \
-            --query 'SecurityGroups[?GroupName!=`default`].GroupId' --output text 2>/dev/null)
+            --query 'SecurityGroups[?GroupName!=`default`].GroupId' --output text
         for sg_id in $sgs; do
             [ -z "$sg_id" ] && continue
-            with_account_creds "$account" aws ec2 delete-security-group --group-id "$sg_id" 2>/dev/null || true
+            deep_cleanup_delete_supporting "$account" "delete security group $sg_id" \
+                aws ec2 delete-security-group --group-id "$sg_id"
         done
 
         # Delete VPC peering connections
         local peerings
-        peerings=$(with_account_creds "$account" aws ec2 describe-vpc-peering-connections \
+        deep_cleanup_enumerate "$account" "peering connections for VPC $vpc_id" peerings \
+            aws ec2 describe-vpc-peering-connections \
             --filters "Name=requester-vpc-info.vpc-id,Values=$vpc_id" \
-            --query 'VpcPeeringConnections[*].VpcPeeringConnectionId' --output text 2>/dev/null)
+            --query 'VpcPeeringConnections[*].VpcPeeringConnectionId' --output text
         for peer_id in $peerings; do
             [ -z "$peer_id" ] && continue
-            with_account_creds "$account" aws ec2 delete-vpc-peering-connection --vpc-peering-connection-id "$peer_id" 2>/dev/null || true
+            deep_cleanup_delete_supporting "$account" "delete VPC peering connection $peer_id" \
+                aws ec2 delete-vpc-peering-connection --vpc-peering-connection-id "$peer_id"
         done
 
         # Finally delete the VPC
-        with_account_creds "$account" aws ec2 delete-vpc --vpc-id "$vpc_id" 2>/dev/null || true
+        deep_cleanup_delete_resource "$account" "delete VPC $vpc_id" \
+            aws ec2 delete-vpc --vpc-id "$vpc_id"
     done
 
     # 2. Delete orphaned S3 buckets matching carina-acc-test*
     local buckets
-    buckets=$(with_account_creds "$account" aws s3api list-buckets \
-        --query 'Buckets[?starts_with(Name, `carina-acc-test`)].Name' --output text 2>/dev/null)
+    deep_cleanup_enumerate "$account" "S3 buckets" buckets \
+        aws s3api list-buckets \
+        --query 'Buckets[?starts_with(Name, `carina-acc-test`)].Name' --output text
     for bucket in $buckets; do
         [ -z "$bucket" ] && continue
-        found=$((found + 1))
         echo "  Cleaning S3 bucket $bucket..."
-        with_account_creds "$account" aws s3 rb "s3://$bucket" --force 2>/dev/null || true
+        deep_cleanup_delete_resource "$account" "delete S3 bucket $bucket" \
+            aws s3 rb "s3://$bucket" --force
     done
 
     # 3. Delete orphaned DynamoDB tables
     local ddb_tables
-    ddb_tables=$(with_account_creds "$account" aws dynamodb list-tables \
-        --query 'TableNames[?starts_with(@, `carina-acc-test`) || starts_with(@, `acceptance-test`)]' --output text 2>/dev/null)
+    deep_cleanup_enumerate "$account" "DynamoDB tables" ddb_tables \
+        aws dynamodb list-tables \
+        --query 'TableNames[?starts_with(@, `carina-acc-test`) || starts_with(@, `acceptance-test`)]' --output text
     for table in $ddb_tables; do
         [ -z "$table" ] && continue
-        found=$((found + 1))
         echo "  Cleaning DynamoDB table $table..."
-        with_account_creds "$account" aws dynamodb delete-table --table-name "$table" 2>/dev/null || true
+        deep_cleanup_delete_resource "$account" "delete DynamoDB table $table" \
+            aws dynamodb delete-table --table-name "$table"
     done
 
     # 4. Delete orphaned ECS clusters
     local ecs_clusters
-    ecs_clusters=$(with_account_creds "$account" aws ecs list-clusters \
-        --query 'clusterArns[?contains(@, `acceptance-test`) || contains(@, `carina-acc`)]' --output text 2>/dev/null)
+    deep_cleanup_enumerate "$account" "ECS clusters" ecs_clusters \
+        aws ecs list-clusters \
+        --query 'clusterArns[?contains(@, `acceptance-test`) || contains(@, `carina-acc`)]' --output text
     for cluster_arn in $ecs_clusters; do
         [ -z "$cluster_arn" ] && continue
-        found=$((found + 1))
         echo "  Cleaning ECS cluster $cluster_arn..."
-        with_account_creds "$account" aws ecs delete-cluster --cluster "$cluster_arn" 2>/dev/null || true
+        deep_cleanup_delete_resource "$account" "delete ECS cluster $cluster_arn" \
+            aws ecs delete-cluster --cluster "$cluster_arn"
     done
 
     # 5. Delete orphaned Route 53 hosted zones
     local hosted_zones
-    hosted_zones=$(with_account_creds "$account" aws route53 list-hosted-zones \
-        --query 'HostedZones[?contains(Name, `acceptance-test`) || contains(Name, `carina-acc`)].Id' --output text 2>/dev/null)
+    deep_cleanup_enumerate "$account" "Route 53 hosted zones" hosted_zones \
+        aws route53 list-hosted-zones \
+        --query 'HostedZones[?contains(Name, `acceptance-test`) || contains(Name, `carina-acc`)].Id' --output text
     for zone_id in $hosted_zones; do
         [ -z "$zone_id" ] && continue
-        found=$((found + 1))
         echo "  Cleaning Route 53 hosted zone $zone_id..."
-        with_account_creds "$account" aws route53 delete-hosted-zone --id "$zone_id" 2>/dev/null || true
+        deep_cleanup_delete_resource "$account" "delete Route 53 hosted zone $zone_id" \
+            aws route53 delete-hosted-zone --id "$zone_id"
     done
 
     # 6. Delete orphaned regional WAFv2 web ACLs
     deep_cleanup_delete_wafv2_web_acls "$account"
-    found=$((found + DEEP_CLEANUP_WAFV2_WEB_ACL_DELETE_COUNT))
 
     # 7. Delete orphaned IAM OIDC providers tagged by acceptance tests
     local oidc_providers
-    oidc_providers=$(with_account_creds "$account" aws iam list-open-id-connect-providers \
-        --query 'OpenIDConnectProviderList[*].Arn' --output text 2>/dev/null)
+    deep_cleanup_enumerate "$account" "IAM OIDC providers" oidc_providers \
+        aws iam list-open-id-connect-providers \
+        --query 'OpenIDConnectProviderList[*].Arn' --output text
     for provider_arn in $oidc_providers; do
         [ -z "$provider_arn" ] && continue
         local provider_tags
-        provider_tags=$(with_account_creds "$account" aws iam list-open-id-connect-provider-tags \
+        deep_cleanup_enumerate "$account" "acceptance-test tags for IAM OIDC provider $provider_arn" provider_tags \
+            aws iam list-open-id-connect-provider-tags \
             --open-id-connect-provider-arn "$provider_arn" \
-            --query 'Tags[?Key==`Environment` && Value==`acceptance-test`].Key' --output text 2>/dev/null)
+            --query 'Tags[?Key==`Environment` && Value==`acceptance-test`].Key' --output text
         if [ -z "$provider_tags" ] || [ "$provider_tags" = "None" ]; then
             continue
         fi
-        found=$((found + 1))
         echo "  Cleaning IAM OIDC provider $provider_arn..."
-        with_account_creds "$account" aws iam delete-open-id-connect-provider --open-id-connect-provider-arn "$provider_arn" 2>/dev/null || true
+        deep_cleanup_delete_resource "$account" "delete IAM OIDC provider $provider_arn" \
+            aws iam delete-open-id-connect-provider --open-id-connect-provider-arn "$provider_arn"
     done
 
     # 8. Delete orphaned IAM roles
     local roles
-    roles=$(with_account_creds "$account" aws iam list-roles \
-        --query 'Roles[?contains(RoleName, `acceptance-test`) || contains(RoleName, `carina-acc`)].RoleName' --output text 2>/dev/null)
+    deep_cleanup_enumerate "$account" "IAM roles" roles \
+        aws iam list-roles \
+        --query 'Roles[?contains(RoleName, `acceptance-test`) || contains(RoleName, `carina-acc`)].RoleName' --output text
     for role in $roles; do
         [ -z "$role" ] && continue
-        found=$((found + 1))
         echo "  Cleaning IAM role $role..."
         # Detach all policies first
         local policies
-        policies=$(with_account_creds "$account" aws iam list-attached-role-policies --role-name "$role" \
-            --query 'AttachedPolicies[*].PolicyArn' --output text 2>/dev/null)
+        deep_cleanup_enumerate "$account" "attached policies for IAM role $role" policies \
+            aws iam list-attached-role-policies --role-name "$role" \
+            --query 'AttachedPolicies[*].PolicyArn' --output text
         for policy_arn in $policies; do
             [ -z "$policy_arn" ] && continue
-            with_account_creds "$account" aws iam detach-role-policy --role-name "$role" --policy-arn "$policy_arn" 2>/dev/null || true
+            deep_cleanup_delete_supporting "$account" "detach policy $policy_arn from IAM role $role" \
+                aws iam detach-role-policy --role-name "$role" --policy-arn "$policy_arn"
         done
         local inline_policies
-        inline_policies=$(with_account_creds "$account" aws iam list-role-policies --role-name "$role" \
-            --query 'PolicyNames[*]' --output text 2>/dev/null)
+        deep_cleanup_enumerate "$account" "inline policies for IAM role $role" inline_policies \
+            aws iam list-role-policies --role-name "$role" \
+            --query 'PolicyNames[*]' --output text
         for policy_name in $inline_policies; do
             [ -z "$policy_name" ] && continue
-            with_account_creds "$account" aws iam delete-role-policy --role-name "$role" --policy-name "$policy_name" 2>/dev/null || true
+            deep_cleanup_delete_supporting "$account" "delete inline policy $policy_name from IAM role $role" \
+                aws iam delete-role-policy --role-name "$role" --policy-name "$policy_name"
         done
-        with_account_creds "$account" aws iam delete-role --role-name "$role" 2>/dev/null || true
+        deep_cleanup_delete_resource "$account" "delete IAM role $role" \
+            aws iam delete-role --role-name "$role"
     done
 
     # 9. Delete orphaned IAM customer managed policies
     local iam_policies
-    iam_policies=$(with_account_creds "$account" aws iam list-policies --scope Local \
-        --query 'Policies[?contains(PolicyName, `acceptance-test`) || contains(PolicyName, `carina-acc`)].Arn' --output text 2>/dev/null)
+    deep_cleanup_enumerate "$account" "IAM customer managed policies" iam_policies \
+        aws iam list-policies --scope Local \
+        --query 'Policies[?contains(PolicyName, `acceptance-test`) || contains(PolicyName, `carina-acc`)].Arn' --output text
     for policy_arn in $iam_policies; do
         [ -z "$policy_arn" ] && continue
-        found=$((found + 1))
         echo "  Cleaning IAM policy $policy_arn..."
 
         local attached_roles
-        attached_roles=$(with_account_creds "$account" aws iam list-entities-for-policy --policy-arn "$policy_arn" \
-            --query 'PolicyRoles[*].RoleName' --output text 2>/dev/null)
+        deep_cleanup_enumerate "$account" "roles attached to IAM policy $policy_arn" attached_roles \
+            aws iam list-entities-for-policy --policy-arn "$policy_arn" \
+            --query 'PolicyRoles[*].RoleName' --output text
         for role_name in $attached_roles; do
             [ -z "$role_name" ] && continue
-            with_account_creds "$account" aws iam detach-role-policy --role-name "$role_name" --policy-arn "$policy_arn" 2>/dev/null || true
+            deep_cleanup_delete_supporting "$account" "detach IAM policy $policy_arn from role $role_name" \
+                aws iam detach-role-policy --role-name "$role_name" --policy-arn "$policy_arn"
         done
 
         local attached_users
-        attached_users=$(with_account_creds "$account" aws iam list-entities-for-policy --policy-arn "$policy_arn" \
-            --query 'PolicyUsers[*].UserName' --output text 2>/dev/null)
+        deep_cleanup_enumerate "$account" "users attached to IAM policy $policy_arn" attached_users \
+            aws iam list-entities-for-policy --policy-arn "$policy_arn" \
+            --query 'PolicyUsers[*].UserName' --output text
         for user_name in $attached_users; do
             [ -z "$user_name" ] && continue
-            with_account_creds "$account" aws iam detach-user-policy --user-name "$user_name" --policy-arn "$policy_arn" 2>/dev/null || true
+            deep_cleanup_delete_supporting "$account" "detach IAM policy $policy_arn from user $user_name" \
+                aws iam detach-user-policy --user-name "$user_name" --policy-arn "$policy_arn"
         done
 
         local attached_groups
-        attached_groups=$(with_account_creds "$account" aws iam list-entities-for-policy --policy-arn "$policy_arn" \
-            --query 'PolicyGroups[*].GroupName' --output text 2>/dev/null)
+        deep_cleanup_enumerate "$account" "groups attached to IAM policy $policy_arn" attached_groups \
+            aws iam list-entities-for-policy --policy-arn "$policy_arn" \
+            --query 'PolicyGroups[*].GroupName' --output text
         for group_name in $attached_groups; do
             [ -z "$group_name" ] && continue
-            with_account_creds "$account" aws iam detach-group-policy --group-name "$group_name" --policy-arn "$policy_arn" 2>/dev/null || true
+            deep_cleanup_delete_supporting "$account" "detach IAM policy $policy_arn from group $group_name" \
+                aws iam detach-group-policy --group-name "$group_name" --policy-arn "$policy_arn"
         done
 
         local policy_versions
-        policy_versions=$(with_account_creds "$account" aws iam list-policy-versions --policy-arn "$policy_arn" \
-            --query 'Versions[?IsDefaultVersion==`false`].VersionId' --output text 2>/dev/null)
+        deep_cleanup_enumerate "$account" "non-default versions of IAM policy $policy_arn" policy_versions \
+            aws iam list-policy-versions --policy-arn "$policy_arn" \
+            --query 'Versions[?IsDefaultVersion==`false`].VersionId' --output text
         for version_id in $policy_versions; do
             [ -z "$version_id" ] && continue
-            with_account_creds "$account" aws iam delete-policy-version --policy-arn "$policy_arn" --version-id "$version_id" 2>/dev/null || true
+            deep_cleanup_delete_supporting "$account" "delete version $version_id of IAM policy $policy_arn" \
+                aws iam delete-policy-version --policy-arn "$policy_arn" --version-id "$version_id"
         done
 
-        with_account_creds "$account" aws iam delete-policy --policy-arn "$policy_arn" 2>/dev/null || true
+        deep_cleanup_delete_resource "$account" "delete IAM policy $policy_arn" \
+            aws iam delete-policy --policy-arn "$policy_arn"
     done
 
     # 10. Delete orphaned log groups
     local log_groups
-    log_groups=$(with_account_creds "$account" aws logs describe-log-groups \
+    deep_cleanup_enumerate "$account" "CloudWatch log groups" log_groups \
+        aws logs describe-log-groups \
         --log-group-name-prefix "/acceptance-test/" \
-        --query 'logGroups[*].logGroupName' --output text 2>/dev/null)
+        --query 'logGroups[*].logGroupName' --output text
     for lg in $log_groups; do
         [ -z "$lg" ] && continue
-        found=$((found + 1))
         echo "  Cleaning log group $lg..."
-        with_account_creds "$account" aws logs delete-log-group --log-group-name "$lg" 2>/dev/null || true
+        deep_cleanup_delete_resource "$account" "delete log group $lg" \
+            aws logs delete-log-group --log-group-name "$lg"
     done
 
     # 11. Delete transit gateways
     local tgws
-    tgws=$(with_account_creds "$account" aws ec2 describe-transit-gateways \
+    deep_cleanup_enumerate "$account" "transit gateways" tgws \
+        aws ec2 describe-transit-gateways \
         --filters "Name=state,Values=available,pending" \
-        --query 'TransitGateways[*].TransitGatewayId' --output text 2>/dev/null)
+        --query 'TransitGateways[*].TransitGatewayId' --output text
     for tgw_id in $tgws; do
         [ -z "$tgw_id" ] && continue
-        found=$((found + 1))
         echo "  Cleaning transit gateway $tgw_id..."
         # Delete attachments first
         local attachments
-        attachments=$(with_account_creds "$account" aws ec2 describe-transit-gateway-attachments \
+        deep_cleanup_enumerate "$account" "attachments for transit gateway $tgw_id" attachments \
+            aws ec2 describe-transit-gateway-attachments \
             --filters "Name=transit-gateway-id,Values=$tgw_id" "Name=state,Values=available" \
-            --query 'TransitGatewayAttachments[*].TransitGatewayAttachmentId' --output text 2>/dev/null)
+            --query 'TransitGatewayAttachments[*].TransitGatewayAttachmentId' --output text
         for att_id in $attachments; do
             [ -z "$att_id" ] && continue
-            with_account_creds "$account" aws ec2 delete-transit-gateway-vpc-attachment --transit-gateway-attachment-id "$att_id" 2>/dev/null || true
+            deep_cleanup_delete_supporting "$account" "delete transit gateway attachment $att_id" \
+                aws ec2 delete-transit-gateway-vpc-attachment --transit-gateway-attachment-id "$att_id"
         done
-        with_account_creds "$account" aws ec2 delete-transit-gateway --transit-gateway-id "$tgw_id" 2>/dev/null || true
+        deep_cleanup_delete_resource "$account" "delete transit gateway $tgw_id" \
+            aws ec2 delete-transit-gateway --transit-gateway-id "$tgw_id"
     done
 
     # 12. Release Elastic IPs not associated with anything
     local eips
-    eips=$(with_account_creds "$account" aws ec2 describe-addresses \
-        --query 'Addresses[?AssociationId==null].AllocationId' --output text 2>/dev/null)
+    deep_cleanup_enumerate "$account" "unassociated Elastic IPs" eips \
+        aws ec2 describe-addresses \
+        --query 'Addresses[?AssociationId==null].AllocationId' --output text
     for eip_id in $eips; do
         [ -z "$eip_id" ] && continue
-        found=$((found + 1))
         echo "  Releasing Elastic IP $eip_id..."
-        with_account_creds "$account" aws ec2 release-address --allocation-id "$eip_id" 2>/dev/null || true
+        deep_cleanup_delete_resource "$account" "release Elastic IP $eip_id" \
+            aws ec2 release-address --allocation-id "$eip_id"
     done
 
-    echo "  $account: $found orphaned resources cleaned"
+    local found=$((DEEP_CLEANUP_DELETED_COUNT + DEEP_CLEANUP_FAILED_COUNT))
+    local summary="$account: $found found, $DEEP_CLEANUP_DELETED_COUNT deleted, $DEEP_CLEANUP_FAILED_COUNT failed"
+    if [ "$DEEP_CLEANUP_ENUMERATION_FAILURE_COUNT" -gt 0 ]; then
+        local enumeration_error_label="errors"
+        if [ "$DEEP_CLEANUP_ENUMERATION_FAILURE_COUNT" -eq 1 ]; then
+            enumeration_error_label="error"
+        fi
+        summary="$summary; $DEEP_CLEANUP_ENUMERATION_FAILURE_COUNT enumeration $enumeration_error_label"
+    fi
+    if [ "$DEEP_CLEANUP_SUPPORTING_FAILURE_COUNT" -gt 0 ]; then
+        local supporting_error_label="errors"
+        if [ "$DEEP_CLEANUP_SUPPORTING_FAILURE_COUNT" -eq 1 ]; then
+            supporting_error_label="error"
+        fi
+        summary="$summary; $DEEP_CLEANUP_SUPPORTING_FAILURE_COUNT supporting cleanup $supporting_error_label"
+    fi
+
+    if [ "$DEEP_CLEANUP_FAILED_COUNT" -gt 0 ]; then
+        echo "  ERROR: $summary" >&2
+        return 1
+    fi
+    if [ "$DEEP_CLEANUP_ENUMERATION_FAILURE_COUNT" -gt 0 ] || \
+        [ "$DEEP_CLEANUP_SUPPORTING_FAILURE_COUNT" -gt 0 ]; then
+        echo "  WARNING: $summary" >&2
+        return 0
+    fi
+
+    echo "  $summary"
+    return 0
 }
 
 # Build provider binary
@@ -1003,12 +1255,30 @@ if [ "$COMMAND" = "full" ]; then
 
     # Deep cleanup: remove orphaned resources before running tests
     echo "Running deep cleanup to remove orphaned resources..."
+    DEEP_CLEANUP_ACCOUNTS=()
     for SLOT in $(seq 0 $((NUM_ACCOUNTS - 1))); do
         ACCOUNT="${ACCOUNTS[$SLOT]}"
         deep_cleanup_account "$ACCOUNT" &
+        PIDS+=($!)
+        DEEP_CLEANUP_ACCOUNTS+=("$ACCOUNT")
     done
-    wait
+
+    DEEP_CLEANUP_EXIT=0
+    for PID_IDX in "${!PIDS[@]}"; do
+        if wait "${PIDS[$PID_IDX]}"; then
+            :
+        else
+            DEEP_CLEANUP_EXIT=1
+            echo "  ERROR: Deep cleanup failed for ${DEEP_CLEANUP_ACCOUNTS[$PID_IDX]}" >&2
+        fi
+    done
+    PIDS=()
     echo ""
+
+    if [ "$DEEP_CLEANUP_EXIT" -ne 0 ]; then
+        echo "ERROR: Pre-test deep cleanup failed; aborting the full run before acceptance tests." >&2
+        exit 1
+    fi
 
     # Distribute tests round-robin across accounts
     for i in "${!TESTS[@]}"; do
