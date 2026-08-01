@@ -54,6 +54,29 @@ jobs:
           components: rustfmt
       - run: cargo fmt --check
 
+  acceptance-shell:
+    name: Acceptance Shell Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify jq dependency
+        run: jq --version
+      - name: Syntax-check shell scripts
+        run: |
+          set -euo pipefail
+          find . \
+            -path './target' -prune -o \
+            -path '*/.git' -prune -o \
+            -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
+      - name: Run acceptance shell tests
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          # shell-tests require jq, but no AWS credentials or carina binary.
+          for test_script in acceptance-tests/shell-tests/*.sh; do
+            bash "$test_script"
+          done
+
   docs-drift:
     name: Check Docs Drift
     runs-on: ubuntu-latest
