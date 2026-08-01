@@ -816,8 +816,30 @@ deep_cleanup_account() {
             aws ec2 describe-route-tables \
             --filters "Name=vpc-id,Values=$vpc_id" \
             --query 'RouteTables[?Associations[0].Main!=`true`].RouteTableId' --output text
+        local rt_id
+        # Disassociate every non-main association before deleting any route table.
         for rt_id in $rts; do
             [ -z "$rt_id" ] && continue
+            [ "$rt_id" = "None" ] && continue
+
+            local rt_associations
+            deep_cleanup_enumerate "$account" "non-main associations for route table $rt_id" rt_associations \
+                aws ec2 describe-route-tables --route-table-ids "$rt_id" \
+                --query 'RouteTables[*].Associations[?Main!=`true`].RouteTableAssociationId' --output text
+            local rt_association_id
+            for rt_association_id in $rt_associations; do
+                [ -z "$rt_association_id" ] && continue
+                [ "$rt_association_id" = "None" ] && continue
+                echo "  Cleaning route table association $rt_association_id from route table $rt_id..."
+                deep_cleanup_delete_supporting "$account" "disassociate route table association $rt_association_id from route table $rt_id" \
+                    aws ec2 disassociate-route-table --association-id "$rt_association_id"
+            done
+        done
+
+        # Delete candidate route tables only after the complete disassociation pass.
+        for rt_id in $rts; do
+            [ -z "$rt_id" ] && continue
+            [ "$rt_id" = "None" ] && continue
             deep_cleanup_delete_supporting "$account" "delete route table $rt_id" \
                 aws ec2 delete-route-table --route-table-id "$rt_id"
         done
