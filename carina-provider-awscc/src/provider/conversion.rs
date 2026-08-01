@@ -330,7 +330,7 @@ pub(crate) fn dsl_value_to_aws_with_defs(
     let shape = schema.shape_of(attr_type);
     // For schema-level string enums, convert namespaced DSL values back to provider values.
     // The gate is "has a populated namespace identity" on a schema enum.
-    let is_namespaced_enum = matches!(shape, Shape::Enum { identity: _, .. });
+    let is_namespaced_enum = matches!(shape, Shape::Enum { .. });
     if is_namespaced_enum {
         match value {
             // Listed enum `String` values can arrive from read/state JSON
