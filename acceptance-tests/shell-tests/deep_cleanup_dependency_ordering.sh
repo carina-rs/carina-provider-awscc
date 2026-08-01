@@ -76,6 +76,12 @@ LB_TWO_ARN="arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app
 TARGET_GROUP_ARN="arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/acceptance-test/333"
 VPC_ID="vpc-ordering"
 SUBNET_ID="subnet-ordering"
+ROUTE_TABLE_ONE_ID="rtb-ordering-one"
+ROUTE_TABLE_TWO_ID="rtb-ordering-two"
+SUBNET_ROUTE_TABLE_ASSOCIATION_ID="rtbassoc-subnet"
+GATEWAY_ROUTE_TABLE_ASSOCIATION_ID="rtbassoc-gateway"
+SECOND_ROUTE_TABLE_ASSOCIATION_ID="rtbassoc-second"
+MAIN_ROUTE_TABLE_ASSOCIATION_ID="rtbassoc-main"
 SOURCE_SG_ID="sg-source"
 DEST_SG_ID="sg-destination"
 SOURCE_INGRESS_RULE_ID="sgr-source-ingress"
@@ -117,6 +123,22 @@ with_account_creds() {
                 ;;
             "aws ec2 describe-subnets"*)
                 echo "$SUBNET_ID"
+                ;;
+            "aws ec2 describe-route-tables --route-table-ids $ROUTE_TABLE_ONE_ID"*)
+                if [[ "$command" == *"Associations[?Main!=\`true\`].RouteTableAssociationId"* ]]; then
+                    printf '%s\t%s\n' "$SUBNET_ROUTE_TABLE_ASSOCIATION_ID" "$GATEWAY_ROUTE_TABLE_ASSOCIATION_ID"
+                else
+                    printf '%s\t%s\t%s\n' \
+                        "$SUBNET_ROUTE_TABLE_ASSOCIATION_ID" \
+                        "$GATEWAY_ROUTE_TABLE_ASSOCIATION_ID" \
+                        "$MAIN_ROUTE_TABLE_ASSOCIATION_ID"
+                fi
+                ;;
+            "aws ec2 describe-route-tables --route-table-ids $ROUTE_TABLE_TWO_ID"*)
+                echo "$SECOND_ROUTE_TABLE_ASSOCIATION_ID"
+                ;;
+            "aws ec2 describe-route-tables"*)
+                printf '%s\t%s\n' "$ROUTE_TABLE_ONE_ID" "$ROUTE_TABLE_TWO_ID"
                 ;;
             "aws ec2 describe-security-groups"*)
                 printf '%s\t%s\n' "$SOURCE_SG_ID" "$DEST_SG_ID"
@@ -218,6 +240,43 @@ fi
 if grep -F "aws ec2 delete-network-interface --network-interface-id $IN_USE_ENI_ID" "$COMMAND_LOG" >/dev/null; then
     fail "in-use network interface must not be force-deleted"
 fi
+
+for route_table_id in "$ROUTE_TABLE_ONE_ID" "$ROUTE_TABLE_TWO_ID"; do
+    association_enumeration_count=$(grep -cF "aws ec2 describe-route-tables --route-table-ids $route_table_id" "$COMMAND_LOG" || true)
+    if [ "$association_enumeration_count" -ne 1 ]; then
+        fail "expected one association enumeration for route table $route_table_id, got $association_enumeration_count"
+    fi
+done
+
+first_route_table_delete=$(first_line_containing "aws ec2 delete-route-table --route-table-id")
+last_route_table_disassociation=""
+for expected_disassociation in \
+    "aws ec2 disassociate-route-table --association-id $SUBNET_ROUTE_TABLE_ASSOCIATION_ID" \
+    "aws ec2 disassociate-route-table --association-id $GATEWAY_ROUTE_TABLE_ASSOCIATION_ID" \
+    "aws ec2 disassociate-route-table --association-id $SECOND_ROUTE_TABLE_ASSOCIATION_ID"
+do
+    disassociation_line=$(first_line_containing "$expected_disassociation")
+    if [ -z "$disassociation_line" ]; then
+        fail "missing route-table disassociation: $expected_disassociation"
+        continue
+    fi
+    if [ -z "$last_route_table_disassociation" ] || [ "$disassociation_line" -gt "$last_route_table_disassociation" ]; then
+        last_route_table_disassociation="$disassociation_line"
+    fi
+done
+if grep -F "aws ec2 disassociate-route-table --association-id $MAIN_ROUTE_TABLE_ASSOCIATION_ID" "$COMMAND_LOG" >/dev/null; then
+    fail "main route-table association must not be disassociated"
+fi
+if [ -n "$last_route_table_disassociation" ] && \
+    { [ -z "$first_route_table_delete" ] || [ "$last_route_table_disassociation" -ge "$first_route_table_delete" ]; }; then
+    fail "not every route-table disassociation ran before the first route-table delete"
+fi
+for route_table_id in "$ROUTE_TABLE_ONE_ID" "$ROUTE_TABLE_TWO_ID"; do
+    route_table_delete=$(first_line_containing "aws ec2 delete-route-table --route-table-id $route_table_id")
+    if [ -z "$route_table_delete" ]; then
+        fail "missing route-table delete after disassociations: $route_table_id"
+    fi
+done
 
 if [ "$FAILURES" -ne 0 ]; then
     exit 1
