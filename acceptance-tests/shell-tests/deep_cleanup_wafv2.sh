@@ -53,6 +53,10 @@ extract_function() {
 }
 
 for fn in \
+    deep_cleanup_enumerate \
+    _deep_cleanup_delete \
+    deep_cleanup_delete_resource \
+    deep_cleanup_delete_supporting \
     deep_cleanup_list_wafv2_web_acls \
     deep_cleanup_disassociate_wafv2_web_acls \
     deep_cleanup_delete_wafv2_web_acls \
@@ -189,6 +193,14 @@ source "$FUNCTIONS_FILE"
 
 declare -F deep_cleanup_list_wafv2_web_acls >/dev/null ||
     fail "deep_cleanup_list_wafv2_web_acls is not defined"
+declare -F deep_cleanup_enumerate >/dev/null ||
+    fail "deep_cleanup_enumerate is not defined"
+declare -F _deep_cleanup_delete >/dev/null ||
+    fail "_deep_cleanup_delete is not defined"
+declare -F deep_cleanup_delete_resource >/dev/null ||
+    fail "deep_cleanup_delete_resource is not defined"
+declare -F deep_cleanup_delete_supporting >/dev/null ||
+    fail "deep_cleanup_delete_supporting is not defined"
 declare -F deep_cleanup_disassociate_wafv2_web_acls >/dev/null ||
     fail "deep_cleanup_disassociate_wafv2_web_acls is not defined"
 declare -F deep_cleanup_delete_wafv2_web_acls >/dev/null ||
@@ -247,8 +259,8 @@ for web_acl_arn in $WEB_ACL_ARNS; do
 done
 
 : > "$COMMAND_LOG"
-if ! deep_cleanup_account "test-account" >/dev/null 2>"$STDERR_LOG"; then
-    fail "deep_cleanup_account returned non-zero"
+if deep_cleanup_account "test-account" >/dev/null 2>"$STDERR_LOG"; then
+    fail "deep_cleanup_account returned zero despite WAFv2 deletion failures"
 fi
 
 first_lb_delete=$(grep -nF "aws elbv2 delete-load-balancer --load-balancer-arn" "$COMMAND_LOG" | head -1 | cut -d: -f1 || true)
@@ -278,6 +290,8 @@ grep -F "$WEB_ACL_TWO_NAME" "$STDERR_LOG" >/dev/null ||
     fail "delete-web-acl failure did not name $WEB_ACL_TWO_NAME"
 grep -F "WAFAssociatedItemException" "$STDERR_LOG" >/dev/null ||
     fail "delete-web-acl failure did not include the AWS error"
+grep -F "test-account: 4 found, 1 deleted, 3 failed" "$STDERR_LOG" >/dev/null ||
+    fail "deep_cleanup_account summary did not count WAFv2 deletion failures"
 
 : > "$COMMAND_LOG"
 WAFV2_LIST_MODE="constant-marker"
