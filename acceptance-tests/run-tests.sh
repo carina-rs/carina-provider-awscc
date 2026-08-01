@@ -351,6 +351,7 @@ deep_cleanup_delete_resource() {
 
     local delete_succeeded=0
     _deep_cleanup_delete "$account" "$operation" delete_succeeded "$@"
+    DEEP_CLEANUP_LAST_DELETE_SUCCEEDED="$delete_succeeded"
     if [ "$delete_succeeded" -eq 1 ]; then
         DEEP_CLEANUP_DELETED_COUNT=$((${DEEP_CLEANUP_DELETED_COUNT:-0} + 1))
     else
@@ -372,6 +373,108 @@ deep_cleanup_delete_supporting() {
     fi
 
     return 0
+}
+
+# Runs a command with a hard wall-clock limit. This is used around AWS waiters,
+# whose generated polling limits can otherwise hold up an entire account sweep.
+deep_cleanup_with_timeout() {
+    local timeout_seconds="$1"
+    shift
+
+    local timer_pid_file
+    if ! timer_pid_file=$(mktemp); then
+        echo "unable to create timeout state file" >&2
+        return 1
+    fi
+
+    local command_pid
+    local timeout_pid
+    local command_status=0
+
+    "$@" &
+    command_pid=$!
+    (
+        local timer_sleep_pid=""
+        # Invoked by the TERM trap while this subshell still owns the timer.
+        # shellcheck disable=SC2329
+        _deep_cleanup_stop_timer() {
+            local active_timer_pid=""
+            active_timer_pid=$(jobs -pr || true)
+            if [ -n "$timer_sleep_pid" ] && [ "$active_timer_pid" = "$timer_sleep_pid" ]; then
+                kill "$timer_sleep_pid" 2>/dev/null || true
+            fi
+            if [ -n "$timer_sleep_pid" ]; then
+                wait "$timer_sleep_pid" 2>/dev/null || true
+            fi
+            exit 0
+        }
+        trap _deep_cleanup_stop_timer TERM
+
+        command sleep "$timeout_seconds" 3>&- >/dev/null 2>&1 &
+        timer_sleep_pid=$!
+        printf '%s\n' "$timer_sleep_pid" > "$timer_pid_file"
+        wait "$timer_sleep_pid" || exit 0
+        timer_sleep_pid=""
+        if kill -0 "$command_pid" 2>/dev/null; then
+            echo "command timed out after $timeout_seconds seconds" >&3
+            kill -KILL "$command_pid" 2>/dev/null || true
+        fi
+    ) 3>&2 </dev/null >/dev/null 2>/dev/null &
+    timeout_pid=$!
+
+    local timer_sleep_pid=""
+    local timer_setup_attempt=0
+    while [ ! -s "$timer_pid_file" ] && [ "$timer_setup_attempt" -lt 100 ]; do
+        if ! kill -0 "$timeout_pid" 2>/dev/null; then
+            break
+        fi
+        command sleep 0.01
+        timer_setup_attempt=$((timer_setup_attempt + 1))
+    done
+    if ! IFS= read -r timer_sleep_pid < "$timer_pid_file" || [ -z "$timer_sleep_pid" ]; then
+        rm -f "$timer_pid_file" 2>/dev/null || true
+        kill "$timeout_pid" 2>/dev/null || true
+        wait "$timeout_pid" 2>/dev/null || true
+        kill -KILL "$command_pid" 2>/dev/null || true
+        wait "$command_pid" 2>/dev/null || true
+        echo "unable to start timeout timer" >&2
+        return 1
+    fi
+    rm -f "$timer_pid_file" 2>/dev/null || true
+
+    if wait "$command_pid"; then
+        command_status=0
+    else
+        command_status=$?
+    fi
+
+    kill "$timeout_pid" 2>/dev/null || true
+    wait "$timeout_pid" 2>/dev/null || true
+    return "$command_status"
+}
+
+# EC2 treats an ENI disappearing during this waiter as failure, although that
+# means AWS completed the release. Suppress only that error; propagate timeouts
+# and every other waiter failure to the supporting-cleanup reporter.
+deep_cleanup_wait_for_network_interface() {
+    local timeout_seconds="$1"
+    shift
+
+    local wait_output=""
+    local wait_status=0
+    if wait_output=$(deep_cleanup_with_timeout "$timeout_seconds" "$@" 2>&1); then
+        return 0
+    else
+        wait_status=$?
+    fi
+
+    if [[ "$wait_output" == *"InvalidNetworkInterfaceID.NotFound"* ]]; then
+        return 0
+    fi
+    if [ -n "$wait_output" ]; then
+        printf '%s\n' "$wait_output" >&2
+    fi
+    return "$wait_status"
 }
 
 deep_cleanup_list_wafv2_web_acls() {
@@ -535,25 +638,47 @@ deep_cleanup_account() {
     DEEP_CLEANUP_ENUMERATION_FAILURE_COUNT=0
     DEEP_CLEANUP_LAST_ENUMERATION_SUCCEEDED=1
     DEEP_CLEANUP_DELETED_COUNT=0
+    DEEP_CLEANUP_LAST_DELETE_SUCCEEDED=0
     DEEP_CLEANUP_FAILED_COUNT=0
     DEEP_CLEANUP_SUPPORTING_FAILURE_COUNT=0
+    # Native waiter budgets: 15s * 40 = 600s (ELBv2), 20s * 10 = 200s (ENI).
+    # Wall caps of 720s and 300s leave 120s/100s of API-call margin as hang backstops.
+    local elbv2_wait_timeout_seconds=720
+    local eni_wait_timeout_seconds=300
 
     # Pre-cleanup: disassociate WAFv2 web ACLs before deleting associated resources.
     deep_cleanup_disassociate_wafv2_web_acls "$account"
 
     # 0. Delete orphaned ELBv2 load balancers and target groups before VPC cleanup
+    # Deleting a load balancer also deletes its listeners, so no listener pass is needed.
+    # Wait for that deletion because target groups remain undeletable while listeners reference them.
     local load_balancers
     deep_cleanup_enumerate "$account" "ELBv2 load balancers" load_balancers \
         aws elbv2 describe-load-balancers \
         --query 'LoadBalancers[?contains(LoadBalancerName, `acceptance-test`) || contains(LoadBalancerName, `carina-acc`)].LoadBalancerArn' --output text
+    local deleted_load_balancers=()
+    local lb_arn
     for lb_arn in $load_balancers; do
         [ -z "$lb_arn" ] && continue
         echo "  Cleaning ELBv2 load balancer $lb_arn..."
         deep_cleanup_delete_resource "$account" "delete ELBv2 load balancer $lb_arn" \
             aws elbv2 delete-load-balancer --load-balancer-arn "$lb_arn"
+        if [ "$DEEP_CLEANUP_LAST_DELETE_SUCCEEDED" -eq 1 ]; then
+            deleted_load_balancers+=("$lb_arn")
+        fi
     done
-    if [ -n "$load_balancers" ] && [ "$load_balancers" != "None" ]; then
-        sleep 15
+    if [ "${#deleted_load_balancers[@]}" -gt 0 ]; then
+        echo "  Waiting for deleted ELBv2 load balancers..."
+        local lb_wait_offset=0
+        while [ "$lb_wait_offset" -lt "${#deleted_load_balancers[@]}" ]; do
+            # describe-load-balancers accepts at most 20 ARNs per waiter poll.
+            local lb_wait_batch=("${deleted_load_balancers[@]:lb_wait_offset:20}")
+            deep_cleanup_delete_supporting "$account" "wait for deleted ELBv2 load balancers" \
+                deep_cleanup_with_timeout "$elbv2_wait_timeout_seconds" \
+                aws elbv2 wait load-balancers-deleted \
+                --load-balancer-arns "${lb_wait_batch[@]}"
+            lb_wait_offset=$((lb_wait_offset + 20))
+        done
     fi
 
     local target_groups
@@ -634,6 +759,45 @@ deep_cleanup_account() {
                 aws ec2 delete-vpn-gateway --vpn-gateway-id "$vpn_id"
         done
 
+        # Wait a bounded period for AWS-side releases, then delete only detached ENIs.
+        # A still in-use ENI may belong to a live resource and is never forced off.
+        local in_use_network_interfaces
+        deep_cleanup_enumerate "$account" "in-use network interfaces for VPC $vpc_id" in_use_network_interfaces \
+            aws ec2 describe-network-interfaces \
+            --filters "Name=vpc-id,Values=$vpc_id" "Name=status,Values=in-use" \
+            --query 'NetworkInterfaces[*].NetworkInterfaceId' --output text
+        local in_use_network_interface_ids=()
+        local eni_id
+        for eni_id in $in_use_network_interfaces; do
+            [ -z "$eni_id" ] && continue
+            [ "$eni_id" = "None" ] && continue
+            in_use_network_interface_ids+=("$eni_id")
+        done
+        if [ "${#in_use_network_interface_ids[@]}" -gt 0 ]; then
+            echo "  Waiting for network interfaces in VPC $vpc_id to become available..."
+            # Unlike ELBv2, wait per interface so one vanished ENI cannot poison a batch;
+            # each remaining ENI must still reach its own availability check.
+            for eni_id in "${in_use_network_interface_ids[@]}"; do
+                deep_cleanup_delete_supporting "$account" "wait for network interface $eni_id to become available" \
+                    deep_cleanup_wait_for_network_interface "$eni_wait_timeout_seconds" \
+                    aws ec2 wait network-interface-available \
+                    --network-interface-ids "$eni_id"
+            done
+        fi
+
+        local available_network_interfaces
+        deep_cleanup_enumerate "$account" "available network interfaces for VPC $vpc_id" available_network_interfaces \
+            aws ec2 describe-network-interfaces \
+            --filters "Name=vpc-id,Values=$vpc_id" "Name=status,Values=available" \
+            --query 'NetworkInterfaces[*].NetworkInterfaceId' --output text
+        for eni_id in $available_network_interfaces; do
+            [ -z "$eni_id" ] && continue
+            [ "$eni_id" = "None" ] && continue
+            echo "  Cleaning network interface $eni_id..."
+            deep_cleanup_delete_supporting "$account" "delete network interface $eni_id" \
+                aws ec2 delete-network-interface --network-interface-id "$eni_id"
+        done
+
         # Delete subnets
         local subnets
         deep_cleanup_enumerate "$account" "subnets for VPC $vpc_id" subnets \
@@ -664,8 +828,49 @@ deep_cleanup_account() {
             aws ec2 describe-security-groups \
             --filters "Name=vpc-id,Values=$vpc_id" \
             --query 'SecurityGroups[?GroupName!=`default`].GroupId' --output text
+        local sg_id
+        # Revoke every candidate group's rules before deleting any group. This
+        # breaks references in either direction between candidate groups.
         for sg_id in $sgs; do
             [ -z "$sg_id" ] && continue
+            [ "$sg_id" = "None" ] && continue
+
+            local sg_rules
+            deep_cleanup_enumerate "$account" "rules for security group $sg_id" sg_rules \
+                aws ec2 describe-security-group-rules \
+                --filters "Name=group-id,Values=$sg_id" \
+                --query 'SecurityGroupRules[].[SecurityGroupRuleId,IsEgress]' --output text
+            local sg_rule_id
+            local is_egress
+            while IFS=$'\t' read -r sg_rule_id is_egress; do
+                [ -z "$sg_rule_id" ] && continue
+                [ "$sg_rule_id" = "None" ] && continue
+
+                case "$is_egress" in
+                    False)
+                        echo "  Cleaning ingress rule $sg_rule_id from security group $sg_id..."
+                        deep_cleanup_delete_supporting "$account" "revoke ingress rule $sg_rule_id from security group $sg_id" \
+                            aws ec2 revoke-security-group-ingress \
+                            --group-id "$sg_id" --security-group-rule-ids "$sg_rule_id"
+                        ;;
+                    True)
+                        echo "  Cleaning egress rule $sg_rule_id from security group $sg_id..."
+                        deep_cleanup_delete_supporting "$account" "revoke egress rule $sg_rule_id from security group $sg_id" \
+                            aws ec2 revoke-security-group-egress \
+                            --group-id "$sg_id" --security-group-rule-ids "$sg_rule_id"
+                        ;;
+                    *)
+                        DEEP_CLEANUP_ENUMERATION_FAILURE_COUNT=$((DEEP_CLEANUP_ENUMERATION_FAILURE_COUNT + 1))
+                        echo "  ERROR: Failed to classify security-group rule $sg_rule_id for $sg_id: unexpected IsEgress value '$is_egress'" >&2
+                        ;;
+                esac
+            done <<< "$sg_rules"
+        done
+
+        # Delete candidate groups only after the complete revoke pass.
+        for sg_id in $sgs; do
+            [ -z "$sg_id" ] && continue
+            [ "$sg_id" = "None" ] && continue
             deep_cleanup_delete_supporting "$account" "delete security group $sg_id" \
                 aws ec2 delete-security-group --group-id "$sg_id"
         done
