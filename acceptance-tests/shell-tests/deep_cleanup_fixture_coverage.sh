@@ -369,8 +369,6 @@ EOF
 command cat > "$KNOWN_GAPS_FILE" <<'EOF'
 awscc.cloudfront.Distribution|Tracked by #408.
 awscc.cloudfront.OriginAccessControl|Tracked by #408.
-awscc.ec2.EgressOnlyInternetGateway|Tracked by #403.
-awscc.ec2.FlowLog|Tracked by #403.
 awscc.ec2.Ipam|Tracked by #406.
 awscc.ec2.IpamPool|Tracked by #406.
 awscc.kms.Key|Tracked by #407.

@@ -719,6 +719,20 @@ deep_cleanup_account() {
             sleep 30
         fi
 
+        # Delete flow logs before their IAM delivery roles are swept later
+        local flow_logs
+        deep_cleanup_enumerate "$account" "flow logs for VPC $vpc_id" flow_logs \
+            aws ec2 describe-flow-logs \
+            --filter "Name=resource-id,Values=$vpc_id" \
+            --query 'FlowLogs[*].FlowLogId' --output text
+        local flow_log_id
+        for flow_log_id in $flow_logs; do
+            [ -z "$flow_log_id" ] && continue
+            [ "$flow_log_id" = "None" ] && continue
+            deep_cleanup_delete_supporting "$account" "delete flow log $flow_log_id" \
+                aws ec2 delete-flow-logs --flow-log-ids "$flow_log_id"
+        done
+
         # Delete VPC endpoints
         local endpoints
         deep_cleanup_enumerate "$account" "VPC endpoints for VPC $vpc_id" endpoints \
@@ -743,6 +757,21 @@ deep_cleanup_account() {
                 aws ec2 detach-internet-gateway --internet-gateway-id "$igw_id" --vpc-id "$vpc_id"
             deep_cleanup_delete_supporting "$account" "delete internet gateway $igw_id" \
                 aws ec2 delete-internet-gateway --internet-gateway-id "$igw_id"
+        done
+
+        # Delete egress-only internet gateways attached to this VPC
+        local egress_only_internet_gateways
+        deep_cleanup_enumerate "$account" "egress-only internet gateways for VPC $vpc_id" egress_only_internet_gateways \
+            aws ec2 describe-egress-only-internet-gateways \
+            --query "EgressOnlyInternetGateways[?Attachments[?VpcId=='$vpc_id']].EgressOnlyInternetGatewayId" \
+            --output text
+        local egress_only_internet_gateway_id
+        for egress_only_internet_gateway_id in $egress_only_internet_gateways; do
+            [ -z "$egress_only_internet_gateway_id" ] && continue
+            [ "$egress_only_internet_gateway_id" = "None" ] && continue
+            deep_cleanup_delete_supporting "$account" "delete egress-only internet gateway $egress_only_internet_gateway_id" \
+                aws ec2 delete-egress-only-internet-gateway \
+                --egress-only-internet-gateway-id "$egress_only_internet_gateway_id"
         done
 
         # Detach and delete VPN gateways

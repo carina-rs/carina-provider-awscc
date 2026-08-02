@@ -17,6 +17,8 @@ RUN_TESTS_SH="$SCRIPT_DIR/../run-tests.sh"
 WORK_DIR="$(mktemp -d)"
 FUNCTIONS_FILE="$WORK_DIR/functions.sh"
 COMMAND_LOG="$WORK_DIR/aws-calls.log"
+FLOW_LOG_STUB_FAILURE_LOG="$WORK_DIR/flow-log-stub-failures.log"
+EOIGW_STUB_FAILURE_LOG="$WORK_DIR/eoigw-stub-failures.log"
 
 cleanup() {
     rm -rf "$WORK_DIR"
@@ -27,6 +29,14 @@ FAILURES=0
 fail() {
     echo "FAIL: $*" >&2
     FAILURES=$((FAILURES + 1))
+}
+
+record_stub_failure() {
+    local failure_file="$1"
+    shift
+    local message="$*"
+    printf '%s\n' "$message" >> "$failure_file"
+    printf 'STUB FAILURE: %s\n' "$message" >&2
 }
 
 if ! command -v jq >/dev/null 2>&1 || ! jq --version >/dev/null 2>&1; then
@@ -91,6 +101,30 @@ DEST_EGRESS_RULE_ID="sgr-destination-egress"
 UNEXPECTED_CASE_RULE_ID="sgr-unexpected-case"
 IN_USE_ENI_ID="eni-in-use"
 AVAILABLE_ENI_ID="eni-available"
+FLOW_LOG_ID="fl-ordering"
+MATCHING_EOIGW_ID="eigw-ordering"
+UNRELATED_EOIGW_ID="eigw-other-vpc"
+OTHER_VPC_ID="vpc-other"
+EOIGW_RESPONSE=$(jq -cn \
+    --arg matching_id "$MATCHING_EOIGW_ID" \
+    --arg unrelated_id "$UNRELATED_EOIGW_ID" \
+    --arg vpc_id "$VPC_ID" \
+    --arg other_vpc_id "$OTHER_VPC_ID" \
+    '{
+        EgressOnlyInternetGateways: [
+            {
+                EgressOnlyInternetGatewayId: $matching_id,
+                Attachments: [
+                    {VpcId: $other_vpc_id},
+                    {VpcId: $vpc_id}
+                ]
+            },
+            {
+                EgressOnlyInternetGatewayId: $unrelated_id,
+                Attachments: [{VpcId: $other_vpc_id}]
+            }
+        ]
+    }')
 
 with_account_creds() {
     shift
@@ -111,6 +145,55 @@ with_account_creds() {
                 ;;
             "aws ec2 describe-vpcs"*)
                 echo "$VPC_ID"
+                ;;
+            "aws ec2 describe-flow-logs"*)
+                if [[ "$command" == *"Name=resource-id,Values=$VPC_ID"* ]]; then
+                    echo "$FLOW_LOG_ID"
+                else
+                    record_stub_failure "$FLOW_LOG_STUB_FAILURE_LOG" \
+                        "FlowLog stub did not recognize the VPC-scoped filter in command: $command"
+                    exit 1
+                fi
+                ;;
+            "aws ec2 describe-egress-only-internet-gateways"*)
+                local query_argument_pattern='(^|[[:space:]])--query[[:space:]]+([^[:space:]]+)'
+                local eoigw_query=""
+                if [[ "$command" =~ $query_argument_pattern ]]; then
+                    eoigw_query="${BASH_REMATCH[2]}"
+                else
+                    record_stub_failure "$EOIGW_STUB_FAILURE_LOG" \
+                        "EOIGW stub did not find --query in command: $command"
+                    exit 1
+                fi
+
+                local attachment_aware_query_pattern="^EgressOnlyInternetGateways\\[\\?Attachments\\[\\?VpcId=='([^']+)'\\]\\]\\.EgressOnlyInternetGatewayId$"
+                local slot_zero_query_pattern="^EgressOnlyInternetGateways\\[\\?Attachments\\[0\\]\\.VpcId=='([^']+)'\\]\\.EgressOnlyInternetGatewayId$"
+                local query_vpc_id
+                if [[ "$eoigw_query" =~ $attachment_aware_query_pattern ]]; then
+                    query_vpc_id="${BASH_REMATCH[1]}"
+                    jq -r --arg vpc_id "$query_vpc_id" '
+                        [
+                            .EgressOnlyInternetGateways[]
+                            | select(.Attachments | any(.VpcId == $vpc_id))
+                            | .EgressOnlyInternetGatewayId
+                        ]
+                        | @tsv
+                    ' <<< "$EOIGW_RESPONSE"
+                elif [[ "$eoigw_query" =~ $slot_zero_query_pattern ]]; then
+                    query_vpc_id="${BASH_REMATCH[1]}"
+                    jq -r --arg vpc_id "$query_vpc_id" '
+                        [
+                            .EgressOnlyInternetGateways[]
+                            | select(.Attachments[0].VpcId == $vpc_id)
+                            | .EgressOnlyInternetGatewayId
+                        ]
+                        | @tsv
+                    ' <<< "$EOIGW_RESPONSE"
+                else
+                    record_stub_failure "$EOIGW_STUB_FAILURE_LOG" \
+                        "EOIGW stub did not recognize query '$eoigw_query' in command: $command"
+                    exit 1
+                fi
                 ;;
             "aws ec2 describe-network-interfaces"*)
                 if [[ "$command" == *"Name=vpc-id,Values=$VPC_ID"* ]] &&
@@ -176,9 +259,25 @@ last_line_containing() {
 source "$FUNCTIONS_FILE"
 
 : > "$COMMAND_LOG"
+: > "$FLOW_LOG_STUB_FAILURE_LOG"
+: > "$EOIGW_STUB_FAILURE_LOG"
 if ! deep_cleanup_account "ordering-account" >"$WORK_DIR/stdout.log" 2>"$WORK_DIR/stderr.log"; then
     fail "deep_cleanup_account returned non-zero for the successful ordering scenario"
 fi
+
+flow_log_stub_failed=0
+while IFS= read -r stub_failure; do
+    [ -z "$stub_failure" ] && continue
+    flow_log_stub_failed=1
+    fail "$stub_failure"
+done < "$FLOW_LOG_STUB_FAILURE_LOG"
+
+eoigw_stub_failed=0
+while IFS= read -r stub_failure; do
+    [ -z "$stub_failure" ] && continue
+    eoigw_stub_failed=1
+    fail "$stub_failure"
+done < "$EOIGW_STUB_FAILURE_LOG"
 
 last_lb_delete=$(last_line_containing "aws elbv2 delete-load-balancer --load-balancer-arn")
 lb_wait=$(first_line_containing "deep_cleanup_with_timeout 720 aws elbv2 wait load-balancers-deleted --load-balancer-arns $LB_ONE_ARN $LB_TWO_ARN")
@@ -192,6 +291,41 @@ elif [ -z "$first_target_group_delete" ] || [ "$lb_wait" -ge "$first_target_grou
 fi
 if grep -F "aws elbv2 delete-listener" "$COMMAND_LOG" >/dev/null; then
     fail "deep cleanup must rely on load-balancer deletion to remove listeners"
+fi
+
+flow_log_enumeration=$(first_line_containing "aws ec2 describe-flow-logs")
+flow_log_delete=$(first_line_containing "aws ec2 delete-flow-logs --flow-log-ids $FLOW_LOG_ID")
+eoigw_enumeration=$(first_line_containing "aws ec2 describe-egress-only-internet-gateways")
+eoigw_delete=$(first_line_containing "aws ec2 delete-egress-only-internet-gateway --egress-only-internet-gateway-id $MATCHING_EOIGW_ID")
+vpc_delete=$(first_line_containing "aws ec2 delete-vpc --vpc-id $VPC_ID")
+first_iam_role_call=$(first_line_containing "aws iam list-roles")
+if [ "$flow_log_stub_failed" -eq 0 ]; then
+    if [ -z "$flow_log_enumeration" ]; then
+        fail "missing VPC-scoped flow-log enumeration"
+    fi
+    if [ -z "$flow_log_delete" ]; then
+        fail "missing delete for the VPC's flow log"
+    elif [ -z "$vpc_delete" ] || [ "$flow_log_delete" -ge "$vpc_delete" ]; then
+        fail "flow log was not deleted before its VPC"
+    fi
+fi
+if [ -z "$first_iam_role_call" ]; then
+    fail "missing IAM role enumeration used as the flow-log dependency boundary"
+elif [ -n "$flow_log_delete" ] && [ "$flow_log_delete" -ge "$first_iam_role_call" ]; then
+    fail "flow log was not deleted before IAM role enumeration"
+fi
+if [ "$eoigw_stub_failed" -eq 0 ]; then
+    if [ -z "$eoigw_enumeration" ]; then
+        fail "missing egress-only internet gateway enumeration"
+    fi
+    if [ -z "$eoigw_delete" ]; then
+        fail "missing delete for the VPC's egress-only internet gateway"
+    elif [ -z "$vpc_delete" ] || [ "$eoigw_delete" -ge "$vpc_delete" ]; then
+        fail "egress-only internet gateway was not deleted before its VPC"
+    fi
+fi
+if grep -F "aws ec2 delete-egress-only-internet-gateway --egress-only-internet-gateway-id $UNRELATED_EOIGW_ID" "$COMMAND_LOG" >/dev/null; then
+    fail "egress-only internet gateway attached only to another VPC must not be deleted"
 fi
 
 first_sg_delete=$(first_line_containing "aws ec2 delete-security-group --group-id")
@@ -227,6 +361,15 @@ fi
 eni_wait=$(first_line_containing "deep_cleanup_wait_for_network_interface 300 aws ec2 wait network-interface-available --network-interface-ids $IN_USE_ENI_ID")
 available_eni_delete=$(first_line_containing "aws ec2 delete-network-interface --network-interface-id $AVAILABLE_ENI_ID")
 first_subnet_delete=$(first_line_containing "aws ec2 delete-subnet --subnet-id")
+first_route_table_teardown=$(first_line_containing "aws ec2 describe-route-tables --filters Name=vpc-id,Values=$VPC_ID")
+if [ -n "$flow_log_delete" ]; then
+    if [ -z "$first_subnet_delete" ] || [ "$flow_log_delete" -ge "$first_subnet_delete" ]; then
+        fail "flow log was not deleted before subnet teardown"
+    fi
+    if [ -z "$first_route_table_teardown" ] || [ "$flow_log_delete" -ge "$first_route_table_teardown" ]; then
+        fail "flow log was not deleted before route-table teardown"
+    fi
+fi
 if [ -z "$eni_wait" ]; then
     fail "missing bounded availability wait for the VPC's in-use network interface"
 elif [ -z "$first_subnet_delete" ] || [ "$eni_wait" -ge "$first_subnet_delete" ]; then
