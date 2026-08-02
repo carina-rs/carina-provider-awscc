@@ -20,6 +20,8 @@ COMMAND_LOG="$WORK_DIR/aws-calls.log"
 FLOW_LOG_STUB_FAILURE_LOG="$WORK_DIR/flow-log-stub-failures.log"
 EOIGW_STUB_FAILURE_LOG="$WORK_DIR/eoigw-stub-failures.log"
 ROUTE_TABLE_STUB_FAILURE_LOG="$WORK_DIR/route-table-stub-failures.log"
+IPAM_STUB_FAILURE_LOG="$WORK_DIR/ipam-stub-failures.log"
+IPAM_DELETE_LOG="$WORK_DIR/ipam-deletes.log"
 
 cleanup() {
     rm -rf "$WORK_DIR"
@@ -105,9 +107,38 @@ UNEXPECTED_CASE_RULE_ID="sgr-unexpected-case"
 IN_USE_ENI_ID="eni-in-use"
 AVAILABLE_ENI_ID="eni-available"
 FLOW_LOG_ID="fl-ordering"
+IPAM_ONE_ID="ipam-ordering-one"
+IPAM_TWO_ID="ipam-ordering-two"
+TRANSITIONING_IPAM_ID="ipam-ordering-transitioning"
+MODIFYING_IPAM_ID="ipam-ordering-modifying"
+DELETING_IPAM_ID="ipam-ordering-deleting"
+DELETE_COMPLETE_IPAM_ID="ipam-ordering-delete-complete"
+ISOLATING_IPAM_ID="ipam-ordering-isolating"
+RESTORING_IPAM_ID="ipam-ordering-restoring"
 MATCHING_EOIGW_ID="eigw-ordering"
 UNRELATED_EOIGW_ID="eigw-other-vpc"
 OTHER_VPC_ID="vpc-other"
+IPAM_RESPONSE=$(jq -cn \
+    --arg ipam_one_id "$IPAM_ONE_ID" \
+    --arg ipam_two_id "$IPAM_TWO_ID" \
+    --arg transitioning_ipam_id "$TRANSITIONING_IPAM_ID" \
+    --arg modifying_ipam_id "$MODIFYING_IPAM_ID" \
+    --arg deleting_ipam_id "$DELETING_IPAM_ID" \
+    --arg delete_complete_ipam_id "$DELETE_COMPLETE_IPAM_ID" \
+    --arg isolating_ipam_id "$ISOLATING_IPAM_ID" \
+    --arg restoring_ipam_id "$RESTORING_IPAM_ID" \
+    '{
+        Ipams: [
+            {IpamId: $ipam_one_id, State: "create-complete"},
+            {IpamId: $ipam_two_id, State: "delete-failed"},
+            {IpamId: $transitioning_ipam_id, State: "create-in-progress"},
+            {IpamId: $modifying_ipam_id, State: "modify-in-progress"},
+            {IpamId: $deleting_ipam_id, State: "delete-in-progress"},
+            {IpamId: $delete_complete_ipam_id, State: "delete-complete"},
+            {IpamId: $isolating_ipam_id, State: "isolate-in-progress"},
+            {IpamId: $restoring_ipam_id, State: "restore-in-progress"}
+        ]
+    }')
 EOIGW_RESPONSE=$(jq -cn \
     --arg matching_id "$MATCHING_EOIGW_ID" \
     --arg unrelated_id "$UNRELATED_EOIGW_ID" \
@@ -178,6 +209,115 @@ with_account_creds() {
                 ;;
             "aws elbv2 describe-target-groups"*)
                 echo "$TARGET_GROUP_ARN"
+                ;;
+            "aws ec2 describe-ipams"*)
+                local query_marker=' --query '
+                local output_marker=' --output '
+                local ipam_query=""
+                if [[ "$command" == *"$query_marker"*"$output_marker"* ]]; then
+                    ipam_query="${command#*"$query_marker"}"
+                    ipam_query="${ipam_query%%"$output_marker"*}"
+                else
+                    record_stub_failure "$IPAM_STUB_FAILURE_LOG" \
+                        "IPAM stub did not find --query in command: $command"
+                    exit 1
+                fi
+
+                local state_filtered_query_pattern='^Ipams\[\?contains\(\[(.*)\],[[:space:]]*State\)\]\.IpamId$'
+                if [[ "$ipam_query" =~ $state_filtered_query_pattern ]]; then
+                    local state_literals="${BASH_REMATCH[1]}"
+                    local state_literals_pattern="^\`[[:lower:]-]+\`([[:space:]]*,[[:space:]]*\`[[:lower:]-]+\`)*$"
+                    if ! [[ "$state_literals" =~ $state_literals_pattern ]]; then
+                        record_stub_failure "$IPAM_STUB_FAILURE_LOG" \
+                            "IPAM stub could not parse state literals in query '$ipam_query' from command: $command"
+                        exit 1
+                    fi
+
+                    local state_csv="${state_literals//\`/}"
+                    state_csv="${state_csv// /}"
+                    local filtered_ipam_states=()
+                    IFS=',' read -r -a filtered_ipam_states <<< "$state_csv"
+                    local filtered_ipam_state
+                    for filtered_ipam_state in "${filtered_ipam_states[@]}"; do
+                        case "$filtered_ipam_state" in
+                            create-in-progress | create-complete | create-failed | \
+                                modify-in-progress | modify-complete | modify-failed | \
+                                delete-in-progress | delete-complete | delete-failed | \
+                                isolate-in-progress | isolate-complete | restore-in-progress)
+                                ;;
+                            *)
+                                record_stub_failure "$IPAM_STUB_FAILURE_LOG" \
+                                    "IPAM stub did not recognize state '$filtered_ipam_state' in query '$ipam_query' from command: $command"
+                                exit 1
+                                ;;
+                        esac
+                    done
+                    jq -r --arg state_csv "$state_csv" '
+                        ($state_csv | split(",")) as $states
+                        | [
+                            .Ipams[]
+                            | select(.State as $state | $states | index($state))
+                            | .IpamId
+                        ]
+                        | @tsv
+                    ' <<< "$IPAM_RESPONSE"
+                else
+                    record_stub_failure "$IPAM_STUB_FAILURE_LOG" \
+                        "IPAM stub did not recognize query '$ipam_query' in command: $command"
+                    exit 1
+                fi
+                ;;
+            "aws ec2 delete-ipam-pool"*)
+                record_stub_failure "$IPAM_STUB_FAILURE_LOG" \
+                    "IPAM stub saw an unexpected standalone pool delete: $command"
+                exit 1
+                ;;
+            "aws ec2 delete-ipam"*)
+                local ipam_delete_arguments_text="${command#aws ec2 delete-ipam}"
+                local ipam_delete_arguments=()
+                read -r -a ipam_delete_arguments <<< "$ipam_delete_arguments_text"
+                local parsed_ipam_id=""
+                local parsed_cascade=0
+                local argument_index=0
+                while [ "$argument_index" -lt "${#ipam_delete_arguments[@]}" ]; do
+                    case "${ipam_delete_arguments[$argument_index]}" in
+                        --ipam-id)
+                            argument_index=$((argument_index + 1))
+                            if [ "$argument_index" -ge "${#ipam_delete_arguments[@]}" ] || [ -n "$parsed_ipam_id" ]; then
+                                record_stub_failure "$IPAM_STUB_FAILURE_LOG" \
+                                    "IPAM stub found a missing or duplicate --ipam-id in command: $command"
+                                exit 1
+                            fi
+                            parsed_ipam_id="${ipam_delete_arguments[$argument_index]}"
+                            ;;
+                        --cascade)
+                            if [ "$parsed_cascade" -eq 1 ]; then
+                                record_stub_failure "$IPAM_STUB_FAILURE_LOG" \
+                                    "IPAM stub found duplicate --cascade in command: $command"
+                                exit 1
+                            fi
+                            parsed_cascade=1
+                            ;;
+                        *)
+                            record_stub_failure "$IPAM_STUB_FAILURE_LOG" \
+                                "IPAM stub did not recognize argument '${ipam_delete_arguments[$argument_index]}' in command: $command"
+                            exit 1
+                            ;;
+                    esac
+                    argument_index=$((argument_index + 1))
+                done
+
+                if [ -z "$parsed_ipam_id" ] || [ "$parsed_cascade" -ne 1 ]; then
+                    record_stub_failure "$IPAM_STUB_FAILURE_LOG" \
+                        "IPAM stub requires --ipam-id and --cascade in command: $command"
+                    exit 1
+                fi
+                if [ "$parsed_ipam_id" != "$IPAM_ONE_ID" ] && [ "$parsed_ipam_id" != "$IPAM_TWO_ID" ]; then
+                    record_stub_failure "$IPAM_STUB_FAILURE_LOG" \
+                        "IPAM stub saw delete for non-enumerated IPAM $parsed_ipam_id in command: $command"
+                    exit 1
+                fi
+                printf '%s\n' "$parsed_ipam_id" >> "$IPAM_DELETE_LOG"
                 ;;
             "aws ec2 describe-vpcs"*)
                 echo "$VPC_ID"
@@ -344,6 +484,8 @@ source "$FUNCTIONS_FILE"
 : > "$FLOW_LOG_STUB_FAILURE_LOG"
 : > "$EOIGW_STUB_FAILURE_LOG"
 : > "$ROUTE_TABLE_STUB_FAILURE_LOG"
+: > "$IPAM_STUB_FAILURE_LOG"
+: > "$IPAM_DELETE_LOG"
 if ! deep_cleanup_account "ordering-account" >"$WORK_DIR/stdout.log" 2>"$WORK_DIR/stderr.log"; then
     fail "deep_cleanup_account returned non-zero for the successful ordering scenario"
 fi
@@ -367,6 +509,11 @@ while IFS= read -r stub_failure; do
     fail "$stub_failure"
 done < "$ROUTE_TABLE_STUB_FAILURE_LOG"
 
+while IFS= read -r stub_failure; do
+    [ -z "$stub_failure" ] && continue
+    fail "$stub_failure"
+done < "$IPAM_STUB_FAILURE_LOG"
+
 last_lb_delete=$(last_line_containing "aws elbv2 delete-load-balancer --load-balancer-arn")
 lb_wait=$(first_line_containing "deep_cleanup_with_timeout 720 aws elbv2 wait load-balancers-deleted --load-balancer-arns $LB_ONE_ARN $LB_TWO_ARN")
 first_target_group_delete=$(first_line_containing "aws elbv2 delete-target-group --target-group-arn")
@@ -379,6 +526,37 @@ elif [ -z "$first_target_group_delete" ] || [ "$lb_wait" -ge "$first_target_grou
 fi
 if grep -F "aws elbv2 delete-listener" "$COMMAND_LOG" >/dev/null; then
     fail "deep cleanup must rely on load-balancer deletion to remove listeners"
+fi
+
+ipam_enumeration=$(first_line_containing "aws ec2 describe-ipams")
+if [ -z "$ipam_enumeration" ]; then
+    fail "missing state-aware IPAM enumeration"
+fi
+for ipam_id in "$IPAM_ONE_ID" "$IPAM_TWO_ID"; do
+    ipam_delete_count=$(grep -cFx "$ipam_id" "$IPAM_DELETE_LOG" || true)
+    ipam_delete=$(first_line_containing "aws ec2 delete-ipam --ipam-id $ipam_id")
+    if [ "$ipam_delete_count" -ne 1 ]; then
+        fail "expected one cascade delete for enumerated IPAM $ipam_id, got $ipam_delete_count"
+    elif [ -z "$ipam_delete" ]; then
+        fail "missing delete command-log entry for enumerated IPAM $ipam_id"
+    elif [ -z "$ipam_enumeration" ] || [ "$ipam_delete" -le "$ipam_enumeration" ]; then
+        fail "IPAM $ipam_id was not deleted after IPAM enumeration"
+    fi
+done
+for excluded_ipam_id in \
+    "$TRANSITIONING_IPAM_ID" \
+    "$MODIFYING_IPAM_ID" \
+    "$DELETING_IPAM_ID" \
+    "$DELETE_COMPLETE_IPAM_ID" \
+    "$ISOLATING_IPAM_ID" \
+    "$RESTORING_IPAM_ID"
+do
+    if grep -F "aws ec2 delete-ipam --ipam-id $excluded_ipam_id" "$COMMAND_LOG" >/dev/null; then
+        fail "IPAM $excluded_ipam_id is in a non-swept state but was deleted"
+    fi
+done
+if grep -F "aws ec2 delete-ipam-pool" "$COMMAND_LOG" >/dev/null; then
+    fail "deep cleanup must rely on cascade IPAM deletion to remove private-scope pools"
 fi
 
 flow_log_enumeration=$(first_line_containing "aws ec2 describe-flow-logs")

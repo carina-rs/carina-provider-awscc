@@ -1139,7 +1139,23 @@ deep_cleanup_account() {
             aws ec2 delete-transit-gateway --transit-gateway-id "$tgw_id"
     done
 
-    # 12. Release Elastic IPs not associated with anything
+    # 12. Delete IPAMs and their private-scope pools
+    local ipams
+    deep_cleanup_enumerate "$account" "IPAM cleanup candidates" ipams \
+        aws ec2 describe-ipams \
+        --query "Ipams[?contains([\`create-complete\`, \`create-failed\`, \`modify-complete\`, \`modify-failed\`, \`delete-failed\`, \`isolate-complete\`], State)].IpamId" --output text
+    local ipam_id
+    for ipam_id in $ipams; do
+        [ -z "$ipam_id" ] && continue
+        [ "$ipam_id" = "None" ] && continue
+        echo "  Cleaning IPAM $ipam_id..."
+        # Cascade deletes private-scope pools, their provisioned CIDRs, and allocations.
+        # It intentionally fails visibly if the IPAM has a public-scope pool.
+        deep_cleanup_delete_resource "$account" "delete IPAM $ipam_id" \
+            aws ec2 delete-ipam --ipam-id "$ipam_id" --cascade
+    done
+
+    # 13. Release Elastic IPs not associated with anything
     local eips
     deep_cleanup_enumerate "$account" "unassociated Elastic IPs" eips \
         aws ec2 describe-addresses \
