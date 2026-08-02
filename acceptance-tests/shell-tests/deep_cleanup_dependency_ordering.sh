@@ -24,6 +24,9 @@ IPAM_STUB_FAILURE_LOG="$WORK_DIR/ipam-stub-failures.log"
 IPAM_DELETE_LOG="$WORK_DIR/ipam-deletes.log"
 KMS_STUB_FAILURE_LOG="$WORK_DIR/kms-stub-failures.log"
 KMS_SCHEDULE_LOG="$WORK_DIR/kms-schedules.log"
+CLOUDFRONT_STUB_FAILURE_LOG="$WORK_DIR/cloudfront-stub-failures.log"
+CLOUDFRONT_DISTRIBUTION_DELETE_LOG="$WORK_DIR/cloudfront-distribution-deletes.log"
+CLOUDFRONT_OAC_DELETE_LOG="$WORK_DIR/cloudfront-oac-deletes.log"
 
 cleanup() {
     rm -rf "$WORK_DIR"
@@ -127,6 +130,29 @@ KMS_ACCESS_DENIED_KEY_ID="kms-access-denied"
 KMS_ENABLED_KEY_ID="kms-enabled-tagged"
 KMS_DISABLED_KEY_ID="kms-disabled-tagged"
 KMS_PENDING_REPLICA_DELETION_KEY_ID="kms-pending-replica-deletion-tagged"
+DISABLED_DEPLOYED_DISTRIBUTION_ID="E-DISABLED-DEPLOYED"
+DISABLED_DEPLOYED_DISTRIBUTION_ETAG="ETAG-DISABLED-DEPLOYED"
+DISABLED_IN_PROGRESS_DISTRIBUTION_ID="E-DISABLED-IN-PROGRESS"
+DISABLED_IN_PROGRESS_DISTRIBUTION_ETAG="ETAG-DISABLED-IN-PROGRESS"
+ENABLED_DEPLOYED_DISTRIBUTION_ID="E-ENABLED-DEPLOYED"
+ENABLED_DEPLOYED_DISTRIBUTION_ETAG="ETAG-ENABLED-DEPLOYED"
+ENABLED_IN_PROGRESS_DISTRIBUTION_ID="E-ENABLED-IN-PROGRESS"
+ENABLED_IN_PROGRESS_DISTRIBUTION_ETAG="ETAG-ENABLED-IN-PROGRESS"
+FIRST_OAC_ID="OAC-ACCEPTANCE-TEST"
+FIRST_OAC_NAME="carina-acc-test-oac"
+FIRST_OAC_ETAG="ETAG-OAC-ACCEPTANCE-TEST"
+ENABLED_DISTRIBUTION_OAC_ID="OAC-ENABLED-DISTRIBUTION"
+ENABLED_DISTRIBUTION_OAC_NAME="enabled-distribution-origin-control"
+ENABLED_DISTRIBUTION_OAC_ETAG="ETAG-OAC-ENABLED-DISTRIBUTION"
+DELETED_DISTRIBUTION_OAC_ID="OAC-DELETED-DISTRIBUTION"
+DELETED_DISTRIBUTION_OAC_NAME="deleted-distribution-origin-control"
+DELETED_DISTRIBUTION_OAC_ETAG="ETAG-OAC-DELETED-DISTRIBUTION"
+GET_DENIED_OAC_ID="OAC-GET-DENIED"
+GET_DENIED_OAC_NAME="carina-acc-denied-oac"
+GET_DENIED_OAC_ETAG="ETAG-OAC-GET-DENIED"
+ODDLY_NAMED_OAC_ID="OAC-ODDLY-NAMED"
+ODDLY_NAMED_OAC_NAME="shared-assets-origin-control"
+ODDLY_NAMED_OAC_ETAG="ETAG-OAC-ODDLY-NAMED"
 KMS_FIXTURE=$(jq -cn \
     --arg aws_managed_key_id "$KMS_AWS_MANAGED_KEY_ID" \
     --arg pending_deletion_key_id "$KMS_PENDING_DELETION_KEY_ID" \
@@ -216,6 +242,83 @@ KMS_FIXTURE=$(jq -cn \
             }
         ]
     }')
+CLOUDFRONT_FIXTURE=$(jq -cn \
+    --arg disabled_deployed_id "$DISABLED_DEPLOYED_DISTRIBUTION_ID" \
+    --arg disabled_deployed_etag "$DISABLED_DEPLOYED_DISTRIBUTION_ETAG" \
+    --arg disabled_in_progress_id "$DISABLED_IN_PROGRESS_DISTRIBUTION_ID" \
+    --arg disabled_in_progress_etag "$DISABLED_IN_PROGRESS_DISTRIBUTION_ETAG" \
+    --arg enabled_deployed_id "$ENABLED_DEPLOYED_DISTRIBUTION_ID" \
+    --arg enabled_deployed_etag "$ENABLED_DEPLOYED_DISTRIBUTION_ETAG" \
+    --arg enabled_in_progress_id "$ENABLED_IN_PROGRESS_DISTRIBUTION_ID" \
+    --arg enabled_in_progress_etag "$ENABLED_IN_PROGRESS_DISTRIBUTION_ETAG" \
+    --arg first_oac_id "$FIRST_OAC_ID" \
+    --arg first_oac_name "$FIRST_OAC_NAME" \
+    --arg first_oac_etag "$FIRST_OAC_ETAG" \
+    --arg enabled_distribution_oac_id "$ENABLED_DISTRIBUTION_OAC_ID" \
+    --arg enabled_distribution_oac_name "$ENABLED_DISTRIBUTION_OAC_NAME" \
+    --arg enabled_distribution_oac_etag "$ENABLED_DISTRIBUTION_OAC_ETAG" \
+    --arg deleted_distribution_oac_id "$DELETED_DISTRIBUTION_OAC_ID" \
+    --arg deleted_distribution_oac_name "$DELETED_DISTRIBUTION_OAC_NAME" \
+    --arg deleted_distribution_oac_etag "$DELETED_DISTRIBUTION_OAC_ETAG" \
+    --arg get_denied_oac_id "$GET_DENIED_OAC_ID" \
+    --arg get_denied_oac_name "$GET_DENIED_OAC_NAME" \
+    --arg get_denied_oac_etag "$GET_DENIED_OAC_ETAG" \
+    --arg oddly_named_oac_id "$ODDLY_NAMED_OAC_ID" \
+    --arg oddly_named_oac_name "$ODDLY_NAMED_OAC_NAME" \
+    --arg oddly_named_oac_etag "$ODDLY_NAMED_OAC_ETAG" \
+    '{
+        Distributions: [
+            {
+                Id: $disabled_deployed_id,
+                Status: "Deployed",
+                Enabled: false,
+                ETag: $disabled_deployed_etag,
+                Origins: {Items: [
+                    {OriginAccessControlId: ""},
+                    {OriginAccessControlId: $deleted_distribution_oac_id}
+                ]}
+            },
+            {
+                Id: $disabled_in_progress_id,
+                Status: "InProgress",
+                Enabled: false,
+                ETag: $disabled_in_progress_etag,
+                Origins: {Items: [{OriginAccessControlId: ""}]}
+            },
+            {
+                Id: $enabled_deployed_id,
+                Status: "Deployed",
+                Enabled: true,
+                ETag: $enabled_deployed_etag,
+                Origins: {Items: [{OriginAccessControlId: $enabled_distribution_oac_id}]}
+            },
+            {
+                Id: $enabled_in_progress_id,
+                Status: "InProgress",
+                Enabled: true,
+                ETag: $enabled_in_progress_etag,
+                Origins: {Items: [{OriginAccessControlId: ""}]}
+            }
+        ],
+        OriginAccessControls: [
+            {Id: $first_oac_id, Name: $first_oac_name, ETag: $first_oac_etag, GetDenied: false},
+            {
+                Id: $enabled_distribution_oac_id,
+                Name: $enabled_distribution_oac_name,
+                ETag: $enabled_distribution_oac_etag,
+                GetDenied: false
+            },
+            {
+                Id: $deleted_distribution_oac_id,
+                Name: $deleted_distribution_oac_name,
+                ETag: $deleted_distribution_oac_etag,
+                GetDenied: false
+            },
+            {Id: $get_denied_oac_id, Name: $get_denied_oac_name, ETag: $get_denied_oac_etag, GetDenied: true},
+            {Id: $oddly_named_oac_id, Name: $oddly_named_oac_name, ETag: $oddly_named_oac_etag, GetDenied: false}
+        ]
+    }')
+CLOUDFRONT_IN_USE_ENUMERATION_DENIED=0
 KMS_LIST_KEYS_RESPONSE=$(jq -c \
     '{Keys: [.Keys[].KeyMetadata | {KeyId: .KeyId, KeyArn: .KeyArn}]}' \
     <<< "$KMS_FIXTURE")
@@ -310,6 +413,346 @@ with_account_creds() {
                 ;;
             "aws elbv2 describe-target-groups"*)
                 echo "$TARGET_GROUP_ARN"
+                ;;
+            "aws cloudfront list-distributions"*)
+                local distribution_arguments=("$@")
+                local distribution_query=""
+                local distribution_output=""
+                local argument_index=3
+                while [ "$argument_index" -lt "${#distribution_arguments[@]}" ]; do
+                    case "${distribution_arguments[$argument_index]}" in
+                        --query)
+                            argument_index=$((argument_index + 1))
+                            if [ "$argument_index" -ge "${#distribution_arguments[@]}" ] || [ -n "$distribution_query" ]; then
+                                record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
+                                    "CloudFront list-distributions stub found a missing or duplicate --query in command: $command"
+                                exit 1
+                            fi
+                            distribution_query="${distribution_arguments[$argument_index]}"
+                            ;;
+                        --output)
+                            argument_index=$((argument_index + 1))
+                            if [ "$argument_index" -ge "${#distribution_arguments[@]}" ] || [ -n "$distribution_output" ]; then
+                                record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
+                                    "CloudFront list-distributions stub found a missing or duplicate --output in command: $command"
+                                exit 1
+                            fi
+                            distribution_output="${distribution_arguments[$argument_index]}"
+                            ;;
+                        *)
+                            record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
+                                "CloudFront list-distributions stub did not recognize argument '${distribution_arguments[$argument_index]}' in command: $command"
+                            exit 1
+                            ;;
+                    esac
+                    argument_index=$((argument_index + 1))
+                done
+                if [ -z "$distribution_query" ] || [ "$distribution_output" != "text" ]; then
+                    record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
+                        "CloudFront list-distributions stub requires --query and --output text in command: $command"
+                    exit 1
+                fi
+
+                local distribution_state_query_pattern='^DistributionList\.Items\[\?(.+)\]\.\[Id,[[:space:]]*ETag\]$'
+                local referenced_oac_query_pattern='^DistributionList\.Items\[\]\.Origins\.Items\[\?(.+)\]\.OriginAccessControlId$'
+                if [[ "$distribution_query" =~ $referenced_oac_query_pattern ]]; then
+                    local referenced_oac_filter="${BASH_REMATCH[1]}"
+                    local non_empty_oac_condition_pattern="^OriginAccessControlId[[:space:]]*!=[[:space:]]*''$"
+                    if [[ ! "$referenced_oac_filter" =~ $non_empty_oac_condition_pattern ]]; then
+                        record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
+                            "CloudFront list-distributions stub could not interpret reference condition '$referenced_oac_filter' in query '$distribution_query' from command: $command"
+                        exit 1
+                    fi
+                    if [ "$CLOUDFRONT_IN_USE_ENUMERATION_DENIED" -eq 1 ]; then
+                        echo "An error occurred (AccessDenied) when calling the ListDistributions operation for the OAC reference snapshot" >&2
+                        exit 254
+                    fi
+                    jq -r \
+                        '[
+                            .Distributions[].Origins.Items[]
+                            | select(.OriginAccessControlId != "")
+                            | .OriginAccessControlId
+                        ]
+                        | @tsv' <<< "$CLOUDFRONT_FIXTURE"
+                elif [[ "$distribution_query" =~ $distribution_state_query_pattern ]]; then
+                    local distribution_filter="${BASH_REMATCH[1]}"
+                    local enabled_condition_pattern="^Enabled==\`(true|false)\`$"
+                    local status_condition_pattern="^Status==\`([^\`]*)\`$"
+                    local distribution_conditions="${distribution_filter// && /$'\n'}"
+                    local filtered_enabled=""
+                    local filtered_status=""
+                    local enabled_condition_seen=0
+                    local status_condition_seen=0
+                    local distribution_condition
+                    while IFS= read -r distribution_condition; do
+                        if [[ "$distribution_condition" =~ $enabled_condition_pattern ]]; then
+                            if [ "$enabled_condition_seen" -eq 1 ]; then
+                                record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
+                                    "CloudFront list-distributions stub found duplicate Enabled conditions in query '$distribution_query' from command: $command"
+                                exit 1
+                            fi
+                            enabled_condition_seen=1
+                            filtered_enabled="${BASH_REMATCH[1]}"
+                        elif [[ "$distribution_condition" =~ $status_condition_pattern ]]; then
+                            if [ "$status_condition_seen" -eq 1 ]; then
+                                record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
+                                    "CloudFront list-distributions stub found duplicate Status conditions in query '$distribution_query' from command: $command"
+                                exit 1
+                            fi
+                            status_condition_seen=1
+                            filtered_status="${BASH_REMATCH[1]}"
+                        else
+                            record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
+                                "CloudFront list-distributions stub could not interpret condition '$distribution_condition' in query '$distribution_query' from command: $command"
+                            exit 1
+                        fi
+                    done <<< "$distribution_conditions"
+
+                    jq -r \
+                        --arg enabled "$filtered_enabled" \
+                        --arg status "$filtered_status" \
+                        '[
+                            .Distributions[]
+                            | select(
+                                ($enabled == "" or (.Enabled | tostring) == $enabled)
+                                and ($status == "" or .Status == $status)
+                            )
+                            | [.Id, .ETag]
+                            | @tsv
+                        ]
+                        | .[]' <<< "$CLOUDFRONT_FIXTURE"
+                else
+                    record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
+                        "CloudFront list-distributions stub did not recognize query '$distribution_query' in command: $command"
+                    exit 1
+                fi
+                ;;
+            "aws cloudfront delete-distribution"*)
+                local distribution_delete_arguments=("$@")
+                local deleted_distribution_id=""
+                local deleted_distribution_etag=""
+                local argument_index=3
+                while [ "$argument_index" -lt "${#distribution_delete_arguments[@]}" ]; do
+                    case "${distribution_delete_arguments[$argument_index]}" in
+                        --id)
+                            argument_index=$((argument_index + 1))
+                            if [ "$argument_index" -ge "${#distribution_delete_arguments[@]}" ] || [ -n "$deleted_distribution_id" ]; then
+                                record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
+                                    "CloudFront delete-distribution stub found a missing or duplicate --id in command: $command"
+                                exit 1
+                            fi
+                            deleted_distribution_id="${distribution_delete_arguments[$argument_index]}"
+                            ;;
+                        --if-match)
+                            argument_index=$((argument_index + 1))
+                            if [ "$argument_index" -ge "${#distribution_delete_arguments[@]}" ] || [ -n "$deleted_distribution_etag" ]; then
+                                record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
+                                    "CloudFront delete-distribution stub found a missing or duplicate --if-match in command: $command"
+                                exit 1
+                            fi
+                            deleted_distribution_etag="${distribution_delete_arguments[$argument_index]}"
+                            ;;
+                        *)
+                            record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
+                                "CloudFront delete-distribution stub did not recognize argument '${distribution_delete_arguments[$argument_index]}' in command: $command"
+                            exit 1
+                            ;;
+                    esac
+                    argument_index=$((argument_index + 1))
+                done
+                if [ -z "$deleted_distribution_id" ] || [ -z "$deleted_distribution_etag" ]; then
+                    record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
+                        "CloudFront delete-distribution stub requires --id and --if-match in command: $command"
+                    exit 1
+                fi
+                local distribution_fixture_count
+                distribution_fixture_count=$(jq -r --arg id "$deleted_distribution_id" \
+                    '[.Distributions[] | select(.Id == $id)] | length' <<< "$CLOUDFRONT_FIXTURE")
+                if [ "$distribution_fixture_count" -ne 1 ]; then
+                    record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
+                        "CloudFront delete-distribution stub saw unknown or duplicate distribution ID '$deleted_distribution_id' in command: $command"
+                    exit 1
+                fi
+                printf '%s\t%s\n' "$deleted_distribution_id" "$deleted_distribution_etag" >> "$CLOUDFRONT_DISTRIBUTION_DELETE_LOG"
+                local expected_distribution_etag
+                expected_distribution_etag=$(jq -r --arg id "$deleted_distribution_id" \
+                    '.Distributions[] | select(.Id == $id) | .ETag' <<< "$CLOUDFRONT_FIXTURE")
+                if [ "$deleted_distribution_etag" != "$expected_distribution_etag" ]; then
+                    echo "An error occurred (PreconditionFailed) when calling the DeleteDistribution operation for distribution $deleted_distribution_id: stale ETag" >&2
+                    exit 254
+                fi
+                ;;
+            "aws cloudfront list-origin-access-controls"*)
+                local oac_list_arguments=("$@")
+                local oac_list_query=""
+                local oac_list_output=""
+                local argument_index=3
+                while [ "$argument_index" -lt "${#oac_list_arguments[@]}" ]; do
+                    case "${oac_list_arguments[$argument_index]}" in
+                        --query)
+                            argument_index=$((argument_index + 1))
+                            if [ "$argument_index" -ge "${#oac_list_arguments[@]}" ] || [ -n "$oac_list_query" ]; then
+                                record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
+                                    "CloudFront list-origin-access-controls stub found a missing or duplicate --query in command: $command"
+                                exit 1
+                            fi
+                            oac_list_query="${oac_list_arguments[$argument_index]}"
+                            ;;
+                        --output)
+                            argument_index=$((argument_index + 1))
+                            if [ "$argument_index" -ge "${#oac_list_arguments[@]}" ] || [ -n "$oac_list_output" ]; then
+                                record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
+                                    "CloudFront list-origin-access-controls stub found a missing or duplicate --output in command: $command"
+                                exit 1
+                            fi
+                            oac_list_output="${oac_list_arguments[$argument_index]}"
+                            ;;
+                        *)
+                            record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
+                                "CloudFront list-origin-access-controls stub did not recognize argument '${oac_list_arguments[$argument_index]}' in command: $command"
+                            exit 1
+                            ;;
+                    esac
+                    argument_index=$((argument_index + 1))
+                done
+                if [ -z "$oac_list_query" ] || [ "$oac_list_output" != "text" ]; then
+                    record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
+                        "CloudFront list-origin-access-controls stub requires --query and --output text in command: $command"
+                    exit 1
+                fi
+
+                local all_oac_ids_query_pattern='^OriginAccessControlList\.Items\[\*\]\.Id$'
+                if [[ "$oac_list_query" =~ $all_oac_ids_query_pattern ]]; then
+                    jq -r '[.OriginAccessControls[].Id] | @tsv' <<< "$CLOUDFRONT_FIXTURE"
+                else
+                    record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
+                        "CloudFront list-origin-access-controls stub did not recognize query '$oac_list_query' in command: $command"
+                    exit 1
+                fi
+                ;;
+            "aws cloudfront get-origin-access-control"*)
+                local oac_get_arguments=("$@")
+                local fetched_oac_id=""
+                local oac_get_query=""
+                local oac_get_output=""
+                local argument_index=3
+                while [ "$argument_index" -lt "${#oac_get_arguments[@]}" ]; do
+                    case "${oac_get_arguments[$argument_index]}" in
+                        --id)
+                            argument_index=$((argument_index + 1))
+                            if [ "$argument_index" -ge "${#oac_get_arguments[@]}" ] || [ -n "$fetched_oac_id" ]; then
+                                record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
+                                    "CloudFront get-origin-access-control stub found a missing or duplicate --id in command: $command"
+                                exit 1
+                            fi
+                            fetched_oac_id="${oac_get_arguments[$argument_index]}"
+                            ;;
+                        --query)
+                            argument_index=$((argument_index + 1))
+                            if [ "$argument_index" -ge "${#oac_get_arguments[@]}" ] || [ -n "$oac_get_query" ]; then
+                                record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
+                                    "CloudFront get-origin-access-control stub found a missing or duplicate --query in command: $command"
+                                exit 1
+                            fi
+                            oac_get_query="${oac_get_arguments[$argument_index]}"
+                            ;;
+                        --output)
+                            argument_index=$((argument_index + 1))
+                            if [ "$argument_index" -ge "${#oac_get_arguments[@]}" ] || [ -n "$oac_get_output" ]; then
+                                record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
+                                    "CloudFront get-origin-access-control stub found a missing or duplicate --output in command: $command"
+                                exit 1
+                            fi
+                            oac_get_output="${oac_get_arguments[$argument_index]}"
+                            ;;
+                        *)
+                            record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
+                                "CloudFront get-origin-access-control stub did not recognize argument '${oac_get_arguments[$argument_index]}' in command: $command"
+                            exit 1
+                            ;;
+                    esac
+                    argument_index=$((argument_index + 1))
+                done
+                if [ -z "$fetched_oac_id" ] || [ "$oac_get_query" != "ETag" ] || [ "$oac_get_output" != "text" ]; then
+                    record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
+                        "CloudFront get-origin-access-control stub requires --id, --query ETag, and --output text in command: $command"
+                    exit 1
+                fi
+                local oac_fixture_count
+                oac_fixture_count=$(jq -r --arg id "$fetched_oac_id" \
+                    '[.OriginAccessControls[] | select(.Id == $id)] | length' <<< "$CLOUDFRONT_FIXTURE")
+                if [ "$oac_fixture_count" -ne 1 ]; then
+                    record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
+                        "CloudFront get-origin-access-control stub saw unknown or duplicate OAC ID '$fetched_oac_id' in command: $command"
+                    exit 1
+                fi
+                if [ "$(jq -r --arg id "$fetched_oac_id" \
+                    '.OriginAccessControls[] | select(.Id == $id) | .GetDenied' <<< "$CLOUDFRONT_FIXTURE")" = "true" ]; then
+                    echo "An error occurred (AccessDenied) when calling the GetOriginAccessControl operation for OAC $fetched_oac_id" >&2
+                    exit 254
+                fi
+                jq -r --arg id "$fetched_oac_id" \
+                    '.OriginAccessControls[] | select(.Id == $id) | .ETag' <<< "$CLOUDFRONT_FIXTURE"
+                ;;
+            "aws cloudfront delete-origin-access-control"*)
+                local oac_delete_arguments=("$@")
+                local deleted_oac_id=""
+                local deleted_oac_etag=""
+                local argument_index=3
+                while [ "$argument_index" -lt "${#oac_delete_arguments[@]}" ]; do
+                    case "${oac_delete_arguments[$argument_index]}" in
+                        --id)
+                            argument_index=$((argument_index + 1))
+                            if [ "$argument_index" -ge "${#oac_delete_arguments[@]}" ] || [ -n "$deleted_oac_id" ]; then
+                                record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
+                                    "CloudFront delete-origin-access-control stub found a missing or duplicate --id in command: $command"
+                                exit 1
+                            fi
+                            deleted_oac_id="${oac_delete_arguments[$argument_index]}"
+                            ;;
+                        --if-match)
+                            argument_index=$((argument_index + 1))
+                            if [ "$argument_index" -ge "${#oac_delete_arguments[@]}" ] || [ -n "$deleted_oac_etag" ]; then
+                                record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
+                                    "CloudFront delete-origin-access-control stub found a missing or duplicate --if-match in command: $command"
+                                exit 1
+                            fi
+                            deleted_oac_etag="${oac_delete_arguments[$argument_index]}"
+                            ;;
+                        *)
+                            record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
+                                "CloudFront delete-origin-access-control stub did not recognize argument '${oac_delete_arguments[$argument_index]}' in command: $command"
+                            exit 1
+                            ;;
+                    esac
+                    argument_index=$((argument_index + 1))
+                done
+                if [ -z "$deleted_oac_id" ] || [ -z "$deleted_oac_etag" ]; then
+                    record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
+                        "CloudFront delete-origin-access-control stub requires --id and --if-match in command: $command"
+                    exit 1
+                fi
+                local oac_fixture_count
+                oac_fixture_count=$(jq -r --arg id "$deleted_oac_id" \
+                    '[.OriginAccessControls[] | select(.Id == $id)] | length' <<< "$CLOUDFRONT_FIXTURE")
+                if [ "$oac_fixture_count" -ne 1 ]; then
+                    record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
+                        "CloudFront delete-origin-access-control stub saw unknown or duplicate OAC ID '$deleted_oac_id' in command: $command"
+                    exit 1
+                fi
+                printf '%s\t%s\n' "$deleted_oac_id" "$deleted_oac_etag" >> "$CLOUDFRONT_OAC_DELETE_LOG"
+                local expected_oac_etag
+                expected_oac_etag=$(jq -r --arg id "$deleted_oac_id" \
+                    '.OriginAccessControls[] | select(.Id == $id) | .ETag' <<< "$CLOUDFRONT_FIXTURE")
+                if [ "$deleted_oac_etag" != "$expected_oac_etag" ]; then
+                    echo "An error occurred (PreconditionFailed) when calling the DeleteOriginAccessControl operation for OAC $deleted_oac_id: stale ETag" >&2
+                    exit 254
+                fi
+                ;;
+            "aws cloudfront "*)
+                record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
+                    "CloudFront stub did not recognize command: $command"
+                exit 1
                 ;;
             "aws kms list-keys"*)
                 local query_marker=' --query '
@@ -855,6 +1298,9 @@ source "$FUNCTIONS_FILE"
 : > "$IPAM_DELETE_LOG"
 : > "$KMS_STUB_FAILURE_LOG"
 : > "$KMS_SCHEDULE_LOG"
+: > "$CLOUDFRONT_STUB_FAILURE_LOG"
+: > "$CLOUDFRONT_DISTRIBUTION_DELETE_LOG"
+: > "$CLOUDFRONT_OAC_DELETE_LOG"
 if ! deep_cleanup_account "ordering-account" >"$WORK_DIR/stdout.log" 2>"$WORK_DIR/stderr.log"; then
     fail "deep_cleanup_account returned non-zero for the successful ordering scenario"
 fi
@@ -888,6 +1334,22 @@ while IFS= read -r stub_failure; do
     fail "$stub_failure"
 done < "$KMS_STUB_FAILURE_LOG"
 
+while IFS= read -r stub_failure; do
+    [ -z "$stub_failure" ] && continue
+    fail "$stub_failure"
+done < "$CLOUDFRONT_STUB_FAILURE_LOG"
+
+# Successful top-level deletes are 2 load balancers + 1 target group + 1 VPC +
+# 2 IPAMs + 3 KMS keys + 1 CloudFront distribution + 2 unreferenced CloudFront
+# OACs = 12. The two referenced OACs are deferred and therefore not counted.
+# The unexpected security-group IsEgress value, denied KMS tag read, and denied
+# OAC ETag read are enumeration warnings.
+expected_ordering_summary="  WARNING: ordering-account: 12 found, 12 deleted, 0 failed; 3 enumeration errors"
+ordering_summary=$(grep -F "ordering-account:" "$WORK_DIR/stderr.log" || true)
+if [ "$ordering_summary" != "$expected_ordering_summary" ]; then
+    fail "unexpected successful ordering summary: expected '$expected_ordering_summary', got '${ordering_summary:-<missing>}'"
+fi
+
 last_lb_delete=$(last_line_containing "aws elbv2 delete-load-balancer --load-balancer-arn")
 lb_wait=$(first_line_containing "deep_cleanup_with_timeout 720 aws elbv2 wait load-balancers-deleted --load-balancer-arns $LB_ONE_ARN $LB_TWO_ARN")
 first_target_group_delete=$(first_line_containing "aws elbv2 delete-target-group --target-group-arn")
@@ -900,6 +1362,113 @@ elif [ -z "$first_target_group_delete" ] || [ "$lb_wait" -ge "$first_target_grou
 fi
 if grep -F "aws elbv2 delete-listener" "$COMMAND_LOG" >/dev/null; then
     fail "deep cleanup must rely on load-balancer deletion to remove listeners"
+fi
+
+cloudfront_distribution_enumeration_count=$(grep -cF "aws cloudfront list-distributions --query " "$COMMAND_LOG" || true)
+if [ "$cloudfront_distribution_enumeration_count" -ne 2 ]; then
+    fail "expected one CloudFront reference snapshot and one state-aware distribution enumeration, got $cloudfront_distribution_enumeration_count list-distributions calls"
+fi
+cloudfront_in_use_oac_enumeration=$(first_line_containing "aws cloudfront list-distributions --query DistributionList.Items[].Origins.Items")
+if [ -z "$cloudfront_in_use_oac_enumeration" ]; then
+    fail "missing CloudFront in-use OAC snapshot"
+fi
+cloudfront_distribution_enumeration=$(first_line_containing "aws cloudfront list-distributions --query DistributionList.Items[?Enabled")
+if [ -z "$cloudfront_distribution_enumeration" ]; then
+    fail "missing state-aware CloudFront distribution enumeration"
+fi
+first_cloudfront_distribution_delete=$(first_line_containing "aws cloudfront delete-distribution --id")
+if [ -z "$first_cloudfront_distribution_delete" ]; then
+    fail "missing CloudFront distribution delete after the in-use OAC snapshot"
+elif [ -n "$cloudfront_in_use_oac_enumeration" ] && \
+    [ "$cloudfront_in_use_oac_enumeration" -ge "$first_cloudfront_distribution_delete" ]; then
+    fail "CloudFront in-use OAC snapshot did not precede distribution deletion"
+fi
+distribution_delete_count=$(awk 'END { print NR }' "$CLOUDFRONT_DISTRIBUTION_DELETE_LOG")
+if [ "$distribution_delete_count" -ne 1 ]; then
+    fail "expected exactly one CloudFront distribution delete, got $distribution_delete_count"
+fi
+expected_distribution_delete="$DISABLED_DEPLOYED_DISTRIBUTION_ID"$'\t'"$DISABLED_DEPLOYED_DISTRIBUTION_ETAG"
+expected_distribution_delete_count=$(grep -cFx \
+    "$expected_distribution_delete" "$CLOUDFRONT_DISTRIBUTION_DELETE_LOG" || true)
+if [ "$expected_distribution_delete_count" -ne 1 ]; then
+    fail "disabled Deployed distribution was not deleted exactly once with its enumerated ETag"
+fi
+for excluded_distribution_id in \
+    "$DISABLED_IN_PROGRESS_DISTRIBUTION_ID" \
+    "$ENABLED_DEPLOYED_DISTRIBUTION_ID" \
+    "$ENABLED_IN_PROGRESS_DISTRIBUTION_ID"
+do
+    if grep -F "aws cloudfront delete-distribution --id $excluded_distribution_id " "$COMMAND_LOG" >/dev/null; then
+        fail "non-sweepable CloudFront distribution $excluded_distribution_id was deleted"
+    fi
+done
+if grep -F "aws cloudfront get-distribution " "$COMMAND_LOG" >/dev/null; then
+    fail "CloudFront distribution ETags must come from list-distributions, not get-distribution"
+fi
+if grep -F "aws cloudfront update-distribution" "$COMMAND_LOG" >/dev/null; then
+    fail "deep cleanup must not auto-disable CloudFront distributions"
+fi
+
+oac_list_enumeration=$(first_line_containing "aws cloudfront list-origin-access-controls")
+if [ -z "$oac_list_enumeration" ]; then
+    fail "missing CloudFront origin access control enumeration"
+fi
+for oac_id in "$FIRST_OAC_ID" "$GET_DENIED_OAC_ID" "$ODDLY_NAMED_OAC_ID"; do
+    oac_get_count=$(grep -cF "aws cloudfront get-origin-access-control --id $oac_id " "$COMMAND_LOG" || true)
+    if [ "$oac_get_count" -ne 1 ]; then
+        fail "expected one ETag enumeration for CloudFront OAC $oac_id, got $oac_get_count"
+    fi
+done
+# Both OACs referenced in the pre-delete snapshot are deferred before their ETag
+# round trip. This includes the OAC on the distribution deleted above: retrying it
+# on the next sweep avoids depending on immediate CloudFront consistency and on
+# the distribution delete having succeeded.
+for deferred_oac_id in "$ENABLED_DISTRIBUTION_OAC_ID" "$DELETED_DISTRIBUTION_OAC_ID"; do
+    if grep -F "aws cloudfront get-origin-access-control --id $deferred_oac_id " "$COMMAND_LOG" >/dev/null; then
+        fail "referenced CloudFront OAC $deferred_oac_id reached its ETag enumeration"
+    fi
+    if grep -F "aws cloudfront delete-origin-access-control --id $deferred_oac_id " "$COMMAND_LOG" >/dev/null; then
+        fail "referenced CloudFront OAC $deferred_oac_id reached its delete attempt"
+    fi
+    if ! grep -Fx "  Skipping CloudFront origin access control $deferred_oac_id because a distribution references it." \
+        "$WORK_DIR/stdout.log" >/dev/null; then
+        fail "referenced CloudFront OAC $deferred_oac_id was not reported as deferred"
+    fi
+done
+oac_delete_count=$(awk 'END { print NR }' "$CLOUDFRONT_OAC_DELETE_LOG")
+if [ "$oac_delete_count" -ne 2 ]; then
+    fail "expected exactly two CloudFront OAC deletes, got $oac_delete_count"
+fi
+for expected_oac_delete in \
+    "$FIRST_OAC_ID"$'\t'"$FIRST_OAC_ETAG" \
+    "$ODDLY_NAMED_OAC_ID"$'\t'"$ODDLY_NAMED_OAC_ETAG"
+do
+    expected_oac_delete_count=$(grep -cFx "$expected_oac_delete" "$CLOUDFRONT_OAC_DELETE_LOG" || true)
+    if [ "$expected_oac_delete_count" -ne 1 ]; then
+        fail "CloudFront OAC delete did not use the exact enumerated ID and ETag: $expected_oac_delete"
+    fi
+done
+if grep -F "aws cloudfront delete-origin-access-control --id $GET_DENIED_OAC_ID " "$COMMAND_LOG" >/dev/null; then
+    fail "CloudFront OAC $GET_DENIED_OAC_ID was deleted despite its failed ETag enumeration"
+fi
+
+last_distribution_delete=$(last_line_containing "aws cloudfront delete-distribution --id")
+first_oac_delete=$(first_line_containing "aws cloudfront delete-origin-access-control --id")
+if [ -z "$last_distribution_delete" ] || [ -z "$first_oac_delete" ]; then
+    fail "missing CloudFront deletes needed to verify distribution-before-OAC ordering"
+elif [ "$last_distribution_delete" -ge "$first_oac_delete" ]; then
+    fail "not every CloudFront distribution delete ran before the first OAC delete"
+fi
+
+denied_oac_get=$(first_line_containing "aws cloudfront get-origin-access-control --id $GET_DENIED_OAC_ID")
+later_oac_delete=$(first_line_containing "aws cloudfront delete-origin-access-control --id $ODDLY_NAMED_OAC_ID")
+if [ -z "$denied_oac_get" ]; then
+    fail "missing AccessDenied CloudFront OAC ETag-enumeration fixture call"
+elif [ -z "$later_oac_delete" ] || [ "$later_oac_delete" -le "$denied_oac_get" ]; then
+    fail "failed CloudFront OAC ETag enumeration stopped a later OAC from being deleted"
+fi
+if ! grep -F "$GET_DENIED_OAC_ID" "$WORK_DIR/stderr.log" | grep -F "AccessDenied" >/dev/null; then
+    fail "CloudFront OAC ETag-enumeration failure was not reported"
 fi
 
 ipam_enumeration=$(first_line_containing "aws ec2 describe-ipams")
@@ -1158,6 +1727,56 @@ done
 if grep -Fx "aws ec2 delete-route-table --route-table-id $MAIN_ROUTE_TABLE_ID" "$COMMAND_LOG" >/dev/null; then
     fail "main route table must not be deleted"
 fi
+
+# If the account-wide OAC reference snapshot is unreadable, skip the entire OAC
+# pass. Treating the blank enumeration output as an empty in-use set would make
+# every OAC look deletable and recreate the permanent enabled-distribution wedge.
+CLOUDFRONT_IN_USE_ENUMERATION_DENIED=1
+COMMAND_LOG="$WORK_DIR/cloudfront-reference-failure-aws-calls.log"
+CLOUDFRONT_STUB_FAILURE_LOG="$WORK_DIR/cloudfront-reference-failure-stub-failures.log"
+CLOUDFRONT_REFERENCE_FAILURE_STDOUT_LOG="$WORK_DIR/cloudfront-reference-failure-stdout.log"
+CLOUDFRONT_REFERENCE_FAILURE_STDERR_LOG="$WORK_DIR/cloudfront-reference-failure-stderr.log"
+: > "$COMMAND_LOG"
+: > "$CLOUDFRONT_STUB_FAILURE_LOG"
+if ! deep_cleanup_account "cloudfront-reference-failure-account" \
+    >"$CLOUDFRONT_REFERENCE_FAILURE_STDOUT_LOG" \
+    2>"$CLOUDFRONT_REFERENCE_FAILURE_STDERR_LOG"; then
+    fail "deep_cleanup_account returned non-zero after the OAC reference enumeration failed"
+fi
+CLOUDFRONT_IN_USE_ENUMERATION_DENIED=0
+
+while IFS= read -r stub_failure; do
+    [ -z "$stub_failure" ] && continue
+    fail "$stub_failure"
+done < "$CLOUDFRONT_STUB_FAILURE_LOG"
+
+failed_reference_snapshot_count=$(grep -cF \
+    "aws cloudfront list-distributions --query DistributionList.Items[].Origins.Items" \
+    "$COMMAND_LOG" || true)
+if [ "$failed_reference_snapshot_count" -ne 1 ]; then
+    fail "expected exactly one failed CloudFront OAC reference snapshot, got $failed_reference_snapshot_count"
+fi
+if ! grep -F "CloudFront origin access controls referenced by distributions" \
+    "$CLOUDFRONT_REFERENCE_FAILURE_STDERR_LOG" | grep -F "AccessDenied" >/dev/null; then
+    fail "failed CloudFront OAC reference snapshot was not reported with its AccessDenied diagnostic"
+fi
+if ! grep -Fx "  Skipping CloudFront origin access control cleanup because distribution references could not be enumerated." \
+    "$CLOUDFRONT_REFERENCE_FAILURE_STDOUT_LOG" >/dev/null; then
+    fail "failed CloudFront OAC reference snapshot did not report the fail-closed pass skip"
+fi
+if ! grep -F "aws cloudfront delete-distribution --id $DISABLED_DEPLOYED_DISTRIBUTION_ID " \
+    "$COMMAND_LOG" >/dev/null; then
+    fail "failed CloudFront OAC reference snapshot incorrectly stopped distribution cleanup"
+fi
+for forbidden_oac_command in \
+    "aws cloudfront list-origin-access-controls" \
+    "aws cloudfront get-origin-access-control" \
+    "aws cloudfront delete-origin-access-control"
+do
+    if grep -F "$forbidden_oac_command" "$COMMAND_LOG" >/dev/null; then
+        fail "failed CloudFront OAC reference snapshot fell through to: $forbidden_oac_command"
+    fi
+done
 
 # A key policy may permit tag reads but deny ScheduleKeyDeletion. Exercise that
 # fatal top-level resource failure separately so the successful ordering scenario

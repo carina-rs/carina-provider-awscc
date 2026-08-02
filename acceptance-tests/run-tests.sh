@@ -1211,6 +1211,90 @@ deep_cleanup_account() {
             --key-id "$kms_key_id" --pending-window-in-days 7
     done
 
+    # Snapshot every OAC reference before deleting distributions. Pass 15
+    # intentionally leaves enabled distributions alone, so their OACs are
+    # undeletable by construction; attempting those deletes would fail forever
+    # and wedge every full run. Once an enabled distribution is disabled and
+    # swept, its OAC drops out of a later snapshot and becomes deletable. OACs
+    # referenced only by distributions deleted below are conservatively deferred
+    # too, then self-heal on the next sweep.
+    local cloudfront_in_use_origin_access_controls
+    deep_cleanup_enumerate "$account" "CloudFront origin access controls referenced by distributions" cloudfront_in_use_origin_access_controls \
+        aws cloudfront list-distributions \
+        --query "DistributionList.Items[].Origins.Items[?OriginAccessControlId!=''].OriginAccessControlId" --output text
+    local cloudfront_in_use_enumeration_succeeded="$DEEP_CLEANUP_LAST_ENUMERATION_SUCCEEDED"
+
+    # 15. Delete disabled, fully deployed CloudFront distributions
+    # These accounts are dedicated to acceptance tests, so untagged or oddly named
+    # distributions are still test debris. Tag/name gating would strand exactly the
+    # orphans this sweep exists to remove. Never auto-disable an enabled distribution,
+    # and defer InProgress distributions until a later sweep after deployment settles.
+    # list-distributions already includes each deletion ETag, so carry it with the ID
+    # instead of making a per-distribution get-distribution call.
+    local cloudfront_distributions
+    deep_cleanup_enumerate "$account" "disabled deployed CloudFront distributions" cloudfront_distributions \
+        aws cloudfront list-distributions \
+        --query "DistributionList.Items[?Enabled==\`false\` && Status==\`Deployed\`].[Id, ETag]" --output text
+    local distribution_id
+    local distribution_etag
+    while IFS=$'\t' read -r distribution_id distribution_etag; do
+        [ -z "$distribution_id" ] && continue
+        [ "$distribution_id" = "None" ] && continue
+        [ -z "$distribution_etag" ] && continue
+        [ "$distribution_etag" = "None" ] && continue
+        echo "  Cleaning CloudFront distribution $distribution_id..."
+        deep_cleanup_delete_resource "$account" "delete CloudFront distribution $distribution_id" \
+            aws cloudfront delete-distribution \
+            --id "$distribution_id" --if-match "$distribution_etag"
+    done <<< "$cloudfront_distributions"
+
+    # 16. Delete unreferenced CloudFront origin access controls after distributions
+    # OACs cannot be tagged, and these dedicated acceptance-test accounts contain no
+    # precious resources. Do not name-filter: every remaining OAC is cleanup debris.
+    # Fail closed if the reference enumeration failed. Its blank output cannot mean
+    # "nothing is in use": deleting everything could hit an OAC owned by an enabled
+    # distribution and recreate the permanent suite wedge this exclusion prevents.
+    if [ "$cloudfront_in_use_enumeration_succeeded" -eq 0 ]; then
+        echo "  Skipping CloudFront origin access control cleanup because distribution references could not be enumerated."
+    else
+        local origin_access_controls
+        deep_cleanup_enumerate "$account" "CloudFront origin access controls" origin_access_controls \
+            aws cloudfront list-origin-access-controls \
+            --query 'OriginAccessControlList.Items[*].Id' --output text
+        local origin_access_control_id
+        for origin_access_control_id in $origin_access_controls; do
+            [ -z "$origin_access_control_id" ] && continue
+            [ "$origin_access_control_id" = "None" ] && continue
+
+            local origin_access_control_is_in_use=0
+            local in_use_origin_access_control_id
+            for in_use_origin_access_control_id in $cloudfront_in_use_origin_access_controls; do
+                [ -z "$in_use_origin_access_control_id" ] && continue
+                [ "$in_use_origin_access_control_id" = "None" ] && continue
+                if [ "$origin_access_control_id" = "$in_use_origin_access_control_id" ]; then
+                    origin_access_control_is_in_use=1
+                    break
+                fi
+            done
+            if [ "$origin_access_control_is_in_use" -eq 1 ]; then
+                echo "  Skipping CloudFront origin access control $origin_access_control_id because a distribution references it."
+                continue
+            fi
+
+            local origin_access_control_etag
+            deep_cleanup_enumerate "$account" "ETag for CloudFront origin access control $origin_access_control_id" origin_access_control_etag \
+                aws cloudfront get-origin-access-control --id "$origin_access_control_id" \
+                --query 'ETag' --output text
+            [ -z "$origin_access_control_etag" ] && continue
+            [ "$origin_access_control_etag" = "None" ] && continue
+
+            echo "  Cleaning CloudFront origin access control $origin_access_control_id..."
+            deep_cleanup_delete_resource "$account" "delete CloudFront origin access control $origin_access_control_id" \
+                aws cloudfront delete-origin-access-control \
+                --id "$origin_access_control_id" --if-match "$origin_access_control_etag"
+        done
+    fi
+
     local found=$((DEEP_CLEANUP_DELETED_COUNT + DEEP_CLEANUP_FAILED_COUNT))
     local summary="$account: $found found, $DEEP_CLEANUP_DELETED_COUNT deleted, $DEEP_CLEANUP_FAILED_COUNT failed"
     if [ "$DEEP_CLEANUP_ENUMERATION_FAILURE_COUNT" -gt 0 ]; then
