@@ -1167,6 +1167,50 @@ deep_cleanup_account() {
             aws ec2 release-address --allocation-id "$eip_id"
     done
 
+    # 14. Schedule tagged KMS customer managed keys for deletion
+    # list-keys exposes no manager, state, or tag fields. Describe each key first
+    # so AWS-managed keys are rejected before list-resource-tags, which their key
+    # policies may deny. Enabled, Disabled, and PendingReplicaDeletion are selected.
+    # Re-scheduling PendingDeletion returns KMSInvalidStateException ("<key> is pending
+    # deletion") with exit 254 and needs no action. PendingReplicaDeletion is included
+    # because it can persist indefinitely while replicas exist; skipping it would leak
+    # the primary forever, while retrying lets it transition after the replicas are gone.
+    # Every other state is excluded conservatively; transitional states can resolve
+    # for a later sweep, and this pass does not assume whether schedule-key-deletion
+    # accepts them.
+    local kms_keys
+    deep_cleanup_enumerate "$account" "KMS keys" kms_keys \
+        aws kms list-keys \
+        --query 'Keys[*].KeyId' --output text
+    local kms_key_id
+    for kms_key_id in $kms_keys; do
+        [ -z "$kms_key_id" ] && continue
+        [ "$kms_key_id" = "None" ] && continue
+
+        local kms_key_sweepable
+        deep_cleanup_enumerate "$account" "metadata for KMS key $kms_key_id" kms_key_sweepable \
+            aws kms describe-key --key-id "$kms_key_id" \
+            --query "[KeyMetadata] | [?KeyManager==\`CUSTOMER\` && contains([\`Enabled\`, \`Disabled\`, \`PendingReplicaDeletion\`], KeyState)].KeyId" --output text
+        [ -z "$kms_key_sweepable" ] && continue
+        [ "$kms_key_sweepable" = "None" ] && continue
+
+        local kms_key_tags
+        deep_cleanup_enumerate "$account" "acceptance-test tags for KMS key $kms_key_id" kms_key_tags \
+            aws kms list-resource-tags --key-id "$kms_key_id" \
+            --query "Tags[?TagKey==\`Environment\` && TagValue==\`acceptance-test\`].TagKey" --output text
+        # Enumeration failure blanks the output, so an unreadable key (its key
+        # policy can deny ListResourceTags even when IAM allows it) takes the same
+        # fail-closed skip path as an untagged key and is never swept.
+        if [ -z "$kms_key_tags" ] || [ "$kms_key_tags" = "None" ]; then
+            continue
+        fi
+
+        echo "  Scheduling KMS key $kms_key_id for deletion..."
+        deep_cleanup_delete_resource "$account" "schedule KMS key $kms_key_id for deletion" \
+            aws kms schedule-key-deletion \
+            --key-id "$kms_key_id" --pending-window-in-days 7
+    done
+
     local found=$((DEEP_CLEANUP_DELETED_COUNT + DEEP_CLEANUP_FAILED_COUNT))
     local summary="$account: $found found, $DEEP_CLEANUP_DELETED_COUNT deleted, $DEEP_CLEANUP_FAILED_COUNT failed"
     if [ "$DEEP_CLEANUP_ENUMERATION_FAILURE_COUNT" -gt 0 ]; then

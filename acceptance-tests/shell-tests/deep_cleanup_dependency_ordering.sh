@@ -22,6 +22,8 @@ EOIGW_STUB_FAILURE_LOG="$WORK_DIR/eoigw-stub-failures.log"
 ROUTE_TABLE_STUB_FAILURE_LOG="$WORK_DIR/route-table-stub-failures.log"
 IPAM_STUB_FAILURE_LOG="$WORK_DIR/ipam-stub-failures.log"
 IPAM_DELETE_LOG="$WORK_DIR/ipam-deletes.log"
+KMS_STUB_FAILURE_LOG="$WORK_DIR/kms-stub-failures.log"
+KMS_SCHEDULE_LOG="$WORK_DIR/kms-schedules.log"
 
 cleanup() {
     rm -rf "$WORK_DIR"
@@ -118,6 +120,105 @@ RESTORING_IPAM_ID="ipam-ordering-restoring"
 MATCHING_EOIGW_ID="eigw-ordering"
 UNRELATED_EOIGW_ID="eigw-other-vpc"
 OTHER_VPC_ID="vpc-other"
+KMS_AWS_MANAGED_KEY_ID="kms-aws-managed-tagged"
+KMS_PENDING_DELETION_KEY_ID="kms-pending-deletion-tagged"
+KMS_FOREIGN_TAG_KEY_ID="kms-foreign-tagged"
+KMS_ACCESS_DENIED_KEY_ID="kms-access-denied"
+KMS_ENABLED_KEY_ID="kms-enabled-tagged"
+KMS_DISABLED_KEY_ID="kms-disabled-tagged"
+KMS_PENDING_REPLICA_DELETION_KEY_ID="kms-pending-replica-deletion-tagged"
+KMS_FIXTURE=$(jq -cn \
+    --arg aws_managed_key_id "$KMS_AWS_MANAGED_KEY_ID" \
+    --arg pending_deletion_key_id "$KMS_PENDING_DELETION_KEY_ID" \
+    --arg foreign_tag_key_id "$KMS_FOREIGN_TAG_KEY_ID" \
+    --arg access_denied_key_id "$KMS_ACCESS_DENIED_KEY_ID" \
+    --arg enabled_key_id "$KMS_ENABLED_KEY_ID" \
+    --arg disabled_key_id "$KMS_DISABLED_KEY_ID" \
+    --arg pending_replica_deletion_key_id "$KMS_PENDING_REPLICA_DELETION_KEY_ID" \
+    '{
+        Keys: [
+            {
+                KeyMetadata: {
+                    KeyId: $aws_managed_key_id,
+                    KeyArn: ("arn:aws:kms:us-east-1:123456789012:key/" + $aws_managed_key_id),
+                    KeyManager: "AWS",
+                    KeyState: "Enabled"
+                },
+                Tags: [{TagKey: "Environment", TagValue: "acceptance-test"}],
+                TagReadDenied: false,
+                ScheduleDenied: false
+            },
+            {
+                KeyMetadata: {
+                    KeyId: $pending_deletion_key_id,
+                    KeyArn: ("arn:aws:kms:us-east-1:123456789012:key/" + $pending_deletion_key_id),
+                    KeyManager: "CUSTOMER",
+                    KeyState: "PendingDeletion"
+                },
+                Tags: [{TagKey: "Environment", TagValue: "acceptance-test"}],
+                TagReadDenied: false,
+                ScheduleDenied: false
+            },
+            {
+                KeyMetadata: {
+                    KeyId: $foreign_tag_key_id,
+                    KeyArn: ("arn:aws:kms:us-east-1:123456789012:key/" + $foreign_tag_key_id),
+                    KeyManager: "CUSTOMER",
+                    KeyState: "Enabled"
+                },
+                Tags: [{TagKey: "Environment", TagValue: "foreign"}],
+                TagReadDenied: false,
+                ScheduleDenied: false
+            },
+            {
+                KeyMetadata: {
+                    KeyId: $access_denied_key_id,
+                    KeyArn: ("arn:aws:kms:us-east-1:123456789012:key/" + $access_denied_key_id),
+                    KeyManager: "CUSTOMER",
+                    KeyState: "Enabled"
+                },
+                Tags: [{TagKey: "Environment", TagValue: "acceptance-test"}],
+                TagReadDenied: true,
+                ScheduleDenied: false
+            },
+            {
+                KeyMetadata: {
+                    KeyId: $enabled_key_id,
+                    KeyArn: ("arn:aws:kms:us-east-1:123456789012:key/" + $enabled_key_id),
+                    KeyManager: "CUSTOMER",
+                    KeyState: "Enabled"
+                },
+                Tags: [{TagKey: "Environment", TagValue: "acceptance-test"}],
+                TagReadDenied: false,
+                ScheduleDenied: false
+            },
+            {
+                KeyMetadata: {
+                    KeyId: $disabled_key_id,
+                    KeyArn: ("arn:aws:kms:us-east-1:123456789012:key/" + $disabled_key_id),
+                    KeyManager: "CUSTOMER",
+                    KeyState: "Disabled"
+                },
+                Tags: [{TagKey: "Environment", TagValue: "acceptance-test"}],
+                TagReadDenied: false,
+                ScheduleDenied: false
+            },
+            {
+                KeyMetadata: {
+                    KeyId: $pending_replica_deletion_key_id,
+                    KeyArn: ("arn:aws:kms:us-east-1:123456789012:key/" + $pending_replica_deletion_key_id),
+                    KeyManager: "CUSTOMER",
+                    KeyState: "PendingReplicaDeletion"
+                },
+                Tags: [{TagKey: "Environment", TagValue: "acceptance-test"}],
+                TagReadDenied: false,
+                ScheduleDenied: false
+            }
+        ]
+    }')
+KMS_LIST_KEYS_RESPONSE=$(jq -c \
+    '{Keys: [.Keys[].KeyMetadata | {KeyId: .KeyId, KeyArn: .KeyArn}]}' \
+    <<< "$KMS_FIXTURE")
 IPAM_RESPONSE=$(jq -cn \
     --arg ipam_one_id "$IPAM_ONE_ID" \
     --arg ipam_two_id "$IPAM_TWO_ID" \
@@ -209,6 +310,272 @@ with_account_creds() {
                 ;;
             "aws elbv2 describe-target-groups"*)
                 echo "$TARGET_GROUP_ARN"
+                ;;
+            "aws kms list-keys"*)
+                local query_marker=' --query '
+                local output_marker=' --output '
+                local kms_list_query=""
+                local kms_list_output=""
+                if [[ "$command" == *"$query_marker"*"$output_marker"* ]]; then
+                    kms_list_query="${command#*"$query_marker"}"
+                    kms_list_query="${kms_list_query%%"$output_marker"*}"
+                    kms_list_output="${command##*"$output_marker"}"
+                else
+                    record_stub_failure "$KMS_STUB_FAILURE_LOG" \
+                        "KMS list-keys stub did not find --query and --output in command: $command"
+                    exit 1
+                fi
+
+                local key_id_projection_pattern='^Keys\[(\*)?\]\.KeyId$'
+                if [ "$kms_list_output" = "text" ] && [[ "$kms_list_query" =~ $key_id_projection_pattern ]]; then
+                    jq -r '[.Keys[] | .KeyId] | @tsv' <<< "$KMS_LIST_KEYS_RESPONSE"
+                else
+                    record_stub_failure "$KMS_STUB_FAILURE_LOG" \
+                        "KMS list-keys stub did not recognize query '$kms_list_query' or output '$kms_list_output' in command: $command"
+                    exit 1
+                fi
+                ;;
+            "aws kms describe-key"*)
+                local query_marker=' --query '
+                local output_marker=' --output '
+                local describe_prefix='aws kms describe-key --key-id '
+                local describe_before_query="${command%%"$query_marker"*}"
+                local kms_describe_query=""
+                local kms_describe_output=""
+                local described_key_id=""
+                if [[ "$command" == *"$query_marker"*"$output_marker"* ]] && \
+                    [[ "$describe_before_query" == "$describe_prefix"* ]]; then
+                    described_key_id="${describe_before_query#"$describe_prefix"}"
+                    kms_describe_query="${command#*"$query_marker"}"
+                    kms_describe_query="${kms_describe_query%%"$output_marker"*}"
+                    kms_describe_output="${command##*"$output_marker"}"
+                else
+                    record_stub_failure "$KMS_STUB_FAILURE_LOG" \
+                        "KMS describe-key stub did not recognize command options: $command"
+                    exit 1
+                fi
+                if [ -z "$described_key_id" ] || [[ "$described_key_id" == *[[:space:]]* ]] || \
+                    [ "$kms_describe_output" != "text" ]; then
+                    record_stub_failure "$KMS_STUB_FAILURE_LOG" \
+                        "KMS describe-key stub found an invalid key ID or output in command: $command"
+                    exit 1
+                fi
+
+                local metadata_query_pattern='^\[KeyMetadata\][[:space:]]*\|[[:space:]]*\[\?(.+)\]\.KeyId$'
+                local manager_and_state_pattern="^KeyManager==\`([[:upper:]]+)\`[[:space:]]*&&[[:space:]]*contains\\(\\[(.*)\\],[[:space:]]*KeyState\\)$"
+                local state_only_pattern='^contains\(\[(.*)\],[[:space:]]*KeyState\)$'
+                local metadata_filter=""
+                local filtered_key_manager=""
+                local state_literals=""
+                if [[ "$kms_describe_query" =~ $metadata_query_pattern ]]; then
+                    metadata_filter="${BASH_REMATCH[1]}"
+                else
+                    record_stub_failure "$KMS_STUB_FAILURE_LOG" \
+                        "KMS describe-key stub did not recognize query '$kms_describe_query' in command: $command"
+                    exit 1
+                fi
+                if [[ "$metadata_filter" =~ $manager_and_state_pattern ]]; then
+                    filtered_key_manager="${BASH_REMATCH[1]}"
+                    state_literals="${BASH_REMATCH[2]}"
+                elif [[ "$metadata_filter" =~ $state_only_pattern ]]; then
+                    state_literals="${BASH_REMATCH[1]}"
+                else
+                    record_stub_failure "$KMS_STUB_FAILURE_LOG" \
+                        "KMS describe-key stub could not interpret filter '$metadata_filter' in command: $command"
+                    exit 1
+                fi
+
+                local state_literals_pattern="^\`[[:alpha:]]+\`([[:space:]]*,[[:space:]]*\`[[:alpha:]]+\`)*$"
+                if ! [[ "$state_literals" =~ $state_literals_pattern ]]; then
+                    record_stub_failure "$KMS_STUB_FAILURE_LOG" \
+                        "KMS describe-key stub could not parse state literals in query '$kms_describe_query' from command: $command"
+                    exit 1
+                fi
+                local state_csv="${state_literals//\`/}"
+                state_csv="${state_csv// /}"
+                local filtered_key_states=()
+                IFS=',' read -r -a filtered_key_states <<< "$state_csv"
+                local filtered_key_state
+                for filtered_key_state in "${filtered_key_states[@]}"; do
+                    case "$filtered_key_state" in
+                        Enabled | Disabled | PendingDeletion | PendingReplicaDeletion | \
+                            PendingImport | Unavailable | Creating | Updating)
+                            ;;
+                        *)
+                            record_stub_failure "$KMS_STUB_FAILURE_LOG" \
+                                "KMS describe-key stub did not recognize state '$filtered_key_state' in query '$kms_describe_query' from command: $command"
+                            exit 1
+                            ;;
+                    esac
+                done
+
+                local kms_metadata
+                kms_metadata=$(jq -c --arg key_id "$described_key_id" '
+                    [.Keys[] | select(.KeyMetadata.KeyId == $key_id)]
+                    | if length == 1 then .[0].KeyMetadata else empty end
+                ' <<< "$KMS_FIXTURE")
+                if [ -z "$kms_metadata" ]; then
+                    record_stub_failure "$KMS_STUB_FAILURE_LOG" \
+                        "KMS describe-key stub saw unknown or duplicate key ID '$described_key_id' in command: $command"
+                    exit 1
+                fi
+
+                local fixture_key_manager
+                local fixture_key_state
+                fixture_key_manager=$(jq -r '.KeyManager' <<< "$kms_metadata")
+                fixture_key_state=$(jq -r '.KeyState' <<< "$kms_metadata")
+                local state_matched=0
+                for filtered_key_state in "${filtered_key_states[@]}"; do
+                    if [ "$fixture_key_state" = "$filtered_key_state" ]; then
+                        state_matched=1
+                        break
+                    fi
+                done
+                if { [ -z "$filtered_key_manager" ] || [ "$fixture_key_manager" = "$filtered_key_manager" ]; } && \
+                    [ "$state_matched" -eq 1 ]; then
+                    echo "$described_key_id"
+                fi
+                ;;
+            "aws kms list-resource-tags"*)
+                local query_marker=' --query '
+                local output_marker=' --output '
+                local tags_prefix='aws kms list-resource-tags --key-id '
+                local tags_before_query="${command%%"$query_marker"*}"
+                local kms_tags_query=""
+                local kms_tags_output=""
+                local tagged_key_id=""
+                if [[ "$command" == *"$query_marker"*"$output_marker"* ]] && \
+                    [[ "$tags_before_query" == "$tags_prefix"* ]]; then
+                    tagged_key_id="${tags_before_query#"$tags_prefix"}"
+                    kms_tags_query="${command#*"$query_marker"}"
+                    kms_tags_query="${kms_tags_query%%"$output_marker"*}"
+                    kms_tags_output="${command##*"$output_marker"}"
+                else
+                    record_stub_failure "$KMS_STUB_FAILURE_LOG" \
+                        "KMS list-resource-tags stub did not recognize command options: $command"
+                    exit 1
+                fi
+                if [ -z "$tagged_key_id" ] || [[ "$tagged_key_id" == *[[:space:]]* ]] || \
+                    [ "$kms_tags_output" != "text" ]; then
+                    record_stub_failure "$KMS_STUB_FAILURE_LOG" \
+                        "KMS list-resource-tags stub found an invalid key ID or output in command: $command"
+                    exit 1
+                fi
+
+                local full_tag_query_pattern="^Tags\\[\\?TagKey==\`([^\`]*)\`[[:space:]]*&&[[:space:]]*TagValue==\`([^\`]*)\`\\]\\.TagKey$"
+                local key_only_tag_query_pattern="^Tags\\[\\?TagKey==\`([^\`]*)\`\\]\\.TagKey$"
+                local all_tags_query_pattern='^Tags\[(\*)?\]\.TagKey$'
+                local tag_query_mode=""
+                local filtered_tag_key=""
+                local filtered_tag_value=""
+                if [[ "$kms_tags_query" =~ $full_tag_query_pattern ]]; then
+                    tag_query_mode="key-and-value"
+                    filtered_tag_key="${BASH_REMATCH[1]}"
+                    filtered_tag_value="${BASH_REMATCH[2]}"
+                elif [[ "$kms_tags_query" =~ $key_only_tag_query_pattern ]]; then
+                    tag_query_mode="key-only"
+                    filtered_tag_key="${BASH_REMATCH[1]}"
+                elif [[ "$kms_tags_query" =~ $all_tags_query_pattern ]]; then
+                    tag_query_mode="all"
+                else
+                    record_stub_failure "$KMS_STUB_FAILURE_LOG" \
+                        "KMS list-resource-tags stub did not recognize query '$kms_tags_query' in command: $command"
+                    exit 1
+                fi
+
+                local kms_tag_fixture
+                kms_tag_fixture=$(jq -c --arg key_id "$tagged_key_id" '
+                    [.Keys[] | select(.KeyMetadata.KeyId == $key_id)]
+                    | if length == 1 then .[0] else empty end
+                ' <<< "$KMS_FIXTURE")
+                if [ -z "$kms_tag_fixture" ]; then
+                    record_stub_failure "$KMS_STUB_FAILURE_LOG" \
+                        "KMS list-resource-tags stub saw unknown or duplicate key ID '$tagged_key_id' in command: $command"
+                    exit 1
+                fi
+                if [ "$(jq -r '.TagReadDenied' <<< "$kms_tag_fixture")" = "true" ]; then
+                    echo "An error occurred (AccessDeniedException) when calling the ListResourceTags operation for key $tagged_key_id" >&2
+                    exit 254
+                fi
+
+                case "$tag_query_mode" in
+                    key-and-value)
+                        jq -r --arg tag_key "$filtered_tag_key" --arg tag_value "$filtered_tag_value" '
+                            [.Tags[] | select(.TagKey == $tag_key and .TagValue == $tag_value) | .TagKey]
+                            | @tsv
+                        ' <<< "$kms_tag_fixture"
+                        ;;
+                    key-only)
+                        jq -r --arg tag_key "$filtered_tag_key" '
+                            [.Tags[] | select(.TagKey == $tag_key) | .TagKey]
+                            | @tsv
+                        ' <<< "$kms_tag_fixture"
+                        ;;
+                    all)
+                        jq -r '[.Tags[].TagKey] | @tsv' <<< "$kms_tag_fixture"
+                        ;;
+                esac
+                ;;
+            "aws kms schedule-key-deletion"*)
+                local kms_schedule_arguments_text="${command#aws kms schedule-key-deletion}"
+                local kms_schedule_arguments=()
+                read -r -a kms_schedule_arguments <<< "$kms_schedule_arguments_text"
+                local scheduled_key_id=""
+                local pending_window_in_days=""
+                local argument_index=0
+                while [ "$argument_index" -lt "${#kms_schedule_arguments[@]}" ]; do
+                    case "${kms_schedule_arguments[$argument_index]}" in
+                        --key-id)
+                            argument_index=$((argument_index + 1))
+                            if [ "$argument_index" -ge "${#kms_schedule_arguments[@]}" ] || [ -n "$scheduled_key_id" ]; then
+                                record_stub_failure "$KMS_STUB_FAILURE_LOG" \
+                                    "KMS schedule-key-deletion stub found a missing or duplicate --key-id in command: $command"
+                                exit 1
+                            fi
+                            scheduled_key_id="${kms_schedule_arguments[$argument_index]}"
+                            ;;
+                        --pending-window-in-days)
+                            argument_index=$((argument_index + 1))
+                            if [ "$argument_index" -ge "${#kms_schedule_arguments[@]}" ] || [ -n "$pending_window_in_days" ]; then
+                                record_stub_failure "$KMS_STUB_FAILURE_LOG" \
+                                    "KMS schedule-key-deletion stub found a missing or duplicate --pending-window-in-days in command: $command"
+                                exit 1
+                            fi
+                            pending_window_in_days="${kms_schedule_arguments[$argument_index]}"
+                            ;;
+                        *)
+                            record_stub_failure "$KMS_STUB_FAILURE_LOG" \
+                                "KMS schedule-key-deletion stub did not recognize argument '${kms_schedule_arguments[$argument_index]}' in command: $command"
+                            exit 1
+                            ;;
+                    esac
+                    argument_index=$((argument_index + 1))
+                done
+                if [ -z "$scheduled_key_id" ] || ! [[ "$pending_window_in_days" =~ ^[[:digit:]]+$ ]]; then
+                    record_stub_failure "$KMS_STUB_FAILURE_LOG" \
+                        "KMS schedule-key-deletion stub requires --key-id and an integer --pending-window-in-days in command: $command"
+                    exit 1
+                fi
+                local kms_schedule_fixture
+                kms_schedule_fixture=$(jq -c --arg key_id "$scheduled_key_id" '
+                    [.Keys[] | select(.KeyMetadata.KeyId == $key_id)]
+                    | if length == 1 then .[0] else empty end
+                ' <<< "$KMS_FIXTURE")
+                if [ -z "$kms_schedule_fixture" ]; then
+                    record_stub_failure "$KMS_STUB_FAILURE_LOG" \
+                        "KMS schedule-key-deletion stub saw an unknown or duplicate key ID '$scheduled_key_id' in command: $command"
+                    exit 1
+                fi
+                printf '%s\t%s\n' "$scheduled_key_id" "$pending_window_in_days" >> "$KMS_SCHEDULE_LOG"
+                if [ "$(jq -r '.ScheduleDenied' <<< "$kms_schedule_fixture")" = "true" ]; then
+                    echo "An error occurred (AccessDeniedException) when calling the ScheduleKeyDeletion operation for key $scheduled_key_id" >&2
+                    exit 254
+                fi
+                ;;
+            "aws kms "*)
+                record_stub_failure "$KMS_STUB_FAILURE_LOG" \
+                    "KMS stub did not recognize command: $command"
+                exit 1
                 ;;
             "aws ec2 describe-ipams"*)
                 local query_marker=' --query '
@@ -486,6 +853,8 @@ source "$FUNCTIONS_FILE"
 : > "$ROUTE_TABLE_STUB_FAILURE_LOG"
 : > "$IPAM_STUB_FAILURE_LOG"
 : > "$IPAM_DELETE_LOG"
+: > "$KMS_STUB_FAILURE_LOG"
+: > "$KMS_SCHEDULE_LOG"
 if ! deep_cleanup_account "ordering-account" >"$WORK_DIR/stdout.log" 2>"$WORK_DIR/stderr.log"; then
     fail "deep_cleanup_account returned non-zero for the successful ordering scenario"
 fi
@@ -513,6 +882,11 @@ while IFS= read -r stub_failure; do
     [ -z "$stub_failure" ] && continue
     fail "$stub_failure"
 done < "$IPAM_STUB_FAILURE_LOG"
+
+while IFS= read -r stub_failure; do
+    [ -z "$stub_failure" ] && continue
+    fail "$stub_failure"
+done < "$KMS_STUB_FAILURE_LOG"
 
 last_lb_delete=$(last_line_containing "aws elbv2 delete-load-balancer --load-balancer-arn")
 lb_wait=$(first_line_containing "deep_cleanup_with_timeout 720 aws elbv2 wait load-balancers-deleted --load-balancer-arns $LB_ONE_ARN $LB_TWO_ARN")
@@ -557,6 +931,92 @@ do
 done
 if grep -F "aws ec2 delete-ipam-pool" "$COMMAND_LOG" >/dev/null; then
     fail "deep cleanup must rely on cascade IPAM deletion to remove private-scope pools"
+fi
+
+kms_list_enumeration=$(first_line_containing "aws kms list-keys")
+if [ -z "$kms_list_enumeration" ]; then
+    fail "missing KMS key enumeration"
+fi
+for kms_key_id in \
+    "$KMS_AWS_MANAGED_KEY_ID" \
+    "$KMS_PENDING_DELETION_KEY_ID" \
+    "$KMS_FOREIGN_TAG_KEY_ID" \
+    "$KMS_ACCESS_DENIED_KEY_ID" \
+    "$KMS_ENABLED_KEY_ID" \
+    "$KMS_DISABLED_KEY_ID" \
+    "$KMS_PENDING_REPLICA_DELETION_KEY_ID"
+do
+    kms_describe_count=$(grep -cF "aws kms describe-key --key-id $kms_key_id" "$COMMAND_LOG" || true)
+    if [ "$kms_describe_count" -ne 1 ]; then
+        fail "expected one metadata enumeration for KMS key $kms_key_id, got $kms_describe_count"
+    fi
+done
+for prefiltered_kms_key_id in "$KMS_AWS_MANAGED_KEY_ID" "$KMS_PENDING_DELETION_KEY_ID"; do
+    if grep -F "aws kms list-resource-tags --key-id $prefiltered_kms_key_id" "$COMMAND_LOG" >/dev/null; then
+        fail "KMS key $prefiltered_kms_key_id must be rejected by metadata before tag enumeration"
+    fi
+done
+
+kms_schedule_count=$(awk 'END { print NR }' "$KMS_SCHEDULE_LOG")
+if [ "$kms_schedule_count" -ne 3 ]; then
+    fail "expected exactly three KMS schedule-key-deletion calls, got $kms_schedule_count"
+fi
+for expected_kms_key_id in \
+    "$KMS_ENABLED_KEY_ID" \
+    "$KMS_DISABLED_KEY_ID" \
+    "$KMS_PENDING_REPLICA_DELETION_KEY_ID"
+do
+    expected_kms_schedule_count=$(awk -F '\t' -v key_id="$expected_kms_key_id" '
+        $1 == key_id && $2 == "7" {
+            count++
+        }
+        END {
+            print count + 0
+        }
+    ' "$KMS_SCHEDULE_LOG")
+    all_kms_schedule_count=$(awk -F '\t' -v key_id="$expected_kms_key_id" '
+        $1 == key_id {
+            count++
+        }
+        END {
+            print count + 0
+        }
+    ' "$KMS_SCHEDULE_LOG")
+    if [ "$all_kms_schedule_count" -ne 1 ]; then
+        fail "expected exactly one schedule-key-deletion call for KMS key $expected_kms_key_id, got $all_kms_schedule_count"
+    elif [ "$expected_kms_schedule_count" -ne 1 ]; then
+        fail "KMS key $expected_kms_key_id was not scheduled with --pending-window-in-days 7"
+    fi
+done
+for excluded_kms_key_id in \
+    "$KMS_AWS_MANAGED_KEY_ID" \
+    "$KMS_PENDING_DELETION_KEY_ID" \
+    "$KMS_FOREIGN_TAG_KEY_ID" \
+    "$KMS_ACCESS_DENIED_KEY_ID"
+do
+    excluded_kms_schedule_count=$(awk -F '\t' -v key_id="$excluded_kms_key_id" '
+        $1 == key_id {
+            count++
+        }
+        END {
+            print count + 0
+        }
+    ' "$KMS_SCHEDULE_LOG")
+    if [ "$excluded_kms_schedule_count" -ne 0 ]; then
+        fail "excluded KMS key $excluded_kms_key_id appeared in a schedule-key-deletion call"
+    fi
+done
+
+access_denied_tag_enumeration=$(first_line_containing "aws kms list-resource-tags --key-id $KMS_ACCESS_DENIED_KEY_ID")
+later_kms_schedule=$(first_line_containing "aws kms schedule-key-deletion --key-id $KMS_ENABLED_KEY_ID")
+if [ -z "$access_denied_tag_enumeration" ]; then
+    fail "missing AccessDenied KMS tag-enumeration fixture call"
+elif [ -z "$later_kms_schedule" ] || [ "$later_kms_schedule" -le "$access_denied_tag_enumeration" ]; then
+    fail "AccessDenied while reading KMS tags stopped a later sweepable key from being scheduled"
+fi
+if ! grep -F "$KMS_ACCESS_DENIED_KEY_ID" "$WORK_DIR/stderr.log" | \
+    grep -F "AccessDeniedException" >/dev/null; then
+    fail "AccessDenied KMS tag-enumeration failure was not reported"
 fi
 
 flow_log_enumeration=$(first_line_containing "aws ec2 describe-flow-logs")
@@ -698,6 +1158,74 @@ done
 if grep -Fx "aws ec2 delete-route-table --route-table-id $MAIN_ROUTE_TABLE_ID" "$COMMAND_LOG" >/dev/null; then
     fail "main route table must not be deleted"
 fi
+
+# A key policy may permit tag reads but deny ScheduleKeyDeletion. Exercise that
+# fatal top-level resource failure separately so the successful ordering scenario
+# above keeps its exact schedule assertions.
+KMS_FIXTURE=$(jq -c --arg key_id "$KMS_ENABLED_KEY_ID" '
+    .Keys |= map(
+        if .KeyMetadata.KeyId == $key_id then
+            .ScheduleDenied = true
+        else
+            .
+        end
+    )
+' <<< "$KMS_FIXTURE")
+schedule_denied_fixture_count=$(jq -r '[.Keys[] | select(.ScheduleDenied == true)] | length' <<< "$KMS_FIXTURE")
+if [ "$schedule_denied_fixture_count" -ne 1 ]; then
+    fail "expected exactly one ScheduleDenied KMS fixture, got $schedule_denied_fixture_count"
+fi
+
+COMMAND_LOG="$WORK_DIR/kms-schedule-failure-aws-calls.log"
+KMS_SCHEDULE_LOG="$WORK_DIR/kms-schedule-failure-schedules.log"
+KMS_STUB_FAILURE_LOG="$WORK_DIR/kms-schedule-failure-stub-failures.log"
+KMS_SCHEDULE_FAILURE_STDERR_LOG="$WORK_DIR/kms-schedule-failure-stderr.log"
+: > "$COMMAND_LOG"
+: > "$KMS_SCHEDULE_LOG"
+: > "$KMS_STUB_FAILURE_LOG"
+if deep_cleanup_account "kms-schedule-failure-account" \
+    >"$WORK_DIR/kms-schedule-failure-stdout.log" \
+    2>"$KMS_SCHEDULE_FAILURE_STDERR_LOG"; then
+    kms_schedule_failure_status=0
+else
+    kms_schedule_failure_status=$?
+fi
+
+while IFS= read -r stub_failure; do
+    [ -z "$stub_failure" ] && continue
+    fail "$stub_failure"
+done < "$KMS_STUB_FAILURE_LOG"
+
+if [ "$kms_schedule_failure_status" -eq 0 ]; then
+    fail "deep_cleanup_account returned zero after ScheduleKeyDeletion failed"
+fi
+if [ "$DEEP_CLEANUP_FAILED_COUNT" -ne 1 ]; then
+    fail "ScheduleKeyDeletion failure was not counted as exactly one failed resource"
+fi
+if [ "$DEEP_CLEANUP_SUPPORTING_FAILURE_COUNT" -ne 0 ]; then
+    fail "ScheduleKeyDeletion failure was incorrectly counted as a supporting failure"
+fi
+if ! grep -F "Failed to schedule KMS key $KMS_ENABLED_KEY_ID for deletion" \
+    "$KMS_SCHEDULE_FAILURE_STDERR_LOG" >/dev/null; then
+    fail "ScheduleKeyDeletion failure did not name the KMS key and operation"
+fi
+if ! grep -F "ScheduleKeyDeletion operation for key $KMS_ENABLED_KEY_ID" \
+    "$KMS_SCHEDULE_FAILURE_STDERR_LOG" | grep -F "AccessDeniedException" >/dev/null; then
+    fail "ScheduleKeyDeletion failure did not retain the AWS AccessDeniedException"
+fi
+
+denied_kms_schedule=$(first_line_containing "aws kms schedule-key-deletion --key-id $KMS_ENABLED_KEY_ID")
+if [ -z "$denied_kms_schedule" ]; then
+    fail "missing attempted schedule for the ScheduleDenied KMS key"
+fi
+for later_kms_key_id in "$KMS_DISABLED_KEY_ID" "$KMS_PENDING_REPLICA_DELETION_KEY_ID"; do
+    later_kms_schedule=$(first_line_containing "aws kms schedule-key-deletion --key-id $later_kms_key_id")
+    if [ -z "$later_kms_schedule" ]; then
+        fail "ScheduleKeyDeletion failure stopped the later attempt for KMS key $later_kms_key_id"
+    elif [ -n "$denied_kms_schedule" ] && [ "$later_kms_schedule" -le "$denied_kms_schedule" ]; then
+        fail "later KMS key $later_kms_key_id was not attempted after the ScheduleKeyDeletion failure"
+    fi
+done
 
 if [ "$FAILURES" -ne 0 ]; then
     exit 1

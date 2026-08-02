@@ -30,6 +30,5 @@ the pooled test accounts. `shell-tests/deep_cleanup_fixture_coverage.sh`
 enforces this list and is where sweep mappings, parent-deletion exceptions, and
 known gaps are maintained.
 
-- `kms.Key`: tracked by #407.
 - `cloudfront.Distribution`: tracked by #408.
 - `cloudfront.OriginAccessControl`: tracked by #408.

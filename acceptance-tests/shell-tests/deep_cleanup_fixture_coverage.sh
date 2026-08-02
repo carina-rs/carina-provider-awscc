@@ -370,7 +370,6 @@ EOF
 command cat > "$KNOWN_GAPS_FILE" <<'EOF'
 awscc.cloudfront.Distribution|Tracked by #408.
 awscc.cloudfront.OriginAccessControl|Tracked by #408.
-awscc.kms.Key|Tracked by #407.
 EOF
 
 duplicate_mapping_types=$(cut -d '|' -f 1 "$SWEEP_MAPPINGS_FILE" | LC_ALL=C sort | uniq -d)
