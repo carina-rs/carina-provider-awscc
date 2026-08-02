@@ -361,6 +361,7 @@ awscc.wafv2.WebAcl|aws wafv2 delete-web-acl
 EOF
 
 command cat > "$ALLOWLIST_FILE" <<'EOF'
+awscc.ec2.IpamPool|Deleted with its parent awscc.ec2.Ipam by delete-ipam --cascade.
 awscc.ec2.Route|Deleted with its parent awscc.ec2.RouteTable.
 awscc.elasticloadbalancingv2.Listener|Deleted with its parent awscc.elasticloadbalancingv2.LoadBalancer.
 awscc.s3.BucketPolicy|Deleted with its parent awscc.s3.Bucket.
@@ -369,8 +370,6 @@ EOF
 command cat > "$KNOWN_GAPS_FILE" <<'EOF'
 awscc.cloudfront.Distribution|Tracked by #408.
 awscc.cloudfront.OriginAccessControl|Tracked by #408.
-awscc.ec2.Ipam|Tracked by #406.
-awscc.ec2.IpamPool|Tracked by #406.
 awscc.kms.Key|Tracked by #407.
 EOF
 
