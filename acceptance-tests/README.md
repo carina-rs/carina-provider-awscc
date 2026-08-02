@@ -22,13 +22,12 @@ fixtures yet:
 - `identitystore.GroupMembership`: group memberships depend on the management
   account identity store and are not creatable in pool accounts.
 
-## Known Deep-Cleanup Gaps
+## Deep-Cleanup Coverage
 
-The following resource types have acceptance fixtures but no corresponding pass
-in `deep_cleanup_account()`. Until fixed, they can leave orphaned resources in
-the pooled test accounts. `shell-tests/deep_cleanup_fixture_coverage.sh`
-enforces this list and is where sweep mappings, parent-deletion exceptions, and
-known gaps are maintained.
-
-- `cloudfront.Distribution`: tracked by #408.
-- `cloudfront.OriginAccessControl`: tracked by #408.
+All resource types with acceptance fixtures are covered by a cleanup pass or a
+validated parent-deletion exception. There are currently no known deep-cleanup
+gaps. `shell-tests/deep_cleanup_fixture_coverage.sh` enforces this coverage and
+is where sweep mappings and parent-deletion exceptions are maintained. When a
+fixture type temporarily lacks cleanup, record it in that test's known-gaps list
+with a tracking issue. Known-gap entries are self-retiring: once the expected
+sweep command appears, the test fails until the entry is removed.

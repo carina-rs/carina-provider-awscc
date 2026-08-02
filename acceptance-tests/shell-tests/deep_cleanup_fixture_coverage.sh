@@ -367,9 +367,9 @@ awscc.elasticloadbalancingv2.Listener|Deleted with its parent awscc.elasticloadb
 awscc.s3.BucketPolicy|Deleted with its parent awscc.s3.Bucket.
 EOF
 
+# Intentionally empty: record fixture types with no cleanup pass here, with a
+# tracking issue. Entries self-retire once their expected sweep command appears.
 command cat > "$KNOWN_GAPS_FILE" <<'EOF'
-awscc.cloudfront.Distribution|Tracked by #408.
-awscc.cloudfront.OriginAccessControl|Tracked by #408.
 EOF
 
 duplicate_mapping_types=$(cut -d '|' -f 1 "$SWEEP_MAPPINGS_FILE" | LC_ALL=C sort | uniq -d)
