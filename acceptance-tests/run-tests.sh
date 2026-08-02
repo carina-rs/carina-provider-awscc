@@ -841,10 +841,14 @@ deep_cleanup_account() {
 
         # Delete non-main route tables
         local rts
+        # Associations are unordered; inspect every slot so #402 cannot select the main table.
+        # Do not use [?!Associations[?Main==`true`]]: truthiness collapses that projection
+        # so it matches nothing. Keep not_null(Associations, `[]`), since without it
+        # length() type-errors on a missing Associations key and fails the enumeration.
         deep_cleanup_enumerate "$account" "non-main route tables for VPC $vpc_id" rts \
             aws ec2 describe-route-tables \
             --filters "Name=vpc-id,Values=$vpc_id" \
-            --query 'RouteTables[?Associations[0].Main!=`true`].RouteTableId' --output text
+            --query 'RouteTables[?length(not_null(Associations, `[]`)[?Main==`true`])==`0`].RouteTableId' --output text
         local rt_id
         # Disassociate every non-main association before deleting any route table.
         for rt_id in $rts; do
