@@ -82,6 +82,7 @@ RESOURCE_TYPES=(
     "AWS::KMS::Key"
     "AWS::DynamoDB::Table"
     "AWS::ECS::Cluster"
+    "AWS::ECR::Repository"
     "AWS::ElasticLoadBalancingV2::LoadBalancer"
     "AWS::ElasticLoadBalancingV2::Listener"
     "AWS::ElasticLoadBalancingV2::TargetGroup"
