@@ -13,6 +13,7 @@ use super::config::AwsccSchemaConfig;
 pub mod cloudfront;
 pub mod dynamodb;
 pub mod ec2;
+pub mod ecr;
 pub mod ecs;
 pub mod elasticloadbalancingv2;
 pub mod iam;
@@ -85,6 +86,7 @@ static ENUM_VALID_VALUES: LazyLock<
         kms::key::enum_valid_values(),
         dynamodb::table::enum_valid_values(),
         ecs::cluster::enum_valid_values(),
+        ecr::repository::enum_valid_values(),
         elasticloadbalancingv2::load_balancer::enum_valid_values(),
         elasticloadbalancingv2::listener::enum_valid_values(),
         elasticloadbalancingv2::target_group::enum_valid_values(),
@@ -144,6 +146,7 @@ fn build_configs() -> Vec<AwsccSchemaConfig> {
         kms::key::kms_key_config(),
         dynamodb::table::dynamodb_table_config(),
         ecs::cluster::ecs_cluster_config(),
+        ecr::repository::ecr_repository_config(),
         elasticloadbalancingv2::load_balancer::elasticloadbalancingv2_load_balancer_config(),
         elasticloadbalancingv2::listener::elasticloadbalancingv2_listener_config(),
         elasticloadbalancingv2::target_group::elasticloadbalancingv2_target_group_config(),
@@ -215,6 +218,7 @@ pub fn required_permissions(resource_type: &str, op: PlanOp) -> &'static [&'stat
         "kms.Key" => kms::key::required_permissions(op),
         "dynamodb.Table" => dynamodb::table::required_permissions(op),
         "ecs.Cluster" => ecs::cluster::required_permissions(op),
+        "ecr.Repository" => ecr::repository::required_permissions(op),
         "elasticloadbalancingv2.LoadBalancer" => {
             elasticloadbalancingv2::load_balancer::required_permissions(op)
         }
