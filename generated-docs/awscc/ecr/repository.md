@@ -8,6 +8,27 @@ CloudFormation Type: `AWS::ECR::Repository`
 
 The ``AWS::ECR::Repository`` resource specifies an Amazon Elastic Container Registry (Amazon ECR) repository, where users can push and pull Docker images, Open Container Initiative (OCI) images, and OCI compatible artifacts. For more information, see [Amazon ECR private repositories](https://docs.aws.amazon.com/AmazonECR/latest/userguide/Repositories.html) in the *Amazon ECR User Guide*.
 
+## Example
+
+```crn
+awscc.ecr.Repository {
+  repository_name      = 'registry-publish-api'
+  image_tag_mutability = awscc.ecr.Repository.ImageTagMutability.immutable
+
+  image_scanning_configuration = {
+    scan_on_push = true
+  }
+
+  lifecycle_policy = {
+    lifecycle_policy_text = '{"rules":[{"rulePriority":1,"description":"keep last 10 images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":10},"action":{"type":"expire"}}]}'
+  }
+
+  tags = {
+    Environment = 'example'
+  }
+}
+```
+
 ## Argument Reference
 
 ### `empty_on_delete`
