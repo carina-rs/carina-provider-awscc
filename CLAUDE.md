@@ -145,6 +145,37 @@ resource's round-trip test from structural-only assertions to full shaped
 equality. The dependency bump plus the KMS, DynamoDB, and ECS test
 strengthening in the winterbaume 1.0.0 work is the model for that upgrade.
 
+## Record measured AWS behaviour in the code, with date and region
+
+Whenever a code path exists **because of an observed AWS behaviour** — an
+override, a special-case branch, a field that must be stripped or synthesised,
+a value spelling that has to be translated — record the observation in a
+comment at that code path. Note what was run, the **region**, the **date**, and
+which directions were checked.
+
+```rust
+// CloudControl rejects adding this block on update and silently ignores its
+// removal, so a presence toggle must force replacement rather than an
+// in-place update. Measured us-east-1, 2026-08-12, both directions
+// (add -> ValidationException; remove -> accepted but read-back unchanged).
+```
+
+The reason is re-measurement, not provenance. AWS behaviour changes, and a
+branch whose justification lives only in a PR thread becomes an incantation
+nobody dares touch. With a date and a region, a future reader can decide
+whether the observation is still current and re-run it. Without them, the only
+safe move is to leave the branch alone forever.
+
+This complements the reconciliation obligation above: that rule says to measure
+real AWS before filing a winterbaume issue; this one says the measurement must
+also survive in the code the measurement produced. A captured `GetResource`
+diff that only ever appears in an issue body is lost to the next reader of the
+provider source.
+
+Applies equally to the codegen overrides — a `resource_type_overrides()` entry
+that exists because real AWS disagrees with the published schema needs the same
+comment, since the generated output alone cannot explain itself.
+
 ## Git Workflow
 
 ### Worktree-Based Development
