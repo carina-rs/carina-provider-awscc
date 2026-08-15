@@ -15,7 +15,8 @@ use indexmap::IndexMap;
 use serde_json::json;
 
 use super::conversion::{aws_value_to_dsl_with_defs, dsl_value_to_aws_with_defs};
-use super::update::build_update_patches;
+use super::tags::tags_provider_name;
+use super::update::{UpdatePatchPlan, build_update_patches};
 use super::{AwsccProvider, get_schema_config};
 use crate::provider::arn_synthesis::SynthesisStatus;
 use crate::provider::cloudcontrol::WaitOutcome;
@@ -56,17 +57,20 @@ impl AwsccProvider {
             &config.schema.defs,
         );
 
-        // Handle tags
-        if config.has_tags
-            && let Some(tags_array) = props.get("Tags").and_then(|v| v.as_array())
-        {
-            let tags_map = self.parse_tags(tags_array);
-            if !tags_map.is_empty() {
-                attributes.insert(
-                    "tags".to_string(),
-                    Value::Concrete(ConcreteValue::Map(tags_map)),
-                );
-            }
+        // Match the #2544 optional-collection canonicalization contract: absent or
+        // empty tags read as `tags = {}` so state never oscillates between absent
+        // and an explicitly empty map. The schema declaration is authoritative here:
+        // `has_tags` can describe a differently named attribute such as HostedZoneTags.
+        if let Some(tags_aws_name) = tags_provider_name(config) {
+            let tags_map = props
+                .get(tags_aws_name)
+                .and_then(|value| value.as_array())
+                .map(|tags| self.parse_tags(tags))
+                .unwrap_or_default();
+            attributes.insert(
+                "tags".to_string(),
+                Value::Concrete(ConcreteValue::Map(tags_map)),
+            );
         }
 
         // Handle special cases
@@ -119,10 +123,10 @@ impl AwsccProvider {
         self.create_special_attributes(resource, &mut desired_state);
 
         // Handle tags
-        if config.has_tags {
+        if let Some(tags_aws_name) = tags_provider_name(config) {
             let tags = self.build_tags(resource.get_attr("tags"));
             if !tags.is_empty() {
-                desired_state.insert("Tags".to_string(), json!(tags));
+                desired_state.insert(tags_aws_name.to_string(), json!(tags));
             }
         }
 
@@ -296,10 +300,10 @@ impl AwsccProvider {
                 .for_resource(id.clone())
         })?;
 
-        let patch_ops = build_update_patches(config, &id.resource_type, patch);
+        let patch_plan = build_update_patches(config, &id.resource_type, patch);
 
         let outcome = self
-            .cc_update_resource(config.aws_type_name, identifier, patch_ops)
+            .cc_update_resource(config.aws_type_name, identifier, patch_plan.ops.clone())
             .await
             .map_err(|e| e.for_resource(id.clone()))?;
 
@@ -315,8 +319,13 @@ impl AwsccProvider {
                 let state = self
                     .read_resource(&id.resource_type, id.identity_or_empty(), Some(&identifier))
                     .await?;
-                let state = merge_update_desired_attributes(state, &desired, config);
-                Ok(UpdateOutcome::Success { state })
+                Ok(update_outcome_from_read_back(
+                    state,
+                    &desired,
+                    &patch_plan,
+                    config,
+                    None,
+                ))
             }
             WaitOutcome::PartialOrFailed {
                 identifier,
@@ -326,28 +335,30 @@ impl AwsccProvider {
                     .read_resource(&id.resource_type, id.identity_or_empty(), Some(&identifier))
                     .await
                 {
-                    Ok(state) => {
-                        let state = merge_update_desired_attributes(state, &desired, config);
-                        Ok(UpdateOutcome::Success { state })
-                    }
+                    Ok(state) => Ok(update_outcome_from_read_back(
+                        state,
+                        &desired,
+                        &patch_plan,
+                        config,
+                        Some(&status_message),
+                    )),
                     Err(read_err) => {
-                        let missing_attributes = patch
-                            .ops
-                            .iter()
-                            .filter(|op| config.schema.attributes.contains_key(&op.key))
-                            .map(|op| op.key.clone())
-                            .collect::<Vec<_>>();
+                        let missing_attributes = patch_plan.touched.clone();
                         let mut state_attributes = desired;
                         for attr in &missing_attributes {
                             state_attributes.remove(attr);
                         }
                         let state = State::existing(id.clone(), state_attributes)
                             .with_identifier(identifier);
-                        let reason = format!(
+                        let mut reason = format!(
                             "handler failed: {}; read error: {}",
                             status_message,
                             read_err.message(),
                         );
+                        if !patch_plan.unsent.is_empty() {
+                            reason.push_str("; ");
+                            reason.push_str(&unsent_attributes_reason(&patch_plan.unsent));
+                        }
                         Ok(UpdateOutcome::partial_success(
                             state,
                             reason,
@@ -459,19 +470,95 @@ fn merge_desired_attributes(
     state
 }
 
-fn merge_update_desired_attributes(
+/// Merge the post-update desired attributes into a read-back and classify the outcome.
+///
+/// When the handler reported failure, no operation was dropped before sending, and every
+/// confirmation-required sent attribute is present in the read-back, this deliberately
+/// returns success and drops the handler status to preserve pre-existing behavior. Value
+/// divergence, including a read-back of the old value, is the differ's responsibility
+/// because confirmation here is presence-only.
+fn update_outcome_from_read_back(
     mut state: State,
     desired: &HashMap<String, Value>,
-    config: &crate::schemas::config::AwsccSchemaConfig,
-) -> State {
+    patch_plan: &UpdatePatchPlan,
+    config: &AwsccSchemaConfig,
+    handler_failure: Option<&str>,
+) -> UpdateOutcome {
+    // Cloud Control can report UPDATE SUCCESS while silently discarding a property:
+    // AWS::S3::Bucket ObjectLockEnabled add-on-update returned OperationStatus SUCCESS
+    // with no error while GetResource afterwards showed the property absent. Measured
+    // ap-northeast-1, 2026-08-14 (issue #419). Attributes actually sent that the
+    // read-back does not confirm, and requested attributes the provider could not send,
+    // are therefore reported as partial success and never fabricated into state.
+    let missing_sent_attributes = patch_plan
+        .requires_confirmation
+        .iter()
+        .filter(|key| {
+            !patch_plan.unsent.contains(key) && !state.attributes.contains_key(key.as_str())
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let unconfirmed_attributes = patch_plan
+        .requires_confirmation
+        .iter()
+        .filter(|key| {
+            patch_plan.unsent.contains(key) || !state.attributes.contains_key(key.as_str())
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+
     for dsl_name in config.schema.attributes.keys() {
         if !state.attributes.contains_key(dsl_name)
+            && !unconfirmed_attributes.contains(dsl_name)
             && let Some(value) = desired.get(dsl_name)
         {
             state.attributes.insert(dsl_name.clone(), value.clone());
         }
     }
-    state
+
+    if unconfirmed_attributes.is_empty() {
+        return UpdateOutcome::Success { state };
+    }
+
+    let reason = update_confirmation_failure_reason(
+        &missing_sent_attributes,
+        &patch_plan.unsent,
+        handler_failure,
+    );
+    UpdateOutcome::partial_success(state, reason, unconfirmed_attributes)
+}
+
+fn update_confirmation_failure_reason(
+    missing_sent_attributes: &[String],
+    unsent_attributes: &[String],
+    handler_failure: Option<&str>,
+) -> String {
+    let mut reasons = Vec::new();
+    if let Some(status_message) = handler_failure {
+        reasons.push(format!("handler failed: {status_message}"));
+    }
+    if !missing_sent_attributes.is_empty() {
+        let absence_reason = format!(
+            "the post-update read-back does not contain patched attributes: {}",
+            missing_sent_attributes.join(", ")
+        );
+        reasons.push(if handler_failure.is_some() {
+            absence_reason
+        } else {
+            format!("Cloud Control reported success, but {absence_reason}")
+        });
+    }
+    if !unsent_attributes.is_empty() {
+        reasons.push(unsent_attributes_reason(unsent_attributes));
+    }
+    reasons.join("; ")
+}
+
+fn unsent_attributes_reason(attributes: &[String]) -> String {
+    format!(
+        "update attributes were not sent to Cloud Control (schema marks the attribute read-only/create-only or the value is not convertible): {}",
+        attributes.join(", ")
+    )
 }
 
 /// Map a CloudControl `GetResource` properties payload onto the DSL
@@ -937,6 +1024,7 @@ mod tests {
     struct PartialUpdateCloudControlService {
         wait_succeeds: bool,
         read_succeeds: bool,
+        read_properties: &'static str,
         saw_update_resource: AtomicBool,
         saw_get_resource: AtomicBool,
     }
@@ -946,6 +1034,17 @@ mod tests {
             Arc::new(Self {
                 wait_succeeds,
                 read_succeeds,
+                read_properties: r#"{"Tags":[{"Key":"env","Value":"prod"}]}"#,
+                saw_update_resource: AtomicBool::new(false),
+                saw_get_resource: AtomicBool::new(false),
+            })
+        }
+
+        fn with_read_properties(wait_succeeds: bool, read_properties: &'static str) -> Arc<Self> {
+            Arc::new(Self {
+                wait_succeeds,
+                read_succeeds: true,
+                read_properties,
                 saw_update_resource: AtomicBool::new(false),
                 saw_get_resource: AtomicBool::new(false),
             })
@@ -995,7 +1094,10 @@ mod tests {
                         self.saw_get_resource.store(true, Ordering::SeqCst);
                         MockResponse::json(
                             200,
-                            r#"{"TypeName":"AWS::S3::Bucket","ResourceDescription":{"Identifier":"partial-bucket","Properties":"{}"}}"#,
+                            format!(
+                                r#"{{"TypeName":"AWS::S3::Bucket","ResourceDescription":{{"Identifier":"partial-bucket","Properties":{:?}}}}}"#,
+                                self.read_properties
+                            ),
                         )
                     }
                     "GetResource" => {
@@ -1058,6 +1160,352 @@ mod tests {
         }
     }
 
+    fn create_only_bucket_name_patch() -> UpdatePatch {
+        let mut patch = partial_update_bucket_patch();
+        patch.ops.insert(
+            0,
+            PatchOp {
+                kind: PatchOpKind::Replace,
+                key: "bucket_name".to_string(),
+                value: Some(Value::Concrete(ConcreteValue::String(
+                    "renamed-bucket".to_string(),
+                ))),
+            },
+        );
+        patch
+    }
+
+    fn empty_tags_patch() -> UpdatePatch {
+        UpdatePatch {
+            ops: vec![PatchOp {
+                kind: PatchOpKind::Replace,
+                key: "tags".to_string(),
+                value: Some(Value::Concrete(ConcreteValue::Map(IndexMap::new()))),
+            }],
+        }
+    }
+
+    fn object_lock_enabled_patch() -> UpdatePatch {
+        UpdatePatch {
+            ops: vec![PatchOp {
+                kind: PatchOpKind::Add,
+                key: "object_lock_enabled".to_string(),
+                value: Some(Value::Concrete(ConcreteValue::Bool(true))),
+            }],
+        }
+    }
+
+    fn replace_object_lock_enabled_patch() -> UpdatePatch {
+        UpdatePatch {
+            ops: vec![PatchOp {
+                kind: PatchOpKind::Replace,
+                key: "object_lock_enabled".to_string(),
+                value: Some(Value::Concrete(ConcreteValue::Bool(true))),
+            }],
+        }
+    }
+
+    fn access_control_patch() -> UpdatePatch {
+        UpdatePatch {
+            ops: vec![PatchOp {
+                kind: PatchOpKind::Add,
+                key: "access_control".to_string(),
+                value: Some(Value::Concrete(ConcreteValue::String(
+                    "private".to_string(),
+                ))),
+            }],
+        }
+    }
+
+    #[tokio::test]
+    async fn update_resource_returns_partial_success_when_successful_update_drops_patched_attribute()
+     {
+        let service = PartialUpdateCloudControlService::new(true, true);
+        let provider = provider_with_partial_update_service(service.clone()).await;
+        let from = partial_update_bucket_state();
+        let patch = object_lock_enabled_patch();
+
+        let outcome = provider
+            .update_resource(
+                from.id.clone(),
+                from.identifier.as_deref().expect("identifier"),
+                &from,
+                &patch,
+            )
+            .await
+            .expect("update should return a partial outcome");
+
+        let UpdateOutcome::PartialSuccess { state, diagnostic } = outcome else {
+            panic!("expected partial success when read-back omits a patched attribute");
+        };
+        assert!(service.saw_update_resource.load(Ordering::SeqCst));
+        assert!(service.saw_get_resource.load(Ordering::SeqCst));
+        assert!(
+            !state.attributes.contains_key("object_lock_enabled"),
+            "an unconfirmed patched value must not be fabricated into state"
+        );
+        assert_eq!(
+            diagnostic.missing_attributes(),
+            &["object_lock_enabled".to_string()]
+        );
+        assert_eq!(
+            diagnostic.reason(),
+            "Cloud Control reported success, but the post-update read-back does not contain patched attributes: object_lock_enabled"
+        );
+    }
+
+    #[tokio::test]
+    async fn update_resource_reports_unsent_create_only_attribute_as_partial_success() {
+        for (read_properties, expected_bucket_name, label) in [
+            (r#"{"Tags":[{"Key":"env","Value":"prod"}]}"#, None, "absent"),
+            (
+                r#"{"BucketName":"partial-bucket","Tags":[{"Key":"env","Value":"prod"}]}"#,
+                Some("partial-bucket"),
+                "present with its old value",
+            ),
+        ] {
+            let service =
+                PartialUpdateCloudControlService::with_read_properties(true, read_properties);
+            let provider = provider_with_partial_update_service(service.clone()).await;
+            let from = partial_update_bucket_state();
+            let patch = create_only_bucket_name_patch();
+
+            let outcome = provider
+                .update_resource(
+                    from.id.clone(),
+                    from.identifier.as_deref().expect("identifier"),
+                    &from,
+                    &patch,
+                )
+                .await
+                .expect("an unsent requested update should return a partial outcome");
+
+            let UpdateOutcome::PartialSuccess { state, diagnostic } = outcome else {
+                panic!("expected partial success when the create-only value is {label}");
+            };
+            assert!(service.saw_update_resource.load(Ordering::SeqCst));
+            assert_eq!(
+                diagnostic.missing_attributes(),
+                &["bucket_name".to_string()]
+            );
+            assert_eq!(
+                diagnostic.reason(),
+                "update attributes were not sent to Cloud Control (schema marks the attribute read-only/create-only or the value is not convertible): bucket_name"
+            );
+            let actual_bucket_name = state.attributes.get("bucket_name").and_then(|value| {
+                let Value::Concrete(ConcreteValue::String(name)) = value else {
+                    return None;
+                };
+                Some(name.as_str())
+            });
+            assert_eq!(
+                actual_bucket_name, expected_bucket_name,
+                "read-back must remain honest when the create-only value is {label}"
+            );
+            assert_ne!(
+                state.attributes.get("bucket_name"),
+                Some(&Value::Concrete(ConcreteValue::String(
+                    "renamed-bucket".to_string()
+                )))
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn update_resource_returns_success_when_read_back_confirms_patched_attribute() {
+        let service = PartialUpdateCloudControlService::with_read_properties(
+            true,
+            r#"{"ObjectLockEnabled":true}"#,
+        );
+        let provider = provider_with_partial_update_service(service).await;
+        let from = partial_update_bucket_state();
+        let patch = object_lock_enabled_patch();
+
+        let outcome = provider
+            .update_resource(
+                from.id.clone(),
+                from.identifier.as_deref().expect("identifier"),
+                &from,
+                &patch,
+            )
+            .await
+            .expect("update should succeed");
+
+        let UpdateOutcome::Success { state } = outcome else {
+            panic!("expected success when read-back confirms the patched attribute");
+        };
+        assert_eq!(
+            state.attributes.get("object_lock_enabled"),
+            Some(&Value::Concrete(ConcreteValue::Bool(true)))
+        );
+    }
+
+    #[tokio::test]
+    async fn update_resource_returns_success_when_failed_handler_read_back_has_old_patched_value() {
+        let service = PartialUpdateCloudControlService::with_read_properties(
+            false,
+            r#"{"ObjectLockEnabled":false}"#,
+        );
+        let provider = provider_with_partial_update_service(service).await;
+        let mut from = partial_update_bucket_state();
+        from.attributes.insert(
+            "object_lock_enabled".to_string(),
+            Value::Concrete(ConcreteValue::Bool(false)),
+        );
+        let patch = replace_object_lock_enabled_patch();
+
+        let outcome = provider
+            .update_resource(
+                from.id.clone(),
+                from.identifier.as_deref().expect("identifier"),
+                &from,
+                &patch,
+            )
+            .await
+            .expect("confirmed read-back should preserve pre-existing success behavior");
+
+        let UpdateOutcome::Success { state } = outcome else {
+            panic!("expected success when the patched attribute is present in read-back");
+        };
+        assert_eq!(
+            state.attributes.get("object_lock_enabled"),
+            Some(&Value::Concrete(ConcreteValue::Bool(false))),
+            "the read-back value must win even when it differs from the patch"
+        );
+    }
+
+    #[tokio::test]
+    async fn update_resource_carries_forward_patched_write_only_attribute() {
+        let service = PartialUpdateCloudControlService::new(true, true);
+        let provider = provider_with_partial_update_service(service).await;
+        let from = partial_update_bucket_state();
+        let patch = access_control_patch();
+
+        let outcome = provider
+            .update_resource(
+                from.id.clone(),
+                from.identifier.as_deref().expect("identifier"),
+                &from,
+                &patch,
+            )
+            .await
+            .expect("update should succeed");
+
+        let UpdateOutcome::Success { state } = outcome else {
+            panic!("expected success for an absent patched write-only attribute");
+        };
+        assert_eq!(
+            state.attributes.get("access_control"),
+            Some(&Value::Concrete(ConcreteValue::String(
+                "private".to_string()
+            )))
+        );
+    }
+
+    #[tokio::test]
+    async fn update_resource_carries_forward_unpatched_attribute_absent_from_read_back() {
+        let service = PartialUpdateCloudControlService::new(true, true);
+        let provider = provider_with_partial_update_service(service).await;
+        let mut from = partial_update_bucket_state();
+        from.attributes.insert(
+            "object_lock_enabled".to_string(),
+            Value::Concrete(ConcreteValue::Bool(false)),
+        );
+        let patch = partial_update_bucket_patch();
+
+        let outcome = provider
+            .update_resource(
+                from.id.clone(),
+                from.identifier.as_deref().expect("identifier"),
+                &from,
+                &patch,
+            )
+            .await
+            .expect("update should succeed");
+
+        let UpdateOutcome::Success { state } = outcome else {
+            panic!("expected success when only an unpatched attribute is absent");
+        };
+        assert_eq!(
+            state.attributes.get("object_lock_enabled"),
+            Some(&Value::Concrete(ConcreteValue::Bool(false)))
+        );
+    }
+
+    #[tokio::test]
+    async fn update_resource_returns_success_when_unset_attribute_is_absent_from_read_back() {
+        for (kind, label) in [
+            (PatchOpKind::Remove, "remove"),
+            (PatchOpKind::Add, "add-none"),
+            (PatchOpKind::Replace, "replace-none"),
+        ] {
+            let service = PartialUpdateCloudControlService::new(true, true);
+            let provider = provider_with_partial_update_service(service).await;
+            let mut from = partial_update_bucket_state();
+            from.attributes.insert(
+                "object_lock_enabled".to_string(),
+                Value::Concrete(ConcreteValue::Bool(true)),
+            );
+            let patch = UpdatePatch {
+                ops: vec![PatchOp {
+                    kind,
+                    key: "object_lock_enabled".to_string(),
+                    value: None,
+                }],
+            };
+
+            let outcome = provider
+                .update_resource(
+                    from.id.clone(),
+                    from.identifier.as_deref().expect("identifier"),
+                    &from,
+                    &patch,
+                )
+                .await
+                .expect("unset update should succeed");
+
+            let UpdateOutcome::Success { state } = outcome else {
+                panic!("expected success for {label} when the attribute is absent");
+            };
+            assert!(
+                !state.attributes.contains_key("object_lock_enabled"),
+                "unset attribute must remain absent for {label}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn update_resource_returns_partial_success_when_failed_update_read_back_omits_patched_attribute()
+     {
+        let service = PartialUpdateCloudControlService::new(false, true);
+        let provider = provider_with_partial_update_service(service).await;
+        let from = partial_update_bucket_state();
+        let patch = object_lock_enabled_patch();
+
+        let outcome = provider
+            .update_resource(
+                from.id.clone(),
+                from.identifier.as_deref().expect("identifier"),
+                &from,
+                &patch,
+            )
+            .await
+            .expect("update should return a partial outcome");
+
+        let UpdateOutcome::PartialSuccess { state, diagnostic } = outcome else {
+            panic!("expected partial success when read-back omits a patched attribute");
+        };
+        assert!(!state.attributes.contains_key("object_lock_enabled"));
+        assert_eq!(
+            diagnostic.missing_attributes(),
+            &["object_lock_enabled".to_string()]
+        );
+        assert_eq!(
+            diagnostic.reason(),
+            "handler failed: post-update read denied; the post-update read-back does not contain patched attributes: object_lock_enabled"
+        );
+    }
+
     #[tokio::test]
     async fn update_resource_returns_success_when_wait_success() {
         let service = PartialUpdateCloudControlService::new(true, true);
@@ -1083,6 +1531,79 @@ mod tests {
         assert!(state.exists);
         assert_eq!(state.identifier.as_deref(), Some("partial-bucket"));
         assert!(state.attributes.contains_key("tags"));
+    }
+
+    #[tokio::test]
+    async fn update_resource_returns_success_when_clearing_all_tags() {
+        let service = PartialUpdateCloudControlService::with_read_properties(true, r#"{}"#);
+        let provider = provider_with_partial_update_service(service).await;
+        let from = partial_update_bucket_state();
+        let patch = empty_tags_patch();
+
+        let outcome = provider
+            .update_resource(
+                from.id.clone(),
+                from.identifier.as_deref().expect("identifier"),
+                &from,
+                &patch,
+            )
+            .await
+            .expect("clearing all tags should succeed");
+
+        let UpdateOutcome::Success { state } = outcome else {
+            panic!("expected success when read-back omits the cleared tags property");
+        };
+        assert_eq!(
+            state.attributes.get("tags"),
+            Some(&Value::Concrete(ConcreteValue::Map(IndexMap::new())))
+        );
+    }
+
+    #[tokio::test]
+    async fn read_resource_canonicalizes_missing_or_empty_tags_to_empty_map() {
+        for (read_properties, label) in [(r#"{}"#, "missing"), (r#"{"Tags":[]}"#, "empty")] {
+            let service =
+                PartialUpdateCloudControlService::with_read_properties(true, read_properties);
+            let provider = provider_with_partial_update_service(service).await;
+
+            let state = provider
+                .read_resource("s3.Bucket", "partial_bucket", Some("partial-bucket"))
+                .await
+                .expect("read should succeed");
+
+            assert_eq!(
+                state.attributes.get("tags"),
+                Some(&Value::Concrete(ConcreteValue::Map(IndexMap::new()))),
+                "{label} Tags must use the canonical empty-map shape"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn read_resource_does_not_fabricate_tags_for_schema_without_tags_attribute() {
+        let config = get_schema_config("route53.HostedZone")
+            .expect("route53.HostedZone schema should exist");
+        assert!(config.has_tags);
+        assert!(!config.schema.attributes.contains_key("tags"));
+
+        for (read_properties, label) in [
+            (r#"{}"#, "missing"),
+            (r#"{"Tags":[{"Key":"env","Value":"prod"}]}"#, "present"),
+        ] {
+            let service =
+                PartialUpdateCloudControlService::with_read_properties(true, read_properties);
+            let provider = provider_with_partial_update_service(service).await;
+
+            let state = provider
+                .read_resource("route53.HostedZone", "hosted_zone", Some("Z123456789"))
+                .await
+                .expect("read should succeed");
+
+            assert!(
+                !state.attributes.contains_key("tags"),
+                "{label} Cloud Control Tags must not fabricate a schema-unknown attribute"
+            );
+        }
     }
 
     #[tokio::test]
@@ -1127,6 +1648,119 @@ mod tests {
             "handler failed: post-update read denied; read error: Failed to get resource: AccessDeniedException: read denied"
         );
         assert_eq!(diagnostic.missing_attributes(), &["tags".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn update_resource_read_error_strips_write_only_and_reports_all_touched_attributes() {
+        let service = PartialUpdateCloudControlService::new(false, false);
+        let provider = provider_with_partial_update_service(service).await;
+        let from = partial_update_bucket_state();
+        let mut patch = access_control_patch();
+        patch.ops.push(PatchOp {
+            kind: PatchOpKind::Remove,
+            key: "website_configuration".to_string(),
+            value: None,
+        });
+
+        let outcome = provider
+            .update_resource(
+                from.id.clone(),
+                from.identifier.as_deref().expect("identifier"),
+                &from,
+                &patch,
+            )
+            .await
+            .expect("failed read-back should return a partial outcome");
+
+        let UpdateOutcome::PartialSuccess { state, diagnostic } = outcome else {
+            panic!("expected partial success when the post-update read fails");
+        };
+        assert!(
+            !state.attributes.contains_key("access_control"),
+            "write-only desired values must not be fabricated after a failed read-back"
+        );
+        assert_eq!(
+            diagnostic.missing_attributes(),
+            &[
+                "access_control".to_string(),
+                "website_configuration".to_string(),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn update_resource_read_error_with_only_write_only_add_stays_partial() {
+        let service = PartialUpdateCloudControlService::new(false, false);
+        let provider = provider_with_partial_update_service(service).await;
+        let from = partial_update_bucket_state();
+        let patch = access_control_patch();
+
+        let outcome = provider
+            .update_resource(
+                from.id.clone(),
+                from.identifier.as_deref().expect("identifier"),
+                &from,
+                &patch,
+            )
+            .await
+            .expect("failed read-back should return a partial outcome");
+
+        let UpdateOutcome::PartialSuccess { state, diagnostic } = outcome else {
+            panic!("a failed handler and failed read must not degrade to success");
+        };
+        assert!(!state.attributes.contains_key("access_control"));
+        assert_eq!(
+            diagnostic.missing_attributes(),
+            &["access_control".to_string()]
+        );
+        assert_eq!(
+            diagnostic.reason(),
+            "handler failed: post-update read denied; read error: Failed to get resource: AccessDeniedException: read denied"
+        );
+    }
+
+    #[tokio::test]
+    async fn update_resource_read_error_reports_unsent_create_only_attribute() {
+        let service = PartialUpdateCloudControlService::new(false, false);
+        let provider = provider_with_partial_update_service(service).await;
+        let from = partial_update_bucket_state();
+        let patch = create_only_bucket_name_patch();
+
+        let outcome = provider
+            .update_resource(
+                from.id.clone(),
+                from.identifier.as_deref().expect("identifier"),
+                &from,
+                &patch,
+            )
+            .await
+            .expect("failed read-back should return a partial outcome");
+
+        let UpdateOutcome::PartialSuccess { state, diagnostic } = outcome else {
+            panic!("expected partial success when the post-update read fails");
+        };
+        assert!(
+            !state.attributes.contains_key("bucket_name"),
+            "an unsent create-only desired value must not be fabricated into state"
+        );
+        assert_eq!(
+            diagnostic.missing_attributes(),
+            &["bucket_name".to_string(), "tags".to_string()]
+        );
+        assert!(
+            diagnostic
+                .reason()
+                .contains("handler failed: post-update read denied")
+        );
+        assert!(
+            diagnostic
+                .reason()
+                .contains("read error: Failed to get resource: AccessDeniedException: read denied")
+        );
+        assert!(
+            diagnostic.reason().contains("not sent to Cloud Control"),
+            "the diagnostic must distinguish provider-dropped updates from read-back omissions"
+        );
     }
 
     #[tokio::test]
