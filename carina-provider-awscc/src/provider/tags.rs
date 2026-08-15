@@ -10,6 +10,15 @@ use carina_core::resource::{ConcreteValue, Value};
 use serde_json::json;
 
 use super::AwsccProvider;
+use crate::schemas::config::AwsccSchemaConfig;
+
+pub(crate) fn tags_provider_name(config: &AwsccSchemaConfig) -> Option<&str> {
+    config
+        .schema
+        .attributes
+        .get("tags")
+        .and_then(|attribute| attribute.provider_name.as_deref())
+}
 
 impl AwsccProvider {
     /// Build tags array for CloudFormation format
