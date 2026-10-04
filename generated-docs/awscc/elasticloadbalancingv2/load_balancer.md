@@ -208,7 +208,7 @@ Shorthand formats: `application` or `Type.application`
 
 ### `canonical_hosted_zone_id`
 
-- **Type:** String
+- **Type:** Route53HostedZoneId
 
 
 

@@ -1161,6 +1161,7 @@ fn infer_string_type_display(prop_name: &str, resource_type: &str) -> String {
 fn override_type_to_display_name(override_type: &str) -> &str {
     match override_type {
         "carina_aws_types::security_group_id()" => "SecurityGroupId",
+        "carina_aws_types::route53_hosted_zone_id()" => "Route53HostedZoneId",
         "carina_aws_types::aws_resource_id()" => "AwsResourceId",
         "carina_aws_types::iam_role_arn()" | "super::super::iam::role::arn()" => "IamRoleArn",
         "carina_aws_types::iam_policy_arn()" | "super::super::iam::policy::arn()" => "IamPolicyArn",
@@ -4629,6 +4630,22 @@ fn resource_type_overrides() -> &'static HashMap<(&'static str, &'static str), T
             m.insert(
                 ("AWS::EC2::SubnetRouteTableAssociation", "Id"),
                 TypeOverride::StringType("carina_aws_types::subnet_route_table_association_id()"),
+            );
+            // Hosted-zone ID producers must carry the shared Route 53 identity so
+            // they can flow into Route53 alias-target sinks. The cached CFN schemas
+            // expose both read-only attributes as unrefined strings. CloudControl
+            // HostedZone create/read in us-east-1 on 2026-10-04 returned the same
+            // unprefixed Z... ID from the create response and read-back state.
+            m.insert(
+                (
+                    "AWS::ElasticLoadBalancingV2::LoadBalancer",
+                    "CanonicalHostedZoneID",
+                ),
+                TypeOverride::StringType("carina_aws_types::route53_hosted_zone_id()"),
+            );
+            m.insert(
+                ("AWS::Route53::HostedZone", "Id"),
+                TypeOverride::StringType("carina_aws_types::route53_hosted_zone_id()"),
             );
             // EIP Address and TransferAddress are IPv4 addresses
             m.insert(
@@ -10311,6 +10328,17 @@ mod tests {
         assert_eq!(
             infer_string_type_display("GatewayId", "AWS::EC2::VPNGatewayRoutePropagation"),
             "AwsResourceId"
+        );
+        assert_eq!(
+            infer_string_type_display(
+                "CanonicalHostedZoneID",
+                "AWS::ElasticLoadBalancingV2::LoadBalancer"
+            ),
+            "Route53HostedZoneId"
+        );
+        assert_eq!(
+            infer_string_type_display("Id", "AWS::Route53::HostedZone"),
+            "Route53HostedZoneId"
         );
     }
 
