@@ -14,7 +14,7 @@
 mod common;
 
 use aws_config::{BehaviorVersion, Region};
-use carina_core::provider::{CreateOutcome, CreateRequest, Provider, ReadRequest};
+use carina_core::provider::{CreateOutcome, Provider, ReadRequest};
 use carina_core::resource::{ConcreteValue, Resource, Value};
 use carina_provider_awscc::AwsccProvider;
 use carina_provider_awscc::provider::AwsccProviderConfig;
@@ -25,6 +25,10 @@ use winterbaume_core::MockAws;
 
 fn string(value: &str) -> Value {
     Value::Concrete(ConcreteValue::String(value.to_string()))
+}
+
+fn enum_identifier(value: &str) -> Value {
+    Value::Concrete(ConcreteValue::enum_identifier(value))
 }
 
 fn map(entries: impl IntoIterator<Item = (&'static str, Value)>) -> Value {
@@ -51,7 +55,7 @@ fn ecs_cluster_resource() -> Resource {
             "cluster_settings",
             list([map([
                 ("name", string("containerInsights")),
-                ("value", string("enabled")),
+                ("value", enum_identifier("enabled")),
             ])]),
         )
         .with_attribute(
@@ -91,9 +95,10 @@ async fn ecs_cluster_create_then_read_round_trips_structured_list_fields() {
     let id = resource.id.clone();
     let resource = common::normalize_resource(resource).await;
 
-    let created = Provider::create(&provider, &id, CreateRequest { resource })
+    let created = provider
+        .create_resource(resource.as_resource())
         .await
-        .expect("ecs.Cluster create through Provider::create should succeed");
+        .expect("ecs.Cluster create_resource should succeed");
     let created = match created {
         CreateOutcome::Success { state } => state,
         CreateOutcome::PartialSuccess { diagnostic, .. } => {

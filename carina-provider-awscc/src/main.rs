@@ -5,9 +5,8 @@ use carina_plugin_sdk::CarinaProvider;
 use carina_provider_protocol::types as proto;
 
 use carina_core::provider::{
-    CreateRequest as CoreCreateRequest, DeleteRequest as CoreDeleteRequest, Provider,
-    ProviderError as CoreProviderError, ProviderNormalizer, ReadRequest as CoreReadRequest,
-    SavedAttrs, UpdateRequest as CoreUpdateRequest,
+    DeleteRequest as CoreDeleteRequest, Provider, ProviderError as CoreProviderError,
+    ProviderNormalizer, ReadRequest as CoreReadRequest, SavedAttrs,
 };
 use carina_core::resource::{
     ConcreteValue, ResourceId as CoreResourceId, State as CoreState, Value as CoreValue,
@@ -232,7 +231,7 @@ impl CarinaProvider for AwsccProcessProvider {
         let core_data_source = convert::proto_to_core_data_source(resource);
         let result = self
             .runtime
-            .block_on(self.provider().read_data_source(&core_data_source));
+            .block_on(self.provider().read_resource(&core_data_source.id, None));
         match result {
             Ok(state) => Ok(convert::core_to_proto_state(&state)),
             Err(e) => Err(Self::convert_error(e)),
@@ -241,10 +240,9 @@ impl CarinaProvider for AwsccProcessProvider {
 
     fn create(
         &self,
-        id: &proto::ResourceId,
+        _id: &proto::ResourceId,
         request: proto::CreateRequest,
     ) -> Result<proto::CreateOutcome, proto::ProviderError> {
-        let core_id = convert::proto_to_core_resource_id(id);
         let core_resource = convert::proto_to_core_resource(&request.resource);
         let mut registry = carina_core::schema::SchemaRegistry::new();
         for config in schemas::generated::configs() {
@@ -259,16 +257,10 @@ impl CarinaProvider for AwsccProcessProvider {
                 &registry,
             ),
         );
-        let resolved_resource = carina_core::executor::resolve_normalized_for_provider(
-            normalized_resource,
-        )
-        .map_err(|e| Self::convert_error(CoreProviderError::invalid_input(e.to_string())))?;
-        let result = self.runtime.block_on(self.provider().create(
-            &core_id,
-            CoreCreateRequest {
-                resource: resolved_resource,
-            },
-        ));
+        let result = self.runtime.block_on(
+            self.provider()
+                .create_resource(normalized_resource.as_resource()),
+        );
         match result {
             Ok(outcome) => Ok(convert::core_to_proto_create_outcome(outcome)),
             Err(e) => Err(Self::convert_error(e)),
@@ -284,13 +276,11 @@ impl CarinaProvider for AwsccProcessProvider {
         let core_id = convert::proto_to_core_resource_id(id);
         let core_from = convert::proto_to_core_state(&request.from);
         let core_patch = convert::proto_to_core_update_patch(&request.patch);
-        let result = self.runtime.block_on(self.provider().update(
-            &core_id,
+        let result = self.runtime.block_on(self.provider().update_resource(
+            core_id,
             identifier,
-            CoreUpdateRequest {
-                from: core_from,
-                patch: core_patch,
-            },
+            &core_from,
+            &core_patch,
         ));
         match result {
             Ok(outcome) => Ok(convert::core_to_proto_update_outcome(outcome)),
@@ -495,6 +485,8 @@ fn assume_role_attribute_type() -> proto::AttributeType {
                 description: Some("IAM role ARN to assume.".to_string()),
                 block_name: None,
                 provider_name: None,
+                read_only: false,
+                deferred_populate: false,
             },
             proto::StructField {
                 name: "session_name".to_string(),
@@ -505,6 +497,8 @@ fn assume_role_attribute_type() -> proto::AttributeType {
                 ),
                 block_name: None,
                 provider_name: None,
+                read_only: false,
+                deferred_populate: false,
             },
             proto::StructField {
                 name: "external_id".to_string(),
@@ -515,6 +509,8 @@ fn assume_role_attribute_type() -> proto::AttributeType {
                 ),
                 block_name: None,
                 provider_name: None,
+                read_only: false,
+                deferred_populate: false,
             },
             proto::StructField {
                 name: "duration".to_string(),
@@ -525,6 +521,8 @@ fn assume_role_attribute_type() -> proto::AttributeType {
                 ),
                 block_name: None,
                 provider_name: None,
+                read_only: false,
+                deferred_populate: false,
             },
         ],
     }

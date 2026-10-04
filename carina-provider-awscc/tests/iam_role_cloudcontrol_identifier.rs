@@ -1,7 +1,7 @@
 mod common;
 
 use aws_config::{BehaviorVersion, Region};
-use carina_core::provider::{CreateOutcome, CreateRequest, Provider, ReadRequest};
+use carina_core::provider::{CreateOutcome, Provider, ReadRequest};
 use carina_core::resource::{ConcreteValue, Resource, Value};
 use carina_provider_awscc::AwsccProvider;
 use carina_provider_awscc::provider::AwsccProviderConfig;
@@ -147,6 +147,10 @@ fn string(value: &str) -> Value {
     Value::Concrete(ConcreteValue::String(value.to_string()))
 }
 
+fn enum_identifier(value: &str) -> Value {
+    Value::Concrete(ConcreteValue::enum_identifier(value))
+}
+
 fn map(entries: impl IntoIterator<Item = (&'static str, Value)>) -> Value {
     Value::Concrete(ConcreteValue::Map(
         entries
@@ -173,12 +177,12 @@ fn assume_role_policy_json() -> serde_json::Value {
 
 fn assume_role_policy_value() -> Value {
     map([
-        ("version", string("2012-10-17")),
+        ("version", enum_identifier("2012_10_17")),
         (
             "statement",
             list([map([
-                ("effect", string("Allow")),
-                ("principal", map([("Service", string("ec2.amazonaws.com"))])),
+                ("effect", enum_identifier("allow")),
+                ("principal", map([("service", string("ec2.amazonaws.com"))])),
                 ("action", string("sts:AssumeRole")),
             ])]),
         ),
@@ -212,7 +216,8 @@ async fn iam_role_create_with_role_name_prefix_canonicalizes_identifier_from_rea
     let id = resource.id.clone();
     let resource = common::normalize_resource(resource).await;
 
-    let created = Provider::create(&provider, &id, CreateRequest { resource })
+    let created = provider
+        .create_resource(resource.as_resource())
         .await
         .expect("iam.Role create should succeed with canonical RoleName identifier");
     let created = match created {

@@ -13,7 +13,7 @@
 mod common;
 
 use aws_config::{BehaviorVersion, Region};
-use carina_core::provider::{CreateOutcome, CreateRequest, Provider, ReadRequest};
+use carina_core::provider::{CreateOutcome, Provider, ReadRequest};
 use carina_core::resource::{ConcreteValue, Resource, Value};
 use carina_provider_awscc::AwsccProvider;
 use carina_provider_awscc::provider::AwsccProviderConfig;
@@ -24,6 +24,10 @@ use winterbaume_core::MockAws;
 
 fn string(value: &str) -> Value {
     Value::Concrete(ConcreteValue::String(value.to_string()))
+}
+
+fn enum_identifier(value: &str) -> Value {
+    Value::Concrete(ConcreteValue::enum_identifier(value))
 }
 
 fn string_list(items: impl IntoIterator<Item = &'static str>) -> Value {
@@ -55,12 +59,12 @@ fn list(items: impl IntoIterator<Item = Value>) -> Value {
 
 fn key_policy() -> Value {
     map([
-        ("version", string("2012-10-17")),
+        ("version", enum_identifier("2012_10_17")),
         (
             "statement",
             list([map([
                 ("sid", string("AllowRootAccountAccess")),
-                ("effect", string("Allow")),
+                ("effect", enum_identifier("allow")),
                 (
                     "principal",
                     map([("aws", string("arn:aws:iam::111122223333:root"))]),
@@ -95,8 +99,8 @@ fn kms_key_resource() -> Resource {
     Resource::with_provider("awscc", "kms.Key", "signing_key", None)
         .with_attribute("description", string("Winterbaume signing key"))
         .with_attribute("key_policy", key_policy())
-        .with_attribute("key_usage", string("SIGN_VERIFY"))
-        .with_attribute("key_spec", string("ECC_NIST_P256"))
+        .with_attribute("key_usage", enum_identifier("sign_verify"))
+        .with_attribute("key_spec", enum_identifier("ecc_nist_p256"))
         .with_attribute("enable_key_rotation", bool_(false))
         .with_attribute("pending_window_in_days", int(7))
         .with_attribute("tags", map([("Environment", string("test"))]))
@@ -140,9 +144,10 @@ async fn kms_key_create_then_read_round_trips_structured_key_policy() {
     let id = resource.id.clone();
     let resource = common::normalize_resource(resource).await;
 
-    let created = Provider::create(&provider, &id, CreateRequest { resource })
+    let created = provider
+        .create_resource(resource.as_resource())
         .await
-        .expect("kms.Key create through Provider::create should succeed");
+        .expect("kms.Key create_resource should succeed");
     let created = match created {
         CreateOutcome::Success { state } => state,
         CreateOutcome::PartialSuccess { diagnostic, .. } => {

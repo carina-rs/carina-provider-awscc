@@ -7,7 +7,9 @@
 use indexmap::IndexMap;
 
 use carina_core::resource::{ConcreteValue, Value};
-use carina_core::schema::{AttributeType, ResourceSchema, Shape, ShapeWalkBudget, StructField};
+use carina_core::schema::{
+    AttributeType, ResourceSchema, Shape, ShapeWalkBudget, StructField, UnionMembers,
+};
 use serde_json::json;
 
 use carina_aws_types::canonicalize_enum_value;
@@ -23,7 +25,7 @@ fn struct_fields_for<'a>(
 fn union_members_for<'a>(
     schema: &'a ResourceSchema,
     attr_type: &'a AttributeType,
-) -> Option<&'a [AttributeType]> {
+) -> Option<UnionMembers<'a>> {
     schema.union_members_with_budget(attr_type, &mut ShapeWalkBudget::new(256))
 }
 
@@ -40,13 +42,15 @@ fn string_list_to_json(items: &[String]) -> serde_json::Value {
 
 fn string_or_list_of_strings_from_json(
     schema: &ResourceSchema,
-    members: &[AttributeType],
+    members: &UnionMembers<'_>,
     value: &serde_json::Value,
 ) -> Option<Value> {
     let has_string = members
         .iter()
-        .any(|member| matches!(schema.shape_of(member), Shape::String { .. }));
-    let has_list_of_strings = members.iter().any(|member| {
+        .flatten()
+        .any(|member| matches!(schema.shape_of(member.as_attr()), Shape::String { .. }));
+    let has_list_of_strings = members.iter().flatten().any(|member| {
+        let member = member.as_attr();
         let Shape::List { element_type, .. } = schema.shape_of(member) else {
             return false;
         };
@@ -91,7 +95,8 @@ fn json_matches_shape(
         Shape::Union => union_members_for(schema, attr_type).is_some_and(|members| {
             members
                 .iter()
-                .any(|member| json_matches_shape(schema, member, value))
+                .flatten()
+                .any(|member| json_matches_shape(schema, member.as_attr(), value))
         }),
     }
 }
@@ -175,12 +180,14 @@ pub(crate) fn aws_value_to_dsl_with_defs(
     if let Shape::Union = shape
         && let Some(members) = union_members_for(&schema, attr_type)
     {
-        if let Some(result) = string_or_list_of_strings_from_json(&schema, members, value) {
+        if let Some(result) = string_or_list_of_strings_from_json(&schema, &members, value) {
             return Some(result);
         }
 
         for member in members
             .iter()
+            .flatten()
+            .map(|member| member.as_attr())
             .filter(|member| json_matches_shape(&schema, member, value))
         {
             if let Some(result) =
@@ -418,6 +425,8 @@ pub(crate) fn dsl_value_to_aws_with_defs(
         if let Value::Concrete(ConcreteValue::StringList(_)) = value {
             for member in members
                 .iter()
+                .flatten()
+                .map(|member| member.as_attr())
                 .filter(|member| is_list_of_strings(&schema, member))
             {
                 if let Some(result) =
@@ -429,7 +438,7 @@ pub(crate) fn dsl_value_to_aws_with_defs(
         }
 
         // Try each member type; use the first that produces a type-aware result
-        for member in members {
+        for member in members.iter().flatten().map(|member| member.as_attr()) {
             if let Some(result) =
                 dsl_value_to_aws_with_defs(value, member, resource_type, attr_name, defs)
             {

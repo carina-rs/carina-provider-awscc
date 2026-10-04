@@ -14,7 +14,7 @@
 mod common;
 
 use aws_config::{BehaviorVersion, Region};
-use carina_core::provider::{CreateOutcome, CreateRequest, Provider, ReadRequest};
+use carina_core::provider::{CreateOutcome, Provider, ReadRequest};
 use carina_core::resource::{ConcreteValue, Resource, Value};
 use carina_provider_awscc::AwsccProvider;
 use carina_provider_awscc::provider::AwsccProviderConfig;
@@ -35,6 +35,10 @@ fn bool_(value: bool) -> Value {
     Value::Concrete(ConcreteValue::Bool(value))
 }
 
+fn enum_identifier(value: &str) -> Value {
+    Value::Concrete(ConcreteValue::enum_identifier(value))
+}
+
 fn map(entries: impl IntoIterator<Item = (&'static str, Value)>) -> Value {
     Value::Concrete(ConcreteValue::Map(
         entries
@@ -51,19 +55,19 @@ fn list(items: impl IntoIterator<Item = Value>) -> Value {
 fn dynamodb_table_resource() -> Resource {
     Resource::with_provider("awscc", "dynamodb.Table", "jti_store", None)
         .with_attribute("table_name", string("jti-store"))
-        .with_attribute("billing_mode", string("PAY_PER_REQUEST"))
+        .with_attribute("billing_mode", enum_identifier("pay_per_request"))
         .with_attribute(
             "attribute_definitions",
             list([map([
                 ("attribute_name", string("jti")),
-                ("attribute_type", string("S")),
+                ("attribute_type", enum_identifier("s")),
             ])]),
         )
         .with_attribute(
             "key_schema",
             list([map([
                 ("attribute_name", string("jti")),
-                ("key_type", string("HASH")),
+                ("key_type", enum_identifier("hash")),
             ])]),
         )
         .with_attribute(
@@ -105,9 +109,10 @@ async fn dynamodb_table_create_then_read_round_trips_list_of_struct_fields() {
     let id = resource.id.clone();
     let resource = common::normalize_resource(resource).await;
 
-    let created = Provider::create(&provider, &id, CreateRequest { resource })
+    let created = provider
+        .create_resource(resource.as_resource())
         .await
-        .expect("dynamodb.Table create through Provider::create should succeed");
+        .expect("dynamodb.Table create_resource should succeed");
     let created = match created {
         CreateOutcome::Success { state } => state,
         CreateOutcome::PartialSuccess { diagnostic, .. } => {

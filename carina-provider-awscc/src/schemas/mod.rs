@@ -20,7 +20,10 @@ mod tests {
 
     use carina_core::differ::create_plan;
     use carina_core::effect::Effect;
-    use carina_core::resource::{ConcreteValue, Resource, ResourceId, State, Value};
+    use carina_core::provider::RawSavedAttrs;
+    use carina_core::resource::{
+        ConcreteValue, ResolvedResource, Resource, ResourceId, State, Value,
+    };
     use carina_core::schema::{AttributeType, RawShape, ResourceSchema, Shape, ShapeWalkBudget};
     use carina_core::schema::{SchemaKind, SchemaRegistry};
     use indexmap::IndexMap;
@@ -41,10 +44,10 @@ mod tests {
         let resource_type = schema.resource_type.clone();
         let resource_id =
             ResourceId::with_provider_identity("awscc", resource_type.clone(), "test", None);
-        let resources = vec![
-            Resource::with_provider("awscc", resource_type, "test", None)
-                .with_attribute("tags", tags_value("new-name")),
-        ];
+        let resource = Resource::with_provider("awscc", resource_type, "test", None)
+            .with_attribute("tags", tags_value("new-name"));
+        let resources = vec![resource.clone()];
+        let managed = vec![ResolvedResource::new(resource)];
 
         let mut schemas = SchemaRegistry::new();
         schemas.insert("awscc", schema);
@@ -68,15 +71,16 @@ mod tests {
         )]);
         let current_states =
             carina_core::resource::into_plan_input_map(raw_states, &schemas, &resources);
+        let saved_attrs = RawSavedAttrs::default().lift(&schemas);
 
         let plan = create_plan(
-            &resources,
+            &managed,
             &[],
             &carina_core::provider::ProviderRouter::new(),
             &current_states,
             &HashMap::new(),
             &schemas,
-            &HashMap::new(),
+            &saved_attrs,
             &HashMap::new(),
             &HashMap::new(),
             &[],

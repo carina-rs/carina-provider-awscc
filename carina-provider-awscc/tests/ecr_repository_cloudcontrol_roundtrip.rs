@@ -25,7 +25,7 @@
 mod common;
 
 use aws_config::{BehaviorVersion, Region};
-use carina_core::provider::{CreateOutcome, CreateRequest, Provider, ReadRequest};
+use carina_core::provider::{CreateOutcome, Provider, ReadRequest};
 use carina_core::resource::{ConcreteValue, Resource, Value};
 use carina_provider_awscc::AwsccProvider;
 use carina_provider_awscc::provider::AwsccProviderConfig;
@@ -49,6 +49,10 @@ fn bool_(value: bool) -> Value {
     Value::Concrete(ConcreteValue::Bool(value))
 }
 
+fn enum_identifier(value: &str) -> Value {
+    Value::Concrete(ConcreteValue::enum_identifier(value))
+}
+
 fn map(entries: impl IntoIterator<Item = (&'static str, Value)>) -> Value {
     Value::Concrete(ConcreteValue::Map(
         entries
@@ -61,7 +65,7 @@ fn map(entries: impl IntoIterator<Item = (&'static str, Value)>) -> Value {
 fn ecr_repository_resource() -> Resource {
     Resource::with_provider("awscc", "ecr.Repository", "publish_api_repo", None)
         .with_attribute("repository_name", string(REPOSITORY_NAME))
-        .with_attribute("image_tag_mutability", string("IMMUTABLE"))
+        .with_attribute("image_tag_mutability", enum_identifier("immutable"))
         .with_attribute(
             "image_scanning_configuration",
             map([("scan_on_push", bool_(true))]),
@@ -120,9 +124,10 @@ async fn ecr_repository_create_then_read_preserves_struct_and_map_fields() {
     let id = resource.id.clone();
     let resource = common::normalize_resource(resource).await;
 
-    let created = Provider::create(&provider, &id, CreateRequest { resource })
+    let created = provider
+        .create_resource(resource.as_resource())
         .await
-        .expect("ecr.Repository create through Provider::create should succeed");
+        .expect("ecr.Repository create_resource should succeed");
     let created = match created {
         CreateOutcome::Success { state } => state,
         CreateOutcome::PartialSuccess { diagnostic, .. } => {
