@@ -63,7 +63,7 @@ pub fn route53_hosted_zone_config() -> AwsccSchemaConfig {
                 .with_block_name("hosted_zone_tag"),
         )
         .attribute(
-            AttributeSchema::new("id", AttributeType::string())
+            AttributeSchema::new("id", carina_aws_types::route53_hosted_zone_id())
                 .read_only()
                 .with_description(" (read-only)")
                 .with_provider_name("Id"),

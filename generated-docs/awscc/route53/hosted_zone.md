@@ -106,7 +106,7 @@ Creates a configuration for DNS query logging. After you create a query logging 
 
 ### `id`
 
-- **Type:** String
+- **Type:** Route53HostedZoneId
 
 
 

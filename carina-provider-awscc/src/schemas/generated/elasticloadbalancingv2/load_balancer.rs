@@ -28,7 +28,7 @@ pub fn elasticloadbalancingv2_load_balancer_config() -> AwsccSchemaConfig {
         schema: ResourceSchema::new("elasticloadbalancingv2.LoadBalancer")
 	        .with_description("Specifies an Application Load Balancer, a Network Load Balancer, or a Gateway Load Balancer.")
         .attribute(
-            AttributeSchema::new("canonical_hosted_zone_id", AttributeType::string())
+            AttributeSchema::new("canonical_hosted_zone_id", carina_aws_types::route53_hosted_zone_id())
                 .read_only()
                 .with_description(" (read-only)")
                 .with_provider_name("CanonicalHostedZoneID"),
