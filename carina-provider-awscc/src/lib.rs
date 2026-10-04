@@ -22,10 +22,10 @@ use indexmap::IndexMap;
 use carina_core::effect::PlanOp;
 use carina_core::provider::{
     BoxFuture, CreateOutcome, CreateRequest, DeleteRequest, Provider, ProviderError,
-    ProviderFactory, ProviderNormalizer, ProviderResult, ReadRequest, SavedAttrs, UpdateOutcome,
-    UpdateRequest, merge_default_tags_for_provider, ready_noop,
+    ProviderFactory, ProviderNormalizer, ProviderReadyDataSource, ProviderResult, ReadRequest,
+    SavedAttrs, UpdateOutcome, UpdateRequest, merge_default_tags_for_provider, ready_noop,
 };
-use carina_core::resource::{ConcreteValue, DataSource, Resource, ResourceId, State, Value};
+use carina_core::resource::{ConcreteValue, Resource, ResourceId, State, Value};
 use carina_core::schema::SchemaRegistry;
 
 use crate::provider::AwsccProviderConfig;
@@ -300,42 +300,17 @@ impl Provider for AwsccProvider {
         identifier: Option<&str>,
         _request: ReadRequest,
     ) -> BoxFuture<'_, ProviderResult<State>> {
-        if let Some(err) = self.init_error() {
-            let err = err.to_string();
-            let id = id.clone();
-            return Box::pin(async move {
-                Err(ProviderError::invalid_input(err)
-                    .for_provider("awscc")
-                    .for_resource(id))
-            });
-        }
         let id = id.clone();
         let identifier = identifier.map(|s| s.to_string());
-        Box::pin(async move {
-            self.read_resource(
-                &id.resource_type,
-                id.identity_or_empty(),
-                identifier.as_deref(),
-            )
-            .await
-        })
+        Box::pin(async move { self.read_resource(&id, identifier.as_deref()).await })
     }
 
-    fn read_data_source(&self, resource: &DataSource) -> BoxFuture<'_, ProviderResult<State>> {
-        if let Some(err) = self.init_error() {
-            let err = err.to_string();
-            let id = resource.id.clone();
-            return Box::pin(async move {
-                Err(ProviderError::invalid_input(err)
-                    .for_provider("awscc")
-                    .for_resource(id))
-            });
-        }
-        let id = resource.id.clone();
-        Box::pin(async move {
-            self.read_resource(&id.resource_type, id.identity_or_empty(), None)
-                .await
-        })
+    fn read_data_source(
+        &self,
+        resource: &ProviderReadyDataSource,
+    ) -> BoxFuture<'_, ProviderResult<State>> {
+        let id = resource.as_data_source().id.clone();
+        Box::pin(async move { self.read_resource(&id, None).await })
     }
 
     fn create(
@@ -343,16 +318,7 @@ impl Provider for AwsccProvider {
         _id: &ResourceId,
         request: CreateRequest,
     ) -> BoxFuture<'_, ProviderResult<CreateOutcome>> {
-        if let Some(err) = self.init_error() {
-            let err = err.to_string();
-            let id = request.resource.as_resource().id.clone();
-            return Box::pin(async move {
-                Err(ProviderError::invalid_input(err)
-                    .for_provider("awscc")
-                    .for_resource(id))
-            });
-        }
-        Box::pin(async move { self.create_resource(request.resource.as_resource()).await })
+        Box::pin(async move { self.create_resource(request.resource().as_resource()).await })
     }
 
     fn update(
@@ -361,19 +327,10 @@ impl Provider for AwsccProvider {
         identifier: &str,
         request: UpdateRequest,
     ) -> BoxFuture<'_, ProviderResult<UpdateOutcome>> {
-        if let Some(err) = self.init_error() {
-            let err = err.to_string();
-            let id = id.clone();
-            return Box::pin(async move {
-                Err(ProviderError::invalid_input(err)
-                    .for_provider("awscc")
-                    .for_resource(id))
-            });
-        }
         let id = id.clone();
         let identifier = identifier.to_string();
         Box::pin(async move {
-            self.update_resource(id, &identifier, &request.from, &request.patch)
+            self.update_resource(id, &identifier, request.from(), request.patch())
                 .await
         })
     }
@@ -495,13 +452,13 @@ mod tests {
                     .iter()
                     .find(|f| f.name == "role_arn")
                     .expect("assume_role.role_arn must be declared");
-                assert!(role_arn.required, "role_arn must be required");
+                assert!(role_arn.is_required(), "role_arn must be required");
                 for opt in ["session_name", "external_id", "duration"] {
                     let f = fields
                         .iter()
                         .find(|f| f.name == opt)
                         .unwrap_or_else(|| panic!("assume_role.{opt} must be declared"));
-                    assert!(!f.required, "assume_role.{opt} must be optional");
+                    assert!(!f.is_required(), "assume_role.{opt} must be optional");
                 }
             }
             other => panic!("assume_role must be a Struct, was {other:?}"),

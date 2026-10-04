@@ -12,7 +12,7 @@
 mod common;
 
 use aws_config::{BehaviorVersion, Region};
-use carina_core::provider::{CreateOutcome, CreateRequest, Provider, ReadRequest};
+use carina_core::provider::{CreateOutcome, Provider, ReadRequest};
 use carina_core::resource::{ConcreteValue, Resource, Value};
 use carina_provider_awscc::AwsccProvider;
 use carina_provider_awscc::provider::AwsccProviderConfig;
@@ -23,6 +23,10 @@ use winterbaume_core::MockAws;
 
 fn string(value: &str) -> Value {
     Value::Concrete(ConcreteValue::String(value.to_string()))
+}
+
+fn enum_identifier(value: &str) -> Value {
+    Value::Concrete(ConcreteValue::enum_identifier(value))
 }
 
 fn int(value: i64) -> Value {
@@ -64,7 +68,7 @@ fn listener_resource() -> Resource {
         ),
     )
     .with_attribute("port", int(443))
-    .with_attribute("protocol", string("HTTPS"))
+    .with_attribute("protocol", enum_identifier("https"))
     .with_attribute(
         "certificates",
         list([map([(
@@ -75,7 +79,7 @@ fn listener_resource() -> Resource {
     .with_attribute(
         "default_actions",
         list([map([
-            ("type", string("forward")),
+            ("type", enum_identifier("forward")),
             (
                 "target_group_arn",
                 string(
@@ -171,9 +175,10 @@ async fn listener_create_then_read_round_trips_full_shaped_state() {
     let id = resource.id.clone();
     let resource = common::normalize_resource(resource).await;
 
-    let created = Provider::create(&provider, &id, CreateRequest { resource })
+    let created = provider
+        .create_resource(resource.as_resource())
         .await
-        .expect("elasticloadbalancingv2.Listener create through Provider::create should succeed");
+        .expect("elasticloadbalancingv2.Listener create_resource should succeed");
     let created = match created {
         CreateOutcome::Success { state } => state,
         CreateOutcome::PartialSuccess { diagnostic, .. } => {

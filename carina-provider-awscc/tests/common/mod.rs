@@ -1,7 +1,9 @@
+use carina_core::binding_index::ResolvedBindings;
 use carina_core::executor::{
-    normalized::apply_desired_normalization, resolve_normalized_for_provider,
+    ModuleConstraintGate, ProviderPreparationContext, prepare_provider_ready_resource,
 };
-use carina_core::resource::{ResolvedResource, Resource};
+use carina_core::provider::ProviderReadyResource;
+use carina_core::resource::Resource;
 use carina_core::schema::AttributeType;
 use carina_core::schema::SchemaRegistry;
 use carina_provider_awscc::AwsccNormalizer;
@@ -15,11 +17,24 @@ pub fn assert_arn_identity(t: AttributeType, expected: &str) {
 }
 
 #[allow(dead_code)]
-pub async fn normalize_resource(resource: Resource) -> ResolvedResource {
-    let normalized =
-        apply_desired_normalization(resource, &[], &AwsccNormalizer, &[], &SchemaRegistry::new())
-            .await;
-    resolve_normalized_for_provider(normalized).expect("test resource should be fully resolved")
+pub async fn normalize_resource(resource: Resource) -> ProviderReadyResource {
+    let bindings = ResolvedBindings::default();
+    let module_gate = ModuleConstraintGate::new(&[]);
+    let mut schemas = SchemaRegistry::new();
+    for schema in carina_provider_awscc::schemas::all_schemas() {
+        schemas.insert("awscc", schema);
+    }
+    let preparation = ProviderPreparationContext::new(
+        &bindings,
+        &module_gate,
+        &[],
+        &AwsccNormalizer,
+        &[],
+        &schemas,
+    );
+    prepare_provider_ready_resource(resource, &preparation)
+        .await
+        .expect("test resource should pass checked provider preparation")
 }
 
 #[allow(dead_code)]

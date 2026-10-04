@@ -230,7 +230,7 @@ mod tests {
             .attributes
             .get("arn")
             .expect("cloudfront.Distribution must expose an `arn` attribute");
-        assert!(arn.read_only, "synthesized `arn` must be read_only");
+        assert!(arn.is_read_only(), "synthesized `arn` must be read_only");
         assert!(
             arn.provider_name.is_none(),
             "synthesized `arn` must not declare a CFN provider_name; \

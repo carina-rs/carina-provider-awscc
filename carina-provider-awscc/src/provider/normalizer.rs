@@ -337,11 +337,12 @@ mod tests {
     fn route53_hosted_zone_name_trailing_dot_has_no_diff_without_registration() {
         let config = crate::schemas::generated::get_config_by_type("route53.HostedZone")
             .expect("route53.HostedZone schema should exist");
-        let desired = Resource::with_provider("awscc", "route53.HostedZone", "example", None)
-            .with_attribute(
+        let desired = carina_core::resource::ResolvedResource::new(
+            Resource::with_provider("awscc", "route53.HostedZone", "example", None).with_attribute(
                 "name",
                 Value::Concrete(ConcreteValue::String("example.com".to_string())),
-            );
+            ),
+        );
         let mut current_states = HashMap::from([(
             desired.id.clone(),
             State::existing(
@@ -518,7 +519,18 @@ mod tests {
         attrs: Vec<(&str, Value)>,
     ) -> (ResourceId, State) {
         use std::collections::BTreeSet;
-        let id = ResourceId::with_provider_name_compat(provider, resource_type, name, None);
+        let identity = match carina_core::resource::ResourceIdentity::try_from(name.to_string()) {
+            Ok(identity) => identity,
+            Err(carina_core::resource::ResourceIdentityError::Empty) => {
+                panic!("test resource identity must not be empty")
+            }
+        };
+        let id = ResourceId::with_provider_identity(
+            provider.to_string(),
+            resource_type.to_string(),
+            identity,
+            None,
+        );
         let mut attributes = HashMap::new();
         for (k, v) in attrs {
             attributes.insert(k.to_string(), v);

@@ -11,7 +11,7 @@
 mod common;
 
 use aws_config::{BehaviorVersion, Region};
-use carina_core::provider::{CreateOutcome, CreateRequest, Provider, ReadRequest};
+use carina_core::provider::{CreateOutcome, Provider, ReadRequest};
 use carina_core::resource::{ConcreteValue, Resource, Value};
 use carina_provider_awscc::AwsccProvider;
 use carina_provider_awscc::provider::AwsccProviderConfig;
@@ -22,6 +22,10 @@ use winterbaume_core::MockAws;
 
 fn string(value: &str) -> Value {
     Value::Concrete(ConcreteValue::String(value.to_string()))
+}
+
+fn enum_identifier(value: &str) -> Value {
+    Value::Concrete(ConcreteValue::enum_identifier(value))
 }
 
 fn int(value: i64) -> Value {
@@ -57,10 +61,10 @@ fn target_group_resource() -> Resource {
         None,
     )
     .with_attribute("name", string("registry-tg"))
-    .with_attribute("protocol", string("HTTP"))
+    .with_attribute("protocol", enum_identifier("http"))
     .with_attribute("port", int(8080))
     .with_attribute("vpc_id", string("vpc-dddd4444"))
-    .with_attribute("target_type", string("ip"))
+    .with_attribute("target_type", enum_identifier("ip"))
     .with_attribute("health_check_path", string("/health"))
     .with_attribute(
         "targets",
@@ -151,11 +155,10 @@ async fn target_group_create_then_read_round_trips_full_shaped_state() {
     let id = resource.id.clone();
     let resource = common::normalize_resource(resource).await;
 
-    let created = Provider::create(&provider, &id, CreateRequest { resource })
+    let created = provider
+        .create_resource(resource.as_resource())
         .await
-        .expect(
-            "elasticloadbalancingv2.TargetGroup create through Provider::create should succeed",
-        );
+        .expect("elasticloadbalancingv2.TargetGroup create_resource should succeed");
     let created = match created {
         CreateOutcome::Success { state } => state,
         CreateOutcome::PartialSuccess { diagnostic, .. } => {

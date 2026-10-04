@@ -23,23 +23,31 @@ use crate::provider::cloudcontrol::WaitOutcome;
 use crate::schemas::config::AwsccSchemaConfig;
 
 impl AwsccProvider {
+    fn ensure_initialized(&self, id: &ResourceId) -> ProviderResult<()> {
+        if let Some(err) = self.init_error() {
+            return Err(ProviderError::invalid_input(err.to_string())
+                .for_provider("awscc")
+                .for_resource(id.clone()));
+        }
+        Ok(())
+    }
+
     /// Read a resource using its configuration
     pub async fn read_resource(
         &self,
-        resource_type: &str,
-        name: &str,
+        id: &ResourceId,
         identifier: Option<&str>,
     ) -> ProviderResult<State> {
-        let id = ResourceId::with_provider_name_compat("awscc", resource_type, name, None);
+        self.ensure_initialized(id)?;
 
-        let config = get_schema_config(resource_type).ok_or_else(|| {
-            ProviderError::internal(format!("Unknown resource type: {}", resource_type))
+        let config = get_schema_config(&id.resource_type).ok_or_else(|| {
+            ProviderError::internal(format!("Unknown resource type: {}", id.resource_type))
                 .for_resource(id.clone())
         })?;
 
         let identifier = match identifier {
             Some(id) => id,
-            None => return Ok(State::not_found(id)),
+            None => return Ok(State::not_found(id.clone())),
         };
 
         let props = match self
@@ -47,13 +55,13 @@ impl AwsccProvider {
             .await?
         {
             Some(props) => props,
-            None => return Ok(State::not_found(id)),
+            None => return Ok(State::not_found(id.clone())),
         };
 
         let mut attributes = map_aws_props_to_attributes(
             &props,
             &config.schema.attributes,
-            resource_type,
+            &id.resource_type,
             &config.schema.defs,
         );
 
@@ -74,19 +82,21 @@ impl AwsccProvider {
         }
 
         // Handle special cases
-        self.read_special_attributes(resource_type, &props, &mut attributes);
+        self.read_special_attributes(&id.resource_type, &props, &mut attributes);
 
         // Synthesize attributes the Cloud Control read does not return
         // (e.g. cloudfront.Distribution.arn). Reads STS once, then caches.
         let _ = self
-            .synthesize_read_attributes(resource_type, &mut attributes)
+            .synthesize_read_attributes(&id.resource_type, &mut attributes)
             .await?;
 
-        Ok(State::existing(id, attributes).with_identifier(identifier))
+        Ok(State::existing(id.clone(), attributes).with_identifier(identifier))
     }
 
     /// Create a resource using its configuration
     pub async fn create_resource(&self, resource: &Resource) -> ProviderResult<CreateOutcome> {
+        self.ensure_initialized(&resource.id)?;
+
         let config = get_schema_config(&resource.id.resource_type).ok_or_else(|| {
             ProviderError::internal(format!(
                 "Unknown resource type: {}",
@@ -147,78 +157,47 @@ impl AwsccProvider {
             WaitOutcome::PartialOrFailed {
                 identifier,
                 status_message,
-            } => {
-                match self
-                    .read_resource(
-                        &resource.id.resource_type,
-                        resource.id.identity_or_empty(),
-                        Some(&identifier),
-                    )
-                    .await
-                {
-                    Ok(state) => {
-                        if !state.exists {
-                            return Ok(create_read_not_found_outcome(
-                                state,
-                                format!(
-                                    "handler failed: {}; read-back returned not_found",
-                                    status_message
-                                ),
-                            ));
-                        }
-                        let mut state = merge_desired_attributes(state, resource, config);
-                        let Some(canonical_identifier) =
-                            canonicalize_identifier_from_read(config, &state)
-                        else {
-                            let missing_attributes =
-                                missing_primary_identifier_attributes(config, &state);
-                            let reason = format!(
-                                "handler failed: {}; read-back missing primaryIdentifier attributes: {}",
-                                status_message,
-                                missing_attributes.join(", ")
-                            );
-                            return Ok(CreateOutcome::partial_success(
-                                state,
-                                reason,
-                                missing_attributes,
-                            ));
-                        };
-                        state.identifier = Some(canonical_identifier);
-                        if let Some(missing_attributes) = self
-                            .synthesize_read_attributes(
-                                &resource.id.resource_type,
-                                &mut state.attributes,
-                            )
-                            .await?
-                            .missing_attributes()
-                        {
-                            let reason = format!(
-                                "handler failed: {}; read-back missing synthesized attributes: {}",
-                                status_message,
-                                missing_attributes.join(", ")
-                            );
-                            return Ok(CreateOutcome::partial_success(
-                                state,
-                                reason,
-                                missing_attributes,
-                            ));
-                        }
-                        return Ok(CreateOutcome::Success { state });
+            } => match self.read_resource(&resource.id, Some(&identifier)).await {
+                Ok(state) => {
+                    if !state.exists {
+                        return Ok(create_read_not_found_outcome(
+                            state,
+                            format!(
+                                "handler failed: {}; read-back returned not_found",
+                                status_message
+                            ),
+                        ));
                     }
-                    Err(read_err) => {
-                        let state = State::existing(resource.id.clone(), HashMap::new())
-                            .with_identifier(identifier);
-                        let missing_attributes = config
-                            .schema
-                            .attributes
-                            .keys()
-                            .filter(|name| resource.get_attr(name.as_str()).is_some())
-                            .cloned()
-                            .collect();
+                    let mut state = merge_desired_attributes(state, resource, config);
+                    let Some(canonical_identifier) =
+                        canonicalize_identifier_from_read(config, &state)
+                    else {
+                        let missing_attributes =
+                            missing_primary_identifier_attributes(config, &state);
                         let reason = format!(
-                            "handler failed: {}; read error: {}",
+                            "handler failed: {}; read-back missing primaryIdentifier attributes: {}",
                             status_message,
-                            read_err.message(),
+                            missing_attributes.join(", ")
+                        );
+                        return Ok(CreateOutcome::partial_success(
+                            state,
+                            reason,
+                            missing_attributes,
+                        ));
+                    };
+                    state.identifier = Some(canonical_identifier);
+                    if let Some(missing_attributes) = self
+                        .synthesize_read_attributes(
+                            &resource.id.resource_type,
+                            &mut state.attributes,
+                        )
+                        .await?
+                        .missing_attributes()
+                    {
+                        let reason = format!(
+                            "handler failed: {}; read-back missing synthesized attributes: {}",
+                            status_message,
+                            missing_attributes.join(", ")
                         );
                         return Ok(CreateOutcome::partial_success(
                             state,
@@ -226,17 +205,33 @@ impl AwsccProvider {
                             missing_attributes,
                         ));
                     }
+                    return Ok(CreateOutcome::Success { state });
                 }
-            }
+                Err(read_err) => {
+                    let state = State::existing(resource.id.clone(), HashMap::new())
+                        .with_identifier(identifier);
+                    let missing_attributes = config
+                        .schema
+                        .attributes
+                        .keys()
+                        .filter(|name| resource.get_attr(name.as_str()).is_some())
+                        .cloned()
+                        .collect();
+                    let reason = format!(
+                        "handler failed: {}; read error: {}",
+                        status_message,
+                        read_err.message(),
+                    );
+                    return Ok(CreateOutcome::partial_success(
+                        state,
+                        reason,
+                        missing_attributes,
+                    ));
+                }
+            },
         };
 
-        let state = self
-            .read_resource(
-                &resource.id.resource_type,
-                resource.id.identity_or_empty(),
-                Some(&identifier),
-            )
-            .await?;
+        let state = self.read_resource(&resource.id, Some(&identifier)).await?;
 
         if !state.exists {
             return Ok(create_read_not_found_outcome(
@@ -295,6 +290,8 @@ impl AwsccProvider {
         from: &State,
         patch: &UpdatePatch,
     ) -> ProviderResult<UpdateOutcome> {
+        self.ensure_initialized(&id)?;
+
         let config = get_schema_config(&id.resource_type).ok_or_else(|| {
             ProviderError::internal(format!("Unknown resource type: {}", id.resource_type))
                 .for_resource(id.clone())
@@ -316,9 +313,7 @@ impl AwsccProvider {
 
         match outcome {
             WaitOutcome::Success { identifier } => {
-                let state = self
-                    .read_resource(&id.resource_type, id.identity_or_empty(), Some(&identifier))
-                    .await?;
+                let state = self.read_resource(&id, Some(&identifier)).await?;
                 Ok(update_outcome_from_read_back(
                     state,
                     &desired,
@@ -330,43 +325,38 @@ impl AwsccProvider {
             WaitOutcome::PartialOrFailed {
                 identifier,
                 status_message,
-            } => {
-                match self
-                    .read_resource(&id.resource_type, id.identity_or_empty(), Some(&identifier))
-                    .await
-                {
-                    Ok(state) => Ok(update_outcome_from_read_back(
-                        state,
-                        &desired,
-                        &patch_plan,
-                        config,
-                        Some(&status_message),
-                    )),
-                    Err(read_err) => {
-                        let missing_attributes = patch_plan.touched.clone();
-                        let mut state_attributes = desired;
-                        for attr in &missing_attributes {
-                            state_attributes.remove(attr);
-                        }
-                        let state = State::existing(id.clone(), state_attributes)
-                            .with_identifier(identifier);
-                        let mut reason = format!(
-                            "handler failed: {}; read error: {}",
-                            status_message,
-                            read_err.message(),
-                        );
-                        if !patch_plan.unsent.is_empty() {
-                            reason.push_str("; ");
-                            reason.push_str(&unsent_attributes_reason(&patch_plan.unsent));
-                        }
-                        Ok(UpdateOutcome::partial_success(
-                            state,
-                            reason,
-                            missing_attributes,
-                        ))
+            } => match self.read_resource(&id, Some(&identifier)).await {
+                Ok(state) => Ok(update_outcome_from_read_back(
+                    state,
+                    &desired,
+                    &patch_plan,
+                    config,
+                    Some(&status_message),
+                )),
+                Err(read_err) => {
+                    let missing_attributes = patch_plan.touched.clone();
+                    let mut state_attributes = desired;
+                    for attr in &missing_attributes {
+                        state_attributes.remove(attr);
                     }
+                    let state =
+                        State::existing(id.clone(), state_attributes).with_identifier(identifier);
+                    let mut reason = format!(
+                        "handler failed: {}; read error: {}",
+                        status_message,
+                        read_err.message(),
+                    );
+                    if !patch_plan.unsent.is_empty() {
+                        reason.push_str("; ");
+                        reason.push_str(&unsent_attributes_reason(&patch_plan.unsent));
+                    }
+                    Ok(UpdateOutcome::partial_success(
+                        state,
+                        reason,
+                        missing_attributes,
+                    ))
                 }
-            }
+            },
         }
     }
 
@@ -606,7 +596,7 @@ fn map_aws_props_to_attributes(
                     attributes.insert(dsl_name.clone(), v);
                 }
             }
-            None if !attr_schema.required && !attr_schema.write_only => {
+            None if !attr_schema.is_required() && !attr_schema.write_only => {
                 match schema_view.shape_of(&attr_schema.attr_type) {
                     Shape::List { .. } => {
                         attributes.insert(
@@ -689,7 +679,7 @@ mod tests {
     fn web_acl_association_state(
         entries: impl IntoIterator<Item = (&'static str, Value)>,
     ) -> State {
-        let id = ResourceId::with_provider_name_compat(
+        let id = ResourceId::with_provider_identity(
             "awscc",
             "wafv2.WebAclAssociation",
             "publish_api_waf",
@@ -842,6 +832,39 @@ mod tests {
             .await;
 
         AwsccProvider::from_sdk_config(config, &super::super::AwsccProviderConfig::default()).await
+    }
+
+    #[tokio::test]
+    async fn read_resource_preserves_pending_identity_when_identifier_is_absent() {
+        let service = PartialCreateCloudControlService::new(true);
+        let provider = provider_with_partial_create_service(service.clone()).await;
+        let id = ResourceId::pending_with_provider("awscc", "s3.Bucket", None);
+
+        let state = provider
+            .read_resource(&id, None)
+            .await
+            .expect("pending identity must not prevent a provider read");
+
+        assert!(!state.exists);
+        assert_eq!(state.id, id);
+        assert!(state.id.identity().is_none());
+        assert!(!service.saw_get_resource.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn read_resource_still_enforces_initialization_error_for_pending_identity() {
+        let service = PartialCreateCloudControlService::new(true);
+        let mut provider = provider_with_partial_create_service(service.clone()).await;
+        provider.init_error = Some("provider initialization failed".to_string());
+        let id = ResourceId::pending_with_provider("awscc", "s3.Bucket", None);
+
+        let error = provider
+            .read_resource(&id, None)
+            .await
+            .expect_err("initialization error must still short-circuit provider reads");
+
+        assert_eq!(error.message(), "provider initialization failed");
+        assert!(!service.saw_get_resource.load(Ordering::SeqCst));
     }
 
     #[derive(Clone, Copy, Debug)]
@@ -1567,7 +1590,15 @@ mod tests {
             let provider = provider_with_partial_update_service(service).await;
 
             let state = provider
-                .read_resource("s3.Bucket", "partial_bucket", Some("partial-bucket"))
+                .read_resource(
+                    &ResourceId::with_provider_identity(
+                        "awscc",
+                        "s3.Bucket",
+                        "partial_bucket",
+                        None,
+                    ),
+                    Some("partial-bucket"),
+                )
                 .await
                 .expect("read should succeed");
 
@@ -1595,7 +1626,15 @@ mod tests {
             let provider = provider_with_partial_update_service(service).await;
 
             let state = provider
-                .read_resource("route53.HostedZone", "hosted_zone", Some("Z123456789"))
+                .read_resource(
+                    &ResourceId::with_provider_identity(
+                        "awscc",
+                        "route53.HostedZone",
+                        "hosted_zone",
+                        None,
+                    ),
+                    Some("Z123456789"),
+                )
                 .await
                 .expect("read should succeed");
 
@@ -2059,7 +2098,9 @@ mod tests {
         for (dsl_name, provider_name, attr_type, required) in entries {
             let mut s = AttributeSchema::new(dsl_name, attr_type);
             s.provider_name = Some(provider_name.to_string());
-            s.required = required;
+            if required {
+                s = s.required();
+            }
             map.insert(dsl_name.to_string(), s);
         }
         map

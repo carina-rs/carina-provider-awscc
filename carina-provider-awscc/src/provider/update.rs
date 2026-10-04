@@ -111,7 +111,7 @@ pub(crate) fn build_update_patches(
 
         // CloudControl rejects patches that touch read-only or create-only
         // properties. Drop them even if they appear in the patch.
-        if attr_schema.read_only || attr_schema.create_only {
+        if attr_schema.is_read_only() || attr_schema.create_only {
             if requires_confirmation {
                 plan.mark_unsent(&op.key);
             }
