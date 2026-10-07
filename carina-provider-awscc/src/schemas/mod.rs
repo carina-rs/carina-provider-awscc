@@ -84,7 +84,8 @@ mod tests {
             &HashMap::new(),
             &HashMap::new(),
             &[],
-        );
+        )
+        .expect("tag-change planning should succeed");
 
         assert_eq!(plan.effects().len(), 1);
         assert!(

@@ -40,14 +40,17 @@ impl ProviderNormalizer for AwsccNormalizer {
     // Desired-side enum canonicalization is owned by the host. Keeping
     // provider-side enum re-derivation here can re-namespace host-canonical
     // open-enum API values and leak DSL strings to AWS.
-    fn normalize_desired<'a>(&'a self, _resources: &'a mut [Resource]) -> BoxFuture<'a, ()> {
+    fn normalize_desired<'a>(
+        &'a self,
+        _resources: &'a mut [Resource],
+    ) -> BoxFuture<'a, ProviderResult<()>> {
         ready_noop()
     }
 
     fn normalize_state<'a>(
         &'a self,
         current_states: &'a mut HashMap<ResourceId, State>,
-    ) -> BoxFuture<'a, ()> {
+    ) -> BoxFuture<'a, ProviderResult<()>> {
         Box::pin(async move {
             crate::provider::normalize_state_string_dsl_transforms_impl(current_states);
             // Canonicalize `Union[String, list(String)]` typed values
@@ -55,6 +58,7 @@ impl ProviderNormalizer for AwsccNormalizer {
             // scalar normalization no longer leaks past the provider
             // boundary. See carina-rs/carina#2481, sub-issue 5.
             crate::provider::canonicalize_string_or_list_states_impl(current_states);
+            Ok(())
         })
     }
 
@@ -62,9 +66,10 @@ impl ProviderNormalizer for AwsccNormalizer {
         &'a self,
         current_states: &'a mut HashMap<ResourceId, State>,
         saved_attrs: &'a SavedAttrs,
-    ) -> BoxFuture<'a, ()> {
+    ) -> BoxFuture<'a, ProviderResult<()>> {
         Box::pin(async move {
             crate::provider::restore_unreturned_attrs_impl(current_states, saved_attrs);
+            Ok(())
         })
     }
 
@@ -73,9 +78,10 @@ impl ProviderNormalizer for AwsccNormalizer {
         resources: &'a mut [Resource],
         default_tags: &'a IndexMap<String, Value>,
         registry: &'a SchemaRegistry,
-    ) -> BoxFuture<'a, ()> {
+    ) -> BoxFuture<'a, ProviderResult<()>> {
         Box::pin(async move {
             merge_default_tags_for_provider("awscc", resources, default_tags, registry);
+            Ok(())
         })
     }
 }
@@ -188,8 +194,8 @@ impl ProviderFactory for AwsccProviderFactory {
         &self,
         _binding: Option<&str>,
         _attributes: &IndexMap<String, Value>,
-    ) -> BoxFuture<'_, Box<dyn ProviderNormalizer>> {
-        Box::pin(async { Box::new(AwsccNormalizer) as Box<dyn ProviderNormalizer> })
+    ) -> BoxFuture<'_, ProviderResult<Box<dyn ProviderNormalizer>>> {
+        Box::pin(async { Ok(Box::new(AwsccNormalizer) as Box<dyn ProviderNormalizer>) })
     }
 
     fn schemas(&self) -> Vec<carina_core::schema::ResourceSchema> {
@@ -287,11 +293,13 @@ impl Provider for AwsccProvider {
         "awscc"
     }
 
-    fn required_permissions(&self, id: &ResourceId, op: PlanOp) -> Vec<String> {
-        schemas::generated::required_permissions(&id.resource_type, op)
-            .iter()
-            .map(|permission| (*permission).to_string())
-            .collect()
+    fn required_permissions(&self, id: &ResourceId, op: PlanOp) -> ProviderResult<Vec<String>> {
+        Ok(
+            schemas::generated::required_permissions(&id.resource_type, op)
+                .iter()
+                .map(|permission| (*permission).to_string())
+                .collect(),
+        )
     }
 
     fn read(
@@ -496,7 +504,8 @@ mod tests {
             None,
         );
 
-        let permissions = Provider::required_permissions(&provider, &id, PlanOp::Create);
+        let permissions = Provider::required_permissions(&provider, &id, PlanOp::Create)
+            .expect("permission lookup should succeed");
 
         assert!(!permissions.is_empty());
         assert!(
@@ -514,7 +523,8 @@ mod tests {
         let provider = provider_for_required_permissions_tests().await;
         let id = ResourceId::with_provider_identity("awscc", "example.Unknown", "test", None);
 
-        let permissions = Provider::required_permissions(&provider, &id, PlanOp::Create);
+        let permissions = Provider::required_permissions(&provider, &id, PlanOp::Create)
+            .expect("permission lookup should succeed");
 
         assert!(permissions.is_empty());
     }
@@ -750,7 +760,8 @@ mod tests {
         let mut resources = vec![resource];
         normalizer
             .merge_default_tags(&mut resources, &default_tags, &schemas)
-            .await;
+            .await
+            .expect("default-tag merge should succeed");
 
         if let Some(Value::Concrete(ConcreteValue::Map(tags))) = resources[0].get_attr("tags") {
             assert_eq!(
@@ -811,7 +822,8 @@ mod tests {
         let mut resources = vec![resource];
         normalizer
             .merge_default_tags(&mut resources, &default_tags, &schemas)
-            .await;
+            .await
+            .expect("default-tag merge should succeed");
 
         if let Some(Value::Concrete(ConcreteValue::Map(tags))) = resources[0].get_attr("tags") {
             assert_eq!(
@@ -860,7 +872,8 @@ mod tests {
         let mut resources = vec![resource];
         normalizer
             .merge_default_tags(&mut resources, &default_tags, &schemas)
-            .await;
+            .await
+            .expect("default-tag merge should succeed");
 
         assert!(!resources[0].attributes.contains_key("tags"));
         assert!(!resources[0].attributes.contains_key("_default_tag_keys"));
@@ -891,7 +904,8 @@ mod tests {
         let mut resources = vec![resource];
         normalizer
             .merge_default_tags(&mut resources, &default_tags, &schemas)
-            .await;
+            .await
+            .expect("default-tag merge should succeed");
 
         if let Some(Value::Concrete(ConcreteValue::Map(tags))) = resources[0].get_attr("tags") {
             assert_eq!(tags.len(), 1);
