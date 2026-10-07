@@ -22,8 +22,9 @@ use indexmap::IndexMap;
 use carina_core::effect::PlanOp;
 use carina_core::provider::{
     BoxFuture, CreateOutcome, CreateRequest, DeleteRequest, Provider, ProviderError,
-    ProviderFactory, ProviderNormalizer, ProviderReadyDataSource, ProviderResult, ReadRequest,
-    SavedAttrs, UpdateOutcome, UpdateRequest, merge_default_tags_for_provider, ready_noop,
+    ProviderFactory, ProviderNormalizer, ProviderReadyConfig, ProviderReadyDataSource,
+    ProviderResult, ReadRequest, SavedAttrs, UpdateOutcome, UpdateRequest,
+    merge_default_tags_for_provider, ready_noop,
 };
 use carina_core::resource::{ConcreteValue, Resource, ResourceId, State, Value};
 use carina_core::schema::SchemaRegistry;
@@ -176,15 +177,15 @@ impl ProviderFactory for AwsccProviderFactory {
     fn create_provider(
         &self,
         _binding: Option<&str>,
-        attributes: &IndexMap<String, Value>,
+        config: &ProviderReadyConfig,
     ) -> BoxFuture<'_, Result<Box<dyn Provider>, carina_core::provider::ProviderError>> {
         // `_binding` is intentionally unused: the AWS Cloud Control
         // factory does not cache instances, so each call already
         // produces an independent `AwsccProvider`. The host uses the
         // binding name as a cache key in `WasmProviderFactory`; for
         // in-process factories the constructed-fresh shape is enough.
-        let region = self.extract_region(attributes);
-        let cfg = extract_provider_config(attributes);
+        let region = self.extract_region(config.attributes());
+        let cfg = extract_provider_config(config.attributes());
         Box::pin(async move {
             Ok(Box::new(AwsccProvider::new_with_config(&region, &cfg).await) as Box<dyn Provider>)
         })
@@ -193,7 +194,7 @@ impl ProviderFactory for AwsccProviderFactory {
     fn create_normalizer(
         &self,
         _binding: Option<&str>,
-        _attributes: &IndexMap<String, Value>,
+        _config: &ProviderReadyConfig,
     ) -> BoxFuture<'_, ProviderResult<Box<dyn ProviderNormalizer>>> {
         Box::pin(async { Ok(Box::new(AwsccNormalizer) as Box<dyn ProviderNormalizer>) })
     }
