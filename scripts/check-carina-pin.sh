@@ -3,13 +3,11 @@
 #
 # Provider repos pin carina-core (+ carina-plugin-sdk +
 # carina-provider-protocol) by git `rev` in their Cargo.toml files.
-# Two recurring failure modes this catches:
+# Two recurring direct-pin failure modes this catches:
 #
-#   1. INCONSISTENT pin — different revs across the workspace's
-#      Cargo.toml files. carina-aws-types and carina-provider-awscc
-#      must pin the SAME carina-core rev; a mismatch links two
-#      carina-core crates and silently breaks type identity
-#      (documented hazard, awscc#255). Always a bug. Hard-fail.
+#   1. INCONSISTENT pin — different direct carina-rs/carina revs across
+#      the workspace's Cargo.toml files. A mismatch links two carina-core
+#      crates and breaks type identity (awscc#255). Always a bug. Hard-fail.
 #
 #   2. STALE pin — the pinned rev predates a carina-core fix this
 #      provider's correctness now depends on. `.carina-core-min-rev`
@@ -19,6 +17,11 @@
 #      renderer / List<StringEnum> reconciliation, carina#3073/#3075).
 #      Hard-fail so staleness is visible and testable, not silent.
 #
+# carina-aws-types is owned by carina-provider-aws and therefore sits outside
+# this source scan. Its separately pinned upstream rev must use the SAME
+# carina rev. The resolved-graph check below enforces that Cargo.lock contains
+# at most one carina-core, carina-provider-protocol, and carina-plugin-sdk.
+#
 # Exit 0 = OK, non-zero = problem (message explains the fix).
 set -euo pipefail
 
@@ -27,6 +30,7 @@ cd "$REPO_ROOT"
 
 CARINA_GIT="https://github.com/carina-rs/carina"
 MIN_REV_FILE=".carina-core-min-rev"
+LOCK_FILE="${CARINA_PIN_LOCK_FILE:-Cargo.lock}"
 
 fail() { echo "::error::$*" >&2; echo "carina-pin check FAILED: $*" >&2; exit 1; }
 
@@ -68,7 +72,61 @@ fi
 PINNED_REV="$uniq_revs"
 echo "carina-pin: all ${pin_count} pins on rev ${PINNED_REV}"
 
-# --- 3. Staleness: pinned rev must be >= .carina-core-min-rev -------
+# --- 3. Resolved graph: no duplicate carina crate identities --------
+[ -f "$LOCK_FILE" ] || fail "$LOCK_FILE missing (run cargo update and commit Cargo.lock)"
+
+lock_entries_for() {
+    awk -v target="$1" '
+        function emit() {
+            if (name == target) {
+                if (pkg_source == "") pkg_source = "(workspace/path)"
+                printf "version=%s source=%s\n", version, pkg_source
+            }
+        }
+        $0 == "[[package]]" {
+            if (in_package) emit()
+            in_package = 1
+            name = ""
+            version = ""
+            pkg_source = ""
+            next
+        }
+        in_package && /^name = "/ {
+            name = $0
+            sub(/^name = "/, "", name)
+            sub(/"$/, "", name)
+            next
+        }
+        in_package && /^version = "/ {
+            version = $0
+            sub(/^version = "/, "", version)
+            sub(/"$/, "", version)
+            next
+        }
+        in_package && /^source = "/ {
+            pkg_source = $0
+            sub(/^source = "/, "", pkg_source)
+            sub(/"$/, "", pkg_source)
+        }
+        END {
+            if (in_package) emit()
+        }
+    ' "$LOCK_FILE"
+}
+
+for crate in carina-core carina-provider-protocol carina-plugin-sdk; do
+    lock_entries="$(lock_entries_for "$crate")"
+    lock_count="$(printf '%s\n' "$lock_entries" \
+      | awk 'NF { count++ } END { print count + 0 }')"
+    if [ "$lock_count" -gt 1 ]; then
+        echo "Cargo.lock contains conflicting ${crate} package sources:" >&2
+        printf '%s\n' "$lock_entries" | sed 's/^/  /' >&2
+        fail "multiple ${crate} packages in Cargo.lock (bump the carina-aws-types git rev from carina-provider-aws to a commit built on the same carina rev)"
+    fi
+done
+echo "carina-pin: Cargo.lock has one resolved identity per carina crate"
+
+# --- 4. Staleness: pinned rev must be >= .carina-core-min-rev -------
 if [ ! -f "$MIN_REV_FILE" ]; then
     fail "$MIN_REV_FILE missing (record the minimum required carina-core rev there)"
 fi

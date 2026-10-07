@@ -141,7 +141,8 @@ mod tests {
 
         crate::AwsccNormalizer
             .normalize_desired(&mut resources)
-            .await;
+            .await
+            .expect("desired-state normalization should succeed");
 
         assert_eq!(
             resources[0].get_attr("availability_zone"),
@@ -164,7 +165,8 @@ mod tests {
 
         crate::AwsccNormalizer
             .normalize_state(&mut current_states)
-            .await;
+            .await
+            .expect("state normalization should succeed");
 
         // The string-transform pass leaves the raw API string alone; the
         // following `canonicalize_string_or_list_states_impl` pass calls
@@ -209,7 +211,8 @@ mod tests {
 
         crate::AwsccNormalizer
             .normalize_state(&mut current_states)
-            .await;
+            .await
+            .expect("state normalization should succeed");
 
         assert_eq!(
             current_states[&id].attributes.get("ip_protocol"),

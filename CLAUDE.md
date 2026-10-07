@@ -4,7 +4,7 @@ This file provides guidance to Claude Code when working with the carina-provider
 
 ## Repository Overview
 
-This is the AWS Cloud Control provider for [Carina](https://github.com/carina-rs/carina), split out as a standalone repository. It uses the AWS Cloud Control API to manage resources via CloudFormation resource type schemas. It depends on carina-core, carina-plugin-sdk, and carina-provider-protocol via git dependencies from the main carina repository. `carina-aws-types` lives in this repository (a local copy, not shared from the main repo).
+This is the AWS Cloud Control provider for [Carina](https://github.com/carina-rs/carina), split out as a standalone repository. It uses the AWS Cloud Control API to manage resources via CloudFormation resource type schemas. It depends on carina-core, carina-plugin-sdk, and carina-provider-protocol via git dependencies from the main carina repository. `carina-aws-types` is owned by `carina-provider-aws` and consumed here as a git dependency.
 
 ## Build and Test Commands
 
@@ -34,7 +34,7 @@ aws-vault exec <profile> -- cargo test
 ## Crate Structure
 
 - **carina-provider-awscc**: The AWSCC provider implementation. Includes a `codegen` binary for generating resource definitions from CloudFormation schemas. Builds as both a native binary and a WASM component.
-- **carina-aws-types**: AWS-specific type definitions. A local copy lives in this repo (the same crate is duplicated in `carina-provider-aws`; it is not shared from the main carina repository).
+- **carina-aws-types**: AWS-specific type definitions owned by `carina-provider-aws` and consumed here as a rev-pinned git dependency.
 
 ## Dependencies on carina (main repo)
 
@@ -52,9 +52,9 @@ carina-plugin-sdk = { path = "../carina/carina-plugin-sdk" }
 carina-provider-protocol = { path = "../carina/carina-provider-protocol" }
 ```
 
-`carina-aws-types` is **not** a main-repo dependency — it is a local crate in
-this repository (`carina-provider-awscc/Cargo.toml` references it as
-`{ path = "../carina-aws-types" }`), so it needs no patch entry.
+`carina-aws-types` is **not** a main-repo dependency — it is owned by
+`carina-provider-aws` and consumed here as a rev-pinned git dependency. Its
+upstream revision must use the same `carina-core` revision as this workspace.
 
 ## Code Generation
 

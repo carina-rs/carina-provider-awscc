@@ -248,15 +248,18 @@ impl CarinaProvider for AwsccProcessProvider {
         for config in schemas::generated::configs() {
             registry.insert("awscc", config.schema.clone());
         }
-        let normalized_resource = self.runtime.block_on(
-            carina_core::executor::normalized::apply_desired_normalization(
-                core_resource,
-                &[],
-                &self.normalizer,
-                &[],
-                &registry,
-            ),
-        );
+        let normalized_resource = self
+            .runtime
+            .block_on(
+                carina_core::executor::normalized::apply_desired_normalization(
+                    core_resource,
+                    &[],
+                    &self.normalizer,
+                    &[],
+                    &registry,
+                ),
+            )
+            .map_err(Self::convert_error)?;
         let result = self.runtime.block_on(
             self.provider()
                 .create_resource(normalized_resource.as_resource()),
@@ -319,20 +322,25 @@ impl CarinaProvider for AwsccProcessProvider {
         &self,
         id: &proto::ResourceId,
         op: carina_plugin_sdk::PlanOp,
-    ) -> Vec<String> {
+    ) -> Result<Vec<String>, proto::ProviderError> {
         let op = match op {
             carina_plugin_sdk::PlanOp::Create => carina_core::effect::PlanOp::Create,
             carina_plugin_sdk::PlanOp::Read => carina_core::effect::PlanOp::Read,
             carina_plugin_sdk::PlanOp::Update => carina_core::effect::PlanOp::Update,
             carina_plugin_sdk::PlanOp::Delete => carina_core::effect::PlanOp::Delete,
         };
-        schemas::generated::required_permissions(&id.resource_type, op)
-            .iter()
-            .map(|permission| (*permission).to_string())
-            .collect()
+        Ok(
+            schemas::generated::required_permissions(&id.resource_type, op)
+                .iter()
+                .map(|permission| (*permission).to_string())
+                .collect(),
+        )
     }
 
-    fn normalize_desired(&self, resources: Vec<proto::Resource>) -> Vec<proto::Resource> {
+    fn normalize_desired(
+        &self,
+        resources: Vec<proto::Resource>,
+    ) -> Result<Vec<proto::Resource>, proto::ProviderError> {
         let mut core_resources: Vec<_> = resources
             .iter()
             .map(convert::proto_to_core_resource)
@@ -342,17 +350,18 @@ impl CarinaProvider for AwsccProcessProvider {
         // CRUD methods. Not a nested runtime: the host drives the WASM
         // call, the guest drives its internal async (carina#3112).
         self.runtime
-            .block_on(self.normalizer.normalize_desired(&mut core_resources));
-        core_resources
+            .block_on(self.normalizer.normalize_desired(&mut core_resources))
+            .map_err(Self::convert_error)?;
+        Ok(core_resources
             .iter()
             .map(convert::core_to_proto_resource)
-            .collect()
+            .collect())
     }
 
     fn normalize_state(
         &self,
         states: HashMap<String, proto::State>,
-    ) -> HashMap<String, proto::State> {
+    ) -> Result<HashMap<String, proto::State>, proto::ProviderError> {
         let mut core_states: HashMap<CoreResourceId, CoreState> = states
             .values()
             .map(|s| {
@@ -361,18 +370,19 @@ impl CarinaProvider for AwsccProcessProvider {
             })
             .collect();
         self.runtime
-            .block_on(self.normalizer.normalize_state(&mut core_states));
-        core_states
+            .block_on(self.normalizer.normalize_state(&mut core_states))
+            .map_err(Self::convert_error)?;
+        Ok(core_states
             .iter()
             .map(|(id, state)| (id.to_string(), convert::core_to_proto_state(state)))
-            .collect()
+            .collect())
     }
 
     fn hydrate_read_state(
         &self,
         states: &mut HashMap<String, proto::State>,
         saved_attrs: &HashMap<String, HashMap<String, proto::Value>>,
-    ) {
+    ) -> Result<(), proto::ProviderError> {
         // Build a key-to-CoreResourceId lookup from states (which contain structured IDs)
         let key_to_id: HashMap<&str, CoreResourceId> = states
             .iter()
@@ -388,20 +398,28 @@ impl CarinaProvider for AwsccProcessProvider {
             .collect();
         let core_saved: SavedAttrs = saved_attrs
             .iter()
-            .filter_map(|(k, v)| {
-                let id = key_to_id.get(k.as_str())?.clone();
+            .map(|(k, v)| {
+                let id = key_to_id.get(k.as_str()).cloned().ok_or_else(|| {
+                    CoreProviderError::internal(format!(
+                        "hydrate_read_state received saved attributes for unknown state key `{k}`"
+                    ))
+                })?;
                 let attrs = convert::proto_to_core_value_map(v);
-                Some((id, attrs))
+                Ok((id, attrs))
             })
-            .collect();
-        self.runtime.block_on(
-            self.normalizer
-                .hydrate_read_state(&mut core_states, &core_saved),
-        );
+            .collect::<Result<_, CoreProviderError>>()
+            .map_err(Self::convert_error)?;
+        self.runtime
+            .block_on(
+                self.normalizer
+                    .hydrate_read_state(&mut core_states, &core_saved),
+            )
+            .map_err(Self::convert_error)?;
         *states = core_states
             .iter()
             .map(|(id, state)| (id.to_string(), convert::core_to_proto_state(state)))
             .collect();
+        Ok(())
     }
 
     fn merge_default_tags(
@@ -409,7 +427,7 @@ impl CarinaProvider for AwsccProcessProvider {
         resources: &mut Vec<proto::Resource>,
         default_tags: &HashMap<String, proto::Value>,
         proto_schemas: &Vec<proto::ResourceSchema>,
-    ) {
+    ) -> Result<(), proto::ProviderError> {
         let mut core_resources: Vec<_> = resources
             .iter()
             .map(convert::proto_to_core_resource)
@@ -422,15 +440,18 @@ impl CarinaProvider for AwsccProcessProvider {
         for s in proto_schemas {
             registry.insert("awscc", convert::proto_to_core_schema(s));
         }
-        self.runtime.block_on(self.normalizer.merge_default_tags(
-            &mut core_resources,
-            &core_tags,
-            &registry,
-        ));
+        self.runtime
+            .block_on(self.normalizer.merge_default_tags(
+                &mut core_resources,
+                &core_tags,
+                &registry,
+            ))
+            .map_err(Self::convert_error)?;
         *resources = core_resources
             .iter()
             .map(convert::core_to_proto_resource)
             .collect();
+        Ok(())
     }
 }
 
@@ -691,6 +712,27 @@ mod tests {
             .expect_err("cross-account role outside allowed_account_ids must fail");
         assert!(err.contains("412038850359"), "must name target: {err}");
         assert!(err.contains("111111111111"), "must name allow list: {err}");
+    }
+
+    #[test]
+    fn hydrate_read_state_rejects_saved_attrs_without_matching_state() {
+        let provider = AwsccProcessProvider::new();
+        let mut states = HashMap::new();
+        let saved_attrs = HashMap::from([(
+            "awscc.ec2.Vpc.orphan".to_string(),
+            HashMap::<String, proto::Value>::new(),
+        )]);
+
+        let error = provider
+            .hydrate_read_state(&mut states, &saved_attrs)
+            .expect_err("an unknown saved-attribute key must not be silently discarded");
+
+        assert!(matches!(error.kind, proto::ProviderErrorKind::Internal));
+        assert!(
+            error.message.contains("unknown state key"),
+            "unexpected error: {}",
+            error.message
+        );
     }
 
     /// Regression for carina-rs/carina#2025: the VPC schema must carry the
