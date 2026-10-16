@@ -6,7 +6,7 @@
 
 use indexmap::IndexMap;
 
-use carina_core::resource::{ConcreteValue, Value};
+use carina_core::resource::{ConcreteValue, Value, ValueString};
 use carina_core::schema::{
     AttributeType, ResourceSchema, Shape, ShapeWalkBudget, StructField, UnionMembers,
 };
@@ -36,8 +36,13 @@ fn is_list_of_strings(schema: &ResourceSchema, attr_type: &AttributeType) -> boo
     matches!(schema.shape_of(element_type), Shape::String { .. })
 }
 
-fn string_list_to_json(items: &[String]) -> serde_json::Value {
-    serde_json::Value::Array(items.iter().map(|item| json!(item)).collect())
+fn string_list_to_json(items: &[ValueString]) -> serde_json::Value {
+    serde_json::Value::Array(
+        items
+            .iter()
+            .map(|item| json!(item.expose_plaintext()))
+            .collect(),
+    )
 }
 
 fn string_or_list_of_strings_from_json(
@@ -63,7 +68,7 @@ fn string_or_list_of_strings_from_json(
 
     if let Some(s) = value.as_str() {
         return Some(Value::Concrete(ConcreteValue::StringList(vec![
-            s.to_string(),
+            s.to_string().into(),
         ])));
     }
 
@@ -72,7 +77,11 @@ fn string_or_list_of_strings_from_json(
         .iter()
         .map(|item| item.as_str().map(ToString::to_string))
         .collect();
-    items.map(|items| Value::Concrete(ConcreteValue::StringList(items)))
+    items.map(|items| {
+        Value::Concrete(ConcreteValue::StringList(
+            items.into_iter().map(Into::into).collect(),
+        ))
+    })
 }
 
 fn json_matches_shape(
@@ -138,7 +147,7 @@ pub(crate) fn aws_value_to_dsl_with_defs(
     {
         let valid_values: Vec<&str> = values.iter().map(String::as_str).collect();
         let canonical = canonicalize_enum_value(s, &valid_values);
-        return Some(Value::Concrete(ConcreteValue::String(canonical)));
+        return Some(Value::Concrete(ConcreteValue::String(canonical.into())));
     }
     if let Shape::Enum { values: None, .. } = shape
         && let Some(s) = value.as_str()
@@ -149,7 +158,7 @@ pub(crate) fn aws_value_to_dsl_with_defs(
         } else {
             s.to_string()
         };
-        return Some(Value::Concrete(ConcreteValue::String(canonical)));
+        return Some(Value::Concrete(ConcreteValue::String(canonical.into())));
     }
 
     // For List types, recurse into each item with the inner type for type-aware conversion
@@ -265,7 +274,7 @@ pub(crate) fn aws_value_to_dsl_with_defs(
         && let Some(s) = value.as_str()
     {
         return Some(Value::Concrete(ConcreteValue::String(
-            transform.apply(s).into_owned(),
+            transform.apply(s).into_owned().into(),
         )));
     }
 
@@ -275,7 +284,9 @@ pub(crate) fn aws_value_to_dsl_with_defs(
 /// Convert JSON value to DSL Value
 pub(crate) fn json_to_value(value: &serde_json::Value) -> Option<Value> {
     match value {
-        serde_json::Value::String(s) => Some(Value::Concrete(ConcreteValue::String(s.clone()))),
+        serde_json::Value::String(s) => {
+            Some(Value::Concrete(ConcreteValue::String(s.clone().into())))
+        }
         serde_json::Value::Bool(b) => Some(Value::Concrete(ConcreteValue::Bool(*b))),
         serde_json::Value::Number(n) => {
             if let Some(i) = n.as_i64() {
@@ -346,6 +357,7 @@ pub(crate) fn dsl_value_to_aws_with_defs(
             // have no positional fallback after host canonicalization; pass
             // strings through unchanged so schema desync stays visible.
             Value::Concrete(ConcreteValue::String(s)) => {
+                let s = s.expose_plaintext();
                 let resolved = if let Shape::Enum {
                     values: Some(values),
                     dsl_aliases,
@@ -359,7 +371,7 @@ pub(crate) fn dsl_value_to_aws_with_defs(
                         &carina_core::schema::DslMap::new(dsl_aliases, None),
                     )
                 } else {
-                    s.clone()
+                    s.to_string()
                 };
                 Some(json!(resolved))
             }
@@ -531,7 +543,7 @@ pub(crate) fn dsl_value_to_aws_with_defs(
 /// Convert DSL Value to JSON value
 pub(crate) fn value_to_json(value: &Value) -> Option<serde_json::Value> {
     match value {
-        Value::Concrete(ConcreteValue::String(s)) => Some(json!(s)),
+        Value::Concrete(ConcreteValue::String(s)) => Some(json!(s.expose_plaintext())),
         Value::Concrete(ConcreteValue::EnumIdentifier(s)) => Some(json!(s.as_str())),
         Value::Concrete(ConcreteValue::CanonicalEnum(c)) => Some(json!(c.api_value())),
         Value::Concrete(ConcreteValue::Bool(b)) => Some(json!(b)),
@@ -643,7 +655,9 @@ mod tests {
         .expect("read should succeed");
         assert_eq!(
             from_api,
-            Value::Concrete(ConcreteValue::String("redirect-to-https".to_string())),
+            Value::Concrete(ConcreteValue::String(
+                "redirect-to-https".to_string().into()
+            )),
             "read must persist the API-canonical value, not a fully-qualified DSL string"
         );
 
@@ -659,7 +673,9 @@ mod tests {
         .expect("read should succeed");
         assert_eq!(
             from_alias,
-            Value::Concrete(ConcreteValue::String("redirect-to-https".to_string())),
+            Value::Concrete(ConcreteValue::String(
+                "redirect-to-https".to_string().into()
+            )),
             "DSL-alias spelling from the API must canonicalize to the API value"
         );
     }
@@ -699,7 +715,7 @@ mod tests {
         assert_eq!(
             top.get("price_class"),
             Some(&Value::Concrete(ConcreteValue::String(
-                "PriceClass_200".to_string()
+                "PriceClass_200".to_string().into()
             ))),
             "price_class must persist the API-canonical value"
         );
@@ -710,7 +726,7 @@ mod tests {
         assert_eq!(
             dcb.get("viewer_protocol_policy"),
             Some(&Value::Concrete(ConcreteValue::String(
-                "redirect-to-https".to_string()
+                "redirect-to-https".to_string().into()
             ))),
             "nested viewer_protocol_policy must persist the API-canonical value, \
              not a fully-qualified DSL string"
@@ -770,7 +786,7 @@ mod tests {
             assert_eq!(
                 map.get("status"),
                 Some(&Value::Concrete(ConcreteValue::String(
-                    "Enabled".to_string()
+                    "Enabled".to_string().into()
                 )))
             );
         } else {
@@ -790,7 +806,7 @@ mod tests {
         let mut map = IndexMap::new();
         map.insert(
             "status".to_string(),
-            Value::Concrete(ConcreteValue::String("Enabled".to_string())),
+            Value::Concrete(ConcreteValue::String("Enabled".to_string().into())),
         );
         let dsl_value = Value::Concrete(ConcreteValue::Map(map));
 
@@ -823,7 +839,7 @@ mod tests {
         let mut map = IndexMap::new();
         map.insert(
             "status".to_string(),
-            Value::Concrete(ConcreteValue::String("Enabled".to_string())),
+            Value::Concrete(ConcreteValue::String("Enabled".to_string().into())),
         );
         let dsl_value = Value::Concrete(ConcreteValue::List(vec![Value::Concrete(
             ConcreteValue::Map(map),
@@ -869,7 +885,7 @@ mod tests {
         let mut parser_map = IndexMap::new();
         parser_map.insert(
             "status".to_string(),
-            Value::Concrete(ConcreteValue::String("Enabled".to_string())),
+            Value::Concrete(ConcreteValue::String("Enabled".to_string().into())),
         );
         let parser_value = Value::Concrete(ConcreteValue::Map(parser_map));
 
@@ -913,7 +929,7 @@ mod tests {
 
         assert_eq!(
             aws_dsl,
-            Value::Concrete(ConcreteValue::String("Gateway".to_string())),
+            Value::Concrete(ConcreteValue::String("Gateway".to_string().into())),
             "AWS read-back must persist the API-canonical value"
         );
 
@@ -942,7 +958,9 @@ mod tests {
             vec![],
         );
         let value = Value::Concrete(ConcreteValue::String(
-            "aws.logs.LogGroup.LogGroupClass.INFREQUENT_ACCESS".to_string(),
+            "aws.logs.LogGroup.LogGroupClass.INFREQUENT_ACCESS"
+                .to_string()
+                .into(),
         ));
         let result = dsl_value_to_aws_with_defs(
             &value,
@@ -965,7 +983,7 @@ mod tests {
             None,
         );
         let value = Value::Concrete(ConcreteValue::String(
-            "aws.Region.ap_northeast_1".to_string(),
+            "aws.Region.ap_northeast_1".to_string().into(),
         ));
         let result = dsl_value_to_aws_with_defs(
             &value,
@@ -1014,10 +1032,10 @@ mod tests {
         let attr_type = AttributeType::list(inner);
         let value = Value::Concrete(ConcreteValue::List(vec![
             Value::Concrete(ConcreteValue::String(
-                "aws.s3.Bucket.AllowedMethod.GET".to_string(),
+                "aws.s3.Bucket.AllowedMethod.GET".to_string().into(),
             )),
             Value::Concrete(ConcreteValue::String(
-                "aws.s3.Bucket.AllowedMethod.PUT".to_string(),
+                "aws.s3.Bucket.AllowedMethod.PUT".to_string().into(),
             )),
         ]));
         let result = dsl_value_to_aws_with_defs(
@@ -1055,8 +1073,8 @@ mod tests {
         assert_eq!(
             result,
             Some(Value::Concrete(ConcreteValue::List(vec![
-                Value::Concrete(ConcreteValue::String("GET".to_string())),
-                Value::Concrete(ConcreteValue::String("PUT".to_string())),
+                Value::Concrete(ConcreteValue::String("GET".to_string().into())),
+                Value::Concrete(ConcreteValue::String("PUT".to_string().into())),
             ])))
         );
     }
@@ -1108,7 +1126,9 @@ mod tests {
             ),
             AttributeType::string(),
         ]);
-        let value = Value::Concrete(ConcreteValue::String("aws.ec2.Sg.Protocol.tcp".to_string()));
+        let value = Value::Concrete(ConcreteValue::String(
+            "aws.ec2.Sg.Protocol.tcp".to_string().into(),
+        ));
         let result = dsl_value_to_aws_with_defs(
             &value,
             &attr_type,
@@ -1127,11 +1147,11 @@ mod tests {
         let mut map = IndexMap::new();
         map.insert(
             "my_custom_key".to_string(),
-            Value::Concrete(ConcreteValue::String("value1".to_string())),
+            Value::Concrete(ConcreteValue::String("value1".to_string().into())),
         );
         map.insert(
             "another-key".to_string(),
-            Value::Concrete(ConcreteValue::String("value2".to_string())),
+            Value::Concrete(ConcreteValue::String("value2".to_string().into())),
         );
         let dsl_value = Value::Concrete(ConcreteValue::Map(map));
 
@@ -1172,7 +1192,7 @@ mod tests {
         map.insert(
             "item_one".to_string(),
             Value::Concrete(ConcreteValue::String(
-                "aws.test.resource.Status.Active".to_string(),
+                "aws.test.resource.Status.Active".to_string().into(),
             )),
         );
         let dsl_value = Value::Concrete(ConcreteValue::Map(map));
@@ -1217,13 +1237,13 @@ mod tests {
             assert_eq!(
                 map.get("MyCustomKey"),
                 Some(&Value::Concrete(ConcreteValue::String(
-                    "value1".to_string()
+                    "value1".to_string().into()
                 )))
             );
             assert_eq!(
                 map.get("another-key"),
                 Some(&Value::Concrete(ConcreteValue::String(
-                    "value2".to_string()
+                    "value2".to_string().into()
                 )))
             );
             assert!(map.get("my_custom_key").is_none());
@@ -1257,7 +1277,9 @@ mod tests {
 
         assert_eq!(
             result,
-            Some(Value::Concrete(ConcreteValue::String("tcp".to_string())))
+            Some(Value::Concrete(ConcreteValue::String(
+                "tcp".to_string().into()
+            )))
         );
     }
 
@@ -1296,7 +1318,7 @@ mod tests {
             vec![
                 (
                     "version".to_string(),
-                    Value::Concrete(ConcreteValue::String("2012-10-17".to_string())),
+                    Value::Concrete(ConcreteValue::String("2012-10-17".to_string().into())),
                 ),
                 (
                     "statement".to_string(),
@@ -1305,12 +1327,14 @@ mod tests {
                             vec![
                                 (
                                     "effect".to_string(),
-                                    Value::Concrete(ConcreteValue::String("Allow".to_string())),
+                                    Value::Concrete(ConcreteValue::String(
+                                        "Allow".to_string().into(),
+                                    )),
                                 ),
                                 (
                                     "action".to_string(),
                                     Value::Concrete(ConcreteValue::String(
-                                        "sts:AssumeRole".to_string(),
+                                        "sts:AssumeRole".to_string().into(),
                                     )),
                                 ),
                                 (
@@ -1319,7 +1343,7 @@ mod tests {
                                         vec![(
                                             "service".to_string(),
                                             Value::Concrete(ConcreteValue::String(
-                                                "lambda.amazonaws.com".to_string(),
+                                                "lambda.amazonaws.com".to_string().into(),
                                             )),
                                         )]
                                         .into_iter()
@@ -1385,7 +1409,7 @@ mod tests {
             vec![
                 (
                     "version".to_string(),
-                    Value::Concrete(ConcreteValue::String("2012-10-17".to_string())),
+                    Value::Concrete(ConcreteValue::String("2012-10-17".to_string().into())),
                 ),
                 (
                     "statement".to_string(),
@@ -1394,7 +1418,9 @@ mod tests {
                             vec![
                                 (
                                     "effect".to_string(),
-                                    Value::Concrete(ConcreteValue::String("Allow".to_string())),
+                                    Value::Concrete(ConcreteValue::String(
+                                        "Allow".to_string().into(),
+                                    )),
                                 ),
                                 (
                                     "principal".to_string(),
@@ -1402,7 +1428,7 @@ mod tests {
                                         vec![(
                                             "service".to_string(),
                                             Value::Concrete(ConcreteValue::StringList(vec![
-                                                "lambda.amazonaws.com".to_string(),
+                                                "lambda.amazonaws.com".to_string().into(),
                                             ])),
                                         )]
                                         .into_iter()
@@ -1412,7 +1438,7 @@ mod tests {
                                 (
                                     "action".to_string(),
                                     Value::Concrete(ConcreteValue::StringList(vec![
-                                        "sts:AssumeRole".to_string(),
+                                        "sts:AssumeRole".to_string().into(),
                                     ])),
                                 ),
                             ]
@@ -1483,7 +1509,7 @@ mod tests {
                                 (
                                     "action".to_string(),
                                     Value::Concrete(ConcreteValue::String(
-                                        "s3:GetObject".to_string(),
+                                        "s3:GetObject".to_string().into(),
                                     )),
                                 ),
                             ]
@@ -1559,7 +1585,7 @@ mod tests {
             assert_eq!(
                 map.get("version"),
                 Some(&Value::Concrete(ConcreteValue::String(
-                    "2012-10-17".to_string()
+                    "2012-10-17".to_string().into()
                 )))
             );
             assert!(
@@ -1571,12 +1597,14 @@ mod tests {
                 if let Some(Value::Concrete(ConcreteValue::Map(stmt))) = stmts.first() {
                     assert_eq!(
                         stmt.get("effect"),
-                        Some(&Value::Concrete(ConcreteValue::String("Allow".to_string())))
+                        Some(&Value::Concrete(ConcreteValue::String(
+                            "Allow".to_string().into()
+                        )))
                     );
                     assert_eq!(
                         stmt.get("action"),
                         Some(&Value::Concrete(ConcreteValue::StringList(vec![
-                            "sts:AssumeRole".to_string()
+                            "sts:AssumeRole".to_string().into()
                         ])))
                     );
                     if let Some(Value::Concrete(ConcreteValue::Map(principal))) =
@@ -1585,7 +1613,7 @@ mod tests {
                         assert_eq!(
                             principal.get("service"),
                             Some(&Value::Concrete(ConcreteValue::StringList(vec![
-                                "lambda.amazonaws.com".to_string()
+                                "lambda.amazonaws.com".to_string().into()
                             ])))
                         );
                     } else {
@@ -1639,13 +1667,13 @@ mod tests {
         assert_eq!(
             statement.get("action"),
             Some(&Value::Concrete(ConcreteValue::StringList(vec![
-                "s3:GetObject".to_string()
+                "s3:GetObject".to_string().into()
             ])))
         );
         assert_eq!(
             statement.get("resource"),
             Some(&Value::Concrete(ConcreteValue::StringList(vec![
-                "arn:aws:s3:::*".to_string()
+                "arn:aws:s3:::*".to_string().into()
             ])))
         );
     }
@@ -1687,15 +1715,15 @@ mod tests {
         assert_eq!(
             statement.get("action"),
             Some(&Value::Concrete(ConcreteValue::StringList(vec![
-                "s3:GetObject".to_string(),
-                "s3:PutObject".to_string()
+                "s3:GetObject".to_string().into(),
+                "s3:PutObject".to_string().into()
             ])))
         );
         assert_eq!(
             statement.get("resource"),
             Some(&Value::Concrete(ConcreteValue::StringList(vec![
-                "arn:aws:s3:::*".to_string(),
-                "arn:aws:s3:::example/*".to_string()
+                "arn:aws:s3:::*".to_string().into(),
+                "arn:aws:s3:::example/*".to_string().into()
             ])))
         );
     }
@@ -1734,7 +1762,7 @@ mod tests {
             vec![
                 (
                     "version".to_string(),
-                    Value::Concrete(ConcreteValue::String("2012-10-17".to_string())),
+                    Value::Concrete(ConcreteValue::String("2012-10-17".to_string().into())),
                 ),
                 (
                     "statement".to_string(),
@@ -1743,12 +1771,14 @@ mod tests {
                             vec![
                                 (
                                     "effect".to_string(),
-                                    Value::Concrete(ConcreteValue::String("Allow".to_string())),
+                                    Value::Concrete(ConcreteValue::String(
+                                        "Allow".to_string().into(),
+                                    )),
                                 ),
                                 (
                                     "action".to_string(),
                                     Value::Concrete(ConcreteValue::StringList(vec![
-                                        "sts:AssumeRole".to_string(),
+                                        "sts:AssumeRole".to_string().into(),
                                     ])),
                                 ),
                             ]
@@ -1823,7 +1853,7 @@ mod tests {
         let expected = Value::Concrete(ConcreteValue::List(vec![Value::Concrete(
             ConcreteValue::Map(IndexMap::from([(
                 "region_name".to_string(),
-                Value::Concrete(ConcreteValue::String("ap-northeast-1".to_string())),
+                Value::Concrete(ConcreteValue::String("ap-northeast-1".to_string().into())),
             )])),
         )]));
         assert_eq!(result, Some(expected));
@@ -1855,7 +1885,7 @@ mod tests {
         assert_eq!(
             result,
             Some(Value::Concrete(ConcreteValue::String(
-                "ipsec.1".to_string()
+                "ipsec.1".to_string().into()
             )))
         );
     }
@@ -1872,7 +1902,7 @@ mod tests {
             vec![],
         );
         let value = Value::Concrete(ConcreteValue::String(
-            "aws.ec2.VpnGateway.Type.ipsec.1".to_string(),
+            "aws.ec2.VpnGateway.Type.ipsec.1".to_string().into(),
         ));
 
         let result = dsl_value_to_aws_with_defs(
@@ -1897,7 +1927,7 @@ mod tests {
             )),
             vec![],
         );
-        let value = Value::Concrete(ConcreteValue::String("ipsec.1".to_string()));
+        let value = Value::Concrete(ConcreteValue::String("ipsec.1".to_string().into()));
 
         let result = dsl_value_to_aws_with_defs(
             &value,
@@ -1934,7 +1964,7 @@ mod tests {
         assert_eq!(
             dsl_val,
             Some(Value::Concrete(ConcreteValue::String(
-                "ipsec.1".to_string()
+                "ipsec.1".to_string().into()
             )))
         );
 
@@ -2002,8 +2032,8 @@ mod tests {
         let json = serde_json::json!(["a", null, "b"]);
         let result = json_to_value(&json);
         let expected = Value::Concrete(ConcreteValue::List(vec![
-            Value::Concrete(ConcreteValue::String("a".to_string())),
-            Value::Concrete(ConcreteValue::String("b".to_string())),
+            Value::Concrete(ConcreteValue::String("a".to_string().into())),
+            Value::Concrete(ConcreteValue::String("b".to_string().into())),
         ]));
         assert_eq!(result, Some(expected));
     }
@@ -2017,7 +2047,9 @@ mod tests {
                 assert_eq!(map.len(), 1);
                 assert_eq!(
                     map.get("key1"),
-                    Some(&Value::Concrete(ConcreteValue::String("val1".to_string())))
+                    Some(&Value::Concrete(ConcreteValue::String(
+                        "val1".to_string().into()
+                    )))
                 );
                 assert!(!map.contains_key("key2"));
             }
@@ -2038,8 +2070,8 @@ mod tests {
         );
 
         let expected = Value::Concrete(ConcreteValue::List(vec![
-            Value::Concrete(ConcreteValue::String("a".to_string())),
-            Value::Concrete(ConcreteValue::String("b".to_string())),
+            Value::Concrete(ConcreteValue::String("a".to_string().into())),
+            Value::Concrete(ConcreteValue::String("b".to_string().into())),
         ]));
         assert_eq!(result, Some(expected));
     }
@@ -2121,7 +2153,7 @@ mod tests {
             assert_eq!(
                 rule0.get("status"),
                 Some(&Value::Concrete(ConcreteValue::String(
-                    "Enabled".to_string()
+                    "Enabled".to_string().into()
                 ))),
                 "status should be the API-canonical enum value"
             );
@@ -2133,7 +2165,7 @@ mod tests {
             assert_eq!(
                 rule0.get("id"),
                 Some(&Value::Concrete(ConcreteValue::String(
-                    "expire-old-objects".to_string()
+                    "expire-old-objects".to_string().into()
                 ))),
             );
         } else {
@@ -2144,7 +2176,7 @@ mod tests {
             assert_eq!(
                 rule1.get("status"),
                 Some(&Value::Concrete(ConcreteValue::String(
-                    "Enabled".to_string()
+                    "Enabled".to_string().into()
                 ))),
             );
             if let Some(Value::Concrete(ConcreteValue::List(transitions))) =
@@ -2155,7 +2187,7 @@ mod tests {
                     assert_eq!(
                         t.get("storage_class"),
                         Some(&Value::Concrete(ConcreteValue::String(
-                            "GLACIER".to_string()
+                            "GLACIER".to_string().into()
                         ))),
                     );
                     assert_eq!(
@@ -2283,7 +2315,9 @@ mod tests {
         .expect("aws_value_to_dsl must succeed");
         assert_eq!(
             dsl,
-            Value::Concrete(ConcreteValue::String("BucketOwnerEnforced".to_string())),
+            Value::Concrete(ConcreteValue::String(
+                "BucketOwnerEnforced".to_string().into()
+            )),
             "read must persist the API-canonical value"
         );
         let lifted = carina_core::utils::lift_enum_leaves(&dsl, &object_ownership.field_type)
@@ -2335,7 +2369,7 @@ mod tests {
         assert_eq!(
             result,
             Some(Value::Concrete(ConcreteValue::String(
-                "carina-rs.dev".to_string()
+                "carina-rs.dev".to_string().into()
             )))
         );
     }
@@ -2361,7 +2395,7 @@ mod tests {
         assert_eq!(
             result,
             Some(Value::Concrete(ConcreteValue::String(
-                "carina-rs.dev.".to_string()
+                "carina-rs.dev.".to_string().into()
             )))
         );
     }

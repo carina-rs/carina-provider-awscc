@@ -20,6 +20,7 @@ pub fn arn() -> AttributeType {
         None,
         legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
+                let s = s.expose_plaintext();
                 carina_aws_types::validate_service_arn(s, "organizations", None)
                     .map_err(|reason| format!("Invalid organizations ARN '{}': {}", s, reason))
             } else {
@@ -51,7 +52,7 @@ pub fn organizations_organization_config() -> AwsccSchemaConfig {
             AttributeSchema::new("feature_set", AttributeType::enum_(carina_core::schema::enum_identity("FeatureSet", Some("aws.organizations.Organization")), Some(vec!["ALL".to_string(), "CONSOLIDATED_BILLING".to_string()]), vec![("ALL".to_string(), "all".to_string()), ("CONSOLIDATED_BILLING".to_string(), "consolidated_billing".to_string())], None, None))
                 .with_description("Specifies the feature set supported by the new organization. Each feature set supports different levels of functionality.")
                 .with_provider_name("FeatureSet")
-                .with_default(Value::Concrete(ConcreteValue::String("ALL".to_string()))),
+                .with_default(Value::Concrete(ConcreteValue::String("ALL".to_string().into()))),
         )
         .attribute(
             AttributeSchema::new("id", AttributeType::refined_string(None, Some("^o-[a-z0-9]{10,32}$".to_string()), None, None))
@@ -89,6 +90,7 @@ pub fn organizations_organization_config() -> AwsccSchemaConfig {
 #[allow(dead_code)]
 fn validate_string_pattern_ec4d9bee0dcd262b_len_6_64(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
+        let s = s.expose_plaintext();
         static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
             Regex::new("[^\\s@]+@[^\\s@]+\\.[^\\s@]+").expect("invalid pattern regex")
         });
@@ -111,6 +113,7 @@ fn validate_string_pattern_ec4d9bee0dcd262b_len_6_64(value: &Value) -> Result<()
 #[allow(dead_code)]
 fn validate_string_pattern_0cb01cbc89d38ae3_len_max_64(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
+        let s = s.expose_plaintext();
         static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
             Regex::new("^r-[0-9a-z]{4,32}$").expect("invalid pattern regex")
         });
@@ -133,6 +136,7 @@ fn validate_string_pattern_0cb01cbc89d38ae3_len_max_64(value: &Value) -> Result<
 #[allow(dead_code)]
 fn validate_string_pattern_2fd01fd52b67fc75(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
+        let s = s.expose_plaintext();
         static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
             Regex::new("^o-[a-z0-9]{10,32}$").expect("invalid pattern regex")
         });

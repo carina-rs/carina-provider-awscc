@@ -17,6 +17,7 @@ pub fn arn() -> AttributeType {
         None,
         legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
+                let s = s.expose_plaintext();
                 carina_aws_types::validate_service_arn(s, "ecs", Some("cluster/"))
                     .map_err(|reason| format!("Invalid ecs ARN '{}': {}", s, reason))
             } else {

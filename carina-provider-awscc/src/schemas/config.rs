@@ -134,6 +134,7 @@ pub(crate) fn validate_namespaced_enum(
     valid_values: &[&str],
 ) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
+        let s = s.expose_plaintext();
         // Reconstruct the structured identity from the caller-supplied
         // `(type_name, namespace)` pair: the namespace's first segment is
         // the provider, the remainder are the service/resource segments,
@@ -169,7 +170,7 @@ mod tests {
     fn validate_namespaced_enum_basic() {
         let result = validate_namespaced_enum(
             &Value::Concrete(ConcreteValue::String(
-                "aws.ec2.Vpc.InstanceTenancy.default".to_string(),
+                "aws.ec2.Vpc.InstanceTenancy.default".to_string().into(),
             )),
             "InstanceTenancy",
             "aws.ec2.Vpc",
@@ -306,12 +307,12 @@ mod tests {
                                 (
                                     "action".to_string(),
                                     Value::Concrete(ConcreteValue::String(
-                                        "sts:AssumeRole".to_string(),
+                                        "sts:AssumeRole".to_string().into(),
                                     )),
                                 ),
                                 (
                                     "resource".to_string(),
-                                    Value::Concrete(ConcreteValue::String("*".to_string())),
+                                    Value::Concrete(ConcreteValue::String("*".to_string().into())),
                                 ),
                             ]
                             .into_iter()

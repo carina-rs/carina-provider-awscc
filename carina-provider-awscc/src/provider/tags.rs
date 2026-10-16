@@ -27,7 +27,7 @@ impl AwsccProvider {
         if let Some(Value::Concrete(ConcreteValue::Map(user_tags))) = user_tags {
             for (key, value) in user_tags {
                 if let Value::Concrete(ConcreteValue::String(v)) = value {
-                    tags.push(json!({"Key": key, "Value": v}));
+                    tags.push(json!({"Key": key, "Value": v.expose_plaintext()}));
                 }
             }
         }
@@ -44,7 +44,7 @@ impl AwsccProvider {
             ) {
                 tags_map.insert(
                     key.to_string(),
-                    Value::Concrete(ConcreteValue::String(value.to_string())),
+                    Value::Concrete(ConcreteValue::String(value.to_string().into())),
                 );
             }
         }

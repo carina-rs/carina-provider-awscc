@@ -18,7 +18,8 @@ fn arn_accepts_eks_multi_segment_oidc_provider() {
     };
     let v = Value::Concrete(ConcreteValue::String(
         "arn:aws:iam::123456789012:oidc-provider/oidc.eks.us-east-1.amazonaws.com/id/AAAAAAAA000000"
-            .to_string(),
+            .to_string()
+            .into(),
     ));
     assert!(validate(&v).is_ok());
 }

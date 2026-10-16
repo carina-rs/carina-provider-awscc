@@ -84,7 +84,7 @@ pub(crate) fn pending_cloudfront_distribution_arn(
         return None;
     };
     Some(Value::Concrete(ConcreteValue::String(
-        cloudfront_distribution_arn(partition, account_id, id),
+        cloudfront_distribution_arn(partition, account_id, id.expose_plaintext()).into(),
     )))
 }
 
@@ -107,9 +107,9 @@ pub(crate) fn pending_iam_role_arn(
     }
     let role_name = string_attr(attributes, "role_name")?;
     let path = string_attr(attributes, "path").unwrap_or("/");
-    Some(Value::Concrete(ConcreteValue::String(iam_role_arn(
-        partition, account_id, path, role_name,
-    ))))
+    Some(Value::Concrete(ConcreteValue::String(
+        iam_role_arn(partition, account_id, path, role_name).into(),
+    )))
 }
 
 pub(crate) fn missing_synthesized_attributes(
@@ -128,7 +128,7 @@ pub(crate) fn missing_synthesized_attributes(
 
 fn string_attr<'a>(attributes: &'a HashMap<String, Value>, name: &str) -> Option<&'a str> {
     match attributes.get(name) {
-        Some(Value::Concrete(ConcreteValue::String(value))) => Some(value),
+        Some(Value::Concrete(ConcreteValue::String(value))) => Some(value.expose_plaintext()),
         _ => None,
     }
 }
@@ -242,7 +242,7 @@ mod tests {
         let mut a = HashMap::new();
         a.insert(
             "id".to_string(),
-            Value::Concrete(ConcreteValue::String(id.to_string())),
+            Value::Concrete(ConcreteValue::String(id.to_string().into())),
         );
         a
     }
@@ -271,7 +271,7 @@ mod tests {
         let mut attrs = attrs_with_id("E1U5RQF7T870K0");
         attrs.insert(
             "arn".to_string(),
-            Value::Concrete(ConcreteValue::String("preexisting".to_string())),
+            Value::Concrete(ConcreteValue::String("preexisting".to_string().into())),
         );
         assert!(
             pending_cloudfront_distribution_arn(
@@ -317,13 +317,13 @@ mod tests {
         if let Some(path) = path {
             attrs.insert(
                 "path".to_string(),
-                Value::Concrete(ConcreteValue::String(path.to_string())),
+                Value::Concrete(ConcreteValue::String(path.to_string().into())),
             );
         }
         if let Some(role_name) = role_name {
             attrs.insert(
                 "role_name".to_string(),
-                Value::Concrete(ConcreteValue::String(role_name.to_string())),
+                Value::Concrete(ConcreteValue::String(role_name.to_string().into())),
             );
         }
         attrs
@@ -381,7 +381,7 @@ mod tests {
         let mut attrs = attrs_with_id("E1U5RQF7T870K0");
         attrs.insert(
             "arn".to_string(),
-            Value::Concrete(ConcreteValue::String("preexisting".to_string())),
+            Value::Concrete(ConcreteValue::String("preexisting".to_string().into())),
         );
         assert!(!needs_synthesis("cloudfront.Distribution", &attrs));
     }

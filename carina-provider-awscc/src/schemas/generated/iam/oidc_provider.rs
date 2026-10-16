@@ -20,6 +20,7 @@ pub fn arn() -> AttributeType {
         None,
         legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
+                let s = s.expose_plaintext();
                 carina_aws_types::validate_iam_arn(s, "oidc-provider/")
                     .map_err(|reason| format!("Invalid IAM OIDC Provider ARN '{}': {}", s, reason))
             } else {
@@ -47,6 +48,7 @@ fn validate_list_items_max_5(value: &Value) -> Result<(), String> {
 #[allow(dead_code)]
 fn validate_string_length_1_255(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
+        let s = s.expose_plaintext();
         let len = s.chars().count();
         if !(1..=255).contains(&len) {
             Err(format!("String length {} is out of range 1..=255", len))
@@ -135,6 +137,7 @@ pub fn iam_oidc_provider_config() -> AwsccSchemaConfig {
 #[allow(dead_code)]
 fn validate_string_pattern_57ee0c44b504b839_len_40_40(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
+        let s = s.expose_plaintext();
         static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
             Regex::new("[0-9A-Fa-f]{40}").expect("invalid pattern regex")
         });

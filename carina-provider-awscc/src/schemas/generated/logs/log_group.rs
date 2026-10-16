@@ -16,6 +16,7 @@ pub fn arn() -> AttributeType {
         None,
         legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
+                let s = s.expose_plaintext();
                 carina_aws_types::validate_service_arn(s, "logs", Some("log-group:"))
                     .map_err(|reason| format!("Invalid logs ARN '{}': {}", s, reason))
             } else {
@@ -87,7 +88,7 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
             AttributeSchema::new("log_group_class", AttributeType::enum_(carina_core::schema::enum_identity("LogGroupClass", Some("aws.logs.LogGroup")), Some(vec!["STANDARD".to_string(), "INFREQUENT_ACCESS".to_string(), "DELIVERY".to_string()]), vec![("STANDARD".to_string(), "standard".to_string()), ("INFREQUENT_ACCESS".to_string(), "infrequent_access".to_string()), ("DELIVERY".to_string(), "delivery".to_string())], None, None))
                 .with_description("Specifies the log group class for this log group. There are two classes: + The ``Standard`` log class supports all CWL features. + The ``Infrequent Access`` log class supports a subset of CWL features and incurs lower costs. For details about the features supported by each class, see [Log classes](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/CloudWatch_Logs_Log_Classes.html)")
                 .with_provider_name("LogGroupClass")
-                .with_default(Value::Concrete(ConcreteValue::String("STANDARD".to_string()))),
+                .with_default(Value::Concrete(ConcreteValue::String("STANDARD".to_string().into()))),
         )
         .attribute(
             AttributeSchema::new("log_group_name", AttributeType::refined_string(None, Some("^[.\\-_/#A-Za-z0-9]{1,512}\\Z".to_string()), Some((Some(1), Some(512))), None))
@@ -125,6 +126,7 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
 #[allow(dead_code)]
 fn validate_string_pattern_b6dfbc56753dfe38_len_1_512(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
+        let s = s.expose_plaintext();
         static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
             Regex::new("^[.\\-_/#A-Za-z0-9]{1,512}\\z").expect("invalid pattern regex")
         });

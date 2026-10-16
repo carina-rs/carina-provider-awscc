@@ -11,6 +11,7 @@ use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, Struct
 #[allow(dead_code)]
 fn validate_string_length_max_256(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
+        let s = s.expose_plaintext();
         let len = s.chars().count();
         if len > 256 {
             Err(format!("String length {} is out of range ..=256", len))
@@ -25,6 +26,7 @@ fn validate_string_length_max_256(value: &Value) -> Result<(), String> {
 #[allow(dead_code)]
 fn validate_string_length_max_128(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
+        let s = s.expose_plaintext();
         let len = s.chars().count();
         if len > 128 {
             Err(format!("String length {} is out of range ..=128", len))

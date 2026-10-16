@@ -5,6 +5,7 @@
 
 use std::collections::HashMap;
 
+use carina_core::provider::SavedAttrs;
 use carina_core::resource::{ConcreteValue, ResourceId, State, Value};
 use carina_core::schema::RawShape;
 
@@ -34,11 +35,12 @@ pub fn normalize_state_string_dsl_transforms_impl(current_states: &mut HashMap<R
                 } = attr_schema.attr_type.raw_shape()
                 && let Value::Concrete(ConcreteValue::String(s)) = value
             {
+                let s = s.expose_plaintext();
                 let transformed = transform.apply(s);
-                if transformed != s.as_str() {
+                if transformed != s {
                     resolved_attrs.insert(
                         key.clone(),
-                        Value::Concrete(ConcreteValue::String(transformed.into_owned())),
+                        Value::Concrete(ConcreteValue::String(transformed.into_owned().into())),
                     );
                     continue;
                 }
@@ -97,7 +99,7 @@ pub fn canonicalize_string_or_list_states_impl(current_states: &mut HashMap<Reso
 /// We carry them forward from the previously saved attribute values.
 pub fn restore_unreturned_attrs_impl(
     current_states: &mut HashMap<ResourceId, State>,
-    saved_attrs: &HashMap<ResourceId, HashMap<String, Value>>,
+    saved_attrs: &SavedAttrs,
 ) {
     for (resource_id, state) in current_states.iter_mut() {
         if !state.exists || resource_id.provider != "awscc" {
@@ -125,17 +127,42 @@ pub fn restore_unreturned_attrs_impl(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use carina_core::provider::ProviderNormalizer;
+    use carina_core::provider::{
+        LiftedSavedAttrs, PersistedAttributes, ProviderNormalizer, RawSavedAttrs,
+    };
     use carina_core::resource::Resource;
-    use carina_core::schema::ShapeWalkBudget;
+    use carina_core::schema::{SchemaRegistry, ShapeWalkBudget};
     use indexmap::IndexMap;
+
+    fn saved_attrs_from_decoded(
+        saved_attrs: HashMap<ResourceId, HashMap<String, Value>>,
+    ) -> LiftedSavedAttrs {
+        let persisted = saved_attrs
+            .into_iter()
+            .map(|(id, attributes)| {
+                let attributes = attributes
+                    .into_iter()
+                    .map(|(key, value)| {
+                        let value = carina_core::value::value_to_json(&value)
+                            .expect("test saved value should serialize to persisted JSON");
+                        (key, value)
+                    })
+                    .collect::<serde_json::Map<_, _>>();
+                let attributes: PersistedAttributes =
+                    serde_json::from_value(serde_json::Value::Object(attributes))
+                        .expect("test saved attributes should decode as persisted JSON");
+                (id, attributes)
+            })
+            .collect();
+        RawSavedAttrs::from_persisted(persisted).lift(&SchemaRegistry::new())
+    }
 
     #[tokio::test]
     async fn normalize_desired_preserves_host_canonical_enum_strings() {
         let mut resource = Resource::with_provider("awscc", "ec2.Subnet", "test", None);
         resource.set_attr(
             "availability_zone".to_string(),
-            Value::Concrete(ConcreteValue::String("ap-northeast-1a".to_string())),
+            Value::Concrete(ConcreteValue::String("ap-northeast-1a".to_string().into())),
         );
         let mut resources = vec![resource];
 
@@ -147,7 +174,7 @@ mod tests {
         assert_eq!(
             resources[0].get_attr("availability_zone"),
             Some(&Value::Concrete(ConcreteValue::String(
-                "ap-northeast-1a".to_string()
+                "ap-northeast-1a".to_string().into()
             ))),
             "host-canonical open-enum API values must not be re-namespaced"
         );
@@ -159,7 +186,7 @@ mod tests {
             ResourceId::with_provider_identity("awscc", "ec2.SecurityGroupEgress", "test", None);
         let attrs = HashMap::from([(
             "ip_protocol".to_string(),
-            Value::Concrete(ConcreteValue::String("-1".to_string())),
+            Value::Concrete(ConcreteValue::String("-1".to_string().into())),
         )]);
         let mut current_states = HashMap::from([(id.clone(), State::existing(id.clone(), attrs))]);
 
@@ -199,7 +226,7 @@ mod tests {
             .get("ip_protocol")
             .expect("ec2.SecurityGroupEgress.ip_protocol should exist");
         let canonical = carina_core::utils::lift_enum_leaves(
-            &Value::Concrete(ConcreteValue::String("-1".to_string())),
+            &Value::Concrete(ConcreteValue::String("-1".to_string().into())),
             &ip_protocol_attr.attr_type,
         )
         .expect("host should lift ip_protocol to CanonicalEnum");
@@ -227,7 +254,7 @@ mod tests {
         let mut state = State::existing(id.clone(), HashMap::new());
         state.attributes.insert(
             "nat_gateway_id".to_string(),
-            Value::Concrete(ConcreteValue::String("nat-123".to_string())),
+            Value::Concrete(ConcreteValue::String("nat-123".to_string().into())),
         );
 
         let mut current_states = HashMap::new();
@@ -236,17 +263,18 @@ mod tests {
         let mut saved = HashMap::new();
         saved.insert(
             "subnet_id".to_string(),
-            Value::Concrete(ConcreteValue::String("subnet-abc".to_string())),
+            Value::Concrete(ConcreteValue::String("subnet-abc".to_string().into())),
         );
         let mut saved_attrs = HashMap::new();
         saved_attrs.insert(id.clone(), saved);
+        let saved_attrs = saved_attrs_from_decoded(saved_attrs);
 
-        restore_unreturned_attrs_impl(&mut current_states, &saved_attrs);
+        restore_unreturned_attrs_impl(&mut current_states, saved_attrs.as_provider_saved_attrs());
 
         assert_eq!(
             current_states[&id].attributes.get("subnet_id"),
             Some(&Value::Concrete(ConcreteValue::String(
-                "subnet-abc".to_string()
+                "subnet-abc".to_string().into()
             )))
         );
     }
@@ -262,12 +290,13 @@ mod tests {
         let mut saved = HashMap::new();
         saved.insert(
             "some_attr".to_string(),
-            Value::Concrete(ConcreteValue::String("value".to_string())),
+            Value::Concrete(ConcreteValue::String("value".to_string().into())),
         );
         let mut saved_attrs = HashMap::new();
         saved_attrs.insert(id.clone(), saved);
+        let saved_attrs = saved_attrs_from_decoded(saved_attrs);
 
-        restore_unreturned_attrs_impl(&mut current_states, &saved_attrs);
+        restore_unreturned_attrs_impl(&mut current_states, saved_attrs.as_provider_saved_attrs());
 
         assert!(!current_states[&id].attributes.contains_key("some_attr"));
     }
@@ -278,7 +307,7 @@ mod tests {
         let mut attrs = HashMap::new();
         attrs.insert(
             "subnet_id".to_string(),
-            Value::Concrete(ConcreteValue::String("subnet-current".to_string())),
+            Value::Concrete(ConcreteValue::String("subnet-current".to_string().into())),
         );
         let state = State::existing(id.clone(), attrs);
 
@@ -288,17 +317,18 @@ mod tests {
         let mut saved = HashMap::new();
         saved.insert(
             "subnet_id".to_string(),
-            Value::Concrete(ConcreteValue::String("subnet-saved".to_string())),
+            Value::Concrete(ConcreteValue::String("subnet-saved".to_string().into())),
         );
         let mut saved_attrs = HashMap::new();
         saved_attrs.insert(id.clone(), saved);
+        let saved_attrs = saved_attrs_from_decoded(saved_attrs);
 
-        restore_unreturned_attrs_impl(&mut current_states, &saved_attrs);
+        restore_unreturned_attrs_impl(&mut current_states, saved_attrs.as_provider_saved_attrs());
 
         assert_eq!(
             current_states[&id].attributes.get("subnet_id"),
             Some(&Value::Concrete(ConcreteValue::String(
-                "subnet-current".to_string()
+                "subnet-current".to_string().into()
             )))
         );
     }
@@ -311,7 +341,9 @@ mod tests {
         state.attributes.insert(
             "ip_protocol".to_string(),
             Value::Concrete(ConcreteValue::String(
-                "aws.ec2.SecurityGroupEgress.IpProtocol.all".to_string(),
+                "aws.ec2.SecurityGroupEgress.IpProtocol.all"
+                    .to_string()
+                    .into(),
             )),
         );
 
@@ -321,17 +353,20 @@ mod tests {
         let mut saved = HashMap::new();
         saved.insert(
             "description".to_string(),
-            Value::Concrete(ConcreteValue::String("Allow all outbound".to_string())),
+            Value::Concrete(ConcreteValue::String(
+                "Allow all outbound".to_string().into(),
+            )),
         );
         let mut saved_attrs = HashMap::new();
         saved_attrs.insert(id.clone(), saved);
+        let saved_attrs = saved_attrs_from_decoded(saved_attrs);
 
-        restore_unreturned_attrs_impl(&mut current_states, &saved_attrs);
+        restore_unreturned_attrs_impl(&mut current_states, saved_attrs.as_provider_saved_attrs());
 
         assert_eq!(
             current_states[&id].attributes.get("description"),
             Some(&Value::Concrete(ConcreteValue::String(
-                "Allow all outbound".to_string()
+                "Allow all outbound".to_string().into()
             )))
         );
     }
@@ -343,7 +378,7 @@ mod tests {
         let desired = carina_core::resource::ResolvedResource::new(
             Resource::with_provider("awscc", "route53.HostedZone", "example", None).with_attribute(
                 "name",
-                Value::Concrete(ConcreteValue::String("example.com".to_string())),
+                Value::Concrete(ConcreteValue::String("example.com".to_string().into())),
             ),
         );
         let mut current_states = HashMap::from([(
@@ -352,7 +387,7 @@ mod tests {
                 desired.id.clone(),
                 HashMap::from([(
                     "name".to_string(),
-                    Value::Concrete(ConcreteValue::String("example.com.".to_string())),
+                    Value::Concrete(ConcreteValue::String("example.com.".to_string().into())),
                 )]),
             ),
         )]);
@@ -365,7 +400,7 @@ mod tests {
         assert_eq!(
             current.attributes.get("name"),
             Some(&Value::Concrete(ConcreteValue::String(
-                "example.com".to_string()
+                "example.com".to_string().into()
             )))
         );
         let diff = carina_core::differ::diff(&desired, current, None, None, Some(&config.schema));
@@ -564,16 +599,16 @@ mod tests {
                     let mut stmt = IndexMap::new();
                     stmt.insert(
                         "Effect".to_string(),
-                        Value::Concrete(ConcreteValue::String("Allow".to_string())),
+                        Value::Concrete(ConcreteValue::String("Allow".to_string().into())),
                     );
                     stmt.insert(
                         "Action".to_string(),
-                        Value::Concrete(ConcreteValue::String("s3:GetObject".to_string())),
+                        Value::Concrete(ConcreteValue::String("s3:GetObject".to_string().into())),
                     );
                     stmt.insert(
                         "Resource".to_string(),
                         Value::Concrete(ConcreteValue::String(
-                            "arn:aws:s3:::my-bucket/*".to_string(),
+                            "arn:aws:s3:::my-bucket/*".to_string().into(),
                         )),
                     );
                     stmt
@@ -588,7 +623,7 @@ mod tests {
             vec![
                 (
                     "policy_name",
-                    Value::Concrete(ConcreteValue::String("test-policy".to_string())),
+                    Value::Concrete(ConcreteValue::String("test-policy".to_string().into())),
                 ),
                 (
                     "policy_document",
@@ -621,14 +656,14 @@ mod tests {
         assert_eq!(
             stmt.get("Action"),
             Some(&Value::Concrete(ConcreteValue::StringList(vec![
-                "s3:GetObject".to_string()
+                "s3:GetObject".to_string().into()
             ]))),
             "Action should be canonicalized to StringList"
         );
         assert_eq!(
             stmt.get("Resource"),
             Some(&Value::Concrete(ConcreteValue::StringList(vec![
-                "arn:aws:s3:::my-bucket/*".to_string()
+                "arn:aws:s3:::my-bucket/*".to_string().into()
             ]))),
             "Resource should be canonicalized to StringList"
         );
@@ -642,7 +677,7 @@ mod tests {
             "test",
             vec![(
                 "policy_name",
-                Value::Concrete(ConcreteValue::String("test".to_string())),
+                Value::Concrete(ConcreteValue::String("test".to_string().into())),
             )],
         );
         let mut current_states: HashMap<ResourceId, State> = HashMap::new();
@@ -653,7 +688,9 @@ mod tests {
         let state = &current_states[&id];
         assert_eq!(
             state.attributes.get("policy_name"),
-            Some(&Value::Concrete(ConcreteValue::String("test".to_string()))),
+            Some(&Value::Concrete(ConcreteValue::String(
+                "test".to_string().into()
+            ))),
             "non-awscc state untouched"
         );
     }
@@ -666,7 +703,7 @@ mod tests {
             "test",
             vec![(
                 "attr",
-                Value::Concrete(ConcreteValue::String("x".to_string())),
+                Value::Concrete(ConcreteValue::String("x".to_string().into())),
             )],
         );
         let mut current_states: HashMap<ResourceId, State> = HashMap::new();
@@ -677,7 +714,9 @@ mod tests {
         let state = &current_states[&id];
         assert_eq!(
             state.attributes.get("attr"),
-            Some(&Value::Concrete(ConcreteValue::String("x".to_string()))),
+            Some(&Value::Concrete(ConcreteValue::String(
+                "x".to_string().into()
+            ))),
             "unknown resource types pass through unchanged"
         );
     }

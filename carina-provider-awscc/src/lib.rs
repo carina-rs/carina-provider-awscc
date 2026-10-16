@@ -169,7 +169,7 @@ impl ProviderFactory for AwsccProviderFactory {
 
     fn extract_region(&self, attributes: &IndexMap<String, Value>) -> String {
         if let Some(Value::Concrete(ConcreteValue::String(region))) = attributes.get("region") {
-            return carina_core::utils::convert_region_value(region);
+            return carina_core::utils::convert_region_value(region.expose_plaintext());
         }
         "ap-northeast-1".to_string()
     }
@@ -281,7 +281,7 @@ fn extract_string_list_attr(attributes: &IndexMap<String, Value>, key: &str) -> 
         Some(Value::Concrete(ConcreteValue::List(items))) => items
             .iter()
             .filter_map(|v| match v {
-                Value::Concrete(ConcreteValue::String(s)) => Some(s.clone()),
+                Value::Concrete(ConcreteValue::String(s)) => Some(s.expose_plaintext().to_string()),
                 _ => None,
             })
             .collect(),
@@ -387,14 +387,14 @@ mod tests {
         attrs.insert(
             "allowed_account_ids".to_string(),
             Value::Concrete(ConcreteValue::List(vec![
-                Value::Concrete(ConcreteValue::String("111111111111".to_string())),
-                Value::Concrete(ConcreteValue::String("222222222222".to_string())),
+                Value::Concrete(ConcreteValue::String("111111111111".to_string().into())),
+                Value::Concrete(ConcreteValue::String("222222222222".to_string().into())),
             ])),
         );
         attrs.insert(
             "forbidden_account_ids".to_string(),
             Value::Concrete(ConcreteValue::List(vec![Value::Concrete(
-                ConcreteValue::String("999999999999".to_string()),
+                ConcreteValue::String("999999999999".to_string().into()),
             )])),
         );
 
@@ -534,7 +534,7 @@ mod tests {
         Value::Concrete(ConcreteValue::List(
             items
                 .iter()
-                .map(|s| Value::Concrete(ConcreteValue::String((*s).to_string())))
+                .map(|s| Value::Concrete(ConcreteValue::String((*s).to_string().into())))
                 .collect(),
         ))
     }
@@ -560,7 +560,9 @@ mod tests {
             map_of(&[(
                 "role_arn",
                 Value::Concrete(ConcreteValue::String(
-                    "arn:aws:iam::412038850359:role/delegation".to_string(),
+                    "arn:aws:iam::412038850359:role/delegation"
+                        .to_string()
+                        .into(),
                 )),
             )]),
         );
@@ -582,7 +584,9 @@ mod tests {
             map_of(&[(
                 "role_arn",
                 Value::Concrete(ConcreteValue::String(
-                    "arn:aws:iam::412038850359:role/delegation".to_string(),
+                    "arn:aws:iam::412038850359:role/delegation"
+                        .to_string()
+                        .into(),
                 )),
             )]),
         );
@@ -615,12 +619,14 @@ mod tests {
                 (
                     "role_arn",
                     Value::Concrete(ConcreteValue::String(
-                        "arn:aws:iam::412038850359:role/delegation".to_string(),
+                        "arn:aws:iam::412038850359:role/delegation"
+                            .to_string()
+                            .into(),
                     )),
                 ),
                 (
                     "session_name",
-                    Value::Concrete(ConcreteValue::String("carina".to_string())),
+                    Value::Concrete(ConcreteValue::String("carina".to_string().into())),
                 ),
                 (
                     "duration",
@@ -732,16 +738,16 @@ mod tests {
         let mut resource = Resource::with_provider("awscc", "ec2.Vpc", "test-vpc", None);
         resource.set_attr(
             "cidr_block".to_string(),
-            Value::Concrete(ConcreteValue::String("10.0.0.0/16".to_string())),
+            Value::Concrete(ConcreteValue::String("10.0.0.0/16".to_string().into())),
         );
         let mut resource_tags: IndexMap<String, Value> = IndexMap::new();
         resource_tags.insert(
             "Name".to_string(),
-            Value::Concrete(ConcreteValue::String("my-vpc".to_string())),
+            Value::Concrete(ConcreteValue::String("my-vpc".to_string().into())),
         );
         resource_tags.insert(
             "Environment".to_string(),
-            Value::Concrete(ConcreteValue::String("staging".to_string())),
+            Value::Concrete(ConcreteValue::String("staging".to_string().into())),
         );
         resource.set_attr(
             "tags".to_string(),
@@ -751,11 +757,11 @@ mod tests {
         let mut default_tags: IndexMap<String, Value> = IndexMap::new();
         default_tags.insert(
             "Environment".to_string(),
-            Value::Concrete(ConcreteValue::String("production".to_string())),
+            Value::Concrete(ConcreteValue::String("production".to_string().into())),
         );
         default_tags.insert(
             "Team".to_string(),
-            Value::Concrete(ConcreteValue::String("platform".to_string())),
+            Value::Concrete(ConcreteValue::String("platform".to_string().into())),
         );
 
         let mut resources = vec![resource];
@@ -768,19 +774,19 @@ mod tests {
             assert_eq!(
                 tags.get("Environment"),
                 Some(&Value::Concrete(ConcreteValue::String(
-                    "staging".to_string()
+                    "staging".to_string().into()
                 )))
             );
             assert_eq!(
                 tags.get("Name"),
                 Some(&Value::Concrete(ConcreteValue::String(
-                    "my-vpc".to_string()
+                    "my-vpc".to_string().into()
                 )))
             );
             assert_eq!(
                 tags.get("Team"),
                 Some(&Value::Concrete(ConcreteValue::String(
-                    "platform".to_string()
+                    "platform".to_string().into()
                 )))
             );
         } else {
@@ -793,7 +799,7 @@ mod tests {
             let key_strs: Vec<&str> = keys
                 .iter()
                 .filter_map(|v| match v {
-                    Value::Concrete(ConcreteValue::String(s)) => Some(s.as_str()),
+                    Value::Concrete(ConcreteValue::String(s)) => Some(s.expose_plaintext()),
                     _ => None,
                 })
                 .collect();
@@ -811,13 +817,13 @@ mod tests {
         let mut resource = Resource::with_provider("awscc", "ec2.Vpc", "test-vpc", None);
         resource.set_attr(
             "cidr_block".to_string(),
-            Value::Concrete(ConcreteValue::String("10.0.0.0/16".to_string())),
+            Value::Concrete(ConcreteValue::String("10.0.0.0/16".to_string().into())),
         );
 
         let mut default_tags: IndexMap<String, Value> = IndexMap::new();
         default_tags.insert(
             "Environment".to_string(),
-            Value::Concrete(ConcreteValue::String("production".to_string())),
+            Value::Concrete(ConcreteValue::String("production".to_string().into())),
         );
 
         let mut resources = vec![resource];
@@ -830,7 +836,7 @@ mod tests {
             assert_eq!(
                 tags.get("Environment"),
                 Some(&Value::Concrete(ConcreteValue::String(
-                    "production".to_string()
+                    "production".to_string().into()
                 )))
             );
         } else {
@@ -843,7 +849,7 @@ mod tests {
             let key_strs: Vec<&str> = keys
                 .iter()
                 .filter_map(|v| match v {
-                    Value::Concrete(ConcreteValue::String(s)) => Some(s.as_str()),
+                    Value::Concrete(ConcreteValue::String(s)) => Some(s.expose_plaintext()),
                     _ => None,
                 })
                 .collect();
@@ -861,13 +867,13 @@ mod tests {
         let mut resource = Resource::with_provider("awscc", "ec2.Route", "test-route", None);
         resource.set_attr(
             "route_table_id".to_string(),
-            Value::Concrete(ConcreteValue::String("rtb-123".to_string())),
+            Value::Concrete(ConcreteValue::String("rtb-123".to_string().into())),
         );
 
         let mut default_tags: IndexMap<String, Value> = IndexMap::new();
         default_tags.insert(
             "Environment".to_string(),
-            Value::Concrete(ConcreteValue::String("production".to_string())),
+            Value::Concrete(ConcreteValue::String("production".to_string().into())),
         );
 
         let mut resources = vec![resource];
@@ -888,12 +894,12 @@ mod tests {
         let mut resource = Resource::with_provider("awscc", "ec2.Vpc", "test-vpc", None);
         resource.set_attr(
             "cidr_block".to_string(),
-            Value::Concrete(ConcreteValue::String("10.0.0.0/16".to_string())),
+            Value::Concrete(ConcreteValue::String("10.0.0.0/16".to_string().into())),
         );
         let mut resource_tags: IndexMap<String, Value> = IndexMap::new();
         resource_tags.insert(
             "Name".to_string(),
-            Value::Concrete(ConcreteValue::String("my-vpc".to_string())),
+            Value::Concrete(ConcreteValue::String("my-vpc".to_string().into())),
         );
         resource.set_attr(
             "tags".to_string(),
@@ -913,7 +919,7 @@ mod tests {
             assert_eq!(
                 tags.get("Name"),
                 Some(&Value::Concrete(ConcreteValue::String(
-                    "my-vpc".to_string()
+                    "my-vpc".to_string().into()
                 )))
             );
         } else {

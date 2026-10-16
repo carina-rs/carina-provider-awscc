@@ -21,6 +21,7 @@ pub fn arn() -> AttributeType {
         None,
         legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
+                let s = s.expose_plaintext();
                 carina_aws_types::validate_service_arn(s, "cloudfront", Some("distribution/"))
                     .map_err(|reason| format!("Invalid cloudfront ARN '{}': {}", s, reason))
             } else {

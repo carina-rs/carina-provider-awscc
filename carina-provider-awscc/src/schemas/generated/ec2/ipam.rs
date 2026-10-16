@@ -17,6 +17,7 @@ pub fn arn() -> AttributeType {
         None,
         legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
+                let s = s.expose_plaintext();
                 carina_aws_types::validate_service_arn(s, "ec2", None)
                     .map_err(|reason| format!("Invalid ec2 ARN '{}': {}", s, reason))
             } else {
@@ -34,6 +35,7 @@ const VALID_TIER: &[&str] = &["free", "advanced"];
 #[allow(dead_code)]
 fn validate_string_length_min_1(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
+        let s = s.expose_plaintext();
         let len = s.chars().count();
         if len < 1 {
             Err(format!("String length {} is out of range 1..", len))
@@ -48,6 +50,7 @@ fn validate_string_length_min_1(value: &Value) -> Result<(), String> {
 #[allow(dead_code)]
 fn validate_string_length_max_255(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
+        let s = s.expose_plaintext();
         let len = s.chars().count();
         if len > 255 {
             Err(format!("String length {} is out of range ..=255", len))

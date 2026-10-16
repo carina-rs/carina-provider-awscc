@@ -207,15 +207,15 @@ mod tests {
         let mut attrs = HashMap::new();
         attrs.insert(
             "vpc_id".to_string(),
-            Value::Concrete(ConcreteValue::String("vpc-12345678".to_string())),
+            Value::Concrete(ConcreteValue::String("vpc-12345678".to_string().into())),
         );
         attrs.insert(
             "internet_gateway_id".to_string(),
-            Value::Concrete(ConcreteValue::String("igw-12345678".to_string())),
+            Value::Concrete(ConcreteValue::String("igw-12345678".to_string().into())),
         );
         attrs.insert(
             "vpn_gateway_id".to_string(),
-            Value::Concrete(ConcreteValue::String("vgw-12345678".to_string())),
+            Value::Concrete(ConcreteValue::String("vgw-12345678".to_string().into())),
         );
 
         let result = schema.validate(&attrs);
@@ -249,11 +249,11 @@ mod tests {
         let mut attrs_igw = HashMap::new();
         attrs_igw.insert(
             "vpc_id".to_string(),
-            Value::Concrete(ConcreteValue::String("vpc-12345678".to_string())),
+            Value::Concrete(ConcreteValue::String("vpc-12345678".to_string().into())),
         );
         attrs_igw.insert(
             "internet_gateway_id".to_string(),
-            Value::Concrete(ConcreteValue::String("igw-12345678".to_string())),
+            Value::Concrete(ConcreteValue::String("igw-12345678".to_string().into())),
         );
         assert!(
             schema.validate(&attrs_igw).is_ok(),
@@ -264,11 +264,11 @@ mod tests {
         let mut attrs_vpn = HashMap::new();
         attrs_vpn.insert(
             "vpc_id".to_string(),
-            Value::Concrete(ConcreteValue::String("vpc-12345678".to_string())),
+            Value::Concrete(ConcreteValue::String("vpc-12345678".to_string().into())),
         );
         attrs_vpn.insert(
             "vpn_gateway_id".to_string(),
-            Value::Concrete(ConcreteValue::String("vgw-12345678".to_string())),
+            Value::Concrete(ConcreteValue::String("vgw-12345678".to_string().into())),
         );
         assert!(
             schema.validate(&attrs_vpn).is_ok(),
@@ -290,7 +290,7 @@ mod tests {
         let mut attrs = HashMap::new();
         attrs.insert(
             "vpc_id".to_string(),
-            Value::Concrete(ConcreteValue::String("vpc-12345678".to_string())),
+            Value::Concrete(ConcreteValue::String("vpc-12345678".to_string().into())),
         );
 
         let result = schema.validate(&attrs);

@@ -127,6 +127,7 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
 #[allow(dead_code)]
 fn validate_string_pattern_b84fa12576539ca9_len_1_512(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
+        let s = s.expose_plaintext();
         static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
             Regex::new("((/[A-Za-z0-9\\.,\\+@=_-]+)*)/").expect("invalid pattern regex")
         });
@@ -149,6 +150,7 @@ fn validate_string_pattern_b84fa12576539ca9_len_1_512(value: &Value) -> Result<(
 #[allow(dead_code)]
 fn validate_string_pattern_9863be410e005e12_len_1_700(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
+        let s = s.expose_plaintext();
         static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
             Regex::new("[\\u0009\\u000A\\u000D\\u0020-\\u007E\\u00A1-\\u00FF]*")
                 .expect("invalid pattern regex")
@@ -172,6 +174,7 @@ fn validate_string_pattern_9863be410e005e12_len_1_700(value: &Value) -> Result<(
 #[allow(dead_code)]
 fn validate_string_pattern_9b83f4f8f3673df5_len_max_256(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
+        let s = s.expose_plaintext();
         static RE: std::sync::LazyLock<Regex> =
             std::sync::LazyLock::new(|| Regex::new("[\\w+=,.@-]+").expect("invalid pattern regex"));
         if !RE.is_match(s) {
@@ -190,6 +193,7 @@ fn validate_string_pattern_9b83f4f8f3673df5_len_max_256(value: &Value) -> Result
 #[allow(dead_code)]
 fn validate_string_pattern_9b83f4f8f3673df5_len_1_32(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
+        let s = s.expose_plaintext();
         static RE: std::sync::LazyLock<Regex> =
             std::sync::LazyLock::new(|| Regex::new("[\\w+=,.@-]+").expect("invalid pattern regex"));
         if !RE.is_match(s) {
@@ -208,6 +212,7 @@ fn validate_string_pattern_9b83f4f8f3673df5_len_1_32(value: &Value) -> Result<()
 #[allow(dead_code)]
 fn validate_string_pattern_9b83f4f8f3673df5_len_1_128(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
+        let s = s.expose_plaintext();
         static RE: std::sync::LazyLock<Regex> =
             std::sync::LazyLock::new(|| Regex::new("[\\w+=,.@-]+").expect("invalid pattern regex"));
         if !RE.is_match(s) {
@@ -226,6 +231,7 @@ fn validate_string_pattern_9b83f4f8f3673df5_len_1_128(value: &Value) -> Result<(
 #[allow(dead_code)]
 fn validate_string_pattern_4d6d630589930649_len_1_240(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
+        let s = s.expose_plaintext();
         static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
             Regex::new("[a-zA-Z0-9&amp;$@#\\/%?=~\\-_'&quot;|!:,.;*+\\[\\]\\ \\(\\)\\{\\}]+")
                 .expect("invalid pattern regex")
@@ -249,6 +255,7 @@ fn validate_string_pattern_4d6d630589930649_len_1_240(value: &Value) -> Result<(
 #[allow(dead_code)]
 fn validate_string_pattern_1e58d8243b46a2f1_len_1_100(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
+        let s = s.expose_plaintext();
         static RE: std::sync::LazyLock<Regex> =
             std::sync::LazyLock::new(|| Regex::new(".*").expect("invalid pattern regex"));
         if !RE.is_match(s) {

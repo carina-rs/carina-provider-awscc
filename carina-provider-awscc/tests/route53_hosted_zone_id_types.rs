@@ -72,7 +72,7 @@ fn hosted_zone_id_producers_validate_route53_values() {
             "Z05136711ZXUHBDOA8D5O",
         ] {
             let result = schema.validate(&Value::Concrete(ConcreteValue::String(
-                hosted_zone_id.to_string(),
+                hosted_zone_id.to_string().into(),
             )));
             assert!(
                 result.is_ok(),
@@ -84,7 +84,7 @@ fn hosted_zone_id_producers_validate_route53_values() {
             assert!(
                 schema
                     .validate(&Value::Concrete(ConcreteValue::String(
-                        hosted_zone_id.to_string()
+                        hosted_zone_id.to_string().into()
                     )))
                     .is_err(),
                 "{label} must reject {hosted_zone_id:?}"
