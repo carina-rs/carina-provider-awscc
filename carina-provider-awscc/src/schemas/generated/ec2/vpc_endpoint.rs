@@ -55,6 +55,7 @@ fn validate_list_items_1_10(value: &Value) -> Result<(), String> {
 #[allow(dead_code)]
 fn validate_string_length_1_255(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
+        let s = s.expose_plaintext();
         let len = s.chars().count();
         if !(1..=255).contains(&len) {
             Err(format!("String length {} is out of range 1..=255", len))

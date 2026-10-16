@@ -18,6 +18,7 @@ pub fn arn() -> AttributeType {
         None,
         legacy_validator(|value| {
             if let Value::Concrete(ConcreteValue::String(s)) = value {
+                let s = s.expose_plaintext();
                 carina_aws_types::validate_service_arn(s, "wafv2", None)
                     .map_err(|reason| format!("Invalid wafv2 ARN '{}': {}", s, reason))
             } else {
@@ -285,6 +286,7 @@ fn validate_list_items_max_100(value: &Value) -> Result<(), String> {
 #[allow(dead_code)]
 fn validate_string_length_1_2(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
+        let s = s.expose_plaintext();
         let len = s.chars().count();
         if !(1..=2).contains(&len) {
             Err(format!("String length {} is out of range 1..=2", len))
@@ -299,6 +301,7 @@ fn validate_string_length_1_2(value: &Value) -> Result<(), String> {
 #[allow(dead_code)]
 fn validate_string_length_1_128(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
+        let s = s.expose_plaintext();
         let len = s.chars().count();
         if !(1..=128).contains(&len) {
             Err(format!("String length {} is out of range 1..=128", len))
@@ -313,6 +316,7 @@ fn validate_string_length_1_128(value: &Value) -> Result<(), String> {
 #[allow(dead_code)]
 fn validate_string_length_1_512(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
+        let s = s.expose_plaintext();
         let len = s.chars().count();
         if !(1..=512).contains(&len) {
             Err(format!("String length {} is out of range 1..=512", len))
@@ -1333,6 +1337,7 @@ pub fn wafv2_web_acl_config() -> AwsccSchemaConfig {
 #[allow(dead_code)]
 fn validate_string_pattern_4e09c821aed9e752_len_1_60(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
+        let s = s.expose_plaintext();
         static RE: std::sync::LazyLock<Regex> =
             std::sync::LazyLock::new(|| Regex::new(".*\\S.*").expect("invalid pattern regex"));
         if !RE.is_match(s) {
@@ -1351,6 +1356,7 @@ fn validate_string_pattern_4e09c821aed9e752_len_1_60(value: &Value) -> Result<()
 #[allow(dead_code)]
 fn validate_string_pattern_4e09c821aed9e752_len_1_64(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
+        let s = s.expose_plaintext();
         static RE: std::sync::LazyLock<Regex> =
             std::sync::LazyLock::new(|| Regex::new(".*\\S.*").expect("invalid pattern regex"));
         if !RE.is_match(s) {
@@ -1369,6 +1375,7 @@ fn validate_string_pattern_4e09c821aed9e752_len_1_64(value: &Value) -> Result<()
 #[allow(dead_code)]
 fn validate_string_pattern_4e09c821aed9e752_len_1_100(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
+        let s = s.expose_plaintext();
         static RE: std::sync::LazyLock<Regex> =
             std::sync::LazyLock::new(|| Regex::new(".*\\S.*").expect("invalid pattern regex"));
         if !RE.is_match(s) {
@@ -1387,6 +1394,7 @@ fn validate_string_pattern_4e09c821aed9e752_len_1_100(value: &Value) -> Result<(
 #[allow(dead_code)]
 fn validate_string_pattern_4e09c821aed9e752_len_1_200(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
+        let s = s.expose_plaintext();
         static RE: std::sync::LazyLock<Regex> =
             std::sync::LazyLock::new(|| Regex::new(".*\\S.*").expect("invalid pattern regex"));
         if !RE.is_match(s) {
@@ -1405,6 +1413,7 @@ fn validate_string_pattern_4e09c821aed9e752_len_1_200(value: &Value) -> Result<(
 #[allow(dead_code)]
 fn validate_string_pattern_4e09c821aed9e752_len_1_256(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
+        let s = s.expose_plaintext();
         static RE: std::sync::LazyLock<Regex> =
             std::sync::LazyLock::new(|| Regex::new(".*\\S.*").expect("invalid pattern regex"));
         if !RE.is_match(s) {
@@ -1423,6 +1432,7 @@ fn validate_string_pattern_4e09c821aed9e752_len_1_256(value: &Value) -> Result<(
 #[allow(dead_code)]
 fn validate_string_pattern_4e09c821aed9e752_len_1_512(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
+        let s = s.expose_plaintext();
         static RE: std::sync::LazyLock<Regex> =
             std::sync::LazyLock::new(|| Regex::new(".*\\S.*").expect("invalid pattern regex"));
         if !RE.is_match(s) {
@@ -1441,6 +1451,7 @@ fn validate_string_pattern_4e09c821aed9e752_len_1_512(value: &Value) -> Result<(
 #[allow(dead_code)]
 fn validate_string_pattern_82a037d29be8d222_len_1_64(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
+        let s = s.expose_plaintext();
         static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
             Regex::new("^[\\w#:\\.\\-/]+$").expect("invalid pattern regex")
         });
@@ -1463,6 +1474,7 @@ fn validate_string_pattern_82a037d29be8d222_len_1_64(value: &Value) -> Result<()
 #[allow(dead_code)]
 fn validate_string_pattern_6fd4a12c0ce64c08_len_1_64(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
+        let s = s.expose_plaintext();
         static RE: std::sync::LazyLock<Regex> =
             std::sync::LazyLock::new(|| Regex::new("^[\\w\\-]+$").expect("invalid pattern regex"));
         if !RE.is_match(s) {
@@ -1481,6 +1493,7 @@ fn validate_string_pattern_6fd4a12c0ce64c08_len_1_64(value: &Value) -> Result<()
 #[allow(dead_code)]
 fn validate_string_pattern_7dc332c889f363a0_len_1_253(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
+        let s = s.expose_plaintext();
         static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
             Regex::new("^[\\w\\.\\-/]+$").expect("invalid pattern regex")
         });
@@ -1555,6 +1568,7 @@ fn validate_response_code_range(value: &Value) -> Result<(), String> {
 #[allow(dead_code)]
 fn validate_string_pattern_42f7eceb887966ad(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
+        let s = s.expose_plaintext();
         static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
             Regex::new("^[0-9A-Za-z_-]{1,128}$").expect("invalid pattern regex")
         });
@@ -1574,6 +1588,7 @@ fn validate_string_pattern_42f7eceb887966ad(value: &Value) -> Result<(), String>
 #[allow(dead_code)]
 fn validate_string_pattern_b3fc65b549fb77bd(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
+        let s = s.expose_plaintext();
         static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
             Regex::new("^[0-9A-Za-z_:-]{1,1024}$").expect("invalid pattern regex")
         });
@@ -1593,6 +1608,7 @@ fn validate_string_pattern_b3fc65b549fb77bd(value: &Value) -> Result<(), String>
 #[allow(dead_code)]
 fn validate_string_pattern_d04f4c3802439b73(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
+        let s = s.expose_plaintext();
         static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
             Regex::new("^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$")
                 .expect("invalid pattern regex")
@@ -1613,6 +1629,7 @@ fn validate_string_pattern_d04f4c3802439b73(value: &Value) -> Result<(), String>
 #[allow(dead_code)]
 fn validate_string_pattern_c77cf75cf1a75ade(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
+        let s = s.expose_plaintext();
         static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
             Regex::new("^[\\/]+([^~]*(~[01])*)*{1,512}$").expect("invalid pattern regex")
         });
@@ -1632,6 +1649,7 @@ fn validate_string_pattern_c77cf75cf1a75ade(value: &Value) -> Result<(), String>
 #[allow(dead_code)]
 fn validate_string_pattern_6fd4a12c0ce64c08(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
+        let s = s.expose_plaintext();
         static RE: std::sync::LazyLock<Regex> =
             std::sync::LazyLock::new(|| Regex::new("^[\\w\\-]+$").expect("invalid pattern regex"));
         if RE.is_match(s) {
@@ -1647,6 +1665,7 @@ fn validate_string_pattern_6fd4a12c0ce64c08(value: &Value) -> Result<(), String>
 #[allow(dead_code)]
 fn validate_string_pattern_2d93cc844f6d4014(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
+        let s = s.expose_plaintext();
         static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
             Regex::new("^[a-zA-Z0-9-]+{1,255}$").expect("invalid pattern regex")
         });
@@ -1666,6 +1685,7 @@ fn validate_string_pattern_2d93cc844f6d4014(value: &Value) -> Result<(), String>
 #[allow(dead_code)]
 fn validate_string_pattern_eef4eb302f1cdd5a(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
+        let s = s.expose_plaintext();
         static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
             Regex::new(
                 "^[a-zA-Z0-9=:#@/\\-,.][a-zA-Z0-9+=:#@/\\-,.\\s]+[a-zA-Z0-9+=:#@/\\-,.]{1,256}$",

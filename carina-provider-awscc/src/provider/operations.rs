@@ -431,7 +431,9 @@ fn missing_primary_identifier_attributes(
 
 fn primary_identifier_segment(value: &Value) -> Option<String> {
     match value {
-        Value::Concrete(ConcreteValue::String(value)) if !value.is_empty() => Some(value.clone()),
+        Value::Concrete(ConcreteValue::String(value)) if !value.expose_plaintext().is_empty() => {
+            Some(value.expose_plaintext().to_string())
+        }
         Value::Concrete(ConcreteValue::EnumIdentifier(value)) => Some(value.to_string()),
         Value::Concrete(ConcreteValue::CanonicalEnum(value)) => Some(value.to_string()),
         Value::Concrete(ConcreteValue::Int(value)) => Some(value.to_string()),
@@ -673,7 +675,7 @@ mod tests {
         "arn:aws:wafv2:ap-northeast-1:123456789012:regional/webacl/publish-api/def456";
 
     fn test_string(value: &str) -> Value {
-        Value::Concrete(ConcreteValue::String(value.to_string()))
+        Value::Concrete(ConcreteValue::String(value.to_string().into()))
     }
 
     fn web_acl_association_state(
@@ -1162,7 +1164,7 @@ mod tests {
             ResourceId::with_provider_identity("awscc", "s3.Bucket", "partial_bucket", None),
             HashMap::from([(
                 "bucket_name".to_string(),
-                Value::Concrete(ConcreteValue::String("partial-bucket".to_string())),
+                Value::Concrete(ConcreteValue::String("partial-bucket".to_string().into())),
             )]),
         )
         .with_identifier("partial-bucket")
@@ -1172,7 +1174,7 @@ mod tests {
         let mut tags = indexmap::IndexMap::new();
         tags.insert(
             "env".to_string(),
-            Value::Concrete(ConcreteValue::String("prod".to_string())),
+            Value::Concrete(ConcreteValue::String("prod".to_string().into())),
         );
         UpdatePatch {
             ops: vec![PatchOp {
@@ -1191,7 +1193,7 @@ mod tests {
                 kind: PatchOpKind::Replace,
                 key: "bucket_name".to_string(),
                 value: Some(Value::Concrete(ConcreteValue::String(
-                    "renamed-bucket".to_string(),
+                    "renamed-bucket".to_string().into(),
                 ))),
             },
         );
@@ -1234,7 +1236,7 @@ mod tests {
                 kind: PatchOpKind::Add,
                 key: "access_control".to_string(),
                 value: Some(Value::Concrete(ConcreteValue::String(
-                    "private".to_string(),
+                    "private".to_string().into(),
                 ))),
             }],
         }
@@ -1319,7 +1321,7 @@ mod tests {
                 let Value::Concrete(ConcreteValue::String(name)) = value else {
                     return None;
                 };
-                Some(name.as_str())
+                Some(name.expose_plaintext())
             });
             assert_eq!(
                 actual_bucket_name, expected_bucket_name,
@@ -1328,7 +1330,7 @@ mod tests {
             assert_ne!(
                 state.attributes.get("bucket_name"),
                 Some(&Value::Concrete(ConcreteValue::String(
-                    "renamed-bucket".to_string()
+                    "renamed-bucket".to_string().into()
                 )))
             );
         }
@@ -1420,7 +1422,7 @@ mod tests {
         assert_eq!(
             state.attributes.get("access_control"),
             Some(&Value::Concrete(ConcreteValue::String(
-                "private".to_string()
+                "private".to_string().into()
             )))
         );
     }
@@ -1675,7 +1677,7 @@ mod tests {
         assert_eq!(
             state.attributes.get("bucket_name"),
             Some(&Value::Concrete(ConcreteValue::String(
-                "partial-bucket".to_string()
+                "partial-bucket".to_string().into()
             )))
         );
         assert!(
@@ -1835,7 +1837,7 @@ mod tests {
     fn partial_create_bucket_resource() -> Resource {
         Resource::with_provider("awscc", "s3.Bucket", "partial_bucket", None).with_attribute(
             "bucket_name",
-            Value::Concrete(ConcreteValue::String("partial-bucket".to_string())),
+            Value::Concrete(ConcreteValue::String("partial-bucket".to_string().into())),
         )
     }
 
@@ -1843,18 +1845,18 @@ mod tests {
         let mut statement = indexmap::IndexMap::new();
         statement.insert(
             "Effect".to_string(),
-            Value::Concrete(ConcreteValue::String("Allow".to_string())),
+            Value::Concrete(ConcreteValue::String("Allow".to_string().into())),
         );
         statement.insert(
             "Action".to_string(),
-            Value::Concrete(ConcreteValue::String("sts:AssumeRole".to_string())),
+            Value::Concrete(ConcreteValue::String("sts:AssumeRole".to_string().into())),
         );
         statement.insert(
             "Principal".to_string(),
             Value::Concrete(ConcreteValue::Map(indexmap::IndexMap::from([(
                 "Service".to_string(),
                 Value::Concrete(ConcreteValue::String(
-                    "vpc-flow-logs.amazonaws.com".to_string(),
+                    "vpc-flow-logs.amazonaws.com".to_string().into(),
                 )),
             )]))),
         );
@@ -1862,7 +1864,7 @@ mod tests {
         Value::Concrete(ConcreteValue::Map(indexmap::IndexMap::from([
             (
                 "Version".to_string(),
-                Value::Concrete(ConcreteValue::String("2012-10-17".to_string())),
+                Value::Concrete(ConcreteValue::String("2012-10-17".to_string().into())),
             ),
             (
                 "Statement".to_string(),
@@ -1879,7 +1881,7 @@ mod tests {
         if include_role_name {
             resource.with_attribute(
                 "role_name",
-                Value::Concrete(ConcreteValue::String("flow-log-role".to_string())),
+                Value::Concrete(ConcreteValue::String("flow-log-role".to_string().into())),
             )
         } else {
             resource
@@ -1938,7 +1940,7 @@ mod tests {
         assert_eq!(
             state.attributes.get("bucket_name"),
             Some(&Value::Concrete(ConcreteValue::String(
-                "partial-bucket".to_string()
+                "partial-bucket".to_string().into()
             )))
         );
     }
@@ -1967,7 +1969,9 @@ mod tests {
         assert_eq!(
             state.attributes.get("arn"),
             Some(&Value::Concrete(ConcreteValue::String(
-                "arn:aws-us-gov:iam::123456789012:role/service-role/flow-log-role".to_string()
+                "arn:aws-us-gov:iam::123456789012:role/service-role/flow-log-role"
+                    .to_string()
+                    .into()
             ))),
             "synthesis must derive the partition from the provider region instead of hardcoding aws"
         );
@@ -1994,7 +1998,9 @@ mod tests {
         assert_eq!(
             state.attributes.get("arn"),
             Some(&Value::Concrete(ConcreteValue::String(
-                "arn:aws-us-gov:iam::123456789012:role/service-role/flow-log-role".to_string()
+                "arn:aws-us-gov:iam::123456789012:role/service-role/flow-log-role"
+                    .to_string()
+                    .into()
             )))
         );
     }
@@ -2236,7 +2242,7 @@ mod tests {
             result.get("managed_policy_arns"),
             Some(&Value::Concrete(ConcreteValue::List(vec![
                 Value::Concrete(ConcreteValue::String(
-                    "arn:aws:iam::aws:policy/ReadOnlyAccess".to_string()
+                    "arn:aws:iam::aws:policy/ReadOnlyAccess".to_string().into()
                 ))
             ]))),
         );

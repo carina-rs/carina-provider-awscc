@@ -52,6 +52,7 @@ pub fn identitystore_group_membership_config() -> AwsccSchemaConfig {
 #[allow(dead_code)]
 fn validate_string_pattern_2a77a2e32f71b5f3_len_1_47(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
+        let s = s.expose_plaintext();
         static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
             Regex::new("^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$").expect("invalid pattern regex")
         });

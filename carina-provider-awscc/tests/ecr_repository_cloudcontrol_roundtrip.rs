@@ -42,7 +42,7 @@ const REPOSITORY_NAME: &str = "carina-registry-publish-api";
 const LIFECYCLE_POLICY_TEXT: &str = r#"{"rules":[{"rulePriority":1,"description":"keep last 10 images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":10},"action":{"type":"expire"}}]}"#;
 
 fn string(value: &str) -> Value {
-    Value::Concrete(ConcreteValue::String(value.to_string()))
+    Value::Concrete(ConcreteValue::String(value.to_string().into()))
 }
 
 fn bool_(value: bool) -> Value {

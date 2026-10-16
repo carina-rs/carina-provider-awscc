@@ -48,6 +48,7 @@ pub fn identitystore_group_config() -> AwsccSchemaConfig {
 #[allow(dead_code)]
 fn validate_string_pattern_a301e45ae2f7df12_len_1_1024(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
+        let s = s.expose_plaintext();
         static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
             Regex::new("^[\\p{L}\\p{M}\\p{S}\\p{N}\\p{P}\\t\\n\\r  ]+$")
                 .expect("invalid pattern regex")
@@ -71,6 +72,7 @@ fn validate_string_pattern_a301e45ae2f7df12_len_1_1024(value: &Value) -> Result<
 #[allow(dead_code)]
 fn validate_string_pattern_3e29f1c0497511f3_len_1_1024(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
+        let s = s.expose_plaintext();
         static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
             Regex::new("^[\\p{L}\\p{M}\\p{S}\\p{N}\\p{P}\\t\\n\\r  　]+$")
                 .expect("invalid pattern regex")

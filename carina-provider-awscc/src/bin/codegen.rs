@@ -415,6 +415,7 @@ fn arn_validator_for(validator: ArnValidator) -> String {
         ArnValidator::Iam { prefix, label } => format!(
             r#"|value| {{
             if let Value::Concrete(ConcreteValue::String(s)) = value {{
+                let s = s.expose_plaintext();
                 carina_aws_types::validate_iam_arn(s, {prefix:?})
                     .map_err(|reason| format!("Invalid {label} ARN '{{}}': {{}}", s, reason))
             }} else {{
@@ -434,6 +435,7 @@ fn arn_validator_for(validator: ArnValidator) -> String {
             format!(
                 r#"|value| {{
             if let Value::Concrete(ConcreteValue::String(s)) = value {{
+                let s = s.expose_plaintext();
                 carina_aws_types::validate_service_arn(s, {service:?}, {prefix_expr})
                     .map_err(|reason| format!("Invalid {label} ARN '{{}}': {{}}", s, reason))
             }} else {{
@@ -451,6 +453,7 @@ fn arn_validator_expression(choice: ArnEmitChoice) -> String {
         ArnEmitChoice::ServicePrefix(service) => format!(
             r#"|value| {{
             if let Value::Concrete(ConcreteValue::String(s)) = value {{
+                let s = s.expose_plaintext();
                 carina_aws_types::validate_service_arn(s, {service:?}, None)
                     .map_err(|reason| format!("Invalid {service} ARN '{{}}': {{}}", s, reason))
             }} else {{
@@ -2647,6 +2650,7 @@ fn {}(value: &Value) -> Result<(), String> {{
             body.push_str(&fn_name);
             body.push_str("(value: &Value) -> Result<(), String> {\n");
             body.push_str("    if let Value::Concrete(ConcreteValue::String(s)) = value {\n");
+            body.push_str("        let s = s.expose_plaintext();\n");
             body.push_str(
                 "        static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {\n",
             );
@@ -2719,6 +2723,7 @@ fn {}(value: &Value) -> Result<(), String> {{
                 r#"#[allow(dead_code)]
 fn {}(value: &Value) -> Result<(), String> {{
     if let Value::Concrete(ConcreteValue::String(s)) = value {{
+        let s = s.expose_plaintext();
         let len = s.chars().count();
         if {} {{
             Err(format!("String length {{}} is out of range {}", len))
@@ -2753,6 +2758,7 @@ fn {}(value: &Value) -> Result<(), String> {{
                 r#"#[allow(dead_code)]
 fn {fn_name}(value: &Value) -> Result<(), String> {{
     if let Value::Concrete(ConcreteValue::String(s)) = value {{
+        let s = s.expose_plaintext();
         static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {{
             Regex::new("{escaped_for_rust}").expect("invalid pattern regex")
         }});
@@ -3091,6 +3097,7 @@ pub fn {}() -> AwsccSchemaConfig {{
 #[allow(dead_code)]
 fn {fn_name}(value: &Value) -> Result<(), String> {{
     if let Value::Concrete(ConcreteValue::String(s)) = value {{
+        let s = s.expose_plaintext();
         static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {{
             Regex::new("{escaped_for_rust}").expect("invalid pattern regex")
         }});
@@ -3211,6 +3218,7 @@ fn {}(value: &Value) -> Result<(), String> {{
 #[allow(dead_code)]
 fn {fn_name}(value: &Value) -> Result<(), String> {{
     if let Value::Concrete(ConcreteValue::String(s)) = value {{
+        let s = s.expose_plaintext();
         static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {{
             Regex::new("{escaped_for_rust}").expect("invalid pattern regex")
         }});
@@ -6170,7 +6178,7 @@ fn json_default_to_value_code(val: &serde_json::Value) -> Option<String> {
         serde_json::Value::String(s) => {
             let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
             Some(format!(
-                "Value::Concrete(ConcreteValue::String(\"{}\".to_string()))", // rust-lit-guard: allow (already escaped JSON default)
+                "Value::Concrete(ConcreteValue::String(\"{}\".to_string().into()))", // rust-lit-guard: allow (already escaped JSON default)
                 escaped
             ))
         }
@@ -11833,7 +11841,7 @@ mod tests {
 
         assert!(
             generated.contains(
-                r#".with_default(Value::Concrete(ConcreteValue::String("/".to_string())))"#
+                r#".with_default(Value::Concrete(ConcreteValue::String("/".to_string().into())))"#
             ),
             "Should emit .with_default() for string default value: {generated}"
         );
@@ -12260,7 +12268,9 @@ mod tests {
     fn test_json_default_to_value_code() {
         assert_eq!(
             json_default_to_value_code(&serde_json::Value::String("hello".to_string())),
-            Some("Value::Concrete(ConcreteValue::String(\"hello\".to_string()))".to_string())
+            Some(
+                "Value::Concrete(ConcreteValue::String(\"hello\".to_string().into()))".to_string()
+            )
         );
         assert_eq!(
             json_default_to_value_code(&serde_json::Value::Bool(true)),

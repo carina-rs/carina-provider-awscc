@@ -148,6 +148,7 @@ pub fn ecr_repository_config() -> AwsccSchemaConfig {
 #[allow(dead_code)]
 fn validate_string_pattern_129eac93eb23f686_len_2_256(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
+        let s = s.expose_plaintext();
         static RE: std::sync::LazyLock<Regex> =
             std::sync::LazyLock::new(|| Regex::new(".*").expect("invalid pattern regex"));
         if !RE.is_match(s) {
@@ -166,6 +167,7 @@ fn validate_string_pattern_129eac93eb23f686_len_2_256(value: &Value) -> Result<(
 #[allow(dead_code)]
 fn validate_string_pattern_e1adf41049631046_len_12_12(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
+        let s = s.expose_plaintext();
         static RE: std::sync::LazyLock<Regex> =
             std::sync::LazyLock::new(|| Regex::new("^[0-9]{12}$").expect("invalid pattern regex"));
         if !RE.is_match(s) {
@@ -187,6 +189,7 @@ fn validate_string_pattern_e1adf41049631046_len_12_12(value: &Value) -> Result<(
 #[allow(dead_code)]
 fn validate_string_pattern_84868325b990ae65_len_1_128(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
+        let s = s.expose_plaintext();
         static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
             Regex::new("^[0-9a-zA-Z._*-]{1,128}").expect("invalid pattern regex")
         });

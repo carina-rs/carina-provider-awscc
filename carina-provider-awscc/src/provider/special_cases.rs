@@ -31,7 +31,7 @@ impl AwsccProvider {
                 {
                     attributes.insert(
                         "vpc_id".to_string(),
-                        Value::Concrete(ConcreteValue::String(vpc_id.to_string())),
+                        Value::Concrete(ConcreteValue::String(vpc_id.to_string().into())),
                     );
                 }
             }
@@ -41,8 +41,9 @@ impl AwsccProvider {
                     let ids: Vec<Value> = rt_ids
                         .iter()
                         .filter_map(|v| {
-                            v.as_str()
-                                .map(|s| Value::Concrete(ConcreteValue::String(s.to_string())))
+                            v.as_str().map(|s| {
+                                Value::Concrete(ConcreteValue::String(s.to_string().into()))
+                            })
                         })
                         .collect();
                     if !ids.is_empty() {

@@ -23,7 +23,7 @@ use winterbaume_cloudcontrol::CloudControlService;
 use winterbaume_core::MockAws;
 
 fn string(value: &str) -> Value {
-    Value::Concrete(ConcreteValue::String(value.to_string()))
+    Value::Concrete(ConcreteValue::String(value.to_string().into()))
 }
 
 fn enum_identifier(value: &str) -> Value {
@@ -32,7 +32,10 @@ fn enum_identifier(value: &str) -> Value {
 
 fn string_list(items: impl IntoIterator<Item = &'static str>) -> Value {
     Value::Concrete(ConcreteValue::StringList(
-        items.into_iter().map(ToString::to_string).collect(),
+        items
+            .into_iter()
+            .map(|item| item.to_string().into())
+            .collect(),
     ))
 }
 
@@ -132,7 +135,7 @@ fn concrete_string_attribute<'a>(
     attribute_name: &str,
 ) -> &'a str {
     match attributes.get(attribute_name) {
-        Some(Value::Concrete(ConcreteValue::String(value))) => value,
+        Some(Value::Concrete(ConcreteValue::String(value))) => value.expose_plaintext(),
         other => panic!("{attribute_name} must be a String, got {other:?}"),
     }
 }

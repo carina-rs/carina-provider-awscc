@@ -24,7 +24,7 @@ use winterbaume_cloudcontrol::CloudControlService;
 use winterbaume_core::MockAws;
 
 fn string(value: &str) -> Value {
-    Value::Concrete(ConcreteValue::String(value.to_string()))
+    Value::Concrete(ConcreteValue::String(value.to_string().into()))
 }
 
 fn enum_identifier(value: &str) -> Value {

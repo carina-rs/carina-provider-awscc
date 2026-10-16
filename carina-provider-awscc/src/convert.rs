@@ -22,6 +22,7 @@ use carina_core::schema::{
     InputMode as CoreInputMode, RawShape as CoreRawShape, ResourceSchema as CoreResourceSchema,
     StructField as CoreStructField, UniqueNameSpec as CoreUniqueNameSpec, legacy_validator,
 };
+use carina_core::value::persisted_secret_marker;
 use carina_provider_protocol::types::{
     AttributeSchema as ProtoAttributeSchema, AttributeType as ProtoAttributeType,
     CreateOutcome as ProtoCreateOutcome, Directives as ProtoDirectives,
@@ -65,7 +66,27 @@ pub fn proto_to_core_resource_id(id: &ProtoResourceId) -> CoreResourceId {
 
 // -- Value --
 
+#[derive(Clone, Copy)]
+enum ValueWireSource {
+    Desired,
+    PersistedState,
+}
+
+/// Serialize a value crossing the desired/provider boundary.
+///
+/// Persisted-state-only values are deliberately rejected here. State-returning
+/// callers must go through [`core_to_proto_state`] instead.
 pub fn core_to_proto_value(v: &CoreValue) -> ProtoValue {
+    core_to_proto_value_from(v, ValueWireSource::Desired)
+}
+
+/// Serialize one state attribute with persisted-state marker semantics.
+/// Kept private so desired/resource callers cannot opt into this policy.
+fn core_to_proto_state_value(v: &CoreValue) -> ProtoValue {
+    core_to_proto_value_from(v, ValueWireSource::PersistedState)
+}
+
+fn core_to_proto_value_from(v: &CoreValue, source: ValueWireSource) -> ProtoValue {
     match v {
         // `EnumIdentifier` carries identifier-shape text (parser-level
         // distinction from quoted-string literals, carina#2986). The
@@ -73,7 +94,9 @@ pub fn core_to_proto_value(v: &CoreValue) -> ProtoValue {
         // emit it as `ProtoValue::String` — identical to the `String`
         // arm. The shape distinction is consumed at the validator entry
         // before reaching this conversion.
-        CoreValue::Concrete(ConcreteValue::String(s)) => ProtoValue::String(s.clone()),
+        CoreValue::Concrete(ConcreteValue::String(s)) => {
+            ProtoValue::String(s.expose_plaintext().to_string())
+        }
         CoreValue::Concrete(ConcreteValue::EnumIdentifier(s)) => {
             ProtoValue::String(s.as_str().to_string())
         }
@@ -85,25 +108,36 @@ pub fn core_to_proto_value(v: &CoreValue) -> ProtoValue {
         CoreValue::Concrete(ConcreteValue::Bool(b)) => ProtoValue::Bool(*b),
         // Duration: emit integer seconds; the WIT contract has no Duration variant today.
         CoreValue::Concrete(ConcreteValue::Duration(d)) => ProtoValue::Int(d.as_secs() as i64),
-        CoreValue::Concrete(ConcreteValue::List(l)) => {
-            ProtoValue::List(l.iter().map(core_to_proto_value).collect())
-        }
-        CoreValue::Concrete(ConcreteValue::StringList(items)) => {
-            ProtoValue::StringList(items.clone())
-        }
+        CoreValue::Concrete(ConcreteValue::List(l)) => ProtoValue::List(
+            l.iter()
+                .map(|value| core_to_proto_value_from(value, source))
+                .collect(),
+        ),
+        CoreValue::Concrete(ConcreteValue::StringList(items)) => ProtoValue::StringList(
+            items
+                .iter()
+                .map(|item| item.expose_plaintext().to_string())
+                .collect(),
+        ),
         CoreValue::Concrete(ConcreteValue::Map(m)) => ProtoValue::Map(
             m.iter()
-                .map(|(k, v)| (k.clone(), core_to_proto_value(v)))
+                .map(|(k, v)| (k.clone(), core_to_proto_value_from(v, source)))
                 .collect(),
         ),
         // Deferred-axis values must be resolved before reaching the provider.
-        // Phase 5a of RFC #2972 makes the axis explicit; we emit redacted
-        // sentinels instead of `format!("{v:?}")` so Secret plaintext never
-        // leaks into a ProtoValue::String. New deferred variants break
-        // compilation rather than silently leaking via Debug.
+        // Raw secrets retain the existing redacted-sentinel behavior. A
+        // saved-state-only `RedactedSecret` must never cross the desired
+        // provider boundary; this legacy infallible converter rejects that
+        // invariant violation rather than passing the persisted hash through.
         CoreValue::Deferred(DeferredValue::Secret(_)) => {
             ProtoValue::String("<redacted-secret>".to_string())
         }
+        CoreValue::Deferred(DeferredValue::RedactedSecret { hash }) => match source {
+            ValueWireSource::PersistedState => ProtoValue::String(persisted_secret_marker(hash)),
+            ValueWireSource::Desired => {
+                panic!("redacted saved-state secret must not reach a provider")
+            }
+        },
         CoreValue::Deferred(DeferredValue::ResourceRef { path }) => {
             ProtoValue::String(format!("<unresolved-ref:{}>", path.to_dot_string()))
         }
@@ -124,16 +158,16 @@ pub fn core_to_proto_value(v: &CoreValue) -> ProtoValue {
 
 pub fn proto_to_core_value(v: &ProtoValue) -> CoreValue {
     match v {
-        ProtoValue::String(s) => CoreValue::Concrete(ConcreteValue::String(s.clone())),
+        ProtoValue::String(s) => CoreValue::Concrete(ConcreteValue::String(s.clone().into())),
         ProtoValue::Int(i) => CoreValue::Concrete(ConcreteValue::Int(*i)),
         ProtoValue::Float(f) => CoreValue::Concrete(ConcreteValue::Float(*f)),
         ProtoValue::Bool(b) => CoreValue::Concrete(ConcreteValue::Bool(*b)),
         ProtoValue::List(l) => CoreValue::Concrete(ConcreteValue::List(
             l.iter().map(proto_to_core_value).collect(),
         )),
-        ProtoValue::StringList(items) => {
-            CoreValue::Concrete(ConcreteValue::StringList(items.clone()))
-        }
+        ProtoValue::StringList(items) => CoreValue::Concrete(ConcreteValue::StringList(
+            items.iter().cloned().map(Into::into).collect(),
+        )),
         ProtoValue::Map(m) => CoreValue::Concrete(ConcreteValue::Map(
             m.iter()
                 .map(|(k, v)| (k.clone(), proto_to_core_value(v)))
@@ -145,6 +179,12 @@ pub fn proto_to_core_value(v: &ProtoValue) -> CoreValue {
 pub fn core_to_proto_value_map(m: &HashMap<String, CoreValue>) -> HashMap<String, ProtoValue> {
     m.iter()
         .map(|(k, v)| (k.clone(), core_to_proto_value(v)))
+        .collect()
+}
+
+fn core_to_proto_state_value_map(m: &HashMap<String, CoreValue>) -> HashMap<String, ProtoValue> {
+    m.iter()
+        .map(|(k, v)| (k.clone(), core_to_proto_state_value(v)))
         .collect()
 }
 
@@ -160,7 +200,7 @@ pub fn core_to_proto_state(s: &CoreState) -> ProtoState {
     ProtoState {
         id: core_to_proto_resource_id(&s.id),
         identifier: s.identifier.clone(),
-        attributes: core_to_proto_value_map(&s.attributes),
+        attributes: core_to_proto_state_value_map(&s.attributes),
         exists: s.exists,
     }
 }
@@ -819,6 +859,17 @@ mod tests {
     use carina_core::schema::DslTransform;
     use carina_provider_protocol::types::DslTransform as ProtoDslTransform;
 
+    #[test]
+    #[should_panic(expected = "redacted saved-state secret must not reach a provider")]
+    fn redacted_saved_state_secret_is_rejected_at_provider_boundary() {
+        let value: CoreValue = serde_json::from_value(serde_json::json!({
+            "RedactedSecret": { "hash": "00".repeat(32) }
+        }))
+        .expect("deserialize saved-state placeholder");
+
+        let _ = core_to_proto_value(&value);
+    }
+
     fn test_enum(
         name: &str,
         values: Vec<String>,
@@ -1029,7 +1080,7 @@ mod tests {
         };
         let core_type = proto_attr_type_to_core(&proto_type);
         let lifted = carina_core::utils::lift_enum_leaves(
-            &CoreValue::Concrete(ConcreteValue::String("example".to_string())),
+            &CoreValue::Concrete(ConcreteValue::String("example".to_string().into())),
             &core_type,
         )
         .expect("state value should lift through named transform");
@@ -1068,7 +1119,7 @@ mod tests {
 
         let roundtripped = proto_to_core_attribute_type(&proto_type);
         let lifted = carina_core::utils::lift_enum_leaves(
-            &CoreValue::Concrete(ConcreteValue::String("ip-name".to_string())),
+            &CoreValue::Concrete(ConcreteValue::String("ip-name".to_string().into())),
             &roundtripped,
         )
         .expect("state value should lift through hyphen_to_underscore");

@@ -39,7 +39,7 @@ const WEB_ACL_ARN: &str =
     "arn:aws:wafv2:ap-northeast-1:123456789012:regional/webacl/publish-api/def456";
 
 fn string(value: &str) -> Value {
-    Value::Concrete(ConcreteValue::String(value.to_string()))
+    Value::Concrete(ConcreteValue::String(value.to_string().into()))
 }
 
 fn web_acl_association_resource() -> Resource {

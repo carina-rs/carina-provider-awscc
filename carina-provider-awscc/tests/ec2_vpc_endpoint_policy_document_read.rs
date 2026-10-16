@@ -150,14 +150,14 @@ async fn ec2_vpc_endpoint_read_canonicalizes_scalar_policy_action_and_resource()
     assert_eq!(
         statement.get("action"),
         Some(&Value::Concrete(ConcreteValue::StringList(vec![
-            "s3:GetObject".to_string()
+            "s3:GetObject".to_string().into()
         ]))),
         "policy_document.statement[0].action must be canonicalized"
     );
     assert_eq!(
         statement.get("resource"),
         Some(&Value::Concrete(ConcreteValue::StringList(vec![
-            "arn:aws:s3:::*".to_string()
+            "arn:aws:s3:::*".to_string().into()
         ]))),
         "policy_document.statement[0].resource must be canonicalized"
     );
@@ -179,16 +179,16 @@ async fn ec2_vpc_endpoint_read_canonicalizes_list_policy_action_and_resource() {
     assert_eq!(
         statement.get("action"),
         Some(&Value::Concrete(ConcreteValue::StringList(vec![
-            "s3:GetObject".to_string(),
-            "s3:PutObject".to_string()
+            "s3:GetObject".to_string().into(),
+            "s3:PutObject".to_string().into()
         ]))),
         "policy_document.statement[0].action must be canonicalized"
     );
     assert_eq!(
         statement.get("resource"),
         Some(&Value::Concrete(ConcreteValue::StringList(vec![
-            "arn:aws:s3:::*".to_string(),
-            "arn:aws:s3:::example/*".to_string()
+            "arn:aws:s3:::*".to_string().into(),
+            "arn:aws:s3:::example/*".to_string().into()
         ]))),
         "policy_document.statement[0].resource must be canonicalized"
     );

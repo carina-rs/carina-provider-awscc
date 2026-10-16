@@ -144,7 +144,7 @@ impl IamRoleIdentifierCloudControl {
 }
 
 fn string(value: &str) -> Value {
-    Value::Concrete(ConcreteValue::String(value.to_string()))
+    Value::Concrete(ConcreteValue::String(value.to_string().into()))
 }
 
 fn enum_identifier(value: &str) -> Value {

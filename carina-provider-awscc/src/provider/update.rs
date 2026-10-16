@@ -183,7 +183,7 @@ fn push_tags_op(patch_ops: &mut Vec<serde_json::Value>, op: &PatchOp, aws_name: 
                 .iter()
                 .map(|(key, value)| match value {
                     Value::Concrete(ConcreteValue::String(v)) => {
-                        Some(json!({"Key": key, "Value": v}))
+                        Some(json!({"Key": key, "Value": v.expose_plaintext()}))
                     }
                     _ => None,
                 })
@@ -300,7 +300,7 @@ mod tests {
         let mut tags = IndexMap::new();
         tags.insert(
             "Env".to_string(),
-            Value::Concrete(ConcreteValue::String("staging".to_string())),
+            Value::Concrete(ConcreteValue::String("staging".to_string().into())),
         );
         let patch = UpdatePatch {
             ops: vec![replace("tags", Value::Concrete(ConcreteValue::Map(tags)))],
@@ -347,7 +347,7 @@ mod tests {
             ops: vec![replace(
                 "instance_tenancy",
                 Value::Concrete(ConcreteValue::String(
-                    "aws.ec2.Vpc.InstanceTenancy.dedicated".to_string(),
+                    "aws.ec2.Vpc.InstanceTenancy.dedicated".to_string().into(),
                 )),
             )],
         };
@@ -415,7 +415,7 @@ mod tests {
         let patch = UpdatePatch {
             ops: vec![replace(
                 "arn",
-                Value::Concrete(ConcreteValue::String("arn:aws:logs:::*".to_string())),
+                Value::Concrete(ConcreteValue::String("arn:aws:logs:::*".to_string().into())),
             )],
         };
         let plan = build_update_patches(config, "logs.LogGroup", &patch);
@@ -443,7 +443,7 @@ mod tests {
         let patch = UpdatePatch {
             ops: vec![replace(
                 "unmapped_attribute",
-                Value::Concrete(ConcreteValue::String("requested".to_string())),
+                Value::Concrete(ConcreteValue::String("requested".to_string().into())),
             )],
         };
 
@@ -497,7 +497,7 @@ mod tests {
         let mut tags = IndexMap::new();
         tags.insert(
             "projectable".to_string(),
-            Value::Concrete(ConcreteValue::String("kept".to_string())),
+            Value::Concrete(ConcreteValue::String("kept".to_string().into())),
         );
         tags.insert(
             "unresolved".to_string(),
@@ -539,11 +539,11 @@ mod tests {
         let mut tags = IndexMap::new();
         tags.insert(
             "Name".to_string(),
-            Value::Concrete(ConcreteValue::String("my-vpc".to_string())),
+            Value::Concrete(ConcreteValue::String("my-vpc".to_string().into())),
         );
         tags.insert(
             "Env".to_string(),
-            Value::Concrete(ConcreteValue::String("prod".to_string())),
+            Value::Concrete(ConcreteValue::String("prod".to_string().into())),
         );
         let patch = UpdatePatch {
             ops: vec![replace("tags", Value::Concrete(ConcreteValue::Map(tags)))],
@@ -583,7 +583,7 @@ mod tests {
         let mut tags = IndexMap::new();
         tags.insert(
             "Env".to_string(),
-            Value::Concrete(ConcreteValue::String("test".to_string())),
+            Value::Concrete(ConcreteValue::String("test".to_string().into())),
         );
         let patch = UpdatePatch {
             ops: vec![replace("tags", Value::Concrete(ConcreteValue::Map(tags)))],
@@ -605,7 +605,7 @@ mod tests {
         let patch = UpdatePatch {
             ops: vec![replace(
                 "not_a_real_attr",
-                Value::Concrete(ConcreteValue::String("x".to_string())),
+                Value::Concrete(ConcreteValue::String("x".to_string().into())),
             )],
         };
         let patches = build_update_patches(config, "ec2.Vpc", &patch).ops;

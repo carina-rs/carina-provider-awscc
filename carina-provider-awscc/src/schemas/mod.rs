@@ -98,7 +98,7 @@ mod tests {
     fn tags_value(name: &str) -> Value {
         Value::Concrete(ConcreteValue::Map(IndexMap::from([(
             "Name".to_string(),
-            Value::Concrete(ConcreteValue::String(name.to_string())),
+            Value::Concrete(ConcreteValue::String(name.to_string().into())),
         )])))
     }
 
