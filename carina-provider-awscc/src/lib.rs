@@ -23,11 +23,9 @@ use carina_core::effect::PlanOp;
 use carina_core::provider::{
     BoxFuture, CreateOutcome, CreateRequest, DeleteRequest, Provider, ProviderError,
     ProviderFactory, ProviderNormalizer, ProviderReadyConfig, ProviderReadyDataSource,
-    ProviderResult, ReadRequest, SavedAttrs, UpdateOutcome, UpdateRequest,
-    merge_default_tags_for_provider, ready_noop,
+    ProviderResult, ReadRequest, SavedAttrs, UpdateOutcome, UpdateRequest, ready_noop,
 };
 use carina_core::resource::{ConcreteValue, Resource, ResourceId, State, Value};
-use carina_core::schema::SchemaRegistry;
 
 use crate::provider::AwsccProviderConfig;
 
@@ -70,18 +68,6 @@ impl ProviderNormalizer for AwsccNormalizer {
     ) -> BoxFuture<'a, ProviderResult<()>> {
         Box::pin(async move {
             crate::provider::restore_unreturned_attrs_impl(current_states, saved_attrs);
-            Ok(())
-        })
-    }
-
-    fn merge_default_tags<'a>(
-        &'a self,
-        resources: &'a mut [Resource],
-        default_tags: &'a IndexMap<String, Value>,
-        registry: &'a SchemaRegistry,
-    ) -> BoxFuture<'a, ProviderResult<()>> {
-        Box::pin(async move {
-            merge_default_tags_for_provider("awscc", resources, default_tags, registry);
             Ok(())
         })
     }
@@ -371,15 +357,6 @@ impl Provider for AwsccProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn build_schemas() -> SchemaRegistry {
-        let factory = AwsccProviderFactory;
-        let mut registry = SchemaRegistry::new();
-        for schema in factory.schemas() {
-            registry.insert("awscc", schema);
-        }
-        registry
-    }
 
     #[test]
     fn extract_provider_config_reads_both_lists() {
@@ -728,203 +705,5 @@ mod tests {
         // per-behavior cache configs each carry both).
         assert!(found.iter().any(|(n, _)| n == "allowed_methods"));
         assert!(found.iter().any(|(n, _)| n == "cached_methods"));
-    }
-
-    #[tokio::test]
-    async fn test_merge_default_tags_resource_tags_win() {
-        let schemas = build_schemas();
-        let normalizer = AwsccNormalizer;
-
-        let mut resource = Resource::with_provider("awscc", "ec2.Vpc", "test-vpc", None);
-        resource.set_attr(
-            "cidr_block".to_string(),
-            Value::Concrete(ConcreteValue::String("10.0.0.0/16".to_string().into())),
-        );
-        let mut resource_tags: IndexMap<String, Value> = IndexMap::new();
-        resource_tags.insert(
-            "Name".to_string(),
-            Value::Concrete(ConcreteValue::String("my-vpc".to_string().into())),
-        );
-        resource_tags.insert(
-            "Environment".to_string(),
-            Value::Concrete(ConcreteValue::String("staging".to_string().into())),
-        );
-        resource.set_attr(
-            "tags".to_string(),
-            Value::Concrete(ConcreteValue::Map(resource_tags)),
-        );
-
-        let mut default_tags: IndexMap<String, Value> = IndexMap::new();
-        default_tags.insert(
-            "Environment".to_string(),
-            Value::Concrete(ConcreteValue::String("production".to_string().into())),
-        );
-        default_tags.insert(
-            "Team".to_string(),
-            Value::Concrete(ConcreteValue::String("platform".to_string().into())),
-        );
-
-        let mut resources = vec![resource];
-        normalizer
-            .merge_default_tags(&mut resources, &default_tags, &schemas)
-            .await
-            .expect("default-tag merge should succeed");
-
-        if let Some(Value::Concrete(ConcreteValue::Map(tags))) = resources[0].get_attr("tags") {
-            assert_eq!(
-                tags.get("Environment"),
-                Some(&Value::Concrete(ConcreteValue::String(
-                    "staging".to_string().into()
-                )))
-            );
-            assert_eq!(
-                tags.get("Name"),
-                Some(&Value::Concrete(ConcreteValue::String(
-                    "my-vpc".to_string().into()
-                )))
-            );
-            assert_eq!(
-                tags.get("Team"),
-                Some(&Value::Concrete(ConcreteValue::String(
-                    "platform".to_string().into()
-                )))
-            );
-        } else {
-            panic!("Expected tags to be a Map");
-        }
-
-        if let Some(Value::Concrete(ConcreteValue::List(keys))) =
-            resources[0].get_attr("_default_tag_keys")
-        {
-            let key_strs: Vec<&str> = keys
-                .iter()
-                .filter_map(|v| match v {
-                    Value::Concrete(ConcreteValue::String(s)) => Some(s.expose_plaintext()),
-                    _ => None,
-                })
-                .collect();
-            assert_eq!(key_strs, vec!["Team"]);
-        } else {
-            panic!("Expected _default_tag_keys to be set");
-        }
-    }
-
-    #[tokio::test]
-    async fn test_merge_default_tags_no_explicit_tags() {
-        let schemas = build_schemas();
-        let normalizer = AwsccNormalizer;
-
-        let mut resource = Resource::with_provider("awscc", "ec2.Vpc", "test-vpc", None);
-        resource.set_attr(
-            "cidr_block".to_string(),
-            Value::Concrete(ConcreteValue::String("10.0.0.0/16".to_string().into())),
-        );
-
-        let mut default_tags: IndexMap<String, Value> = IndexMap::new();
-        default_tags.insert(
-            "Environment".to_string(),
-            Value::Concrete(ConcreteValue::String("production".to_string().into())),
-        );
-
-        let mut resources = vec![resource];
-        normalizer
-            .merge_default_tags(&mut resources, &default_tags, &schemas)
-            .await
-            .expect("default-tag merge should succeed");
-
-        if let Some(Value::Concrete(ConcreteValue::Map(tags))) = resources[0].get_attr("tags") {
-            assert_eq!(
-                tags.get("Environment"),
-                Some(&Value::Concrete(ConcreteValue::String(
-                    "production".to_string().into()
-                )))
-            );
-        } else {
-            panic!("Expected tags to be set from default_tags");
-        }
-
-        if let Some(Value::Concrete(ConcreteValue::List(keys))) =
-            resources[0].get_attr("_default_tag_keys")
-        {
-            let key_strs: Vec<&str> = keys
-                .iter()
-                .filter_map(|v| match v {
-                    Value::Concrete(ConcreteValue::String(s)) => Some(s.expose_plaintext()),
-                    _ => None,
-                })
-                .collect();
-            assert_eq!(key_strs, vec!["Environment"]);
-        } else {
-            panic!("Expected _default_tag_keys to be set");
-        }
-    }
-
-    #[tokio::test]
-    async fn test_merge_default_tags_skips_no_tag_schema() {
-        let schemas = build_schemas();
-        let normalizer = AwsccNormalizer;
-
-        let mut resource = Resource::with_provider("awscc", "ec2.Route", "test-route", None);
-        resource.set_attr(
-            "route_table_id".to_string(),
-            Value::Concrete(ConcreteValue::String("rtb-123".to_string().into())),
-        );
-
-        let mut default_tags: IndexMap<String, Value> = IndexMap::new();
-        default_tags.insert(
-            "Environment".to_string(),
-            Value::Concrete(ConcreteValue::String("production".to_string().into())),
-        );
-
-        let mut resources = vec![resource];
-        normalizer
-            .merge_default_tags(&mut resources, &default_tags, &schemas)
-            .await
-            .expect("default-tag merge should succeed");
-
-        assert!(!resources[0].attributes.contains_key("tags"));
-        assert!(!resources[0].attributes.contains_key("_default_tag_keys"));
-    }
-
-    #[tokio::test]
-    async fn test_merge_default_tags_no_default_tags() {
-        let schemas = build_schemas();
-        let normalizer = AwsccNormalizer;
-
-        let mut resource = Resource::with_provider("awscc", "ec2.Vpc", "test-vpc", None);
-        resource.set_attr(
-            "cidr_block".to_string(),
-            Value::Concrete(ConcreteValue::String("10.0.0.0/16".to_string().into())),
-        );
-        let mut resource_tags: IndexMap<String, Value> = IndexMap::new();
-        resource_tags.insert(
-            "Name".to_string(),
-            Value::Concrete(ConcreteValue::String("my-vpc".to_string().into())),
-        );
-        resource.set_attr(
-            "tags".to_string(),
-            Value::Concrete(ConcreteValue::Map(resource_tags)),
-        );
-
-        let default_tags: IndexMap<String, Value> = IndexMap::new();
-
-        let mut resources = vec![resource];
-        normalizer
-            .merge_default_tags(&mut resources, &default_tags, &schemas)
-            .await
-            .expect("default-tag merge should succeed");
-
-        if let Some(Value::Concrete(ConcreteValue::Map(tags))) = resources[0].get_attr("tags") {
-            assert_eq!(tags.len(), 1);
-            assert_eq!(
-                tags.get("Name"),
-                Some(&Value::Concrete(ConcreteValue::String(
-                    "my-vpc".to_string().into()
-                )))
-            );
-        } else {
-            panic!("Expected tags to be unchanged");
-        }
-        assert!(!resources[0].attributes.contains_key("_default_tag_keys"));
     }
 }
