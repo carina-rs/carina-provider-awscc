@@ -680,7 +680,7 @@ dependencies = [
 [[package]]
 name = "carina-aws-types"
 version = "0.4.0"
-source = "git+https://github.com/carina-rs/carina-provider-aws?rev=00d8e822#00d8e8224e8c44cbb514017e0474646f2bdb6013"
+source = "git+https://github.com/carina-rs/carina-provider-aws?rev=6e87170#6e87170c28eded6bc2f803940a2627a130e4f5a6"
 dependencies = [
  "carina-core",
  "heck",
@@ -689,12 +689,13 @@ dependencies = [
 [[package]]
 name = "carina-core"
 version = "0.4.0"
-source = "git+https://github.com/carina-rs/carina?rev=e8cdb6f8#e8cdb6f84a7540a60a8c1b03311d1f5416da4b11"
+source = "git+https://github.com/carina-rs/carina?rev=327fb75f#327fb75f1fcea8b4590d21f407fcdb39314ac35e"
 dependencies = [
  "argon2",
  "carina-provider-protocol",
  "futures",
  "indexmap",
+ "log",
  "pest",
  "pest_derive",
  "regex",
@@ -711,7 +712,7 @@ dependencies = [
 [[package]]
 name = "carina-plugin-sdk"
 version = "0.4.0"
-source = "git+https://github.com/carina-rs/carina?rev=e8cdb6f8#e8cdb6f84a7540a60a8c1b03311d1f5416da4b11"
+source = "git+https://github.com/carina-rs/carina?rev=327fb75f#327fb75f1fcea8b4590d21f407fcdb39314ac35e"
 dependencies = [
  "aws-smithy-runtime-api",
  "aws-smithy-types",
@@ -759,7 +760,7 @@ dependencies = [
 [[package]]
 name = "carina-provider-protocol"
 version = "0.3.0"
-source = "git+https://github.com/carina-rs/carina?rev=e8cdb6f8#e8cdb6f84a7540a60a8c1b03311d1f5416da4b11"
+source = "git+https://github.com/carina-rs/carina?rev=327fb75f#327fb75f1fcea8b4590d21f407fcdb39314ac35e"
 dependencies = [
  "serde",
  "serde_json",
@@ -1008,7 +1009,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

@@ -464,9 +464,9 @@ fn proto_attr_type_to_core(t: &ProtoAttributeType) -> CoreAttributeType {
             }
         }
         // Cyclic CFN struct reference (carina#3340). The host's
-        // structural counterpart is `AttributeType::ref_`; the matching
-        // `ResourceSchema.defs` map is converted alongside in
-        // `proto_to_core_schema` so resolution at walk-sites succeeds.
+        // structural counterpart is `AttributeType::ref_`; consumers that
+        // lift a whole schema must convert its matching `ResourceSchema.defs`
+        // map alongside the attribute so resolution at walk-sites succeeds.
         ProtoAttributeType::Ref { name } => CoreAttributeType::ref_(name.clone()),
     }
 }
@@ -504,87 +504,6 @@ fn proto_input_mode_to_core(required: bool, read_only: bool) -> CoreInputMode {
         (true, false) => CoreInputMode::Required,
         (false, true) => CoreInputMode::ProviderPopulated,
         (true, true) => panic!("schema input mode cannot be both required and read-only"),
-    }
-}
-
-fn proto_to_core_attribute_schema(a: &ProtoAttributeSchema) -> CoreAttributeSchema {
-    let ProtoAttributeSchema {
-        name,
-        attr_type,
-        required,
-        default,
-        description,
-        create_only,
-        read_only,
-        write_only,
-        block_name,
-        provider_name,
-        removable,
-        identity,
-        deferred_populate,
-    } = a;
-    CoreAttributeSchema {
-        name: name.clone(),
-        attr_type: proto_attr_type_to_core(attr_type),
-        input_mode: proto_input_mode_to_core(*required, *read_only),
-        default: default.as_ref().map(proto_to_core_value),
-        description: description.clone(),
-        completions: None,
-        provider_name: provider_name.clone(),
-        create_only: *create_only,
-        removable: *removable,
-        block_name: block_name.clone(),
-        write_only: *write_only,
-        identity: *identity,
-        deferred_populate: *deferred_populate,
-    }
-}
-
-pub fn proto_to_core_schema(s: &ProtoResourceSchema) -> CoreResourceSchema {
-    use carina_core::schema::SchemaKind as CoreSchemaKind;
-    use carina_provider_protocol::types::SchemaKind as ProtoSchemaKind;
-    let kind = match s.kind {
-        ProtoSchemaKind::Managed => CoreSchemaKind::Resource,
-        ProtoSchemaKind::DataSource => CoreSchemaKind::DataSource,
-    };
-    CoreResourceSchema {
-        resource_type: s.resource_type.clone(),
-        attributes: s
-            .attributes
-            .iter()
-            .map(|(k, v)| (k.clone(), proto_to_core_attribute_schema(v)))
-            .collect(),
-        description: s.description.clone(),
-        validator: None,
-        kind,
-        unique_name: proto_to_core_unique_name(&s.unique_name),
-        operation_config: s.operation_config.as_ref().map(|c| {
-            carina_core::schema::OperationConfig {
-                delete_timeout_secs: c.delete_timeout_secs,
-                delete_max_retries: c.delete_max_retries,
-                create_timeout_secs: c.create_timeout_secs,
-                create_max_retries: c.create_max_retries,
-            }
-        }),
-        exclusive_required: s.exclusive_required.clone(),
-        default_wait_timeout: None,
-        default_wait_interval: None,
-        // Cyclic CFN struct definitions reachable via Ref (carina#3340).
-        defs: s
-            .defs
-            .iter()
-            .map(|(k, v)| (k.clone(), proto_attr_type_to_core(v)))
-            .collect(),
-    }
-}
-
-fn proto_to_core_unique_name(spec: &ProtoUniqueNameSpec) -> CoreUniqueNameSpec {
-    match spec {
-        ProtoUniqueNameSpec::Attribute(attribute) => {
-            CoreUniqueNameSpec::Attribute(attribute.clone())
-        }
-        ProtoUniqueNameSpec::Coexisting => CoreUniqueNameSpec::Coexisting,
-        ProtoUniqueNameSpec::Conflicting => CoreUniqueNameSpec::Conflicting,
     }
 }
 
@@ -1143,7 +1062,7 @@ mod tests {
     }
 
     #[test]
-    fn schema_transport_preserves_nested_input_mode_deferred_populate_and_default() {
+    fn core_to_proto_schema_preserves_nested_input_mode_deferred_populate_and_default() {
         let schema = carina_provider_awscc::schemas::generated::kms::key::kms_key_config()
             .schema
             .attribute(
@@ -1195,54 +1114,5 @@ mod tests {
             proto_key_spec.default,
             Some(ProtoValue::String("SYMMETRIC_DEFAULT".to_string()))
         );
-
-        let round_tripped = proto_to_core_schema(&proto);
-        let probe = &round_tripped.attributes["transport_probe"];
-        assert_eq!(probe.input_mode, CoreInputMode::ProviderPopulated);
-        assert!(probe.deferred_populate);
-        let CoreRawShape::Struct {
-            name: round_tripped_struct_name,
-            fields: round_tripped_fields,
-        } = probe.attr_type.raw_shape()
-        else {
-            panic!("round-tripped transport_probe must remain a Struct");
-        };
-        assert_eq!(round_tripped_struct_name, "TransportProbe");
-        let CoreStructField {
-            name: field_name,
-            field_type: _field_type,
-            input_mode: field_input_mode,
-            description: _field_description,
-            provider_name: _field_provider_name,
-            block_name: _field_block_name,
-            deferred_populate: field_deferred_populate,
-        } = &round_tripped_fields[0];
-        assert_eq!(field_name, "result");
-        assert_eq!(*field_input_mode, CoreInputMode::ProviderPopulated);
-        assert!(*field_deferred_populate);
-
-        let CoreAttributeSchema {
-            name: key_spec_name,
-            attr_type: _key_spec_type,
-            input_mode: key_spec_input_mode,
-            default: key_spec_default,
-            description: _key_spec_description,
-            completions: _key_spec_completions,
-            provider_name: _key_spec_provider_name,
-            create_only: _key_spec_create_only,
-            removable: _key_spec_removable,
-            block_name: _key_spec_block_name,
-            write_only: _key_spec_write_only,
-            identity: _key_spec_identity,
-            deferred_populate: key_spec_deferred_populate,
-        } = &round_tripped.attributes["key_spec"];
-        assert_eq!(key_spec_name, "key_spec");
-        assert_eq!(*key_spec_input_mode, CoreInputMode::Optional);
-        assert!(matches!(
-            key_spec_default,
-            Some(CoreValue::Concrete(ConcreteValue::String(value)))
-                if value == "SYMMETRIC_DEFAULT"
-        ));
-        assert!(!*key_spec_deferred_populate);
     }
 }
