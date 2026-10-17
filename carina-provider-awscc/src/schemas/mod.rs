@@ -18,7 +18,7 @@ pub fn all_schemas() -> Vec<ResourceSchema> {
 mod tests {
     use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-    use carina_core::differ::create_plan;
+    use carina_core::differ::{Orphans, PlanPriorStates, create_plan};
     use carina_core::effect::Effect;
     use carina_core::provider::RawSavedAttrs;
     use carina_core::resource::{
@@ -71,17 +71,17 @@ mod tests {
         )]);
         let current_states =
             carina_core::resource::into_plan_input_map(raw_states, &schemas, &resources);
+        let orphans = Orphans::new();
         let saved_attrs = RawSavedAttrs::default().lift(&schemas);
 
         let plan = create_plan(
             &managed,
             &[],
             &carina_core::provider::ProviderRouter::new(),
-            &current_states,
+            PlanPriorStates::new(&current_states, &orphans),
             &HashMap::new(),
             &schemas,
             &saved_attrs,
-            &HashMap::new(),
             &HashMap::new(),
             &[],
         )

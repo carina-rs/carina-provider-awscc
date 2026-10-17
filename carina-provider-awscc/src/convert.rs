@@ -781,8 +781,12 @@ mod tests {
     #[test]
     #[should_panic(expected = "redacted saved-state secret must not reach a provider")]
     fn redacted_saved_state_secret_is_rejected_at_provider_boundary() {
+        let hash = concat!(
+            "$argon2id$v=19$m=19456,t=2,p=1$MDEyMzQ1Njc4OWFiY2RlZg$",
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        );
         let value: CoreValue = serde_json::from_value(serde_json::json!({
-            "RedactedSecret": { "hash": "00".repeat(32) }
+            "RedactedSecret": { "hash": hash }
         }))
         .expect("deserialize saved-state placeholder");
 
