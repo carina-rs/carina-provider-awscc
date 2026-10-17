@@ -734,7 +734,11 @@ mod tests {
     #[test]
     fn hydrate_read_state_round_trips_saved_write_only_secret_marker() {
         let provider = AwsccProcessProvider::new();
-        let marker = format!("_secret:argon2:{}", "aB".repeat(32));
+        let marker = concat!(
+            "_secret:$argon2id$v=19$m=19456,t=2,p=1$MDEyMzQ1Njc4OWFiY2RlZg$",
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        )
+        .to_string();
         let state_key = "awscc.ec2.Eip.example".to_string();
         let mut states = HashMap::from([(
             state_key.clone(),
