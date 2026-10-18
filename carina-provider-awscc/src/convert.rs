@@ -88,17 +88,15 @@ fn core_to_proto_state_value(v: &CoreValue) -> ProtoValue {
 
 fn core_to_proto_value_from(v: &CoreValue, source: ValueWireSource) -> ProtoValue {
     match v {
-        // `EnumIdentifier` carries identifier-shape text (parser-level
-        // distinction from quoted-string literals, carina#2986). The
-        // provider wire protocol has no native identifier variant, so we
-        // emit it as `ProtoValue::String` — identical to the `String`
-        // arm. The shape distinction is consumed at the validator entry
-        // before reaching this conversion.
         CoreValue::Concrete(ConcreteValue::String(s)) => {
             ProtoValue::String(s.expose_plaintext().to_string())
         }
-        CoreValue::Concrete(ConcreteValue::EnumIdentifier(s)) => {
-            ProtoValue::String(s.as_str().to_string())
+        // Protocol v6 makes unresolved enum identifiers a host-boundary
+        // violation. This converter is intentionally infallible, so retain
+        // an explicit invariant guard instead of smuggling DSL spelling over
+        // the wire as a String.
+        CoreValue::Concrete(ConcreteValue::EnumIdentifier(_)) => {
+            unreachable!("unresolved enum identifier must not reach protocol conversion")
         }
         CoreValue::Concrete(ConcreteValue::CanonicalEnum(c)) => {
             ProtoValue::String(c.api_value().to_string())
@@ -777,6 +775,14 @@ mod tests {
     use super::*;
     use carina_core::schema::DslTransform;
     use carina_provider_protocol::types::DslTransform as ProtoDslTransform;
+
+    #[test]
+    #[should_panic(expected = "unresolved enum identifier must not reach protocol conversion")]
+    fn unresolved_enum_identifier_is_rejected_at_provider_boundary() {
+        let value = CoreValue::Concrete(ConcreteValue::enum_identifier("aws.example.Mode.dsl"));
+
+        let _ = core_to_proto_value(&value);
+    }
 
     #[test]
     #[should_panic(expected = "redacted saved-state secret must not reach a provider")]

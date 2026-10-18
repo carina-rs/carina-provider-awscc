@@ -13,7 +13,6 @@ use carina_core::schema::{
 use serde_json::json;
 
 use carina_aws_types::canonicalize_enum_value;
-use carina_core::utils::canonicalize_enum_to_api;
 
 fn struct_fields_for<'a>(
     schema: &'a ResourceSchema,
@@ -133,11 +132,10 @@ pub(crate) fn aws_value_to_dsl_with_defs(
 
     // This feeds the read/import path, whose result is written to
     // state. State must hold the provider-side (API) value, NOT a
-    // fully-qualified DSL string: carina-core's state-lift reconciles
-    // the API value back to an `EnumIdentifier` on the next plan, but a
-    // fully-qualified DSL string matches neither `values` nor
-    // `dsl_aliases`, so the lift would skip it and every subsequent
-    // plan would report a spurious `~ change` (awscc#254).
+    // fully-qualified DSL string: carina-core's state canonicalization
+    // reconciles the API value to a `CanonicalEnum` on the next plan,
+    // while a fully-qualified DSL string is literal state text and would
+    // report a spurious `~ change` (awscc#254).
     if let Shape::Enum {
         identity: _,
         values: Some(values),
@@ -346,57 +344,12 @@ pub(crate) fn dsl_value_to_aws_with_defs(
     let mut schema = ResourceSchema::new(resource_type);
     schema.defs = defs.clone();
     let shape = schema.shape_of(attr_type);
-    // For schema-level string enums, convert namespaced DSL values back to provider values.
-    // The gate is "has a populated namespace identity" on a schema enum.
-    let is_namespaced_enum = matches!(shape, Shape::Enum { .. });
-    if is_namespaced_enum {
+    // Protocol v6 resolves enum identifiers in the host. A String here is
+    // therefore literal text and must pass through byte-for-byte; only the
+    // capability-bearing CanonicalEnum variant contributes an API spelling.
+    if matches!(shape, Shape::Enum { .. }) {
         match value {
-            // Listed enum `String` values can arrive from read/state JSON
-            // conversion or older saved state. Keep schema-aware
-            // canonicalization for those closed enums. Validator-only enums
-            // have no positional fallback after host canonicalization; pass
-            // strings through unchanged so schema desync stays visible.
-            Value::Concrete(ConcreteValue::String(s)) => {
-                let s = s.expose_plaintext();
-                let resolved = if let Shape::Enum {
-                    values: Some(values),
-                    dsl_aliases,
-                    ..
-                } = shape
-                {
-                    let valid: Vec<&str> = values.iter().map(String::as_str).collect();
-                    canonicalize_enum_to_api(
-                        s,
-                        &valid,
-                        &carina_core::schema::DslMap::new(dsl_aliases, None),
-                    )
-                } else {
-                    s.to_string()
-                };
-                Some(json!(resolved))
-            }
-            Value::Concrete(ConcreteValue::EnumIdentifier(s)) => {
-                let resolved = if let Shape::Enum {
-                    values: Some(values),
-                    dsl_aliases,
-                    ..
-                } = shape
-                {
-                    let valid: Vec<&str> = values.iter().map(String::as_str).collect();
-                    canonicalize_enum_to_api(
-                        s.as_str(),
-                        &valid,
-                        &carina_core::schema::DslMap::new(dsl_aliases, None),
-                    )
-                } else {
-                    // Raw EnumIdentifier at a validator-only enum position
-                    // means the host did not canonicalize it; pass it through
-                    // so AWS-side rejection is visible instead of silently
-                    // mis-splitting.
-                    s.as_str().to_string()
-                };
-                Some(json!(resolved))
-            }
+            Value::Concrete(ConcreteValue::String(s)) => Some(json!(s.expose_plaintext())),
             Value::Concrete(ConcreteValue::CanonicalEnum(c)) => Some(json!(c.api_value())),
             _ => value_to_json(value),
         }
@@ -544,7 +497,9 @@ pub(crate) fn dsl_value_to_aws_with_defs(
 pub(crate) fn value_to_json(value: &Value) -> Option<serde_json::Value> {
     match value {
         Value::Concrete(ConcreteValue::String(s)) => Some(json!(s.expose_plaintext())),
-        Value::Concrete(ConcreteValue::EnumIdentifier(s)) => Some(json!(s.as_str())),
+        Value::Concrete(ConcreteValue::EnumIdentifier(_)) => {
+            unreachable!("unresolved enum identifier must not reach AWS value conversion")
+        }
         Value::Concrete(ConcreteValue::CanonicalEnum(c)) => Some(json!(c.api_value())),
         Value::Concrete(ConcreteValue::Bool(b)) => Some(json!(b)),
         Value::Concrete(ConcreteValue::Int(i)) => Some(json!(i)),
@@ -732,9 +687,9 @@ mod tests {
              not a fully-qualified DSL string"
         );
 
-        // carina-core's state-lift reduces the persisted API values to
-        // the canonical fully-qualified identifiers the differ reconciles against
-        // the parsed-desired side — closing the awscc#254 spurious diff.
+        // carina-core's state canonicalization lifts the persisted API
+        // values to CanonicalEnum values the differ reconciles against the
+        // parsed-desired side — closing the awscc#254 spurious diff.
         let lifted = carina_core::utils::lift_enum_leaves_with_defs(
             &dsl,
             &attr_schema.attr_type,
@@ -934,16 +889,16 @@ mod tests {
         );
 
         // No false diff: reconciliation happens in carina-core
-        // (state-lift + differ), not by the provider emitting identical
+        // (state canonicalization + differ), not by the provider emitting identical
         // strings on both sides. Assert the awscc-owned half — the
-        // persisted API value lifts to the canonical fully-qualified identifier.
+        // persisted API value lifts to CanonicalEnum.
         let lifted = carina_core::utils::lift_enum_leaves(&aws_dsl, &attr_schema.attr_type)
-            .expect("API-canonical state value must lift to an EnumIdentifier");
+            .expect("API-canonical state value must lift to CanonicalEnum");
         assert_canonical_enum(&lifted, "aws.ec2.VpcEndpoint.VpcEndpointType", "Gateway");
     }
 
     #[test]
-    fn test_dsl_value_to_aws_preserves_underscores_in_enum_values() {
+    fn test_dsl_value_to_aws_keeps_string_literal_at_enum_position() {
         let attr_type = test_enum(
             "LogGroupClass",
             vec![
@@ -970,7 +925,10 @@ mod tests {
             &std::collections::BTreeMap::new(),
         );
 
-        assert_eq!(result, Some(json!("INFREQUENT_ACCESS")));
+        assert_eq!(
+            result,
+            Some(json!("aws.logs.LogGroup.LogGroupClass.INFREQUENT_ACCESS"))
+        );
     }
 
     #[test]
@@ -997,7 +955,8 @@ mod tests {
     }
 
     #[test]
-    fn test_dsl_value_to_aws_raw_enum_identifier_passes_through_verbatim() {
+    #[should_panic(expected = "unresolved enum identifier must not reach AWS value conversion")]
+    fn test_dsl_value_to_aws_rejects_unresolved_enum_identifier() {
         let attr_type = AttributeType::enum_(
             carina_aws_types::provider_bare_type(&[], "Region"),
             None,
@@ -1007,15 +966,13 @@ mod tests {
         );
         let raw = "aws.Region.ap_northeast_1";
         let value = Value::Concrete(ConcreteValue::enum_identifier(raw));
-        let result = dsl_value_to_aws_with_defs(
+        let _ = dsl_value_to_aws_with_defs(
             &value,
             &attr_type,
             "logs.LogGroup",
             "region",
             &std::collections::BTreeMap::new(),
         );
-
-        assert_eq!(result, Some(json!(raw)));
     }
 
     #[test]
@@ -1029,14 +986,11 @@ mod tests {
             )),
             vec![],
         );
+        let enum_schema = carina_core::schema::Schema::flat(inner.clone());
         let attr_type = AttributeType::list(inner);
         let value = Value::Concrete(ConcreteValue::List(vec![
-            Value::Concrete(ConcreteValue::String(
-                "aws.s3.Bucket.AllowedMethod.GET".to_string().into(),
-            )),
-            Value::Concrete(ConcreteValue::String(
-                "aws.s3.Bucket.AllowedMethod.PUT".to_string().into(),
-            )),
+            enum_schema.canonicalize_state(Value::Concrete(ConcreteValue::String("GET".into()))),
+            enum_schema.canonicalize_state(Value::Concrete(ConcreteValue::String("PUT".into()))),
         ]));
         let result = dsl_value_to_aws_with_defs(
             &value,
@@ -1113,7 +1067,7 @@ mod tests {
     }
 
     #[test]
-    fn test_dsl_value_to_aws_union_with_string_enum() {
+    fn test_dsl_value_to_aws_union_keeps_string_literal() {
         let attr_type = AttributeType::union(vec![
             test_enum(
                 "Protocol",
@@ -1137,7 +1091,7 @@ mod tests {
             &std::collections::BTreeMap::new(),
         );
 
-        assert_eq!(result, Some(json!("tcp")));
+        assert_eq!(result, Some(json!("aws.ec2.Sg.Protocol.tcp")));
     }
 
     #[test]
@@ -1186,14 +1140,13 @@ mod tests {
             )),
             vec![],
         );
+        let enum_schema = carina_core::schema::Schema::flat(inner_type.clone());
         let attr_type = AttributeType::map(inner_type);
 
         let mut map = IndexMap::new();
         map.insert(
             "item_one".to_string(),
-            Value::Concrete(ConcreteValue::String(
-                "aws.test.resource.Status.Active".to_string().into(),
-            )),
+            enum_schema.canonicalize_state(Value::Concrete(ConcreteValue::String("Active".into()))),
         );
         let dsl_value = Value::Concrete(ConcreteValue::Map(map));
 
@@ -1473,29 +1426,19 @@ mod tests {
         );
     }
 
-    /// Regression for aws#315 (cross-checked on the awscc side): the
-    /// aws#315 root cause was the aws normalizer's StringEnum leaf guard
-    /// matching only `String`, silently skipping the `EnumIdentifier`
-    /// shape that nested IAM policy `version` / `effect` arrive in after
-    /// the carina#3055 state-lift. This test feeds the awscc serializer
-    /// the **same `EnumIdentifier` shape** (namespaced for `version`, bare
-    /// alias for `effect`) to prove awscc has no parallel gap:
-    /// `dsl_value_to_aws` accepts both `String | EnumIdentifier` at the
-    /// StringEnum branch and resolves via `canonicalize_enum_to_api`, so
-    /// the Cloud Control `desired_state` payload still gets the AWS wire
-    /// form (`"2012-10-17"`, `"Allow"`).
+    /// Protocol v6 resolves nested IAM enum leaves in the host. This test
+    /// feeds the resulting CanonicalEnum values to the awscc serializer and
+    /// proves the Cloud Control payload uses their API spellings.
     #[test]
-    fn test_dsl_value_to_aws_iam_policy_document_canonicalizes_namespaced_and_alias_enums() {
+    fn test_dsl_value_to_aws_iam_policy_document_serializes_canonical_enums() {
         use carina_aws_types::iam_policy_document;
 
         let attr_type = iam_policy_document();
-        let value = Value::Concrete(ConcreteValue::Map(
+        let raw_value = Value::Concrete(ConcreteValue::Map(
             vec![
                 (
                     "version".to_string(),
-                    Value::Concrete(ConcreteValue::enum_identifier(
-                        "aws.iam.PolicyDocument.Version.2012_10_17",
-                    )),
+                    Value::Concrete(ConcreteValue::String("2012-10-17".into())),
                 ),
                 (
                     "statement".to_string(),
@@ -1504,7 +1447,7 @@ mod tests {
                             vec![
                                 (
                                     "effect".to_string(),
-                                    Value::Concrete(ConcreteValue::enum_identifier("allow")),
+                                    Value::Concrete(ConcreteValue::String("Allow".into())),
                                 ),
                                 (
                                     "action".to_string(),
@@ -1522,6 +1465,8 @@ mod tests {
             .into_iter()
             .collect(),
         ));
+        let value =
+            carina_core::schema::Schema::flat(attr_type.clone()).canonicalize_state(raw_value);
 
         let result = dsl_value_to_aws_with_defs(
             &value,
@@ -1733,9 +1678,8 @@ mod tests {
     /// the read path emitted the fully-qualified DSL form. awscc#254
     /// flipped that: the read path persists the *API-canonical* value
     /// (`"2012-10-17"`, `"Allow"`) since that is what is written to
-    /// state, and carina-core's state-lift reduces it to the canonical
-    /// short `EnumIdentifier`. This pins the awscc-owned half of that
-    /// contract.
+    /// state, and carina-core's state canonicalization lifts it to a
+    /// CanonicalEnum. This pins the awscc-owned half of that contract.
     #[test]
     fn test_aws313_iam_policy_doc_read_is_api_canonical_and_lifts() {
         use carina_aws_types::iam_policy_document;
@@ -1799,9 +1743,8 @@ mod tests {
              got read={read_side:?}"
         );
 
-        // carina-core's state-lift reduces the persisted API values to
-        // the canonical fully-qualified `EnumIdentifier` form — the shape the
-        // differ reconciles against the parsed-desired side.
+        // carina-core's state canonicalization lifts persisted API values to
+        // CanonicalEnum, the shape reconciled against parsed desired values.
         let lifted = carina_core::utils::lift_enum_leaves(&read_side, &attr_type)
             .expect("API-canonical IAM policy doc must lift");
         let Value::Concrete(ConcreteValue::Map(lifted_map)) = &lifted else {
@@ -1891,7 +1834,7 @@ mod tests {
     }
 
     #[test]
-    fn test_dsl_value_to_aws_enum_value_with_dot() {
+    fn test_dsl_value_to_aws_keeps_namespaced_dotted_string_literal() {
         let attr_type = test_enum(
             "Type",
             vec!["ipsec.1".to_string()],
@@ -1913,7 +1856,7 @@ mod tests {
             &std::collections::BTreeMap::new(),
         );
 
-        assert_eq!(result, Some(json!("ipsec.1")));
+        assert_eq!(result, Some(json!("aws.ec2.VpnGateway.Type.ipsec.1")));
     }
 
     #[test]
@@ -2018,7 +1961,8 @@ mod tests {
             None,
         );
         let schema = carina_core::schema::Schema::flat(attr_type);
-        let value = schema.canonicalize(Value::Concrete(ConcreteValue::enum_identifier("allow")));
+        let value =
+            schema.canonicalize_state(Value::Concrete(ConcreteValue::String("Allow".into())));
 
         assert!(matches!(
             value,
@@ -2220,11 +2164,10 @@ mod tests {
         );
     }
 
-    /// Regression for #199: a snake_case DSL enum value (here
+    /// Regression for #199: the snake_case DSL enum value (here
     /// `bucket_owner_enforced`) must validate against the regenerated
-    /// `aws.s3.Bucket.OwnershipControls.OwnershipControlsRule.ObjectOwnership` schema,
-    /// and `dsl_value_to_aws` must round-trip it back to the AWS
-    /// spelling (`BucketOwnerEnforced`).
+    /// schema. Protocol v6 then gives the provider a CanonicalEnum, which
+    /// `dsl_value_to_aws` writes using `BucketOwnerEnforced`.
     #[test]
     fn test_object_ownership_snake_case_validates_and_roundtrips() {
         // Walk the schema to find the nested ObjectOwnership StringEnum:
@@ -2269,9 +2212,8 @@ mod tests {
             .unwrap();
 
         // Validate the snake_case form (the canonical DSL spelling per D7).
-        // Phase 4 of carina#2986: DSL-source enum values arrive as
-        // `EnumIdentifier`; a `String` here would route to
-        // `StringLiteralExpectedEnum`.
+        // Parser-level enum values are still EnumIdentifier before the host
+        // resolves them at the provider boundary.
         let snake_case_value = Value::Concrete(ConcreteValue::enum_identifier(
             "aws.s3.Bucket.OwnershipControls.OwnershipControlsRule.ObjectOwnership.bucket_owner_enforced",
         ));
@@ -2293,9 +2235,17 @@ mod tests {
             "PascalCase API spelling must be rejected in DSL position",
         );
 
-        // Round-trip: DSL snake_case -> AWS API spelling.
+        // The provider boundary carries the host-resolved API spelling.
+        let canonical_value = ownership_schema.canonicalize_state(Value::Concrete(
+            ConcreteValue::String("BucketOwnerEnforced".into()),
+        ));
+        assert_canonical_enum(
+            &canonical_value,
+            "aws.s3.Bucket.OwnershipControls.OwnershipControlsRule.ObjectOwnership",
+            "BucketOwnerEnforced",
+        );
         let aws_json = dsl_value_to_aws_with_defs(
-            &snake_case_value,
+            &canonical_value,
             &object_ownership.field_type,
             "s3.Bucket",
             "object_ownership",

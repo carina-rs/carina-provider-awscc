@@ -434,8 +434,7 @@ fn primary_identifier_segment(value: &Value) -> Option<String> {
         Value::Concrete(ConcreteValue::String(value)) if !value.expose_plaintext().is_empty() => {
             Some(value.expose_plaintext().to_string())
         }
-        Value::Concrete(ConcreteValue::EnumIdentifier(value)) => Some(value.to_string()),
-        Value::Concrete(ConcreteValue::CanonicalEnum(value)) => Some(value.to_string()),
+        Value::Concrete(ConcreteValue::CanonicalEnum(value)) => Some(value.api_value().to_string()),
         Value::Concrete(ConcreteValue::Int(value)) => Some(value.to_string()),
         Value::Concrete(ConcreteValue::Float(value)) => Some(value.to_string()),
         Value::Concrete(ConcreteValue::Bool(value)) => Some(value.to_string()),
