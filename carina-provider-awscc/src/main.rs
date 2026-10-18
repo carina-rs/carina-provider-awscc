@@ -160,7 +160,7 @@ impl CarinaProvider for AwsccProcessProvider {
         let region = if let Some(CoreValue::Concrete(ConcreteValue::String(region))) =
             core_attrs.get("region")
         {
-            carina_core::utils::convert_region_value(region.expose_plaintext())
+            region.expose_plaintext().to_string()
         } else {
             "ap-northeast-1".to_string()
         };
@@ -196,11 +196,8 @@ impl CarinaProvider for AwsccProcessProvider {
         vec!["region".to_string()]
     }
 
-    // `enum_aliases` is no longer overridden. After awscc#220 / #223,
-    // DSL → API canonical conversion goes through `DslMap::api_for`
-    // against each `StringEnum`'s exhaustive `dsl_aliases` table
-    // (sourced from `carina-core` schema). The host-side dispatch
-    // table this method used to feed has been removed.
+    // Protocol v6 resolves enum aliases in the host. The guest receives API
+    // spellings as wire strings, so it does not expose an enum-alias callback.
 
     fn validate_custom_type(
         &self,
@@ -265,7 +262,6 @@ impl CarinaProvider for AwsccProcessProvider {
                     core_resource,
                     &[],
                     &self.normalizer,
-                    &[],
                     Self::schema_registry(),
                 ),
             )
@@ -812,9 +808,9 @@ mod tests {
         let policy_wire_attrs = HashMap::from([(
             "policy_document".to_string(),
             proto_map(&[(
-                "Statement",
+                "statement",
                 proto::Value::List(vec![proto_map(&[(
-                    "Action",
+                    "action",
                     proto::Value::StringList(vec!["s3:GetObject".to_string()]),
                 )])]),
             )]),

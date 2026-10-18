@@ -21,9 +21,10 @@ use indexmap::IndexMap;
 
 use carina_core::effect::PlanOp;
 use carina_core::provider::{
-    BoxFuture, CreateOutcome, CreateRequest, DeleteRequest, Provider, ProviderError,
-    ProviderFactory, ProviderNormalizer, ProviderReadyConfig, ProviderReadyDataSource,
-    ProviderResult, ReadRequest, SavedAttrs, UpdateOutcome, UpdateRequest, ready_noop,
+    BoxFuture, CanonicalCustomTypeValue, CanonicalProviderConfigAttributes, CreateOutcome,
+    CreateRequest, DeleteRequest, Provider, ProviderError, ProviderFactory, ProviderNormalizer,
+    ProviderReadyConfig, ProviderReadyDataSource, ProviderResult, ReadRequest, SavedAttrs,
+    UpdateOutcome, UpdateRequest, ready_noop,
 };
 use carina_core::resource::{ConcreteValue, Resource, ResourceId, State, Value};
 
@@ -117,7 +118,10 @@ impl ProviderFactory for AwsccProviderFactory {
         types
     }
 
-    fn validate_config(&self, attributes: &IndexMap<String, Value>) -> Result<(), String> {
+    fn validate_config(
+        &self,
+        attributes: &CanonicalProviderConfigAttributes,
+    ) -> Result<(), String> {
         // Cross-account guardrail: when `assume_role.role_arn` parses to
         // an account id that is not in `allowed_account_ids` (when that
         // list is configured), refuse the configuration. Avoids the
@@ -135,7 +139,7 @@ impl ProviderFactory for AwsccProviderFactory {
     fn validate_custom_type(
         &self,
         identity: &carina_core::schema::TypeIdentity,
-        value: &str,
+        value: &CanonicalCustomTypeValue,
     ) -> Result<(), String> {
         use carina_core::parser::ValidatorFn;
         use std::sync::OnceLock;
@@ -147,17 +151,14 @@ impl ProviderFactory for AwsccProviderFactory {
         // filtered by the host before the call reaches us.
         let key = carina_core::parser::pascal_to_snake(&identity.kind);
         if let Some(validator) = validators.get(&key) {
-            validator(value)
+            validator(value.as_str())
         } else {
             Ok(())
         }
     }
 
     fn extract_region(&self, attributes: &IndexMap<String, Value>) -> String {
-        if let Some(Value::Concrete(ConcreteValue::String(region))) = attributes.get("region") {
-            return carina_core::utils::convert_region_value(region.expose_plaintext());
-        }
-        "ap-northeast-1".to_string()
+        carina_core::utils::extract_region_from_attrs(attributes, "ap-northeast-1")
     }
 
     fn create_provider(
@@ -202,12 +203,9 @@ impl ProviderFactory for AwsccProviderFactory {
         )])
     }
 
-    // The default `Provider::get_enum_alias_reverse` returning `None`
-    // is fine — DSL → API canonical lookup is done via
-    // `DslMap::api_for` in `dsl_value_to_aws`, sourced from the
-    // exhaustive `dsl_aliases` table on each StringEnum. The legacy
-    // string-keyed dispatch (`(resource_type, attr_name)`) was
-    // removed in awscc#223 / awscc#220.
+    // Enum aliases remain schema metadata consumed by the host. Protocol v6
+    // gives the provider API spellings, so no provider-local reverse lookup
+    // or string-keyed dispatch is needed.
 }
 
 // =============================================================================
@@ -451,6 +449,36 @@ mod tests {
         }
     }
 
+    #[test]
+    fn extract_region_reads_provider_ready_canonical_enum() {
+        let factory = AwsccProviderFactory;
+        let region_type = factory
+            .provider_config_attribute_types()
+            .remove("region")
+            .expect("region provider config type");
+        let region = carina_core::schema::Schema::flat(region_type)
+            .canonicalize_state(Value::Concrete(ConcreteValue::String("us-west-2".into())));
+        assert!(matches!(
+            &region,
+            Value::Concrete(ConcreteValue::CanonicalEnum(value))
+                if value.api_value() == "us-west-2"
+        ));
+        let attributes = IndexMap::from([("region".to_string(), region)]);
+
+        assert_eq!(factory.extract_region(&attributes), "us-west-2");
+    }
+
+    #[test]
+    fn extract_region_keeps_string_literal() {
+        let factory = AwsccProviderFactory;
+        let attributes = IndexMap::from([(
+            "region".to_string(),
+            Value::Concrete(ConcreteValue::String("aws.Region.us_west_2".into())),
+        )]);
+
+        assert_eq!(factory.extract_region(&attributes), "aws.Region.us_west_2");
+    }
+
     #[cfg(not(target_arch = "wasm32"))]
     async fn provider_for_required_permissions_tests() -> AwsccProvider {
         use aws_config::BehaviorVersion;
@@ -543,9 +571,12 @@ mod tests {
                 )),
             )]),
         );
-        factory
-            .validate_config(&attrs)
-            .expect("matching allowed_account_ids must validate");
+        carina_core::executor::provider_ready::validate_and_canonicalize_provider_config(
+            &factory,
+            factory.name(),
+            &attrs,
+        )
+        .expect("matching allowed_account_ids must validate");
     }
 
     #[test]
@@ -567,9 +598,13 @@ mod tests {
                 )),
             )]),
         );
-        let err = factory
-            .validate_config(&attrs)
-            .expect_err("cross-account role outside allowed_account_ids must fail");
+        let err = carina_core::executor::provider_ready::validate_and_canonicalize_provider_config(
+            &factory,
+            factory.name(),
+            &attrs,
+        )
+        .expect_err("cross-account role outside allowed_account_ids must fail")
+        .to_string();
         assert!(err.contains("412038850359"), "must name target: {err}");
         assert!(err.contains("111111111111"), "must name allow list: {err}");
     }
@@ -582,9 +617,12 @@ mod tests {
             "allowed_account_ids".to_string(),
             list_of(&["412038850359"]),
         );
-        factory
-            .validate_config(&attrs)
-            .expect("validate_config without assume_role must be a no-op");
+        carina_core::executor::provider_ready::validate_and_canonicalize_provider_config(
+            &factory,
+            factory.name(),
+            &attrs,
+        )
+        .expect("validate_config without assume_role must be a no-op");
     }
 
     #[test]

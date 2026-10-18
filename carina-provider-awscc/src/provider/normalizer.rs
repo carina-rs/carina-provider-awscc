@@ -72,18 +72,19 @@ pub fn canonicalize_string_or_list_states_impl(current_states: &mut HashMap<Reso
             Some(c) => c,
             None => continue,
         };
-        // Route canonicalization through `Schema::canonicalize_attr`
-        // so cyclic CFN attributes (`AttributeType::Ref`) resolve
-        // against this resource's def map. The defs-less
-        // `carina_core::value::canonicalize_with_type` wrapper this
-        // replaced silently used an empty definition map and panicked on every
-        // Ref-containing attribute (carina#3345 Symptom B —
-        // `ec2_vpc_endpoint/{gateway,interface}` plan-verify).
+        // Route provider state through `Schema::canonicalize_state_attr` so
+        // cyclic CFN attributes (`AttributeType::Ref`) resolve against this
+        // resource's def map. The old defs-less wrapper silently used an
+        // empty definition map and panicked on every Ref-containing attribute
+        // (carina#3345 Symptom B — `ec2_vpc_endpoint/{gateway,interface}`
+        // plan-verify).
         let schema_view = carina_core::schema::Schema::with_defs(config.schema.defs.clone());
         let mut new_attrs = HashMap::with_capacity(state.attributes.len());
         for (key, value) in std::mem::take(&mut state.attributes) {
             let canon = match config.schema.attributes.get(key.as_str()) {
-                Some(attr_schema) => schema_view.canonicalize_attr(&attr_schema.attr_type, value),
+                Some(attr_schema) => {
+                    schema_view.canonicalize_state_attr(&attr_schema.attr_type, value)
+                }
                 None => value,
             };
             new_attrs.insert(key, canon);
@@ -197,9 +198,9 @@ mod tests {
 
         // The string-transform pass leaves the raw API string alone; the
         // following `canonicalize_string_or_list_states_impl` pass calls
-        // `Schema::canonicalize_attr`, which host-lifts schema-known enums
-        // to CanonicalEnum. The bug guard is that this must not become a
-        // DSL-namespaced String.
+        // `Schema::canonicalize_state_attr`, which lifts schema-known state
+        // enums to CanonicalEnum. The bug guard is that this must not become
+        // a DSL-namespaced String.
         match current_states[&id].attributes.get("ip_protocol") {
             Some(Value::Concrete(ConcreteValue::CanonicalEnum(c))) => {
                 assert_eq!(
@@ -589,24 +590,25 @@ mod tests {
         // AWS::IAM::RolePolicy has `policy_document` typed as
         // `iam_policy_document()`, a Struct that nests
         // Union[String, list(String)] fields like Statement[].Action.
-        // The provider canonicalize pass walks via the Struct schema
-        // and folds nested scalars to StringList.
+        // Read conversion has already translated CloudFormation property
+        // names to DSL keys. The provider state pass walks that host-facing
+        // shape via the Struct schema and folds nested scalars to StringList.
         let mut policy_map = IndexMap::new();
         policy_map.insert(
-            "Statement".to_string(),
+            "statement".to_string(),
             Value::Concrete(ConcreteValue::List(vec![Value::Concrete(
                 ConcreteValue::Map({
                     let mut stmt = IndexMap::new();
                     stmt.insert(
-                        "Effect".to_string(),
+                        "effect".to_string(),
                         Value::Concrete(ConcreteValue::String("Allow".to_string().into())),
                     );
                     stmt.insert(
-                        "Action".to_string(),
+                        "action".to_string(),
                         Value::Concrete(ConcreteValue::String("s3:GetObject".to_string().into())),
                     );
                     stmt.insert(
-                        "Resource".to_string(),
+                        "resource".to_string(),
                         Value::Concrete(ConcreteValue::String(
                             "arn:aws:s3:::my-bucket/*".to_string().into(),
                         )),
@@ -636,7 +638,7 @@ mod tests {
 
         canonicalize_string_or_list_states_impl(&mut current_states);
 
-        // Statement[0].Action: scalar → StringList(["s3:GetObject"])
+        // statement[0].action: scalar → StringList(["s3:GetObject"])
         let state = &current_states[&id];
         let policy_document = state
             .attributes
@@ -646,26 +648,26 @@ mod tests {
             panic!("expected Map for policy_document");
         };
         let Value::Concrete(ConcreteValue::List(stmts)) =
-            pd.get("Statement").expect("Statement present")
+            pd.get("statement").expect("statement present")
         else {
-            panic!("expected List for Statement");
+            panic!("expected List for statement");
         };
         let Value::Concrete(ConcreteValue::Map(stmt)) = &stmts[0] else {
-            panic!("expected Map for Statement[0]");
+            panic!("expected Map for statement[0]");
         };
         assert_eq!(
-            stmt.get("Action"),
+            stmt.get("action"),
             Some(&Value::Concrete(ConcreteValue::StringList(vec![
                 "s3:GetObject".to_string().into()
             ]))),
-            "Action should be canonicalized to StringList"
+            "action should be canonicalized to StringList"
         );
         assert_eq!(
-            stmt.get("Resource"),
+            stmt.get("resource"),
             Some(&Value::Concrete(ConcreteValue::StringList(vec![
                 "arn:aws:s3:::my-bucket/*".to_string().into()
             ]))),
-            "Resource should be canonicalized to StringList"
+            "resource should be canonicalized to StringList"
         );
     }
 
