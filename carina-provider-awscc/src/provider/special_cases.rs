@@ -10,7 +10,7 @@ use carina_core::provider::{ProviderError, ProviderResult};
 use carina_core::resource::{ConcreteValue, Resource, ResourceId, Value};
 use serde_json::json;
 
-use super::AwsccProvider;
+use super::{AwsccProvider, error_helpers::CloudControlOperationFailure};
 use crate::provider::cloudcontrol::WaitOutcome;
 use crate::schemas::config::AwsccSchemaConfig;
 
@@ -97,18 +97,18 @@ impl AwsccProvider {
                     .cc_update_resource(config.aws_type_name, identifier, patch_ops)
                     .await
                     .map_err(|e| {
-                        ProviderError::api_error(
+                        ProviderError::api_error_caused_by(
                             "Failed to detach Internet Gateway from VPC before deletion",
+                            e,
                         )
-                        .with_cause(e)
                         .for_resource(id.clone())
                     })? {
                     WaitOutcome::Success { .. } => {}
                     WaitOutcome::PartialOrFailed { status_message, .. } => {
-                        return Err(ProviderError::api_error(format!(
-                            "Failed to detach Internet Gateway from VPC before deletion: {}",
-                            status_message
-                        ))
+                        return Err(ProviderError::api_error_caused_by(
+                            "Failed to detach Internet Gateway from VPC before deletion",
+                            CloudControlOperationFailure::new(status_message),
+                        )
                         .for_resource(id.clone()));
                     }
                 }

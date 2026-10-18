@@ -21,7 +21,7 @@ use crate::schemas::config::AwsccSchemaConfig;
 /// Returns an error instead of silently returning an empty object when the JSON is malformed.
 pub(crate) fn parse_resource_properties(props_str: &str) -> ProviderResult<serde_json::Value> {
     serde_json::from_str(props_str)
-        .map_err(|e| ProviderError::internal("Failed to parse resource properties").with_cause(e))
+        .map_err(|e| ProviderError::internal_caused_by("Failed to parse resource properties", e))
 }
 
 /// A type-tied update plan containing the JSON Patch sent to Cloud Control, the DSL
@@ -270,10 +270,11 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(
-            err.message()
+            err.detail()
+                .context()
                 .contains("Failed to parse resource properties"),
             "Expected error message about parsing, got: {}",
-            err.message()
+            err
         );
         assert!(
             matches!(err, ProviderError::Internal(_)),

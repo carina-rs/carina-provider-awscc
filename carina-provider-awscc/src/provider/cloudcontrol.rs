@@ -10,11 +10,13 @@ use aws_sdk_cloudcontrol::types::{OperationStatus, ProgressEvent};
 use aws_smithy_runtime_api::client::result::SdkError;
 use aws_smithy_types::error::metadata::ProvideErrorMetadata;
 use carina_core::provider::{ProviderError, ProviderResult};
+use thiserror::Error;
 
 use super::{
     AwsccProvider, CREATE_RETRY_INITIAL_DELAY_SECS, CREATE_RETRY_MAX_ATTEMPTS,
     CREATE_RETRY_MAX_DELAY_SECS, DELETE_RETRY_INITIAL_DELAY_SECS, DELETE_RETRY_MAX_ATTEMPTS,
     DELETE_RETRY_MAX_DELAY_SECS,
+    error_helpers::{CloudControlOperationFailure, api_error_with_meta_and_subject},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -26,6 +28,54 @@ pub enum WaitOutcome {
         identifier: String,
         status_message: String,
     },
+}
+
+#[derive(Debug)]
+struct CloudControlResourceSubject {
+    type_name: String,
+    identifier: Option<String>,
+}
+
+impl CloudControlResourceSubject {
+    fn type_only(type_name: &str) -> Self {
+        Self {
+            type_name: type_name.to_string(),
+            identifier: None,
+        }
+    }
+
+    fn identified(type_name: &str, identifier: &str) -> Self {
+        Self {
+            type_name: type_name.to_string(),
+            identifier: Some(identifier.to_string()),
+        }
+    }
+}
+
+impl std::fmt::Display for CloudControlResourceSubject {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "resource type {}", self.type_name)?;
+        if let Some(identifier) = &self.identifier {
+            write!(f, ", identifier {identifier}")?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+struct CloudControlRequestToken(String);
+
+impl std::fmt::Display for CloudControlRequestToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "request token {}", self.0)
+    }
+}
+
+#[derive(Debug, Error)]
+#[error("resource type {type_name} after {attempts} retry attempts")]
+struct RetryAttemptsExhausted {
+    type_name: String,
+    attempts: u32,
 }
 
 impl AwsccProvider {
@@ -58,11 +108,12 @@ impl AwsccProvider {
                 if Self::is_not_found_error(&e) {
                     Ok(None)
                 } else {
-                    let detail = Self::format_sdk_error(&e);
-                    Err(ProviderError::api_error(format!(
-                        "Failed to get resource: {}",
-                        detail
-                    )))
+                    Err(api_error_with_meta_and_subject(
+                        "Failed to get resource",
+                        "cloudcontrol.GetResource",
+                        CloudControlResourceSubject::identified(type_name, identifier),
+                        e,
+                    ))
                 }
             }
         }
@@ -112,7 +163,7 @@ impl AwsccProvider {
                     {
                         Ok(outcome) => return Ok(outcome),
                         Err(e)
-                            if Self::is_retryable_status_message(e.message())
+                            if Self::is_retryable_operation_error(&e)
                                 && attempt < max_retry_attempts =>
                         {
                             log::warn!(
@@ -120,7 +171,7 @@ impl AwsccProvider {
                                 type_name,
                                 attempt + 1,
                                 max_retry_attempts,
-                                e.message(),
+                                e,
                                 delay_secs,
                             );
                             tokio::time::sleep(Duration::from_secs(delay_secs)).await;
@@ -144,19 +195,23 @@ impl AwsccProvider {
                         delay_secs = (delay_secs * 2).min(CREATE_RETRY_MAX_DELAY_SECS);
                         continue;
                     }
-                    let detail = Self::format_sdk_error(&e);
-                    return Err(ProviderError::api_error(format!(
-                        "Failed to create resource: {}",
-                        detail
-                    )));
+                    return Err(api_error_with_meta_and_subject(
+                        "Failed to create resource",
+                        "cloudcontrol.CreateResource",
+                        CloudControlResourceSubject::type_only(type_name),
+                        e,
+                    ));
                 }
             }
         }
 
-        Err(ProviderError::api_error(format!(
-            "Failed to create resource {} after {} retry attempts",
-            type_name, max_retry_attempts
-        )))
+        Err(ProviderError::api_error_caused_by(
+            "Failed to create resource",
+            RetryAttemptsExhausted {
+                type_name: type_name.to_string(),
+                attempts: max_retry_attempts,
+            },
+        ))
     }
 
     /// Update a resource using Cloud Control API
@@ -173,7 +228,7 @@ impl AwsccProvider {
         }
 
         let patch_document = serde_json::to_string(&patch_ops)
-            .map_err(|e| ProviderError::internal("Failed to build patch").with_cause(e))?;
+            .map_err(|e| ProviderError::internal_caused_by("Failed to build patch", e))?;
 
         let result = self
             .cloudcontrol_client
@@ -184,8 +239,12 @@ impl AwsccProvider {
             .send()
             .await
             .map_err(|e| {
-                let detail = Self::format_sdk_error(&e);
-                ProviderError::api_error(format!("Failed to update resource: {}", detail))
+                api_error_with_meta_and_subject(
+                    "Failed to update resource",
+                    "cloudcontrol.UpdateResource",
+                    CloudControlResourceSubject::identified(type_name, identifier),
+                    e,
+                )
             })?;
 
         if let Some(request_token) = result.progress_event().and_then(|p| p.request_token()) {
@@ -240,13 +299,13 @@ impl AwsccProvider {
                         {
                             Ok(WaitOutcome::Success { .. }) => return Ok(()),
                             Ok(WaitOutcome::PartialOrFailed { status_message, .. }) => {
-                                return Err(ProviderError::api_error(format!(
-                                    "Operation failed: {}",
-                                    status_message
-                                )));
+                                return Err(ProviderError::api_error_caused_by(
+                                    "Operation failed",
+                                    CloudControlOperationFailure::new(status_message),
+                                ));
                             }
                             Err(e)
-                                if Self::is_retryable_status_message(e.message())
+                                if Self::is_retryable_operation_error(&e)
                                     && attempt < max_retry_attempts =>
                             {
                                 log::warn!(
@@ -254,7 +313,7 @@ impl AwsccProvider {
                                     type_name,
                                     attempt + 1,
                                     max_retry_attempts,
-                                    e.message(),
+                                    e,
                                     delay_secs,
                                 );
                                 tokio::time::sleep(Duration::from_secs(delay_secs)).await;
@@ -280,19 +339,23 @@ impl AwsccProvider {
                         delay_secs = (delay_secs * 2).min(DELETE_RETRY_MAX_DELAY_SECS);
                         continue;
                     }
-                    let detail = Self::format_sdk_error(&e);
-                    return Err(ProviderError::api_error(format!(
-                        "Failed to delete resource: {}",
-                        detail
-                    )));
+                    return Err(api_error_with_meta_and_subject(
+                        "Failed to delete resource",
+                        "cloudcontrol.DeleteResource",
+                        CloudControlResourceSubject::identified(type_name, identifier),
+                        e,
+                    ));
                 }
             }
         }
 
-        Err(ProviderError::api_error(format!(
-            "Failed to delete resource {} after {} retry attempts",
-            type_name, max_retry_attempts
-        )))
+        Err(ProviderError::api_error_caused_by(
+            "Failed to delete resource",
+            RetryAttemptsExhausted {
+                type_name: type_name.to_string(),
+                attempts: max_retry_attempts,
+            },
+        ))
     }
 
     /// Returns the max polling attempts for a given resource type and operation.
@@ -323,26 +386,6 @@ impl AwsccProvider {
             }
         }
         120 // Default: 10 minutes (120 * 5s)
-    }
-
-    /// Formats an SDK error into a human-readable message.
-    ///
-    /// The `SdkError::Display` implementation only outputs generic labels like "service error"
-    /// without including the actual error code or message. This method extracts the structured
-    /// error metadata (code and message) from service errors to provide actionable error messages.
-    pub(crate) fn format_sdk_error<E, R>(error: &SdkError<E, R>) -> String
-    where
-        E: ProvideErrorMetadata + std::fmt::Display,
-    {
-        match error {
-            SdkError::ServiceError(service_error) => {
-                let err = service_error.err();
-                let code = err.code().unwrap_or("Unknown");
-                let message = err.message().unwrap_or("no details");
-                format!("{}: {}", code, message)
-            }
-            other => format!("{}", other),
-        }
     }
 
     /// Returns true if the SDK error represents a "not found" condition.
@@ -467,6 +510,16 @@ impl AwsccProvider {
             .any(|pattern| status_message.contains(pattern))
     }
 
+    /// Classify a failed asynchronous CloudControl operation using the typed
+    /// status cause created by [`Self::classify_progress_event`].
+    fn is_retryable_operation_error(error: &ProviderError) -> bool {
+        error
+            .detail()
+            .cause()
+            .and_then(|cause| cause.downcast_ref::<CloudControlOperationFailure>())
+            .is_some_and(|cause| Self::is_retryable_status_message(cause.status_message()))
+    }
+
     /// Wait for a Cloud Control operation to complete with a configurable number of attempts
     pub(crate) async fn wait_for_operation_with_attempts(
         &self,
@@ -483,7 +536,12 @@ impl AwsccProvider {
                 .send()
                 .await
                 .map_err(|e| {
-                    ProviderError::api_error("Failed to get operation status").with_cause(e)
+                    api_error_with_meta_and_subject(
+                        "Failed to get operation status",
+                        "cloudcontrol.GetResourceRequestStatus",
+                        CloudControlRequestToken(request_token.to_string()),
+                        e,
+                    )
                 })?;
 
             if let Some(progress) = status.progress_event()
@@ -517,10 +575,10 @@ impl AwsccProvider {
                         status_message: msg,
                     }));
                 }
-                Err(ProviderError::api_error(format!(
-                    "Operation failed: {}",
-                    msg
-                )))
+                Err(ProviderError::api_error_caused_by(
+                    "Operation failed",
+                    CloudControlOperationFailure::new(msg),
+                ))
             }
             _ => Ok(None),
         }
@@ -590,6 +648,25 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn operation_error_retry_classification_uses_typed_status_cause() {
+        let retryable = AwsccProvider::classify_progress_event(&progress(
+            OperationStatus::Failed,
+            None,
+            Some("Throttling: Rate exceeded"),
+        ))
+        .expect_err("failed progress must produce an error");
+        let non_retryable = AwsccProvider::classify_progress_event(&progress(
+            OperationStatus::Failed,
+            None,
+            Some("InvalidParameterValue: invalid CIDR"),
+        ))
+        .expect_err("failed progress must produce an error");
+
+        assert!(AwsccProvider::is_retryable_operation_error(&retryable));
+        assert!(!AwsccProvider::is_retryable_operation_error(&non_retryable));
+    }
+
     // =========================================================================
     // is_retryable_sdk_error tests
     // =========================================================================
@@ -647,8 +724,9 @@ mod tests {
         let err = AwsccProvider::classify_progress_event(&progress)
             .expect_err("failed progress without identifier must remain an error");
 
+        assert_eq!(err.detail().context(), "Operation failed");
         assert_eq!(
-            err.message(),
+            err.to_string(),
             "Operation failed: handler failed before identifier"
         );
     }
@@ -664,8 +742,9 @@ mod tests {
         let err = AwsccProvider::classify_progress_event(&progress)
             .expect_err("empty identifier must not be treated as partial success");
 
+        assert_eq!(err.detail().context(), "Operation failed");
         assert_eq!(
-            err.message(),
+            err.to_string(),
             "Operation failed: handler failed before useful identifier"
         );
     }
@@ -702,8 +781,9 @@ mod tests {
         let err = AwsccProvider::classify_progress_event(&progress)
             .expect_err("cancel without identifier must remain an error");
 
+        assert_eq!(err.detail().context(), "Operation failed");
         assert_eq!(
-            err.message(),
+            err.to_string(),
             "Operation failed: operation cancelled before identifier"
         );
     }
@@ -1090,116 +1170,5 @@ mod tests {
             AwsccProvider::default_polling_attempts("AWS::EC2::NatGateway", "create"),
             120
         );
-    }
-
-    // =========================================================================
-    // format_sdk_error tests
-    // =========================================================================
-
-    #[test]
-    fn test_format_sdk_error_create_resource_error() {
-        use aws_sdk_cloudcontrol::operation::create_resource::CreateResourceError;
-        use aws_sdk_cloudcontrol::types::error::GeneralServiceException;
-        use aws_smithy_runtime_api::client::result::SdkError;
-
-        let meta = aws_smithy_types::error::ErrorMetadata::builder()
-            .code("GeneralServiceException")
-            .message("Handler returned status FAILED")
-            .build();
-        let err = CreateResourceError::GeneralServiceException(
-            GeneralServiceException::builder()
-                .message("Handler returned status FAILED")
-                .meta(meta)
-                .build(),
-        );
-        let sdk_err = SdkError::service_error(err, http::Response::new(""));
-        let formatted = AwsccProvider::format_sdk_error(&sdk_err);
-        assert_eq!(
-            formatted,
-            "GeneralServiceException: Handler returned status FAILED"
-        );
-    }
-
-    #[test]
-    fn test_format_sdk_error_delete_resource_error() {
-        use aws_sdk_cloudcontrol::operation::delete_resource::DeleteResourceError;
-        use aws_sdk_cloudcontrol::types::error::GeneralServiceException;
-        use aws_smithy_runtime_api::client::result::SdkError;
-
-        let meta = aws_smithy_types::error::ErrorMetadata::builder()
-            .code("GeneralServiceException")
-            .message("Handler returned status FAILED")
-            .build();
-        let err = DeleteResourceError::GeneralServiceException(
-            GeneralServiceException::builder()
-                .message("Handler returned status FAILED")
-                .meta(meta)
-                .build(),
-        );
-        let sdk_err = SdkError::service_error(err, http::Response::new(""));
-        let formatted = AwsccProvider::format_sdk_error(&sdk_err);
-        assert_eq!(
-            formatted,
-            "GeneralServiceException: Handler returned status FAILED"
-        );
-    }
-
-    #[test]
-    fn test_format_sdk_error_service_error() {
-        use aws_sdk_cloudcontrol::operation::update_resource::UpdateResourceError;
-        use aws_sdk_cloudcontrol::types::error::GeneralServiceException;
-        use aws_smithy_runtime_api::client::result::SdkError;
-
-        let meta = aws_smithy_types::error::ErrorMetadata::builder()
-            .code("GeneralServiceException")
-            .message("Handler returned status FAILED")
-            .build();
-        let err = UpdateResourceError::GeneralServiceException(
-            GeneralServiceException::builder()
-                .message("Handler returned status FAILED")
-                .meta(meta)
-                .build(),
-        );
-        let sdk_err = SdkError::service_error(err, http::Response::new(""));
-        let formatted = AwsccProvider::format_sdk_error(&sdk_err);
-        assert_eq!(
-            formatted,
-            "GeneralServiceException: Handler returned status FAILED"
-        );
-    }
-
-    #[test]
-    fn test_format_sdk_error_get_resource_error() {
-        use aws_sdk_cloudcontrol::operation::get_resource::GetResourceError;
-        use aws_sdk_cloudcontrol::types::error::GeneralServiceException;
-        use aws_smithy_runtime_api::client::result::SdkError;
-
-        let meta = aws_smithy_types::error::ErrorMetadata::builder()
-            .code("GeneralServiceException")
-            .message("Handler returned status FAILED")
-            .build();
-        let err = GetResourceError::GeneralServiceException(
-            GeneralServiceException::builder()
-                .message("Handler returned status FAILED")
-                .meta(meta)
-                .build(),
-        );
-        let sdk_err = SdkError::service_error(err, http::Response::new(""));
-        let formatted = AwsccProvider::format_sdk_error(&sdk_err);
-        assert_eq!(
-            formatted,
-            "GeneralServiceException: Handler returned status FAILED"
-        );
-    }
-
-    #[test]
-    fn test_format_sdk_error_timeout() {
-        use aws_sdk_cloudcontrol::operation::update_resource::UpdateResourceError;
-        use aws_smithy_runtime_api::client::result::SdkError;
-
-        let sdk_err: SdkError<UpdateResourceError, http::Response<&str>> =
-            SdkError::timeout_error("connection timed out");
-        let formatted = AwsccProvider::format_sdk_error(&sdk_err);
-        assert_eq!(formatted, "request has timed out");
     }
 }
