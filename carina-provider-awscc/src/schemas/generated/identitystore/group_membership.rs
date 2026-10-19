@@ -45,6 +45,7 @@ pub fn identitystore_group_membership_config() -> AwsccSchemaConfig {
                 .with_description("The identifier for a GroupMembership in the identity store. (read-only)")
                 .with_provider_name("MembershipId"),
         )
+        .with_coexisting_replacement()
         .with_def("MemberId", AttributeType::struct_("MemberId".to_string(), vec![StructField::new("user_id", AttributeType::refined_string(None, Some("^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$".to_string()), Some((Some(1), Some(47))), None)).required().with_description("The identifier for a user in the identity store.").with_provider_name("UserId")]))
     }
 }

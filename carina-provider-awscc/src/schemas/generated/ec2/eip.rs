@@ -78,6 +78,7 @@ pub fn ec2_eip_config() -> AwsccSchemaConfig {
                 .with_description("The Elastic IP address you are accepting for transfer. You can only accept one transferred address. For more information on Elastic IP address transfers, see [Transfer Elastic IP addresses](https://docs.aws.amazon.com/vpc/latest/userguide/vpc-eips.html#transfer-EIPs-intro) in the *Amazon Virtual Private Cloud User Guide*.")
                 .with_provider_name("TransferAddress"),
         )
+        .with_conflicting_replacement()
         .with_validator(|attrs| {
             let mut errors = Vec::new();
             if let Err(mut e) = carina_aws_types::validate_tags_map(attrs) {

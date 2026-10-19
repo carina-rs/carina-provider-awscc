@@ -36,6 +36,7 @@ pub fn ec2_subnet_route_table_association_config() -> AwsccSchemaConfig {
                 .with_description("The ID of the subnet.")
                 .with_provider_name("SubnetId"),
         )
+        .with_conflicting_replacement()
     }
 }
 

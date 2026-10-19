@@ -137,6 +137,7 @@ pub fn ec2_nat_gateway_config() -> AwsccSchemaConfig {
                 .with_description("The ID of the VPC in which the NAT gateway is located.")
                 .with_provider_name("VpcId"),
         )
+        .with_conflicting_replacement()
         .with_operation_config(OperationConfig {
             delete_timeout_secs: Some(1200),
             delete_max_retries: None,

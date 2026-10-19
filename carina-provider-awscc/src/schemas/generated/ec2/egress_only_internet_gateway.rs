@@ -42,6 +42,7 @@ pub fn ec2_egress_only_internet_gateway_config() -> AwsccSchemaConfig {
                     )
                     .with_provider_name("VpcId"),
             )
+            .with_coexisting_replacement()
             .with_validator(|attrs| {
                 let mut errors = Vec::new();
                 if let Err(mut e) = carina_aws_types::validate_tags_map(attrs) {

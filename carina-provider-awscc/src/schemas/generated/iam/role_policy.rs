@@ -35,6 +35,7 @@ pub fn iam_role_policy_config() -> AwsccSchemaConfig {
                 .with_description("The name of the role to associate the policy with. This parameter allows (through its [regex pattern](https://docs.aws.amazon.com/http://wikipedia.org/wiki/regex)) a string of characters consisting of upper and lowercase alphanumeric characters with no spaces. You can also include any of the following characters: _+=,.@-")
                 .with_provider_name("RoleName"),
         )
+        .with_unique_name_attribute("policy_name")
     }
 }
 

@@ -120,6 +120,7 @@ pub fn iam_oidc_provider_config() -> AwsccSchemaConfig {
                 .create_only()
                 .with_provider_name("Url"),
             )
+            .with_coexisting_replacement()
             .with_validator(|attrs| {
                 let mut errors = Vec::new();
                 if let Err(mut e) = carina_aws_types::validate_tags_map(attrs) {

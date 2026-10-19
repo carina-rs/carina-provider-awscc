@@ -112,6 +112,7 @@ pub fn ec2_security_group_config() -> AwsccSchemaConfig {
                 .with_description("The ID of the VPC for the security group.")
                 .with_provider_name("VpcId"),
         )
+        .with_unique_name_attribute("group_name")
         .with_validator(|attrs| {
             let mut errors = Vec::new();
             if let Err(mut e) = carina_aws_types::validate_tags_map(attrs) {

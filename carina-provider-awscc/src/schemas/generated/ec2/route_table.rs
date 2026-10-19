@@ -35,6 +35,7 @@ pub fn ec2_route_table_config() -> AwsccSchemaConfig {
                 .with_description("The ID of the VPC.")
                 .with_provider_name("VpcId"),
         )
+        .with_coexisting_replacement()
         .with_validator(|attrs| {
             let mut errors = Vec::new();
             if let Err(mut e) = carina_aws_types::validate_tags_map(attrs) {

@@ -237,30 +237,143 @@ struct EnumInfo {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum UniqueNameReplacementClass {
-    Coexisting,
-}
-
-const UNIQUE_NAME_REPLACEMENT_CLASSES: &[(&str, UniqueNameReplacementClass)] = &[
-    ("ec2.Vpc", UniqueNameReplacementClass::Coexisting),
-    // TransitGatewayAttachment replacements are driven by create-only
-    // transit_gateway_id/vpc_id changes. Any reachable replacement targets a
-    // different (transit gateway, VPC) pair than the original; AWS allows a VPC
-    // to attach to multiple transit gateways simultaneously, so the new
-    // attachment can coexist during create_before_destroy. Cascade-driven
-    // replacements also change the pair because the upstream TGW/VPC id changes.
-    (
-        "ec2.TransitGatewayAttachment",
-        UniqueNameReplacementClass::Coexisting,
-    ),
-];
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum UniqueNameEmission {
-    Attribute(String),
+enum ReplacementClass {
+    Attribute(&'static str),
     Coexisting,
     Conflicting,
 }
+
+const REPLACEMENT_CLASSES: &[(&str, ReplacementClass)] = &[
+    // Distribution aliases are globally unique and cannot coexist.
+    ("cloudfront.Distribution", ReplacementClass::Conflicting),
+    // The account-unique name is nested, so it cannot be temporarily renamed.
+    (
+        "cloudfront.OriginAccessControl",
+        ReplacementClass::Conflicting,
+    ),
+    // Table names are user-chosen and unique within an account and region.
+    ("dynamodb.Table", ReplacementClass::Attribute("table_name")),
+    // Address and transfer_address pin a specific IP that cannot coexist.
+    ("ec2.Eip", ReplacementClass::Conflicting),
+    // Replacement changes vpc_id, so it targets a different VPC.
+    (
+        "ec2.EgressOnlyInternetGateway",
+        ReplacementClass::Coexisting,
+    ),
+    // AWS rejects duplicate flow logs for the same source, traffic, and destination.
+    ("ec2.FlowLog", ReplacementClass::Conflicting),
+    // The default regional quota permits only one IPAM.
+    ("ec2.Ipam", ReplacementClass::Conflicting),
+    // Provisioned CIDRs must not overlap within an IPAM scope.
+    ("ec2.IpamPool", ReplacementClass::Conflicting),
+    // Internet gateways use server-generated identities without a unique name.
+    ("ec2.InternetGateway", ReplacementClass::Coexisting),
+    // An EIP can be associated with only one NAT gateway during replacement.
+    ("ec2.NatGateway", ReplacementClass::Conflicting),
+    // Every create-only field participates in a route's uniqueness key.
+    ("ec2.Route", ReplacementClass::Coexisting),
+    // Replacement changes vpc_id, so it targets a different VPC.
+    ("ec2.RouteTable", ReplacementClass::Coexisting),
+    // Group names are unique within a VPC and AWS generates one when omitted.
+    (
+        "ec2.SecurityGroup",
+        ReplacementClass::Attribute("group_name"),
+    ),
+    // Some create-only changes respell the same rule (group_name vs group_id,
+    // ports ignored for protocol -1), which AWS rejects as a duplicate.
+    ("ec2.SecurityGroupEgress", ReplacementClass::Conflicting),
+    // Some create-only changes respell the same rule (group_name vs group_id,
+    // ports ignored for protocol -1), which AWS rejects as a duplicate.
+    ("ec2.SecurityGroupIngress", ReplacementClass::Conflicting),
+    // CIDRs cannot overlap when an AZ-driven replacement keeps the same VPC and CIDR.
+    ("ec2.Subnet", ReplacementClass::Conflicting),
+    // A subnet can have only one route table association.
+    (
+        "ec2.SubnetRouteTableAssociation",
+        ReplacementClass::Conflicting,
+    ),
+    // Transit gateways use server-generated identities without a unique name.
+    ("ec2.TransitGateway", ReplacementClass::Coexisting),
+    // Replacement changes the transit-gateway/VPC pair, which can coexist.
+    ("ec2.TransitGatewayAttachment", ReplacementClass::Coexisting),
+    // VPCs use server-generated identities without a unique name.
+    ("ec2.Vpc", ReplacementClass::Coexisting),
+    // A VPC or route table cannot have a duplicate endpoint for the same service.
+    ("ec2.VpcEndpoint", ReplacementClass::Conflicting),
+    // A VPC can have only one attached internet gateway.
+    ("ec2.VpcGatewayAttachment", ReplacementClass::Conflicting),
+    // Only one active peering connection may exist for a VPC pair.
+    ("ec2.VpcPeeringConnection", ReplacementClass::Conflicting),
+    // VPN gateways use server-generated identities without a unique name.
+    ("ec2.VpnGateway", ReplacementClass::Coexisting),
+    // Repository names are user-chosen and unique within a registry.
+    (
+        "ecr.Repository",
+        ReplacementClass::Attribute("repository_name"),
+    ),
+    // Cluster names are user-chosen and unique within an account and region.
+    ("ecs.Cluster", ReplacementClass::Attribute("cluster_name")),
+    // A target group associates with one load balancer, so the new listener's forward
+    // action conflicts with the old one.
+    (
+        "elasticloadbalancingv2.Listener",
+        ReplacementClass::Conflicting,
+    ),
+    // subnet_mappings can pin an EIP allocation or private IPv4 address that the
+    // replacement cannot share with the original.
+    (
+        "elasticloadbalancingv2.LoadBalancer",
+        ReplacementClass::Conflicting,
+    ),
+    // Target group names are unique per account and region.
+    (
+        "elasticloadbalancingv2.TargetGroup",
+        ReplacementClass::Attribute("name"),
+    ),
+    // The URL is both the uniqueness key and the only create-only field.
+    ("iam.OidcProvider", ReplacementClass::Coexisting),
+    // Role names are user-chosen and unique within an account.
+    ("iam.Role", ReplacementClass::Attribute("role_name")),
+    // Policy names are unique within their containing role.
+    ("iam.RolePolicy", ReplacementClass::Attribute("policy_name")),
+    // Display names are unique within an identity store.
+    (
+        "identitystore.Group",
+        ReplacementClass::Attribute("display_name"),
+    ),
+    // Every create-only field participates in the membership's uniqueness key.
+    (
+        "identitystore.GroupMembership",
+        ReplacementClass::Coexisting,
+    ),
+    // KMS keys use server-generated identities without a unique name.
+    ("kms.Key", ReplacementClass::Coexisting),
+    // Log group names are user-chosen and unique within an account and region.
+    (
+        "logs.LogGroup",
+        ReplacementClass::Attribute("log_group_name"),
+    ),
+    // Account email addresses are globally unique.
+    ("organizations.Account", ReplacementClass::Conflicting),
+    // An account can belong to only one organization.
+    ("organizations.Organization", ReplacementClass::Conflicting),
+    // Hosted zone names are not unique, and replacement occurs only on name change.
+    ("route53.HostedZone", ReplacementClass::Coexisting),
+    // Bucket names are user-chosen and globally unique.
+    ("s3.Bucket", ReplacementClass::Attribute("bucket_name")),
+    // One policy per bucket; `bucket` is the parent, not this resource's own name.
+    ("s3.BucketPolicy", ReplacementClass::Conflicting),
+    // Every create-only field participates in the assignment's uniqueness key.
+    ("sso.Assignment", ReplacementClass::Coexisting),
+    // An account can have only one IAM Identity Center instance.
+    ("sso.Instance", ReplacementClass::Conflicting),
+    // Permission set names are unique within an IAM Identity Center instance.
+    ("sso.PermissionSet", ReplacementClass::Attribute("name")),
+    // Web ACL names are unique within a scope and region.
+    ("wafv2.WebAcl", ReplacementClass::Attribute("name")),
+    // A resource holds one web ACL; a web_acl_arn change keeps resource_arn.
+    ("wafv2.WebAclAssociation", ReplacementClass::Conflicting),
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ArnEmitChoice {
@@ -788,61 +901,81 @@ fn dsl_resource_name_from_type(type_name: &str) -> Result<String> {
     Ok(format!("{}.{}", service, resource))
 }
 
-fn unique_name_replacement_class(resource_type_name: &str) -> Option<UniqueNameReplacementClass> {
-    UNIQUE_NAME_REPLACEMENT_CLASSES
+fn is_string_property(schema: &CfnSchema, property: &CfnProperty) -> bool {
+    if matches!(
+        property.prop_type.as_ref().and_then(TypeValue::as_str),
+        Some("string")
+    ) {
+        return true;
+    }
+
+    property
+        .ref_path
+        .as_deref()
+        .and_then(|ref_path| resolve_ref(schema, ref_path))
+        .is_some_and(|definition| definition.def_type.as_deref() == Some("string"))
+}
+
+fn declared_replacement_class(
+    resource_type_name: &str,
+    schema: &CfnSchema,
+) -> Result<ReplacementClass> {
+    let class = REPLACEMENT_CLASSES
         .iter()
         .find_map(|(name, class)| (*name == resource_type_name).then_some(*class))
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "replacement class is not declared for {resource_type_name}; add it to REPLACEMENT_CLASSES"
+            )
+        })?;
+
+    match class {
+        ReplacementClass::Attribute(attribute) => {
+            let (provider_name, property) = schema
+                .properties
+                .iter()
+                .find(|(provider_name, _)| provider_name.to_snake_case() == attribute)
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "replacement class for {resource_type_name} declares attribute {attribute:?}, but it does not match a top-level property"
+                    )
+                })?;
+            let property_path = format!("/properties/{provider_name}");
+            if schema
+                .read_only_properties
+                .iter()
+                .any(|read_only| read_only == &property_path)
+            {
+                anyhow::bail!(
+                    "replacement class for {resource_type_name} declares attribute {attribute:?}, but {property_path} is read-only"
+                );
+            }
+            if !is_string_property(schema, property) {
+                anyhow::bail!(
+                    "replacement class for {resource_type_name} declares attribute {attribute:?}, but {property_path} must be a string"
+                );
+            }
+        }
+        ReplacementClass::Coexisting | ReplacementClass::Conflicting => {}
+    }
+
+    Ok(class)
 }
 
-fn derive_unique_name_attribute(schema: &CfnSchema) -> Option<String> {
-    let primary_ids = schema.primary_identifier.as_ref()?;
-    if primary_ids.len() != 1 {
-        return None;
-    }
-
-    let prop_path = primary_ids[0].trim_start_matches("/properties/");
-    let is_read_only = schema
-        .read_only_properties
-        .iter()
-        .map(|p| p.trim_start_matches("/properties/"))
-        .any(|p| p == prop_path);
-    if is_read_only {
-        return None;
-    }
-
-    let prop = schema.properties.get(prop_path)?;
-    let is_string = prop
-        .prop_type
-        .as_ref()
-        .and_then(TypeValue::as_str)
-        .map(|t| t == "string")
-        .unwrap_or(false);
-    is_string.then(|| prop_path.to_snake_case())
-}
-
-fn derive_unique_name_emission(resource_type_name: &str, schema: &CfnSchema) -> UniqueNameEmission {
-    if let Some(attribute) = derive_unique_name_attribute(schema) {
-        return UniqueNameEmission::Attribute(attribute);
-    }
-
-    match unique_name_replacement_class(resource_type_name) {
-        Some(UniqueNameReplacementClass::Coexisting) => UniqueNameEmission::Coexisting,
-        None => UniqueNameEmission::Conflicting,
-    }
-}
-
-fn emit_unique_name_builder(code: &mut String, emission: UniqueNameEmission) {
-    match emission {
-        UniqueNameEmission::Attribute(attribute) => {
+fn emit_replacement_class_builder(code: &mut String, class: ReplacementClass) {
+    match class {
+        ReplacementClass::Attribute(attribute) => {
             code.push_str(&format!(
                 "        .with_unique_name_attribute({})\n",
-                rust_lit(&attribute)
+                rust_lit(attribute)
             ));
         }
-        UniqueNameEmission::Coexisting => {
+        ReplacementClass::Coexisting => {
             code.push_str("        .with_coexisting_replacement()\n");
         }
-        UniqueNameEmission::Conflicting => {}
+        ReplacementClass::Conflicting => {
+            code.push_str("        .with_conflicting_replacement()\n");
+        }
     }
 }
 
@@ -3007,7 +3140,7 @@ pub fn {}() -> AwsccSchemaConfig {{
         ));
     }
 
-    emit_unique_name_builder(&mut body, derive_unique_name_emission(&schema_name, schema));
+    emit_replacement_class_builder(&mut body, declared_replacement_class(&schema_name, schema)?);
 
     // Per-resource operational config for resources with slow CloudControl operations.
     let op_config = operation_config_for_type(type_name);
@@ -6315,21 +6448,11 @@ mod tests {
         paths
     }
 
-    fn is_string_property(schema: &CfnSchema, property: &CfnProperty) -> bool {
-        if matches!(
-            property.prop_type.as_ref().and_then(TypeValue::as_str),
-            Some("string")
-        ) {
-            return true;
-        }
-
-        let Some(ref_path) = &property.ref_path else {
-            return false;
-        };
-        let Some(definition) = resolve_ref(schema, ref_path) else {
-            return false;
-        };
-        matches!(definition.def_type.as_deref(), Some("string"))
+    /// Generate an intentionally partial schema fixture under a declared
+    /// resource identity whose replacement class requires no name property.
+    /// Use only when the assertion is independent of the emitted identity.
+    fn generate_synthetic_schema_code(schema: &CfnSchema) -> Result<String> {
+        generate_schema_code(schema, "AWS::EC2::Route")
     }
 
     fn has_resource_enum_override(type_name: &str, property_path: &str) -> bool {
@@ -6580,43 +6703,80 @@ mod tests {
         );
     }
 
+    fn empty_schema(type_name: &str) -> CfnSchema {
+        CfnSchema {
+            type_name: type_name.to_string(),
+            description: None,
+            properties: BTreeMap::new(),
+            required: vec![],
+            read_only_properties: vec![],
+            create_only_properties: vec![],
+            write_only_properties: vec![],
+            primary_identifier: None,
+            definitions: None,
+            tagging: None,
+            one_of: vec![],
+            any_of: vec![],
+            handlers: BTreeMap::new(),
+        }
+    }
+
+    fn emitted_replacement_class(class: ReplacementClass) -> String {
+        let mut code = String::new();
+        emit_replacement_class_builder(&mut code, class);
+        code
+    }
+
     #[test]
-    fn test_unique_name_emission_covers_attribute_coexisting_and_conflicting() {
-        fn empty_schema(type_name: &str) -> CfnSchema {
-            CfnSchema {
-                type_name: type_name.to_string(),
-                description: None,
-                properties: BTreeMap::new(),
-                required: vec![],
-                read_only_properties: vec![],
-                create_only_properties: vec![],
-                write_only_properties: vec![],
-                primary_identifier: None,
-                definitions: None,
-                tagging: None,
-                one_of: vec![],
-                any_of: vec![],
-                handlers: BTreeMap::new(),
-            }
-        }
+    fn test_replacement_class_rejects_unclassified_resource() {
+        let error = declared_replacement_class(
+            "example.Unclassified",
+            &empty_schema("AWS::Example::Unclassified"),
+        )
+        .expect_err("an unclassified resource must fail codegen");
 
-        fn emitted(emission: UniqueNameEmission) -> String {
-            let mut code = String::new();
-            emit_unique_name_builder(&mut code, emission);
-            code
-        }
+        let message = error.to_string();
+        assert!(message.contains("example.Unclassified"));
+        assert!(message.contains("add it to REPLACEMENT_CLASSES"));
+    }
 
-        assert_eq!(
-            UNIQUE_NAME_REPLACEMENT_CLASSES,
-            &[
-                ("ec2.Vpc", UniqueNameReplacementClass::Coexisting),
-                (
-                    "ec2.TransitGatewayAttachment",
-                    UniqueNameReplacementClass::Coexisting
-                ),
-            ]
+    #[test]
+    fn test_replacement_class_rejects_invalid_attribute_declarations() {
+        let missing_error = declared_replacement_class("iam.Role", &empty_schema("AWS::IAM::Role"))
+            .expect_err("a nonexistent unique-name attribute must fail codegen");
+        assert!(missing_error.to_string().contains("role_name"));
+        assert!(missing_error.to_string().contains("top-level property"));
+
+        let mut read_only_schema = empty_schema("AWS::IAM::Role");
+        read_only_schema.properties.insert(
+            "RoleName".to_string(),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("string".to_string())),
+                ..Default::default()
+            },
         );
+        read_only_schema.read_only_properties = vec!["/properties/RoleName".to_string()];
+        let read_only_error = declared_replacement_class("iam.Role", &read_only_schema)
+            .expect_err("a read-only unique-name attribute must fail codegen");
+        assert!(read_only_error.to_string().contains("role_name"));
+        assert!(read_only_error.to_string().contains("read-only"));
 
+        let mut non_string_schema = empty_schema("AWS::IAM::Role");
+        non_string_schema.properties.insert(
+            "RoleName".to_string(),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("integer".to_string())),
+                ..Default::default()
+            },
+        );
+        let non_string_error = declared_replacement_class("iam.Role", &non_string_schema)
+            .expect_err("a non-string unique-name attribute must fail codegen");
+        assert!(non_string_error.to_string().contains("role_name"));
+        assert!(non_string_error.to_string().contains("must be a string"));
+    }
+
+    #[test]
+    fn test_declared_replacement_class_covers_all_classes() {
         let mut attr_schema = empty_schema("AWS::IAM::Role");
         attr_schema.properties.insert(
             "RoleName".to_string(),
@@ -6625,48 +6785,84 @@ mod tests {
                 ..Default::default()
             },
         );
-        attr_schema.primary_identifier = Some(vec!["/properties/RoleName".to_string()]);
-        let attr_emission = derive_unique_name_emission("iam.Role", &attr_schema);
+        let attr_class = declared_replacement_class("iam.Role", &attr_schema).unwrap();
+        assert_eq!(attr_class, ReplacementClass::Attribute("role_name"));
         assert_eq!(
-            attr_emission,
-            UniqueNameEmission::Attribute("role_name".to_string())
-        );
-        assert_eq!(
-            emitted(attr_emission),
+            emitted_replacement_class(attr_class),
             "        .with_unique_name_attribute(\"role_name\")\n"
         );
 
-        let mut vpc_schema = empty_schema("AWS::EC2::VPC");
-        vpc_schema.properties.insert(
-            "VpcId".to_string(),
-            CfnProperty {
-                prop_type: Some(TypeValue::Single("string".to_string())),
-                ..Default::default()
-            },
-        );
-        vpc_schema.primary_identifier = Some(vec!["/properties/VpcId".to_string()]);
-        vpc_schema.read_only_properties = vec!["/properties/VpcId".to_string()];
-        let coexisting_emission = derive_unique_name_emission("ec2.Vpc", &vpc_schema);
-        assert_eq!(coexisting_emission, UniqueNameEmission::Coexisting);
+        let coexisting_class =
+            declared_replacement_class("ec2.Vpc", &empty_schema("AWS::EC2::VPC")).unwrap();
+        assert_eq!(coexisting_class, ReplacementClass::Coexisting);
         assert_eq!(
-            emitted(coexisting_emission),
+            emitted_replacement_class(coexisting_class),
             "        .with_coexisting_replacement()\n"
         );
 
-        let tgw_attachment_emission = derive_unique_name_emission(
-            "ec2.TransitGatewayAttachment",
-            &empty_schema("AWS::EC2::TransitGatewayAttachment"),
-        );
-        assert_eq!(tgw_attachment_emission, UniqueNameEmission::Coexisting);
+        let conflicting_class =
+            declared_replacement_class("ec2.Subnet", &empty_schema("AWS::EC2::Subnet")).unwrap();
+        assert_eq!(conflicting_class, ReplacementClass::Conflicting);
         assert_eq!(
-            emitted(tgw_attachment_emission),
-            "        .with_coexisting_replacement()\n"
+            emitted_replacement_class(conflicting_class),
+            "        .with_conflicting_replacement()\n"
+        );
+    }
+
+    #[test]
+    fn test_declared_replacement_class_issue_441_named_scenarios() {
+        let security_group = cfn_schema_for_codegen_tests("AWS::EC2::SecurityGroup");
+        assert_eq!(
+            declared_replacement_class("ec2.SecurityGroup", &security_group).unwrap(),
+            ReplacementClass::Attribute("group_name")
         );
 
-        let conflicting_emission =
-            derive_unique_name_emission("ec2.Route", &empty_schema("AWS::EC2::Route"));
-        assert_eq!(conflicting_emission, UniqueNameEmission::Conflicting);
-        assert_eq!(emitted(conflicting_emission), "");
+        let web_acl = cfn_schema_for_codegen_tests("AWS::WAFv2::WebACL");
+        assert_eq!(
+            declared_replacement_class("wafv2.WebAcl", &web_acl).unwrap(),
+            ReplacementClass::Attribute("name")
+        );
+
+        let bucket_policy = cfn_schema_for_codegen_tests("AWS::S3::BucketPolicy");
+        assert_eq!(
+            declared_replacement_class("s3.BucketPolicy", &bucket_policy).unwrap(),
+            ReplacementClass::Conflicting
+        );
+    }
+
+    #[test]
+    fn test_replacement_class_table_exactly_matches_schema_cache() {
+        let mut cached_resources = BTreeSet::new();
+
+        for path in cached_schema_paths() {
+            let raw = std::fs::read_to_string(&path).expect("cached CFN schema");
+            let schema: CfnSchema = serde_json::from_str(&raw).expect("cached CFN schema parses");
+            let dsl_name = dsl_resource_name_from_type(&schema.type_name)
+                .expect("cached CFN type name is valid");
+
+            assert!(
+                cached_resources.insert(dsl_name.clone()),
+                "duplicate cached DSL resource name: {dsl_name}"
+            );
+            declared_replacement_class(&dsl_name, &schema).unwrap_or_else(|error| {
+                panic!("replacement class for {dsl_name} must validate: {error}")
+            });
+        }
+
+        let declared_resources: BTreeSet<&str> = REPLACEMENT_CLASSES
+            .iter()
+            .map(|(resource, _)| *resource)
+            .collect();
+        assert_eq!(
+            declared_resources.len(),
+            REPLACEMENT_CLASSES.len(),
+            "replacement class table must not contain duplicate resource names"
+        );
+        assert_eq!(
+            declared_resources,
+            cached_resources.iter().map(String::as_str).collect(),
+            "replacement class table and schema cache must contain the same resource types"
+        );
     }
 
     #[test]
@@ -10750,7 +10946,7 @@ mod tests {
             handlers: BTreeMap::new(),
         };
 
-        let generated = generate_schema_code(&schema, "AWS::EC2::TestResource").unwrap();
+        let generated = generate_synthetic_schema_code(&schema).unwrap();
 
         assert!(
             generated.contains("AttributeType::enum_("),
@@ -11185,7 +11381,7 @@ mod tests {
             any_of: vec![],
             handlers: BTreeMap::new(),
         };
-        let generated = generate_schema_code(&schema, "AWS::WAFv2::WebACL").unwrap();
+        let generated = generate_synthetic_schema_code(&schema).unwrap();
         assert!(
             generated.contains("StructField::new(\"priority\", AttributeType::refined_int("),
             "nested struct field via scalar integer $ref must generate as int: {generated}"
@@ -11238,7 +11434,7 @@ mod tests {
             any_of: vec![],
             handlers: BTreeMap::new(),
         };
-        let generated = generate_schema_code(&schema, "AWS::Example::Thing").unwrap();
+        let generated = generate_synthetic_schema_code(&schema).unwrap();
         assert!(
             generated.contains("AttributeType::list(AttributeType::int())"),
             "list of scalar integer $ref must generate list(int()): {generated}"
@@ -11284,7 +11480,7 @@ mod tests {
             any_of: vec![],
             handlers: BTreeMap::new(),
         };
-        let generated = generate_schema_code(&schema, "AWS::S3::Bucket").unwrap();
+        let generated = generate_synthetic_schema_code(&schema).unwrap();
         assert!(
             generated.contains("AttributeType::list(AttributeType::enum_("),
             "array with enum items should generate list(Enum): {generated}"
@@ -11837,7 +12033,7 @@ mod tests {
             handlers: BTreeMap::new(),
         };
 
-        let generated = generate_schema_code(&schema, "AWS::IAM::Role").unwrap();
+        let generated = generate_synthetic_schema_code(&schema).unwrap();
 
         assert!(
             generated.contains(
@@ -11880,7 +12076,7 @@ mod tests {
             handlers: BTreeMap::new(),
         };
 
-        let generated = generate_schema_code(&schema, "AWS::Logs::LogGroup").unwrap();
+        let generated = generate_synthetic_schema_code(&schema).unwrap();
 
         assert!(
             generated.contains(".with_default(Value::Concrete(ConcreteValue::Bool(false)))"),
@@ -11917,7 +12113,7 @@ mod tests {
             handlers: BTreeMap::new(),
         };
 
-        let generated = generate_schema_code(&schema, "AWS::Test::Resource").unwrap();
+        let generated = generate_synthetic_schema_code(&schema).unwrap();
 
         assert!(
             generated.contains(".with_default(Value::Concrete(ConcreteValue::Int(3)))"),
@@ -12707,7 +12903,7 @@ mod tests {
             handlers: BTreeMap::new(),
         };
 
-        let generated = generate_schema_code(&schema, "AWS::Test::Resource").unwrap();
+        let generated = generate_synthetic_schema_code(&schema).unwrap();
 
         assert!(
             generated.contains("validate_string_length_min_1"),
@@ -12748,7 +12944,7 @@ mod tests {
             handlers: BTreeMap::new(),
         };
 
-        let generated = generate_schema_code(&schema, "AWS::Test::Resource").unwrap();
+        let generated = generate_synthetic_schema_code(&schema).unwrap();
 
         assert!(
             generated.contains("validate_string_length_max_256"),
@@ -12990,7 +13186,7 @@ mod tests {
             handlers: BTreeMap::new(),
         };
 
-        let generated = generate_schema_code(&schema, "AWS::S3::Bucket").unwrap();
+        let generated = generate_synthetic_schema_code(&schema).unwrap();
         assert!(
             generated.contains("fn validate_string_pattern_"),
             "Should generate hash-based pattern validation function for $ref definition pattern: {generated}"
@@ -13037,7 +13233,7 @@ mod tests {
             handlers: BTreeMap::new(),
         };
 
-        let generated = generate_schema_code(&schema, "AWS::Test::Resource").unwrap();
+        let generated = generate_synthetic_schema_code(&schema).unwrap();
         assert!(
             generated.contains("fn validate_string_pattern_"),
             "Should generate hash-based pattern validation function for top-level $ref pattern: {generated}"
@@ -13083,7 +13279,7 @@ mod tests {
             handlers: BTreeMap::new(),
         };
 
-        let generated = generate_schema_code(&schema, "AWS::Test::Resource").unwrap();
+        let generated = generate_synthetic_schema_code(&schema).unwrap();
 
         // Should NOT have per-property validation functions
         assert!(
@@ -13235,7 +13431,7 @@ mod tests {
             handlers: BTreeMap::new(),
         };
 
-        let generated = generate_schema_code(&schema, "AWS::Test::Resource").unwrap();
+        let generated = generate_synthetic_schema_code(&schema).unwrap();
 
         // Should use chars().count() for character-based length, not byte-based len()
         assert!(
@@ -13285,7 +13481,7 @@ mod tests {
             handlers: BTreeMap::new(),
         };
 
-        let generated = generate_schema_code(&schema, "AWS::Test::Resource").unwrap();
+        let generated = generate_synthetic_schema_code(&schema).unwrap();
 
         // Should NOT have per-property pattern validation functions
         assert!(
@@ -13380,7 +13576,7 @@ mod tests {
             handlers: BTreeMap::new(),
         };
 
-        let generated = generate_schema_code(&schema, "AWS::Test::Resource").unwrap();
+        let generated = generate_synthetic_schema_code(&schema).unwrap();
 
         // Should NOT have per-property items validation functions
         assert!(
@@ -13804,8 +14000,7 @@ mod tests {
             handlers: BTreeMap::new(),
         };
 
-        let code = generate_schema_code(&schema, "AWS::Test::ArrayPattern")
-            .expect("codegen should succeed");
+        let code = generate_synthetic_schema_code(&schema).expect("codegen should succeed");
 
         // The combined validator function must be defined
         assert!(
@@ -14008,7 +14203,7 @@ mod tests {
             handlers: BTreeMap::new(),
         };
 
-        let generated = generate_schema_code(&schema, "AWS::EC2::TestResource").unwrap();
+        let generated = generate_synthetic_schema_code(&schema).unwrap();
 
         // A read-only attribute with no description should not get a "(read-only)" description
         assert!(
@@ -14397,7 +14592,7 @@ mod tests {
             handlers: BTreeMap::new(),
         };
 
-        let code = generate_schema_code(&schema, "AWS::Test::Resource").unwrap();
+        let code = generate_synthetic_schema_code(&schema).unwrap();
 
         // Password should have .write_only()
         assert!(
@@ -14512,7 +14707,7 @@ mod tests {
             handlers: BTreeMap::new(),
         };
 
-        let code = generate_schema_code(&schema, "AWS::Test::Nested").unwrap();
+        let code = generate_synthetic_schema_code(&schema).unwrap();
 
         // Config should NOT have .write_only() because only its child is write-only
         assert!(
@@ -14612,7 +14807,7 @@ mod tests {
             any_of: vec![],
             handlers: BTreeMap::new(),
         };
-        let generated = generate_schema_code(&schema, "AWS::S3::Bucket").unwrap();
+        let generated = generate_synthetic_schema_code(&schema).unwrap();
 
         // The values list still carries the API spellings (canonical for round-trip
         // with the AWS API) but a populated dsl_aliases entry must be present.
@@ -14687,7 +14882,7 @@ mod tests {
             any_of: vec![],
             handlers: BTreeMap::new(),
         };
-        let generated = generate_schema_code(&schema, "AWS::S3::Bucket").unwrap();
+        let generated = generate_synthetic_schema_code(&schema).unwrap();
         assert!(
             generated.contains("(\"DEEP_ARCHIVE\".to_string(), \"deep_archive\".to_string())"),
             "dsl_aliases must map SHOUTY_SNAKE to snake_case: {generated}"

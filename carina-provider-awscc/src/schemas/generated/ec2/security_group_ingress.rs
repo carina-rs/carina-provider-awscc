@@ -123,6 +123,7 @@ pub fn ec2_security_group_ingress_config() -> AwsccSchemaConfig {
                 .with_description("The end of port range for the TCP and UDP protocols, or an ICMP/ICMPv6 code. A value of -1 indicates all ICMP/ICMPv6 codes for the specified ICMP type. If you specify all ICMP/ICMPv6 types, you must specify all codes. Use this for ICMP and any protocol that uses ports.")
                 .with_provider_name("ToPort"),
         )
+        .with_conflicting_replacement()
     }
 }
 

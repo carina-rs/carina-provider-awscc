@@ -50,15 +50,19 @@ aws-vault exec <profile> -- ./carina-provider-awscc/scripts/generate-schemas.sh 
    )
    ```
 
-2. If the resource also needs documentation, add the same type to `scripts/generate-docs.sh`.
+2. Add its DSL resource name and deliberate replacement class to
+   `REPLACEMENT_CLASSES` in `codegen.rs`. Codegen fails if this declaration is
+   missing.
 
-3. Run the generation script:
+3. If the resource also needs documentation, add the same type to `scripts/generate-docs.sh`.
+
+4. Run the generation script:
 
    ```bash
    aws-vault exec <profile> -- ./carina-provider-awscc/scripts/generate-schemas.sh
    ```
 
-4. Verify the generated output:
+5. Verify the generated output:
 
    ```bash
    cargo test -p carina-provider-awscc

@@ -38,7 +38,8 @@ pub fn wafv2_web_acl_association_config() -> AwsccSchemaConfig {
                     .required()
                     .create_only()
                     .with_provider_name("WebACLArn"),
-            ),
+            )
+            .with_conflicting_replacement(),
     }
 }
 

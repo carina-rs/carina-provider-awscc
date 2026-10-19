@@ -116,7 +116,8 @@ pub fn sso_assignment_config() -> AwsccSchemaConfig {
                 .create_only()
                 .with_description("The type of resource to be provisioned to, only aws account now")
                 .with_provider_name("TargetType"),
-            ),
+            )
+            .with_coexisting_replacement(),
     }
 }
 

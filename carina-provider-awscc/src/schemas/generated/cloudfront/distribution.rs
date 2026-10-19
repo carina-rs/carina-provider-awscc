@@ -264,6 +264,7 @@ pub fn cloudfront_distribution_config() -> AwsccSchemaConfig {
                 .read_only()
                 .with_description("The ARN of the CloudFront distribution. Synthesized by the provider from the distribution id; CloudFront's CloudFormation type does not expose ARN through the Cloud Control API. (read-only)"),
         )
+        .with_conflicting_replacement()
         .with_validator(|attrs| {
             let mut errors = Vec::new();
             if let Err(mut e) = carina_aws_types::validate_tags_map(attrs) {

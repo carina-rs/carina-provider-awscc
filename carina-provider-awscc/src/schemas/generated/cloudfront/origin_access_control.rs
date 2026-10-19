@@ -40,6 +40,7 @@ pub fn cloudfront_origin_access_control_config() -> AwsccSchemaConfig {
                 .with_description("The origin access control.")
                 .with_provider_name("OriginAccessControlConfig"),
         )
+        .with_conflicting_replacement()
         .with_def("OriginAccessControlConfig", AttributeType::struct_("OriginAccessControlConfig".to_string(), vec![StructField::new("description", AttributeType::string()).with_description("A description of the origin access control.").with_provider_name("Description"),
                     StructField::new("name", AttributeType::string()).required().with_description("A name to identify the origin access control. You can specify up to 64 characters.").with_provider_name("Name"),
                     StructField::new("origin_access_control_origin_type", AttributeType::enum_(carina_core::schema::enum_identity("OriginAccessControlOriginType", Some("aws.cloudfront.OriginAccessControl.OriginAccessControlConfig")), Some(vec!["s3".to_string(), "mediastore".to_string(), "lambda".to_string(), "mediapackagev2".to_string()]), vec![("s3".to_string(), "s3".to_string()), ("mediastore".to_string(), "mediastore".to_string()), ("lambda".to_string(), "lambda".to_string()), ("mediapackagev2".to_string(), "mediapackagev2".to_string())], None, None)).required().with_description("The type of origin that this origin access control is for.").with_provider_name("OriginAccessControlOriginType"),
