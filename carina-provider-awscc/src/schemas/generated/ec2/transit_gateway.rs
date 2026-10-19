@@ -273,6 +273,7 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
                 )
                 .with_provider_name("VpnEcmpSupport"),
             )
+            .with_coexisting_replacement()
             .with_operation_config(OperationConfig {
                 delete_timeout_secs: Some(1800),
                 delete_max_retries: Some(24),

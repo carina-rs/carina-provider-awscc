@@ -102,6 +102,7 @@ pub fn ec2_route_config() -> AwsccSchemaConfig {
                 .with_description("The ID of a VPC peering connection.")
                 .with_provider_name("VpcPeeringConnectionId"),
         )
+        .with_coexisting_replacement()
     }
 }
 

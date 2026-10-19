@@ -39,6 +39,7 @@ pub fn ec2_vpc_gateway_attachment_config() -> AwsccSchemaConfig {
                 .with_description("The ID of the virtual private gateway. You must specify either InternetGatewayId or VpnGatewayId, but not both.")
                 .with_provider_name("VpnGatewayId"),
         )
+        .with_conflicting_replacement()
         .with_operation_config(OperationConfig {
             delete_timeout_secs: Some(1800),
             delete_max_retries: None,

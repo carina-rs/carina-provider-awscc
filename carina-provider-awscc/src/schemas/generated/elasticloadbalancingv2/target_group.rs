@@ -163,6 +163,7 @@ pub fn elasticloadbalancingv2_target_group_config() -> AwsccSchemaConfig {
                 .with_description("The identifier of the virtual private cloud (VPC). If the target is a Lambda function, this parameter does not apply.")
                 .with_provider_name("VpcId"),
         )
+        .with_unique_name_attribute("name")
         .with_validator(|attrs| {
             let mut errors = Vec::new();
             if let Err(mut e) = carina_aws_types::validate_tags_map(attrs) {

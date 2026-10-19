@@ -620,6 +620,7 @@ pub fn wafv2_web_acl_config() -> AwsccSchemaConfig {
                 .required()
                 .with_provider_name("VisibilityConfig"),
         )
+        .with_unique_name_attribute("name")
         .with_validator(|attrs| {
             let mut errors = Vec::new();
             if let Err(mut e) = carina_aws_types::validate_tags_map(attrs) {

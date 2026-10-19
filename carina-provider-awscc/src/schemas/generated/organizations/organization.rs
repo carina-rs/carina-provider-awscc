@@ -84,6 +84,7 @@ pub fn organizations_organization_config() -> AwsccSchemaConfig {
                 .with_description("The unique identifier (ID) for the root. (read-only)")
                 .with_provider_name("RootId"),
         )
+        .with_conflicting_replacement()
     }
 }
 

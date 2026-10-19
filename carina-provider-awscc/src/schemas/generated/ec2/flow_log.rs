@@ -129,6 +129,7 @@ pub fn ec2_flow_log_config() -> AwsccSchemaConfig {
                 .with_description("The type of traffic to log. You can log traffic that the resource accepts or rejects, or all traffic.")
                 .with_provider_name("TrafficType"),
         )
+        .with_conflicting_replacement()
         .with_validator(|attrs| {
             let mut errors = Vec::new();
             if let Err(mut e) = carina_aws_types::validate_tags_map(attrs) {

@@ -140,6 +140,7 @@ pub fn elasticloadbalancingv2_load_balancer_config() -> AwsccSchemaConfig {
                 .with_description("The type of load balancer. The default is ``application``.")
                 .with_provider_name("Type"),
         )
+        .with_conflicting_replacement()
         .with_validator(|attrs| {
             let mut errors = Vec::new();
             if let Err(mut e) = carina_aws_types::validate_tags_map(attrs) {

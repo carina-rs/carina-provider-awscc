@@ -106,6 +106,7 @@ pub fn ec2_security_group_egress_config() -> AwsccSchemaConfig {
                 .with_description("If the protocol is TCP or UDP, this is the end of the port range. If the protocol is ICMP or ICMPv6, this is the ICMP code or -1 (all ICMP codes). If the start port is -1 (all ICMP types), then the end port must be -1 (all ICMP codes).")
                 .with_provider_name("ToPort"),
         )
+        .with_conflicting_replacement()
     }
 }
 

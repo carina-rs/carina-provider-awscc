@@ -42,6 +42,7 @@ pub fn identitystore_group_config() -> AwsccSchemaConfig {
                 .with_description("The globally unique identifier for the identity store.")
                 .with_provider_name("IdentityStoreId"),
         )
+        .with_unique_name_attribute("display_name")
     }
 }
 

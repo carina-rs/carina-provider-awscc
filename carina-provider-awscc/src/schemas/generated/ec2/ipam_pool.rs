@@ -197,6 +197,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
                 .with_provider_name("Tags")
                 .with_block_name("tag"),
         )
+        .with_conflicting_replacement()
         .with_operation_config(OperationConfig {
             delete_timeout_secs: Some(1800),
             delete_max_retries: None,
