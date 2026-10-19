@@ -48,7 +48,7 @@ impl AwsccProcessProvider {
     }
 
     fn convert_error(e: CoreProviderError) -> proto::ProviderError {
-        convert::core_to_proto_provider_error(e)
+        e.to_wire()
     }
 
     fn provider(&self) -> &AwsccProvider {

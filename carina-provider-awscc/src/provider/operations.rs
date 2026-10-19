@@ -219,8 +219,7 @@ impl AwsccProvider {
                         .collect();
                     let reason = format!(
                         "handler failed: {}; read error: {}",
-                        status_message,
-                        read_err.message(),
+                        status_message, read_err,
                     );
                     return Ok(CreateOutcome::partial_success(
                         state,
@@ -343,8 +342,7 @@ impl AwsccProvider {
                         State::existing(id.clone(), state_attributes).with_identifier(identifier);
                     let mut reason = format!(
                         "handler failed: {}; read error: {}",
-                        status_message,
-                        read_err.message(),
+                        status_message, read_err,
                     );
                     if !patch_plan.unsent.is_empty() {
                         reason.push_str("; ");
@@ -378,8 +376,7 @@ impl AwsccProvider {
         // Handle force_delete for S3 buckets: empty the bucket before deletion
         if directives.force_delete && id.resource_type == "s3.Bucket" {
             self.empty_s3_bucket(identifier).await.map_err(|e| {
-                ProviderError::api_error("Failed to empty S3 bucket before deletion")
-                    .with_cause(e)
+                ProviderError::api_error_caused_by("Failed to empty S3 bucket before deletion", e)
                     .for_resource(id.clone())
             })?;
         }
@@ -864,7 +861,7 @@ mod tests {
             .await
             .expect_err("initialization error must still short-circuit provider reads");
 
-        assert_eq!(error.message(), "provider initialization failed");
+        assert_eq!(error.detail().context(), "provider initialization failed");
         assert!(!service.saw_get_resource.load(Ordering::SeqCst));
     }
 
@@ -1646,6 +1643,26 @@ mod tests {
         }
     }
 
+    fn assert_structured_partial_read_error(reason: &str, status_message: &str) {
+        assert!(
+            reason.starts_with(&format!(
+                "handler failed: {status_message}; read error: Failed to get resource"
+            )),
+            "unexpected partial-success reason: {reason}"
+        );
+        for expected in [
+            "operation: cloudcontrol.GetResource",
+            "status: 403 AccessDeniedException",
+            "resource type AWS::S3::Bucket, identifier partial-bucket",
+            "read denied",
+        ] {
+            assert!(
+                reason.contains(expected),
+                "partial-success reason lost `{expected}`: {reason}"
+            );
+        }
+    }
+
     #[tokio::test]
     async fn update_resource_returns_partial_success_when_failed_identifier_read_fails() {
         let service = PartialUpdateCloudControlService::new(false, false);
@@ -1683,10 +1700,7 @@ mod tests {
             !state.attributes.contains_key("tags"),
             "missing authored attributes must be absent so the partial-read marker can materialize them as Unknown"
         );
-        assert_eq!(
-            diagnostic.reason(),
-            "handler failed: post-update read denied; read error: Failed to get resource: AccessDeniedException: read denied"
-        );
+        assert_structured_partial_read_error(diagnostic.reason(), "post-update read denied");
         assert_eq!(diagnostic.missing_attributes(), &["tags".to_string()]);
     }
 
@@ -1753,10 +1767,7 @@ mod tests {
             diagnostic.missing_attributes(),
             &["access_control".to_string()]
         );
-        assert_eq!(
-            diagnostic.reason(),
-            "handler failed: post-update read denied; read error: Failed to get resource: AccessDeniedException: read denied"
-        );
+        assert_structured_partial_read_error(diagnostic.reason(), "post-update read denied");
     }
 
     #[tokio::test]
@@ -1792,11 +1803,7 @@ mod tests {
                 .reason()
                 .contains("handler failed: post-update read denied")
         );
-        assert!(
-            diagnostic
-                .reason()
-                .contains("read error: Failed to get resource: AccessDeniedException: read denied")
-        );
+        assert_structured_partial_read_error(diagnostic.reason(), "post-update read denied");
         assert!(
             diagnostic.reason().contains("not sent to Cloud Control"),
             "the diagnostic must distinguish provider-dropped updates from read-back omissions"
@@ -1907,10 +1914,7 @@ mod tests {
         assert!(state.exists);
         assert_eq!(state.identifier.as_deref(), Some("partial-bucket"));
         assert!(state.attributes.is_empty());
-        assert_eq!(
-            diagnostic.reason(),
-            "handler failed: post-create read denied; read error: Failed to get resource: AccessDeniedException: read denied"
-        );
+        assert_structured_partial_read_error(diagnostic.reason(), "post-create read denied");
         assert_eq!(
             diagnostic.missing_attributes(),
             &["bucket_name".to_string()]

@@ -8,7 +8,16 @@ use aws_smithy_types::error::metadata::ProvideErrorMetadata;
 
 use carina_core::provider::{ProviderError, ProviderResult};
 
-use super::AwsccProvider;
+use super::{AwsccProvider, error_helpers::api_error_with_meta_and_subject};
+
+#[derive(Debug)]
+struct S3Bucket(String);
+
+impl std::fmt::Display for S3Bucket {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "bucket {}", self.0)
+    }
+}
 
 impl AwsccProvider {
     /// Create an S3 client from the stored config
@@ -40,10 +49,12 @@ impl AwsccProvider {
                     if is_no_such_bucket(&e) {
                         return Ok(());
                     }
-                    return Err(ProviderError::api_error(format!(
-                        "Failed to list object versions: {}",
-                        format_s3_error(&e)
-                    )));
+                    return Err(api_error_with_meta_and_subject(
+                        "Failed to list object versions",
+                        "s3.ListObjectVersions",
+                        S3Bucket(bucket_name.to_string()),
+                        e,
+                    ));
                 }
             };
 
@@ -57,7 +68,7 @@ impl AwsccProvider {
                         id = id.version_id(vid);
                     }
                     objects_to_delete.push(id.build().map_err(|e| {
-                        ProviderError::internal("Failed to build ObjectIdentifier").with_cause(e)
+                        ProviderError::internal_caused_by("Failed to build ObjectIdentifier", e)
                     })?);
                 }
             }
@@ -70,7 +81,7 @@ impl AwsccProvider {
                         id = id.version_id(vid);
                     }
                     objects_to_delete.push(id.build().map_err(|e| {
-                        ProviderError::internal("Failed to build ObjectIdentifier").with_cause(e)
+                        ProviderError::internal_caused_by("Failed to build ObjectIdentifier", e)
                     })?);
                 }
             }
@@ -82,7 +93,7 @@ impl AwsccProvider {
                     .quiet(true)
                     .build()
                     .map_err(|e| {
-                        ProviderError::internal("Failed to build Delete request").with_cause(e)
+                        ProviderError::internal_caused_by("Failed to build Delete request", e)
                     })?;
 
                 s3.delete_objects()
@@ -91,10 +102,12 @@ impl AwsccProvider {
                     .send()
                     .await
                     .map_err(|e| {
-                        ProviderError::api_error(format!(
-                            "Failed to delete objects: {}",
-                            format_s3_error(&e)
-                        ))
+                        api_error_with_meta_and_subject(
+                            "Failed to delete objects",
+                            "s3.DeleteObjects",
+                            S3Bucket(bucket_name.to_string()),
+                            e,
+                        )
                     })?;
             }
 
@@ -107,26 +120,6 @@ impl AwsccProvider {
         }
 
         Ok(())
-    }
-}
-
-/// Format an S3 SDK error into a human-readable message with error code and details.
-///
-/// The `SdkError::Display` implementation only outputs generic labels like "service error"
-/// without including the actual error code or message. This function extracts the structured
-/// error metadata to provide actionable error messages.
-fn format_s3_error<E, R>(error: &SdkError<E, R>) -> String
-where
-    E: ProvideErrorMetadata + std::fmt::Display,
-{
-    match error {
-        SdkError::ServiceError(service_error) => {
-            let err = service_error.err();
-            let code = err.code().unwrap_or("Unknown");
-            let message = err.message().unwrap_or("no details");
-            format!("{}: {}", code, message)
-        }
-        other => format!("{}", other),
     }
 }
 

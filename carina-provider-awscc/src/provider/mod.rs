@@ -19,6 +19,7 @@ mod arn_synthesis;
 pub mod assume_role;
 mod cloudcontrol;
 pub(crate) mod conversion;
+mod error_helpers;
 mod normalizer;
 mod operations;
 mod s3;
@@ -33,6 +34,7 @@ use carina_core::provider::{ProviderError, ProviderResult};
 use tokio::sync::OnceCell;
 
 use crate::schemas::config::AwsccSchemaConfig;
+use error_helpers::api_error_with_meta;
 
 // Re-export public API
 pub use normalizer::{
@@ -137,7 +139,11 @@ impl AwsccProvider {
             .get_or_try_init(|| async {
                 let sts = StsClient::new(&self.aws_config);
                 let identity = sts.get_caller_identity().send().await.map_err(|e| {
-                    ProviderError::api_error(format!("Failed to call sts:GetCallerIdentity: {e}"))
+                    api_error_with_meta(
+                        "Failed to call sts:GetCallerIdentity",
+                        "sts.GetCallerIdentity",
+                        e,
+                    )
                 })?;
                 identity.account().map(|s| s.to_string()).ok_or_else(|| {
                     ProviderError::api_error("sts:GetCallerIdentity returned no account id")

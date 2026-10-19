@@ -8,14 +8,13 @@ use std::collections::HashMap;
 
 use carina_core::provider::{
     CreateOutcome as CoreCreateOutcome, PatchOp as CorePatchOp, PatchOpKind as CorePatchOpKind,
-    ProviderError as CoreProviderError, UpdateOutcome as CoreUpdateOutcome,
-    UpdatePatch as CoreUpdatePatch,
+    UpdateOutcome as CoreUpdateOutcome, UpdatePatch as CoreUpdatePatch,
 };
 use carina_core::resource::{
     ConcreteValue, DataSource as CoreDataSource, DeferredValue, Directives as CoreDirectives,
     Resource as CoreResource, ResourceId as CoreResourceId,
     ResourceIdentity as CoreResourceIdentity, ResourceIdentityError as CoreResourceIdentityError,
-    ResourceIdentityState as CoreResourceIdentityState, State as CoreState, Value as CoreValue,
+    State as CoreState, Value as CoreValue,
 };
 use carina_core::schema::{
     AttributeSchema as CoreAttributeSchema, AttributeType as CoreAttributeType,
@@ -27,25 +26,16 @@ use carina_provider_protocol::types::{
     AttributeSchema as ProtoAttributeSchema, AttributeType as ProtoAttributeType,
     CreateOutcome as ProtoCreateOutcome, Directives as ProtoDirectives,
     PartialReadDiagnostic as ProtoPartialReadDiagnostic, PatchOp as ProtoPatchOp,
-    PatchOpKind as ProtoPatchOpKind, ProviderError as ProtoProviderError,
-    ProviderErrorKind as ProtoProviderErrorKind, Resource as ProtoResource,
-    ResourceId as ProtoResourceId, ResourceSchema as ProtoResourceSchema, State as ProtoState,
-    StructField as ProtoStructField, UniqueNameSpec as ProtoUniqueNameSpec,
-    UpdateOutcome as ProtoUpdateOutcome, UpdatePatch as ProtoUpdatePatch, Value as ProtoValue,
+    PatchOpKind as ProtoPatchOpKind, Resource as ProtoResource, ResourceId as ProtoResourceId,
+    ResourceSchema as ProtoResourceSchema, State as ProtoState, StructField as ProtoStructField,
+    UniqueNameSpec as ProtoUniqueNameSpec, UpdateOutcome as ProtoUpdateOutcome,
+    UpdatePatch as ProtoUpdatePatch, Value as ProtoValue,
 };
 
 // -- ResourceId --
 
 pub fn core_to_proto_resource_id(id: &CoreResourceId) -> ProtoResourceId {
-    let identity = match id.identity_state() {
-        CoreResourceIdentityState::Pending(_) => String::new(),
-        CoreResourceIdentityState::Resolved(identity) => identity.as_str().to_string(),
-    };
-    ProtoResourceId {
-        provider: id.provider.clone(),
-        resource_type: id.resource_type.clone(),
-        identity,
-    }
+    id.to_wire()
 }
 
 pub fn proto_to_core_resource_id(id: &ProtoResourceId) -> CoreResourceId {
@@ -731,42 +721,6 @@ fn proto_to_core_patch_op(op: &ProtoPatchOp) -> CorePatchOp {
 pub fn proto_to_core_update_patch(p: &ProtoUpdatePatch) -> CoreUpdatePatch {
     CoreUpdatePatch {
         ops: p.ops.iter().map(proto_to_core_patch_op).collect(),
-    }
-}
-
-// -- ProviderError --
-
-fn core_to_proto_provider_error_kind(e: &CoreProviderError) -> ProtoProviderErrorKind {
-    match e {
-        CoreProviderError::InvalidInput(_) => ProtoProviderErrorKind::InvalidInput,
-        CoreProviderError::ApiError(_) => ProtoProviderErrorKind::ApiError,
-        CoreProviderError::NotFound(_) => ProtoProviderErrorKind::NotFound,
-        CoreProviderError::Timeout(_) => ProtoProviderErrorKind::Timeout,
-        CoreProviderError::Internal(_) => ProtoProviderErrorKind::Internal,
-    }
-}
-
-pub fn core_to_proto_provider_error(e: CoreProviderError) -> ProtoProviderError {
-    let kind = core_to_proto_provider_error_kind(&e);
-    let detail = e.detail();
-    let resource_id = detail.resource_id.as_deref().map(core_to_proto_resource_id);
-    let cause = detail.cause.as_ref().map(|c| c.to_string());
-    let provider_name = detail.provider_name.clone();
-    let message = detail.message.clone();
-    let operation = detail.operation.clone();
-    let status = detail.status;
-    let code = detail.code.clone();
-    let request_id = detail.request_id.clone();
-    ProtoProviderError {
-        kind,
-        message,
-        resource_id,
-        cause,
-        provider_name,
-        operation,
-        status,
-        code,
-        request_id,
     }
 }
 
