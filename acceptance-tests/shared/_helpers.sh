@@ -27,10 +27,9 @@ if [ -z "${CARINA_BIN:-}" ]; then
 fi
 
 # ── Provider source injection ────────────────────────────────────────
-# Use WASM provider binaries (carina CLI only supports WASM providers)
+# Use the WASM awscc provider binary (carina CLI only supports WASM providers)
 # Build with: cargo build -p carina-provider-awscc --target wasm32-wasip2 --release
 AWSCC_PROVIDER_BIN="${AWSCC_PROVIDER_BIN:-$PROJECT_ROOT/target/wasm32-wasip2/release/carina-provider-awscc.wasm}"
-AWS_PROVIDER_BIN="${AWS_PROVIDER_BIN:-$PROJECT_ROOT/target/wasm32-wasip2/release/carina-provider-aws.wasm}"
 PROVIDER_VERSION=$(grep '^version = ' "$PROJECT_ROOT/Cargo.toml" | head -1 | sed 's/version = "\(.*\)"/\1/')
 
 # inject_provider_source: Create a temp directory containing a .crn file with
@@ -45,9 +44,6 @@ inject_provider_source() {
     sed \
         -e '/^provider awscc {/a\
   source = "file://'"$AWSCC_PROVIDER_BIN"'"\
-  version = "'"$PROVIDER_VERSION"'"' \
-        -e '/^provider aws {/a\
-  source = "file://'"$AWS_PROVIDER_BIN"'"\
   version = "'"$PROVIDER_VERSION"'"' \
         "$original" > "$tmp_dir/main.crn"
 
@@ -66,9 +62,6 @@ inject_provider_source_dir() {
         sed -i '' \
             -e '/^provider awscc {/a\
   source = "file://'"$AWSCC_PROVIDER_BIN"'"\
-  version = "'"$PROVIDER_VERSION"'"' \
-            -e '/^provider aws {/a\
-  source = "file://'"$AWS_PROVIDER_BIN"'"\
   version = "'"$PROVIDER_VERSION"'"' \
             "$crn_file"
     done

@@ -1364,22 +1364,18 @@ fi
 # Provider blocks require source and version attributes.
 # Inject them dynamically so .crn files don't need to hard-code binary paths.
 AWSCC_PROVIDER_BIN="${AWSCC_PROVIDER_BIN:-$PROJECT_ROOT/target/wasm32-wasip2/release/carina-provider-awscc.wasm}"
-AWS_PROVIDER_BIN="${AWS_PROVIDER_BIN:-$PROJECT_ROOT/target/wasm32-wasip2/release/carina-provider-aws.wasm}"
 
 # Read provider version from workspace Cargo.toml to avoid hardcoding
 PROVIDER_VERSION=$(grep '^version = ' "$PROJECT_ROOT/Cargo.toml" | head -1 | sed 's/version = "\(.*\)"/\1/')
 
-# Validate that provider binaries are WASM components, not native binaries.
+# Validate that the awscc provider binary is a WASM component, not a native binary.
 # Native binaries are no longer supported and will cause cryptic linker errors.
-for bin_var in AWSCC_PROVIDER_BIN AWS_PROVIDER_BIN; do
-    bin_path="${!bin_var}"
-    if [ -n "$bin_path" ] && [ -f "$bin_path" ] && [[ "$bin_path" != *.wasm ]]; then
-        echo "ERROR: $bin_var points to a non-WASM binary: $bin_path"
-        echo "       Provider binaries must be .wasm components."
-        echo "       Unset $bin_var to use the default WASM build, or point it to a .wasm file."
-        exit 1
-    fi
-done
+if [ -n "$AWSCC_PROVIDER_BIN" ] && [ -f "$AWSCC_PROVIDER_BIN" ] && [[ "$AWSCC_PROVIDER_BIN" != *.wasm ]]; then
+    echo "ERROR: AWSCC_PROVIDER_BIN points to a non-WASM binary: $AWSCC_PROVIDER_BIN"
+    echo "       Provider binaries must be .wasm components."
+    echo "       Unset AWSCC_PROVIDER_BIN to use the default WASM build, or point it to a .wasm file."
+    exit 1
+fi
 
 # inject_provider_source: Create a temp copy of a .crn file with source/version
 # injected into provider blocks. Prints the temp file path.
@@ -1392,9 +1388,6 @@ inject_provider_source() {
     sed \
         -e '/^provider awscc {/a\
   source = "file://'"$AWSCC_PROVIDER_BIN"'"\
-  version = "'"$PROVIDER_VERSION"'"' \
-        -e '/^provider aws {/a\
-  source = "file://'"$AWS_PROVIDER_BIN"'"\
   version = "'"$PROVIDER_VERSION"'"' \
         "$original" > "$tmp_file"
 

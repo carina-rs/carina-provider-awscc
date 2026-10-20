@@ -4,12 +4,14 @@
 #
 # AWS requires a resource planning pool (with SourceResource pointing to the VPC)
 # for subnet CIDR allocation. This test creates:
-#   1. STS caller identity (data source for account_id)
-#   2. IPAM
-#   3. Top-level IPAM Pool (provisioned with 10.0.0.0/8)
-#   4. VPC (allocates /16 from top pool)
-#   5. VPC-scoped IPAM Pool (resource planning pool with SourceResource = VPC)
-#   6. Subnet (allocates /24 from VPC pool)
+#   1. IPAM
+#   2. Top-level IPAM Pool (provisioned with 10.0.0.0/8)
+#   3. VPC (allocates /16 from top pool)
+#   4. VPC-scoped IPAM Pool (resource planning pool with SourceResource = VPC)
+#   5. Subnet (allocates /24 from VPC pool)
+# ResourceOwner is the VPC owner's account ID. This test creates the IPAM and VPC
+# in one account, so it uses element 4 of the IPAM ARN when split on ':'
+# (arn:aws:ec2::<account-id>:ipam/...), keeping the fixture awscc-only.
 #
 # Known issues:
 # - IPAM Pool deletion times out via CloudControl API.
@@ -17,12 +19,6 @@
 provider awscc {
   region = aws.Region.ap_northeast_1
 }
-
-provider aws {
-  region = aws.Region.ap_northeast_1
-}
-
-let identity = read aws.sts.caller_identity {}
 
 let ipam = awscc.ec2.Ipam {
   tier = advanced
@@ -55,7 +51,7 @@ let vpc_pool = awscc.ec2.IpamPool {
 
   source_resource = {
     resource_id     = vpc.vpc_id
-    resource_owner  = identity.account_id
+    resource_owner  = split(':', ipam.arn)[4]
     resource_region = 'ap-northeast-1'
     resource_type   = 'vpc'
   }
