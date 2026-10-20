@@ -283,7 +283,15 @@ impl CarinaProvider for AwsccProcessProvider {
         request: proto::UpdateRequest,
     ) -> Result<proto::UpdateOutcome, proto::ProviderError> {
         let core_id = convert::proto_to_core_resource_id(id);
-        let core_from = convert::proto_to_core_state(&request.from);
+        let core_from = convert::proto_to_core_persisted_state(&request.from).map_err(|error| {
+            Self::convert_error(
+                CoreProviderError::internal_caused_by(
+                    "failed to decode persisted update state",
+                    error,
+                )
+                .for_resource(core_id.clone()),
+            )
+        })?;
         let core_patch = convert::proto_to_core_update_patch(&request.patch);
         let result = self.runtime.block_on(self.provider().update_resource(
             core_id,
@@ -366,28 +374,39 @@ impl CarinaProvider for AwsccProcessProvider {
 
     fn normalize_state(
         &self,
-        states: HashMap<String, proto::State>,
-    ) -> Result<HashMap<String, proto::State>, proto::ProviderError> {
+        states: HashMap<String, proto::PersistedState>,
+    ) -> Result<HashMap<String, proto::PersistedState>, proto::ProviderError> {
         let mut core_states: HashMap<CoreResourceId, CoreState> = states
-            .values()
-            .map(|s| {
-                let core_state = convert::proto_to_core_state(s);
-                (core_state.id.clone(), core_state)
+            .iter()
+            .map(|(key, state)| {
+                convert::proto_to_core_persisted_state(state)
+                    .map(|core_state| (core_state.id.clone(), core_state))
+                    .map_err(|error| {
+                        CoreProviderError::internal(format!(
+                            "normalize_state could not decode persisted state `{key}`: {error}"
+                        ))
+                    })
             })
-            .collect();
+            .collect::<Result<_, _>>()
+            .map_err(Self::convert_error)?;
         self.runtime
             .block_on(self.normalizer.normalize_state(&mut core_states))
             .map_err(Self::convert_error)?;
         Ok(core_states
             .iter()
-            .map(|(id, state)| (id.to_string(), convert::core_to_proto_state(state)))
+            .map(|(id, state)| {
+                (
+                    id.to_string(),
+                    convert::core_to_proto_persisted_state(state),
+                )
+            })
             .collect())
     }
 
     fn hydrate_read_state(
         &self,
-        states: &mut HashMap<String, proto::State>,
-        saved_attrs: &HashMap<String, HashMap<String, proto::Value>>,
+        states: &mut HashMap<String, proto::PersistedState>,
+        saved_attrs: &HashMap<String, HashMap<String, proto::PersistedValue>>,
     ) -> Result<(), proto::ProviderError> {
         // Build a key-to-CoreResourceId lookup from states (which contain structured IDs)
         let key_to_id: HashMap<&str, CoreResourceId> = states
@@ -396,12 +415,18 @@ impl CarinaProvider for AwsccProcessProvider {
             .collect();
 
         let mut core_states: HashMap<CoreResourceId, CoreState> = states
-            .values()
-            .map(|s| {
-                let core_state = convert::proto_to_core_state(s);
-                (core_state.id.clone(), core_state)
+            .iter()
+            .map(|(key, state)| {
+                convert::proto_to_core_persisted_state(state)
+                    .map(|core_state| (core_state.id.clone(), core_state))
+                    .map_err(|error| {
+                        CoreProviderError::internal(format!(
+                            "hydrate_read_state could not decode persisted state `{key}`: {error}"
+                        ))
+                    })
             })
-            .collect();
+            .collect::<Result<_, _>>()
+            .map_err(Self::convert_error)?;
         let core_saved =
             decode_persisted_saved_attrs(saved_attrs, &key_to_id, Self::schema_registry())
                 .map_err(Self::convert_error)?;
@@ -413,14 +438,19 @@ impl CarinaProvider for AwsccProcessProvider {
             .map_err(Self::convert_error)?;
         *states = core_states
             .iter()
-            .map(|(id, state)| (id.to_string(), convert::core_to_proto_state(state)))
+            .map(|(id, state)| {
+                (
+                    id.to_string(),
+                    convert::core_to_proto_persisted_state(state),
+                )
+            })
             .collect();
         Ok(())
     }
 }
 
 fn decode_persisted_saved_attrs(
-    saved_attrs: &HashMap<String, HashMap<String, proto::Value>>,
+    saved_attrs: &HashMap<String, HashMap<String, proto::PersistedValue>>,
     key_to_id: &HashMap<&str, CoreResourceId>,
     registry: &SchemaRegistry,
 ) -> Result<LiftedSavedAttrs, CoreProviderError> {
@@ -432,11 +462,18 @@ fn decode_persisted_saved_attrs(
                     "hydrate_read_state received saved attributes for unknown state key `{key}`"
                 ))
             })?;
-            let attrs = serde_json::to_value(values)
-                .and_then(serde_json::from_value::<PersistedAttributes>)
+            let typed_values =
+                convert::proto_to_core_persisted_value_map(values).map_err(|error| {
+                    CoreProviderError::internal(format!(
+                        "hydrate_read_state could not decode persisted attributes for `{key}`: \
+                         {error}"
+                    ))
+                })?;
+            let attrs = PersistedAttributes::from_typed_persisted_wire_values(typed_values)
                 .map_err(|error| {
                     CoreProviderError::internal(format!(
-                        "hydrate_read_state could not decode persisted attributes for `{key}`: {error}"
+                        "hydrate_read_state could not encode persisted attributes for `{key}`: \
+                         {error}"
                     ))
                 })?;
             Ok((id, attrs))
@@ -662,6 +699,18 @@ mod tests {
         proto::Value::Map(m)
     }
 
+    fn persisted_str(s: &str) -> proto::PersistedValue {
+        proto::PersistedValue::String(s.to_string())
+    }
+
+    fn persisted_map(items: &[(&str, proto::PersistedValue)]) -> proto::PersistedValue {
+        let mut m = std::collections::HashMap::new();
+        for (k, v) in items {
+            m.insert((*k).to_string(), v.clone());
+        }
+        proto::PersistedValue::Map(m)
+    }
+
     #[test]
     fn validate_config_accepts_assume_role_in_allowed_account() {
         let provider = AwsccProcessProvider::new();
@@ -712,7 +761,7 @@ mod tests {
         let mut states = HashMap::new();
         let saved_attrs = HashMap::from([(
             "awscc.ec2.Vpc.orphan".to_string(),
-            HashMap::<String, proto::Value>::new(),
+            HashMap::<String, proto::PersistedValue>::new(),
         )]);
 
         let error = provider
@@ -728,17 +777,17 @@ mod tests {
     }
 
     #[test]
-    fn hydrate_read_state_round_trips_saved_write_only_secret_marker() {
+    fn hydrate_read_state_round_trips_saved_write_only_redacted_secret() {
         let provider = AwsccProcessProvider::new();
-        let marker = concat!(
-            "_secret:$argon2id$v=19$m=19456,t=2,p=1$MDEyMzQ1Njc4OWFiY2RlZg$",
+        let digest = concat!(
+            "$argon2id$v=19$m=19456,t=2,p=1$MDEyMzQ1Njc4OWFiY2RlZg$",
             "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
         )
         .to_string();
         let state_key = "awscc.ec2.Eip.example".to_string();
         let mut states = HashMap::from([(
             state_key.clone(),
-            proto::State {
+            proto::PersistedState {
                 id: proto::ResourceId {
                     provider: "awscc".to_string(),
                     resource_type: "ec2.Eip".to_string(),
@@ -751,12 +800,15 @@ mod tests {
         )]);
         let saved_attrs = HashMap::from([(
             state_key,
-            HashMap::from([("address".to_string(), proto::Value::String(marker.clone()))]),
+            HashMap::from([(
+                "address".to_string(),
+                proto::PersistedValue::RedactedSecret(digest.clone()),
+            )]),
         )]);
 
         provider
             .hydrate_read_state(&mut states, &saved_attrs)
-            .expect("saved write-only secret markers must survive hydration");
+            .expect("saved write-only redacted secrets must survive hydration");
 
         let hydrated = states
             .values()
@@ -764,8 +816,8 @@ mod tests {
             .expect("hydrated state must remain present");
         assert_eq!(
             hydrated.attributes.get("address"),
-            Some(&proto::Value::String(marker)),
-            "state-side serialization must reproduce the byte-identical persisted marker"
+            Some(&proto::PersistedValue::RedactedSecret(digest)),
+            "state-side serialization must preserve the structural redacted secret"
         );
     }
 
@@ -780,42 +832,45 @@ mod tests {
         let distribution_key = distribution_id.to_string();
         let distribution_wire_attrs = HashMap::from([(
             "distribution_config".to_string(),
-            proto_map(&[
+            persisted_map(&[
                 (
                     "aliases",
-                    proto::Value::List(vec![proto_str("cdn.example.com")]),
+                    proto::PersistedValue::List(vec![persisted_str("cdn.example.com")]),
                 ),
-                ("comment", proto_str("shape parity")),
-                ("enabled", proto::Value::Bool(true)),
+                ("comment", persisted_str("shape parity")),
+                ("enabled", proto::PersistedValue::Bool(true)),
                 (
                     "default_cache_behavior",
-                    proto_map(&[("default_ttl", proto::Value::Float(60.5))]),
+                    persisted_map(&[("default_ttl", proto::PersistedValue::Float(60.5))]),
                 ),
                 (
                     "origins",
-                    proto::Value::List(vec![proto_map(&[
-                        ("connection_attempts", proto::Value::Int(3)),
-                        ("id", proto_str("primary")),
+                    proto::PersistedValue::List(vec![persisted_map(&[
+                        ("connection_attempts", proto::PersistedValue::Int(3)),
+                        ("id", persisted_str("primary")),
                     ])]),
                 ),
             ]),
         )]);
-        let expected_distribution = convert::proto_to_core_value_map(&distribution_wire_attrs);
+        let expected_distribution =
+            convert::proto_to_core_persisted_value_map(&distribution_wire_attrs)
+                .expect("ordinary persisted values should decode");
 
         let policy_id =
             CoreResourceId::with_provider_identity("awscc", "iam.RolePolicy", "example", None);
         let policy_key = policy_id.to_string();
         let policy_wire_attrs = HashMap::from([(
             "policy_document".to_string(),
-            proto_map(&[(
+            persisted_map(&[(
                 "statement",
-                proto::Value::List(vec![proto_map(&[(
+                proto::PersistedValue::List(vec![persisted_map(&[(
                     "action",
-                    proto::Value::StringList(vec!["s3:GetObject".to_string()]),
+                    proto::PersistedValue::StringList(vec!["s3:GetObject".to_string()]),
                 )])]),
             )]),
         )]);
-        let expected_policy = convert::proto_to_core_value_map(&policy_wire_attrs);
+        let expected_policy = convert::proto_to_core_persisted_value_map(&policy_wire_attrs)
+            .expect("ordinary persisted values should decode");
 
         let saved_attrs = HashMap::from([
             (distribution_key.clone(), distribution_wire_attrs),
@@ -836,8 +891,8 @@ mod tests {
         assert_eq!(
             decoded.as_provider_saved_attrs().get(&distribution_id),
             Some(&expected_distribution),
-            "serde persisted decoding plus schema lifting must preserve the old direct proto \
-             conversion for strings, ints, floats, bools, lists, and real-schema nested structs"
+            "typed persisted decoding plus schema lifting must preserve strings, ints, floats, \
+             bools, lists, and real-schema nested structs"
         );
         assert_eq!(
             decoded.as_provider_saved_attrs().get(&policy_id),

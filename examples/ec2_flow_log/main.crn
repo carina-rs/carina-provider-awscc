@@ -13,7 +13,7 @@ let vpc = awscc.ec2.Vpc {
 
 awscc.ec2.FlowLog {
   resource_id          = vpc.vpc_id
-  resource_type        = vpc
+  resource_type        = aws.ec2.FlowLog.ResourceType.vpc
   traffic_type         = all
   log_destination_type = s3
   log_destination      = 'arn:aws:s3:::example-flow-logs-bucket'
