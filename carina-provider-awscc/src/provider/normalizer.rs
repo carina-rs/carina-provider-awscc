@@ -141,17 +141,8 @@ mod tests {
         let persisted = saved_attrs
             .into_iter()
             .map(|(id, attributes)| {
-                let attributes = attributes
-                    .into_iter()
-                    .map(|(key, value)| {
-                        let value = carina_core::value::value_to_json(&value)
-                            .expect("test saved value should serialize to persisted JSON");
-                        (key, value)
-                    })
-                    .collect::<serde_json::Map<_, _>>();
-                let attributes: PersistedAttributes =
-                    serde_json::from_value(serde_json::Value::Object(attributes))
-                        .expect("test saved attributes should decode as persisted JSON");
+                let attributes = PersistedAttributes::from_typed_persisted_wire_values(attributes)
+                    .expect("test saved attributes should encode as persisted values");
                 (id, attributes)
             })
             .collect();

@@ -12,7 +12,7 @@ use carina_core::provider::{
 };
 use carina_core::resource::{
     ConcreteValue, DataSource as CoreDataSource, DeferredValue, Directives as CoreDirectives,
-    Resource as CoreResource, ResourceId as CoreResourceId,
+    RedactedSecretHash, Resource as CoreResource, ResourceId as CoreResourceId,
     ResourceIdentity as CoreResourceIdentity, ResourceIdentityError as CoreResourceIdentityError,
     State as CoreState, Value as CoreValue,
 };
@@ -21,16 +21,20 @@ use carina_core::schema::{
     InputMode as CoreInputMode, RawShape as CoreRawShape, ResourceSchema as CoreResourceSchema,
     StructField as CoreStructField, UniqueNameSpec as CoreUniqueNameSpec, legacy_validator,
 };
-use carina_core::value::persisted_secret_marker;
 use carina_provider_protocol::types::{
     AttributeSchema as ProtoAttributeSchema, AttributeType as ProtoAttributeType,
     CreateOutcome as ProtoCreateOutcome, Directives as ProtoDirectives,
     PartialReadDiagnostic as ProtoPartialReadDiagnostic, PatchOp as ProtoPatchOp,
-    PatchOpKind as ProtoPatchOpKind, Resource as ProtoResource, ResourceId as ProtoResourceId,
-    ResourceSchema as ProtoResourceSchema, State as ProtoState, StructField as ProtoStructField,
-    UniqueNameSpec as ProtoUniqueNameSpec, UpdateOutcome as ProtoUpdateOutcome,
-    UpdatePatch as ProtoUpdatePatch, Value as ProtoValue,
+    PatchOpKind as ProtoPatchOpKind, PersistedState as ProtoPersistedState,
+    PersistedValue as ProtoPersistedValue, Resource as ProtoResource,
+    ResourceId as ProtoResourceId, ResourceSchema as ProtoResourceSchema, State as ProtoState,
+    StructField as ProtoStructField, UniqueNameSpec as ProtoUniqueNameSpec,
+    UpdateOutcome as ProtoUpdateOutcome, UpdatePatch as ProtoUpdatePatch, Value as ProtoValue,
 };
+
+#[derive(Debug, thiserror::Error)]
+#[error("persisted state contains an invalid redacted-secret digest")]
+pub struct PersistedValueDecodeError;
 
 // -- ResourceId --
 
@@ -56,27 +60,11 @@ pub fn proto_to_core_resource_id(id: &ProtoResourceId) -> CoreResourceId {
 
 // -- Value --
 
-#[derive(Clone, Copy)]
-enum ValueWireSource {
-    Desired,
-    PersistedState,
-}
-
 /// Serialize a value crossing the desired/provider boundary.
 ///
-/// Persisted-state-only values are deliberately rejected here. State-returning
-/// callers must go through [`core_to_proto_state`] instead.
+/// Persisted-state-only values are deliberately rejected here. Persisted-state
+/// callers must go through [`core_to_proto_persisted_value`] instead.
 pub fn core_to_proto_value(v: &CoreValue) -> ProtoValue {
-    core_to_proto_value_from(v, ValueWireSource::Desired)
-}
-
-/// Serialize one state attribute with persisted-state marker semantics.
-/// Kept private so desired/resource callers cannot opt into this policy.
-fn core_to_proto_state_value(v: &CoreValue) -> ProtoValue {
-    core_to_proto_value_from(v, ValueWireSource::PersistedState)
-}
-
-fn core_to_proto_value_from(v: &CoreValue, source: ValueWireSource) -> ProtoValue {
     match v {
         CoreValue::Concrete(ConcreteValue::String(s)) => {
             ProtoValue::String(s.expose_plaintext().to_string())
@@ -96,11 +84,9 @@ fn core_to_proto_value_from(v: &CoreValue, source: ValueWireSource) -> ProtoValu
         CoreValue::Concrete(ConcreteValue::Bool(b)) => ProtoValue::Bool(*b),
         // Duration: emit integer seconds; the WIT contract has no Duration variant today.
         CoreValue::Concrete(ConcreteValue::Duration(d)) => ProtoValue::Int(d.as_secs() as i64),
-        CoreValue::Concrete(ConcreteValue::List(l)) => ProtoValue::List(
-            l.iter()
-                .map(|value| core_to_proto_value_from(value, source))
-                .collect(),
-        ),
+        CoreValue::Concrete(ConcreteValue::List(l)) => {
+            ProtoValue::List(l.iter().map(core_to_proto_value).collect())
+        }
         CoreValue::Concrete(ConcreteValue::StringList(items)) => ProtoValue::StringList(
             items
                 .iter()
@@ -109,7 +95,7 @@ fn core_to_proto_value_from(v: &CoreValue, source: ValueWireSource) -> ProtoValu
         ),
         CoreValue::Concrete(ConcreteValue::Map(m)) => ProtoValue::Map(
             m.iter()
-                .map(|(k, v)| (k.clone(), core_to_proto_value_from(v, source)))
+                .map(|(k, v)| (k.clone(), core_to_proto_value(v)))
                 .collect(),
         ),
         // Deferred-axis values must be resolved before reaching the provider.
@@ -120,12 +106,9 @@ fn core_to_proto_value_from(v: &CoreValue, source: ValueWireSource) -> ProtoValu
         CoreValue::Deferred(DeferredValue::Secret(_)) => {
             ProtoValue::String("<redacted-secret>".to_string())
         }
-        CoreValue::Deferred(DeferredValue::RedactedSecret { hash }) => match source {
-            ValueWireSource::PersistedState => ProtoValue::String(persisted_secret_marker(hash)),
-            ValueWireSource::Desired => {
-                panic!("redacted saved-state secret must not reach a provider")
-            }
-        },
+        CoreValue::Deferred(DeferredValue::RedactedSecret { .. }) => {
+            panic!("redacted saved-state secret must not reach a provider")
+        }
         CoreValue::Deferred(DeferredValue::ResourceRef { path }) => {
             ProtoValue::String(format!("<unresolved-ref:{}>", path.to_dot_string()))
         }
@@ -137,6 +120,12 @@ fn core_to_proto_value_from(v: &CoreValue, source: ValueWireSource) -> ProtoValu
         }
         CoreValue::Deferred(DeferredValue::FunctionCall { name, .. }) => {
             ProtoValue::String(format!("<unresolved-fn:{name}>"))
+        }
+        CoreValue::Deferred(DeferredValue::ResolvedFunctionCall { function, .. }) => {
+            ProtoValue::String(format!("<unresolved-fn:{}>", function.name))
+        }
+        CoreValue::Deferred(DeferredValue::Access(_)) => {
+            ProtoValue::String("<unresolved-access>".to_string())
         }
         CoreValue::Deferred(DeferredValue::Unknown(_)) => {
             ProtoValue::String("<unknown>".to_string())
@@ -170,15 +159,127 @@ pub fn core_to_proto_value_map(m: &HashMap<String, CoreValue>) -> HashMap<String
         .collect()
 }
 
-fn core_to_proto_state_value_map(m: &HashMap<String, CoreValue>) -> HashMap<String, ProtoValue> {
-    m.iter()
-        .map(|(k, v)| (k.clone(), core_to_proto_state_value(v)))
-        .collect()
-}
-
 pub fn proto_to_core_value_map(m: &HashMap<String, ProtoValue>) -> HashMap<String, CoreValue> {
     m.iter()
         .map(|(k, v)| (k.clone(), proto_to_core_value(v)))
+        .collect()
+}
+
+/// Convert a core value at a persisted-state position.
+///
+/// This is deliberately separate from [`core_to_proto_value`]: only this
+/// typed position may carry a redacted-secret digest.
+pub fn core_to_proto_persisted_value(v: &CoreValue) -> ProtoPersistedValue {
+    match v {
+        CoreValue::Concrete(ConcreteValue::String(s)) => {
+            ProtoPersistedValue::String(s.expose_plaintext().to_string())
+        }
+        CoreValue::Concrete(ConcreteValue::EnumIdentifier(_)) => {
+            unreachable!("unresolved enum identifier must not reach protocol conversion")
+        }
+        CoreValue::Concrete(ConcreteValue::CanonicalEnum(c)) => {
+            ProtoPersistedValue::String(c.api_value().to_string())
+        }
+        CoreValue::Concrete(ConcreteValue::Int(i)) => ProtoPersistedValue::Int(*i),
+        CoreValue::Concrete(ConcreteValue::Float(f)) => ProtoPersistedValue::Float(*f),
+        CoreValue::Concrete(ConcreteValue::Bool(b)) => ProtoPersistedValue::Bool(*b),
+        CoreValue::Concrete(ConcreteValue::Duration(d)) => {
+            ProtoPersistedValue::Int(d.as_secs() as i64)
+        }
+        CoreValue::Concrete(ConcreteValue::List(l)) => {
+            ProtoPersistedValue::List(l.iter().map(core_to_proto_persisted_value).collect())
+        }
+        CoreValue::Concrete(ConcreteValue::StringList(items)) => ProtoPersistedValue::StringList(
+            items
+                .iter()
+                .map(|item| item.expose_plaintext().to_string())
+                .collect(),
+        ),
+        CoreValue::Concrete(ConcreteValue::Map(m)) => ProtoPersistedValue::Map(
+            m.iter()
+                .map(|(k, v)| (k.clone(), core_to_proto_persisted_value(v)))
+                .collect(),
+        ),
+        CoreValue::Deferred(DeferredValue::Secret(_)) => {
+            panic!("live secret must be redacted before persisted-state conversion")
+        }
+        CoreValue::Deferred(DeferredValue::RedactedSecret { hash }) => {
+            ProtoPersistedValue::RedactedSecret(hash.encoded_digest())
+        }
+        CoreValue::Deferred(DeferredValue::ResourceRef { .. }) => {
+            panic!("unresolved resource reference must not reach persisted-state conversion")
+        }
+        CoreValue::Deferred(DeferredValue::BindingRef { .. }) => {
+            panic!("unresolved binding reference must not reach persisted-state conversion")
+        }
+        CoreValue::Deferred(DeferredValue::Interpolation(_)) => {
+            panic!("unresolved interpolation must not reach persisted-state conversion")
+        }
+        CoreValue::Deferred(DeferredValue::FunctionCall { .. }) => {
+            panic!("unresolved built-in function call must not reach persisted-state conversion")
+        }
+        CoreValue::Deferred(DeferredValue::ResolvedFunctionCall { .. }) => {
+            panic!("unresolved user function call must not reach persisted-state conversion")
+        }
+        CoreValue::Deferred(DeferredValue::Access(_)) => {
+            panic!("unresolved access expression must not reach persisted-state conversion")
+        }
+        CoreValue::Deferred(DeferredValue::Unknown(_)) => {
+            panic!("unknown value must not reach persisted-state conversion")
+        }
+    }
+}
+
+fn core_to_proto_persisted_value_map(
+    m: &HashMap<String, CoreValue>,
+) -> HashMap<String, ProtoPersistedValue> {
+    m.iter()
+        .map(|(k, v)| (k.clone(), core_to_proto_persisted_value(v)))
+        .collect()
+}
+
+/// Decode a value from a persisted-state position.
+///
+/// Ordinary strings are always strings. Only the protocol's structural
+/// `RedactedSecret` variant gains secret semantics.
+pub fn proto_to_core_persisted_value(
+    v: &ProtoPersistedValue,
+) -> Result<CoreValue, PersistedValueDecodeError> {
+    match v {
+        ProtoPersistedValue::String(s) => {
+            Ok(CoreValue::Concrete(ConcreteValue::String(s.clone().into())))
+        }
+        ProtoPersistedValue::RedactedSecret(digest) => {
+            let hash =
+                RedactedSecretHash::from_encoded_digest(digest).ok_or(PersistedValueDecodeError)?;
+            Ok(CoreValue::Deferred(DeferredValue::RedactedSecret { hash }))
+        }
+        ProtoPersistedValue::Int(i) => Ok(CoreValue::Concrete(ConcreteValue::Int(*i))),
+        ProtoPersistedValue::Float(f) => Ok(CoreValue::Concrete(ConcreteValue::Float(*f))),
+        ProtoPersistedValue::Bool(b) => Ok(CoreValue::Concrete(ConcreteValue::Bool(*b))),
+        ProtoPersistedValue::List(l) => l
+            .iter()
+            .map(proto_to_core_persisted_value)
+            .collect::<Result<Vec<_>, _>>()
+            .map(ConcreteValue::List)
+            .map(CoreValue::Concrete),
+        ProtoPersistedValue::StringList(items) => Ok(CoreValue::Concrete(
+            ConcreteValue::StringList(items.iter().cloned().map(Into::into).collect()),
+        )),
+        ProtoPersistedValue::Map(m) => m
+            .iter()
+            .map(|(k, v)| proto_to_core_persisted_value(v).map(|value| (k.clone(), value)))
+            .collect::<Result<indexmap::IndexMap<_, _>, _>>()
+            .map(ConcreteValue::Map)
+            .map(CoreValue::Concrete),
+    }
+}
+
+pub fn proto_to_core_persisted_value_map(
+    m: &HashMap<String, ProtoPersistedValue>,
+) -> Result<HashMap<String, CoreValue>, PersistedValueDecodeError> {
+    m.iter()
+        .map(|(k, v)| proto_to_core_persisted_value(v).map(|value| (k.clone(), value)))
         .collect()
 }
 
@@ -188,21 +289,32 @@ pub fn core_to_proto_state(s: &CoreState) -> ProtoState {
     ProtoState {
         id: core_to_proto_resource_id(&s.id),
         identifier: s.identifier.clone(),
-        attributes: core_to_proto_state_value_map(&s.attributes),
+        attributes: core_to_proto_value_map(&s.attributes),
         exists: s.exists,
     }
 }
 
-pub fn proto_to_core_state(s: &ProtoState) -> CoreState {
+pub fn core_to_proto_persisted_state(s: &CoreState) -> ProtoPersistedState {
+    ProtoPersistedState {
+        id: core_to_proto_resource_id(&s.id),
+        identifier: s.identifier.clone(),
+        attributes: core_to_proto_persisted_value_map(&s.attributes),
+        exists: s.exists,
+    }
+}
+
+pub fn proto_to_core_persisted_state(
+    s: &ProtoPersistedState,
+) -> Result<CoreState, PersistedValueDecodeError> {
     let id = proto_to_core_resource_id(&s.id);
     if s.exists {
-        let mut state = CoreState::existing(id, proto_to_core_value_map(&s.attributes));
+        let mut state = CoreState::existing(id, proto_to_core_persisted_value_map(&s.attributes)?);
         if let Some(ref ident) = s.identifier {
             state = state.with_identifier(ident);
         }
-        state
+        Ok(state)
     } else {
-        CoreState::not_found(id)
+        Ok(CoreState::not_found(id))
     }
 }
 
@@ -230,11 +342,11 @@ pub fn core_to_proto_create_outcome(outcome: CoreCreateOutcome) -> ProtoCreateOu
 pub fn core_to_proto_update_outcome(outcome: CoreUpdateOutcome) -> ProtoUpdateOutcome {
     match outcome {
         CoreUpdateOutcome::Success { state } => ProtoUpdateOutcome::Success {
-            state: core_to_proto_state(&state),
+            state: core_to_proto_persisted_state(&state),
         },
         CoreUpdateOutcome::PartialSuccess { state, diagnostic } => {
             ProtoUpdateOutcome::PartialSuccess {
-                state: core_to_proto_state(&state),
+                state: core_to_proto_persisted_state(&state),
                 diagnostic: ProtoPartialReadDiagnostic {
                     reason: diagnostic.reason().to_string(),
                     missing_attributes: diagnostic.missing_attributes().to_vec(),
@@ -741,16 +853,44 @@ mod tests {
     #[test]
     #[should_panic(expected = "redacted saved-state secret must not reach a provider")]
     fn redacted_saved_state_secret_is_rejected_at_provider_boundary() {
-        let hash = concat!(
+        let digest = concat!(
             "$argon2id$v=19$m=19456,t=2,p=1$MDEyMzQ1Njc4OWFiY2RlZg$",
             "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
         );
-        let value: CoreValue = serde_json::from_value(serde_json::json!({
-            "RedactedSecret": { "hash": hash }
-        }))
-        .expect("deserialize saved-state placeholder");
+        let hash = RedactedSecretHash::from_encoded_digest(digest)
+            .expect("test digest should be structurally valid");
+        let value = CoreValue::Deferred(DeferredValue::RedactedSecret { hash });
 
         let _ = core_to_proto_value(&value);
+    }
+
+    #[test]
+    fn update_outcome_encodes_redacted_secret_as_structural_persisted_value() {
+        let digest = concat!(
+            "$argon2id$v=19$m=19456,t=2,p=1$MDEyMzQ1Njc4OWFiY2RlZg$",
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        );
+        let hash = RedactedSecretHash::from_encoded_digest(digest)
+            .expect("test digest should be structurally valid");
+        let id = CoreResourceId::with_provider_identity("awscc", "s3.Bucket", "example", None);
+        let state = CoreState::existing(
+            id,
+            HashMap::from([(
+                "access_control".to_string(),
+                CoreValue::Deferred(DeferredValue::RedactedSecret { hash }),
+            )]),
+        )
+        .with_identifier("example");
+
+        let outcome = core_to_proto_update_outcome(CoreUpdateOutcome::Success { state });
+
+        let ProtoUpdateOutcome::Success { state } = outcome else {
+            panic!("expected a successful update outcome")
+        };
+        assert_eq!(
+            state.attributes.get("access_control"),
+            Some(&ProtoPersistedValue::RedactedSecret(digest.to_string()))
+        );
     }
 
     fn test_enum(

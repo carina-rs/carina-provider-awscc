@@ -663,6 +663,7 @@ mod tests {
     use std::future::Future;
     use std::pin::Pin;
     use std::sync::Arc;
+    use std::sync::Mutex;
     use std::sync::atomic::{AtomicBool, Ordering};
     use winterbaume_core::{MockAws, MockRequest, MockResponse, MockService};
 
@@ -1048,6 +1049,7 @@ mod tests {
         read_properties: &'static str,
         saw_update_resource: AtomicBool,
         saw_get_resource: AtomicBool,
+        update_request_body: Mutex<Option<String>>,
     }
 
     impl PartialUpdateCloudControlService {
@@ -1058,6 +1060,7 @@ mod tests {
                 read_properties: r#"{"Tags":[{"Key":"env","Value":"prod"}]}"#,
                 saw_update_resource: AtomicBool::new(false),
                 saw_get_resource: AtomicBool::new(false),
+                update_request_body: Mutex::new(None),
             })
         }
 
@@ -1068,6 +1071,7 @@ mod tests {
                 read_properties,
                 saw_update_resource: AtomicBool::new(false),
                 saw_get_resource: AtomicBool::new(false),
+                update_request_body: Mutex::new(None),
             })
         }
     }
@@ -1098,6 +1102,11 @@ mod tests {
                 match action {
                     "UpdateResource" => {
                         self.saw_update_resource.store(true, Ordering::SeqCst);
+                        *self
+                            .update_request_body
+                            .lock()
+                            .expect("update request body lock poisoned") =
+                            Some(String::from_utf8_lossy(&request.body).into_owned());
                         MockResponse::json(
                             200,
                             r#"{"ProgressEvent":{"RequestToken":"update-token-1"}}"#,
@@ -1450,6 +1459,54 @@ mod tests {
         assert_eq!(
             state.attributes.get("object_lock_enabled"),
             Some(&Value::Concrete(ConcreteValue::Bool(false)))
+        );
+    }
+
+    #[tokio::test]
+    async fn update_resource_carries_unpatched_redacted_secret_without_sending_digest() {
+        let service = PartialUpdateCloudControlService::new(true, true);
+        let provider = provider_with_partial_update_service(service.clone()).await;
+        let mut from = partial_update_bucket_state();
+        let secret = Value::Deferred(DeferredValue::Secret(Box::new(Value::Concrete(
+            ConcreteValue::String("stored-write-only-secret".into()),
+        ))));
+        let redacted = carina_core::value::redact_secrets_in_value(&secret)
+            .expect("redact saved-state placeholder");
+        let Value::Deferred(DeferredValue::RedactedSecret { hash }) = &redacted else {
+            panic!("expected a redacted secret")
+        };
+        let digest = hash.encoded_digest();
+        from.attributes
+            .insert("access_control".to_string(), redacted.clone());
+
+        let outcome = provider
+            .update_resource(
+                from.id.clone(),
+                from.identifier.as_deref().expect("identifier"),
+                &from,
+                &partial_update_bucket_patch(),
+            )
+            .await
+            .expect("update should succeed");
+
+        let UpdateOutcome::Success { state } = outcome else {
+            panic!("expected success when an unpatched secret is absent from read-back");
+        };
+        assert_eq!(state.attributes.get("access_control"), Some(&redacted));
+
+        let request_body = service
+            .update_request_body
+            .lock()
+            .expect("update request body lock poisoned")
+            .clone()
+            .expect("CloudControl update request should be captured");
+        assert!(
+            !request_body.contains(&digest),
+            "persisted redacted-secret digests must never be sent to CloudControl"
+        );
+        assert!(
+            !request_body.contains("AccessControl"),
+            "an unpatched persisted attribute must not enter the patch document"
         );
     }
 

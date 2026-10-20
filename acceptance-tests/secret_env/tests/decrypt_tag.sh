@@ -28,12 +28,12 @@ fi
 
 # Verify state contains argon2 hash for the decrypted tag
 printf "  %-50s" "assert: state contains secret hash"
-SECRET_VAL=$(jq -r '.resources[0].attributes.tags.DecryptedTag' "$WORK_DIR/carina.state.json" 2>/dev/null)
-if echo "$SECRET_VAL" | grep -q '^_secret:\$argon2id\$'; then
+SECRET_DIGEST=$(jq -r '.resources[0].attributes.tags.DecryptedTag["$secret"] // empty' "$WORK_DIR/carina.state.json" 2>/dev/null)
+if echo "$SECRET_DIGEST" | grep -q '^\$argon2id\$'; then
     echo "OK"
     TEST_PASSED=$((TEST_PASSED + 1))
 else
-    echo "FAIL (expected _secret:\$argon2id\$..., got '$SECRET_VAL')"
+    echo "FAIL (expected structural \$secret with \$argon2id\$ digest, got '$SECRET_DIGEST')"
     TEST_FAILED=$((TEST_FAILED + 1))
 fi
 
