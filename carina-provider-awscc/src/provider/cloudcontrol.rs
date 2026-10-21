@@ -4,13 +4,14 @@
 //! API: creating, reading, updating, and deleting resources, as well as polling for
 //! operation completion and retry/error handling logic.
 
-use std::time::Duration;
-
 use aws_sdk_cloudcontrol::types::{OperationStatus, ProgressEvent};
-use aws_smithy_runtime_api::client::result::SdkError;
+use std::future::Future;
+
+use aws_smithy_runtime_api::client::{orchestrator::HttpResponse, result::SdkError};
 use aws_smithy_types::error::metadata::ProvideErrorMetadata;
 use carina_core::provider::{ProviderError, ProviderResult};
-use thiserror::Error;
+use carina_provider_protocol::OperationStep;
+use serde::{Deserialize, Serialize};
 
 use super::{
     AwsccProvider, CREATE_RETRY_INITIAL_DELAY_SECS, CREATE_RETRY_MAX_ATTEMPTS,
@@ -28,6 +29,86 @@ pub enum WaitOutcome {
         identifier: String,
         status_message: String,
     },
+}
+
+/// Opaque CloudControl continuation identifier returned by a mutating request.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct RequestToken(String);
+
+impl RequestToken {
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<&str> for RequestToken {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+
+impl From<String> for RequestToken {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+/// Shared continuation state for one CloudControl mutating request.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "phase", rename_all = "snake_case")]
+pub enum CcRequestPhase {
+    NotIssued { attempt: u32 },
+    InFlight { request: RequestToken, attempt: u32 },
+}
+
+/// Continuation state for a CloudControl create operation.
+pub type CcCreateToken = CcRequestPhase;
+
+/// Continuation state for a CloudControl update operation.
+pub type CcUpdateToken = CcRequestPhase;
+
+/// Continuation state for a CloudControl delete operation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "phase", content = "request", rename_all = "snake_case")]
+pub enum CcDeleteToken {
+    DetachIgw(CcRequestPhase),
+    Delete(CcRequestPhase),
+}
+
+type CcWaitStep = OperationStep<WaitOutcome, CcRequestPhase>;
+pub(crate) type CcCreateWaitStep = CcWaitStep;
+pub(crate) type CcUpdateWaitStep = CcWaitStep;
+pub(crate) type CcDeleteWaitStep = OperationStep<(), CcRequestPhase>;
+
+const FIRST_POLL_AFTER_SECS: u32 = 1;
+const POLL_AFTER_SECS: u32 = 5;
+
+#[derive(Debug)]
+enum RequestStatusStep {
+    Pending,
+    Done(WaitOutcome),
+    RetryableFailure { error: ProviderError },
+}
+
+#[derive(Debug, Clone, Copy)]
+struct RetryPolicy {
+    action: &'static str,
+    max_attempts: u32,
+    initial_delay_secs: u64,
+    max_delay_secs: u64,
+}
+
+impl RetryPolicy {
+    fn delay_secs(self, attempt: u32) -> u32 {
+        let multiplier = 2_u64.saturating_pow(attempt);
+        u32::try_from(
+            self.initial_delay_secs
+                .saturating_mul(multiplier)
+                .min(self.max_delay_secs),
+        )
+        .expect("CloudControl retry delay constants fit in u32")
+    }
 }
 
 #[derive(Debug)]
@@ -71,13 +152,6 @@ impl std::fmt::Display for CloudControlRequestToken {
     }
 }
 
-#[derive(Debug, Error)]
-#[error("resource type {type_name} after {attempts} retry attempts")]
-struct RetryAttemptsExhausted {
-    type_name: String,
-    attempts: u32,
-}
-
 impl AwsccProvider {
     /// Get a resource by identifier using Cloud Control API
     pub async fn cc_get_resource(
@@ -119,114 +193,129 @@ impl AwsccProvider {
         }
     }
 
-    /// Create a resource using Cloud Control API, with retry logic for retryable errors.
-    ///
-    /// Some operations fail transiently due to eventual consistency in AWS
-    /// (e.g., IPAM Pool CIDR propagation delays cause "missing a source resource"
-    /// errors when creating subnets). This method retries with exponential backoff
-    /// for such errors.
-    pub async fn cc_create_resource(
+    /// Issue one CloudControl create request.
+    pub(crate) async fn cc_create_step(
         &self,
         type_name: &str,
         desired_state: serde_json::Value,
         operation_config: Option<&carina_core::schema::OperationConfig>,
-    ) -> ProviderResult<WaitOutcome> {
-        let mut delay_secs = CREATE_RETRY_INITIAL_DELAY_SECS;
-        let max_retry_attempts = operation_config
-            .and_then(|c| c.create_max_retries)
-            .unwrap_or(CREATE_RETRY_MAX_ATTEMPTS);
-        let max_polling_attempts = operation_config
-            .and_then(|c| c.create_timeout_secs)
-            .map(|secs| (secs / 5) as u32)
-            .unwrap_or(Self::default_polling_attempts(type_name, "create"));
-
-        for attempt in 0..=max_retry_attempts {
-            let result = self
-                .cloudcontrol_client
-                .create_resource()
-                .type_name(type_name)
-                .desired_state(desired_state.to_string())
-                .send()
-                .await;
-
-            match result {
-                Ok(response) => {
-                    let request_token =
-                        response
-                            .progress_event()
-                            .and_then(|p| p.request_token())
-                            .ok_or_else(|| ProviderError::internal("No request token returned"))?;
-
-                    match self
-                        .wait_for_operation_with_attempts(request_token, max_polling_attempts)
-                        .await
-                    {
-                        Ok(outcome) => return Ok(outcome),
-                        Err(e)
-                            if Self::is_retryable_operation_error(&e)
-                                && attempt < max_retry_attempts =>
-                        {
-                            log::warn!(
-                                "Retryable error creating {} (attempt {}/{}): {}. Retrying in {}s...",
-                                type_name,
-                                attempt + 1,
-                                max_retry_attempts,
-                                e,
-                                delay_secs,
-                            );
-                            tokio::time::sleep(Duration::from_secs(delay_secs)).await;
-                            delay_secs = (delay_secs * 2).min(CREATE_RETRY_MAX_DELAY_SECS);
-                            continue;
-                        }
-                        Err(e) => return Err(e),
-                    }
-                }
-                Err(e) => {
-                    if Self::is_retryable_sdk_error(&e) && attempt < max_retry_attempts {
-                        log::warn!(
-                            "Retryable error creating {} (attempt {}/{}): {:?}. Retrying in {}s...",
-                            type_name,
-                            attempt + 1,
-                            max_retry_attempts,
-                            e,
-                            delay_secs,
-                        );
-                        tokio::time::sleep(Duration::from_secs(delay_secs)).await;
-                        delay_secs = (delay_secs * 2).min(CREATE_RETRY_MAX_DELAY_SECS);
-                        continue;
-                    }
-                    return Err(api_error_with_meta_and_subject(
-                        "Failed to create resource",
-                        "cloudcontrol.CreateResource",
-                        CloudControlResourceSubject::type_only(type_name),
-                        e,
-                    ));
-                }
-            }
-        }
-
-        Err(ProviderError::api_error_caused_by(
-            "Failed to create resource",
-            RetryAttemptsExhausted {
-                type_name: type_name.to_string(),
-                attempts: max_retry_attempts,
-            },
-        ))
+    ) -> ProviderResult<CcCreateWaitStep> {
+        self.issue_create(
+            type_name,
+            desired_state,
+            0,
+            Self::request_retry_policy(operation_config, "creating"),
+        )
+        .await
     }
 
-    /// Update a resource using Cloud Control API
-    pub async fn cc_update_resource(
+    /// Perform one poll or re-issue step for a pending create.
+    pub(crate) async fn cc_poll_create_step(
+        &self,
+        type_name: &str,
+        desired_state: serde_json::Value,
+        operation_config: Option<&carina_core::schema::OperationConfig>,
+        token: CcCreateToken,
+    ) -> ProviderResult<CcCreateWaitStep> {
+        let retry_policy = Self::request_retry_policy(operation_config, "creating");
+        self.poll_phase(type_name, token, retry_policy, |attempt| {
+            self.issue_create(type_name, desired_state, attempt, retry_policy)
+        })
+        .await
+    }
+
+    async fn issue_create(
+        &self,
+        type_name: &str,
+        desired_state: serde_json::Value,
+        attempt: u32,
+        retry_policy: RetryPolicy,
+    ) -> ProviderResult<CcCreateWaitStep> {
+        let result = self
+            .cloudcontrol_client
+            .create_resource()
+            .type_name(type_name)
+            .desired_state(desired_state.to_string())
+            .send()
+            .await
+            .map(|response| {
+                response
+                    .progress_event()
+                    .and_then(|progress| progress.request_token())
+                    .map(RequestToken::from)
+            });
+        Self::finish_issue(
+            result,
+            type_name,
+            attempt,
+            retry_policy,
+            "Failed to create resource",
+            "cloudcontrol.CreateResource",
+            CloudControlResourceSubject::type_only(type_name),
+            || Err(ProviderError::internal("No request token returned")),
+        )
+    }
+
+    /// Issue one CloudControl update request.
+    pub(crate) async fn cc_update_step(
         &self,
         type_name: &str,
         identifier: &str,
         patch_ops: Vec<serde_json::Value>,
-    ) -> ProviderResult<WaitOutcome> {
+        operation_config: Option<&carina_core::schema::OperationConfig>,
+    ) -> ProviderResult<CcUpdateWaitStep> {
         if patch_ops.is_empty() {
-            return Ok(WaitOutcome::Success {
+            return Ok(OperationStep::Done(WaitOutcome::Success {
                 identifier: identifier.to_string(),
-            });
+            }));
         }
+        self.issue_update(
+            type_name,
+            identifier,
+            patch_ops,
+            0,
+            Self::request_retry_policy(operation_config, "updating"),
+        )
+        .await
+    }
 
+    /// Perform one poll or re-issue step for a pending update.
+    pub(crate) async fn cc_poll_update_step(
+        &self,
+        type_name: &str,
+        identifier: &str,
+        patch_ops: Vec<serde_json::Value>,
+        operation_config: Option<&carina_core::schema::OperationConfig>,
+        token: CcUpdateToken,
+    ) -> ProviderResult<CcUpdateWaitStep> {
+        let retry_policy = Self::request_retry_policy(operation_config, "updating");
+        let step = self
+            .poll_phase(type_name, token, retry_policy, |attempt| {
+                self.issue_update(type_name, identifier, patch_ops, attempt, retry_policy)
+            })
+            .await?;
+        Ok(match step {
+            OperationStep::Done(outcome) => {
+                OperationStep::Done(Self::outcome_with_identifier(outcome, identifier))
+            }
+            OperationStep::Pending {
+                pending,
+                poll_after_secs,
+            } => OperationStep::Pending {
+                pending,
+                poll_after_secs,
+            },
+        })
+    }
+
+    async fn issue_update(
+        &self,
+        type_name: &str,
+        identifier: &str,
+        patch_ops: Vec<serde_json::Value>,
+        attempt: u32,
+        retry_policy: RetryPolicy,
+    ) -> ProviderResult<CcUpdateWaitStep> {
         let patch_document = serde_json::to_string(&patch_ops)
             .map_err(|e| ProviderError::internal_caused_by("Failed to build patch", e))?;
 
@@ -238,154 +327,233 @@ impl AwsccProvider {
             .patch_document(patch_document)
             .send()
             .await
-            .map_err(|e| {
-                api_error_with_meta_and_subject(
-                    "Failed to update resource",
-                    "cloudcontrol.UpdateResource",
-                    CloudControlResourceSubject::identified(type_name, identifier),
-                    e,
-                )
-            })?;
-
-        if let Some(request_token) = result.progress_event().and_then(|p| p.request_token()) {
-            return self
-                .wait_for_operation_with_attempts(request_token, 120)
-                .await;
-        }
-
-        Ok(WaitOutcome::Success {
-            identifier: identifier.to_string(),
-        })
+            .map(|response| {
+                response
+                    .progress_event()
+                    .and_then(|progress| progress.request_token())
+                    .map(RequestToken::from)
+            });
+        Self::finish_issue(
+            result,
+            type_name,
+            attempt,
+            retry_policy,
+            "Failed to update resource",
+            "cloudcontrol.UpdateResource",
+            CloudControlResourceSubject::identified(type_name, identifier),
+            || {
+                Ok(WaitOutcome::Success {
+                    identifier: identifier.to_string(),
+                })
+            },
+        )
     }
 
-    /// Delete a resource using Cloud Control API, with retry logic for retryable errors.
-    ///
-    /// Uses resource-type-specific polling timeouts. IPAM-related resources
-    /// get a longer timeout since their deletion via CloudControl API can
-    /// take 15-30 minutes. Retries with exponential backoff on transient errors
-    /// such as throttling or service unavailability.
-    pub async fn cc_delete_resource(
+    /// Issue one CloudControl delete request.
+    pub(crate) async fn cc_delete_step(
         &self,
         type_name: &str,
         identifier: &str,
         operation_config: Option<&carina_core::schema::OperationConfig>,
-    ) -> ProviderResult<()> {
-        let mut delay_secs = DELETE_RETRY_INITIAL_DELAY_SECS;
-        let max_polling_attempts = operation_config
-            .and_then(|c| c.delete_timeout_secs)
-            .map(|secs| (secs / 5) as u32)
-            .unwrap_or(Self::default_polling_attempts(type_name, "delete"));
-        let max_retry_attempts = operation_config
-            .and_then(|c| c.delete_max_retries)
-            .unwrap_or(DELETE_RETRY_MAX_ATTEMPTS);
-
-        for attempt in 0..=max_retry_attempts {
-            let result = self
-                .cloudcontrol_client
-                .delete_resource()
-                .type_name(type_name)
-                .identifier(identifier)
-                .send()
-                .await;
-
-            match result {
-                Ok(response) => {
-                    if let Some(request_token) =
-                        response.progress_event().and_then(|p| p.request_token())
-                    {
-                        match self
-                            .wait_for_operation_with_attempts(request_token, max_polling_attempts)
-                            .await
-                        {
-                            Ok(WaitOutcome::Success { .. }) => return Ok(()),
-                            Ok(WaitOutcome::PartialOrFailed { status_message, .. }) => {
-                                return Err(ProviderError::api_error_caused_by(
-                                    "Operation failed",
-                                    CloudControlOperationFailure::new(status_message),
-                                ));
-                            }
-                            Err(e)
-                                if Self::is_retryable_operation_error(&e)
-                                    && attempt < max_retry_attempts =>
-                            {
-                                log::warn!(
-                                    "Retryable error deleting {} (attempt {}/{}): {}. Retrying in {}s...",
-                                    type_name,
-                                    attempt + 1,
-                                    max_retry_attempts,
-                                    e,
-                                    delay_secs,
-                                );
-                                tokio::time::sleep(Duration::from_secs(delay_secs)).await;
-                                delay_secs = (delay_secs * 2).min(DELETE_RETRY_MAX_DELAY_SECS);
-                                continue;
-                            }
-                            Err(e) => return Err(e),
-                        }
-                    }
-                    return Ok(());
-                }
-                Err(e) => {
-                    if Self::is_retryable_sdk_error(&e) && attempt < max_retry_attempts {
-                        log::warn!(
-                            "Retryable error deleting {} (attempt {}/{}): {:?}. Retrying in {}s...",
-                            type_name,
-                            attempt + 1,
-                            max_retry_attempts,
-                            e,
-                            delay_secs,
-                        );
-                        tokio::time::sleep(Duration::from_secs(delay_secs)).await;
-                        delay_secs = (delay_secs * 2).min(DELETE_RETRY_MAX_DELAY_SECS);
-                        continue;
-                    }
-                    return Err(api_error_with_meta_and_subject(
-                        "Failed to delete resource",
-                        "cloudcontrol.DeleteResource",
-                        CloudControlResourceSubject::identified(type_name, identifier),
-                        e,
-                    ));
-                }
-            }
-        }
-
-        Err(ProviderError::api_error_caused_by(
-            "Failed to delete resource",
-            RetryAttemptsExhausted {
-                type_name: type_name.to_string(),
-                attempts: max_retry_attempts,
-            },
-        ))
+    ) -> ProviderResult<CcDeleteWaitStep> {
+        let step = self
+            .issue_delete(
+                type_name,
+                identifier,
+                0,
+                Self::delete_retry_policy(operation_config),
+            )
+            .await?;
+        Self::finish_delete_step(step)
     }
 
-    /// Returns the max polling attempts for a given resource type and operation.
-    ///
-    /// Some resource types (e.g., IPAM Pool, VPCGatewayAttachment, NatGateway) take
-    /// significantly longer to delete via the CloudControl API than the default timeout allows.
-    pub(crate) fn default_polling_attempts(type_name: &str, operation: &str) -> u32 {
-        if operation == "delete" {
-            // IPAM Pool deletions can take 15-30 minutes via CloudControl API
-            if type_name.contains("IPAMPool") || type_name.contains("IPAM") {
-                return 360; // 30 minutes (360 * 5s)
-            }
-            // VPCGatewayAttachment deletion via CloudControl can be slow when
-            // dependent resources (e.g., NAT gateways) are still being cleaned up.
-            // The default 10-minute timeout is often insufficient. (issue #1066)
-            if type_name.contains("VPCGatewayAttachment") {
-                return 360; // 30 minutes (360 * 5s)
-            }
-            // NatGateway deletion via CloudControl API can take 10-15 minutes.
-            // The default 10-minute timeout is insufficient. (issue #1443)
-            if type_name == "AWS::EC2::NatGateway" {
-                return 240; // 20 minutes (240 * 5s)
-            }
-            // TransitGateway deletion can take 10-20 minutes, especially during
-            // create_before_destroy when VPC attachments are still being detached.
-            if type_name.contains("TransitGateway") {
-                return 360; // 30 minutes (360 * 5s)
+    /// Perform one poll or re-issue step for a pending delete.
+    pub(crate) async fn cc_poll_delete_step(
+        &self,
+        type_name: &str,
+        identifier: &str,
+        operation_config: Option<&carina_core::schema::OperationConfig>,
+        phase: CcRequestPhase,
+    ) -> ProviderResult<CcDeleteWaitStep> {
+        let retry_policy = Self::delete_retry_policy(operation_config);
+        let step = self
+            .poll_phase(type_name, phase, retry_policy, |attempt| {
+                self.issue_delete(type_name, identifier, attempt, retry_policy)
+            })
+            .await?;
+        Self::finish_delete_step(step)
+    }
+
+    async fn issue_delete(
+        &self,
+        type_name: &str,
+        identifier: &str,
+        attempt: u32,
+        retry_policy: RetryPolicy,
+    ) -> ProviderResult<CcWaitStep> {
+        let result = self
+            .cloudcontrol_client
+            .delete_resource()
+            .type_name(type_name)
+            .identifier(identifier)
+            .send()
+            .await
+            .map(|response| {
+                response
+                    .progress_event()
+                    .and_then(|progress| progress.request_token())
+                    .map(RequestToken::from)
+            });
+        Self::finish_issue(
+            result,
+            type_name,
+            attempt,
+            retry_policy,
+            "Failed to delete resource",
+            "cloudcontrol.DeleteResource",
+            CloudControlResourceSubject::identified(type_name, identifier),
+            || {
+                Ok(WaitOutcome::Success {
+                    identifier: identifier.to_string(),
+                })
+            },
+        )
+    }
+
+    async fn poll_phase<Issue, IssueFuture>(
+        &self,
+        type_name: &str,
+        phase: CcRequestPhase,
+        retry_policy: RetryPolicy,
+        issue: Issue,
+    ) -> ProviderResult<CcWaitStep>
+    where
+        Issue: FnOnce(u32) -> IssueFuture,
+        IssueFuture: Future<Output = ProviderResult<CcWaitStep>>,
+    {
+        match phase {
+            CcRequestPhase::NotIssued { attempt } => issue(attempt).await,
+            CcRequestPhase::InFlight { request, attempt } => {
+                match self.poll_request_status(&request).await? {
+                    RequestStatusStep::Pending => Ok(OperationStep::Pending {
+                        pending: CcRequestPhase::InFlight { request, attempt },
+                        poll_after_secs: POLL_AFTER_SECS,
+                    }),
+                    RequestStatusStep::Done(outcome) => Ok(OperationStep::Done(outcome)),
+                    RequestStatusStep::RetryableFailure { error } => {
+                        if attempt >= retry_policy.max_attempts {
+                            return Err(error);
+                        }
+                        let delay_secs = retry_policy.delay_secs(attempt);
+                        log::warn!(
+                            "Retryable error {} {type_name} (attempt {}/{}): {}. Retrying in {}s...",
+                            retry_policy.action,
+                            attempt + 1,
+                            retry_policy.max_attempts,
+                            error,
+                            delay_secs,
+                        );
+                        Ok(OperationStep::Pending {
+                            pending: CcRequestPhase::NotIssued {
+                                attempt: attempt + 1,
+                            },
+                            poll_after_secs: delay_secs,
+                        })
+                    }
+                }
             }
         }
-        120 // Default: 10 minutes (120 * 5s)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn finish_issue<E, Subject, NoRequest>(
+        result: Result<Option<RequestToken>, SdkError<E, HttpResponse>>,
+        type_name: &str,
+        attempt: u32,
+        retry_policy: RetryPolicy,
+        context: &'static str,
+        operation: &'static str,
+        subject: Subject,
+        no_request: NoRequest,
+    ) -> ProviderResult<CcWaitStep>
+    where
+        E: std::error::Error + ProvideErrorMetadata + Send + Sync + 'static,
+        Subject: std::fmt::Debug + std::fmt::Display + Send + Sync + 'static,
+        NoRequest: FnOnce() -> ProviderResult<WaitOutcome>,
+    {
+        match result {
+            Ok(Some(request)) => Ok(OperationStep::Pending {
+                pending: CcRequestPhase::InFlight { request, attempt },
+                poll_after_secs: FIRST_POLL_AFTER_SECS,
+            }),
+            Ok(None) => no_request().map(OperationStep::Done),
+            Err(error)
+                if Self::is_retryable_sdk_error(&error) && attempt < retry_policy.max_attempts =>
+            {
+                let delay_secs = retry_policy.delay_secs(attempt);
+                log::warn!(
+                    "Retryable error {} {type_name} (attempt {}/{}): {error:?}. Retrying in {delay_secs}s...",
+                    retry_policy.action,
+                    attempt + 1,
+                    retry_policy.max_attempts,
+                );
+                Ok(OperationStep::Pending {
+                    pending: CcRequestPhase::NotIssued {
+                        attempt: attempt + 1,
+                    },
+                    poll_after_secs: delay_secs,
+                })
+            }
+            Err(error) => Err(api_error_with_meta_and_subject(
+                context, operation, subject, error,
+            )),
+        }
+    }
+
+    fn finish_delete_step(step: CcWaitStep) -> ProviderResult<CcDeleteWaitStep> {
+        match step {
+            OperationStep::Done(WaitOutcome::Success { .. }) => Ok(OperationStep::Done(())),
+            OperationStep::Done(WaitOutcome::PartialOrFailed { status_message, .. }) => {
+                Err(ProviderError::api_error_caused_by(
+                    "Operation failed",
+                    CloudControlOperationFailure::new(status_message),
+                ))
+            }
+            OperationStep::Pending {
+                pending,
+                poll_after_secs,
+            } => Ok(OperationStep::Pending {
+                pending,
+                poll_after_secs,
+            }),
+        }
+    }
+
+    fn request_retry_policy(
+        operation_config: Option<&carina_core::schema::OperationConfig>,
+        action: &'static str,
+    ) -> RetryPolicy {
+        RetryPolicy {
+            action,
+            max_attempts: operation_config
+                .and_then(|config| config.create_max_retries)
+                .unwrap_or(CREATE_RETRY_MAX_ATTEMPTS),
+            initial_delay_secs: CREATE_RETRY_INITIAL_DELAY_SECS,
+            max_delay_secs: CREATE_RETRY_MAX_DELAY_SECS,
+        }
+    }
+
+    fn delete_retry_policy(
+        operation_config: Option<&carina_core::schema::OperationConfig>,
+    ) -> RetryPolicy {
+        RetryPolicy {
+            action: "deleting",
+            max_attempts: operation_config
+                .and_then(|config| config.delete_max_retries)
+                .unwrap_or(DELETE_RETRY_MAX_ATTEMPTS),
+            initial_delay_secs: DELETE_RETRY_INITIAL_DELAY_SECS,
+            max_delay_secs: DELETE_RETRY_MAX_DELAY_SECS,
+        }
     }
 
     /// Returns true if the SDK error represents a "not found" condition.
@@ -510,49 +678,60 @@ impl AwsccProvider {
             .any(|pattern| status_message.contains(pattern))
     }
 
-    /// Classify a failed asynchronous CloudControl operation using the typed
-    /// status cause created by [`Self::classify_progress_event`].
-    fn is_retryable_operation_error(error: &ProviderError) -> bool {
-        error
-            .detail()
-            .cause()
-            .and_then(|cause| cause.downcast_ref::<CloudControlOperationFailure>())
-            .is_some_and(|cause| Self::is_retryable_status_message(cause.status_message()))
+    /// Fetch and classify exactly one CloudControl request status.
+    async fn poll_request_status(
+        &self,
+        request: &RequestToken,
+    ) -> ProviderResult<RequestStatusStep> {
+        let status = self
+            .cloudcontrol_client
+            .get_resource_request_status()
+            .request_token(request.as_str())
+            .send()
+            .await
+            .map_err(|error| {
+                api_error_with_meta_and_subject(
+                    "Failed to get operation status",
+                    "cloudcontrol.GetResourceRequestStatus",
+                    CloudControlRequestToken(request.as_str().to_string()),
+                    error,
+                )
+            })?;
+
+        let Some(progress) = status.progress_event() else {
+            return Ok(RequestStatusStep::Pending);
+        };
+        match Self::classify_progress_event(progress) {
+            Ok(Some(outcome)) => Ok(RequestStatusStep::Done(outcome)),
+            Ok(None) => Ok(RequestStatusStep::Pending),
+            Err(error)
+                if matches!(
+                    progress.operation_status(),
+                    Some(OperationStatus::Failed | OperationStatus::CancelComplete)
+                ) && progress
+                    .status_message()
+                    .is_some_and(Self::is_retryable_status_message) =>
+            {
+                Ok(RequestStatusStep::RetryableFailure { error })
+            }
+            Err(error) => Err(error),
+        }
     }
 
-    /// Wait for a Cloud Control operation to complete with a configurable number of attempts
-    pub(crate) async fn wait_for_operation_with_attempts(
-        &self,
-        request_token: &str,
-        max_attempts: u32,
-    ) -> ProviderResult<WaitOutcome> {
-        let delay = Duration::from_secs(5);
-
-        for _ in 0..max_attempts {
-            let status = self
-                .cloudcontrol_client
-                .get_resource_request_status()
-                .request_token(request_token)
-                .send()
-                .await
-                .map_err(|e| {
-                    api_error_with_meta_and_subject(
-                        "Failed to get operation status",
-                        "cloudcontrol.GetResourceRequestStatus",
-                        CloudControlRequestToken(request_token.to_string()),
-                        e,
-                    )
-                })?;
-
-            if let Some(progress) = status.progress_event()
-                && let Some(outcome) = Self::classify_progress_event(progress)?
-            {
-                return Ok(outcome);
-            }
-            tokio::time::sleep(delay).await;
+    fn outcome_with_identifier(outcome: WaitOutcome, fallback: &str) -> WaitOutcome {
+        match outcome {
+            WaitOutcome::Success { identifier } if identifier.is_empty() => WaitOutcome::Success {
+                identifier: fallback.to_string(),
+            },
+            WaitOutcome::PartialOrFailed {
+                identifier,
+                status_message,
+            } if identifier.is_empty() => WaitOutcome::PartialOrFailed {
+                identifier: fallback.to_string(),
+                status_message,
+            },
+            other => other,
         }
-
-        Err(ProviderError::timeout("Operation timed out"))
     }
 
     pub(crate) fn classify_progress_event(
@@ -646,25 +825,6 @@ mod tests {
         assert!(!AwsccProvider::is_retryable_status_message(
             "AccessDeniedException: not authorized"
         ));
-    }
-
-    #[test]
-    fn operation_error_retry_classification_uses_typed_status_cause() {
-        let retryable = AwsccProvider::classify_progress_event(&progress(
-            OperationStatus::Failed,
-            None,
-            Some("Throttling: Rate exceeded"),
-        ))
-        .expect_err("failed progress must produce an error");
-        let non_retryable = AwsccProvider::classify_progress_event(&progress(
-            OperationStatus::Failed,
-            None,
-            Some("InvalidParameterValue: invalid CIDR"),
-        ))
-        .expect_err("failed progress must produce an error");
-
-        assert!(AwsccProvider::is_retryable_operation_error(&retryable));
-        assert!(!AwsccProvider::is_retryable_operation_error(&non_retryable));
     }
 
     // =========================================================================
@@ -1071,104 +1231,5 @@ mod tests {
         let sdk_err: SdkError<GetResourceError, http::Response<&str>> =
             SdkError::timeout_error("connection timed out");
         assert!(!AwsccProvider::is_not_found_error(&sdk_err));
-    }
-
-    #[test]
-    fn test_max_polling_attempts_ipam_pool_delete() {
-        assert_eq!(
-            AwsccProvider::default_polling_attempts("AWS::EC2::IPAMPool", "delete"),
-            360
-        );
-    }
-
-    #[test]
-    fn test_max_polling_attempts_ipam_delete() {
-        assert_eq!(
-            AwsccProvider::default_polling_attempts("AWS::EC2::IPAM", "delete"),
-            360
-        );
-    }
-
-    #[test]
-    fn test_max_polling_attempts_default_delete() {
-        assert_eq!(
-            AwsccProvider::default_polling_attempts("AWS::EC2::VPC", "delete"),
-            120
-        );
-    }
-
-    #[test]
-    fn test_max_polling_attempts_ipam_create() {
-        assert_eq!(
-            AwsccProvider::default_polling_attempts("AWS::EC2::IPAMPool", "create"),
-            120
-        );
-    }
-
-    #[test]
-    fn test_max_polling_attempts_vpc_gateway_attachment_delete() {
-        // VPCGatewayAttachment deletion via CloudControl API can be slow,
-        // especially when dependent resources (NAT gateways) are still
-        // being cleaned up. Extended timeout prevents premature timeout
-        // failures. (issue #1066)
-        assert_eq!(
-            AwsccProvider::default_polling_attempts("AWS::EC2::VPCGatewayAttachment", "delete"),
-            360
-        );
-    }
-
-    #[test]
-    fn test_max_polling_attempts_vpc_gateway_attachment_create() {
-        // Create operations use the default timeout
-        assert_eq!(
-            AwsccProvider::default_polling_attempts("AWS::EC2::VPCGatewayAttachment", "create"),
-            120
-        );
-    }
-
-    #[test]
-    fn test_max_polling_attempts_transit_gateway_delete() {
-        // TransitGateway deletion can take 10-20 minutes during
-        // create_before_destroy while VPC attachments are being detached.
-        assert_eq!(
-            AwsccProvider::default_polling_attempts("AWS::EC2::TransitGateway", "delete"),
-            360
-        );
-    }
-
-    #[test]
-    fn test_max_polling_attempts_transit_gateway_attachment_delete() {
-        assert_eq!(
-            AwsccProvider::default_polling_attempts("AWS::EC2::TransitGatewayAttachment", "delete"),
-            360
-        );
-    }
-
-    #[test]
-    fn test_max_polling_attempts_transit_gateway_create() {
-        // Create operations use the default timeout
-        assert_eq!(
-            AwsccProvider::default_polling_attempts("AWS::EC2::TransitGateway", "create"),
-            120
-        );
-    }
-
-    #[test]
-    fn test_max_polling_attempts_nat_gateway_delete() {
-        // NatGateway deletion via CloudControl API can take 10-15 minutes.
-        // Extended timeout prevents premature timeout failures. (issue #1443)
-        assert_eq!(
-            AwsccProvider::default_polling_attempts("AWS::EC2::NatGateway", "delete"),
-            240
-        );
-    }
-
-    #[test]
-    fn test_max_polling_attempts_nat_gateway_create() {
-        // Create operations use the default timeout
-        assert_eq!(
-            AwsccProvider::default_polling_attempts("AWS::EC2::NatGateway", "create"),
-            120
-        );
     }
 }

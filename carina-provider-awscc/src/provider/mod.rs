@@ -37,6 +37,7 @@ use crate::schemas::config::AwsccSchemaConfig;
 use error_helpers::api_error_with_meta;
 
 // Re-export public API
+pub use cloudcontrol::{CcCreateToken, CcDeleteToken, CcRequestPhase, CcUpdateToken, RequestToken};
 pub use normalizer::{
     canonicalize_string_or_list_states_impl, normalize_state_string_dsl_transforms_impl,
     restore_unreturned_attrs_impl,

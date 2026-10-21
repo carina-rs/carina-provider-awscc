@@ -2,6 +2,10 @@
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
+    use carina_provider_protocol::OperationKind;
+
     use crate::schemas::config::AwsccSchemaConfig;
     use crate::schemas::generated::{configs, get_config_by_type};
 
@@ -41,6 +45,30 @@ mod tests {
         assert!(get_config("ec2.Subnet").unwrap().has_tags);
         assert!(!get_config("ec2.Route").unwrap().has_tags);
         assert!(!get_config("ec2.VpcGatewayAttachment").unwrap().has_tags);
+    }
+
+    #[test]
+    fn operation_budgets_come_from_generated_schema_config() {
+        let ipam = get_config("ec2.Ipam").unwrap();
+        let ipam_pool = get_config("ec2.IpamPool").unwrap();
+
+        assert_eq!(
+            ipam.schema
+                .operation_config
+                .as_ref()
+                .unwrap()
+                .budget(OperationKind::Delete),
+            Duration::from_secs(3600)
+        );
+        assert_eq!(
+            ipam_pool
+                .schema
+                .operation_config
+                .as_ref()
+                .unwrap()
+                .budget(OperationKind::Delete),
+            Duration::from_secs(3600)
+        );
     }
 
     #[test]

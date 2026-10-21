@@ -148,7 +148,7 @@ fn target_group_attributes() -> Value {
     ])
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn target_group_create_then_read_round_trips_full_shaped_state() {
     let provider = winterbaume_provider().await;
     let resource = target_group_resource();

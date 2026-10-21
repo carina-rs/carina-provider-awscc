@@ -5,22 +5,66 @@
 //! tags, special cases, and default values.
 
 use std::collections::HashMap;
+use std::future::Future;
+use std::time::Duration;
 
 use carina_core::provider::{
-    CreateOutcome, ProviderError, ProviderResult, UpdateOutcome, UpdatePatch,
+    CreateOutcome, DeleteRequest, ProviderError, ProviderResult, UpdateOutcome, UpdatePatch,
 };
 use carina_core::resource::{ConcreteValue, Directives, Resource, ResourceId, State, Value};
 use carina_core::schema::{AttributeSchema, AttributeType, Schema, Shape};
+use carina_provider_protocol::{
+    DEFAULT_OPERATION_BUDGET, DriveOutcome, OperationKind, OperationStep, drive_pending,
+};
 use indexmap::IndexMap;
 use serde_json::json;
 
 use super::conversion::{aws_value_to_dsl_with_defs, dsl_value_to_aws_with_defs};
 use super::tags::tags_provider_name;
 use super::update::{UpdatePatchPlan, build_update_patches};
-use super::{AwsccProvider, get_schema_config};
+use super::{
+    AwsccProvider, CcCreateToken, CcDeleteToken, CcRequestPhase, CcUpdateToken, get_schema_config,
+};
 use crate::provider::arn_synthesis::SynthesisStatus;
 use crate::provider::cloudcontrol::WaitOutcome;
+use crate::provider::special_cases::internet_gateway_detach_patch;
 use crate::schemas::config::AwsccSchemaConfig;
+
+pub type CcCreateStep = OperationStep<CreateOutcome, CcCreateToken>;
+pub type CcUpdateStep = OperationStep<UpdateOutcome, CcUpdateToken>;
+pub type CcDeleteStep = OperationStep<(), CcDeleteToken>;
+
+async fn drive_operation<T, Token, Initial, Poll, PollFuture, Sleep, SleepFuture>(
+    id: &ResourceId,
+    kind: OperationKind,
+    budget: Duration,
+    initial: Initial,
+    poll: Poll,
+    sleep: Sleep,
+) -> ProviderResult<T>
+where
+    Initial: Future<Output = ProviderResult<OperationStep<T, Token>>>,
+    Poll: FnMut(Token) -> PollFuture,
+    PollFuture: Future<Output = ProviderResult<OperationStep<T, Token>>>,
+    Sleep: FnMut(Duration) -> SleepFuture,
+    SleepFuture: Future<Output = ()>,
+{
+    match drive_pending(budget, initial, poll, sleep).await? {
+        DriveOutcome::Done(value) => Ok(value),
+        DriveOutcome::OverBudget => {
+            let operation = match kind {
+                OperationKind::Create => "create",
+                OperationKind::Update => "update",
+                OperationKind::Delete => "delete",
+            };
+            Err(ProviderError::timeout(format!(
+                "{operation} of {} did not finish within {budget:?}",
+                id.resource_type
+            ))
+            .for_resource(id.clone()))
+        }
+    }
+}
 
 impl AwsccProvider {
     fn ensure_initialized(&self, id: &ResourceId) -> ProviderResult<()> {
@@ -93,23 +137,19 @@ impl AwsccProvider {
         Ok(State::existing(id.clone(), attributes).with_identifier(identifier))
     }
 
-    /// Create a resource using its configuration
-    pub async fn create_resource(&self, resource: &Resource) -> ProviderResult<CreateOutcome> {
-        self.ensure_initialized(&resource.id)?;
+    fn operation_budget(&self, resource_type: &str, kind: OperationKind) -> Duration {
+        get_schema_config(resource_type)
+            .and_then(|config| config.schema.operation_config.as_ref())
+            .map_or(DEFAULT_OPERATION_BUDGET, |config| config.budget(kind))
+    }
 
-        let config = get_schema_config(&resource.id.resource_type).ok_or_else(|| {
-            ProviderError::internal(format!(
-                "Unknown resource type: {}",
-                resource.id.resource_type
-            ))
-            .for_resource(resource.id.clone())
-        })?;
-
+    fn create_desired_state(
+        &self,
+        resource: &Resource,
+        config: &AwsccSchemaConfig,
+    ) -> serde_json::Value {
         let mut desired_state = serde_json::Map::new();
-
-        // Map DSL attributes to AWS attributes using provider_name
         for (dsl_name, attr_schema) in &config.schema.attributes {
-            // Skip tags - handled separately below
             if dsl_name == "tags" {
                 continue;
             }
@@ -128,29 +168,82 @@ impl AwsccProvider {
                 }
             }
         }
-
-        // Handle special cases for create
         self.create_special_attributes(resource, &mut desired_state);
-
-        // Handle tags
         if let Some(tags_aws_name) = tags_provider_name(config) {
             let tags = self.build_tags(resource.get_attr("tags"));
             if !tags.is_empty() {
                 desired_state.insert(tags_aws_name.to_string(), json!(tags));
             }
         }
-
-        // Set default values
         self.set_default_values(&resource.id.resource_type, &mut desired_state);
+        serde_json::Value::Object(desired_state)
+    }
 
-        let outcome = self
-            .cc_create_resource(
+    /// Perform the initial, non-blocking CloudControl create step.
+    pub async fn create_step(&self, resource: &Resource) -> ProviderResult<CcCreateStep> {
+        self.ensure_initialized(&resource.id)?;
+        let config = get_schema_config(&resource.id.resource_type).ok_or_else(|| {
+            ProviderError::internal(format!(
+                "Unknown resource type: {}",
+                resource.id.resource_type
+            ))
+            .for_resource(resource.id.clone())
+        })?;
+        let step = self
+            .cc_create_step(
                 config.aws_type_name,
-                serde_json::Value::Object(desired_state),
+                self.create_desired_state(resource, config),
                 config.schema.operation_config.as_ref(),
             )
             .await
             .map_err(|e| e.for_resource(resource.id.clone()))?;
+        self.finish_create_step(resource, config, step).await
+    }
+
+    /// Perform one CloudControl status or re-issue step for create.
+    pub async fn poll_create_step(
+        &self,
+        resource: &Resource,
+        token: CcCreateToken,
+    ) -> ProviderResult<CcCreateStep> {
+        self.ensure_initialized(&resource.id)?;
+        let config = get_schema_config(&resource.id.resource_type).ok_or_else(|| {
+            ProviderError::internal(format!(
+                "Unknown resource type: {}",
+                resource.id.resource_type
+            ))
+            .for_resource(resource.id.clone())
+        })?;
+        let step = self
+            .cc_poll_create_step(
+                config.aws_type_name,
+                self.create_desired_state(resource, config),
+                config.schema.operation_config.as_ref(),
+                token,
+            )
+            .await
+            .map_err(|e| e.for_resource(resource.id.clone()))?;
+        self.finish_create_step(resource, config, step).await
+    }
+
+    async fn finish_create_step(
+        &self,
+        resource: &Resource,
+        config: &AwsccSchemaConfig,
+        step: OperationStep<WaitOutcome, CcCreateToken>,
+    ) -> ProviderResult<CcCreateStep> {
+        let outcome = match step {
+            OperationStep::Pending {
+                pending,
+                poll_after_secs,
+            } => {
+                return Ok(OperationStep::Pending {
+                    pending,
+                    poll_after_secs,
+                });
+            }
+            OperationStep::Done(outcome) => outcome,
+        };
 
         let identifier = match outcome {
             WaitOutcome::Success { identifier } => identifier,
@@ -160,13 +253,13 @@ impl AwsccProvider {
             } => match self.read_resource(&resource.id, Some(&identifier)).await {
                 Ok(state) => {
                     if !state.exists {
-                        return Ok(create_read_not_found_outcome(
+                        return Ok(OperationStep::Done(create_read_not_found_outcome(
                             state,
                             format!(
                                 "handler failed: {}; read-back returned not_found",
                                 status_message
                             ),
-                        ));
+                        )));
                     }
                     let mut state = merge_desired_attributes(state, resource, config);
                     let Some(canonical_identifier) =
@@ -179,11 +272,11 @@ impl AwsccProvider {
                             status_message,
                             missing_attributes.join(", ")
                         );
-                        return Ok(CreateOutcome::partial_success(
+                        return Ok(OperationStep::Done(CreateOutcome::partial_success(
                             state,
                             reason,
                             missing_attributes,
-                        ));
+                        )));
                     };
                     state.identifier = Some(canonical_identifier);
                     if let Some(missing_attributes) = self
@@ -199,13 +292,13 @@ impl AwsccProvider {
                             status_message,
                             missing_attributes.join(", ")
                         );
-                        return Ok(CreateOutcome::partial_success(
+                        return Ok(OperationStep::Done(CreateOutcome::partial_success(
                             state,
                             reason,
                             missing_attributes,
-                        ));
+                        )));
                     }
-                    return Ok(CreateOutcome::Success { state });
+                    return Ok(OperationStep::Done(CreateOutcome::Success { state }));
                 }
                 Err(read_err) => {
                     let state = State::existing(resource.id.clone(), HashMap::new())
@@ -221,11 +314,11 @@ impl AwsccProvider {
                         "handler failed: {}; read error: {}",
                         status_message, read_err,
                     );
-                    return Ok(CreateOutcome::partial_success(
+                    return Ok(OperationStep::Done(CreateOutcome::partial_success(
                         state,
                         reason,
                         missing_attributes,
-                    ));
+                    )));
                 }
             },
         };
@@ -233,22 +326,22 @@ impl AwsccProvider {
         let state = self.read_resource(&resource.id, Some(&identifier)).await?;
 
         if !state.exists {
-            return Ok(create_read_not_found_outcome(
+            return Ok(OperationStep::Done(create_read_not_found_outcome(
                 state,
                 "read-back returned not_found",
-            ));
+            )));
         }
         let mut state = merge_desired_attributes(state, resource, config);
         let Some(canonical_identifier) = canonicalize_identifier_from_read(config, &state) else {
             let missing_attributes = missing_primary_identifier_attributes(config, &state);
-            return Ok(CreateOutcome::partial_success(
+            return Ok(OperationStep::Done(CreateOutcome::partial_success(
                 state,
                 format!(
                     "read-back missing primaryIdentifier attributes: {}",
                     missing_attributes.join(", ")
                 ),
                 missing_attributes,
-            ));
+            )));
         };
         state.identifier = Some(canonical_identifier);
 
@@ -256,82 +349,129 @@ impl AwsccProvider {
             .synthesize_read_attributes(&resource.id.resource_type, &mut state.attributes)
             .await?
         {
-            SynthesisStatus::Complete => Ok(CreateOutcome::Success { state }),
-            SynthesisStatus::Missing { attributes } => Ok(CreateOutcome::partial_success(
-                state,
-                format!(
-                    "read-back missing synthesized attributes: {}",
-                    attributes.join(", ")
-                ),
-                attributes,
-            )),
+            SynthesisStatus::Complete => Ok(OperationStep::Done(CreateOutcome::Success { state })),
+            SynthesisStatus::Missing { attributes } => {
+                Ok(OperationStep::Done(CreateOutcome::partial_success(
+                    state,
+                    format!(
+                        "read-back missing synthesized attributes: {}",
+                        attributes.join(", ")
+                    ),
+                    attributes,
+                )))
+            }
         }
     }
 
-    /// Update a resource by applying an [`UpdatePatch`] to its
-    /// CloudControl-side state.
-    ///
-    /// The patch is the sole source of truth for the update payload —
-    /// fields the user has never specified are not in `patch.ops` and
-    /// therefore generate no JSON Patch op, leaving CloudControl's
-    /// other state alone (this is the actual fix for
-    /// `carina-rs/carina#2559`).
-    ///
-    /// `from` is the current provider-side state; it is used only to
-    /// reconstruct the post-update desired-state view that's carried
-    /// forward into the returned `State` for attributes the API does
-    /// not return in its read response. It MUST NOT be used to derive
-    /// additional fields to write back.
-    pub async fn update_resource(
+    /// Drive create steps to a settled result for native callers.
+    pub async fn create_resource(&self, resource: &Resource) -> ProviderResult<CreateOutcome> {
+        let budget =
+            self.operation_budget(resource.id.resource_type.as_str(), OperationKind::Create);
+        drive_operation(
+            &resource.id,
+            OperationKind::Create,
+            budget,
+            self.create_step(resource),
+            |token| self.poll_create_step(resource, token),
+            tokio::time::sleep,
+        )
+        .await
+    }
+
+    /// Perform the initial, non-blocking CloudControl update step.
+    pub async fn update_step(
         &self,
-        id: ResourceId,
+        id: &ResourceId,
         identifier: &str,
         from: &State,
         patch: &UpdatePatch,
-    ) -> ProviderResult<UpdateOutcome> {
-        self.ensure_initialized(&id)?;
-
+    ) -> ProviderResult<CcUpdateStep> {
+        self.ensure_initialized(id)?;
         let config = get_schema_config(&id.resource_type).ok_or_else(|| {
             ProviderError::internal(format!("Unknown resource type: {}", id.resource_type))
                 .for_resource(id.clone())
         })?;
-
         let patch_plan = build_update_patches(config, &id.resource_type, patch);
-
-        let outcome = self
-            .cc_update_resource(config.aws_type_name, identifier, patch_plan.ops.clone())
+        let step = self
+            .cc_update_step(
+                config.aws_type_name,
+                identifier,
+                patch_plan.ops.clone(),
+                config.schema.operation_config.as_ref(),
+            )
             .await
-            .map_err(|e| e.for_resource(id.clone()))?;
+            .map_err(|error| error.for_resource(id.clone()))?;
+        self.finish_update_step(id, from, patch, config, patch_plan, step)
+            .await
+    }
 
-        // Reconstruct the post-update desired view (current state + the
-        // patch we just applied). This is the source of values to carry
-        // forward for attributes CloudControl's read does not return —
-        // same logic as `create_resource` but built without a `to:
-        // Resource` (which Level 3 deliberately does not pass through).
+    /// Perform one CloudControl status or re-issue step for update.
+    pub async fn poll_update_step(
+        &self,
+        id: &ResourceId,
+        identifier: &str,
+        from: &State,
+        patch: &UpdatePatch,
+        token: CcUpdateToken,
+    ) -> ProviderResult<CcUpdateStep> {
+        self.ensure_initialized(id)?;
+        let config = get_schema_config(&id.resource_type).ok_or_else(|| {
+            ProviderError::internal(format!("Unknown resource type: {}", id.resource_type))
+                .for_resource(id.clone())
+        })?;
+        let patch_plan = build_update_patches(config, &id.resource_type, patch);
+        let step = self
+            .cc_poll_update_step(
+                config.aws_type_name,
+                identifier,
+                patch_plan.ops.clone(),
+                config.schema.operation_config.as_ref(),
+                token,
+            )
+            .await
+            .map_err(|error| error.for_resource(id.clone()))?;
+        self.finish_update_step(id, from, patch, config, patch_plan, step)
+            .await
+    }
+
+    async fn finish_update_step(
+        &self,
+        id: &ResourceId,
+        from: &State,
+        patch: &UpdatePatch,
+        config: &AwsccSchemaConfig,
+        patch_plan: UpdatePatchPlan,
+        step: OperationStep<WaitOutcome, CcUpdateToken>,
+    ) -> ProviderResult<CcUpdateStep> {
+        let outcome = match step {
+            OperationStep::Pending {
+                pending,
+                poll_after_secs,
+            } => {
+                return Ok(OperationStep::Pending {
+                    pending,
+                    poll_after_secs,
+                });
+            }
+            OperationStep::Done(outcome) => outcome,
+        };
         let desired = post_update_attributes(from, patch);
-
-        match outcome {
+        let outcome = match outcome {
             WaitOutcome::Success { identifier } => {
-                let state = self.read_resource(&id, Some(&identifier)).await?;
-                Ok(update_outcome_from_read_back(
-                    state,
-                    &desired,
-                    &patch_plan,
-                    config,
-                    None,
-                ))
+                let state = self.read_resource(id, Some(&identifier)).await?;
+                update_outcome_from_read_back(state, &desired, &patch_plan, config, None)
             }
             WaitOutcome::PartialOrFailed {
                 identifier,
                 status_message,
-            } => match self.read_resource(&id, Some(&identifier)).await {
-                Ok(state) => Ok(update_outcome_from_read_back(
+            } => match self.read_resource(id, Some(&identifier)).await {
+                Ok(state) => update_outcome_from_read_back(
                     state,
                     &desired,
                     &patch_plan,
                     config,
                     Some(&status_message),
-                )),
+                ),
                 Err(read_err) => {
                     let missing_attributes = patch_plan.touched.clone();
                     let mut state_attributes = desired;
@@ -348,47 +488,223 @@ impl AwsccProvider {
                         reason.push_str("; ");
                         reason.push_str(&unsent_attributes_reason(&patch_plan.unsent));
                     }
-                    Ok(UpdateOutcome::partial_success(
-                        state,
-                        reason,
-                        missing_attributes,
-                    ))
+                    UpdateOutcome::partial_success(state, reason, missing_attributes)
                 }
             },
+        };
+        Ok(OperationStep::Done(outcome))
+    }
+
+    /// Drive update steps to a settled result for native callers.
+    pub async fn update_resource(
+        &self,
+        id: ResourceId,
+        identifier: &str,
+        from: &State,
+        patch: &UpdatePatch,
+    ) -> ProviderResult<UpdateOutcome> {
+        let budget = self.operation_budget(id.resource_type.as_str(), OperationKind::Update);
+        drive_operation(
+            &id,
+            OperationKind::Update,
+            budget,
+            self.update_step(&id, identifier, from, patch),
+            |token| self.poll_update_step(&id, identifier, from, patch, token),
+            tokio::time::sleep,
+        )
+        .await
+    }
+
+    /// Perform the initial, non-blocking CloudControl delete step.
+    pub async fn delete_step(
+        &self,
+        id: &ResourceId,
+        identifier: &str,
+        request: &DeleteRequest,
+    ) -> ProviderResult<CcDeleteStep> {
+        self.ensure_initialized(id)?;
+        let config = get_schema_config(&id.resource_type).ok_or_else(|| {
+            ProviderError::internal(format!("Unknown resource type: {}", id.resource_type))
+                .for_resource(id.clone())
+        })?;
+
+        if let Some(patch_ops) = self
+            .internet_gateway_detach_patch_if_attached(id, config, identifier)
+            .await?
+        {
+            let detach = self
+                .cc_update_step(
+                    config.aws_type_name,
+                    identifier,
+                    patch_ops,
+                    config.schema.operation_config.as_ref(),
+                )
+                .await
+                .map_err(|error| detach_igw_error(id, error))?;
+            return self
+                .continue_after_igw_detach(id, config, identifier, detach)
+                .await;
+        }
+
+        if request.directives.force_delete && id.resource_type == "s3.Bucket" {
+            self.empty_s3_bucket(identifier).await.map_err(|error| {
+                ProviderError::api_error_caused_by(
+                    "Failed to empty S3 bucket before deletion",
+                    error,
+                )
+                .for_resource(id.clone())
+            })?;
+        }
+
+        self.cc_delete_step(
+            config.aws_type_name,
+            identifier,
+            config.schema.operation_config.as_ref(),
+        )
+        .await
+        .map(wrap_delete_phase)
+        .map_err(|error| error.for_resource(id.clone()))
+    }
+
+    /// Perform one CloudControl status or re-issue step for delete.
+    pub async fn poll_delete_step(
+        &self,
+        id: &ResourceId,
+        identifier: &str,
+        _request: &DeleteRequest,
+        token: CcDeleteToken,
+    ) -> ProviderResult<CcDeleteStep> {
+        self.ensure_initialized(id)?;
+        let config = get_schema_config(&id.resource_type).ok_or_else(|| {
+            ProviderError::internal(format!("Unknown resource type: {}", id.resource_type))
+                .for_resource(id.clone())
+        })?;
+
+        match token {
+            CcDeleteToken::DetachIgw(phase) => {
+                let patch_ops = if matches!(&phase, CcRequestPhase::NotIssued { .. }) {
+                    let Some(patch_ops) = self
+                        .internet_gateway_detach_patch_if_attached(id, config, identifier)
+                        .await?
+                    else {
+                        return self
+                            .cc_delete_step(
+                                config.aws_type_name,
+                                identifier,
+                                config.schema.operation_config.as_ref(),
+                            )
+                            .await
+                            .map(wrap_delete_phase)
+                            .map_err(|error| error.for_resource(id.clone()));
+                    };
+                    patch_ops
+                } else {
+                    internet_gateway_detach_patch()
+                };
+                let detach = self
+                    .cc_poll_update_step(
+                        config.aws_type_name,
+                        identifier,
+                        patch_ops,
+                        config.schema.operation_config.as_ref(),
+                        phase,
+                    )
+                    .await
+                    .map_err(|error| detach_igw_error(id, error))?;
+                self.continue_after_igw_detach(id, config, identifier, detach)
+                    .await
+            }
+            CcDeleteToken::Delete(phase) => self
+                .cc_poll_delete_step(
+                    config.aws_type_name,
+                    identifier,
+                    config.schema.operation_config.as_ref(),
+                    phase,
+                )
+                .await
+                .map(wrap_delete_phase)
+                .map_err(|error| error.for_resource(id.clone())),
         }
     }
 
-    /// Delete a resource
+    async fn continue_after_igw_detach(
+        &self,
+        id: &ResourceId,
+        config: &AwsccSchemaConfig,
+        identifier: &str,
+        step: OperationStep<WaitOutcome, CcUpdateToken>,
+    ) -> ProviderResult<CcDeleteStep> {
+        match step {
+            OperationStep::Pending {
+                pending,
+                poll_after_secs,
+            } => Ok(OperationStep::Pending {
+                pending: CcDeleteToken::DetachIgw(pending),
+                poll_after_secs,
+            }),
+            OperationStep::Done(WaitOutcome::Success { .. }) => self
+                .cc_delete_step(
+                    config.aws_type_name,
+                    identifier,
+                    config.schema.operation_config.as_ref(),
+                )
+                .await
+                .map(wrap_delete_phase)
+                .map_err(|error| error.for_resource(id.clone())),
+            OperationStep::Done(WaitOutcome::PartialOrFailed { status_message, .. }) => {
+                Err(ProviderError::api_error_caused_by(
+                    "Failed to detach Internet Gateway from VPC before deletion",
+                    crate::provider::error_helpers::CloudControlOperationFailure::new(
+                        status_message,
+                    ),
+                )
+                .for_resource(id.clone()))
+            }
+        }
+    }
+
+    /// Drive delete steps to a settled result for native callers.
     pub async fn delete_resource(
         &self,
         id: &ResourceId,
         identifier: &str,
         directives: &Directives,
     ) -> ProviderResult<()> {
-        let config = get_schema_config(&id.resource_type).ok_or_else(|| {
-            ProviderError::internal(format!("Unknown resource type: {}", id.resource_type))
-                .for_resource(id.clone())
-        })?;
-
-        // Handle special pre-delete operations
-        self.pre_delete_operations(id, config, identifier).await?;
-
-        // Handle force_delete for S3 buckets: empty the bucket before deletion
-        if directives.force_delete && id.resource_type == "s3.Bucket" {
-            self.empty_s3_bucket(identifier).await.map_err(|e| {
-                ProviderError::api_error_caused_by("Failed to empty S3 bucket before deletion", e)
-                    .for_resource(id.clone())
-            })?;
-        }
-
-        self.cc_delete_resource(
-            config.aws_type_name,
-            identifier,
-            config.schema.operation_config.as_ref(),
+        let budget = self.operation_budget(id.resource_type.as_str(), OperationKind::Delete);
+        let request = DeleteRequest {
+            directives: directives.clone(),
+        };
+        drive_operation(
+            id,
+            OperationKind::Delete,
+            budget,
+            self.delete_step(id, identifier, &request),
+            |token| self.poll_delete_step(id, identifier, &request, token),
+            tokio::time::sleep,
         )
         .await
-        .map_err(|e| e.for_resource(id.clone()))
     }
+}
+
+fn wrap_delete_phase(step: OperationStep<(), CcRequestPhase>) -> CcDeleteStep {
+    match step {
+        OperationStep::Done(()) => OperationStep::Done(()),
+        OperationStep::Pending {
+            pending,
+            poll_after_secs,
+        } => OperationStep::Pending {
+            pending: CcDeleteToken::Delete(pending),
+            poll_after_secs,
+        },
+    }
+}
+
+fn detach_igw_error(id: &ResourceId, error: ProviderError) -> ProviderError {
+    ProviderError::api_error_caused_by(
+        "Failed to detach Internet Gateway from VPC before deletion",
+        error,
+    )
+    .for_resource(id.clone())
 }
 
 fn canonicalize_identifier_from_read(
@@ -673,6 +989,31 @@ mod tests {
 
     fn test_string(value: &str) -> Value {
         Value::Concrete(ConcreteValue::String(value.to_string().into()))
+    }
+
+    #[tokio::test]
+    async fn native_driver_maps_over_budget_to_provider_timeout() {
+        let id = ResourceId::with_provider_identity("awscc", "ec2.Vpc", "budget", None);
+        let error = drive_operation(
+            &id,
+            OperationKind::Create,
+            Duration::ZERO,
+            std::future::ready(Ok::<_, ProviderError>(OperationStep::Pending {
+                pending: (),
+                poll_after_secs: 5,
+            })),
+            |_| std::future::ready(Ok(OperationStep::Done(()))),
+            |_| std::future::ready(()),
+        )
+        .await
+        .expect_err("pending operation with zero budget must time out");
+
+        assert_eq!(error.variant_name(), "timeout");
+        assert!(
+            error
+                .to_string()
+                .contains("create of ec2.Vpc did not finish within 0ns")
+        );
     }
 
     fn web_acl_association_state(

@@ -140,7 +140,7 @@ fn concrete_string_attribute<'a>(
     }
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn kms_key_create_then_read_round_trips_structured_key_policy() {
     let provider = winterbaume_provider().await;
     let resource = kms_key_resource();

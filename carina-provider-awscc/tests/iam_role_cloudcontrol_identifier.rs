@@ -208,7 +208,7 @@ async fn provider_with_mock(service: IamRoleIdentifierCloudControl) -> AwsccProv
     AwsccProvider::from_sdk_config(config, &AwsccProviderConfig::default()).await
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn iam_role_create_with_role_name_prefix_canonicalizes_identifier_from_read_state() {
     let service = IamRoleIdentifierCloudControl::default();
     let provider = provider_with_mock(service.clone()).await;

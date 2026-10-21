@@ -2,9 +2,14 @@ use std::collections::HashMap;
 use std::sync::LazyLock;
 
 mod convert;
-use carina_plugin_sdk::CarinaProvider;
+use carina_plugin_sdk::{
+    CarinaProvider, CreateOutcome as SdkCreateOutcome, DeleteOutcome as SdkDeleteOutcome, Pending,
+    UpdateOutcome as SdkUpdateOutcome,
+};
+use carina_provider_protocol::OperationStep;
 use carina_provider_protocol::types as proto;
 
+use carina_core::executor::normalized::NormalizedResource;
 use carina_core::provider::{
     DeleteRequest as CoreDeleteRequest, LiftedSavedAttrs, PersistedAttributes, Provider,
     ProviderError as CoreProviderError, ProviderNormalizer, RawSavedAttrs,
@@ -16,7 +21,9 @@ use carina_core::resource::{
 use carina_core::schema::SchemaRegistry;
 
 use carina_provider_awscc::AwsccNormalizer;
-use carina_provider_awscc::provider::{AwsccProvider, AwsccProviderConfig};
+use carina_provider_awscc::provider::{
+    AwsccProvider, AwsccProviderConfig, CcCreateToken, CcDeleteToken, CcUpdateToken,
+};
 use carina_provider_awscc::schemas;
 
 struct AwsccProcessProvider {
@@ -67,9 +74,58 @@ impl AwsccProcessProvider {
         });
         &REGISTRY
     }
+
+    fn normalize_create_resource(
+        &self,
+        resource: &proto::Resource,
+    ) -> Result<NormalizedResource, CoreProviderError> {
+        let core_resource = convert::proto_to_core_resource(resource);
+        self.runtime.block_on(
+            carina_core::executor::normalized::apply_desired_normalization(
+                core_resource,
+                &[],
+                &self.normalizer,
+                Self::schema_registry(),
+            ),
+        )
+    }
+
+    fn map_step<T, Token, Outcome>(
+        result: Result<OperationStep<T, Token>, CoreProviderError>,
+        done: impl FnOnce(T) -> Outcome,
+        pending: impl FnOnce(Pending<Token>) -> Outcome,
+    ) -> Result<Outcome, CoreProviderError> {
+        match result {
+            Ok(OperationStep::Done(value)) => Ok(done(value)),
+            Ok(OperationStep::Pending {
+                pending: token,
+                poll_after_secs,
+            }) => Ok(pending(Pending {
+                token,
+                poll_after_secs,
+            })),
+            Err(error) => Err(error),
+        }
+    }
+
+    fn core_delete_request(request: proto::DeleteRequest) -> CoreDeleteRequest {
+        CoreDeleteRequest {
+            directives: carina_core::resource::Directives {
+                force_delete: request.directives.force_delete,
+                create_before_destroy: request.directives.create_before_destroy,
+                prevent_destroy: request.directives.prevent_destroy,
+                depends_on: Vec::new(),
+                provider_instance: None,
+            },
+        }
+    }
 }
 
 impl CarinaProvider for AwsccProcessProvider {
+    type CreateToken = CcCreateToken;
+    type UpdateToken = CcUpdateToken;
+    type DeleteToken = CcDeleteToken;
+
     fn info(&self) -> proto::ProviderInfo {
         proto::ProviderInfo {
             name: "awscc".into(),
@@ -253,27 +309,41 @@ impl CarinaProvider for AwsccProcessProvider {
         &self,
         _id: &proto::ResourceId,
         request: proto::CreateRequest,
-    ) -> Result<proto::CreateOutcome, proto::ProviderError> {
-        let core_resource = convert::proto_to_core_resource(&request.resource);
+    ) -> Result<SdkCreateOutcome<Self::CreateToken>, proto::ProviderError> {
         let normalized_resource = self
-            .runtime
-            .block_on(
-                carina_core::executor::normalized::apply_desired_normalization(
-                    core_resource,
-                    &[],
-                    &self.normalizer,
-                    Self::schema_registry(),
-                ),
-            )
+            .normalize_create_resource(&request.resource)
             .map_err(Self::convert_error)?;
         let result = self.runtime.block_on(
             self.provider()
-                .create_resource(normalized_resource.as_resource()),
+                .create_step(normalized_resource.as_resource()),
         );
-        match result {
-            Ok(outcome) => Ok(convert::core_to_proto_create_outcome(outcome)),
-            Err(e) => Err(Self::convert_error(e)),
-        }
+        Self::map_step(
+            result,
+            |outcome| SdkCreateOutcome::Done(convert::core_to_proto_create_outcome(outcome)),
+            SdkCreateOutcome::Pending,
+        )
+        .map_err(Self::convert_error)
+    }
+
+    fn poll_create(
+        &self,
+        _id: &proto::ResourceId,
+        request: proto::CreateRequest,
+        pending: Pending<Self::CreateToken>,
+    ) -> Result<SdkCreateOutcome<Self::CreateToken>, proto::ProviderError> {
+        let normalized_resource = self
+            .normalize_create_resource(&request.resource)
+            .map_err(Self::convert_error)?;
+        let result = self.runtime.block_on(
+            self.provider()
+                .poll_create_step(normalized_resource.as_resource(), pending.token),
+        );
+        Self::map_step(
+            result,
+            |outcome| SdkCreateOutcome::Done(convert::core_to_proto_create_outcome(outcome)),
+            SdkCreateOutcome::Pending,
+        )
+        .map_err(Self::convert_error)
     }
 
     fn update(
@@ -281,7 +351,7 @@ impl CarinaProvider for AwsccProcessProvider {
         id: &proto::ResourceId,
         identifier: &str,
         request: proto::UpdateRequest,
-    ) -> Result<proto::UpdateOutcome, proto::ProviderError> {
+    ) -> Result<SdkUpdateOutcome<Self::UpdateToken>, proto::ProviderError> {
         let core_id = convert::proto_to_core_resource_id(id);
         let core_from = convert::proto_to_core_persisted_state(&request.from).map_err(|error| {
             Self::convert_error(
@@ -293,16 +363,51 @@ impl CarinaProvider for AwsccProcessProvider {
             )
         })?;
         let core_patch = convert::proto_to_core_update_patch(&request.patch);
-        let result = self.runtime.block_on(self.provider().update_resource(
-            core_id,
+        let result = self.runtime.block_on(self.provider().update_step(
+            &core_id,
             identifier,
             &core_from,
             &core_patch,
         ));
-        match result {
-            Ok(outcome) => Ok(convert::core_to_proto_update_outcome(outcome)),
-            Err(e) => Err(Self::convert_error(e)),
-        }
+        Self::map_step(
+            result,
+            |outcome| SdkUpdateOutcome::Done(convert::core_to_proto_update_outcome(outcome)),
+            SdkUpdateOutcome::Pending,
+        )
+        .map_err(Self::convert_error)
+    }
+
+    fn poll_update(
+        &self,
+        id: &proto::ResourceId,
+        identifier: &str,
+        request: proto::UpdateRequest,
+        pending: Pending<Self::UpdateToken>,
+    ) -> Result<SdkUpdateOutcome<Self::UpdateToken>, proto::ProviderError> {
+        let core_id = convert::proto_to_core_resource_id(id);
+        let core_from = convert::proto_to_core_persisted_state(&request.from).map_err(|error| {
+            Self::convert_error(
+                CoreProviderError::internal_caused_by(
+                    "failed to decode persisted update state",
+                    error,
+                )
+                .for_resource(core_id.clone()),
+            )
+        })?;
+        let core_patch = convert::proto_to_core_update_patch(&request.patch);
+        let result = self.runtime.block_on(self.provider().poll_update_step(
+            &core_id,
+            identifier,
+            &core_from,
+            &core_patch,
+            pending.token,
+        ));
+        Self::map_step(
+            result,
+            |outcome| SdkUpdateOutcome::Done(convert::core_to_proto_update_outcome(outcome)),
+            SdkUpdateOutcome::Pending,
+        )
+        .map_err(Self::convert_error)
     }
 
     fn delete(
@@ -310,26 +415,43 @@ impl CarinaProvider for AwsccProcessProvider {
         id: &proto::ResourceId,
         identifier: &str,
         request: proto::DeleteRequest,
-    ) -> Result<(), proto::ProviderError> {
+    ) -> Result<SdkDeleteOutcome<Self::DeleteToken>, proto::ProviderError> {
         let core_id = convert::proto_to_core_resource_id(id);
-        let core_directives = carina_core::resource::Directives {
-            force_delete: request.directives.force_delete,
-            create_before_destroy: request.directives.create_before_destroy,
-            prevent_destroy: request.directives.prevent_destroy,
-            depends_on: Vec::new(),
-            provider_instance: None,
-        };
-        let result = self.runtime.block_on(self.provider().delete(
+        let core_request = Self::core_delete_request(request);
+        let result = self.runtime.block_on(self.provider().delete_step(
             &core_id,
             identifier,
-            CoreDeleteRequest {
-                directives: core_directives,
-            },
+            &core_request,
         ));
-        match result {
-            Ok(()) => Ok(()),
-            Err(e) => Err(Self::convert_error(e)),
-        }
+        Self::map_step(
+            result,
+            |()| SdkDeleteOutcome::Deleted,
+            SdkDeleteOutcome::Pending,
+        )
+        .map_err(Self::convert_error)
+    }
+
+    fn poll_delete(
+        &self,
+        id: &proto::ResourceId,
+        identifier: &str,
+        request: proto::DeleteRequest,
+        pending: Pending<Self::DeleteToken>,
+    ) -> Result<SdkDeleteOutcome<Self::DeleteToken>, proto::ProviderError> {
+        let core_id = convert::proto_to_core_resource_id(id);
+        let core_request = Self::core_delete_request(request);
+        let result = self.runtime.block_on(self.provider().poll_delete_step(
+            &core_id,
+            identifier,
+            &core_request,
+            pending.token,
+        ));
+        Self::map_step(
+            result,
+            |()| SdkDeleteOutcome::Deleted,
+            SdkDeleteOutcome::Pending,
+        )
+        .map_err(Self::convert_error)
     }
 
     fn required_permissions(

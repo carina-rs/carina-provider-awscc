@@ -117,7 +117,7 @@ async fn stored_repository_identifier(cloudcontrol: &CloudControlService) -> Str
     resources[0].identifier.clone()
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn ecr_repository_create_then_read_preserves_struct_and_map_fields() {
     let (provider, cloudcontrol) = winterbaume_provider().await;
     let resource = ecr_repository_resource();
