@@ -88,7 +88,7 @@ async fn stored_web_acl_association_identifier(cloudcontrol: &CloudControlServic
     resources[0].identifier.clone()
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn web_acl_association_create_then_read_preserves_plain_string_properties() {
     let (provider, cloudcontrol) = winterbaume_provider().await;
     let resource = web_acl_association_resource();

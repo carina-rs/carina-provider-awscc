@@ -88,7 +88,7 @@ fn attributes(entries: impl IntoIterator<Item = (&'static str, Value)>) -> HashM
         .collect()
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn ecs_cluster_create_then_read_round_trips_structured_list_fields() {
     let provider = winterbaume_provider().await;
     let resource = ecs_cluster_resource();

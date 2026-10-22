@@ -279,6 +279,7 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
                 delete_max_retries: Some(24),
                 create_timeout_secs: None,
                 create_max_retries: None,
+                update_timeout_secs: None,
             })
             .with_validator(|attrs| {
                 let mut errors = Vec::new();

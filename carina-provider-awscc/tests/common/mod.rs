@@ -2,6 +2,7 @@ use carina_core::binding_index::ResolvedBindings;
 use carina_core::executor::{
     ModuleConstraintGate, ProviderPreparationContext, prepare_provider_ready_resource,
 };
+use carina_core::provider::CreateRequest;
 use carina_core::provider::ProviderReadyResource;
 use carina_core::resource::Resource;
 use carina_core::schema::AttributeType;
@@ -35,6 +36,27 @@ pub async fn normalize_resource(resource: Resource) -> ProviderReadyResource {
     prepare_provider_ready_resource(resource, &preparation)
         .await
         .expect("test resource should pass checked provider preparation")
+}
+
+#[allow(dead_code)]
+pub async fn create_request(resource: Resource) -> CreateRequest {
+    let bindings = ResolvedBindings::default();
+    let module_gate = ModuleConstraintGate::new(&[]);
+    let mut schemas = SchemaRegistry::new();
+    for schema in carina_provider_awscc::schemas::all_schemas() {
+        schemas.insert("awscc", schema);
+    }
+    let preparation = ProviderPreparationContext::new(
+        &bindings,
+        &module_gate,
+        &[],
+        &AwsccNormalizer,
+        &[],
+        &schemas,
+    );
+    carina_core::executor::prepare_create_request(resource, &preparation)
+        .await
+        .expect("test resource should pass checked create preparation")
 }
 
 #[allow(dead_code)]

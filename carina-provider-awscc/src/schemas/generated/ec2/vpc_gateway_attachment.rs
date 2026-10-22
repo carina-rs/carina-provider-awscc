@@ -45,6 +45,7 @@ pub fn ec2_vpc_gateway_attachment_config() -> AwsccSchemaConfig {
             delete_max_retries: None,
             create_timeout_secs: None,
             create_max_retries: None,
+            update_timeout_secs: None,
         })
         .exclusive_required(&["internet_gateway_id", "vpn_gateway_id"])
     }

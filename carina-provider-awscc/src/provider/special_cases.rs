@@ -6,13 +6,16 @@
 
 use std::collections::HashMap;
 
-use carina_core::provider::{ProviderError, ProviderResult};
+use carina_core::provider::ProviderResult;
 use carina_core::resource::{ConcreteValue, Resource, ResourceId, Value};
 use serde_json::json;
 
-use super::{AwsccProvider, error_helpers::CloudControlOperationFailure};
-use crate::provider::cloudcontrol::WaitOutcome;
+use super::AwsccProvider;
 use crate::schemas::config::AwsccSchemaConfig;
+
+pub(crate) fn internet_gateway_detach_patch() -> Vec<serde_json::Value> {
+    vec![json!({"op": "remove", "path": "/Attachments"})]
+}
 
 impl AwsccProvider {
     /// Handle special attributes that don't follow standard mapping
@@ -77,43 +80,22 @@ impl AwsccProvider {
         }
     }
 
-    /// Handle pre-delete operations (e.g., detach IGW from VPC)
-    pub(crate) async fn pre_delete_operations(
+    /// Build the Internet Gateway detach patch when the gateway is attached.
+    pub(crate) async fn internet_gateway_detach_patch_if_attached(
         &self,
         id: &ResourceId,
         config: &AwsccSchemaConfig,
         identifier: &str,
-    ) -> ProviderResult<()> {
-        if id.resource_type == "ec2.InternetGateway" {
-            // Detach from VPC first
-            if let Some(props) = self
+    ) -> ProviderResult<Option<Vec<serde_json::Value>>> {
+        if id.resource_type == "ec2.InternetGateway"
+            && let Some(props) = self
                 .cc_get_resource(config.aws_type_name, identifier)
                 .await?
-                && let Some(attachments) = props.get("Attachments").and_then(|v| v.as_array())
-                && !attachments.is_empty()
-            {
-                let patch_ops = vec![json!({"op": "remove", "path": "/Attachments"})];
-                match self
-                    .cc_update_resource(config.aws_type_name, identifier, patch_ops)
-                    .await
-                    .map_err(|e| {
-                        ProviderError::api_error_caused_by(
-                            "Failed to detach Internet Gateway from VPC before deletion",
-                            e,
-                        )
-                        .for_resource(id.clone())
-                    })? {
-                    WaitOutcome::Success { .. } => {}
-                    WaitOutcome::PartialOrFailed { status_message, .. } => {
-                        return Err(ProviderError::api_error_caused_by(
-                            "Failed to detach Internet Gateway from VPC before deletion",
-                            CloudControlOperationFailure::new(status_message),
-                        )
-                        .for_resource(id.clone()));
-                    }
-                }
-            }
+            && let Some(attachments) = props.get("Attachments").and_then(|v| v.as_array())
+            && !attachments.is_empty()
+        {
+            return Ok(Some(internet_gateway_detach_patch()));
         }
-        Ok(())
+        Ok(None)
     }
 }

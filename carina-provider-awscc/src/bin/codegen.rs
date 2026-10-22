@@ -3150,6 +3150,7 @@ pub fn {}() -> AwsccSchemaConfig {{
         emit_option_field(&mut body, "delete_max_retries", cfg.delete_max_retries);
         emit_option_field(&mut body, "create_timeout_secs", cfg.create_timeout_secs);
         emit_option_field(&mut body, "create_max_retries", cfg.create_max_retries);
+        emit_option_field(&mut body, "update_timeout_secs", cfg.update_timeout_secs);
         body.push_str("        })\n");
     }
 
@@ -3501,6 +3502,7 @@ struct CodegenOperationConfig {
     delete_max_retries: Option<u32>,
     create_timeout_secs: Option<u64>,
     create_max_retries: Option<u32>,
+    update_timeout_secs: Option<u64>,
 }
 
 /// Returns operational config overrides for resource types with slow CloudControl operations.
@@ -3514,7 +3516,7 @@ fn operation_config_for_type(type_name: &str) -> Option<CodegenOperationConfig> 
             })
         }
         "AWS::EC2::IPAM" | "AWS::EC2::IPAMPool" => Some(CodegenOperationConfig {
-            delete_timeout_secs: Some(1800),
+            delete_timeout_secs: Some(3600),
             ..Default::default()
         }),
         "AWS::EC2::NatGateway" => Some(CodegenOperationConfig {

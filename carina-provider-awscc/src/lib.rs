@@ -13,7 +13,9 @@ pub mod resources;
 pub mod schemas;
 
 // Re-export main types
-pub use provider::AwsccProvider;
+pub use provider::{
+    AwsccProvider, CcCreateToken, CcDeleteToken, CcRequestPhase, CcUpdateToken, RequestToken,
+};
 
 use std::collections::HashMap;
 
@@ -22,7 +24,7 @@ use indexmap::IndexMap;
 use carina_core::effect::PlanOp;
 use carina_core::provider::{
     BoxFuture, CanonicalCustomTypeValue, CanonicalProviderConfigAttributes, CreateOutcome,
-    CreateRequest, DeleteRequest, Provider, ProviderError, ProviderFactory, ProviderNormalizer,
+    CreateRequest, DeleteRequest, Provider, ProviderFactory, ProviderNormalizer,
     ProviderReadyConfig, ProviderReadyDataSource, ProviderResult, ReadRequest, SavedAttrs,
     UpdateOutcome, UpdateRequest, ready_noop,
 };
@@ -334,15 +336,6 @@ impl Provider for AwsccProvider {
         identifier: &str,
         request: DeleteRequest,
     ) -> BoxFuture<'_, ProviderResult<()>> {
-        if let Some(err) = self.init_error() {
-            let err = err.to_string();
-            let id = id.clone();
-            return Box::pin(async move {
-                Err(ProviderError::invalid_input(err)
-                    .for_provider("awscc")
-                    .for_resource(id))
-            });
-        }
         let id = id.clone();
         let identifier = identifier.to_string();
         Box::pin(async move {

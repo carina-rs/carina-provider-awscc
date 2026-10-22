@@ -102,7 +102,7 @@ fn attributes(entries: impl IntoIterator<Item = (&'static str, Value)>) -> HashM
         .collect()
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn dynamodb_table_create_then_read_round_trips_list_of_struct_fields() {
     let provider = winterbaume_provider().await;
     let resource = dynamodb_table_resource();

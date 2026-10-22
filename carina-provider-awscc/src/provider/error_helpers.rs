@@ -194,10 +194,6 @@ impl CloudControlOperationFailure {
             status_message: status_message.into(),
         }
     }
-
-    pub(crate) fn status_message(&self) -> &str {
-        &self.status_message
-    }
 }
 
 #[cfg(test)]

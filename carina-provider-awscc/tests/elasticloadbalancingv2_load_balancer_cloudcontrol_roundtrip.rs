@@ -139,7 +139,7 @@ fn load_balancer_attributes() -> Value {
     ])
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn load_balancer_create_then_read_round_trips_full_shaped_state() {
     let provider = winterbaume_provider().await;
     let resource = load_balancer_resource();

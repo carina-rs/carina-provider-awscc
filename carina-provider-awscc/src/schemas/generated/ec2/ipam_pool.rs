@@ -199,10 +199,11 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
         )
         .with_conflicting_replacement()
         .with_operation_config(OperationConfig {
-            delete_timeout_secs: Some(1800),
+            delete_timeout_secs: Some(3600),
             delete_max_retries: None,
             create_timeout_secs: None,
             create_max_retries: None,
+            update_timeout_secs: None,
         })
         .with_validator(|attrs| {
             let mut errors = Vec::new();

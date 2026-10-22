@@ -789,6 +789,7 @@ pub fn core_to_proto_schema(s: &CoreResourceSchema) -> ProtoResourceSchema {
                 delete_max_retries: c.delete_max_retries,
                 create_timeout_secs: c.create_timeout_secs,
                 create_max_retries: c.create_max_retries,
+                update_timeout_secs: c.update_timeout_secs,
             }
         }),
         validators: vec![],
