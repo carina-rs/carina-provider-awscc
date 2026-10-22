@@ -680,7 +680,7 @@ dependencies = [
 [[package]]
 name = "carina-aws-types"
 version = "0.4.0"
-source = "git+https://github.com/carina-rs/carina-provider-aws?rev=24a205c#24a205cf7d7f098e56ab4cc9ed967010899506f9"
+source = "git+https://github.com/carina-rs/carina-provider-aws?rev=bc732d2#bc732d24144d80d5779d7b84fb51ce094d40bfe1"
 dependencies = [
  "carina-core",
  "heck",
@@ -1012,7 +1012,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
