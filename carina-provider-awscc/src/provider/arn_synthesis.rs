@@ -22,15 +22,6 @@ pub(crate) enum SynthesisStatus {
     Missing { attributes: Vec<String> },
 }
 
-impl SynthesisStatus {
-    pub(crate) fn missing_attributes(self) -> Option<Vec<String>> {
-        match self {
-            Self::Complete => None,
-            Self::Missing { attributes } => Some(attributes),
-        }
-    }
-}
-
 /// Build the ARN for `AWS::CloudFront::Distribution`.
 ///
 /// CloudFront is a global service: the region segment is empty.

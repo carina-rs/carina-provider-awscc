@@ -9,7 +9,8 @@ use std::future::Future;
 use std::time::Duration;
 
 use carina_core::provider::{
-    CreateOutcome, DeleteRequest, ProviderError, ProviderResult, UpdateOutcome, UpdatePatch,
+    AppliedIdentifier, AppliedState, CreateOutcome, DeleteRequest, ProviderError, ProviderResult,
+    ReadOutcome, UpdateOutcome, UpdatePatch,
 };
 use carina_core::resource::{ConcreteValue, Directives, Resource, ResourceId, State, Value};
 use carina_core::schema::{AttributeSchema, AttributeType, Schema, Shape};
@@ -80,8 +81,8 @@ impl AwsccProvider {
     pub async fn read_resource(
         &self,
         id: &ResourceId,
-        identifier: Option<&str>,
-    ) -> ProviderResult<State> {
+        identifier: &AppliedIdentifier,
+    ) -> ProviderResult<ReadOutcome> {
         self.ensure_initialized(id)?;
 
         let config = get_schema_config(&id.resource_type).ok_or_else(|| {
@@ -89,17 +90,12 @@ impl AwsccProvider {
                 .for_resource(id.clone())
         })?;
 
-        let identifier = match identifier {
-            Some(id) => id,
-            None => return Ok(State::not_found(id.clone())),
-        };
-
         let props = match self
-            .cc_get_resource(config.aws_type_name, identifier)
+            .cc_get_resource(config.aws_type_name, identifier.as_str())
             .await?
         {
             Some(props) => props,
-            None => return Ok(State::not_found(id.clone())),
+            None => return Ok(ReadOutcome::not_found(id.clone())),
         };
 
         let mut attributes = map_aws_props_to_attributes(
@@ -134,7 +130,20 @@ impl AwsccProvider {
             .synthesize_read_attributes(&id.resource_type, &mut attributes)
             .await?;
 
-        Ok(State::existing(id.clone(), attributes).with_identifier(identifier))
+        Ok(ReadOutcome::found(AppliedState::from_identifier(
+            id.clone(),
+            identifier.clone(),
+            attributes,
+        )))
+    }
+
+    pub async fn read_data_source_resource(&self, id: &ResourceId) -> ProviderResult<State> {
+        Err(ProviderError::invalid_input(format!(
+            "awscc does not provide data sources; requested type {}",
+            id.resource_type
+        ))
+        .for_provider("awscc")
+        .for_resource(id.clone()))
     }
 
     fn operation_budget(&self, resource_type: &str, kind: OperationKind) -> Duration {
@@ -245,120 +254,161 @@ impl AwsccProvider {
             OperationStep::Done(outcome) => outcome,
         };
 
-        let identifier = match outcome {
-            WaitOutcome::Success { identifier } => identifier,
+        let (identifier, handler_failure) = match outcome {
+            WaitOutcome::Success { identifier } => (identifier, None),
             WaitOutcome::PartialOrFailed {
                 identifier,
                 status_message,
-            } => match self.read_resource(&resource.id, Some(&identifier)).await {
-                Ok(state) => {
-                    if !state.exists {
-                        return Ok(OperationStep::Done(create_read_not_found_outcome(
-                            state,
-                            format!(
-                                "handler failed: {}; read-back returned not_found",
-                                status_message
-                            ),
-                        )));
-                    }
-                    let mut state = merge_desired_attributes(state, resource, config);
-                    let Some(canonical_identifier) =
-                        canonicalize_identifier_from_read(config, &state)
-                    else {
-                        let missing_attributes =
-                            missing_primary_identifier_attributes(config, &state);
-                        let reason = format!(
-                            "handler failed: {}; read-back missing primaryIdentifier attributes: {}",
-                            status_message,
-                            missing_attributes.join(", ")
-                        );
-                        return Ok(OperationStep::Done(CreateOutcome::partial_success(
-                            state,
-                            reason,
-                            missing_attributes,
-                        )));
-                    };
-                    state.identifier = Some(canonical_identifier);
-                    if let Some(missing_attributes) = self
-                        .synthesize_read_attributes(
-                            &resource.id.resource_type,
-                            &mut state.attributes,
-                        )
-                        .await?
-                        .missing_attributes()
-                    {
-                        let reason = format!(
-                            "handler failed: {}; read-back missing synthesized attributes: {}",
-                            status_message,
-                            missing_attributes.join(", ")
-                        );
-                        return Ok(OperationStep::Done(CreateOutcome::partial_success(
-                            state,
-                            reason,
-                            missing_attributes,
-                        )));
-                    }
-                    return Ok(OperationStep::Done(CreateOutcome::Success { state }));
-                }
-                Err(read_err) => {
-                    let state = State::existing(resource.id.clone(), HashMap::new())
-                        .with_identifier(identifier);
-                    let missing_attributes = config
+            } => (identifier, Some(status_message)),
+        };
+        let identifier = applied_identifier(&resource.id, "create", identifier)?;
+        let read_back = self.read_resource(&resource.id, &identifier).await;
+        let outcome = self
+            .create_outcome_from_read(
+                resource,
+                config,
+                identifier,
+                read_back,
+                handler_failure.as_deref(),
+            )
+            .await;
+        Ok(OperationStep::Done(outcome))
+    }
+
+    async fn create_outcome_from_read(
+        &self,
+        resource: &Resource,
+        config: &AwsccSchemaConfig,
+        wait_identifier: AppliedIdentifier,
+        read_back: ProviderResult<ReadOutcome>,
+        handler_failure: Option<&str>,
+    ) -> CreateOutcome {
+        let read_state = match read_back {
+            Ok(ReadOutcome::Found { state }) => state,
+            Ok(ReadOutcome::NotFound { .. }) => {
+                let state = AppliedState::from_identifier(
+                    resource.id.clone(),
+                    wait_identifier,
+                    resource.resolved_attributes(),
+                );
+                return CreateOutcome::partial_success(
+                    state,
+                    read_back_reason(handler_failure, "read-back returned not_found"),
+                    vec!["state".to_string()],
+                );
+            }
+            Err(read_error) => {
+                let state = AppliedState::from_identifier(
+                    resource.id.clone(),
+                    wait_identifier,
+                    HashMap::new(),
+                );
+                let missing_attributes = nonempty_missing_attributes(
+                    config
                         .schema
                         .attributes
                         .keys()
                         .filter(|name| resource.get_attr(name.as_str()).is_some())
                         .cloned()
-                        .collect();
-                    let reason = format!(
-                        "handler failed: {}; read error: {}",
-                        status_message, read_err,
+                        .collect(),
+                );
+                return CreateOutcome::partial_success(
+                    state,
+                    read_back_reason(handler_failure, format!("read error: {read_error}")),
+                    missing_attributes,
+                );
+            }
+        };
+
+        let mut attributes = merge_desired_attributes(read_state.attributes(), resource, config);
+        let canonical_identifier =
+            match canonicalize_identifier_from_read(config, &resource.id, &attributes) {
+                Ok(Some(identifier)) => identifier,
+                Ok(None) => {
+                    let missing_attributes =
+                        missing_primary_identifier_attributes(config, &attributes);
+                    let reason = read_back_reason(
+                        handler_failure,
+                        format!(
+                            "read-back missing primaryIdentifier attributes: {}",
+                            missing_attributes.join(", ")
+                        ),
                     );
-                    return Ok(OperationStep::Done(CreateOutcome::partial_success(
+                    let state = AppliedState::from_identifier(
+                        resource.id.clone(),
+                        wait_identifier,
+                        attributes,
+                    );
+                    return CreateOutcome::partial_success(
                         state,
                         reason,
-                        missing_attributes,
-                    )));
+                        nonempty_missing_attributes(missing_attributes),
+                    );
                 }
-            },
-        };
+                Err(error) => {
+                    let state = AppliedState::from_identifier(
+                        resource.id.clone(),
+                        wait_identifier,
+                        attributes,
+                    );
+                    return CreateOutcome::partial_success(
+                        state,
+                        read_back_reason(
+                            handler_failure,
+                            format!("failed to canonicalize read-back identifier: {error}"),
+                        ),
+                        vec!["state".to_string()],
+                    );
+                }
+            };
 
-        let state = self.read_resource(&resource.id, Some(&identifier)).await?;
-
-        if !state.exists {
-            return Ok(OperationStep::Done(create_read_not_found_outcome(
-                state,
-                "read-back returned not_found",
-            )));
-        }
-        let mut state = merge_desired_attributes(state, resource, config);
-        let Some(canonical_identifier) = canonicalize_identifier_from_read(config, &state) else {
-            let missing_attributes = missing_primary_identifier_attributes(config, &state);
-            return Ok(OperationStep::Done(CreateOutcome::partial_success(
-                state,
-                format!(
-                    "read-back missing primaryIdentifier attributes: {}",
-                    missing_attributes.join(", ")
-                ),
-                missing_attributes,
-            )));
-        };
-        state.identifier = Some(canonical_identifier);
-
-        match self
-            .synthesize_read_attributes(&resource.id.resource_type, &mut state.attributes)
-            .await?
-        {
-            SynthesisStatus::Complete => Ok(OperationStep::Done(CreateOutcome::Success { state })),
-            SynthesisStatus::Missing { attributes } => {
-                Ok(OperationStep::Done(CreateOutcome::partial_success(
+        let synthesis = self
+            .synthesize_read_attributes(&resource.id.resource_type, &mut attributes)
+            .await;
+        let synthesis = match synthesis {
+            Ok(synthesis) => synthesis,
+            Err(error) => {
+                let state =
+                    AppliedState::from_identifier(resource.id.clone(), wait_identifier, attributes);
+                return CreateOutcome::partial_success(
                     state,
+                    read_back_reason(
+                        handler_failure,
+                        format!("failed to synthesize read-back attributes: {error}"),
+                    ),
+                    vec!["state".to_string()],
+                );
+            }
+        };
+
+        match synthesis {
+            SynthesisStatus::Complete => CreateOutcome::Success {
+                state: AppliedState::from_identifier(
+                    resource.id.clone(),
+                    canonical_identifier,
+                    attributes,
+                ),
+            },
+            SynthesisStatus::Missing {
+                attributes: missing_attributes,
+            } => {
+                let reason = read_back_reason(
+                    handler_failure,
                     format!(
                         "read-back missing synthesized attributes: {}",
-                        attributes.join(", ")
+                        missing_attributes.join(", ")
                     ),
+                );
+                let state = AppliedState::from_identifier(
+                    resource.id.clone(),
+                    canonical_identifier,
                     attributes,
-                )))
+                );
+                CreateOutcome::partial_success(
+                    state,
+                    reason,
+                    nonempty_missing_attributes(missing_attributes),
+                )
             }
         }
     }
@@ -382,7 +432,7 @@ impl AwsccProvider {
     pub async fn update_step(
         &self,
         id: &ResourceId,
-        identifier: &str,
+        identifier: &AppliedIdentifier,
         from: &State,
         patch: &UpdatePatch,
     ) -> ProviderResult<CcUpdateStep> {
@@ -395,13 +445,14 @@ impl AwsccProvider {
         let step = self
             .cc_update_step(
                 config.aws_type_name,
-                identifier,
+                identifier.as_str(),
                 patch_plan.ops.clone(),
                 config.schema.operation_config.as_ref(),
             )
             .await
             .map_err(|error| error.for_resource(id.clone()))?;
-        self.finish_update_step(id, from, patch, config, patch_plan, step)
+        let desired = post_update_attributes(from, patch);
+        self.finish_update_step(id, identifier, desired, config, patch_plan, step)
             .await
     }
 
@@ -409,7 +460,7 @@ impl AwsccProvider {
     pub async fn poll_update_step(
         &self,
         id: &ResourceId,
-        identifier: &str,
+        identifier: &AppliedIdentifier,
         from: &State,
         patch: &UpdatePatch,
         token: CcUpdateToken,
@@ -423,22 +474,23 @@ impl AwsccProvider {
         let step = self
             .cc_poll_update_step(
                 config.aws_type_name,
-                identifier,
+                identifier.as_str(),
                 patch_plan.ops.clone(),
                 config.schema.operation_config.as_ref(),
                 token,
             )
             .await
             .map_err(|error| error.for_resource(id.clone()))?;
-        self.finish_update_step(id, from, patch, config, patch_plan, step)
+        let desired = post_update_attributes(from, patch);
+        self.finish_update_step(id, identifier, desired, config, patch_plan, step)
             .await
     }
 
     async fn finish_update_step(
         &self,
         id: &ResourceId,
-        from: &State,
-        patch: &UpdatePatch,
+        identifier: &AppliedIdentifier,
+        desired: HashMap<String, Value>,
         config: &AwsccSchemaConfig,
         patch_plan: UpdatePatchPlan,
         step: OperationStep<WaitOutcome, CcUpdateToken>,
@@ -455,43 +507,20 @@ impl AwsccProvider {
             }
             OperationStep::Done(outcome) => outcome,
         };
-        let desired = post_update_attributes(from, patch);
-        let outcome = match outcome {
-            WaitOutcome::Success { identifier } => {
-                let state = self.read_resource(id, Some(&identifier)).await?;
-                update_outcome_from_read_back(state, &desired, &patch_plan, config, None)
-            }
-            WaitOutcome::PartialOrFailed {
-                identifier,
-                status_message,
-            } => match self.read_resource(id, Some(&identifier)).await {
-                Ok(state) => update_outcome_from_read_back(
-                    state,
-                    &desired,
-                    &patch_plan,
-                    config,
-                    Some(&status_message),
-                ),
-                Err(read_err) => {
-                    let missing_attributes = patch_plan.touched.clone();
-                    let mut state_attributes = desired;
-                    for attr in &missing_attributes {
-                        state_attributes.remove(attr);
-                    }
-                    let state =
-                        State::existing(id.clone(), state_attributes).with_identifier(identifier);
-                    let mut reason = format!(
-                        "handler failed: {}; read error: {}",
-                        status_message, read_err,
-                    );
-                    if !patch_plan.unsent.is_empty() {
-                        reason.push_str("; ");
-                        reason.push_str(&unsent_attributes_reason(&patch_plan.unsent));
-                    }
-                    UpdateOutcome::partial_success(state, reason, missing_attributes)
-                }
-            },
+        let handler_failure = match outcome {
+            WaitOutcome::Success { .. } => None,
+            WaitOutcome::PartialOrFailed { status_message, .. } => Some(status_message),
         };
+        let read_back = self.read_resource(id, identifier).await;
+        let outcome = update_outcome_from_read_back(
+            id,
+            identifier,
+            read_back,
+            desired,
+            &patch_plan,
+            config,
+            handler_failure.as_deref(),
+        );
         Ok(OperationStep::Done(outcome))
     }
 
@@ -499,7 +528,7 @@ impl AwsccProvider {
     pub async fn update_resource(
         &self,
         id: ResourceId,
-        identifier: &str,
+        identifier: &AppliedIdentifier,
         from: &State,
         patch: &UpdatePatch,
     ) -> ProviderResult<UpdateOutcome> {
@@ -519,7 +548,7 @@ impl AwsccProvider {
     pub async fn delete_step(
         &self,
         id: &ResourceId,
-        identifier: &str,
+        identifier: &AppliedIdentifier,
         request: &DeleteRequest,
     ) -> ProviderResult<CcDeleteStep> {
         self.ensure_initialized(id)?;
@@ -529,13 +558,13 @@ impl AwsccProvider {
         })?;
 
         if let Some(patch_ops) = self
-            .internet_gateway_detach_patch_if_attached(id, config, identifier)
+            .internet_gateway_detach_patch_if_attached(id, config, identifier.as_str())
             .await?
         {
             let detach = self
                 .cc_update_step(
                     config.aws_type_name,
-                    identifier,
+                    identifier.as_str(),
                     patch_ops,
                     config.schema.operation_config.as_ref(),
                 )
@@ -547,18 +576,20 @@ impl AwsccProvider {
         }
 
         if request.directives.force_delete && id.resource_type == "s3.Bucket" {
-            self.empty_s3_bucket(identifier).await.map_err(|error| {
-                ProviderError::api_error_caused_by(
-                    "Failed to empty S3 bucket before deletion",
-                    error,
-                )
-                .for_resource(id.clone())
-            })?;
+            self.empty_s3_bucket(identifier.as_str())
+                .await
+                .map_err(|error| {
+                    ProviderError::api_error_caused_by(
+                        "Failed to empty S3 bucket before deletion",
+                        error,
+                    )
+                    .for_resource(id.clone())
+                })?;
         }
 
         self.cc_delete_step(
             config.aws_type_name,
-            identifier,
+            identifier.as_str(),
             config.schema.operation_config.as_ref(),
         )
         .await
@@ -570,7 +601,7 @@ impl AwsccProvider {
     pub async fn poll_delete_step(
         &self,
         id: &ResourceId,
-        identifier: &str,
+        identifier: &AppliedIdentifier,
         _request: &DeleteRequest,
         token: CcDeleteToken,
     ) -> ProviderResult<CcDeleteStep> {
@@ -584,13 +615,13 @@ impl AwsccProvider {
             CcDeleteToken::DetachIgw(phase) => {
                 let patch_ops = if matches!(&phase, CcRequestPhase::NotIssued { .. }) {
                     let Some(patch_ops) = self
-                        .internet_gateway_detach_patch_if_attached(id, config, identifier)
+                        .internet_gateway_detach_patch_if_attached(id, config, identifier.as_str())
                         .await?
                     else {
                         return self
                             .cc_delete_step(
                                 config.aws_type_name,
-                                identifier,
+                                identifier.as_str(),
                                 config.schema.operation_config.as_ref(),
                             )
                             .await
@@ -604,7 +635,7 @@ impl AwsccProvider {
                 let detach = self
                     .cc_poll_update_step(
                         config.aws_type_name,
-                        identifier,
+                        identifier.as_str(),
                         patch_ops,
                         config.schema.operation_config.as_ref(),
                         phase,
@@ -617,7 +648,7 @@ impl AwsccProvider {
             CcDeleteToken::Delete(phase) => self
                 .cc_poll_delete_step(
                     config.aws_type_name,
-                    identifier,
+                    identifier.as_str(),
                     config.schema.operation_config.as_ref(),
                     phase,
                 )
@@ -631,7 +662,7 @@ impl AwsccProvider {
         &self,
         id: &ResourceId,
         config: &AwsccSchemaConfig,
-        identifier: &str,
+        identifier: &AppliedIdentifier,
         step: OperationStep<WaitOutcome, CcUpdateToken>,
     ) -> ProviderResult<CcDeleteStep> {
         match step {
@@ -645,7 +676,7 @@ impl AwsccProvider {
             OperationStep::Done(WaitOutcome::Success { .. }) => self
                 .cc_delete_step(
                     config.aws_type_name,
-                    identifier,
+                    identifier.as_str(),
                     config.schema.operation_config.as_ref(),
                 )
                 .await
@@ -667,7 +698,7 @@ impl AwsccProvider {
     pub async fn delete_resource(
         &self,
         id: &ResourceId,
-        identifier: &str,
+        identifier: &AppliedIdentifier,
         directives: &Directives,
     ) -> ProviderResult<()> {
         let budget = self.operation_budget(id.resource_type.as_str(), OperationKind::Delete);
@@ -707,33 +738,71 @@ fn detach_igw_error(id: &ResourceId, error: ProviderError) -> ProviderError {
     .for_resource(id.clone())
 }
 
+fn applied_identifier(
+    id: &ResourceId,
+    operation: &'static str,
+    identifier: String,
+) -> ProviderResult<AppliedIdentifier> {
+    AppliedIdentifier::new(identifier).map_err(|_| {
+        ProviderError::api_error(format!(
+            "Cloud Control {operation} returned an empty provider identifier"
+        ))
+        .for_resource(id.clone())
+        .with_operation(operation)
+    })
+}
+
+fn read_back_reason(handler_failure: Option<&str>, detail: impl Into<String>) -> String {
+    let detail = detail.into();
+    match handler_failure {
+        Some(status_message) => format!("handler failed: {status_message}; {detail}"),
+        None => detail,
+    }
+}
+
+fn nonempty_missing_attributes(mut attributes: Vec<String>) -> Vec<String> {
+    if attributes.is_empty() {
+        attributes.push("state".to_string());
+    }
+    attributes
+}
+
 fn canonicalize_identifier_from_read(
     config: &AwsccSchemaConfig,
-    read_state: &State,
-) -> Option<String> {
+    id: &ResourceId,
+    attributes: &HashMap<String, Value>,
+) -> ProviderResult<Option<AppliedIdentifier>> {
     let mut segments = Vec::with_capacity(config.primary_identifier.len());
     for attr in config.primary_identifier {
-        segments.push(primary_identifier_segment(
-            read_state.attributes.get(attr.dsl_name)?,
-        )?);
+        let Some(value) = attributes.get(attr.dsl_name) else {
+            return Ok(None);
+        };
+        let Some(segment) = primary_identifier_segment(value) else {
+            return Ok(None);
+        };
+        segments.push(segment);
     }
-    if segments.is_empty() {
-        None
-    } else {
-        Some(segments.join("|"))
-    }
+    AppliedIdentifier::new(segments.join("|"))
+        .map(Some)
+        .map_err(|error| {
+            ProviderError::api_error_caused_by(
+                "Cloud Control read-back produced an empty canonical identifier",
+                error,
+            )
+            .for_resource(id.clone())
+            .with_operation("cloudcontrol.GetResource")
+        })
 }
 
 fn missing_primary_identifier_attributes(
     config: &AwsccSchemaConfig,
-    read_state: &State,
+    attributes: &HashMap<String, Value>,
 ) -> Vec<String> {
     config
         .primary_identifier
         .iter()
         .filter(|attr| {
-            read_state
-                .attributes
+            attributes
                 .get(attr.dsl_name)
                 .and_then(primary_identifier_segment)
                 .is_none()
@@ -756,22 +825,23 @@ fn primary_identifier_segment(value: &Value) -> Option<String> {
 }
 
 fn merge_desired_attributes(
-    mut state: State,
+    read_attributes: &HashMap<String, Value>,
     resource: &Resource,
     config: &crate::schemas::config::AwsccSchemaConfig,
-) -> State {
+) -> HashMap<String, Value> {
+    let mut attributes = read_attributes.clone();
     // Preserve desired attributes not returned by CloudControl API.
     // CloudControl doesn't always return all properties in GetResource responses
     // (create-only properties, and some normal properties like `description`).
     // Carry them forward from the desired state.
     for dsl_name in config.schema.attributes.keys() {
-        if !state.attributes.contains_key(dsl_name)
+        if !attributes.contains_key(dsl_name)
             && let Some(value) = resource.get_attr(dsl_name.as_str())
         {
-            state.attributes.insert(dsl_name.to_string(), value.clone());
+            attributes.insert(dsl_name.to_string(), value.clone());
         }
     }
-    state
+    attributes
 }
 
 /// Merge the post-update desired attributes into a read-back and classify the outcome.
@@ -782,12 +852,39 @@ fn merge_desired_attributes(
 /// divergence, including a read-back of the old value, is the differ's responsibility
 /// because confirmation here is presence-only.
 fn update_outcome_from_read_back(
-    mut state: State,
-    desired: &HashMap<String, Value>,
+    id: &ResourceId,
+    identifier: &AppliedIdentifier,
+    read_back: ProviderResult<ReadOutcome>,
+    desired: HashMap<String, Value>,
     patch_plan: &UpdatePatchPlan,
     config: &AwsccSchemaConfig,
     handler_failure: Option<&str>,
 ) -> UpdateOutcome {
+    let mut attributes = match read_back {
+        Ok(ReadOutcome::Found { state }) => state.attributes().clone(),
+        Ok(ReadOutcome::NotFound { .. }) => {
+            return update_partial_without_read_back(
+                id,
+                identifier,
+                desired,
+                patch_plan,
+                read_back_reason(
+                    handler_failure,
+                    "post-update read-back did not find the updated resource",
+                ),
+            );
+        }
+        Err(read_error) => {
+            return update_partial_without_read_back(
+                id,
+                identifier,
+                desired,
+                patch_plan,
+                read_back_reason(handler_failure, format!("read error: {read_error}")),
+            );
+        }
+    };
+
     // Cloud Control can report UPDATE SUCCESS while silently discarding a property:
     // AWS::S3::Bucket ObjectLockEnabled add-on-update returned OperationStatus SUCCESS
     // with no error while GetResource afterwards showed the property absent. Measured
@@ -797,28 +894,26 @@ fn update_outcome_from_read_back(
     let missing_sent_attributes = patch_plan
         .requires_confirmation
         .iter()
-        .filter(|key| {
-            !patch_plan.unsent.contains(key) && !state.attributes.contains_key(key.as_str())
-        })
+        .filter(|key| !patch_plan.unsent.contains(key) && !attributes.contains_key(key.as_str()))
         .cloned()
         .collect::<Vec<_>>();
     let unconfirmed_attributes = patch_plan
         .requires_confirmation
         .iter()
-        .filter(|key| {
-            patch_plan.unsent.contains(key) || !state.attributes.contains_key(key.as_str())
-        })
+        .filter(|key| patch_plan.unsent.contains(key) || !attributes.contains_key(key.as_str()))
         .cloned()
         .collect::<Vec<_>>();
 
     for dsl_name in config.schema.attributes.keys() {
-        if !state.attributes.contains_key(dsl_name)
+        if !attributes.contains_key(dsl_name)
             && !unconfirmed_attributes.contains(dsl_name)
             && let Some(value) = desired.get(dsl_name)
         {
-            state.attributes.insert(dsl_name.clone(), value.clone());
+            attributes.insert(dsl_name.clone(), value.clone());
         }
     }
+
+    let state = AppliedState::from_identifier(id.clone(), identifier.clone(), attributes);
 
     if unconfirmed_attributes.is_empty() {
         return UpdateOutcome::Success { state };
@@ -830,6 +925,28 @@ fn update_outcome_from_read_back(
         handler_failure,
     );
     UpdateOutcome::partial_success(state, reason, unconfirmed_attributes)
+}
+
+fn update_partial_without_read_back(
+    id: &ResourceId,
+    identifier: &AppliedIdentifier,
+    mut desired: HashMap<String, Value>,
+    patch_plan: &UpdatePatchPlan,
+    mut reason: String,
+) -> UpdateOutcome {
+    let missing_attributes = nonempty_missing_attributes(patch_plan.touched.clone());
+    for attr in &missing_attributes {
+        desired.remove(attr);
+    }
+    if !patch_plan.unsent.is_empty() {
+        reason.push_str("; ");
+        reason.push_str(&unsent_attributes_reason(&patch_plan.unsent));
+    }
+    UpdateOutcome::partial_success(
+        AppliedState::from_identifier(id.clone(), identifier.clone(), desired),
+        reason,
+        missing_attributes,
+    )
 }
 
 fn update_confirmation_failure_reason(
@@ -934,10 +1051,6 @@ fn map_aws_props_to_attributes(
     attributes
 }
 
-fn create_read_not_found_outcome(state: State, diagnostic: impl Into<String>) -> CreateOutcome {
-    CreateOutcome::partial_success(state, diagnostic.into(), vec!["state".to_string()])
-}
-
 /// Reconstruct the post-update desired-state attribute map: take the
 /// current provider-side `from` state and apply each patch op on top.
 ///
@@ -972,7 +1085,9 @@ fn post_update_attributes(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use carina_core::provider::{CreateOutcome, PatchOp, PatchOpKind, UpdateOutcome};
+    use carina_core::provider::{
+        AppliedIdentifier, CreateOutcome, PatchOp, PatchOpKind, ReadOutcome, UpdateOutcome,
+    };
     use carina_core::resource::{DeferredValue, UnknownReason};
     use carina_core::schema::AttributeType;
     use serde_json::json;
@@ -989,6 +1104,10 @@ mod tests {
 
     fn test_string(value: &str) -> Value {
         Value::Concrete(ConcreteValue::String(value.to_string().into()))
+    }
+
+    fn test_identifier(value: &str) -> AppliedIdentifier {
+        AppliedIdentifier::new(value).expect("test provider identifier must be non-empty")
     }
 
     #[tokio::test]
@@ -1049,12 +1168,15 @@ mod tests {
             ("web_acl_arn", test_string(WEB_ACL_ASSOCIATION_WEB_ACL_ARN)),
         ]);
 
+        let identifier = canonicalize_identifier_from_read(&config, &state.id, &state.attributes)
+            .expect("canonicalization should succeed")
+            .expect("both primary identifier attributes are present");
         assert_eq!(
-            canonicalize_identifier_from_read(&config, &state),
-            Some(format!(
+            identifier.as_str(),
+            format!(
                 "{}|{}",
                 WEB_ACL_ASSOCIATION_RESOURCE_ARN, WEB_ACL_ASSOCIATION_WEB_ACL_ARN
-            ))
+            )
         );
     }
 
@@ -1076,26 +1198,65 @@ mod tests {
             ),
         ]);
 
-        assert_eq!(
-            canonicalize_identifier_from_read(&config, &missing_segment),
-            None
+        assert!(
+            canonicalize_identifier_from_read(
+                &config,
+                &missing_segment.id,
+                &missing_segment.attributes,
+            )
+            .expect("missing primary identifier attributes are not provider errors")
+            .is_none()
         );
-        assert_eq!(
-            canonicalize_identifier_from_read(&config, &unknown_segment),
-            None
+        assert!(
+            canonicalize_identifier_from_read(
+                &config,
+                &unknown_segment.id,
+                &unknown_segment.attributes,
+            )
+            .expect("unknown primary identifier attributes are not provider errors")
+            .is_none()
         );
+    }
+
+    #[test]
+    fn canonicalize_identifier_from_read_rejects_empty_canonical_identifier() {
+        let mut config = web_acl_association_config();
+        config.primary_identifier = &[];
+        let state = web_acl_association_state([]);
+
+        let error = canonicalize_identifier_from_read(&config, &state.id, &state.attributes)
+            .expect_err("an empty canonical identifier must be a provider error");
+
+        assert!(error.to_string().contains("empty canonical identifier"));
     }
 
     #[derive(Debug)]
     struct PartialCreateCloudControlService {
+        wait_succeeds: bool,
         read_succeeds: bool,
+        read_not_found: bool,
         saw_get_resource: AtomicBool,
     }
 
     impl PartialCreateCloudControlService {
         fn new(read_succeeds: bool) -> Arc<Self> {
+            Self::with_wait_result(false, read_succeeds)
+        }
+
+        fn with_wait_result(wait_succeeds: bool, read_succeeds: bool) -> Arc<Self> {
             Arc::new(Self {
+                wait_succeeds,
                 read_succeeds,
+                read_not_found: false,
+                saw_get_resource: AtomicBool::new(false),
+            })
+        }
+
+        fn with_not_found(wait_succeeds: bool) -> Arc<Self> {
+            Arc::new(Self {
+                wait_succeeds,
+                read_succeeds: false,
+                read_not_found: true,
                 saw_get_resource: AtomicBool::new(false),
             })
         }
@@ -1129,10 +1290,21 @@ mod tests {
                         200,
                         r#"{"ProgressEvent":{"RequestToken":"request-token-1"}}"#,
                     ),
+                    "GetResourceRequestStatus" if self.wait_succeeds => MockResponse::json(
+                        200,
+                        r#"{"ProgressEvent":{"RequestToken":"request-token-1","OperationStatus":"SUCCESS","Identifier":"partial-bucket"}}"#,
+                    ),
                     "GetResourceRequestStatus" => MockResponse::json(
                         200,
                         r#"{"ProgressEvent":{"RequestToken":"request-token-1","OperationStatus":"FAILED","Identifier":"partial-bucket","StatusMessage":"post-create read denied"}}"#,
                     ),
+                    "GetResource" if self.read_not_found => {
+                        self.saw_get_resource.store(true, Ordering::SeqCst);
+                        MockResponse::json(
+                            404,
+                            r#"{"__type":"ResourceNotFoundException","message":"bucket not found"}"#,
+                        )
+                    }
                     "GetResource" if self.read_succeeds => {
                         self.saw_get_resource.store(true, Ordering::SeqCst);
                         MockResponse::json(
@@ -1175,20 +1347,24 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn read_resource_preserves_pending_identity_when_identifier_is_absent() {
+    async fn read_resource_accepts_pending_identity_with_applied_identifier() {
         let service = PartialCreateCloudControlService::new(true);
         let provider = provider_with_partial_create_service(service.clone()).await;
         let id = ResourceId::pending_with_provider("awscc", "s3.Bucket", None);
+        let identifier = test_identifier("partial-bucket");
 
-        let state = provider
-            .read_resource(&id, None)
+        let outcome = provider
+            .read_resource(&id, &identifier)
             .await
             .expect("pending identity must not prevent a provider read");
 
-        assert!(!state.exists);
-        assert_eq!(state.id, id);
-        assert!(state.id.identity().is_none());
-        assert!(!service.saw_get_resource.load(Ordering::SeqCst));
+        let ReadOutcome::Found { state } = outcome else {
+            panic!("expected the real identifier to be read")
+        };
+        assert_eq!(state.id(), &id);
+        assert!(state.id().identity().is_none());
+        assert_eq!(state.identifier(), &identifier);
+        assert!(service.saw_get_resource.load(Ordering::SeqCst));
     }
 
     #[tokio::test]
@@ -1197,14 +1373,70 @@ mod tests {
         let mut provider = provider_with_partial_create_service(service.clone()).await;
         provider.init_error = Some("provider initialization failed".to_string());
         let id = ResourceId::pending_with_provider("awscc", "s3.Bucket", None);
+        let identifier = test_identifier("partial-bucket");
 
         let error = provider
-            .read_resource(&id, None)
+            .read_resource(&id, &identifier)
             .await
             .expect_err("initialization error must still short-circuit provider reads");
 
         assert_eq!(error.detail().context(), "provider initialization failed");
         assert!(!service.saw_get_resource.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn read_data_source_reports_unsupported_type_without_managed_read() {
+        let service = PartialCreateCloudControlService::new(true);
+        let mut provider = provider_with_partial_create_service(service.clone()).await;
+        provider.init_error = Some("provider initialization failed".to_string());
+        let id = ResourceId::pending_with_provider("awscc", "s3.Bucket", None);
+
+        let error = provider
+            .read_data_source_resource(&id)
+            .await
+            .expect_err("awscc must reject data-source reads");
+
+        assert!(
+            error
+                .to_string()
+                .contains("awscc does not provide data sources; requested type s3.Bucket")
+        );
+        assert!(!service.saw_get_resource.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn create_outcome_preserves_wait_identifier_when_canonicalization_fails() {
+        let service = PartialCreateCloudControlService::new(true);
+        let provider = provider_with_partial_create_service(service).await;
+        let resource = partial_create_bucket_resource();
+        let wait_identifier = test_identifier("partial-bucket");
+        let mut config = crate::schemas::generated::s3::bucket::s3_bucket_config();
+        config.primary_identifier = &[];
+        let read_back = ReadOutcome::found(AppliedState::from_identifier(
+            resource.id.clone(),
+            wait_identifier.clone(),
+            HashMap::from([("bucket_name".to_string(), test_string("partial-bucket"))]),
+        ));
+
+        let outcome = provider
+            .create_outcome_from_read(
+                &resource,
+                &config,
+                wait_identifier.clone(),
+                Ok(read_back),
+                None,
+            )
+            .await;
+
+        let CreateOutcome::PartialSuccess { state, diagnostic } = outcome else {
+            panic!("canonicalization failure must preserve the created resource");
+        };
+        assert_eq!(state.identifier(), &wait_identifier);
+        assert_eq!(
+            state.attributes().get("bucket_name"),
+            Some(&test_string("partial-bucket"))
+        );
+        assert!(diagnostic.reason().contains("empty canonical identifier"));
     }
 
     #[derive(Clone, Copy, Debug)]
@@ -1317,12 +1549,22 @@ mod tests {
 
     #[derive(Debug)]
     struct CallerIdentityService {
+        succeeds: bool,
         saw_get_caller_identity: AtomicBool,
     }
 
     impl CallerIdentityService {
         fn new() -> Arc<Self> {
+            Self::with_result(true)
+        }
+
+        fn failing() -> Arc<Self> {
+            Self::with_result(false)
+        }
+
+        fn with_result(succeeds: bool) -> Arc<Self> {
             Arc::new(Self {
+                succeeds,
                 saw_get_caller_identity: AtomicBool::new(false),
             })
         }
@@ -1346,6 +1588,19 @@ mod tests {
         ) -> Pin<Box<dyn Future<Output = MockResponse> + Send + '_>> {
             Box::pin(async move {
                 self.saw_get_caller_identity.store(true, Ordering::SeqCst);
+                if !self.succeeds {
+                    return MockResponse::xml(
+                        403,
+                        r#"<ErrorResponse xmlns="https://sts.amazonaws.com/doc/2011-06-15/">
+  <Error>
+    <Type>Sender</Type>
+    <Code>AccessDenied</Code>
+    <Message>synthesis denied</Message>
+  </Error>
+  <RequestId>00000000-0000-0000-0000-000000000000</RequestId>
+</ErrorResponse>"#,
+                    );
+                }
                 MockResponse::xml(
                     200,
                     r#"<GetCallerIdentityResponse xmlns="https://sts.amazonaws.com/doc/2011-06-15/">
@@ -1387,6 +1642,7 @@ mod tests {
     struct PartialUpdateCloudControlService {
         wait_succeeds: bool,
         read_succeeds: bool,
+        read_not_found: bool,
         read_properties: &'static str,
         saw_update_resource: AtomicBool,
         saw_get_resource: AtomicBool,
@@ -1398,6 +1654,7 @@ mod tests {
             Arc::new(Self {
                 wait_succeeds,
                 read_succeeds,
+                read_not_found: false,
                 read_properties: r#"{"Tags":[{"Key":"env","Value":"prod"}]}"#,
                 saw_update_resource: AtomicBool::new(false),
                 saw_get_resource: AtomicBool::new(false),
@@ -1409,7 +1666,20 @@ mod tests {
             Arc::new(Self {
                 wait_succeeds,
                 read_succeeds: true,
+                read_not_found: false,
                 read_properties,
+                saw_update_resource: AtomicBool::new(false),
+                saw_get_resource: AtomicBool::new(false),
+                update_request_body: Mutex::new(None),
+            })
+        }
+
+        fn with_not_found(wait_succeeds: bool) -> Arc<Self> {
+            Arc::new(Self {
+                wait_succeeds,
+                read_succeeds: false,
+                read_not_found: true,
+                read_properties: "{}",
                 saw_update_resource: AtomicBool::new(false),
                 saw_get_resource: AtomicBool::new(false),
                 update_request_body: Mutex::new(None),
@@ -1461,6 +1731,13 @@ mod tests {
                         200,
                         r#"{"ProgressEvent":{"RequestToken":"update-token-1","OperationStatus":"FAILED","Identifier":"partial-bucket","StatusMessage":"post-update read denied"}}"#,
                     ),
+                    "GetResource" if self.read_not_found => {
+                        self.saw_get_resource.store(true, Ordering::SeqCst);
+                        MockResponse::json(
+                            404,
+                            r#"{"__type":"ResourceNotFoundException","message":"bucket not found"}"#,
+                        )
+                    }
                     "GetResource" if self.read_succeeds => {
                         self.saw_get_resource.store(true, Ordering::SeqCst);
                         MockResponse::json(
@@ -1599,7 +1876,7 @@ mod tests {
         let outcome = provider
             .update_resource(
                 from.id.clone(),
-                from.identifier.as_deref().expect("identifier"),
+                &test_identifier("partial-bucket"),
                 &from,
                 &patch,
             )
@@ -1612,7 +1889,7 @@ mod tests {
         assert!(service.saw_update_resource.load(Ordering::SeqCst));
         assert!(service.saw_get_resource.load(Ordering::SeqCst));
         assert!(
-            !state.attributes.contains_key("object_lock_enabled"),
+            !state.attributes().contains_key("object_lock_enabled"),
             "an unconfirmed patched value must not be fabricated into state"
         );
         assert_eq!(
@@ -1644,7 +1921,7 @@ mod tests {
             let outcome = provider
                 .update_resource(
                     from.id.clone(),
-                    from.identifier.as_deref().expect("identifier"),
+                    &test_identifier("partial-bucket"),
                     &from,
                     &patch,
                 )
@@ -1663,7 +1940,7 @@ mod tests {
                 diagnostic.reason(),
                 "update attributes were not sent to Cloud Control (schema marks the attribute read-only/create-only or the value is not convertible): bucket_name"
             );
-            let actual_bucket_name = state.attributes.get("bucket_name").and_then(|value| {
+            let actual_bucket_name = state.attributes().get("bucket_name").and_then(|value| {
                 let Value::Concrete(ConcreteValue::String(name)) = value else {
                     return None;
                 };
@@ -1674,7 +1951,7 @@ mod tests {
                 "read-back must remain honest when the create-only value is {label}"
             );
             assert_ne!(
-                state.attributes.get("bucket_name"),
+                state.attributes().get("bucket_name"),
                 Some(&Value::Concrete(ConcreteValue::String(
                     "renamed-bucket".to_string().into()
                 )))
@@ -1695,7 +1972,7 @@ mod tests {
         let outcome = provider
             .update_resource(
                 from.id.clone(),
-                from.identifier.as_deref().expect("identifier"),
+                &test_identifier("partial-bucket"),
                 &from,
                 &patch,
             )
@@ -1706,7 +1983,7 @@ mod tests {
             panic!("expected success when read-back confirms the patched attribute");
         };
         assert_eq!(
-            state.attributes.get("object_lock_enabled"),
+            state.attributes().get("object_lock_enabled"),
             Some(&Value::Concrete(ConcreteValue::Bool(true)))
         );
     }
@@ -1728,7 +2005,7 @@ mod tests {
         let outcome = provider
             .update_resource(
                 from.id.clone(),
-                from.identifier.as_deref().expect("identifier"),
+                &test_identifier("partial-bucket"),
                 &from,
                 &patch,
             )
@@ -1739,7 +2016,7 @@ mod tests {
             panic!("expected success when the patched attribute is present in read-back");
         };
         assert_eq!(
-            state.attributes.get("object_lock_enabled"),
+            state.attributes().get("object_lock_enabled"),
             Some(&Value::Concrete(ConcreteValue::Bool(false))),
             "the read-back value must win even when it differs from the patch"
         );
@@ -1755,7 +2032,7 @@ mod tests {
         let outcome = provider
             .update_resource(
                 from.id.clone(),
-                from.identifier.as_deref().expect("identifier"),
+                &test_identifier("partial-bucket"),
                 &from,
                 &patch,
             )
@@ -1766,7 +2043,7 @@ mod tests {
             panic!("expected success for an absent patched write-only attribute");
         };
         assert_eq!(
-            state.attributes.get("access_control"),
+            state.attributes().get("access_control"),
             Some(&Value::Concrete(ConcreteValue::String(
                 "private".to_string().into()
             )))
@@ -1787,7 +2064,7 @@ mod tests {
         let outcome = provider
             .update_resource(
                 from.id.clone(),
-                from.identifier.as_deref().expect("identifier"),
+                &test_identifier("partial-bucket"),
                 &from,
                 &patch,
             )
@@ -1798,7 +2075,7 @@ mod tests {
             panic!("expected success when only an unpatched attribute is absent");
         };
         assert_eq!(
-            state.attributes.get("object_lock_enabled"),
+            state.attributes().get("object_lock_enabled"),
             Some(&Value::Concrete(ConcreteValue::Bool(false)))
         );
     }
@@ -1823,7 +2100,7 @@ mod tests {
         let outcome = provider
             .update_resource(
                 from.id.clone(),
-                from.identifier.as_deref().expect("identifier"),
+                &test_identifier("partial-bucket"),
                 &from,
                 &partial_update_bucket_patch(),
             )
@@ -1833,7 +2110,7 @@ mod tests {
         let UpdateOutcome::Success { state } = outcome else {
             panic!("expected success when an unpatched secret is absent from read-back");
         };
-        assert_eq!(state.attributes.get("access_control"), Some(&redacted));
+        assert_eq!(state.attributes().get("access_control"), Some(&redacted));
 
         let request_body = service
             .update_request_body
@@ -1876,7 +2153,7 @@ mod tests {
             let outcome = provider
                 .update_resource(
                     from.id.clone(),
-                    from.identifier.as_deref().expect("identifier"),
+                    &test_identifier("partial-bucket"),
                     &from,
                     &patch,
                 )
@@ -1887,7 +2164,7 @@ mod tests {
                 panic!("expected success for {label} when the attribute is absent");
             };
             assert!(
-                !state.attributes.contains_key("object_lock_enabled"),
+                !state.attributes().contains_key("object_lock_enabled"),
                 "unset attribute must remain absent for {label}"
             );
         }
@@ -1904,7 +2181,7 @@ mod tests {
         let outcome = provider
             .update_resource(
                 from.id.clone(),
-                from.identifier.as_deref().expect("identifier"),
+                &test_identifier("partial-bucket"),
                 &from,
                 &patch,
             )
@@ -1914,7 +2191,7 @@ mod tests {
         let UpdateOutcome::PartialSuccess { state, diagnostic } = outcome else {
             panic!("expected partial success when read-back omits a patched attribute");
         };
-        assert!(!state.attributes.contains_key("object_lock_enabled"));
+        assert!(!state.attributes().contains_key("object_lock_enabled"));
         assert_eq!(
             diagnostic.missing_attributes(),
             &["object_lock_enabled".to_string()]
@@ -1935,7 +2212,7 @@ mod tests {
         let outcome = provider
             .update_resource(
                 from.id.clone(),
-                from.identifier.as_deref().expect("identifier"),
+                &test_identifier("partial-bucket"),
                 &from,
                 &patch,
             )
@@ -1947,9 +2224,8 @@ mod tests {
         };
         assert!(service.saw_update_resource.load(Ordering::SeqCst));
         assert!(service.saw_get_resource.load(Ordering::SeqCst));
-        assert!(state.exists);
-        assert_eq!(state.identifier.as_deref(), Some("partial-bucket"));
-        assert!(state.attributes.contains_key("tags"));
+        assert_eq!(state.identifier().as_str(), "partial-bucket");
+        assert!(state.attributes().contains_key("tags"));
     }
 
     #[tokio::test]
@@ -1962,7 +2238,7 @@ mod tests {
         let outcome = provider
             .update_resource(
                 from.id.clone(),
-                from.identifier.as_deref().expect("identifier"),
+                &test_identifier("partial-bucket"),
                 &from,
                 &patch,
             )
@@ -1973,7 +2249,7 @@ mod tests {
             panic!("expected success when read-back omits the cleared tags property");
         };
         assert_eq!(
-            state.attributes.get("tags"),
+            state.attributes().get("tags"),
             Some(&Value::Concrete(ConcreteValue::Map(IndexMap::new())))
         );
     }
@@ -1984,8 +2260,9 @@ mod tests {
             let service =
                 PartialUpdateCloudControlService::with_read_properties(true, read_properties);
             let provider = provider_with_partial_update_service(service).await;
+            let identifier = test_identifier("partial-bucket");
 
-            let state = provider
+            let outcome = provider
                 .read_resource(
                     &ResourceId::with_provider_identity(
                         "awscc",
@@ -1993,13 +2270,16 @@ mod tests {
                         "partial_bucket",
                         None,
                     ),
-                    Some("partial-bucket"),
+                    &identifier,
                 )
                 .await
                 .expect("read should succeed");
+            let ReadOutcome::Found { state } = outcome else {
+                panic!("expected the bucket to be found")
+            };
 
             assert_eq!(
-                state.attributes.get("tags"),
+                state.attributes().get("tags"),
                 Some(&Value::Concrete(ConcreteValue::Map(IndexMap::new()))),
                 "{label} Tags must use the canonical empty-map shape"
             );
@@ -2020,8 +2300,9 @@ mod tests {
             let service =
                 PartialUpdateCloudControlService::with_read_properties(true, read_properties);
             let provider = provider_with_partial_update_service(service).await;
+            let identifier = test_identifier("Z123456789");
 
-            let state = provider
+            let outcome = provider
                 .read_resource(
                     &ResourceId::with_provider_identity(
                         "awscc",
@@ -2029,13 +2310,16 @@ mod tests {
                         "hosted_zone",
                         None,
                     ),
-                    Some("Z123456789"),
+                    &identifier,
                 )
                 .await
                 .expect("read should succeed");
+            let ReadOutcome::Found { state } = outcome else {
+                panic!("expected the hosted zone to be found")
+            };
 
             assert!(
-                !state.attributes.contains_key("tags"),
+                !state.attributes().contains_key("tags"),
                 "{label} Cloud Control Tags must not fabricate a schema-unknown attribute"
             );
         }
@@ -2071,7 +2355,7 @@ mod tests {
         let outcome = provider
             .update_resource(
                 from.id.clone(),
-                from.identifier.as_deref().expect("identifier"),
+                &test_identifier("partial-bucket"),
                 &from,
                 &patch,
             )
@@ -2086,20 +2370,115 @@ mod tests {
             service.saw_get_resource.load(Ordering::SeqCst),
             "provider must retry read with the identifier from failed progress"
         );
-        assert!(state.exists);
-        assert_eq!(state.identifier.as_deref(), Some("partial-bucket"));
+        assert_eq!(state.identifier().as_str(), "partial-bucket");
         assert_eq!(
-            state.attributes.get("bucket_name"),
+            state.attributes().get("bucket_name"),
             Some(&Value::Concrete(ConcreteValue::String(
                 "partial-bucket".to_string().into()
             )))
         );
         assert!(
-            !state.attributes.contains_key("tags"),
+            !state.attributes().contains_key("tags"),
             "missing authored attributes must be absent so the partial-read marker can materialize them as Unknown"
         );
         assert_structured_partial_read_error(diagnostic.reason(), "post-update read denied");
         assert_eq!(diagnostic.missing_attributes(), &["tags".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn update_resource_preserves_identifier_when_read_back_is_not_found() {
+        let service = PartialUpdateCloudControlService::with_not_found(true);
+        let provider = provider_with_partial_update_service(service.clone()).await;
+        let from = partial_update_bucket_state();
+        let identifier = test_identifier("partial-bucket");
+        let patch = partial_update_bucket_patch();
+
+        let outcome = provider
+            .update_resource(from.id.clone(), &identifier, &from, &patch)
+            .await
+            .expect("update should return a partial outcome instead of losing its identifier");
+
+        let UpdateOutcome::PartialSuccess { state, diagnostic } = outcome else {
+            panic!("expected partial success when post-update read returns not_found");
+        };
+        assert!(service.saw_update_resource.load(Ordering::SeqCst));
+        assert!(service.saw_get_resource.load(Ordering::SeqCst));
+        assert_eq!(state.identifier(), &identifier);
+        assert_eq!(
+            state.attributes().get("bucket_name"),
+            Some(&Value::Concrete(ConcreteValue::String(
+                "partial-bucket".to_string().into()
+            )))
+        );
+        assert!(!state.attributes().contains_key("tags"));
+        assert_eq!(diagnostic.missing_attributes(), &["tags".to_string()]);
+        assert_eq!(
+            diagnostic.reason(),
+            "post-update read-back did not find the updated resource"
+        );
+    }
+
+    #[tokio::test]
+    async fn update_resource_preserves_identifier_when_failed_wait_read_back_is_not_found() {
+        let service = PartialUpdateCloudControlService::with_not_found(false);
+        let provider = provider_with_partial_update_service(service.clone()).await;
+        let from = partial_update_bucket_state();
+        let identifier = test_identifier("partial-bucket");
+        let patch = partial_update_bucket_patch();
+
+        let outcome = provider
+            .update_resource(from.id.clone(), &identifier, &from, &patch)
+            .await
+            .expect("update should return a partial outcome instead of losing its identifier");
+
+        let UpdateOutcome::PartialSuccess { state, diagnostic } = outcome else {
+            panic!("expected partial success when failed-update read-back returns not_found");
+        };
+        assert!(service.saw_update_resource.load(Ordering::SeqCst));
+        assert!(service.saw_get_resource.load(Ordering::SeqCst));
+        assert_eq!(state.identifier(), &identifier);
+        assert_eq!(
+            state.attributes().get("bucket_name"),
+            Some(&test_string("partial-bucket"))
+        );
+        assert!(!state.attributes().contains_key("tags"));
+        assert_eq!(diagnostic.missing_attributes(), &["tags".to_string()]);
+        assert_eq!(
+            diagnostic.reason(),
+            "handler failed: post-update read denied; post-update read-back did not find the updated resource"
+        );
+    }
+
+    #[tokio::test]
+    async fn update_resource_preserves_identifier_when_successful_wait_read_back_fails() {
+        let service = PartialUpdateCloudControlService::new(true, false);
+        let provider = provider_with_partial_update_service(service.clone()).await;
+        let from = partial_update_bucket_state();
+        let identifier = test_identifier("partial-bucket");
+        let patch = partial_update_bucket_patch();
+
+        let outcome = provider
+            .update_resource(from.id.clone(), &identifier, &from, &patch)
+            .await
+            .expect("update should return a partial outcome instead of losing its identifier");
+
+        let UpdateOutcome::PartialSuccess { state, diagnostic } = outcome else {
+            panic!("expected partial success when post-update read fails");
+        };
+        assert!(service.saw_update_resource.load(Ordering::SeqCst));
+        assert!(service.saw_get_resource.load(Ordering::SeqCst));
+        assert_eq!(state.identifier(), &identifier);
+        assert_eq!(
+            state.attributes().get("bucket_name"),
+            Some(&test_string("partial-bucket"))
+        );
+        assert!(!state.attributes().contains_key("tags"));
+        assert_eq!(diagnostic.missing_attributes(), &["tags".to_string()]);
+        assert!(
+            diagnostic
+                .reason()
+                .starts_with("read error: Failed to get resource")
+        );
     }
 
     #[tokio::test]
@@ -2117,7 +2496,7 @@ mod tests {
         let outcome = provider
             .update_resource(
                 from.id.clone(),
-                from.identifier.as_deref().expect("identifier"),
+                &test_identifier("partial-bucket"),
                 &from,
                 &patch,
             )
@@ -2128,7 +2507,7 @@ mod tests {
             panic!("expected partial success when the post-update read fails");
         };
         assert!(
-            !state.attributes.contains_key("access_control"),
+            !state.attributes().contains_key("access_control"),
             "write-only desired values must not be fabricated after a failed read-back"
         );
         assert_eq!(
@@ -2150,7 +2529,7 @@ mod tests {
         let outcome = provider
             .update_resource(
                 from.id.clone(),
-                from.identifier.as_deref().expect("identifier"),
+                &test_identifier("partial-bucket"),
                 &from,
                 &patch,
             )
@@ -2160,7 +2539,7 @@ mod tests {
         let UpdateOutcome::PartialSuccess { state, diagnostic } = outcome else {
             panic!("a failed handler and failed read must not degrade to success");
         };
-        assert!(!state.attributes.contains_key("access_control"));
+        assert!(!state.attributes().contains_key("access_control"));
         assert_eq!(
             diagnostic.missing_attributes(),
             &["access_control".to_string()]
@@ -2178,7 +2557,7 @@ mod tests {
         let outcome = provider
             .update_resource(
                 from.id.clone(),
-                from.identifier.as_deref().expect("identifier"),
+                &test_identifier("partial-bucket"),
                 &from,
                 &patch,
             )
@@ -2189,7 +2568,7 @@ mod tests {
             panic!("expected partial success when the post-update read fails");
         };
         assert!(
-            !state.attributes.contains_key("bucket_name"),
+            !state.attributes().contains_key("bucket_name"),
             "an unsent create-only desired value must not be fabricated into state"
         );
         assert_eq!(
@@ -2218,7 +2597,7 @@ mod tests {
         let outcome = provider
             .update_resource(
                 from.id.clone(),
-                from.identifier.as_deref().expect("identifier"),
+                &test_identifier("partial-bucket"),
                 &from,
                 &patch,
             )
@@ -2233,9 +2612,8 @@ mod tests {
             service.saw_get_resource.load(Ordering::SeqCst),
             "provider must retry read with the identifier from failed progress"
         );
-        assert!(state.exists);
-        assert_eq!(state.identifier.as_deref(), Some("partial-bucket"));
-        assert!(state.attributes.contains_key("tags"));
+        assert_eq!(state.identifier().as_str(), "partial-bucket");
+        assert!(state.attributes().contains_key("tags"));
     }
 
     fn partial_create_bucket_resource() -> Resource {
@@ -2293,6 +2671,29 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn create_resource_preserves_identifier_when_successful_wait_read_back_is_not_found() {
+        let service = PartialCreateCloudControlService::with_not_found(true);
+        let provider = provider_with_partial_create_service(service.clone()).await;
+
+        let outcome = provider
+            .create_resource(&partial_create_bucket_resource())
+            .await
+            .expect("create should return a partial outcome instead of losing its identifier");
+
+        let CreateOutcome::PartialSuccess { state, diagnostic } = outcome else {
+            panic!("expected partial success when post-create read returns not_found");
+        };
+        assert!(service.saw_get_resource.load(Ordering::SeqCst));
+        assert_eq!(state.identifier().as_str(), "partial-bucket");
+        assert_eq!(
+            state.attributes().get("bucket_name"),
+            Some(&test_string("partial-bucket"))
+        );
+        assert_eq!(diagnostic.reason(), "read-back returned not_found");
+        assert_eq!(diagnostic.missing_attributes(), &["state".to_string()]);
+    }
+
+    #[tokio::test]
     async fn create_resource_returns_partial_success_when_failed_identifier_read_fails() {
         let service = PartialCreateCloudControlService::new(false);
         let provider = provider_with_partial_create_service(service.clone()).await;
@@ -2309,13 +2710,34 @@ mod tests {
             service.saw_get_resource.load(Ordering::SeqCst),
             "provider must retry read with the identifier from failed progress"
         );
-        assert!(state.exists);
-        assert_eq!(state.identifier.as_deref(), Some("partial-bucket"));
-        assert!(state.attributes.is_empty());
+        assert_eq!(state.identifier().as_str(), "partial-bucket");
+        assert!(state.attributes().is_empty());
         assert_structured_partial_read_error(diagnostic.reason(), "post-create read denied");
         assert_eq!(
             diagnostic.missing_attributes(),
             &["bucket_name".to_string()]
+        );
+    }
+
+    #[tokio::test]
+    async fn create_resource_preserves_identifier_when_successful_wait_read_back_fails() {
+        let service = PartialCreateCloudControlService::with_wait_result(true, false);
+        let provider = provider_with_partial_create_service(service.clone()).await;
+
+        let outcome = provider
+            .create_resource(&partial_create_bucket_resource())
+            .await
+            .expect("create should return a partial outcome instead of losing its identifier");
+
+        let CreateOutcome::PartialSuccess { state, diagnostic } = outcome else {
+            panic!("expected partial success when post-create read fails");
+        };
+        assert!(service.saw_get_resource.load(Ordering::SeqCst));
+        assert_eq!(state.identifier().as_str(), "partial-bucket");
+        assert!(
+            diagnostic
+                .reason()
+                .starts_with("read error: Failed to get resource")
         );
     }
 
@@ -2336,10 +2758,9 @@ mod tests {
             service.saw_get_resource.load(Ordering::SeqCst),
             "provider must retry read with the identifier from failed progress"
         );
-        assert!(state.exists);
-        assert_eq!(state.identifier.as_deref(), Some("partial-bucket"));
+        assert_eq!(state.identifier().as_str(), "partial-bucket");
         assert_eq!(
-            state.attributes.get("bucket_name"),
+            state.attributes().get("bucket_name"),
             Some(&Value::Concrete(ConcreteValue::String(
                 "partial-bucket".to_string().into()
             )))
@@ -2368,7 +2789,7 @@ mod tests {
             "ARN synthesis must use the existing account lookup"
         );
         assert_eq!(
-            state.attributes.get("arn"),
+            state.attributes().get("arn"),
             Some(&Value::Concrete(ConcreteValue::String(
                 "arn:aws-us-gov:iam::123456789012:role/service-role/flow-log-role"
                     .to_string()
@@ -2376,6 +2797,37 @@ mod tests {
             ))),
             "synthesis must derive the partition from the provider region instead of hardcoding aws"
         );
+    }
+
+    #[tokio::test]
+    async fn create_iam_role_preserves_wait_identifier_when_synthesis_fails() {
+        let cloudcontrol = IamRoleCreateCloudControlService::new(false);
+        let sts = CallerIdentityService::failing();
+        let provider =
+            provider_with_iam_role_create_service(cloudcontrol.clone(), sts.clone()).await;
+
+        let outcome = provider
+            .create_resource(&iam_role_resource(true))
+            .await
+            .expect("post-create synthesis failure must become partial success");
+
+        let CreateOutcome::PartialSuccess { state, diagnostic } = outcome else {
+            panic!("synthesis failure must preserve the created resource");
+        };
+        assert!(cloudcontrol.saw_create_resource.load(Ordering::SeqCst));
+        assert!(cloudcontrol.saw_get_resource.load(Ordering::SeqCst));
+        assert!(sts.saw_get_caller_identity.load(Ordering::SeqCst));
+        assert_eq!(state.identifier().as_str(), "flow-log-role");
+        assert_eq!(
+            state.attributes().get("role_name"),
+            Some(&test_string("flow-log-role"))
+        );
+        assert!(
+            diagnostic
+                .reason()
+                .contains("Failed to call sts:GetCallerIdentity")
+        );
+        assert!(diagnostic.reason().contains("synthesis denied"));
     }
 
     #[tokio::test]
@@ -2397,7 +2849,7 @@ mod tests {
             "ARN synthesis must use the existing account lookup"
         );
         assert_eq!(
-            state.attributes.get("arn"),
+            state.attributes().get("arn"),
             Some(&Value::Concrete(ConcreteValue::String(
                 "arn:aws-us-gov:iam::123456789012:role/service-role/flow-log-role"
                     .to_string()
@@ -2424,9 +2876,11 @@ mod tests {
         };
         assert!(cloudcontrol.saw_create_resource.load(Ordering::SeqCst));
         assert!(cloudcontrol.saw_get_resource.load(Ordering::SeqCst));
-        assert!(!state.exists);
-        assert_eq!(state.identifier.as_deref(), None);
-        assert!(state.attributes.is_empty());
+        assert_eq!(state.identifier().as_str(), "flow-log-role");
+        assert_eq!(
+            state.attributes().get("role_name"),
+            Some(&test_string("flow-log-role"))
+        );
         assert_eq!(diagnostic.reason(), "read-back returned not_found");
         assert_eq!(diagnostic.missing_attributes(), &["state".to_string()]);
         assert!(
@@ -2453,9 +2907,11 @@ mod tests {
         };
         assert!(cloudcontrol.saw_create_resource.load(Ordering::SeqCst));
         assert!(cloudcontrol.saw_get_resource.load(Ordering::SeqCst));
-        assert!(!state.exists);
-        assert_eq!(state.identifier.as_deref(), None);
-        assert!(state.attributes.is_empty());
+        assert_eq!(state.identifier().as_str(), "flow-log-role");
+        assert_eq!(
+            state.attributes().get("role_name"),
+            Some(&test_string("flow-log-role"))
+        );
         assert_eq!(
             diagnostic.reason(),
             "handler failed: post-create validation failed; read-back returned not_found"
@@ -2481,10 +2937,9 @@ mod tests {
         let CreateOutcome::PartialSuccess { state, diagnostic } = outcome else {
             panic!("expected partial success when primaryIdentifier cannot be canonicalized");
         };
-        assert!(state.exists);
-        assert_eq!(state.identifier.as_deref(), Some("flow-log-role"));
+        assert_eq!(state.identifier().as_str(), "flow-log-role");
         assert!(
-            !state.attributes.contains_key("arn"),
+            !state.attributes().contains_key("arn"),
             "unknown ARN must not be published as a successful attribute"
         );
         assert_eq!(diagnostic.missing_attributes(), &["RoleName".to_string()]);

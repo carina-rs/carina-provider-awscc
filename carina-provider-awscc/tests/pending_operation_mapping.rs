@@ -30,6 +30,18 @@ const IGW_TYPE: &str = "AWS::EC2::InternetGateway";
 const IGW_ID: &str = "igw-0123456789abcdef0";
 const TRANSIT_GATEWAY_ID: &str = "tgw-0123456789abcdef0";
 
+fn vpc_identifier() -> carina_core::provider::AppliedIdentifier {
+    common::applied_identifier(VPC_ID)
+}
+
+fn internet_gateway_identifier() -> carina_core::provider::AppliedIdentifier {
+    common::applied_identifier(IGW_ID)
+}
+
+fn transit_gateway_identifier() -> carina_core::provider::AppliedIdentifier {
+    common::applied_identifier(TRANSIT_GATEWAY_ID)
+}
+
 #[derive(Clone)]
 enum Reply {
     Json(JsonValue),
@@ -336,7 +348,7 @@ async fn pending_statuses_keep_the_same_create_token_and_success_reads_back() {
         OperationStep::Done(CreateOutcome::Success { state }) => state,
         other => panic!("expected successful create, got {other:?}"),
     };
-    assert_eq!(state.identifier.as_deref(), Some(VPC_ID));
+    assert_eq!(state.identifier().as_str(), VPC_ID);
     assert_eq!(service.calls("CreateResource"), 1);
     assert_eq!(service.calls("GetResourceRequestStatus"), 3);
     assert_eq!(service.calls("GetResource"), 1);
@@ -523,7 +535,7 @@ async fn retryable_failed_delete_schedules_reissue_after_backoff() {
     let request = DeleteRequest::default();
     let (token, delay) = expect_delete_pending(
         provider
-            .delete_step(&id, VPC_ID, &request)
+            .delete_step(&id, &vpc_identifier(), &request)
             .await
             .expect("issue delete"),
     );
@@ -531,7 +543,7 @@ async fn retryable_failed_delete_schedules_reissue_after_backoff() {
 
     let (token, delay) = expect_delete_pending(
         provider
-            .poll_delete_step(&id, VPC_ID, &request, token)
+            .poll_delete_step(&id, &vpc_identifier(), &request, token)
             .await
             .expect("schedule delete retry"),
     );
@@ -560,7 +572,7 @@ async fn transit_gateway_delete_uses_per_type_retry_override_past_attempt_twelve
     let request = DeleteRequest::default();
     let (mut token, _) = expect_delete_pending(
         provider
-            .delete_step(&id, TRANSIT_GATEWAY_ID, &request)
+            .delete_step(&id, &transit_gateway_identifier(), &request)
             .await
             .expect("issue TransitGateway delete"),
     );
@@ -568,7 +580,7 @@ async fn transit_gateway_delete_uses_per_type_retry_override_past_attempt_twelve
     for attempt in 1_u32..=13 {
         let (not_issued, _) = expect_delete_pending(
             provider
-                .poll_delete_step(&id, TRANSIT_GATEWAY_ID, &request, token)
+                .poll_delete_step(&id, &transit_gateway_identifier(), &request, token)
                 .await
                 .unwrap_or_else(|error| {
                     panic!("TransitGateway retry {attempt} exhausted too early: {error}")
@@ -581,7 +593,7 @@ async fn transit_gateway_delete_uses_per_type_retry_override_past_attempt_twelve
 
         let (in_flight, delay) = expect_delete_pending(
             provider
-                .poll_delete_step(&id, TRANSIT_GATEWAY_ID, &request, not_issued)
+                .poll_delete_step(&id, &transit_gateway_identifier(), &request, not_issued)
                 .await
                 .expect("re-issue TransitGateway delete"),
         );
@@ -614,13 +626,13 @@ async fn retryable_failed_delete_with_identifier_errors_without_reissue() {
     let request = DeleteRequest::default();
     let (token, _) = expect_delete_pending(
         provider
-            .delete_step(&id, VPC_ID, &request)
+            .delete_step(&id, &vpc_identifier(), &request)
             .await
             .expect("issue delete"),
     );
 
     let error = provider
-        .poll_delete_step(&id, VPC_ID, &request, token)
+        .poll_delete_step(&id, &vpc_identifier(), &request, token)
         .await
         .expect_err("identifier-bearing delete failure should not retry");
     assert_eq!(error.detail().context(), "Operation failed");
@@ -779,7 +791,7 @@ async fn update_success_reads_back_after_one_status_call() {
     let (id, from, patch) = vpc_update();
 
     let token = match provider
-        .update_step(&id, VPC_ID, &from, &patch)
+        .update_step(&id, &vpc_identifier(), &from, &patch)
         .await
         .expect("issue update")
     {
@@ -800,12 +812,12 @@ async fn update_success_reads_back_after_one_status_call() {
         }
     );
     match provider
-        .poll_update_step(&id, VPC_ID, &from, &patch, token)
+        .poll_update_step(&id, &vpc_identifier(), &from, &patch, token)
         .await
         .expect("poll update")
     {
         OperationStep::Done(UpdateOutcome::Success { state }) => {
-            assert_eq!(state.identifier.as_deref(), Some(VPC_ID));
+            assert_eq!(state.identifier().as_str(), VPC_ID);
         }
         other => panic!("expected successful update, got {other:?}"),
     }
@@ -824,7 +836,7 @@ async fn update_not_issued_resends_the_original_patch() {
     let (id, from, patch) = vpc_update();
 
     let (token, delay) = match provider
-        .update_step(&id, VPC_ID, &from, &patch)
+        .update_step(&id, &vpc_identifier(), &from, &patch)
         .await
         .expect("retryable initial update")
     {
@@ -839,7 +851,7 @@ async fn update_not_issued_resends_the_original_patch() {
     assert_eq!(service.calls("UpdateResource"), 1);
 
     let (token, delay) = match provider
-        .poll_update_step(&id, VPC_ID, &from, &patch, token)
+        .poll_update_step(&id, &vpc_identifier(), &from, &patch, token)
         .await
         .expect("re-send update")
     {
@@ -888,12 +900,12 @@ async fn update_without_request_token_settles_and_reads_back() {
     let (id, from, patch) = vpc_update();
 
     match provider
-        .update_step(&id, VPC_ID, &from, &patch)
+        .update_step(&id, &vpc_identifier(), &from, &patch)
         .await
         .expect("update without request token")
     {
         OperationStep::Done(UpdateOutcome::Success { state }) => {
-            assert_eq!(state.identifier.as_deref(), Some(VPC_ID));
+            assert_eq!(state.identifier().as_str(), VPC_ID);
         }
         other => panic!("expected settled update, got {other:?}"),
     }
@@ -914,7 +926,7 @@ async fn empty_update_patch_settles_without_update_request() {
 
     assert!(matches!(
         provider
-            .update_step(&id, VPC_ID, &from, &patch)
+            .update_step(&id, &vpc_identifier(), &from, &patch)
             .await
             .expect("empty update"),
         OperationStep::Done(UpdateOutcome::Success { .. })
@@ -953,7 +965,7 @@ async fn internet_gateway_delete_detaches_then_deletes() {
 
     let (token, delay) = expect_delete_pending(
         provider
-            .delete_step(&id, IGW_ID, &request)
+            .delete_step(&id, &internet_gateway_identifier(), &request)
             .await
             .expect("issue IGW detach"),
     );
@@ -970,7 +982,7 @@ async fn internet_gateway_delete_detaches_then_deletes() {
 
     let (token, delay) = expect_delete_pending(
         provider
-            .poll_delete_step(&id, IGW_ID, &request, token)
+            .poll_delete_step(&id, &internet_gateway_identifier(), &request, token)
             .await
             .expect("finish detach and issue delete"),
     );
@@ -986,7 +998,7 @@ async fn internet_gateway_delete_detaches_then_deletes() {
 
     assert_eq!(
         provider
-            .poll_delete_step(&id, IGW_ID, &request, token)
+            .poll_delete_step(&id, &internet_gateway_identifier(), &request, token)
             .await
             .expect("finish delete"),
         OperationStep::Done(())
@@ -1024,7 +1036,7 @@ async fn internet_gateway_detach_not_issued_rechecks_then_resets_delete_attempt(
 
     let (token, delay) = expect_delete_pending(
         provider
-            .delete_step(&id, IGW_ID, &request)
+            .delete_step(&id, &internet_gateway_identifier(), &request)
             .await
             .expect("schedule IGW detach resend"),
     );
@@ -1037,7 +1049,7 @@ async fn internet_gateway_detach_not_issued_rechecks_then_resets_delete_attempt(
 
     let (token, delay) = expect_delete_pending(
         provider
-            .poll_delete_step(&id, IGW_ID, &request, token)
+            .poll_delete_step(&id, &internet_gateway_identifier(), &request, token)
             .await
             .expect("re-send IGW detach"),
     );
@@ -1056,7 +1068,7 @@ async fn internet_gateway_detach_not_issued_rechecks_then_resets_delete_attempt(
 
     let (token, delay) = expect_delete_pending(
         provider
-            .poll_delete_step(&id, IGW_ID, &request, token)
+            .poll_delete_step(&id, &internet_gateway_identifier(), &request, token)
             .await
             .expect("finish retried detach and start delete"),
     );
@@ -1101,7 +1113,7 @@ async fn internet_gateway_detach_not_issued_skips_resend_when_already_detached()
 
     let (token, _) = expect_delete_pending(
         provider
-            .delete_step(&id, IGW_ID, &request)
+            .delete_step(&id, &internet_gateway_identifier(), &request)
             .await
             .expect("schedule IGW detach retry"),
     );
@@ -1112,7 +1124,7 @@ async fn internet_gateway_detach_not_issued_skips_resend_when_already_detached()
 
     let (token, delay) = expect_delete_pending(
         provider
-            .poll_delete_step(&id, IGW_ID, &request, token)
+            .poll_delete_step(&id, &internet_gateway_identifier(), &request, token)
             .await
             .expect("skip redundant detach and issue delete"),
     );
@@ -1155,13 +1167,13 @@ async fn internet_gateway_detach_partial_failure_does_not_reissue_or_delete() {
     let request = DeleteRequest::default();
     let (token, _) = expect_delete_pending(
         provider
-            .delete_step(&id, IGW_ID, &request)
+            .delete_step(&id, &internet_gateway_identifier(), &request)
             .await
             .expect("issue IGW detach"),
     );
 
     let error = provider
-        .poll_delete_step(&id, IGW_ID, &request, token)
+        .poll_delete_step(&id, &internet_gateway_identifier(), &request, token)
         .await
         .expect_err("partial detach must stop delete");
     assert_eq!(
@@ -1198,7 +1210,11 @@ async fn unattached_internet_gateway_goes_straight_to_delete() {
 
     let (token, delay) = expect_delete_pending(
         provider
-            .delete_step(&id, IGW_ID, &DeleteRequest::default())
+            .delete_step(
+                &id,
+                &internet_gateway_identifier(),
+                &DeleteRequest::default(),
+            )
             .await
             .expect("issue direct IGW delete"),
     );

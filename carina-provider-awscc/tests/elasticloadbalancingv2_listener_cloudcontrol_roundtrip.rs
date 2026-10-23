@@ -188,19 +188,16 @@ async fn listener_create_then_read_round_trips_full_shaped_state() {
             )
         }
     };
-    let identifier = created
-        .identifier
-        .as_deref()
-        .expect("CloudControl create must return a stable identifier");
+    let identifier = created.identifier();
 
-    let read = Provider::read(&provider, &id, Some(identifier), ReadRequest)
+    let read = Provider::read(&provider, &id, identifier, ReadRequest)
         .await
         .expect("elasticloadbalancingv2.Listener read through Provider::read should succeed");
+    let read = common::found_state(read);
 
-    assert!(read.exists, "read-back state must exist");
-    assert_eq!(read.identifier.as_deref(), Some(identifier));
+    assert_eq!(read.identifier(), identifier);
 
-    let listener_arn = concrete_string_attribute(&read.attributes, "listener_arn");
+    let listener_arn = concrete_string_attribute(read.attributes(), "listener_arn");
     let suffix = listener_arn
         .strip_prefix(
             "arn:aws:elasticloadbalancing:ap-northeast-1:123456789012:listener/app/registry-alb/abc123/",
@@ -257,7 +254,8 @@ async fn listener_create_then_read_round_trips_full_shaped_state() {
         ("listener_attributes", listener_attributes()),
     ]);
     assert_eq!(
-        &read.attributes, &expected,
+        read.attributes(),
+        &expected,
         "read-back attributes must exactly match the full shaped ELBv2 listener state"
     );
 }

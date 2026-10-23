@@ -137,31 +137,30 @@ async fn ecr_repository_create_then_read_preserves_struct_and_map_fields() {
             )
         }
     };
-    let identifier = created
-        .identifier
-        .as_deref()
-        .expect("CloudControl create must return a stable identifier");
+    let identifier = created.identifier();
 
     assert_eq!(
-        identifier, REPOSITORY_NAME,
+        identifier.as_str(),
+        REPOSITORY_NAME,
         "primary identifier for AWS::ECR::Repository is the repository name"
     );
     let stored_identifier = stored_repository_identifier(&cloudcontrol).await;
-    assert_ne!(stored_identifier, identifier);
+    assert_ne!(stored_identifier, identifier.as_str());
     assert!(
         common::is_uuidish(&stored_identifier),
         "unregistered winterbaume identifier should be a synthetic UUID: {stored_identifier}"
     );
+    let stored_identifier = common::applied_identifier(stored_identifier);
 
-    let read = Provider::read(&provider, &id, Some(&stored_identifier), ReadRequest)
+    let read = Provider::read(&provider, &id, &stored_identifier, ReadRequest)
         .await
         .expect("ecr.Repository read through Provider::read should succeed");
+    let read = common::found_state(read);
 
-    assert!(read.exists, "read-back state must exist");
-    assert_eq!(read.identifier.as_deref(), Some(stored_identifier.as_str()));
+    assert_eq!(read.identifier(), &stored_identifier);
     assert_eq!(
-        read.attributes,
-        attributes([
+        read.attributes(),
+        &attributes([
             ("repository_name", string(REPOSITORY_NAME)),
             ("image_tag_mutability", string("IMMUTABLE")),
             (

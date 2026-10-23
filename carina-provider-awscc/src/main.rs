@@ -278,15 +278,15 @@ impl CarinaProvider for AwsccProcessProvider {
     fn read(
         &self,
         id: &proto::ResourceId,
-        identifier: Option<&str>,
+        identifier: &proto::AppliedIdentifier,
         _request: proto::ReadRequest,
-    ) -> Result<proto::State, proto::ProviderError> {
+    ) -> Result<proto::ReadOutcome, proto::ProviderError> {
         let core_id = convert::proto_to_core_resource_id(id);
         let result =
             self.runtime
                 .block_on(self.provider().read(&core_id, identifier, CoreReadRequest));
         match result {
-            Ok(state) => Ok(convert::core_to_proto_state(&state)),
+            Ok(outcome) => Ok(convert::core_to_proto_read_outcome(outcome)),
             Err(e) => Err(Self::convert_error(e)),
         }
     }
@@ -296,9 +296,10 @@ impl CarinaProvider for AwsccProcessProvider {
         resource: &proto::Resource,
     ) -> Result<proto::State, proto::ProviderError> {
         let core_data_source = convert::proto_to_core_data_source(resource);
-        let result = self
-            .runtime
-            .block_on(self.provider().read_resource(&core_data_source.id, None));
+        let result = self.runtime.block_on(
+            self.provider()
+                .read_data_source_resource(&core_data_source.id),
+        );
         match result {
             Ok(state) => Ok(convert::core_to_proto_state(&state)),
             Err(e) => Err(Self::convert_error(e)),
@@ -349,10 +350,11 @@ impl CarinaProvider for AwsccProcessProvider {
     fn update(
         &self,
         id: &proto::ResourceId,
-        identifier: &str,
+        identifier: &proto::AppliedIdentifier,
         request: proto::UpdateRequest,
     ) -> Result<SdkUpdateOutcome<Self::UpdateToken>, proto::ProviderError> {
         let core_id = convert::proto_to_core_resource_id(id);
+        let state_after_patch = request.state_after_patch();
         let core_from = convert::proto_to_core_persisted_state(&request.from).map_err(|error| {
             Self::convert_error(
                 CoreProviderError::internal_caused_by(
@@ -371,7 +373,12 @@ impl CarinaProvider for AwsccProcessProvider {
         ));
         Self::map_step(
             result,
-            |outcome| SdkUpdateOutcome::Done(convert::core_to_proto_update_outcome(outcome)),
+            |outcome| {
+                SdkUpdateOutcome::Done(convert::core_to_proto_update_outcome(
+                    outcome,
+                    state_after_patch,
+                ))
+            },
             SdkUpdateOutcome::Pending,
         )
         .map_err(Self::convert_error)
@@ -380,11 +387,12 @@ impl CarinaProvider for AwsccProcessProvider {
     fn poll_update(
         &self,
         id: &proto::ResourceId,
-        identifier: &str,
+        identifier: &proto::AppliedIdentifier,
         request: proto::UpdateRequest,
         pending: Pending<Self::UpdateToken>,
     ) -> Result<SdkUpdateOutcome<Self::UpdateToken>, proto::ProviderError> {
         let core_id = convert::proto_to_core_resource_id(id);
+        let state_after_patch = request.state_after_patch();
         let core_from = convert::proto_to_core_persisted_state(&request.from).map_err(|error| {
             Self::convert_error(
                 CoreProviderError::internal_caused_by(
@@ -404,7 +412,12 @@ impl CarinaProvider for AwsccProcessProvider {
         ));
         Self::map_step(
             result,
-            |outcome| SdkUpdateOutcome::Done(convert::core_to_proto_update_outcome(outcome)),
+            |outcome| {
+                SdkUpdateOutcome::Done(convert::core_to_proto_update_outcome(
+                    outcome,
+                    state_after_patch,
+                ))
+            },
             SdkUpdateOutcome::Pending,
         )
         .map_err(Self::convert_error)
@@ -413,7 +426,7 @@ impl CarinaProvider for AwsccProcessProvider {
     fn delete(
         &self,
         id: &proto::ResourceId,
-        identifier: &str,
+        identifier: &proto::AppliedIdentifier,
         request: proto::DeleteRequest,
     ) -> Result<SdkDeleteOutcome<Self::DeleteToken>, proto::ProviderError> {
         let core_id = convert::proto_to_core_resource_id(id);
@@ -434,7 +447,7 @@ impl CarinaProvider for AwsccProcessProvider {
     fn poll_delete(
         &self,
         id: &proto::ResourceId,
-        identifier: &str,
+        identifier: &proto::AppliedIdentifier,
         request: proto::DeleteRequest,
         pending: Pending<Self::DeleteToken>,
     ) -> Result<SdkDeleteOutcome<Self::DeleteToken>, proto::ProviderError> {

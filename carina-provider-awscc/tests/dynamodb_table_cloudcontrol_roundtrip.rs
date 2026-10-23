@@ -122,17 +122,14 @@ async fn dynamodb_table_create_then_read_round_trips_list_of_struct_fields() {
             )
         }
     };
-    let identifier = created
-        .identifier
-        .as_deref()
-        .expect("CloudControl create must return a stable identifier");
+    let identifier = created.identifier();
 
-    let read = Provider::read(&provider, &id, Some(identifier), ReadRequest)
+    let read = Provider::read(&provider, &id, identifier, ReadRequest)
         .await
         .expect("dynamodb.Table read through Provider::read should succeed");
+    let read = common::found_state(read);
 
-    assert!(read.exists, "read-back state must exist");
-    assert_eq!(read.identifier.as_deref(), Some(identifier));
+    assert_eq!(read.identifier(), identifier);
     let expected = attributes([
         ("table_name", string("jti-store")),
         ("billing_mode", string("PAY_PER_REQUEST")),
@@ -180,7 +177,8 @@ async fn dynamodb_table_create_then_read_round_trips_list_of_struct_fields() {
         ),
     ]);
     assert_eq!(
-        &read.attributes, &expected,
+        read.attributes(),
+        &expected,
         "read-back attributes must exactly match the full shaped DynamoDB table state"
     );
 }

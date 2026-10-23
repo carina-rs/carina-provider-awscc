@@ -2,8 +2,9 @@ use carina_core::binding_index::ResolvedBindings;
 use carina_core::executor::{
     ModuleConstraintGate, ProviderPreparationContext, prepare_provider_ready_resource,
 };
-use carina_core::provider::CreateRequest;
-use carina_core::provider::ProviderReadyResource;
+use carina_core::provider::{
+    AppliedIdentifier, AppliedState, CreateRequest, ProviderReadyResource, ReadOutcome,
+};
 use carina_core::resource::Resource;
 use carina_core::schema::AttributeType;
 use carina_core::schema::SchemaRegistry;
@@ -66,4 +67,17 @@ pub fn is_uuidish(value: &str) -> bool {
             8 | 13 | 18 | 23 => byte == b'-',
             _ => byte.is_ascii_hexdigit(),
         })
+}
+
+#[allow(dead_code)]
+pub fn applied_identifier(value: impl Into<String>) -> AppliedIdentifier {
+    AppliedIdentifier::new(value).expect("test provider identifier must be non-empty")
+}
+
+#[allow(dead_code)]
+pub fn found_state(outcome: ReadOutcome) -> AppliedState {
+    match outcome {
+        ReadOutcome::Found { state } => state,
+        ReadOutcome::NotFound { id } => panic!("expected {id} to be found"),
+    }
 }

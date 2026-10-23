@@ -7,7 +7,8 @@
 use std::collections::HashMap;
 
 use carina_core::provider::{
-    CreateOutcome as CoreCreateOutcome, PatchOp as CorePatchOp, PatchOpKind as CorePatchOpKind,
+    AppliedState as CoreAppliedState, CreateOutcome as CoreCreateOutcome, PatchOp as CorePatchOp,
+    PatchOpKind as CorePatchOpKind, ReadOutcome as CoreReadOutcome,
     UpdateOutcome as CoreUpdateOutcome, UpdatePatch as CoreUpdatePatch,
 };
 use carina_core::resource::{
@@ -22,14 +23,16 @@ use carina_core::schema::{
     StructField as CoreStructField, UniqueNameSpec as CoreUniqueNameSpec, legacy_validator,
 };
 use carina_provider_protocol::types::{
+    AppliedPersistedState as ProtoAppliedPersistedState, AppliedState as ProtoAppliedState,
     AttributeSchema as ProtoAttributeSchema, AttributeType as ProtoAttributeType,
     CreateOutcome as ProtoCreateOutcome, Directives as ProtoDirectives,
     PartialReadDiagnostic as ProtoPartialReadDiagnostic, PatchOp as ProtoPatchOp,
     PatchOpKind as ProtoPatchOpKind, PersistedState as ProtoPersistedState,
-    PersistedValue as ProtoPersistedValue, Resource as ProtoResource,
-    ResourceId as ProtoResourceId, ResourceSchema as ProtoResourceSchema, State as ProtoState,
-    StructField as ProtoStructField, UniqueNameSpec as ProtoUniqueNameSpec,
-    UpdateOutcome as ProtoUpdateOutcome, UpdatePatch as ProtoUpdatePatch, Value as ProtoValue,
+    PersistedValue as ProtoPersistedValue, ReadOutcome as ProtoReadOutcome,
+    Resource as ProtoResource, ResourceId as ProtoResourceId,
+    ResourceSchema as ProtoResourceSchema, State as ProtoState, StructField as ProtoStructField,
+    UniqueNameSpec as ProtoUniqueNameSpec, UpdateOutcome as ProtoUpdateOutcome,
+    UpdatePatch as ProtoUpdatePatch, Value as ProtoValue,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -294,6 +297,25 @@ pub fn core_to_proto_state(s: &CoreState) -> ProtoState {
     }
 }
 
+pub fn core_to_proto_applied_state(s: &CoreAppliedState) -> ProtoAppliedState {
+    ProtoAppliedState {
+        id: core_to_proto_resource_id(s.id()),
+        identifier: s.identifier().clone(),
+        attributes: core_to_proto_value_map(s.attributes()),
+    }
+}
+
+pub fn core_to_proto_read_outcome(outcome: CoreReadOutcome) -> ProtoReadOutcome {
+    match outcome {
+        CoreReadOutcome::NotFound { id } => ProtoReadOutcome::NotFound {
+            id: core_to_proto_resource_id(&id),
+        },
+        CoreReadOutcome::Found { state } => ProtoReadOutcome::Found {
+            state: core_to_proto_applied_state(&state),
+        },
+    }
+}
+
 pub fn core_to_proto_persisted_state(s: &CoreState) -> ProtoPersistedState {
     ProtoPersistedState {
         id: core_to_proto_resource_id(&s.id),
@@ -323,11 +345,11 @@ pub fn proto_to_core_persisted_state(
 pub fn core_to_proto_create_outcome(outcome: CoreCreateOutcome) -> ProtoCreateOutcome {
     match outcome {
         CoreCreateOutcome::Success { state } => ProtoCreateOutcome::Success {
-            state: core_to_proto_state(&state),
+            state: core_to_proto_applied_state(&state),
         },
         CoreCreateOutcome::PartialSuccess { state, diagnostic } => {
             ProtoCreateOutcome::PartialSuccess {
-                state: core_to_proto_state(&state),
+                state: core_to_proto_applied_state(&state),
                 diagnostic: ProtoPartialReadDiagnostic {
                     reason: diagnostic.reason().to_string(),
                     missing_attributes: diagnostic.missing_attributes().to_vec(),
@@ -339,14 +361,32 @@ pub fn core_to_proto_create_outcome(outcome: CoreCreateOutcome) -> ProtoCreateOu
 
 // -- UpdateOutcome --
 
-pub fn core_to_proto_update_outcome(outcome: CoreUpdateOutcome) -> ProtoUpdateOutcome {
+fn core_to_proto_update_state(
+    state: &CoreAppliedState,
+    mut state_after_patch: ProtoPersistedState,
+) -> ProtoAppliedPersistedState {
+    let mut attributes = core_to_proto_persisted_value_map(state.attributes());
+    for (key, value) in state_after_patch.attributes.drain() {
+        attributes.entry(key).or_insert(value);
+    }
+    ProtoAppliedPersistedState {
+        id: core_to_proto_resource_id(state.id()),
+        identifier: state.identifier().clone(),
+        attributes,
+    }
+}
+
+pub fn core_to_proto_update_outcome(
+    outcome: CoreUpdateOutcome,
+    state_after_patch: ProtoPersistedState,
+) -> ProtoUpdateOutcome {
     match outcome {
         CoreUpdateOutcome::Success { state } => ProtoUpdateOutcome::Success {
-            state: core_to_proto_persisted_state(&state),
+            state: core_to_proto_update_state(&state, state_after_patch),
         },
         CoreUpdateOutcome::PartialSuccess { state, diagnostic } => {
             ProtoUpdateOutcome::PartialSuccess {
-                state: core_to_proto_persisted_state(&state),
+                state: core_to_proto_update_state(&state, state_after_patch),
                 diagnostic: ProtoPartialReadDiagnostic {
                     reason: diagnostic.reason().to_string(),
                     missing_attributes: diagnostic.missing_attributes().to_vec(),
@@ -874,16 +914,18 @@ mod tests {
         let hash = RedactedSecretHash::from_encoded_digest(digest)
             .expect("test digest should be structurally valid");
         let id = CoreResourceId::with_provider_identity("awscc", "s3.Bucket", "example", None);
-        let state = CoreState::existing(
-            id,
-            HashMap::from([(
-                "access_control".to_string(),
-                CoreValue::Deferred(DeferredValue::RedactedSecret { hash }),
-            )]),
-        )
-        .with_identifier("example");
+        let attributes = HashMap::from([(
+            "access_control".to_string(),
+            CoreValue::Deferred(DeferredValue::RedactedSecret { hash }),
+        )]);
+        let state_after_patch = core_to_proto_persisted_state(
+            &CoreState::existing(id.clone(), attributes.clone()).with_identifier("example"),
+        );
+        let state = CoreAppliedState::new(id, "example", attributes)
+            .expect("test provider identifier must be non-empty");
 
-        let outcome = core_to_proto_update_outcome(CoreUpdateOutcome::Success { state });
+        let outcome =
+            core_to_proto_update_outcome(CoreUpdateOutcome::Success { state }, state_after_patch);
 
         let ProtoUpdateOutcome::Success { state } = outcome else {
             panic!("expected a successful update outcome")
