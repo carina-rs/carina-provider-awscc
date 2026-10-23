@@ -23,10 +23,10 @@ use indexmap::IndexMap;
 
 use carina_core::effect::PlanOp;
 use carina_core::provider::{
-    BoxFuture, CanonicalCustomTypeValue, CanonicalProviderConfigAttributes, CreateOutcome,
-    CreateRequest, DeleteRequest, Provider, ProviderFactory, ProviderNormalizer,
-    ProviderReadyConfig, ProviderReadyDataSource, ProviderResult, ReadRequest, SavedAttrs,
-    UpdateOutcome, UpdateRequest, ready_noop,
+    AppliedIdentifier, BoxFuture, CanonicalCustomTypeValue, CanonicalProviderConfigAttributes,
+    CreateOutcome, CreateRequest, DeleteRequest, Provider, ProviderFactory, ProviderNormalizer,
+    ProviderReadyConfig, ProviderReadyDataSource, ProviderResult, ReadOutcome, ReadRequest,
+    SavedAttrs, UpdateOutcome, UpdateRequest, ready_noop,
 };
 use carina_core::resource::{ConcreteValue, Resource, ResourceId, State, Value};
 
@@ -292,12 +292,12 @@ impl Provider for AwsccProvider {
     fn read(
         &self,
         id: &ResourceId,
-        identifier: Option<&str>,
+        identifier: &AppliedIdentifier,
         _request: ReadRequest,
-    ) -> BoxFuture<'_, ProviderResult<State>> {
+    ) -> BoxFuture<'_, ProviderResult<ReadOutcome>> {
         let id = id.clone();
-        let identifier = identifier.map(|s| s.to_string());
-        Box::pin(async move { self.read_resource(&id, identifier.as_deref()).await })
+        let identifier = identifier.clone();
+        Box::pin(async move { self.read_resource(&id, &identifier).await })
     }
 
     fn read_data_source(
@@ -305,7 +305,7 @@ impl Provider for AwsccProvider {
         resource: &ProviderReadyDataSource,
     ) -> BoxFuture<'_, ProviderResult<State>> {
         let id = resource.as_data_source().id.clone();
-        Box::pin(async move { self.read_resource(&id, None).await })
+        Box::pin(async move { self.read_data_source_resource(&id).await })
     }
 
     fn create(
@@ -319,11 +319,11 @@ impl Provider for AwsccProvider {
     fn update(
         &self,
         id: &ResourceId,
-        identifier: &str,
+        identifier: &AppliedIdentifier,
         request: UpdateRequest,
     ) -> BoxFuture<'_, ProviderResult<UpdateOutcome>> {
         let id = id.clone();
-        let identifier = identifier.to_string();
+        let identifier = identifier.clone();
         Box::pin(async move {
             self.update_resource(id, &identifier, request.from(), request.patch())
                 .await
@@ -333,11 +333,11 @@ impl Provider for AwsccProvider {
     fn delete(
         &self,
         id: &ResourceId,
-        identifier: &str,
+        identifier: &AppliedIdentifier,
         request: DeleteRequest,
     ) -> BoxFuture<'_, ProviderResult<()>> {
         let id = id.clone();
-        let identifier = identifier.to_string();
+        let identifier = identifier.clone();
         Box::pin(async move {
             self.delete_resource(&id, &identifier, &request.directives)
                 .await

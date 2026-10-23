@@ -186,7 +186,7 @@ async fn create_and_delete_steps_make_one_issue_and_one_status_call_each() {
     assert_eq!(cloudcontrol.calls("GetResourceRequestStatus"), 1);
     assert_eq!(cloudcontrol.calls("GetResource"), 1);
 
-    let stored_identifier = cloudcontrol.stored_identifier().await;
+    let stored_identifier = common::applied_identifier(cloudcontrol.stored_identifier().await);
     let delete_token = match provider
         .delete_step(&resource.id, &stored_identifier, &DeleteRequest::default())
         .await
@@ -201,7 +201,7 @@ async fn create_and_delete_steps_make_one_issue_and_one_status_call_each() {
         }
         OperationStep::Done(()) => panic!("delete must defer"),
     };
-    assert_eq!(created.identifier.as_deref(), Some(REPOSITORY_NAME));
+    assert_eq!(created.identifier().as_str(), REPOSITORY_NAME);
     assert_eq!(cloudcontrol.calls("DeleteResource"), 1);
 
     assert_eq!(
@@ -235,7 +235,7 @@ async fn native_provider_drives_create_and_delete_to_completion() {
     assert_eq!(cloudcontrol.calls("CreateResource"), 1);
     assert_eq!(cloudcontrol.calls("GetResourceRequestStatus"), 1);
 
-    let stored_identifier = cloudcontrol.stored_identifier().await;
+    let stored_identifier = common::applied_identifier(cloudcontrol.stored_identifier().await);
     Provider::delete(&provider, &id, &stored_identifier, DeleteRequest::default())
         .await
         .expect("native delete should drive pending steps");

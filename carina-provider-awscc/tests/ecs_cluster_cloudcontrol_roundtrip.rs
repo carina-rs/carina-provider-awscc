@@ -108,17 +108,14 @@ async fn ecs_cluster_create_then_read_round_trips_structured_list_fields() {
             )
         }
     };
-    let identifier = created
-        .identifier
-        .as_deref()
-        .expect("CloudControl create must return a stable identifier");
+    let identifier = created.identifier();
 
-    let read = Provider::read(&provider, &id, Some(identifier), ReadRequest)
+    let read = Provider::read(&provider, &id, identifier, ReadRequest)
         .await
         .expect("ecs.Cluster read through Provider::read should succeed");
+    let read = common::found_state(read);
 
-    assert!(read.exists, "read-back state must exist");
-    assert_eq!(read.identifier.as_deref(), Some(identifier));
+    assert_eq!(read.identifier(), identifier);
     let expected = attributes([
         ("cluster_name", string("registry-fargate")),
         (
@@ -146,7 +143,8 @@ async fn ecs_cluster_create_then_read_round_trips_structured_list_fields() {
         ),
     ]);
     assert_eq!(
-        &read.attributes, &expected,
+        read.attributes(),
+        &expected,
         "read-back attributes must exactly match the full shaped ECS cluster state"
     );
 }

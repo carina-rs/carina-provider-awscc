@@ -1,3 +1,5 @@
+mod common;
+
 use aws_config::{BehaviorVersion, Region};
 use carina_core::provider::{Provider, ReadRequest};
 use carina_core::resource::{ConcreteValue, ResourceId, Value};
@@ -105,15 +107,16 @@ async fn read_vpc_endpoint(
 ) -> indexmap::IndexMap<String, Value> {
     let provider = provider_with_mock(policy_document).await;
     let id = ResourceId::with_provider_identity("awscc", "ec2.VpcEndpoint", "gateway", None);
+    let identifier = common::applied_identifier(VPC_ENDPOINT_ID);
 
-    let read = Provider::read(&provider, &id, Some(VPC_ENDPOINT_ID), ReadRequest)
+    let read = Provider::read(&provider, &id, &identifier, ReadRequest)
         .await
         .expect("ec2.VpcEndpoint read through Provider::read should succeed");
+    let read = common::found_state(read);
 
-    assert!(read.exists, "read-back state must exist");
-    assert_eq!(read.identifier.as_deref(), Some(VPC_ENDPOINT_ID));
+    assert_eq!(read.identifier(), &identifier);
 
-    first_policy_statement(&read.attributes).clone()
+    first_policy_statement(read.attributes()).clone()
 }
 
 fn first_policy_statement(

@@ -159,21 +159,18 @@ async fn load_balancer_create_then_read_round_trips_full_shaped_state() {
             )
         }
     };
-    let identifier = created
-        .identifier
-        .as_deref()
-        .expect("CloudControl create must return a stable identifier");
+    let identifier = created.identifier();
 
-    let read = Provider::read(&provider, &id, Some(identifier), ReadRequest)
+    let read = Provider::read(&provider, &id, identifier, ReadRequest)
         .await
         .expect("elasticloadbalancingv2.LoadBalancer read through Provider::read should succeed");
+    let read = common::found_state(read);
 
-    assert!(read.exists, "read-back state must exist");
-    assert_eq!(read.identifier.as_deref(), Some(identifier));
+    assert_eq!(read.identifier(), identifier);
 
-    let load_balancer_arn = concrete_string_attribute(&read.attributes, "load_balancer_arn");
+    let load_balancer_arn = concrete_string_attribute(read.attributes(), "load_balancer_arn");
     let load_balancer_full_name =
-        concrete_string_attribute(&read.attributes, "load_balancer_full_name");
+        concrete_string_attribute(read.attributes(), "load_balancer_full_name");
     let suffix = load_balancer_full_name
         .strip_prefix("app/registry-alb/")
         .expect("load_balancer_full_name must use app/<name>/<suffix>");
@@ -188,7 +185,7 @@ async fn load_balancer_create_then_read_round_trips_full_shaped_state() {
         )
     );
 
-    let dns_name = concrete_string_attribute(&read.attributes, "dns_name");
+    let dns_name = concrete_string_attribute(read.attributes(), "dns_name");
     let dns_suffix = dns_name
         .strip_prefix("registry-alb-")
         .and_then(|rest| rest.strip_suffix(".us-east-1.elb.amazonaws.com"))
@@ -231,7 +228,8 @@ async fn load_balancer_create_then_read_round_trips_full_shaped_state() {
         ),
     ]);
     assert_eq!(
-        &read.attributes, &expected,
+        read.attributes(),
+        &expected,
         "read-back attributes must exactly match the full shaped ELBv2 load balancer state"
     );
 }

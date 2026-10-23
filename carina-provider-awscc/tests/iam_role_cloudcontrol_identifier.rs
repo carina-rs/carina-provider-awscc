@@ -227,9 +227,9 @@ async fn iam_role_create_with_role_name_prefix_canonicalizes_identifier_from_rea
         }
     };
 
-    assert_eq!(created.identifier.as_deref(), Some(ROLE_NAME));
+    assert_eq!(created.identifier().as_str(), ROLE_NAME);
     assert_eq!(
-        created.attributes.get("role_name"),
+        created.attributes().get("role_name"),
         Some(&string(ROLE_NAME))
     );
     assert_eq!(
@@ -237,12 +237,12 @@ async fn iam_role_create_with_role_name_prefix_canonicalizes_identifier_from_rea
         vec![PATH_QUALIFIED_IDENTIFIER.to_string()]
     );
 
-    let read = Provider::read(&provider, &id, created.identifier.as_deref(), ReadRequest)
+    let read = Provider::read(&provider, &id, created.identifier(), ReadRequest)
         .await
         .expect("iam.Role read should use the stored RoleName identifier");
+    let read = common::found_state(read);
 
-    assert!(read.exists);
-    assert_eq!(read.identifier.as_deref(), Some(ROLE_NAME));
+    assert_eq!(read.identifier().as_str(), ROLE_NAME);
     assert_eq!(
         service.get_identifiers(),
         vec![PATH_QUALIFIED_IDENTIFIER.to_string(), ROLE_NAME.to_string()]

@@ -160,28 +160,25 @@ async fn kms_key_create_then_read_round_trips_structured_key_policy() {
             )
         }
     };
-    let identifier = created
-        .identifier
-        .as_deref()
-        .expect("CloudControl create must return a stable identifier");
+    let identifier = created.identifier();
 
-    let read = Provider::read(&provider, &id, Some(identifier), ReadRequest)
+    let read = Provider::read(&provider, &id, identifier, ReadRequest)
         .await
         .expect("kms.Key read through Provider::read should succeed");
+    let read = common::found_state(read);
 
-    assert!(read.exists, "read-back state must exist");
-    assert_eq!(read.identifier.as_deref(), Some(identifier));
+    assert_eq!(read.identifier(), identifier);
     assert!(
-        !read.attributes.contains_key("pending_window_in_days"),
+        !read.attributes().contains_key("pending_window_in_days"),
         "write-only pending_window_in_days must be stripped"
     );
-    let key_id = concrete_string_attribute(&read.attributes, "key_id");
+    let key_id = concrete_string_attribute(read.attributes(), "key_id");
     assert!(
         common::is_uuidish(key_id),
         "key_id must be uuid-shaped: {key_id}"
     );
     assert_eq!(
-        concrete_string_attribute(&read.attributes, "arn"),
+        concrete_string_attribute(read.attributes(), "arn"),
         format!("arn:aws:kms:us-east-1:123456789012:key/{key_id}")
     );
 
@@ -202,12 +199,13 @@ async fn kms_key_create_then_read_round_trips_structured_key_policy() {
         ),
     ]);
     assert_eq!(
-        &read.attributes, &expected,
+        read.attributes(),
+        &expected,
         "read-back attributes must exactly match the full shaped KMS key state"
     );
     assert!(
         matches!(
-            read.attributes.get("key_policy"),
+            read.attributes().get("key_policy"),
             Some(Value::Concrete(ConcreteValue::Map(_)))
         ),
         "key_policy must remain a structured policy document"

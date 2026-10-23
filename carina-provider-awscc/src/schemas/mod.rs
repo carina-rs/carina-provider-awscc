@@ -67,7 +67,8 @@ mod tests {
             State::existing(
                 resource_id.clone(),
                 HashMap::from([("tags".to_string(), tags_value("old-name"))]),
-            ),
+            )
+            .with_identifier("test-resource-id"),
         )]);
         let current_states =
             carina_core::resource::into_plan_input_map(raw_states, &schemas, &resources);
