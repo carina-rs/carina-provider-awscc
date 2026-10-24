@@ -156,10 +156,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cargo/bin/vela
-          key: vela-cli-${{ runner.os }}-v1
+          key: vela-cli-${{ runner.os }}-4611418f8a84426b4b79077cae3f59357ca09ff7
       - name: Install vela-cli
         if: steps.cache-vela.outputs.cache-hit != 'true'
-        run: cargo install --git https://github.com/mizzy/vela vela-cli --quiet
+        run: cargo install --git https://github.com/mizzy/vela --rev 4611418f8a84426b4b79077cae3f59357ca09ff7 vela-cli --quiet
       - name: Optimize WASM with vela
         run: vela optimize target/wasm32-wasip2/release/carina-provider-awscc.wasm -o target/wasm32-wasip2/release/carina-provider-awscc.wasm
       - uses: actions/upload-artifact@v4
