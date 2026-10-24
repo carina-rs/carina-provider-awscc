@@ -22,7 +22,7 @@ mod tests {
     use carina_core::effect::Effect;
     use carina_core::provider::RawSavedAttrs;
     use carina_core::resource::{
-        ConcreteValue, ResolvedResource, Resource, ResourceId, State, Value,
+        ConcreteValue, Current, ResolvedResource, Resource, ResourceId, State, Value,
     };
     use carina_core::schema::{AttributeType, RawShape, ResourceSchema, Shape, ShapeWalkBudget};
     use carina_core::schema::{SchemaKind, SchemaRegistry};
@@ -70,8 +70,14 @@ mod tests {
             )
             .with_identifier("test-resource-id"),
         )]);
-        let current_states =
-            carina_core::resource::into_plan_input_map(raw_states, &schemas, &resources);
+        let current_states = carina_core::resource::into_plan_input_current_map(
+            raw_states
+                .into_iter()
+                .map(|(id, state)| (id, Current::from_state(state)))
+                .collect(),
+            &schemas,
+            &resources,
+        );
         let orphans = Orphans::new();
         let saved_attrs = RawSavedAttrs::default().lift(&schemas);
 
@@ -79,7 +85,7 @@ mod tests {
             &managed,
             &[],
             &carina_core::provider::ProviderRouter::new(),
-            PlanPriorStates::new(&current_states, &orphans),
+            PlanPriorStates::new(&current_states, &HashMap::new(), &orphans),
             &HashMap::new(),
             &schemas,
             &saved_attrs,

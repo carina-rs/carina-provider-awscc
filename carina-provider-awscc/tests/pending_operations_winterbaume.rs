@@ -10,7 +10,7 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
 use aws_config::{BehaviorVersion, Region};
-use carina_core::provider::{CreateOutcome, DeleteRequest, Provider};
+use carina_core::provider::{CreateOutcomeKind, DeleteRequest, Provider};
 use carina_core::resource::{ConcreteValue, Resource, Value};
 use carina_provider_awscc::provider::AwsccProviderConfig;
 use carina_provider_awscc::{
@@ -25,6 +25,7 @@ const ACCOUNT_ID: &str = "123456789012";
 const REGION: &str = "us-east-1";
 const TYPE_NAME: &str = "AWS::ECR::Repository";
 const REPOSITORY_NAME: &str = "pending-operation-test";
+const TEST_CLIENT_TOKEN: &str = "00000000-0000-4000-8000-000000000001";
 
 struct CountingCloudControl {
     inner: CloudControlService,
@@ -129,10 +130,15 @@ where
 
 #[test]
 fn continuation_tokens_round_trip() {
-    assert_token_round_trip(CcCreateToken::NotIssued { attempt: 1 });
+    assert_token_round_trip(CcCreateToken::NotIssued {
+        attempt: 1,
+        client_token: TEST_CLIENT_TOKEN.to_string(),
+    });
     assert_token_round_trip(CcCreateToken::InFlight {
         request: RequestToken::from("create-request"),
         attempt: 2,
+        identifier: Some(REPOSITORY_NAME.to_string()),
+        client_token: "00000000-0000-4000-8000-000000000002".to_string(),
     });
     assert_token_round_trip(CcUpdateToken::NotIssued { attempt: 3 });
     assert_token_round_trip(CcUpdateToken::InFlight {
@@ -152,34 +158,33 @@ fn continuation_tokens_round_trip() {
     }));
 }
 
-#[tokio::test]
-async fn create_and_delete_steps_make_one_issue_and_one_status_call_each() {
-    let (provider, cloudcontrol) = provider().await;
-    let resource = common::normalize_resource(repository_resource()).await;
-
-    let create_token = match provider
-        .create_step(resource.as_resource())
-        .await
-        .expect("issue create")
-    {
-        OperationStep::Pending {
-            pending,
-            poll_after_secs,
-        } => {
-            assert_eq!(poll_after_secs, 1);
-            pending
+#[test]
+fn create_continuation_debug_omits_client_token() {
+    let debug = format!(
+        "{:?}",
+        CcCreateToken::NotIssued {
+            attempt: 1,
+            client_token: TEST_CLIENT_TOKEN.to_string(),
         }
-        OperationStep::Done(outcome) => panic!("create must defer, got {outcome:?}"),
-    };
-    assert_eq!(cloudcontrol.calls("CreateResource"), 1);
-    assert_eq!(cloudcontrol.calls("GetResourceRequestStatus"), 0);
+    );
 
-    let created = match provider
-        .poll_create_step(resource.as_resource(), create_token)
+    assert_eq!(debug, "NotIssued { attempt: 1 }");
+    assert!(!debug.contains(TEST_CLIENT_TOKEN));
+}
+
+#[tokio::test(start_paused = true)]
+async fn create_dispatch_and_delete_steps_make_one_issue_and_one_status_call_each() {
+    let (provider, cloudcontrol) = provider().await;
+    let resource = repository_resource();
+    let id = resource.id.clone();
+    let request = common::create_request(resource).await;
+
+    let created = match carina_core::executor::dispatch_create(&provider, &id, request)
         .await
-        .expect("poll create")
+        .expect("dispatch create")
+        .into_kind()
     {
-        OperationStep::Done(CreateOutcome::Success { state }) => state,
+        CreateOutcomeKind::Success { state } => state,
         other => panic!("create poll must settle, got {other:?}"),
     };
     assert_eq!(cloudcontrol.calls("CreateResource"), 1);
@@ -188,7 +193,7 @@ async fn create_and_delete_steps_make_one_issue_and_one_status_call_each() {
 
     let stored_identifier = common::applied_identifier(cloudcontrol.stored_identifier().await);
     let delete_token = match provider
-        .delete_step(&resource.id, &stored_identifier, &DeleteRequest::default())
+        .delete_step(&id, &stored_identifier, &DeleteRequest::default())
         .await
         .expect("issue delete")
     {
@@ -200,14 +205,15 @@ async fn create_and_delete_steps_make_one_issue_and_one_status_call_each() {
             pending
         }
         OperationStep::Done(()) => panic!("delete must defer"),
+        OperationStep::Verdict(error) => panic!("delete failed: {error}"),
     };
     assert_eq!(created.identifier().as_str(), REPOSITORY_NAME);
     assert_eq!(cloudcontrol.calls("DeleteResource"), 1);
 
-    assert_eq!(
+    assert!(matches!(
         provider
             .poll_delete_step(
-                &resource.id,
+                &id,
                 &stored_identifier,
                 &DeleteRequest::default(),
                 delete_token,
@@ -215,7 +221,7 @@ async fn create_and_delete_steps_make_one_issue_and_one_status_call_each() {
             .await
             .expect("poll delete"),
         OperationStep::Done(())
-    );
+    ));
     assert_eq!(cloudcontrol.calls("DeleteResource"), 1);
     assert_eq!(cloudcontrol.calls("GetResourceRequestStatus"), 2);
 }
@@ -227,7 +233,7 @@ async fn native_provider_drives_create_and_delete_to_completion() {
     let id = resource.id.clone();
     let request = common::create_request(resource).await;
 
-    let created = Provider::create(&provider, &id, request)
+    let created = carina_core::executor::dispatch_create(&provider, &id, request)
         .await
         .expect("native create should drive pending steps")
         .into_state_for_writeback();

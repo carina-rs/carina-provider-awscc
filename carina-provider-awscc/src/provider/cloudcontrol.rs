@@ -4,7 +4,7 @@
 //! API: creating, reading, updating, and deleting resources, as well as polling for
 //! operation completion and retry/error handling logic.
 
-use aws_sdk_cloudcontrol::types::{OperationStatus, ProgressEvent};
+use aws_sdk_cloudcontrol::types::{HandlerErrorCode, OperationStatus, ProgressEvent};
 use std::future::Future;
 
 use aws_smithy_runtime_api::client::{orchestrator::HttpResponse, result::SdkError};
@@ -63,7 +63,107 @@ pub enum CcRequestPhase {
 }
 
 /// Continuation state for a CloudControl create operation.
-pub type CcCreateToken = CcRequestPhase;
+///
+/// CloudControl can disclose the physical identifier before the request is
+/// terminal. Keep it beside the request token so every later poll or resume
+/// can preserve both pieces of evidence. The client token is generated once
+/// per logical create and retained across every resend for idempotency.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "phase", rename_all = "snake_case")]
+pub enum CcCreateToken {
+    NotIssued {
+        attempt: u32,
+        #[serde(default = "new_create_client_token")]
+        client_token: String,
+    },
+    InFlight {
+        request: RequestToken,
+        attempt: u32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        identifier: Option<String>,
+        #[serde(default = "new_create_client_token")]
+        client_token: String,
+    },
+}
+
+impl std::fmt::Debug for CcCreateToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotIssued { attempt, .. } => f
+                .debug_struct("NotIssued")
+                .field("attempt", attempt)
+                .finish(),
+            Self::InFlight {
+                request,
+                attempt,
+                identifier,
+                ..
+            } => f
+                .debug_struct("InFlight")
+                .field("request", request)
+                .field("attempt", attempt)
+                .field("identifier", identifier)
+                .finish(),
+        }
+    }
+}
+
+impl CcCreateToken {
+    pub(crate) fn identifier(&self) -> Option<&str> {
+        match self {
+            Self::NotIssued { .. } => None,
+            Self::InFlight { identifier, .. } => identifier.as_deref(),
+        }
+    }
+
+    pub(crate) fn attempt(&self) -> u32 {
+        match self {
+            Self::NotIssued { attempt, .. } | Self::InFlight { attempt, .. } => *attempt,
+        }
+    }
+
+    pub(crate) fn client_token(&self) -> &str {
+        match self {
+            Self::NotIssued { client_token, .. } | Self::InFlight { client_token, .. } => {
+                client_token
+            }
+        }
+    }
+
+    pub(crate) fn retry_not_issued(&self, attempt: u32) -> Self {
+        Self::NotIssued {
+            attempt,
+            client_token: self.client_token().to_string(),
+        }
+    }
+
+    pub(crate) fn with_identifier(self, identifier: Option<String>) -> Self {
+        match self {
+            Self::NotIssued {
+                attempt,
+                client_token,
+            } => Self::NotIssued {
+                attempt,
+                client_token,
+            },
+            Self::InFlight {
+                request,
+                attempt,
+                identifier: _,
+                client_token,
+            } => Self::InFlight {
+                request,
+                attempt,
+                identifier,
+                client_token,
+            },
+        }
+    }
+}
+
+fn new_create_client_token() -> String {
+    uuid::Uuid::new_v4().to_string()
+}
 
 /// Continuation state for a CloudControl update operation.
 pub type CcUpdateToken = CcRequestPhase;
@@ -76,10 +176,9 @@ pub enum CcDeleteToken {
     Delete(CcRequestPhase),
 }
 
-type CcWaitStep = OperationStep<WaitOutcome, CcRequestPhase>;
-pub(crate) type CcCreateWaitStep = CcWaitStep;
+type CcWaitStep = OperationStep<WaitOutcome, ProviderError, CcRequestPhase>;
 pub(crate) type CcUpdateWaitStep = CcWaitStep;
-pub(crate) type CcDeleteWaitStep = OperationStep<(), CcRequestPhase>;
+pub(crate) type CcDeleteWaitStep = OperationStep<(), ProviderError, CcRequestPhase>;
 
 const FIRST_POLL_AFTER_SECS: u32 = 1;
 const POLL_AFTER_SECS: u32 = 5;
@@ -89,6 +188,37 @@ enum RequestStatusStep {
     Pending,
     Done(WaitOutcome),
     RetryableFailure { error: ProviderError },
+}
+
+#[derive(Debug)]
+pub(crate) struct CcCreatePending {
+    pub(crate) token: CcCreateToken,
+    pub(crate) poll_after_secs: u32,
+}
+
+#[derive(Debug)]
+pub(crate) enum CcCreateStatus {
+    Pending(CcCreatePending),
+    Success {
+        token: CcCreateToken,
+        identifier: Option<String>,
+    },
+    Failed {
+        token: CcCreateToken,
+        status: OperationStatus,
+        identifier: Option<String>,
+        error_code: Option<HandlerErrorCode>,
+        status_message: String,
+    },
+    RequestTokenNotFound {
+        token: CcCreateToken,
+        error: ProviderError,
+    },
+    StatusError {
+        token: CcCreateToken,
+        error: ProviderError,
+        poll_after_secs: u32,
+    },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -199,28 +329,42 @@ impl AwsccProvider {
         type_name: &str,
         desired_state: serde_json::Value,
         operation_config: Option<&carina_core::schema::OperationConfig>,
-    ) -> ProviderResult<CcCreateWaitStep> {
+    ) -> ProviderResult<CcCreatePending> {
         self.issue_create(
             type_name,
             desired_state,
             0,
+            new_create_client_token(),
             Self::request_retry_policy(operation_config, "creating"),
         )
         .await
     }
 
-    /// Perform one poll or re-issue step for a pending create.
-    pub(crate) async fn cc_poll_create_step(
+    /// Re-issue a create whose previous send did not return a request token.
+    pub(crate) async fn cc_reissue_create_step(
         &self,
         type_name: &str,
         desired_state: serde_json::Value,
         operation_config: Option<&carina_core::schema::OperationConfig>,
         token: CcCreateToken,
-    ) -> ProviderResult<CcCreateWaitStep> {
+    ) -> ProviderResult<CcCreatePending> {
         let retry_policy = Self::request_retry_policy(operation_config, "creating");
-        self.poll_phase(type_name, token, retry_policy, |attempt| {
-            self.issue_create(type_name, desired_state, attempt, retry_policy)
-        })
+        let CcCreateToken::NotIssued {
+            attempt,
+            client_token,
+        } = token
+        else {
+            return Err(ProviderError::internal(
+                "cannot re-issue an in-flight Cloud Control create request",
+            ));
+        };
+        self.issue_create(
+            type_name,
+            desired_state,
+            attempt,
+            client_token,
+            retry_policy,
+        )
         .await
     }
 
@@ -229,31 +373,167 @@ impl AwsccProvider {
         type_name: &str,
         desired_state: serde_json::Value,
         attempt: u32,
+        client_token: String,
         retry_policy: RetryPolicy,
-    ) -> ProviderResult<CcCreateWaitStep> {
+    ) -> ProviderResult<CcCreatePending> {
         let result = self
             .cloudcontrol_client
             .create_resource()
             .type_name(type_name)
             .desired_state(desired_state.to_string())
+            .client_token(&client_token)
             .send()
-            .await
-            .map(|response| {
-                response
-                    .progress_event()
-                    .and_then(|progress| progress.request_token())
+            .await;
+
+        match result {
+            Ok(response) => {
+                let progress = response.progress_event();
+                let request = progress
+                    .and_then(ProgressEvent::request_token)
+                    .filter(|request| !request.is_empty())
                     .map(RequestToken::from)
-            });
-        Self::finish_issue(
-            result,
-            type_name,
+                    .ok_or_else(|| ProviderError::internal("No request token returned"))?;
+                let identifier = progress
+                    .and_then(ProgressEvent::identifier)
+                    .filter(|identifier| !identifier.is_empty())
+                    .map(ToString::to_string);
+                Ok(CcCreatePending {
+                    token: CcCreateToken::InFlight {
+                        request,
+                        attempt,
+                        identifier,
+                        client_token,
+                    },
+                    poll_after_secs: FIRST_POLL_AFTER_SECS,
+                })
+            }
+            Err(error)
+                if Self::is_retryable_sdk_error(&error) && attempt < retry_policy.max_attempts =>
+            {
+                let delay_secs = retry_policy.delay_secs(attempt);
+                log::warn!(
+                    "Retryable error creating {type_name} (attempt {}/{}): {error:?}. Retrying in {delay_secs}s...",
+                    attempt + 1,
+                    retry_policy.max_attempts,
+                );
+                Ok(CcCreatePending {
+                    token: CcCreateToken::NotIssued {
+                        attempt: attempt + 1,
+                        client_token,
+                    },
+                    poll_after_secs: delay_secs,
+                })
+            }
+            Err(error) => Err(api_error_with_meta_and_subject(
+                "Failed to create resource",
+                "cloudcontrol.CreateResource",
+                CloudControlResourceSubject::type_only(type_name),
+                error,
+            )),
+        }
+    }
+
+    /// Fetch and classify one status for an accepted create request.
+    pub(crate) async fn cc_create_request_status(&self, token: CcCreateToken) -> CcCreateStatus {
+        let CcCreateToken::InFlight {
+            request,
             attempt,
-            retry_policy,
-            "Failed to create resource",
-            "cloudcontrol.CreateResource",
-            CloudControlResourceSubject::type_only(type_name),
-            || Err(ProviderError::internal("No request token returned")),
-        )
+            identifier: recorded_identifier,
+            client_token,
+        } = token
+        else {
+            return CcCreateStatus::StatusError {
+                token,
+                error: ProviderError::internal(
+                    "cannot poll a Cloud Control create request before it is issued",
+                ),
+                poll_after_secs: POLL_AFTER_SECS,
+            };
+        };
+
+        let result = self
+            .cloudcontrol_client
+            .get_resource_request_status()
+            .request_token(request.as_str())
+            .send()
+            .await;
+        let token = CcCreateToken::InFlight {
+            request: request.clone(),
+            attempt,
+            identifier: recorded_identifier.clone(),
+            client_token,
+        };
+        let response = match result {
+            Ok(response) => response,
+            Err(error) if Self::is_request_token_not_found_error(&error) => {
+                return CcCreateStatus::RequestTokenNotFound {
+                    token,
+                    error: api_error_with_meta_and_subject(
+                        "Cloud Control request token is no longer known",
+                        "cloudcontrol.GetResourceRequestStatus",
+                        CloudControlRequestToken(request.as_str().to_string()),
+                        error,
+                    ),
+                };
+            }
+            Err(error) => {
+                return CcCreateStatus::StatusError {
+                    token,
+                    error: api_error_with_meta_and_subject(
+                        "Failed to get operation status",
+                        "cloudcontrol.GetResourceRequestStatus",
+                        CloudControlRequestToken(request.as_str().to_string()),
+                        error,
+                    ),
+                    poll_after_secs: POLL_AFTER_SECS,
+                };
+            }
+        };
+
+        let Some(progress) = response.progress_event() else {
+            return CcCreateStatus::Pending(CcCreatePending {
+                token,
+                poll_after_secs: POLL_AFTER_SECS,
+            });
+        };
+        let identifier = progress
+            .identifier()
+            .filter(|identifier| !identifier.is_empty())
+            .map(ToString::to_string)
+            .or(recorded_identifier);
+        let token = token.with_identifier(identifier.clone());
+        match progress.operation_status() {
+            None
+            | Some(OperationStatus::Pending)
+            | Some(OperationStatus::InProgress)
+            | Some(OperationStatus::CancelInProgress) => CcCreateStatus::Pending(CcCreatePending {
+                token,
+                poll_after_secs: POLL_AFTER_SECS,
+            }),
+            Some(OperationStatus::Success) => CcCreateStatus::Success { token, identifier },
+            Some(status @ (OperationStatus::Failed | OperationStatus::CancelComplete)) => {
+                CcCreateStatus::Failed {
+                    token,
+                    status: status.clone(),
+                    identifier,
+                    error_code: progress.error_code().cloned(),
+                    status_message: progress
+                        .status_message()
+                        .unwrap_or("Unknown error")
+                        .to_string(),
+                }
+            }
+            Some(future_status) => {
+                log::warn!(
+                    "Cloud Control returned unknown create operation status {}; preserving the request as pending",
+                    future_status.as_str()
+                );
+                CcCreateStatus::Pending(CcCreatePending {
+                    token,
+                    poll_after_secs: POLL_AFTER_SECS,
+                })
+            }
+        }
     }
 
     /// Issue one CloudControl update request.
@@ -298,6 +578,7 @@ impl AwsccProvider {
             OperationStep::Done(outcome) => {
                 OperationStep::Done(Self::outcome_with_identifier(outcome, identifier))
             }
+            OperationStep::Verdict(error) => OperationStep::Verdict(error),
             OperationStep::Pending {
                 pending,
                 poll_after_secs,
@@ -519,6 +800,7 @@ impl AwsccProvider {
                     CloudControlOperationFailure::new(status_message),
                 ))
             }
+            OperationStep::Verdict(error) => Ok(OperationStep::Verdict(error)),
             OperationStep::Pending {
                 pending,
                 poll_after_secs,
@@ -582,6 +864,17 @@ impl AwsccProvider {
             }
             _ => false,
         }
+    }
+
+    fn is_request_token_not_found_error<E, R>(error: &SdkError<E, R>) -> bool
+    where
+        E: ProvideErrorMetadata,
+    {
+        matches!(
+            error,
+            SdkError::ServiceError(service_error)
+                if service_error.err().code() == Some("RequestTokenNotFoundException")
+        )
     }
 
     /// Returns true if an AWS SDK error represents a retryable condition.
@@ -738,29 +1031,42 @@ impl AwsccProvider {
         progress: &ProgressEvent,
     ) -> ProviderResult<Option<WaitOutcome>> {
         match progress.operation_status() {
+            None
+            | Some(OperationStatus::Pending)
+            | Some(OperationStatus::InProgress)
+            | Some(OperationStatus::CancelInProgress) => Ok(None),
             Some(OperationStatus::Success) => Ok(Some(WaitOutcome::Success {
                 identifier: progress.identifier().unwrap_or("").to_string(),
             })),
-            Some(OperationStatus::Failed) | Some(OperationStatus::CancelComplete) => {
-                let msg = progress
-                    .status_message()
-                    .unwrap_or("Unknown error")
-                    .to_string();
-                if let Some(identifier) = progress.identifier()
-                    && !identifier.is_empty()
-                {
-                    return Ok(Some(WaitOutcome::PartialOrFailed {
-                        identifier: identifier.to_string(),
-                        status_message: msg,
-                    }));
-                }
-                Err(ProviderError::api_error_caused_by(
-                    "Operation failed",
-                    CloudControlOperationFailure::new(msg),
-                ))
+            Some(OperationStatus::Failed) => Self::terminal_failure_outcome(progress),
+            Some(OperationStatus::CancelComplete) => Self::terminal_failure_outcome(progress),
+            Some(future_status) => {
+                log::warn!(
+                    "Cloud Control returned unknown operation status {}; preserving the request as pending",
+                    future_status.as_str()
+                );
+                Ok(None)
             }
-            _ => Ok(None),
         }
+    }
+
+    fn terminal_failure_outcome(progress: &ProgressEvent) -> ProviderResult<Option<WaitOutcome>> {
+        let msg = progress
+            .status_message()
+            .unwrap_or("Unknown error")
+            .to_string();
+        if let Some(identifier) = progress.identifier()
+            && !identifier.is_empty()
+        {
+            return Ok(Some(WaitOutcome::PartialOrFailed {
+                identifier: identifier.to_string(),
+                status_message: msg,
+            }));
+        }
+        Err(ProviderError::api_error_caused_by(
+            "Operation failed",
+            CloudControlOperationFailure::new(msg),
+        ))
     }
 }
 
