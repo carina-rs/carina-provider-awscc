@@ -14,8 +14,11 @@ use carina_core::schema::RawShape;
 /// The host owns state enum canonicalization. This pass intentionally keeps
 /// enum values untouched and only applies non-enum string transforms such as
 /// Route53 hosted-zone trailing-dot stripping.
-pub fn normalize_state_string_dsl_transforms_impl(current_states: &mut HashMap<ResourceId, State>) {
-    for (resource_id, state) in current_states.iter_mut() {
+pub fn normalize_state_string_dsl_transforms_impl<S>(current_states: &mut S)
+where
+    for<'a> &'a mut S: IntoIterator<Item = (&'a ResourceId, &'a mut State)>,
+{
+    for (resource_id, state) in current_states {
         if !state.exists || resource_id.provider != "awscc" {
             continue;
         }
@@ -62,8 +65,11 @@ pub fn normalize_state_string_dsl_transforms_impl(current_states: &mut HashMap<R
 /// every downstream consumer (state writeback, plan display, the
 /// differ) see the same shape as the canonicalized desired side.
 /// See carina-rs/carina#2481, sub-issue 5.
-pub fn canonicalize_string_or_list_states_impl(current_states: &mut HashMap<ResourceId, State>) {
-    for (resource_id, state) in current_states.iter_mut() {
+pub fn canonicalize_string_or_list_states_impl<S>(current_states: &mut S)
+where
+    for<'a> &'a mut S: IntoIterator<Item = (&'a ResourceId, &'a mut State)>,
+{
+    for (resource_id, state) in current_states {
         if !state.exists || resource_id.provider != "awscc" {
             continue;
         }
@@ -98,11 +104,11 @@ pub fn canonicalize_string_or_list_states_impl(current_states: &mut HashMap<Reso
 /// CloudControl API doesn't always return all properties in GetResource responses
 /// (create-only properties, and some normal properties like `description`).
 /// We carry them forward from the previously saved attribute values.
-pub fn restore_unreturned_attrs_impl(
-    current_states: &mut HashMap<ResourceId, State>,
-    saved_attrs: &SavedAttrs,
-) {
-    for (resource_id, state) in current_states.iter_mut() {
+pub fn restore_unreturned_attrs_impl<S>(current_states: &mut S, saved_attrs: &SavedAttrs)
+where
+    for<'a> &'a mut S: IntoIterator<Item = (&'a ResourceId, &'a mut State)>,
+{
+    for (resource_id, state) in current_states {
         if !state.exists || resource_id.provider != "awscc" {
             continue;
         }
@@ -182,10 +188,12 @@ mod tests {
         )]);
         let mut current_states = HashMap::from([(id.clone(), State::existing(id.clone(), attrs))]);
 
-        crate::AwsccNormalizer
-            .normalize_state(&mut current_states)
-            .await
-            .expect("state normalization should succeed");
+        carina_core::provider::normalize_provider_states(
+            &crate::AwsccNormalizer,
+            &mut current_states,
+        )
+        .await
+        .expect("state normalization should succeed");
 
         // The string-transform pass leaves the raw API string alone; the
         // following `canonicalize_string_or_list_states_impl` pass calls
@@ -228,10 +236,12 @@ mod tests {
         let attrs = HashMap::from([("ip_protocol".to_string(), canonical.clone())]);
         let mut current_states = HashMap::from([(id.clone(), State::existing(id.clone(), attrs))]);
 
-        crate::AwsccNormalizer
-            .normalize_state(&mut current_states)
-            .await
-            .expect("state normalization should succeed");
+        carina_core::provider::normalize_provider_states(
+            &crate::AwsccNormalizer,
+            &mut current_states,
+        )
+        .await
+        .expect("state normalization should succeed");
 
         assert_eq!(
             current_states[&id].attributes.get("ip_protocol"),

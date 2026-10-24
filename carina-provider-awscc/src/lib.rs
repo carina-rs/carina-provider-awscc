@@ -24,9 +24,10 @@ use indexmap::IndexMap;
 use carina_core::effect::PlanOp;
 use carina_core::provider::{
     AppliedIdentifier, BoxFuture, CanonicalCustomTypeValue, CanonicalProviderConfigAttributes,
-    CreateOutcome, CreateRequest, DeleteRequest, Provider, ProviderFactory, ProviderNormalizer,
-    ProviderReadyConfig, ProviderReadyDataSource, ProviderResult, ReadOutcome, ReadRequest,
-    SavedAttrs, UpdateOutcome, UpdateRequest, ready_noop,
+    CreateAttempt, CreateFailure, CreateOutcome, CreateRequest, DeleteRequest, Provider,
+    ProviderFactory, ProviderNormalizer, ProviderReadyConfig, ProviderReadyDataSource,
+    ProviderResult, ReadOutcome, ReadRequest, ResumeCreateRequest, ResumeFailure, ResumeOutcome,
+    SavedAttrs, StateTransformMap, UpdateOutcome, UpdateRequest, ready_noop,
 };
 use carina_core::resource::{ConcreteValue, Resource, ResourceId, State, Value};
 
@@ -51,7 +52,7 @@ impl ProviderNormalizer for AwsccNormalizer {
 
     fn normalize_state<'a>(
         &'a self,
-        current_states: &'a mut HashMap<ResourceId, State>,
+        current_states: &'a mut StateTransformMap,
     ) -> BoxFuture<'a, ProviderResult<()>> {
         Box::pin(async move {
             crate::provider::normalize_state_string_dsl_transforms_impl(current_states);
@@ -66,7 +67,7 @@ impl ProviderNormalizer for AwsccNormalizer {
 
     fn hydrate_read_state<'a>(
         &'a self,
-        current_states: &'a mut HashMap<ResourceId, State>,
+        current_states: &'a mut StateTransformMap,
         saved_attrs: &'a SavedAttrs,
     ) -> BoxFuture<'a, ProviderResult<()>> {
         Box::pin(async move {
@@ -312,8 +313,19 @@ impl Provider for AwsccProvider {
         &self,
         _id: &ResourceId,
         request: CreateRequest,
-    ) -> BoxFuture<'_, ProviderResult<CreateOutcome>> {
-        Box::pin(async move { self.create_resource(request.resource().as_resource()).await })
+        attempt: CreateAttempt,
+    ) -> BoxFuture<'_, Result<CreateOutcome, CreateFailure>> {
+        Box::pin(async move {
+            self.drive_native_create(request.resource().as_resource(), attempt)
+                .await
+        })
+    }
+
+    fn resume_create(
+        &self,
+        request: ResumeCreateRequest,
+    ) -> BoxFuture<'_, Result<ResumeOutcome, ResumeFailure>> {
+        Box::pin(async move { self.drive_native_resume(request).await })
     }
 
     fn update(

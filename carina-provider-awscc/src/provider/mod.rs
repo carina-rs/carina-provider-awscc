@@ -42,6 +42,11 @@ pub use normalizer::{
     canonicalize_string_or_list_states_impl, normalize_state_string_dsl_transforms_impl,
     restore_unreturned_attrs_impl,
 };
+#[doc(hidden)]
+pub use operations::{
+    CcCreateAttempt, CcCreatePoll, CcCreateResume, CcIssuedCreate, CcPollAttempt, CcResumeAttempt,
+    CcResumedCreate,
+};
 pub(crate) use update::parse_resource_properties;
 
 /// Maximum number of retry attempts for retryable create errors

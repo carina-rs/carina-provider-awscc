@@ -21,7 +21,7 @@
 mod common;
 
 use aws_config::{BehaviorVersion, Region};
-use carina_core::provider::{CreateOutcome, Provider, ReadRequest};
+use carina_core::provider::{CreateOutcomeKind, Provider, ReadRequest};
 use carina_core::resource::{ConcreteValue, Resource, Value};
 use carina_provider_awscc::AwsccProvider;
 use carina_provider_awscc::provider::AwsccProviderConfig;
@@ -93,15 +93,14 @@ async fn web_acl_association_create_then_read_preserves_plain_string_properties(
     let (provider, cloudcontrol) = winterbaume_provider().await;
     let resource = web_acl_association_resource();
     let id = resource.id.clone();
-    let resource = common::normalize_resource(resource).await;
+    let request = common::create_request(resource).await;
 
-    let created = provider
-        .create_resource(resource.as_resource())
+    let created = carina_core::executor::dispatch_create(&provider, &id, request)
         .await
         .expect("wafv2.WebAclAssociation create_resource should succeed");
-    let created = match created {
-        CreateOutcome::Success { state } => state,
-        CreateOutcome::PartialSuccess { diagnostic, .. } => {
+    let created = match created.into_kind() {
+        CreateOutcomeKind::Success { state } => state,
+        CreateOutcomeKind::PartialSuccess { diagnostic, .. } => {
             panic!(
                 "roundtrip create should be full success, got partial: {:?}",
                 diagnostic

@@ -1,7 +1,7 @@
 mod common;
 
 use aws_config::{BehaviorVersion, Region};
-use carina_core::provider::{CreateOutcome, Provider, ReadRequest};
+use carina_core::provider::{CreateOutcomeKind, Provider, ReadRequest};
 use carina_core::resource::{ConcreteValue, Resource, Value};
 use carina_provider_awscc::AwsccProvider;
 use carina_provider_awscc::provider::AwsccProviderConfig;
@@ -214,15 +214,14 @@ async fn iam_role_create_with_role_name_prefix_canonicalizes_identifier_from_rea
     let provider = provider_with_mock(service.clone()).await;
     let resource = iam_role_resource();
     let id = resource.id.clone();
-    let resource = common::normalize_resource(resource).await;
+    let request = common::create_request(resource).await;
 
-    let created = provider
-        .create_resource(resource.as_resource())
+    let created = carina_core::executor::dispatch_create(&provider, &id, request)
         .await
         .expect("iam.Role create should succeed with canonical RoleName identifier");
-    let created = match created {
-        CreateOutcome::Success { state } => state,
-        CreateOutcome::PartialSuccess { diagnostic, .. } => {
+    let created = match created.into_kind() {
+        CreateOutcomeKind::Success { state } => state,
+        CreateOutcomeKind::PartialSuccess { diagnostic, .. } => {
             panic!("iam.Role create should be full success, got partial: {diagnostic:?}")
         }
     };
