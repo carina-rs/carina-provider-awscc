@@ -162,6 +162,19 @@ mod tests {
         );
     }
 
+    // CreateDistribution returns DomainName synchronously; see carina-rs/carina#3940.
+    #[test]
+    fn generated_cloudfront_distribution_domain_name_is_not_deferred_populate() {
+        let config = super::generated::cloudfront::distribution::cloudfront_distribution_config();
+        let domain_name = config
+            .schema
+            .attributes
+            .get("domain_name")
+            .expect("CloudFront distribution should expose domain_name");
+
+        assert!(!domain_name.deferred_populate);
+    }
+
     #[test]
     fn generated_string_enum_identities_are_unique_within_each_resource() {
         let mut failures = Vec::new();

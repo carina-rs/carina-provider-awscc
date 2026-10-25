@@ -243,7 +243,6 @@ pub fn cloudfront_distribution_config() -> AwsccSchemaConfig {
         .attribute(
             AttributeSchema::new("domain_name", AttributeType::string())
                 .read_only()
-                .deferred_populate()
                 .with_description(" (read-only)")
                 .with_provider_name("DomainName"),
         )

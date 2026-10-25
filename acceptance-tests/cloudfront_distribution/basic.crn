@@ -1,13 +1,15 @@
 # CloudFront Distribution - Basic test
 #
-# Tests: disabled minimal distribution with a custom origin and PriceClass_100.
+# Tests: disabled minimal distribution with a custom origin and PriceClass_100,
+# plus a Logs LogGroup tag consuming distribution.domain_name without a wait
+# block (regression coverage for carina#3940).
 # This fixture has a custom run.sh because deploy/delete commonly takes 5-15 minutes.
 
 provider awscc {
   region = aws.Region.ap_northeast_1
 }
 
-awscc.cloudfront.Distribution {
+let distribution = awscc.cloudfront.Distribution {
   distribution_config = {
     comment         = 'Carina acceptance test distribution'
     enabled         = false
@@ -54,5 +56,15 @@ awscc.cloudfront.Distribution {
 
   tags = {
     Environment = 'acceptance-test'
+  }
+}
+
+awscc.logs.LogGroup {
+  log_group_name    = '/acceptance-test/cloudfront-distribution-domain-name-consumer'
+  retention_in_days = 1
+
+  tags = {
+    Environment          = 'acceptance-test'
+    CloudFrontDomainName = distribution.domain_name
   }
 }
