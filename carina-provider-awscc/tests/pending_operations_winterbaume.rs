@@ -233,10 +233,12 @@ async fn native_provider_drives_create_and_delete_to_completion() {
     let id = resource.id.clone();
     let request = common::create_request(resource).await;
 
-    let created = carina_core::executor::dispatch_create(&provider, &id, request)
-        .await
-        .expect("native create should drive pending steps")
-        .into_state_for_writeback();
+    let created = carina_core::executor::complete_create_for_writeback(
+        carina_core::executor::dispatch_create(&provider, &id, request)
+            .await
+            .expect("native create should drive pending steps"),
+    )
+    .0;
     assert_eq!(created.identifier.as_deref(), Some(REPOSITORY_NAME));
     assert_eq!(cloudcontrol.calls("CreateResource"), 1);
     assert_eq!(cloudcontrol.calls("GetResourceRequestStatus"), 1);
