@@ -363,6 +363,8 @@ const REPLACEMENT_CLASSES: &[(&str, ReplacementClass)] = &[
     ("s3.Bucket", ReplacementClass::Attribute("bucket_name")),
     // One policy per bucket; `bucket` is the parent, not this resource's own name.
     ("s3.BucketPolicy", ReplacementClass::Conflicting),
+    // Parameter names are user-chosen and unique within an account and region.
+    ("ssm.Parameter", ReplacementClass::Attribute("name")),
     // Every create-only field participates in the assignment's uniqueness key.
     ("sso.Assignment", ReplacementClass::Coexisting),
     // An account can have only one IAM Identity Center instance.

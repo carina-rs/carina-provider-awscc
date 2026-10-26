@@ -23,6 +23,7 @@ pub mod logs;
 pub mod organizations;
 pub mod route53;
 pub mod s3;
+pub mod ssm;
 pub mod sso;
 pub mod wafv2;
 
@@ -67,6 +68,7 @@ static ENUM_VALID_VALUES: LazyLock<
         ec2::transit_gateway_attachment::enum_valid_values(),
         s3::bucket::enum_valid_values(),
         s3::bucket_policy::enum_valid_values(),
+        ssm::parameter::enum_valid_values(),
         iam::role::enum_valid_values(),
         iam::role_policy::enum_valid_values(),
         iam::oidc_provider::enum_valid_values(),
@@ -127,6 +129,7 @@ fn build_configs() -> Vec<AwsccSchemaConfig> {
         ec2::transit_gateway_attachment::ec2_transit_gateway_attachment_config(),
         s3::bucket::s3_bucket_config(),
         s3::bucket_policy::s3_bucket_policy_config(),
+        ssm::parameter::ssm_parameter_config(),
         iam::role::iam_role_config(),
         iam::role_policy::iam_role_policy_config(),
         iam::oidc_provider::iam_oidc_provider_config(),
@@ -195,6 +198,7 @@ pub fn required_permissions(resource_type: &str, op: PlanOp) -> &'static [&'stat
         "ec2.TransitGatewayAttachment" => ec2::transit_gateway_attachment::required_permissions(op),
         "s3.Bucket" => s3::bucket::required_permissions(op),
         "s3.BucketPolicy" => s3::bucket_policy::required_permissions(op),
+        "ssm.Parameter" => ssm::parameter::required_permissions(op),
         "iam.Role" => iam::role::required_permissions(op),
         "iam.RolePolicy" => iam::role_policy::required_permissions(op),
         "iam.OidcProvider" => iam::oidc_provider::required_permissions(op),

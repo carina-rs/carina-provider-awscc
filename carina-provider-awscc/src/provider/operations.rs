@@ -2622,6 +2622,40 @@ mod tests {
         AwsccProvider::from_sdk_config(config, &super::super::AwsccProviderConfig::default()).await
     }
 
+    fn ssm_parameter_resource(tags: Option<Value>) -> Resource {
+        let resource = Resource::with_provider("awscc", "ssm.Parameter", "invalid_tags", None)
+            .with_attribute("name", test_string("/carina/test/invalid-tags"))
+            .with_attribute("type", test_string("String"))
+            .with_attribute("value", test_string("test"));
+        match tags {
+            Some(tags) => resource.with_attribute("tags", tags),
+            None => resource,
+        }
+    }
+
+    #[tokio::test]
+    async fn create_desired_state_omits_absent_or_empty_tags() {
+        let provider =
+            provider_with_partial_create_service(PartialCreateCloudControlService::new(true)).await;
+        let config = get_schema_config("ssm.Parameter")
+            .expect("ssm.Parameter schema configuration should exist");
+        let resources = [
+            ("absent", ssm_parameter_resource(None)),
+            (
+                "empty",
+                ssm_parameter_resource(Some(Value::Concrete(ConcreteValue::Map(IndexMap::new())))),
+            ),
+        ];
+
+        for (label, resource) in resources {
+            let desired_state = provider.create_desired_state(&resource, config);
+            assert!(
+                desired_state.get("Tags").is_none(),
+                "{label} tags must not emit a Tags property"
+            );
+        }
+    }
+
     #[tokio::test]
     async fn read_resource_accepts_pending_identity_with_applied_identifier() {
         let service = PartialCreateCloudControlService::new(true);
