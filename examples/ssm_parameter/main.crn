@@ -1,0 +1,18 @@
+# SSM Parameter Example
+#
+# Stores a task role ARN in Parameter Store for another deployment to consume.
+
+provider awscc {
+  region = awscc.Region.ap_northeast_1
+}
+
+awscc.ssm.Parameter {
+  name  = '/carina-registry/dev/publish/task_role_arn'
+  type  = string
+  value = 'arn:aws:iam::123456789012:role/carina-registry-publish-task'
+
+  tags = {
+    Environment = 'dev'
+    Project     = 'carina-registry'
+  }
+}

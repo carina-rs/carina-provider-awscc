@@ -530,6 +530,51 @@ mod tests {
     }
 
     #[test]
+    fn test_ssm_parameter_replace_tags_projects_to_map_shape() {
+        let config = get_schema_config("ssm.Parameter").expect("ssm.Parameter schema should exist");
+        let tags = IndexMap::from([(
+            "Env".to_string(),
+            Value::Concrete(ConcreteValue::String("prod".to_string().into())),
+        )]);
+        let patch = UpdatePatch {
+            ops: vec![replace("tags", Value::Concrete(ConcreteValue::Map(tags)))],
+        };
+
+        let plan = build_update_patches(config, "ssm.Parameter", &patch);
+
+        assert_eq!(
+            plan.ops,
+            [json!({
+                "op": "add",
+                "path": "/Tags",
+                "value": {"Env": "prod"},
+            })]
+        );
+        assert_eq!(plan.requires_confirmation, ["tags"]);
+        assert!(plan.unsent.is_empty());
+    }
+
+    #[test]
+    fn test_ssm_parameter_value_update_is_in_place() {
+        let config = get_schema_config("ssm.Parameter").expect("ssm.Parameter schema should exist");
+        let patch = UpdatePatch {
+            ops: vec![replace(
+                "value",
+                Value::Concrete(ConcreteValue::String("v2".to_string().into())),
+            )],
+        };
+
+        let plan = build_update_patches(config, "ssm.Parameter", &patch);
+
+        assert_eq!(
+            plan.ops,
+            [json!({"op": "add", "path": "/Value", "value": "v2"})]
+        );
+        assert_eq!(plan.requires_confirmation, ["value"]);
+        assert!(plan.unsent.is_empty());
+    }
+
+    #[test]
     fn test_tags_patch_uses_schema_provider_name_for_path() {
         let config = AwsccSchemaConfig {
             aws_type_name: "AWS::Test::Resource",
