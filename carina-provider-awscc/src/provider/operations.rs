@@ -644,7 +644,7 @@ impl AwsccProvider {
         &self,
         resource: &Resource,
         config: &AwsccSchemaConfig,
-    ) -> serde_json::Value {
+    ) -> ProviderResult<serde_json::Value> {
         let mut desired_state = serde_json::Map::new();
         for (dsl_name, attr_schema) in &config.schema.attributes {
             if dsl_name == "tags" {
@@ -668,13 +668,21 @@ impl AwsccProvider {
         self.create_special_attributes(resource, &mut desired_state);
         if let Some(tags_property) = config.tags.as_ref()
             && let Some(value) = resource.get_attr("tags")
-            && let Some(tags) = tags_property.encode_dsl_tags(value)
-            && !wire_tags_are_empty(&tags)
         {
-            desired_state.insert(tags_property.provider_name.to_string(), tags);
+            let tags = tags_property.encode_dsl_tags(value).ok_or_else(|| {
+                ProviderError::invalid_input(format!(
+                    "failed to encode `tags` attribute for resource {}: expected a map with string values",
+                    resource.id.resource_type
+                ))
+                .for_provider("awscc")
+                .for_resource(resource.id.clone())
+            })?;
+            if !wire_tags_are_empty(&tags) {
+                desired_state.insert(tags_property.provider_name.to_string(), tags);
+            }
         }
         self.set_default_values(&resource.id.resource_type, &mut desired_state);
-        serde_json::Value::Object(desired_state)
+        Ok(serde_json::Value::Object(desired_state))
     }
 
     /// Perform the initial, non-blocking CloudControl create step.
@@ -695,10 +703,14 @@ impl AwsccProvider {
                 .for_resource(resource.id.clone()),
             ));
         };
+        let desired_state = match self.create_desired_state(resource, config) {
+            Ok(desired_state) => desired_state,
+            Err(error) => return Err(attempt.untracked(error)),
+        };
         let pending = match self
             .cc_create_step(
                 config.aws_type_name,
-                self.create_desired_state(resource, config),
+                desired_state,
                 config.schema.operation_config.as_ref(),
             )
             .await
@@ -750,10 +762,14 @@ impl AwsccProvider {
                 .for_resource(resource.id.clone()),
             ));
         };
+        let desired_state = match self.create_desired_state(resource, config) {
+            Ok(desired_state) => desired_state,
+            Err(error) => return Err(attempt.untracked(error)),
+        };
         let pending = match self
             .cc_reissue_create_step(
                 config.aws_type_name,
-                self.create_desired_state(resource, config),
+                desired_state,
                 config.schema.operation_config.as_ref(),
                 token,
             )
@@ -781,15 +797,19 @@ impl AwsccProvider {
 
         match token {
             token @ CcCreateToken::NotIssued { .. } => {
-                let pending = match self
-                    .cc_reissue_create_step(
-                        config.aws_type_name,
-                        self.create_desired_state(resource, config),
-                        config.schema.operation_config.as_ref(),
-                        token,
-                    )
-                    .await
-                {
+                let pending = match self.create_desired_state(resource, config) {
+                    Ok(desired_state) => {
+                        self.cc_reissue_create_step(
+                            config.aws_type_name,
+                            desired_state,
+                            config.schema.operation_config.as_ref(),
+                            token,
+                        )
+                        .await
+                    }
+                    Err(error) => Err(error),
+                };
+                let pending = match pending {
                     Ok(pending) => pending,
                     Err(error) => {
                         let error = error.for_resource(resource.id.clone());
@@ -2511,6 +2531,7 @@ mod tests {
         wait_succeeds: bool,
         read_succeeds: bool,
         read_not_found: bool,
+        saw_create_resource: AtomicBool,
         saw_get_resource: AtomicBool,
     }
 
@@ -2524,6 +2545,7 @@ mod tests {
                 wait_succeeds,
                 read_succeeds,
                 read_not_found: false,
+                saw_create_resource: AtomicBool::new(false),
                 saw_get_resource: AtomicBool::new(false),
             })
         }
@@ -2533,6 +2555,7 @@ mod tests {
                 wait_succeeds,
                 read_succeeds: false,
                 read_not_found: true,
+                saw_create_resource: AtomicBool::new(false),
                 saw_get_resource: AtomicBool::new(false),
             })
         }
@@ -2562,10 +2585,13 @@ mod tests {
                     .and_then(|v| v.split('.').next_back())
                     .unwrap_or_default();
                 match action {
-                    "CreateResource" => MockResponse::json(
-                        200,
-                        r#"{"ProgressEvent":{"RequestToken":"request-token-1"}}"#,
-                    ),
+                    "CreateResource" => {
+                        self.saw_create_resource.store(true, Ordering::SeqCst);
+                        MockResponse::json(
+                            200,
+                            r#"{"ProgressEvent":{"RequestToken":"request-token-1"}}"#,
+                        )
+                    }
                     "GetResourceRequestStatus" if self.wait_succeeds => MockResponse::json(
                         200,
                         r#"{"ProgressEvent":{"RequestToken":"request-token-1","OperationStatus":"SUCCESS","Identifier":"partial-bucket"}}"#,
@@ -2622,6 +2648,138 @@ mod tests {
         AwsccProvider::from_sdk_config(config, &super::super::AwsccProviderConfig::default()).await
     }
 
+    struct ErrorTestCreateAttempt;
+
+    struct ErrorTestIssuedCreate {
+        identifier: AppliedIdentifier,
+    }
+
+    impl CcCreateAttempt for ErrorTestCreateAttempt {
+        type Step = ();
+        type Verdict = ProviderError;
+        type Issued = ErrorTestIssuedCreate;
+
+        fn untracked(self, error: ProviderError) -> Self::Verdict {
+            error
+        }
+
+        fn issued(self, identifier: AppliedIdentifier, _sent: Sent) -> Self::Issued {
+            ErrorTestIssuedCreate { identifier }
+        }
+
+        fn pending(
+            self,
+            _token: CcCreateToken,
+            _sent: Sent,
+            _poll_after_secs: u32,
+        ) -> Result<Self::Step, Self::Verdict> {
+            Ok(())
+        }
+    }
+
+    impl CcIssuedCreate for ErrorTestIssuedCreate {
+        type Step = ();
+        type Verdict = ProviderError;
+
+        fn identifier(&self) -> &AppliedIdentifier {
+            &self.identifier
+        }
+
+        fn succeeded(
+            self,
+            _identifier: AppliedIdentifier,
+            _attributes: HashMap<String, Value>,
+        ) -> Self::Step {
+        }
+
+        fn partial(
+            self,
+            _identifier: AppliedIdentifier,
+            _attributes: HashMap<String, Value>,
+            _reason: String,
+            _missing_attributes: Vec<String>,
+        ) -> Self::Step {
+        }
+
+        fn failed(
+            self,
+            _identifier: AppliedIdentifier,
+            _observation: Observation,
+            error: ProviderError,
+        ) -> Self::Verdict {
+            error
+        }
+
+        fn discarded(self, error: ProviderError) -> Self::Verdict {
+            error
+        }
+
+        fn pending(
+            self,
+            _token: CcCreateToken,
+            _poll_after_secs: u32,
+        ) -> Result<Self::Step, Self::Verdict> {
+            Ok(())
+        }
+    }
+
+    fn s3_bucket_resource(tags: Option<Value>) -> Resource {
+        let resource = Resource::with_provider("awscc", "s3.Bucket", "invalid_tags", None)
+            .with_attribute("bucket_name", test_string("carina-test-invalid-tags"));
+        match tags {
+            Some(tags) => resource.with_attribute("tags", tags),
+            None => resource,
+        }
+    }
+
+    #[tokio::test]
+    async fn create_rejects_non_string_tag_value() {
+        let service = PartialCreateCloudControlService::new(true);
+        let provider = provider_with_partial_create_service(service.clone()).await;
+        let resource =
+            s3_bucket_resource(Some(Value::Concrete(ConcreteValue::Map(IndexMap::from([
+                (
+                    "env".to_string(),
+                    Value::Concrete(ConcreteValue::Bool(true)),
+                ),
+            ])))));
+
+        let error = provider
+            .create_step(&resource, ErrorTestCreateAttempt)
+            .await
+            .expect_err("a non-string tag value must fail before create is sent");
+
+        assert_eq!(error.variant_name(), "invalid_input");
+        assert!(error.to_string().contains("`tags`"));
+        assert!(error.to_string().contains("s3.Bucket"));
+        assert!(!service.saw_create_resource.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn create_desired_state_omits_absent_or_empty_key_value_list_tags() {
+        let provider =
+            provider_with_partial_create_service(PartialCreateCloudControlService::new(true)).await;
+        let config =
+            get_schema_config("s3.Bucket").expect("s3.Bucket schema configuration should exist");
+        let resources = [
+            ("absent", s3_bucket_resource(None)),
+            (
+                "empty",
+                s3_bucket_resource(Some(Value::Concrete(ConcreteValue::Map(IndexMap::new())))),
+            ),
+        ];
+
+        for (label, resource) in resources {
+            let desired_state = provider
+                .create_desired_state(&resource, config)
+                .expect("absent or empty tags should be encodable");
+            assert!(
+                desired_state.get("Tags").is_none(),
+                "{label} tags must not emit a Tags property"
+            );
+        }
+    }
+
     fn ssm_parameter_resource(tags: Option<Value>) -> Resource {
         let resource = Resource::with_provider("awscc", "ssm.Parameter", "invalid_tags", None)
             .with_attribute("name", test_string("/carina/test/invalid-tags"))
@@ -2634,7 +2792,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn create_desired_state_omits_absent_or_empty_tags() {
+    async fn create_desired_state_omits_absent_or_empty_map_tags() {
         let provider =
             provider_with_partial_create_service(PartialCreateCloudControlService::new(true)).await;
         let config = get_schema_config("ssm.Parameter")
@@ -2648,7 +2806,9 @@ mod tests {
         ];
 
         for (label, resource) in resources {
-            let desired_state = provider.create_desired_state(&resource, config);
+            let desired_state = provider
+                .create_desired_state(&resource, config)
+                .expect("absent or empty tags should be encodable");
             assert!(
                 desired_state.get("Tags").is_none(),
                 "{label} tags must not emit a Tags property"
