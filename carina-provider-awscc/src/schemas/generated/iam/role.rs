@@ -4,7 +4,7 @@
 //!
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
-use crate::schemas::config::AwsccSchemaConfig;
+use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
 use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{
     AttributeSchema, AttributeType, ResourceSchema, StructField, legacy_validator,
@@ -47,7 +47,7 @@ pub fn iam_role_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::IAM::Role",
         resource_type_name: "iam.Role",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "RoleName", dsl_name: "role_name" }],
-        has_tags: true,
+        tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
         schema: ResourceSchema::new("iam.Role")
 	        .with_description("Creates a new role for your AWS-account.   For more information about roles, see [IAM roles](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html) in the *IAM User Guide*. For information about quotas for role names and the number of roles you can create, see [IAM and quotas](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_iam-quotas.html) in the *IAM User Guide*.")
         .attribute(

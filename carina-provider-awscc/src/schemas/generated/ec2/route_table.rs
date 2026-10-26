@@ -4,7 +4,7 @@
 //!
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
-use crate::schemas::config::AwsccSchemaConfig;
+use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
 use carina_core::schema::{AttributeSchema, ResourceSchema};
 
 /// Returns the schema config for ec2_route_table (AWS::EC2::RouteTable)
@@ -13,7 +13,7 @@ pub fn ec2_route_table_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::EC2::RouteTable",
         resource_type_name: "ec2.RouteTable",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "RouteTableId", dsl_name: "route_table_id" }],
-        has_tags: true,
+        tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
         schema: ResourceSchema::new("ec2.RouteTable")
 	        .with_description("Specifies a route table for the specified VPC. After you create a route table, you can add routes and associate the table with a subnet.  For more information, see [Route tables](https://docs.aws.amazon.com/vpc/latest/userguide/VPC_Route_Tables.html) in the *Amazon VPC User Guide*.")
         .attribute(

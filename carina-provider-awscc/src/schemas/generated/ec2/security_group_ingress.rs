@@ -42,7 +42,7 @@ pub fn ec2_security_group_ingress_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::EC2::SecurityGroupIngress",
         resource_type_name: "ec2.SecurityGroupIngress",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "Id", dsl_name: "id" }],
-        has_tags: false,
+        tags: None,
         schema: ResourceSchema::new("ec2.SecurityGroupIngress")
 	        .with_description("Resource Type definition for AWS::EC2::SecurityGroupIngress")
         .attribute(

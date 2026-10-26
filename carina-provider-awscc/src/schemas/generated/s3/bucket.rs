@@ -4,7 +4,7 @@
 //!
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
-use crate::schemas::config::AwsccSchemaConfig;
+use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
 use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{
     AttributeSchema, AttributeType, ResourceSchema, StructField, legacy_validator,
@@ -218,7 +218,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::S3::Bucket",
         resource_type_name: "s3.Bucket",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "BucketName", dsl_name: "bucket_name" }],
-        has_tags: true,
+        tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
         schema: ResourceSchema::new("s3.Bucket")
 	        .with_description("The ``AWS::S3::Bucket`` resource creates an Amazon S3 bucket in the same AWS Region where you create the AWS CloudFormation stack.  To control how AWS CloudFormation handles the bucket when the stack is deleted, you can set a deletion policy for your bucket. You can choose to *retain* the bucket or to *delete* the bucket. For more information, see [DeletionPolicy Attribute](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-attribute-deletionpolicy.html).   You can only delete empty buckets. Deletion fails for buckets that have contents.")
         .attribute(

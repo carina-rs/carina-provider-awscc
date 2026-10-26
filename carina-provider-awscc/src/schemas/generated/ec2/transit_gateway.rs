@@ -4,7 +4,7 @@
 //!
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
-use crate::schemas::config::AwsccSchemaConfig;
+use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
 use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{AttributeSchema, AttributeType, OperationConfig, ResourceSchema, types};
 
@@ -48,7 +48,10 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
             provider_name: "Id",
             dsl_name: "id",
         }],
-        has_tags: true,
+        tags: Some(TagsProperty {
+            provider_name: "Tags",
+            wire: TagsWire::KeyValueList,
+        }),
         schema: ResourceSchema::new("ec2.TransitGateway")
             .with_description("Resource Type definition for AWS::EC2::TransitGateway")
             .attribute(

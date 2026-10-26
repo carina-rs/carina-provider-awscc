@@ -4,7 +4,7 @@
 //!
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
-use crate::schemas::config::AwsccSchemaConfig;
+use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
 use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{
     AttributeSchema, AttributeType, ResourceSchema, StructField, legacy_validator,
@@ -45,7 +45,7 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::SSO::PermissionSet",
         resource_type_name: "sso.PermissionSet",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "InstanceArn", dsl_name: "instance_arn" }, crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "PermissionSetArn", dsl_name: "permission_set_arn" }],
-        has_tags: true,
+        tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
         schema: ResourceSchema::new("sso.PermissionSet")
 	        .with_description("Resource Type definition for SSO PermissionSet")
         .attribute(

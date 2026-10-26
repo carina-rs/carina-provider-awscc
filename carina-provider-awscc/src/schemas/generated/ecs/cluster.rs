@@ -4,7 +4,7 @@
 //!
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
-use crate::schemas::config::AwsccSchemaConfig;
+use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
 use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{
     AttributeSchema, AttributeType, ResourceSchema, StructField, legacy_validator,
@@ -38,7 +38,7 @@ pub fn ecs_cluster_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::ECS::Cluster",
         resource_type_name: "ecs.Cluster",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "ClusterName", dsl_name: "cluster_name" }],
-        has_tags: true,
+        tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
         schema: ResourceSchema::new("ecs.Cluster")
 	        .with_description("The ``AWS::ECS::Cluster`` resource creates an Amazon Elastic Container Service (Amazon ECS) cluster.")
         .attribute(

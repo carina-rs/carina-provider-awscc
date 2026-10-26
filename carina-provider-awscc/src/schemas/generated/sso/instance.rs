@@ -4,7 +4,7 @@
 //!
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
-use crate::schemas::config::AwsccSchemaConfig;
+use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
 use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema};
 use regex::Regex;
@@ -31,7 +31,7 @@ pub fn sso_instance_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::SSO::Instance",
         resource_type_name: "sso.Instance",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "InstanceArn", dsl_name: "instance_arn" }],
-        has_tags: true,
+        tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
         schema: ResourceSchema::new("sso.Instance")
 	        .with_description("Resource Type definition for Identity Center (SSO) Instance")
         .attribute(

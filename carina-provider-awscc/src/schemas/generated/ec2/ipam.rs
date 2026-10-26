@@ -4,7 +4,7 @@
 //!
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
-use crate::schemas::config::AwsccSchemaConfig;
+use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
 use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{
     AttributeSchema, AttributeType, OperationConfig, ResourceSchema, StructField, legacy_validator,
@@ -68,7 +68,7 @@ pub fn ec2_ipam_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::EC2::IPAM",
         resource_type_name: "ec2.Ipam",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "IpamId", dsl_name: "ipam_id" }],
-        has_tags: true,
+        tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
         schema: ResourceSchema::new("ec2.Ipam")
 	        .with_description("Resource Schema of AWS::EC2::IPAM Type")
         .attribute(

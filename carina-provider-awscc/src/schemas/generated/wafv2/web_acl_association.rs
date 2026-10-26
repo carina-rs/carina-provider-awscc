@@ -22,7 +22,7 @@ pub fn wafv2_web_acl_association_config() -> AwsccSchemaConfig {
                 dsl_name: "web_acl_arn",
             },
         ],
-        has_tags: false,
+        tags: None,
         schema: ResourceSchema::new("wafv2.WebAclAssociation")
             .with_description(
                 "Associates WebACL to Application Load Balancer, CloudFront or API Gateway.",

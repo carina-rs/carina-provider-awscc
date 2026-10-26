@@ -4,7 +4,7 @@
 //!
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
-use crate::schemas::config::AwsccSchemaConfig;
+use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
 use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{
     AttributeSchema, AttributeType, ResourceSchema, StructField, legacy_validator, types,
@@ -334,7 +334,7 @@ pub fn wafv2_web_acl_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::WAFv2::WebACL",
         resource_type_name: "wafv2.WebAcl",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "Name", dsl_name: "name" }, crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "Id", dsl_name: "id" }, crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "Scope", dsl_name: "scope" }],
-        has_tags: true,
+        tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
         schema: ResourceSchema::new("wafv2.WebAcl")
 	        .with_description("Contains the Rules that identify the requests that you want to allow, block, or count. In a WebACL, you also specify a default action (ALLOW or BLOCK), and the action for each Rule that you add to a WebACL, for example, block requests from specified IP addresses or block requests from specified referrers. You also associate the WebACL with a CloudFront distribution to identify the requests that you want AWS WAF to filter. If you add more than one Rule to a WebACL, a request needs to match only one of the specifications to be allowed, blocked, or counted.")
         .attribute(

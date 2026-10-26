@@ -4,7 +4,7 @@
 //!
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
-use crate::schemas::config::AwsccSchemaConfig;
+use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
 use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{
     AttributeSchema, AttributeType, ResourceSchema, StructField, legacy_validator,
@@ -104,7 +104,7 @@ pub fn cloudfront_distribution_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::CloudFront::Distribution",
         resource_type_name: "cloudfront.Distribution",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "Id", dsl_name: "id" }],
-        has_tags: true,
+        tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
         schema: ResourceSchema::new("cloudfront.Distribution")
 	        .with_description("A distribution tells CloudFront where you want content to be delivered from, and the details about how to track and manage content delivery.")
         .attribute(

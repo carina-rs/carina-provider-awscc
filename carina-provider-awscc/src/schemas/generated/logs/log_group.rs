@@ -4,7 +4,7 @@
 //!
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
-use crate::schemas::config::AwsccSchemaConfig;
+use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
 use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, legacy_validator};
 use regex::Regex;
@@ -54,7 +54,7 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::Logs::LogGroup",
         resource_type_name: "logs.LogGroup",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "LogGroupName", dsl_name: "log_group_name" }],
-        has_tags: true,
+        tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
         schema: ResourceSchema::new("logs.LogGroup")
 	        .with_description("The ``AWS::Logs::LogGroup`` resource specifies a log group. A log group defines common properties for log streams, such as their retention and access control rules. Each log stream must belong to one log group.  You can create up to 1,000,000 log groups per Region per account. You must use the following guidelines when naming a log group:   +  Log group names must be unique within a Region for an AWS account.   +  Log group names can be between 1 and 512 characters long.   +  Log group names consist of the following characters: a-z, A-Z, 0-9, '_' (underscore), '-' (hyphen), '/' (forward slash), and '.' (period).")
         .attribute(

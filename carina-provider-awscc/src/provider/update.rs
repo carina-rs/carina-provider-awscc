@@ -8,12 +8,10 @@
 //! sibling-resource state alone (the actual fix for
 //! `carina-rs/carina#2559`).
 
-use carina_core::provider::{PatchOp, PatchOpKind, ProviderError, ProviderResult, UpdatePatch};
-use carina_core::resource::{ConcreteValue, Value};
+use carina_core::provider::{PatchOpKind, ProviderError, ProviderResult, UpdatePatch};
 use serde_json::json;
 
 use super::conversion::dsl_value_to_aws_with_defs;
-use super::tags::tags_provider_name;
 use crate::schemas::config::AwsccSchemaConfig;
 
 /// Parse a JSON string from CloudControl API response into a `serde_json::Value`.
@@ -61,7 +59,7 @@ impl UpdatePatchPlan {
 
 /// Build a Cloud Control update plan from an [`UpdatePatch`].
 ///
-/// Each [`PatchOp`] in `patch.ops` corresponds to a key the user
+/// Each [`carina_core::provider::PatchOp`] in `patch.ops` corresponds to a key the user
 /// explicitly added, replaced, or removed in the desired state.
 /// Attributes the user has never specified do not appear in `patch.ops`
 /// and therefore generate no JSON Patch op — CloudControl leaves them
@@ -82,8 +80,8 @@ impl UpdatePatchPlan {
 /// filtered out remain in the plan's confirmation metadata so their desired values
 /// cannot later be fabricated into state.
 ///
-/// `tags` is special-cased to project the per-key DSL `Map<String,
-/// String>` into CloudControl's `[{"Key": ..., "Value": ...}]` shape.
+/// `tags` is converted from the per-key DSL `Map<String, String>` through
+/// the schema-declared CloudControl wire shape.
 pub(crate) fn build_update_patches(
     config: &AwsccSchemaConfig,
     resource_type: &str,
@@ -118,11 +116,22 @@ pub(crate) fn build_update_patches(
             continue;
         }
 
-        let provider_name = if op.key == "tags" {
-            tags_provider_name(config)
-        } else {
-            attr_schema.provider_name.as_deref()
-        };
+        if op.key == "tags" {
+            let Some(tags_property) = config.tags.as_ref() else {
+                if requires_confirmation {
+                    plan.mark_unsent(&op.key);
+                }
+                continue;
+            };
+            if let Some(patch_op) = tags_property.update_patch(op) {
+                plan.ops.push(patch_op);
+            } else if requires_confirmation {
+                plan.mark_unsent(&op.key);
+            }
+            continue;
+        }
+
+        let provider_name = attr_schema.provider_name.as_deref();
         let aws_name = match provider_name {
             Some(name) => name,
             None => {
@@ -132,13 +141,6 @@ pub(crate) fn build_update_patches(
                 continue;
             }
         };
-
-        if op.key == "tags" {
-            if !push_tags_op(&mut plan.ops, op, aws_name) && requires_confirmation {
-                plan.mark_unsent(&op.key);
-            }
-            continue;
-        }
 
         match (op.kind, &op.value) {
             (PatchOpKind::Add | PatchOpKind::Replace, Some(value)) => {
@@ -170,52 +172,10 @@ pub(crate) fn build_update_patches(
     plan
 }
 
-/// Project a `tags` patch op (DSL `Map<String, String>`) into the
-/// CloudControl `[{"Key": ..., "Value": ...}]` shape. Projection is
-/// all-or-nothing because the resulting array replaces the remote tag set.
-fn push_tags_op(patch_ops: &mut Vec<serde_json::Value>, op: &PatchOp, aws_name: &str) -> bool {
-    match (op.kind, &op.value) {
-        (
-            PatchOpKind::Add | PatchOpKind::Replace,
-            Some(Value::Concrete(ConcreteValue::Map(user_tags))),
-        ) => {
-            let Some(tags) = user_tags
-                .iter()
-                .map(|(key, value)| match value {
-                    Value::Concrete(ConcreteValue::String(v)) => {
-                        Some(json!({"Key": key, "Value": v.expose_plaintext()}))
-                    }
-                    _ => None,
-                })
-                .collect::<Option<Vec<_>>>()
-            else {
-                return false;
-            };
-            if tags.is_empty() {
-                // An empty map means clear all tags: treat it as remove so we
-                // don't push an empty Tags array (CloudControl rejects
-                // some resource types' empty Tags).
-                patch_ops.push(json!({"op": "remove", "path": format!("/{aws_name}")}));
-            } else {
-                patch_ops.push(json!({
-                    "op": "add",
-                    "path": format!("/{aws_name}"),
-                    "value": tags,
-                }));
-            }
-            true
-        }
-        (PatchOpKind::Add | PatchOpKind::Replace, Some(_)) => false,
-        (PatchOpKind::Remove, _) | (PatchOpKind::Add | PatchOpKind::Replace, None) => {
-            patch_ops.push(json!({"op": "remove", "path": format!("/{aws_name}")}));
-            true
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use carina_core::resource::{DeferredValue, UnknownReason};
+    use carina_core::provider::PatchOp;
+    use carina_core::resource::{ConcreteValue, DeferredValue, UnknownReason, Value};
     use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema};
     use indexmap::IndexMap;
 
@@ -435,7 +395,7 @@ mod tests {
             aws_type_name: "AWS::Test::Resource",
             resource_type_name: "test.Resource",
             primary_identifier: &[],
-            has_tags: false,
+            tags: None,
             schema: ResourceSchema::new("test.Resource").attribute(AttributeSchema::new(
                 "unmapped_attribute",
                 AttributeType::string(),
@@ -575,7 +535,10 @@ mod tests {
             aws_type_name: "AWS::Test::Resource",
             resource_type_name: "test.Resource",
             primary_identifier: &[],
-            has_tags: true,
+            tags: Some(crate::schemas::config::TagsProperty {
+                provider_name: "ResourceTags",
+                wire: crate::schemas::config::TagsWire::KeyValueList,
+            }),
             schema: ResourceSchema::new("test.Resource").attribute(
                 AttributeSchema::new("tags", carina_aws_types::tags_type())
                     .with_provider_name("ResourceTags"),
@@ -590,7 +553,10 @@ mod tests {
             ops: vec![replace("tags", Value::Concrete(ConcreteValue::Map(tags)))],
         };
 
-        assert_eq!(tags_provider_name(&config), Some("ResourceTags"));
+        assert_eq!(
+            config.tags.as_ref().map(|tags| tags.provider_name),
+            Some("ResourceTags")
+        );
         let plan = build_update_patches(&config, "test.Resource", &patch);
 
         assert_eq!(plan.ops.len(), 1);
