@@ -4,7 +4,7 @@
 //!
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
-use crate::schemas::config::AwsccSchemaConfig;
+use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField};
 
 const VALID_IP_ADDRESS_TYPE: &[&str] = &["ipv4", "ipv6"];
@@ -21,7 +21,7 @@ pub fn elasticloadbalancingv2_target_group_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::ElasticLoadBalancingV2::TargetGroup",
         resource_type_name: "elasticloadbalancingv2.TargetGroup",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "TargetGroupArn", dsl_name: "target_group_arn" }],
-        has_tags: true,
+        tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
         schema: ResourceSchema::new("elasticloadbalancingv2.TargetGroup")
 	        .with_description("Resource Type definition for AWS::ElasticLoadBalancingV2::TargetGroup")
         .attribute(

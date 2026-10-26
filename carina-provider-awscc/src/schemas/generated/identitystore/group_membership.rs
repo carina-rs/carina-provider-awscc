@@ -15,7 +15,7 @@ pub fn identitystore_group_membership_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::IdentityStore::GroupMembership",
         resource_type_name: "identitystore.GroupMembership",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "MembershipId", dsl_name: "membership_id" }, crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "IdentityStoreId", dsl_name: "identity_store_id" }],
-        has_tags: false,
+        tags: None,
         schema: ResourceSchema::new("identitystore.GroupMembership")
 	        .with_description("Resource Type Definition for AWS:IdentityStore::GroupMembership")
         .attribute(

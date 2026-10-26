@@ -24,10 +24,26 @@ pub struct AwsccSchemaConfig {
     pub resource_type_name: &'static str,
     /// CloudFormation primaryIdentifier fields and their generated DSL attributes.
     pub primary_identifier: &'static [PrimaryIdentifierAttribute],
-    /// Whether this resource type uses tags
-    pub has_tags: bool,
+    /// CloudControl tag property metadata, when the resource exposes tags.
+    pub tags: Option<TagsProperty>,
     /// The resource schema with attribute definitions
     pub schema: ResourceSchema,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TagsProperty {
+    pub provider_name: &'static str,
+    pub wire: TagsWire,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TagsWire {
+    KeyValueList,
+    /// Some CloudFormation types (for example `AWS::SSM::Parameter`) declare
+    /// Tags as a JSON object map; CloudControl uses that shape on the wire for
+    /// create, read, update, and remove (`AWS::SSM::Parameter` measured in
+    /// us-east-1 on 2026-10-26).
+    Map,
 }
 
 #[derive(Debug, Clone, Copy)]

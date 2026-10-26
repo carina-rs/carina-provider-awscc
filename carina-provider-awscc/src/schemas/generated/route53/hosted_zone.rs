@@ -44,7 +44,7 @@ pub fn route53_hosted_zone_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::Route53::HostedZone",
         resource_type_name: "route53.HostedZone",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "Id", dsl_name: "id" }],
-        has_tags: true,
+        tags: None,
         schema: ResourceSchema::new("route53.HostedZone")
 	        .with_description("Creates a new public or private hosted zone. You create records in a public hosted zone to define how you want to route traffic on the internet for a domain, such as example.com, and its subdomains (apex.example.com, acme.example.com). You create records in a private hosted zone to define how you want to route traffic for a domain and its subdomains within one or more Amazon Virtual Private Clouds (Amazon VPCs).    You can't convert a public hosted zone to a private hosted zone or vice versa. Instead, you must create a new hosted zone with the same name and create new resource record sets.   For more information about charges for hosted zones, see [Amazon Route 53 Pricing](https://docs.aws.amazon.com/route53/pricing/).  Note the following:   +  You can't create a hosted zone for a top-level domain (TLD) such as .com.   +  If your domain is registered with a registrar other than Route 53, you must update the name servers with your registrar to make Route 53 the DNS service for the domain. For more information, see [Migrating DNS Service for an Existing Domain to Amazon Route 53](https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/MigratingDNS.html) in the *Amazon Route 53 Developer Guide*.      When you submit a ``CreateHostedZone`` request, the initial status of the hosted zone is ``PENDING``. For public hosted zones, this means that the NS and SOA records are not yet available on all Route 53 DNS servers. When the NS and SOA records are available, the status of the zone changes to ``INSYNC``.  The ``CreateHostedZone`` request requires the caller to have an ``ec2:DescribeVpcs`` permission.   When creating private hosted zones, the Amazon VPC must belong to the same partition where the hosted zone is created. A partition is a group of AWS-Regions. Each AWS-account is scoped to one partition.  The following are the supported partitions:   +  ``aws`` - AWS-Regions   +  ``aws-cn`` - China Regions   +  ``aws-us-gov`` - govcloud-us-region     For more information, see [Access Management](https://docs.aws.amazon.com/general/latest/gr/aws-arns-and-namespaces.html) in the *General Reference*.")
         .attribute(
@@ -95,13 +95,6 @@ pub fn route53_hosted_zone_config() -> AwsccSchemaConfig {
                 .with_block_name("vp_c"),
         )
         .with_coexisting_replacement()
-        .with_validator(|attrs| {
-            let mut errors = Vec::new();
-            if let Err(mut e) = carina_aws_types::validate_tags_map(attrs) {
-                errors.append(&mut e);
-            }
-            if errors.is_empty() { Ok(()) } else { Err(errors) }
-        })
         .with_def("HostedZoneConfig", AttributeType::struct_("HostedZoneConfig".to_string(), vec![StructField::new("comment", AttributeType::refined_string(None, None, Some((None, Some(256))), None)).with_description("Any comments that you want to include about the hosted zone.").with_provider_name("Comment")]))
         .with_def("HostedZoneFeatures", AttributeType::struct_("HostedZoneFeatures".to_string(), vec![StructField::new("enable_accelerated_recovery", AttributeType::bool()).with_description("").with_provider_name("EnableAcceleratedRecovery")]))
         .with_def("QueryLoggingConfig", AttributeType::struct_("QueryLoggingConfig".to_string(), vec![StructField::new("cloud_watch_logs_log_group_arn", carina_aws_types::arn()).required().with_description("The Amazon Resource Name (ARN) of the CloudWatch Logs log group that Amazon Route 53 is publishing logs to.").with_provider_name("CloudWatchLogsLogGroupArn")]))

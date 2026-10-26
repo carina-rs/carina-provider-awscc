@@ -4,7 +4,7 @@
 //!
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
-use crate::schemas::config::AwsccSchemaConfig;
+use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
 use carina_core::schema::{AttributeSchema, ResourceSchema};
 
 /// Returns the schema config for ec2_egress_only_internet_gateway (AWS::EC2::EgressOnlyInternetGateway)
@@ -16,7 +16,10 @@ pub fn ec2_egress_only_internet_gateway_config() -> AwsccSchemaConfig {
             provider_name: "Id",
             dsl_name: "id",
         }],
-        has_tags: true,
+        tags: Some(TagsProperty {
+            provider_name: "Tags",
+            wire: TagsWire::KeyValueList,
+        }),
         schema: ResourceSchema::new("ec2.EgressOnlyInternetGateway")
             .with_description("Resource Type definition for AWS::EC2::EgressOnlyInternetGateway")
             .attribute(

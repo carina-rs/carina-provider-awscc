@@ -40,11 +40,39 @@ mod tests {
     }
 
     #[test]
-    fn test_schema_config_has_tags() {
-        assert!(get_config("ec2.Vpc").unwrap().has_tags);
-        assert!(get_config("ec2.Subnet").unwrap().has_tags);
-        assert!(!get_config("ec2.Route").unwrap().has_tags);
-        assert!(!get_config("ec2.VpcGatewayAttachment").unwrap().has_tags);
+    fn test_schema_config_tags_metadata() {
+        assert!(get_config("ec2.Vpc").unwrap().tags.is_some());
+        assert!(get_config("ec2.Subnet").unwrap().tags.is_some());
+        assert!(get_config("ec2.Route").unwrap().tags.is_none());
+        assert!(get_config("route53.HostedZone").unwrap().tags.is_none());
+        assert!(
+            get_config("ec2.VpcGatewayAttachment")
+                .unwrap()
+                .tags
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn generated_tags_metadata_matches_dsl_tags_attribute() {
+        for config in configs() {
+            let tags_attribute = config.schema.attributes.get("tags");
+            assert_eq!(
+                config.tags.is_some(),
+                tags_attribute.is_some(),
+                "{} tags metadata and DSL attribute disagree",
+                config.resource_type_name
+            );
+
+            if let Some(tags) = config.tags.as_ref() {
+                assert_eq!(
+                    tags_attribute.and_then(|attribute| attribute.provider_name.as_deref()),
+                    Some(tags.provider_name),
+                    "{} tags provider name disagrees with its DSL attribute",
+                    config.resource_type_name
+                );
+            }
+        }
     }
 
     #[test]
@@ -217,7 +245,7 @@ mod tests {
     fn test_iam_oidc_provider_config() {
         let config = get_config("iam.OidcProvider").expect("iam.oidc_provider config should exist");
         assert_eq!(config.aws_type_name, "AWS::IAM::OIDCProvider");
-        assert!(config.has_tags, "OIDCProvider should support tags");
+        assert!(config.tags.is_some(), "OIDCProvider should support tags");
     }
 
     /// VPCGatewayAttachment requires exactly one of internet_gateway_id or vpn_gateway_id.

@@ -42,7 +42,7 @@ pub fn sso_assignment_config() -> AwsccSchemaConfig {
                 dsl_name: "principal_id",
             },
         ],
-        has_tags: false,
+        tags: None,
         schema: ResourceSchema::new("sso.Assignment")
             .with_description("Resource Type definition for SSO assignmet")
             .attribute(

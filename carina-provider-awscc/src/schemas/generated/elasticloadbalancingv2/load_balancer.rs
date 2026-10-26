@@ -4,7 +4,7 @@
 //!
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
-use crate::schemas::config::AwsccSchemaConfig;
+use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
 use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField};
 
@@ -24,7 +24,7 @@ pub fn elasticloadbalancingv2_load_balancer_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::ElasticLoadBalancingV2::LoadBalancer",
         resource_type_name: "elasticloadbalancingv2.LoadBalancer",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "LoadBalancerArn", dsl_name: "load_balancer_arn" }],
-        has_tags: true,
+        tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
         schema: ResourceSchema::new("elasticloadbalancingv2.LoadBalancer")
 	        .with_description("Specifies an Application Load Balancer, a Network Load Balancer, or a Gateway Load Balancer.")
         .attribute(

@@ -722,6 +722,43 @@ fn emit_permissions_slice(permissions: &[String]) -> String {
 struct CfnTagging {
     #[serde(default)]
     taggable: bool,
+    tag_property: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GeneratedTagsWire {
+    KeyValueList,
+    Map,
+}
+
+impl GeneratedTagsWire {
+    fn rust_variant(self) -> &'static str {
+        match self {
+            Self::KeyValueList => "TagsWire::KeyValueList",
+            Self::Map => "TagsWire::Map",
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct GeneratedTagsProperty {
+    provider_name: String,
+    wire: GeneratedTagsWire,
+}
+
+/// Whether this CloudFormation property is generated as the canonical DSL
+/// `tags: Map<String, String>` attribute.
+fn is_dsl_tags_property(schema: &CfnSchema, provider_name: &str) -> bool {
+    let Some(tagging) = schema.tagging.as_ref().filter(|tagging| tagging.taggable) else {
+        return false;
+    };
+    let tag_property = tagging
+        .tag_property
+        .as_deref()
+        .unwrap_or("/properties/Tags");
+
+    tag_property.strip_prefix("/properties/") == Some(provider_name)
+        && provider_name.to_snake_case() == "tags"
 }
 
 /// Type can be a string or an array of strings in JSON Schema
@@ -774,6 +811,9 @@ struct CfnProperty {
     insertion_order: Option<bool>,
     /// Inline object properties (for nested objects)
     properties: Option<BTreeMap<String, CfnProperty>>,
+    /// JSON object-map value schemas keyed by key-pattern.
+    #[serde(default)]
+    pattern_properties: Option<BTreeMap<String, CfnProperty>>,
     /// Required fields for inline objects
     #[serde(default)]
     required: Vec<String>,
@@ -816,6 +856,96 @@ struct CfnProperty {
     #[serde(default)]
     #[serde(rename = "anyOf")]
     any_of: Vec<CfnProperty>,
+}
+
+fn derive_tags_property(schema: &CfnSchema) -> Result<Option<GeneratedTagsProperty>> {
+    let Some(tagging) = schema.tagging.as_ref().filter(|tagging| tagging.taggable) else {
+        return Ok(None);
+    };
+    let tag_property = tagging
+        .tag_property
+        .as_deref()
+        .unwrap_or("/properties/Tags");
+    let Some(provider_name) = tag_property.strip_prefix("/properties/") else {
+        anyhow::bail!(
+            "{} has invalid tagging.tagProperty {tag_property:?}; expected /properties/<name>",
+            schema.type_name
+        );
+    };
+    if provider_name.is_empty() || provider_name.contains('/') {
+        anyhow::bail!(
+            "{} has invalid tagging.tagProperty {tag_property:?}; expected one top-level property",
+            schema.type_name
+        );
+    }
+    let property = schema.properties.get(provider_name).ok_or_else(|| {
+        anyhow::anyhow!(
+            "{} is taggable but tag property {provider_name:?} does not exist",
+            schema.type_name
+        )
+    })?;
+
+    if !is_dsl_tags_property(schema, provider_name) {
+        return Ok(None);
+    }
+
+    let wire = if is_key_value_tag_array(property, schema) {
+        GeneratedTagsWire::KeyValueList
+    } else if is_string_tag_map(property, schema) {
+        GeneratedTagsWire::Map
+    } else {
+        anyhow::bail!(
+            "{} tag property {provider_name:?} must be an array of Key/Value strings or an object map with string values",
+            schema.type_name
+        );
+    };
+
+    Ok(Some(GeneratedTagsProperty {
+        provider_name: provider_name.to_string(),
+        wire,
+    }))
+}
+
+fn is_key_value_tag_array(property: &CfnProperty, schema: &CfnSchema) -> bool {
+    if property.prop_type.as_ref().and_then(TypeValue::as_str) != Some("array") {
+        return false;
+    }
+    let Some(items) = property.items.as_deref() else {
+        return false;
+    };
+    let properties = items.properties.as_ref().or_else(|| {
+        items
+            .ref_path
+            .as_deref()
+            .and_then(|path| path.strip_prefix("#/definitions/"))
+            .and_then(|name| schema.definitions.as_ref()?.get(name))
+            .and_then(|definition| definition.properties.as_ref())
+    });
+    let Some(properties) = properties else {
+        return false;
+    };
+    ["Key", "Value"].into_iter().all(|name| {
+        properties
+            .get(name)
+            .is_some_and(|property| is_string_property(schema, property))
+    })
+}
+
+fn is_string_tag_map(property: &CfnProperty, schema: &CfnSchema) -> bool {
+    if property.prop_type.as_ref().and_then(TypeValue::as_str) != Some("object")
+        || property.additional_properties != Some(false)
+    {
+        return false;
+    }
+    property
+        .pattern_properties
+        .as_ref()
+        .is_some_and(|patterns| {
+            !patterns.is_empty()
+                && patterns
+                    .values()
+                    .all(|value| is_string_property(schema, value))
+        })
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -2635,8 +2765,20 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
         needs_attribute_type = true;
     }
 
-    // Determine has_tags from tagging metadata
-    let has_tags = schema.tagging.as_ref().map(|t| t.taggable).unwrap_or(false);
+    // Derive both the tag property name and CloudControl wire representation
+    // from the schema. Unsupported shapes are codegen errors rather than an
+    // implicit Key/Value-list default.
+    let tags = derive_tags_property(schema)?;
+    let tags_expr = tags.as_ref().map_or_else(
+        || "None".to_string(),
+        |tags| {
+            format!(
+                "Some(TagsProperty {{ provider_name: {}, wire: {} }})",
+                rust_lit(&tags.provider_name),
+                tags.wire.rust_variant()
+            )
+        },
+    );
 
     // Detect mutually exclusive field groups from schema structure and descriptions
     let exclusive_groups = detect_exclusive_fields(schema, type_name);
@@ -2929,7 +3071,7 @@ pub fn {}() -> AwsccSchemaConfig {{
         aws_type_name: "{}",
         resource_type_name: "{}",
         primary_identifier: {},
-        has_tags: {},
+        tags: {},
         schema: ResourceSchema::new("{}")
 	"#,
         full_resource,
@@ -2938,7 +3080,7 @@ pub fn {}() -> AwsccSchemaConfig {{
         type_name,
         dsl_resource,
         primary_identifier,
-        has_tags,
+        tags_expr,
         schema_name
     ));
 
@@ -3167,7 +3309,7 @@ pub fn {}() -> AwsccSchemaConfig {{
     // Tags map-shape check is still emitted as a closure. It's a local
     // safety net; the host side re-attaches the equivalent check via
     // `ValidatorType::TagsKeyValueCheck` (see `main.rs::schemas`).
-    if has_tags {
+    if tags.is_some() {
         body.push_str("        .with_validator(|attrs| {\n");
         body.push_str("            let mut errors = Vec::new();\n");
         body.push_str("            if let Err(mut e) = carina_aws_types::validate_tags_map(attrs) {\n                errors.append(&mut e);\n            }\n");
@@ -3457,6 +3599,11 @@ fn {fn_name}(value: &Value) -> Result<(), String> {{
         schema_imports.push("OperationConfig");
     }
     let schema_imports_str = schema_imports.join(", ");
+    let config_import = if body.contains("TagsProperty") {
+        "use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};"
+    } else {
+        "use crate::schemas::config::AwsccSchemaConfig;"
+    };
     code.push_str(&format!(
         r#"//! {} schema definition for AWS Cloud Control
 //!
@@ -3465,9 +3612,9 @@ fn {fn_name}(value: &Value) -> Result<(), String> {{
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
 use carina_core::schema::{{{}}};
-use crate::schemas::config::AwsccSchemaConfig;
+{}
 "#,
-        resource, type_name, schema_imports_str
+        resource, type_name, schema_imports_str, config_import
     ));
     let has_defaults = body.contains(".with_default(");
     if has_ranged_ints
@@ -5712,8 +5859,9 @@ fn cfn_type_to_carina_type_with_enum_with_struct_path(
     enums: &BTreeMap<String, EnumInfo>,
     struct_path: &[String],
 ) -> (String, Option<EnumInfo>) {
-    // Tags property is special - it's a Map in Carina (Terraform-style)
-    if prop_name == "Tags" {
+    // The declared tag property is special when its generated DSL name is
+    // `tags`: it is a Map in Carina (Terraform-style).
+    if is_dsl_tags_property(schema, prop_name) {
         return ("carina_aws_types::tags_type()".to_string(), None);
     }
 
@@ -14191,6 +14339,106 @@ mod tests {
         }"#;
         let prop: CfnProperty = serde_json::from_str(json).unwrap();
         assert_eq!(prop.format, Some("int64".to_string()));
+    }
+
+    fn tag_schema(tags_property: &str) -> CfnSchema {
+        serde_json::from_str(&format!(
+            r#"{{
+                "typeName": "AWS::Test::Resource",
+                "properties": {{"Tags": {tags_property}}},
+                "tagging": {{
+                    "taggable": true,
+                    "tagProperty": "/properties/Tags"
+                }}
+            }}"#
+        ))
+        .unwrap()
+    }
+
+    #[test]
+    fn taggable_object_map_uses_map_wire_shape() {
+        let schema = tag_schema(
+            r#"{
+                "type": "object",
+                "patternProperties": {".*": {"type": "string"}},
+                "additionalProperties": false
+            }"#,
+        );
+
+        let tags = derive_tags_property(&schema).unwrap().unwrap();
+
+        assert_eq!(tags.provider_name, "Tags");
+        assert_eq!(tags.wire, GeneratedTagsWire::Map);
+        let (attribute_type, enum_info) = cfn_type_to_carina_type_with_enum(
+            schema.properties.get("Tags").unwrap(),
+            "Tags",
+            &schema,
+            "aws.test.Resource",
+            &BTreeMap::new(),
+        );
+        assert_eq!(attribute_type, "carina_aws_types::tags_type()");
+        assert!(enum_info.is_none());
+    }
+
+    #[test]
+    fn taggable_key_value_array_uses_key_value_list_wire_shape() {
+        let schema = tag_schema(
+            r#"{
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "Key": {"type": "string"},
+                        "Value": {"type": "string"}
+                    },
+                    "required": ["Key", "Value"]
+                }
+            }"#,
+        );
+
+        let tags = derive_tags_property(&schema).unwrap().unwrap();
+
+        assert_eq!(tags.provider_name, "Tags");
+        assert_eq!(tags.wire, GeneratedTagsWire::KeyValueList);
+    }
+
+    #[test]
+    fn taggable_unknown_tag_property_shape_is_an_error() {
+        let schema = tag_schema(r#"{"type": "string"}"#);
+
+        let error = derive_tags_property(&schema)
+            .expect_err("unsupported tag property shape must fail codegen");
+
+        assert!(error.to_string().contains("AWS::Test::Resource"));
+        assert!(error.to_string().contains("Tags"));
+    }
+
+    #[test]
+    fn taggable_non_dsl_tag_property_has_no_tags_metadata() {
+        let schema: CfnSchema = serde_json::from_str(
+            r#"{
+                "typeName": "AWS::Route53::HostedZone",
+                "properties": {
+                    "HostedZoneTags": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "Key": {"type": "string"},
+                                "Value": {"type": "string"}
+                            }
+                        }
+                    }
+                },
+                "tagging": {
+                    "taggable": true,
+                    "tagProperty": "/properties/HostedZoneTags"
+                }
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(derive_tags_property(&schema).unwrap(), None);
     }
 
     // --- Exclusive field detection tests ---

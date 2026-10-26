@@ -4,7 +4,7 @@
 //!
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
-use crate::schemas::config::AwsccSchemaConfig;
+use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
 use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{
     AttributeSchema, AttributeType, ResourceSchema, legacy_validator, types,
@@ -51,7 +51,7 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::Organizations::Account",
         resource_type_name: "organizations.Account",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "AccountId", dsl_name: "account_id" }],
-        has_tags: true,
+        tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
         schema: ResourceSchema::new("organizations.Account")
 	        .with_description("You can use AWS::Organizations::Account to manage accounts in organization.")
         .attribute(

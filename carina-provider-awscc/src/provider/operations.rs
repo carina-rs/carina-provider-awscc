@@ -23,10 +23,9 @@ use carina_provider_protocol::{
     DEFAULT_OPERATION_BUDGET, DriveError, DriveOutcome, OperationKind, OperationStep, drive_pending,
 };
 use indexmap::IndexMap;
-use serde_json::json;
 
 use super::conversion::{aws_value_to_dsl_with_defs, dsl_value_to_aws_with_defs};
-use super::tags::tags_provider_name;
+use super::tags::wire_tags_are_empty;
 use super::update::{UpdatePatchPlan, build_update_patches};
 use super::{
     AwsccProvider, CcCreateToken, CcDeleteToken, CcRequestPhase, CcUpdateToken, get_schema_config,
@@ -601,13 +600,9 @@ impl AwsccProvider {
         // Match the #2544 optional-collection canonicalization contract: absent or
         // empty tags read as `tags = {}` so state never oscillates between absent
         // and an explicitly empty map. The schema declaration is authoritative here:
-        // `has_tags` can describe a differently named attribute such as HostedZoneTags.
-        if let Some(tags_aws_name) = tags_provider_name(config) {
-            let tags_map = props
-                .get(tags_aws_name)
-                .and_then(|value| value.as_array())
-                .map(|tags| self.parse_tags(tags))
-                .unwrap_or_default();
+        // Tag metadata carries both the provider property name and its wire shape.
+        if let Some(tags) = config.tags.as_ref() {
+            let tags_map = tags.decode_wire_tags(props.get(tags.provider_name));
             attributes.insert(
                 "tags".to_string(),
                 Value::Concrete(ConcreteValue::Map(tags_map)),
@@ -671,11 +666,12 @@ impl AwsccProvider {
             }
         }
         self.create_special_attributes(resource, &mut desired_state);
-        if let Some(tags_aws_name) = tags_provider_name(config) {
-            let tags = self.build_tags(resource.get_attr("tags"));
-            if !tags.is_empty() {
-                desired_state.insert(tags_aws_name.to_string(), json!(tags));
-            }
+        if let Some(tags_property) = config.tags.as_ref()
+            && let Some(value) = resource.get_attr("tags")
+            && let Some(tags) = tags_property.encode_dsl_tags(value)
+            && !wire_tags_are_empty(&tags)
+        {
+            desired_state.insert(tags_property.provider_name.to_string(), tags);
         }
         self.set_default_values(&resource.id.resource_type, &mut desired_state);
         serde_json::Value::Object(desired_state)
@@ -3570,7 +3566,7 @@ mod tests {
     async fn read_resource_does_not_fabricate_tags_for_schema_without_tags_attribute() {
         let config = get_schema_config("route53.HostedZone")
             .expect("route53.HostedZone schema should exist");
-        assert!(config.has_tags);
+        assert!(config.tags.is_none());
         assert!(!config.schema.attributes.contains_key("tags"));
 
         for (read_properties, label) in [

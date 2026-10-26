@@ -489,7 +489,7 @@ impl CarinaProvider for AwsccProcessProvider {
             .iter()
             .map(|config| {
                 let mut schema = convert::core_to_proto_schema(&config.schema);
-                if config.has_tags {
+                if config.tags.is_some() {
                     schema
                         .validators
                         .push(proto::ValidatorType::TagsKeyValueCheck);
@@ -1159,7 +1159,7 @@ mod tests {
         let provider = AwsccProcessProvider::new();
         let schemas = provider.schemas();
         let configs = schemas::generated::configs();
-        if let Some(untagged) = configs.iter().find(|c| !c.has_tags) {
+        if let Some(untagged) = configs.iter().find(|c| c.tags.is_none()) {
             let schema = schemas
                 .iter()
                 .find(|s| s.resource_type == untagged.resource_type_name)

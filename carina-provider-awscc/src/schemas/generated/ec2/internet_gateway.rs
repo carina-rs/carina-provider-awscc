@@ -4,7 +4,7 @@
 //!
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
-use crate::schemas::config::AwsccSchemaConfig;
+use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
 use carina_core::schema::{AttributeSchema, ResourceSchema};
 
 /// Returns the schema config for ec2_internet_gateway (AWS::EC2::InternetGateway)
@@ -13,7 +13,7 @@ pub fn ec2_internet_gateway_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::EC2::InternetGateway",
         resource_type_name: "ec2.InternetGateway",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "InternetGatewayId", dsl_name: "internet_gateway_id" }],
-        has_tags: true,
+        tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
         schema: ResourceSchema::new("ec2.InternetGateway")
 	        .with_description("Allocates an internet gateway for use with a VPC. After creating the Internet gateway, you then attach it to a VPC.")
         .attribute(
