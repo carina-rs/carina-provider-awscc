@@ -179,12 +179,21 @@ pub(crate) fn build_update_patches(
 
 #[cfg(test)]
 mod tests {
-    use carina_core::provider::PatchOp;
-    use carina_core::resource::{ConcreteValue, DeferredValue, UnknownReason, Value};
-    use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema};
+    use std::collections::HashMap;
+
+    use carina_core::binding_index::ResolvedBindings;
+    use carina_core::executor::{
+        ModuleConstraintGate, ProviderPreparationContext, prepare_provider_ready_resource,
+    };
+    use carina_core::provider::{PatchOp, build_update_patch as build_core_update_patch};
+    use carina_core::resource::{
+        ConcreteValue, DeferredValue, Resource, State, UnknownReason, Value,
+    };
+    use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, SchemaRegistry};
     use indexmap::IndexMap;
 
     use super::*;
+    use crate::AwsccNormalizer;
 
     fn get_schema_config(resource_type: &str) -> Option<&'static AwsccSchemaConfig> {
         super::super::get_schema_config(resource_type)
@@ -388,19 +397,69 @@ mod tests {
         assert_eq!(plan.touched, ["tier"]);
     }
 
-    #[test]
-    fn cloudfront_function_code_update_reasserts_auto_publish_without_confirmation() {
+    #[tokio::test]
+    async fn cloudfront_function_code_update_reasserts_auto_publish_without_confirmation() {
         let config = get_schema_config("cloudfront.Function")
             .expect("cloudfront.Function schema should exist");
-        let patch = UpdatePatch {
-            ops: vec![
-                replace(
+        let desired =
+            Resource::with_provider("awscc", "cloudfront.Function", "publish_update", None)
+                .with_attribute("name", string("carina-acc-test-fn-publish"))
+                .with_attribute(
                     "function_code",
                     string("function handler(event) { return event.request; }"),
-                ),
-                reassert("auto_publish", bool_(true)),
-            ],
-        };
+                )
+                .with_attribute(
+                    "function_config",
+                    map([
+                        ("comment", string("Publish update test")),
+                        (
+                            "runtime",
+                            Value::Concrete(ConcreteValue::enum_identifier("cloudfront_js_2_0")),
+                        ),
+                    ]),
+                )
+                .with_attribute("auto_publish", bool_(true));
+        let from = State::existing(
+            desired.id.clone(),
+            HashMap::from([(
+                "function_code".to_string(),
+                string("function handler(event) { return event.request.uri; }"),
+            )]),
+        );
+
+        let bindings = ResolvedBindings::default();
+        let module_gate = ModuleConstraintGate::new(&[]);
+        let mut schemas = SchemaRegistry::new();
+        for schema in crate::schemas::all_schemas() {
+            schemas.insert("awscc", schema);
+        }
+        let preparation = ProviderPreparationContext::new(
+            &bindings,
+            &module_gate,
+            &[],
+            &AwsccNormalizer,
+            &[],
+            &schemas,
+        );
+        let desired = prepare_provider_ready_resource(desired, &preparation)
+            .await
+            .expect("CloudFront Function should pass provider preparation");
+        let patch = build_core_update_patch(
+            &["function_code".to_string()],
+            &desired,
+            &from,
+            &config.schema,
+        );
+
+        assert!(matches!(
+            patch.ops.as_slice(),
+            [
+                PatchOp::Replace { key: function_code, .. },
+                PatchOp::Reassert { key: auto_publish, value }
+            ] if function_code == "function_code"
+                && auto_publish == "auto_publish"
+                && value == &bool_(true)
+        ));
 
         let plan = build_update_patches(config, "cloudfront.Function", &patch);
 

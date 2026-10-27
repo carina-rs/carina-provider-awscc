@@ -112,13 +112,6 @@ The function code. For more information about writing a CloudFront function, see
 
 Contains configuration information about a CloudFront function.
 
-### `function_metadata`
-
-- **Type:** [Struct(FunctionMetadata)](#functionmetadata)
-- **Required:** No
-
-Contains metadata about a CloudFront function.
-
 ### `name`
 
 - **Type:** String
@@ -159,7 +152,7 @@ Shorthand formats: `cloudfront_js_1_0` or `Runtime.cloudfront_js_1_0`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `function_arn` | Arn | No | The Amazon Resource Name (ARN) of the function. The ARN uniquely identifies the function. |
+| `function_arn` | Arn | No | The Amazon Resource Name (ARN) of the function. The ARN uniquely identifies the function. Provider-populated; cannot be set. |
 
 ### KeyValueStoreAssociation
 
@@ -174,6 +167,12 @@ Shorthand formats: `cloudfront_js_1_0` or `Runtime.cloudfront_js_1_0`
 - **Type:** Arn
 
 
+
+### `function_metadata`
+
+- **Type:** [Struct(FunctionMetadata)](#functionmetadata)
+
+Contains metadata about a CloudFront function.
 
 ### `stage`
 

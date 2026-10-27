@@ -63,6 +63,7 @@ parse_cloudfront_stub_flags() {
     CLOUDFRONT_STUB_NAME=""
     CLOUDFRONT_STUB_OUTPUT=""
     CLOUDFRONT_STUB_QUERY=""
+    CLOUDFRONT_STUB_STAGE=""
     CLOUDFRONT_STUB_TYPE=""
 
     local flag
@@ -94,6 +95,7 @@ parse_cloudfront_stub_flags() {
             --name) output_variable="CLOUDFRONT_STUB_NAME" ;;
             --output) output_variable="CLOUDFRONT_STUB_OUTPUT" ;;
             --query) output_variable="CLOUDFRONT_STUB_QUERY" ;;
+            --stage) output_variable="CLOUDFRONT_STUB_STAGE" ;;
             --type) output_variable="CLOUDFRONT_STUB_TYPE" ;;
         esac
         current_value="${!output_variable}"
@@ -628,8 +630,7 @@ with_account_creds() {
                 local referenced_oac_query_pattern='^DistributionList\.Items\[\]\.Origins\.Items\[\?(.+)\]\.OriginAccessControlId$'
                 local referenced_default_rhp_query_pattern='^DistributionList\.Items\[\]\.DefaultCacheBehavior\.ResponseHeadersPolicyId$'
                 local referenced_ordered_rhp_query_pattern='^DistributionList\.Items\[\]\.CacheBehaviors\.Items\[\]\.ResponseHeadersPolicyId$'
-                local referenced_default_function_query_pattern='^DistributionList\.Items\[\]\.DefaultCacheBehavior\.FunctionAssociations\.Items\[\]\.FunctionARN$'
-                local referenced_ordered_function_query_pattern='^DistributionList\.Items\[\]\.CacheBehaviors\.Items\[\]\.FunctionAssociations\.Items\[\]\.FunctionARN$'
+                local referenced_function_query='DistributionList.Items[].[DefaultCacheBehavior.FunctionAssociations.Items[].FunctionARN, CacheBehaviors.Items[].FunctionAssociations.Items[].FunctionARN][][]'
                 if [[ "$distribution_query" =~ $referenced_oac_query_pattern ]]; then
                     local referenced_oac_filter="${BASH_REMATCH[1]}"
                     local non_empty_oac_condition_pattern="^OriginAccessControlId[[:space:]]*!=[[:space:]]*''$"
@@ -671,21 +672,14 @@ with_account_creds() {
                             | select(. != "")
                         ]
                         | @tsv' <<< "$CLOUDFRONT_FIXTURE"
-                elif [[ "$distribution_query" =~ $referenced_default_function_query_pattern ]]; then
+                elif [ "$distribution_query" = "$referenced_function_query" ]; then
                     jq -r \
                         '[
                             .Distributions[]
-                            | .DefaultCacheBehavior.FunctionAssociations.Items[]?
-                            | .FunctionARN
-                        ]
-                        | @tsv' <<< "$CLOUDFRONT_FIXTURE"
-                elif [[ "$distribution_query" =~ $referenced_ordered_function_query_pattern ]]; then
-                    jq -r \
-                        '[
-                            .Distributions[]
-                            | .CacheBehaviors.Items[]?
-                            | .FunctionAssociations.Items[]?
-                            | .FunctionARN
+                            | (
+                                .DefaultCacheBehavior.FunctionAssociations.Items[]?.FunctionARN,
+                                .CacheBehaviors.Items[]?.FunctionAssociations.Items[]?.FunctionARN
+                              )
                         ]
                         | @tsv' <<< "$CLOUDFRONT_FIXTURE"
                 elif [[ "$distribution_query" =~ $distribution_state_query_pattern ]]; then
@@ -801,14 +795,15 @@ with_account_creds() {
                 if ! parse_cloudfront_stub_flags \
                     "CloudFront list-functions" \
                     "$command" \
-                    "--query --output" \
+                    "--stage --query --output" \
                     "${function_list_arguments[@]:3}"; then
                     exit 1
                 fi
                 if [ "$CLOUDFRONT_STUB_QUERY" != 'FunctionList.Items[?starts_with(Name, `carina-acc-test`)].[Name, FunctionMetadata.FunctionARN]' ] || \
+                    [ "$CLOUDFRONT_STUB_STAGE" != "DEVELOPMENT" ] || \
                     [ "$CLOUDFRONT_STUB_OUTPUT" != "text" ]; then
                     record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
-                        "CloudFront list-functions stub requires the acceptance prefix query and --output text in command: $command"
+                        "CloudFront list-functions stub requires --stage DEVELOPMENT, the acceptance prefix query, and --output text in command: $command"
                     exit 1
                 fi
                 jq -r \
@@ -1678,8 +1673,8 @@ if grep -F "aws elbv2 delete-listener" "$COMMAND_LOG" >/dev/null; then
 fi
 
 cloudfront_distribution_enumeration_count=$(grep -cF "aws cloudfront list-distributions --query " "$COMMAND_LOG" || true)
-if [ "$cloudfront_distribution_enumeration_count" -ne 6 ]; then
-    fail "expected three pre-delete reference snapshots, one state-aware distribution enumeration, and two post-delete function snapshots; got $cloudfront_distribution_enumeration_count list-distributions calls"
+if [ "$cloudfront_distribution_enumeration_count" -ne 5 ]; then
+    fail "expected three pre-delete reference snapshots, one state-aware distribution enumeration, and one post-delete function snapshot; got $cloudfront_distribution_enumeration_count list-distributions calls"
 fi
 cloudfront_in_use_oac_enumeration=$(first_line_containing "aws cloudfront list-distributions --query DistributionList.Items[].Origins.Items")
 if [ -z "$cloudfront_in_use_oac_enumeration" ]; then
@@ -1693,13 +1688,9 @@ cloudfront_in_use_ordered_rhp_enumeration=$(first_line_containing "aws cloudfron
 if [ -z "$cloudfront_in_use_ordered_rhp_enumeration" ]; then
     fail "missing CloudFront ordered-cache-behavior response headers policy snapshot"
 fi
-cloudfront_in_use_default_function_enumeration=$(first_line_containing "aws cloudfront list-distributions --query DistributionList.Items[].DefaultCacheBehavior.FunctionAssociations.Items[].FunctionARN")
-if [ -z "$cloudfront_in_use_default_function_enumeration" ]; then
-    fail "missing CloudFront default-cache-behavior function snapshot"
-fi
-cloudfront_in_use_ordered_function_enumeration=$(first_line_containing "aws cloudfront list-distributions --query DistributionList.Items[].CacheBehaviors.Items[].FunctionAssociations.Items[].FunctionARN")
-if [ -z "$cloudfront_in_use_ordered_function_enumeration" ]; then
-    fail "missing CloudFront ordered-cache-behavior function snapshot"
+cloudfront_in_use_function_enumeration=$(first_line_containing "aws cloudfront list-distributions --query DistributionList.Items[].[DefaultCacheBehavior.FunctionAssociations.Items[].FunctionARN, CacheBehaviors.Items[].FunctionAssociations.Items[].FunctionARN][][]")
+if [ -z "$cloudfront_in_use_function_enumeration" ]; then
+    fail "missing combined CloudFront cache-behavior function snapshot"
 fi
 cloudfront_distribution_enumeration=$(first_line_containing "aws cloudfront list-distributions --query DistributionList.Items[?Enabled")
 if [ -z "$cloudfront_distribution_enumeration" ]; then
@@ -1721,16 +1712,11 @@ do
         fail "CloudFront in-use response headers policy snapshot did not precede distribution deletion"
     fi
 done
-for function_reference_snapshot in \
-    "$cloudfront_in_use_default_function_enumeration" \
-    "$cloudfront_in_use_ordered_function_enumeration"
-do
-    if [ -n "$function_reference_snapshot" ] && \
-        [ -n "$first_cloudfront_distribution_delete" ] && \
-        [ "$function_reference_snapshot" -le "$first_cloudfront_distribution_delete" ]; then
-        fail "CloudFront function reference snapshot did not run after distribution deletion"
-    fi
-done
+if [ -n "$cloudfront_in_use_function_enumeration" ] && \
+    [ -n "$first_cloudfront_distribution_delete" ] && \
+    [ "$cloudfront_in_use_function_enumeration" -le "$first_cloudfront_distribution_delete" ]; then
+    fail "CloudFront function reference snapshot did not run after distribution deletion"
+fi
 distribution_delete_count=$(awk 'END { print NR }' "$CLOUDFRONT_DISTRIBUTION_DELETE_LOG")
 if [ "$distribution_delete_count" -ne 1 ]; then
     fail "expected exactly one CloudFront distribution delete, got $distribution_delete_count"
@@ -1757,19 +1743,14 @@ if grep -F "aws cloudfront update-distribution" "$COMMAND_LOG" >/dev/null; then
     fail "deep cleanup must not auto-disable CloudFront distributions"
 fi
 
-function_list_enumeration=$(first_line_containing "aws cloudfront list-functions --query FunctionList.Items[?starts_with(Name, \`carina-acc-test\`)].[Name, FunctionMetadata.FunctionARN] --output text")
+function_list_enumeration=$(first_line_containing "aws cloudfront list-functions --stage DEVELOPMENT --query FunctionList.Items[?starts_with(Name, \`carina-acc-test\`)].[Name, FunctionMetadata.FunctionARN] --output text")
 if [ -z "$function_list_enumeration" ]; then
     fail "missing acceptance-prefix CloudFront function enumeration"
 fi
-for function_reference_snapshot in \
-    "$cloudfront_in_use_default_function_enumeration" \
-    "$cloudfront_in_use_ordered_function_enumeration"
-do
-    if [ -n "$function_reference_snapshot" ] && [ -n "$function_list_enumeration" ] && \
-        [ "$function_reference_snapshot" -ge "$function_list_enumeration" ]; then
-        fail "CloudFront function reference snapshot did not precede function enumeration"
-    fi
-done
+if [ -n "$cloudfront_in_use_function_enumeration" ] && [ -n "$function_list_enumeration" ] && \
+    [ "$cloudfront_in_use_function_enumeration" -ge "$function_list_enumeration" ]; then
+    fail "CloudFront function reference snapshot did not precede function enumeration"
+fi
 first_function_describe_count=$(grep -cF "aws cloudfront describe-function --name $FIRST_FUNCTION_NAME --query ETag --output text" "$COMMAND_LOG" || true)
 if [ "$first_function_describe_count" -ne 1 ]; then
     fail "expected one ETag lookup for unreferenced CloudFront function $FIRST_FUNCTION_NAME, got $first_function_describe_count"

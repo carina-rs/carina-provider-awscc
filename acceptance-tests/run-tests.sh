@@ -376,19 +376,22 @@ deep_cleanup_delete_supporting() {
 }
 
 # Delete unreferenced CloudFront resources whose APIs share the same lifecycle:
-# list IDs, fetch an ETag, then delete with --if-match. The caller snapshots
-# distribution references before this helper runs and passes a fail-closed gate.
+# list resource keys (and, when different, reference keys), fetch an ETag, then
+# delete with --if-match. The caller snapshots distribution references before
+# this helper runs and passes a fail-closed gate.
 deep_cleanup_cloudfront_unreferenced_resources() {
     local account="$1"
     local resource_name="$2"
     local list_description="$3"
     local reference_enumeration_succeeded="$4"
-    local in_use_resource_ids="$5"
+    local in_use_reference_keys="$5"
     local list_operation="$6"
     local list_query="$7"
     local get_operation="$8"
     local delete_operation="$9"
-    shift 9
+    local resource_key_option="${10}"
+    local has_separate_reference_key="${11}"
+    shift 11
     local list_extra_args=("$@")
 
     if [ "$reference_enumeration_succeeded" -eq 0 ]; then
@@ -396,126 +399,105 @@ deep_cleanup_cloudfront_unreferenced_resources() {
         return 0
     fi
 
-    local resource_ids
-    deep_cleanup_enumerate "$account" "$list_description" resource_ids \
+    local listed_resources
+    deep_cleanup_enumerate "$account" "$list_description" listed_resources \
         aws cloudfront "$list_operation" ${list_extra_args[@]+"${list_extra_args[@]}"} \
         --query "$list_query" --output text
-    local resource_id
-    for resource_id in $resource_ids; do
-        [ -z "$resource_id" ] && continue
-        [ "$resource_id" = "None" ] && continue
+
+    local resources_with_references="$listed_resources"
+    if [ "$has_separate_reference_key" -eq 0 ]; then
+        resources_with_references=""
+        local listed_resource_key
+        for listed_resource_key in $listed_resources; do
+            [ -z "$listed_resource_key" ] && continue
+            [ "$listed_resource_key" = "None" ] && continue
+            resources_with_references="${resources_with_references}${resources_with_references:+$'\n'}${listed_resource_key}"$'\t'"${listed_resource_key}"
+        done
+    fi
+
+    local resource_key
+    local reference_key
+    while IFS=$'\t' read -r resource_key reference_key; do
+        [ -z "$resource_key" ] && continue
+        [ "$resource_key" = "None" ] && continue
+        [ -z "$reference_key" ] && continue
+        [ "$reference_key" = "None" ] && continue
 
         local resource_is_in_use=0
-        local in_use_resource_id
-        for in_use_resource_id in $in_use_resource_ids; do
-            [ -z "$in_use_resource_id" ] && continue
-            [ "$in_use_resource_id" = "None" ] && continue
-            if [ "$resource_id" = "$in_use_resource_id" ]; then
+        local in_use_reference_key
+        for in_use_reference_key in $in_use_reference_keys; do
+            [ -z "$in_use_reference_key" ] && continue
+            [ "$in_use_reference_key" = "None" ] && continue
+            if [ "$reference_key" = "$in_use_reference_key" ]; then
                 resource_is_in_use=1
                 break
             fi
         done
         if [ "$resource_is_in_use" -eq 1 ]; then
-            echo "  Skipping CloudFront $resource_name $resource_id because a distribution references it."
+            echo "  Skipping CloudFront $resource_name $resource_key because a distribution references it."
             continue
         fi
 
         local resource_etag
-        deep_cleanup_enumerate "$account" "ETag for CloudFront $resource_name $resource_id" resource_etag \
-            aws cloudfront "$get_operation" --id "$resource_id" \
+        deep_cleanup_enumerate "$account" "ETag for CloudFront $resource_name $resource_key" resource_etag \
+            aws cloudfront "$get_operation" "$resource_key_option" "$resource_key" \
             --query 'ETag' --output text
         [ -z "$resource_etag" ] && continue
         [ "$resource_etag" = "None" ] && continue
 
-        echo "  Cleaning CloudFront $resource_name $resource_id..."
+        echo "  Cleaning CloudFront $resource_name $resource_key..."
         # Keep literal delete commands here because deep_cleanup_fixture_coverage.sh
         # anchors coverage to the literal `aws cloudfront delete-...` text.
         case "$delete_operation" in
             delete-origin-access-control)
-                deep_cleanup_delete_resource "$account" "delete CloudFront $resource_name $resource_id" \
+                deep_cleanup_delete_resource "$account" "delete CloudFront $resource_name $resource_key" \
                     aws cloudfront delete-origin-access-control \
-                    --id "$resource_id" --if-match "$resource_etag"
+                    --id "$resource_key" --if-match "$resource_etag"
                 ;;
             delete-response-headers-policy)
-                deep_cleanup_delete_resource "$account" "delete CloudFront $resource_name $resource_id" \
+                deep_cleanup_delete_resource "$account" "delete CloudFront $resource_name $resource_key" \
                     aws cloudfront delete-response-headers-policy \
-                    --id "$resource_id" --if-match "$resource_etag"
+                    --id "$resource_key" --if-match "$resource_etag"
+                ;;
+            delete-function)
+                deep_cleanup_delete_resource "$account" "delete CloudFront $resource_name $resource_key" \
+                    aws cloudfront delete-function \
+                    --name "$resource_key" --if-match "$resource_etag"
                 ;;
             *)
                 echo "  ERROR: Unsupported CloudFront cleanup operation: $delete_operation" >&2
                 return 1
                 ;;
         esac
-    done
+    done <<< "$resources_with_references"
 }
 
 # Delete acceptance-test CloudFront Functions after distribution cleanup. A
 # function cannot be deleted while any cache behavior references its ARN, so
 # enumerate both association paths after distribution deletion and fail closed
-# if either reference snapshot is unavailable.
+# if the reference snapshot is unavailable.
 deep_cleanup_cloudfront_functions() {
     local account="$1"
 
-    local default_function_arns
-    deep_cleanup_enumerate "$account" "CloudFront functions referenced by default cache behaviors" default_function_arns \
+    local in_use_function_arns
+    deep_cleanup_enumerate "$account" "CloudFront functions referenced by cache behaviors" in_use_function_arns \
         aws cloudfront list-distributions \
-        --query 'DistributionList.Items[].DefaultCacheBehavior.FunctionAssociations.Items[].FunctionARN' --output text
-    local default_function_enumeration_succeeded="$DEEP_CLEANUP_LAST_ENUMERATION_SUCCEEDED"
+        --query 'DistributionList.Items[].[DefaultCacheBehavior.FunctionAssociations.Items[].FunctionARN, CacheBehaviors.Items[].FunctionAssociations.Items[].FunctionARN][][]' --output text
+    local function_reference_enumeration_succeeded="$DEEP_CLEANUP_LAST_ENUMERATION_SUCCEEDED"
 
-    local ordered_function_arns
-    deep_cleanup_enumerate "$account" "CloudFront functions referenced by ordered cache behaviors" ordered_function_arns \
-        aws cloudfront list-distributions \
-        --query 'DistributionList.Items[].CacheBehaviors.Items[].FunctionAssociations.Items[].FunctionARN' --output text
-    local ordered_function_enumeration_succeeded="$DEEP_CLEANUP_LAST_ENUMERATION_SUCCEEDED"
-
-    if [ "$default_function_enumeration_succeeded" -eq 0 ] || \
-        [ "$ordered_function_enumeration_succeeded" -eq 0 ]; then
-        echo "  Skipping CloudFront function cleanup because distribution references could not be enumerated."
-        return 0
-    fi
-
-    local in_use_function_arns="$default_function_arns $ordered_function_arns"
-    local functions
-    deep_cleanup_enumerate "$account" "acceptance-test CloudFront functions" functions \
-        aws cloudfront list-functions \
-        --query 'FunctionList.Items[?starts_with(Name, `carina-acc-test`)].[Name, FunctionMetadata.FunctionARN]' --output text
-
-    local function_name
-    local function_arn
-    while IFS=$'\t' read -r function_name function_arn; do
-        [ -z "$function_name" ] && continue
-        [ "$function_name" = "None" ] && continue
-        [ -z "$function_arn" ] && continue
-        [ "$function_arn" = "None" ] && continue
-
-        local function_is_in_use=0
-        local in_use_function_arn
-        for in_use_function_arn in $in_use_function_arns; do
-            [ -z "$in_use_function_arn" ] && continue
-            [ "$in_use_function_arn" = "None" ] && continue
-            if [ "$function_arn" = "$in_use_function_arn" ]; then
-                function_is_in_use=1
-                break
-            fi
-        done
-        if [ "$function_is_in_use" -eq 1 ]; then
-            echo "  Skipping CloudFront function $function_name because a distribution references it."
-            continue
-        fi
-
-        local function_etag
-        deep_cleanup_enumerate "$account" "ETag for CloudFront function $function_name" function_etag \
-            aws cloudfront describe-function --name "$function_name" \
-            --query 'ETag' --output text
-        [ -z "$function_etag" ] && continue
-        [ "$function_etag" = "None" ] && continue
-
-        echo "  Cleaning CloudFront function $function_name..."
-        # Keep the literal command for deep_cleanup_fixture_coverage.sh.
-        deep_cleanup_delete_resource "$account" "delete CloudFront function $function_name" \
-            aws cloudfront delete-function \
-            --name "$function_name" --if-match "$function_etag"
-    done <<< "$functions"
+    deep_cleanup_cloudfront_unreferenced_resources \
+        "$account" \
+        "function" \
+        "acceptance-test CloudFront functions" \
+        "$function_reference_enumeration_succeeded" \
+        "$in_use_function_arns" \
+        "list-functions" \
+        'FunctionList.Items[?starts_with(Name, `carina-acc-test`)].[Name, FunctionMetadata.FunctionARN]' \
+        "describe-function" \
+        "delete-function" \
+        "--name" \
+        1 \
+        --stage DEVELOPMENT
 }
 
 # Runs a command with a hard wall-clock limit. This is used around AWS waiters,
@@ -1425,7 +1407,9 @@ deep_cleanup_account() {
         "list-origin-access-controls" \
         'OriginAccessControlList.Items[*].Id' \
         "get-origin-access-control" \
-        "delete-origin-access-control"
+        "delete-origin-access-control" \
+        "--id" \
+        0
 
     # 18. Delete unreferenced custom CloudFront response headers policies.
     # AWS-managed policies are excluded by --type custom. Fail closed if either
@@ -1446,6 +1430,8 @@ deep_cleanup_account() {
         'ResponseHeadersPolicyList.Items[*].ResponseHeadersPolicy.Id' \
         "get-response-headers-policy" \
         "delete-response-headers-policy" \
+        "--id" \
+        0 \
         --type custom
 
     local found=$((DEEP_CLEANUP_DELETED_COUNT + DEEP_CLEANUP_FAILED_COUNT))

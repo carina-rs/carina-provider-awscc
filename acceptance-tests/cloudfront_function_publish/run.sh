@@ -15,6 +15,7 @@ source "$SCRIPT_DIR/../shared/_helpers.sh"
 FUNCTION_NAME="carina-acc-test-fn-publish"
 TOTAL_PASSED=0
 TOTAL_FAILED=0
+LAST_STEP_SUCCEEDED=0
 ACTIVE_WORK_DIR=""
 
 with_account_creds() {
@@ -59,11 +60,13 @@ record_step() {
     if output=$("$@" 2>&1); then
         echo "OK"
         TOTAL_PASSED=$((TOTAL_PASSED + 1))
+        LAST_STEP_SUCCEEDED=1
         return 0
     else
         echo "FAIL"
         echo "  ERROR: $output"
         TOTAL_FAILED=$((TOTAL_FAILED + 1))
+        LAST_STEP_SUCCEEDED=0
         # Aggregate failures so set -e does not skip later assertions or cleanup.
         return 0
     fi
@@ -184,10 +187,14 @@ plan_verify "$WORK_DIR"
 record_step "assert: LIVE serves step2 code" assert_stage_code LIVE "$EXPECTED_CODE"
 record_step "assert: DEVELOPMENT serves step2 code" assert_stage_code DEVELOPMENT "$EXPECTED_CODE"
 record_step "destroy" destroy_function
+destroy_succeeded="$LAST_STEP_SUCCEEDED"
 record_step "assert: function is gone" assert_function_gone
+gone_succeeded="$LAST_STEP_SUCCEEDED"
 
-rm -rf "$WORK_DIR"
-ACTIVE_WORK_DIR=""
+if [ "$destroy_succeeded" -eq 1 ] && [ "$gone_succeeded" -eq 1 ]; then
+    rm -rf "$WORK_DIR"
+    ACTIVE_WORK_DIR=""
+fi
 
 echo ""
 echo "Results: $TOTAL_PASSED passed, $TOTAL_FAILED failed"

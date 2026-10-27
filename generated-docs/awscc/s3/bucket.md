@@ -689,8 +689,8 @@ Shorthand formats: `enabled` or `Status.enabled`
 |-------|------|----------|-------------|
 | `configuration_state` | [Enum (ConfigurationState)](#configuration_state-configurationstate) | Yes | The configuration state of the inventory table, indicating whether the inventory table is enabled or disabled. |
 | `encryption_configuration` | [Struct(MetadataTableEncryptionConfiguration)](#metadatatableencryptionconfiguration) | No | The encryption configuration for the inventory table. |
-| `table_arn` | Arn | No | The Amazon Resource Name (ARN) for the inventory table. |
-| `table_name` | String | No | The name of the inventory table. |
+| `table_arn` | Arn | No | The Amazon Resource Name (ARN) for the inventory table. Provider-populated; cannot be set. |
+| `table_name` | String | No | The name of the inventory table. Provider-populated; cannot be set. |
 
 ### JournalTableConfiguration
 
@@ -698,8 +698,8 @@ Shorthand formats: `enabled` or `Status.enabled`
 |-------|------|----------|-------------|
 | `encryption_configuration` | [Struct(MetadataTableEncryptionConfiguration)](#metadatatableencryptionconfiguration) | No | The encryption configuration for the journal table. |
 | `record_expiration` | [Struct(RecordExpiration)](#recordexpiration) | Yes | The journal table record expiration settings for the journal table. |
-| `table_arn` | Arn | No | The Amazon Resource Name (ARN) for the journal table. |
-| `table_name` | String | No | The name of the journal table. |
+| `table_arn` | Arn | No | The Amazon Resource Name (ARN) for the journal table. Provider-populated; cannot be set. |
+| `table_name` | String | No | The name of the journal table. Provider-populated; cannot be set. |
 
 ### LambdaConfiguration
 
@@ -728,7 +728,7 @@ Shorthand formats: `enabled` or `Status.enabled`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `destination` | [Struct(MetadataDestination)](#metadatadestination) | No | The destination information for the S3 Metadata configuration. |
+| `destination` | [Struct(MetadataDestination)](#metadatadestination) | No | The destination information for the S3 Metadata configuration. Provider-populated; cannot be set. |
 | `inventory_table_configuration` | [Struct(InventoryTableConfiguration)](#inventorytableconfiguration) | No | The inventory table configuration for a metadata configuration. |
 | `journal_table_configuration` | [Struct(JournalTableConfiguration)](#journaltableconfiguration) | Yes | The journal table configuration for a metadata configuration. |
 
@@ -979,10 +979,10 @@ Shorthand formats: `enabled` or `Status.enabled`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `table_arn` | Arn | No | The Amazon Resource Name (ARN) for the metadata table in the metadata table configuration. The specified metadata table name must be unique within the ``aws_s3_metadata`` namespace in the destination table bucket. |
+| `table_arn` | Arn | No | The Amazon Resource Name (ARN) for the metadata table in the metadata table configuration. The specified metadata table name must be unique within the ``aws_s3_metadata`` namespace in the destination table bucket. Provider-populated; cannot be set. |
 | `table_bucket_arn` | Arn | Yes | The Amazon Resource Name (ARN) for the table bucket that's specified as the destination in the metadata table configuration. The destination table bucket must be in the same Region and AWS-account as the general purpose bucket. |
 | `table_name` | String | Yes | The name for the metadata table in your metadata table configuration. The specified metadata table name must be unique within the ``aws_s3_metadata`` namespace in the destination table bucket. |
-| `table_namespace` | String | No | The table bucket namespace for the metadata table in your metadata table configuration. This value is always ``aws_s3_metadata``. |
+| `table_namespace` | String | No | The table bucket namespace for the metadata table in your metadata table configuration. This value is always ``aws_s3_metadata``. Provider-populated; cannot be set. |
 
 ### ServerSideEncryptionByDefault
 
