@@ -1,0 +1,25 @@
+# CloudFront ResponseHeadersPolicy - Basic test
+#
+# Tests: a response headers policy with CSP and nosniff security headers.
+
+provider awscc {
+  region = aws.Region.ap_northeast_1
+}
+
+awscc.cloudfront.ResponseHeadersPolicy {
+  response_headers_policy_config = {
+    name                    = 'carina-acc-test-rhp'
+    comment                 = 'Carina acceptance test response headers policy'
+
+    security_headers_config = {
+      content_security_policy = {
+        content_security_policy = "default-src 'self'"
+        override                = true
+      }
+
+      content_type_options    = {
+        override = true
+      }
+    }
+  }
+}

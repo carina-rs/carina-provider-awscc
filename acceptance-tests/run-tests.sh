@@ -375,6 +375,80 @@ deep_cleanup_delete_supporting() {
     return 0
 }
 
+# Delete unreferenced CloudFront resources whose APIs share the same lifecycle:
+# list IDs, fetch an ETag, then delete with --if-match. The caller snapshots
+# distribution references before this helper runs and passes a fail-closed gate.
+deep_cleanup_cloudfront_unreferenced_resources() {
+    local account="$1"
+    local resource_name="$2"
+    local list_description="$3"
+    local reference_enumeration_succeeded="$4"
+    local in_use_resource_ids="$5"
+    local list_operation="$6"
+    local list_query="$7"
+    local get_operation="$8"
+    local delete_operation="$9"
+    shift 9
+    local list_extra_args=("$@")
+
+    if [ "$reference_enumeration_succeeded" -eq 0 ]; then
+        echo "  Skipping CloudFront $resource_name cleanup because distribution references could not be enumerated."
+        return 0
+    fi
+
+    local resource_ids
+    deep_cleanup_enumerate "$account" "$list_description" resource_ids \
+        aws cloudfront "$list_operation" ${list_extra_args[@]+"${list_extra_args[@]}"} \
+        --query "$list_query" --output text
+    local resource_id
+    for resource_id in $resource_ids; do
+        [ -z "$resource_id" ] && continue
+        [ "$resource_id" = "None" ] && continue
+
+        local resource_is_in_use=0
+        local in_use_resource_id
+        for in_use_resource_id in $in_use_resource_ids; do
+            [ -z "$in_use_resource_id" ] && continue
+            [ "$in_use_resource_id" = "None" ] && continue
+            if [ "$resource_id" = "$in_use_resource_id" ]; then
+                resource_is_in_use=1
+                break
+            fi
+        done
+        if [ "$resource_is_in_use" -eq 1 ]; then
+            echo "  Skipping CloudFront $resource_name $resource_id because a distribution references it."
+            continue
+        fi
+
+        local resource_etag
+        deep_cleanup_enumerate "$account" "ETag for CloudFront $resource_name $resource_id" resource_etag \
+            aws cloudfront "$get_operation" --id "$resource_id" \
+            --query 'ETag' --output text
+        [ -z "$resource_etag" ] && continue
+        [ "$resource_etag" = "None" ] && continue
+
+        echo "  Cleaning CloudFront $resource_name $resource_id..."
+        # Keep literal delete commands here because deep_cleanup_fixture_coverage.sh
+        # anchors coverage to the literal `aws cloudfront delete-...` text.
+        case "$delete_operation" in
+            delete-origin-access-control)
+                deep_cleanup_delete_resource "$account" "delete CloudFront $resource_name $resource_id" \
+                    aws cloudfront delete-origin-access-control \
+                    --id "$resource_id" --if-match "$resource_etag"
+                ;;
+            delete-response-headers-policy)
+                deep_cleanup_delete_resource "$account" "delete CloudFront $resource_name $resource_id" \
+                    aws cloudfront delete-response-headers-policy \
+                    --id "$resource_id" --if-match "$resource_etag"
+                ;;
+            *)
+                echo "  ERROR: Unsupported CloudFront cleanup operation: $delete_operation" >&2
+                return 1
+                ;;
+        esac
+    done
+}
+
 # Runs a command with a hard wall-clock limit. This is used around AWS waiters,
 # whose generated polling limits can otherwise hold up an entire account sweep.
 deep_cleanup_with_timeout() {
@@ -1224,6 +1298,22 @@ deep_cleanup_account() {
         --query "DistributionList.Items[].Origins.Items[?OriginAccessControlId!=''].OriginAccessControlId" --output text
     local cloudfront_in_use_enumeration_succeeded="$DEEP_CLEANUP_LAST_ENUMERATION_SUCCEEDED"
 
+    # Snapshot response headers policy references before deleting distributions.
+    # Default and ordered cache behaviors expose the policy ID on different paths,
+    # so enumerate both. As with OACs, defer every policy seen in this snapshot
+    # until a later sweep rather than depending on immediate CloudFront consistency.
+    local cloudfront_in_use_default_response_headers_policies
+    deep_cleanup_enumerate "$account" "CloudFront response headers policies referenced by default cache behaviors" cloudfront_in_use_default_response_headers_policies \
+        aws cloudfront list-distributions \
+        --query 'DistributionList.Items[].DefaultCacheBehavior.ResponseHeadersPolicyId' --output text
+    local cloudfront_default_response_headers_policy_enumeration_succeeded="$DEEP_CLEANUP_LAST_ENUMERATION_SUCCEEDED"
+    local cloudfront_in_use_ordered_response_headers_policies
+    deep_cleanup_enumerate "$account" "CloudFront response headers policies referenced by ordered cache behaviors" cloudfront_in_use_ordered_response_headers_policies \
+        aws cloudfront list-distributions \
+        --query 'DistributionList.Items[].CacheBehaviors.Items[].ResponseHeadersPolicyId' --output text
+    local cloudfront_ordered_response_headers_policy_enumeration_succeeded="$DEEP_CLEANUP_LAST_ENUMERATION_SUCCEEDED"
+    local cloudfront_in_use_response_headers_policies="$cloudfront_in_use_default_response_headers_policies $cloudfront_in_use_ordered_response_headers_policies"
+
     # 15. Delete disabled, fully deployed CloudFront distributions
     # These accounts are dedicated to acceptance tests, so untagged or oddly named
     # distributions are still test debris. Tag/name gating would strand exactly the
@@ -1254,46 +1344,37 @@ deep_cleanup_account() {
     # Fail closed if the reference enumeration failed. Its blank output cannot mean
     # "nothing is in use": deleting everything could hit an OAC owned by an enabled
     # distribution and recreate the permanent suite wedge this exclusion prevents.
-    if [ "$cloudfront_in_use_enumeration_succeeded" -eq 0 ]; then
-        echo "  Skipping CloudFront origin access control cleanup because distribution references could not be enumerated."
-    else
-        local origin_access_controls
-        deep_cleanup_enumerate "$account" "CloudFront origin access controls" origin_access_controls \
-            aws cloudfront list-origin-access-controls \
-            --query 'OriginAccessControlList.Items[*].Id' --output text
-        local origin_access_control_id
-        for origin_access_control_id in $origin_access_controls; do
-            [ -z "$origin_access_control_id" ] && continue
-            [ "$origin_access_control_id" = "None" ] && continue
+    deep_cleanup_cloudfront_unreferenced_resources \
+        "$account" \
+        "origin access control" \
+        "CloudFront origin access controls" \
+        "$cloudfront_in_use_enumeration_succeeded" \
+        "$cloudfront_in_use_origin_access_controls" \
+        "list-origin-access-controls" \
+        'OriginAccessControlList.Items[*].Id' \
+        "get-origin-access-control" \
+        "delete-origin-access-control"
 
-            local origin_access_control_is_in_use=0
-            local in_use_origin_access_control_id
-            for in_use_origin_access_control_id in $cloudfront_in_use_origin_access_controls; do
-                [ -z "$in_use_origin_access_control_id" ] && continue
-                [ "$in_use_origin_access_control_id" = "None" ] && continue
-                if [ "$origin_access_control_id" = "$in_use_origin_access_control_id" ]; then
-                    origin_access_control_is_in_use=1
-                    break
-                fi
-            done
-            if [ "$origin_access_control_is_in_use" -eq 1 ]; then
-                echo "  Skipping CloudFront origin access control $origin_access_control_id because a distribution references it."
-                continue
-            fi
-
-            local origin_access_control_etag
-            deep_cleanup_enumerate "$account" "ETag for CloudFront origin access control $origin_access_control_id" origin_access_control_etag \
-                aws cloudfront get-origin-access-control --id "$origin_access_control_id" \
-                --query 'ETag' --output text
-            [ -z "$origin_access_control_etag" ] && continue
-            [ "$origin_access_control_etag" = "None" ] && continue
-
-            echo "  Cleaning CloudFront origin access control $origin_access_control_id..."
-            deep_cleanup_delete_resource "$account" "delete CloudFront origin access control $origin_access_control_id" \
-                aws cloudfront delete-origin-access-control \
-                --id "$origin_access_control_id" --if-match "$origin_access_control_etag"
-        done
+    # 17. Delete unreferenced custom CloudFront response headers policies.
+    # AWS-managed policies are excluded by --type custom. Fail closed if either
+    # reference path could not be enumerated, because an empty result is not proof
+    # that the remaining custom policies are unused.
+    local cloudfront_response_headers_policy_reference_enumeration_succeeded=1
+    if [ "$cloudfront_default_response_headers_policy_enumeration_succeeded" -eq 0 ] || \
+        [ "$cloudfront_ordered_response_headers_policy_enumeration_succeeded" -eq 0 ]; then
+        cloudfront_response_headers_policy_reference_enumeration_succeeded=0
     fi
+    deep_cleanup_cloudfront_unreferenced_resources \
+        "$account" \
+        "response headers policy" \
+        "custom CloudFront response headers policies" \
+        "$cloudfront_response_headers_policy_reference_enumeration_succeeded" \
+        "$cloudfront_in_use_response_headers_policies" \
+        "list-response-headers-policies" \
+        'ResponseHeadersPolicyList.Items[*].ResponseHeadersPolicy.Id' \
+        "get-response-headers-policy" \
+        "delete-response-headers-policy" \
+        --type custom
 
     local found=$((DEEP_CLEANUP_DELETED_COUNT + DEEP_CLEANUP_FAILED_COUNT))
     local summary="$account: $found found, $DEEP_CLEANUP_DELETED_COUNT deleted, $DEEP_CLEANUP_FAILED_COUNT failed"

@@ -251,6 +251,11 @@ const REPLACEMENT_CLASSES: &[(&str, ReplacementClass)] = &[
         "cloudfront.OriginAccessControl",
         ReplacementClass::Conflicting,
     ),
+    // The account-unique name is nested in the config, so it cannot be temporarily renamed.
+    (
+        "cloudfront.ResponseHeadersPolicy",
+        ReplacementClass::Conflicting,
+    ),
     // Table names are user-chosen and unique within an account and region.
     ("dynamodb.Table", ReplacementClass::Attribute("table_name")),
     // Address and transfer_address pin a specific IP that cannot coexist.
@@ -5284,6 +5289,17 @@ fn resource_type_overrides() -> &'static HashMap<(&'static str, &'static str), T
                 ),
                 TypeOverride::EnumUnordered(cached_methods),
             );
+            // ResponseHeadersPolicy CORS methods are also an order-insensitive
+            // set whose valid values appear only in the CFN description.
+            m.insert(
+                (
+                    "AWS::CloudFront::ResponseHeadersPolicy",
+                    "AccessControlAllowMethods.Items",
+                ),
+                TypeOverride::EnumUnordered(vec![
+                    "GET", "DELETE", "HEAD", "OPTIONS", "PATCH", "POST", "PUT", "ALL",
+                ]),
+            );
             // OriginProtocolPolicy: the modern CustomOriginConfig path is
             // already CFN-enum, but the LegacyCustomOrigin definition is
             // plain string. Override there.
@@ -7151,8 +7167,8 @@ mod tests {
         assert_eq!(list_constructor(Some(true), false), "AttributeType::list");
     }
 
-    /// The four CloudFront methods overrides must be `EnumUnordered`
-    /// so the generated schema uses `unordered_list` (carina#3093).
+    /// CloudFront method-list overrides must be `EnumUnordered` so the
+    /// generated schema uses `unordered_list` (carina#3093, awscc#469).
     #[test]
     fn test_cloudfront_methods_overrides_are_enum_unordered() {
         let ov = resource_type_overrides();
@@ -7172,6 +7188,10 @@ mod tests {
             (
                 "AWS::CloudFront::Distribution",
                 "CacheBehavior.CachedMethods",
+            ),
+            (
+                "AWS::CloudFront::ResponseHeadersPolicy",
+                "AccessControlAllowMethods.Items",
             ),
         ] {
             match ov.get(&key) {

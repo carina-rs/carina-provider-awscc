@@ -78,6 +78,7 @@ RESOURCE_TYPES=(
     "AWS::Route53::HostedZone"
     "AWS::CloudFront::Distribution"
     "AWS::CloudFront::OriginAccessControl"
+    "AWS::CloudFront::ResponseHeadersPolicy"
     "AWS::WAFv2::WebACL"
     "AWS::WAFv2::WebACLAssociation"
     "AWS::KMS::Key"

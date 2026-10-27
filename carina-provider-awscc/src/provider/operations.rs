@@ -4421,6 +4421,134 @@ mod tests {
         map
     }
 
+    /// Real `GetResource` shape measured in us-east-1 on 2026-10-27 with
+    /// `carina-test-000`. CloudFront returns every unset security-header member
+    /// as an empty object. Those provider-filled objects must not create a plan
+    /// diff against the two security-header members declared by the user.
+    #[test]
+    fn response_headers_policy_real_read_shape_converts_without_diff() {
+        let config = crate::schemas::generated::cloudfront::response_headers_policy::cloudfront_response_headers_policy_config();
+        let props: serde_json::Value = serde_json::from_str(
+            r#"{"Id":"5100bde3-b286-4270-9ae4-4e8c41e2320c","LastModifiedTime":"2026-10-27T04:30:37.862Z","ResponseHeadersPolicyConfig":{"Comment":"probe","Name":"carina-469-probe","SecurityHeadersConfig":{"ContentSecurityPolicy":{"ContentSecurityPolicy":"default-src 'self'","Override":true},"ContentTypeOptions":{"Override":true},"FrameOptions":{},"ReferrerPolicy":{},"StrictTransportSecurity":{},"XSSProtection":{}}}}"#,
+        )
+        .expect("captured CloudControl Properties must be valid JSON");
+
+        let attributes = map_aws_props_to_attributes(
+            &props,
+            &config.schema.attributes,
+            "cloudfront.ResponseHeadersPolicy",
+            &config.schema.defs,
+        );
+
+        assert_eq!(
+            attributes.get("id"),
+            Some(&test_string("5100bde3-b286-4270-9ae4-4e8c41e2320c"))
+        );
+        assert_eq!(
+            attributes.get("last_modified_time"),
+            Some(&test_string("2026-10-27T04:30:37.862Z"))
+        );
+        let Some(Value::Concrete(ConcreteValue::Map(policy_config))) =
+            attributes.get("response_headers_policy_config")
+        else {
+            panic!("ResponseHeadersPolicyConfig must convert to a map");
+        };
+        assert_eq!(policy_config.get("comment"), Some(&test_string("probe")));
+        assert_eq!(
+            policy_config.get("name"),
+            Some(&test_string("carina-469-probe"))
+        );
+        let Some(Value::Concrete(ConcreteValue::Map(security_headers))) =
+            policy_config.get("security_headers_config")
+        else {
+            panic!("SecurityHeadersConfig must convert to a map");
+        };
+        let Some(Value::Concrete(ConcreteValue::Map(content_security_policy))) =
+            security_headers.get("content_security_policy")
+        else {
+            panic!("ContentSecurityPolicy must convert to a map");
+        };
+        assert_eq!(
+            content_security_policy.get("content_security_policy"),
+            Some(&test_string("default-src 'self'"))
+        );
+        assert_eq!(
+            content_security_policy.get("override"),
+            Some(&Value::Concrete(ConcreteValue::Bool(true)))
+        );
+        let Some(Value::Concrete(ConcreteValue::Map(content_type_options))) =
+            security_headers.get("content_type_options")
+        else {
+            panic!("ContentTypeOptions must convert to a map");
+        };
+        assert_eq!(
+            content_type_options.get("override"),
+            Some(&Value::Concrete(ConcreteValue::Bool(true)))
+        );
+        for empty_member in [
+            "frame_options",
+            "referrer_policy",
+            "strict_transport_security",
+            "xss_protection",
+        ] {
+            assert!(
+                matches!(
+                    security_headers.get(empty_member),
+                    Some(Value::Concrete(ConcreteValue::Map(fields))) if fields.is_empty()
+                ),
+                "{empty_member} must preserve the empty object returned by CloudControl"
+            );
+        }
+
+        let desired_security_headers = Value::Concrete(ConcreteValue::Map(IndexMap::from([
+            (
+                "content_security_policy".to_string(),
+                Value::Concrete(ConcreteValue::Map(IndexMap::from([
+                    (
+                        "content_security_policy".to_string(),
+                        test_string("default-src 'self'"),
+                    ),
+                    (
+                        "override".to_string(),
+                        Value::Concrete(ConcreteValue::Bool(true)),
+                    ),
+                ]))),
+            ),
+            (
+                "content_type_options".to_string(),
+                Value::Concrete(ConcreteValue::Map(IndexMap::from([(
+                    "override".to_string(),
+                    Value::Concrete(ConcreteValue::Bool(true)),
+                )]))),
+            ),
+        ])));
+        let desired_policy_config = Value::Concrete(ConcreteValue::Map(IndexMap::from([
+            ("comment".to_string(), test_string("probe")),
+            ("name".to_string(), test_string("carina-469-probe")),
+            (
+                "security_headers_config".to_string(),
+                desired_security_headers,
+            ),
+        ])));
+        let desired = carina_core::resource::ResolvedResource::new(
+            Resource::with_provider(
+                "awscc",
+                "cloudfront.ResponseHeadersPolicy",
+                "measured_read_shape",
+                None,
+            )
+            .with_attribute("response_headers_policy_config", desired_policy_config),
+        );
+        let current = State::existing(desired.id.clone(), attributes)
+            .with_identifier("5100bde3-b286-4270-9ae4-4e8c41e2320c");
+
+        let diff = carina_core::differ::diff(&desired, &current, None, None, Some(&config.schema));
+        assert!(
+            matches!(diff, carina_core::differ::Diff::NoChange(_)),
+            "provider-filled empty security-header objects must not produce a diff: {diff:?}"
+        );
+    }
+
     /// carina-rs/carina#2544: CloudControl omits empty optional list
     /// fields from `GetResource`. The provider read path must canonicalize
     /// these absent-but-empty fields to `Value::Concrete(ConcreteValue::List(vec![]))` so the
