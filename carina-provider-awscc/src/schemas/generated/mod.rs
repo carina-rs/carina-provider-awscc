@@ -82,6 +82,7 @@ static ENUM_VALID_VALUES: LazyLock<
         identitystore::group_membership::enum_valid_values(),
         route53::hosted_zone::enum_valid_values(),
         cloudfront::distribution::enum_valid_values(),
+        cloudfront::function::enum_valid_values(),
         cloudfront::origin_access_control::enum_valid_values(),
         cloudfront::response_headers_policy::enum_valid_values(),
         wafv2::web_acl::enum_valid_values(),
@@ -144,6 +145,7 @@ fn build_configs() -> Vec<AwsccSchemaConfig> {
         identitystore::group_membership::identitystore_group_membership_config(),
         route53::hosted_zone::route53_hosted_zone_config(),
         cloudfront::distribution::cloudfront_distribution_config(),
+        cloudfront::function::cloudfront_function_config(),
         cloudfront::origin_access_control::cloudfront_origin_access_control_config(),
         cloudfront::response_headers_policy::cloudfront_response_headers_policy_config(),
         wafv2::web_acl::wafv2_web_acl_config(),
@@ -216,6 +218,7 @@ pub fn required_permissions(resource_type: &str, op: PlanOp) -> &'static [&'stat
         }
         "route53.HostedZone" => route53::hosted_zone::required_permissions(op),
         "cloudfront.Distribution" => cloudfront::distribution::required_permissions(op),
+        "cloudfront.Function" => cloudfront::function::required_permissions(op),
         "cloudfront.OriginAccessControl" => {
             cloudfront::origin_access_control::required_permissions(op)
         }

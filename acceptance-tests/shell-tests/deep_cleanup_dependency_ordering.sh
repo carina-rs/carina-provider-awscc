@@ -26,6 +26,7 @@ KMS_STUB_FAILURE_LOG="$WORK_DIR/kms-stub-failures.log"
 KMS_SCHEDULE_LOG="$WORK_DIR/kms-schedules.log"
 CLOUDFRONT_STUB_FAILURE_LOG="$WORK_DIR/cloudfront-stub-failures.log"
 CLOUDFRONT_DISTRIBUTION_DELETE_LOG="$WORK_DIR/cloudfront-distribution-deletes.log"
+CLOUDFRONT_FUNCTION_DELETE_LOG="$WORK_DIR/cloudfront-function-deletes.log"
 CLOUDFRONT_OAC_DELETE_LOG="$WORK_DIR/cloudfront-oac-deletes.log"
 CLOUDFRONT_RHP_DELETE_LOG="$WORK_DIR/cloudfront-response-headers-policy-deletes.log"
 
@@ -59,8 +60,10 @@ parse_cloudfront_stub_flags() {
 
     CLOUDFRONT_STUB_ID=""
     CLOUDFRONT_STUB_IF_MATCH=""
+    CLOUDFRONT_STUB_NAME=""
     CLOUDFRONT_STUB_OUTPUT=""
     CLOUDFRONT_STUB_QUERY=""
+    CLOUDFRONT_STUB_STAGE=""
     CLOUDFRONT_STUB_TYPE=""
 
     local flag
@@ -89,8 +92,10 @@ parse_cloudfront_stub_flags() {
         case "$flag" in
             --id) output_variable="CLOUDFRONT_STUB_ID" ;;
             --if-match) output_variable="CLOUDFRONT_STUB_IF_MATCH" ;;
+            --name) output_variable="CLOUDFRONT_STUB_NAME" ;;
             --output) output_variable="CLOUDFRONT_STUB_OUTPUT" ;;
             --query) output_variable="CLOUDFRONT_STUB_QUERY" ;;
+            --stage) output_variable="CLOUDFRONT_STUB_STAGE" ;;
             --type) output_variable="CLOUDFRONT_STUB_TYPE" ;;
         esac
         current_value="${!output_variable}"
@@ -133,6 +138,7 @@ for fn in \
     deep_cleanup_delete_resource \
     deep_cleanup_delete_supporting \
     deep_cleanup_cloudfront_unreferenced_resources \
+    deep_cleanup_cloudfront_functions \
     deep_cleanup_with_timeout \
     deep_cleanup_wait_for_network_interface \
     deep_cleanup_list_wafv2_web_acls \
@@ -227,6 +233,15 @@ GET_DENIED_RHP_ETAG="ETAG-RHP-GET-DENIED"
 ODDLY_NAMED_RHP_ID="RHP-ODDLY-NAMED"
 ODDLY_NAMED_RHP_NAME="shared-security-response-headers"
 ODDLY_NAMED_RHP_ETAG="ETAG-RHP-ODDLY-NAMED"
+FIRST_FUNCTION_NAME="carina-acc-test-function"
+FIRST_FUNCTION_ARN="arn:aws:cloudfront::123456789012:function/$FIRST_FUNCTION_NAME"
+FIRST_FUNCTION_ETAG="ETAG-FUNCTION-ACCEPTANCE-TEST"
+ENABLED_DISTRIBUTION_FUNCTION_NAME="carina-acc-test-function-in-use"
+ENABLED_DISTRIBUTION_FUNCTION_ARN="arn:aws:cloudfront::123456789012:function/$ENABLED_DISTRIBUTION_FUNCTION_NAME"
+ENABLED_DISTRIBUTION_FUNCTION_ETAG="ETAG-FUNCTION-IN-USE"
+UNRELATED_FUNCTION_NAME="shared-viewer-request-function"
+UNRELATED_FUNCTION_ARN="arn:aws:cloudfront::123456789012:function/$UNRELATED_FUNCTION_NAME"
+UNRELATED_FUNCTION_ETAG="ETAG-FUNCTION-UNRELATED"
 KMS_FIXTURE=$(jq -cn \
     --arg aws_managed_key_id "$KMS_AWS_MANAGED_KEY_ID" \
     --arg pending_deletion_key_id "$KMS_PENDING_DELETION_KEY_ID" \
@@ -357,6 +372,15 @@ CLOUDFRONT_FIXTURE=$(jq -cn \
     --arg oddly_named_rhp_id "$ODDLY_NAMED_RHP_ID" \
     --arg oddly_named_rhp_name "$ODDLY_NAMED_RHP_NAME" \
     --arg oddly_named_rhp_etag "$ODDLY_NAMED_RHP_ETAG" \
+    --arg first_function_name "$FIRST_FUNCTION_NAME" \
+    --arg first_function_arn "$FIRST_FUNCTION_ARN" \
+    --arg first_function_etag "$FIRST_FUNCTION_ETAG" \
+    --arg enabled_distribution_function_name "$ENABLED_DISTRIBUTION_FUNCTION_NAME" \
+    --arg enabled_distribution_function_arn "$ENABLED_DISTRIBUTION_FUNCTION_ARN" \
+    --arg enabled_distribution_function_etag "$ENABLED_DISTRIBUTION_FUNCTION_ETAG" \
+    --arg unrelated_function_name "$UNRELATED_FUNCTION_NAME" \
+    --arg unrelated_function_arn "$UNRELATED_FUNCTION_ARN" \
+    --arg unrelated_function_etag "$UNRELATED_FUNCTION_ETAG" \
     '{
         Distributions: [
             {
@@ -368,8 +392,14 @@ CLOUDFRONT_FIXTURE=$(jq -cn \
                     {OriginAccessControlId: ""},
                     {OriginAccessControlId: $deleted_distribution_oac_id}
                 ]},
-                DefaultCacheBehavior: {ResponseHeadersPolicyId: ""},
-                CacheBehaviors: {Items: [{ResponseHeadersPolicyId: $deleted_distribution_rhp_id}]}
+                DefaultCacheBehavior: {
+                    ResponseHeadersPolicyId: "",
+                    FunctionAssociations: {Items: []}
+                },
+                CacheBehaviors: {Items: [{
+                    ResponseHeadersPolicyId: $deleted_distribution_rhp_id,
+                    FunctionAssociations: {Items: []}
+                }]}
             },
             {
                 Id: $disabled_in_progress_id,
@@ -377,7 +407,10 @@ CLOUDFRONT_FIXTURE=$(jq -cn \
                 Enabled: false,
                 ETag: $disabled_in_progress_etag,
                 Origins: {Items: [{OriginAccessControlId: ""}]},
-                DefaultCacheBehavior: {ResponseHeadersPolicyId: ""},
+                DefaultCacheBehavior: {
+                    ResponseHeadersPolicyId: "",
+                    FunctionAssociations: {Items: []}
+                },
                 CacheBehaviors: {Items: []}
             },
             {
@@ -386,7 +419,10 @@ CLOUDFRONT_FIXTURE=$(jq -cn \
                 Enabled: true,
                 ETag: $enabled_deployed_etag,
                 Origins: {Items: [{OriginAccessControlId: $enabled_distribution_oac_id}]},
-                DefaultCacheBehavior: {ResponseHeadersPolicyId: $enabled_distribution_rhp_id},
+                DefaultCacheBehavior: {
+                    ResponseHeadersPolicyId: $enabled_distribution_rhp_id,
+                    FunctionAssociations: {Items: [{FunctionARN: $enabled_distribution_function_arn}]}
+                },
                 CacheBehaviors: {Items: []}
             },
             {
@@ -395,7 +431,10 @@ CLOUDFRONT_FIXTURE=$(jq -cn \
                 Enabled: true,
                 ETag: $enabled_in_progress_etag,
                 Origins: {Items: [{OriginAccessControlId: ""}]},
-                DefaultCacheBehavior: {ResponseHeadersPolicyId: ""},
+                DefaultCacheBehavior: {
+                    ResponseHeadersPolicyId: "",
+                    FunctionAssociations: {Items: []}
+                },
                 CacheBehaviors: {Items: []}
             },
             {
@@ -404,7 +443,7 @@ CLOUDFRONT_FIXTURE=$(jq -cn \
                 Enabled: true,
                 ETag: $no_rhp_etag,
                 Origins: {Items: []},
-                DefaultCacheBehavior: {},
+                DefaultCacheBehavior: {FunctionAssociations: {Items: []}},
                 CacheBehaviors: {Quantity: 0}
             }
         ],
@@ -441,6 +480,15 @@ CLOUDFRONT_FIXTURE=$(jq -cn \
             },
             {Id: $get_denied_rhp_id, Name: $get_denied_rhp_name, ETag: $get_denied_rhp_etag, GetDenied: true},
             {Id: $oddly_named_rhp_id, Name: $oddly_named_rhp_name, ETag: $oddly_named_rhp_etag, GetDenied: false}
+        ],
+        Functions: [
+            {Name: $first_function_name, FunctionARN: $first_function_arn, ETag: $first_function_etag},
+            {
+                Name: $enabled_distribution_function_name,
+                FunctionARN: $enabled_distribution_function_arn,
+                ETag: $enabled_distribution_function_etag
+            },
+            {Name: $unrelated_function_name, FunctionARN: $unrelated_function_arn, ETag: $unrelated_function_etag}
         ]
     }')
 CLOUDFRONT_IN_USE_ENUMERATION_DENIED=0
@@ -582,6 +630,7 @@ with_account_creds() {
                 local referenced_oac_query_pattern='^DistributionList\.Items\[\]\.Origins\.Items\[\?(.+)\]\.OriginAccessControlId$'
                 local referenced_default_rhp_query_pattern='^DistributionList\.Items\[\]\.DefaultCacheBehavior\.ResponseHeadersPolicyId$'
                 local referenced_ordered_rhp_query_pattern='^DistributionList\.Items\[\]\.CacheBehaviors\.Items\[\]\.ResponseHeadersPolicyId$'
+                local referenced_function_query='DistributionList.Items[].[DefaultCacheBehavior.FunctionAssociations.Items[].FunctionARN, CacheBehaviors.Items[].FunctionAssociations.Items[].FunctionARN][][]'
                 if [[ "$distribution_query" =~ $referenced_oac_query_pattern ]]; then
                     local referenced_oac_filter="${BASH_REMATCH[1]}"
                     local non_empty_oac_condition_pattern="^OriginAccessControlId[[:space:]]*!=[[:space:]]*''$"
@@ -621,6 +670,20 @@ with_account_creds() {
                                 else "None"
                               end
                             | select(. != "")
+                        ]
+                        | @tsv' <<< "$CLOUDFRONT_FIXTURE"
+                elif [ "$distribution_query" = "$referenced_function_query" ]; then
+                    if [ "$CLOUDFRONT_IN_USE_ENUMERATION_DENIED" -eq 1 ]; then
+                        echo "An error occurred (AccessDenied) when calling the ListDistributions operation for the function reference snapshot" >&2
+                        exit 254
+                    fi
+                    jq -r \
+                        '[
+                            .Distributions[]
+                            | (
+                                .DefaultCacheBehavior.FunctionAssociations.Items[]?.FunctionARN,
+                                .CacheBehaviors.Items[]?.FunctionAssociations.Items[]?.FunctionARN
+                              )
                         ]
                         | @tsv' <<< "$CLOUDFRONT_FIXTURE"
                 elif [[ "$distribution_query" =~ $distribution_state_query_pattern ]]; then
@@ -728,6 +791,91 @@ with_account_creds() {
                     '.Distributions[] | select(.Id == $id) | .ETag' <<< "$CLOUDFRONT_FIXTURE")
                 if [ "$deleted_distribution_etag" != "$expected_distribution_etag" ]; then
                     echo "An error occurred (PreconditionFailed) when calling the DeleteDistribution operation for distribution $deleted_distribution_id: stale ETag" >&2
+                    exit 254
+                fi
+                ;;
+            "aws cloudfront list-functions"*)
+                local function_list_arguments=("$@")
+                if ! parse_cloudfront_stub_flags \
+                    "CloudFront list-functions" \
+                    "$command" \
+                    "--stage --query --output" \
+                    "${function_list_arguments[@]:3}"; then
+                    exit 1
+                fi
+                if [ "$CLOUDFRONT_STUB_QUERY" != 'FunctionList.Items[?starts_with(Name, `carina-acc-test`)].[Name, FunctionMetadata.FunctionARN]' ] || \
+                    [ "$CLOUDFRONT_STUB_STAGE" != "DEVELOPMENT" ] || \
+                    [ "$CLOUDFRONT_STUB_OUTPUT" != "text" ]; then
+                    record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
+                        "CloudFront list-functions stub requires --stage DEVELOPMENT, the acceptance prefix query, and --output text in command: $command"
+                    exit 1
+                fi
+                jq -r \
+                    '[
+                        .Functions[]
+                        | select(.Name | startswith("carina-acc-test"))
+                        | [.Name, .FunctionARN]
+                        | @tsv
+                    ]
+                    | .[]' <<< "$CLOUDFRONT_FIXTURE"
+                ;;
+            "aws cloudfront describe-function"*)
+                local function_describe_arguments=("$@")
+                if ! parse_cloudfront_stub_flags \
+                    "CloudFront describe-function" \
+                    "$command" \
+                    "--name --query --output" \
+                    "${function_describe_arguments[@]:3}"; then
+                    exit 1
+                fi
+                local described_function_name="$CLOUDFRONT_STUB_NAME"
+                if [ -z "$described_function_name" ] || [ "$CLOUDFRONT_STUB_QUERY" != "ETag" ] || \
+                    [ "$CLOUDFRONT_STUB_OUTPUT" != "text" ]; then
+                    record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
+                        "CloudFront describe-function stub requires --name, --query ETag, and --output text in command: $command"
+                    exit 1
+                fi
+                local function_fixture_count
+                function_fixture_count=$(jq -r --arg name "$described_function_name" \
+                    '[.Functions[] | select(.Name == $name)] | length' <<< "$CLOUDFRONT_FIXTURE")
+                if [ "$function_fixture_count" -ne 1 ]; then
+                    record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
+                        "CloudFront describe-function stub saw unknown or duplicate function name '$described_function_name' in command: $command"
+                    exit 1
+                fi
+                jq -r --arg name "$described_function_name" \
+                    '.Functions[] | select(.Name == $name) | .ETag' <<< "$CLOUDFRONT_FIXTURE"
+                ;;
+            "aws cloudfront delete-function"*)
+                local function_delete_arguments=("$@")
+                if ! parse_cloudfront_stub_flags \
+                    "CloudFront delete-function" \
+                    "$command" \
+                    "--name --if-match" \
+                    "${function_delete_arguments[@]:3}"; then
+                    exit 1
+                fi
+                local deleted_function_name="$CLOUDFRONT_STUB_NAME"
+                local deleted_function_etag="$CLOUDFRONT_STUB_IF_MATCH"
+                if [ -z "$deleted_function_name" ] || [ -z "$deleted_function_etag" ]; then
+                    record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
+                        "CloudFront delete-function stub requires --name and --if-match in command: $command"
+                    exit 1
+                fi
+                local function_fixture_count
+                function_fixture_count=$(jq -r --arg name "$deleted_function_name" \
+                    '[.Functions[] | select(.Name == $name)] | length' <<< "$CLOUDFRONT_FIXTURE")
+                if [ "$function_fixture_count" -ne 1 ]; then
+                    record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
+                        "CloudFront delete-function stub saw unknown or duplicate function name '$deleted_function_name' in command: $command"
+                    exit 1
+                fi
+                printf '%s\t%s\n' "$deleted_function_name" "$deleted_function_etag" >> "$CLOUDFRONT_FUNCTION_DELETE_LOG"
+                local expected_function_etag
+                expected_function_etag=$(jq -r --arg name "$deleted_function_name" \
+                    '.Functions[] | select(.Name == $name) | .ETag' <<< "$CLOUDFRONT_FIXTURE")
+                if [ "$deleted_function_etag" != "$expected_function_etag" ]; then
+                    echo "An error occurred (PreconditionFailed) when calling the DeleteFunction operation for function $deleted_function_name: stale ETag" >&2
                     exit 254
                 fi
                 ;;
@@ -1461,6 +1609,7 @@ source "$FUNCTIONS_FILE"
 : > "$KMS_SCHEDULE_LOG"
 : > "$CLOUDFRONT_STUB_FAILURE_LOG"
 : > "$CLOUDFRONT_DISTRIBUTION_DELETE_LOG"
+: > "$CLOUDFRONT_FUNCTION_DELETE_LOG"
 : > "$CLOUDFRONT_OAC_DELETE_LOG"
 if ! deep_cleanup_account "ordering-account" >"$WORK_DIR/stdout.log" 2>"$WORK_DIR/stderr.log"; then
     fail "deep_cleanup_account returned non-zero for the successful ordering scenario"
@@ -1501,12 +1650,13 @@ while IFS= read -r stub_failure; do
 done < "$CLOUDFRONT_STUB_FAILURE_LOG"
 
 # Successful top-level deletes are 2 load balancers + 1 target group + 1 VPC +
-# 2 IPAMs + 3 KMS keys + 1 CloudFront distribution + 2 unreferenced CloudFront
-# OACs + 2 unreferenced response headers policies = 14. Referenced CloudFront
+# 2 IPAMs + 3 KMS keys + 1 CloudFront distribution + 1 unreferenced CloudFront
+# function + 2 unreferenced CloudFront OACs + 2 unreferenced response headers
+# policies = 15. Referenced CloudFront
 # helpers are deferred and therefore not counted. The unexpected security-group
 # IsEgress value, denied KMS tag read, denied OAC ETag read, and denied response
 # headers policy ETag read are enumeration warnings.
-expected_ordering_summary="  WARNING: ordering-account: 14 found, 14 deleted, 0 failed; 4 enumeration errors"
+expected_ordering_summary="  WARNING: ordering-account: 15 found, 15 deleted, 0 failed; 4 enumeration errors"
 ordering_summary=$(grep -F "ordering-account:" "$WORK_DIR/stderr.log" || true)
 if [ "$ordering_summary" != "$expected_ordering_summary" ]; then
     fail "unexpected successful ordering summary: expected '$expected_ordering_summary', got '${ordering_summary:-<missing>}'"
@@ -1527,8 +1677,8 @@ if grep -F "aws elbv2 delete-listener" "$COMMAND_LOG" >/dev/null; then
 fi
 
 cloudfront_distribution_enumeration_count=$(grep -cF "aws cloudfront list-distributions --query " "$COMMAND_LOG" || true)
-if [ "$cloudfront_distribution_enumeration_count" -ne 4 ]; then
-    fail "expected three CloudFront reference snapshots and one state-aware distribution enumeration, got $cloudfront_distribution_enumeration_count list-distributions calls"
+if [ "$cloudfront_distribution_enumeration_count" -ne 5 ]; then
+    fail "expected three pre-delete reference snapshots, one state-aware distribution enumeration, and one post-delete function snapshot; got $cloudfront_distribution_enumeration_count list-distributions calls"
 fi
 cloudfront_in_use_oac_enumeration=$(first_line_containing "aws cloudfront list-distributions --query DistributionList.Items[].Origins.Items")
 if [ -z "$cloudfront_in_use_oac_enumeration" ]; then
@@ -1541,6 +1691,10 @@ fi
 cloudfront_in_use_ordered_rhp_enumeration=$(first_line_containing "aws cloudfront list-distributions --query DistributionList.Items[].CacheBehaviors.Items[].ResponseHeadersPolicyId")
 if [ -z "$cloudfront_in_use_ordered_rhp_enumeration" ]; then
     fail "missing CloudFront ordered-cache-behavior response headers policy snapshot"
+fi
+cloudfront_in_use_function_enumeration=$(first_line_containing "aws cloudfront list-distributions --query DistributionList.Items[].[DefaultCacheBehavior.FunctionAssociations.Items[].FunctionARN, CacheBehaviors.Items[].FunctionAssociations.Items[].FunctionARN][][]")
+if [ -z "$cloudfront_in_use_function_enumeration" ]; then
+    fail "missing combined CloudFront cache-behavior function snapshot"
 fi
 cloudfront_distribution_enumeration=$(first_line_containing "aws cloudfront list-distributions --query DistributionList.Items[?Enabled")
 if [ -z "$cloudfront_distribution_enumeration" ]; then
@@ -1562,6 +1716,11 @@ do
         fail "CloudFront in-use response headers policy snapshot did not precede distribution deletion"
     fi
 done
+if [ -n "$cloudfront_in_use_function_enumeration" ] && \
+    [ -n "$first_cloudfront_distribution_delete" ] && \
+    [ "$cloudfront_in_use_function_enumeration" -le "$first_cloudfront_distribution_delete" ]; then
+    fail "CloudFront function reference snapshot did not run after distribution deletion"
+fi
 distribution_delete_count=$(awk 'END { print NR }' "$CLOUDFRONT_DISTRIBUTION_DELETE_LOG")
 if [ "$distribution_delete_count" -ne 1 ]; then
     fail "expected exactly one CloudFront distribution delete, got $distribution_delete_count"
@@ -1586,6 +1745,45 @@ if grep -F "aws cloudfront get-distribution " "$COMMAND_LOG" >/dev/null; then
 fi
 if grep -F "aws cloudfront update-distribution" "$COMMAND_LOG" >/dev/null; then
     fail "deep cleanup must not auto-disable CloudFront distributions"
+fi
+
+function_list_enumeration=$(first_line_containing "aws cloudfront list-functions --stage DEVELOPMENT --query FunctionList.Items[?starts_with(Name, \`carina-acc-test\`)].[Name, FunctionMetadata.FunctionARN] --output text")
+if [ -z "$function_list_enumeration" ]; then
+    fail "missing acceptance-prefix CloudFront function enumeration"
+fi
+if [ -n "$cloudfront_in_use_function_enumeration" ] && [ -n "$function_list_enumeration" ] && \
+    [ "$cloudfront_in_use_function_enumeration" -ge "$function_list_enumeration" ]; then
+    fail "CloudFront function reference snapshot did not precede function enumeration"
+fi
+first_function_describe_count=$(grep -cF "aws cloudfront describe-function --name $FIRST_FUNCTION_NAME --query ETag --output text" "$COMMAND_LOG" || true)
+if [ "$first_function_describe_count" -ne 1 ]; then
+    fail "expected one ETag lookup for unreferenced CloudFront function $FIRST_FUNCTION_NAME, got $first_function_describe_count"
+fi
+for skipped_function_name in "$ENABLED_DISTRIBUTION_FUNCTION_NAME" "$UNRELATED_FUNCTION_NAME"; do
+    if grep -F "aws cloudfront describe-function --name $skipped_function_name " "$COMMAND_LOG" >/dev/null; then
+        fail "CloudFront function $skipped_function_name unexpectedly reached its ETag lookup"
+    fi
+    if grep -F "aws cloudfront delete-function --name $skipped_function_name " "$COMMAND_LOG" >/dev/null; then
+        fail "CloudFront function $skipped_function_name unexpectedly reached its delete attempt"
+    fi
+done
+if ! grep -Fx "  Skipping CloudFront function $ENABLED_DISTRIBUTION_FUNCTION_NAME because a distribution references it." \
+    "$WORK_DIR/stdout.log" >/dev/null; then
+    fail "referenced CloudFront function was not reported as deferred"
+fi
+function_delete_count=$(awk 'END { print NR }' "$CLOUDFRONT_FUNCTION_DELETE_LOG")
+if [ "$function_delete_count" -ne 1 ]; then
+    fail "expected exactly one CloudFront function delete, got $function_delete_count"
+fi
+expected_function_delete="$FIRST_FUNCTION_NAME"$'\t'"$FIRST_FUNCTION_ETAG"
+if ! grep -Fx "$expected_function_delete" "$CLOUDFRONT_FUNCTION_DELETE_LOG" >/dev/null; then
+    fail "CloudFront function delete did not use the exact enumerated name and ETag"
+fi
+first_function_delete=$(first_line_containing "aws cloudfront delete-function --name $FIRST_FUNCTION_NAME --if-match $FIRST_FUNCTION_ETAG")
+if [ -z "$first_cloudfront_distribution_delete" ] || [ -z "$first_function_delete" ]; then
+    fail "missing CloudFront deletes needed to verify distribution-before-function ordering"
+elif [ "$first_cloudfront_distribution_delete" -ge "$first_function_delete" ]; then
+    fail "CloudFront function cleanup did not run after distribution deletion"
 fi
 
 oac_list_enumeration=$(first_line_containing "aws cloudfront list-origin-access-controls")
@@ -1966,9 +2164,9 @@ if grep -Fx "aws ec2 delete-route-table --route-table-id $MAIN_ROUTE_TABLE_ID" "
     fail "main route table must not be deleted"
 fi
 
-# If the account-wide OAC reference snapshot is unreadable, skip the entire OAC
-# pass. Treating the blank enumeration output as an empty in-use set would make
-# every OAC look deletable and recreate the permanent enabled-distribution wedge.
+# If the account-wide CloudFront reference snapshots are unreadable, skip the
+# corresponding OAC and function passes. Treating blank enumeration output as
+# an empty in-use set would make every resource look deletable.
 CLOUDFRONT_IN_USE_ENUMERATION_DENIED=1
 COMMAND_LOG="$WORK_DIR/cloudfront-reference-failure-aws-calls.log"
 CLOUDFRONT_STUB_FAILURE_LOG="$WORK_DIR/cloudfront-reference-failure-stub-failures.log"
@@ -2013,6 +2211,30 @@ for forbidden_oac_command in \
 do
     if grep -F "$forbidden_oac_command" "$COMMAND_LOG" >/dev/null; then
         fail "failed CloudFront OAC reference snapshot fell through to: $forbidden_oac_command"
+    fi
+done
+
+failed_function_reference_snapshot_count=$(grep -cF \
+    "aws cloudfront list-distributions --query DistributionList.Items[].[DefaultCacheBehavior.FunctionAssociations.Items[].FunctionARN, CacheBehaviors.Items[].FunctionAssociations.Items[].FunctionARN][][]" \
+    "$COMMAND_LOG" || true)
+if [ "$failed_function_reference_snapshot_count" -ne 1 ]; then
+    fail "expected exactly one failed CloudFront function reference snapshot, got $failed_function_reference_snapshot_count"
+fi
+if ! grep -F "CloudFront functions referenced by cache behaviors" \
+    "$CLOUDFRONT_REFERENCE_FAILURE_STDERR_LOG" | grep -F "AccessDenied" >/dev/null; then
+    fail "failed CloudFront function reference snapshot was not reported with its AccessDenied diagnostic"
+fi
+if ! grep -Fx "  Skipping CloudFront function cleanup because distribution references could not be enumerated." \
+    "$CLOUDFRONT_REFERENCE_FAILURE_STDOUT_LOG" >/dev/null; then
+    fail "failed CloudFront function reference snapshot did not report the fail-closed pass skip"
+fi
+for forbidden_function_command in \
+    "aws cloudfront list-functions" \
+    "aws cloudfront describe-function" \
+    "aws cloudfront delete-function"
+do
+    if grep -F "$forbidden_function_command" "$COMMAND_LOG" >/dev/null; then
+        fail "failed CloudFront function reference snapshot fell through to: $forbidden_function_command"
     fi
 done
 

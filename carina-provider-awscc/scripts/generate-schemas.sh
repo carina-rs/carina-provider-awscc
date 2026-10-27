@@ -77,6 +77,7 @@ RESOURCE_TYPES=(
     "AWS::IdentityStore::GroupMembership"
     "AWS::Route53::HostedZone"
     "AWS::CloudFront::Distribution"
+    "AWS::CloudFront::Function"
     "AWS::CloudFront::OriginAccessControl"
     "AWS::CloudFront::ResponseHeadersPolicy"
     "AWS::WAFv2::WebACL"

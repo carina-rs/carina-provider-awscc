@@ -2355,10 +2355,10 @@ mod tests {
     use super::*;
     use carina_core::provider::{
         AppliedIdentifier, CreateFailureKind, CreateOutcome, CreateOutcomeKind, Observation,
-        PatchOp, ReadOutcome, UpdateOutcome,
+        PatchOp, PersistedAttributes, RawSavedAttrs, ReadOutcome, UpdateOutcome,
     };
     use carina_core::resource::{DeferredValue, UnknownReason};
-    use carina_core::schema::AttributeType;
+    use carina_core::schema::{AttributeType, SchemaRegistry};
     use serde_json::json;
     use std::future::Future;
     use std::pin::Pin;
@@ -4529,6 +4529,154 @@ mod tests {
         assert!(
             matches!(diff, carina_core::differ::Diff::NoChange(_)),
             "provider-filled empty security-header objects must not produce a diff: {diff:?}"
+        );
+    }
+
+    /// Real `GetResource` shape measured in us-east-1 on 2026-10-27 with
+    /// `carina-test-000`. CloudControl omits the write-only `AutoPublish` even
+    /// though it returns the updated code and reports `Stage: LIVE`. Persisted
+    /// write-only provenance must prevent that omission from causing a phantom
+    /// diff after create or update.
+    #[test]
+    fn cloudfront_function_real_read_shape_has_no_diff_with_auto_publish_provenance() {
+        let config = crate::schemas::generated::cloudfront::function::cloudfront_function_config();
+        let function_arn = "arn:aws:cloudfront::123456789012:function/carina-acc-test-fn";
+        let function_code = "function handler(event) { return event.request; }";
+        let props = json!({
+            "FunctionConfig": {
+                "Comment": "Carina acceptance test function",
+                "Runtime": "cloudfront-js-2.0"
+            },
+            "FunctionARN": function_arn,
+            "FunctionMetadata": {"FunctionARN": function_arn},
+            "FunctionCode": function_code,
+            "Stage": "LIVE",
+            "Tags": [],
+            "Name": "carina-acc-test-fn"
+        });
+
+        let attributes = map_aws_props_to_attributes(
+            &props,
+            &config.schema.attributes,
+            "cloudfront.Function",
+            &config.schema.defs,
+        );
+        assert!(
+            !attributes.contains_key("auto_publish"),
+            "CloudControl read conversion must not fabricate the write-only AutoPublish field"
+        );
+        assert_eq!(
+            attributes.get("function_arn"),
+            Some(&test_string(function_arn))
+        );
+        assert_eq!(
+            attributes.get("function_metadata"),
+            Some(&Value::Concrete(ConcreteValue::Map(IndexMap::from([(
+                "function_arn".to_string(),
+                test_string(function_arn),
+            )]))))
+        );
+        assert_eq!(attributes.get("stage"), Some(&test_string("LIVE")));
+
+        let desired = carina_core::resource::ResolvedResource::new(
+            Resource::with_provider("awscc", "cloudfront.Function", "measured_read_shape", None)
+                .with_attribute("name", test_string("carina-acc-test-fn"))
+                .with_attribute("function_code", test_string(function_code))
+                .with_attribute(
+                    "function_config",
+                    Value::Concrete(ConcreteValue::Map(IndexMap::from([
+                        (
+                            "comment".to_string(),
+                            test_string("Carina acceptance test function"),
+                        ),
+                        ("runtime".to_string(), test_string("cloudfront-js-2.0")),
+                    ]))),
+                )
+                .with_attribute("auto_publish", Value::Concrete(ConcreteValue::Bool(true))),
+        );
+        let current = State::existing(desired.id.clone(), attributes).with_identifier(function_arn);
+
+        let persisted = PersistedAttributes::from_typed_persisted_wire_values(HashMap::from([(
+            "auto_publish".to_string(),
+            Value::Concrete(ConcreteValue::Bool(true)),
+        )]))
+        .expect("AutoPublish should encode as persisted provider state");
+        let mut registry = SchemaRegistry::new();
+        registry.insert("awscc", config.schema.clone());
+        let saved_attrs =
+            RawSavedAttrs::from_persisted(HashMap::from([(desired.id.clone(), persisted)]))
+                .lift(&registry);
+
+        let mut current_states = HashMap::from([(desired.id.clone(), current)]);
+        crate::provider::restore_unreturned_attrs_impl(
+            &mut current_states,
+            saved_attrs.as_provider_saved_attrs(),
+        );
+        let current = current_states
+            .remove(&desired.id)
+            .expect("hydrated function state should remain present");
+        assert_eq!(
+            current.attributes.get("auto_publish"),
+            Some(&Value::Concrete(ConcreteValue::Bool(true))),
+            "provider hydration must restore AutoPublish from persisted provenance"
+        );
+
+        let diff = carina_core::differ::diff(
+            &desired,
+            &current,
+            saved_attrs.get(&desired.id),
+            None,
+            Some(&config.schema),
+        );
+        assert!(
+            matches!(diff, carina_core::differ::Diff::NoChange(_)),
+            "omitted AutoPublish must be reconciled from persisted provenance: {diff:?}"
+        );
+    }
+
+    #[test]
+    fn cloudfront_function_code_change_is_an_in_place_update() {
+        let config = crate::schemas::generated::cloudfront::function::cloudfront_function_config();
+        let function_config = Value::Concrete(ConcreteValue::Map(IndexMap::from([
+            (
+                "comment".to_string(),
+                test_string("Verify AutoPublish reassertion on code updates"),
+            ),
+            ("runtime".to_string(), test_string("cloudfront-js-2.0")),
+        ])));
+        let desired = carina_core::resource::ResolvedResource::new(
+            Resource::with_provider("awscc", "cloudfront.Function", "publish", None)
+                .with_attribute("name", test_string("carina-acc-test-fn-publish"))
+                .with_attribute("function_code", test_string("step2"))
+                .with_attribute("function_config", function_config.clone())
+                .with_attribute("auto_publish", Value::Concrete(ConcreteValue::Bool(true))),
+        );
+        let current = State::existing(
+            desired.id.clone(),
+            HashMap::from([
+                (
+                    "name".to_string(),
+                    test_string("carina-acc-test-fn-publish"),
+                ),
+                ("function_code".to_string(), test_string("step1")),
+                ("function_config".to_string(), function_config),
+                (
+                    "auto_publish".to_string(),
+                    Value::Concrete(ConcreteValue::Bool(true)),
+                ),
+            ]),
+        );
+
+        let diff = carina_core::differ::diff(&desired, &current, None, None, Some(&config.schema));
+        assert!(
+            matches!(
+                diff,
+                carina_core::differ::Diff::Update {
+                    ref changed_attributes,
+                    ..
+                } if changed_attributes == &["function_code".to_string()]
+            ),
+            "FunctionCode must plan as an in-place Update, not replacement: {diff:?}"
         );
     }
 

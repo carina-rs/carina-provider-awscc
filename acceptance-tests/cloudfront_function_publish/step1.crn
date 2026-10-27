@@ -1,0 +1,22 @@
+provider awscc {
+  region = aws.Region.ap_northeast_1
+}
+
+awscc.cloudfront.Function {
+  name = 'carina-acc-test-fn-publish'
+
+  function_code = <<'JS'
+function handler(event) {
+  var request = event.request;
+  request.headers['x-carina-step'] = { value: 'step1' };
+  return request;
+}
+JS
+
+  function_config = {
+    runtime = cloudfront_js_2_0
+    comment = 'Verify AutoPublish reassertion on code updates'
+  }
+
+  auto_publish = true
+}

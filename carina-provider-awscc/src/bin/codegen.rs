@@ -36,6 +36,12 @@ type PatternWithLength = (String, Option<u64>, Option<u64>);
 /// range validators accumulated by the recursion guard.
 type RangeValidator = (Option<i64>, Option<i64>, bool);
 
+#[derive(Debug, Clone)]
+struct StructReadOnlyUse {
+    property_path: Vec<String>,
+    signature: BTreeSet<Vec<String>>,
+}
+
 struct RustStrLit<'a>(&'a str);
 
 impl std::fmt::Display for RustStrLit<'_> {
@@ -128,6 +134,16 @@ thread_local! {
     #[allow(clippy::missing_const_for_thread_local)]
     static EMITTED_INT_ENUMS: RefCell<BTreeMap<String, Vec<i64>>> =
         RefCell::new(BTreeMap::new());
+    /// Provider paths whose generated `AttributeSchema` or `StructField`
+    /// actually carries `.read_only()` in the current emission pass.
+    #[allow(clippy::missing_const_for_thread_local)]
+    static EMITTED_READ_ONLY_PATHS: RefCell<Vec<Vec<String>>> = RefCell::new(Vec::new());
+    /// Read-only signatures produced by each emitted struct name. Reusing a
+    /// name with a different signature is unsafe for both Rust definition
+    /// caching and Markdown struct collection.
+    #[allow(clippy::missing_const_for_thread_local)]
+    static EMITTED_STRUCT_READ_ONLY_USES: RefCell<BTreeMap<String, Vec<StructReadOnlyUse>>> =
+        RefCell::new(BTreeMap::new());
 }
 
 /// Reset the per-resource recursion guard state. Called at the start
@@ -140,6 +156,12 @@ fn reset_recursion_guard() {
     EMITTED_STANDALONE_PATTERNS.with(|s| s.borrow_mut().clear());
     EMITTED_RANGE_VALIDATORS.with(|s| s.borrow_mut().clear());
     EMITTED_INT_ENUMS.with(|s| s.borrow_mut().clear());
+    reset_read_only_emission_state();
+}
+
+fn reset_read_only_emission_state() {
+    EMITTED_READ_ONLY_PATHS.with(|s| s.borrow_mut().clear());
+    EMITTED_STRUCT_READ_ONLY_USES.with(|s| s.borrow_mut().clear());
 }
 
 /// Take the defs collected during the current resource pass and
@@ -246,6 +268,9 @@ enum ReplacementClass {
 const REPLACEMENT_CLASSES: &[(&str, ReplacementClass)] = &[
     // Distribution aliases are globally unique and cannot coexist.
     ("cloudfront.Distribution", ReplacementClass::Conflicting),
+    // The top-level create-only name is account-unique, so replacement must
+    // temporarily rename it.
+    ("cloudfront.Function", ReplacementClass::Attribute("name")),
     // The account-unique name is nested, so it cannot be temporarily renamed.
     (
         "cloudfront.OriginAccessControl",
@@ -1262,10 +1287,204 @@ struct StructDefInfo {
     def_name: String,
     /// Structural path from the resource root to this definition.
     struct_path: Vec<String>,
+    /// CloudFormation property path from the resource root to this definition.
+    property_path: Vec<String>,
     /// Properties of the definition
     properties: BTreeMap<String, CfnProperty>,
     /// Required fields
     required: Vec<String>,
+}
+
+fn decode_json_pointer_segment(segment: &str) -> String {
+    segment.replace("~1", "/").replace("~0", "~")
+}
+
+fn cfn_property_path(pointer: &str) -> Option<Vec<String>> {
+    let path = pointer.strip_prefix("/properties/")?;
+    if path.is_empty() {
+        return None;
+    }
+    Some(path.split('/').map(decode_json_pointer_segment).collect())
+}
+
+fn extend_property_path(property_path: &[String], segment: &str) -> Vec<String> {
+    let mut extended = property_path.to_vec();
+    extended.push(segment.to_string());
+    extended
+}
+
+fn is_read_only_property_path(schema: &CfnSchema, property_path: &[String]) -> bool {
+    schema
+        .read_only_properties
+        .iter()
+        .filter_map(|pointer| cfn_property_path(pointer))
+        .any(|path| path == property_path)
+}
+
+fn has_nested_read_only_property_path(schema: &CfnSchema, property_path: &[String]) -> bool {
+    schema
+        .read_only_properties
+        .iter()
+        .filter_map(|pointer| cfn_property_path(pointer))
+        .any(|path| path.len() > property_path.len() && path.starts_with(property_path))
+}
+
+fn struct_fields_are_fully_read_only(
+    schema: &CfnSchema,
+    properties: &BTreeMap<String, CfnProperty>,
+    property_path: &[String],
+    visiting_defs: &mut HashSet<String>,
+) -> bool {
+    let mut fields = properties
+        .iter()
+        .filter(|(_, property)| !is_deprecated_property(property))
+        .peekable();
+    fields.peek().is_some()
+        && fields.all(|(field_name, field)| {
+            let field_path = extend_property_path(property_path, field_name);
+            property_is_fully_read_only(schema, field, &field_path, visiting_defs)
+        })
+}
+
+fn property_is_fully_read_only(
+    schema: &CfnSchema,
+    property: &CfnProperty,
+    property_path: &[String],
+    visiting_defs: &mut HashSet<String>,
+) -> bool {
+    if is_read_only_property_path(schema, property_path) {
+        return true;
+    }
+    if !has_nested_read_only_property_path(schema, property_path) {
+        return false;
+    }
+
+    if let Some(ref_path) = &property.ref_path {
+        if !visiting_defs.insert(ref_path.clone()) {
+            return false;
+        }
+        let fully_read_only = match resolve_ref_classified(schema, ref_path) {
+            Some(ResolvedDef::Struct { properties, .. }) => {
+                struct_fields_are_fully_read_only(schema, properties, property_path, visiting_defs)
+            }
+            Some(ResolvedDef::OneOf { variants }) => {
+                let merged = variants
+                    .iter()
+                    .filter_map(|variant| variant.properties.as_ref())
+                    .flat_map(|properties| properties.iter())
+                    .map(|(name, property)| (name.clone(), property.clone()))
+                    .collect::<BTreeMap<_, _>>();
+                struct_fields_are_fully_read_only(schema, &merged, property_path, visiting_defs)
+            }
+            Some(ResolvedDef::Array { items }) => {
+                let item_path = extend_property_path(property_path, "*");
+                property_is_fully_read_only(schema, items, &item_path, visiting_defs)
+            }
+            _ => false,
+        };
+        visiting_defs.remove(ref_path);
+        return fully_read_only;
+    }
+
+    match property.prop_type.as_ref().and_then(TypeValue::as_str) {
+        Some("object") => property.properties.as_ref().is_some_and(|properties| {
+            struct_fields_are_fully_read_only(schema, properties, property_path, visiting_defs)
+        }),
+        Some("array") => property.items.as_deref().is_some_and(|items| {
+            let item_path = extend_property_path(property_path, "*");
+            property_is_fully_read_only(schema, items, &item_path, visiting_defs)
+        }),
+        _ => false,
+    }
+}
+
+fn is_property_read_only(
+    schema: &CfnSchema,
+    property: &CfnProperty,
+    property_path: &[String],
+) -> bool {
+    property_is_fully_read_only(schema, property, property_path, &mut HashSet::new())
+}
+
+fn record_emitted_read_only_path(property_path: &[String]) {
+    EMITTED_READ_ONLY_PATHS.with(|paths| paths.borrow_mut().push(property_path.to_vec()));
+}
+
+fn read_only_emission_mark() -> usize {
+    EMITTED_READ_ONLY_PATHS.with(|paths| paths.borrow().len())
+}
+
+fn record_struct_read_only_use(struct_name: &str, property_path: &[String], emission_mark: usize) {
+    let signature = EMITTED_READ_ONLY_PATHS.with(|paths| {
+        paths.borrow()[emission_mark..]
+            .iter()
+            .filter_map(|path| {
+                path.strip_prefix(property_path)
+                    .filter(|relative| !relative.is_empty())
+                    .map(<[String]>::to_vec)
+            })
+            .collect::<BTreeSet<_>>()
+    });
+    EMITTED_STRUCT_READ_ONLY_USES.with(|uses| {
+        uses.borrow_mut()
+            .entry(struct_name.to_string())
+            .or_default()
+            .push(StructReadOnlyUse {
+                property_path: property_path.to_vec(),
+                signature,
+            });
+    });
+}
+
+fn format_cfn_property_path(path: &[String]) -> String {
+    let encoded = path
+        .iter()
+        .map(|segment| segment.replace('~', "~0").replace('/', "~1"))
+        .collect::<Vec<_>>()
+        .join("/");
+    format!("/properties/{encoded}")
+}
+
+fn validate_emitted_nested_read_only_properties(schema: &CfnSchema) -> Result<()> {
+    let emitted = EMITTED_READ_ONLY_PATHS.with(|paths| {
+        paths
+            .borrow()
+            .iter()
+            .cloned()
+            .collect::<BTreeSet<Vec<String>>>()
+    });
+    for pointer in &schema.read_only_properties {
+        let Some(path) = cfn_property_path(pointer) else {
+            continue;
+        };
+        if path.len() > 1 && !emitted.contains(&path) {
+            anyhow::bail!(
+                "{} nested readOnlyProperties pointer {pointer:?} did not resolve to an emitted StructField",
+                schema.type_name
+            );
+        }
+    }
+
+    EMITTED_STRUCT_READ_ONLY_USES.with(|all_uses| -> Result<()> {
+        for (struct_name, uses) in all_uses.borrow().iter() {
+            let Some(first) = uses.first() else {
+                continue;
+            };
+            if let Some(differing) = uses
+                .iter()
+                .skip(1)
+                .find(|use_| use_.signature != first.signature)
+            {
+                anyhow::bail!(
+                    "{} struct {struct_name:?} is emitted from {} and {} with different nested readOnlyProperties sets; name-based caching cannot represent path-dependent provider-populated fields",
+                    schema.type_name,
+                    format_cfn_property_path(&first.property_path),
+                    format_cfn_property_path(&differing.property_path),
+                );
+            }
+        }
+        Ok(())
+    })
 }
 
 fn extend_struct_path(struct_path: &[String], struct_name: &str) -> Vec<String> {
@@ -1755,17 +1974,12 @@ fn type_display_string(
 }
 
 fn generate_markdown(schema: &CfnSchema, type_name: &str) -> Result<String> {
+    reset_recursion_guard();
+
     let mut md = String::new();
 
     let dsl_resource = dsl_resource_name_from_type(type_name)?;
     let namespace = format!("aws.{}", dsl_resource);
-
-    // Build read-only properties set
-    let read_only: HashSet<String> = schema
-        .read_only_properties
-        .iter()
-        .map(|p| p.trim_start_matches("/properties/").to_string())
-        .collect();
 
     // Build create-only properties set
     let create_only: HashSet<String> = schema
@@ -1802,7 +2016,14 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str) -> Result<String> {
             resource_type_overrides().get(&(type_name, prop_name.as_str()))
         {
             enums.insert(prop_name.clone(), enum_info_for_override(prop_name, values));
-            collect_struct_defs(prop, prop_name, schema, &[], &mut struct_defs);
+            collect_struct_defs(
+                prop,
+                prop_name,
+                schema,
+                &[],
+                std::slice::from_ref(prop_name),
+                &mut struct_defs,
+            );
             continue;
         }
         let (_, enum_info) =
@@ -1811,7 +2032,14 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str) -> Result<String> {
             enums.insert(prop_name.clone(), info);
         }
         // Collect struct definitions from $ref
-        collect_struct_defs(prop, prop_name, schema, &[], &mut struct_defs);
+        collect_struct_defs(
+            prop,
+            prop_name,
+            schema,
+            &[],
+            std::slice::from_ref(prop_name),
+            &mut struct_defs,
+        );
     }
 
     // Scan struct definition fields for enum info (const values, $ref to enum-only definitions)
@@ -1839,13 +2067,15 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str) -> Result<String> {
                     _ => {}
                 }
             }
-            let (_, enum_info) = cfn_type_to_carina_type_with_enum_with_struct_path(
+            let field_path = extend_property_path(&def_info.property_path, field_name);
+            let (_, enum_info) = cfn_type_to_carina_type_with_enum_with_paths(
                 field_prop,
                 field_name,
                 schema,
                 &namespace,
                 &enums,
                 &def_info.struct_path,
+                &field_path,
             );
             if let Some(info) = enum_info {
                 enums.insert(composite_key, info);
@@ -1854,6 +2084,36 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str) -> Result<String> {
     }
 
     qualify_nested_enum_type_names(&mut enums);
+
+    // Validate nested read-only pointers against the same AttributeType
+    // emitter used for generated Rust. Markdown has its own presentation
+    // traversal, but it must not document a shape that the schema artifact
+    // cannot represent safely.
+    reset_recursion_guard();
+    let has_arn_helper = resource_identity_parts(&dsl_resource).is_some()
+        && (schema.properties.contains_key("Arn")
+            || synthetic_attributes()
+                .iter()
+                .any(|synth| synth.cfn_type == type_name && synth.attr_name == "arn"));
+    for (prop_name, prop) in &schema.properties {
+        if is_deprecated_property(prop) {
+            continue;
+        }
+        let _ = generate_top_level_attribute_type(
+            prop_name,
+            prop,
+            schema,
+            &namespace,
+            &enums,
+            has_arn_helper,
+        );
+        let property_path = [prop_name.clone()];
+        if is_property_read_only(schema, prop, &property_path) {
+            record_emitted_read_only_path(&property_path);
+        }
+    }
+    validate_emitted_nested_read_only_properties(schema)?;
+    reset_recursion_guard();
 
     // Title
     md.push_str(&format!("# awscc.{}\n\n", dsl_resource));
@@ -1871,7 +2131,8 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str) -> Result<String> {
         if is_deprecated_property(prop) {
             continue;
         }
-        if read_only.contains(prop_name) {
+        let property_path = [prop_name.clone()];
+        if is_property_read_only(schema, prop, &property_path) {
             continue;
         }
 
@@ -1979,7 +2240,9 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str) -> Result<String> {
                     continue;
                 }
                 let snake_name = field_name.to_snake_case();
-                let is_req = required_set.contains(field_name.as_str());
+                let field_path = extend_property_path(&def_info.property_path, field_name);
+                let is_read_only = is_property_read_only(schema, field_prop, &field_path);
+                let is_req = required_set.contains(field_name.as_str()) && !is_read_only;
                 let composite_key = format!("{}.{}", def_info.def_name, field_name);
                 let field_type_display: String = if enums.contains_key(&composite_key) {
                     let enum_info = &enums[&composite_key];
@@ -2005,13 +2268,19 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str) -> Result<String> {
                 } else {
                     type_display_string(field_name, field_prop, schema, &enums)
                 };
-                let desc = collapse_whitespace(
+                let mut desc = collapse_whitespace(
                     &field_prop
                         .description
                         .as_deref()
                         .unwrap_or("")
                         .replace('\n', " "),
                 );
+                if is_read_only {
+                    if !desc.is_empty() {
+                        desc.push(' ');
+                    }
+                    desc.push_str("Provider-populated; cannot be set.");
+                }
                 md.push_str(&format!(
                     "| `{}` | {} | {} | {} |\n",
                     snake_name,
@@ -2029,16 +2298,16 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str) -> Result<String> {
         .iter()
         .filter(|s| s.cfn_type == type_name)
         .collect();
-    let has_read_only = schema
-        .properties
-        .keys()
-        .any(|name| read_only.contains(name))
-        || !synth_for_type.is_empty();
+    let has_read_only = schema.properties.iter().any(|(name, property)| {
+        let property_path = [name.clone()];
+        is_property_read_only(schema, property, &property_path)
+    }) || !synth_for_type.is_empty();
     if has_read_only {
         md.push_str("## Attribute Reference\n\n");
 
         for (prop_name, prop) in &schema.properties {
-            if !read_only.contains(prop_name) {
+            let property_path = [prop_name.clone()];
+            if !is_property_read_only(schema, prop, &property_path) {
                 continue;
             }
 
@@ -2075,6 +2344,7 @@ fn collect_struct_defs(
     prop_name: &str,
     schema: &CfnSchema,
     struct_path: &[String],
+    property_path: &[String],
     struct_defs: &mut BTreeMap<String, StructDefInfo>,
 ) {
     // Handle $ref. Only struct-shaped defs (inline properties, or a oneOf
@@ -2097,6 +2367,7 @@ fn collect_struct_defs(
                         StructDefInfo {
                             def_name: def_name.to_string(),
                             struct_path: def_path.clone(),
+                            property_path: property_path.to_vec(),
                             properties: properties.clone(),
                             required: required.to_vec(),
                         },
@@ -2106,7 +2377,15 @@ fn collect_struct_defs(
                         if is_deprecated_property(field_prop) {
                             continue;
                         }
-                        collect_struct_defs(field_prop, field_name, schema, &def_path, struct_defs);
+                        let field_path = extend_property_path(property_path, field_name);
+                        collect_struct_defs(
+                            field_prop,
+                            field_name,
+                            schema,
+                            &def_path,
+                            &field_path,
+                            struct_defs,
+                        );
                     }
                 }
             }
@@ -2127,6 +2406,7 @@ fn collect_struct_defs(
                         StructDefInfo {
                             def_name: def_name.to_string(),
                             struct_path: def_path.clone(),
+                            property_path: property_path.to_vec(),
                             properties: merged_props.clone(),
                             required: vec![], // oneOf variants are mutually exclusive
                         },
@@ -2136,7 +2416,15 @@ fn collect_struct_defs(
                         if is_deprecated_property(field_prop) {
                             continue;
                         }
-                        collect_struct_defs(field_prop, field_name, schema, &def_path, struct_defs);
+                        let field_path = extend_property_path(property_path, field_name);
+                        collect_struct_defs(
+                            field_prop,
+                            field_name,
+                            schema,
+                            &def_path,
+                            &field_path,
+                            struct_defs,
+                        );
                     }
                 }
             }
@@ -2161,11 +2449,13 @@ fn collect_struct_defs(
         && !struct_defs.contains_key(def_name)
     {
         let def_path = extend_struct_path(struct_path, def_name);
+        let item_path = extend_property_path(property_path, "*");
         struct_defs.insert(
             def_name.to_string(),
             StructDefInfo {
                 def_name: def_name.to_string(),
                 struct_path: def_path.clone(),
+                property_path: item_path.clone(),
                 properties: properties.clone(),
                 required: required.to_vec(),
             },
@@ -2175,7 +2465,15 @@ fn collect_struct_defs(
             if is_deprecated_property(field_prop) {
                 continue;
             }
-            collect_struct_defs(field_prop, field_name, schema, &def_path, struct_defs);
+            let field_path = extend_property_path(&item_path, field_name);
+            collect_struct_defs(
+                field_prop,
+                field_name,
+                schema,
+                &def_path,
+                &field_path,
+                struct_defs,
+            );
         }
     }
     // Handle inline object with properties
@@ -2191,6 +2489,7 @@ fn collect_struct_defs(
             StructDefInfo {
                 def_name: prop_name.to_string(),
                 struct_path: def_path.clone(),
+                property_path: property_path.to_vec(),
                 properties: props.clone(),
                 required: prop.required.clone(),
             },
@@ -2200,7 +2499,15 @@ fn collect_struct_defs(
             if is_deprecated_property(field_prop) {
                 continue;
             }
-            collect_struct_defs(field_prop, field_name, schema, &def_path, struct_defs);
+            let field_path = extend_property_path(property_path, field_name);
+            collect_struct_defs(
+                field_prop,
+                field_name,
+                schema,
+                &def_path,
+                &field_path,
+                struct_defs,
+            );
         }
     }
 }
@@ -2310,13 +2617,67 @@ fn detect_exclusive_fields(schema: &CfnSchema, type_name: &str) -> Vec<Vec<Strin
     all_groups.into_iter().collect()
 }
 
+/// Produce the exact AttributeType expression used by a top-level generated
+/// attribute. Besides returning Rust source, this walks every nested struct
+/// that survives overrides and records its emitted read-only fields.
+fn generate_top_level_attribute_type(
+    prop_name: &str,
+    prop: &CfnProperty,
+    schema: &CfnSchema,
+    namespace: &str,
+    enums: &BTreeMap<String, EnumInfo>,
+    has_arn_helper: bool,
+) -> String {
+    if has_arn_helper && prop_name == "Arn" {
+        return "self::arn()".to_string();
+    }
+
+    if let Some(enum_info) = enums.get(prop_name) {
+        let aliases = known_enum_aliases();
+        let prop_aliases = aliases.get(prop_name);
+        let dsl_aliases_code = dsl_aliases_code(&enum_info.values, prop_aliases);
+        let values_str = enum_info
+            .values
+            .iter()
+            .map(|value| format!("{}.to_string()", rust_lit(value)))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let enum_type = format!(
+            r#"AttributeType::enum_(carina_core::schema::enum_identity({}, Some({})), Some(vec![{}]), {}, None, None)"#,
+            rust_lit(&enum_info.type_name),
+            rust_lit(namespace),
+            values_str,
+            dsl_aliases_code
+        );
+        let is_array = prop
+            .prop_type
+            .as_ref()
+            .and_then(TypeValue::as_str)
+            .is_some_and(|prop_type| prop_type == "array");
+        let is_ref_array = prop
+            .ref_path
+            .as_ref()
+            .and_then(|ref_path| resolve_ref_classified(schema, ref_path))
+            .is_some_and(|definition| matches!(definition, ResolvedDef::Array { .. }));
+        if is_array || is_ref_array {
+            let list_ctor = list_constructor(
+                prop.insertion_order,
+                override_forces_unordered(schema.type_name.as_str(), prop_name),
+            );
+            return format!("{}({})", list_ctor, enum_type);
+        }
+        return enum_type;
+    }
+
+    cfn_type_to_carina_type_with_enum(prop, prop_name, schema, namespace, enums).0
+}
+
 fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
     // carina#3340: clear per-resource codegen state at function entry
     // (cyclic-$ref guard + emitted-pattern accumulators) so prior
     // resources don't leak entries into this resource's pre-scan or
     // post-emit validator-fn generation.
     reset_recursion_guard();
-
     let mut code = String::new();
 
     // Parse type name: AWS::EC2::VPC -> (ec2, vpc)
@@ -2338,13 +2699,6 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
             .then(|| emit_arn_helper(service, resource, arn_emit_choice(service, resource)))
     });
     let has_arn_helper = arn_helper.is_some();
-
-    // Build read-only properties set
-    let read_only: HashSet<String> = schema
-        .read_only_properties
-        .iter()
-        .map(|p| p.trim_start_matches("/properties/").to_string())
-        .collect();
 
     // Build create-only properties set
     let create_only: HashSet<String> = schema
@@ -2744,6 +3098,7 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
     // `type_name`s — they key on pattern strings, numeric bounds, and
     // integer values — so they survive qualification unchanged.
     EMITTED_DEFS.with(|s| s.borrow_mut().clear());
+    reset_read_only_emission_state();
 
     let has_enums = !enums.is_empty();
     let has_ranged_ints = !ranged_ints.is_empty();
@@ -2799,9 +3154,6 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
     if let Some(helper) = &arn_helper {
         body.push_str(helper);
     }
-
-    // Aliases feed the `dsl_aliases` table on each `StringEnum` below.
-    let aliases = known_enum_aliases();
 
     // Generate enum constants.
     // Constants are always emitted (referenced by enum_valid_values()).
@@ -3106,8 +3458,9 @@ pub fn {}() -> AwsccSchemaConfig {{
     // Generate attributes for each property
     for (prop_name, prop) in &schema.properties {
         let attr_name = prop_name.to_snake_case();
-        let is_required = required.contains(prop_name) && !read_only.contains(prop_name);
-        let is_read_only = read_only.contains(prop_name);
+        let property_path = [prop_name.clone()];
+        let is_read_only = is_property_read_only(schema, prop, &property_path);
+        let is_required = required.contains(prop_name) && !is_read_only;
         let is_create_only = create_only.contains(prop_name)
             || create_only
                 .iter()
@@ -3121,58 +3474,14 @@ pub fn {}() -> AwsccSchemaConfig {{
         let is_write_only = write_only.contains(prop_name);
         let is_identity = identity_properties().contains(&(type_name, prop_name));
 
-        let attr_type = if has_arn_helper && prop_name == "Arn" {
-            "self::arn()".to_string()
-        } else if let Some(enum_info) = enums.get(prop_name) {
-            // Use shared schema enum type for constrained strings.
-            // Emit a `dsl_aliases` data table mapping every canonical value
-            // to its snake_case DSL spelling per naming-conventions design
-            // D7. Data form (rather than a `fn` closure) is required so the
-            // alias map survives the WASM-component boundary — see
-            // awscc#199 / carina#2831.
-            let prop_aliases = aliases.get(prop_name.as_str());
-            let dsl_aliases_code = dsl_aliases_code(&enum_info.values, prop_aliases);
-            let values_str = enum_info
-                .values
-                .iter()
-                .map(|v| format!("{}.to_string()", rust_lit(v)))
-                .collect::<Vec<_>>()
-                .join(", ");
-            let enum_type = format!(
-                r#"AttributeType::enum_(carina_core::schema::enum_identity({}, Some({})), Some(vec![{}]), {}, None, None)"#,
-                rust_lit(&enum_info.type_name),
-                rust_lit(&namespace),
-                values_str,
-                dsl_aliases_code
-            );
-            // Wrap in List if the property is an array type
-            let is_array = prop
-                .prop_type
-                .as_ref()
-                .and_then(|t| t.as_str())
-                .map(|t| t == "array")
-                .unwrap_or(false);
-            // Also check if the property is a $ref to an array-typed definition
-            let is_ref_array = prop
-                .ref_path
-                .as_ref()
-                .and_then(|ref_path| resolve_ref_classified(schema, ref_path))
-                .map(|def| matches!(def, ResolvedDef::Array { .. }))
-                .unwrap_or(false);
-            if is_array || is_ref_array {
-                let list_ctor = list_constructor(
-                    prop.insertion_order,
-                    override_forces_unordered(schema.type_name.as_str(), prop_name),
-                );
-                format!("{}({})", list_ctor, enum_type)
-            } else {
-                enum_type
-            }
-        } else {
-            let (attr_type, _) =
-                cfn_type_to_carina_type_with_enum(prop, prop_name, schema, &namespace, &enums);
-            attr_type
-        };
+        let attr_type = generate_top_level_attribute_type(
+            prop_name,
+            prop,
+            schema,
+            &namespace,
+            &enums,
+            has_arn_helper,
+        );
 
         let mut attr_code = format!(
             "        .attribute(\n            AttributeSchema::new(\"{}\", {})", // rust-lit-guard: allow (snake_case output cannot contain " or \\)
@@ -3189,6 +3498,7 @@ pub fn {}() -> AwsccSchemaConfig {{
 
         if is_read_only {
             attr_code.push_str("\n                .read_only()");
+            record_emitted_read_only_path(&property_path);
         }
 
         if is_write_only {
@@ -3251,6 +3561,8 @@ pub fn {}() -> AwsccSchemaConfig {{
         attr_code.push_str(",\n        )\n");
         body.push_str(&attr_code);
     }
+
+    validate_emitted_nested_read_only_properties(schema)?;
 
     // Emit synthetic attributes — values the Cloud Control read path does
     // not return because the CFN schema omits them. The provider fills
@@ -4227,6 +4539,11 @@ impl ResolvedDef<'_> {
     }
 }
 
+struct StructGenerationPaths<'a> {
+    structural: &'a [String],
+    provider: &'a [String],
+}
+
 /// Generate Rust code for an AttributeType::Struct from a set of properties
 fn generate_struct_type(
     def_name: &str,
@@ -4235,9 +4552,10 @@ fn generate_struct_type(
     schema: &CfnSchema,
     namespace: &str,
     enums: &BTreeMap<String, EnumInfo>,
-    struct_path: &[String],
+    paths: StructGenerationPaths<'_>,
 ) -> String {
-    let current_struct_path = extend_struct_path(struct_path, def_name);
+    let emission_mark = read_only_emission_mark();
+    let current_struct_path = extend_struct_path(paths.structural, def_name);
     let enum_namespace = namespace_with_struct_path(namespace, &current_struct_path);
     let required_set: HashSet<&str> = required.iter().map(|s| s.as_str()).collect();
     let aliases = known_enum_aliases();
@@ -4247,15 +4565,7 @@ fn generate_struct_type(
         .filter(|(_, field_prop)| !is_deprecated_property(field_prop))
         .map(|(field_name, field_prop)| {
             let snake_name = field_name.to_snake_case();
-            let (field_type, mut enum_info) =
-                cfn_type_to_carina_type_with_enum_with_struct_path(
-                    field_prop,
-                    field_name,
-                    schema,
-                    namespace,
-                    enums,
-                    &current_struct_path,
-                );
+            let field_path = extend_property_path(paths.provider, field_name);
             // Apply nested-field enum overlay (awscc#246). When the resource
             // schema does not annotate a struct field as an enum but we have
             // a curated value list in `resource_type_overrides()` keyed by
@@ -4265,6 +4575,24 @@ fn generate_struct_type(
             let nested_key = format!("{}.{}", def_name, field_name);
             let nested_override =
                 resource_type_overrides().get(&(schema.type_name.as_str(), nested_key.as_str()));
+            // A composite StringType override replaces the entire source
+            // property, including any object children. Do not walk those
+            // discarded children: read-only bookkeeping must describe the
+            // AttributeType that is actually emitted.
+            let (field_type, mut enum_info) =
+                if let Some(TypeOverride::StringType(override_type)) = nested_override {
+                    (override_type.to_string(), None)
+                } else {
+                    cfn_type_to_carina_type_with_enum_with_paths(
+                        field_prop,
+                        field_name,
+                        schema,
+                        namespace,
+                        enums,
+                        &current_struct_path,
+                        &field_path,
+                    )
+                };
             // `EnumUnordered` is element-handled identically to `Enum`;
             // it differs only in forcing `unordered_list` below
             // (carina#3093).
@@ -4349,12 +4677,17 @@ fn generate_struct_type(
             } else {
                 field_type
             };
-            let is_required = required_set.contains(field_name.as_str());
+            let is_read_only = is_property_read_only(schema, field_prop, &field_path);
+            let is_required = required_set.contains(field_name.as_str()) && !is_read_only;
 
             let mut field_code =
                 format!("StructField::new({}, {})", rust_lit(&snake_name), field_type);
             if is_required {
                 field_code.push_str(".required()");
+            }
+            if is_read_only {
+                field_code.push_str(".read_only()");
+                record_emitted_read_only_path(&field_path);
             }
             if let Some(desc) = &field_prop.description {
                 let escaped = collapse_whitespace(
@@ -4383,11 +4716,13 @@ fn generate_struct_type(
         .collect();
 
     let fields_str = fields.join(",\n                    ");
-    format!(
+    let struct_type = format!(
         "AttributeType::struct_({}.to_string(), vec![{}])",
         rust_lit(def_name),
         fields_str
-    )
+    );
+    record_struct_read_only_use(def_name, paths.provider, emission_mark);
+    struct_type
 }
 
 /// Known enum overrides for properties where `extract_enum_from_description()` fails
@@ -5300,6 +5635,12 @@ fn resource_type_overrides() -> &'static HashMap<(&'static str, &'static str), T
                     "GET", "DELETE", "HEAD", "OPTIONS", "PATCH", "POST", "PUT", "ALL",
                 ]),
             );
+            // The CFN schema describes Runtime as a plain string, while the
+            // CloudFront Functions API exposes this closed runtime set.
+            m.insert(
+                ("AWS::CloudFront::Function", "FunctionConfig.Runtime"),
+                TypeOverride::Enum(vec!["cloudfront-js-1.0", "cloudfront-js-2.0"]),
+            );
             // OriginProtocolPolicy: the modern CustomOriginConfig path is
             // already CFN-enum, but the LegacyCustomOrigin definition is
             // plain string. Override there.
@@ -5834,13 +6175,15 @@ fn cfn_type_to_carina_type_with_enum(
     namespace: &str,
     enums: &BTreeMap<String, EnumInfo>,
 ) -> (String, Option<EnumInfo>) {
-    cfn_type_to_carina_type_with_enum_with_struct_path(
+    let property_path = [prop_name.to_string()];
+    cfn_type_to_carina_type_with_enum_with_paths(
         prop,
         prop_name,
         schema,
         namespace,
         enums,
         &[],
+        &property_path,
     )
 }
 
@@ -5869,13 +6212,14 @@ fn property_resolves_to_array(prop: &CfnProperty, schema: &CfnSchema) -> bool {
         .is_some_and(|resolved| matches!(resolved, ResolvedDef::Array { .. }))
 }
 
-fn cfn_type_to_carina_type_with_enum_with_struct_path(
+fn cfn_type_to_carina_type_with_enum_with_paths(
     prop: &CfnProperty,
     prop_name: &str,
     schema: &CfnSchema,
     namespace: &str,
     enums: &BTreeMap<String, EnumInfo>,
     struct_path: &[String],
+    property_path: &[String],
 ) -> (String, Option<EnumInfo>) {
     // The declared tag property is special when its generated DSL name is
     // `tags`: it is a Map in Carina (Terraform-style).
@@ -5903,13 +6247,14 @@ fn cfn_type_to_carina_type_with_enum_with_struct_path(
             .iter()
             .find(|variant| property_resolves_to_array(variant, schema))
         {
-            return cfn_type_to_carina_type_with_enum_with_struct_path(
+            return cfn_type_to_carina_type_with_enum_with_paths(
                 array_variant,
                 prop_name,
                 schema,
                 namespace,
                 enums,
                 struct_path,
+                property_path,
             );
         }
 
@@ -5935,16 +6280,17 @@ fn cfn_type_to_carina_type_with_enum_with_struct_path(
             return ("carina_aws_types::tags_type()".to_string(), None);
         }
 
-        if let Some(def_name) = ref_def_name(ref_path) {
-            let already_known = IN_PROGRESS_DEFS.with(|s| s.borrow().contains(def_name))
-                || EMITTED_DEFS.with(|s| s.borrow().contains_key(def_name));
-            if already_known {
-                return (
-                    format!("AttributeType::ref_({}.to_string())", rust_lit(def_name)),
-                    None,
-                );
-            }
+        if let Some(def_name) = ref_def_name(ref_path)
+            && IN_PROGRESS_DEFS.with(|s| s.borrow().contains(def_name))
+        {
+            return (
+                format!("AttributeType::ref_({}.to_string())", rust_lit(def_name)),
+                None,
+            );
         }
+
+        let definition_already_emitted = ref_def_name(ref_path)
+            .is_some_and(|def_name| EMITTED_DEFS.with(|s| s.borrow().contains_key(def_name)));
 
         if let Some(resolved) = resolve_ref_classified(schema, ref_path) {
             match resolved {
@@ -5963,11 +6309,20 @@ fn cfn_type_to_carina_type_with_enum_with_struct_path(
                         schema,
                         namespace,
                         enums,
-                        struct_path,
+                        StructGenerationPaths {
+                            structural: struct_path,
+                            provider: property_path,
+                        },
                     );
                     IN_PROGRESS_DEFS.with(|s| {
                         s.borrow_mut().remove(def_name);
                     });
+                    if definition_already_emitted {
+                        return (
+                            format!("AttributeType::ref_({}.to_string())", rust_lit(def_name)),
+                            None,
+                        );
+                    }
                     EMITTED_DEFS.with(|s| {
                         s.borrow_mut().insert(def_name.to_string(), body.clone());
                     });
@@ -5997,11 +6352,20 @@ fn cfn_type_to_carina_type_with_enum_with_struct_path(
                             schema,
                             namespace,
                             enums,
-                            struct_path,
+                            StructGenerationPaths {
+                                structural: struct_path,
+                                provider: property_path,
+                            },
                         );
                         IN_PROGRESS_DEFS.with(|s| {
                             s.borrow_mut().remove(def_name);
                         });
+                        if definition_already_emitted {
+                            return (
+                                format!("AttributeType::ref_({}.to_string())", rust_lit(def_name)),
+                                None,
+                            );
+                        }
                         EMITTED_DEFS.with(|s| {
                             s.borrow_mut().insert(def_name.to_string(), body.clone());
                         });
@@ -6022,13 +6386,15 @@ fn cfn_type_to_carina_type_with_enum_with_struct_path(
                     return ("/* enum */".to_string(), Some(enum_info));
                 }
                 ResolvedDef::Array { items } => {
-                    let (item_type, item_enum) = cfn_type_to_carina_type_with_enum_with_struct_path(
+                    let item_path = extend_property_path(property_path, "*");
+                    let (item_type, item_enum) = cfn_type_to_carina_type_with_enum_with_paths(
                         items,
                         prop_name,
                         schema,
                         namespace,
                         enums,
                         struct_path,
+                        &item_path,
                     );
                     let effective_item_type = if item_enum.is_some() {
                         "AttributeType::string()".to_string()
@@ -6069,13 +6435,14 @@ fn cfn_type_to_carina_type_with_enum_with_struct_path(
                 }
                 scalar @ ResolvedDef::Scalar { .. } => {
                     if let Some(scalar_prop) = scalar.scalar_as_property() {
-                        return cfn_type_to_carina_type_with_enum_with_struct_path(
+                        return cfn_type_to_carina_type_with_enum_with_paths(
                             &scalar_prop,
                             prop_name,
                             schema,
                             namespace,
                             enums,
                             struct_path,
+                            property_path,
                         );
                     }
                 }
@@ -6318,6 +6685,7 @@ fn cfn_type_to_carina_type_with_enum_with_struct_path(
                 override_forces_unordered(schema.type_name.as_str(), prop_name),
             );
             let (list_type, item_enum) = if let Some(items) = &prop.items {
+                let item_path = extend_property_path(property_path, "*");
                 // Struct-shaped $ref items are inlined as a list-of-struct;
                 // every other item shape (scalar/enum/array/string/opaque)
                 // falls through to the normal recursion below.
@@ -6336,17 +6704,21 @@ fn cfn_type_to_carina_type_with_enum_with_struct_path(
                         schema,
                         namespace,
                         enums,
-                        struct_path,
+                        StructGenerationPaths {
+                            structural: struct_path,
+                            provider: &item_path,
+                        },
                     );
                     (format!("{}({})", list_ctor, struct_type), None)
                 } else {
-                    let (item_type, item_enum) = cfn_type_to_carina_type_with_enum_with_struct_path(
+                    let (item_type, item_enum) = cfn_type_to_carina_type_with_enum_with_paths(
                         items,
                         prop_name,
                         schema,
                         namespace,
                         enums,
                         struct_path,
+                        &item_path,
                     );
                     // If array items have enum values, propagate the enum info so the
                     // caller can register it. The item type uses String as a placeholder;
@@ -6402,7 +6774,10 @@ fn cfn_type_to_carina_type_with_enum_with_struct_path(
                         schema,
                         namespace,
                         enums,
-                        struct_path,
+                        StructGenerationPaths {
+                            structural: struct_path,
+                            provider: property_path,
+                        },
                     ),
                     None,
                 );
@@ -6966,6 +7341,16 @@ mod tests {
     }
 
     #[test]
+    fn test_cloudfront_function_replacement_class_uses_top_level_name() {
+        let function = cfn_schema_for_codegen_tests("AWS::CloudFront::Function");
+
+        assert_eq!(
+            declared_replacement_class("cloudfront.Function", &function).unwrap(),
+            ReplacementClass::Attribute("name")
+        );
+    }
+
+    #[test]
     fn test_replacement_class_table_exactly_matches_schema_cache() {
         let mut cached_resources = BTreeSet::new();
 
@@ -7201,6 +7586,509 @@ mod tests {
                 ),
             }
         }
+    }
+
+    #[test]
+    fn test_cloudfront_function_runtime_override_and_dsl_aliases() {
+        let schema = cfn_schema_for_codegen_tests("AWS::CloudFront::Function");
+        let generated = generate_schema_code(&schema, "AWS::CloudFront::Function")
+            .expect("CloudFront Function schema generation should succeed");
+        assert!(
+            generated
+                .contains(r#"("cloudfront-js-2.0".to_string(), "cloudfront_js_2_0".to_string())"#),
+            "cloudfront-js-2.0 must expose the DSL alias cloudfront_js_2_0: {generated}"
+        );
+    }
+
+    #[test]
+    fn test_cloudfront_function_nested_read_only_metadata_is_provider_populated() {
+        let schema = cfn_schema_for_codegen_tests("AWS::CloudFront::Function");
+        let generated = generate_schema_code(&schema, "AWS::CloudFront::Function")
+            .expect("CloudFront Function schema generation should succeed");
+
+        assert!(
+            generated.contains(
+                r#"StructField::new("function_arn", carina_aws_types::arn()).read_only()"#
+            ),
+            "FunctionMetadata.FunctionARN must be provider-populated: {generated}"
+        );
+
+        let function_metadata = generated
+            .split("AttributeSchema::new(\"function_metadata\"")
+            .nth(1)
+            .and_then(|tail| tail.split("AttributeSchema::new(\"name\"").next())
+            .expect("generated Function schema should contain function_metadata before name");
+        let function_metadata_attribute_builders = function_metadata
+            .split(r#".with_provider_name("FunctionARN")]))"#)
+            .nth(1)
+            .expect("function_metadata should contain its nested FunctionARN field");
+        assert!(
+            function_metadata_attribute_builders.contains(".read_only()"),
+            "FunctionMetadata contains only provider-populated fields, so the top-level attribute must be read-only: {function_metadata_attribute_builders}"
+        );
+    }
+
+    #[test]
+    fn test_s3_bucket_nested_read_only_metadata_fields_are_provider_populated() {
+        let schema = cfn_schema_for_codegen_tests("AWS::S3::Bucket");
+        let generated = generate_schema_code(&schema, "AWS::S3::Bucket")
+            .expect("S3 Bucket schema generation should succeed");
+
+        let s3_tables_destination = generated
+            .split(r#"AttributeType::struct_("S3TablesDestination"#)
+            .nth(1)
+            .and_then(|tail| {
+                tail.split(r#".with_provider_name("S3TablesDestination")"#)
+                    .next()
+            })
+            .expect("generated S3 schema should contain S3TablesDestination");
+        for field in ["table_namespace", "table_arn"] {
+            assert!(
+                s3_tables_destination.contains(&format!(
+                    r#"StructField::new("{field}", carina_aws_types::arn()).read_only()"#
+                )) || s3_tables_destination.contains(&format!(
+                    r#"StructField::new("{field}", AttributeType::string()).read_only()"#
+                )),
+                "S3TablesDestination.{field} must be provider-populated: {s3_tables_destination}"
+            );
+        }
+        let table_name = s3_tables_destination
+            .split(r#"StructField::new("table_name"#)
+            .nth(1)
+            .and_then(|tail| tail.split(r#"StructField::new("table_namespace"#).next())
+            .expect("S3TablesDestination should contain table_name before table_namespace");
+        assert!(
+            !table_name.contains(".read_only()"),
+            "S3TablesDestination.TableName must remain writable: {table_name}"
+        );
+
+        let metadata_configuration = generated
+            .split(r#"AttributeType::struct_("MetadataConfiguration"#)
+            .nth(1)
+            .expect("generated S3 schema should contain MetadataConfiguration");
+        let destination = metadata_configuration
+            .split(r#"StructField::new("destination"#)
+            .nth(1)
+            .and_then(|tail| {
+                tail.split(r#"StructField::new("inventory_table_configuration"#)
+                    .next()
+            })
+            .expect("MetadataConfiguration should contain destination");
+        assert!(
+            destination.contains(".read_only()"),
+            "MetadataConfiguration.Destination must be provider-populated: {destination}"
+        );
+
+        let inventory_table_configuration = metadata_configuration
+            .split(r#"StructField::new("inventory_table_configuration""#)
+            .nth(1)
+            .and_then(|tail| {
+                tail.split(r#"StructField::new("journal_table_configuration""#)
+                    .next()
+            })
+            .expect("MetadataConfiguration should contain InventoryTableConfiguration");
+        assert!(
+            inventory_table_configuration
+                .contains(r#"StructField::new("table_arn", carina_aws_types::arn()).read_only()"#),
+            "InventoryTableConfiguration.TableArn must be provider-populated: {inventory_table_configuration}"
+        );
+        assert!(
+            inventory_table_configuration
+                .contains(r#"StructField::new("table_name", AttributeType::string()).read_only()"#),
+            "InventoryTableConfiguration.TableName must be provider-populated: {inventory_table_configuration}"
+        );
+
+        let journal_table_configuration = metadata_configuration
+            .split(r#"StructField::new("journal_table_configuration""#)
+            .nth(1)
+            .and_then(|tail| {
+                tail.split(r#".with_provider_name("JournalTableConfiguration")"#)
+                    .next()
+            })
+            .expect("MetadataConfiguration should contain JournalTableConfiguration");
+        assert!(
+            journal_table_configuration
+                .contains(r#"StructField::new("table_arn", carina_aws_types::arn()).read_only()"#),
+            "JournalTableConfiguration.TableArn must be provider-populated: {journal_table_configuration}"
+        );
+        assert!(
+            journal_table_configuration
+                .contains(r#"StructField::new("table_name", AttributeType::string()).read_only()"#),
+            "JournalTableConfiguration.TableName must be provider-populated: {journal_table_configuration}"
+        );
+    }
+
+    #[test]
+    fn test_nested_read_only_path_through_array_wildcard_is_provider_populated() {
+        let mut schema = empty_schema("AWS::Test::ArrayReadOnly");
+        schema.properties.insert(
+            "Items".to_string(),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("array".to_string())),
+                items: Some(Box::new(CfnProperty {
+                    prop_type: Some(TypeValue::Single("object".to_string())),
+                    properties: Some(BTreeMap::from([
+                        (
+                            "Owned".to_string(),
+                            CfnProperty {
+                                prop_type: Some(TypeValue::Single("string".to_string())),
+                                ..Default::default()
+                            },
+                        ),
+                        (
+                            "Writable".to_string(),
+                            CfnProperty {
+                                prop_type: Some(TypeValue::Single("string".to_string())),
+                                ..Default::default()
+                            },
+                        ),
+                    ])),
+                    ..Default::default()
+                })),
+                ..Default::default()
+            },
+        );
+        schema.read_only_properties = vec!["/properties/Items/*/Owned".to_string()];
+
+        let items = schema
+            .properties
+            .get("Items")
+            .expect("array read-only test schema should contain Items");
+        let (generated, _) = cfn_type_to_carina_type_with_enum(
+            items,
+            "Items",
+            &schema,
+            "aws.test.ArrayReadOnly",
+            &BTreeMap::new(),
+        );
+        assert!(
+            generated.contains(r#"StructField::new("owned", AttributeType::string()).read_only()"#),
+            "Items[*].Owned must be provider-populated: {generated}"
+        );
+        assert!(
+            !generated
+                .contains(r#"StructField::new("writable", AttributeType::string()).read_only()"#),
+            "Items[*].Writable must remain writable: {generated}"
+        );
+    }
+
+    #[test]
+    fn test_nested_read_only_path_through_ref_array_items_is_provider_populated() {
+        let item_definition = CfnDefinition {
+            def_type: Some("object".to_string()),
+            properties: Some(BTreeMap::from([
+                (
+                    "Owned".to_string(),
+                    CfnProperty {
+                        prop_type: Some(TypeValue::Single("string".to_string())),
+                        ..Default::default()
+                    },
+                ),
+                (
+                    "Writable".to_string(),
+                    CfnProperty {
+                        prop_type: Some(TypeValue::Single("string".to_string())),
+                        ..Default::default()
+                    },
+                ),
+            ])),
+            ..Default::default()
+        };
+        let item_ref = CfnProperty {
+            ref_path: Some("#/definitions/Item".to_string()),
+            ..Default::default()
+        };
+        let mut schema = empty_schema("AWS::EC2::Route");
+        schema.properties = BTreeMap::from([
+            (
+                "DirectItems".to_string(),
+                CfnProperty {
+                    prop_type: Some(TypeValue::Single("array".to_string())),
+                    items: Some(Box::new(item_ref.clone())),
+                    ..Default::default()
+                },
+            ),
+            (
+                "ReferencedItems".to_string(),
+                CfnProperty {
+                    ref_path: Some("#/definitions/ItemList".to_string()),
+                    ..Default::default()
+                },
+            ),
+        ]);
+        schema.definitions = Some(BTreeMap::from([
+            ("Item".to_string(), item_definition),
+            (
+                "ItemList".to_string(),
+                CfnDefinition {
+                    def_type: Some("array".to_string()),
+                    items: Some(Box::new(item_ref)),
+                    ..Default::default()
+                },
+            ),
+        ]));
+        schema.read_only_properties = vec![
+            "/properties/DirectItems/*/Owned".to_string(),
+            "/properties/ReferencedItems/*/Owned".to_string(),
+        ];
+
+        let generated = generate_synthetic_schema_code(&schema)
+            .expect("both $ref item array forms should generate");
+        for attribute in ["direct_items", "referenced_items"] {
+            let attribute_body = generated
+                .split(&format!(r#"AttributeSchema::new("{attribute}""#))
+                .nth(1)
+                .and_then(|tail| tail.split(".with_provider_name(").next())
+                .unwrap_or_else(|| panic!("generated schema should contain {attribute}"));
+            assert!(
+                attribute_body
+                    .contains(r#"StructField::new("owned", AttributeType::string()).read_only()"#),
+                "{attribute}[*].Owned must be provider-populated: {attribute_body}"
+            );
+            assert!(
+                !attribute_body.contains(
+                    r#"StructField::new("writable", AttributeType::string()).read_only()"#
+                ),
+                "{attribute}[*].Writable must remain writable: {attribute_body}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_shared_definition_with_path_dependent_read_only_fields_is_rejected() {
+        let mut schema = empty_schema("AWS::EC2::Route");
+        let shared_ref = CfnProperty {
+            ref_path: Some("#/definitions/Shared".to_string()),
+            ..Default::default()
+        };
+        schema.properties = BTreeMap::from([
+            ("Left".to_string(), shared_ref.clone()),
+            ("Right".to_string(), shared_ref),
+        ]);
+        schema.definitions = Some(BTreeMap::from([(
+            "Shared".to_string(),
+            CfnDefinition {
+                def_type: Some("object".to_string()),
+                properties: Some(BTreeMap::from([
+                    (
+                        "Owned".to_string(),
+                        CfnProperty {
+                            prop_type: Some(TypeValue::Single("string".to_string())),
+                            ..Default::default()
+                        },
+                    ),
+                    (
+                        "Writable".to_string(),
+                        CfnProperty {
+                            prop_type: Some(TypeValue::Single("string".to_string())),
+                            ..Default::default()
+                        },
+                    ),
+                ])),
+                ..Default::default()
+            },
+        )]));
+        schema.read_only_properties = vec!["/properties/Left/Owned".to_string()];
+
+        for (generator, result) in [
+            ("Rust", generate_synthetic_schema_code(&schema)),
+            ("Markdown", generate_markdown(&schema, "AWS::EC2::Route")),
+        ] {
+            let error = result.expect_err(
+                "a shared definition with path-dependent read-only fields must fail closed",
+            );
+            let message = error.to_string();
+            assert!(message.contains("Shared"), "{generator}: {message}");
+            assert!(
+                message.contains("/properties/Left")
+                    && message.contains("/properties/Right")
+                    && message.contains("different nested readOnlyProperties"),
+                "{generator}: {message}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_unmatched_nested_read_only_pointer_is_rejected() {
+        let mut schema = empty_schema("AWS::EC2::Route");
+        schema.properties.insert(
+            "Config".to_string(),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
+                properties: Some(BTreeMap::from([(
+                    "Present".to_string(),
+                    CfnProperty {
+                        prop_type: Some(TypeValue::Single("string".to_string())),
+                        ..Default::default()
+                    },
+                )])),
+                ..Default::default()
+            },
+        );
+        let pointer = "/properties/Config/Missing";
+        schema.read_only_properties = vec![pointer.to_string()];
+
+        let error = generate_synthetic_schema_code(&schema)
+            .expect_err("an unresolved nested readOnlyProperties pointer must fail closed");
+        let message = error.to_string();
+        assert!(message.contains(pointer), "{message}");
+        assert!(message.contains("did not resolve"), "{message}");
+    }
+
+    #[test]
+    fn test_nested_read_only_pointer_discarded_by_composite_string_override_is_rejected() {
+        let mut schema = empty_schema("AWS::ElasticLoadBalancingV2::Listener");
+        schema.properties.insert(
+            "Config".to_string(),
+            CfnProperty {
+                ref_path: Some("#/definitions/RedirectConfig".to_string()),
+                ..Default::default()
+            },
+        );
+        schema.definitions = Some(BTreeMap::from([(
+            "RedirectConfig".to_string(),
+            CfnDefinition {
+                def_type: Some("object".to_string()),
+                properties: Some(BTreeMap::from([(
+                    "Protocol".to_string(),
+                    CfnProperty {
+                        prop_type: Some(TypeValue::Single("object".to_string())),
+                        properties: Some(BTreeMap::from([(
+                            "Owned".to_string(),
+                            CfnProperty {
+                                prop_type: Some(TypeValue::Single("string".to_string())),
+                                ..Default::default()
+                            },
+                        )])),
+                        ..Default::default()
+                    },
+                )])),
+                ..Default::default()
+            },
+        )]));
+        let pointer = "/properties/Config/Protocol/Owned";
+        schema.read_only_properties = vec![pointer.to_string()];
+
+        for (generator, result) in [
+            ("Rust", generate_synthetic_schema_code(&schema)),
+            (
+                "Markdown",
+                generate_markdown(&schema, "AWS::ElasticLoadBalancingV2::Listener"),
+            ),
+        ] {
+            let error = result.expect_err(
+                "a composite StringType override must not claim its discarded child was emitted",
+            );
+            let message = error.to_string();
+            assert!(message.contains(pointer), "{generator}: {message}");
+            assert!(
+                message.contains("did not resolve"),
+                "{generator}: {message}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_required_nested_struct_with_only_read_only_fields_is_read_only_not_required() {
+        let mut schema = empty_schema("AWS::Test::NestedReadOnly");
+        schema.properties.insert(
+            "Config".to_string(),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
+                properties: Some(BTreeMap::from([
+                    (
+                        "Meta".to_string(),
+                        CfnProperty {
+                            prop_type: Some(TypeValue::Single("object".to_string())),
+                            properties: Some(BTreeMap::from([(
+                                "Arn".to_string(),
+                                CfnProperty {
+                                    prop_type: Some(TypeValue::Single("string".to_string())),
+                                    ..Default::default()
+                                },
+                            )])),
+                            required: vec!["Arn".to_string()],
+                            ..Default::default()
+                        },
+                    ),
+                    (
+                        "Writable".to_string(),
+                        CfnProperty {
+                            prop_type: Some(TypeValue::Single("string".to_string())),
+                            ..Default::default()
+                        },
+                    ),
+                ])),
+                required: vec!["Meta".to_string()],
+                ..Default::default()
+            },
+        );
+        schema.read_only_properties = vec!["/properties/Config/Meta/Arn".to_string()];
+
+        let generated = generate_synthetic_schema_code(&schema)
+            .expect("nested fully read-only structs should generate");
+        assert!(
+            generated.contains(
+                r#".with_provider_name("Arn")])).read_only().with_provider_name("Meta")"#
+            ),
+            "Config.Meta must be provider-populated when every emitted child is read-only: {generated}"
+        );
+        assert!(
+            !generated
+                .contains(r#".with_provider_name("Arn")])).required().with_provider_name("Meta")"#),
+            "Config.Meta must not remain required when it is provider-populated: {generated}"
+        );
+    }
+
+    #[test]
+    fn test_markdown_rejects_same_inline_struct_name_with_different_read_only_fields() {
+        fn parent() -> CfnProperty {
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
+                properties: Some(BTreeMap::from([(
+                    "Config".to_string(),
+                    CfnProperty {
+                        prop_type: Some(TypeValue::Single("object".to_string())),
+                        properties: Some(BTreeMap::from([
+                            (
+                                "Owned".to_string(),
+                                CfnProperty {
+                                    prop_type: Some(TypeValue::Single("string".to_string())),
+                                    ..Default::default()
+                                },
+                            ),
+                            (
+                                "Writable".to_string(),
+                                CfnProperty {
+                                    prop_type: Some(TypeValue::Single("string".to_string())),
+                                    ..Default::default()
+                                },
+                            ),
+                        ])),
+                        ..Default::default()
+                    },
+                )])),
+                ..Default::default()
+            }
+        }
+
+        let mut schema = empty_schema("AWS::Test::InlineCollision");
+        schema.properties = BTreeMap::from([
+            ("Left".to_string(), parent()),
+            ("Right".to_string(), parent()),
+        ]);
+        schema.read_only_properties = vec!["/properties/Left/Config/Owned".to_string()];
+
+        let error = generate_markdown(&schema, "AWS::Test::InlineCollision")
+            .expect_err("Markdown must not reuse the first path for ambiguous inline structs");
+        let message = error.to_string();
+        assert!(message.contains("Config"), "{message}");
+        assert!(
+            message.contains("/properties/Left/Config")
+                && message.contains("/properties/Right/Config")
+                && message.contains("different nested readOnlyProperties"),
+            "{message}"
+        );
     }
 
     #[test]
@@ -10503,14 +11391,8 @@ mod tests {
             handlers: BTreeMap::new(),
         };
 
-        let (carina_type, enum_info) = cfn_type_to_carina_type_with_enum_with_struct_path(
-            &prop,
-            "KeyPolicy",
-            &schema,
-            "",
-            &BTreeMap::new(),
-            &[],
-        );
+        let (carina_type, enum_info) =
+            cfn_type_to_carina_type_with_enum(&prop, "KeyPolicy", &schema, "", &BTreeMap::new());
 
         assert_eq!(carina_type, "carina_aws_types::iam_policy_document()");
         assert!(enum_info.is_none());
@@ -10582,14 +11464,8 @@ mod tests {
             handlers: BTreeMap::new(),
         };
 
-        let (carina_type, enum_info) = cfn_type_to_carina_type_with_enum_with_struct_path(
-            &prop,
-            "KeySchema",
-            &schema,
-            "",
-            &BTreeMap::new(),
-            &[],
-        );
+        let (carina_type, enum_info) =
+            cfn_type_to_carina_type_with_enum(&prop, "KeySchema", &schema, "", &BTreeMap::new());
 
         assert!(enum_info.is_none());
         assert!(carina_type.contains("AttributeType::list("));
@@ -10630,13 +11506,12 @@ mod tests {
             handlers: BTreeMap::new(),
         };
 
-        let _ = cfn_type_to_carina_type_with_enum_with_struct_path(
+        let _ = cfn_type_to_carina_type_with_enum(
             &prop,
             "UnionProperty",
             &schema,
             "",
             &BTreeMap::new(),
-            &[],
         );
     }
 

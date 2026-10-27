@@ -4,5 +4,6 @@
 //!   aws-vault exec <profile> -- ./carina-provider-awscc/scripts/generate-schemas.sh
 
 pub mod distribution;
+pub mod function;
 pub mod origin_access_control;
 pub mod response_headers_policy;
