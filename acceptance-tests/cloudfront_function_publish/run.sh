@@ -137,7 +137,7 @@ assert_stage_code() {
     local actual_file="$ACTIVE_WORK_DIR/function-${stage}.js"
 
     with_account_creds aws cloudfront get-function \
-        --name "$FUNCTION_NAME" --stage "$stage" "$actual_file" >/dev/null
+        --name "$FUNCTION_NAME" --stage "$stage" "$actual_file" >/dev/null || return 1
     if cmp -s "$expected_file" "$actual_file"; then
         return 0
     fi
@@ -150,7 +150,7 @@ assert_stage_code() {
 assert_function_gone() {
     local found
     found=$(with_account_creds aws cloudfront list-functions \
-        --query "FunctionList.Items[?Name==\`$FUNCTION_NAME\`].Name" --output text)
+        --query "FunctionList.Items[?Name==\`$FUNCTION_NAME\`].Name" --output text) || return 1
     [ -z "$found" ] || [ "$found" = "None" ]
 }
 

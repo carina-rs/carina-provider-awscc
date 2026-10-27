@@ -673,6 +673,10 @@ with_account_creds() {
                         ]
                         | @tsv' <<< "$CLOUDFRONT_FIXTURE"
                 elif [ "$distribution_query" = "$referenced_function_query" ]; then
+                    if [ "$CLOUDFRONT_IN_USE_ENUMERATION_DENIED" -eq 1 ]; then
+                        echo "An error occurred (AccessDenied) when calling the ListDistributions operation for the function reference snapshot" >&2
+                        exit 254
+                    fi
                     jq -r \
                         '[
                             .Distributions[]
@@ -2160,9 +2164,9 @@ if grep -Fx "aws ec2 delete-route-table --route-table-id $MAIN_ROUTE_TABLE_ID" "
     fail "main route table must not be deleted"
 fi
 
-# If the account-wide OAC reference snapshot is unreadable, skip the entire OAC
-# pass. Treating the blank enumeration output as an empty in-use set would make
-# every OAC look deletable and recreate the permanent enabled-distribution wedge.
+# If the account-wide CloudFront reference snapshots are unreadable, skip the
+# corresponding OAC and function passes. Treating blank enumeration output as
+# an empty in-use set would make every resource look deletable.
 CLOUDFRONT_IN_USE_ENUMERATION_DENIED=1
 COMMAND_LOG="$WORK_DIR/cloudfront-reference-failure-aws-calls.log"
 CLOUDFRONT_STUB_FAILURE_LOG="$WORK_DIR/cloudfront-reference-failure-stub-failures.log"
@@ -2207,6 +2211,30 @@ for forbidden_oac_command in \
 do
     if grep -F "$forbidden_oac_command" "$COMMAND_LOG" >/dev/null; then
         fail "failed CloudFront OAC reference snapshot fell through to: $forbidden_oac_command"
+    fi
+done
+
+failed_function_reference_snapshot_count=$(grep -cF \
+    "aws cloudfront list-distributions --query DistributionList.Items[].[DefaultCacheBehavior.FunctionAssociations.Items[].FunctionARN, CacheBehaviors.Items[].FunctionAssociations.Items[].FunctionARN][][]" \
+    "$COMMAND_LOG" || true)
+if [ "$failed_function_reference_snapshot_count" -ne 1 ]; then
+    fail "expected exactly one failed CloudFront function reference snapshot, got $failed_function_reference_snapshot_count"
+fi
+if ! grep -F "CloudFront functions referenced by cache behaviors" \
+    "$CLOUDFRONT_REFERENCE_FAILURE_STDERR_LOG" | grep -F "AccessDenied" >/dev/null; then
+    fail "failed CloudFront function reference snapshot was not reported with its AccessDenied diagnostic"
+fi
+if ! grep -Fx "  Skipping CloudFront function cleanup because distribution references could not be enumerated." \
+    "$CLOUDFRONT_REFERENCE_FAILURE_STDOUT_LOG" >/dev/null; then
+    fail "failed CloudFront function reference snapshot did not report the fail-closed pass skip"
+fi
+for forbidden_function_command in \
+    "aws cloudfront list-functions" \
+    "aws cloudfront describe-function" \
+    "aws cloudfront delete-function"
+do
+    if grep -F "$forbidden_function_command" "$COMMAND_LOG" >/dev/null; then
+        fail "failed CloudFront function reference snapshot fell through to: $forbidden_function_command"
     fi
 done
 

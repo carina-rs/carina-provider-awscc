@@ -1400,6 +1400,248 @@ fn is_top_level_property_read_only(
     property_is_fully_read_only(schema, property, &property_path, &mut HashSet::new())
 }
 
+#[derive(Debug)]
+struct DefinitionReadOnlyUse {
+    property_path: Vec<String>,
+    signature: BTreeSet<Vec<String>>,
+}
+
+struct NestedReadOnlyAnalyzer<'a> {
+    schema: &'a CfnSchema,
+    nested_pointers: BTreeMap<Vec<String>, String>,
+    matched_pointers: HashSet<Vec<String>>,
+    definition_uses: BTreeMap<String, Vec<DefinitionReadOnlyUse>>,
+    active_definitions: HashSet<String>,
+}
+
+impl<'a> NestedReadOnlyAnalyzer<'a> {
+    fn new(schema: &'a CfnSchema) -> Self {
+        let nested_pointers = schema
+            .read_only_properties
+            .iter()
+            .filter_map(|pointer| {
+                let path = cfn_property_path(pointer)?;
+                (path.len() > 1).then(|| (path, pointer.clone()))
+            })
+            .collect();
+        Self {
+            schema,
+            nested_pointers,
+            matched_pointers: HashSet::new(),
+            definition_uses: BTreeMap::new(),
+            active_definitions: HashSet::new(),
+        }
+    }
+
+    fn analyze(mut self) -> Result<()> {
+        for (property_name, property) in &self.schema.properties {
+            if is_deprecated_property(property) {
+                continue;
+            }
+            self.visit_property(
+                property,
+                property_name,
+                std::slice::from_ref(property_name),
+                false,
+            )?;
+        }
+
+        if let Some((_, pointer)) = self
+            .nested_pointers
+            .iter()
+            .find(|(path, _)| !self.matched_pointers.contains(*path))
+        {
+            anyhow::bail!(
+                "{} nested readOnlyProperties pointer {pointer:?} did not resolve to an emitted StructField or lifted read-only attribute",
+                self.schema.type_name
+            );
+        }
+
+        for (definition_name, uses) in &self.definition_uses {
+            let Some(first) = uses.first() else {
+                continue;
+            };
+            if let Some(differing) = uses
+                .iter()
+                .skip(1)
+                .find(|use_| use_.signature != first.signature)
+            {
+                anyhow::bail!(
+                    "{} definition {definition_name:?} is referenced from {} and {} with different nested readOnlyProperties sets; definition-name caching cannot represent path-dependent provider-populated fields",
+                    self.schema.type_name,
+                    format_cfn_property_path(&first.property_path),
+                    format_cfn_property_path(&differing.property_path),
+                );
+            }
+        }
+        Ok(())
+    }
+
+    fn visit_property(
+        &mut self,
+        property: &CfnProperty,
+        property_name: &str,
+        property_path: &[String],
+        is_emitted_field: bool,
+    ) -> Result<()> {
+        if is_emitted_field && self.nested_pointers.contains_key(property_path) {
+            self.matched_pointers.insert(property_path.to_vec());
+        }
+
+        if is_dsl_tags_property(self.schema, property_name) || property.const_value.is_some() {
+            return Ok(());
+        }
+
+        if !property.one_of.is_empty()
+            && let Some(array_variant) = property
+                .one_of
+                .iter()
+                .find(|variant| property_resolves_to_array(variant, self.schema))
+                .cloned()
+        {
+            return self.visit_property(&array_variant, property_name, property_path, false);
+        }
+
+        if let Some(ref_path) = &property.ref_path {
+            if ref_path.contains("/Tag") {
+                return Ok(());
+            }
+            let Some(definition) = resolve_ref(self.schema, ref_path).cloned() else {
+                return Ok(());
+            };
+            let definition_name = ref_def_name(ref_path).unwrap_or(property_name);
+            match classify_def(&definition) {
+                ResolvedDef::Struct { properties, .. } => {
+                    self.visit_definition(definition_name, properties, property_path)?;
+                }
+                ResolvedDef::OneOf { variants } => {
+                    let properties = merged_struct_properties(variants);
+                    if !properties.is_empty() {
+                        self.visit_definition(definition_name, &properties, property_path)?;
+                    }
+                }
+                ResolvedDef::Array { items } => {
+                    let item_path = extend_property_path(property_path, "*");
+                    self.visit_property(items, property_name, &item_path, false)?;
+                }
+                ResolvedDef::Enum { .. }
+                | ResolvedDef::StringPattern { .. }
+                | ResolvedDef::Scalar { .. }
+                | ResolvedDef::Opaque => {}
+            }
+            return Ok(());
+        }
+
+        if property.enum_values.is_some() {
+            return Ok(());
+        }
+
+        match property.prop_type.as_ref().and_then(TypeValue::as_str) {
+            Some("array") => {
+                if let Some(items) = property.items.as_deref() {
+                    let item_path = extend_property_path(property_path, "*");
+                    if let Some(ref_path) = &items.ref_path
+                        && !ref_path.contains("/Tag")
+                        && let Some(definition) = resolve_ref(self.schema, ref_path).cloned()
+                        && let ResolvedDef::Struct { properties, .. } = classify_def(&definition)
+                    {
+                        let definition_name = ref_def_name(ref_path).unwrap_or(property_name);
+                        self.visit_definition(definition_name, properties, &item_path)?;
+                    } else {
+                        self.visit_property(items, property_name, &item_path, false)?;
+                    }
+                }
+            }
+            Some("object") => {
+                let string_override = matches!(
+                    resource_type_overrides().get(&(self.schema.type_name.as_str(), property_name)),
+                    Some(TypeOverride::StringType(_))
+                );
+                if !string_override
+                    && let Some(properties) = &property.properties
+                    && !properties.is_empty()
+                {
+                    self.visit_fields(properties, property_path)?;
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn visit_definition(
+        &mut self,
+        definition_name: &str,
+        properties: &BTreeMap<String, CfnProperty>,
+        property_path: &[String],
+    ) -> Result<()> {
+        self.record_definition_use(definition_name, property_path);
+        if !self.active_definitions.insert(definition_name.to_string()) {
+            return Ok(());
+        }
+        let result = self.visit_fields(properties, property_path);
+        self.active_definitions.remove(definition_name);
+        result
+    }
+
+    fn visit_fields(
+        &mut self,
+        properties: &BTreeMap<String, CfnProperty>,
+        property_path: &[String],
+    ) -> Result<()> {
+        for (field_name, field) in properties {
+            if is_deprecated_property(field) {
+                continue;
+            }
+            let field_path = extend_property_path(property_path, field_name);
+            self.visit_property(field, field_name, &field_path, true)?;
+        }
+        Ok(())
+    }
+
+    fn record_definition_use(&mut self, definition_name: &str, property_path: &[String]) {
+        let signature = self
+            .nested_pointers
+            .keys()
+            .filter(|read_only_path| {
+                read_only_path.len() > property_path.len()
+                    && read_only_path.starts_with(property_path)
+            })
+            .map(|read_only_path| read_only_path[property_path.len()..].to_vec())
+            .collect::<BTreeSet<_>>();
+        self.definition_uses
+            .entry(definition_name.to_string())
+            .or_default()
+            .push(DefinitionReadOnlyUse {
+                property_path: property_path.to_vec(),
+                signature,
+            });
+    }
+}
+
+fn merged_struct_properties(variants: &[CfnProperty]) -> BTreeMap<String, CfnProperty> {
+    variants
+        .iter()
+        .filter_map(|variant| variant.properties.as_ref())
+        .flat_map(|properties| properties.iter())
+        .filter(|(_, property)| !is_deprecated_property(property))
+        .map(|(name, property)| (name.clone(), property.clone()))
+        .collect()
+}
+
+fn format_cfn_property_path(path: &[String]) -> String {
+    let encoded = path
+        .iter()
+        .map(|segment| segment.replace('~', "~0").replace('/', "~1"))
+        .collect::<Vec<_>>()
+        .join("/");
+    format!("/properties/{encoded}")
+}
+
+fn validate_nested_read_only_properties(schema: &CfnSchema) -> Result<()> {
+    NestedReadOnlyAnalyzer::new(schema).analyze()
+}
+
 fn extend_struct_path(struct_path: &[String], struct_name: &str) -> Vec<String> {
     let segment = struct_name.to_pascal_case();
     let existing: Vec<usize> = struct_path
@@ -1887,6 +2129,8 @@ fn type_display_string(
 }
 
 fn generate_markdown(schema: &CfnSchema, type_name: &str) -> Result<String> {
+    validate_nested_read_only_properties(schema)?;
+
     let mut md = String::new();
 
     let dsl_resource = dsl_resource_name_from_type(type_name)?;
@@ -2507,6 +2751,7 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
     // resources don't leak entries into this resource's pre-scan or
     // post-emit validator-fn generation.
     reset_recursion_guard();
+    validate_nested_read_only_properties(schema)?;
 
     let mut code = String::new();
 
@@ -6038,13 +6283,15 @@ fn cfn_type_to_carina_type_with_enum(
     namespace: &str,
     enums: &BTreeMap<String, EnumInfo>,
 ) -> (String, Option<EnumInfo>) {
-    cfn_type_to_carina_type_with_enum_with_struct_path(
+    let property_path = [prop_name.to_string()];
+    cfn_type_to_carina_type_with_enum_with_paths(
         prop,
         prop_name,
         schema,
         namespace,
         enums,
         &[],
+        &property_path,
     )
 }
 
@@ -6071,27 +6318,6 @@ fn property_resolves_to_array(prop: &CfnProperty, schema: &CfnSchema) -> bool {
         .as_deref()
         .and_then(|ref_path| resolve_ref_classified(schema, ref_path))
         .is_some_and(|resolved| matches!(resolved, ResolvedDef::Array { .. }))
-}
-
-fn cfn_type_to_carina_type_with_enum_with_struct_path(
-    prop: &CfnProperty,
-    prop_name: &str,
-    schema: &CfnSchema,
-    namespace: &str,
-    enums: &BTreeMap<String, EnumInfo>,
-    struct_path: &[String],
-) -> (String, Option<EnumInfo>) {
-    let mut property_path = struct_path.to_vec();
-    property_path.push(prop_name.to_string());
-    cfn_type_to_carina_type_with_enum_with_paths(
-        prop,
-        prop_name,
-        schema,
-        namespace,
-        enums,
-        struct_path,
-        &property_path,
-    )
 }
 
 fn cfn_type_to_carina_type_with_enum_with_paths(
@@ -7556,6 +7782,44 @@ mod tests {
             destination.contains(".read_only()"),
             "MetadataConfiguration.Destination must be provider-populated: {destination}"
         );
+
+        let inventory_table_configuration = metadata_configuration
+            .split(r#"StructField::new("inventory_table_configuration""#)
+            .nth(1)
+            .and_then(|tail| {
+                tail.split(r#"StructField::new("journal_table_configuration""#)
+                    .next()
+            })
+            .expect("MetadataConfiguration should contain InventoryTableConfiguration");
+        assert!(
+            inventory_table_configuration
+                .contains(r#"StructField::new("table_arn", carina_aws_types::arn()).read_only()"#),
+            "InventoryTableConfiguration.TableArn must be provider-populated: {inventory_table_configuration}"
+        );
+        assert!(
+            inventory_table_configuration
+                .contains(r#"StructField::new("table_name", AttributeType::string()).read_only()"#),
+            "InventoryTableConfiguration.TableName must be provider-populated: {inventory_table_configuration}"
+        );
+
+        let journal_table_configuration = metadata_configuration
+            .split(r#"StructField::new("journal_table_configuration""#)
+            .nth(1)
+            .and_then(|tail| {
+                tail.split(r#".with_provider_name("JournalTableConfiguration")"#)
+                    .next()
+            })
+            .expect("MetadataConfiguration should contain JournalTableConfiguration");
+        assert!(
+            journal_table_configuration
+                .contains(r#"StructField::new("table_arn", carina_aws_types::arn()).read_only()"#),
+            "JournalTableConfiguration.TableArn must be provider-populated: {journal_table_configuration}"
+        );
+        assert!(
+            journal_table_configuration
+                .contains(r#"StructField::new("table_name", AttributeType::string()).read_only()"#),
+            "JournalTableConfiguration.TableName must be provider-populated: {journal_table_configuration}"
+        );
     }
 
     #[test]
@@ -7610,6 +7874,169 @@ mod tests {
                 .contains(r#"StructField::new("writable", AttributeType::string()).read_only()"#),
             "Items[*].Writable must remain writable: {generated}"
         );
+    }
+
+    #[test]
+    fn test_nested_read_only_path_through_ref_array_items_is_provider_populated() {
+        let item_definition = CfnDefinition {
+            def_type: Some("object".to_string()),
+            properties: Some(BTreeMap::from([
+                (
+                    "Owned".to_string(),
+                    CfnProperty {
+                        prop_type: Some(TypeValue::Single("string".to_string())),
+                        ..Default::default()
+                    },
+                ),
+                (
+                    "Writable".to_string(),
+                    CfnProperty {
+                        prop_type: Some(TypeValue::Single("string".to_string())),
+                        ..Default::default()
+                    },
+                ),
+            ])),
+            ..Default::default()
+        };
+        let item_ref = CfnProperty {
+            ref_path: Some("#/definitions/Item".to_string()),
+            ..Default::default()
+        };
+        let mut schema = empty_schema("AWS::EC2::Route");
+        schema.properties = BTreeMap::from([
+            (
+                "DirectItems".to_string(),
+                CfnProperty {
+                    prop_type: Some(TypeValue::Single("array".to_string())),
+                    items: Some(Box::new(item_ref.clone())),
+                    ..Default::default()
+                },
+            ),
+            (
+                "ReferencedItems".to_string(),
+                CfnProperty {
+                    ref_path: Some("#/definitions/ItemList".to_string()),
+                    ..Default::default()
+                },
+            ),
+        ]);
+        schema.definitions = Some(BTreeMap::from([
+            ("Item".to_string(), item_definition),
+            (
+                "ItemList".to_string(),
+                CfnDefinition {
+                    def_type: Some("array".to_string()),
+                    items: Some(Box::new(item_ref)),
+                    ..Default::default()
+                },
+            ),
+        ]));
+        schema.read_only_properties = vec![
+            "/properties/DirectItems/*/Owned".to_string(),
+            "/properties/ReferencedItems/*/Owned".to_string(),
+        ];
+
+        let generated = generate_synthetic_schema_code(&schema)
+            .expect("both $ref item array forms should generate");
+        for attribute in ["direct_items", "referenced_items"] {
+            let attribute_body = generated
+                .split(&format!(r#"AttributeSchema::new("{attribute}""#))
+                .nth(1)
+                .and_then(|tail| tail.split(".with_provider_name(").next())
+                .unwrap_or_else(|| panic!("generated schema should contain {attribute}"));
+            assert!(
+                attribute_body
+                    .contains(r#"StructField::new("owned", AttributeType::string()).read_only()"#),
+                "{attribute}[*].Owned must be provider-populated: {attribute_body}"
+            );
+            assert!(
+                !attribute_body.contains(
+                    r#"StructField::new("writable", AttributeType::string()).read_only()"#
+                ),
+                "{attribute}[*].Writable must remain writable: {attribute_body}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_shared_definition_with_path_dependent_read_only_fields_is_rejected() {
+        let mut schema = empty_schema("AWS::EC2::Route");
+        let shared_ref = CfnProperty {
+            ref_path: Some("#/definitions/Shared".to_string()),
+            ..Default::default()
+        };
+        schema.properties = BTreeMap::from([
+            ("Left".to_string(), shared_ref.clone()),
+            ("Right".to_string(), shared_ref),
+        ]);
+        schema.definitions = Some(BTreeMap::from([(
+            "Shared".to_string(),
+            CfnDefinition {
+                def_type: Some("object".to_string()),
+                properties: Some(BTreeMap::from([
+                    (
+                        "Owned".to_string(),
+                        CfnProperty {
+                            prop_type: Some(TypeValue::Single("string".to_string())),
+                            ..Default::default()
+                        },
+                    ),
+                    (
+                        "Writable".to_string(),
+                        CfnProperty {
+                            prop_type: Some(TypeValue::Single("string".to_string())),
+                            ..Default::default()
+                        },
+                    ),
+                ])),
+                ..Default::default()
+            },
+        )]));
+        schema.read_only_properties = vec!["/properties/Left/Owned".to_string()];
+
+        for (generator, result) in [
+            ("Rust", generate_synthetic_schema_code(&schema)),
+            ("Markdown", generate_markdown(&schema, "AWS::EC2::Route")),
+        ] {
+            let error = result.expect_err(
+                "a shared definition with path-dependent read-only fields must fail closed",
+            );
+            let message = error.to_string();
+            assert!(message.contains("Shared"), "{generator}: {message}");
+            assert!(
+                message.contains("/properties/Left")
+                    && message.contains("/properties/Right")
+                    && message.contains("different nested readOnlyProperties"),
+                "{generator}: {message}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_unmatched_nested_read_only_pointer_is_rejected() {
+        let mut schema = empty_schema("AWS::EC2::Route");
+        schema.properties.insert(
+            "Config".to_string(),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
+                properties: Some(BTreeMap::from([(
+                    "Present".to_string(),
+                    CfnProperty {
+                        prop_type: Some(TypeValue::Single("string".to_string())),
+                        ..Default::default()
+                    },
+                )])),
+                ..Default::default()
+            },
+        );
+        let pointer = "/properties/Config/Missing";
+        schema.read_only_properties = vec![pointer.to_string()];
+
+        let error = generate_synthetic_schema_code(&schema)
+            .expect_err("an unresolved nested readOnlyProperties pointer must fail closed");
+        let message = error.to_string();
+        assert!(message.contains(pointer), "{message}");
+        assert!(message.contains("did not resolve"), "{message}");
     }
 
     #[test]
@@ -10912,14 +11339,8 @@ mod tests {
             handlers: BTreeMap::new(),
         };
 
-        let (carina_type, enum_info) = cfn_type_to_carina_type_with_enum_with_struct_path(
-            &prop,
-            "KeyPolicy",
-            &schema,
-            "",
-            &BTreeMap::new(),
-            &[],
-        );
+        let (carina_type, enum_info) =
+            cfn_type_to_carina_type_with_enum(&prop, "KeyPolicy", &schema, "", &BTreeMap::new());
 
         assert_eq!(carina_type, "carina_aws_types::iam_policy_document()");
         assert!(enum_info.is_none());
@@ -10991,14 +11412,8 @@ mod tests {
             handlers: BTreeMap::new(),
         };
 
-        let (carina_type, enum_info) = cfn_type_to_carina_type_with_enum_with_struct_path(
-            &prop,
-            "KeySchema",
-            &schema,
-            "",
-            &BTreeMap::new(),
-            &[],
-        );
+        let (carina_type, enum_info) =
+            cfn_type_to_carina_type_with_enum(&prop, "KeySchema", &schema, "", &BTreeMap::new());
 
         assert!(enum_info.is_none());
         assert!(carina_type.contains("AttributeType::list("));
@@ -11039,13 +11454,12 @@ mod tests {
             handlers: BTreeMap::new(),
         };
 
-        let _ = cfn_type_to_carina_type_with_enum_with_struct_path(
+        let _ = cfn_type_to_carina_type_with_enum(
             &prop,
             "UnionProperty",
             &schema,
             "",
             &BTreeMap::new(),
-            &[],
         );
     }
 
