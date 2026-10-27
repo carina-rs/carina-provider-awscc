@@ -354,7 +354,7 @@ cat >> "$OUTPUT_DIR/mod.rs" << 'EOF'
 
 /// Build all schema configs (called once by LazyLock).
 fn build_configs() -> Vec<AwsccSchemaConfig> {
-    vec![
+    let builders: &[fn() -> AwsccSchemaConfig] = &[
 EOF
 
 # Add config function calls dynamically
@@ -364,11 +364,12 @@ for TYPE_NAME in "${GENERATED_TYPES[@]}"; do
     FULL_NAME=$("$CODEGEN_BIN" --type-name "$TYPE_NAME" --print-full-resource-name)
     FUNC_NAME="${FULL_NAME}_config"
 
-    echo "        ${SVC}::${RESOURCE}::${FUNC_NAME}()," >> "$OUTPUT_DIR/mod.rs"
+    echo "        ${SVC}::${RESOURCE}::${FUNC_NAME}," >> "$OUTPUT_DIR/mod.rs"
 done
 
 cat >> "$OUTPUT_DIR/mod.rs" << 'EOF'
-    ]
+    ];
+    builders.iter().map(|build| build()).collect()
 }
 
 /// Returns a reference to the cached schema configs slice.

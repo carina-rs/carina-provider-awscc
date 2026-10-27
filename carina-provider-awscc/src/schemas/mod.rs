@@ -41,7 +41,7 @@ mod tests {
     }
 
     fn assert_tag_change_plans_update(schema: ResourceSchema) {
-        let resource_type = schema.resource_type.clone();
+        let resource_type = schema.resource_type().to_string();
         let resource_id =
             ResourceId::with_provider_identity("awscc", resource_type.clone(), "test", None);
         let resource = Resource::with_provider("awscc", resource_type, "test", None)
@@ -85,7 +85,7 @@ mod tests {
             &managed,
             &[],
             &carina_core::provider::ProviderRouter::new(),
-            PlanPriorStates::new(&current_states, &HashMap::new(), &orphans),
+            PlanPriorStates::new(&current_states, &orphans),
             &HashMap::new(),
             &schemas,
             &saved_attrs,
@@ -114,24 +114,24 @@ mod tests {
         let config = super::generated::s3::bucket::s3_bucket_config();
         let lifecycle = config
             .schema
-            .attributes
+            .attributes()
             .get("lifecycle_configuration")
             .expect("s3 bucket should expose lifecycle_configuration");
-        let Shape::Struct { .. } = config.schema.shape_of(&lifecycle.attr_type) else {
+        let Shape::Struct { .. } = config.schema.shape_of(lifecycle.attr_type()) else {
             panic!("lifecycle_configuration should be a struct");
         };
         let fields = config
             .schema
-            .struct_fields_with_budget(&lifecycle.attr_type, &mut ShapeWalkBudget::new(256))
+            .struct_fields_with_budget(lifecycle.attr_type(), &mut ShapeWalkBudget::new(256))
             .expect("lifecycle_configuration should expose fields");
         let rules = fields
             .iter()
-            .find(|field| field.name == "rules")
+            .find(|field| field.name() == "rules")
             .expect("lifecycle_configuration should expose rules");
         let Shape::List {
             element_type: inner,
             ..
-        } = config.schema.shape_of(&rules.field_type)
+        } = config.schema.shape_of(rules.field_type())
         else {
             panic!("rules should be a list");
         };
@@ -143,22 +143,22 @@ mod tests {
             .struct_fields_with_budget(inner, &mut ShapeWalkBudget::new(256))
             .expect("rules should expose fields");
 
-        assert!(fields.iter().any(|field| field.name == "transitions"));
+        assert!(fields.iter().any(|field| field.name() == "transitions"));
         assert!(
             fields
                 .iter()
-                .any(|field| field.name == "noncurrent_version_transitions")
+                .any(|field| field.name() == "noncurrent_version_transitions")
         );
-        assert!(!fields.iter().any(|field| field.name == "transition"));
+        assert!(!fields.iter().any(|field| field.name() == "transition"));
         assert!(
             !fields
                 .iter()
-                .any(|field| field.name == "noncurrent_version_transition")
+                .any(|field| field.name() == "noncurrent_version_transition")
         );
         assert!(
             !fields
                 .iter()
-                .any(|field| field.name == "noncurrent_version_expiration_in_days")
+                .any(|field| field.name() == "noncurrent_version_expiration_in_days")
         );
     }
 
@@ -168,11 +168,11 @@ mod tests {
         let config = super::generated::cloudfront::distribution::cloudfront_distribution_config();
         let domain_name = config
             .schema
-            .attributes
+            .attributes()
             .get("domain_name")
             .expect("CloudFront distribution should expose domain_name");
 
-        assert!(!domain_name.deferred_populate);
+        assert!(!domain_name.is_deferred_populate());
     }
 
     #[test]
@@ -182,7 +182,7 @@ mod tests {
         for schema in super::all_schemas() {
             let mut collector = StringEnumIdentityCollector::new();
 
-            for (def_name, def) in &schema.defs {
+            for (def_name, def) in schema.defs() {
                 if collector.duplicates.len() >= 20 {
                     break;
                 }
@@ -196,13 +196,13 @@ mod tests {
                 );
             }
 
-            for (attr_name, attr) in &schema.attributes {
+            for (attr_name, attr) in schema.attributes() {
                 if collector.duplicates.len() >= 20 {
                     break;
                 }
                 collect_string_enum_identities(
                     &schema,
-                    &attr.attr_type,
+                    attr.attr_type(),
                     &format!("inline:{attr_name}"),
                     None,
                     &mut collector,
@@ -218,7 +218,7 @@ mod tests {
                 }
                 failures.push(format!(
                     "{}:\n  {}",
-                    schema.resource_type,
+                    schema.resource_type(),
                     collector.duplicates.join("\n  ")
                 ));
             }
@@ -350,7 +350,7 @@ mod tests {
                 );
             }
             RawShape::Struct { name, fields } => {
-                if schema.defs.contains_key(name) && current_named_def != Some(name) {
+                if schema.defs().contains_key(name) && current_named_def != Some(name) {
                     collector.stack.remove(&ptr);
                     return;
                 }
@@ -358,10 +358,10 @@ mod tests {
                     if collector.duplicates.len() >= 20 {
                         break;
                     }
-                    let field_defining_site = format!("{defining_site}.{}", field.name);
+                    let field_defining_site = format!("{defining_site}.{}", field.name());
                     collect_string_enum_identities(
                         schema,
-                        &field.field_type,
+                        field.field_type(),
                         &field_defining_site,
                         current_named_def,
                         collector,

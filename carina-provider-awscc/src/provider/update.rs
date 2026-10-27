@@ -92,7 +92,7 @@ pub(crate) fn build_update_patches(
 
     for op in &patch.ops {
         let key = op.key();
-        let attr_schema = match config.schema.attributes.get(key) {
+        let attr_schema = match config.schema.attributes().get(key) {
             Some(s) => s,
             // Unknown keys (not in the schema) are silently dropped:
             // CloudControl will reject anything we don't have an AWS
@@ -103,7 +103,7 @@ pub(crate) fn build_update_patches(
         plan.touch(key);
 
         let requires_confirmation = match op {
-            PatchOp::Add { .. } | PatchOp::Replace { .. } => !attr_schema.write_only,
+            PatchOp::Add { .. } | PatchOp::Replace { .. } => !attr_schema.is_write_only(),
             PatchOp::Reassert { .. } | PatchOp::Remove { .. } => false,
         };
         if requires_confirmation {
@@ -112,7 +112,7 @@ pub(crate) fn build_update_patches(
 
         // CloudControl rejects patches that touch read-only or create-only
         // properties. Drop them even if they appear in the patch.
-        if attr_schema.is_read_only() || attr_schema.create_only {
+        if attr_schema.is_read_only() || attr_schema.is_create_only() {
             if requires_confirmation {
                 plan.mark_unsent(key);
             }
@@ -134,7 +134,7 @@ pub(crate) fn build_update_patches(
             continue;
         }
 
-        let provider_name = attr_schema.provider_name.as_deref();
+        let provider_name = attr_schema.provider_name();
         let aws_name = match provider_name {
             Some(name) => name,
             None => {
@@ -151,10 +151,10 @@ pub(crate) fn build_update_patches(
             | PatchOp::Reassert { value, .. } => {
                 if let Some(aws_value) = dsl_value_to_aws_with_defs(
                     value,
-                    &attr_schema.attr_type,
+                    attr_schema.attr_type(),
                     resource_type,
                     key,
-                    &config.schema.defs,
+                    config.schema.defs(),
                 ) {
                     plan.ops.push(json!({
                         "op": "add",
@@ -752,10 +752,10 @@ mod tests {
             .expect("cloudfront.ResponseHeadersPolicy schema should exist");
         let attr = config
             .schema
-            .attributes
+            .attributes()
             .get("response_headers_policy_config")
             .expect("response_headers_policy_config should exist");
-        assert!(!attr.create_only);
+        assert!(!attr.is_create_only());
 
         let patch = UpdatePatch {
             ops: vec![replace(

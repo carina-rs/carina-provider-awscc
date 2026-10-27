@@ -592,9 +592,9 @@ impl AwsccProvider {
 
         let mut attributes = map_aws_props_to_attributes(
             &props,
-            &config.schema.attributes,
+            config.schema.attributes(),
             &id.resource_type,
-            &config.schema.defs,
+            config.schema.defs(),
         );
 
         // Match the #2544 optional-collection canonicalization contract: absent or
@@ -636,7 +636,7 @@ impl AwsccProvider {
 
     fn operation_budget(&self, resource_type: &str, kind: OperationKind) -> Duration {
         get_schema_config(resource_type)
-            .and_then(|config| config.schema.operation_config.as_ref())
+            .and_then(|config| config.schema.operation_config())
             .map_or(DEFAULT_OPERATION_BUDGET, |config| config.budget(kind))
     }
 
@@ -646,19 +646,19 @@ impl AwsccProvider {
         config: &AwsccSchemaConfig,
     ) -> ProviderResult<serde_json::Value> {
         let mut desired_state = serde_json::Map::new();
-        for (dsl_name, attr_schema) in &config.schema.attributes {
+        for (dsl_name, attr_schema) in config.schema.attributes() {
             if dsl_name == "tags" {
                 continue;
             }
-            if let Some(aws_name) = &attr_schema.provider_name
+            if let Some(aws_name) = attr_schema.provider_name()
                 && let Some(value) = resource.get_attr(dsl_name.as_str())
             {
                 let aws_value = dsl_value_to_aws_with_defs(
                     value,
-                    &attr_schema.attr_type,
+                    attr_schema.attr_type(),
                     &resource.id.resource_type,
                     dsl_name,
-                    &config.schema.defs,
+                    config.schema.defs(),
                 );
                 if let Some(v) = aws_value {
                     desired_state.insert(aws_name.to_string(), v);
@@ -711,7 +711,7 @@ impl AwsccProvider {
             .cc_create_step(
                 config.aws_type_name,
                 desired_state,
-                config.schema.operation_config.as_ref(),
+                config.schema.operation_config(),
             )
             .await
         {
@@ -770,7 +770,7 @@ impl AwsccProvider {
             .cc_reissue_create_step(
                 config.aws_type_name,
                 desired_state,
-                config.schema.operation_config.as_ref(),
+                config.schema.operation_config(),
                 token,
             )
             .await
@@ -802,7 +802,7 @@ impl AwsccProvider {
                         self.cc_reissue_create_step(
                             config.aws_type_name,
                             desired_state,
-                            config.schema.operation_config.as_ref(),
+                            config.schema.operation_config(),
                             token,
                         )
                         .await
@@ -1114,7 +1114,7 @@ impl AwsccProvider {
                 let missing_attributes = nonempty_missing_attributes(
                     config
                         .schema
-                        .attributes
+                        .attributes()
                         .keys()
                         .filter(|name| resource.get_attr(name.as_str()).is_some())
                         .cloned()
@@ -1670,7 +1670,7 @@ impl AwsccProvider {
                 config.aws_type_name,
                 identifier.as_str(),
                 patch_plan.ops.clone(),
-                config.schema.operation_config.as_ref(),
+                config.schema.operation_config(),
             )
             .await
             .map_err(|error| error.for_resource(id.clone()))?;
@@ -1699,7 +1699,7 @@ impl AwsccProvider {
                 config.aws_type_name,
                 identifier.as_str(),
                 patch_plan.ops.clone(),
-                config.schema.operation_config.as_ref(),
+                config.schema.operation_config(),
                 token,
             )
             .await
@@ -1790,7 +1790,7 @@ impl AwsccProvider {
                     config.aws_type_name,
                     identifier.as_str(),
                     patch_ops,
-                    config.schema.operation_config.as_ref(),
+                    config.schema.operation_config(),
                 )
                 .await
                 .map_err(|error| detach_igw_error(id, error))?;
@@ -1814,7 +1814,7 @@ impl AwsccProvider {
         self.cc_delete_step(
             config.aws_type_name,
             identifier.as_str(),
-            config.schema.operation_config.as_ref(),
+            config.schema.operation_config(),
         )
         .await
         .map(wrap_delete_phase)
@@ -1846,7 +1846,7 @@ impl AwsccProvider {
                             .cc_delete_step(
                                 config.aws_type_name,
                                 identifier.as_str(),
-                                config.schema.operation_config.as_ref(),
+                                config.schema.operation_config(),
                             )
                             .await
                             .map(wrap_delete_phase)
@@ -1861,7 +1861,7 @@ impl AwsccProvider {
                         config.aws_type_name,
                         identifier.as_str(),
                         patch_ops,
-                        config.schema.operation_config.as_ref(),
+                        config.schema.operation_config(),
                         phase,
                     )
                     .await
@@ -1873,7 +1873,7 @@ impl AwsccProvider {
                 .cc_poll_delete_step(
                     config.aws_type_name,
                     identifier.as_str(),
-                    config.schema.operation_config.as_ref(),
+                    config.schema.operation_config(),
                     phase,
                 )
                 .await
@@ -1902,7 +1902,7 @@ impl AwsccProvider {
                 .cc_delete_step(
                     config.aws_type_name,
                     identifier.as_str(),
-                    config.schema.operation_config.as_ref(),
+                    config.schema.operation_config(),
                 )
                 .await
                 .map(wrap_delete_phase)
@@ -1987,8 +1987,7 @@ fn token_identifier(id: &ResourceId, token: &CcCreateToken) -> Option<AppliedIde
 fn create_max_attempts(config: &AwsccSchemaConfig) -> u32 {
     config
         .schema
-        .operation_config
-        .as_ref()
+        .operation_config()
         .and_then(|operation| operation.create_max_retries)
         .unwrap_or(super::CREATE_RETRY_MAX_ATTEMPTS)
 }
@@ -2104,7 +2103,7 @@ fn merge_desired_attributes(
     // CloudControl doesn't always return all properties in GetResource responses
     // (create-only properties, and some normal properties like `description`).
     // Carry them forward from the desired state.
-    for dsl_name in config.schema.attributes.keys() {
+    for dsl_name in config.schema.attributes().keys() {
         if !attributes.contains_key(dsl_name)
             && let Some(value) = resource.get_attr(dsl_name.as_str())
         {
@@ -2174,7 +2173,7 @@ fn update_outcome_from_read_back(
         .cloned()
         .collect::<Vec<_>>();
 
-    for dsl_name in config.schema.attributes.keys() {
+    for dsl_name in config.schema.attributes().keys() {
         if !attributes.contains_key(dsl_name)
             && !unconfirmed_attributes.contains(dsl_name)
             && let Some(value) = desired.get(dsl_name)
@@ -2282,23 +2281,23 @@ fn map_aws_props_to_attributes(
         if dsl_name == "tags" {
             continue;
         }
-        let Some(aws_name) = &attr_schema.provider_name else {
+        let Some(aws_name) = attr_schema.provider_name() else {
             continue;
         };
-        match props.get(aws_name.as_str()) {
+        match props.get(aws_name) {
             Some(value) => {
                 if let Some(v) = aws_value_to_dsl_with_defs(
                     dsl_name,
                     value,
-                    &attr_schema.attr_type,
+                    attr_schema.attr_type(),
                     resource_type,
                     defs,
                 ) {
                     attributes.insert(dsl_name.clone(), v);
                 }
             }
-            None if !attr_schema.is_required() && !attr_schema.write_only => {
-                match schema_view.shape_of(&attr_schema.attr_type) {
+            None if !attr_schema.is_required() && !attr_schema.is_write_only() => {
+                match schema_view.shape_of(attr_schema.attr_type()) {
                     Shape::List { .. } => {
                         attributes.insert(
                             dsl_name.clone(),
@@ -3741,7 +3740,7 @@ mod tests {
         let config = get_schema_config("route53.HostedZone")
             .expect("route53.HostedZone schema should exist");
         assert!(config.tags.is_none());
-        assert!(!config.schema.attributes.contains_key("tags"));
+        assert!(!config.schema.attributes().contains_key("tags"));
 
         for (read_properties, label) in [
             (r#"{}"#, "missing"),
@@ -4394,8 +4393,8 @@ mod tests {
     ) -> HashMap<String, AttributeSchema> {
         let mut map = HashMap::new();
         for (dsl_name, provider_name, attr_type, required) in entries {
-            let mut s = AttributeSchema::new(dsl_name, attr_type);
-            s.provider_name = Some(provider_name.to_string());
+            let mut s = AttributeSchema::new(dsl_name, attr_type)
+                .with_provider_name(provider_name.to_string());
             if required {
                 s = s.required();
             }
@@ -4418,9 +4417,9 @@ mod tests {
 
         let attributes = map_aws_props_to_attributes(
             &props,
-            &config.schema.attributes,
+            config.schema.attributes(),
             "cloudfront.ResponseHeadersPolicy",
-            &config.schema.defs,
+            config.schema.defs(),
         );
 
         assert_eq!(
@@ -4525,7 +4524,9 @@ mod tests {
         let current = State::existing(desired.id.clone(), attributes)
             .with_identifier("5100bde3-b286-4270-9ae4-4e8c41e2320c");
 
-        let diff = carina_core::differ::diff(&desired, &current, None, None, Some(&config.schema));
+        let saved_attrs = RawSavedAttrs::default().lift(&SchemaRegistry::new());
+        let diff =
+            carina_core::differ::diff(&desired, &current, &saved_attrs, None, Some(&config.schema));
         assert!(
             matches!(diff, carina_core::differ::Diff::NoChange(_)),
             "provider-filled empty security-header objects must not produce a diff: {diff:?}"
@@ -4557,9 +4558,9 @@ mod tests {
 
         let attributes = map_aws_props_to_attributes(
             &props,
-            &config.schema.attributes,
+            config.schema.attributes(),
             "cloudfront.Function",
-            &config.schema.defs,
+            config.schema.defs(),
         );
         assert!(
             !attributes.contains_key("auto_publish"),
@@ -4603,9 +4604,11 @@ mod tests {
         .expect("AutoPublish should encode as persisted provider state");
         let mut registry = SchemaRegistry::new();
         registry.insert("awscc", config.schema.clone());
-        let saved_attrs =
-            RawSavedAttrs::from_persisted(HashMap::from([(desired.id.clone(), persisted)]))
-                .lift(&registry);
+        let saved_attrs = RawSavedAttrs::from_persisted(
+            HashMap::from([(desired.id.clone(), persisted)]),
+            HashMap::new(),
+        )
+        .lift(&registry);
 
         let mut current_states = HashMap::from([(desired.id.clone(), current)]);
         crate::provider::restore_unreturned_attrs_impl(
@@ -4621,13 +4624,8 @@ mod tests {
             "provider hydration must restore AutoPublish from persisted provenance"
         );
 
-        let diff = carina_core::differ::diff(
-            &desired,
-            &current,
-            saved_attrs.get(&desired.id),
-            None,
-            Some(&config.schema),
-        );
+        let diff =
+            carina_core::differ::diff(&desired, &current, &saved_attrs, None, Some(&config.schema));
         assert!(
             matches!(diff, carina_core::differ::Diff::NoChange(_)),
             "omitted AutoPublish must be reconciled from persisted provenance: {diff:?}"
@@ -4667,7 +4665,9 @@ mod tests {
             ]),
         );
 
-        let diff = carina_core::differ::diff(&desired, &current, None, None, Some(&config.schema));
+        let saved_attrs = RawSavedAttrs::default().lift(&SchemaRegistry::new());
+        let diff =
+            carina_core::differ::diff(&desired, &current, &saved_attrs, None, Some(&config.schema));
         assert!(
             matches!(
                 diff,

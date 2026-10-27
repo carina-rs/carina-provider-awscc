@@ -9,7 +9,7 @@ use carina_provider_awscc::schemas::generated::elasticloadbalancingv2::listener:
 
 fn find_field<'a>(t: &'a AttributeType, field: &str) -> Option<&'a StructField> {
     match t.raw_shape() {
-        RawShape::Struct { fields, .. } => fields.iter().find(|f| f.name == field),
+        RawShape::Struct { fields, .. } => fields.iter().find(|f| f.name() == field),
         _ => None,
     }
 }
@@ -22,10 +22,10 @@ fn peel_list_element(t: &AttributeType) -> &AttributeType {
 }
 
 fn assert_redirect_type(field: &StructField, expected_identity: &str, where_: &str) {
-    let RawShape::String { identity, .. } = field.field_type.raw_shape() else {
+    let RawShape::String { identity, .. } = field.field_type().raw_shape() else {
         panic!(
             "{where_}: redirect field should be a refined string, got {:?}",
-            field.field_type.raw_shape()
+            field.field_type().raw_shape()
         );
     };
     assert_eq!(
@@ -54,7 +54,7 @@ fn redirect_config_uses_redirect_types_in_def_map() {
     let config = elasticloadbalancingv2_listener_config();
     let redirect_config = config
         .schema
-        .defs
+        .defs()
         .get("RedirectConfig")
         .expect("RedirectConfig def is registered");
     assert_redirect_fields(redirect_config, "defs[RedirectConfig]");
@@ -65,14 +65,14 @@ fn redirect_config_uses_redirect_types_inline() {
     let config = elasticloadbalancingv2_listener_config();
     let default_actions = config
         .schema
-        .attributes
+        .attributes()
         .get("default_actions")
         .expect("Listener has a default_actions attribute");
-    let action = peel_list_element(&default_actions.attr_type);
+    let action = peel_list_element(default_actions.attr_type());
     let redirect_config_field =
         find_field(action, "redirect_config").expect("Action has a redirect_config field");
     assert_redirect_fields(
-        &redirect_config_field.field_type,
+        redirect_config_field.field_type(),
         "inline Action.RedirectConfig",
     );
 }

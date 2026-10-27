@@ -42,6 +42,12 @@ struct StructReadOnlyUse {
     signature: BTreeSet<Vec<String>>,
 }
 
+#[derive(Debug, Clone)]
+struct StructWriteOnlyUse {
+    property_path: Vec<String>,
+    signature: BTreeSet<Vec<String>>,
+}
+
 struct RustStrLit<'a>(&'a str);
 
 impl std::fmt::Display for RustStrLit<'_> {
@@ -144,6 +150,22 @@ thread_local! {
     #[allow(clippy::missing_const_for_thread_local)]
     static EMITTED_STRUCT_READ_ONLY_USES: RefCell<BTreeMap<String, Vec<StructReadOnlyUse>>> =
         RefCell::new(BTreeMap::new());
+    /// Provider paths whose generated `AttributeSchema` or `StructField`
+    /// actually carries `.write_only()` in the current emission pass.
+    #[allow(clippy::missing_const_for_thread_local)]
+    static EMITTED_WRITE_ONLY_PATHS: RefCell<Vec<Vec<String>>> = RefCell::new(Vec::new());
+    /// Nested write-only paths deliberately omitted because the target
+    /// property is deprecated. These paths satisfy fail-closed validation
+    /// without restoring deprecated fields to the generated DSL surface.
+    #[allow(clippy::missing_const_for_thread_local)]
+    static SKIPPED_DEPRECATED_WRITE_ONLY_PATHS: RefCell<BTreeSet<Vec<String>>> =
+        RefCell::new(BTreeSet::new());
+    /// Write-only signatures produced by each emitted struct name. Reusing a
+    /// name with a different signature is unsafe for both Rust definition
+    /// caching and Markdown struct collection.
+    #[allow(clippy::missing_const_for_thread_local)]
+    static EMITTED_STRUCT_WRITE_ONLY_USES: RefCell<BTreeMap<String, Vec<StructWriteOnlyUse>>> =
+        RefCell::new(BTreeMap::new());
 }
 
 /// Reset the per-resource recursion guard state. Called at the start
@@ -156,12 +178,15 @@ fn reset_recursion_guard() {
     EMITTED_STANDALONE_PATTERNS.with(|s| s.borrow_mut().clear());
     EMITTED_RANGE_VALIDATORS.with(|s| s.borrow_mut().clear());
     EMITTED_INT_ENUMS.with(|s| s.borrow_mut().clear());
-    reset_read_only_emission_state();
+    reset_property_mode_emission_state();
 }
 
-fn reset_read_only_emission_state() {
+fn reset_property_mode_emission_state() {
     EMITTED_READ_ONLY_PATHS.with(|s| s.borrow_mut().clear());
     EMITTED_STRUCT_READ_ONLY_USES.with(|s| s.borrow_mut().clear());
+    EMITTED_WRITE_ONLY_PATHS.with(|s| s.borrow_mut().clear());
+    SKIPPED_DEPRECATED_WRITE_ONLY_PATHS.with(|s| s.borrow_mut().clear());
+    EMITTED_STRUCT_WRITE_ONLY_USES.with(|s| s.borrow_mut().clear());
 }
 
 /// Take the defs collected during the current resource pass and
@@ -1321,6 +1346,14 @@ fn is_read_only_property_path(schema: &CfnSchema, property_path: &[String]) -> b
         .any(|path| path == property_path)
 }
 
+fn is_write_only_property_path(schema: &CfnSchema, property_path: &[String]) -> bool {
+    schema
+        .write_only_properties
+        .iter()
+        .filter_map(|pointer| cfn_property_path(pointer))
+        .any(|path| path == property_path)
+}
+
 fn has_nested_read_only_property_path(schema: &CfnSchema, property_path: &[String]) -> bool {
     schema
         .read_only_properties
@@ -1436,6 +1469,44 @@ fn record_struct_read_only_use(struct_name: &str, property_path: &[String], emis
     });
 }
 
+fn record_emitted_write_only_path(property_path: &[String]) {
+    EMITTED_WRITE_ONLY_PATHS.with(|paths| paths.borrow_mut().push(property_path.to_vec()));
+}
+
+fn record_skipped_deprecated_write_only_path(schema: &CfnSchema, property_path: &[String]) {
+    if is_write_only_property_path(schema, property_path) {
+        SKIPPED_DEPRECATED_WRITE_ONLY_PATHS.with(|paths| {
+            paths.borrow_mut().insert(property_path.to_vec());
+        });
+    }
+}
+
+fn write_only_emission_mark() -> usize {
+    EMITTED_WRITE_ONLY_PATHS.with(|paths| paths.borrow().len())
+}
+
+fn record_struct_write_only_use(struct_name: &str, property_path: &[String], emission_mark: usize) {
+    let signature = EMITTED_WRITE_ONLY_PATHS.with(|paths| {
+        paths.borrow()[emission_mark..]
+            .iter()
+            .filter_map(|path| {
+                path.strip_prefix(property_path)
+                    .filter(|relative| !relative.is_empty())
+                    .map(<[String]>::to_vec)
+            })
+            .collect::<BTreeSet<_>>()
+    });
+    EMITTED_STRUCT_WRITE_ONLY_USES.with(|uses| {
+        uses.borrow_mut()
+            .entry(struct_name.to_string())
+            .or_default()
+            .push(StructWriteOnlyUse {
+                property_path: property_path.to_vec(),
+                signature,
+            });
+    });
+}
+
 fn format_cfn_property_path(path: &[String]) -> String {
     let encoded = path
         .iter()
@@ -1477,6 +1548,67 @@ fn validate_emitted_nested_read_only_properties(schema: &CfnSchema) -> Result<()
             {
                 anyhow::bail!(
                     "{} struct {struct_name:?} is emitted from {} and {} with different nested readOnlyProperties sets; name-based caching cannot represent path-dependent provider-populated fields",
+                    schema.type_name,
+                    format_cfn_property_path(&first.property_path),
+                    format_cfn_property_path(&differing.property_path),
+                );
+            }
+        }
+        Ok(())
+    })
+}
+
+fn validate_emitted_nested_write_only_properties(schema: &CfnSchema) -> Result<()> {
+    let read_only = schema
+        .read_only_properties
+        .iter()
+        .filter_map(|pointer| cfn_property_path(pointer).map(|path| (path, pointer)))
+        .collect::<BTreeMap<_, _>>();
+    for pointer in &schema.write_only_properties {
+        let Some(path) = cfn_property_path(pointer) else {
+            continue;
+        };
+        if let Some(read_only_pointer) = read_only.get(&path) {
+            anyhow::bail!(
+                "{} property pointer {pointer:?} is both readOnlyProperties and writeOnlyProperties (read-only pointer {read_only_pointer:?})",
+                schema.type_name
+            );
+        }
+    }
+
+    let emitted = EMITTED_WRITE_ONLY_PATHS.with(|paths| {
+        paths
+            .borrow()
+            .iter()
+            .cloned()
+            .collect::<BTreeSet<Vec<String>>>()
+    });
+    let skipped_deprecated =
+        SKIPPED_DEPRECATED_WRITE_ONLY_PATHS.with(|paths| paths.borrow().clone());
+    for pointer in &schema.write_only_properties {
+        let Some(path) = cfn_property_path(pointer) else {
+            continue;
+        };
+        if path.len() > 1 && !emitted.contains(&path) && !skipped_deprecated.contains(&path) {
+            anyhow::bail!(
+                "{} nested writeOnlyProperties pointer {pointer:?} did not resolve to an emitted StructField",
+                schema.type_name
+            );
+        }
+    }
+
+    EMITTED_STRUCT_WRITE_ONLY_USES.with(|all_uses| -> Result<()> {
+        for (struct_name, uses) in all_uses.borrow().iter() {
+            let Some(first) = uses.first() else {
+                continue;
+            };
+            if let Some(differing) = uses
+                .iter()
+                .skip(1)
+                .find(|use_| use_.signature != first.signature)
+            {
+                anyhow::bail!(
+                    "{} struct {struct_name:?} is emitted from {} and {} with different nested writeOnlyProperties sets; name-based caching cannot represent path-dependent provider-omitted fields",
                     schema.type_name,
                     format_cfn_property_path(&first.property_path),
                     format_cfn_property_path(&differing.property_path),
@@ -2111,8 +2243,12 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str) -> Result<String> {
         if is_property_read_only(schema, prop, &property_path) {
             record_emitted_read_only_path(&property_path);
         }
+        if is_write_only_property_path(schema, &property_path) {
+            record_emitted_write_only_path(&property_path);
+        }
     }
     validate_emitted_nested_read_only_properties(schema)?;
+    validate_emitted_nested_write_only_properties(schema)?;
     reset_recursion_guard();
 
     // Title
@@ -2239,8 +2375,8 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str) -> Result<String> {
                 if is_deprecated_property(field_prop) {
                     continue;
                 }
-                let snake_name = field_name.to_snake_case();
                 let field_path = extend_property_path(&def_info.property_path, field_name);
+                let snake_name = field_name.to_snake_case();
                 let is_read_only = is_property_read_only(schema, field_prop, &field_path);
                 let is_req = required_set.contains(field_name.as_str()) && !is_read_only;
                 let composite_key = format!("{}.{}", def_info.def_name, field_name);
@@ -3098,7 +3234,7 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
     // `type_name`s — they key on pattern strings, numeric bounds, and
     // integer values — so they survive qualification unchanged.
     EMITTED_DEFS.with(|s| s.borrow_mut().clear());
-    reset_read_only_emission_state();
+    reset_property_mode_emission_state();
 
     let has_enums = !enums.is_empty();
     let has_ranged_ints = !ranged_ints.is_empty();
@@ -3503,6 +3639,7 @@ pub fn {}() -> AwsccSchemaConfig {{
 
         if is_write_only {
             attr_code.push_str("\n                .write_only()");
+            record_emitted_write_only_path(&property_path);
         }
 
         if is_identity {
@@ -3563,6 +3700,7 @@ pub fn {}() -> AwsccSchemaConfig {{
     }
 
     validate_emitted_nested_read_only_properties(schema)?;
+    validate_emitted_nested_write_only_properties(schema)?;
 
     // Emit synthetic attributes — values the Cloud Control read path does
     // not return because the CFN schema omits them. The provider fills
@@ -4555,6 +4693,7 @@ fn generate_struct_type(
     paths: StructGenerationPaths<'_>,
 ) -> String {
     let emission_mark = read_only_emission_mark();
+    let write_only_emission_mark = write_only_emission_mark();
     let current_struct_path = extend_struct_path(paths.structural, def_name);
     let enum_namespace = namespace_with_struct_path(namespace, &current_struct_path);
     let required_set: HashSet<&str> = required.iter().map(|s| s.as_str()).collect();
@@ -4562,7 +4701,14 @@ fn generate_struct_type(
 
     let fields: Vec<String> = properties
         .iter()
-        .filter(|(_, field_prop)| !is_deprecated_property(field_prop))
+        .filter(|(field_name, field_prop)| {
+            if is_deprecated_property(field_prop) {
+                let field_path = extend_property_path(paths.provider, field_name);
+                record_skipped_deprecated_write_only_path(schema, &field_path);
+                return false;
+            }
+            true
+        })
         .map(|(field_name, field_prop)| {
             let snake_name = field_name.to_snake_case();
             let field_path = extend_property_path(paths.provider, field_name);
@@ -4678,6 +4824,7 @@ fn generate_struct_type(
                 field_type
             };
             let is_read_only = is_property_read_only(schema, field_prop, &field_path);
+            let is_write_only = is_write_only_property_path(schema, &field_path);
             let is_required = required_set.contains(field_name.as_str()) && !is_read_only;
 
             let mut field_code =
@@ -4688,6 +4835,10 @@ fn generate_struct_type(
             if is_read_only {
                 field_code.push_str(".read_only()");
                 record_emitted_read_only_path(&field_path);
+            }
+            if is_write_only {
+                field_code.push_str(".write_only()");
+                record_emitted_write_only_path(&field_path);
             }
             if let Some(desc) = &field_prop.description {
                 let escaped = collapse_whitespace(
@@ -4722,6 +4873,7 @@ fn generate_struct_type(
         fields_str
     );
     record_struct_read_only_use(def_name, paths.provider, emission_mark);
+    record_struct_write_only_use(def_name, paths.provider, write_only_emission_mark);
     struct_type
 }
 
@@ -6334,6 +6486,8 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
                         if let Some(props) = &variant.properties {
                             for (k, v) in props {
                                 if is_deprecated_property(v) {
+                                    let field_path = extend_property_path(property_path, k);
+                                    record_skipped_deprecated_write_only_path(schema, &field_path);
                                     continue;
                                 }
                                 merged_props.insert(k.clone(), v.clone());
@@ -15823,12 +15977,351 @@ mod tests {
 
         let code = generate_synthetic_schema_code(&schema).unwrap();
 
-        // Config should NOT have .write_only() because only its child is write-only
         assert!(
-            !code.contains(".write_only()"),
+            code.contains(
+                r#"StructField::new("secret_field", AttributeType::string()).write_only()"#
+            ),
+            "the matched nested field must be write-only: {code}"
+        );
+        // Config should NOT have .write_only() because only its child is write-only.
+        assert!(
+            !code.contains("\n                .write_only()"),
+            "Config should not be write-only when only its child is write-only: {code}"
+        );
+        assert!(
+            code.matches(".write_only()").count() == 1,
             "Parent attribute should NOT be marked write-only when only nested \
              sub-properties are write-only. Generated code:\n{code}"
         );
+    }
+
+    #[test]
+    fn test_deprecated_nested_write_only_property_is_skipped_without_error() {
+        let mut schema = empty_schema("AWS::Test::DeprecatedWriteOnly");
+        schema.properties.insert(
+            "Config".to_string(),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
+                properties: Some(BTreeMap::from([(
+                    "LegacySecret".to_string(),
+                    CfnProperty {
+                        prop_type: Some(TypeValue::Single("string".to_string())),
+                        description: Some("(Deprecated.) Legacy write input.".to_string()),
+                        ..Default::default()
+                    },
+                )])),
+                ..Default::default()
+            },
+        );
+        schema.write_only_properties = vec!["/properties/Config/LegacySecret".to_string()];
+
+        for (generator, result) in [
+            ("Rust", generate_synthetic_schema_code(&schema)),
+            (
+                "Markdown",
+                generate_markdown(&schema, "AWS::Test::DeprecatedWriteOnly"),
+            ),
+        ] {
+            let generated =
+                result.expect("a deprecated write-only target is intentionally skipped");
+            assert!(
+                !generated.contains("legacy_secret"),
+                "{generator} must not expose the deprecated write alias: {generated}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_nested_write_only_path_through_array_wildcard_is_provider_omitted() {
+        let mut schema = empty_schema("AWS::Test::NestedWriteOnlyArray");
+        schema.properties.insert(
+            "Items".to_string(),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("array".to_string())),
+                items: Some(Box::new(CfnProperty {
+                    prop_type: Some(TypeValue::Single("object".to_string())),
+                    properties: Some(BTreeMap::from([
+                        (
+                            "Secret".to_string(),
+                            CfnProperty {
+                                prop_type: Some(TypeValue::Single("string".to_string())),
+                                ..Default::default()
+                            },
+                        ),
+                        (
+                            "Visible".to_string(),
+                            CfnProperty {
+                                prop_type: Some(TypeValue::Single("string".to_string())),
+                                ..Default::default()
+                            },
+                        ),
+                    ])),
+                    ..Default::default()
+                })),
+                ..Default::default()
+            },
+        );
+        schema.write_only_properties = vec!["/properties/Items/*/Secret".to_string()];
+
+        let generated = generate_synthetic_schema_code(&schema)
+            .expect("a matched array wildcard write-only pointer should generate");
+        assert!(
+            generated
+                .contains(r#"StructField::new("secret", AttributeType::string()).write_only()"#),
+            "Items[*].Secret must be provider-omitted: {generated}"
+        );
+        assert!(
+            !generated
+                .contains(r#"StructField::new("visible", AttributeType::string()).write_only()"#),
+            "Items[*].Visible must remain observable: {generated}"
+        );
+    }
+
+    #[test]
+    fn test_nested_write_only_path_through_ref_array_items_is_provider_omitted() {
+        let mut schema = empty_schema("AWS::Test::NestedWriteOnlyRefArray");
+        schema.properties.insert(
+            "Items".to_string(),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("array".to_string())),
+                items: Some(Box::new(CfnProperty {
+                    ref_path: Some("#/definitions/Item".to_string()),
+                    ..Default::default()
+                })),
+                ..Default::default()
+            },
+        );
+        schema.definitions = Some(BTreeMap::from([(
+            "Item".to_string(),
+            CfnDefinition {
+                def_type: Some("object".to_string()),
+                properties: Some(BTreeMap::from([
+                    (
+                        "Secret".to_string(),
+                        CfnProperty {
+                            prop_type: Some(TypeValue::Single("string".to_string())),
+                            ..Default::default()
+                        },
+                    ),
+                    (
+                        "Visible".to_string(),
+                        CfnProperty {
+                            prop_type: Some(TypeValue::Single("string".to_string())),
+                            ..Default::default()
+                        },
+                    ),
+                ])),
+                ..Default::default()
+            },
+        )]));
+        schema.write_only_properties = vec!["/properties/Items/*/Secret".to_string()];
+
+        let generated = generate_synthetic_schema_code(&schema)
+            .expect("a matched write-only pointer through $ref array items should generate");
+        assert!(
+            generated
+                .contains(r#"StructField::new("secret", AttributeType::string()).write_only()"#),
+            "Items[*].Secret must be provider-omitted: {generated}"
+        );
+        assert!(
+            !generated
+                .contains(r#"StructField::new("visible", AttributeType::string()).write_only()"#),
+            "Items[*].Visible must remain observable: {generated}"
+        );
+    }
+
+    #[test]
+    fn test_non_deprecated_unmatched_nested_write_only_pointer_is_rejected() {
+        let mut schema = empty_schema("AWS::Test::NestedWriteOnlyMissing");
+        schema.properties.insert(
+            "Config".to_string(),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
+                properties: Some(BTreeMap::from([(
+                    "Present".to_string(),
+                    CfnProperty {
+                        prop_type: Some(TypeValue::Single("string".to_string())),
+                        ..Default::default()
+                    },
+                )])),
+                ..Default::default()
+            },
+        );
+        let pointer = "/properties/Config/Missing";
+        schema.write_only_properties = vec![pointer.to_string()];
+
+        for (generator, result) in [
+            ("Rust", generate_synthetic_schema_code(&schema)),
+            (
+                "Markdown",
+                generate_markdown(&schema, "AWS::Test::NestedWriteOnlyMissing"),
+            ),
+        ] {
+            let error = result
+                .expect_err("an unresolved nested writeOnlyProperties pointer must fail closed");
+            let message = error.to_string();
+            assert!(message.contains(pointer), "{generator}: {message}");
+            assert!(
+                message.contains("did not resolve"),
+                "{generator}: {message}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_shared_definition_with_path_dependent_write_only_fields_is_rejected() {
+        let mut schema = empty_schema("AWS::Test::NestedWriteOnlySharedRef");
+        let shared_ref = CfnProperty {
+            ref_path: Some("#/definitions/Shared".to_string()),
+            ..Default::default()
+        };
+        schema.properties = BTreeMap::from([
+            ("Left".to_string(), shared_ref.clone()),
+            ("Right".to_string(), shared_ref),
+        ]);
+        schema.definitions = Some(BTreeMap::from([(
+            "Shared".to_string(),
+            CfnDefinition {
+                def_type: Some("object".to_string()),
+                properties: Some(BTreeMap::from([
+                    (
+                        "Secret".to_string(),
+                        CfnProperty {
+                            prop_type: Some(TypeValue::Single("string".to_string())),
+                            ..Default::default()
+                        },
+                    ),
+                    (
+                        "Visible".to_string(),
+                        CfnProperty {
+                            prop_type: Some(TypeValue::Single("string".to_string())),
+                            ..Default::default()
+                        },
+                    ),
+                ])),
+                ..Default::default()
+            },
+        )]));
+        schema.write_only_properties = vec!["/properties/Left/Secret".to_string()];
+
+        for (generator, result) in [
+            ("Rust", generate_synthetic_schema_code(&schema)),
+            (
+                "Markdown",
+                generate_markdown(&schema, "AWS::Test::NestedWriteOnlySharedRef"),
+            ),
+        ] {
+            let error = result.expect_err(
+                "a shared definition with path-dependent write-only fields must fail closed",
+            );
+            let message = error.to_string();
+            assert!(message.contains("Shared"), "{generator}: {message}");
+            assert!(
+                message.contains("/properties/Left")
+                    && message.contains("/properties/Right")
+                    && message.contains("different nested writeOnlyProperties"),
+                "{generator}: {message}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_same_named_inline_struct_with_path_dependent_write_only_fields_is_rejected() {
+        fn parent() -> CfnProperty {
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
+                properties: Some(BTreeMap::from([(
+                    "Config".to_string(),
+                    CfnProperty {
+                        prop_type: Some(TypeValue::Single("object".to_string())),
+                        properties: Some(BTreeMap::from([
+                            (
+                                "Secret".to_string(),
+                                CfnProperty {
+                                    prop_type: Some(TypeValue::Single("string".to_string())),
+                                    ..Default::default()
+                                },
+                            ),
+                            (
+                                "Visible".to_string(),
+                                CfnProperty {
+                                    prop_type: Some(TypeValue::Single("string".to_string())),
+                                    ..Default::default()
+                                },
+                            ),
+                        ])),
+                        ..Default::default()
+                    },
+                )])),
+                ..Default::default()
+            }
+        }
+
+        let mut schema = empty_schema("AWS::Test::NestedWriteOnlyInlineCollision");
+        schema.properties = BTreeMap::from([
+            ("Left".to_string(), parent()),
+            ("Right".to_string(), parent()),
+        ]);
+        schema.write_only_properties = vec!["/properties/Left/Config/Secret".to_string()];
+
+        for (generator, result) in [
+            ("Rust", generate_synthetic_schema_code(&schema)),
+            (
+                "Markdown",
+                generate_markdown(&schema, "AWS::Test::NestedWriteOnlyInlineCollision"),
+            ),
+        ] {
+            let error = result.expect_err(
+                "same-named inline structs with path-dependent write-only fields must fail closed",
+            );
+            let message = error.to_string();
+            assert!(message.contains("Config"), "{generator}: {message}");
+            assert!(
+                message.contains("/properties/Left/Config")
+                    && message.contains("/properties/Right/Config")
+                    && message.contains("different nested writeOnlyProperties"),
+                "{generator}: {message}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_nested_read_only_write_only_pointer_is_rejected() {
+        let mut schema = empty_schema("AWS::Test::NestedReadWriteConflict");
+        schema.properties.insert(
+            "Config".to_string(),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
+                properties: Some(BTreeMap::from([(
+                    "Value".to_string(),
+                    CfnProperty {
+                        prop_type: Some(TypeValue::Single("string".to_string())),
+                        ..Default::default()
+                    },
+                )])),
+                ..Default::default()
+            },
+        );
+        let pointer = "/properties/Config/Value";
+        schema.read_only_properties = vec![pointer.to_string()];
+        schema.write_only_properties = vec![pointer.to_string()];
+
+        for (generator, result) in [
+            ("Rust", generate_synthetic_schema_code(&schema)),
+            (
+                "Markdown",
+                generate_markdown(&schema, "AWS::Test::NestedReadWriteConflict"),
+            ),
+        ] {
+            let error = result
+                .expect_err("a pointer cannot be both read-only and write-only in generated code");
+            let message = error.to_string();
+            assert!(message.contains(pointer), "{generator}: {message}");
+            assert!(
+                message.contains("both readOnlyProperties and writeOnlyProperties"),
+                "{generator}: {message}"
+            );
+        }
     }
 
     #[test]

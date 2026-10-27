@@ -439,13 +439,13 @@ mod tests {
                     .expect("assume_role should expose struct fields");
                 let role_arn = fields
                     .iter()
-                    .find(|f| f.name == "role_arn")
+                    .find(|f| f.name() == "role_arn")
                     .expect("assume_role.role_arn must be declared");
                 assert!(role_arn.is_required(), "role_arn must be required");
                 for opt in ["session_name", "external_id", "duration"] {
                     let f = fields
                         .iter()
-                        .find(|f| f.name == opt)
+                        .find(|f| f.name() == opt)
                         .unwrap_or_else(|| panic!("assume_role.{opt} must be declared"));
                     assert!(!f.is_required(), "assume_role.{opt} must be optional");
                 }
@@ -681,7 +681,7 @@ mod tests {
         let schema = factory
             .schemas()
             .into_iter()
-            .find(|s| s.resource_type == "cloudfront.Distribution")
+            .find(|s| s.resource_type() == "cloudfront.Distribution")
             .expect("cloudfront.Distribution schema must be present");
 
         // Recursively collect the `ordered` flag of every List whose
@@ -719,7 +719,7 @@ mod tests {
                 }
                 RawShape::Struct { fields, .. } => {
                     for f in fields {
-                        collect(&f.field_type, Some(f.name.as_str()), defs, seen, out);
+                        collect(f.field_type(), Some(f.name()), defs, seen, out);
                     }
                 }
                 RawShape::Map { value, .. } => collect(value, None, defs, seen, out),
@@ -728,9 +728,9 @@ mod tests {
         }
 
         let mut found = Vec::new();
-        for attr in schema.attributes.values() {
+        for attr in schema.attributes().values() {
             let mut seen = std::collections::HashSet::new();
-            collect(&attr.attr_type, None, &schema.defs, &mut seen, &mut found);
+            collect(attr.attr_type(), None, schema.defs(), &mut seen, &mut found);
         }
 
         assert!(

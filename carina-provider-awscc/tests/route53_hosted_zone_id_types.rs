@@ -22,12 +22,12 @@ fn hosted_zone_id_producers_are_assignable_to_alias_target_union_and_string() {
         ),
         ("HostedZone.id", route53_hosted_zone_config(), "id"),
     ] {
-        let source = &config
+        let source = config
             .schema
-            .attributes
+            .attributes()
             .get(attribute_name)
             .unwrap_or_else(|| panic!("{label} must exist"))
-            .attr_type;
+            .attr_type();
 
         assert!(
             config
@@ -58,10 +58,10 @@ fn hosted_zone_id_producers_validate_route53_values() {
     ] {
         let producer_type = config
             .schema
-            .attributes
+            .attributes()
             .get(attribute_name)
             .unwrap_or_else(|| panic!("{label} must exist"))
-            .attr_type
+            .attr_type()
             .clone();
         let schema = Schema::flat(producer_type);
 

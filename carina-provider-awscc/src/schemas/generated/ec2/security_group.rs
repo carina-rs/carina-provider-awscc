@@ -93,7 +93,7 @@ pub fn ec2_security_group_config() -> AwsccSchemaConfig {
                     StructField::new("ip_protocol", AttributeType::enum_(carina_core::schema::enum_identity("IpProtocol", Some("aws.ec2.SecurityGroup.Ingress")), Some(vec!["tcp".to_string(), "udp".to_string(), "icmp".to_string(), "icmpv6".to_string(), "-1".to_string()]), vec![("tcp".to_string(), "tcp".to_string()), ("udp".to_string(), "udp".to_string()), ("icmp".to_string(), "icmp".to_string()), ("icmpv6".to_string(), "icmpv6".to_string()), ("-1".to_string(), "all".to_string())], None, None)).required().with_provider_name("IpProtocol"),
                     StructField::new("source_prefix_list_id", carina_aws_types::prefix_list_id()).with_provider_name("SourcePrefixListId"),
                     StructField::new("source_security_group_id", carina_aws_types::security_group_id()).with_provider_name("SourceSecurityGroupId"),
-                    StructField::new("source_security_group_name", AttributeType::string()).with_provider_name("SourceSecurityGroupName"),
+                    StructField::new("source_security_group_name", AttributeType::string()).write_only().with_provider_name("SourceSecurityGroupName"),
                     StructField::new("source_security_group_owner_id", carina_aws_types::aws_account_id()).with_provider_name("SourceSecurityGroupOwnerId"),
                     StructField::new("to_port", AttributeType::refined_int(None, Some((Some(-1), Some(65535))))).with_provider_name("ToPort")])))
                 .with_description("The inbound rules associated with the security group. There is a short interruption during which you cannot connect to the security group.")
