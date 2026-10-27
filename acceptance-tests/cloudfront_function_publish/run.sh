@@ -96,6 +96,32 @@ plan_verify() {
     return 0
 }
 
+plan_function_code_update() {
+    local output
+    local rc=0
+    output=$(cd "$ACTIVE_WORK_DIR" && with_account_creds run_with_timeout 600 "$CARINA_BIN" plan --detailed-exitcode . 2>&1) || rc=$?
+
+    if [ "$rc" -ne 2 ]; then
+        echo "Expected a change plan with exit code 2, got $rc:" >&2
+        echo "$output" >&2
+        return 1
+    fi
+
+    if grep -Eq '^[[:space:]]*-/\+[[:space:]]+awscc\.cloudfront\.Function([[:space:]]|$)|must be replaced' <<< "$output"; then
+        echo "CloudFront Function was planned for replacement, not an in-place update:" >&2
+        echo "$output" >&2
+        return 1
+    fi
+
+    if ! grep -Eq '^[[:space:]]*~[[:space:]]+awscc\.cloudfront\.Function([[:space:]]|$)' <<< "$output"; then
+        echo "CloudFront Function plan did not contain the in-place update marker:" >&2
+        echo "$output" >&2
+        return 1
+    fi
+
+    return 0
+}
+
 install_config() {
     local source_crn="$1"
     local injected_dir
@@ -182,6 +208,7 @@ record_step "step1: apply initial function" apply_function
 plan_verify "$WORK_DIR"
 
 install_config "$SCRIPT_DIR/step2.crn"
+record_step "step2: plan in-place function_code update" plan_function_code_update
 record_step "step2: apply function_code update" apply_function
 plan_verify "$WORK_DIR"
 record_step "assert: LIVE serves step2 code" assert_stage_code LIVE "$EXPECTED_CODE"

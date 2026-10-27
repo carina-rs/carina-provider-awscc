@@ -156,17 +156,24 @@ fn function_arn_is_assignable_to_distribution_function_association() {
         .attr_type;
     let default_cache_behavior =
         &find_field(distribution_config, "default_cache_behavior").field_type;
-    let associations =
-        list_element(&find_field(default_cache_behavior, "function_associations").field_type);
-    let association_arn = &find_field(associations, "function_arn").field_type;
+    let cache_behavior =
+        list_element(&find_field(distribution_config, "cache_behaviors").field_type);
 
-    assert!(
-        function
-            .schema
-            .type_in_schema(function_arn)
-            .is_assignable_to(distribution.schema.type_in_schema(association_arn)),
-        "Function.function_arn must be reference-compatible with Distribution function associations"
-    );
+    for (path, behavior) in [
+        ("default_cache_behavior", default_cache_behavior),
+        ("cache_behaviors[]", cache_behavior),
+    ] {
+        let associations = list_element(&find_field(behavior, "function_associations").field_type);
+        let association_arn = &find_field(associations, "function_arn").field_type;
+
+        assert!(
+            function
+                .schema
+                .type_in_schema(function_arn)
+                .is_assignable_to(distribution.schema.type_in_schema(association_arn)),
+            "Function.function_arn must be reference-compatible with Distribution.{path}.function_associations[].function_arn"
+        );
+    }
 }
 
 #[test]

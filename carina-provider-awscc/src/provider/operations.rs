@@ -4634,6 +4634,52 @@ mod tests {
         );
     }
 
+    #[test]
+    fn cloudfront_function_code_change_is_an_in_place_update() {
+        let config = crate::schemas::generated::cloudfront::function::cloudfront_function_config();
+        let function_config = Value::Concrete(ConcreteValue::Map(IndexMap::from([
+            (
+                "comment".to_string(),
+                test_string("Verify AutoPublish reassertion on code updates"),
+            ),
+            ("runtime".to_string(), test_string("cloudfront-js-2.0")),
+        ])));
+        let desired = carina_core::resource::ResolvedResource::new(
+            Resource::with_provider("awscc", "cloudfront.Function", "publish", None)
+                .with_attribute("name", test_string("carina-acc-test-fn-publish"))
+                .with_attribute("function_code", test_string("step2"))
+                .with_attribute("function_config", function_config.clone())
+                .with_attribute("auto_publish", Value::Concrete(ConcreteValue::Bool(true))),
+        );
+        let current = State::existing(
+            desired.id.clone(),
+            HashMap::from([
+                (
+                    "name".to_string(),
+                    test_string("carina-acc-test-fn-publish"),
+                ),
+                ("function_code".to_string(), test_string("step1")),
+                ("function_config".to_string(), function_config),
+                (
+                    "auto_publish".to_string(),
+                    Value::Concrete(ConcreteValue::Bool(true)),
+                ),
+            ]),
+        );
+
+        let diff = carina_core::differ::diff(&desired, &current, None, None, Some(&config.schema));
+        assert!(
+            matches!(
+                diff,
+                carina_core::differ::Diff::Update {
+                    ref changed_attributes,
+                    ..
+                } if changed_attributes == &["function_code".to_string()]
+            ),
+            "FunctionCode must plan as an in-place Update, not replacement: {diff:?}"
+        );
+    }
+
     /// carina-rs/carina#2544: CloudControl omits empty optional list
     /// fields from `GetResource`. The provider read path must canonicalize
     /// these absent-but-empty fields to `Value::Concrete(ConcreteValue::List(vec![]))` so the
