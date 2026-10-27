@@ -1,0 +1,80 @@
+# CloudFront Function Example
+#
+# Publishes a viewer-request function that rewrites the root path and attaches
+# it to the default cache behavior of a minimal disabled distribution.
+
+provider awscc {
+  region = awscc.Region.ap_northeast_1
+}
+
+let viewer_request_function = awscc.cloudfront.Function {
+  name = 'carina-registry-viewer-request'
+
+  function_code = <<'JS'
+function handler(event) {
+  var request = event.request;
+  if (request.uri === '/') {
+    request.uri = '/providers/';
+  }
+  return request;
+}
+JS
+
+  function_config = {
+    runtime = cloudfront_js_2_0
+    comment = 'Rewrite the registry root request'
+  }
+
+  auto_publish = true
+}
+
+awscc.cloudfront.Distribution {
+  distribution_config = {
+    comment      = 'Distribution using the viewer-request function'
+    enabled      = false
+    price_class  = price_class_100
+    http_version = http2
+    ipv6_enabled = false
+
+    default_cache_behavior = {
+      target_origin_id       = 'example-origin'
+      viewer_protocol_policy = allow_all
+      allowed_methods        = [get, head]
+      cached_methods         = [get, head]
+
+      function_association {
+        event_type   = viewer_request
+        function_arn = viewer_request_function.function_arn
+      }
+
+      forwarded_values = {
+        query_string = false
+        cookies = {
+          forward = none
+        }
+      }
+    }
+
+    origin {
+      id          = 'example-origin'
+      domain_name = 'example.com'
+
+      custom_origin_config = {
+        http_port              = 80
+        https_port             = 443
+        origin_protocol_policy = http_only
+        origin_ssl_protocols   = [tlsv1_2]
+      }
+    }
+
+    restrictions = {
+      geo_restriction = {
+        restriction_type = none
+      }
+    }
+
+    viewer_certificate = {
+      cloud_front_default_certificate = true
+    }
+  }
+}

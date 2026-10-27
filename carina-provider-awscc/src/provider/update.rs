@@ -389,6 +389,42 @@ mod tests {
     }
 
     #[test]
+    fn cloudfront_function_code_update_reasserts_auto_publish_without_confirmation() {
+        let config = get_schema_config("cloudfront.Function")
+            .expect("cloudfront.Function schema should exist");
+        let patch = UpdatePatch {
+            ops: vec![
+                replace(
+                    "function_code",
+                    string("function handler(event) { return event.request; }"),
+                ),
+                reassert("auto_publish", bool_(true)),
+            ],
+        };
+
+        let plan = build_update_patches(config, "cloudfront.Function", &patch);
+
+        assert_eq!(
+            plan.ops,
+            [
+                json!({
+                    "op": "add",
+                    "path": "/FunctionCode",
+                    "value": "function handler(event) { return event.request; }",
+                }),
+                json!({"op": "add", "path": "/AutoPublish", "value": true}),
+            ]
+        );
+        assert_eq!(
+            plan.requires_confirmation,
+            ["function_code"],
+            "the write-only AutoPublish reassertion must not require read-back confirmation"
+        );
+        assert!(plan.unsent.is_empty());
+        assert_eq!(plan.touched, ["function_code", "auto_publish"]);
+    }
+
+    #[test]
     fn test_remove_op_emits_remove_json_patch() {
         let config = get_vpc_config();
         let patch = UpdatePatch {

@@ -246,6 +246,9 @@ enum ReplacementClass {
 const REPLACEMENT_CLASSES: &[(&str, ReplacementClass)] = &[
     // Distribution aliases are globally unique and cannot coexist.
     ("cloudfront.Distribution", ReplacementClass::Conflicting),
+    // The top-level create-only name is account-unique, so replacement must
+    // temporarily rename it.
+    ("cloudfront.Function", ReplacementClass::Attribute("name")),
     // The account-unique name is nested, so it cannot be temporarily renamed.
     (
         "cloudfront.OriginAccessControl",
@@ -5300,6 +5303,12 @@ fn resource_type_overrides() -> &'static HashMap<(&'static str, &'static str), T
                     "GET", "DELETE", "HEAD", "OPTIONS", "PATCH", "POST", "PUT", "ALL",
                 ]),
             );
+            // The CFN schema describes Runtime as a plain string, while the
+            // CloudFront Functions API exposes this closed runtime set.
+            m.insert(
+                ("AWS::CloudFront::Function", "FunctionConfig.Runtime"),
+                TypeOverride::Enum(vec!["cloudfront-js-1.0", "cloudfront-js-2.0"]),
+            );
             // OriginProtocolPolicy: the modern CustomOriginConfig path is
             // already CFN-enum, but the LegacyCustomOrigin definition is
             // plain string. Override there.
@@ -6966,6 +6975,16 @@ mod tests {
     }
 
     #[test]
+    fn test_cloudfront_function_replacement_class_uses_top_level_name() {
+        let function = cfn_schema_for_codegen_tests("AWS::CloudFront::Function");
+
+        assert_eq!(
+            declared_replacement_class("cloudfront.Function", &function).unwrap(),
+            ReplacementClass::Attribute("name")
+        );
+    }
+
+    #[test]
     fn test_replacement_class_table_exactly_matches_schema_cache() {
         let mut cached_resources = BTreeSet::new();
 
@@ -7201,6 +7220,27 @@ mod tests {
                 ),
             }
         }
+    }
+
+    #[test]
+    fn test_cloudfront_function_runtime_override_and_dsl_aliases() {
+        let key = ("AWS::CloudFront::Function", "FunctionConfig.Runtime");
+        assert_eq!(
+            resource_type_overrides().get(&key),
+            Some(&TypeOverride::Enum(vec![
+                "cloudfront-js-1.0",
+                "cloudfront-js-2.0",
+            ]))
+        );
+
+        let schema = cfn_schema_for_codegen_tests("AWS::CloudFront::Function");
+        let generated = generate_schema_code(&schema, "AWS::CloudFront::Function")
+            .expect("CloudFront Function schema generation should succeed");
+        assert!(
+            generated
+                .contains(r#"("cloudfront-js-2.0".to_string(), "cloudfront_js_2_0".to_string())"#),
+            "cloudfront-js-2.0 must expose the DSL alias cloudfront_js_2_0: {generated}"
+        );
     }
 
     #[test]

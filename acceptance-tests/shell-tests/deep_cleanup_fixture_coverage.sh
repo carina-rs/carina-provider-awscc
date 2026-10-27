@@ -322,6 +322,7 @@ fi
 # are comma-separated only when the same DSL type has multiple fixture forms.
 command cat > "$SWEEP_MAPPINGS_FILE" <<'EOF'
 awscc.cloudfront.Distribution|aws cloudfront delete-distribution
+awscc.cloudfront.Function|aws cloudfront delete-function
 awscc.cloudfront.OriginAccessControl|aws cloudfront delete-origin-access-control
 awscc.cloudfront.ResponseHeadersPolicy|aws cloudfront delete-response-headers-policy
 awscc.dynamodb.Table|aws dynamodb delete-table

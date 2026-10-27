@@ -1,0 +1,28 @@
+# CloudFront Function - Basic test
+#
+# Tests a cloudfront-js-2.0 viewer-request function published to LIVE.
+
+provider awscc {
+  region = aws.Region.ap_northeast_1
+}
+
+awscc.cloudfront.Function {
+  name = 'carina-acc-test-fn'
+
+  function_code = <<'JS'
+function handler(event) {
+  var request = event.request;
+  if (request.uri === '/') {
+    request.uri = '/providers/';
+  }
+  return request;
+}
+JS
+
+  function_config = {
+    runtime = cloudfront_js_2_0
+    comment = 'Carina acceptance test function'
+  }
+
+  auto_publish = true
+}

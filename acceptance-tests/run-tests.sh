@@ -449,6 +449,75 @@ deep_cleanup_cloudfront_unreferenced_resources() {
     done
 }
 
+# Delete acceptance-test CloudFront Functions after distribution cleanup. A
+# function cannot be deleted while any cache behavior references its ARN, so
+# enumerate both association paths after distribution deletion and fail closed
+# if either reference snapshot is unavailable.
+deep_cleanup_cloudfront_functions() {
+    local account="$1"
+
+    local default_function_arns
+    deep_cleanup_enumerate "$account" "CloudFront functions referenced by default cache behaviors" default_function_arns \
+        aws cloudfront list-distributions \
+        --query 'DistributionList.Items[].DefaultCacheBehavior.FunctionAssociations.Items[].FunctionARN' --output text
+    local default_function_enumeration_succeeded="$DEEP_CLEANUP_LAST_ENUMERATION_SUCCEEDED"
+
+    local ordered_function_arns
+    deep_cleanup_enumerate "$account" "CloudFront functions referenced by ordered cache behaviors" ordered_function_arns \
+        aws cloudfront list-distributions \
+        --query 'DistributionList.Items[].CacheBehaviors.Items[].FunctionAssociations.Items[].FunctionARN' --output text
+    local ordered_function_enumeration_succeeded="$DEEP_CLEANUP_LAST_ENUMERATION_SUCCEEDED"
+
+    if [ "$default_function_enumeration_succeeded" -eq 0 ] || \
+        [ "$ordered_function_enumeration_succeeded" -eq 0 ]; then
+        echo "  Skipping CloudFront function cleanup because distribution references could not be enumerated."
+        return 0
+    fi
+
+    local in_use_function_arns="$default_function_arns $ordered_function_arns"
+    local functions
+    deep_cleanup_enumerate "$account" "acceptance-test CloudFront functions" functions \
+        aws cloudfront list-functions \
+        --query 'FunctionList.Items[?starts_with(Name, `carina-acc-test`)].[Name, FunctionMetadata.FunctionARN]' --output text
+
+    local function_name
+    local function_arn
+    while IFS=$'\t' read -r function_name function_arn; do
+        [ -z "$function_name" ] && continue
+        [ "$function_name" = "None" ] && continue
+        [ -z "$function_arn" ] && continue
+        [ "$function_arn" = "None" ] && continue
+
+        local function_is_in_use=0
+        local in_use_function_arn
+        for in_use_function_arn in $in_use_function_arns; do
+            [ -z "$in_use_function_arn" ] && continue
+            [ "$in_use_function_arn" = "None" ] && continue
+            if [ "$function_arn" = "$in_use_function_arn" ]; then
+                function_is_in_use=1
+                break
+            fi
+        done
+        if [ "$function_is_in_use" -eq 1 ]; then
+            echo "  Skipping CloudFront function $function_name because a distribution references it."
+            continue
+        fi
+
+        local function_etag
+        deep_cleanup_enumerate "$account" "ETag for CloudFront function $function_name" function_etag \
+            aws cloudfront describe-function --name "$function_name" \
+            --query 'ETag' --output text
+        [ -z "$function_etag" ] && continue
+        [ "$function_etag" = "None" ] && continue
+
+        echo "  Cleaning CloudFront function $function_name..."
+        # Keep the literal command for deep_cleanup_fixture_coverage.sh.
+        deep_cleanup_delete_resource "$account" "delete CloudFront function $function_name" \
+            aws cloudfront delete-function \
+            --name "$function_name" --if-match "$function_etag"
+    done <<< "$functions"
+}
+
 # Runs a command with a hard wall-clock limit. This is used around AWS waiters,
 # whose generated polling limits can otherwise hold up an entire account sweep.
 deep_cleanup_with_timeout() {
@@ -1338,7 +1407,10 @@ deep_cleanup_account() {
             --id "$distribution_id" --if-match "$distribution_etag"
     done <<< "$cloudfront_distributions"
 
-    # 16. Delete unreferenced CloudFront origin access controls after distributions
+    # 16. Delete acceptance-test CloudFront functions after distributions.
+    deep_cleanup_cloudfront_functions "$account"
+
+    # 17. Delete unreferenced CloudFront origin access controls after distributions
     # OACs cannot be tagged, and these dedicated acceptance-test accounts contain no
     # precious resources. Do not name-filter: every remaining OAC is cleanup debris.
     # Fail closed if the reference enumeration failed. Its blank output cannot mean
@@ -1355,7 +1427,7 @@ deep_cleanup_account() {
         "get-origin-access-control" \
         "delete-origin-access-control"
 
-    # 17. Delete unreferenced custom CloudFront response headers policies.
+    # 18. Delete unreferenced custom CloudFront response headers policies.
     # AWS-managed policies are excluded by --type custom. Fail closed if either
     # reference path could not be enumerated, because an empty result is not proof
     # that the remaining custom policies are unused.
