@@ -7,9 +7,8 @@
 use std::collections::HashMap;
 
 use carina_core::provider::{
-    AppliedState as CoreAppliedState, PatchOp as CorePatchOp, PatchOpKind as CorePatchOpKind,
-    ReadOutcome as CoreReadOutcome, UpdateOutcome as CoreUpdateOutcome,
-    UpdatePatch as CoreUpdatePatch,
+    AppliedState as CoreAppliedState, PatchOp as CorePatchOp, ReadOutcome as CoreReadOutcome,
+    UpdateOutcome as CoreUpdateOutcome, UpdatePatch as CoreUpdatePatch,
 };
 use carina_core::resource::{
     ConcreteValue, DataSource as CoreDataSource, DeferredValue, Directives as CoreDirectives,
@@ -26,9 +25,9 @@ use carina_provider_protocol::types::{
     AppliedPersistedState as ProtoAppliedPersistedState, AppliedState as ProtoAppliedState,
     AttributeSchema as ProtoAttributeSchema, AttributeType as ProtoAttributeType,
     Directives as ProtoDirectives, PartialReadDiagnostic as ProtoPartialReadDiagnostic,
-    PatchOp as ProtoPatchOp, PatchOpKind as ProtoPatchOpKind,
-    PersistedState as ProtoPersistedState, PersistedValue as ProtoPersistedValue,
-    ReadOutcome as ProtoReadOutcome, Resource as ProtoResource, ResourceId as ProtoResourceId,
+    PatchOp as ProtoPatchOp, PersistedState as ProtoPersistedState,
+    PersistedValue as ProtoPersistedValue, ReadOutcome as ProtoReadOutcome,
+    Resource as ProtoResource, ResourceId as ProtoResourceId,
     ResourceSchema as ProtoResourceSchema, State as ProtoState, StructField as ProtoStructField,
     UniqueNameSpec as ProtoUniqueNameSpec, UpdateOutcome as ProtoUpdateOutcome,
     UpdatePatch as ProtoUpdatePatch, Value as ProtoValue,
@@ -843,19 +842,21 @@ fn core_to_proto_unique_name(spec: &CoreUniqueNameSpec) -> ProtoUniqueNameSpec {
 
 // -- UpdatePatch --
 
-fn proto_to_core_patch_op_kind(k: ProtoPatchOpKind) -> CorePatchOpKind {
-    match k {
-        ProtoPatchOpKind::Add => CorePatchOpKind::Add,
-        ProtoPatchOpKind::Replace => CorePatchOpKind::Replace,
-        ProtoPatchOpKind::Remove => CorePatchOpKind::Remove,
-    }
-}
-
 fn proto_to_core_patch_op(op: &ProtoPatchOp) -> CorePatchOp {
-    CorePatchOp {
-        kind: proto_to_core_patch_op_kind(op.kind),
-        key: op.key.clone(),
-        value: op.value.as_ref().map(proto_to_core_value),
+    match op {
+        ProtoPatchOp::Add { key, value } => CorePatchOp::Add {
+            key: key.clone(),
+            value: proto_to_core_value(value),
+        },
+        ProtoPatchOp::Replace { key, value } => CorePatchOp::Replace {
+            key: key.clone(),
+            value: proto_to_core_value(value),
+        },
+        ProtoPatchOp::Reassert { key, value } => CorePatchOp::Reassert {
+            key: key.clone(),
+            value: proto_to_core_value(value),
+        },
+        ProtoPatchOp::Remove { key } => CorePatchOp::Remove { key: key.clone() },
     }
 }
 
