@@ -17,9 +17,12 @@ use carina_core::resource::{
     State as CoreState, Value as CoreValue,
 };
 use carina_core::schema::{
-    AttributeSchema as CoreAttributeSchema, AttributeType as CoreAttributeType,
-    InputMode as CoreInputMode, RawShape as CoreRawShape, ResourceSchema as CoreResourceSchema,
-    StructField as CoreStructField, UniqueNameSpec as CoreUniqueNameSpec, legacy_validator,
+    AttributeSchema as CoreAttributeSchema, AttributeSchemaParts as CoreAttributeSchemaParts,
+    AttributeType as CoreAttributeType, InputMode as CoreInputMode, RawShape as CoreRawShape,
+    ResourceSchema as CoreResourceSchema, ResourceSchemaParts as CoreResourceSchemaParts,
+    ResourceValidation as CoreResourceValidation, StructField as CoreStructField,
+    StructFieldParts as CoreStructFieldParts, UniqueNameSpec as CoreUniqueNameSpec,
+    legacy_validator,
 };
 use carina_provider_protocol::types::{
     AppliedPersistedState as ProtoAppliedPersistedState, AppliedState as ProtoAppliedState,
@@ -36,6 +39,14 @@ use carina_provider_protocol::types::{
 #[derive(Debug, thiserror::Error)]
 #[error("persisted state contains an invalid redacted-secret digest")]
 pub struct PersistedValueDecodeError;
+
+#[derive(Debug, thiserror::Error)]
+enum StructFieldDecodeError {
+    #[error("struct field `{name}` cannot be both required and read-only")]
+    RequiredReadOnly { name: String },
+    #[error("struct field `{name}` cannot be both read-only and write-only")]
+    ReadOnlyWriteOnly { name: String },
+}
 
 // -- ResourceId --
 
@@ -450,8 +461,10 @@ pub fn proto_to_core_data_source(r: &ProtoResource) -> CoreDataSource {
 
 // -- AttributeType --
 
-fn proto_attr_type_to_core(t: &ProtoAttributeType) -> CoreAttributeType {
-    match t {
+fn proto_attr_type_to_core(
+    t: &ProtoAttributeType,
+) -> Result<CoreAttributeType, StructFieldDecodeError> {
+    Ok(match t {
         ProtoAttributeType::String {
             pattern,
             length,
@@ -508,22 +521,28 @@ fn proto_attr_type_to_core(t: &ProtoAttributeType) -> CoreAttributeType {
             length,
             ..
         } => CoreAttributeType::refined_list(
-            proto_attr_type_to_core(element_type),
+            proto_attr_type_to_core(element_type)?,
             *ordered,
             *length,
             legacy_validator(|_| Ok(())),
         ),
         ProtoAttributeType::Map { inner, key } => CoreAttributeType::map_with_key(
-            proto_attr_type_to_core(key),
-            proto_attr_type_to_core(inner),
+            proto_attr_type_to_core(key)?,
+            proto_attr_type_to_core(inner)?,
         ),
         ProtoAttributeType::Struct { name, fields } => CoreAttributeType::struct_(
             name.clone(),
-            fields.iter().map(proto_to_core_struct_field).collect(),
+            fields
+                .iter()
+                .map(proto_to_core_struct_field)
+                .collect::<Result<Vec<_>, _>>()?,
         ),
-        ProtoAttributeType::Union { members } => {
-            CoreAttributeType::union(members.iter().map(proto_attr_type_to_core).collect())
-        }
+        ProtoAttributeType::Union { members } => CoreAttributeType::union(
+            members
+                .iter()
+                .map(proto_attr_type_to_core)
+                .collect::<Result<Vec<_>, _>>()?,
+        ),
         ProtoAttributeType::Custom {
             name,
             base,
@@ -537,7 +556,7 @@ fn proto_attr_type_to_core(t: &ProtoAttributeType) -> CoreAttributeType {
             } else {
                 Some(carina_core::schema::TypeIdentity::from_dotted(name))
             };
-            let base = proto_attr_type_to_core(base);
+            let base = proto_attr_type_to_core(base)?;
             match base.raw_shape() {
                 CoreRawShape::String { .. } => CoreAttributeType::refined_string(
                     identity,
@@ -570,7 +589,7 @@ fn proto_attr_type_to_core(t: &ProtoAttributeType) -> CoreAttributeType {
             dsl_transform,
         } => {
             let identity = carina_core::schema::enum_identity(name, Some(namespace.as_str()));
-            let base = proto_attr_type_to_core(base);
+            let base = proto_attr_type_to_core(base)?;
             if matches!(base.raw_shape(), CoreRawShape::String { .. }) {
                 CoreAttributeType::enum_(
                     identity,
@@ -595,15 +614,17 @@ fn proto_attr_type_to_core(t: &ProtoAttributeType) -> CoreAttributeType {
         // lift a whole schema must convert its matching `ResourceSchema.defs`
         // map alongside the attribute so resolution at walk-sites succeeds.
         ProtoAttributeType::Ref { name } => CoreAttributeType::ref_(name.clone()),
-    }
+    })
 }
 
 #[allow(dead_code)]
 fn proto_to_core_attribute_type(t: &ProtoAttributeType) -> CoreAttributeType {
-    proto_attr_type_to_core(t)
+    proto_attr_type_to_core(t).expect("test attribute type must decode")
 }
 
-fn proto_to_core_struct_field(f: &ProtoStructField) -> CoreStructField {
+fn proto_to_core_struct_field(
+    f: &ProtoStructField,
+) -> Result<CoreStructField, StructFieldDecodeError> {
     let ProtoStructField {
         name,
         field_type,
@@ -612,25 +633,51 @@ fn proto_to_core_struct_field(f: &ProtoStructField) -> CoreStructField {
         block_name,
         provider_name,
         read_only,
+        write_only,
         deferred_populate,
     } = f;
-    CoreStructField {
-        name: name.clone(),
-        field_type: proto_attr_type_to_core(field_type),
-        input_mode: proto_input_mode_to_core(*required, *read_only),
-        description: description.clone(),
-        provider_name: provider_name.clone(),
-        block_name: block_name.clone(),
-        deferred_populate: *deferred_populate,
+
+    if *read_only && *write_only {
+        return Err(StructFieldDecodeError::ReadOnlyWriteOnly { name: name.clone() });
     }
+
+    let input_mode = proto_input_mode_to_core(name, *required, *read_only)?;
+    let mut field = CoreStructField::new(name.clone(), proto_attr_type_to_core(field_type)?);
+    field = match input_mode {
+        CoreInputMode::Optional => field,
+        CoreInputMode::Required => field.required(),
+        CoreInputMode::ProviderPopulated => field.read_only(),
+    };
+    if let Some(description) = description {
+        field = field.with_description(description.clone());
+    }
+    if let Some(provider_name) = provider_name {
+        field = field.with_provider_name(provider_name.clone());
+    }
+    if let Some(block_name) = block_name {
+        field = field.with_block_name(block_name.clone());
+    }
+    if *write_only {
+        field = field.write_only();
+    }
+    if *deferred_populate {
+        field = field.deferred_populate();
+    }
+    Ok(field)
 }
 
-fn proto_input_mode_to_core(required: bool, read_only: bool) -> CoreInputMode {
+fn proto_input_mode_to_core(
+    name: &str,
+    required: bool,
+    read_only: bool,
+) -> Result<CoreInputMode, StructFieldDecodeError> {
     match (required, read_only) {
-        (false, false) => CoreInputMode::Optional,
-        (true, false) => CoreInputMode::Required,
-        (false, true) => CoreInputMode::ProviderPopulated,
-        (true, true) => panic!("schema input mode cannot be both required and read-only"),
+        (false, false) => Ok(CoreInputMode::Optional),
+        (true, false) => Ok(CoreInputMode::Required),
+        (false, true) => Ok(CoreInputMode::ProviderPopulated),
+        (true, true) => Err(StructFieldDecodeError::RequiredReadOnly {
+            name: name.to_string(),
+        }),
     }
 }
 
@@ -729,7 +776,7 @@ fn core_to_proto_attribute_type(t: &CoreAttributeType) -> ProtoAttributeType {
 }
 
 fn core_to_proto_struct_field(f: &CoreStructField) -> ProtoStructField {
-    let CoreStructField {
+    let CoreStructFieldParts {
         name,
         field_type,
         input_mode,
@@ -737,27 +784,30 @@ fn core_to_proto_struct_field(f: &CoreStructField) -> ProtoStructField {
         provider_name,
         block_name,
         deferred_populate,
-    } = f;
-    let (required, read_only) = core_input_mode_to_proto(*input_mode);
+        write_only,
+    } = f.parts();
+    let (required, read_only) = core_input_mode_to_proto(input_mode);
     ProtoStructField {
-        name: name.clone(),
+        name: name.to_string(),
         field_type: core_to_proto_attribute_type(field_type),
         required,
-        description: description.clone(),
-        block_name: block_name.clone(),
-        provider_name: provider_name.clone(),
+        description: description.map(str::to_owned),
+        block_name: block_name.map(str::to_owned),
+        provider_name: provider_name.map(str::to_owned),
         read_only,
-        deferred_populate: *deferred_populate,
+        write_only,
+        deferred_populate,
     }
 }
 
 fn core_to_proto_attribute_schema(a: &CoreAttributeSchema) -> ProtoAttributeSchema {
-    let CoreAttributeSchema {
+    let CoreAttributeSchemaParts {
         name,
         attr_type,
         input_mode,
         default,
         description,
+        // The protocol has no field for completions.
         completions: _completions,
         provider_name,
         create_only,
@@ -766,22 +816,22 @@ fn core_to_proto_attribute_schema(a: &CoreAttributeSchema) -> ProtoAttributeSche
         write_only,
         identity,
         deferred_populate,
-    } = a;
-    let (required, read_only) = core_input_mode_to_proto(*input_mode);
+    } = a.parts();
+    let (required, read_only) = core_input_mode_to_proto(input_mode);
     ProtoAttributeSchema {
-        name: name.clone(),
+        name: name.to_string(),
         attr_type: core_to_proto_attribute_type(attr_type),
         required,
-        default: default.as_ref().map(core_to_proto_value),
-        description: description.clone(),
-        create_only: *create_only,
+        default: default.map(core_to_proto_value),
+        description: description.map(str::to_owned),
+        create_only,
         read_only,
-        write_only: *write_only,
-        block_name: block_name.clone(),
-        provider_name: provider_name.clone(),
-        removable: *removable,
-        identity: *identity,
-        deferred_populate: *deferred_populate,
+        write_only,
+        block_name: block_name.map(str::to_owned),
+        provider_name: provider_name.map(str::to_owned),
+        removable,
+        identity,
+        deferred_populate,
     }
 }
 
@@ -796,34 +846,49 @@ fn core_input_mode_to_proto(input_mode: CoreInputMode) -> (bool, bool) {
 pub fn core_to_proto_schema(s: &CoreResourceSchema) -> ProtoResourceSchema {
     use carina_core::schema::SchemaKind as CoreSchemaKind;
     use carina_provider_protocol::types::SchemaKind as ProtoSchemaKind;
-    let kind = match s.kind {
+    let CoreResourceSchemaParts {
+        resource_type,
+        attributes,
+        description,
+        validation,
+        kind,
+        unique_name,
+        operation_config,
+        exclusive_required,
+        // The protocol has no fields for wait defaults.
+        default_wait_timeout: _default_wait_timeout,
+        default_wait_interval: _default_wait_interval,
+        defs,
+    } = s.parts();
+    let kind = match kind {
         CoreSchemaKind::Resource => ProtoSchemaKind::Managed,
         CoreSchemaKind::DataSource => ProtoSchemaKind::DataSource,
     };
     ProtoResourceSchema {
-        resource_type: s.resource_type.clone(),
-        attributes: s
-            .attributes
+        resource_type: resource_type.to_string(),
+        attributes: attributes
             .iter()
             .map(|(k, v)| (k.clone(), core_to_proto_attribute_schema(v)))
             .collect(),
-        description: s.description.clone(),
+        description: description.map(str::to_owned),
         kind,
-        unique_name: core_to_proto_unique_name(&s.unique_name),
-        operation_config: s.operation_config.as_ref().map(|c| {
-            carina_provider_protocol::OperationConfig {
-                delete_timeout_secs: c.delete_timeout_secs,
-                delete_max_retries: c.delete_max_retries,
-                create_timeout_secs: c.create_timeout_secs,
-                create_max_retries: c.create_max_retries,
-                update_timeout_secs: c.update_timeout_secs,
-            }
+        unique_name: core_to_proto_unique_name(unique_name),
+        operation_config: operation_config.map(|c| carina_provider_protocol::OperationConfig {
+            delete_timeout_secs: c.delete_timeout_secs,
+            delete_max_retries: c.delete_max_retries,
+            create_timeout_secs: c.create_timeout_secs,
+            create_max_retries: c.create_max_retries,
+            update_timeout_secs: c.update_timeout_secs,
         }),
-        validators: vec![],
-        exclusive_required: s.exclusive_required.clone(),
+        validators: match validation {
+            CoreResourceValidation::Declared(validators) => validators.clone(),
+            CoreResourceValidation::None => vec![],
+            // Native callbacks are not portable across the protocol.
+            CoreResourceValidation::InProcess(_native_callback) => vec![],
+        },
+        exclusive_required: exclusive_required.to_vec(),
         // Cyclic CFN struct definitions reachable via Ref (carina#3340).
-        defs: s
-            .defs
+        defs: defs
             .iter()
             .map(|(k, v)| (k.clone(), core_to_proto_attribute_type(v)))
             .collect(),
@@ -1133,7 +1198,7 @@ mod tests {
             namespace: "aws.route53.HostedZone".to_string(),
             dsl_transform: Some(ProtoDslTransform::StripSuffix(".".to_string())),
         };
-        let core_type = proto_attr_type_to_core(&proto_type);
+        let core_type = proto_attr_type_to_core(&proto_type).expect("custom enum should decode");
         let lifted = carina_core::utils::lift_enum_leaves(
             &CoreValue::Concrete(ConcreteValue::String("example".to_string().into())),
             &core_type,
@@ -1198,6 +1263,46 @@ mod tests {
     }
 
     #[test]
+    fn nested_struct_field_write_only_round_trips_through_protocol() {
+        let core = CoreStructField::new("client_secret", CoreAttributeType::string()).write_only();
+
+        let protocol = core_to_proto_struct_field(&core);
+        assert!(protocol.write_only);
+
+        let round_tripped =
+            proto_to_core_struct_field(&protocol).expect("write-only field should decode");
+        assert!(round_tripped.is_write_only());
+    }
+
+    #[test]
+    fn protocol_struct_field_rejects_read_only_write_only_conflict() {
+        let protocol = ProtoStructField {
+            name: "client_secret".to_string(),
+            field_type: ProtoAttributeType::String {
+                pattern: None,
+                length: None,
+                validate: None,
+                to_dsl: None,
+                identity: None,
+            },
+            required: false,
+            description: None,
+            block_name: None,
+            provider_name: None,
+            read_only: true,
+            write_only: true,
+            deferred_populate: false,
+        };
+
+        let error = proto_to_core_struct_field(&protocol)
+            .expect_err("provider-populated and write-only must fail before builders panic");
+        assert_eq!(
+            error.to_string(),
+            "struct field `client_secret` cannot be both read-only and write-only"
+        );
+    }
+
+    #[test]
     fn core_to_proto_schema_preserves_nested_input_mode_deferred_populate_and_default() {
         let schema = carina_provider_awscc::schemas::generated::kms::key::kms_key_config()
             .schema
@@ -1238,11 +1343,13 @@ mod tests {
             block_name: _proto_field_block_name,
             provider_name: _proto_field_provider_name,
             read_only: proto_field_read_only,
+            write_only: proto_field_write_only,
             deferred_populate: proto_field_deferred_populate,
         } = &proto_fields[0];
         assert_eq!(proto_field_name, "result");
         assert!(!*proto_field_required);
         assert!(*proto_field_read_only);
+        assert!(!*proto_field_write_only);
         assert!(*proto_field_deferred_populate);
 
         let proto_key_spec = &proto.attributes["key_spec"];

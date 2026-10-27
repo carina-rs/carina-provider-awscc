@@ -81,7 +81,7 @@ fn find_field<'a>(attribute_type: &'a AttributeType, field_name: &str) -> &'a St
     };
     fields
         .iter()
-        .find(|field| field.name == field_name)
+        .find(|field| field.name() == field_name)
         .unwrap_or_else(|| panic!("expected struct field {field_name}"))
 }
 
@@ -190,52 +190,52 @@ fn response_headers_policy_id_matches_existing_cloudfront_id_reference_pattern()
     let response_headers_policy = cloudfront_response_headers_policy_config();
     let response_headers_policy_id = response_headers_policy
         .schema
-        .attributes
+        .attributes()
         .get("id")
         .expect("ResponseHeadersPolicy.id should exist");
     assert!(response_headers_policy_id.is_read_only());
 
     let origin_access_control = cloudfront_origin_access_control_config();
-    let origin_access_control_id = &origin_access_control
+    let origin_access_control_id = origin_access_control
         .schema
-        .attributes
+        .attributes()
         .get("id")
         .expect("OriginAccessControl.id should exist")
-        .attr_type;
+        .attr_type();
 
     let distribution = cloudfront_distribution_config();
-    let distribution_config = &distribution
+    let distribution_config = distribution
         .schema
-        .attributes
+        .attributes()
         .get("distribution_config")
         .expect("Distribution.distribution_config should exist")
-        .attr_type;
+        .attr_type();
     let default_cache_behavior =
-        &find_field(distribution_config, "default_cache_behavior").field_type;
+        find_field(distribution_config, "default_cache_behavior").field_type();
     let cache_behavior =
-        list_element(&find_field(distribution_config, "cache_behaviors").field_type);
-    let origin = list_element(&find_field(distribution_config, "origins").field_type);
+        list_element(find_field(distribution_config, "cache_behaviors").field_type());
+    let origin = list_element(find_field(distribution_config, "origins").field_type());
 
     for (label, sink) in [
         (
             "default_cache_behavior.response_headers_policy_id",
-            &find_field(default_cache_behavior, "response_headers_policy_id").field_type,
+            find_field(default_cache_behavior, "response_headers_policy_id").field_type(),
         ),
         (
             "cache_behaviors[].response_headers_policy_id",
-            &find_field(cache_behavior, "response_headers_policy_id").field_type,
+            find_field(cache_behavior, "response_headers_policy_id").field_type(),
         ),
     ] {
         assert!(
             response_headers_policy
                 .schema
-                .type_in_schema(&response_headers_policy_id.attr_type)
+                .type_in_schema(response_headers_policy_id.attr_type())
                 .is_assignable_to(distribution.schema.type_in_schema(sink)),
             "ResponseHeadersPolicy.id must be assignable to Distribution.{label}"
         );
     }
 
-    let origin_access_control_sink = &find_field(origin, "origin_access_control_id").field_type;
+    let origin_access_control_sink = find_field(origin, "origin_access_control_id").field_type();
     assert!(
         origin_access_control
             .schema
@@ -382,16 +382,16 @@ async fn response_headers_policy_create_then_read_preserves_nested_headers() {
         panic!("access_control_allow_methods.items must round-trip as a list");
     };
     let response_headers_policy = cloudfront_response_headers_policy_config();
-    let policy_config_type = &response_headers_policy
+    let policy_config_type = response_headers_policy
         .schema
-        .attributes
+        .attributes()
         .get("response_headers_policy_config")
         .expect("ResponseHeadersPolicy.response_headers_policy_config should exist")
-        .attr_type;
-    let cors_config_type = &find_field(policy_config_type, "cors_config").field_type;
+        .attr_type();
+    let cors_config_type = find_field(policy_config_type, "cors_config").field_type();
     let allow_methods_type =
-        &find_field(cors_config_type, "access_control_allow_methods").field_type;
-    let method_type = list_element(&find_field(allow_methods_type, "items").field_type);
+        find_field(cors_config_type, "access_control_allow_methods").field_type();
+    let method_type = list_element(find_field(allow_methods_type, "items").field_type());
     let (_, _, _, _, method_dsl_map) = method_type
         .enum_parts()
         .expect("access_control_allow_methods.items elements should be enums");

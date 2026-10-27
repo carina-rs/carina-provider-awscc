@@ -1008,7 +1008,7 @@ fn decode_persisted_saved_attrs(
             Ok((id, attrs))
         })
         .collect::<Result<_, CoreProviderError>>()?;
-    Ok(RawSavedAttrs::from_persisted(persisted_saved).lift(registry))
+    Ok(RawSavedAttrs::from_persisted(persisted_saved, HashMap::new()).lift(registry))
 }
 
 /// Pull `allowed_account_ids` / `forbidden_account_ids` / `assume_role`
@@ -1065,6 +1065,7 @@ fn assume_role_attribute_type() -> proto::AttributeType {
                 block_name: None,
                 provider_name: None,
                 read_only: false,
+                write_only: false,
                 deferred_populate: false,
             },
             proto::StructField {
@@ -1077,6 +1078,7 @@ fn assume_role_attribute_type() -> proto::AttributeType {
                 block_name: None,
                 provider_name: None,
                 read_only: false,
+                write_only: false,
                 deferred_populate: false,
             },
             proto::StructField {
@@ -1089,6 +1091,7 @@ fn assume_role_attribute_type() -> proto::AttributeType {
                 block_name: None,
                 provider_name: None,
                 read_only: false,
+                write_only: false,
                 deferred_populate: false,
             },
             proto::StructField {
@@ -1101,6 +1104,7 @@ fn assume_role_attribute_type() -> proto::AttributeType {
                 block_name: None,
                 provider_name: None,
                 read_only: false,
+                write_only: false,
                 deferred_populate: false,
             },
         ],

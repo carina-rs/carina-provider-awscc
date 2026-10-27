@@ -9,7 +9,7 @@ use carina_provider_awscc::schemas::generated::elasticloadbalancingv2::listener:
 
 fn find_field<'a>(t: &'a AttributeType, field: &str) -> Option<&'a StructField> {
     match t.raw_shape() {
-        RawShape::Struct { fields, .. } => fields.iter().find(|f| f.name == field),
+        RawShape::Struct { fields, .. } => fields.iter().find(|f| f.name() == field),
         _ => None,
     }
 }
@@ -22,10 +22,10 @@ fn peel_list_element(t: &AttributeType) -> &AttributeType {
 }
 
 fn assert_http_response_status_code(field: &StructField, where_: &str) {
-    let RawShape::String { identity, .. } = field.field_type.raw_shape() else {
+    let RawShape::String { identity, .. } = field.field_type().raw_shape() else {
         panic!(
             "{where_}: status_code should be a refined string, got {:?}",
-            field.field_type.raw_shape()
+            field.field_type().raw_shape()
         );
     };
     assert_eq!(
@@ -40,7 +40,7 @@ fn fixed_response_status_code_uses_http_response_status_code_in_def_map() {
     let config = elasticloadbalancingv2_listener_config();
     let fixed_response = config
         .schema
-        .defs
+        .defs()
         .get("FixedResponseConfig")
         .expect("FixedResponseConfig def is registered");
     let status_code = find_field(fixed_response, "status_code")
@@ -53,13 +53,13 @@ fn fixed_response_status_code_uses_http_response_status_code_inline() {
     let config = elasticloadbalancingv2_listener_config();
     let default_actions = config
         .schema
-        .attributes
+        .attributes()
         .get("default_actions")
         .expect("Listener has a default_actions attribute");
-    let action = peel_list_element(&default_actions.attr_type);
+    let action = peel_list_element(default_actions.attr_type());
     let fixed_response_field = find_field(action, "fixed_response_config")
         .expect("Action has a fixed_response_config field");
-    let status_code = find_field(&fixed_response_field.field_type, "status_code")
+    let status_code = find_field(fixed_response_field.field_type(), "status_code")
         .expect("Action.FixedResponseConfig has a status_code field");
     assert_http_response_status_code(status_code, "inline Action.FixedResponseConfig");
 }

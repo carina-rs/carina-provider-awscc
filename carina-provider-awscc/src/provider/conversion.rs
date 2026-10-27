@@ -28,6 +28,16 @@ fn union_members_for<'a>(
     schema.union_members_with_budget(attr_type, &mut ShapeWalkBudget::new(256))
 }
 
+fn resource_schema_with_defs(
+    resource_type: &str,
+    defs: &std::collections::BTreeMap<String, AttributeType>,
+) -> ResourceSchema {
+    defs.iter().fold(
+        ResourceSchema::new(resource_type),
+        |schema, (name, attr_type)| schema.with_def(name.clone(), attr_type.clone()),
+    )
+}
+
 fn is_list_of_strings(schema: &ResourceSchema, attr_type: &AttributeType) -> bool {
     let Shape::List { element_type, .. } = schema.shape_of(attr_type) else {
         return false;
@@ -126,8 +136,7 @@ pub(crate) fn aws_value_to_dsl_with_defs(
     // Struct / List / Map / ... underneath. `Shape` has no `Ref`
     // variant, so the wildcard fallthrough cannot silently swallow a
     // `Ref` (carina#3349).
-    let mut schema = ResourceSchema::new(resource_type);
-    schema.defs = defs.clone();
+    let schema = resource_schema_with_defs(resource_type, defs);
     let shape = schema.shape_of(attr_type);
 
     // This feeds the read/import path, whose result is written to
@@ -214,16 +223,16 @@ pub(crate) fn aws_value_to_dsl_with_defs(
         let map: IndexMap<String, Value> = fields
             .iter()
             .filter_map(|field| {
-                let provider_key = field.provider_name.as_deref().unwrap_or(&field.name);
+                let provider_key = field.provider_name().unwrap_or(field.name());
                 let json_val = obj.get(provider_key)?;
                 let dsl_val = aws_value_to_dsl_with_defs(
-                    &field.name,
+                    field.name(),
                     json_val,
-                    &field.field_type,
+                    field.field_type(),
                     resource_type,
                     defs,
                 );
-                dsl_val.map(|v| (field.name.clone(), v))
+                dsl_val.map(|v| (field.name().to_string(), v))
             })
             .collect();
         if !map.is_empty() {
@@ -341,8 +350,7 @@ pub(crate) fn dsl_value_to_aws_with_defs(
     attr_name: &str,
     defs: &std::collections::BTreeMap<String, AttributeType>,
 ) -> Option<serde_json::Value> {
-    let mut schema = ResourceSchema::new(resource_type);
-    schema.defs = defs.clone();
+    let schema = resource_schema_with_defs(resource_type, defs);
     let shape = schema.shape_of(attr_type);
     // Protocol v6 resolves enum identifiers in the host. A String here is
     // therefore literal text and must pass through byte-for-byte; only the
@@ -419,17 +427,13 @@ pub(crate) fn dsl_value_to_aws_with_defs(
         let obj: serde_json::Map<String, serde_json::Value> = fields
             .iter()
             .filter_map(|field| {
-                let dsl_val = map.get(&field.name)?;
-                let provider_key = field
-                    .provider_name
-                    .as_deref()
-                    .unwrap_or(&field.name)
-                    .to_string();
+                let dsl_val = map.get(field.name())?;
+                let provider_key = field.provider_name().unwrap_or(field.name()).to_string();
                 let json_val = dsl_value_to_aws_with_defs(
                     dsl_val,
-                    &field.field_type,
+                    field.field_type(),
                     resource_type,
-                    &field.name,
+                    field.name(),
                     defs,
                 );
                 json_val.map(|v| (provider_key, v))
@@ -446,17 +450,13 @@ pub(crate) fn dsl_value_to_aws_with_defs(
         let obj: serde_json::Map<String, serde_json::Value> = fields
             .iter()
             .filter_map(|field| {
-                let dsl_val = map.get(&field.name)?;
-                let provider_key = field
-                    .provider_name
-                    .as_deref()
-                    .unwrap_or(&field.name)
-                    .to_string();
+                let dsl_val = map.get(field.name())?;
+                let provider_key = field.provider_name().unwrap_or(field.name()).to_string();
                 let json_val = dsl_value_to_aws_with_defs(
                     dsl_val,
-                    &field.field_type,
+                    field.field_type(),
                     resource_type,
-                    &field.name,
+                    field.name(),
                     defs,
                 );
                 json_val.map(|v| (provider_key, v))
@@ -645,7 +645,11 @@ mod tests {
     fn test_cloudfront_distribution_config_read_is_api_canonical() {
         let config =
             crate::schemas::generated::cloudfront::distribution::cloudfront_distribution_config();
-        let attr_schema = config.schema.attributes.get("distribution_config").unwrap();
+        let attr_schema = config
+            .schema
+            .attributes()
+            .get("distribution_config")
+            .unwrap();
 
         let aws_json = json!({
             "DefaultCacheBehavior": {
@@ -658,9 +662,9 @@ mod tests {
         let dsl = aws_value_to_dsl_with_defs(
             "distribution_config",
             &aws_json,
-            &attr_schema.attr_type,
+            attr_schema.attr_type(),
             "cloudfront.Distribution",
-            &config.schema.defs,
+            config.schema.defs(),
         )
         .expect("aws_value_to_dsl should succeed for distribution_config");
 
@@ -692,8 +696,8 @@ mod tests {
         // parsed-desired side — closing the awscc#254 spurious diff.
         let lifted = carina_core::utils::lift_enum_leaves_with_defs(
             &dsl,
-            &attr_schema.attr_type,
-            &config.schema.defs,
+            attr_schema.attr_type(),
+            config.schema.defs(),
         )
         .expect("API-canonical distribution_config must lift");
         let Value::Concrete(ConcreteValue::Map(lifted_top)) = &lifted else {
@@ -869,14 +873,14 @@ mod tests {
     #[test]
     fn test_vpc_endpoint_type_roundtrip_no_false_diff() {
         let config = crate::schemas::generated::ec2::vpc_endpoint::ec2_vpc_endpoint_config();
-        let attr_schema = config.schema.attributes.get("vpc_endpoint_type").unwrap();
+        let attr_schema = config.schema.attributes().get("vpc_endpoint_type").unwrap();
 
         // AWS read-back side.
         let aws_json = serde_json::json!("Gateway");
         let aws_dsl = aws_value_to_dsl_with_defs(
             "vpc_endpoint_type",
             &aws_json,
-            &attr_schema.attr_type,
+            attr_schema.attr_type(),
             "ec2.VpcEndpoint",
             &std::collections::BTreeMap::new(),
         )
@@ -892,7 +896,7 @@ mod tests {
         // (state canonicalization + differ), not by the provider emitting identical
         // strings on both sides. Assert the awscc-owned half — the
         // persisted API value lifts to CanonicalEnum.
-        let lifted = carina_core::utils::lift_enum_leaves(&aws_dsl, &attr_schema.attr_type)
+        let lifted = carina_core::utils::lift_enum_leaves(&aws_dsl, attr_schema.attr_type())
             .expect("API-canonical state value must lift to CanonicalEnum");
         assert_canonical_enum(&lifted, "aws.ec2.VpcEndpoint.VpcEndpointType", "Gateway");
     }
@@ -2039,7 +2043,7 @@ mod tests {
         let config = crate::schemas::generated::s3::bucket::s3_bucket_config();
         let attr_schema = config
             .schema
-            .attributes
+            .attributes()
             .get("lifecycle_configuration")
             .unwrap();
 
@@ -2047,7 +2051,7 @@ mod tests {
         // (Transition singular, ExpiredObjectDeleteMarker, etc.) are write-only in the
         // CloudFormation schema, not the parent attribute itself.
         assert!(
-            !attr_schema.write_only,
+            !attr_schema.is_write_only(),
             "lifecycle_configuration should NOT be marked write-only; \
              only nested sub-properties are write-only in the CFN schema"
         );
@@ -2078,9 +2082,9 @@ mod tests {
         let dsl_value = aws_value_to_dsl_with_defs(
             "lifecycle_configuration",
             &aws_json,
-            &attr_schema.attr_type,
+            attr_schema.attr_type(),
             "s3.Bucket",
-            &config.schema.defs,
+            config.schema.defs(),
         )
         .expect("aws_value_to_dsl should succeed for lifecycle_configuration");
 
@@ -2151,10 +2155,10 @@ mod tests {
         // Write path: convert DSL value back to AWS JSON
         let written_json = dsl_value_to_aws_with_defs(
             &dsl_value,
-            &attr_schema.attr_type,
+            attr_schema.attr_type(),
             "s3.Bucket",
             "lifecycle_configuration",
-            &config.schema.defs,
+            config.schema.defs(),
         )
         .expect("dsl_value_to_aws should succeed");
 
@@ -2175,27 +2179,27 @@ mod tests {
         let config = crate::schemas::generated::s3::bucket::s3_bucket_config();
         let ownership_controls = config
             .schema
-            .attributes
+            .attributes()
             .get("ownership_controls")
             .expect("s3.Bucket has ownership_controls");
         // carina#3340: reuse-via-Ref may produce `AttributeType::Ref`
         // at this position; resolve through `schema.defs` so the test
         // still sees the underlying Struct.
-        let Shape::Struct { .. } = config.schema.shape_of(&ownership_controls.attr_type) else {
+        let Shape::Struct { .. } = config.schema.shape_of(ownership_controls.attr_type()) else {
             panic!("ownership_controls is a Struct");
         };
         let fields = config
             .schema
             .struct_fields_with_budget(
-                &ownership_controls.attr_type,
+                ownership_controls.attr_type(),
                 &mut ShapeWalkBudget::new(256),
             )
             .expect("ownership_controls exposes fields");
-        let rules = fields.iter().find(|f| f.name == "rules").unwrap();
+        let rules = fields.iter().find(|f| f.name() == "rules").unwrap();
         let Shape::List {
             element_type: inner,
             ..
-        } = config.schema.shape_of(&rules.field_type)
+        } = config.schema.shape_of(rules.field_type())
         else {
             panic!("rules is a List");
         };
@@ -2208,7 +2212,7 @@ mod tests {
             .expect("rules.inner exposes fields");
         let object_ownership = rule_fields
             .iter()
-            .find(|f| f.name == "object_ownership")
+            .find(|f| f.name() == "object_ownership")
             .unwrap();
 
         // Validate the snake_case form (the canonical DSL spelling per D7).
@@ -2218,7 +2222,7 @@ mod tests {
             "aws.s3.Bucket.OwnershipControls.OwnershipControlsRule.ObjectOwnership.bucket_owner_enforced",
         ));
         let ownership_schema =
-            carina_core::schema::Schema::flat(object_ownership.field_type.clone());
+            carina_core::schema::Schema::flat(object_ownership.field_type().clone());
         ownership_schema
             .validate(&snake_case_value)
             .expect("snake_case DSL spelling must validate");
@@ -2246,7 +2250,7 @@ mod tests {
         );
         let aws_json = dsl_value_to_aws_with_defs(
             &canonical_value,
-            &object_ownership.field_type,
+            object_ownership.field_type(),
             "s3.Bucket",
             "object_ownership",
             &std::collections::BTreeMap::new(),
@@ -2258,7 +2262,7 @@ mod tests {
         let dsl = aws_value_to_dsl_with_defs(
             "object_ownership",
             &json!("BucketOwnerEnforced"),
-            &object_ownership.field_type,
+            object_ownership.field_type(),
             "s3.Bucket",
             &std::collections::BTreeMap::new(),
         )
@@ -2270,7 +2274,7 @@ mod tests {
             )),
             "read must persist the API-canonical value"
         );
-        let lifted = carina_core::utils::lift_enum_leaves(&dsl, &object_ownership.field_type)
+        let lifted = carina_core::utils::lift_enum_leaves(&dsl, object_ownership.field_type())
             .expect("API-canonical state value must lift");
         assert_canonical_enum(
             &lifted,

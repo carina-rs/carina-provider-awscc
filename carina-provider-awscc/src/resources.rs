@@ -56,7 +56,7 @@ mod tests {
     #[test]
     fn generated_tags_metadata_matches_dsl_tags_attribute() {
         for config in configs() {
-            let tags_attribute = config.schema.attributes.get("tags");
+            let tags_attribute = config.schema.attributes().get("tags");
             assert_eq!(
                 config.tags.is_some(),
                 tags_attribute.is_some(),
@@ -66,7 +66,7 @@ mod tests {
 
             if let Some(tags) = config.tags.as_ref() {
                 assert_eq!(
-                    tags_attribute.and_then(|attribute| attribute.provider_name.as_deref()),
+                    tags_attribute.and_then(|attribute| attribute.provider_name()),
                     Some(tags.provider_name),
                     "{} tags provider name disagrees with its DSL attribute",
                     config.resource_type_name
@@ -82,8 +82,7 @@ mod tests {
 
         assert_eq!(
             ipam.schema
-                .operation_config
-                .as_ref()
+                .operation_config()
                 .unwrap()
                 .budget(OperationKind::Delete),
             Duration::from_secs(3600)
@@ -91,8 +90,7 @@ mod tests {
         assert_eq!(
             ipam_pool
                 .schema
-                .operation_config
-                .as_ref()
+                .operation_config()
                 .unwrap()
                 .budget(OperationKind::Delete),
             Duration::from_secs(3600)
@@ -102,10 +100,10 @@ mod tests {
     #[test]
     fn test_schema_config_provider_name() {
         let vpc_config = get_config("ec2.Vpc").unwrap();
-        let cidr_attr = vpc_config.schema.attributes.get("cidr_block").unwrap();
-        assert_eq!(cidr_attr.provider_name.as_deref(), Some("CidrBlock"));
-        let vpc_id_attr = vpc_config.schema.attributes.get("vpc_id").unwrap();
-        assert_eq!(vpc_id_attr.provider_name.as_deref(), Some("VpcId"));
+        let cidr_attr = vpc_config.schema.attributes().get("cidr_block").unwrap();
+        assert_eq!(cidr_attr.provider_name(), Some("CidrBlock"));
+        let vpc_id_attr = vpc_config.schema.attributes().get("vpc_id").unwrap();
+        assert_eq!(vpc_id_attr.provider_name(), Some("VpcId"));
     }
 
     /// Verify that every `List<Struct>` attribute (both top-level and nested)
@@ -163,12 +161,12 @@ mod tests {
             defs: &std::collections::BTreeMap<String, AttributeType>,
             seen: &mut std::collections::HashSet<String>,
         ) {
-            let field_path = format!("{}.{}", parent_path, field.name);
-            if is_list_of_struct(&field.field_type, defs) && field.block_name.is_none() {
+            let field_path = format!("{}.{}", parent_path, field.name());
+            if is_list_of_struct(field.field_type(), defs) && field.block_name().is_none() {
                 missing.push(field_path.clone());
             }
             // Recurse into the field type regardless
-            check_type(&field.field_type, &field_path, missing, defs, seen);
+            check_type(field.field_type(), &field_path, missing, defs, seen);
         }
 
         /// Check a top-level AttributeSchema: if it is List<Struct>, it must have block_name.
@@ -178,13 +176,13 @@ mod tests {
             missing: &mut Vec<String>,
             defs: &std::collections::BTreeMap<String, AttributeType>,
         ) {
-            let path = format!("{}.{}", resource_type, attr.name);
-            if is_list_of_struct(&attr.attr_type, defs) && attr.block_name.is_none() {
+            let path = format!("{}.{}", resource_type, attr.name());
+            if is_list_of_struct(attr.attr_type(), defs) && attr.block_name().is_none() {
                 missing.push(path.clone());
             }
             // Recurse into the attribute type regardless
             let mut seen = std::collections::HashSet::new();
-            check_type(&attr.attr_type, &path, missing, defs, &mut seen);
+            check_type(attr.attr_type(), &path, missing, defs, &mut seen);
         }
 
         /// True iff `at` resolves to `List<inner>` where `inner` (peeling one
@@ -223,9 +221,9 @@ mod tests {
 
         let mut missing = Vec::new();
         for config in configs() {
-            let resource_type = &config.schema.resource_type;
-            for attr in config.schema.attributes.values() {
-                check_attr(attr, resource_type, &mut missing, &config.schema.defs);
+            let resource_type = config.schema.resource_type();
+            for attr in config.schema.attributes().values() {
+                check_attr(attr, resource_type, &mut missing, config.schema.defs());
             }
         }
 

@@ -218,12 +218,12 @@ mod tests {
             .expect("cloudfront.Distribution schema must be registered");
         let arn = config
             .schema
-            .attributes
+            .attributes()
             .get("arn")
             .expect("cloudfront.Distribution must expose an `arn` attribute");
         assert!(arn.is_read_only(), "synthesized `arn` must be read_only");
         assert!(
-            arn.provider_name.is_none(),
+            arn.provider_name().is_none(),
             "synthesized `arn` must not declare a CFN provider_name; \
              the value is built on the provider side from id + account id"
         );

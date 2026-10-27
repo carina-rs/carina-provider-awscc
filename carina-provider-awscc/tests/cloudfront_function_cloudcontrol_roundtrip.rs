@@ -70,7 +70,7 @@ fn find_field<'a>(attribute_type: &'a AttributeType, field_name: &str) -> &'a St
     };
     fields
         .iter()
-        .find(|field| field.name == field_name)
+        .find(|field| field.name() == field_name)
         .unwrap_or_else(|| panic!("expected struct field {field_name}"))
 }
 
@@ -141,30 +141,30 @@ async fn stored_function(cloudcontrol: &CloudControlService) -> (String, serde_j
 #[test]
 fn function_arn_is_assignable_to_distribution_function_association() {
     let function = cloudfront_function_config();
-    let function_arn = &function
+    let function_arn = function
         .schema
-        .attributes
+        .attributes()
         .get("function_arn")
         .expect("Function.function_arn should exist")
-        .attr_type;
+        .attr_type();
     let distribution = cloudfront_distribution_config();
-    let distribution_config = &distribution
+    let distribution_config = distribution
         .schema
-        .attributes
+        .attributes()
         .get("distribution_config")
         .expect("Distribution.distribution_config should exist")
-        .attr_type;
+        .attr_type();
     let default_cache_behavior =
-        &find_field(distribution_config, "default_cache_behavior").field_type;
+        find_field(distribution_config, "default_cache_behavior").field_type();
     let cache_behavior =
-        list_element(&find_field(distribution_config, "cache_behaviors").field_type);
+        list_element(find_field(distribution_config, "cache_behaviors").field_type());
 
     for (path, behavior) in [
         ("default_cache_behavior", default_cache_behavior),
         ("cache_behaviors[]", cache_behavior),
     ] {
-        let associations = list_element(&find_field(behavior, "function_associations").field_type);
-        let association_arn = &find_field(associations, "function_arn").field_type;
+        let associations = list_element(find_field(behavior, "function_associations").field_type());
+        let association_arn = find_field(associations, "function_arn").field_type();
 
         assert!(
             function
@@ -181,7 +181,7 @@ fn function_metadata_is_provider_populated_and_rejects_assignment() {
     let config = cloudfront_function_config();
     let function_metadata = config
         .schema
-        .attributes
+        .attributes()
         .get("function_metadata")
         .expect("Function.function_metadata should exist");
     assert!(
@@ -273,13 +273,13 @@ async fn cloudfront_function_create_then_read_preserves_config_and_runtime_alias
     };
 
     let config = cloudfront_function_config();
-    let function_config_type = &config
+    let function_config_type = config
         .schema
-        .attributes
+        .attributes()
         .get("function_config")
         .expect("Function.function_config should exist")
-        .attr_type;
-    let runtime_type = &find_field(function_config_type, "runtime").field_type;
+        .attr_type();
+    let runtime_type = find_field(function_config_type, "runtime").field_type();
     let (_, _, _, _, runtime_dsl_map) = runtime_type
         .enum_parts()
         .expect("FunctionConfig.runtime should be an enum");

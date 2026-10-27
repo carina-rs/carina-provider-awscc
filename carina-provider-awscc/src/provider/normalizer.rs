@@ -31,11 +31,11 @@ where
 
         let mut resolved_attrs = HashMap::new();
         for (key, value) in &state.attributes {
-            if let Some(attr_schema) = config.schema.attributes.get(key.as_str())
+            if let Some(attr_schema) = config.schema.attributes().get(key.as_str())
                 && let RawShape::String {
                     to_dsl: Some(transform),
                     ..
-                } = attr_schema.attr_type.raw_shape()
+                } = attr_schema.attr_type().raw_shape()
                 && let Value::Concrete(ConcreteValue::String(s)) = value
             {
                 let s = s.expose_plaintext();
@@ -84,12 +84,12 @@ where
         // empty definition map and panicked on every Ref-containing attribute
         // (carina#3345 Symptom B — `ec2_vpc_endpoint/{gateway,interface}`
         // plan-verify).
-        let schema_view = carina_core::schema::Schema::with_defs(config.schema.defs.clone());
+        let schema_view = carina_core::schema::Schema::with_defs(config.schema.defs().clone());
         let mut new_attrs = HashMap::with_capacity(state.attributes.len());
         for (key, value) in std::mem::take(&mut state.attributes) {
-            let canon = match config.schema.attributes.get(key.as_str()) {
+            let canon = match config.schema.attributes().get(key.as_str()) {
                 Some(attr_schema) => {
-                    schema_view.canonicalize_state_attr(&attr_schema.attr_type, value)
+                    schema_view.canonicalize_state_attr(attr_schema.attr_type(), value)
                 }
                 None => value,
             };
@@ -121,7 +121,7 @@ where
             Some(attrs) => attrs,
             None => continue,
         };
-        for dsl_name in config.schema.attributes.keys() {
+        for dsl_name in config.schema.attributes().keys() {
             if !state.attributes.contains_key(dsl_name)
                 && let Some(value) = saved.get(dsl_name)
             {
@@ -152,7 +152,7 @@ mod tests {
                 (id, attributes)
             })
             .collect();
-        RawSavedAttrs::from_persisted(persisted).lift(&SchemaRegistry::new())
+        RawSavedAttrs::from_persisted(persisted, HashMap::new()).lift(&SchemaRegistry::new())
     }
 
     #[tokio::test]
@@ -222,12 +222,12 @@ mod tests {
             .expect("ec2.SecurityGroupEgress schema should exist");
         let ip_protocol_attr = config
             .schema
-            .attributes
+            .attributes()
             .get("ip_protocol")
             .expect("ec2.SecurityGroupEgress.ip_protocol should exist");
         let canonical = carina_core::utils::lift_enum_leaves(
             &Value::Concrete(ConcreteValue::String("-1".to_string().into())),
-            &ip_protocol_attr.attr_type,
+            ip_protocol_attr.attr_type(),
         )
         .expect("host should lift ip_protocol to CanonicalEnum");
 
@@ -405,7 +405,9 @@ mod tests {
                 "example.com".to_string().into()
             )))
         );
-        let diff = carina_core::differ::diff(&desired, current, None, None, Some(&config.schema));
+        let saved_attrs = RawSavedAttrs::default().lift(&SchemaRegistry::new());
+        let diff =
+            carina_core::differ::diff(&desired, current, &saved_attrs, None, Some(&config.schema));
         assert!(
             matches!(diff, carina_core::differ::Diff::NoChange(_)),
             "expected no diff for Route53 HostedZone name with trailing dot, got {diff:?}"
@@ -421,13 +423,13 @@ mod tests {
             );
         let ip_protocol = config
             .schema
-            .attributes
+            .attributes()
             .get("ip_protocol")
             .expect("ip_protocol attribute not found");
         if let carina_core::schema::Shape::Enum {
             values: Some(values),
             ..
-        } = config.schema.shape_of(&ip_protocol.attr_type)
+        } = config.schema.shape_of(ip_protocol.attr_type())
         {
             assert!(
                 values.contains(&"-1".to_string()) && !values.contains(&"all".to_string()),
@@ -444,13 +446,13 @@ mod tests {
         let config = crate::schemas::generated::ec2::security_group_ingress::ec2_security_group_ingress_config();
         let ip_protocol = config
             .schema
-            .attributes
+            .attributes()
             .get("ip_protocol")
             .expect("ip_protocol attribute not found");
         if let carina_core::schema::Shape::Enum {
             values: Some(values),
             ..
-        } = config.schema.shape_of(&ip_protocol.attr_type)
+        } = config.schema.shape_of(ip_protocol.attr_type())
         {
             assert!(
                 values.contains(&"-1".to_string()) && !values.contains(&"all".to_string()),
@@ -467,14 +469,14 @@ mod tests {
         let config = crate::schemas::generated::ec2::security_group::ec2_security_group_config();
         let egress = config
             .schema
-            .attributes
+            .attributes()
             .get("security_group_egress")
             .expect("security_group_egress attribute not found");
         // Drill into List -> Struct -> ip_protocol field
         if let carina_core::schema::Shape::List {
             element_type: inner,
             ..
-        } = config.schema.shape_of(&egress.attr_type)
+        } = config.schema.shape_of(egress.attr_type())
         {
             if let carina_core::schema::Shape::Struct { .. } = config.schema.shape_of(inner) {
                 let fields = config
@@ -483,12 +485,12 @@ mod tests {
                     .expect("egress struct should expose fields");
                 let ip_field = fields
                     .iter()
-                    .find(|f| f.name == "ip_protocol")
+                    .find(|f| f.name() == "ip_protocol")
                     .expect("ip_protocol field not found in egress struct");
                 if let carina_core::schema::Shape::Enum {
                     values: Some(values),
                     ..
-                } = config.schema.shape_of(&ip_field.field_type)
+                } = config.schema.shape_of(ip_field.field_type())
                 {
                     assert!(
                         values.contains(&"-1".to_string()) && !values.contains(&"all".to_string()),
@@ -511,13 +513,13 @@ mod tests {
         let config = crate::schemas::generated::ec2::security_group::ec2_security_group_config();
         let ingress = config
             .schema
-            .attributes
+            .attributes()
             .get("security_group_ingress")
             .expect("security_group_ingress attribute not found");
         if let carina_core::schema::Shape::List {
             element_type: inner,
             ..
-        } = config.schema.shape_of(&ingress.attr_type)
+        } = config.schema.shape_of(ingress.attr_type())
         {
             if let carina_core::schema::Shape::Struct { .. } = config.schema.shape_of(inner) {
                 let fields = config
@@ -526,12 +528,12 @@ mod tests {
                     .expect("ingress struct should expose fields");
                 let ip_field = fields
                     .iter()
-                    .find(|f| f.name == "ip_protocol")
+                    .find(|f| f.name() == "ip_protocol")
                     .expect("ip_protocol field not found in ingress struct");
                 if let carina_core::schema::Shape::Enum {
                     values: Some(values),
                     ..
-                } = config.schema.shape_of(&ip_field.field_type)
+                } = config.schema.shape_of(ip_field.field_type())
                 {
                     assert!(
                         values.contains(&"-1".to_string()) && !values.contains(&"all".to_string()),
