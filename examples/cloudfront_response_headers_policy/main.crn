@@ -1,0 +1,73 @@
+# CloudFront Response Headers Policy Example
+#
+# Adds Content-Security-Policy and X-Content-Type-Options: nosniff to
+# responses served by a CloudFront cache behavior that uses this policy.
+
+provider awscc {
+  region = awscc.Region.ap_northeast_1
+}
+
+let response_headers_policy = awscc.cloudfront.ResponseHeadersPolicy {
+  response_headers_policy_config = {
+    name                    = 'carina-registry-security-headers'
+    comment                 = 'Security headers for the registry read plane'
+
+    security_headers_config = {
+      content_security_policy = {
+        content_security_policy = "default-src 'self'"
+        override                = true
+      }
+
+      content_type_options    = {
+        override = true
+      }
+    }
+  }
+}
+
+awscc.cloudfront.Distribution {
+  distribution_config = {
+    comment                = 'Distribution using the response headers policy'
+    enabled                = false
+    price_class            = price_class_100
+    http_version           = http2
+    ipv6_enabled           = false
+
+    default_cache_behavior = {
+      target_origin_id           = 'example-origin'
+      viewer_protocol_policy     = allow_all
+      allowed_methods            = [get, head]
+      cached_methods             = [get, head]
+      response_headers_policy_id = response_headers_policy.id
+
+      forwarded_values           = {
+        query_string = false
+        cookies      = {
+          forward = none
+        }
+      }
+    }
+
+    origin {
+      id          = 'example-origin'
+      domain_name = 'example.com'
+
+      custom_origin_config = {
+        http_port              = 80
+        https_port             = 443
+        origin_protocol_policy = http_only
+        origin_ssl_protocols   = [tlsv1_2]
+      }
+    }
+
+    restrictions           = {
+      geo_restriction = {
+        restriction_type = none
+      }
+    }
+
+    viewer_certificate     = {
+      cloud_front_default_certificate = true
+    }
+  }
+}

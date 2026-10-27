@@ -27,6 +27,7 @@ KMS_SCHEDULE_LOG="$WORK_DIR/kms-schedules.log"
 CLOUDFRONT_STUB_FAILURE_LOG="$WORK_DIR/cloudfront-stub-failures.log"
 CLOUDFRONT_DISTRIBUTION_DELETE_LOG="$WORK_DIR/cloudfront-distribution-deletes.log"
 CLOUDFRONT_OAC_DELETE_LOG="$WORK_DIR/cloudfront-oac-deletes.log"
+CLOUDFRONT_RHP_DELETE_LOG="$WORK_DIR/cloudfront-response-headers-policy-deletes.log"
 
 cleanup() {
     rm -rf "$WORK_DIR"
@@ -45,6 +46,61 @@ record_stub_failure() {
     local message="$*"
     printf '%s\n' "$message" >> "$failure_file"
     printf 'STUB FAILURE: %s\n' "$message" >&2
+}
+
+# Parse the common AWS CLI --flag value form used by the CloudFront list/get/
+# delete stubs. Results are reset on every call and exposed through the
+# CLOUDFRONT_STUB_* variables for the calling case arm.
+parse_cloudfront_stub_flags() {
+    local stub_name="$1"
+    local command="$2"
+    local allowed_flags="$3"
+    shift 3
+
+    CLOUDFRONT_STUB_ID=""
+    CLOUDFRONT_STUB_IF_MATCH=""
+    CLOUDFRONT_STUB_OUTPUT=""
+    CLOUDFRONT_STUB_QUERY=""
+    CLOUDFRONT_STUB_TYPE=""
+
+    local flag
+    local value
+    local output_variable
+    local current_value
+    while [ "$#" -gt 0 ]; do
+        flag="$1"
+        shift
+        case " $allowed_flags " in
+            *" $flag "*)
+                ;;
+            *)
+                record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
+                    "$stub_name stub did not recognize argument '$flag' in command: $command"
+                return 1
+                ;;
+        esac
+        if [ "$#" -eq 0 ]; then
+            record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
+                "$stub_name stub found a missing or duplicate $flag in command: $command"
+            return 1
+        fi
+        value="$1"
+        shift
+        case "$flag" in
+            --id) output_variable="CLOUDFRONT_STUB_ID" ;;
+            --if-match) output_variable="CLOUDFRONT_STUB_IF_MATCH" ;;
+            --output) output_variable="CLOUDFRONT_STUB_OUTPUT" ;;
+            --query) output_variable="CLOUDFRONT_STUB_QUERY" ;;
+            --type) output_variable="CLOUDFRONT_STUB_TYPE" ;;
+        esac
+        current_value="${!output_variable}"
+        if [ -n "$current_value" ]; then
+            record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
+                "$stub_name stub found a missing or duplicate $flag in command: $command"
+            return 1
+        fi
+        printf -v "$output_variable" '%s' "$value"
+    done
 }
 
 if ! command -v jq >/dev/null 2>&1 || ! jq --version >/dev/null 2>&1; then
@@ -76,6 +132,7 @@ for fn in \
     _deep_cleanup_delete \
     deep_cleanup_delete_resource \
     deep_cleanup_delete_supporting \
+    deep_cleanup_cloudfront_unreferenced_resources \
     deep_cleanup_with_timeout \
     deep_cleanup_wait_for_network_interface \
     deep_cleanup_list_wafv2_web_acls \
@@ -138,6 +195,8 @@ ENABLED_DEPLOYED_DISTRIBUTION_ID="E-ENABLED-DEPLOYED"
 ENABLED_DEPLOYED_DISTRIBUTION_ETAG="ETAG-ENABLED-DEPLOYED"
 ENABLED_IN_PROGRESS_DISTRIBUTION_ID="E-ENABLED-IN-PROGRESS"
 ENABLED_IN_PROGRESS_DISTRIBUTION_ETAG="ETAG-ENABLED-IN-PROGRESS"
+NO_RESPONSE_HEADERS_POLICY_DISTRIBUTION_ID="E-NO-RESPONSE-HEADERS-POLICY"
+NO_RESPONSE_HEADERS_POLICY_DISTRIBUTION_ETAG="ETAG-NO-RESPONSE-HEADERS-POLICY"
 FIRST_OAC_ID="OAC-ACCEPTANCE-TEST"
 FIRST_OAC_NAME="carina-acc-test-oac"
 FIRST_OAC_ETAG="ETAG-OAC-ACCEPTANCE-TEST"
@@ -153,6 +212,21 @@ GET_DENIED_OAC_ETAG="ETAG-OAC-GET-DENIED"
 ODDLY_NAMED_OAC_ID="OAC-ODDLY-NAMED"
 ODDLY_NAMED_OAC_NAME="shared-assets-origin-control"
 ODDLY_NAMED_OAC_ETAG="ETAG-OAC-ODDLY-NAMED"
+FIRST_RHP_ID="RHP-ACCEPTANCE-TEST"
+FIRST_RHP_NAME="carina-acc-test-rhp"
+FIRST_RHP_ETAG="ETAG-RHP-ACCEPTANCE-TEST"
+ENABLED_DISTRIBUTION_RHP_ID="RHP-ENABLED-DISTRIBUTION"
+ENABLED_DISTRIBUTION_RHP_NAME="enabled-distribution-response-headers"
+ENABLED_DISTRIBUTION_RHP_ETAG="ETAG-RHP-ENABLED-DISTRIBUTION"
+DELETED_DISTRIBUTION_RHP_ID="RHP-DELETED-DISTRIBUTION"
+DELETED_DISTRIBUTION_RHP_NAME="deleted-distribution-response-headers"
+DELETED_DISTRIBUTION_RHP_ETAG="ETAG-RHP-DELETED-DISTRIBUTION"
+GET_DENIED_RHP_ID="RHP-GET-DENIED"
+GET_DENIED_RHP_NAME="carina-acc-denied-rhp"
+GET_DENIED_RHP_ETAG="ETAG-RHP-GET-DENIED"
+ODDLY_NAMED_RHP_ID="RHP-ODDLY-NAMED"
+ODDLY_NAMED_RHP_NAME="shared-security-response-headers"
+ODDLY_NAMED_RHP_ETAG="ETAG-RHP-ODDLY-NAMED"
 KMS_FIXTURE=$(jq -cn \
     --arg aws_managed_key_id "$KMS_AWS_MANAGED_KEY_ID" \
     --arg pending_deletion_key_id "$KMS_PENDING_DELETION_KEY_ID" \
@@ -251,6 +325,8 @@ CLOUDFRONT_FIXTURE=$(jq -cn \
     --arg enabled_deployed_etag "$ENABLED_DEPLOYED_DISTRIBUTION_ETAG" \
     --arg enabled_in_progress_id "$ENABLED_IN_PROGRESS_DISTRIBUTION_ID" \
     --arg enabled_in_progress_etag "$ENABLED_IN_PROGRESS_DISTRIBUTION_ETAG" \
+    --arg no_rhp_id "$NO_RESPONSE_HEADERS_POLICY_DISTRIBUTION_ID" \
+    --arg no_rhp_etag "$NO_RESPONSE_HEADERS_POLICY_DISTRIBUTION_ETAG" \
     --arg first_oac_id "$FIRST_OAC_ID" \
     --arg first_oac_name "$FIRST_OAC_NAME" \
     --arg first_oac_etag "$FIRST_OAC_ETAG" \
@@ -266,6 +342,21 @@ CLOUDFRONT_FIXTURE=$(jq -cn \
     --arg oddly_named_oac_id "$ODDLY_NAMED_OAC_ID" \
     --arg oddly_named_oac_name "$ODDLY_NAMED_OAC_NAME" \
     --arg oddly_named_oac_etag "$ODDLY_NAMED_OAC_ETAG" \
+    --arg first_rhp_id "$FIRST_RHP_ID" \
+    --arg first_rhp_name "$FIRST_RHP_NAME" \
+    --arg first_rhp_etag "$FIRST_RHP_ETAG" \
+    --arg enabled_distribution_rhp_id "$ENABLED_DISTRIBUTION_RHP_ID" \
+    --arg enabled_distribution_rhp_name "$ENABLED_DISTRIBUTION_RHP_NAME" \
+    --arg enabled_distribution_rhp_etag "$ENABLED_DISTRIBUTION_RHP_ETAG" \
+    --arg deleted_distribution_rhp_id "$DELETED_DISTRIBUTION_RHP_ID" \
+    --arg deleted_distribution_rhp_name "$DELETED_DISTRIBUTION_RHP_NAME" \
+    --arg deleted_distribution_rhp_etag "$DELETED_DISTRIBUTION_RHP_ETAG" \
+    --arg get_denied_rhp_id "$GET_DENIED_RHP_ID" \
+    --arg get_denied_rhp_name "$GET_DENIED_RHP_NAME" \
+    --arg get_denied_rhp_etag "$GET_DENIED_RHP_ETAG" \
+    --arg oddly_named_rhp_id "$ODDLY_NAMED_RHP_ID" \
+    --arg oddly_named_rhp_name "$ODDLY_NAMED_RHP_NAME" \
+    --arg oddly_named_rhp_etag "$ODDLY_NAMED_RHP_ETAG" \
     '{
         Distributions: [
             {
@@ -276,28 +367,45 @@ CLOUDFRONT_FIXTURE=$(jq -cn \
                 Origins: {Items: [
                     {OriginAccessControlId: ""},
                     {OriginAccessControlId: $deleted_distribution_oac_id}
-                ]}
+                ]},
+                DefaultCacheBehavior: {ResponseHeadersPolicyId: ""},
+                CacheBehaviors: {Items: [{ResponseHeadersPolicyId: $deleted_distribution_rhp_id}]}
             },
             {
                 Id: $disabled_in_progress_id,
                 Status: "InProgress",
                 Enabled: false,
                 ETag: $disabled_in_progress_etag,
-                Origins: {Items: [{OriginAccessControlId: ""}]}
+                Origins: {Items: [{OriginAccessControlId: ""}]},
+                DefaultCacheBehavior: {ResponseHeadersPolicyId: ""},
+                CacheBehaviors: {Items: []}
             },
             {
                 Id: $enabled_deployed_id,
                 Status: "Deployed",
                 Enabled: true,
                 ETag: $enabled_deployed_etag,
-                Origins: {Items: [{OriginAccessControlId: $enabled_distribution_oac_id}]}
+                Origins: {Items: [{OriginAccessControlId: $enabled_distribution_oac_id}]},
+                DefaultCacheBehavior: {ResponseHeadersPolicyId: $enabled_distribution_rhp_id},
+                CacheBehaviors: {Items: []}
             },
             {
                 Id: $enabled_in_progress_id,
                 Status: "InProgress",
                 Enabled: true,
                 ETag: $enabled_in_progress_etag,
-                Origins: {Items: [{OriginAccessControlId: ""}]}
+                Origins: {Items: [{OriginAccessControlId: ""}]},
+                DefaultCacheBehavior: {ResponseHeadersPolicyId: ""},
+                CacheBehaviors: {Items: []}
+            },
+            {
+                Id: $no_rhp_id,
+                Status: "Deployed",
+                Enabled: true,
+                ETag: $no_rhp_etag,
+                Origins: {Items: []},
+                DefaultCacheBehavior: {},
+                CacheBehaviors: {Quantity: 0}
             }
         ],
         OriginAccessControls: [
@@ -316,6 +424,23 @@ CLOUDFRONT_FIXTURE=$(jq -cn \
             },
             {Id: $get_denied_oac_id, Name: $get_denied_oac_name, ETag: $get_denied_oac_etag, GetDenied: true},
             {Id: $oddly_named_oac_id, Name: $oddly_named_oac_name, ETag: $oddly_named_oac_etag, GetDenied: false}
+        ],
+        ResponseHeadersPolicies: [
+            {Id: $first_rhp_id, Name: $first_rhp_name, ETag: $first_rhp_etag, GetDenied: false},
+            {
+                Id: $enabled_distribution_rhp_id,
+                Name: $enabled_distribution_rhp_name,
+                ETag: $enabled_distribution_rhp_etag,
+                GetDenied: false
+            },
+            {
+                Id: $deleted_distribution_rhp_id,
+                Name: $deleted_distribution_rhp_name,
+                ETag: $deleted_distribution_rhp_etag,
+                GetDenied: false
+            },
+            {Id: $get_denied_rhp_id, Name: $get_denied_rhp_name, ETag: $get_denied_rhp_etag, GetDenied: true},
+            {Id: $oddly_named_rhp_id, Name: $oddly_named_rhp_name, ETag: $oddly_named_rhp_etag, GetDenied: false}
         ]
     }')
 CLOUDFRONT_IN_USE_ENUMERATION_DENIED=0
@@ -455,6 +580,8 @@ with_account_creds() {
 
                 local distribution_state_query_pattern='^DistributionList\.Items\[\?(.+)\]\.\[Id,[[:space:]]*ETag\]$'
                 local referenced_oac_query_pattern='^DistributionList\.Items\[\]\.Origins\.Items\[\?(.+)\]\.OriginAccessControlId$'
+                local referenced_default_rhp_query_pattern='^DistributionList\.Items\[\]\.DefaultCacheBehavior\.ResponseHeadersPolicyId$'
+                local referenced_ordered_rhp_query_pattern='^DistributionList\.Items\[\]\.CacheBehaviors\.Items\[\]\.ResponseHeadersPolicyId$'
                 if [[ "$distribution_query" =~ $referenced_oac_query_pattern ]]; then
                     local referenced_oac_filter="${BASH_REMATCH[1]}"
                     local non_empty_oac_condition_pattern="^OriginAccessControlId[[:space:]]*!=[[:space:]]*''$"
@@ -472,6 +599,28 @@ with_account_creds() {
                             .Distributions[].Origins.Items[]
                             | select(.OriginAccessControlId != "")
                             | .OriginAccessControlId
+                        ]
+                        | @tsv' <<< "$CLOUDFRONT_FIXTURE"
+                elif [[ "$distribution_query" =~ $referenced_default_rhp_query_pattern ]]; then
+                    jq -r \
+                        '[
+                            .Distributions[]
+                            | if (.DefaultCacheBehavior | has("ResponseHeadersPolicyId"))
+                                then .DefaultCacheBehavior.ResponseHeadersPolicyId
+                                else "None"
+                              end
+                            | select(. != "")
+                        ]
+                        | @tsv' <<< "$CLOUDFRONT_FIXTURE"
+                elif [[ "$distribution_query" =~ $referenced_ordered_rhp_query_pattern ]]; then
+                    jq -r \
+                        '[
+                            .Distributions[]
+                            | if (.CacheBehaviors | has("Items"))
+                                then (.CacheBehaviors.Items[].ResponseHeadersPolicyId // "None")
+                                else "None"
+                              end
+                            | select(. != "")
                         ]
                         | @tsv' <<< "$CLOUDFRONT_FIXTURE"
                 elif [[ "$distribution_query" =~ $distribution_state_query_pattern ]]; then
@@ -584,37 +733,15 @@ with_account_creds() {
                 ;;
             "aws cloudfront list-origin-access-controls"*)
                 local oac_list_arguments=("$@")
-                local oac_list_query=""
-                local oac_list_output=""
-                local argument_index=3
-                while [ "$argument_index" -lt "${#oac_list_arguments[@]}" ]; do
-                    case "${oac_list_arguments[$argument_index]}" in
-                        --query)
-                            argument_index=$((argument_index + 1))
-                            if [ "$argument_index" -ge "${#oac_list_arguments[@]}" ] || [ -n "$oac_list_query" ]; then
-                                record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
-                                    "CloudFront list-origin-access-controls stub found a missing or duplicate --query in command: $command"
-                                exit 1
-                            fi
-                            oac_list_query="${oac_list_arguments[$argument_index]}"
-                            ;;
-                        --output)
-                            argument_index=$((argument_index + 1))
-                            if [ "$argument_index" -ge "${#oac_list_arguments[@]}" ] || [ -n "$oac_list_output" ]; then
-                                record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
-                                    "CloudFront list-origin-access-controls stub found a missing or duplicate --output in command: $command"
-                                exit 1
-                            fi
-                            oac_list_output="${oac_list_arguments[$argument_index]}"
-                            ;;
-                        *)
-                            record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
-                                "CloudFront list-origin-access-controls stub did not recognize argument '${oac_list_arguments[$argument_index]}' in command: $command"
-                            exit 1
-                            ;;
-                    esac
-                    argument_index=$((argument_index + 1))
-                done
+                if ! parse_cloudfront_stub_flags \
+                    "CloudFront list-origin-access-controls" \
+                    "$command" \
+                    "--query --output" \
+                    "${oac_list_arguments[@]:3}"; then
+                    exit 1
+                fi
+                local oac_list_query="$CLOUDFRONT_STUB_QUERY"
+                local oac_list_output="$CLOUDFRONT_STUB_OUTPUT"
                 if [ -z "$oac_list_query" ] || [ "$oac_list_output" != "text" ]; then
                     record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
                         "CloudFront list-origin-access-controls stub requires --query and --output text in command: $command"
@@ -632,47 +759,16 @@ with_account_creds() {
                 ;;
             "aws cloudfront get-origin-access-control"*)
                 local oac_get_arguments=("$@")
-                local fetched_oac_id=""
-                local oac_get_query=""
-                local oac_get_output=""
-                local argument_index=3
-                while [ "$argument_index" -lt "${#oac_get_arguments[@]}" ]; do
-                    case "${oac_get_arguments[$argument_index]}" in
-                        --id)
-                            argument_index=$((argument_index + 1))
-                            if [ "$argument_index" -ge "${#oac_get_arguments[@]}" ] || [ -n "$fetched_oac_id" ]; then
-                                record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
-                                    "CloudFront get-origin-access-control stub found a missing or duplicate --id in command: $command"
-                                exit 1
-                            fi
-                            fetched_oac_id="${oac_get_arguments[$argument_index]}"
-                            ;;
-                        --query)
-                            argument_index=$((argument_index + 1))
-                            if [ "$argument_index" -ge "${#oac_get_arguments[@]}" ] || [ -n "$oac_get_query" ]; then
-                                record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
-                                    "CloudFront get-origin-access-control stub found a missing or duplicate --query in command: $command"
-                                exit 1
-                            fi
-                            oac_get_query="${oac_get_arguments[$argument_index]}"
-                            ;;
-                        --output)
-                            argument_index=$((argument_index + 1))
-                            if [ "$argument_index" -ge "${#oac_get_arguments[@]}" ] || [ -n "$oac_get_output" ]; then
-                                record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
-                                    "CloudFront get-origin-access-control stub found a missing or duplicate --output in command: $command"
-                                exit 1
-                            fi
-                            oac_get_output="${oac_get_arguments[$argument_index]}"
-                            ;;
-                        *)
-                            record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
-                                "CloudFront get-origin-access-control stub did not recognize argument '${oac_get_arguments[$argument_index]}' in command: $command"
-                            exit 1
-                            ;;
-                    esac
-                    argument_index=$((argument_index + 1))
-                done
+                if ! parse_cloudfront_stub_flags \
+                    "CloudFront get-origin-access-control" \
+                    "$command" \
+                    "--id --query --output" \
+                    "${oac_get_arguments[@]:3}"; then
+                    exit 1
+                fi
+                local fetched_oac_id="$CLOUDFRONT_STUB_ID"
+                local oac_get_query="$CLOUDFRONT_STUB_QUERY"
+                local oac_get_output="$CLOUDFRONT_STUB_OUTPUT"
                 if [ -z "$fetched_oac_id" ] || [ "$oac_get_query" != "ETag" ] || [ "$oac_get_output" != "text" ]; then
                     record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
                         "CloudFront get-origin-access-control stub requires --id, --query ETag, and --output text in command: $command"
@@ -696,37 +792,15 @@ with_account_creds() {
                 ;;
             "aws cloudfront delete-origin-access-control"*)
                 local oac_delete_arguments=("$@")
-                local deleted_oac_id=""
-                local deleted_oac_etag=""
-                local argument_index=3
-                while [ "$argument_index" -lt "${#oac_delete_arguments[@]}" ]; do
-                    case "${oac_delete_arguments[$argument_index]}" in
-                        --id)
-                            argument_index=$((argument_index + 1))
-                            if [ "$argument_index" -ge "${#oac_delete_arguments[@]}" ] || [ -n "$deleted_oac_id" ]; then
-                                record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
-                                    "CloudFront delete-origin-access-control stub found a missing or duplicate --id in command: $command"
-                                exit 1
-                            fi
-                            deleted_oac_id="${oac_delete_arguments[$argument_index]}"
-                            ;;
-                        --if-match)
-                            argument_index=$((argument_index + 1))
-                            if [ "$argument_index" -ge "${#oac_delete_arguments[@]}" ] || [ -n "$deleted_oac_etag" ]; then
-                                record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
-                                    "CloudFront delete-origin-access-control stub found a missing or duplicate --if-match in command: $command"
-                                exit 1
-                            fi
-                            deleted_oac_etag="${oac_delete_arguments[$argument_index]}"
-                            ;;
-                        *)
-                            record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
-                                "CloudFront delete-origin-access-control stub did not recognize argument '${oac_delete_arguments[$argument_index]}' in command: $command"
-                            exit 1
-                            ;;
-                    esac
-                    argument_index=$((argument_index + 1))
-                done
+                if ! parse_cloudfront_stub_flags \
+                    "CloudFront delete-origin-access-control" \
+                    "$command" \
+                    "--id --if-match" \
+                    "${oac_delete_arguments[@]:3}"; then
+                    exit 1
+                fi
+                local deleted_oac_id="$CLOUDFRONT_STUB_ID"
+                local deleted_oac_etag="$CLOUDFRONT_STUB_IF_MATCH"
                 if [ -z "$deleted_oac_id" ] || [ -z "$deleted_oac_etag" ]; then
                     record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
                         "CloudFront delete-origin-access-control stub requires --id and --if-match in command: $command"
@@ -746,6 +820,93 @@ with_account_creds() {
                     '.OriginAccessControls[] | select(.Id == $id) | .ETag' <<< "$CLOUDFRONT_FIXTURE")
                 if [ "$deleted_oac_etag" != "$expected_oac_etag" ]; then
                     echo "An error occurred (PreconditionFailed) when calling the DeleteOriginAccessControl operation for OAC $deleted_oac_id: stale ETag" >&2
+                    exit 254
+                fi
+                ;;
+            "aws cloudfront list-response-headers-policies"*)
+                local rhp_list_arguments=("$@")
+                if ! parse_cloudfront_stub_flags \
+                    "CloudFront list-response-headers-policies" \
+                    "$command" \
+                    "--type --query --output" \
+                    "${rhp_list_arguments[@]:3}"; then
+                    exit 1
+                fi
+                local rhp_list_type="$CLOUDFRONT_STUB_TYPE"
+                local rhp_list_query="$CLOUDFRONT_STUB_QUERY"
+                local rhp_list_output="$CLOUDFRONT_STUB_OUTPUT"
+                if [ "$rhp_list_type" != "custom" ] || \
+                    [ "$rhp_list_query" != "ResponseHeadersPolicyList.Items[*].ResponseHeadersPolicy.Id" ] || \
+                    [ "$rhp_list_output" != "text" ]; then
+                    record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
+                        "CloudFront list-response-headers-policies stub requires --type custom, the policy ID query, and --output text in command: $command"
+                    exit 1
+                fi
+                jq -r '[.ResponseHeadersPolicies[].Id] | @tsv' <<< "$CLOUDFRONT_FIXTURE"
+                ;;
+            "aws cloudfront get-response-headers-policy"*)
+                local rhp_get_arguments=("$@")
+                if ! parse_cloudfront_stub_flags \
+                    "CloudFront get-response-headers-policy" \
+                    "$command" \
+                    "--id --query --output" \
+                    "${rhp_get_arguments[@]:3}"; then
+                    exit 1
+                fi
+                local fetched_rhp_id="$CLOUDFRONT_STUB_ID"
+                local rhp_get_query="$CLOUDFRONT_STUB_QUERY"
+                local rhp_get_output="$CLOUDFRONT_STUB_OUTPUT"
+                if [ -z "$fetched_rhp_id" ] || [ "$rhp_get_query" != "ETag" ] || [ "$rhp_get_output" != "text" ]; then
+                    record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
+                        "CloudFront get-response-headers-policy stub requires --id, --query ETag, and --output text in command: $command"
+                    exit 1
+                fi
+                local rhp_fixture_count
+                rhp_fixture_count=$(jq -r --arg id "$fetched_rhp_id" \
+                    '[.ResponseHeadersPolicies[] | select(.Id == $id)] | length' <<< "$CLOUDFRONT_FIXTURE")
+                if [ "$rhp_fixture_count" -ne 1 ]; then
+                    record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
+                        "CloudFront get-response-headers-policy stub saw unknown or duplicate policy ID '$fetched_rhp_id' in command: $command"
+                    exit 1
+                fi
+                if [ "$(jq -r --arg id "$fetched_rhp_id" \
+                    '.ResponseHeadersPolicies[] | select(.Id == $id) | .GetDenied' <<< "$CLOUDFRONT_FIXTURE")" = "true" ]; then
+                    echo "An error occurred (AccessDenied) when calling the GetResponseHeadersPolicy operation for policy $fetched_rhp_id" >&2
+                    exit 254
+                fi
+                jq -r --arg id "$fetched_rhp_id" \
+                    '.ResponseHeadersPolicies[] | select(.Id == $id) | .ETag' <<< "$CLOUDFRONT_FIXTURE"
+                ;;
+            "aws cloudfront delete-response-headers-policy"*)
+                local rhp_delete_arguments=("$@")
+                if ! parse_cloudfront_stub_flags \
+                    "CloudFront delete-response-headers-policy" \
+                    "$command" \
+                    "--id --if-match" \
+                    "${rhp_delete_arguments[@]:3}"; then
+                    exit 1
+                fi
+                local deleted_rhp_id="$CLOUDFRONT_STUB_ID"
+                local deleted_rhp_etag="$CLOUDFRONT_STUB_IF_MATCH"
+                if [ -z "$deleted_rhp_id" ] || [ -z "$deleted_rhp_etag" ]; then
+                    record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
+                        "CloudFront delete-response-headers-policy stub requires --id and --if-match in command: $command"
+                    exit 1
+                fi
+                local rhp_fixture_count
+                rhp_fixture_count=$(jq -r --arg id "$deleted_rhp_id" \
+                    '[.ResponseHeadersPolicies[] | select(.Id == $id)] | length' <<< "$CLOUDFRONT_FIXTURE")
+                if [ "$rhp_fixture_count" -ne 1 ]; then
+                    record_stub_failure "$CLOUDFRONT_STUB_FAILURE_LOG" \
+                        "CloudFront delete-response-headers-policy stub saw unknown or duplicate policy ID '$deleted_rhp_id' in command: $command"
+                    exit 1
+                fi
+                printf '%s\t%s\n' "$deleted_rhp_id" "$deleted_rhp_etag" >> "$CLOUDFRONT_RHP_DELETE_LOG"
+                local expected_rhp_etag
+                expected_rhp_etag=$(jq -r --arg id "$deleted_rhp_id" \
+                    '.ResponseHeadersPolicies[] | select(.Id == $id) | .ETag' <<< "$CLOUDFRONT_FIXTURE")
+                if [ "$deleted_rhp_etag" != "$expected_rhp_etag" ]; then
+                    echo "An error occurred (PreconditionFailed) when calling the DeleteResponseHeadersPolicy operation for policy $deleted_rhp_id: stale ETag" >&2
                     exit 254
                 fi
                 ;;
@@ -1341,10 +1502,11 @@ done < "$CLOUDFRONT_STUB_FAILURE_LOG"
 
 # Successful top-level deletes are 2 load balancers + 1 target group + 1 VPC +
 # 2 IPAMs + 3 KMS keys + 1 CloudFront distribution + 2 unreferenced CloudFront
-# OACs = 12. The two referenced OACs are deferred and therefore not counted.
-# The unexpected security-group IsEgress value, denied KMS tag read, and denied
-# OAC ETag read are enumeration warnings.
-expected_ordering_summary="  WARNING: ordering-account: 12 found, 12 deleted, 0 failed; 3 enumeration errors"
+# OACs + 2 unreferenced response headers policies = 14. Referenced CloudFront
+# helpers are deferred and therefore not counted. The unexpected security-group
+# IsEgress value, denied KMS tag read, denied OAC ETag read, and denied response
+# headers policy ETag read are enumeration warnings.
+expected_ordering_summary="  WARNING: ordering-account: 14 found, 14 deleted, 0 failed; 4 enumeration errors"
 ordering_summary=$(grep -F "ordering-account:" "$WORK_DIR/stderr.log" || true)
 if [ "$ordering_summary" != "$expected_ordering_summary" ]; then
     fail "unexpected successful ordering summary: expected '$expected_ordering_summary', got '${ordering_summary:-<missing>}'"
@@ -1365,12 +1527,20 @@ if grep -F "aws elbv2 delete-listener" "$COMMAND_LOG" >/dev/null; then
 fi
 
 cloudfront_distribution_enumeration_count=$(grep -cF "aws cloudfront list-distributions --query " "$COMMAND_LOG" || true)
-if [ "$cloudfront_distribution_enumeration_count" -ne 2 ]; then
-    fail "expected one CloudFront reference snapshot and one state-aware distribution enumeration, got $cloudfront_distribution_enumeration_count list-distributions calls"
+if [ "$cloudfront_distribution_enumeration_count" -ne 4 ]; then
+    fail "expected three CloudFront reference snapshots and one state-aware distribution enumeration, got $cloudfront_distribution_enumeration_count list-distributions calls"
 fi
 cloudfront_in_use_oac_enumeration=$(first_line_containing "aws cloudfront list-distributions --query DistributionList.Items[].Origins.Items")
 if [ -z "$cloudfront_in_use_oac_enumeration" ]; then
     fail "missing CloudFront in-use OAC snapshot"
+fi
+cloudfront_in_use_default_rhp_enumeration=$(first_line_containing "aws cloudfront list-distributions --query DistributionList.Items[].DefaultCacheBehavior.ResponseHeadersPolicyId")
+if [ -z "$cloudfront_in_use_default_rhp_enumeration" ]; then
+    fail "missing CloudFront default-cache-behavior response headers policy snapshot"
+fi
+cloudfront_in_use_ordered_rhp_enumeration=$(first_line_containing "aws cloudfront list-distributions --query DistributionList.Items[].CacheBehaviors.Items[].ResponseHeadersPolicyId")
+if [ -z "$cloudfront_in_use_ordered_rhp_enumeration" ]; then
+    fail "missing CloudFront ordered-cache-behavior response headers policy snapshot"
 fi
 cloudfront_distribution_enumeration=$(first_line_containing "aws cloudfront list-distributions --query DistributionList.Items[?Enabled")
 if [ -z "$cloudfront_distribution_enumeration" ]; then
@@ -1383,6 +1553,15 @@ elif [ -n "$cloudfront_in_use_oac_enumeration" ] && \
     [ "$cloudfront_in_use_oac_enumeration" -ge "$first_cloudfront_distribution_delete" ]; then
     fail "CloudFront in-use OAC snapshot did not precede distribution deletion"
 fi
+for rhp_reference_snapshot in \
+    "$cloudfront_in_use_default_rhp_enumeration" \
+    "$cloudfront_in_use_ordered_rhp_enumeration"
+do
+    if [ -n "$rhp_reference_snapshot" ] && \
+        [ "$rhp_reference_snapshot" -ge "$first_cloudfront_distribution_delete" ]; then
+        fail "CloudFront in-use response headers policy snapshot did not precede distribution deletion"
+    fi
+done
 distribution_delete_count=$(awk 'END { print NR }' "$CLOUDFRONT_DISTRIBUTION_DELETE_LOG")
 if [ "$distribution_delete_count" -ne 1 ]; then
     fail "expected exactly one CloudFront distribution delete, got $distribution_delete_count"
@@ -1469,6 +1648,65 @@ elif [ -z "$later_oac_delete" ] || [ "$later_oac_delete" -le "$denied_oac_get" ]
 fi
 if ! grep -F "$GET_DENIED_OAC_ID" "$WORK_DIR/stderr.log" | grep -F "AccessDenied" >/dev/null; then
     fail "CloudFront OAC ETag-enumeration failure was not reported"
+fi
+
+rhp_list_enumeration=$(first_line_containing "aws cloudfront list-response-headers-policies --type custom")
+if [ -z "$rhp_list_enumeration" ]; then
+    fail "missing custom CloudFront response headers policy enumeration"
+fi
+for rhp_id in "$FIRST_RHP_ID" "$GET_DENIED_RHP_ID" "$ODDLY_NAMED_RHP_ID"; do
+    rhp_get_count=$(grep -cF "aws cloudfront get-response-headers-policy --id $rhp_id " "$COMMAND_LOG" || true)
+    if [ "$rhp_get_count" -ne 1 ]; then
+        fail "expected one ETag enumeration for CloudFront response headers policy $rhp_id, got $rhp_get_count"
+    fi
+done
+# Policies referenced by either cache behavior shape are deferred even when the
+# referencing disabled distribution was deleted in this sweep.
+for deferred_rhp_id in "$ENABLED_DISTRIBUTION_RHP_ID" "$DELETED_DISTRIBUTION_RHP_ID"; do
+    if grep -F "aws cloudfront get-response-headers-policy --id $deferred_rhp_id " "$COMMAND_LOG" >/dev/null; then
+        fail "referenced CloudFront response headers policy $deferred_rhp_id reached its ETag enumeration"
+    fi
+    if grep -F "aws cloudfront delete-response-headers-policy --id $deferred_rhp_id " "$COMMAND_LOG" >/dev/null; then
+        fail "referenced CloudFront response headers policy $deferred_rhp_id reached its delete attempt"
+    fi
+    if ! grep -Fx "  Skipping CloudFront response headers policy $deferred_rhp_id because a distribution references it." \
+        "$WORK_DIR/stdout.log" >/dev/null; then
+        fail "referenced CloudFront response headers policy $deferred_rhp_id was not reported as deferred"
+    fi
+done
+rhp_delete_count=$(awk 'END { print NR }' "$CLOUDFRONT_RHP_DELETE_LOG")
+if [ "$rhp_delete_count" -ne 2 ]; then
+    fail "expected exactly two CloudFront response headers policy deletes, got $rhp_delete_count"
+fi
+for expected_rhp_delete in \
+    "$FIRST_RHP_ID"$'\t'"$FIRST_RHP_ETAG" \
+    "$ODDLY_NAMED_RHP_ID"$'\t'"$ODDLY_NAMED_RHP_ETAG"
+do
+    expected_rhp_delete_count=$(grep -cFx "$expected_rhp_delete" "$CLOUDFRONT_RHP_DELETE_LOG" || true)
+    if [ "$expected_rhp_delete_count" -ne 1 ]; then
+        fail "CloudFront response headers policy delete did not use the exact enumerated ID and ETag: $expected_rhp_delete"
+    fi
+done
+if grep -F "aws cloudfront delete-response-headers-policy --id $GET_DENIED_RHP_ID " "$COMMAND_LOG" >/dev/null; then
+    fail "CloudFront response headers policy $GET_DENIED_RHP_ID was deleted despite its failed ETag enumeration"
+fi
+
+first_rhp_delete=$(first_line_containing "aws cloudfront delete-response-headers-policy --id")
+if [ -z "$last_distribution_delete" ] || [ -z "$first_rhp_delete" ]; then
+    fail "missing CloudFront deletes needed to verify distribution-before-response-headers-policy ordering"
+elif [ "$last_distribution_delete" -ge "$first_rhp_delete" ]; then
+    fail "not every CloudFront distribution delete ran before the first response headers policy delete"
+fi
+
+denied_rhp_get=$(first_line_containing "aws cloudfront get-response-headers-policy --id $GET_DENIED_RHP_ID")
+later_rhp_delete=$(first_line_containing "aws cloudfront delete-response-headers-policy --id $ODDLY_NAMED_RHP_ID")
+if [ -z "$denied_rhp_get" ]; then
+    fail "missing AccessDenied CloudFront response headers policy ETag-enumeration fixture call"
+elif [ -z "$later_rhp_delete" ] || [ "$later_rhp_delete" -le "$denied_rhp_get" ]; then
+    fail "failed CloudFront response headers policy ETag enumeration stopped a later policy from being deleted"
+fi
+if ! grep -F "$GET_DENIED_RHP_ID" "$WORK_DIR/stderr.log" | grep -F "AccessDenied" >/dev/null; then
+    fail "CloudFront response headers policy ETag-enumeration failure was not reported"
 fi
 
 ipam_enumeration=$(first_line_containing "aws ec2 describe-ipams")

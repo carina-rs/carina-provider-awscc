@@ -5,3 +5,4 @@
 
 pub mod distribution;
 pub mod origin_access_control;
+pub mod response_headers_policy;

@@ -213,6 +213,23 @@ mod tests {
         }
     }
 
+    fn string(value: &str) -> Value {
+        Value::Concrete(ConcreteValue::String(value.to_string().into()))
+    }
+
+    fn bool_(value: bool) -> Value {
+        Value::Concrete(ConcreteValue::Bool(value))
+    }
+
+    fn map(entries: impl IntoIterator<Item = (&'static str, Value)>) -> Value {
+        Value::Concrete(ConcreteValue::Map(
+            entries
+                .into_iter()
+                .map(|(key, value)| (key.to_string(), value))
+                .collect(),
+        ))
+    }
+
     #[test]
     fn test_parse_resource_properties_valid_json() {
         let json_str = r#"{"VpcId": "vpc-123", "CidrBlock": "10.0.0.0/16"}"#;
@@ -571,6 +588,67 @@ mod tests {
             [json!({"op": "add", "path": "/Value", "value": "v2"})]
         );
         assert_eq!(plan.requires_confirmation, ["value"]);
+        assert!(plan.unsent.is_empty());
+    }
+
+    #[test]
+    fn test_cloudfront_response_headers_policy_security_headers_update_is_in_place() {
+        let config = get_schema_config("cloudfront.ResponseHeadersPolicy")
+            .expect("cloudfront.ResponseHeadersPolicy schema should exist");
+        let attr = config
+            .schema
+            .attributes
+            .get("response_headers_policy_config")
+            .expect("response_headers_policy_config should exist");
+        assert!(!attr.create_only);
+
+        let patch = UpdatePatch {
+            ops: vec![replace(
+                "response_headers_policy_config",
+                map([
+                    ("name", string("carina-registry-security-headers")),
+                    (
+                        "security_headers_config",
+                        map([
+                            (
+                                "content_security_policy",
+                                map([
+                                    ("content_security_policy", string("default-src 'self'")),
+                                    ("override", bool_(true)),
+                                ]),
+                            ),
+                            ("content_type_options", map([("override", bool_(true))])),
+                        ]),
+                    ),
+                ]),
+            )],
+        };
+
+        let plan = build_update_patches(config, "cloudfront.ResponseHeadersPolicy", &patch);
+
+        assert_eq!(
+            plan.ops,
+            [json!({
+                "op": "add",
+                "path": "/ResponseHeadersPolicyConfig",
+                "value": {
+                    "Name": "carina-registry-security-headers",
+                    "SecurityHeadersConfig": {
+                        "ContentSecurityPolicy": {
+                            "ContentSecurityPolicy": "default-src 'self'",
+                            "Override": true,
+                        },
+                        "ContentTypeOptions": {
+                            "Override": true,
+                        },
+                    },
+                },
+            })]
+        );
+        assert_eq!(
+            plan.requires_confirmation,
+            ["response_headers_policy_config"]
+        );
         assert!(plan.unsent.is_empty());
     }
 

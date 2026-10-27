@@ -323,6 +323,7 @@ fi
 command cat > "$SWEEP_MAPPINGS_FILE" <<'EOF'
 awscc.cloudfront.Distribution|aws cloudfront delete-distribution
 awscc.cloudfront.OriginAccessControl|aws cloudfront delete-origin-access-control
+awscc.cloudfront.ResponseHeadersPolicy|aws cloudfront delete-response-headers-policy
 awscc.dynamodb.Table|aws dynamodb delete-table
 awscc.ec2.EgressOnlyInternetGateway|aws ec2 delete-egress-only-internet-gateway
 awscc.ec2.Eip|aws ec2 release-address
