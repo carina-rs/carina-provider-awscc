@@ -8,7 +8,7 @@
 //! sibling-resource state alone (the actual fix for
 //! `carina-rs/carina#2559`).
 
-use carina_core::provider::{PatchOpKind, ProviderError, ProviderResult, UpdatePatch};
+use carina_core::provider::{PatchOp, ProviderError, ProviderResult, UpdatePatch};
 use serde_json::json;
 
 use super::conversion::dsl_value_to_aws_with_defs;
@@ -59,26 +59,27 @@ impl UpdatePatchPlan {
 
 /// Build a Cloud Control update plan from an [`UpdatePatch`].
 ///
-/// Each [`carina_core::provider::PatchOp`] in `patch.ops` corresponds to a key the user
-/// explicitly added, replaced, or removed in the desired state.
-/// Attributes the user has never specified do not appear in `patch.ops`
-/// and therefore generate no JSON Patch op — CloudControl leaves them
-/// untouched.
+/// Each [`PatchOp`] in `patch.ops` corresponds to a key the user explicitly added,
+/// replaced, or removed in the desired state, or an unchanged write-only key that
+/// must be reasserted alongside another update. Attributes the user has never specified
+/// do not appear in `patch.ops` and therefore generate no JSON Patch op — CloudControl
+/// leaves them untouched.
 ///
 /// Mapping rules:
-/// - [`PatchOpKind::Add`] / [`PatchOpKind::Replace`] with a value →
+/// - [`PatchOp::Add`], [`PatchOp::Replace`], and [`PatchOp::Reassert`] →
 ///   `{"op": "add", "path": "/<aws_name>", "value": <serialized>}`
 ///   (`add` is used for both because CloudControl's JSON Patch
 ///   `replace` fails when the property does not exist in the resource
 ///   model, while `add` works for both create-and-set and replace-existing
 ///   cases — matches the Terraform AWSCC provider's behavior).
-/// - [`PatchOpKind::Remove`] (or Add/Replace with `value: None`) →
+/// - [`PatchOp::Remove`] →
 ///   `{"op": "remove", "path": "/<aws_name>"}`.
 ///
 /// Read-only and create-only attributes are filtered out: CloudControl rejects
-/// patches that touch them. Add/Replace operations with concrete values that are
-/// filtered out remain in the plan's confirmation metadata so their desired values
-/// cannot later be fabricated into state.
+/// patches that touch them. Add/Replace operations that are filtered out remain in
+/// the plan's confirmation metadata so their desired values cannot later be fabricated
+/// into state. Reassert operations never require read-back confirmation because their
+/// write-only values cannot appear in the read model.
 ///
 /// `tags` is converted from the per-key DSL `Map<String, String>` through
 /// the schema-declared CloudControl wire shape.
@@ -90,7 +91,8 @@ pub(crate) fn build_update_patches(
     let mut plan = UpdatePatchPlan::default();
 
     for op in &patch.ops {
-        let attr_schema = match config.schema.attributes.get(&op.key) {
+        let key = op.key();
+        let attr_schema = match config.schema.attributes.get(key) {
             Some(s) => s,
             // Unknown keys (not in the schema) are silently dropped:
             // CloudControl will reject anything we don't have an AWS
@@ -98,35 +100,36 @@ pub(crate) fn build_update_patches(
             // schema bugs as user errors.
             None => continue,
         };
-        plan.touch(&op.key);
+        plan.touch(key);
 
-        let requires_confirmation = matches!(op.kind, PatchOpKind::Add | PatchOpKind::Replace)
-            && op.value.is_some()
-            && !attr_schema.write_only;
+        let requires_confirmation = match op {
+            PatchOp::Add { .. } | PatchOp::Replace { .. } => !attr_schema.write_only,
+            PatchOp::Reassert { .. } | PatchOp::Remove { .. } => false,
+        };
         if requires_confirmation {
-            plan.require_confirmation(&op.key);
+            plan.require_confirmation(key);
         }
 
         // CloudControl rejects patches that touch read-only or create-only
         // properties. Drop them even if they appear in the patch.
         if attr_schema.is_read_only() || attr_schema.create_only {
             if requires_confirmation {
-                plan.mark_unsent(&op.key);
+                plan.mark_unsent(key);
             }
             continue;
         }
 
-        if op.key == "tags" {
+        if key == "tags" {
             let Some(tags_property) = config.tags.as_ref() else {
                 if requires_confirmation {
-                    plan.mark_unsent(&op.key);
+                    plan.mark_unsent(key);
                 }
                 continue;
             };
             if let Some(patch_op) = tags_property.update_patch(op) {
                 plan.ops.push(patch_op);
             } else if requires_confirmation {
-                plan.mark_unsent(&op.key);
+                plan.mark_unsent(key);
             }
             continue;
         }
@@ -136,19 +139,21 @@ pub(crate) fn build_update_patches(
             Some(name) => name,
             None => {
                 if requires_confirmation {
-                    plan.mark_unsent(&op.key);
+                    plan.mark_unsent(key);
                 }
                 continue;
             }
         };
 
-        match (op.kind, &op.value) {
-            (PatchOpKind::Add | PatchOpKind::Replace, Some(value)) => {
+        match op {
+            PatchOp::Add { value, .. }
+            | PatchOp::Replace { value, .. }
+            | PatchOp::Reassert { value, .. } => {
                 if let Some(aws_value) = dsl_value_to_aws_with_defs(
                     value,
                     &attr_schema.attr_type,
                     resource_type,
-                    &op.key,
+                    key,
                     &config.schema.defs,
                 ) {
                     plan.ops.push(json!({
@@ -157,10 +162,10 @@ pub(crate) fn build_update_patches(
                         "value": aws_value,
                     }));
                 } else if requires_confirmation {
-                    plan.mark_unsent(&op.key);
+                    plan.mark_unsent(key);
                 }
             }
-            (PatchOpKind::Remove, _) | (PatchOpKind::Add | PatchOpKind::Replace, None) => {
+            PatchOp::Remove { .. } => {
                 plan.ops.push(json!({
                     "op": "remove",
                     "path": format!("/{}", aws_name),
@@ -190,26 +195,29 @@ mod tests {
     }
 
     fn replace(key: &str, value: Value) -> PatchOp {
-        PatchOp {
-            kind: PatchOpKind::Replace,
+        PatchOp::Replace {
             key: key.to_string(),
-            value: Some(value),
+            value,
         }
     }
 
     fn add(key: &str, value: Value) -> PatchOp {
-        PatchOp {
-            kind: PatchOpKind::Add,
+        PatchOp::Add {
             key: key.to_string(),
-            value: Some(value),
+            value,
+        }
+    }
+
+    fn reassert(key: &str, value: Value) -> PatchOp {
+        PatchOp::Reassert {
+            key: key.to_string(),
+            value,
         }
     }
 
     fn remove(key: &str) -> PatchOp {
-        PatchOp {
-            kind: PatchOpKind::Remove,
+        PatchOp::Remove {
             key: key.to_string(),
-            value: None,
         }
     }
 
@@ -363,6 +371,24 @@ mod tests {
     }
 
     #[test]
+    fn test_reassert_op_emits_converted_add_without_confirmation() {
+        let config = get_schema_config("ssm.Parameter").expect("ssm.Parameter schema should exist");
+        let patch = UpdatePatch {
+            ops: vec![reassert("tier", string("Advanced"))],
+        };
+
+        let plan = build_update_patches(config, "ssm.Parameter", &patch);
+
+        assert_eq!(
+            plan.ops,
+            [json!({"op": "add", "path": "/Tier", "value": "Advanced"})]
+        );
+        assert!(plan.requires_confirmation.is_empty());
+        assert!(plan.unsent.is_empty());
+        assert_eq!(plan.touched, ["tier"]);
+    }
+
+    #[test]
     fn test_remove_op_emits_remove_json_patch() {
         let config = get_vpc_config();
         let patch = UpdatePatch {
@@ -404,6 +430,40 @@ mod tests {
         );
         assert_eq!(plan.requires_confirmation, ["arn"]);
         assert_eq!(plan.unsent, ["arn"]);
+    }
+
+    #[test]
+    fn test_reassert_read_only_and_create_only_attributes_are_dropped() {
+        let config = AwsccSchemaConfig {
+            aws_type_name: "AWS::Test::Resource",
+            resource_type_name: "test.Resource",
+            primary_identifier: &[],
+            tags: None,
+            schema: ResourceSchema::new("test.Resource")
+                .attribute(
+                    AttributeSchema::new("read_only", AttributeType::string())
+                        .read_only()
+                        .with_provider_name("ReadOnly"),
+                )
+                .attribute(
+                    AttributeSchema::new("create_only", AttributeType::string())
+                        .create_only()
+                        .with_provider_name("CreateOnly"),
+                ),
+        };
+        let patch = UpdatePatch {
+            ops: vec![
+                reassert("read_only", string("read")),
+                reassert("create_only", string("create")),
+            ],
+        };
+
+        let plan = build_update_patches(&config, "test.Resource", &patch);
+
+        assert!(plan.ops.is_empty());
+        assert!(plan.requires_confirmation.is_empty());
+        assert!(plan.unsent.is_empty());
+        assert_eq!(plan.touched, ["read_only", "create_only"]);
     }
 
     #[test]

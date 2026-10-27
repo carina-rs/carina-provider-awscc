@@ -2332,20 +2332,18 @@ fn post_update_attributes(
     from: &State,
     patch: &UpdatePatch,
 ) -> std::collections::HashMap<String, Value> {
-    use carina_core::provider::PatchOpKind;
+    use carina_core::provider::PatchOp;
 
     let mut attributes = from.attributes.clone();
     for op in &patch.ops {
-        match op.kind {
-            PatchOpKind::Add | PatchOpKind::Replace => {
-                if let Some(value) = &op.value {
-                    attributes.insert(op.key.clone(), value.clone());
-                } else {
-                    attributes.remove(&op.key);
-                }
+        match op {
+            PatchOp::Add { key, value }
+            | PatchOp::Replace { key, value }
+            | PatchOp::Reassert { key, value } => {
+                attributes.insert(key.clone(), value.clone());
             }
-            PatchOpKind::Remove => {
-                attributes.remove(&op.key);
+            PatchOp::Remove { key } => {
+                attributes.remove(key);
             }
         }
     }
@@ -2357,7 +2355,7 @@ mod tests {
     use super::*;
     use carina_core::provider::{
         AppliedIdentifier, CreateFailureKind, CreateOutcome, CreateOutcomeKind, Observation,
-        PatchOp, PatchOpKind, ReadOutcome, UpdateOutcome,
+        PatchOp, ReadOutcome, UpdateOutcome,
     };
     use carina_core::resource::{DeferredValue, UnknownReason};
     use carina_core::schema::AttributeType;
@@ -3270,10 +3268,9 @@ mod tests {
             Value::Concrete(ConcreteValue::String("prod".to_string().into())),
         );
         UpdatePatch {
-            ops: vec![PatchOp {
-                kind: PatchOpKind::Replace,
+            ops: vec![PatchOp::Replace {
                 key: "tags".to_string(),
-                value: Some(Value::Concrete(ConcreteValue::Map(tags))),
+                value: Value::Concrete(ConcreteValue::Map(tags)),
             }],
         }
     }
@@ -3282,12 +3279,9 @@ mod tests {
         let mut patch = partial_update_bucket_patch();
         patch.ops.insert(
             0,
-            PatchOp {
-                kind: PatchOpKind::Replace,
+            PatchOp::Replace {
                 key: "bucket_name".to_string(),
-                value: Some(Value::Concrete(ConcreteValue::String(
-                    "renamed-bucket".to_string().into(),
-                ))),
+                value: Value::Concrete(ConcreteValue::String("renamed-bucket".to_string().into())),
             },
         );
         patch
@@ -3295,42 +3289,36 @@ mod tests {
 
     fn empty_tags_patch() -> UpdatePatch {
         UpdatePatch {
-            ops: vec![PatchOp {
-                kind: PatchOpKind::Replace,
+            ops: vec![PatchOp::Replace {
                 key: "tags".to_string(),
-                value: Some(Value::Concrete(ConcreteValue::Map(IndexMap::new()))),
+                value: Value::Concrete(ConcreteValue::Map(IndexMap::new())),
             }],
         }
     }
 
     fn object_lock_enabled_patch() -> UpdatePatch {
         UpdatePatch {
-            ops: vec![PatchOp {
-                kind: PatchOpKind::Add,
+            ops: vec![PatchOp::Add {
                 key: "object_lock_enabled".to_string(),
-                value: Some(Value::Concrete(ConcreteValue::Bool(true))),
+                value: Value::Concrete(ConcreteValue::Bool(true)),
             }],
         }
     }
 
     fn replace_object_lock_enabled_patch() -> UpdatePatch {
         UpdatePatch {
-            ops: vec![PatchOp {
-                kind: PatchOpKind::Replace,
+            ops: vec![PatchOp::Replace {
                 key: "object_lock_enabled".to_string(),
-                value: Some(Value::Concrete(ConcreteValue::Bool(true))),
+                value: Value::Concrete(ConcreteValue::Bool(true)),
             }],
         }
     }
 
     fn access_control_patch() -> UpdatePatch {
         UpdatePatch {
-            ops: vec![PatchOp {
-                kind: PatchOpKind::Add,
+            ops: vec![PatchOp::Add {
                 key: "access_control".to_string(),
-                value: Some(Value::Concrete(ConcreteValue::String(
-                    "private".to_string().into(),
-                ))),
+                value: Value::Concrete(ConcreteValue::String("private".to_string().into())),
             }],
         }
     }
@@ -3600,44 +3588,36 @@ mod tests {
 
     #[tokio::test]
     async fn update_resource_returns_success_when_unset_attribute_is_absent_from_read_back() {
-        for (kind, label) in [
-            (PatchOpKind::Remove, "remove"),
-            (PatchOpKind::Add, "add-none"),
-            (PatchOpKind::Replace, "replace-none"),
-        ] {
-            let service = PartialUpdateCloudControlService::new(true, true);
-            let provider = provider_with_partial_update_service(service).await;
-            let mut from = partial_update_bucket_state();
-            from.attributes.insert(
-                "object_lock_enabled".to_string(),
-                Value::Concrete(ConcreteValue::Bool(true)),
-            );
-            let patch = UpdatePatch {
-                ops: vec![PatchOp {
-                    kind,
-                    key: "object_lock_enabled".to_string(),
-                    value: None,
-                }],
-            };
+        let service = PartialUpdateCloudControlService::new(true, true);
+        let provider = provider_with_partial_update_service(service).await;
+        let mut from = partial_update_bucket_state();
+        from.attributes.insert(
+            "object_lock_enabled".to_string(),
+            Value::Concrete(ConcreteValue::Bool(true)),
+        );
+        let patch = UpdatePatch {
+            ops: vec![PatchOp::Remove {
+                key: "object_lock_enabled".to_string(),
+            }],
+        };
 
-            let outcome = provider
-                .update_resource(
-                    from.id.clone(),
-                    &test_identifier("partial-bucket"),
-                    &from,
-                    &patch,
-                )
-                .await
-                .expect("unset update should succeed");
+        let outcome = provider
+            .update_resource(
+                from.id.clone(),
+                &test_identifier("partial-bucket"),
+                &from,
+                &patch,
+            )
+            .await
+            .expect("unset update should succeed");
 
-            let UpdateOutcome::Success { state } = outcome else {
-                panic!("expected success for {label} when the attribute is absent");
-            };
-            assert!(
-                !state.attributes().contains_key("object_lock_enabled"),
-                "unset attribute must remain absent for {label}"
-            );
-        }
+        let UpdateOutcome::Success { state } = outcome else {
+            panic!("expected success when the removed attribute is absent");
+        };
+        assert!(
+            !state.attributes().contains_key("object_lock_enabled"),
+            "removed attribute must remain absent"
+        );
     }
 
     #[tokio::test]
@@ -3956,11 +3936,14 @@ mod tests {
         let service = PartialUpdateCloudControlService::new(false, false);
         let provider = provider_with_partial_update_service(service).await;
         let from = partial_update_bucket_state();
-        let mut patch = access_control_patch();
-        patch.ops.push(PatchOp {
-            kind: PatchOpKind::Remove,
+        let mut patch = UpdatePatch {
+            ops: vec![PatchOp::Reassert {
+                key: "access_control".to_string(),
+                value: Value::Concrete(ConcreteValue::String("private".to_string().into())),
+            }],
+        };
+        patch.ops.push(PatchOp::Remove {
             key: "website_configuration".to_string(),
-            value: None,
         });
 
         let outcome = provider

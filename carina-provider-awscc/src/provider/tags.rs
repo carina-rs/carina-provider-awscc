@@ -2,7 +2,7 @@
 
 use indexmap::IndexMap;
 
-use carina_core::provider::{PatchOp, PatchOpKind};
+use carina_core::provider::PatchOp;
 use carina_core::resource::{ConcreteValue, Value};
 use serde_json::json;
 
@@ -89,8 +89,10 @@ impl TagsProperty {
     ///
     /// Returning `None` means the DSL value could not be converted without loss.
     pub(crate) fn update_patch(&self, op: &PatchOp) -> Option<serde_json::Value> {
-        match (op.kind, &op.value) {
-            (PatchOpKind::Add | PatchOpKind::Replace, Some(value)) => {
+        match op {
+            PatchOp::Add { value, .. }
+            | PatchOp::Replace { value, .. }
+            | PatchOp::Reassert { value, .. } => {
                 let wire_value = self.encode_dsl_tags(value)?;
                 if wire_tags_are_empty(&wire_value) {
                     Some(json!({"op": "remove", "path": format!("/{}", self.provider_name)}))
@@ -102,7 +104,7 @@ impl TagsProperty {
                     }))
                 }
             }
-            (PatchOpKind::Remove, _) | (PatchOpKind::Add | PatchOpKind::Replace, None) => {
+            PatchOp::Remove { .. } => {
                 Some(json!({"op": "remove", "path": format!("/{}", self.provider_name)}))
             }
         }
@@ -118,7 +120,7 @@ fn insert_tag(tags: &mut IndexMap<String, Value>, key: &str, value: &str) {
 
 #[cfg(test)]
 mod tests {
-    use carina_core::provider::{PatchOp, PatchOpKind};
+    use carina_core::provider::PatchOp;
     use serde_json::json;
 
     use super::*;
@@ -145,11 +147,30 @@ mod tests {
         ))
     }
 
-    fn patch(kind: PatchOpKind, value: Option<Value>) -> PatchOp {
-        PatchOp {
-            kind,
+    fn add(value: Value) -> PatchOp {
+        PatchOp::Add {
             key: "tags".to_string(),
             value,
+        }
+    }
+
+    fn replace(value: Value) -> PatchOp {
+        PatchOp::Replace {
+            key: "tags".to_string(),
+            value,
+        }
+    }
+
+    fn reassert(value: Value) -> PatchOp {
+        PatchOp::Reassert {
+            key: "tags".to_string(),
+            value,
+        }
+    }
+
+    fn remove() -> PatchOp {
+        PatchOp::Remove {
+            key: "tags".to_string(),
         }
     }
 
@@ -196,7 +217,7 @@ mod tests {
     }
 
     #[test]
-    fn update_patch_uses_each_wire_shape_for_add_and_replace() {
+    fn update_patch_uses_each_wire_shape_for_add_replace_and_reassert() {
         for (wire, expected_value) in [
             (
                 TagsWire::KeyValueList,
@@ -205,9 +226,13 @@ mod tests {
             (TagsWire::Map, json!({"env": "prod"})),
         ] {
             let property = tags_property(wire);
-            for kind in [PatchOpKind::Add, PatchOpKind::Replace] {
+            for op in [
+                add(dsl_tags(&[("env", "prod")])),
+                replace(dsl_tags(&[("env", "prod")])),
+                reassert(dsl_tags(&[("env", "prod")])),
+            ] {
                 assert_eq!(
-                    property.update_patch(&patch(kind, Some(dsl_tags(&[("env", "prod")])),)),
+                    property.update_patch(&op),
                     Some(json!({
                         "op": "add",
                         "path": "/Tags",
@@ -224,12 +249,9 @@ mod tests {
             let property = tags_property(wire);
             let expected = json!({"op": "remove", "path": "/Tags"});
 
+            assert_eq!(property.update_patch(&remove()), Some(expected.clone()));
             assert_eq!(
-                property.update_patch(&patch(PatchOpKind::Remove, None)),
-                Some(expected.clone())
-            );
-            assert_eq!(
-                property.update_patch(&patch(PatchOpKind::Replace, Some(dsl_tags(&[])),)),
+                property.update_patch(&replace(dsl_tags(&[]))),
                 Some(expected)
             );
         }
@@ -243,9 +265,6 @@ mod tests {
             Value::Concrete(ConcreteValue::Bool(true)),
         )])));
 
-        assert_eq!(
-            property.update_patch(&patch(PatchOpKind::Replace, Some(invalid))),
-            None
-        );
+        assert_eq!(property.update_patch(&replace(invalid)), None);
     }
 }

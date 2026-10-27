@@ -13,7 +13,7 @@ use aws_config::{BehaviorVersion, Region};
 use aws_sdk_cloudcontrol::operation::create_resource::CreateResourceError;
 use carina_core::provider::{
     AppliedIdentifier, AppliedState, CreateFailureKind, DeleteRequest, Observation, PatchOp,
-    PatchOpKind, ProviderError, ReadOutcome, Sent, UpdateOutcome, UpdatePatch,
+    ProviderError, ReadOutcome, Sent, UpdateOutcome, UpdatePatch,
 };
 use carina_core::resource::{ConcreteValue, Resource, ResourceId, State, Value};
 use carina_provider_awscc::provider::{
@@ -514,10 +514,9 @@ fn vpc_update() -> (ResourceId, State, UpdatePatch) {
     )
     .with_identifier(VPC_ID);
     let patch = UpdatePatch {
-        ops: vec![PatchOp {
-            kind: PatchOpKind::Replace,
+        ops: vec![PatchOp::Replace {
             key: "enable_dns_support".to_string(),
-            value: Some(bool_(true)),
+            value: bool_(true),
         }],
     };
     (id, from, patch)
