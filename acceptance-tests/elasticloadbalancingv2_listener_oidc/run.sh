@@ -228,15 +228,17 @@ assert_updated_listener() {
 }
 
 assert_listener_gone() {
-    local resources
+    local output
     [ -n "$LISTENER_ARN" ] || return 1
-    resources=$(with_account_creds aws cloudcontrol list-resources \
-        --region "$REGION" \
-        --type-name AWS::ElasticLoadBalancingV2::Listener \
-        --output json) || return 1
-    ! jq -e --arg arn "$LISTENER_ARN" '
-        .ResourceDescriptions[]? | select(.Identifier == $arn)
-    ' <<< "$resources" >/dev/null
+    if output=$(with_account_creds aws elbv2 describe-listeners \
+        --region "$REGION" --listener-arns "$LISTENER_ARN" 2>&1); then
+        return 1
+    fi
+    if grep -q 'ListenerNotFound' <<< "$output"; then
+        return 0
+    fi
+    echo "$output" >&2
+    return 1
 }
 
 assert_load_balancer_gone() {
