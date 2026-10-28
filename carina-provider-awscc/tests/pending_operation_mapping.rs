@@ -7,27 +7,41 @@ mod common;
 use std::collections::{HashMap, VecDeque};
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use aws_config::{BehaviorVersion, Region};
 use aws_sdk_cloudcontrol::operation::create_resource::CreateResourceError;
+use aws_smithy_runtime_api::client::{
+    http::{
+        HttpClient, HttpConnector, HttpConnectorFuture, SharedHttpClient, SharedHttpConnector,
+        http_client_fn,
+    },
+    result::ConnectorError,
+};
+use carina_core::binding_index::ResolvedBindings;
+use carina_core::executor::{ModuleConstraintGate, ProviderPreparationContext};
 use carina_core::provider::{
-    AppliedIdentifier, AppliedState, CreateFailureKind, DeleteRequest, Observation, PatchOp,
-    ProviderError, ReadOutcome, Sent, UpdateOutcome, UpdatePatch,
+    AppliedIdentifier, AppliedState, CreateAttempt, CreateFailureKind, DeleteRequest, Observation,
+    PatchOp, PendingToken, Poll, ProviderError, ReadOutcome, ResumeCreateRequest,
+    ResumeFailureKind, Sent, UpdateOutcome, UpdatePatch,
 };
 use carina_core::resource::{ConcreteValue, Resource, ResourceId, State, Value};
+use carina_core::schema::SchemaRegistry;
 use carina_provider_awscc::provider::{
     AwsccProviderConfig, CcCreateAttempt, CcCreatePoll, CcCreateResume, CcIssuedCreate,
-    CcPollAttempt, CcResumeAttempt, CcResumedCreate,
+    CcPollAttempt, CcResumeAttempt, CcResumedCreate, NotAppliedCreate,
 };
 use carina_provider_awscc::{
-    AwsccProvider, CcCreateToken, CcDeleteToken, CcRequestPhase, CcUpdateToken, RequestToken,
+    AwsccNormalizer, AwsccProvider, BoundedSdkConfig, CcCreateToken, CcDeleteToken, CcRequestPhase,
+    CcUpdateToken, RequestToken, UndeterminedCreate,
 };
 use carina_provider_protocol::OperationStep;
+use indexmap::IndexMap;
 use serde_json::{Value as JsonValue, json};
 use winterbaume_core::{MockAws, MockRequest, MockResponse, MockService, json_error_response};
 
-const REGION: &str = "us-east-1";
+static NEXT_TEST_REGION: AtomicUsize = AtomicUsize::new(1);
 const VPC_TYPE: &str = "AWS::EC2::VPC";
 const VPC_ID: &str = "vpc-0123456789abcdef0";
 const TEST_CLIENT_TOKEN: &str = "00000000-0000-4000-8000-000000000000";
@@ -174,6 +188,109 @@ impl MockService for ScriptedCloudControl {
     }
 }
 
+struct DeniedSts;
+
+impl MockService for DeniedSts {
+    fn service_name(&self) -> &str {
+        "sts"
+    }
+
+    fn url_patterns(&self) -> Vec<&str> {
+        vec![
+            r"https?://sts\..*\.amazonaws\.com",
+            r"https?://sts\.amazonaws\.com",
+        ]
+    }
+
+    fn handle(
+        &self,
+        _request: MockRequest,
+    ) -> Pin<Box<dyn Future<Output = MockResponse> + Send + '_>> {
+        Box::pin(async {
+            MockResponse::error(
+                403,
+                "AccessDeniedException",
+                "injected provider initialization failure",
+            )
+        })
+    }
+}
+
+#[derive(Clone, Debug)]
+struct PostSendFailureConnector {
+    inner: SharedHttpConnector,
+    failures: Arc<Mutex<HashMap<String, PostSendFailureScript>>>,
+}
+
+#[derive(Debug)]
+struct PostSendFailureScript {
+    outcomes: VecDeque<bool>,
+    invocation_id: Option<String>,
+    current_outcome: bool,
+}
+
+impl PostSendFailureScript {
+    fn new(outcomes: Vec<bool>) -> Self {
+        Self {
+            outcomes: outcomes.into(),
+            invocation_id: None,
+            current_outcome: false,
+        }
+    }
+
+    fn outcome_for(&mut self, invocation_id: String) -> bool {
+        if self.invocation_id.as_deref() != Some(invocation_id.as_str()) {
+            self.current_outcome = if self.outcomes.len() > 1 {
+                self.outcomes.pop_front().expect("non-empty failure script")
+            } else {
+                self.outcomes.front().copied().unwrap_or(false)
+            };
+            self.invocation_id = Some(invocation_id);
+        }
+        self.current_outcome
+    }
+}
+
+impl HttpConnector for PostSendFailureConnector {
+    fn call(
+        &self,
+        request: aws_smithy_runtime_api::client::orchestrator::HttpRequest,
+    ) -> HttpConnectorFuture {
+        let action = request
+            .headers()
+            .get("x-amz-target")
+            .and_then(|value| value.split('.').next_back())
+            .map(ToString::to_string);
+        let invocation_id = request
+            .headers()
+            .get("amz-sdk-invocation-id")
+            .map(ToString::to_string);
+        let inner = self.inner.clone();
+        let failures = Arc::clone(&self.failures);
+
+        HttpConnectorFuture::new(async move {
+            let response = inner.call(request).await?;
+            let should_fail = action
+                .zip(invocation_id)
+                .is_some_and(|(action, invocation_id)| {
+                    let mut failures = failures.lock().expect("post-send failure script lock");
+                    let Some(script) = failures.get_mut(&action) else {
+                        return false;
+                    };
+                    script.outcome_for(invocation_id)
+                });
+            if should_fail {
+                Err(ConnectorError::timeout(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "injected post-send timeout",
+                ))))
+            } else {
+                Ok(response)
+            }
+        })
+    }
+}
+
 fn mutation_reply(token: &str, identifier: &str) -> Reply {
     Reply::Json(json!({
         "ProgressEvent": {
@@ -191,6 +308,20 @@ fn mutation_reply_without_identifier(token: &str) -> Reply {
             "RequestToken": token,
         }
     }))
+}
+
+fn mutation_reply_without_request_token(request_token: Option<&str>) -> Reply {
+    let mut progress = serde_json::Map::from_iter([(
+        "OperationStatus".to_string(),
+        JsonValue::String("IN_PROGRESS".to_string()),
+    )]);
+    if let Some(request_token) = request_token {
+        progress.insert(
+            "RequestToken".to_string(),
+            JsonValue::String(request_token.to_string()),
+        );
+    }
+    Reply::Json(json!({"ProgressEvent": progress}))
 }
 
 fn status_reply(status: &str, identifier: Option<&str>, message: Option<&str>) -> Reply {
@@ -246,6 +377,30 @@ fn throttled() -> Reply {
     }
 }
 
+fn invalid_request() -> Reply {
+    Reply::Error {
+        status: 400,
+        code: "InvalidRequestException",
+        message: "invalid create request",
+    }
+}
+
+fn client_token_conflict() -> Reply {
+    Reply::Error {
+        status: 400,
+        code: "ClientTokenConflictException",
+        message: "client token reused with different desired state",
+    }
+}
+
+fn service_internal_error() -> Reply {
+    Reply::Error {
+        status: 500,
+        code: "ServiceInternalErrorException",
+        message: "Internal error",
+    }
+}
+
 fn not_found() -> Reply {
     Reply::Error {
         status: 404,
@@ -286,10 +441,22 @@ enum TestCreateStep {
 #[derive(Debug)]
 enum TestCreateVerdict {
     Untracked(Box<ProviderError>),
-    Undetermined(Box<ProviderError>),
+    Undetermined {
+        token: CcCreateToken,
+        error: Box<ProviderError>,
+    },
     Created {
         identifier: AppliedIdentifier,
         observation: Box<Observation>,
+        error: Box<ProviderError>,
+    },
+    Preserved {
+        token: CcCreateToken,
+        identifier: AppliedIdentifier,
+        error: Box<ProviderError>,
+    },
+    ResumePreserved {
+        identifier: Option<AppliedIdentifier>,
         error: Box<ProviderError>,
     },
     Discarded(Box<ProviderError>),
@@ -306,8 +473,8 @@ impl CcCreateAttempt for TestCreateAttempt {
     type Verdict = TestCreateVerdict;
     type Issued = TestIssuedCreate;
 
-    fn untracked(self, error: ProviderError) -> Self::Verdict {
-        TestCreateVerdict::Untracked(Box::new(error))
+    fn untracked(self, failure: NotAppliedCreate) -> Self::Verdict {
+        TestCreateVerdict::Untracked(Box::new(failure.into_error()))
     }
 
     fn issued(self, identifier: AppliedIdentifier, _sent: Sent) -> Self::Issued {
@@ -333,8 +500,16 @@ impl CcPollAttempt for TestCreateAttempt {
     type Verdict = TestCreateVerdict;
     type Issued = TestIssuedCreate;
 
-    fn untracked(self, error: ProviderError) -> Self::Verdict {
-        TestCreateVerdict::Untracked(Box::new(error))
+    fn untracked(self, failure: NotAppliedCreate) -> Self::Verdict {
+        TestCreateVerdict::Untracked(Box::new(failure.into_error()))
+    }
+
+    fn undetermined(self, token: CcCreateToken, failure: UndeterminedCreate) -> Self::Verdict {
+        let error = failure.into_error();
+        TestCreateVerdict::Undetermined {
+            token,
+            error: Box::new(error),
+        }
     }
 
     fn issued(self, identifier: AppliedIdentifier) -> Self::Issued {
@@ -400,6 +575,14 @@ impl CcIssuedCreate for TestIssuedCreate {
         TestCreateVerdict::Discarded(Box::new(error))
     }
 
+    fn preserve(self, token: CcCreateToken, error: ProviderError) -> Self::Verdict {
+        TestCreateVerdict::Preserved {
+            token,
+            identifier: self.identifier,
+            error: Box::new(error),
+        }
+    }
+
     fn pending(
         self,
         token: CcCreateToken,
@@ -419,12 +602,15 @@ impl CcResumeAttempt for TestCreateAttempt {
     type Resumed = TestIssuedCreate;
     type Resent = TestCreateAttempt;
 
-    fn untracked(self, error: ProviderError) -> Self::Verdict {
-        TestCreateVerdict::Untracked(Box::new(error))
+    fn untracked(self, failure: NotAppliedCreate) -> Self::Verdict {
+        TestCreateVerdict::Untracked(Box::new(failure.into_error()))
     }
 
-    fn undetermined(self, error: ProviderError) -> Self::Verdict {
-        TestCreateVerdict::Undetermined(Box::new(error))
+    fn preserve(self, error: ProviderError) -> Self::Verdict {
+        TestCreateVerdict::ResumePreserved {
+            identifier: None,
+            error: Box::new(error),
+        }
     }
 
     fn issued(self, identifier: AppliedIdentifier) -> Self::Resumed {
@@ -477,6 +663,13 @@ impl CcResumedCreate for TestIssuedCreate {
         TestCreateVerdict::Discarded(Box::new(error))
     }
 
+    fn preserve(self, error: ProviderError) -> Self::Verdict {
+        TestCreateVerdict::ResumePreserved {
+            identifier: Some(self.identifier),
+            error: Box::new(error),
+        }
+    }
+
     fn pending(
         self,
         token: CcCreateToken,
@@ -525,14 +718,42 @@ fn vpc_update() -> (ResourceId, State, UpdatePatch) {
 async fn provider_with_script(
     entries: impl IntoIterator<Item = (&'static str, Vec<Reply>)>,
 ) -> (AwsccProvider, Arc<ScriptedCloudControl>) {
+    provider_with_post_send_failures(entries, []).await
+}
+
+async fn provider_with_post_send_failures(
+    entries: impl IntoIterator<Item = (&'static str, Vec<Reply>)>,
+    failure_scripts: impl IntoIterator<Item = (&'static str, Vec<bool>)>,
+) -> (AwsccProvider, Arc<ScriptedCloudControl>) {
     let service = Arc::new(ScriptedCloudControl::new(entries));
     let mock = MockAws::builder()
         .with_service(Arc::clone(&service))
         .build();
+    let inner = mock.http_client();
+    let failures = Arc::new(Mutex::new(
+        failure_scripts
+            .into_iter()
+            .map(|(action, script)| (action.to_string(), PostSendFailureScript::new(script)))
+            .collect::<HashMap<_, _>>(),
+    ));
+    let http_client: SharedHttpClient = http_client_fn(move |settings, components| {
+        SharedHttpConnector::new(PostSendFailureConnector {
+            inner: inner.http_connector(settings, components),
+            failures: Arc::clone(&failures),
+        })
+    });
+    // The SDK's standard retry quota is process-global for a service/region retry
+    // partition. Give each provider a unique region, and therefore a unique default
+    // CloudControl RetryPartition, so timeout-heavy parallel tests cannot drain one
+    // another's retry tokens.
+    let region = format!(
+        "us-test-{}",
+        NEXT_TEST_REGION.fetch_add(1, Ordering::Relaxed)
+    );
     let config = aws_config::defaults(BehaviorVersion::latest())
-        .http_client(mock.http_client())
+        .http_client(http_client)
         .credentials_provider(mock.credentials_provider())
-        .region(Region::new(REGION))
+        .region(Region::new(region))
         .load()
         .await;
     (
@@ -543,6 +764,209 @@ async fn provider_with_script(
         .await,
         service,
     )
+}
+
+async fn provider_with_initialization_error() -> AwsccProvider {
+    let cloudcontrol = Arc::new(ScriptedCloudControl::new([
+        (
+            "CreateResource",
+            vec![mutation_reply_without_identifier("unexpected-create")],
+        ),
+        (
+            "GetResourceRequestStatus",
+            vec![status_reply("IN_PROGRESS", Some(VPC_ID), None)],
+        ),
+    ]));
+    let mock = MockAws::builder()
+        .with_service(cloudcontrol)
+        .with_service(Arc::new(DeniedSts))
+        .build();
+    let config = aws_config::defaults(BehaviorVersion::latest())
+        .http_client(mock.http_client())
+        .credentials_provider(mock.credentials_provider())
+        .region(Region::new("us-init-error-1"))
+        .load()
+        .await;
+    let provider = AwsccProvider::from_sdk_config(
+        BoundedSdkConfig::new(config),
+        &AwsccProviderConfig {
+            allowed_account_ids: vec!["123456789012".to_string()],
+            ..AwsccProviderConfig::default()
+        },
+    )
+    .await;
+    assert!(provider.init_error().is_some());
+    provider
+}
+
+fn request_client_tokens(service: &ScriptedCloudControl, action: &str) -> Vec<String> {
+    service
+        .bodies(action)
+        .iter()
+        .map(|body| {
+            serde_json::from_str::<JsonValue>(body).expect("request body should be valid JSON")
+                ["ClientToken"]
+                .as_str()
+                .expect("mutating request should include ClientToken")
+                .to_string()
+        })
+        .collect()
+}
+
+fn assert_cloudcontrol_api_error(
+    error: &ProviderError,
+    message: &str,
+    operation: &str,
+    code: &str,
+    cause: &str,
+) {
+    assert_eq!(error.variant_name(), "api_error");
+    assert_eq!(error.detail().context(), message);
+    assert_eq!(error.detail().operation.as_deref(), Some(operation));
+    assert_eq!(error.detail().status, Some(400));
+    assert_eq!(error.detail().code.as_deref(), Some(code));
+    assert_eq!(error.to_wire().cause.as_deref(), Some(cause));
+}
+
+fn create_token(value: JsonValue) -> CcCreateToken {
+    serde_json::from_value(value).expect("deserialize test create token")
+}
+
+fn pending_create_for_token(
+    resource: &Resource,
+    token: &CcCreateToken,
+) -> carina_core::provider::PendingCreate {
+    let pending_token = PendingToken::new(
+        serde_json::to_string(token).expect("serialize test Cloud Control create token"),
+    );
+    let attempt = CreateAttempt::for_test(resource.id.clone());
+    match token.identifier() {
+        Some(identifier) => attempt
+            .issued(
+                common::applied_identifier(identifier),
+                Sent::AllRequestAttributes,
+            )
+            .pending(pending_token, 5),
+        None => attempt.pending(pending_token, Sent::AllRequestAttributes, 5),
+    }
+}
+
+async fn resume_request_for_token(
+    resource: Resource,
+    token: &CcCreateToken,
+) -> ResumeCreateRequest {
+    let pending = pending_create_for_token(&resource, token);
+    let failure = pending.preserve(ProviderError::internal("construct test in-flight create"));
+    let CreateFailureKind::InFlight { pending, error } = failure.into_kind() else {
+        panic!("preserving a pending create must produce an in-flight create");
+    };
+    assert_eq!(error.to_string(), "construct test in-flight create");
+    ResumeCreateRequest::for_test(pending, common::create_request(resource).await)
+        .expect("test resume request must preserve its resource route")
+}
+
+async fn resume_request_for_unchecked_resource(
+    resource: Resource,
+    token: &CcCreateToken,
+) -> ResumeCreateRequest {
+    let pending = pending_create_for_token(&resource, token);
+    let failure = pending.preserve(ProviderError::internal("construct test in-flight create"));
+    let CreateFailureKind::InFlight { pending, error } = failure.into_kind() else {
+        panic!("preserving a pending create must produce an in-flight create");
+    };
+    assert_eq!(error.to_string(), "construct test in-flight create");
+
+    // Deliberately omit schemas from this test-only preparation context so an
+    // invalid provider payload reaches the provider's pre-send validation.
+    let bindings = ResolvedBindings::default();
+    let module_gate = ModuleConstraintGate::new(&[]);
+    let schemas = SchemaRegistry::new();
+    let preparation = ProviderPreparationContext::new(
+        &bindings,
+        &module_gate,
+        &[],
+        &AwsccNormalizer,
+        &[],
+        &schemas,
+    );
+    let request = carina_core::executor::prepare_create_request(resource, &preparation)
+        .await
+        .expect("unchecked test resource should reach provider validation");
+    ResumeCreateRequest::for_test(pending, request)
+        .expect("test resume request must preserve its resource route")
+}
+
+#[test]
+fn unconfirmed_create_without_client_token_is_rejected() {
+    let error = serde_json::from_value::<CcCreateToken>(json!({
+        "phase": "unconfirmed",
+        "attempt": 0,
+        "resends": 1,
+    }))
+    .expect_err("an unconfirmed create must never mint a replacement client token");
+
+    assert_eq!(error.to_string(), "missing field `client_token`");
+}
+
+#[test]
+fn not_issued_request_without_client_token_is_rejected() {
+    let error = serde_json::from_value::<CcRequestPhase>(json!({
+        "phase": "not_issued",
+        "attempt": 0,
+    }))
+    .expect_err("ephemeral update/delete continuations need no legacy token fallback");
+
+    assert_eq!(error.to_string(), "missing field `client_token`");
+}
+
+#[test]
+fn legacy_in_flight_tokens_ignore_dead_client_token_data() {
+    let request_phase = serde_json::from_value::<CcRequestPhase>(json!({
+        "phase": "in_flight",
+        "request": "update-request",
+        "attempt": 3,
+        "client_token": TEST_CLIENT_TOKEN,
+    }))
+    .expect("legacy update continuation must deserialize");
+    assert_eq!(
+        serde_json::to_value(request_phase).expect("serialize update continuation"),
+        json!({
+            "phase": "in_flight",
+            "request": "update-request",
+            "attempt": 3,
+        })
+    );
+
+    let create_token = serde_json::from_value::<CcCreateToken>(json!({
+        "phase": "in_flight",
+        "request": "create-request",
+        "attempt": 4,
+        "identifier": VPC_ID,
+        "client_token": TEST_CLIENT_TOKEN,
+    }))
+    .expect("legacy create continuation must deserialize");
+    assert_eq!(
+        serde_json::to_value(create_token).expect("serialize create continuation"),
+        json!({
+            "phase": "in_flight",
+            "request": "create-request",
+            "attempt": 4,
+            "identifier": VPC_ID,
+        })
+    );
+}
+
+fn expect_update_pending(
+    step: OperationStep<UpdateOutcome, ProviderError, CcUpdateToken>,
+) -> (CcUpdateToken, u32) {
+    match step {
+        OperationStep::Pending {
+            pending,
+            poll_after_secs,
+        } => (pending, poll_after_secs),
+        OperationStep::Done(outcome) => panic!("expected pending update, got {outcome:?}"),
+        OperationStep::Verdict(error) => panic!("expected pending update, got {error}"),
+    }
 }
 
 fn expect_create_pending(step: TestCreateStep) -> (CcCreateToken, u32) {
@@ -567,17 +991,31 @@ fn expect_create_pending(step: TestCreateStep) -> (CcCreateToken, u32) {
 
 fn test_create_poll(token: &CcCreateToken) -> CcCreatePoll<TestCreateAttempt, TestIssuedCreate> {
     match token {
-        CcCreateToken::InFlight {
-            identifier: Some(identifier),
-            ..
-        } => CcCreatePoll::Issued(TestIssuedCreate {
-            identifier: common::applied_identifier(identifier),
-        }),
-        CcCreateToken::NotIssued { .. }
-        | CcCreateToken::InFlight {
-            identifier: None, ..
-        } => CcCreatePoll::Unissued(TestCreateAttempt),
+        CcCreateToken::InFlight(create) if create.identifier().is_some() => {
+            CcCreatePoll::Issued(TestIssuedCreate {
+                identifier: common::applied_identifier(
+                    create
+                        .identifier()
+                        .expect("guard requires an in-flight identifier"),
+                ),
+            })
+        }
+        CcCreateToken::NotIssued(_)
+        | CcCreateToken::Unconfirmed(_)
+        | CcCreateToken::InFlight(_) => CcCreatePoll::Unissued(TestCreateAttempt),
     }
+}
+
+fn in_flight_create_token(identifier: Option<&str>) -> CcCreateToken {
+    let mut value = json!({
+        "phase": "in_flight",
+        "request": "create-resume",
+        "attempt": 0,
+    });
+    if let Some(identifier) = identifier {
+        value["identifier"] = json!(identifier);
+    }
+    create_token(value)
 }
 
 async fn poll_test_create(
@@ -587,15 +1025,6 @@ async fn poll_test_create(
 ) -> Result<TestCreateStep, TestCreateVerdict> {
     let poll = test_create_poll(&token);
     provider.poll_create_step(resource, token, poll).await
-}
-
-fn in_flight_create_token(identifier: Option<&str>) -> CcCreateToken {
-    CcCreateToken::InFlight {
-        request: RequestToken::from("create-resume"),
-        attempt: 0,
-        identifier: identifier.map(ToString::to_string),
-        client_token: TEST_CLIENT_TOKEN.to_string(),
-    }
 }
 
 fn expect_delete_pending(
@@ -612,13 +1041,13 @@ fn expect_delete_pending(
 }
 
 #[tokio::test]
-async fn create_resource_rejection_before_request_token_is_untracked() {
+async fn create_invalid_request_rejection_is_terminal_and_untracked() {
     let (provider, service) = provider_with_script([(
         "CreateResource",
         vec![Reply::Error {
-            status: 403,
-            code: "AccessDeniedException",
-            message: "create denied",
+            status: 400,
+            code: "InvalidRequestException",
+            message: "invalid create request",
         }],
     )])
     .await;
@@ -632,9 +1061,512 @@ async fn create_resource_rejection_before_request_token_is_untracked() {
     let TestCreateVerdict::Untracked(error) = failure else {
         panic!("CreateResource rejection must be untracked");
     };
-    assert!(error.to_string().contains("create denied"));
+    assert_cloudcontrol_api_error(
+        &error,
+        "Failed to create resource",
+        "cloudcontrol.CreateResource",
+        "InvalidRequestException",
+        "resource type AWS::EC2::VPC: AWS SDK request failed: service error: InvalidRequestException: invalid create request: InvalidRequestException: invalid create request",
+    );
     assert_eq!(service.calls("CreateResource"), 1);
     assert_eq!(service.calls("GetResourceRequestStatus"), 0);
+}
+
+#[tokio::test]
+async fn accepted_create_without_request_token_becomes_unconfirmed_and_resends_same_token() {
+    for (label, request_token) in [("missing", None), ("empty", Some(""))] {
+        let (provider, service) = provider_with_script([(
+            "CreateResource",
+            vec![
+                mutation_reply_without_request_token(request_token),
+                mutation_reply_without_identifier("create-after-missing-token"),
+            ],
+        )])
+        .await;
+        let resource = common::normalize_resource(vpc_resource()).await;
+
+        let initial = provider
+            .create_step(resource.as_resource(), TestCreateAttempt)
+            .await
+            .unwrap_or_else(|error| {
+                panic!("accepted create with {label} request token must stay tracked: {error:?}")
+            });
+        let (token, poll_after_secs) = expect_create_pending(initial);
+        let encoded = serde_json::to_value(&token).expect("serialize unconfirmed create token");
+        assert_eq!(
+            encoded["phase"], "unconfirmed",
+            "{label} request token must produce an unconfirmed create"
+        );
+        assert_eq!(encoded["attempt"], 0);
+        assert_eq!(encoded["resends"], 1);
+        assert_eq!(poll_after_secs, 1);
+
+        let resent = provider
+            .poll_create_step(
+                resource.as_resource(),
+                token,
+                CcCreatePoll::Unissued(TestCreateAttempt),
+            )
+            .await
+            .unwrap_or_else(|error| panic!("same-token resend must recover tracking: {error:?}"));
+        let (resent_token, resent_poll_after_secs) = expect_create_pending(resent);
+        assert!(matches!(
+            resent_token,
+            CcCreateToken::InFlight(ref create)
+                if create.request() == &RequestToken::from("create-after-missing-token")
+                    && create.attempt() == 0
+                    && create.identifier().is_none()
+        ));
+        assert_eq!(resent_poll_after_secs, 1);
+
+        let client_tokens = request_client_tokens(&service, "CreateResource");
+        assert_eq!(client_tokens.len(), 2);
+        assert_eq!(client_tokens[0], client_tokens[1]);
+        assert_eq!(encoded["client_token"], client_tokens[0]);
+        assert_eq!(service.calls("GetResourceRequestStatus"), 0);
+    }
+}
+
+#[tokio::test]
+async fn unconfirmed_create_without_request_token_uses_resend_backoff() {
+    let (provider, service) = provider_with_script([(
+        "CreateResource",
+        vec![
+            mutation_reply_without_request_token(None),
+            mutation_reply_without_request_token(None),
+        ],
+    )])
+    .await;
+    let resource = common::normalize_resource(vpc_resource()).await;
+
+    let initial = provider
+        .create_step(resource.as_resource(), TestCreateAttempt)
+        .await
+        .expect("accepted create without a request token must stay tracked");
+    let (token, initial_delay) = expect_create_pending(initial);
+    assert_eq!(initial_delay, 1);
+
+    let resent = provider
+        .poll_create_step(
+            resource.as_resource(),
+            token,
+            CcCreatePoll::Unissued(TestCreateAttempt),
+        )
+        .await
+        .expect("an unconfirmed missing-token reply must stay tracked");
+    let (token, delay) = expect_create_pending(resent);
+    let encoded = serde_json::to_value(&token).expect("serialize unconfirmed create token");
+    assert_eq!(encoded["phase"], "unconfirmed");
+    assert_eq!(encoded["attempt"], 0);
+    assert_eq!(encoded["resends"], 2);
+    assert_eq!(delay, 20);
+
+    let client_tokens = request_client_tokens(&service, "CreateResource");
+    assert_eq!(client_tokens.len(), 2);
+    assert_eq!(client_tokens[0], client_tokens[1]);
+    assert_eq!(encoded["client_token"], client_tokens[0]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn unconfirmed_create_rejection_from_native_drive_preserves_in_flight_token() {
+    let (provider, service) = provider_with_post_send_failures(
+        [(
+            "CreateResource",
+            vec![
+                mutation_reply_without_identifier("accepted-but-hidden"),
+                mutation_reply_without_identifier("accepted-but-hidden"),
+                mutation_reply_without_identifier("accepted-but-hidden"),
+                invalid_request(),
+            ],
+        )],
+        [("CreateResource", vec![true, false])],
+    )
+    .await;
+    let resource = vpc_resource();
+    let id = resource.id.clone();
+    let request = common::create_request(resource).await;
+
+    let failure = carina_core::executor::dispatch_create(&provider, &id, request)
+        .await
+        .expect_err("a rejected resend cannot disprove the earlier create send");
+    let CreateFailureKind::InFlight { pending, error } = failure.into_kind() else {
+        panic!("an unconfirmed create rejection must remain in flight");
+    };
+    assert_eq!(error.variant_name(), "api_error");
+    assert_eq!(
+        error.detail().context(),
+        "Failed to resend create resource; the outcome of the earlier send is unknown"
+    );
+
+    let persisted: JsonValue = serde_json::from_str(pending.token().expose_for_provider_call())
+        .expect("persisted Cloud Control create token must be valid JSON");
+    let client_tokens = request_client_tokens(&service, "CreateResource");
+    assert_eq!(client_tokens.len(), 4);
+    assert_eq!(client_tokens, vec![client_tokens[0].clone(); 4]);
+    assert_eq!(persisted["phase"], "unconfirmed");
+    assert_eq!(persisted["attempt"], 0);
+    assert_eq!(persisted["resends"], 1);
+    assert_eq!(persisted["client_token"], client_tokens[0]);
+    assert_eq!(service.calls("GetResourceRequestStatus"), 0);
+}
+
+#[tokio::test]
+async fn unconfirmed_create_rejection_from_poll_preserves_in_flight_token() {
+    let (provider, service) =
+        provider_with_script([("CreateResource", vec![invalid_request()])]).await;
+    let resource = common::normalize_resource(vpc_resource()).await;
+    let token = serde_json::from_value::<CcCreateToken>(json!({
+        "phase": "unconfirmed",
+        "attempt": 2,
+        "resends": 7,
+        "client_token": TEST_CLIENT_TOKEN,
+    }))
+    .expect("deserialize unconfirmed create continuation");
+    let pending = pending_create_for_token(resource.as_resource(), &token);
+    let Poll::Unissued(poll) = pending.into_poll() else {
+        panic!("an identifier-less pending create must produce an unissued poll");
+    };
+
+    let failure = provider
+        .poll_create_step(
+            resource.as_resource(),
+            token.clone(),
+            CcCreatePoll::Unissued(poll),
+        )
+        .await
+        .expect_err("a rejected resend cannot disprove the earlier create send");
+    let CreateFailureKind::InFlight { pending, error } = failure.into_kind() else {
+        panic!("an unconfirmed poll rejection must remain in flight");
+    };
+    assert_eq!(error.variant_name(), "api_error");
+    assert_eq!(
+        error.detail().context(),
+        "Failed to resend create resource; the outcome of the earlier send is unknown"
+    );
+    assert_eq!(
+        pending.token().expose_for_provider_call(),
+        serde_json::to_string(&token).expect("serialize expected create continuation")
+    );
+    assert_eq!(
+        request_client_tokens(&service, "CreateResource"),
+        [TEST_CLIENT_TOKEN]
+    );
+}
+
+#[tokio::test]
+async fn unissued_poll_unconfirmed_rejection_is_undetermined_with_same_token() {
+    let (provider, service) =
+        provider_with_script([("CreateResource", vec![invalid_request()])]).await;
+    let resource = common::normalize_resource(vpc_resource()).await;
+    let token = create_token(json!({
+        "phase": "unconfirmed",
+        "attempt": 2,
+        "resends": 7,
+        "client_token": TEST_CLIENT_TOKEN,
+    }));
+
+    let failure = provider
+        .poll_create_step(
+            resource.as_resource(),
+            token.clone(),
+            CcCreatePoll::Unissued(TestCreateAttempt),
+        )
+        .await
+        .expect_err("a rejected unconfirmed resend must remain undetermined");
+
+    let TestCreateVerdict::Undetermined {
+        token: preserved,
+        error,
+    } = failure
+    else {
+        panic!("an unissued unconfirmed rejection must be undetermined");
+    };
+    assert_eq!(preserved, token);
+    assert_cloudcontrol_api_error(
+        &error,
+        "Failed to resend create resource; the outcome of the earlier send is unknown",
+        "cloudcontrol.CreateResource",
+        "InvalidRequestException",
+        "resource type AWS::EC2::VPC: AWS SDK request failed: service error: InvalidRequestException: invalid create request: InvalidRequestException: invalid create request",
+    );
+    assert_eq!(
+        request_client_tokens(&service, "CreateResource"),
+        [TEST_CLIENT_TOKEN]
+    );
+}
+
+#[tokio::test]
+async fn unconfirmed_create_rejection_from_resume_preserves_in_flight_token() {
+    let (provider, service) =
+        provider_with_script([("CreateResource", vec![invalid_request()])]).await;
+    let resource = vpc_resource();
+    let token = serde_json::from_value::<CcCreateToken>(json!({
+        "phase": "unconfirmed",
+        "attempt": 2,
+        "resends": 7,
+        "client_token": TEST_CLIENT_TOKEN,
+    }))
+    .expect("deserialize unconfirmed create continuation");
+    let request = resume_request_for_token(resource, &token).await;
+
+    let failure = carina_core::executor::dispatch_resume_create(&provider, request)
+        .await
+        .expect_err("a rejected resumed send cannot disprove the earlier create send");
+    let ResumeFailureKind::InFlight { pending, error } = failure.into_kind() else {
+        panic!("an unconfirmed resume rejection must remain in flight");
+    };
+    assert_eq!(error.variant_name(), "api_error");
+    assert_eq!(
+        error.detail().context(),
+        "Failed to resend create resource; the outcome of the earlier send is unknown"
+    );
+    assert_eq!(
+        pending.token().expose_for_provider_call(),
+        serde_json::to_string(&token).expect("serialize expected create continuation")
+    );
+    assert_eq!(
+        request_client_tokens(&service, "CreateResource"),
+        [TEST_CLIENT_TOKEN]
+    );
+}
+
+#[tokio::test]
+async fn unconfirmed_create_pre_send_failure_from_resume_preserves_pending_token() {
+    let (provider, service) =
+        provider_with_script(std::iter::empty::<(&'static str, Vec<Reply>)>()).await;
+    let resource = Resource::with_provider("awscc", "s3.Bucket", "invalid_resume", None)
+        .with_attribute("bucket_name", string("carina-invalid-resume"))
+        .with_attribute(
+            "tags",
+            Value::Concrete(ConcreteValue::Map(IndexMap::from([(
+                "env".to_string(),
+                bool_(true),
+            )]))),
+        );
+    let token = serde_json::from_value::<CcCreateToken>(json!({
+        "phase": "unconfirmed",
+        "attempt": 2,
+        "resends": 7,
+        "client_token": TEST_CLIENT_TOKEN,
+    }))
+    .expect("deserialize unconfirmed create continuation");
+
+    let request = resume_request_for_unchecked_resource(resource, &token).await;
+    let failure = carina_core::executor::dispatch_resume_create(&provider, request)
+        .await
+        .expect_err("a pre-send failure cannot disprove the earlier create send");
+    let ResumeFailureKind::InFlight { pending, error } = failure.into_kind() else {
+        panic!("an unconfirmed pre-send failure must remain in flight");
+    };
+    assert_eq!(
+        pending.token().expose_for_provider_call(),
+        serde_json::to_string(&token).expect("serialize expected create continuation")
+    );
+    assert_eq!(pending.identifier(), None);
+    assert_eq!(error.variant_name(), "invalid_input");
+    assert_eq!(
+        error.detail().context(),
+        "failed to encode `tags` attribute for resource s3.Bucket: expected a map with string values"
+    );
+    assert_eq!(service.calls("CreateResource"), 0);
+}
+
+#[tokio::test]
+async fn issued_poll_unconfirmed_client_token_conflict_retries_with_same_token() {
+    let (provider, service) =
+        provider_with_script([("CreateResource", vec![client_token_conflict()])]).await;
+    let resource = common::normalize_resource(vpc_resource()).await;
+    let token = create_token(json!({
+        "phase": "unconfirmed",
+        "attempt": 2,
+        "resends": 7,
+        "client_token": TEST_CLIENT_TOKEN,
+    }));
+    let issued_identifier = vpc_identifier();
+
+    let step = provider
+        .poll_create_step::<TestCreateAttempt>(
+            resource.as_resource(),
+            token,
+            CcCreatePoll::Issued(TestIssuedCreate {
+                identifier: issued_identifier.clone(),
+            }),
+        )
+        .await
+        .expect("ClientTokenConflictException must retry an unconfirmed create");
+
+    let TestCreateStep::Pending {
+        token,
+        poll_after_secs,
+        issued,
+    } = step
+    else {
+        panic!("a retryable client-token conflict must remain pending");
+    };
+    let encoded = serde_json::to_value(&token).expect("serialize retried create token");
+    assert_eq!(encoded["phase"], "unconfirmed");
+    assert_eq!(encoded["attempt"], 2);
+    assert_eq!(encoded["resends"], 8);
+    assert_eq!(encoded["client_token"], TEST_CLIENT_TOKEN);
+    assert_eq!(poll_after_secs, 120);
+    assert_eq!(issued, Some(issued_identifier));
+    assert_eq!(
+        request_client_tokens(&service, "CreateResource"),
+        [TEST_CLIENT_TOKEN]
+    );
+}
+
+#[tokio::test]
+async fn issued_poll_unconfirmed_non_retryable_rejection_preserves_create() {
+    let (provider, service) =
+        provider_with_script([("CreateResource", vec![invalid_request()])]).await;
+    let resource = common::normalize_resource(vpc_resource()).await;
+    let token = create_token(json!({
+        "phase": "unconfirmed",
+        "attempt": 2,
+        "resends": 7,
+        "client_token": TEST_CLIENT_TOKEN,
+    }));
+    let issued_identifier = vpc_identifier();
+
+    let failure = provider
+        .poll_create_step::<TestCreateAttempt>(
+            resource.as_resource(),
+            token.clone(),
+            CcCreatePoll::Issued(TestIssuedCreate {
+                identifier: issued_identifier.clone(),
+            }),
+        )
+        .await
+        .expect_err("a permanent rejection cannot disprove an earlier create send");
+
+    let TestCreateVerdict::Preserved {
+        token: preserved,
+        identifier,
+        error,
+    } = failure
+    else {
+        panic!("an issued unconfirmed rejection must preserve the create");
+    };
+    assert_eq!(preserved, token);
+    assert_eq!(identifier, issued_identifier);
+    assert_cloudcontrol_api_error(
+        &error,
+        "Failed to resend create resource; the outcome of the earlier send is unknown",
+        "cloudcontrol.CreateResource",
+        "InvalidRequestException",
+        "resource type AWS::EC2::VPC: AWS SDK request failed: service error: InvalidRequestException: invalid create request: InvalidRequestException: invalid create request",
+    );
+    assert_eq!(
+        request_client_tokens(&service, "CreateResource"),
+        [TEST_CLIENT_TOKEN]
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn resume_initialization_error_preserves_unissued_and_issued_continuations() {
+    let provider = provider_with_initialization_error().await;
+    let initialization_error = provider
+        .init_error()
+        .expect("test provider must retain its initialization error")
+        .to_string();
+    let cases = [
+        (
+            "unissued",
+            create_token(json!({
+                "phase": "not_issued",
+                "attempt": 0,
+                "client_token": TEST_CLIENT_TOKEN,
+            })),
+            None,
+        ),
+        (
+            "issued",
+            create_token(json!({
+                "phase": "in_flight",
+                "request": "create-before-init-error",
+                "attempt": 0,
+                "identifier": VPC_ID,
+            })),
+            Some(vpc_identifier()),
+        ),
+    ];
+
+    for (label, token, expected_identifier) in cases {
+        let request = resume_request_for_token(vpc_resource(), &token).await;
+        let failure = match carina_core::executor::dispatch_resume_create(&provider, request).await
+        {
+            Err(failure) => failure,
+            Ok(outcome) => {
+                panic!("{label} resume must preserve its initialization error, got {outcome:?}")
+            }
+        };
+        let ResumeFailureKind::InFlight { pending, error } = failure.into_kind() else {
+            panic!("{label} resume initialization failure must remain in flight");
+        };
+        assert_eq!(
+            pending.token().expose_for_provider_call(),
+            serde_json::to_string(&token).expect("serialize expected preserved token")
+        );
+        assert_eq!(pending.identifier(), expected_identifier.as_ref());
+        assert_eq!(error.variant_name(), "invalid_input");
+        assert_eq!(error.detail().context(), initialization_error.as_str());
+        assert_eq!(error.detail().provider_name.as_deref(), Some("awscc"));
+        assert_eq!(error.detail().resource_id.as_deref(), Some(pending.id()));
+    }
+}
+
+#[tokio::test]
+async fn resume_unknown_resource_type_preserves_unissued_and_issued_witnesses() {
+    let (provider, service) =
+        provider_with_script(std::iter::empty::<(&'static str, Vec<Reply>)>()).await;
+    let resource = Resource::with_provider("awscc", "unknown.Resource", "pending", None);
+    let issued_identifier = common::applied_identifier("unknown-identifier");
+    let cases = [
+        (
+            "unissued",
+            create_token(json!({
+                "phase": "not_issued",
+                "attempt": 0,
+                "client_token": TEST_CLIENT_TOKEN,
+            })),
+            CcCreateResume::Unissued(TestCreateAttempt),
+            None,
+        ),
+        (
+            "issued",
+            create_token(json!({
+                "phase": "in_flight",
+                "request": "unknown-resource-create",
+                "attempt": 0,
+                "identifier": issued_identifier.as_str(),
+            })),
+            CcCreateResume::Issued(TestIssuedCreate {
+                identifier: issued_identifier.clone(),
+            }),
+            Some(issued_identifier.clone()),
+        ),
+    ];
+
+    for (label, token, resume, expected_identifier) in cases {
+        let failure = match provider.resume_create_step(&resource, token, resume).await {
+            Err(failure) => failure,
+            Ok(step) => {
+                panic!("{label} unknown-type resume must preserve its error, got {step:?}")
+            }
+        };
+        let TestCreateVerdict::ResumePreserved { identifier, error } = failure else {
+            panic!("{label} unknown-type resume must use the preserving verdict");
+        };
+        assert_eq!(identifier, expected_identifier);
+        assert_eq!(error.variant_name(), "internal");
+        assert_eq!(
+            error.detail().context(),
+            "Unknown resource type: unknown.Resource"
+        );
+        assert_eq!(error.detail().resource_id.as_deref(), Some(&resource.id));
+    }
+    assert_eq!(service.actions(), Vec::<String>::new());
 }
 
 #[tokio::test]
@@ -669,18 +1601,14 @@ async fn progress_identifier_transitions_pending_create_to_issued() {
         .await
         .expect("in-progress status with an identifier remains pending");
     let TestCreateStep::Pending {
-        token:
-            CcCreateToken::InFlight {
-                identifier: Some(token_identifier),
-                ..
-            },
+        token: CcCreateToken::InFlight(create),
         issued: Some(issued_identifier),
         ..
     } = next
     else {
         panic!("the first progress identifier must consume the issued transition");
     };
-    assert_eq!(token_identifier, VPC_ID);
+    assert_eq!(create.identifier(), Some(VPC_ID));
     assert_eq!(issued_identifier.as_str(), VPC_ID);
     assert_eq!(
         service.actions(),
@@ -744,16 +1672,14 @@ async fn accepted_in_progress_create_over_budget_preserves_token_and_identifier(
         .expect("persisted CloudControl token should decode");
     assert!(matches!(
         token,
-        CcCreateToken::InFlight {
-            request,
-            attempt: 0,
-            identifier: Some(identifier),
-            ..
-        } if request == RequestToken::from("create-budget") && identifier == VPC_ID
+        CcCreateToken::InFlight(create)
+            if create.request() == &RequestToken::from("create-budget")
+                && create.attempt() == 0
+                && create.identifier() == Some(VPC_ID)
     ));
     assert_eq!(error.variant_name(), "timeout");
     assert_eq!(service.calls("CreateResource"), 1);
-    assert!(service.calls("GetResourceRequestStatus") > 0);
+    assert_eq!(service.calls("GetResourceRequestStatus"), 15);
     assert_eq!(service.calls("GetResource"), 0);
 }
 
@@ -1039,7 +1965,7 @@ async fn poll_expired_token_with_identifier_and_not_found_is_discarded() {
 }
 
 #[tokio::test]
-async fn resume_expired_token_without_identifier_is_undetermined() {
+async fn resume_expired_token_without_identifier_preserves_pending_token() {
     let (provider, service) = provider_with_script([(
         "GetResourceRequestStatus",
         vec![Reply::Error {
@@ -1049,21 +1975,25 @@ async fn resume_expired_token_without_identifier_is_undetermined() {
         }],
     )])
     .await;
-    let resource = common::normalize_resource(vpc_resource()).await;
-
-    let failure = provider
-        .resume_create_step(
-            resource.as_resource(),
-            in_flight_create_token(None),
-            CcCreateResume::<TestCreateAttempt, TestIssuedCreate>::Unissued(TestCreateAttempt),
-        )
+    let token = in_flight_create_token(None);
+    let request = resume_request_for_token(vpc_resource(), &token).await;
+    let failure = carina_core::executor::dispatch_resume_create(&provider, request)
         .await
         .expect_err("an unknown request with no identifier is undetermined");
 
-    let TestCreateVerdict::Undetermined(error) = failure else {
-        panic!("expired token without an identifier must be undetermined");
+    let ResumeFailureKind::InFlight { pending, error } = failure.into_kind() else {
+        panic!("expired token without an identifier must remain in flight");
     };
-    assert!(error.to_string().contains("no longer known"));
+    assert_eq!(
+        pending.token().expose_for_provider_call(),
+        serde_json::to_string(&token).expect("serialize expected create continuation")
+    );
+    assert_eq!(pending.identifier(), None);
+    assert_eq!(error.variant_name(), "api_error");
+    assert_eq!(
+        error.detail().context(),
+        "Cloud Control request token is no longer known"
+    );
     assert_eq!(service.calls("GetResource"), 0);
 }
 
@@ -1116,32 +2046,27 @@ async fn resume_not_issued_uses_resend_attempt() {
     let step = provider
         .resume_create_step(
             resource.as_resource(),
-            CcCreateToken::NotIssued {
-                attempt: 1,
-                client_token: TEST_CLIENT_TOKEN.to_string(),
-            },
+            create_token(json!({
+                "phase": "not_issued",
+                "attempt": 1,
+                "client_token": TEST_CLIENT_TOKEN,
+            })),
             CcCreateResume::<TestCreateAttempt, TestIssuedCreate>::Unissued(TestCreateAttempt),
         )
         .await
         .expect("NotIssued resume must resend the desired state");
 
     let TestCreateStep::Pending {
-        token:
-            CcCreateToken::InFlight {
-                request,
-                attempt,
-                identifier: Some(identifier),
-                ..
-            },
+        token: CcCreateToken::InFlight(create),
         issued: Some(issued),
         ..
     } = step
     else {
         panic!("resent accepted create must become issued pending");
     };
-    assert_eq!(request, RequestToken::from("create-resent"));
-    assert_eq!(attempt, 1);
-    assert_eq!(identifier, VPC_ID);
+    assert_eq!(create.request(), &RequestToken::from("create-resent"));
+    assert_eq!(create.attempt(), 1);
+    assert_eq!(create.identifier(), Some(VPC_ID));
     assert_eq!(issued.as_str(), VPC_ID);
     assert_eq!(service.calls("CreateResource"), 1);
     assert_eq!(service.calls("GetResourceRequestStatus"), 0);
@@ -1226,12 +2151,10 @@ async fn pending_statuses_keep_the_same_create_token_and_success_reads_back() {
     assert_eq!(delay, 1);
     assert!(matches!(
         &token,
-        CcCreateToken::InFlight {
-            request,
-            attempt: 0,
-            identifier: Some(identifier),
-            ..
-        } if request == &RequestToken::from("create-0") && identifier == VPC_ID
+        CcCreateToken::InFlight(create)
+            if create.request() == &RequestToken::from("create-0")
+                && create.attempt() == 0
+                && create.identifier() == Some(VPC_ID)
     ));
     let expected = token.clone();
 
@@ -1263,7 +2186,7 @@ async fn pending_statuses_keep_the_same_create_token_and_success_reads_back() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn retryable_initial_sdk_error_returns_not_issued_and_poll_resends_same_request() {
+async fn create_throttling_retries_with_the_same_client_token() {
     let (provider, service) = provider_with_script([(
         "CreateResource",
         vec![
@@ -1284,7 +2207,7 @@ async fn retryable_initial_sdk_error_returns_not_issued_and_poll_resends_same_re
     );
     assert!(matches!(
         &token,
-        CcCreateToken::NotIssued { attempt: 1, .. }
+        CcCreateToken::NotIssued(create) if create.attempt() == 1
     ));
     assert_eq!(delay, 10);
     assert_eq!(service.calls("CreateResource"), 3);
@@ -1296,12 +2219,10 @@ async fn retryable_initial_sdk_error_returns_not_issued_and_poll_resends_same_re
     );
     assert!(matches!(
         token,
-        CcCreateToken::InFlight {
-            request,
-            attempt: 1,
-            identifier: Some(identifier),
-            ..
-        } if request == RequestToken::from("create-1") && identifier == VPC_ID
+        CcCreateToken::InFlight(create)
+            if create.request() == &RequestToken::from("create-1")
+                && create.attempt() == 1
+                && create.identifier() == Some(VPC_ID)
     ));
     assert_eq!(delay, 1);
     assert_eq!(service.calls("CreateResource"), 4);
@@ -1321,6 +2242,50 @@ async fn retryable_initial_sdk_error_returns_not_issued_and_poll_resends_same_re
         .expect("an in-run resend must include a ClientToken");
     assert!(common::is_uuidish(first_client_token));
     assert_eq!(retried_client_token, first_client_token);
+}
+
+#[tokio::test]
+async fn not_issued_client_token_conflict_retries_with_the_same_client_token() {
+    let (provider, service) = provider_with_script([(
+        "CreateResource",
+        vec![
+            client_token_conflict(),
+            mutation_reply("create-after-conflict", VPC_ID),
+        ],
+    )])
+    .await;
+    let resource = common::normalize_resource(vpc_resource()).await;
+
+    let (token, delay) = expect_create_pending(
+        provider
+            .create_step(resource.as_resource(), TestCreateAttempt)
+            .await
+            .expect("a not-issued client-token conflict must schedule a bounded retry"),
+    );
+    assert!(matches!(
+        &token,
+        CcCreateToken::NotIssued(create) if create.attempt() == 1
+    ));
+    assert_eq!(delay, 10);
+
+    let (token, delay) = expect_create_pending(
+        poll_test_create(&provider, resource.as_resource(), token)
+            .await
+            .expect("the bounded retry must reuse the original client token"),
+    );
+    assert!(matches!(
+        token,
+        CcCreateToken::InFlight(create)
+            if create.request() == &RequestToken::from("create-after-conflict")
+                && create.attempt() == 1
+                && create.identifier() == Some(VPC_ID)
+    ));
+    assert_eq!(delay, 1);
+    assert_eq!(service.calls("CreateResource"), 2);
+    let client_tokens = request_client_tokens(&service, "CreateResource");
+    assert_eq!(client_tokens.len(), 2);
+    assert!(common::is_uuidish(&client_tokens[0]));
+    assert_eq!(client_tokens[1], client_tokens[0]);
 }
 
 #[tokio::test(start_paused = true)]
@@ -1345,7 +2310,7 @@ async fn resume_not_issued_reuses_original_create_client_token() {
     );
     assert!(matches!(
         &token,
-        CcCreateToken::NotIssued { attempt: 1, .. }
+        CcCreateToken::NotIssued(create) if create.attempt() == 1
     ));
 
     let step = provider
@@ -1409,7 +2374,7 @@ async fn retryable_failed_status_reissues_with_incremented_attempt_and_backoff()
     );
     assert!(matches!(
         &token,
-        CcCreateToken::NotIssued { attempt: 1, .. }
+        CcCreateToken::NotIssued(create) if create.attempt() == 1
     ));
     assert_eq!(delay, 10);
     assert_eq!(service.calls("GetResourceRequestStatus"), 1);
@@ -1422,15 +2387,204 @@ async fn retryable_failed_status_reissues_with_incremented_attempt_and_backoff()
     );
     assert!(matches!(
         token,
-        CcCreateToken::InFlight {
-            request,
-            attempt: 1,
-            identifier: Some(identifier),
-            ..
-        } if request == RequestToken::from("create-1") && identifier == VPC_ID
+        CcCreateToken::InFlight(create)
+            if create.request() == &RequestToken::from("create-1")
+                && create.attempt() == 1
+                && create.identifier() == Some(VPC_ID)
     ));
     assert_eq!(delay, 1);
     assert_eq!(service.calls("CreateResource"), 2);
+    let client_tokens = request_client_tokens(&service, "CreateResource");
+    assert_eq!(client_tokens.len(), 2);
+    assert_ne!(client_tokens[0], client_tokens[1]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn create_one_maybe_sent_then_uncapped_throttling_stays_pending() {
+    let (provider, service) = provider_with_post_send_failures(
+        [(
+            "CreateResource",
+            vec![
+                mutation_reply_without_identifier("never-returned"),
+                mutation_reply_without_identifier("never-returned"),
+                mutation_reply_without_identifier("never-returned"),
+                throttled(),
+            ],
+        )],
+        [("CreateResource", vec![true, false])],
+    )
+    .await;
+    let resource = common::normalize_resource(vpc_resource()).await;
+
+    let (mut token, delay) = expect_create_pending(
+        provider
+            .create_step(resource.as_resource(), TestCreateAttempt)
+            .await
+            .expect("first outcome-unknown create should remain pending"),
+    );
+    let encoded = serde_json::to_value(&token).expect("serialize create continuation");
+    assert_eq!(encoded["phase"], "unconfirmed");
+    assert_eq!(encoded["attempt"], 0);
+    assert_eq!(encoded["resends"], 1);
+    assert_eq!(delay, 10);
+
+    for expected_resends in 2..=14 {
+        let (next, delay) = expect_create_pending(
+            poll_test_create(&provider, resource.as_resource(), token)
+                .await
+                .unwrap_or_else(|error| {
+                    panic!(
+                        "throttled unconfirmed create resend {expected_resends} was lost: {error:?}"
+                    )
+                }),
+        );
+        let encoded = serde_json::to_value(&next).expect("serialize create continuation");
+        assert_eq!(encoded["phase"], "unconfirmed");
+        assert_eq!(encoded["attempt"], 0);
+        assert_eq!(encoded["resends"], expected_resends);
+        let expected_delay = match expected_resends {
+            2 => 20,
+            3 => 40,
+            4 => 80,
+            5..=14 => 120,
+            _ => unreachable!("test resend range is exact"),
+        };
+        assert_eq!(delay, expected_delay);
+        token = next;
+    }
+
+    let client_tokens = request_client_tokens(&service, "CreateResource");
+    assert_eq!(client_tokens.len(), 42);
+    assert_eq!(client_tokens, vec![client_tokens[0].clone(); 42]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn create_repeated_post_send_timeouts_past_max_attempts_stay_pending() {
+    let (provider, service) = provider_with_post_send_failures(
+        [(
+            "CreateResource",
+            vec![mutation_reply_without_identifier("never-returned")],
+        )],
+        [("CreateResource", vec![true])],
+    )
+    .await;
+    let resource = common::normalize_resource(vpc_resource()).await;
+
+    let (mut token, delay) = expect_create_pending(
+        provider
+            .create_step(resource.as_resource(), TestCreateAttempt)
+            .await
+            .expect("first post-send timeout must remain pending"),
+    );
+    let encoded = serde_json::to_value(&token).expect("serialize create continuation");
+    assert_eq!(encoded["phase"], "unconfirmed");
+    assert_eq!(encoded["attempt"], 0);
+    assert_eq!(encoded["resends"], 1);
+    assert_eq!(delay, 10);
+
+    for expected_resends in 2..=14 {
+        let (next, delay) = expect_create_pending(
+            poll_test_create(&provider, resource.as_resource(), token)
+                .await
+                .unwrap_or_else(|error| {
+                    panic!(
+                        "post-send timeout on create resend {expected_resends} was lost: {error:?}"
+                    )
+                }),
+        );
+        let encoded = serde_json::to_value(&next).expect("serialize create continuation");
+        assert_eq!(encoded["phase"], "unconfirmed");
+        assert_eq!(encoded["attempt"], 0);
+        assert_eq!(encoded["resends"], expected_resends);
+        let expected_delay = match expected_resends {
+            2 => 20,
+            3 => 40,
+            4 => 80,
+            5..=14 => 120,
+            _ => unreachable!("test resend range is exact"),
+        };
+        assert_eq!(delay, expected_delay);
+        token = next;
+    }
+
+    let client_tokens = request_client_tokens(&service, "CreateResource");
+    assert_eq!(client_tokens.len(), 42);
+    assert_eq!(client_tokens, vec![client_tokens[0].clone(); 42]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn unconfirmed_resends_do_not_consume_failed_status_retry_budget() {
+    let mut create_replies = vec![
+        mutation_reply_without_identifier("accepted-but-hidden"),
+        mutation_reply_without_identifier("accepted-but-hidden"),
+        mutation_reply_without_identifier("accepted-but-hidden"),
+    ];
+    create_replies.extend((0..39).map(|_| throttled()));
+    create_replies.push(mutation_reply_without_identifier("accepted-after-resends"));
+    let (provider, service) = provider_with_post_send_failures(
+        [
+            ("CreateResource", create_replies),
+            (
+                "GetResourceRequestStatus",
+                vec![status_reply(
+                    "FAILED",
+                    None,
+                    Some("IpamPool is missing a source resource"),
+                )],
+            ),
+        ],
+        [("CreateResource", vec![true, false])],
+    )
+    .await;
+    let resource = common::normalize_resource(vpc_resource()).await;
+
+    let (mut token, delay) = expect_create_pending(
+        provider
+            .create_step(resource.as_resource(), TestCreateAttempt)
+            .await
+            .expect("first outcome-unknown create must remain pending"),
+    );
+    assert_eq!(delay, 10);
+    for expected_resends in 2..=14 {
+        let (next, _) = expect_create_pending(
+            poll_test_create(&provider, resource.as_resource(), token)
+                .await
+                .unwrap_or_else(|error| {
+                    panic!("unconfirmed create resend {expected_resends} was lost: {error:?}")
+                }),
+        );
+        let encoded = serde_json::to_value(&next).expect("serialize create continuation");
+        assert_eq!(encoded["attempt"], 0);
+        assert_eq!(encoded["resends"], expected_resends);
+        token = next;
+    }
+
+    let (token, delay) = expect_create_pending(
+        poll_test_create(&provider, resource.as_resource(), token)
+            .await
+            .expect("the accepted resend must become an in-flight create"),
+    );
+    assert_eq!(delay, 1);
+    assert!(matches!(
+        &token,
+        CcCreateToken::InFlight(create)
+            if create.request() == &RequestToken::from("accepted-after-resends")
+                && create.attempt() == 0
+                && create.identifier().is_none()
+    ));
+
+    let (token, delay) = expect_create_pending(
+        poll_test_create(&provider, resource.as_resource(), token)
+            .await
+            .expect("the first retryable FAILED status must retain the full retry budget"),
+    );
+    assert!(matches!(
+        token,
+        CcCreateToken::NotIssued(create) if create.attempt() == 1
+    ));
+    assert_eq!(delay, 10);
+    assert_eq!(service.calls("CreateResource"), 43);
+    assert_eq!(service.calls("GetResourceRequestStatus"), 1);
 }
 
 #[tokio::test]
@@ -1447,14 +2601,22 @@ async fn failed_status_retry_follows_message_not_handler_error_code() {
     .await;
     let resource = common::normalize_resource(vpc_resource()).await;
 
-    let failure = poll_test_create(
-        &provider,
-        resource.as_resource(),
-        in_flight_create_token(None),
-    )
-    .await
-    .expect_err("a retryable-looking code must not override a permanent message");
-    assert!(matches!(failure, TestCreateVerdict::Untracked(_)));
+    let token = in_flight_create_token(None);
+    let failure = poll_test_create(&provider, resource.as_resource(), token.clone())
+        .await
+        .expect_err("a retryable-looking code must not override a permanent message");
+    let TestCreateVerdict::Undetermined {
+        token: preserved,
+        error,
+    } = failure
+    else {
+        panic!("an identifier-less accepted create must remain tracked");
+    };
+    assert_eq!(preserved, token);
+    assert_eq!(
+        error.detail().context(),
+        "Cloud Control create ended with FAILED: invalid configuration"
+    );
     assert_eq!(service.calls("CreateResource"), 0);
 
     let (provider, service) = provider_with_script([(
@@ -1478,7 +2640,10 @@ async fn failed_status_retry_follows_message_not_handler_error_code() {
         .await
         .expect("a known retryable message must override a permanent-looking code"),
     );
-    assert!(matches!(token, CcCreateToken::NotIssued { attempt: 1, .. }));
+    assert!(matches!(
+        token,
+        CcCreateToken::NotIssued(create) if create.attempt() == 1
+    ));
     assert_eq!(delay, 10);
     assert_eq!(service.calls("CreateResource"), 0);
 }
@@ -1525,7 +2690,7 @@ async fn retryable_failed_create_with_identifier_is_created_without_reissue() {
 }
 
 #[tokio::test]
-async fn cancel_complete_without_identifier_is_untracked_without_reissue() {
+async fn cancel_complete_without_identifier_is_undetermined_without_reissue() {
     let (provider, service) = provider_with_script([
         (
             "CreateResource",
@@ -1545,12 +2710,18 @@ async fn cancel_complete_without_identifier_is_untracked_without_reissue() {
             .expect("issue create"),
     );
 
+    let expected = token.clone();
     let failure = poll_test_create(&provider, resource.as_resource(), token)
         .await
         .expect_err("a deliberately canceled create must not be re-issued");
-    let TestCreateVerdict::Untracked(error) = failure else {
-        panic!("identifier-less CANCEL_COMPLETE must be untracked");
+    let TestCreateVerdict::Undetermined {
+        token: preserved,
+        error,
+    } = failure
+    else {
+        panic!("identifier-less CANCEL_COMPLETE must remain tracked");
     };
+    assert_eq!(preserved, expected);
     assert!(error.to_string().contains("Throttling"));
     assert_eq!(service.calls("CreateResource"), 1);
 }
@@ -1581,12 +2752,345 @@ async fn retryable_failed_delete_schedules_reissue_after_backoff() {
             .await
             .expect("schedule delete retry"),
     );
-    assert_eq!(
+    assert!(matches!(
         token,
-        CcDeleteToken::Delete(CcRequestPhase::NotIssued { attempt: 1 })
-    );
+        CcDeleteToken::Delete(CcRequestPhase::NotIssued(request))
+            if request.attempt() == 1
+    ));
     assert_eq!(delay, 10);
     assert_eq!(service.calls("DeleteResource"), 1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn delete_post_send_timeout_resends_with_same_client_token() {
+    let (provider, service) = provider_with_post_send_failures(
+        [(
+            "DeleteResource",
+            vec![mutation_reply("delete-timeout", VPC_ID)],
+        )],
+        [("DeleteResource", vec![true, false])],
+    )
+    .await;
+    let id = ResourceId::with_provider_identity("awscc", "ec2.Vpc", "pending", None);
+    let request = DeleteRequest::default();
+
+    let (token, delay) = expect_delete_pending(
+        provider
+            .delete_step(&id, &vpc_identifier(), &request)
+            .await
+            .expect("an outcome-unknown delete should remain pending"),
+    );
+    assert!(matches!(
+        &token,
+        CcDeleteToken::Delete(CcRequestPhase::Unconfirmed(request))
+            if request.attempt() == 0
+    ));
+    assert_eq!(delay, 10);
+
+    let (token, delay) = expect_delete_pending(
+        provider
+            .poll_delete_step(&id, &vpc_identifier(), &request, token)
+            .await
+            .expect("resending with the same token should recover the request"),
+    );
+    assert!(matches!(
+        token,
+        CcDeleteToken::Delete(CcRequestPhase::InFlight(request))
+            if request.request() == &RequestToken::from("delete-timeout")
+                && request.attempt() == 0
+    ));
+    assert_eq!(delay, 1);
+
+    let client_tokens = request_client_tokens(&service, "DeleteResource");
+    assert_eq!(client_tokens.len(), 4);
+    assert!(common::is_uuidish(&client_tokens[0]));
+    assert!(client_tokens.iter().all(|token| token == &client_tokens[0]));
+}
+
+#[tokio::test(start_paused = true)]
+async fn unconfirmed_delete_rejection_reports_unknown_earlier_outcome() {
+    let (provider, service) = provider_with_post_send_failures(
+        [(
+            "DeleteResource",
+            vec![
+                mutation_reply("accepted-but-hidden", VPC_ID),
+                mutation_reply("accepted-but-hidden", VPC_ID),
+                mutation_reply("accepted-but-hidden", VPC_ID),
+                invalid_request(),
+            ],
+        )],
+        [("DeleteResource", vec![true, false])],
+    )
+    .await;
+    let id = ResourceId::with_provider_identity("awscc", "ec2.Vpc", "pending", None);
+    let request = DeleteRequest::default();
+    let (token, delay) = expect_delete_pending(
+        provider
+            .delete_step(&id, &vpc_identifier(), &request)
+            .await
+            .expect("an outcome-unknown delete must remain pending"),
+    );
+    assert_eq!(delay, 10);
+
+    let error = provider
+        .poll_delete_step(&id, &vpc_identifier(), &request, token)
+        .await
+        .expect_err("a permanent rejection must stop the delete resend loop");
+    assert_eq!(error.variant_name(), "api_error");
+    assert_eq!(
+        error.detail().context(),
+        "Failed to resend delete resource; the outcome of the earlier send is unknown"
+    );
+    let client_tokens = request_client_tokens(&service, "DeleteResource");
+    assert_eq!(client_tokens.len(), 4);
+    assert_eq!(client_tokens, vec![client_tokens[0].clone(); 4]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn delete_one_post_send_timeout_then_uncapped_throttling_stays_pending() {
+    let (provider, service) = provider_with_post_send_failures(
+        [(
+            "DeleteResource",
+            vec![
+                mutation_reply("never-returned", VPC_ID),
+                mutation_reply("never-returned", VPC_ID),
+                mutation_reply("never-returned", VPC_ID),
+                throttled(),
+            ],
+        )],
+        [("DeleteResource", vec![true, false])],
+    )
+    .await;
+    let id = ResourceId::with_provider_identity("awscc", "ec2.Vpc", "pending", None);
+    let request = DeleteRequest::default();
+
+    let (mut token, delay) = expect_delete_pending(
+        provider
+            .delete_step(&id, &vpc_identifier(), &request)
+            .await
+            .expect("first outcome-unknown delete should remain pending"),
+    );
+    let encoded = serde_json::to_value(&token).expect("serialize delete continuation");
+    assert_eq!(encoded["request"]["phase"], "unconfirmed");
+    assert_eq!(encoded["request"]["attempt"], 0);
+    assert_eq!(encoded["request"]["resends"], 1);
+    assert_eq!(delay, 10);
+
+    for expected_resends in 2..=14 {
+        let (next, delay) = expect_delete_pending(
+            provider
+                .poll_delete_step(&id, &vpc_identifier(), &request, token)
+                .await
+                .unwrap_or_else(|error| {
+                    panic!(
+                        "throttled unconfirmed delete resend {expected_resends} was capped: {error}"
+                    )
+                }),
+        );
+        let encoded = serde_json::to_value(&next).expect("serialize delete continuation");
+        assert_eq!(encoded["request"]["phase"], "unconfirmed");
+        assert_eq!(encoded["request"]["attempt"], 0);
+        assert_eq!(encoded["request"]["resends"], expected_resends);
+        let expected_delay = match expected_resends {
+            2 => 20,
+            3 => 40,
+            4 => 80,
+            5..=14 => 120,
+            _ => unreachable!("test resend range is exact"),
+        };
+        assert_eq!(delay, expected_delay);
+        token = next;
+    }
+
+    let client_tokens = request_client_tokens(&service, "DeleteResource");
+    assert_eq!(client_tokens.len(), 42);
+    assert_eq!(client_tokens, vec![client_tokens[0].clone(); 42]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn delete_repeated_post_send_timeouts_past_max_attempts_stay_pending() {
+    let (provider, service) = provider_with_post_send_failures(
+        [(
+            "DeleteResource",
+            vec![mutation_reply("never-returned", VPC_ID)],
+        )],
+        [("DeleteResource", vec![true])],
+    )
+    .await;
+    let id = ResourceId::with_provider_identity("awscc", "ec2.Vpc", "pending", None);
+    let request = DeleteRequest::default();
+
+    let (mut token, delay) = expect_delete_pending(
+        provider
+            .delete_step(&id, &vpc_identifier(), &request)
+            .await
+            .expect("first post-send timeout must remain pending"),
+    );
+    let encoded = serde_json::to_value(&token).expect("serialize delete continuation");
+    assert_eq!(encoded["request"]["phase"], "unconfirmed");
+    assert_eq!(encoded["request"]["attempt"], 0);
+    assert_eq!(encoded["request"]["resends"], 1);
+    assert_eq!(delay, 10);
+
+    for expected_resends in 2..=14 {
+        let (next, delay) = expect_delete_pending(
+            provider
+                .poll_delete_step(&id, &vpc_identifier(), &request, token)
+                .await
+                .unwrap_or_else(|error| {
+                    panic!(
+                        "post-send timeout on delete resend {expected_resends} was capped: {error}"
+                    )
+                }),
+        );
+        let encoded = serde_json::to_value(&next).expect("serialize delete continuation");
+        assert_eq!(encoded["request"]["phase"], "unconfirmed");
+        assert_eq!(encoded["request"]["attempt"], 0);
+        assert_eq!(encoded["request"]["resends"], expected_resends);
+        let expected_delay = match expected_resends {
+            2 => 20,
+            3 => 40,
+            4 => 80,
+            5..=14 => 120,
+            _ => unreachable!("test resend range is exact"),
+        };
+        assert_eq!(delay, expected_delay);
+        token = next;
+    }
+
+    let client_tokens = request_client_tokens(&service, "DeleteResource");
+    assert_eq!(client_tokens.len(), 42);
+    assert_eq!(client_tokens, vec![client_tokens[0].clone(); 42]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn delete_throttling_reuses_client_token_until_retry_cap() {
+    let (provider, service) = provider_with_script([("DeleteResource", vec![throttled()])]).await;
+    let id = ResourceId::with_provider_identity("awscc", "ec2.Vpc", "pending", None);
+    let request = DeleteRequest::default();
+
+    let (mut token, _) = expect_delete_pending(
+        provider
+            .delete_step(&id, &vpc_identifier(), &request)
+            .await
+            .expect("first throttled delete should schedule a retry"),
+    );
+    for expected_attempt in 2..=12 {
+        let (next, _) = expect_delete_pending(
+            provider
+                .poll_delete_step(&id, &vpc_identifier(), &request, token)
+                .await
+                .unwrap_or_else(|error| {
+                    panic!("throttled delete attempt {expected_attempt} failed early: {error}")
+                }),
+        );
+        token = next;
+    }
+
+    let error = provider
+        .poll_delete_step(&id, &vpc_identifier(), &request, token)
+        .await
+        .expect_err("retryable service rejection should still honor the retry cap");
+    assert_cloudcontrol_api_error(
+        &error,
+        "Failed to delete resource",
+        "cloudcontrol.DeleteResource",
+        "ThrottlingException",
+        "resource type AWS::EC2::VPC, identifier vpc-0123456789abcdef0: AWS SDK request failed: service error: ThrottlingException: Rate exceeded: ThrottlingException: Rate exceeded",
+    );
+    let client_tokens = request_client_tokens(&service, "DeleteResource");
+    assert_eq!(client_tokens.len(), 39);
+    assert!(client_tokens.iter().all(|token| token == &client_tokens[0]));
+}
+
+#[tokio::test(start_paused = true)]
+async fn terminal_failed_delete_rotates_client_token_before_reissue() {
+    let (provider, service) = provider_with_post_send_failures(
+        [
+            (
+                "DeleteResource",
+                vec![
+                    mutation_reply("delete-failed", VPC_ID),
+                    mutation_reply("delete-reissued", VPC_ID),
+                ],
+            ),
+            (
+                "GetResourceRequestStatus",
+                vec![status_reply(
+                    "FAILED",
+                    None,
+                    Some("resource has non-deleted VPC Attachments"),
+                )],
+            ),
+        ],
+        [("DeleteResource", vec![false, true, false])],
+    )
+    .await;
+    let id = ResourceId::with_provider_identity("awscc", "ec2.Vpc", "pending", None);
+    let request = DeleteRequest::default();
+
+    let (token, delay) = expect_delete_pending(
+        provider
+            .delete_step(&id, &vpc_identifier(), &request)
+            .await
+            .expect("issue original delete"),
+    );
+    assert!(matches!(
+        &token,
+        CcDeleteToken::Delete(CcRequestPhase::InFlight(request))
+            if request.request() == &RequestToken::from("delete-failed")
+                && request.attempt() == 0
+    ));
+    assert_eq!(delay, 1);
+
+    let (token, delay) = expect_delete_pending(
+        provider
+            .poll_delete_step(&id, &vpc_identifier(), &request, token)
+            .await
+            .expect("terminal retryable failure should schedule a new request"),
+    );
+    assert!(matches!(
+        &token,
+        CcDeleteToken::Delete(CcRequestPhase::NotIssued(request))
+            if request.attempt() == 1
+    ));
+    assert_eq!(delay, 10);
+
+    let (token, delay) = expect_delete_pending(
+        provider
+            .poll_delete_step(&id, &vpc_identifier(), &request, token)
+            .await
+            .expect("outcome-unknown resend should preserve the new request"),
+    );
+    assert!(matches!(
+        &token,
+        CcDeleteToken::Delete(CcRequestPhase::Unconfirmed(request))
+            if request.attempt() == 1 && request.resends() == 1
+    ));
+    assert_eq!(delay, 10);
+
+    let (token, delay) = expect_delete_pending(
+        provider
+            .poll_delete_step(&id, &vpc_identifier(), &request, token)
+            .await
+            .expect("second resend should recover the new request"),
+    );
+    assert!(matches!(
+        token,
+        CcDeleteToken::Delete(CcRequestPhase::InFlight(request))
+            if request.request() == &RequestToken::from("delete-reissued")
+                && request.attempt() == 1
+    ));
+    assert_eq!(delay, 1);
+
+    let client_tokens = request_client_tokens(&service, "DeleteResource");
+    assert_eq!(client_tokens.len(), 5);
+    assert_ne!(client_tokens[0], client_tokens[1]);
+    assert!(
+        client_tokens[1..]
+            .iter()
+            .all(|token| token == &client_tokens[1])
+    );
 }
 
 #[tokio::test]
@@ -1620,10 +3124,11 @@ async fn transit_gateway_delete_uses_per_type_retry_override_past_attempt_twelve
                     panic!("TransitGateway retry {attempt} exhausted too early: {error}")
                 }),
         );
-        assert_eq!(
-            not_issued,
-            CcDeleteToken::Delete(CcRequestPhase::NotIssued { attempt })
-        );
+        assert!(matches!(
+            &not_issued,
+            CcDeleteToken::Delete(CcRequestPhase::NotIssued(request))
+                if request.attempt() == attempt
+        ));
 
         let (in_flight, delay) = expect_delete_pending(
             provider
@@ -1631,13 +3136,12 @@ async fn transit_gateway_delete_uses_per_type_retry_override_past_attempt_twelve
                 .await
                 .expect("re-issue TransitGateway delete"),
         );
-        assert_eq!(
-            in_flight,
-            CcDeleteToken::Delete(CcRequestPhase::InFlight {
-                request: RequestToken::from("delete-tgw"),
-                attempt,
-            })
-        );
+        assert!(matches!(
+            &in_flight,
+            CcDeleteToken::Delete(CcRequestPhase::InFlight(request))
+                if request.request() == &RequestToken::from("delete-tgw")
+                    && request.attempt() == attempt
+        ));
         assert_eq!(delay, 1);
         token = in_flight;
     }
@@ -1675,7 +3179,7 @@ async fn retryable_failed_delete_with_identifier_errors_without_reissue() {
 }
 
 #[tokio::test]
-async fn non_retryable_failed_status_preserves_untracked_and_created_outcomes() {
+async fn non_retryable_failed_status_preserves_undetermined_and_created_outcomes() {
     let (provider, _) = provider_with_script([
         (
             "CreateResource",
@@ -1698,12 +3202,18 @@ async fn non_retryable_failed_status_preserves_untracked_and_created_outcomes() 
             .await
             .expect("issue create"),
     );
+    let expected = token.clone();
     let error = poll_test_create(&provider, resource.as_resource(), token)
         .await
         .expect_err("failed create without identifier must error");
-    let TestCreateVerdict::Untracked(error) = error else {
-        panic!("failure without identifier must be untracked");
+    let TestCreateVerdict::Undetermined {
+        token: preserved,
+        error,
+    } = error
+    else {
+        panic!("failure without identifier must remain tracked");
     };
+    assert_eq!(preserved, expected);
     assert_eq!(error.variant_name(), "api_error");
     assert!(error.to_string().contains("InvalidParameterValue"));
 
@@ -1758,11 +3268,8 @@ async fn retry_attempts_exhausted_preserves_the_last_sdk_error_source() {
                 .unwrap_or_else(|error| panic!("retry {attempt} failed early: {error:?}")),
         );
         assert!(matches!(
-            next,
-            CcCreateToken::NotIssued {
-                attempt: next_attempt,
-                ..
-            } if next_attempt == attempt + 1
+            &next,
+            CcCreateToken::NotIssued(create) if create.attempt() == attempt + 1
         ));
         assert_eq!(delay, expected_delay);
         token = next;
@@ -1797,22 +3304,23 @@ async fn status_retry_exhaustion_preserves_the_last_operation_failure() {
     .await;
     let resource = common::normalize_resource(vpc_resource()).await;
 
-    let error = poll_test_create(
-        &provider,
-        resource.as_resource(),
-        CcCreateToken::InFlight {
-            request: RequestToken::from("create-final"),
-            attempt: 12,
-            identifier: None,
-            client_token: TEST_CLIENT_TOKEN.to_string(),
-        },
-    )
-    .await
-    .expect_err("final retryable status should return its real failure");
+    let token = create_token(json!({
+        "phase": "in_flight",
+        "request": "create-final",
+        "attempt": 12,
+    }));
+    let error = poll_test_create(&provider, resource.as_resource(), token.clone())
+        .await
+        .expect_err("final retryable status should return its real failure");
 
-    let TestCreateVerdict::Untracked(error) = error else {
-        panic!("exhausted status retry without an identifier must be untracked");
+    let TestCreateVerdict::Undetermined {
+        token: preserved,
+        error,
+    } = error
+    else {
+        panic!("exhausted status retry without an identifier must remain tracked");
     };
+    assert_eq!(preserved, token);
     assert_eq!(
         error.detail().context(),
         "Cloud Control create ended with FAILED: Throttling"
@@ -1851,13 +3359,12 @@ async fn update_success_reads_back_after_one_status_call() {
         }
         other => panic!("expected pending update, got {other:?}"),
     };
-    assert_eq!(
-        token,
-        CcUpdateToken::InFlight {
-            request: RequestToken::from("update-0"),
-            attempt: 0,
-        }
-    );
+    assert!(matches!(
+        &token,
+        CcUpdateToken::InFlight(request)
+            if request.request() == &RequestToken::from("update-0")
+                && request.attempt() == 0
+    ));
     match provider
         .poll_update_step(&id, &vpc_identifier(), &from, &patch, token)
         .await
@@ -1898,28 +3405,25 @@ async fn update_not_issued_resends_the_original_patch() {
         } => (pending, poll_after_secs),
         other => panic!("expected pending update, got {other:?}"),
     };
-    assert_eq!(token, CcUpdateToken::NotIssued { attempt: 1 });
+    assert!(matches!(
+        &token,
+        CcUpdateToken::NotIssued(request) if request.attempt() == 1
+    ));
     assert_eq!(delay, 10);
     assert_eq!(service.calls("UpdateResource"), 3);
 
-    let (token, delay) = match provider
-        .poll_update_step(&id, &vpc_identifier(), &from, &patch, token)
-        .await
-        .expect("re-send update")
-    {
-        OperationStep::Pending {
-            pending,
-            poll_after_secs,
-        } => (pending, poll_after_secs),
-        other => panic!("expected pending update, got {other:?}"),
-    };
-    assert_eq!(
-        token,
-        CcUpdateToken::InFlight {
-            request: RequestToken::from("update-1"),
-            attempt: 1,
-        }
+    let (token, delay) = expect_update_pending(
+        provider
+            .poll_update_step(&id, &vpc_identifier(), &from, &patch, token)
+            .await
+            .expect("re-send update"),
     );
+    assert!(matches!(
+        token,
+        CcUpdateToken::InFlight(request)
+            if request.request() == &RequestToken::from("update-1")
+                && request.attempt() == 1
+    ));
     assert_eq!(delay, 1);
     assert_eq!(service.calls("UpdateResource"), 4);
     let bodies = service.bodies("UpdateResource");
@@ -1929,6 +3433,347 @@ async fn update_not_issued_resends_the_original_patch() {
         .map(|body| serde_json::from_str::<JsonValue>(body).unwrap()["PatchDocument"].clone())
         .collect::<Vec<_>>();
     assert_eq!(patches[0], patches[3]);
+    let client_tokens = request_client_tokens(&service, "UpdateResource");
+    assert!(client_tokens.iter().all(|token| token == &client_tokens[0]));
+}
+
+#[tokio::test(start_paused = true)]
+async fn update_post_send_timeout_resends_with_same_client_token() {
+    let (provider, service) = provider_with_post_send_failures(
+        [(
+            "UpdateResource",
+            vec![mutation_reply("update-timeout", VPC_ID)],
+        )],
+        [("UpdateResource", vec![true, false])],
+    )
+    .await;
+    let (id, from, patch) = vpc_update();
+
+    let (token, delay) = expect_update_pending(
+        provider
+            .update_step(&id, &vpc_identifier(), &from, &patch)
+            .await
+            .expect("an outcome-unknown update should remain pending"),
+    );
+    assert!(matches!(
+        &token,
+        CcRequestPhase::Unconfirmed(request) if request.attempt() == 0
+    ));
+    assert_eq!(delay, 10);
+
+    let (token, delay) = expect_update_pending(
+        provider
+            .poll_update_step(&id, &vpc_identifier(), &from, &patch, token)
+            .await
+            .expect("resending with the same token should recover the request"),
+    );
+    assert!(matches!(
+        token,
+        CcRequestPhase::InFlight(request)
+            if request.request() == &RequestToken::from("update-timeout")
+                && request.attempt() == 0
+    ));
+    assert_eq!(delay, 1);
+
+    let client_tokens = request_client_tokens(&service, "UpdateResource");
+    assert_eq!(client_tokens.len(), 4);
+    assert!(common::is_uuidish(&client_tokens[0]));
+    assert!(client_tokens.iter().all(|token| token == &client_tokens[0]));
+}
+
+#[tokio::test(start_paused = true)]
+async fn unconfirmed_update_rejection_reports_unknown_earlier_outcome() {
+    let (provider, service) = provider_with_post_send_failures(
+        [(
+            "UpdateResource",
+            vec![
+                mutation_reply("accepted-but-hidden", VPC_ID),
+                mutation_reply("accepted-but-hidden", VPC_ID),
+                mutation_reply("accepted-but-hidden", VPC_ID),
+                invalid_request(),
+            ],
+        )],
+        [("UpdateResource", vec![true, false])],
+    )
+    .await;
+    let (id, from, patch) = vpc_update();
+    let (token, delay) = expect_update_pending(
+        provider
+            .update_step(&id, &vpc_identifier(), &from, &patch)
+            .await
+            .expect("an outcome-unknown update must remain pending"),
+    );
+    assert_eq!(delay, 10);
+
+    let error = provider
+        .poll_update_step(&id, &vpc_identifier(), &from, &patch, token)
+        .await
+        .expect_err("a permanent rejection must stop the update resend loop");
+    assert_eq!(error.variant_name(), "api_error");
+    assert_eq!(
+        error.detail().context(),
+        "Failed to resend update resource; the outcome of the earlier send is unknown"
+    );
+    let client_tokens = request_client_tokens(&service, "UpdateResource");
+    assert_eq!(client_tokens.len(), 4);
+    assert_eq!(client_tokens, vec![client_tokens[0].clone(); 4]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn update_one_post_send_timeout_then_uncapped_throttling_stays_pending() {
+    let (provider, service) = provider_with_post_send_failures(
+        [(
+            "UpdateResource",
+            vec![
+                mutation_reply("never-returned", VPC_ID),
+                mutation_reply("never-returned", VPC_ID),
+                mutation_reply("never-returned", VPC_ID),
+                throttled(),
+            ],
+        )],
+        [("UpdateResource", vec![true, false])],
+    )
+    .await;
+    let (id, from, patch) = vpc_update();
+
+    let (mut token, delay) = expect_update_pending(
+        provider
+            .update_step(&id, &vpc_identifier(), &from, &patch)
+            .await
+            .expect("first outcome-unknown update should remain pending"),
+    );
+    let encoded = serde_json::to_value(&token).expect("serialize update continuation");
+    assert_eq!(encoded["phase"], "unconfirmed");
+    assert_eq!(encoded["attempt"], 0);
+    assert_eq!(encoded["resends"], 1);
+    assert_eq!(delay, 10);
+
+    for expected_resends in 2..=14 {
+        let (next, delay) = expect_update_pending(
+            provider
+                .poll_update_step(&id, &vpc_identifier(), &from, &patch, token)
+                .await
+                .unwrap_or_else(|error| {
+                    panic!(
+                        "throttled unconfirmed update resend {expected_resends} was capped: {error}"
+                    )
+                }),
+        );
+        let encoded = serde_json::to_value(&next).expect("serialize update continuation");
+        assert_eq!(encoded["phase"], "unconfirmed");
+        assert_eq!(encoded["attempt"], 0);
+        assert_eq!(encoded["resends"], expected_resends);
+        let expected_delay = match expected_resends {
+            2 => 20,
+            3 => 40,
+            4 => 80,
+            5..=14 => 120,
+            _ => unreachable!("test resend range is exact"),
+        };
+        assert_eq!(delay, expected_delay);
+        token = next;
+    }
+
+    let client_tokens = request_client_tokens(&service, "UpdateResource");
+    assert_eq!(client_tokens.len(), 42);
+    assert_eq!(client_tokens, vec![client_tokens[0].clone(); 42]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn update_repeated_post_send_timeouts_past_max_attempts_stay_pending() {
+    let (provider, service) = provider_with_post_send_failures(
+        [(
+            "UpdateResource",
+            vec![mutation_reply("never-returned", VPC_ID)],
+        )],
+        [("UpdateResource", vec![true])],
+    )
+    .await;
+    let (id, from, patch) = vpc_update();
+
+    let (mut token, delay) = expect_update_pending(
+        provider
+            .update_step(&id, &vpc_identifier(), &from, &patch)
+            .await
+            .expect("first post-send timeout must remain pending"),
+    );
+    let encoded = serde_json::to_value(&token).expect("serialize update continuation");
+    assert_eq!(encoded["phase"], "unconfirmed");
+    assert_eq!(encoded["attempt"], 0);
+    assert_eq!(encoded["resends"], 1);
+    assert_eq!(delay, 10);
+
+    for expected_resends in 2..=14 {
+        let (next, delay) = expect_update_pending(
+            provider
+                .poll_update_step(&id, &vpc_identifier(), &from, &patch, token)
+                .await
+                .unwrap_or_else(|error| {
+                    panic!(
+                        "post-send timeout on update resend {expected_resends} was capped: {error}"
+                    )
+                }),
+        );
+        let encoded = serde_json::to_value(&next).expect("serialize update continuation");
+        assert_eq!(encoded["phase"], "unconfirmed");
+        assert_eq!(encoded["attempt"], 0);
+        assert_eq!(encoded["resends"], expected_resends);
+        let expected_delay = match expected_resends {
+            2 => 20,
+            3 => 40,
+            4 => 80,
+            5..=14 => 120,
+            _ => unreachable!("test resend range is exact"),
+        };
+        assert_eq!(delay, expected_delay);
+        token = next;
+    }
+
+    let client_tokens = request_client_tokens(&service, "UpdateResource");
+    assert_eq!(client_tokens.len(), 42);
+    assert_eq!(client_tokens, vec![client_tokens[0].clone(); 42]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn update_5xx_service_internal_error_is_maybe_sent_and_uncapped() {
+    let (provider, service) =
+        provider_with_script([("UpdateResource", vec![service_internal_error()])]).await;
+    let (id, from, patch) = vpc_update();
+
+    let (mut token, delay) = expect_update_pending(
+        provider
+            .update_step(&id, &vpc_identifier(), &from, &patch)
+            .await
+            .expect("a 5xx service error may follow an accepted update"),
+    );
+    let encoded = serde_json::to_value(&token).expect("serialize update continuation");
+    assert_eq!(encoded["phase"], "unconfirmed");
+    assert_eq!(encoded["attempt"], 0);
+    assert_eq!(encoded["resends"], 1);
+    assert_eq!(delay, 10);
+
+    for expected_resends in 2..=13 {
+        let (next, delay) = expect_update_pending(
+            provider
+                .poll_update_step(&id, &vpc_identifier(), &from, &patch, token)
+                .await
+                .unwrap_or_else(|error| {
+                    panic!("maybe-sent update resend {expected_resends} was capped: {error}")
+                }),
+        );
+        let encoded = serde_json::to_value(&next).expect("serialize update continuation");
+        assert_eq!(encoded["phase"], "unconfirmed");
+        assert_eq!(encoded["attempt"], 0);
+        assert_eq!(encoded["resends"], expected_resends);
+        let expected_delay = match expected_resends {
+            2 => 20,
+            3 => 40,
+            4 => 80,
+            5..=13 => 120,
+            _ => unreachable!("test resend range is exact"),
+        };
+        assert_eq!(delay, expected_delay);
+        token = next;
+    }
+
+    let client_tokens = request_client_tokens(&service, "UpdateResource");
+    assert_eq!(client_tokens.len(), 39);
+    assert_eq!(client_tokens, vec![client_tokens[0].clone(); 39]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn update_throttling_reuses_client_token_until_retry_cap() {
+    let (provider, service) = provider_with_script([("UpdateResource", vec![throttled()])]).await;
+    let (id, from, patch) = vpc_update();
+
+    let (mut token, _) = expect_update_pending(
+        provider
+            .update_step(&id, &vpc_identifier(), &from, &patch)
+            .await
+            .expect("first throttled update should schedule a retry"),
+    );
+    for expected_attempt in 2..=12 {
+        let (next, _) = expect_update_pending(
+            provider
+                .poll_update_step(&id, &vpc_identifier(), &from, &patch, token)
+                .await
+                .unwrap_or_else(|error| {
+                    panic!("throttled update attempt {expected_attempt} failed early: {error}")
+                }),
+        );
+        token = next;
+    }
+
+    let error = provider
+        .poll_update_step(&id, &vpc_identifier(), &from, &patch, token)
+        .await
+        .expect_err("retryable service rejection should still honor the retry cap");
+    assert_cloudcontrol_api_error(
+        &error,
+        "Failed to update resource",
+        "cloudcontrol.UpdateResource",
+        "ThrottlingException",
+        "resource type AWS::EC2::VPC, identifier vpc-0123456789abcdef0: AWS SDK request failed: service error: ThrottlingException: Rate exceeded: ThrottlingException: Rate exceeded",
+    );
+    let client_tokens = request_client_tokens(&service, "UpdateResource");
+    assert_eq!(client_tokens.len(), 39);
+    assert!(client_tokens.iter().all(|token| token == &client_tokens[0]));
+}
+
+#[tokio::test]
+async fn separate_update_steps_use_different_client_tokens() {
+    let (provider, service) = provider_with_script([(
+        "UpdateResource",
+        vec![
+            mutation_reply("update-logical-1", VPC_ID),
+            mutation_reply("update-logical-2", VPC_ID),
+        ],
+    )])
+    .await;
+    let (id, from, patch) = vpc_update();
+
+    expect_update_pending(
+        provider
+            .update_step(&id, &vpc_identifier(), &from, &patch)
+            .await
+            .expect("issue first logical update"),
+    );
+    expect_update_pending(
+        provider
+            .update_step(&id, &vpc_identifier(), &from, &patch)
+            .await
+            .expect("issue second logical update"),
+    );
+
+    let client_tokens = request_client_tokens(&service, "UpdateResource");
+    assert_eq!(client_tokens.len(), 2);
+    assert_ne!(client_tokens[0], client_tokens[1]);
+}
+
+#[tokio::test]
+async fn update_and_delete_non_retryable_service_errors_are_terminal() {
+    let denied = || Reply::Error {
+        status: 403,
+        code: "AccessDeniedException",
+        message: "mutation denied",
+    };
+    let (provider, service) = provider_with_script([
+        ("UpdateResource", vec![denied()]),
+        ("DeleteResource", vec![denied()]),
+    ])
+    .await;
+    let (id, from, patch) = vpc_update();
+
+    provider
+        .update_step(&id, &vpc_identifier(), &from, &patch)
+        .await
+        .expect_err("non-retryable update rejection should be terminal");
+    provider
+        .delete_step(&id, &vpc_identifier(), &DeleteRequest::default())
+        .await
+        .expect_err("non-retryable delete rejection should be terminal");
+    assert_eq!(service.calls("UpdateResource"), 1);
+    assert_eq!(service.calls("DeleteResource"), 1);
 }
 
 #[tokio::test]
@@ -2022,13 +3867,12 @@ async fn internet_gateway_delete_detaches_then_deletes() {
             .expect("issue IGW detach"),
     );
     assert_eq!(delay, 1);
-    assert_eq!(
-        token,
-        CcDeleteToken::DetachIgw(CcRequestPhase::InFlight {
-            request: RequestToken::from("detach-0"),
-            attempt: 0,
-        })
-    );
+    assert!(matches!(
+        &token,
+        CcDeleteToken::DetachIgw(CcRequestPhase::InFlight(request))
+            if request.request() == &RequestToken::from("detach-0")
+                && request.attempt() == 0
+    ));
     assert_eq!(service.calls("UpdateResource"), 1);
     assert_eq!(service.calls("DeleteResource"), 0);
 
@@ -2039,13 +3883,12 @@ async fn internet_gateway_delete_detaches_then_deletes() {
             .expect("finish detach and issue delete"),
     );
     assert_eq!(delay, 1);
-    assert_eq!(
-        token,
-        CcDeleteToken::Delete(CcRequestPhase::InFlight {
-            request: RequestToken::from("delete-0"),
-            attempt: 0,
-        })
-    );
+    assert!(matches!(
+        &token,
+        CcDeleteToken::Delete(CcRequestPhase::InFlight(request))
+            if request.request() == &RequestToken::from("delete-0")
+                && request.attempt() == 0
+    ));
     assert_eq!(service.calls("DeleteResource"), 1);
 
     assert!(matches!(
@@ -2097,10 +3940,11 @@ async fn internet_gateway_detach_not_issued_rechecks_then_resets_delete_attempt(
             .await
             .expect("schedule IGW detach resend"),
     );
-    assert_eq!(
-        token,
-        CcDeleteToken::DetachIgw(CcRequestPhase::NotIssued { attempt: 1 })
-    );
+    assert!(matches!(
+        &token,
+        CcDeleteToken::DetachIgw(CcRequestPhase::NotIssued(request))
+            if request.attempt() == 1
+    ));
     assert_eq!(delay, 10);
     assert_eq!(service.calls("UpdateResource"), 3);
 
@@ -2110,13 +3954,12 @@ async fn internet_gateway_detach_not_issued_rechecks_then_resets_delete_attempt(
             .await
             .expect("re-send IGW detach"),
     );
-    assert_eq!(
-        token,
-        CcDeleteToken::DetachIgw(CcRequestPhase::InFlight {
-            request: RequestToken::from("detach-1"),
-            attempt: 1,
-        })
-    );
+    assert!(matches!(
+        &token,
+        CcDeleteToken::DetachIgw(CcRequestPhase::InFlight(request))
+            if request.request() == &RequestToken::from("detach-1")
+                && request.attempt() == 1
+    ));
     assert_eq!(delay, 1);
     assert_eq!(service.calls("GetResource"), 2);
     assert_eq!(service.calls("UpdateResource"), 4);
@@ -2129,13 +3972,12 @@ async fn internet_gateway_detach_not_issued_rechecks_then_resets_delete_attempt(
             .await
             .expect("finish retried detach and start delete"),
     );
-    assert_eq!(
+    assert!(matches!(
         token,
-        CcDeleteToken::Delete(CcRequestPhase::InFlight {
-            request: RequestToken::from("delete-0"),
-            attempt: 0,
-        })
-    );
+        CcDeleteToken::Delete(CcRequestPhase::InFlight(request))
+            if request.request() == &RequestToken::from("delete-0")
+                && request.attempt() == 0
+    ));
     assert_eq!(delay, 1);
     assert_eq!(service.calls("GetResourceRequestStatus"), 1);
     assert_eq!(service.calls("DeleteResource"), 1);
@@ -2174,10 +4016,11 @@ async fn internet_gateway_detach_not_issued_skips_resend_when_already_detached()
             .await
             .expect("schedule IGW detach retry"),
     );
-    assert_eq!(
-        token,
-        CcDeleteToken::DetachIgw(CcRequestPhase::NotIssued { attempt: 1 })
-    );
+    assert!(matches!(
+        &token,
+        CcDeleteToken::DetachIgw(CcRequestPhase::NotIssued(request))
+            if request.attempt() == 1
+    ));
 
     let (token, delay) = expect_delete_pending(
         provider
@@ -2185,18 +4028,85 @@ async fn internet_gateway_detach_not_issued_skips_resend_when_already_detached()
             .await
             .expect("skip redundant detach and issue delete"),
     );
-    assert_eq!(
+    assert!(matches!(
         token,
-        CcDeleteToken::Delete(CcRequestPhase::InFlight {
-            request: RequestToken::from("delete-0"),
-            attempt: 0,
-        })
-    );
+        CcDeleteToken::Delete(CcRequestPhase::InFlight(request))
+            if request.request() == &RequestToken::from("delete-0")
+                && request.attempt() == 0
+    ));
     assert_eq!(delay, 1);
     assert_eq!(service.calls("GetResource"), 2);
     assert_eq!(service.calls("UpdateResource"), 3);
     assert_eq!(service.calls("GetResourceRequestStatus"), 0);
     assert_eq!(service.calls("DeleteResource"), 1);
+}
+
+#[tokio::test]
+async fn internet_gateway_unconfirmed_detach_resends_without_rechecking_attachment() {
+    let (provider, service) = provider_with_script([
+        (
+            "GetResource",
+            vec![get_resource_reply(
+                IGW_TYPE,
+                IGW_ID,
+                json!({
+                    "InternetGatewayId": IGW_ID,
+                    "Attachments": [],
+                }),
+            )],
+        ),
+        (
+            "UpdateResource",
+            vec![mutation_reply("detach-resend", IGW_ID)],
+        ),
+        (
+            "DeleteResource",
+            vec![mutation_reply("must-not-delete", IGW_ID)],
+        ),
+    ])
+    .await;
+    let id = ResourceId::with_provider_identity("awscc", "ec2.InternetGateway", "pending", None);
+    let request = DeleteRequest::default();
+    let token: CcDeleteToken = serde_json::from_value(json!({
+        "phase": "detach_igw",
+        "request": {
+            "phase": "unconfirmed",
+            "attempt": 13,
+            "resends": 14,
+            "client_token": TEST_CLIENT_TOKEN,
+        },
+    }))
+    .expect("deserialize an unconfirmed detach continuation");
+
+    let (token, delay) = expect_delete_pending(
+        provider
+            .poll_delete_step(&id, &internet_gateway_identifier(), &request, token)
+            .await
+            .expect("an unconfirmed detach must be resent with the same request"),
+    );
+
+    assert!(matches!(
+        token,
+        CcDeleteToken::DetachIgw(CcRequestPhase::InFlight(request))
+            if request.request() == &RequestToken::from("detach-resend")
+                && request.attempt() == 13
+    ));
+    assert_eq!(delay, 1);
+    assert_eq!(service.calls("GetResource"), 0);
+    assert_eq!(service.calls("UpdateResource"), 1);
+    assert_eq!(service.calls("DeleteResource"), 0);
+
+    let bodies = service.bodies("UpdateResource");
+    assert_eq!(bodies.len(), 1);
+    let body: JsonValue = serde_json::from_str(&bodies[0]).expect("valid update request body");
+    let patch: JsonValue = serde_json::from_str(
+        body["PatchDocument"]
+            .as_str()
+            .expect("detach request should contain a patch document"),
+    )
+    .expect("valid detach patch document");
+    assert_eq!(patch, json!([{"op": "remove", "path": "/Attachments"}]));
+    assert_eq!(body["ClientToken"], TEST_CLIENT_TOKEN);
 }
 
 #[tokio::test]
@@ -2275,13 +4185,12 @@ async fn unattached_internet_gateway_goes_straight_to_delete() {
             .await
             .expect("issue direct IGW delete"),
     );
-    assert_eq!(
+    assert!(matches!(
         token,
-        CcDeleteToken::Delete(CcRequestPhase::InFlight {
-            request: RequestToken::from("delete-0"),
-            attempt: 0,
-        })
-    );
+        CcDeleteToken::Delete(CcRequestPhase::InFlight(request))
+            if request.request() == &RequestToken::from("delete-0")
+                && request.attempt() == 0
+    ));
     assert_eq!(delay, 1);
     assert_eq!(service.calls("UpdateResource"), 0);
     assert_eq!(service.calls("DeleteResource"), 1);
