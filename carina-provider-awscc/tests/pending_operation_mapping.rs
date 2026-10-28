@@ -533,11 +533,14 @@ async fn provider_with_script(
         .http_client(mock.http_client())
         .credentials_provider(mock.credentials_provider())
         .region(Region::new(REGION))
-        .retry_config(aws_config::retry::RetryConfig::disabled())
         .load()
         .await;
     (
-        AwsccProvider::from_sdk_config(config, &AwsccProviderConfig::default()).await,
+        AwsccProvider::from_sdk_config(
+            carina_provider_awscc::BoundedSdkConfig::new(config),
+            &AwsccProviderConfig::default(),
+        )
+        .await,
         service,
     )
 }
@@ -754,7 +757,7 @@ async fn accepted_in_progress_create_over_budget_preserves_token_and_identifier(
     assert_eq!(service.calls("GetResource"), 0);
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn status_sdk_error_re_pends_the_issued_create() {
     let (provider, service) = provider_with_script([(
         "GetResourceRequestStatus",
@@ -783,6 +786,7 @@ async fn status_sdk_error_re_pends_the_issued_create() {
     assert_eq!(identifier.as_str(), VPC_ID);
     assert_eq!(poll_after_secs, 5);
     assert_eq!(service.calls("GetResource"), 0);
+    assert_eq!(service.calls("GetResourceRequestStatus"), 3);
 }
 
 #[tokio::test]
@@ -1063,7 +1067,7 @@ async fn resume_expired_token_without_identifier_is_undetermined() {
     assert_eq!(service.calls("GetResource"), 0);
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn resume_status_sdk_error_without_identifier_re_pends_with_backoff() {
     let (provider, service) = provider_with_script([(
         "GetResourceRequestStatus",
@@ -1097,6 +1101,7 @@ async fn resume_status_sdk_error_without_identifier_re_pends_with_backoff() {
     assert_eq!(next_token, token);
     assert_eq!(poll_after_secs, 5);
     assert_eq!(service.calls("GetResource"), 0);
+    assert_eq!(service.calls("GetResourceRequestStatus"), 3);
 }
 
 #[tokio::test]
@@ -1257,11 +1262,16 @@ async fn pending_statuses_keep_the_same_create_token_and_success_reads_back() {
     assert_eq!(service.calls("GetResource"), 1);
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn retryable_initial_sdk_error_returns_not_issued_and_poll_resends_same_request() {
     let (provider, service) = provider_with_script([(
         "CreateResource",
-        vec![throttled(), mutation_reply("create-1", VPC_ID)],
+        vec![
+            throttled(),
+            throttled(),
+            throttled(),
+            mutation_reply("create-1", VPC_ID),
+        ],
     )])
     .await;
     let resource = common::normalize_resource(vpc_resource()).await;
@@ -1277,7 +1287,7 @@ async fn retryable_initial_sdk_error_returns_not_issued_and_poll_resends_same_re
         CcCreateToken::NotIssued { attempt: 1, .. }
     ));
     assert_eq!(delay, 10);
-    assert_eq!(service.calls("CreateResource"), 1);
+    assert_eq!(service.calls("CreateResource"), 3);
 
     let (token, delay) = expect_create_pending(
         poll_test_create(&provider, resource.as_resource(), token)
@@ -1294,30 +1304,35 @@ async fn retryable_initial_sdk_error_returns_not_issued_and_poll_resends_same_re
         } if request == RequestToken::from("create-1") && identifier == VPC_ID
     ));
     assert_eq!(delay, 1);
-    assert_eq!(service.calls("CreateResource"), 2);
+    assert_eq!(service.calls("CreateResource"), 4);
 
     let bodies = service.bodies("CreateResource");
     let requests = bodies
         .iter()
         .map(|body| serde_json::from_str::<JsonValue>(body).unwrap())
         .collect::<Vec<_>>();
-    assert_eq!(requests.len(), 2);
-    assert_eq!(requests[0]["DesiredState"], requests[1]["DesiredState"]);
+    assert_eq!(requests.len(), 4);
+    assert_eq!(requests[0]["DesiredState"], requests[3]["DesiredState"]);
     let first_client_token = requests[0]["ClientToken"]
         .as_str()
         .expect("the first create send must include a ClientToken");
-    let retried_client_token = requests[1]["ClientToken"]
+    let retried_client_token = requests[3]["ClientToken"]
         .as_str()
         .expect("an in-run resend must include a ClientToken");
     assert!(common::is_uuidish(first_client_token));
     assert_eq!(retried_client_token, first_client_token);
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn resume_not_issued_reuses_original_create_client_token() {
     let (provider, service) = provider_with_script([(
         "CreateResource",
-        vec![throttled(), mutation_reply("create-resent", VPC_ID)],
+        vec![
+            throttled(),
+            throttled(),
+            throttled(),
+            mutation_reply("create-resent", VPC_ID),
+        ],
     )])
     .await;
     let resource = common::normalize_resource(vpc_resource()).await;
@@ -1348,11 +1363,11 @@ async fn resume_not_issued_reuses_original_create_client_token() {
         .iter()
         .map(|body| serde_json::from_str::<JsonValue>(body).unwrap())
         .collect::<Vec<_>>();
-    assert_eq!(requests.len(), 2);
+    assert_eq!(requests.len(), 4);
     let first_client_token = requests[0]["ClientToken"]
         .as_str()
         .expect("the first create send must include a ClientToken");
-    let resumed_client_token = requests[1]["ClientToken"]
+    let resumed_client_token = requests[3]["ClientToken"]
         .as_str()
         .expect("a cross-run resend must include a ClientToken");
     assert!(common::is_uuidish(first_client_token));
@@ -1723,7 +1738,7 @@ async fn non_retryable_failed_status_preserves_untracked_and_created_outcomes() 
     }
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn retry_attempts_exhausted_preserves_the_last_sdk_error_source() {
     let (provider, service) = provider_with_script([("CreateResource", vec![throttled()])]).await;
     let resource = common::normalize_resource(vpc_resource()).await;
@@ -1770,7 +1785,7 @@ async fn retry_attempts_exhausted_preserves_the_last_sdk_error_source() {
         sdk_error.is_some(),
         "cause chain should retain CreateResource SdkError"
     );
-    assert_eq!(service.calls("CreateResource"), 13);
+    assert_eq!(service.calls("CreateResource"), 39);
 }
 
 #[tokio::test]
@@ -1858,11 +1873,16 @@ async fn update_success_reads_back_after_one_status_call() {
     assert_eq!(service.calls("GetResource"), 1);
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn update_not_issued_resends_the_original_patch() {
     let (provider, service) = provider_with_script([(
         "UpdateResource",
-        vec![throttled(), mutation_reply("update-1", VPC_ID)],
+        vec![
+            throttled(),
+            throttled(),
+            throttled(),
+            mutation_reply("update-1", VPC_ID),
+        ],
     )])
     .await;
     let (id, from, patch) = vpc_update();
@@ -1880,7 +1900,7 @@ async fn update_not_issued_resends_the_original_patch() {
     };
     assert_eq!(token, CcUpdateToken::NotIssued { attempt: 1 });
     assert_eq!(delay, 10);
-    assert_eq!(service.calls("UpdateResource"), 1);
+    assert_eq!(service.calls("UpdateResource"), 3);
 
     let (token, delay) = match provider
         .poll_update_step(&id, &vpc_identifier(), &from, &patch, token)
@@ -1901,14 +1921,14 @@ async fn update_not_issued_resends_the_original_patch() {
         }
     );
     assert_eq!(delay, 1);
-    assert_eq!(service.calls("UpdateResource"), 2);
+    assert_eq!(service.calls("UpdateResource"), 4);
     let bodies = service.bodies("UpdateResource");
-    assert_eq!(bodies.len(), 2);
+    assert_eq!(bodies.len(), 4);
     let patches = bodies
         .iter()
         .map(|body| serde_json::from_str::<JsonValue>(body).unwrap()["PatchDocument"].clone())
         .collect::<Vec<_>>();
-    assert_eq!(patches[0], patches[1]);
+    assert_eq!(patches[0], patches[3]);
 }
 
 #[tokio::test]
@@ -2038,7 +2058,7 @@ async fn internet_gateway_delete_detaches_then_deletes() {
     assert_eq!(service.calls("GetResourceRequestStatus"), 2);
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn internet_gateway_detach_not_issued_rechecks_then_resets_delete_attempt() {
     let (provider, service) = provider_with_script([
         (
@@ -2054,7 +2074,12 @@ async fn internet_gateway_detach_not_issued_rechecks_then_resets_delete_attempt(
         ),
         (
             "UpdateResource",
-            vec![throttled(), mutation_reply("detach-1", IGW_ID)],
+            vec![
+                throttled(),
+                throttled(),
+                throttled(),
+                mutation_reply("detach-1", IGW_ID),
+            ],
         ),
         ("DeleteResource", vec![mutation_reply("delete-0", IGW_ID)]),
         (
@@ -2077,7 +2102,7 @@ async fn internet_gateway_detach_not_issued_rechecks_then_resets_delete_attempt(
         CcDeleteToken::DetachIgw(CcRequestPhase::NotIssued { attempt: 1 })
     );
     assert_eq!(delay, 10);
-    assert_eq!(service.calls("UpdateResource"), 1);
+    assert_eq!(service.calls("UpdateResource"), 3);
 
     let (token, delay) = expect_delete_pending(
         provider
@@ -2094,7 +2119,7 @@ async fn internet_gateway_detach_not_issued_rechecks_then_resets_delete_attempt(
     );
     assert_eq!(delay, 1);
     assert_eq!(service.calls("GetResource"), 2);
-    assert_eq!(service.calls("UpdateResource"), 2);
+    assert_eq!(service.calls("UpdateResource"), 4);
     assert_eq!(service.calls("GetResourceRequestStatus"), 0);
     assert_eq!(service.calls("DeleteResource"), 0);
 
@@ -2116,7 +2141,7 @@ async fn internet_gateway_detach_not_issued_rechecks_then_resets_delete_attempt(
     assert_eq!(service.calls("DeleteResource"), 1);
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn internet_gateway_detach_not_issued_skips_resend_when_already_detached() {
     let attached = get_resource_reply(
         IGW_TYPE,
@@ -2169,7 +2194,7 @@ async fn internet_gateway_detach_not_issued_skips_resend_when_already_detached()
     );
     assert_eq!(delay, 1);
     assert_eq!(service.calls("GetResource"), 2);
-    assert_eq!(service.calls("UpdateResource"), 1);
+    assert_eq!(service.calls("UpdateResource"), 3);
     assert_eq!(service.calls("GetResourceRequestStatus"), 0);
     assert_eq!(service.calls("DeleteResource"), 1);
 }

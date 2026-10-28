@@ -11,11 +11,13 @@
 pub mod provider;
 pub mod resources;
 pub mod schemas;
+mod sdk_config;
 
 // Re-export main types
 pub use provider::{
     AwsccProvider, CcCreateToken, CcDeleteToken, CcRequestPhase, CcUpdateToken, RequestToken,
 };
+pub use sdk_config::BoundedSdkConfig;
 
 use std::collections::HashMap;
 
@@ -501,7 +503,11 @@ mod tests {
             .load()
             .await;
 
-        AwsccProvider::from_sdk_config(config, &AwsccProviderConfig::default()).await
+        AwsccProvider::from_sdk_config(
+            BoundedSdkConfig::new(config),
+            &AwsccProviderConfig::default(),
+        )
+        .await
     }
 
     #[cfg(not(target_arch = "wasm32"))]

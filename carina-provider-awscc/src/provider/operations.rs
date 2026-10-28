@@ -2642,7 +2642,11 @@ mod tests {
             .load()
             .await;
 
-        AwsccProvider::from_sdk_config(config, &super::super::AwsccProviderConfig::default()).await
+        AwsccProvider::from_sdk_config(
+            crate::BoundedSdkConfig::new(config),
+            &super::super::AwsccProviderConfig::default(),
+        )
+        .await
     }
 
     struct ErrorTestCreateAttempt;
@@ -3102,7 +3106,11 @@ mod tests {
             .load()
             .await;
 
-        AwsccProvider::from_sdk_config(config, &super::super::AwsccProviderConfig::default()).await
+        AwsccProvider::from_sdk_config(
+            crate::BoundedSdkConfig::new(config),
+            &super::super::AwsccProviderConfig::default(),
+        )
+        .await
     }
 
     #[derive(Debug)]
@@ -3246,7 +3254,11 @@ mod tests {
             .load()
             .await;
 
-        AwsccProvider::from_sdk_config(config, &super::super::AwsccProviderConfig::default()).await
+        AwsccProvider::from_sdk_config(
+            crate::BoundedSdkConfig::new(config),
+            &super::super::AwsccProviderConfig::default(),
+        )
+        .await
     }
 
     fn partial_update_bucket_state() -> State {

@@ -92,7 +92,11 @@ async fn winterbaume_provider() -> AwsccProvider {
         .load()
         .await;
 
-    AwsccProvider::from_sdk_config(config, &AwsccProviderConfig::default()).await
+    AwsccProvider::from_sdk_config(
+        carina_provider_awscc::BoundedSdkConfig::new(config),
+        &AwsccProviderConfig::default(),
+    )
+    .await
 }
 
 fn attributes(entries: impl IntoIterator<Item = (&'static str, Value)>) -> HashMap<String, Value> {

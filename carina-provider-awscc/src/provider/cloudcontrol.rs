@@ -891,7 +891,8 @@ impl AwsccProvider {
     /// - `NetworkFailureException`: Network connectivity issues
     /// - `ConcurrentOperationException`: Another operation is in progress
     /// - `NotStabilizedException`: Resource not yet stabilized
-    /// - `SdkError::TimeoutError`: Connection timeout
+    /// - `SdkError::TimeoutError`: SDK timeout, including bounded attempt/operation timeouts that
+    ///   can fire after the request reached Cloud Control
     /// - `SdkError::DispatchFailure`: HTTP dispatch failure
     pub(crate) fn is_retryable_sdk_error<E, R>(error: &SdkError<E, R>) -> bool
     where
