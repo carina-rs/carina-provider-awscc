@@ -29,7 +29,7 @@ use carina_provider_awscc::AwsccNormalizer;
 use carina_provider_awscc::provider::{
     AwsccProvider, AwsccProviderConfig, CcCreateAttempt, CcCreatePoll, CcCreateResume,
     CcCreateToken, CcDeleteToken, CcIssuedCreate, CcPollAttempt, CcResumeAttempt, CcResumedCreate,
-    CcUpdateToken,
+    CcUpdateToken, InFlightCreateRequest, UndeterminedCreate,
 };
 use carina_provider_awscc::schemas;
 
@@ -85,6 +85,11 @@ impl CcPollAttempt for GuestPollAttempt {
 
     fn untracked(self, error: CoreProviderError) -> Self::Verdict {
         self.0.untracked(error.to_wire())
+    }
+
+    fn undetermined(self, failure: UndeterminedCreate) -> Self::Verdict {
+        let (_, error) = failure.into_token_and_error();
+        self.0.undetermined(error.to_wire())
     }
 
     fn issued(self, identifier: CoreAppliedIdentifier) -> Self::Issued {
@@ -149,6 +154,13 @@ impl CcIssuedCreate for GuestIssuedCreate {
         self.0.discarded(error.to_wire())
     }
 
+    fn preserve(self, _token: CcCreateToken, error: CoreProviderError) -> Self::Verdict {
+        self.0.failed(
+            proto::Observation::ReadFailed(error.to_wire()),
+            error.to_wire(),
+        )
+    }
+
     fn pending(
         self,
         token: CcCreateToken,
@@ -208,6 +220,15 @@ impl CcIssuedCreate for GuestPolledIssuedCreate {
         self.0.discarded(error.to_wire()).into()
     }
 
+    fn preserve(self, _token: CcCreateToken, error: CoreProviderError) -> Self::Verdict {
+        self.0
+            .failed(
+                proto::Observation::ReadFailed(error.to_wire()),
+                error.to_wire(),
+            )
+            .into()
+    }
+
     fn pending(
         self,
         token: CcCreateToken,
@@ -227,7 +248,16 @@ impl CcResumeAttempt for GuestResumeAttempt {
         self.0.untracked(error.to_wire())
     }
 
-    fn undetermined(self, error: CoreProviderError) -> Self::Verdict {
+    fn undetermined(self, failure: UndeterminedCreate) -> Self::Verdict {
+        let (_, error) = failure.into_token_and_error();
+        self.0.undetermined(error.to_wire())
+    }
+
+    fn forgotten(self, _token: InFlightCreateRequest, error: CoreProviderError) -> Self::Verdict {
+        self.0.undetermined(error.to_wire())
+    }
+
+    fn preserve(self, error: CoreProviderError) -> Self::Verdict {
         self.0.undetermined(error.to_wire())
     }
 
@@ -277,6 +307,13 @@ impl CcResumedCreate for GuestResumedCreate {
 
     fn discarded(self, error: CoreProviderError) -> Self::Verdict {
         self.0.discarded(error.to_wire())
+    }
+
+    fn preserve(self, error: CoreProviderError) -> Self::Verdict {
+        self.0.failed(
+            proto::Observation::ReadFailed(error.to_wire()),
+            error.to_wire(),
+        )
     }
 
     fn pending(
@@ -363,6 +400,15 @@ impl CcIssuedCreate for GuestResentIssuedCreate {
 
     fn discarded(self, error: CoreProviderError) -> Self::Verdict {
         self.0.discarded(error.to_wire()).into()
+    }
+
+    fn preserve(self, _token: CcCreateToken, error: CoreProviderError) -> Self::Verdict {
+        self.0
+            .failed(
+                proto::Observation::ReadFailed(error.to_wire()),
+                error.to_wire(),
+            )
+            .into()
     }
 
     fn pending(

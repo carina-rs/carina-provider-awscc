@@ -24,7 +24,7 @@ native = []
 
 [dependencies]
 carina-core = { git = "https://github.com/carina-rs/carina", rev = "acd9ae1e" }
-carina-aws-types = { git = "https://github.com/carina-rs/carina-provider-aws", rev = "d4b0d77" }
+carina-aws-types = { git = "https://github.com/carina-rs/carina-provider-aws", rev = "532ce8d0" }
 carina-plugin-sdk = { git = "https://github.com/carina-rs/carina", rev = "acd9ae1e" }
 carina-provider-protocol = { git = "https://github.com/carina-rs/carina", rev = "acd9ae1e" }
 indexmap = "2"
@@ -51,6 +51,7 @@ http = "1"
 tokio = { version = "1", features = ["full"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+carina-core = { git = "https://github.com/carina-rs/carina", rev = "acd9ae1e", features = ["test-utils"] }
 tokio = { version = "1", features = ["test-util"] }
 winterbaume-core = "0.2"
 winterbaume-cloudcontrol = "1"

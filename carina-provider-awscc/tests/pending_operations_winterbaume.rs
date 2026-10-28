@@ -14,7 +14,7 @@ use carina_core::provider::{CreateOutcomeKind, DeleteRequest, Provider};
 use carina_core::resource::{ConcreteValue, Resource, Value};
 use carina_provider_awscc::provider::AwsccProviderConfig;
 use carina_provider_awscc::{
-    AwsccProvider, CcCreateToken, CcDeleteToken, CcRequestPhase, CcUpdateToken, RequestToken,
+    AwsccProvider, CcCreateToken, CcDeleteToken, CcUpdateToken, ClientToken,
 };
 use carina_provider_protocol::OperationStep;
 use serde::{Serialize, de::DeserializeOwned};
@@ -132,48 +132,109 @@ where
     );
 }
 
+fn assert_token_json_round_trip<T>(expected_json: &str)
+where
+    T: Serialize + DeserializeOwned + std::fmt::Debug + PartialEq,
+{
+    let token = serde_json::from_str::<T>(expected_json).expect("deserialize pending token");
+    assert_eq!(
+        serde_json::to_string(&token).expect("serialize pending token"),
+        expected_json
+    );
+    assert_token_round_trip(token);
+}
+
+fn client_token(value: &str) -> ClientToken {
+    serde_json::from_value(serde_json::json!(value)).expect("deserialize test client token")
+}
+
+fn assert_create_token_round_trip(expected_json: &str) {
+    let token = serde_json::from_str::<CcCreateToken>(expected_json)
+        .expect("deserialize create pending token");
+    let json = serde_json::to_string(&token).expect("serialize create pending token");
+    assert_eq!(json, expected_json);
+    assert_eq!(
+        serde_json::from_str::<CcCreateToken>(&json).expect("round-trip create pending token"),
+        token
+    );
+}
+
 #[test]
 fn continuation_tokens_round_trip() {
-    assert_token_round_trip(CcCreateToken::NotIssued {
-        attempt: 1,
-        client_token: TEST_CLIENT_TOKEN.to_string(),
-    });
-    assert_token_round_trip(CcCreateToken::InFlight {
-        request: RequestToken::from("create-request"),
-        attempt: 2,
-        identifier: Some(REPOSITORY_NAME.to_string()),
-        client_token: "00000000-0000-4000-8000-000000000002".to_string(),
-    });
-    assert_token_round_trip(CcUpdateToken::NotIssued { attempt: 3 });
-    assert_token_round_trip(CcUpdateToken::InFlight {
-        request: RequestToken::from("update-request"),
-        attempt: 4,
-    });
-    assert_token_round_trip(CcDeleteToken::DetachIgw(CcRequestPhase::InFlight {
-        request: RequestToken::from("detach-request"),
-        attempt: 5,
-    }));
-    assert_token_round_trip(CcDeleteToken::Delete(CcRequestPhase::NotIssued {
-        attempt: 6,
-    }));
-    assert_token_round_trip(CcDeleteToken::Delete(CcRequestPhase::InFlight {
-        request: RequestToken::from("delete-request"),
-        attempt: 7,
-    }));
+    assert_create_token_round_trip(&format!(
+        r#"{{"phase":"not_issued","attempt":1,"client_token":"{TEST_CLIENT_TOKEN}"}}"#
+    ));
+    assert_create_token_round_trip(
+        r#"{"phase":"unconfirmed","attempt":2,"resends":3,"client_token":"00000000-0000-4000-8000-000000000001"}"#,
+    );
+    assert_create_token_round_trip(&format!(
+        r#"{{"phase":"in_flight","request":"create-request","attempt":3,"identifier":"{REPOSITORY_NAME}"}}"#
+    ));
+    assert_token_json_round_trip::<CcUpdateToken>(
+        r#"{"phase":"not_issued","attempt":4,"client_token":"00000000-0000-4000-8000-000000000003"}"#,
+    );
+    assert_token_json_round_trip::<CcUpdateToken>(
+        r#"{"phase":"unconfirmed","attempt":5,"resends":6,"client_token":"00000000-0000-4000-8000-000000000004"}"#,
+    );
+    assert_token_json_round_trip::<CcUpdateToken>(
+        r#"{"phase":"in_flight","request":"update-request","attempt":6}"#,
+    );
+    assert_token_json_round_trip::<CcDeleteToken>(
+        r#"{"phase":"detach_igw","request":{"phase":"unconfirmed","attempt":7,"resends":8,"client_token":"00000000-0000-4000-8000-000000000006"}}"#,
+    );
+    assert_token_json_round_trip::<CcDeleteToken>(
+        r#"{"phase":"detach_igw","request":{"phase":"in_flight","request":"detach-request","attempt":8}}"#,
+    );
+    assert_token_json_round_trip::<CcDeleteToken>(
+        r#"{"phase":"delete","request":{"phase":"not_issued","attempt":9,"client_token":"00000000-0000-4000-8000-000000000008"}}"#,
+    );
+    assert_token_json_round_trip::<CcDeleteToken>(
+        r#"{"phase":"delete","request":{"phase":"in_flight","request":"delete-request","attempt":10}}"#,
+    );
 }
 
 #[test]
 fn create_continuation_debug_omits_client_token() {
-    let debug = format!(
-        "{:?}",
-        CcCreateToken::NotIssued {
-            attempt: 1,
-            client_token: TEST_CLIENT_TOKEN.to_string(),
-        }
-    );
+    let token = serde_json::from_value::<CcCreateToken>(serde_json::json!({
+        "phase": "not_issued",
+        "attempt": 1,
+        "client_token": TEST_CLIENT_TOKEN,
+    }))
+    .expect("deserialize create continuation");
+    let debug = format!("{token:?}");
 
     assert_eq!(debug, "NotIssued { attempt: 1 }");
     assert!(!debug.contains(TEST_CLIENT_TOKEN));
+}
+
+#[test]
+fn client_token_debug_redacts_value() {
+    let debug = format!("{:?}", client_token(TEST_CLIENT_TOKEN));
+
+    assert_eq!(debug, "ClientToken(<redacted>)");
+    assert!(!debug.contains(TEST_CLIENT_TOKEN));
+}
+
+#[test]
+fn invalid_client_tokens_fail_at_deserialization() {
+    assert!(serde_json::from_value::<ClientToken>(serde_json::json!("")).is_err());
+    assert!(serde_json::from_value::<ClientToken>(serde_json::json!("a".repeat(129))).is_err());
+    assert!(serde_json::from_value::<ClientToken>(serde_json::json!("not valid")).is_err());
+}
+
+#[test]
+fn old_create_continuation_without_client_token_mints_one() {
+    let token: CcCreateToken = serde_json::from_value(serde_json::json!({
+        "phase": "not_issued",
+        "attempt": 3,
+    }))
+    .expect("old create continuation should deserialize");
+    let encoded = serde_json::to_value(token).expect("serialize upgraded create continuation");
+    let client_token = encoded["client_token"]
+        .as_str()
+        .expect("upgraded create continuation should contain a client token");
+
+    assert!(common::is_uuidish(client_token));
 }
 
 #[tokio::test(start_paused = true)]

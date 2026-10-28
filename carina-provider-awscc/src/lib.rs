@@ -15,7 +15,9 @@ mod sdk_config;
 
 // Re-export main types
 pub use provider::{
-    AwsccProvider, CcCreateToken, CcDeleteToken, CcRequestPhase, CcUpdateToken, RequestToken,
+    AwsccProvider, CcCreateToken, CcDeleteToken, CcRequestPhase, CcUpdateToken, ClientToken,
+    InFlightCreateRequest, InFlightRequest, NotIssuedCreate, NotIssuedRequest, RequestToken,
+    UnconfirmedCreate, UnconfirmedRequest, UndeterminedCreate,
 };
 pub use sdk_config::BoundedSdkConfig;
 
