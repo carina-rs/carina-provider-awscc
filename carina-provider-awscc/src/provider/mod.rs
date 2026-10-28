@@ -27,13 +27,13 @@ mod special_cases;
 mod tags;
 pub(crate) mod update;
 
-use aws_config::Region;
 use aws_sdk_cloudcontrol::Client as CloudControlClient;
 use aws_sdk_sts::Client as StsClient;
 use carina_core::provider::{ProviderError, ProviderResult};
 use tokio::sync::OnceCell;
 
 use crate::schemas::config::AwsccSchemaConfig;
+use crate::sdk_config::{BoundedSdkConfig, SdkClients};
 use error_helpers::api_error_with_meta;
 
 // Re-export public API
@@ -83,7 +83,8 @@ pub struct AwsccProviderConfig {
 /// AWS Cloud Control Provider
 pub struct AwsccProvider {
     cloudcontrol_client: CloudControlClient,
-    aws_config: aws_config::SdkConfig,
+    s3_client: aws_sdk_s3::Client,
+    sts_client: StsClient,
     /// Set when provider initialization rejected the caller's AWS account
     /// against `allowed_account_ids` / `forbidden_account_ids`. Every
     /// `Provider` trait method short-circuits to this error before
@@ -116,22 +117,28 @@ impl AwsccProvider {
     /// returned instance will surface that error before any
     /// CloudControl call.
     pub async fn new_with_config(region: &str, cfg: &AwsccProviderConfig) -> Self {
-        let config = Self::build_config(region, cfg.assume_role.as_ref()).await;
+        let config = BoundedSdkConfig::load(region, cfg.assume_role.as_ref()).await;
         Self::from_sdk_config(config, cfg).await
     }
 
-    /// Create a new AwsccProvider from a prebuilt AWS SDK configuration.
-    pub async fn from_sdk_config(config: aws_config::SdkConfig, cfg: &AwsccProviderConfig) -> Self {
+    /// Create a new AwsccProvider from a bounded AWS SDK configuration.
+    pub async fn from_sdk_config(config: BoundedSdkConfig, cfg: &AwsccProviderConfig) -> Self {
+        let SdkClients {
+            cloudcontrol,
+            s3,
+            sts,
+        } = config.clients();
         let init_error =
             if cfg.allowed_account_ids.is_empty() && cfg.forbidden_account_ids.is_empty() {
                 None
             } else {
-                Self::check_account_guard(&config, cfg).await.err()
+                Self::check_account_guard(&sts, cfg).await.err()
             };
 
         Self {
-            cloudcontrol_client: CloudControlClient::new(&config),
-            aws_config: config,
+            cloudcontrol_client: cloudcontrol,
+            s3_client: s3,
+            sts_client: sts,
             init_error,
             account_id: OnceCell::new(),
         }
@@ -143,14 +150,18 @@ impl AwsccProvider {
     pub(crate) async fn account_id(&self) -> ProviderResult<&str> {
         self.account_id
             .get_or_try_init(|| async {
-                let sts = StsClient::new(&self.aws_config);
-                let identity = sts.get_caller_identity().send().await.map_err(|e| {
-                    api_error_with_meta(
-                        "Failed to call sts:GetCallerIdentity",
-                        "sts.GetCallerIdentity",
-                        e,
-                    )
-                })?;
+                let identity = self
+                    .sts_client
+                    .get_caller_identity()
+                    .send()
+                    .await
+                    .map_err(|e| {
+                        api_error_with_meta(
+                            "Failed to call sts:GetCallerIdentity",
+                            "sts.GetCallerIdentity",
+                            e,
+                        )
+                    })?;
                 identity.account().map(|s| s.to_string()).ok_or_else(|| {
                     ProviderError::api_error("sts:GetCallerIdentity returned no account id")
                 })
@@ -164,11 +175,7 @@ impl AwsccProvider {
     ///
     /// Returns `Ok(())` if the account is allowed; otherwise an error
     /// message naming both the offending list and the actual account ID.
-    async fn check_account_guard(
-        sdk_config: &aws_config::SdkConfig,
-        cfg: &AwsccProviderConfig,
-    ) -> Result<(), String> {
-        let sts = StsClient::new(sdk_config);
+    async fn check_account_guard(sts: &StsClient, cfg: &AwsccProviderConfig) -> Result<(), String> {
         let identity = sts.get_caller_identity().send().await.map_err(|e| {
             format!(
                 "Failed to call sts:GetCallerIdentity to check \
@@ -193,41 +200,50 @@ impl AwsccProvider {
     pub fn init_error(&self) -> Option<&str> {
         self.init_error.as_deref()
     }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    async fn build_config(
-        region: &str,
-        assume_role: Option<&assume_role::AssumeRoleConfig>,
-    ) -> aws_config::SdkConfig {
-        let base = aws_config::defaults(aws_config::BehaviorVersion::latest())
-            .region(Region::new(region.to_string()))
-            .load()
-            .await;
-        match assume_role {
-            None => base,
-            Some(ar) => assume_role::wrap_with_assume_role(base, ar).await,
-        }
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    async fn build_config(
-        region: &str,
-        assume_role: Option<&assume_role::AssumeRoleConfig>,
-    ) -> aws_config::SdkConfig {
-        use carina_plugin_sdk::wasi_http::WasiHttpClient;
-        let base = aws_config::defaults(aws_config::BehaviorVersion::latest())
-            .region(Region::new(region.to_string()))
-            .http_client(WasiHttpClient::new())
-            .load()
-            .await;
-        match assume_role {
-            None => base,
-            Some(ar) => assume_role::wrap_with_assume_role(base, ar).await,
-        }
-    }
 }
 
 /// Get the AwsccSchemaConfig for a resource type. O(1) via cached HashMap.
 fn get_schema_config(resource_type: &str) -> Option<&'static AwsccSchemaConfig> {
     crate::schemas::generated::get_config_by_type(resource_type)
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests {
+    use aws_smithy_types::retry::RetryConfig;
+    use aws_smithy_types::timeout::TimeoutConfig;
+    use winterbaume_core::MockAws;
+
+    use super::{AwsccProvider, AwsccProviderConfig};
+    use crate::BoundedSdkConfig;
+    use crate::sdk_config::assert_bounded_policy;
+
+    #[tokio::test]
+    async fn from_sdk_config_applies_policy_to_all_client_config_sources() {
+        let mock = MockAws::builder().build();
+        let input = aws_config::SdkConfig::builder()
+            .http_client(mock.http_client())
+            .credentials_provider(mock.credentials_provider())
+            .timeout_config(TimeoutConfig::disabled())
+            .retry_config(RetryConfig::standard().with_max_attempts(10))
+            .build();
+        let provider = AwsccProvider::from_sdk_config(
+            BoundedSdkConfig::new(input),
+            &AwsccProviderConfig::default(),
+        )
+        .await;
+
+        assert_bounded_policy(
+            provider.cloudcontrol_client.config().timeout_config(),
+            provider.cloudcontrol_client.config().retry_config(),
+        );
+
+        assert_bounded_policy(
+            provider.s3_client.config().timeout_config(),
+            provider.s3_client.config().retry_config(),
+        );
+        assert_bounded_policy(
+            provider.sts_client.config().timeout_config(),
+            provider.sts_client.config().retry_config(),
+        );
+    }
 }

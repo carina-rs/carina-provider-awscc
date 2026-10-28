@@ -99,7 +99,11 @@ async fn provider_with_mock(policy_document: serde_json::Value) -> AwsccProvider
         .load()
         .await;
 
-    AwsccProvider::from_sdk_config(config, &AwsccProviderConfig::default()).await
+    AwsccProvider::from_sdk_config(
+        carina_provider_awscc::BoundedSdkConfig::new(config),
+        &AwsccProviderConfig::default(),
+    )
+    .await
 }
 
 async fn read_vpc_endpoint(

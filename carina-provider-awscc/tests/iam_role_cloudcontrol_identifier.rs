@@ -205,7 +205,11 @@ async fn provider_with_mock(service: IamRoleIdentifierCloudControl) -> AwsccProv
         .load()
         .await;
 
-    AwsccProvider::from_sdk_config(config, &AwsccProviderConfig::default()).await
+    AwsccProvider::from_sdk_config(
+        carina_provider_awscc::BoundedSdkConfig::new(config),
+        &AwsccProviderConfig::default(),
+    )
+    .await
 }
 
 #[tokio::test(start_paused = true)]

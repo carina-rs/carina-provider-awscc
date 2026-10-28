@@ -112,7 +112,11 @@ async fn provider() -> (AwsccProvider, Arc<CountingCloudControl>) {
         .load()
         .await;
     (
-        AwsccProvider::from_sdk_config(config, &AwsccProviderConfig::default()).await,
+        AwsccProvider::from_sdk_config(
+            carina_provider_awscc::BoundedSdkConfig::new(config),
+            &AwsccProviderConfig::default(),
+        )
+        .await,
         cloudcontrol,
     )
 }

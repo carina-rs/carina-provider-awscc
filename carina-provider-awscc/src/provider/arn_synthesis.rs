@@ -160,8 +160,12 @@ impl AwsccProvider {
             return Ok(SynthesisStatus::Complete);
         }
         let account_id = self.account_id().await?;
-        let partition =
-            partition_for_region(self.aws_config.region().map(|region| region.as_ref()));
+        let partition = partition_for_region(
+            self.cloudcontrol_client
+                .config()
+                .region()
+                .map(|region| region.as_ref()),
+        );
         if let Some(value) =
             pending_cloudfront_distribution_arn(resource_type, attributes, partition, account_id)
         {

@@ -20,9 +20,9 @@ impl std::fmt::Display for S3Bucket {
 }
 
 impl AwsccProvider {
-    /// Create an S3 client from the stored config
-    pub(crate) fn s3_client(&self) -> aws_sdk_s3::Client {
-        aws_sdk_s3::Client::new(&self.aws_config)
+    /// Return the stored S3 client.
+    pub(crate) fn s3_client(&self) -> &aws_sdk_s3::Client {
+        &self.s3_client
     }
 
     /// Empty an S3 bucket by deleting all objects and versions

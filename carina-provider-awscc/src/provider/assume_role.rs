@@ -134,29 +134,6 @@ pub fn extract_assume_role(value: Option<&Value>) -> Result<Option<AssumeRoleCon
     }))
 }
 
-/// Layer an STS `AssumeRoleProvider` on top of the ambient base
-/// credential chain. The returned [`aws_config::SdkConfig`] uses the
-/// assumed-role credentials for every SDK call thereafter.
-pub async fn wrap_with_assume_role(
-    base: aws_config::SdkConfig,
-    ar: &AssumeRoleConfig,
-) -> aws_config::SdkConfig {
-    let mut builder =
-        aws_config::sts::AssumeRoleProvider::builder(ar.role_arn.clone()).configure(&base);
-    if let Some(name) = ar.session_name.as_deref() {
-        builder = builder.session_name(name);
-    }
-    if let Some(eid) = ar.external_id.as_deref() {
-        builder = builder.external_id(eid);
-    }
-    if let Some(dur) = ar.duration {
-        builder = builder.session_length(dur);
-    }
-    let provider = builder.build().await;
-    let shared = aws_credential_types::provider::SharedCredentialsProvider::new(provider);
-    base.into_builder().credentials_provider(shared).build()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
