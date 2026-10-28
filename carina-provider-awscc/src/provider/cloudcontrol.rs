@@ -881,7 +881,7 @@ impl AwsccProvider {
         type_name: &str,
         desired_state: &serde_json::Value,
         client_token: &ClientToken,
-    ) -> Result<CreateResourceOutput, SdkError<CreateResourceError, HttpResponse>> {
+    ) -> Result<CreateResourceOutput, Box<SdkError<CreateResourceError, HttpResponse>>> {
         self.cloudcontrol_client
             .create_resource()
             .type_name(type_name)
@@ -889,6 +889,7 @@ impl AwsccProvider {
             .client_token(client_token.as_str())
             .send()
             .await
+            .map_err(Box::new)
     }
 
     async fn issue_not_issued_create(
@@ -930,7 +931,12 @@ impl AwsccProvider {
                 }
             }
             Err(error) => {
-                match Self::not_issued_retry_decision(&error, type_name, token, retry_policy) {
+                match Self::not_issued_retry_decision(
+                    error.as_ref(),
+                    type_name,
+                    token,
+                    retry_policy,
+                ) {
                     NotIssuedDecision::RetryRejected {
                         pending,
                         delay_secs,
@@ -950,7 +956,7 @@ impl AwsccProvider {
                             "Failed to create resource",
                             "cloudcontrol.CreateResource",
                             CloudControlResourceSubject::type_only(type_name),
-                            error,
+                            *error,
                         )))
                     }
                 }
@@ -999,7 +1005,12 @@ impl AwsccProvider {
                 }
             }
             Err(error) => {
-                match Self::unconfirmed_retry_decision(&error, type_name, token, retry_policy) {
+                match Self::unconfirmed_retry_decision(
+                    error.as_ref(),
+                    type_name,
+                    token,
+                    retry_policy,
+                ) {
                     UnconfirmedDecision::Resend {
                         pending,
                         delay_secs,
@@ -1011,7 +1022,7 @@ impl AwsccProvider {
                         retry_policy.unknown_outcome_context,
                         "cloudcontrol.CreateResource",
                         CloudControlResourceSubject::type_only(type_name),
-                        error,
+                        *error,
                     )),
                 }
             }
@@ -1178,8 +1189,9 @@ impl AwsccProvider {
         identifier: &str,
         patch_ops: Vec<serde_json::Value>,
         client_token: &ClientToken,
-    ) -> ProviderResult<Result<Option<RequestToken>, SdkError<UpdateResourceError, HttpResponse>>>
-    {
+    ) -> ProviderResult<
+        Result<Option<RequestToken>, Box<SdkError<UpdateResourceError, HttpResponse>>>,
+    > {
         let patch_document = serde_json::to_string(&patch_ops)
             .map_err(|e| ProviderError::internal_caused_by("Failed to build patch", e))?;
 
@@ -1197,7 +1209,8 @@ impl AwsccProvider {
                     .progress_event()
                     .and_then(|progress| progress.request_token())
                     .map(RequestToken::from)
-            }))
+            })
+            .map_err(Box::new))
     }
 
     async fn issue_not_issued_update(
@@ -1300,7 +1313,7 @@ impl AwsccProvider {
         type_name: &str,
         identifier: &str,
         client_token: &ClientToken,
-    ) -> Result<Option<RequestToken>, SdkError<DeleteResourceError, HttpResponse>> {
+    ) -> Result<Option<RequestToken>, Box<SdkError<DeleteResourceError, HttpResponse>>> {
         self.cloudcontrol_client
             .delete_resource()
             .type_name(type_name)
@@ -1314,6 +1327,7 @@ impl AwsccProvider {
                     .and_then(|progress| progress.request_token())
                     .map(RequestToken::from)
             })
+            .map_err(Box::new)
     }
 
     async fn issue_not_issued_delete(
@@ -1495,7 +1509,7 @@ impl AwsccProvider {
 
     #[allow(clippy::too_many_arguments)]
     fn finish_not_issued<E, Subject, NoRequest>(
-        result: Result<Option<RequestToken>, SdkError<E, HttpResponse>>,
+        result: Result<Option<RequestToken>, Box<SdkError<E, HttpResponse>>>,
         type_name: &str,
         token: NotIssuedRequest,
         retry_policy: RetryPolicy,
@@ -1516,7 +1530,12 @@ impl AwsccProvider {
             }),
             Ok(None) => no_request().map(OperationStep::Done),
             Err(error) => {
-                match Self::not_issued_retry_decision(&error, type_name, token, retry_policy) {
+                match Self::not_issued_retry_decision(
+                    error.as_ref(),
+                    type_name,
+                    token,
+                    retry_policy,
+                ) {
                     NotIssuedDecision::RetryRejected {
                         pending,
                         delay_secs,
@@ -1532,7 +1551,7 @@ impl AwsccProvider {
                         poll_after_secs: delay_secs,
                     }),
                     NotIssuedDecision::Fail { .. } => Err(api_error_with_meta_and_subject(
-                        context, operation, subject, error,
+                        context, operation, subject, *error,
                     )),
                 }
             }
@@ -1541,7 +1560,7 @@ impl AwsccProvider {
 
     #[allow(clippy::too_many_arguments)]
     fn finish_unconfirmed<E, Subject, NoRequest>(
-        result: Result<Option<RequestToken>, SdkError<E, HttpResponse>>,
+        result: Result<Option<RequestToken>, Box<SdkError<E, HttpResponse>>>,
         type_name: &str,
         token: UnconfirmedRequest,
         retry_policy: RetryPolicy,
@@ -1561,7 +1580,12 @@ impl AwsccProvider {
             }),
             Ok(None) => no_request().map(OperationStep::Done),
             Err(error) => {
-                match Self::unconfirmed_retry_decision(&error, type_name, &token, retry_policy) {
+                match Self::unconfirmed_retry_decision(
+                    error.as_ref(),
+                    type_name,
+                    &token,
+                    retry_policy,
+                ) {
                     UnconfirmedDecision::Resend {
                         pending,
                         delay_secs,
@@ -1573,7 +1597,7 @@ impl AwsccProvider {
                         retry_policy.unknown_outcome_context,
                         operation,
                         subject,
-                        error,
+                        *error,
                     )),
                 }
             }
