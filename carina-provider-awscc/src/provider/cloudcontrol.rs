@@ -63,7 +63,7 @@ impl From<String> for RequestToken {
 }
 
 mod client_token {
-    use super::RequestToken;
+    use super::{OperationStatus, ProviderError, RequestToken};
     use serde::{Deserialize, Serialize};
 
     /// Opaque idempotency token for one logical CloudControl request.
@@ -109,7 +109,6 @@ mod client_token {
     #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
     pub struct NotIssuedRequest {
         attempt: u32,
-        #[serde(default = "fresh_client_token")]
         client_token: ClientToken,
     }
 
@@ -127,6 +126,10 @@ mod client_token {
 
         pub(super) fn client_token(&self) -> &ClientToken {
             &self.client_token
+        }
+
+        pub(super) fn into_in_flight(self, request: RequestToken) -> InFlightRequest {
+            InFlightRequest::new(request, self.attempt)
         }
     }
 
@@ -150,6 +153,10 @@ mod client_token {
         pub(super) fn client_token(&self) -> &ClientToken {
             &self.client_token
         }
+
+        pub(super) fn into_in_flight(self, request: RequestToken) -> InFlightRequest {
+            InFlightRequest::new(request, self.attempt)
+        }
     }
 
     /// A non-create mutation accepted by CloudControl.
@@ -168,15 +175,36 @@ mod client_token {
             self.attempt
         }
 
-        pub(super) fn new(request: RequestToken, attempt: u32) -> Self {
+        fn new(request: RequestToken, attempt: u32) -> Self {
             Self { request, attempt }
         }
+    }
 
-        pub(super) fn retry_after_terminal_failure(self) -> NotIssuedRequest {
-            // The consumed witness proves the original request finished. A fresh
-            // token therefore cannot duplicate a still-running request.
+    /// Proof that an accepted non-create mutation reached a terminal failure.
+    #[derive(Debug)]
+    pub(crate) struct TerminallyFailedRequest {
+        request: InFlightRequest,
+    }
+
+    impl TerminallyFailedRequest {
+        pub(super) fn from_status(
+            request: InFlightRequest,
+            status: OperationStatus,
+        ) -> Option<Self> {
+            matches!(
+                status,
+                OperationStatus::Failed | OperationStatus::CancelComplete
+            )
+            .then_some(Self { request })
+        }
+
+        pub(crate) fn attempt(&self) -> u32 {
+            self.request.attempt
+        }
+
+        pub(crate) fn retry_after_terminal_failure(self) -> NotIssuedRequest {
             NotIssuedRequest {
-                attempt: self.attempt + 1,
+                attempt: self.request.attempt + 1,
                 client_token: fresh_client_token(),
             }
         }
@@ -231,7 +259,7 @@ mod client_token {
             self.attempt
         }
 
-        pub(super) fn start() -> Self {
+        pub(crate) fn start() -> Self {
             Self {
                 attempt: 0,
                 client_token: fresh_client_token(),
@@ -240,6 +268,18 @@ mod client_token {
 
         pub(super) fn client_token(&self) -> &ClientToken {
             &self.client_token
+        }
+
+        pub(super) fn into_in_flight(
+            self,
+            request: RequestToken,
+            identifier: Option<String>,
+        ) -> InFlightCreateRequest {
+            InFlightCreateRequest::new(request, self.attempt, identifier)
+        }
+
+        pub(crate) fn into_not_applied(self, error: ProviderError) -> NotAppliedCreate {
+            NotAppliedCreate(error)
         }
     }
 
@@ -262,6 +302,14 @@ mod client_token {
 
         pub(super) fn client_token(&self) -> &ClientToken {
             &self.client_token
+        }
+
+        pub(super) fn to_in_flight(
+            &self,
+            request: RequestToken,
+            identifier: Option<String>,
+        ) -> InFlightCreateRequest {
+            InFlightCreateRequest::new(request, self.attempt, identifier)
         }
     }
 
@@ -287,7 +335,7 @@ mod client_token {
             self.identifier.as_deref()
         }
 
-        pub(super) fn new(request: RequestToken, attempt: u32, identifier: Option<String>) -> Self {
+        fn new(request: RequestToken, attempt: u32, identifier: Option<String>) -> Self {
             Self {
                 request,
                 attempt,
@@ -295,21 +343,62 @@ mod client_token {
             }
         }
 
-        pub(super) fn into_parts(self) -> (RequestToken, u32, Option<String>) {
-            (self.request, self.attempt, self.identifier)
-        }
-
         pub(super) fn with_identifier(self, identifier: Option<String>) -> Self {
             Self { identifier, ..self }
         }
+    }
+
+    /// Proof that an accepted create reached a terminal failure.
+    #[derive(Debug)]
+    pub(crate) struct TerminallyFailedCreate {
+        request: InFlightCreateRequest,
+        status: OperationStatus,
+    }
+
+    impl TerminallyFailedCreate {
+        pub(super) fn from_status(
+            request: InFlightCreateRequest,
+            status: OperationStatus,
+        ) -> Option<Self> {
+            matches!(
+                status,
+                OperationStatus::Failed | OperationStatus::CancelComplete
+            )
+            .then_some(Self { request, status })
+        }
+
+        pub(crate) fn status(&self) -> &OperationStatus {
+            &self.status
+        }
+
+        pub(crate) fn attempt(&self) -> u32 {
+            self.request.attempt
+        }
+
+        pub(crate) fn into_in_flight(self) -> InFlightCreateRequest {
+            self.request
+        }
 
         pub(crate) fn retry_after_terminal_failure(self) -> NotIssuedCreate {
-            // The consumed witness proves the original request finished. A fresh
-            // token therefore cannot duplicate a still-running request.
             NotIssuedCreate {
-                attempt: self.attempt + 1,
+                attempt: self.request.attempt + 1,
                 client_token: fresh_client_token(),
             }
+        }
+    }
+
+    /// Proof that a create failed before any send could have been accepted.
+    #[derive(Debug)]
+    #[doc(hidden)]
+    pub struct NotAppliedCreate(ProviderError);
+
+    impl NotAppliedCreate {
+        pub fn into_error(self) -> ProviderError {
+            self.0
+        }
+
+        pub(crate) fn map_error(self, map: impl FnOnce(ProviderError) -> ProviderError) -> Self {
+            Self(map(self.0))
         }
     }
 
@@ -476,13 +565,65 @@ mod client_token {
             }
         }
     }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        fn in_flight_request() -> InFlightRequest {
+            InFlightRequest::new(RequestToken::from("request"), 3)
+        }
+
+        fn in_flight_create() -> InFlightCreateRequest {
+            InFlightCreateRequest::new(RequestToken::from("create"), 3, None)
+        }
+
+        #[test]
+        fn terminal_failure_witnesses_accept_only_failed_and_cancel_complete() {
+            for status in [
+                OperationStatus::Pending,
+                OperationStatus::InProgress,
+                OperationStatus::CancelInProgress,
+                OperationStatus::Success,
+            ] {
+                assert!(
+                    TerminallyFailedRequest::from_status(in_flight_request(), status.clone())
+                        .is_none(),
+                    "{} must not prove terminal request failure",
+                    status.as_str()
+                );
+                assert!(
+                    TerminallyFailedCreate::from_status(in_flight_create(), status.clone())
+                        .is_none(),
+                    "{} must not prove terminal create failure",
+                    status.as_str()
+                );
+            }
+
+            for status in [OperationStatus::Failed, OperationStatus::CancelComplete] {
+                assert!(
+                    TerminallyFailedRequest::from_status(in_flight_request(), status.clone())
+                        .is_some(),
+                    "{} must prove terminal request failure",
+                    status.as_str()
+                );
+                assert!(
+                    TerminallyFailedCreate::from_status(in_flight_create(), status.clone())
+                        .is_some(),
+                    "{} must prove terminal create failure",
+                    status.as_str()
+                );
+            }
+        }
+    }
 }
 
+pub(crate) use client_token::TerminallyFailedCreate;
 pub use client_token::{
     CcCreateToken, CcRequestPhase, ClientToken, InFlightCreateRequest, InFlightRequest,
-    NotIssuedCreate, NotIssuedRequest, UnconfirmedCreate, UnconfirmedRequest,
+    NotAppliedCreate, NotIssuedCreate, NotIssuedRequest, UnconfirmedCreate, UnconfirmedRequest,
 };
-use client_token::{NotIssuedPhase, UnconfirmedPhase};
+use client_token::{NotIssuedPhase, TerminallyFailedRequest, UnconfirmedPhase};
 
 /// Continuation state for a CloudControl update operation.
 pub type CcUpdateToken = CcRequestPhase;
@@ -504,9 +645,12 @@ const POLL_AFTER_SECS: u32 = 5;
 
 #[derive(Debug)]
 enum RequestStatusStep {
-    Pending,
+    Pending(InFlightRequest),
     Done(WaitOutcome),
-    RetryableFailure { error: ProviderError },
+    RetryableFailure {
+        failure: TerminallyFailedRequest,
+        error: ProviderError,
+    },
 }
 
 #[derive(Debug)]
@@ -527,6 +671,10 @@ impl UndeterminedCreate {
     pub fn into_error(self) -> ProviderError {
         self.0
     }
+
+    pub(crate) fn map_error(self, map: impl FnOnce(ProviderError) -> ProviderError) -> Self {
+        Self(map(self.0))
+    }
 }
 
 #[derive(Debug)]
@@ -540,8 +688,7 @@ pub(crate) enum CcCreateStatus {
         identifier: Option<String>,
     },
     Failed {
-        token: InFlightCreateRequest,
-        status: OperationStatus,
+        failure: TerminallyFailedCreate,
         identifier: Option<String>,
         error_code: Option<HandlerErrorCode>,
         status_message: String,
@@ -588,7 +735,9 @@ enum NotIssuedDecision<NotIssued, Unconfirmed> {
         pending: Unconfirmed,
         delay_secs: u32,
     },
-    Fail,
+    Fail {
+        not_issued: NotIssued,
+    },
 }
 
 #[derive(Debug)]
@@ -682,22 +831,6 @@ impl AwsccProvider {
         }
     }
 
-    /// Issue one CloudControl create request.
-    pub(crate) async fn cc_create_step(
-        &self,
-        type_name: &str,
-        desired_state: serde_json::Value,
-        operation_config: Option<&carina_core::schema::OperationConfig>,
-    ) -> ProviderResult<CcCreatePending> {
-        self.send_not_issued_create(
-            type_name,
-            desired_state,
-            operation_config,
-            NotIssuedCreate::start(),
-        )
-        .await
-    }
-
     /// Send a create that is proven not to have been issued.
     pub(crate) async fn send_not_issued_create(
         &self,
@@ -705,7 +838,7 @@ impl AwsccProvider {
         desired_state: serde_json::Value,
         operation_config: Option<&carina_core::schema::OperationConfig>,
         token: NotIssuedCreate,
-    ) -> ProviderResult<CcCreatePending> {
+    ) -> Result<CcCreatePending, NotAppliedCreate> {
         let retry_policy = Self::request_retry_policy(
             operation_config,
             "creating",
@@ -733,6 +866,16 @@ impl AwsccProvider {
             .map_err(UndeterminedCreate::new)
     }
 
+    // Contract checked against aws-sdk-cloudcontrol 1.103.0 on 2026-10-28 for
+    // every create/update/delete ClientToken member: "A unique identifier to
+    // ensure the idempotency of the resource request. As a best practice,
+    // specify this token to ensure idempotency, so that Amazon Web Services
+    // Cloud Control API can accurately distinguish between request retries and
+    // new resource requests. You might retry a resource request to ensure that
+    // it was successfully received." Its ClientTokenConflictException docs
+    // add, "However, client token expire after 36 hours." Within that documented
+    // window, resending any CloudControl mutation with the same ClientToken
+    // cannot apply it twice.
     async fn send_create_request(
         &self,
         type_name: &str,
@@ -754,8 +897,7 @@ impl AwsccProvider {
         desired_state: serde_json::Value,
         token: NotIssuedCreate,
         retry_policy: RetryPolicy,
-    ) -> ProviderResult<CcCreatePending> {
-        let attempt = token.attempt();
+    ) -> Result<CcCreatePending, NotAppliedCreate> {
         let result = self
             .send_create_request(type_name, &desired_state, token.client_token())
             .await;
@@ -773,7 +915,7 @@ impl AwsccProvider {
                     .map(ToString::to_string);
                 match request {
                     Some(request) => Ok(CcCreatePending {
-                        token: InFlightCreateRequest::new(request, attempt, identifier).into(),
+                        token: token.into_in_flight(request, identifier).into(),
                         poll_after_secs: FIRST_POLL_AFTER_SECS,
                     }),
                     None => {
@@ -803,12 +945,14 @@ impl AwsccProvider {
                         token: pending.into(),
                         poll_after_secs: delay_secs,
                     }),
-                    NotIssuedDecision::Fail => Err(api_error_with_meta_and_subject(
-                        "Failed to create resource",
-                        "cloudcontrol.CreateResource",
-                        CloudControlResourceSubject::type_only(type_name),
-                        error,
-                    )),
+                    NotIssuedDecision::Fail { not_issued } => {
+                        Err(not_issued.into_not_applied(api_error_with_meta_and_subject(
+                            "Failed to create resource",
+                            "cloudcontrol.CreateResource",
+                            CloudControlResourceSubject::type_only(type_name),
+                            error,
+                        )))
+                    }
                 }
             }
         }
@@ -821,7 +965,6 @@ impl AwsccProvider {
         token: &UnconfirmedCreate,
         retry_policy: RetryPolicy,
     ) -> ProviderResult<CcCreatePending> {
-        let attempt = token.attempt();
         let result = self
             .send_create_request(type_name, &desired_state, token.client_token())
             .await;
@@ -839,7 +982,7 @@ impl AwsccProvider {
                     .map(ToString::to_string);
                 match request {
                     Some(request) => Ok(CcCreatePending {
-                        token: InFlightCreateRequest::new(request, attempt, identifier).into(),
+                        token: token.to_in_flight(request, identifier).into(),
                         poll_after_secs: FIRST_POLL_AFTER_SECS,
                     }),
                     None => {
@@ -880,7 +1023,8 @@ impl AwsccProvider {
         &self,
         token: InFlightCreateRequest,
     ) -> CcCreateStatus {
-        let (request, attempt, recorded_identifier) = token.into_parts();
+        let request = token.request().clone();
+        let recorded_identifier = token.identifier().map(ToString::to_string);
 
         let result = self
             .cloudcontrol_client
@@ -888,8 +1032,6 @@ impl AwsccProvider {
             .request_token(request.as_str())
             .send()
             .await;
-        let token =
-            InFlightCreateRequest::new(request.clone(), attempt, recorded_identifier.clone());
         let response = match result {
             Ok(response) => response,
             Err(error) if Self::is_request_token_not_found_error(&error) => {
@@ -939,9 +1081,10 @@ impl AwsccProvider {
             },
             Some(OperationStatus::Success) => CcCreateStatus::Success { token, identifier },
             Some(status @ (OperationStatus::Failed | OperationStatus::CancelComplete)) => {
+                let failure = TerminallyFailedCreate::from_status(token, status.clone())
+                    .expect("matched terminal create status constructs a failure witness");
                 CcCreateStatus::Failed {
-                    token,
-                    status: status.clone(),
+                    failure,
                     identifier,
                     error_code: progress.error_code().cloned(),
                     status_message: progress
@@ -1230,14 +1373,14 @@ impl AwsccProvider {
         token: InFlightRequest,
         retry_policy: RetryPolicy,
     ) -> ProviderResult<CcWaitStep> {
-        let attempt = token.attempt();
-        match self.poll_request_status(token.request()).await? {
-            RequestStatusStep::Pending => Ok(OperationStep::Pending {
+        match self.poll_request_status(token).await? {
+            RequestStatusStep::Pending(token) => Ok(OperationStep::Pending {
                 pending: token.into(),
                 poll_after_secs: POLL_AFTER_SECS,
             }),
             RequestStatusStep::Done(outcome) => Ok(OperationStep::Done(outcome)),
-            RequestStatusStep::RetryableFailure { error } => {
+            RequestStatusStep::RetryableFailure { failure, error } => {
+                let attempt = failure.attempt();
                 if attempt >= retry_policy.max_attempts {
                     return Err(error);
                 }
@@ -1251,7 +1394,7 @@ impl AwsccProvider {
                     delay_secs,
                 );
                 Ok(OperationStep::Pending {
-                    pending: token.retry_after_terminal_failure().into(),
+                    pending: failure.retry_after_terminal_failure().into(),
                     poll_after_secs: delay_secs,
                 })
             }
@@ -1304,7 +1447,9 @@ impl AwsccProvider {
                     delay_secs,
                 }
             }
-            SendOutcome::NotSent | SendOutcome::Rejected => NotIssuedDecision::Fail,
+            SendOutcome::NotSent | SendOutcome::Rejected => NotIssuedDecision::Fail {
+                not_issued: pending,
+            },
         }
     }
 
@@ -1364,10 +1509,9 @@ impl AwsccProvider {
         Subject: std::fmt::Debug + std::fmt::Display + Send + Sync + 'static,
         NoRequest: FnOnce() -> ProviderResult<WaitOutcome>,
     {
-        let attempt = token.attempt();
         match result {
             Ok(Some(request)) => Ok(OperationStep::Pending {
-                pending: InFlightRequest::new(request, attempt).into(),
+                pending: token.into_in_flight(request).into(),
                 poll_after_secs: FIRST_POLL_AFTER_SECS,
             }),
             Ok(None) => no_request().map(OperationStep::Done),
@@ -1387,7 +1531,7 @@ impl AwsccProvider {
                         pending: pending.into(),
                         poll_after_secs: delay_secs,
                     }),
-                    NotIssuedDecision::Fail => Err(api_error_with_meta_and_subject(
+                    NotIssuedDecision::Fail { .. } => Err(api_error_with_meta_and_subject(
                         context, operation, subject, error,
                     )),
                 }
@@ -1410,10 +1554,9 @@ impl AwsccProvider {
         Subject: std::fmt::Debug + std::fmt::Display + Send + Sync + 'static,
         NoRequest: FnOnce() -> ProviderResult<WaitOutcome>,
     {
-        let attempt = token.attempt();
         match result {
             Ok(Some(request)) => Ok(OperationStep::Pending {
-                pending: InFlightRequest::new(request, attempt).into(),
+                pending: token.into_in_flight(request).into(),
                 poll_after_secs: FIRST_POLL_AFTER_SECS,
             }),
             Ok(None) => no_request().map(OperationStep::Done),
@@ -1527,6 +1670,12 @@ impl AwsccProvider {
     }
 
     /// Returns whether CloudControl's proven rejection is worth retrying.
+    ///
+    /// Entries that CloudControl normally returns with a 5xx status (for
+    /// example, `ServiceInternalErrorException`) are classified as
+    /// `SendOutcome::MaybeSent` before this proven-rejection list is consulted.
+    /// Keep them here as a defensive classification for model- or
+    /// transport-dependent responses that reach this function as rejections.
     fn is_retryable_rejection<E, R>(error: &SdkError<E, R>) -> bool
     where
         E: ProvideErrorMetadata,
@@ -1534,6 +1683,7 @@ impl AwsccProvider {
         /// Error codes from the CloudControl API that indicate retryable conditions.
         const RETRYABLE_ERROR_CODES: &[&str] = &[
             "ThrottlingException",
+            "ClientTokenConflictException",
             "ServiceInternalErrorException",
             "HandlerFailureException",
             "HandlerInternalFailureException",
@@ -1600,8 +1750,9 @@ impl AwsccProvider {
     /// Fetch and classify exactly one CloudControl request status.
     async fn poll_request_status(
         &self,
-        request: &RequestToken,
+        token: InFlightRequest,
     ) -> ProviderResult<RequestStatusStep> {
+        let request = token.request().clone();
         let status = self
             .cloudcontrol_client
             .get_resource_request_status()
@@ -1618,11 +1769,11 @@ impl AwsccProvider {
             })?;
 
         let Some(progress) = status.progress_event() else {
-            return Ok(RequestStatusStep::Pending);
+            return Ok(RequestStatusStep::Pending(token));
         };
         match Self::classify_progress_event(progress) {
             Ok(Some(outcome)) => Ok(RequestStatusStep::Done(outcome)),
-            Ok(None) => Ok(RequestStatusStep::Pending),
+            Ok(None) => Ok(RequestStatusStep::Pending(token)),
             Err(error)
                 if matches!(
                     progress.operation_status(),
@@ -1631,7 +1782,13 @@ impl AwsccProvider {
                     .status_message()
                     .is_some_and(Self::is_retryable_status_message) =>
             {
-                Ok(RequestStatusStep::RetryableFailure { error })
+                let observed_status = progress
+                    .operation_status()
+                    .cloned()
+                    .expect("retryable terminal branch has an operation status");
+                let failure = TerminallyFailedRequest::from_status(token, observed_status)
+                    .expect("matched terminal request status constructs a failure witness");
+                Ok(RequestStatusStep::RetryableFailure { failure, error })
             }
             Err(error) => Err(error),
         }

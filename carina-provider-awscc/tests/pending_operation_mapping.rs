@@ -30,7 +30,7 @@ use carina_core::resource::{ConcreteValue, Resource, ResourceId, State, Value};
 use carina_core::schema::SchemaRegistry;
 use carina_provider_awscc::provider::{
     AwsccProviderConfig, CcCreateAttempt, CcCreatePoll, CcCreateResume, CcIssuedCreate,
-    CcPollAttempt, CcResumeAttempt, CcResumedCreate,
+    CcPollAttempt, CcResumeAttempt, CcResumedCreate, NotAppliedCreate,
 };
 use carina_provider_awscc::{
     AwsccNormalizer, AwsccProvider, BoundedSdkConfig, CcCreateToken, CcDeleteToken, CcRequestPhase,
@@ -441,7 +441,6 @@ enum TestCreateStep {
 #[derive(Debug)]
 enum TestCreateVerdict {
     Untracked(Box<ProviderError>),
-    #[allow(dead_code)]
     Undetermined {
         token: CcCreateToken,
         error: Box<ProviderError>,
@@ -474,8 +473,8 @@ impl CcCreateAttempt for TestCreateAttempt {
     type Verdict = TestCreateVerdict;
     type Issued = TestIssuedCreate;
 
-    fn untracked(self, error: ProviderError) -> Self::Verdict {
-        TestCreateVerdict::Untracked(Box::new(error))
+    fn untracked(self, failure: NotAppliedCreate) -> Self::Verdict {
+        TestCreateVerdict::Untracked(Box::new(failure.into_error()))
     }
 
     fn issued(self, identifier: AppliedIdentifier, _sent: Sent) -> Self::Issued {
@@ -501,8 +500,8 @@ impl CcPollAttempt for TestCreateAttempt {
     type Verdict = TestCreateVerdict;
     type Issued = TestIssuedCreate;
 
-    fn untracked(self, error: ProviderError) -> Self::Verdict {
-        TestCreateVerdict::Untracked(Box::new(error))
+    fn untracked(self, failure: NotAppliedCreate) -> Self::Verdict {
+        TestCreateVerdict::Untracked(Box::new(failure.into_error()))
     }
 
     fn undetermined(self, token: CcCreateToken, failure: UndeterminedCreate) -> Self::Verdict {
@@ -603,8 +602,8 @@ impl CcResumeAttempt for TestCreateAttempt {
     type Resumed = TestIssuedCreate;
     type Resent = TestCreateAttempt;
 
-    fn untracked(self, error: ProviderError) -> Self::Verdict {
-        TestCreateVerdict::Untracked(Box::new(error))
+    fn untracked(self, failure: NotAppliedCreate) -> Self::Verdict {
+        TestCreateVerdict::Untracked(Box::new(failure.into_error()))
     }
 
     fn preserve(self, error: ProviderError) -> Self::Verdict {
@@ -905,6 +904,17 @@ fn unconfirmed_create_without_client_token_is_rejected() {
         "resends": 1,
     }))
     .expect_err("an unconfirmed create must never mint a replacement client token");
+
+    assert_eq!(error.to_string(), "missing field `client_token`");
+}
+
+#[test]
+fn not_issued_request_without_client_token_is_rejected() {
+    let error = serde_json::from_value::<CcRequestPhase>(json!({
+        "phase": "not_issued",
+        "attempt": 0,
+    }))
+    .expect_err("ephemeral update/delete continuations need no legacy token fallback");
 
     assert_eq!(error.to_string(), "missing field `client_token`");
 }
@@ -1244,9 +1254,51 @@ async fn unconfirmed_create_rejection_from_poll_preserves_in_flight_token() {
 }
 
 #[tokio::test]
+async fn unissued_poll_unconfirmed_rejection_is_undetermined_with_same_token() {
+    let (provider, service) =
+        provider_with_script([("CreateResource", vec![invalid_request()])]).await;
+    let resource = common::normalize_resource(vpc_resource()).await;
+    let token = create_token(json!({
+        "phase": "unconfirmed",
+        "attempt": 2,
+        "resends": 7,
+        "client_token": TEST_CLIENT_TOKEN,
+    }));
+
+    let failure = provider
+        .poll_create_step(
+            resource.as_resource(),
+            token.clone(),
+            CcCreatePoll::Unissued(TestCreateAttempt),
+        )
+        .await
+        .expect_err("a rejected unconfirmed resend must remain undetermined");
+
+    let TestCreateVerdict::Undetermined {
+        token: preserved,
+        error,
+    } = failure
+    else {
+        panic!("an unissued unconfirmed rejection must be undetermined");
+    };
+    assert_eq!(preserved, token);
+    assert_cloudcontrol_api_error(
+        &error,
+        "Failed to resend create resource; the outcome of the earlier send is unknown",
+        "cloudcontrol.CreateResource",
+        "InvalidRequestException",
+        "resource type AWS::EC2::VPC: AWS SDK request failed: service error: InvalidRequestException: invalid create request: InvalidRequestException: invalid create request",
+    );
+    assert_eq!(
+        request_client_tokens(&service, "CreateResource"),
+        [TEST_CLIENT_TOKEN]
+    );
+}
+
+#[tokio::test]
 async fn unconfirmed_create_rejection_from_resume_preserves_in_flight_token() {
     let (provider, service) =
-        provider_with_script([("CreateResource", vec![client_token_conflict()])]).await;
+        provider_with_script([("CreateResource", vec![invalid_request()])]).await;
     let resource = vpc_resource();
     let token = serde_json::from_value::<CcCreateToken>(json!({
         "phase": "unconfirmed",
@@ -1320,9 +1372,54 @@ async fn unconfirmed_create_pre_send_failure_from_resume_preserves_pending_token
 }
 
 #[tokio::test]
-async fn issued_poll_unconfirmed_resend_failure_preserves_token_and_error() {
+async fn issued_poll_unconfirmed_client_token_conflict_retries_with_same_token() {
     let (provider, service) =
         provider_with_script([("CreateResource", vec![client_token_conflict()])]).await;
+    let resource = common::normalize_resource(vpc_resource()).await;
+    let token = create_token(json!({
+        "phase": "unconfirmed",
+        "attempt": 2,
+        "resends": 7,
+        "client_token": TEST_CLIENT_TOKEN,
+    }));
+    let issued_identifier = vpc_identifier();
+
+    let step = provider
+        .poll_create_step::<TestCreateAttempt>(
+            resource.as_resource(),
+            token,
+            CcCreatePoll::Issued(TestIssuedCreate {
+                identifier: issued_identifier.clone(),
+            }),
+        )
+        .await
+        .expect("ClientTokenConflictException must retry an unconfirmed create");
+
+    let TestCreateStep::Pending {
+        token,
+        poll_after_secs,
+        issued,
+    } = step
+    else {
+        panic!("a retryable client-token conflict must remain pending");
+    };
+    let encoded = serde_json::to_value(&token).expect("serialize retried create token");
+    assert_eq!(encoded["phase"], "unconfirmed");
+    assert_eq!(encoded["attempt"], 2);
+    assert_eq!(encoded["resends"], 8);
+    assert_eq!(encoded["client_token"], TEST_CLIENT_TOKEN);
+    assert_eq!(poll_after_secs, 120);
+    assert_eq!(issued, Some(issued_identifier));
+    assert_eq!(
+        request_client_tokens(&service, "CreateResource"),
+        [TEST_CLIENT_TOKEN]
+    );
+}
+
+#[tokio::test]
+async fn issued_poll_unconfirmed_non_retryable_rejection_preserves_create() {
+    let (provider, service) =
+        provider_with_script([("CreateResource", vec![invalid_request()])]).await;
     let resource = common::normalize_resource(vpc_resource()).await;
     let token = create_token(json!({
         "phase": "unconfirmed",
@@ -1341,7 +1438,7 @@ async fn issued_poll_unconfirmed_resend_failure_preserves_token_and_error() {
             }),
         )
         .await
-        .expect_err("a non-retryable resend failure must preserve the issued create");
+        .expect_err("a permanent rejection cannot disprove an earlier create send");
 
     let TestCreateVerdict::Preserved {
         token: preserved,
@@ -1349,7 +1446,7 @@ async fn issued_poll_unconfirmed_resend_failure_preserves_token_and_error() {
         error,
     } = failure
     else {
-        panic!("an issued create resend failure must use the preserving verdict");
+        panic!("an issued unconfirmed rejection must preserve the create");
     };
     assert_eq!(preserved, token);
     assert_eq!(identifier, issued_identifier);
@@ -1357,8 +1454,8 @@ async fn issued_poll_unconfirmed_resend_failure_preserves_token_and_error() {
         &error,
         "Failed to resend create resource; the outcome of the earlier send is unknown",
         "cloudcontrol.CreateResource",
-        "ClientTokenConflictException",
-        "resource type AWS::EC2::VPC: AWS SDK request failed: service error: ClientTokenConflictException: client token reused with different desired state: ClientTokenConflictException: client token reused with different desired state",
+        "InvalidRequestException",
+        "resource type AWS::EC2::VPC: AWS SDK request failed: service error: InvalidRequestException: invalid create request: InvalidRequestException: invalid create request",
     );
     assert_eq!(
         request_client_tokens(&service, "CreateResource"),
@@ -2147,6 +2244,50 @@ async fn create_throttling_retries_with_the_same_client_token() {
     assert_eq!(retried_client_token, first_client_token);
 }
 
+#[tokio::test]
+async fn not_issued_client_token_conflict_retries_with_the_same_client_token() {
+    let (provider, service) = provider_with_script([(
+        "CreateResource",
+        vec![
+            client_token_conflict(),
+            mutation_reply("create-after-conflict", VPC_ID),
+        ],
+    )])
+    .await;
+    let resource = common::normalize_resource(vpc_resource()).await;
+
+    let (token, delay) = expect_create_pending(
+        provider
+            .create_step(resource.as_resource(), TestCreateAttempt)
+            .await
+            .expect("a not-issued client-token conflict must schedule a bounded retry"),
+    );
+    assert!(matches!(
+        &token,
+        CcCreateToken::NotIssued(create) if create.attempt() == 1
+    ));
+    assert_eq!(delay, 10);
+
+    let (token, delay) = expect_create_pending(
+        poll_test_create(&provider, resource.as_resource(), token)
+            .await
+            .expect("the bounded retry must reuse the original client token"),
+    );
+    assert!(matches!(
+        token,
+        CcCreateToken::InFlight(create)
+            if create.request() == &RequestToken::from("create-after-conflict")
+                && create.attempt() == 1
+                && create.identifier() == Some(VPC_ID)
+    ));
+    assert_eq!(delay, 1);
+    assert_eq!(service.calls("CreateResource"), 2);
+    let client_tokens = request_client_tokens(&service, "CreateResource");
+    assert_eq!(client_tokens.len(), 2);
+    assert!(common::is_uuidish(&client_tokens[0]));
+    assert_eq!(client_tokens[1], client_tokens[0]);
+}
+
 #[tokio::test(start_paused = true)]
 async fn resume_not_issued_reuses_original_create_client_token() {
     let (provider, service) = provider_with_script([(
@@ -2460,14 +2601,22 @@ async fn failed_status_retry_follows_message_not_handler_error_code() {
     .await;
     let resource = common::normalize_resource(vpc_resource()).await;
 
-    let failure = poll_test_create(
-        &provider,
-        resource.as_resource(),
-        in_flight_create_token(None),
-    )
-    .await
-    .expect_err("a retryable-looking code must not override a permanent message");
-    assert!(matches!(failure, TestCreateVerdict::Untracked(_)));
+    let token = in_flight_create_token(None);
+    let failure = poll_test_create(&provider, resource.as_resource(), token.clone())
+        .await
+        .expect_err("a retryable-looking code must not override a permanent message");
+    let TestCreateVerdict::Undetermined {
+        token: preserved,
+        error,
+    } = failure
+    else {
+        panic!("an identifier-less accepted create must remain tracked");
+    };
+    assert_eq!(preserved, token);
+    assert_eq!(
+        error.detail().context(),
+        "Cloud Control create ended with FAILED: invalid configuration"
+    );
     assert_eq!(service.calls("CreateResource"), 0);
 
     let (provider, service) = provider_with_script([(
@@ -2541,7 +2690,7 @@ async fn retryable_failed_create_with_identifier_is_created_without_reissue() {
 }
 
 #[tokio::test]
-async fn cancel_complete_without_identifier_is_untracked_without_reissue() {
+async fn cancel_complete_without_identifier_is_undetermined_without_reissue() {
     let (provider, service) = provider_with_script([
         (
             "CreateResource",
@@ -2561,12 +2710,18 @@ async fn cancel_complete_without_identifier_is_untracked_without_reissue() {
             .expect("issue create"),
     );
 
+    let expected = token.clone();
     let failure = poll_test_create(&provider, resource.as_resource(), token)
         .await
         .expect_err("a deliberately canceled create must not be re-issued");
-    let TestCreateVerdict::Untracked(error) = failure else {
-        panic!("identifier-less CANCEL_COMPLETE must be untracked");
+    let TestCreateVerdict::Undetermined {
+        token: preserved,
+        error,
+    } = failure
+    else {
+        panic!("identifier-less CANCEL_COMPLETE must remain tracked");
     };
+    assert_eq!(preserved, expected);
     assert!(error.to_string().contains("Throttling"));
     assert_eq!(service.calls("CreateResource"), 1);
 }
@@ -3024,7 +3179,7 @@ async fn retryable_failed_delete_with_identifier_errors_without_reissue() {
 }
 
 #[tokio::test]
-async fn non_retryable_failed_status_preserves_untracked_and_created_outcomes() {
+async fn non_retryable_failed_status_preserves_undetermined_and_created_outcomes() {
     let (provider, _) = provider_with_script([
         (
             "CreateResource",
@@ -3047,12 +3202,18 @@ async fn non_retryable_failed_status_preserves_untracked_and_created_outcomes() 
             .await
             .expect("issue create"),
     );
+    let expected = token.clone();
     let error = poll_test_create(&provider, resource.as_resource(), token)
         .await
         .expect_err("failed create without identifier must error");
-    let TestCreateVerdict::Untracked(error) = error else {
-        panic!("failure without identifier must be untracked");
+    let TestCreateVerdict::Undetermined {
+        token: preserved,
+        error,
+    } = error
+    else {
+        panic!("failure without identifier must remain tracked");
     };
+    assert_eq!(preserved, expected);
     assert_eq!(error.variant_name(), "api_error");
     assert!(error.to_string().contains("InvalidParameterValue"));
 
@@ -3143,21 +3304,23 @@ async fn status_retry_exhaustion_preserves_the_last_operation_failure() {
     .await;
     let resource = common::normalize_resource(vpc_resource()).await;
 
-    let error = poll_test_create(
-        &provider,
-        resource.as_resource(),
-        create_token(json!({
-            "phase": "in_flight",
-            "request": "create-final",
-            "attempt": 12,
-        })),
-    )
-    .await
-    .expect_err("final retryable status should return its real failure");
+    let token = create_token(json!({
+        "phase": "in_flight",
+        "request": "create-final",
+        "attempt": 12,
+    }));
+    let error = poll_test_create(&provider, resource.as_resource(), token.clone())
+        .await
+        .expect_err("final retryable status should return its real failure");
 
-    let TestCreateVerdict::Untracked(error) = error else {
-        panic!("exhausted status retry without an identifier must be untracked");
+    let TestCreateVerdict::Undetermined {
+        token: preserved,
+        error,
+    } = error
+    else {
+        panic!("exhausted status retry without an identifier must remain tracked");
     };
+    assert_eq!(preserved, token);
     assert_eq!(
         error.detail().context(),
         "Cloud Control create ended with FAILED: Throttling"

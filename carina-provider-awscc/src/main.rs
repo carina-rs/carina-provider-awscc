@@ -29,7 +29,7 @@ use carina_provider_awscc::AwsccNormalizer;
 use carina_provider_awscc::provider::{
     AwsccProvider, AwsccProviderConfig, CcCreateAttempt, CcCreatePoll, CcCreateResume,
     CcCreateToken, CcDeleteToken, CcIssuedCreate, CcPollAttempt, CcResumeAttempt, CcResumedCreate,
-    CcUpdateToken, UndeterminedCreate,
+    CcUpdateToken, NotAppliedCreate, UndeterminedCreate,
 };
 use carina_provider_awscc::schemas;
 
@@ -60,8 +60,8 @@ impl CcCreateAttempt for GuestCreateAttempt {
     type Verdict = SdkCreateVerdict;
     type Issued = GuestIssuedCreate;
 
-    fn untracked(self, error: CoreProviderError) -> Self::Verdict {
-        self.0.untracked(error.to_wire())
+    fn untracked(self, failure: NotAppliedCreate) -> Self::Verdict {
+        self.0.untracked(failure.into_error().to_wire())
     }
 
     fn issued(self, identifier: CoreAppliedIdentifier, sent: CoreSent) -> Self::Issued {
@@ -83,8 +83,8 @@ impl CcPollAttempt for GuestPollAttempt {
     type Verdict = SdkPollVerdict;
     type Issued = GuestPolledIssuedCreate;
 
-    fn untracked(self, error: CoreProviderError) -> Self::Verdict {
-        self.0.untracked(error.to_wire())
+    fn untracked(self, failure: NotAppliedCreate) -> Self::Verdict {
+        self.0.untracked(failure.into_error().to_wire())
     }
 
     fn undetermined(self, _token: CcCreateToken, failure: UndeterminedCreate) -> Self::Verdict {
@@ -244,8 +244,8 @@ impl CcResumeAttempt for GuestResumeAttempt {
     type Resumed = GuestResumedCreate;
     type Resent = GuestResentCreateAttempt;
 
-    fn untracked(self, error: CoreProviderError) -> Self::Verdict {
-        self.0.untracked(error.to_wire())
+    fn untracked(self, failure: NotAppliedCreate) -> Self::Verdict {
+        self.0.untracked(failure.into_error().to_wire())
     }
 
     fn preserve(self, error: CoreProviderError) -> Self::Verdict {
@@ -321,8 +321,8 @@ impl CcCreateAttempt for GuestResentCreateAttempt {
     type Verdict = SdkResumeVerdict;
     type Issued = GuestResentIssuedCreate;
 
-    fn untracked(self, error: CoreProviderError) -> Self::Verdict {
-        self.0.untracked(error.to_wire()).into()
+    fn untracked(self, failure: NotAppliedCreate) -> Self::Verdict {
+        self.0.untracked(failure.into_error().to_wire()).into()
     }
 
     fn issued(self, identifier: CoreAppliedIdentifier, sent: CoreSent) -> Self::Issued {

@@ -29,11 +29,12 @@ use super::tags::wire_tags_are_empty;
 use super::update::{UpdatePatchPlan, build_update_patches};
 use super::{
     AwsccProvider, CcCreateToken, CcDeleteToken, CcRequestPhase, CcUpdateToken,
-    InFlightCreateRequest, NotIssuedCreate, UnconfirmedCreate, get_schema_config,
+    InFlightCreateRequest, NotIssuedCreate, NotIssuedRequest, UnconfirmedCreate, get_schema_config,
 };
 use crate::provider::arn_synthesis::SynthesisStatus;
 use crate::provider::cloudcontrol::{
-    CcCreatePending, CcCreateStatus, UndeterminedCreate, WaitOutcome,
+    CcCreatePending, CcCreateStatus, NotAppliedCreate, TerminallyFailedCreate, UndeterminedCreate,
+    WaitOutcome,
 };
 use crate::provider::special_cases::internet_gateway_detach_patch;
 use crate::schemas::config::AwsccSchemaConfig;
@@ -44,8 +45,7 @@ pub type CcDeleteStep = OperationStep<(), ProviderError, CcDeleteToken>;
 const POLL_AFTER_SECS: u32 = 5;
 
 struct CreateTerminalFailure {
-    token: InFlightCreateRequest,
-    status: OperationStatus,
+    failure: TerminallyFailedCreate,
     identifier: Option<String>,
     error_code: Option<HandlerErrorCode>,
     status_message: String,
@@ -128,7 +128,7 @@ pub trait CcCreateAttempt {
     type Verdict;
     type Issued: CcIssuedCreate<Step = Self::Step, Verdict = Self::Verdict>;
 
-    fn untracked(self, error: ProviderError) -> Self::Verdict;
+    fn untracked(self, failure: NotAppliedCreate) -> Self::Verdict;
     fn issued(self, identifier: AppliedIdentifier, sent: Sent) -> Self::Issued;
     fn pending(
         self,
@@ -144,7 +144,7 @@ pub trait CcPollAttempt {
     type Verdict;
     type Issued: CcIssuedCreate<Step = Self::Step, Verdict = Self::Verdict>;
 
-    fn untracked(self, error: ProviderError) -> Self::Verdict;
+    fn untracked(self, failure: NotAppliedCreate) -> Self::Verdict;
     fn undetermined(self, token: CcCreateToken, failure: UndeterminedCreate) -> Self::Verdict;
     fn issued(self, identifier: AppliedIdentifier) -> Self::Issued;
     fn pending(
@@ -189,7 +189,7 @@ pub trait CcResumeAttempt {
     type Resumed: CcResumedCreate<Step = Self::Step, Verdict = Self::Verdict>;
     type Resent: CcCreateAttempt<Step = Self::Step, Verdict = Self::Verdict>;
 
-    fn untracked(self, error: ProviderError) -> Self::Verdict;
+    fn untracked(self, failure: NotAppliedCreate) -> Self::Verdict;
     fn preserve(self, error: ProviderError) -> Self::Verdict;
     fn issued(self, identifier: AppliedIdentifier) -> Self::Resumed;
     fn pending(
@@ -251,8 +251,8 @@ impl CcCreateAttempt for CreateAttempt {
     type Verdict = CreateFailure;
     type Issued = IssuedCreate;
 
-    fn untracked(self, error: ProviderError) -> Self::Verdict {
-        self.untracked(error)
+    fn untracked(self, failure: NotAppliedCreate) -> Self::Verdict {
+        self.untracked(failure.into_error())
     }
 
     fn issued(self, identifier: AppliedIdentifier, sent: Sent) -> Self::Issued {
@@ -278,8 +278,8 @@ impl CcPollAttempt for PollAttempt {
     type Verdict = CreateFailure;
     type Issued = IssuedCreate;
 
-    fn untracked(self, error: ProviderError) -> Self::Verdict {
-        self.untracked(error)
+    fn untracked(self, failure: NotAppliedCreate) -> Self::Verdict {
+        self.untracked(failure.into_error())
     }
 
     fn undetermined(self, token: CcCreateToken, failure: UndeterminedCreate) -> Self::Verdict {
@@ -368,8 +368,8 @@ impl CcResumeAttempt for ResumeAttempt {
     type Resumed = ResumedCreate;
     type Resent = ResentCreateAttempt;
 
-    fn untracked(self, error: ProviderError) -> Self::Verdict {
-        self.untracked(error)
+    fn untracked(self, failure: NotAppliedCreate) -> Self::Verdict {
+        self.untracked(failure.into_error())
     }
 
     fn preserve(self, error: ProviderError) -> Self::Verdict {
@@ -440,8 +440,8 @@ impl CcCreateAttempt for ResentCreateAttempt {
     type Verdict = ResumeFailure;
     type Issued = ResentIssuedCreate;
 
-    fn untracked(self, error: ProviderError) -> Self::Verdict {
-        self.untracked(error)
+    fn untracked(self, failure: NotAppliedCreate) -> Self::Verdict {
+        self.untracked(failure.into_error())
     }
 
     fn issued(self, identifier: AppliedIdentifier, sent: Sent) -> Self::Issued {
@@ -467,8 +467,8 @@ impl CcPollAttempt for ResentPollAttempt {
     type Verdict = ResumeFailure;
     type Issued = ResentIssuedCreate;
 
-    fn untracked(self, error: ProviderError) -> Self::Verdict {
-        self.untracked(error)
+    fn untracked(self, failure: NotAppliedCreate) -> Self::Verdict {
+        self.untracked(failure.into_error())
     }
 
     fn undetermined(self, token: CcCreateToken, failure: UndeterminedCreate) -> Self::Verdict {
@@ -697,32 +697,40 @@ impl AwsccProvider {
         resource: &Resource,
         attempt: A,
     ) -> Result<A::Step, A::Verdict> {
+        let token = NotIssuedCreate::start();
         if let Err(error) = self.ensure_initialized(&resource.id) {
-            return Err(attempt.untracked(error));
+            return Err(attempt.untracked(token.into_not_applied(error)));
         }
         let Some(config) = get_schema_config(&resource.id.resource_type) else {
             return Err(attempt.untracked(
-                ProviderError::internal(format!(
-                    "Unknown resource type: {}",
-                    resource.id.resource_type
-                ))
-                .for_resource(resource.id.clone()),
+                token.into_not_applied(
+                    ProviderError::internal(format!(
+                        "Unknown resource type: {}",
+                        resource.id.resource_type
+                    ))
+                    .for_resource(resource.id.clone()),
+                ),
             ));
         };
         let desired_state = match self.create_desired_state(resource, config) {
             Ok(desired_state) => desired_state,
-            Err(error) => return Err(attempt.untracked(error)),
+            Err(error) => return Err(attempt.untracked(token.into_not_applied(error))),
         };
         let pending = match self
-            .cc_create_step(
+            .send_not_issued_create(
                 config.aws_type_name,
                 desired_state,
                 config.schema.operation_config(),
+                token,
             )
             .await
         {
             Ok(pending) => pending,
-            Err(error) => return Err(attempt.untracked(error.for_resource(resource.id.clone()))),
+            Err(failure) => {
+                return Err(attempt.untracked(
+                    failure.map_error(|error| error.for_resource(resource.id.clone())),
+                ));
+            }
         };
         self.finish_initial_pending(&resource.id, attempt, pending)
     }
@@ -759,7 +767,7 @@ impl AwsccProvider {
     ) -> Result<U::Step, U::Verdict> {
         let desired_state = match self.create_desired_state(resource, config) {
             Ok(desired_state) => desired_state,
-            Err(error) => return Err(attempt.resend().untracked(error)),
+            Err(error) => return Err(attempt.untracked(token.into_not_applied(error))),
         };
         let pending = match self
             .send_not_issued_create(
@@ -771,10 +779,10 @@ impl AwsccProvider {
             .await
         {
             Ok(pending) => pending,
-            Err(error) => {
-                return Err(attempt
-                    .resend()
-                    .untracked(error.for_resource(resource.id.clone())));
+            Err(failure) => {
+                return Err(attempt.untracked(
+                    failure.map_error(|error| error.for_resource(resource.id.clone())),
+                ));
             }
         };
         self.finish_initial_pending(&resource.id, attempt.resend(), pending)
@@ -833,7 +841,7 @@ impl AwsccProvider {
                             .finish_polled_not_applied(
                                 &resource.id,
                                 poll,
-                                error.for_resource(resource.id.clone()),
+                                token.into_not_applied(error.for_resource(resource.id.clone())),
                             )
                             .await;
                     }
@@ -848,12 +856,12 @@ impl AwsccProvider {
                     .await
                 {
                     Ok(pending) => pending,
-                    Err(error) => {
+                    Err(failure) => {
                         return self
                             .finish_polled_not_applied(
                                 &resource.id,
                                 poll,
-                                error.for_resource(resource.id.clone()),
+                                failure.map_error(|error| error.for_resource(resource.id.clone())),
                             )
                             .await;
                     }
@@ -873,20 +881,21 @@ impl AwsccProvider {
                     }
                     Err(error) => Err(UndeterminedCreate::new(error)),
                 };
-                let pending =
-                    match pending {
-                        Ok(pending) => pending,
-                        Err(failure) => {
-                            let error = failure.into_error().for_resource(resource.id.clone());
-                            return match poll {
-                                CcCreatePoll::Unissued(attempt) => Err(attempt
-                                    .undetermined(token.into(), UndeterminedCreate::new(error))),
-                                CcCreatePoll::Issued(issued) => {
-                                    Err(issued.preserve(token.into(), error))
-                                }
-                            };
-                        }
-                    };
+                let pending = match pending {
+                    Ok(pending) => pending,
+                    Err(failure) => {
+                        let failure =
+                            failure.map_error(|error| error.for_resource(resource.id.clone()));
+                        return match poll {
+                            CcCreatePoll::Unissued(attempt) => {
+                                Err(attempt.undetermined(token.into(), failure))
+                            }
+                            CcCreatePoll::Issued(issued) => {
+                                Err(issued.preserve(token.into(), failure.into_error()))
+                            }
+                        };
+                    }
+                };
                 self.continue_polled_pending(&resource.id, poll, pending)
             }
             CcCreateToken::InFlight(token) => {
@@ -901,11 +910,13 @@ impl AwsccProvider {
         &self,
         id: &ResourceId,
         poll: CcCreatePoll<U, U::Issued>,
-        error: ProviderError,
+        failure: NotAppliedCreate,
     ) -> Result<U::Step, U::Verdict> {
         match poll {
-            CcCreatePoll::Unissued(attempt) => Err(attempt.untracked(error)),
-            CcCreatePoll::Issued(issued) => Err(self.failed_issued(id, issued, error).await),
+            CcCreatePoll::Unissued(attempt) => Err(attempt.untracked(failure)),
+            CcCreatePoll::Issued(issued) => {
+                Err(self.failed_issued(id, issued, failure.into_error()).await)
+            }
         }
     }
 
@@ -989,8 +1000,7 @@ impl AwsccProvider {
                     .await
             }
             CcCreateStatus::Failed {
-                token,
-                status,
+                failure,
                 identifier,
                 error_code,
                 status_message,
@@ -1000,8 +1010,7 @@ impl AwsccProvider {
                     config,
                     poll,
                     CreateTerminalFailure {
-                        token,
-                        status,
+                        failure,
                         identifier,
                         error_code,
                         status_message,
@@ -1064,12 +1073,11 @@ impl AwsccProvider {
                         applied_identifier(&resource.id, "create", identifier.to_string()).ok()
                     })
                 }) else {
-                    return Err(attempt.untracked(
-                        ProviderError::api_error(
-                            "Cloud Control reported create success without an identifier",
-                        )
-                        .for_resource(resource.id.clone()),
-                    ));
+                    let error = ProviderError::api_error(
+                        "Cloud Control reported create success without an identifier",
+                    )
+                    .for_resource(resource.id.clone());
+                    return Err(attempt.undetermined(token.into(), UndeterminedCreate::new(error)));
                 };
                 (attempt.issued(identifier.clone()), identifier)
             }
@@ -1091,12 +1099,12 @@ impl AwsccProvider {
         failure: CreateTerminalFailure,
     ) -> Result<U::Step, U::Verdict> {
         let CreateTerminalFailure {
-            token,
-            status,
+            failure,
             identifier: status_identifier,
             error_code,
             status_message,
         } = failure;
+        let status = failure.status().clone();
         let error = cloudcontrol_create_failure(
             &resource.id,
             &status,
@@ -1118,17 +1126,20 @@ impl AwsccProvider {
                     Err(self
                         .failed_issued_as(&resource.id, identifier, issued, error)
                         .await)
-                } else if matches!(status, OperationStatus::Failed)
+                } else if matches!(failure.status(), OperationStatus::Failed)
                     && handler_failure_retryable(&status_message)
-                    && token.attempt() < create_max_attempts(config)
+                    && failure.attempt() < create_max_attempts(config)
                 {
-                    let attempt_number = token.attempt();
+                    let attempt_number = failure.attempt();
                     attempt.pending(
-                        token.retry_after_terminal_failure().into(),
+                        failure.retry_after_terminal_failure().into(),
                         create_retry_delay(attempt_number),
                     )
                 } else {
-                    Err(attempt.untracked(error))
+                    Err(attempt.undetermined(
+                        failure.into_in_flight().into(),
+                        UndeterminedCreate::new(error),
+                    ))
                 }
             }
         }
@@ -1435,8 +1446,7 @@ impl AwsccProvider {
                     .await
             }
             CcCreateStatus::Failed {
-                token,
-                status,
+                failure,
                 identifier,
                 error_code,
                 status_message,
@@ -1446,8 +1456,7 @@ impl AwsccProvider {
                     config,
                     resume,
                     CreateTerminalFailure {
-                        token,
-                        status,
+                        failure,
                         identifier,
                         error_code,
                         status_message,
@@ -1510,12 +1519,11 @@ impl AwsccProvider {
                         applied_identifier(&resource.id, "create", identifier.to_string()).ok()
                     })
                 }) else {
-                    return Err(attempt.untracked(
-                        ProviderError::api_error(
-                            "Cloud Control reported create success without an identifier",
-                        )
-                        .for_resource(resource.id.clone()),
-                    ));
+                    let error = ProviderError::api_error(
+                        "Cloud Control reported create success without an identifier",
+                    )
+                    .for_resource(resource.id.clone());
+                    return Err(attempt.preserve(error));
                 };
                 (attempt.issued(identifier.clone()), identifier)
             }
@@ -1537,12 +1545,12 @@ impl AwsccProvider {
         failure: CreateTerminalFailure,
     ) -> Result<U::Step, U::Verdict> {
         let CreateTerminalFailure {
-            token,
-            status,
+            failure,
             identifier: status_identifier,
             error_code,
             status_message,
         } = failure;
+        let status = failure.status().clone();
         let error = cloudcontrol_create_failure(
             &resource.id,
             &status,
@@ -1564,18 +1572,18 @@ impl AwsccProvider {
                     Err(self
                         .failed_resumed_as(&resource.id, identifier, resumed, error)
                         .await)
-                } else if matches!(status, OperationStatus::Failed)
+                } else if matches!(failure.status(), OperationStatus::Failed)
                     && handler_failure_retryable(&status_message)
-                    && token.attempt() < create_max_attempts(config)
+                    && failure.attempt() < create_max_attempts(config)
                 {
-                    let attempt_number = token.attempt();
+                    let attempt_number = failure.attempt();
                     attempt.resend().pending(
-                        token.retry_after_terminal_failure().into(),
+                        failure.retry_after_terminal_failure().into(),
                         Sent::AllRequestAttributes,
                         create_retry_delay(attempt_number),
                     )
                 } else {
-                    Err(attempt.untracked(error))
+                    Err(attempt.preserve(error))
                 }
             }
         }
@@ -1947,37 +1955,18 @@ impl AwsccProvider {
         })?;
 
         match token {
-            CcDeleteToken::DetachIgw(phase) => {
-                let patch_ops = match &phase {
-                    CcRequestPhase::NotIssued(_) => {
-                        let Some(patch_ops) = self
-                            .internet_gateway_detach_patch_if_attached(
-                                id,
-                                config,
-                                identifier.as_str(),
-                            )
-                            .await?
-                        else {
-                            return self
-                                .cc_delete_step(
-                                    config.aws_type_name,
-                                    identifier.as_str(),
-                                    config.schema.operation_config(),
-                                )
-                                .await
-                                .map(wrap_delete_phase)
-                                .map_err(|error| error.for_resource(id.clone()));
-                        };
-                        patch_ops
-                    }
-                    CcRequestPhase::Unconfirmed(_) => internet_gateway_detach_patch(),
-                    CcRequestPhase::InFlight(_) => internet_gateway_detach_patch(),
-                };
+            CcDeleteToken::DetachIgw(CcRequestPhase::NotIssued(token)) => {
+                self.poll_not_issued_igw_detach(id, config, identifier, token)
+                    .await
+            }
+            CcDeleteToken::DetachIgw(
+                phase @ (CcRequestPhase::Unconfirmed(_) | CcRequestPhase::InFlight(_)),
+            ) => {
                 let detach = self
                     .cc_poll_update_step(
                         config.aws_type_name,
                         identifier.as_str(),
-                        patch_ops,
+                        internet_gateway_detach_patch(),
                         config.schema.operation_config(),
                         phase,
                     )
@@ -1997,6 +1986,41 @@ impl AwsccProvider {
                 .map(wrap_delete_phase)
                 .map_err(|error| error.for_resource(id.clone())),
         }
+    }
+
+    async fn poll_not_issued_igw_detach(
+        &self,
+        id: &ResourceId,
+        config: &AwsccSchemaConfig,
+        identifier: &AppliedIdentifier,
+        token: NotIssuedRequest,
+    ) -> ProviderResult<CcDeleteStep> {
+        let Some(patch_ops) = self
+            .internet_gateway_detach_patch_if_attached(id, config, identifier.as_str())
+            .await?
+        else {
+            return self
+                .cc_delete_step(
+                    config.aws_type_name,
+                    identifier.as_str(),
+                    config.schema.operation_config(),
+                )
+                .await
+                .map(wrap_delete_phase)
+                .map_err(|error| error.for_resource(id.clone()));
+        };
+        let detach = self
+            .cc_poll_update_step(
+                config.aws_type_name,
+                identifier.as_str(),
+                patch_ops,
+                config.schema.operation_config(),
+                token.into(),
+            )
+            .await
+            .map_err(|error| detach_igw_error(id, error))?;
+        self.continue_after_igw_detach(id, config, identifier, detach)
+            .await
     }
 
     async fn continue_after_igw_detach(
@@ -2777,8 +2801,8 @@ mod tests {
         type Verdict = ProviderError;
         type Issued = ErrorTestIssuedCreate;
 
-        fn untracked(self, error: ProviderError) -> Self::Verdict {
-            error
+        fn untracked(self, failure: NotAppliedCreate) -> Self::Verdict {
+            failure.into_error()
         }
 
         fn issued(self, identifier: AppliedIdentifier, _sent: Sent) -> Self::Issued {
