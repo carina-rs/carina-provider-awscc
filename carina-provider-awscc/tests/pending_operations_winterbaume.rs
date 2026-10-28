@@ -217,9 +217,21 @@ fn client_token_debug_redacts_value() {
 
 #[test]
 fn invalid_client_tokens_fail_at_deserialization() {
-    assert!(serde_json::from_value::<ClientToken>(serde_json::json!("")).is_err());
-    assert!(serde_json::from_value::<ClientToken>(serde_json::json!("a".repeat(129))).is_err());
-    assert!(serde_json::from_value::<ClientToken>(serde_json::json!("not valid")).is_err());
+    for value in ["".to_string(), "a".repeat(129)] {
+        let error = serde_json::from_value::<ClientToken>(serde_json::json!(value))
+            .expect_err("an invalid ClientToken length must be rejected");
+        assert_eq!(
+            error.to_string(),
+            "CloudControl ClientToken length must be between 1 and 128"
+        );
+    }
+
+    let error = serde_json::from_value::<ClientToken>(serde_json::json!("not valid"))
+        .expect_err("invalid ClientToken characters must be rejected");
+    assert_eq!(
+        error.to_string(),
+        "CloudControl ClientToken must match the pattern [-A-Za-z0-9+/=]+"
+    );
 }
 
 #[test]

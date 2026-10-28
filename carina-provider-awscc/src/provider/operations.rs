@@ -145,7 +145,7 @@ pub trait CcPollAttempt {
     type Issued: CcIssuedCreate<Step = Self::Step, Verdict = Self::Verdict>;
 
     fn untracked(self, error: ProviderError) -> Self::Verdict;
-    fn undetermined(self, failure: UndeterminedCreate) -> Self::Verdict;
+    fn undetermined(self, token: CcCreateToken, failure: UndeterminedCreate) -> Self::Verdict;
     fn issued(self, identifier: AppliedIdentifier) -> Self::Issued;
     fn pending(
         self,
@@ -190,8 +190,6 @@ pub trait CcResumeAttempt {
     type Resent: CcCreateAttempt<Step = Self::Step, Verdict = Self::Verdict>;
 
     fn untracked(self, error: ProviderError) -> Self::Verdict;
-    fn undetermined(self, failure: UndeterminedCreate) -> Self::Verdict;
-    fn forgotten(self, token: InFlightCreateRequest, error: ProviderError) -> Self::Verdict;
     fn preserve(self, error: ProviderError) -> Self::Verdict;
     fn issued(self, identifier: AppliedIdentifier) -> Self::Resumed;
     fn pending(
@@ -284,8 +282,8 @@ impl CcPollAttempt for PollAttempt {
         self.untracked(error)
     }
 
-    fn undetermined(self, failure: UndeterminedCreate) -> Self::Verdict {
-        let (token, error) = failure.into_token_and_error();
+    fn undetermined(self, token: CcCreateToken, failure: UndeterminedCreate) -> Self::Verdict {
+        let error = failure.into_error();
         self.pending(token.into_pending_token(), POLL_AFTER_SECS)
             .preserve(error)
     }
@@ -372,15 +370,6 @@ impl CcResumeAttempt for ResumeAttempt {
 
     fn untracked(self, error: ProviderError) -> Self::Verdict {
         self.untracked(error)
-    }
-
-    fn undetermined(self, failure: UndeterminedCreate) -> Self::Verdict {
-        let (_, error) = failure.into_token_and_error();
-        self.preserve(error)
-    }
-
-    fn forgotten(self, _token: InFlightCreateRequest, error: ProviderError) -> Self::Verdict {
-        self.preserve(error)
     }
 
     fn preserve(self, error: ProviderError) -> Self::Verdict {
@@ -482,8 +471,8 @@ impl CcPollAttempt for ResentPollAttempt {
         self.untracked(error)
     }
 
-    fn undetermined(self, failure: UndeterminedCreate) -> Self::Verdict {
-        let (token, error) = failure.into_token_and_error();
+    fn undetermined(self, token: CcCreateToken, failure: UndeterminedCreate) -> Self::Verdict {
+        let error = failure.into_error();
         self.pending(token.into_pending_token(), POLL_AFTER_SECS)
             .preserve(error)
     }
@@ -804,20 +793,18 @@ impl AwsccProvider {
                     config.aws_type_name,
                     desired_state,
                     config.schema.operation_config(),
-                    token,
+                    &token,
                 )
                 .await
             }
-            Err(error) => Err(UndeterminedCreate::new(token, error)),
+            Err(error) => Err(UndeterminedCreate::new(error)),
         };
         let pending = match pending {
             Ok(pending) => pending,
             Err(failure) => {
-                let (token, error) = failure.into_parts();
-                return Err(attempt.undetermined(UndeterminedCreate::new(
-                    token,
-                    error.for_resource(resource.id.clone()),
-                )));
+                return Err(
+                    attempt.preserve(failure.into_error().for_resource(resource.id.clone()))
+                );
             }
         };
         self.finish_initial_pending(&resource.id, attempt.resend(), pending)
@@ -880,27 +867,26 @@ impl AwsccProvider {
                             config.aws_type_name,
                             desired_state,
                             config.schema.operation_config(),
-                            token,
+                            &token,
                         )
                         .await
                     }
-                    Err(error) => Err(UndeterminedCreate::new(token, error)),
+                    Err(error) => Err(UndeterminedCreate::new(error)),
                 };
-                let pending = match pending {
-                    Ok(pending) => pending,
-                    Err(failure) => {
-                        let (token, error) = failure.into_parts();
-                        let failure =
-                            UndeterminedCreate::new(token, error.for_resource(resource.id.clone()));
-                        return match poll {
-                            CcCreatePoll::Unissued(attempt) => Err(attempt.undetermined(failure)),
-                            CcCreatePoll::Issued(issued) => {
-                                let (token, error) = failure.into_token_and_error();
-                                Err(issued.preserve(token, error))
-                            }
-                        };
-                    }
-                };
+                let pending =
+                    match pending {
+                        Ok(pending) => pending,
+                        Err(failure) => {
+                            let error = failure.into_error().for_resource(resource.id.clone());
+                            return match poll {
+                                CcCreatePoll::Unissued(attempt) => Err(attempt
+                                    .undetermined(token.into(), UndeterminedCreate::new(error))),
+                                CcCreatePoll::Issued(issued) => {
+                                    Err(issued.preserve(token.into(), error))
+                                }
+                            };
+                        }
+                    };
                 self.continue_polled_pending(&resource.id, poll, pending)
             }
             CcCreateToken::InFlight(token) => {
@@ -1486,7 +1472,7 @@ impl AwsccProvider {
                 let Some(identifier) = token.identifier().and_then(|identifier| {
                     applied_identifier(&resource.id, "create", identifier.to_string()).ok()
                 }) else {
-                    return Err(attempt.forgotten(token, token_error));
+                    return Err(attempt.preserve(token_error));
                 };
                 attempt.issued(identifier)
             }

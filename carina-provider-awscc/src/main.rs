@@ -29,7 +29,7 @@ use carina_provider_awscc::AwsccNormalizer;
 use carina_provider_awscc::provider::{
     AwsccProvider, AwsccProviderConfig, CcCreateAttempt, CcCreatePoll, CcCreateResume,
     CcCreateToken, CcDeleteToken, CcIssuedCreate, CcPollAttempt, CcResumeAttempt, CcResumedCreate,
-    CcUpdateToken, InFlightCreateRequest, UndeterminedCreate,
+    CcUpdateToken, UndeterminedCreate,
 };
 use carina_provider_awscc::schemas;
 
@@ -87,8 +87,8 @@ impl CcPollAttempt for GuestPollAttempt {
         self.0.untracked(error.to_wire())
     }
 
-    fn undetermined(self, failure: UndeterminedCreate) -> Self::Verdict {
-        let (_, error) = failure.into_token_and_error();
+    fn undetermined(self, _token: CcCreateToken, failure: UndeterminedCreate) -> Self::Verdict {
+        let error = failure.into_error();
         self.0.undetermined(error.to_wire())
     }
 
@@ -246,15 +246,6 @@ impl CcResumeAttempt for GuestResumeAttempt {
 
     fn untracked(self, error: CoreProviderError) -> Self::Verdict {
         self.0.untracked(error.to_wire())
-    }
-
-    fn undetermined(self, failure: UndeterminedCreate) -> Self::Verdict {
-        let (_, error) = failure.into_token_and_error();
-        self.0.undetermined(error.to_wire())
-    }
-
-    fn forgotten(self, _token: InFlightCreateRequest, error: CoreProviderError) -> Self::Verdict {
-        self.0.undetermined(error.to_wire())
     }
 
     fn preserve(self, error: CoreProviderError) -> Self::Verdict {

@@ -72,7 +72,7 @@ mod client_token {
     pub struct ClientToken(String);
 
     impl ClientToken {
-        pub(crate) fn as_str(&self) -> &str {
+        pub(super) fn as_str(&self) -> &str {
             &self.0
         }
     }
@@ -118,25 +118,14 @@ mod client_token {
             self.attempt
         }
 
-        pub(crate) fn start() -> Self {
+        pub(super) fn start() -> Self {
             Self {
                 attempt: 0,
                 client_token: fresh_client_token(),
             }
         }
 
-        pub(crate) fn from_parts(attempt: u32, client_token: ClientToken) -> Self {
-            Self {
-                attempt,
-                client_token,
-            }
-        }
-
-        pub(crate) fn into_parts(self) -> (u32, ClientToken) {
-            (self.attempt, self.client_token)
-        }
-
-        pub(crate) fn client_token(&self) -> &ClientToken {
+        pub(super) fn client_token(&self) -> &ClientToken {
             &self.client_token
         }
     }
@@ -158,19 +147,7 @@ mod client_token {
             self.resends
         }
 
-        pub(crate) fn from_parts(attempt: u32, resends: u32, client_token: ClientToken) -> Self {
-            Self {
-                attempt,
-                resends,
-                client_token,
-            }
-        }
-
-        pub(crate) fn into_parts(self) -> (u32, u32, ClientToken) {
-            (self.attempt, self.resends, self.client_token)
-        }
-
-        pub(crate) fn client_token(&self) -> &ClientToken {
+        pub(super) fn client_token(&self) -> &ClientToken {
             &self.client_token
         }
     }
@@ -191,11 +168,11 @@ mod client_token {
             self.attempt
         }
 
-        pub(crate) fn new(request: RequestToken, attempt: u32) -> Self {
+        pub(super) fn new(request: RequestToken, attempt: u32) -> Self {
             Self { request, attempt }
         }
 
-        pub(crate) fn retry_after_terminal_failure(self) -> NotIssuedRequest {
+        pub(super) fn retry_after_terminal_failure(self) -> NotIssuedRequest {
             // The consumed witness proves the original request finished. A fresh
             // token therefore cannot duplicate a still-running request.
             NotIssuedRequest {
@@ -218,7 +195,7 @@ mod client_token {
     }
 
     impl CcRequestPhase {
-        pub(crate) fn start() -> Self {
+        pub(super) fn start() -> Self {
             NotIssuedRequest::start().into()
         }
     }
@@ -254,25 +231,14 @@ mod client_token {
             self.attempt
         }
 
-        pub(crate) fn start() -> Self {
+        pub(super) fn start() -> Self {
             Self {
                 attempt: 0,
                 client_token: fresh_client_token(),
             }
         }
 
-        pub(crate) fn from_parts(attempt: u32, client_token: ClientToken) -> Self {
-            Self {
-                attempt,
-                client_token,
-            }
-        }
-
-        pub(crate) fn into_parts(self) -> (u32, ClientToken) {
-            (self.attempt, self.client_token)
-        }
-
-        pub(crate) fn client_token(&self) -> &ClientToken {
+        pub(super) fn client_token(&self) -> &ClientToken {
             &self.client_token
         }
     }
@@ -294,19 +260,7 @@ mod client_token {
             self.resends
         }
 
-        pub(crate) fn from_parts(attempt: u32, resends: u32, client_token: ClientToken) -> Self {
-            Self {
-                attempt,
-                resends,
-                client_token,
-            }
-        }
-
-        pub(crate) fn into_parts(self) -> (u32, u32, ClientToken) {
-            (self.attempt, self.resends, self.client_token)
-        }
-
-        pub(crate) fn client_token(&self) -> &ClientToken {
+        pub(super) fn client_token(&self) -> &ClientToken {
             &self.client_token
         }
     }
@@ -333,7 +287,7 @@ mod client_token {
             self.identifier.as_deref()
         }
 
-        pub(crate) fn new(request: RequestToken, attempt: u32, identifier: Option<String>) -> Self {
+        pub(super) fn new(request: RequestToken, attempt: u32, identifier: Option<String>) -> Self {
             Self {
                 request,
                 attempt,
@@ -341,11 +295,11 @@ mod client_token {
             }
         }
 
-        pub(crate) fn into_parts(self) -> (RequestToken, u32, Option<String>) {
+        pub(super) fn into_parts(self) -> (RequestToken, u32, Option<String>) {
             (self.request, self.attempt, self.identifier)
         }
 
-        pub(crate) fn with_identifier(self, identifier: Option<String>) -> Self {
+        pub(super) fn with_identifier(self, identifier: Option<String>) -> Self {
             Self { identifier, ..self }
         }
 
@@ -439,12 +393,96 @@ mod client_token {
             Self::InFlight(create)
         }
     }
+
+    pub(super) trait NotIssuedPhase: Sized {
+        type Unconfirmed;
+
+        fn attempt(&self) -> u32;
+        fn retry_rejected(self) -> Self;
+        fn into_unconfirmed(self, resends: u32) -> Self::Unconfirmed;
+    }
+
+    pub(super) trait UnconfirmedPhase: Sized {
+        fn resends(&self) -> u32;
+        fn resend(&self, resends: u32) -> Self;
+    }
+
+    impl NotIssuedPhase for NotIssuedCreate {
+        type Unconfirmed = UnconfirmedCreate;
+
+        fn attempt(&self) -> u32 {
+            self.attempt
+        }
+
+        fn retry_rejected(mut self) -> Self {
+            self.attempt += 1;
+            self
+        }
+
+        fn into_unconfirmed(self, resends: u32) -> Self::Unconfirmed {
+            UnconfirmedCreate {
+                attempt: self.attempt,
+                resends,
+                client_token: self.client_token,
+            }
+        }
+    }
+
+    impl UnconfirmedPhase for UnconfirmedCreate {
+        fn resends(&self) -> u32 {
+            self.resends
+        }
+
+        fn resend(&self, resends: u32) -> Self {
+            Self {
+                attempt: self.attempt,
+                resends,
+                client_token: self.client_token.clone(),
+            }
+        }
+    }
+
+    impl NotIssuedPhase for NotIssuedRequest {
+        type Unconfirmed = UnconfirmedRequest;
+
+        fn attempt(&self) -> u32 {
+            self.attempt
+        }
+
+        fn retry_rejected(mut self) -> Self {
+            self.attempt += 1;
+            self
+        }
+
+        fn into_unconfirmed(self, resends: u32) -> Self::Unconfirmed {
+            UnconfirmedRequest {
+                attempt: self.attempt,
+                resends,
+                client_token: self.client_token,
+            }
+        }
+    }
+
+    impl UnconfirmedPhase for UnconfirmedRequest {
+        fn resends(&self) -> u32 {
+            self.resends
+        }
+
+        fn resend(&self, resends: u32) -> Self {
+            Self {
+                attempt: self.attempt,
+                resends,
+                client_token: self.client_token.clone(),
+            }
+        }
+    }
 }
 
 pub use client_token::{
     CcCreateToken, CcRequestPhase, ClientToken, InFlightCreateRequest, InFlightRequest,
     NotIssuedCreate, NotIssuedRequest, UnconfirmedCreate, UnconfirmedRequest,
 };
+use client_token::{NotIssuedPhase, UnconfirmedPhase};
 
 /// Continuation state for a CloudControl update operation.
 pub type CcUpdateToken = CcRequestPhase;
@@ -479,22 +517,15 @@ pub(crate) struct CcCreatePending {
 
 #[derive(Debug)]
 #[doc(hidden)]
-pub struct UndeterminedCreate {
-    token: UnconfirmedCreate,
-    error: ProviderError,
-}
+pub struct UndeterminedCreate(ProviderError);
 
 impl UndeterminedCreate {
-    pub(crate) fn new(token: UnconfirmedCreate, error: ProviderError) -> Self {
-        Self { token, error }
+    pub(crate) fn new(error: ProviderError) -> Self {
+        Self(error)
     }
 
-    pub(crate) fn into_parts(self) -> (UnconfirmedCreate, ProviderError) {
-        (self.token, self.error)
-    }
-
-    pub fn into_token_and_error(self) -> (CcCreateToken, ProviderError) {
-        (self.token.into(), self.error)
+    pub fn into_error(self) -> ProviderError {
+        self.0
     }
 }
 
@@ -567,77 +598,6 @@ enum UnconfirmedDecision<Unconfirmed> {
         delay_secs: u32,
     },
     Fail,
-}
-
-trait NotIssuedPhase: Sized {
-    type Unconfirmed;
-
-    fn attempt(&self) -> u32;
-    fn retry_rejected(self) -> Self;
-    fn into_unconfirmed(self, resends: u32) -> Self::Unconfirmed;
-}
-
-trait UnconfirmedPhase: Sized {
-    fn resends(&self) -> u32;
-    fn resend(self, resends: u32) -> Self;
-}
-
-impl NotIssuedPhase for NotIssuedCreate {
-    type Unconfirmed = UnconfirmedCreate;
-
-    fn attempt(&self) -> u32 {
-        self.attempt()
-    }
-
-    fn retry_rejected(self) -> Self {
-        let (attempt, client_token) = self.into_parts();
-        Self::from_parts(attempt + 1, client_token)
-    }
-
-    fn into_unconfirmed(self, resends: u32) -> Self::Unconfirmed {
-        let (attempt, client_token) = self.into_parts();
-        UnconfirmedCreate::from_parts(attempt, resends, client_token)
-    }
-}
-
-impl UnconfirmedPhase for UnconfirmedCreate {
-    fn resends(&self) -> u32 {
-        self.resends()
-    }
-
-    fn resend(self, resends: u32) -> Self {
-        let (attempt, _, client_token) = self.into_parts();
-        Self::from_parts(attempt, resends, client_token)
-    }
-}
-
-impl NotIssuedPhase for NotIssuedRequest {
-    type Unconfirmed = UnconfirmedRequest;
-
-    fn attempt(&self) -> u32 {
-        self.attempt()
-    }
-
-    fn retry_rejected(self) -> Self {
-        let (attempt, client_token) = self.into_parts();
-        Self::from_parts(attempt + 1, client_token)
-    }
-
-    fn into_unconfirmed(self, resends: u32) -> Self::Unconfirmed {
-        let (attempt, client_token) = self.into_parts();
-        UnconfirmedRequest::from_parts(attempt, resends, client_token)
-    }
-}
-
-impl UnconfirmedPhase for UnconfirmedRequest {
-    fn resends(&self) -> u32 {
-        self.resends()
-    }
-
-    fn resend(self, resends: u32) -> Self {
-        let (attempt, _, client_token) = self.into_parts();
-        Self::from_parts(attempt, resends, client_token)
-    }
 }
 
 #[derive(Debug)]
@@ -761,17 +721,16 @@ impl AwsccProvider {
         type_name: &str,
         desired_state: serde_json::Value,
         operation_config: Option<&carina_core::schema::OperationConfig>,
-        token: UnconfirmedCreate,
+        token: &UnconfirmedCreate,
     ) -> Result<CcCreatePending, UndeterminedCreate> {
         let retry_policy = Self::request_retry_policy(
             operation_config,
             "creating",
             "Failed to resend create resource; the outcome of the earlier send is unknown",
         );
-        let failure_token = token.clone();
         self.issue_unconfirmed_create(type_name, desired_state, token, retry_policy)
             .await
-            .map_err(|error| UndeterminedCreate::new(failure_token, error))
+            .map_err(UndeterminedCreate::new)
     }
 
     async fn send_create_request(
@@ -859,7 +818,7 @@ impl AwsccProvider {
         &self,
         type_name: &str,
         desired_state: serde_json::Value,
-        token: UnconfirmedCreate,
+        token: &UnconfirmedCreate,
         retry_policy: RetryPolicy,
     ) -> ProviderResult<CcCreatePending> {
         let attempt = token.attempt();
@@ -884,13 +843,14 @@ impl AwsccProvider {
                         poll_after_secs: FIRST_POLL_AFTER_SECS,
                     }),
                     None => {
+                        let delay_secs = retry_policy.delay_secs(token.resends());
                         let resends = token.resends().saturating_add(1);
                         log::warn!(
-                            "Cloud Control accepted create {type_name} without returning a request token; resending with the same client token"
+                            "Cloud Control accepted create {type_name} without returning a request token; resending with the same client token in {delay_secs}s"
                         );
                         Ok(CcCreatePending {
                             token: token.resend(resends).into(),
-                            poll_after_secs: FIRST_POLL_AFTER_SECS,
+                            poll_after_secs: delay_secs,
                         })
                     }
                 }
@@ -1351,7 +1311,7 @@ impl AwsccProvider {
     fn unconfirmed_retry_decision<E, Phase>(
         error: &SdkError<E, HttpResponse>,
         type_name: &str,
-        pending: Phase,
+        pending: &Phase,
         retry_policy: RetryPolicy,
     ) -> UnconfirmedDecision<Phase>
     where
@@ -1458,7 +1418,7 @@ impl AwsccProvider {
             }),
             Ok(None) => no_request().map(OperationStep::Done),
             Err(error) => {
-                match Self::unconfirmed_retry_decision(&error, type_name, token, retry_policy) {
+                match Self::unconfirmed_retry_decision(&error, type_name, &token, retry_policy) {
                     UnconfirmedDecision::Resend {
                         pending,
                         delay_secs,
