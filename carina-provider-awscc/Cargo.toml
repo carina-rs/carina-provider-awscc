@@ -25,6 +25,7 @@ native = []
 [dependencies]
 carina-core = { workspace = true }
 carina-aws-types = { workspace = true }
+carina-docgen = { workspace = true }
 carina-plugin-sdk = { workspace = true }
 carina-provider-protocol = { workspace = true }
 indexmap = "2"

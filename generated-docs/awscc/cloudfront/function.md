@@ -106,7 +106,7 @@ The function code. For more information about writing a CloudFront function, see
 
 ### `function_config`
 
-- **Type:** [Struct(FunctionConfig)](#functionconfig)
+- **Type:** [Struct(FunctionConfig)](#function_config-1)
 - **Required:** Yes
 
 Contains configuration information about a CloudFront function.
@@ -128,7 +128,7 @@ A complex type that contains zero or more ``Tag`` elements.
 
 ## Enum Values
 
-### runtime (Runtime)
+### function_config.runtime (Runtime)
 
 | Value | DSL Identifier |
 |-------|----------------|
@@ -139,25 +139,25 @@ Shorthand formats: `cloudfront_js_1_0` or `Runtime.cloudfront_js_1_0`
 
 ## Struct Definitions
 
-### FunctionConfig
+### function_config
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `comment` | String | Yes | A comment to describe the function. The comment cannot be longer than 128 characters. |
-| `key_value_store_associations` | [List\<KeyValueStoreAssociation\>](#keyvaluestoreassociation) | No | The configuration for the key value store associations. |
-| `runtime` | [Enum (Runtime)](#runtime-runtime) | Yes | The function's runtime environment version. |
+| `key_value_store_associations` | List\<[Struct(KeyValueStoreAssociation)](#function_configkey_value_store_associations)\> | No | The configuration for the key value store associations. |
+| `runtime` | [Enum (Runtime)](#function_configruntime-runtime) | Yes | The function's runtime environment version. |
 
-### FunctionMetadata
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `function_arn` | Arn | No | The Amazon Resource Name (ARN) of the function. The ARN uniquely identifies the function. Provider-populated; cannot be set. |
-
-### KeyValueStoreAssociation
+### function_config.key_value_store_associations
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `key_value_store_arn` | Arn | Yes | The Amazon Resource Name (ARN) of the key value store association. |
+
+### function_metadata
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `function_arn` | Arn | No | The Amazon Resource Name (ARN) of the function. The ARN uniquely identifies the function. Provider-populated; cannot be set. |
 
 ## Attribute Reference
 
@@ -169,7 +169,7 @@ Shorthand formats: `cloudfront_js_1_0` or `Runtime.cloudfront_js_1_0`
 
 ### `function_metadata`
 
-- **Type:** [Struct(FunctionMetadata)](#functionmetadata)
+- **Type:** [Struct(FunctionMetadata)](#function_metadata)
 
 Contains metadata about a CloudFront function.
 

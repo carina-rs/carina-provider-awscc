@@ -28,7 +28,7 @@ awscc.ec2.Ipam {
 
 ### `default_resource_discovery_organizational_unit_exclusions`
 
-- **Type:** [List\<IpamOrganizationalUnitExclusion\>](#ipamorganizationalunitexclusion)
+- **Type:** List\<[Struct(IpamOrganizationalUnitExclusion)](#default_resource_discovery_organizational_unit_exclusions-1)\>
 - **Required:** No
 
 A set of organizational unit (OU) exclusions for the default resource discovery, created with this IPAM.
@@ -54,7 +54,7 @@ A metered account is an account that is charged for active IP addresses managed 
 
 ### `operating_regions`
 
-- **Type:** [List\<IpamOperatingRegion\>](#ipamoperatingregion)
+- **Type:** List\<[Struct(IpamOperatingRegion)](#operating_regions-1)\>
 - **Required:** No
 
 The regions IPAM is enabled for. Allows pools to be created in these regions, as well as enabling monitoring
@@ -95,17 +95,17 @@ Shorthand formats: `free` or `Tier.free`
 
 ## Struct Definitions
 
-### IpamOperatingRegion
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `region_name` | Region | Yes | The name of the region. |
-
-### IpamOrganizationalUnitExclusion
+### default_resource_discovery_organizational_unit_exclusions
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `organizations_entity_path` | String(len: 1..) | Yes | An AWS Organizations entity path. Build the path for the OU(s) using AWS Organizations IDs separated by a '/'. Include all child OUs by ending the path with '/*'. |
+
+### operating_regions
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `region_name` | Region | Yes | The name of the region. |
 
 ## Attribute Reference
 

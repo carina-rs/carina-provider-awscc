@@ -58,14 +58,14 @@ The name of the security group.
 
 ### `security_group_egress`
 
-- **Type:** [List\<Egress\>](#egress)
+- **Type:** List\<[Struct(Egress)](#security_group_egress-1)\>
 - **Required:** No
 
 [VPC only] The outbound rules associated with the security group. There is a short interruption during which you cannot connect to the security group.
 
 ### `security_group_ingress`
 
-- **Type:** [List\<Ingress\>](#ingress)
+- **Type:** List\<[Struct(Ingress)](#security_group_ingress-1)\>
 - **Required:** No
 
 The inbound rules associated with the security group. There is a short interruption during which you cannot connect to the security group.
@@ -87,7 +87,7 @@ The ID of the VPC for the security group.
 
 ## Enum Values
 
-### ip_protocol (IpProtocol)
+### security_group_egress.ip_protocol (IpProtocol)
 
 | Value | DSL Identifier |
 |-------|----------------|
@@ -99,7 +99,7 @@ The ID of the VPC for the security group.
 
 Shorthand formats: `tcp` or `IpProtocol.tcp`
 
-### ip_protocol (IpProtocol)
+### security_group_ingress.ip_protocol (IpProtocol)
 
 | Value | DSL Identifier |
 |-------|----------------|
@@ -113,7 +113,7 @@ Shorthand formats: `tcp` or `IpProtocol.tcp`
 
 ## Struct Definitions
 
-### Egress
+### security_group_egress
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -123,10 +123,10 @@ Shorthand formats: `tcp` or `IpProtocol.tcp`
 | `destination_prefix_list_id` | PrefixListId | No |  |
 | `destination_security_group_id` | SecurityGroupId | No |  |
 | `from_port` | Int(-1..=65535) | No |  |
-| `ip_protocol` | [Enum (IpProtocol)](#ip_protocol-ipprotocol) | Yes |  |
+| `ip_protocol` | [Enum (IpProtocol)](#security_group_egressip_protocol-ipprotocol) | Yes |  |
 | `to_port` | Int(-1..=65535) | No |  |
 
-### Ingress
+### security_group_ingress
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -134,7 +134,7 @@ Shorthand formats: `tcp` or `IpProtocol.tcp`
 | `cidr_ipv6` | Ipv6Cidr | No |  |
 | `description` | String | No |  |
 | `from_port` | Int(-1..=65535) | No |  |
-| `ip_protocol` | [Enum (IpProtocol)](#ip_protocol-ipprotocol) | Yes |  |
+| `ip_protocol` | [Enum (IpProtocol)](#security_group_ingressip_protocol-ipprotocol) | Yes |  |
 | `source_prefix_list_id` | PrefixListId | No |  |
 | `source_security_group_id` | SecurityGroupId | No |  |
 | `source_security_group_name` | String | No |  |

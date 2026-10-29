@@ -47,7 +47,7 @@ The ARN for the IAM role that permits Amazon EC2 to publish flow logs to a Cloud
 
 ### `destination_options`
 
-- **Type:** [Struct(DestinationOptions)](#destinationoptions)
+- **Type:** [Struct(DestinationOptions)](#destination_options-1)
 - **Required:** No
 - **Create-only:** Yes
 
@@ -124,7 +124,7 @@ The type of traffic to log. You can log traffic that the resource accepts or rej
 
 ## Enum Values
 
-### file_format (FileFormat)
+### destination_options.file_format (FileFormat)
 
 | Value | DSL Identifier |
 |-------|----------------|
@@ -168,11 +168,11 @@ Shorthand formats: `accept` or `TrafficType.accept`
 
 ## Struct Definitions
 
-### DestinationOptions
+### destination_options
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `file_format` | [Enum (FileFormat)](#file_format-fileformat) | Yes |  |
+| `file_format` | [Enum (FileFormat)](#destination_optionsfile_format-fileformat) | Yes |  |
 | `hive_compatible_partitions` | Bool | Yes |  |
 | `per_hour_partition` | Bool | Yes |  |
 

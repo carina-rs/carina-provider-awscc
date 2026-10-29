@@ -40,7 +40,7 @@ If true, deleting the repository force deletes the contents of the repository. I
 
 ### `encryption_configuration`
 
-- **Type:** [Struct(EncryptionConfiguration)](#encryptionconfiguration)
+- **Type:** [Struct(EncryptionConfiguration)](#encryption_configuration-1)
 - **Required:** No
 - **Create-only:** Yes
 
@@ -48,7 +48,7 @@ The encryption configuration for the repository. This determines how the content
 
 ### `image_scanning_configuration`
 
-- **Type:** [Struct(ImageScanningConfiguration)](#imagescanningconfiguration)
+- **Type:** [Struct(ImageScanningConfiguration)](#image_scanning_configuration-1)
 - **Required:** No
 
 The ``imageScanningConfiguration`` parameter is being deprecated, in favor of specifying the image scanning configuration at the registry level. For more information, see ``PutRegistryScanningConfiguration``. The image scanning configuration for the repository. This determines whether images are scanned for known vulnerabilities after being pushed to the repository.
@@ -62,14 +62,14 @@ The tag mutability setting for the repository. If this parameter is omitted, the
 
 ### `image_tag_mutability_exclusion_filters`
 
-- **Type:** [List\<ImageTagMutabilityExclusionFilter\>](#imagetagmutabilityexclusionfilter) (items: 1..=5)
+- **Type:** List\<[Struct(ImageTagMutabilityExclusionFilter)](#image_tag_mutability_exclusion_filters-1)\> (items: 1..=5)
 - **Required:** No
 
 A list of filters that specify which image tags are excluded from the repository's image tag mutability setting.
 
 ### `lifecycle_policy`
 
-- **Type:** [Struct(LifecyclePolicy)](#lifecyclepolicy)
+- **Type:** [Struct(LifecyclePolicy)](#lifecycle_policy-1)
 - **Required:** No
 
 Creates or updates a lifecycle policy. For information about lifecycle policy syntax, see [Lifecycle policy template](https://docs.aws.amazon.com/AmazonECR/latest/userguide/LifecyclePolicies.html).
@@ -98,7 +98,7 @@ An array of key-value pairs to apply to this resource.
 
 ## Enum Values
 
-### encryption_type (EncryptionType)
+### encryption_configuration.encryption_type (EncryptionType)
 
 | Value | DSL Identifier |
 |-------|----------------|
@@ -119,7 +119,7 @@ Shorthand formats: `aes256` or `EncryptionType.aes256`
 
 Shorthand formats: `mutable` or `ImageTagMutability.mutable`
 
-### image_tag_mutability_exclusion_filter_type (ImageTagMutabilityExclusionFilterType)
+### image_tag_mutability_exclusion_filters.image_tag_mutability_exclusion_filter_type (ImageTagMutabilityExclusionFilterType)
 
 | Value | DSL Identifier |
 |-------|----------------|
@@ -129,27 +129,27 @@ Shorthand formats: `wildcard` or `ImageTagMutabilityExclusionFilterType.wildcard
 
 ## Struct Definitions
 
-### EncryptionConfiguration
+### encryption_configuration
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `encryption_type` | [Enum (EncryptionType)](#encryption_type-encryptiontype) | Yes | The encryption type to use. If you use the ``KMS`` encryption type, the contents of the repository will be encrypted using server-side encryption with KMSlong key stored in KMS. When you use KMS to encrypt your data, you can either use the default AWS managed KMS key for Amazon ECR, or specify your own KMS key, which you already created. If you use the ``KMS_DSSE`` encryption type, the contents of the repository will be encrypted with two layers of encryption using server-side encryption with the KMS Management Service key stored in KMS. Similar to the ``KMS`` encryption type, you can either use the default AWS managed KMS key for Amazon ECR, or specify your own KMS key, which you've already created. If you use the ``AES256`` encryption type, Amazon ECR uses server-side encryption with Amazon S3-managed encryption keys which encrypts the images in the repository using an AES256 encryption algorithm. For more information, see [Amazon ECR encryption at rest](https://docs.aws.amazon.com/AmazonECR/latest/userguide/encryption-at-rest.html) in the *Amazon Elastic Container Registry User Guide*. |
+| `encryption_type` | [Enum (EncryptionType)](#encryption_configurationencryption_type-encryptiontype) | Yes | The encryption type to use. If you use the ``KMS`` encryption type, the contents of the repository will be encrypted using server-side encryption with KMSlong key stored in KMS. When you use KMS to encrypt your data, you can either use the default AWS managed KMS key for Amazon ECR, or specify your own KMS key, which you already created. If you use the ``KMS_DSSE`` encryption type, the contents of the repository will be encrypted with two layers of encryption using server-side encryption with the KMS Management Service key stored in KMS. Similar to the ``KMS`` encryption type, you can either use the default AWS managed KMS key for Amazon ECR, or specify your own KMS key, which you've already created. If you use the ``AES256`` encryption type, Amazon ECR uses server-side encryption with Amazon S3-managed encryption keys which encrypts the images in the repository using an AES256 encryption algorithm. For more information, see [Amazon ECR encryption at rest](https://docs.aws.amazon.com/AmazonECR/latest/userguide/encryption-at-rest.html) in the *Amazon Elastic Container Registry User Guide*. |
 | `kms_key` | String | No | If you use the ``KMS`` encryption type, specify the KMS key to use for encryption. The alias, key ID, or full ARN of the KMS key can be specified. The key must exist in the same Region as the repository. If no key is specified, the default AWS managed KMS key for Amazon ECR will be used. |
 
-### ImageScanningConfiguration
+### image_scanning_configuration
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `scan_on_push` | Bool | No | The setting that determines whether images are scanned after being pushed to a repository. If set to ``true``, images will be scanned after being pushed. If this parameter is not specified, it will default to ``false`` and images will not be scanned unless a scan is manually started. |
 
-### ImageTagMutabilityExclusionFilter
+### image_tag_mutability_exclusion_filters
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `image_tag_mutability_exclusion_filter_type` | [Enum (ImageTagMutabilityExclusionFilterType)](#image_tag_mutability_exclusion_filter_type-imagetagmutabilityexclusionfiltertype) | Yes |  |
+| `image_tag_mutability_exclusion_filter_type` | [Enum (ImageTagMutabilityExclusionFilterType)](#image_tag_mutability_exclusion_filtersimage_tag_mutability_exclusion_filter_type-imagetagmutabilityexclusionfiltertype) | Yes |  |
 | `image_tag_mutability_exclusion_filter_value` | String | Yes |  |
 
-### LifecyclePolicy
+### lifecycle_policy
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|

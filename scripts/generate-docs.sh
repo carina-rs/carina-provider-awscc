@@ -35,11 +35,23 @@ CACHE_DIR="$PROJECT_ROOT/cfn-schema-cache"
 DOCS_DIR="$PROJECT_ROOT/generated-docs/awscc"
 EXAMPLES_DIR="$PROJECT_ROOT/examples"
 SCHEMAS_DIR="$PROJECT_ROOT/carina-provider-awscc/src/schemas/generated"
+
+cd "$PROJECT_ROOT"
+
+# Build codegen successfully before deleting the existing generated docs. This
+# prevents a stale binary's clap exit code from being mistaken for the
+# deliberate NON_PROVISIONABLE skip below.
+cargo build -p carina-provider-awscc --bin codegen --quiet
+
+CODEGEN_BIN="target/debug/codegen"
+if [ ! -x "$CODEGEN_BIN" ]; then
+    echo "ERROR: codegen binary not found at $CODEGEN_BIN" >&2
+    exit 1
+fi
+
 mkdir -p "$CACHE_DIR"
 rm -rf "$DOCS_DIR"
 mkdir -p "$DOCS_DIR"
-
-cd "$PROJECT_ROOT"
 
 # Derive resource types from generated schema files (single source of truth).
 # Each .rs file (excluding mod.rs) has a header comment:
@@ -57,19 +69,6 @@ echo "Generating awscc provider documentation..."
 echo "Output directory: $DOCS_DIR"
 echo ""
 
-# Build codegen tool first
-cargo build --bin codegen --quiet 2>/dev/null || true
-
-CODEGEN_BIN="target/debug/codegen"
-if [ ! -f "$CODEGEN_BIN" ]; then
-    echo "Trying to build with cargo..."
-    cargo build --bin codegen
-    if [ ! -f "$CODEGEN_BIN" ]; then
-        echo "ERROR: Could not build codegen binary"
-        exit 1
-    fi
-fi
-
 for TYPE_NAME in "${RESOURCE_TYPES[@]}"; do
     DSL_NAME=$("$CODEGEN_BIN" --type-name "$TYPE_NAME" --print-dsl-resource-name)
     SERVICE=$(echo "$DSL_NAME" | cut -d'.' -f1)
@@ -81,7 +80,6 @@ for TYPE_NAME in "${RESOURCE_TYPES[@]}"; do
     # so we convert here only for the filename. The title and the
     # markdown body keep the codegen's PascalCase DSL form.
     RESOURCE_FILE=$(echo "$RESOURCE" | sed -E 's/([a-z0-9])([A-Z])/\1_\2/g' | tr '[:upper:]' '[:lower:]')
-    FULL_RESOURCE=$("$CODEGEN_BIN" --type-name "$TYPE_NAME" --print-full-resource-name)
     mkdir -p "$DOCS_DIR/$SERVICE"
     OUTPUT_FILE="$DOCS_DIR/$SERVICE/$RESOURCE_FILE.md"
 
@@ -118,6 +116,7 @@ for TYPE_NAME in "${RESOURCE_TYPES[@]}"; do
         --file "$CACHE_FILE" \
         --type-name "$TYPE_NAME" \
         --format markdown \
+        --examples-dir "$EXAMPLES_DIR" \
         --output "$OUTPUT_FILE"
     EXIT_CODE=$?
     set -e
@@ -129,9 +128,9 @@ for TYPE_NAME in "${RESOURCE_TYPES[@]}"; do
             continue
             ;;
         *)
-            echo "  Warning: failed to generate docs for $TYPE_NAME, skipping"
+            echo "ERROR: failed to generate docs for $TYPE_NAME" >&2
             rm -f "$OUTPUT_FILE"
-            continue
+            exit "$EXIT_CODE"
             ;;
     esac
 
@@ -149,32 +148,6 @@ for TYPE_NAME in "${RESOURCE_TYPES[@]}"; do
         mv "$FRONTMATTER_TMPFILE" "$OUTPUT_FILE"
     fi
 
-    # Insert example from hand-written example file (after description, before Argument Reference)
-    EXAMPLE_FILE="$EXAMPLES_DIR/${FULL_RESOURCE}/main.crn"
-    if [ -f "$EXAMPLE_FILE" ]; then
-        EXAMPLE_TMPFILE=$(mktemp)
-        {
-            echo "## Example"
-            echo ""
-            echo '```crn'
-            # Strip provider block, leading comments, and leading blank lines
-            sed -n '/^provider /,/^}/!p' "$EXAMPLE_FILE" | \
-                sed '/^#/d' | \
-                sed '/./,$!d'
-            echo '```'
-            echo ""
-        } > "$EXAMPLE_TMPFILE"
-        # Insert the example block before "## Argument Reference"
-        MERGED_TMPFILE=$(mktemp)
-        while IFS= read -r line || [ -n "$line" ]; do
-            if [ "$line" = "## Argument Reference" ]; then
-                cat "$EXAMPLE_TMPFILE"
-            fi
-            printf '%s\n' "$line"
-        done < "$OUTPUT_FILE" > "$MERGED_TMPFILE"
-        mv "$MERGED_TMPFILE" "$OUTPUT_FILE"
-        rm -f "$EXAMPLE_TMPFILE"
-    fi
 done
 
 echo ""

@@ -11,24 +11,24 @@ Contains the Rules that identify the requests that you want to allow, block, or 
 
 ### `application_config`
 
-- **Type:** [Struct(ApplicationConfig)](#applicationconfig)
+- **Type:** [Struct(ApplicationConfig)](#application_config-1)
 - **Required:** No
 
 Collection of application attributes.
 
 ### `association_config`
 
-- **Type:** [Struct(AssociationConfig)](#associationconfig)
+- **Type:** [Struct(AssociationConfig)](#association_config-1)
 - **Required:** No
 
 ### `captcha_config`
 
-- **Type:** [Struct(CaptchaConfig)](#captchaconfig)
+- **Type:** [Struct(CaptchaConfig)](#captcha_config-1)
 - **Required:** No
 
 ### `challenge_config`
 
-- **Type:** [Struct(ChallengeConfig)](#challengeconfig)
+- **Type:** [Struct(ChallengeConfig)](#challenge_config-1)
 - **Required:** No
 
 ### `custom_response_bodies`
@@ -38,14 +38,14 @@ Collection of application attributes.
 
 ### `data_protection_config`
 
-- **Type:** [Struct(DataProtectionConfig)](#dataprotectionconfig)
+- **Type:** [Struct(DataProtectionConfig)](#data_protection_config-1)
 - **Required:** No
 
 Collection of dataProtects.
 
 ### `default_action`
 
-- **Type:** [Struct(DefaultAction)](#defaultaction)
+- **Type:** [Struct(DefaultAction)](#default_action-1)
 - **Required:** Yes
 
 ### `description`
@@ -61,12 +61,12 @@ Collection of dataProtects.
 
 ### `on_source_d_do_s_protection_config`
 
-- **Type:** [Struct(OnSourceDDoSProtectionConfig)](#onsourceddosprotectionconfig)
+- **Type:** [Struct(OnSourceDDoSProtectionConfig)](#on_source_d_do_s_protection_config-1)
 - **Required:** No
 
 ### `rules`
 
-- **Type:** [List\<Rule\>](#rule)
+- **Type:** List\<[Struct(Rule)](#rules-1)\>
 - **Required:** No
 
 Collection of Rules.
@@ -89,31 +89,33 @@ Collection of Rules.
 
 ### `visibility_config`
 
-- **Type:** [Struct(VisibilityConfig)](#visibilityconfig)
+- **Type:** [Struct(VisibilityConfig)](#visibility_config-1)
 - **Required:** Yes
 
 ## Enum Values
 
-### sensitivity_to_block (SensitivityToAct)
+### data_protection_config.data_protections.action (DataProtectionAction)
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `LOW` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.SensitivityToAct.low` |
-| `MEDIUM` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.SensitivityToAct.medium` |
-| `HIGH` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.SensitivityToAct.high` |
+| `SUBSTITUTION` | `aws.wafv2.WebAcl.DataProtectionConfig.DataProtect.DataProtectionAction.substitution` |
+| `HASH` | `aws.wafv2.WebAcl.DataProtectionConfig.DataProtect.DataProtectionAction.hash` |
 
-Shorthand formats: `low` or `SensitivityToAct.low`
+Shorthand formats: `substitution` or `DataProtectionAction.substitution`
 
-### inspection_level (InspectionLevel)
+### data_protection_config.data_protections.field.field_type (FieldType)
 
 | Value | DSL Identifier |
 |-------|----------------|
-| `COMMON` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesBotControlRuleSet.InspectionLevel.common` |
-| `TARGETED` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesBotControlRuleSet.InspectionLevel.targeted` |
+| `SINGLE_HEADER` | `aws.wafv2.WebAcl.DataProtectionConfig.DataProtect.FieldToProtect.FieldType.single_header` |
+| `SINGLE_COOKIE` | `aws.wafv2.WebAcl.DataProtectionConfig.DataProtect.FieldToProtect.FieldType.single_cookie` |
+| `SINGLE_QUERY_ARGUMENT` | `aws.wafv2.WebAcl.DataProtectionConfig.DataProtect.FieldToProtect.FieldType.single_query_argument` |
+| `QUERY_STRING` | `aws.wafv2.WebAcl.DataProtectionConfig.DataProtect.FieldToProtect.FieldType.query_string` |
+| `BODY` | `aws.wafv2.WebAcl.DataProtectionConfig.DataProtect.FieldToProtect.FieldType.body` |
 
-Shorthand formats: `common` or `InspectionLevel.common`
+Shorthand formats: `single_header` or `FieldType.single_header`
 
-### oversize_handling (OversizeHandling)
+### field_to_match.body.oversize_handling (OversizeHandling)
 
 | Value | DSL Identifier |
 |-------|----------------|
@@ -123,7 +125,141 @@ Shorthand formats: `common` or `InspectionLevel.common`
 
 Shorthand formats: `continue` or `OversizeHandling.continue`
 
-### positional_constraint (PositionalConstraint)
+### field_to_match.cookies.match_scope (MapMatchScope)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `ALL` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Cookies.MapMatchScope.all` |
+| `KEY` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Cookies.MapMatchScope.key` |
+| `VALUE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Cookies.MapMatchScope.value` |
+
+Shorthand formats: `all` or `MapMatchScope.all`
+
+### field_to_match.cookies.oversize_handling (OversizeHandling)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `CONTINUE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Cookies.OversizeHandling.continue` |
+| `MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Cookies.OversizeHandling.match` |
+| `NO_MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Cookies.OversizeHandling.no_match` |
+
+Shorthand formats: `continue` or `OversizeHandling.continue`
+
+### field_to_match.header_order.oversize_handling (OversizeHandling)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `CONTINUE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.HeaderOrder.OversizeHandling.continue` |
+| `MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.HeaderOrder.OversizeHandling.match` |
+| `NO_MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.HeaderOrder.OversizeHandling.no_match` |
+
+Shorthand formats: `continue` or `OversizeHandling.continue`
+
+### field_to_match.headers.match_scope (MapMatchScope)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `ALL` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Headers.MapMatchScope.all` |
+| `KEY` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Headers.MapMatchScope.key` |
+| `VALUE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Headers.MapMatchScope.value` |
+
+Shorthand formats: `all` or `MapMatchScope.all`
+
+### field_to_match.headers.oversize_handling (OversizeHandling)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `CONTINUE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Headers.OversizeHandling.continue` |
+| `MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Headers.OversizeHandling.match` |
+| `NO_MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Headers.OversizeHandling.no_match` |
+
+Shorthand formats: `continue` or `OversizeHandling.continue`
+
+### field_to_match.ja3_fingerprint.fallback_behavior (FallbackBehavior)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Ja3Fingerprint.FallbackBehavior.match` |
+| `NO_MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Ja3Fingerprint.FallbackBehavior.no_match` |
+
+Shorthand formats: `match` or `FallbackBehavior.match`
+
+### field_to_match.ja4_fingerprint.fallback_behavior (FallbackBehavior)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Ja4Fingerprint.FallbackBehavior.match` |
+| `NO_MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Ja4Fingerprint.FallbackBehavior.no_match` |
+
+Shorthand formats: `match` or `FallbackBehavior.match`
+
+### field_to_match.json_body.invalid_fallback_behavior (BodyParsingFallbackBehavior)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.BodyParsingFallbackBehavior.match` |
+| `NO_MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.BodyParsingFallbackBehavior.no_match` |
+| `EVALUATE_AS_STRING` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.BodyParsingFallbackBehavior.evaluate_as_string` |
+
+Shorthand formats: `match` or `BodyParsingFallbackBehavior.match`
+
+### field_to_match.json_body.match_scope (JsonMatchScope)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `ALL` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.JsonMatchScope.all` |
+| `KEY` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.JsonMatchScope.key` |
+| `VALUE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.JsonMatchScope.value` |
+
+Shorthand formats: `all` or `JsonMatchScope.all`
+
+### field_to_match.json_body.oversize_handling (OversizeHandling)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `CONTINUE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.OversizeHandling.continue` |
+| `MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.OversizeHandling.match` |
+| `NO_MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.OversizeHandling.no_match` |
+
+Shorthand formats: `continue` or `OversizeHandling.continue`
+
+### field_to_match.uri_fragment.fallback_behavior (FallbackBehavior)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.UriFragment.FallbackBehavior.match` |
+| `NO_MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.UriFragment.FallbackBehavior.no_match` |
+
+Shorthand formats: `match` or `FallbackBehavior.match`
+
+### forwarded_ip_configuration.fallback_behavior (FallbackBehavior)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `MATCH` | `aws.wafv2.WebAcl.Rule.Statement.AsnMatchStatement.ForwardedIpConfiguration.FallbackBehavior.match` |
+| `NO_MATCH` | `aws.wafv2.WebAcl.Rule.Statement.AsnMatchStatement.ForwardedIpConfiguration.FallbackBehavior.no_match` |
+
+Shorthand formats: `match` or `FallbackBehavior.match`
+
+### on_source_d_do_s_protection_config.alb_low_reputation_mode (AlbLowReputationMode)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `ACTIVE_UNDER_DDOS` | `aws.wafv2.WebAcl.OnSourceDDoSProtectionConfig.AlbLowReputationMode.active_under_ddos` |
+| `ALWAYS_ON` | `aws.wafv2.WebAcl.OnSourceDDoSProtectionConfig.AlbLowReputationMode.always_on` |
+
+Shorthand formats: `active_under_ddos` or `AlbLowReputationMode.active_under_ddos`
+
+### scope (Scope)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `CLOUDFRONT` | `aws.wafv2.WebAcl.Scope.cloudfront` |
+| `REGIONAL` | `aws.wafv2.WebAcl.Scope.regional` |
+
+Shorthand formats: `cloudfront` or `Scope.cloudfront`
+
+### statement.byte_match_statement.positional_constraint (PositionalConstraint)
 
 | Value | DSL Identifier |
 |-------|----------------|
@@ -135,85 +271,7 @@ Shorthand formats: `continue` or `OversizeHandling.continue`
 
 Shorthand formats: `exactly` or `PositionalConstraint.exactly`
 
-### sensitivity (SensitivityToAct)
-
-| Value | DSL Identifier |
-|-------|----------------|
-| `LOW` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.ClientSideActionConfig.ClientSideAction.SensitivityToAct.low` |
-| `MEDIUM` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.ClientSideActionConfig.ClientSideAction.SensitivityToAct.medium` |
-| `HIGH` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.ClientSideActionConfig.ClientSideAction.SensitivityToAct.high` |
-
-Shorthand formats: `low` or `SensitivityToAct.low`
-
-### usage_of_action (UsageOfAction)
-
-| Value | DSL Identifier |
-|-------|----------------|
-| `ENABLED` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.ClientSideActionConfig.ClientSideAction.UsageOfAction.enabled` |
-| `DISABLED` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.ClientSideActionConfig.ClientSideAction.UsageOfAction.disabled` |
-
-Shorthand formats: `enabled` or `UsageOfAction.enabled`
-
-### match_scope (MapMatchScope)
-
-| Value | DSL Identifier |
-|-------|----------------|
-| `ALL` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Cookies.MapMatchScope.all` |
-| `KEY` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Cookies.MapMatchScope.key` |
-| `VALUE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Cookies.MapMatchScope.value` |
-
-Shorthand formats: `all` or `MapMatchScope.all`
-
-### oversize_handling (OversizeHandling)
-
-| Value | DSL Identifier |
-|-------|----------------|
-| `CONTINUE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Cookies.OversizeHandling.continue` |
-| `MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Cookies.OversizeHandling.match` |
-| `NO_MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Cookies.OversizeHandling.no_match` |
-
-Shorthand formats: `continue` or `OversizeHandling.continue`
-
-### fallback_behavior (FallbackBehavior)
-
-| Value | DSL Identifier |
-|-------|----------------|
-| `MATCH` | `aws.wafv2.WebAcl.Rule.Statement.AsnMatchStatement.ForwardedIpConfiguration.FallbackBehavior.match` |
-| `NO_MATCH` | `aws.wafv2.WebAcl.Rule.Statement.AsnMatchStatement.ForwardedIpConfiguration.FallbackBehavior.no_match` |
-
-Shorthand formats: `match` or `FallbackBehavior.match`
-
-### oversize_handling (OversizeHandling)
-
-| Value | DSL Identifier |
-|-------|----------------|
-| `CONTINUE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.HeaderOrder.OversizeHandling.continue` |
-| `MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.HeaderOrder.OversizeHandling.match` |
-| `NO_MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.HeaderOrder.OversizeHandling.no_match` |
-
-Shorthand formats: `continue` or `OversizeHandling.continue`
-
-### match_scope (MapMatchScope)
-
-| Value | DSL Identifier |
-|-------|----------------|
-| `ALL` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Headers.MapMatchScope.all` |
-| `KEY` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Headers.MapMatchScope.key` |
-| `VALUE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Headers.MapMatchScope.value` |
-
-Shorthand formats: `all` or `MapMatchScope.all`
-
-### oversize_handling (OversizeHandling)
-
-| Value | DSL Identifier |
-|-------|----------------|
-| `CONTINUE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Headers.OversizeHandling.continue` |
-| `MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Headers.OversizeHandling.match` |
-| `NO_MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Headers.OversizeHandling.no_match` |
-
-Shorthand formats: `continue` or `OversizeHandling.continue`
-
-### fallback_behavior (FallbackBehavior)
+### statement.ip_set_reference_statement.ip_set_forwarded_ip_config.fallback_behavior (FallbackBehavior)
 
 | Value | DSL Identifier |
 |-------|----------------|
@@ -222,7 +280,7 @@ Shorthand formats: `continue` or `OversizeHandling.continue`
 
 Shorthand formats: `match` or `FallbackBehavior.match`
 
-### position (Position)
+### statement.ip_set_reference_statement.ip_set_forwarded_ip_config.position (Position)
 
 | Value | DSL Identifier |
 |-------|----------------|
@@ -232,55 +290,7 @@ Shorthand formats: `match` or `FallbackBehavior.match`
 
 Shorthand formats: `first` or `Position.first`
 
-### fallback_behavior (FallbackBehavior)
-
-| Value | DSL Identifier |
-|-------|----------------|
-| `MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Ja3Fingerprint.FallbackBehavior.match` |
-| `NO_MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Ja3Fingerprint.FallbackBehavior.no_match` |
-
-Shorthand formats: `match` or `FallbackBehavior.match`
-
-### fallback_behavior (FallbackBehavior)
-
-| Value | DSL Identifier |
-|-------|----------------|
-| `MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Ja4Fingerprint.FallbackBehavior.match` |
-| `NO_MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.Ja4Fingerprint.FallbackBehavior.no_match` |
-
-Shorthand formats: `match` or `FallbackBehavior.match`
-
-### invalid_fallback_behavior (BodyParsingFallbackBehavior)
-
-| Value | DSL Identifier |
-|-------|----------------|
-| `MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.BodyParsingFallbackBehavior.match` |
-| `NO_MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.BodyParsingFallbackBehavior.no_match` |
-| `EVALUATE_AS_STRING` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.BodyParsingFallbackBehavior.evaluate_as_string` |
-
-Shorthand formats: `match` or `BodyParsingFallbackBehavior.match`
-
-### match_scope (JsonMatchScope)
-
-| Value | DSL Identifier |
-|-------|----------------|
-| `ALL` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.JsonMatchScope.all` |
-| `KEY` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.JsonMatchScope.key` |
-| `VALUE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.JsonMatchScope.value` |
-
-Shorthand formats: `all` or `JsonMatchScope.all`
-
-### oversize_handling (OversizeHandling)
-
-| Value | DSL Identifier |
-|-------|----------------|
-| `CONTINUE` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.OversizeHandling.continue` |
-| `MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.OversizeHandling.match` |
-| `NO_MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.JsonBody.OversizeHandling.no_match` |
-
-Shorthand formats: `continue` or `OversizeHandling.continue`
-
-### scope (LabelMatchScope)
+### statement.label_match_statement.scope (LabelMatchScope)
 
 | Value | DSL Identifier |
 |-------|----------------|
@@ -289,7 +299,63 @@ Shorthand formats: `continue` or `OversizeHandling.continue`
 
 Shorthand formats: `label` or `LabelMatchScope.label`
 
-### payload_type (PayloadType)
+### statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_acfp_rule_set.request_inspection.payload_type (PayloadType)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `JSON` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAcfpRuleSet.RequestInspectionAcfp.PayloadType.json` |
+| `FORM_ENCODED` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAcfpRuleSet.RequestInspectionAcfp.PayloadType.form_encoded` |
+
+Shorthand formats: `json` or `PayloadType.json`
+
+### statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_anti_d_do_s_rule_set.client_side_action_config.challenge.sensitivity (SensitivityToAct)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `LOW` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.ClientSideActionConfig.ClientSideAction.SensitivityToAct.low` |
+| `MEDIUM` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.ClientSideActionConfig.ClientSideAction.SensitivityToAct.medium` |
+| `HIGH` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.ClientSideActionConfig.ClientSideAction.SensitivityToAct.high` |
+
+Shorthand formats: `low` or `SensitivityToAct.low`
+
+### statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_anti_d_do_s_rule_set.client_side_action_config.challenge.usage_of_action (UsageOfAction)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `ENABLED` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.ClientSideActionConfig.ClientSideAction.UsageOfAction.enabled` |
+| `DISABLED` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.ClientSideActionConfig.ClientSideAction.UsageOfAction.disabled` |
+
+Shorthand formats: `enabled` or `UsageOfAction.enabled`
+
+### statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_anti_d_do_s_rule_set.sensitivity_to_block (SensitivityToAct)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `LOW` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.SensitivityToAct.low` |
+| `MEDIUM` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.SensitivityToAct.medium` |
+| `HIGH` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAntiDDoSRuleSet.SensitivityToAct.high` |
+
+Shorthand formats: `low` or `SensitivityToAct.low`
+
+### statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_atp_rule_set.request_inspection.payload_type (PayloadType)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `JSON` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAtpRuleSet.RequestInspection.PayloadType.json` |
+| `FORM_ENCODED` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAtpRuleSet.RequestInspection.PayloadType.form_encoded` |
+
+Shorthand formats: `json` or `PayloadType.json`
+
+### statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_bot_control_rule_set.inspection_level (InspectionLevel)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `COMMON` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesBotControlRuleSet.InspectionLevel.common` |
+| `TARGETED` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesBotControlRuleSet.InspectionLevel.targeted` |
+
+Shorthand formats: `common` or `InspectionLevel.common`
+
+### statement.managed_rule_group_statement.managed_rule_group_configs.payload_type (PayloadType)
 
 | Value | DSL Identifier |
 |-------|----------------|
@@ -298,16 +364,7 @@ Shorthand formats: `label` or `LabelMatchScope.label`
 
 Shorthand formats: `json` or `PayloadType.json`
 
-### alb_low_reputation_mode (AlbLowReputationMode)
-
-| Value | DSL Identifier |
-|-------|----------------|
-| `ACTIVE_UNDER_DDOS` | `aws.wafv2.WebAcl.OnSourceDDoSProtectionConfig.AlbLowReputationMode.active_under_ddos` |
-| `ALWAYS_ON` | `aws.wafv2.WebAcl.OnSourceDDoSProtectionConfig.AlbLowReputationMode.always_on` |
-
-Shorthand formats: `active_under_ddos` or `AlbLowReputationMode.active_under_ddos`
-
-### aggregate_key_type (AggregateKeyType)
+### statement.rate_based_statement.aggregate_key_type (AggregateKeyType)
 
 | Value | DSL Identifier |
 |-------|----------------|
@@ -318,7 +375,25 @@ Shorthand formats: `active_under_ddos` or `AlbLowReputationMode.active_under_ddo
 
 Shorthand formats: `constant` or `AggregateKeyType.constant`
 
-### evaluation_window_sec (EvaluationWindowSec)
+### statement.rate_based_statement.custom_keys.ja3_fingerprint.fallback_behavior (FallbackBehavior)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `MATCH` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitJa3Fingerprint.FallbackBehavior.match` |
+| `NO_MATCH` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitJa3Fingerprint.FallbackBehavior.no_match` |
+
+Shorthand formats: `match` or `FallbackBehavior.match`
+
+### statement.rate_based_statement.custom_keys.ja4_fingerprint.fallback_behavior (FallbackBehavior)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `MATCH` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitJa4Fingerprint.FallbackBehavior.match` |
+| `NO_MATCH` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitJa4Fingerprint.FallbackBehavior.no_match` |
+
+Shorthand formats: `match` or `FallbackBehavior.match`
+
+### statement.rate_based_statement.evaluation_window_sec (EvaluationWindowSec)
 
 | Value | DSL Identifier |
 |-------|----------------|
@@ -329,52 +404,7 @@ Shorthand formats: `constant` or `AggregateKeyType.constant`
 
 Shorthand formats: `60` or `EvaluationWindowSec.60`
 
-### fallback_behavior (FallbackBehavior)
-
-| Value | DSL Identifier |
-|-------|----------------|
-| `MATCH` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitJa3Fingerprint.FallbackBehavior.match` |
-| `NO_MATCH` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitJa3Fingerprint.FallbackBehavior.no_match` |
-
-Shorthand formats: `match` or `FallbackBehavior.match`
-
-### fallback_behavior (FallbackBehavior)
-
-| Value | DSL Identifier |
-|-------|----------------|
-| `MATCH` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitJa4Fingerprint.FallbackBehavior.match` |
-| `NO_MATCH` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.RateBasedStatementCustomKey.RateLimitJa4Fingerprint.FallbackBehavior.no_match` |
-
-Shorthand formats: `match` or `FallbackBehavior.match`
-
-### payload_type (PayloadType)
-
-| Value | DSL Identifier |
-|-------|----------------|
-| `JSON` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAtpRuleSet.RequestInspection.PayloadType.json` |
-| `FORM_ENCODED` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAtpRuleSet.RequestInspection.PayloadType.form_encoded` |
-
-Shorthand formats: `json` or `PayloadType.json`
-
-### payload_type (PayloadType)
-
-| Value | DSL Identifier |
-|-------|----------------|
-| `JSON` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAcfpRuleSet.RequestInspectionAcfp.PayloadType.json` |
-| `FORM_ENCODED` | `aws.wafv2.WebAcl.Rule.Statement.ManagedRuleGroupStatement.ManagedRuleGroupConfig.AwsManagedRulesAcfpRuleSet.RequestInspectionAcfp.PayloadType.form_encoded` |
-
-Shorthand formats: `json` or `PayloadType.json`
-
-### scope (Scope)
-
-| Value | DSL Identifier |
-|-------|----------------|
-| `CLOUDFRONT` | `aws.wafv2.WebAcl.Scope.cloudfront` |
-| `REGIONAL` | `aws.wafv2.WebAcl.Scope.regional` |
-
-Shorthand formats: `cloudfront` or `Scope.cloudfront`
-
-### comparison_operator (ComparisonOperator)
+### statement.size_constraint_statement.comparison_operator (ComparisonOperator)
 
 | Value | DSL Identifier |
 |-------|----------------|
@@ -387,7 +417,7 @@ Shorthand formats: `cloudfront` or `Scope.cloudfront`
 
 Shorthand formats: `eq` or `ComparisonOperator.eq`
 
-### sensitivity_level (SensitivityLevel)
+### statement.sqli_match_statement.sensitivity_level (SensitivityLevel)
 
 | Value | DSL Identifier |
 |-------|----------------|
@@ -396,7 +426,7 @@ Shorthand formats: `eq` or `ComparisonOperator.eq`
 
 Shorthand formats: `low` or `SensitivityLevel.low`
 
-### type (TextTransformationType)
+### text_transformation.type (TextTransformationType)
 
 | Value | DSL Identifier |
 |-------|----------------|
@@ -424,142 +454,165 @@ Shorthand formats: `low` or `SensitivityLevel.low`
 
 Shorthand formats: `none` or `TextTransformationType.none`
 
-### fallback_behavior (FallbackBehavior)
-
-| Value | DSL Identifier |
-|-------|----------------|
-| `MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.UriFragment.FallbackBehavior.match` |
-| `NO_MATCH` | `aws.wafv2.WebAcl.Rule.Statement.ByteMatchStatement.FieldToMatch.UriFragment.FallbackBehavior.no_match` |
-
-Shorthand formats: `match` or `FallbackBehavior.match`
-
 ## Struct Definitions
 
-### AWSManagedRulesACFPRuleSet
+### allow_action
+
+Used by: `default_action.allow`, `rules.action.allow`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `creation_path` | String | Yes |  |
-| `enable_regex_in_path` | Bool | No |  |
-| `registration_page_path` | String | Yes |  |
-| `request_inspection` | [Struct(RequestInspectionACFP)](#requestinspectionacfp) | Yes |  |
-| `response_inspection` | [Struct(ResponseInspection)](#responseinspection) | No |  |
+| `custom_request_handling` | [Struct(CustomRequestHandling)](#custom_request_handling) | No |  |
 
-### AWSManagedRulesATPRuleSet
+### application_config
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `enable_regex_in_path` | Bool | No |  |
-| `login_path` | String | Yes |  |
-| `request_inspection` | [Struct(RequestInspection)](#requestinspection) | No |  |
-| `response_inspection` | [Struct(ResponseInspection)](#responseinspection) | No |  |
+| `attributes` | List\<[Struct(ApplicationAttribute)](#application_configattributes)\> | Yes |  |
 
-### AWSManagedRulesAntiDDoSRuleSet
+### application_config.attributes
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `client_side_action_config` | [Struct(ClientSideActionConfig)](#clientsideactionconfig) | Yes |  |
-| `sensitivity_to_block` | [Enum (SensitivityToAct)](#sensitivity_to_block-sensitivitytoact) | No |  |
+| `name` | String | Yes |  |
+| `values` | String | Yes |  |
 
-### AWSManagedRulesBotControlRuleSet
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `enable_machine_learning` | Bool | No |  |
-| `inspection_level` | [Enum (InspectionLevel)](#inspection_level-inspectionlevel) | Yes |  |
-
-### AllowAction
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `custom_request_handling` | [Struct(CustomRequestHandling)](#customrequesthandling) | No |  |
-
-### AndStatement
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `statements` | [List\<Statement\>](#statement) | Yes |  |
-
-### ApplicationConfig
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `attributes` | String | Yes |  |
-
-### AsnMatchStatement
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `asn_list` | `List<Int>` | No |  |
-| `forwarded_ip_config` | [Struct(ForwardedIPConfiguration)](#forwardedipconfiguration) | No |  |
-
-### AssociationConfig
+### association_config
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `request_body` | String | No |  |
 
-### BlockAction
+### block_action
+
+Used by: `default_action.block`, `rules.action.block`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `custom_response` | [Struct(CustomResponse)](#customresponse) | No |  |
+| `custom_response` | [Struct(CustomResponse)](#block_actioncustom_response) | No |  |
 
-### Body
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `oversize_handling` | [Enum (OversizeHandling)](#oversize_handling-oversizehandling) | No |  |
-
-### ByteMatchStatement
+### block_action.custom_response
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `field_to_match` | [Struct(FieldToMatch)](#fieldtomatch) | Yes |  |
-| `positional_constraint` | [Enum (PositionalConstraint)](#positional_constraint-positionalconstraint) | Yes |  |
-| `search_string` | String | No |  |
-| `search_string_base64` | String | No |  |
-| `text_transformations` | [List\<TextTransformation\>](#texttransformation) | Yes |  |
+| `custom_response_body_key` | String | No | Custom response body key. |
+| `response_code` | Int(200..=599) | Yes |  |
+| `response_headers` | List\<[Struct(CustomHTTPHeader)](#custom_http_header)\> (items: 1..) | No | Collection of HTTP headers. |
 
-### CaptchaAction
+### captcha_config
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `custom_request_handling` | [Struct(CustomRequestHandling)](#customrequesthandling) | No |  |
-
-### CaptchaConfig
+Used by: `captcha_config`, `rules.captcha_config`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `immunity_time_property` | [Struct(ImmunityTimeProperty)](#immunitytimeproperty) | No |  |
+| `immunity_time_property` | [Struct(ImmunityTimeProperty)](#immunity_time_property) | No |  |
 
-### ChallengeAction
+### challenge_config
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `custom_request_handling` | [Struct(CustomRequestHandling)](#customrequesthandling) | No |  |
-
-### ChallengeConfig
+Used by: `challenge_config`, `rules.challenge_config`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `immunity_time_property` | [Struct(ImmunityTimeProperty)](#immunitytimeproperty) | No |  |
+| `immunity_time_property` | [Struct(ImmunityTimeProperty)](#immunity_time_property) | No |  |
 
-### ClientSideAction
+### custom_http_header
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `exempt_uri_regular_expressions` | String | No |  |
-| `sensitivity` | [Enum (SensitivityToAct)](#sensitivity-sensitivitytoact) | No |  |
-| `usage_of_action` | [Enum (UsageOfAction)](#usage_of_action-usageofaction) | Yes |  |
-
-### ClientSideActionConfig
+Used by: `block_action.custom_response.response_headers`, `custom_request_handling.insert_headers`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `challenge` | [Struct(ClientSideAction)](#clientsideaction) | Yes |  |
+| `name` | String | Yes |  |
+| `value` | String | Yes |  |
 
-### CookieMatchPattern
+### custom_request_handling
+
+Used by: `allow_action.custom_request_handling`, `rule_action.captcha.custom_request_handling`, `rule_action.challenge.custom_request_handling`, `rule_action.count.custom_request_handling`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `insert_headers` | List\<[Struct(CustomHTTPHeader)](#custom_http_header)\> (items: 1..) | Yes | Collection of HTTP headers. |
+
+### data_protection_config
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `data_protections` | List\<[Struct(DataProtect)](#data_protection_configdata_protections)\> | Yes |  |
+
+### data_protection_config.data_protections
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `action` | [Enum (DataProtectionAction)](#data_protection_configdata_protectionsaction-dataprotectionaction) | Yes |  |
+| `exclude_rate_based_details` | Bool | No |  |
+| `exclude_rule_match_details` | Bool | No |  |
+| `field` | [Struct(FieldToProtect)](#data_protection_configdata_protectionsfield) | Yes |  |
+
+### data_protection_config.data_protections.field
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `field_keys` | `List<String>` | No | List of field keys to protect |
+| `field_type` | [Enum (FieldType)](#data_protection_configdata_protectionsfieldfield_type-fieldtype) | Yes | Field type to protect |
+
+### default_action
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `allow` | [Struct(AllowAction)](#allow_action) | No |  |
+| `block` | [Struct(BlockAction)](#block_action) | No |  |
+
+### excluded_rule
+
+Used by: `statement.managed_rule_group_statement.excluded_rules`, `statement.rule_group_reference_statement.excluded_rules`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | String | Yes |  |
+
+### field_identifier
+
+Used by: `statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_acfp_rule_set.request_inspection.email_field`, `statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_acfp_rule_set.request_inspection.password_field`, `statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_acfp_rule_set.request_inspection.username_field`, `statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_atp_rule_set.request_inspection.password_field`, `statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_atp_rule_set.request_inspection.username_field`, `statement.managed_rule_group_statement.managed_rule_group_configs.password_field`, `statement.managed_rule_group_statement.managed_rule_group_configs.username_field`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `identifier` | String(pattern, len: 1..=512) | Yes |  |
+
+### field_to_match
+
+Used by: `statement.byte_match_statement.field_to_match`, `statement.regex_match_statement.field_to_match`, `statement.regex_pattern_set_reference_statement.field_to_match`, `statement.size_constraint_statement.field_to_match`, `statement.sqli_match_statement.field_to_match`, `statement.xss_match_statement.field_to_match`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `all_query_arguments` | `Map<String, String>` | No | All query arguments of a web request. |
+| `body` | [Struct(Body)](#field_to_matchbody) | No |  |
+| `cookies` | [Struct(Cookies)](#field_to_matchcookies) | No |  |
+| `header_order` | [Struct(HeaderOrder)](#field_to_matchheader_order) | No |  |
+| `headers` | [Struct(Headers)](#field_to_matchheaders) | No |  |
+| `ja3_fingerprint` | [Struct(JA3Fingerprint)](#field_to_matchja3_fingerprint) | No |  |
+| `ja4_fingerprint` | [Struct(JA4Fingerprint)](#field_to_matchja4_fingerprint) | No |  |
+| `json_body` | [Struct(JsonBody)](#field_to_matchjson_body) | No |  |
+| `method` | `Map<String, String>` | No | The HTTP method of a web request. The method indicates the type of operation that the request is asking the origin to perform. |
+| `query_string` | `Map<String, String>` | No | The query string of a web request. This is the part of a URL that appears after a ? character, if any. |
+| `single_header` | [Struct(SingleHeader)](#field_to_matchsingle_header) | No |  |
+| `single_query_argument` | [Struct(SingleQueryArgument)](#field_to_matchsingle_query_argument) | No | One query argument in a web request, identified by name, for example UserName or SalesRegion. The name can be up to 30 characters long and isn't case sensitive. |
+| `uri_fragment` | [Struct(UriFragment)](#field_to_matchuri_fragment) | No |  |
+| `uri_path` | `Map<String, String>` | No | The path component of the URI of a web request. This is the part of a web request that identifies a resource, for example, /images/daily-ad.jpg. |
+
+### field_to_match.body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `oversize_handling` | [Enum (OversizeHandling)](#field_to_matchbodyoversize_handling-oversizehandling) | No |  |
+
+### field_to_match.cookies
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `match_pattern` | [Struct(CookieMatchPattern)](#field_to_matchcookiesmatch_pattern) | Yes |  |
+| `match_scope` | [Enum (MapMatchScope)](#field_to_matchcookiesmatch_scope-mapmatchscope) | Yes |  |
+| `oversize_handling` | [Enum (OversizeHandling)](#field_to_matchcookiesoversize_handling-oversizehandling) | Yes |  |
+
+### field_to_match.cookies.match_pattern
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -567,100 +620,21 @@ Shorthand formats: `match` or `FallbackBehavior.match`
 | `excluded_cookies` | `List<String>` (items: 1..=199) | No |  |
 | `included_cookies` | `List<String>` (items: 1..=199) | No |  |
 
-### Cookies
+### field_to_match.header_order
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `match_pattern` | [Struct(CookieMatchPattern)](#cookiematchpattern) | Yes |  |
-| `match_scope` | [Enum (MapMatchScope)](#match_scope-mapmatchscope) | Yes |  |
-| `oversize_handling` | [Enum (OversizeHandling)](#oversize_handling-oversizehandling) | Yes |  |
+| `oversize_handling` | [Enum (OversizeHandling)](#field_to_matchheader_orderoversize_handling-oversizehandling) | Yes |  |
 
-### CountAction
+### field_to_match.headers
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `custom_request_handling` | [Struct(CustomRequestHandling)](#customrequesthandling) | No |  |
+| `match_pattern` | [Struct(HeaderMatchPattern)](#field_to_matchheadersmatch_pattern) | Yes |  |
+| `match_scope` | [Enum (MapMatchScope)](#field_to_matchheadersmatch_scope-mapmatchscope) | Yes |  |
+| `oversize_handling` | [Enum (OversizeHandling)](#field_to_matchheadersoversize_handling-oversizehandling) | Yes |  |
 
-### CustomHTTPHeader
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `name` | String | Yes |  |
-| `value` | String | Yes |  |
-
-### CustomRequestHandling
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `insert_headers` | [List\<CustomHTTPHeader\>](#customhttpheader) (items: 1..) | Yes | Collection of HTTP headers. |
-
-### CustomResponse
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `custom_response_body_key` | String | No | Custom response body key. |
-| `response_code` | Int(200..=599) | Yes |  |
-| `response_headers` | [List\<CustomHTTPHeader\>](#customhttpheader) (items: 1..) | No | Collection of HTTP headers. |
-
-### DataProtectionConfig
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `data_protections` | String | Yes |  |
-
-### DefaultAction
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `allow` | [Struct(AllowAction)](#allowaction) | No |  |
-| `block` | [Struct(BlockAction)](#blockaction) | No |  |
-
-### ExcludedRule
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `name` | String | Yes |  |
-
-### FieldIdentifier
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `identifier` | String(pattern, len: 1..=512) | Yes |  |
-
-### FieldToMatch
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `all_query_arguments` | `Map<String, String>` | No | All query arguments of a web request. |
-| `body` | [Struct(Body)](#body) | No |  |
-| `cookies` | [Struct(Cookies)](#cookies) | No |  |
-| `header_order` | [Struct(HeaderOrder)](#headerorder) | No |  |
-| `headers` | [Struct(Headers)](#headers) | No |  |
-| `ja3_fingerprint` | [Struct(JA3Fingerprint)](#ja3fingerprint) | No |  |
-| `ja4_fingerprint` | [Struct(JA4Fingerprint)](#ja4fingerprint) | No |  |
-| `json_body` | [Struct(JsonBody)](#jsonbody) | No |  |
-| `method` | `Map<String, String>` | No | The HTTP method of a web request. The method indicates the type of operation that the request is asking the origin to perform. |
-| `query_string` | `Map<String, String>` | No | The query string of a web request. This is the part of a URL that appears after a ? character, if any. |
-| `single_header` | [Struct(SingleHeader)](#singleheader) | No |  |
-| `single_query_argument` | [Struct(SingleQueryArgument)](#singlequeryargument) | No | One query argument in a web request, identified by name, for example UserName or SalesRegion. The name can be up to 30 characters long and isn't case sensitive. |
-| `uri_fragment` | [Struct(UriFragment)](#urifragment) | No |  |
-| `uri_path` | `Map<String, String>` | No | The path component of the URI of a web request. This is the part of a web request that identifies a resource, for example, /images/daily-ad.jpg. |
-
-### ForwardedIPConfiguration
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `fallback_behavior` | [Enum (FallbackBehavior)](#fallback_behavior-fallbackbehavior) | Yes |  |
-| `header_name` | String | Yes |  |
-
-### GeoMatchStatement
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `country_codes` | `List<String>` | No |  |
-| `forwarded_ip_config` | [Struct(ForwardedIPConfiguration)](#forwardedipconfiguration) | No |  |
-
-### HeaderMatchPattern
+### field_to_match.headers.match_pattern
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -668,263 +642,94 @@ Shorthand formats: `match` or `FallbackBehavior.match`
 | `excluded_headers` | `List<String>` (items: 1..=199) | No |  |
 | `included_headers` | `List<String>` (items: 1..=199) | No |  |
 
-### HeaderOrder
+### field_to_match.ja3_fingerprint
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `oversize_handling` | [Enum (OversizeHandling)](#oversize_handling-oversizehandling) | Yes |  |
+| `fallback_behavior` | [Enum (FallbackBehavior)](#field_to_matchja3_fingerprintfallback_behavior-fallbackbehavior) | Yes |  |
 
-### Headers
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `match_pattern` | [Struct(HeaderMatchPattern)](#headermatchpattern) | Yes |  |
-| `match_scope` | [Enum (MapMatchScope)](#match_scope-mapmatchscope) | Yes |  |
-| `oversize_handling` | [Enum (OversizeHandling)](#oversize_handling-oversizehandling) | Yes |  |
-
-### IPSetForwardedIPConfiguration
+### field_to_match.ja4_fingerprint
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `fallback_behavior` | [Enum (FallbackBehavior)](#fallback_behavior-fallbackbehavior) | Yes |  |
-| `header_name` | String | Yes |  |
-| `position` | [Enum (Position)](#position-position) | Yes |  |
+| `fallback_behavior` | [Enum (FallbackBehavior)](#field_to_matchja4_fingerprintfallback_behavior-fallbackbehavior) | Yes |  |
 
-### IPSetReferenceStatement
+### field_to_match.json_body
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `arn` | Arn | Yes |  |
-| `ip_set_forwarded_ip_config` | [Struct(IPSetForwardedIPConfiguration)](#ipsetforwardedipconfiguration) | No |  |
+| `invalid_fallback_behavior` | [Enum (BodyParsingFallbackBehavior)](#field_to_matchjson_bodyinvalid_fallback_behavior-bodyparsingfallbackbehavior) | No |  |
+| `match_pattern` | [Struct(JsonMatchPattern)](#field_to_matchjson_bodymatch_pattern) | Yes |  |
+| `match_scope` | [Enum (JsonMatchScope)](#field_to_matchjson_bodymatch_scope-jsonmatchscope) | Yes |  |
+| `oversize_handling` | [Enum (OversizeHandling)](#field_to_matchjson_bodyoversize_handling-oversizehandling) | No |  |
 
-### ImmunityTimeProperty
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `immunity_time` | Int(60..=259200) | Yes |  |
-
-### JA3Fingerprint
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `fallback_behavior` | [Enum (FallbackBehavior)](#fallback_behavior-fallbackbehavior) | Yes |  |
-
-### JA4Fingerprint
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `fallback_behavior` | [Enum (FallbackBehavior)](#fallback_behavior-fallbackbehavior) | Yes |  |
-
-### JsonBody
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `invalid_fallback_behavior` | [Enum (BodyParsingFallbackBehavior)](#invalid_fallback_behavior-bodyparsingfallbackbehavior) | No |  |
-| `match_pattern` | [Struct(JsonMatchPattern)](#jsonmatchpattern) | Yes |  |
-| `match_scope` | [Enum (JsonMatchScope)](#match_scope-jsonmatchscope) | Yes |  |
-| `oversize_handling` | [Enum (OversizeHandling)](#oversize_handling-oversizehandling) | No |  |
-
-### JsonMatchPattern
+### field_to_match.json_body.match_pattern
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `all` | `Map<String, String>` | No | Inspect all parts of the web request's JSON body. |
 | `included_paths` | `List<String>` | No |  |
 
-### Label
+### field_to_match.single_header
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `name` | String | Yes |  |
 
-### LabelMatchStatement
+### field_to_match.single_query_argument
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `key` | String | Yes |  |
-| `scope` | [Enum (LabelMatchScope)](#scope-labelmatchscope) | Yes |  |
-
-### ManagedRuleGroupConfig
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `aws_managed_rules_acfp_rule_set` | [Struct(AWSManagedRulesACFPRuleSet)](#awsmanagedrulesacfpruleset) | No |  |
-| `aws_managed_rules_atp_rule_set` | [Struct(AWSManagedRulesATPRuleSet)](#awsmanagedrulesatpruleset) | No |  |
-| `aws_managed_rules_anti_d_do_s_rule_set` | [Struct(AWSManagedRulesAntiDDoSRuleSet)](#awsmanagedrulesantiddosruleset) | No |  |
-| `aws_managed_rules_bot_control_rule_set` | [Struct(AWSManagedRulesBotControlRuleSet)](#awsmanagedrulesbotcontrolruleset) | No |  |
-| `login_path` | String(pattern, len: 1..=256) | No |  |
-| `password_field` | [Struct(FieldIdentifier)](#fieldidentifier) | No |  |
-| `payload_type` | [Enum (PayloadType)](#payload_type-payloadtype) | No |  |
-| `username_field` | [Struct(FieldIdentifier)](#fieldidentifier) | No |  |
-
-### ManagedRuleGroupStatement
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `excluded_rules` | [List\<ExcludedRule\>](#excludedrule) | No |  |
-| `managed_rule_group_configs` | [List\<ManagedRuleGroupConfig\>](#managedrulegroupconfig) | No | Collection of ManagedRuleGroupConfig. |
 | `name` | String | Yes |  |
-| `rule_action_overrides` | [List\<RuleActionOverride\>](#ruleactionoverride) (items: ..=100) | No | Action overrides for rules in the rule group. |
-| `scope_down_statement` | [Struct(Statement)](#statement) | No |  |
-| `vendor_name` | String | Yes |  |
-| `version` | String(pattern, len: 1..=64) | No |  |
 
-### NotStatement
+### field_to_match.uri_fragment
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `statement` | [Struct(Statement)](#statement) | Yes |  |
+| `fallback_behavior` | [Enum (FallbackBehavior)](#field_to_matchuri_fragmentfallback_behavior-fallbackbehavior) | No |  |
 
-### OnSourceDDoSProtectionConfig
+### forwarded_ip_configuration
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `alb_low_reputation_mode` | [Enum (AlbLowReputationMode)](#alb_low_reputation_mode-alblowreputationmode) | Yes |  |
-
-### OrStatement
+Used by: `statement.asn_match_statement.forwarded_ip_config`, `statement.geo_match_statement.forwarded_ip_config`, `statement.rate_based_statement.forwarded_ip_config`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `statements` | [List\<Statement\>](#statement) | Yes |  |
+| `fallback_behavior` | [Enum (FallbackBehavior)](#forwarded_ip_configurationfallback_behavior-fallbackbehavior) | Yes |  |
+| `header_name` | String | Yes |  |
 
-### OverrideAction
+### immunity_time_property
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `count` | `Map<String, String>` | No | Count traffic towards application. |
-| `none` | `Map<String, String>` | No | Keep the RuleGroup or ManagedRuleGroup behavior as is. |
-
-### RateBasedStatement
+Used by: `captcha_config.immunity_time_property`, `challenge_config.immunity_time_property`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `aggregate_key_type` | [Enum (AggregateKeyType)](#aggregate_key_type-aggregatekeytype) | Yes |  |
-| `custom_keys` | [List\<RateBasedStatementCustomKey\>](#ratebasedstatementcustomkey) (items: ..=5) | No | Specifies the aggregate keys to use in a rate-base rule. |
-| `evaluation_window_sec` | [Enum (EvaluationWindowSec)](#evaluation_window_sec-evaluationwindowsec) | No |  |
-| `forwarded_ip_config` | [Struct(ForwardedIPConfiguration)](#forwardedipconfiguration) | No |  |
-| `limit` | Int(10..=2000000000) | Yes |  |
-| `scope_down_statement` | [Struct(Statement)](#statement) | No |  |
+| `immunity_time` | Int(60..=259200) | Yes |  |
 
-### RateBasedStatementCustomKey
+### on_source_d_do_s_protection_config
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `asn` | String | No |  |
-| `cookie` | [Struct(RateLimitCookie)](#ratelimitcookie) | No |  |
-| `forwarded_ip` | Ipv4Address | No |  |
-| `http_method` | String | No |  |
-| `header` | [Struct(RateLimitHeader)](#ratelimitheader) | No |  |
-| `ip` | Ipv4Address | No |  |
-| `ja3_fingerprint` | [Struct(RateLimitJA3Fingerprint)](#ratelimitja3fingerprint) | No |  |
-| `ja4_fingerprint` | [Struct(RateLimitJA4Fingerprint)](#ratelimitja4fingerprint) | No |  |
-| `label_namespace` | [Struct(RateLimitLabelNamespace)](#ratelimitlabelnamespace) | No |  |
-| `query_argument` | [Struct(RateLimitQueryArgument)](#ratelimitqueryargument) | No |  |
-| `query_string` | [Struct(RateLimitQueryString)](#ratelimitquerystring) | No |  |
-| `uri_path` | [Struct(RateLimitUriPath)](#ratelimituripath) | No |  |
+| `alb_low_reputation_mode` | [Enum (AlbLowReputationMode)](#on_source_d_do_s_protection_configalb_low_reputation_mode-alblowreputationmode) | Yes |  |
 
-### RateLimitCookie
+### response_inspection
+
+Used by: `statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_acfp_rule_set.response_inspection`, `statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_atp_rule_set.response_inspection`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `name` | String(pattern, len: 1..=64) | Yes | The name of the cookie to use. |
-| `text_transformations` | [List\<TextTransformation\>](#texttransformation) | Yes |  |
+| `body_contains` | [Struct(ResponseInspectionBodyContains)](#response_inspectionbody_contains) | No |  |
+| `header` | [Struct(ResponseInspectionHeader)](#response_inspectionheader) | No |  |
+| `json` | [Struct(ResponseInspectionJson)](#response_inspectionjson) | No |  |
+| `status_code` | [Struct(ResponseInspectionStatusCode)](#response_inspectionstatus_code) | No |  |
 
-### RateLimitHeader
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `name` | String(pattern, len: 1..=64) | Yes | The name of the header to use. |
-| `text_transformations` | [List\<TextTransformation\>](#texttransformation) | Yes |  |
-
-### RateLimitJA3Fingerprint
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `fallback_behavior` | [Enum (FallbackBehavior)](#fallback_behavior-fallbackbehavior) | Yes |  |
-
-### RateLimitJA4Fingerprint
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `fallback_behavior` | [Enum (FallbackBehavior)](#fallback_behavior-fallbackbehavior) | Yes |  |
-
-### RateLimitLabelNamespace
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `namespace` | String | Yes | The namespace to use for aggregation. |
-
-### RateLimitQueryArgument
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `name` | String(pattern, len: 1..=64) | Yes | The name of the query argument to use. |
-| `text_transformations` | [List\<TextTransformation\>](#texttransformation) | Yes |  |
-
-### RateLimitQueryString
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `text_transformations` | [List\<TextTransformation\>](#texttransformation) | Yes |  |
-
-### RateLimitUriPath
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `text_transformations` | [List\<TextTransformation\>](#texttransformation) | Yes |  |
-
-### RegexMatchStatement
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `field_to_match` | [Struct(FieldToMatch)](#fieldtomatch) | Yes |  |
-| `regex_string` | String(len: 1..=512) | Yes |  |
-| `text_transformations` | [List\<TextTransformation\>](#texttransformation) | Yes |  |
-
-### RegexPatternSetReferenceStatement
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `arn` | Arn | Yes |  |
-| `field_to_match` | [Struct(FieldToMatch)](#fieldtomatch) | Yes |  |
-| `text_transformations` | [List\<TextTransformation\>](#texttransformation) | Yes |  |
-
-### RequestInspection
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `password_field` | [Struct(FieldIdentifier)](#fieldidentifier) | Yes |  |
-| `payload_type` | [Enum (PayloadType)](#payload_type-payloadtype) | Yes |  |
-| `username_field` | [Struct(FieldIdentifier)](#fieldidentifier) | Yes |  |
-
-### RequestInspectionACFP
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `address_fields` | `List<String>` | No |  |
-| `email_field` | [Struct(FieldIdentifier)](#fieldidentifier) | No |  |
-| `password_field` | [Struct(FieldIdentifier)](#fieldidentifier) | No |  |
-| `payload_type` | [Enum (PayloadType)](#payload_type-payloadtype) | Yes |  |
-| `phone_number_fields` | `List<String>` | No |  |
-| `username_field` | [Struct(FieldIdentifier)](#fieldidentifier) | No |  |
-
-### ResponseInspection
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `body_contains` | [Struct(ResponseInspectionBodyContains)](#responseinspectionbodycontains) | No |  |
-| `header` | [Struct(ResponseInspectionHeader)](#responseinspectionheader) | No |  |
-| `json` | [Struct(ResponseInspectionJson)](#responseinspectionjson) | No |  |
-| `status_code` | [Struct(ResponseInspectionStatusCode)](#responseinspectionstatuscode) | No |  |
-
-### ResponseInspectionBodyContains
+### response_inspection.body_contains
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `failure_strings` | `List<String>` (items: 1..=5) | Yes |  |
 | `success_strings` | `List<String>` (items: 1..=5) | Yes |  |
 
-### ResponseInspectionHeader
+### response_inspection.header
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -932,7 +737,7 @@ Shorthand formats: `match` or `FallbackBehavior.match`
 | `name` | String(pattern, len: 1..=200) | Yes |  |
 | `success_values` | `List<String>` (items: 1..=3) | Yes |  |
 
-### ResponseInspectionJson
+### response_inspection.json
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -940,129 +745,408 @@ Shorthand formats: `match` or `FallbackBehavior.match`
 | `identifier` | String(pattern, len: 1..=512) | Yes |  |
 | `success_values` | `List<String>` (items: 1..=5) | Yes |  |
 
-### ResponseInspectionStatusCode
+### response_inspection.status_code
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `failure_codes` | `List<Int>` (items: 1..=10) | Yes |  |
 | `success_codes` | `List<Int>` (items: 1..=10) | Yes |  |
 
-### Rule
+### rule_action
+
+Used by: `rules.action`, `rules.statement.managed_rule_group_statement.rule_action_overrides.action_to_use`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `action` | [Struct(RuleAction)](#ruleaction) | No |  |
-| `captcha_config` | [Struct(CaptchaConfig)](#captchaconfig) | No |  |
-| `challenge_config` | [Struct(ChallengeConfig)](#challengeconfig) | No |  |
+| `allow` | [Struct(AllowAction)](#allow_action) | No |  |
+| `block` | [Struct(BlockAction)](#block_action) | No |  |
+| `captcha` | [Struct(CaptchaAction)](#rule_actioncaptcha) | No |  |
+| `challenge` | [Struct(ChallengeAction)](#rule_actionchallenge) | No |  |
+| `count` | [Struct(CountAction)](#rule_actioncount) | No |  |
+
+### rule_action.captcha
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `custom_request_handling` | [Struct(CustomRequestHandling)](#custom_request_handling) | No |  |
+
+### rule_action.challenge
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `custom_request_handling` | [Struct(CustomRequestHandling)](#custom_request_handling) | No |  |
+
+### rule_action.count
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `custom_request_handling` | [Struct(CustomRequestHandling)](#custom_request_handling) | No |  |
+
+### rule_action_override
+
+Used by: `statement.managed_rule_group_statement.rule_action_overrides`, `statement.rule_group_reference_statement.rule_action_overrides`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `action_to_use` | [Struct(RuleAction)](#rule_action) | Yes |  |
 | `name` | String | Yes |  |
-| `override_action` | [Struct(OverrideAction)](#overrideaction) | No |  |
+
+### rules
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `action` | [Struct(RuleAction)](#rule_action) | No |  |
+| `captcha_config` | [Struct(CaptchaConfig)](#captcha_config-1) | No |  |
+| `challenge_config` | [Struct(ChallengeConfig)](#challenge_config-1) | No |  |
+| `name` | String | Yes |  |
+| `override_action` | [Struct(OverrideAction)](#rulesoverride_action) | No |  |
 | `priority` | Int(0..) | Yes |  |
-| `rule_labels` | [List\<Label\>](#label) | No | Collection of Rule Labels. |
+| `rule_labels` | List\<[Struct(Label)](#rulesrule_labels)\> | No | Collection of Rule Labels. |
 | `statement` | [Struct(Statement)](#statement) | Yes |  |
-| `visibility_config` | [Struct(VisibilityConfig)](#visibilityconfig) | Yes |  |
+| `visibility_config` | [Struct(VisibilityConfig)](#visibility_config-1) | Yes |  |
 
-### RuleAction
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `allow` | [Struct(AllowAction)](#allowaction) | No |  |
-| `block` | [Struct(BlockAction)](#blockaction) | No |  |
-| `captcha` | [Struct(CaptchaAction)](#captchaaction) | No |  |
-| `challenge` | [Struct(ChallengeAction)](#challengeaction) | No |  |
-| `count` | [Struct(CountAction)](#countaction) | No |  |
-
-### RuleActionOverride
+### rules.override_action
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `action_to_use` | [Struct(RuleAction)](#ruleaction) | Yes |  |
+| `count` | `Map<String, String>` | No | Count traffic towards application. |
+| `none` | `Map<String, String>` | No | Keep the RuleGroup or ManagedRuleGroup behavior as is. |
+
+### rules.rule_labels
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
 | `name` | String | Yes |  |
 
-### RuleGroupReferenceStatement
+### statement
+
+Used by: `rules.statement`, `rules.statement.and_statement.statements`, `rules.statement.managed_rule_group_statement.scope_down_statement`, `rules.statement.not_statement.statement`, `rules.statement.or_statement.statements`, `rules.statement.rate_based_statement.scope_down_statement`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `and_statement` | [Struct(AndStatement)](#statementand_statement) | No |  |
+| `asn_match_statement` | [Struct(AsnMatchStatement)](#statementasn_match_statement) | No |  |
+| `byte_match_statement` | [Struct(ByteMatchStatement)](#statementbyte_match_statement) | No |  |
+| `geo_match_statement` | [Struct(GeoMatchStatement)](#statementgeo_match_statement) | No |  |
+| `ip_set_reference_statement` | [Struct(IPSetReferenceStatement)](#statementip_set_reference_statement) | No |  |
+| `label_match_statement` | [Struct(LabelMatchStatement)](#statementlabel_match_statement) | No |  |
+| `managed_rule_group_statement` | [Struct(ManagedRuleGroupStatement)](#statementmanaged_rule_group_statement) | No |  |
+| `not_statement` | [Struct(NotStatement)](#statementnot_statement) | No |  |
+| `or_statement` | [Struct(OrStatement)](#statementor_statement) | No |  |
+| `rate_based_statement` | [Struct(RateBasedStatement)](#statementrate_based_statement) | No |  |
+| `regex_match_statement` | [Struct(RegexMatchStatement)](#statementregex_match_statement) | No |  |
+| `regex_pattern_set_reference_statement` | [Struct(RegexPatternSetReferenceStatement)](#statementregex_pattern_set_reference_statement) | No |  |
+| `rule_group_reference_statement` | [Struct(RuleGroupReferenceStatement)](#statementrule_group_reference_statement) | No |  |
+| `size_constraint_statement` | [Struct(SizeConstraintStatement)](#statementsize_constraint_statement) | No |  |
+| `sqli_match_statement` | [Struct(SqliMatchStatement)](#statementsqli_match_statement) | No |  |
+| `xss_match_statement` | [Struct(XssMatchStatement)](#statementxss_match_statement) | No |  |
+
+### statement.and_statement
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `statements` | List\<[Struct(Statement)](#statement)\> | Yes |  |
+
+### statement.asn_match_statement
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `asn_list` | `List<Int>` | No |  |
+| `forwarded_ip_config` | [Struct(ForwardedIPConfiguration)](#forwarded_ip_configuration) | No |  |
+
+### statement.byte_match_statement
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `field_to_match` | [Struct(FieldToMatch)](#field_to_match) | Yes |  |
+| `positional_constraint` | [Enum (PositionalConstraint)](#statementbyte_match_statementpositional_constraint-positionalconstraint) | Yes |  |
+| `search_string` | String | No |  |
+| `search_string_base64` | String | No |  |
+| `text_transformations` | List\<[Struct(TextTransformation)](#text_transformation)\> | Yes |  |
+
+### statement.geo_match_statement
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `country_codes` | `List<String>` | No |  |
+| `forwarded_ip_config` | [Struct(ForwardedIPConfiguration)](#forwarded_ip_configuration) | No |  |
+
+### statement.ip_set_reference_statement
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `arn` | Arn | Yes |  |
-| `excluded_rules` | [List\<ExcludedRule\>](#excludedrule) | No |  |
-| `rule_action_overrides` | [List\<RuleActionOverride\>](#ruleactionoverride) (items: ..=100) | No | Action overrides for rules in the rule group. |
+| `ip_set_forwarded_ip_config` | [Struct(IPSetForwardedIPConfiguration)](#statementip_set_reference_statementip_set_forwarded_ip_config) | No |  |
 
-### SingleHeader
+### statement.ip_set_reference_statement.ip_set_forwarded_ip_config
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
+| `fallback_behavior` | [Enum (FallbackBehavior)](#statementip_set_reference_statementip_set_forwarded_ip_configfallback_behavior-fallbackbehavior) | Yes |  |
+| `header_name` | String | Yes |  |
+| `position` | [Enum (Position)](#statementip_set_reference_statementip_set_forwarded_ip_configposition-position) | Yes |  |
+
+### statement.label_match_statement
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `key` | String | Yes |  |
+| `scope` | [Enum (LabelMatchScope)](#statementlabel_match_statementscope-labelmatchscope) | Yes |  |
+
+### statement.managed_rule_group_statement
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `excluded_rules` | List\<[Struct(ExcludedRule)](#excluded_rule)\> | No |  |
+| `managed_rule_group_configs` | List\<[Struct(ManagedRuleGroupConfig)](#statementmanaged_rule_group_statementmanaged_rule_group_configs)\> | No | Collection of ManagedRuleGroupConfig. |
 | `name` | String | Yes |  |
+| `rule_action_overrides` | List\<[Struct(RuleActionOverride)](#rule_action_override)\> (items: ..=100) | No | Action overrides for rules in the rule group. |
+| `scope_down_statement` | [Struct(Statement)](#statement) | No |  |
+| `vendor_name` | String | Yes |  |
+| `version` | String(pattern, len: 1..=64) | No |  |
 
-### SingleQueryArgument
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `name` | String | Yes |  |
-
-### SizeConstraintStatement
+### statement.managed_rule_group_statement.managed_rule_group_configs
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `comparison_operator` | [Enum (ComparisonOperator)](#comparison_operator-comparisonoperator) | Yes |  |
-| `field_to_match` | [Struct(FieldToMatch)](#fieldtomatch) | Yes |  |
+| `aws_managed_rules_acfp_rule_set` | [Struct(AWSManagedRulesACFPRuleSet)](#statementmanaged_rule_group_statementmanaged_rule_group_configsaws_managed_rules_acfp_rule_set) | No |  |
+| `aws_managed_rules_atp_rule_set` | [Struct(AWSManagedRulesATPRuleSet)](#statementmanaged_rule_group_statementmanaged_rule_group_configsaws_managed_rules_atp_rule_set) | No |  |
+| `aws_managed_rules_anti_d_do_s_rule_set` | [Struct(AWSManagedRulesAntiDDoSRuleSet)](#statementmanaged_rule_group_statementmanaged_rule_group_configsaws_managed_rules_anti_d_do_s_rule_set) | No |  |
+| `aws_managed_rules_bot_control_rule_set` | [Struct(AWSManagedRulesBotControlRuleSet)](#statementmanaged_rule_group_statementmanaged_rule_group_configsaws_managed_rules_bot_control_rule_set) | No |  |
+| `login_path` | String(pattern, len: 1..=256) | No |  |
+| `password_field` | [Struct(FieldIdentifier)](#field_identifier) | No |  |
+| `payload_type` | [Enum (PayloadType)](#statementmanaged_rule_group_statementmanaged_rule_group_configspayload_type-payloadtype) | No |  |
+| `username_field` | [Struct(FieldIdentifier)](#field_identifier) | No |  |
+
+### statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_acfp_rule_set
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `creation_path` | String | Yes |  |
+| `enable_regex_in_path` | Bool | No |  |
+| `registration_page_path` | String | Yes |  |
+| `request_inspection` | [Struct(RequestInspectionACFP)](#statementmanaged_rule_group_statementmanaged_rule_group_configsaws_managed_rules_acfp_rule_setrequest_inspection) | Yes |  |
+| `response_inspection` | [Struct(ResponseInspection)](#response_inspection) | No |  |
+
+### statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_acfp_rule_set.request_inspection
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `address_fields` | `List<String>` | No |  |
+| `email_field` | [Struct(FieldIdentifier)](#field_identifier) | No |  |
+| `password_field` | [Struct(FieldIdentifier)](#field_identifier) | No |  |
+| `payload_type` | [Enum (PayloadType)](#statementmanaged_rule_group_statementmanaged_rule_group_configsaws_managed_rules_acfp_rule_setrequest_inspectionpayload_type-payloadtype) | Yes |  |
+| `phone_number_fields` | `List<String>` | No |  |
+| `username_field` | [Struct(FieldIdentifier)](#field_identifier) | No |  |
+
+### statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_anti_d_do_s_rule_set
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `client_side_action_config` | [Struct(ClientSideActionConfig)](#statementmanaged_rule_group_statementmanaged_rule_group_configsaws_managed_rules_anti_d_do_s_rule_setclient_side_action_config) | Yes |  |
+| `sensitivity_to_block` | [Enum (SensitivityToAct)](#statementmanaged_rule_group_statementmanaged_rule_group_configsaws_managed_rules_anti_d_do_s_rule_setsensitivity_to_block-sensitivitytoact) | No |  |
+
+### statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_anti_d_do_s_rule_set.client_side_action_config
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `challenge` | [Struct(ClientSideAction)](#statementmanaged_rule_group_statementmanaged_rule_group_configsaws_managed_rules_anti_d_do_s_rule_setclient_side_action_configchallenge) | Yes |  |
+
+### statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_anti_d_do_s_rule_set.client_side_action_config.challenge
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `exempt_uri_regular_expressions` | List\<[Struct(Regex)](#statementmanaged_rule_group_statementmanaged_rule_group_configsaws_managed_rules_anti_d_do_s_rule_setclient_side_action_configchallengeexempt_uri_regular_expressions)\> | No |  |
+| `sensitivity` | [Enum (SensitivityToAct)](#statementmanaged_rule_group_statementmanaged_rule_group_configsaws_managed_rules_anti_d_do_s_rule_setclient_side_action_configchallengesensitivity-sensitivitytoact) | No |  |
+| `usage_of_action` | [Enum (UsageOfAction)](#statementmanaged_rule_group_statementmanaged_rule_group_configsaws_managed_rules_anti_d_do_s_rule_setclient_side_action_configchallengeusage_of_action-usageofaction) | Yes |  |
+
+### statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_anti_d_do_s_rule_set.client_side_action_config.challenge.exempt_uri_regular_expressions
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `regex_string` | String | No |  |
+
+### statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_atp_rule_set
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `enable_regex_in_path` | Bool | No |  |
+| `login_path` | String | Yes |  |
+| `request_inspection` | [Struct(RequestInspection)](#statementmanaged_rule_group_statementmanaged_rule_group_configsaws_managed_rules_atp_rule_setrequest_inspection) | No |  |
+| `response_inspection` | [Struct(ResponseInspection)](#response_inspection) | No |  |
+
+### statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_atp_rule_set.request_inspection
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `password_field` | [Struct(FieldIdentifier)](#field_identifier) | Yes |  |
+| `payload_type` | [Enum (PayloadType)](#statementmanaged_rule_group_statementmanaged_rule_group_configsaws_managed_rules_atp_rule_setrequest_inspectionpayload_type-payloadtype) | Yes |  |
+| `username_field` | [Struct(FieldIdentifier)](#field_identifier) | Yes |  |
+
+### statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_bot_control_rule_set
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `enable_machine_learning` | Bool | No |  |
+| `inspection_level` | [Enum (InspectionLevel)](#statementmanaged_rule_group_statementmanaged_rule_group_configsaws_managed_rules_bot_control_rule_setinspection_level-inspectionlevel) | Yes |  |
+
+### statement.not_statement
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `statement` | [Struct(Statement)](#statement) | Yes |  |
+
+### statement.or_statement
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `statements` | List\<[Struct(Statement)](#statement)\> | Yes |  |
+
+### statement.rate_based_statement
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `aggregate_key_type` | [Enum (AggregateKeyType)](#statementrate_based_statementaggregate_key_type-aggregatekeytype) | Yes |  |
+| `custom_keys` | List\<[Struct(RateBasedStatementCustomKey)](#statementrate_based_statementcustom_keys)\> (items: ..=5) | No | Specifies the aggregate keys to use in a rate-base rule. |
+| `evaluation_window_sec` | [Enum (EvaluationWindowSec)](#statementrate_based_statementevaluation_window_sec-evaluationwindowsec) | No |  |
+| `forwarded_ip_config` | [Struct(ForwardedIPConfiguration)](#forwarded_ip_configuration) | No |  |
+| `limit` | Int(10..=2000000000) | Yes |  |
+| `scope_down_statement` | [Struct(Statement)](#statement) | No |  |
+
+### statement.rate_based_statement.custom_keys
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `asn` | String | No |  |
+| `cookie` | [Struct(RateLimitCookie)](#statementrate_based_statementcustom_keyscookie) | No |  |
+| `forwarded_ip` | Ipv4Address | No |  |
+| `http_method` | String | No |  |
+| `header` | [Struct(RateLimitHeader)](#statementrate_based_statementcustom_keysheader) | No |  |
+| `ip` | Ipv4Address | No |  |
+| `ja3_fingerprint` | [Struct(RateLimitJA3Fingerprint)](#statementrate_based_statementcustom_keysja3_fingerprint) | No |  |
+| `ja4_fingerprint` | [Struct(RateLimitJA4Fingerprint)](#statementrate_based_statementcustom_keysja4_fingerprint) | No |  |
+| `label_namespace` | [Struct(RateLimitLabelNamespace)](#statementrate_based_statementcustom_keyslabel_namespace) | No |  |
+| `query_argument` | [Struct(RateLimitQueryArgument)](#statementrate_based_statementcustom_keysquery_argument) | No |  |
+| `query_string` | [Struct(RateLimitQueryString)](#statementrate_based_statementcustom_keysquery_string) | No |  |
+| `uri_path` | [Struct(RateLimitUriPath)](#statementrate_based_statementcustom_keysuri_path) | No |  |
+
+### statement.rate_based_statement.custom_keys.cookie
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | String(pattern, len: 1..=64) | Yes | The name of the cookie to use. |
+| `text_transformations` | List\<[Struct(TextTransformation)](#text_transformation)\> | Yes |  |
+
+### statement.rate_based_statement.custom_keys.header
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | String(pattern, len: 1..=64) | Yes | The name of the header to use. |
+| `text_transformations` | List\<[Struct(TextTransformation)](#text_transformation)\> | Yes |  |
+
+### statement.rate_based_statement.custom_keys.ja3_fingerprint
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `fallback_behavior` | [Enum (FallbackBehavior)](#statementrate_based_statementcustom_keysja3_fingerprintfallback_behavior-fallbackbehavior) | Yes |  |
+
+### statement.rate_based_statement.custom_keys.ja4_fingerprint
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `fallback_behavior` | [Enum (FallbackBehavior)](#statementrate_based_statementcustom_keysja4_fingerprintfallback_behavior-fallbackbehavior) | Yes |  |
+
+### statement.rate_based_statement.custom_keys.label_namespace
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `namespace` | String | Yes | The namespace to use for aggregation. |
+
+### statement.rate_based_statement.custom_keys.query_argument
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | String(pattern, len: 1..=64) | Yes | The name of the query argument to use. |
+| `text_transformations` | List\<[Struct(TextTransformation)](#text_transformation)\> | Yes |  |
+
+### statement.rate_based_statement.custom_keys.query_string
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `text_transformations` | List\<[Struct(TextTransformation)](#text_transformation)\> | Yes |  |
+
+### statement.rate_based_statement.custom_keys.uri_path
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `text_transformations` | List\<[Struct(TextTransformation)](#text_transformation)\> | Yes |  |
+
+### statement.regex_match_statement
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `field_to_match` | [Struct(FieldToMatch)](#field_to_match) | Yes |  |
+| `regex_string` | String(len: 1..=512) | Yes |  |
+| `text_transformations` | List\<[Struct(TextTransformation)](#text_transformation)\> | Yes |  |
+
+### statement.regex_pattern_set_reference_statement
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `arn` | Arn | Yes |  |
+| `field_to_match` | [Struct(FieldToMatch)](#field_to_match) | Yes |  |
+| `text_transformations` | List\<[Struct(TextTransformation)](#text_transformation)\> | Yes |  |
+
+### statement.rule_group_reference_statement
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `arn` | Arn | Yes |  |
+| `excluded_rules` | List\<[Struct(ExcludedRule)](#excluded_rule)\> | No |  |
+| `rule_action_overrides` | List\<[Struct(RuleActionOverride)](#rule_action_override)\> (items: ..=100) | No | Action overrides for rules in the rule group. |
+
+### statement.size_constraint_statement
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `comparison_operator` | [Enum (ComparisonOperator)](#statementsize_constraint_statementcomparison_operator-comparisonoperator) | Yes |  |
+| `field_to_match` | [Struct(FieldToMatch)](#field_to_match) | Yes |  |
 | `size` | Float(0..=21474836480) | Yes |  |
-| `text_transformations` | [List\<TextTransformation\>](#texttransformation) | Yes |  |
+| `text_transformations` | List\<[Struct(TextTransformation)](#text_transformation)\> | Yes |  |
 
-### SqliMatchStatement
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `field_to_match` | [Struct(FieldToMatch)](#fieldtomatch) | Yes |  |
-| `sensitivity_level` | [Enum (SensitivityLevel)](#sensitivity_level-sensitivitylevel) | No |  |
-| `text_transformations` | [List\<TextTransformation\>](#texttransformation) | Yes |  |
-
-### Statement
+### statement.sqli_match_statement
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `and_statement` | [Struct(AndStatement)](#andstatement) | No |  |
-| `asn_match_statement` | [Struct(AsnMatchStatement)](#asnmatchstatement) | No |  |
-| `byte_match_statement` | [Struct(ByteMatchStatement)](#bytematchstatement) | No |  |
-| `geo_match_statement` | [Struct(GeoMatchStatement)](#geomatchstatement) | No |  |
-| `ip_set_reference_statement` | [Struct(IPSetReferenceStatement)](#ipsetreferencestatement) | No |  |
-| `label_match_statement` | [Struct(LabelMatchStatement)](#labelmatchstatement) | No |  |
-| `managed_rule_group_statement` | [Struct(ManagedRuleGroupStatement)](#managedrulegroupstatement) | No |  |
-| `not_statement` | [Struct(NotStatement)](#notstatement) | No |  |
-| `or_statement` | [Struct(OrStatement)](#orstatement) | No |  |
-| `rate_based_statement` | [Struct(RateBasedStatement)](#ratebasedstatement) | No |  |
-| `regex_match_statement` | [Struct(RegexMatchStatement)](#regexmatchstatement) | No |  |
-| `regex_pattern_set_reference_statement` | [Struct(RegexPatternSetReferenceStatement)](#regexpatternsetreferencestatement) | No |  |
-| `rule_group_reference_statement` | [Struct(RuleGroupReferenceStatement)](#rulegroupreferencestatement) | No |  |
-| `size_constraint_statement` | [Struct(SizeConstraintStatement)](#sizeconstraintstatement) | No |  |
-| `sqli_match_statement` | [Struct(SqliMatchStatement)](#sqlimatchstatement) | No |  |
-| `xss_match_statement` | [Struct(XssMatchStatement)](#xssmatchstatement) | No |  |
+| `field_to_match` | [Struct(FieldToMatch)](#field_to_match) | Yes |  |
+| `sensitivity_level` | [Enum (SensitivityLevel)](#statementsqli_match_statementsensitivity_level-sensitivitylevel) | No |  |
+| `text_transformations` | List\<[Struct(TextTransformation)](#text_transformation)\> | Yes |  |
 
-### TextTransformation
+### statement.xss_match_statement
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `field_to_match` | [Struct(FieldToMatch)](#field_to_match) | Yes |  |
+| `text_transformations` | List\<[Struct(TextTransformation)](#text_transformation)\> | Yes |  |
+
+### text_transformation
+
+Used by: `statement.byte_match_statement.text_transformations`, `statement.rate_based_statement.custom_keys.cookie.text_transformations`, `statement.rate_based_statement.custom_keys.header.text_transformations`, `statement.rate_based_statement.custom_keys.query_argument.text_transformations`, `statement.rate_based_statement.custom_keys.query_string.text_transformations`, `statement.rate_based_statement.custom_keys.uri_path.text_transformations`, `statement.regex_match_statement.text_transformations`, `statement.regex_pattern_set_reference_statement.text_transformations`, `statement.size_constraint_statement.text_transformations`, `statement.sqli_match_statement.text_transformations`, `statement.xss_match_statement.text_transformations`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `priority` | Int(0..) | Yes |  |
-| `type` | [Enum (TextTransformationType)](#type-texttransformationtype) | Yes |  |
+| `type` | [Enum (TextTransformationType)](#text_transformationtype-texttransformationtype) | Yes |  |
 
-### UriFragment
+### visibility_config
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `fallback_behavior` | [Enum (FallbackBehavior)](#fallback_behavior-fallbackbehavior) | No |  |
-
-### VisibilityConfig
+Used by: `rules.visibility_config`, `visibility_config`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `cloud_watch_metrics_enabled` | Bool | Yes |  |
 | `metric_name` | String(len: 1..=128) | Yes |  |
 | `sampled_requests_enabled` | Bool | Yes |  |
-
-### XssMatchStatement
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `field_to_match` | [Struct(FieldToMatch)](#fieldtomatch) | Yes |  |
-| `text_transformations` | [List\<TextTransformation\>](#texttransformation) | Yes |  |
 
 ## Attribute Reference
 
