@@ -96,6 +96,7 @@ pub fn route53_hosted_zone_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::Route53::HostedZone",
         resource_type_name: "route53.HostedZone",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "Id", dsl_name: "id" }],
+        exclusive_groups: &[],
         tags: None,
         schema,
     }

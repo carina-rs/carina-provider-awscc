@@ -198,6 +198,7 @@ pub fn cloudfront_response_headers_policy_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::CloudFront::ResponseHeadersPolicy",
         resource_type_name: "cloudfront.ResponseHeadersPolicy",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "Id", dsl_name: "id" }],
+        exclusive_groups: &[],
         tags: None,
         schema,
     }

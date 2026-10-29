@@ -158,6 +158,7 @@ pub fn ec2_ipam_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::EC2::IPAM",
         resource_type_name: "ec2.Ipam",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "IpamId", dsl_name: "ipam_id" }],
+        exclusive_groups: &[],
         tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
         schema,
     }

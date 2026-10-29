@@ -118,6 +118,7 @@ pub fn iam_role_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::IAM::Role",
         resource_type_name: "iam.Role",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "RoleName", dsl_name: "role_name" }],
+        exclusive_groups: &[],
         tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
         schema,
     }

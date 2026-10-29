@@ -53,6 +53,7 @@ pub fn cloudfront_origin_access_control_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::CloudFront::OriginAccessControl",
         resource_type_name: "cloudfront.OriginAccessControl",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "Id", dsl_name: "id" }],
+        exclusive_groups: &[],
         tags: None,
         schema,
     }

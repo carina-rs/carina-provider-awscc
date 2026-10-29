@@ -35,6 +35,7 @@ pub fn s3_bucket_policy_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::S3::BucketPolicy",
         resource_type_name: "s3.BucketPolicy",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "Bucket", dsl_name: "bucket" }],
+        exclusive_groups: &[],
         tags: None,
         schema,
     }

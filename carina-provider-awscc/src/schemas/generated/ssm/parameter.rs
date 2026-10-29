@@ -114,6 +114,7 @@ pub fn ssm_parameter_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::SSM::Parameter",
         resource_type_name: "ssm.Parameter",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "Name", dsl_name: "name" }],
+        exclusive_groups: &[],
         tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::Map }),
         schema,
     }

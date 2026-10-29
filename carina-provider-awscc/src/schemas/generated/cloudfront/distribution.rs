@@ -520,6 +520,7 @@ pub fn cloudfront_distribution_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::CloudFront::Distribution",
         resource_type_name: "cloudfront.Distribution",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "Id", dsl_name: "id" }],
+        exclusive_groups: &[],
         tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
         schema,
     }

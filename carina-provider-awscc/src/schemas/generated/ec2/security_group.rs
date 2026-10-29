@@ -109,6 +109,7 @@ pub fn ec2_security_group_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::EC2::SecurityGroup",
         resource_type_name: "ec2.SecurityGroup",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "Id", dsl_name: "id" }],
+        exclusive_groups: &[],
         tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
         schema,
     }

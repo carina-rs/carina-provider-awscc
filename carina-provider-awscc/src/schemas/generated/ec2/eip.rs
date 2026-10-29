@@ -109,6 +109,7 @@ pub fn ec2_eip_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::EC2::EIP",
         resource_type_name: "ec2.Eip",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "PublicIp", dsl_name: "public_ip" }, crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "AllocationId", dsl_name: "allocation_id" }],
+        exclusive_groups: &[],
         tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
         schema,
     }

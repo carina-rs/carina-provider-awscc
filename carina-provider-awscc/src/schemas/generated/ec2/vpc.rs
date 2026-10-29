@@ -124,6 +124,7 @@ pub fn ec2_vpc_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::EC2::VPC",
         resource_type_name: "ec2.Vpc",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "VpcId", dsl_name: "vpc_id" }],
+        exclusive_groups: &[],
         tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
         schema,
     }

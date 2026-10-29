@@ -792,6 +792,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::S3::Bucket",
         resource_type_name: "s3.Bucket",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "BucketName", dsl_name: "bucket_name" }],
+        exclusive_groups: &[],
         tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
         schema,
     }

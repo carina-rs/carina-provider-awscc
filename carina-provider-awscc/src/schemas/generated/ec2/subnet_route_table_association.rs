@@ -44,6 +44,7 @@ pub fn ec2_subnet_route_table_association_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::EC2::SubnetRouteTableAssociation",
         resource_type_name: "ec2.SubnetRouteTableAssociation",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "Id", dsl_name: "id" }],
+        exclusive_groups: &[],
         tags: None,
         schema,
     }

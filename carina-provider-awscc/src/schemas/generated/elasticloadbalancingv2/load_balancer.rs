@@ -198,6 +198,7 @@ pub fn elasticloadbalancingv2_load_balancer_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::ElasticLoadBalancingV2::LoadBalancer",
         resource_type_name: "elasticloadbalancingv2.LoadBalancer",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "LoadBalancerArn", dsl_name: "load_balancer_arn" }],
+        exclusive_groups: &[],
         tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
         schema,
     }

@@ -179,6 +179,7 @@ pub fn ec2_nat_gateway_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::EC2::NatGateway",
         resource_type_name: "ec2.NatGateway",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "NatGatewayId", dsl_name: "nat_gateway_id" }],
+        exclusive_groups: &[],
         tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
         schema,
     }

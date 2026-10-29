@@ -135,6 +135,7 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::Organizations::Account",
         resource_type_name: "organizations.Account",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "AccountId", dsl_name: "account_id" }],
+        exclusive_groups: &[],
         tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
         schema,
     }
