@@ -9,9 +9,13 @@
 //! - `schemas` - Auto-generated resource schemas
 
 pub mod provider;
+mod resend_safety;
 pub mod resources;
 pub mod schemas;
 mod sdk_config;
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod resend_guard;
 
 // Re-export main types
 pub use provider::{

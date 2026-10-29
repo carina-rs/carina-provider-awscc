@@ -7,6 +7,7 @@ use aws_smithy_types::retry::RetryConfig;
 use aws_smithy_types::timeout::TimeoutConfig;
 
 use crate::provider::assume_role::AssumeRoleConfig;
+use crate::resend_safety::cloudcontrol_idempotency;
 
 /// An AWS SDK configuration with the provider's timeout and retry policy applied.
 pub struct BoundedSdkConfig(aws_config::SdkConfig);
@@ -66,8 +67,13 @@ impl BoundedSdkConfig {
     }
 
     pub(crate) fn clients(&self) -> SdkClients {
+        let cloudcontrol = aws_sdk_cloudcontrol::Client::from_conf(
+            aws_sdk_cloudcontrol::config::Builder::from(&self.0)
+                .interceptor(carina_aws_types::ResendGuard::new(cloudcontrol_idempotency))
+                .build(),
+        );
         SdkClients {
-            cloudcontrol: aws_sdk_cloudcontrol::Client::new(&self.0),
+            cloudcontrol,
             s3: aws_sdk_s3::Client::new(&self.0),
             sts: aws_sdk_sts::Client::new(&self.0),
         }
