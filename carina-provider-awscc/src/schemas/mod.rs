@@ -1,5 +1,6 @@
 //! AWS Cloud Control resource schema definitions
 
+pub mod catalog;
 pub mod config;
 pub mod generated;
 

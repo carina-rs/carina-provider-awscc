@@ -37,20 +37,6 @@ const VALID_VPC_ENDPOINT_TYPE: &[&str] = &[
 ];
 
 #[allow(dead_code)]
-fn validate_list_items_1_10(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::List(items)) = value {
-        let len = items.len();
-        if !(1..=10).contains(&len) {
-            Err(format!("List has {} items, expected 1..=10", len))
-        } else {
-            Ok(())
-        }
-    } else {
-        Err("Expected list".to_string())
-    }
-}
-
-#[allow(dead_code)]
 fn validate_string_length_1_255(value: &Value) -> Result<(), String> {
     if let Value::Concrete(ConcreteValue::String(s)) = value {
         let s = s.expose_plaintext();

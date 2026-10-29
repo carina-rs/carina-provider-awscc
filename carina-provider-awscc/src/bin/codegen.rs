@@ -135,11 +135,6 @@ thread_local! {
     #[allow(clippy::missing_const_for_thread_local)]
     static EMITTED_RANGE_VALIDATORS: RefCell<BTreeMap<String, RangeValidator>> =
         RefCell::new(BTreeMap::new());
-    /// `prop_name -> integer enum values`, same rationale as
-    /// `EMITTED_RANGE_VALIDATORS` (carina#3340).
-    #[allow(clippy::missing_const_for_thread_local)]
-    static EMITTED_INT_ENUMS: RefCell<BTreeMap<String, Vec<i64>>> =
-        RefCell::new(BTreeMap::new());
     /// Provider paths whose generated `AttributeSchema` or `StructField`
     /// actually uses the `provider_populated` constructor in the current
     /// emission pass.
@@ -178,7 +173,6 @@ fn reset_recursion_guard() {
     EMITTED_PATTERNS_WITH_LENGTHS.with(|s| s.borrow_mut().clear());
     EMITTED_STANDALONE_PATTERNS.with(|s| s.borrow_mut().clear());
     EMITTED_RANGE_VALIDATORS.with(|s| s.borrow_mut().clear());
-    EMITTED_INT_ENUMS.with(|s| s.borrow_mut().clear());
     reset_property_mode_emission_state();
 }
 
@@ -232,17 +226,6 @@ fn record_range_validator(prop_name: &str, min: Option<i64>, max: Option<i64>, i
 
 fn take_emitted_range_validators() -> BTreeMap<String, (Option<i64>, Option<i64>, bool)> {
     EMITTED_RANGE_VALIDATORS.with(|s| std::mem::take(&mut *s.borrow_mut()))
-}
-
-fn record_int_enum(prop_name: &str, values: &[i64]) {
-    EMITTED_INT_ENUMS.with(|s| {
-        s.borrow_mut()
-            .insert(prop_name.to_string(), values.to_vec());
-    });
-}
-
-fn take_emitted_int_enums() -> BTreeMap<String, Vec<i64>> {
-    EMITTED_INT_ENUMS.with(|s| std::mem::take(&mut *s.borrow_mut()))
 }
 
 /// Exit status used when a schema is deliberately skipped (NON_PROVISIONABLE).
@@ -433,234 +416,37 @@ const REPLACEMENT_CLASSES: &[(&str, ReplacementClass)] = &[
     ("wafv2.WebAclAssociation", ReplacementClass::Conflicting),
 ];
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ArnEmitChoice {
-    PerKind(&'static ArnValidation),
-    ServicePrefix(&'static str),
-    Generic,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct ArnValidation {
-    service: &'static str,
-    resource: &'static str,
-    regex: &'static str,
-    validator: ArnValidator,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ArnValidator {
-    Iam {
-        prefix: &'static str,
-        label: &'static str,
-    },
-    Service {
-        service: &'static str,
-        prefix: Option<&'static str>,
-        label: &'static str,
-    },
-}
-
-static ARN_VALIDATIONS: &[ArnValidation] = &[
-    ArnValidation {
-        service: "iam",
-        resource: "Role",
-        regex: "^arn:(aws|aws-cn|aws-us-gov):iam::[^:]*:role/.+$",
-        validator: ArnValidator::Iam {
-            prefix: "role/",
-            label: "IAM Role",
-        },
-    },
-    ArnValidation {
-        service: "iam",
-        resource: "Policy",
-        regex: "^arn:(aws|aws-cn|aws-us-gov):iam::[^:]*:policy/.+$",
-        validator: ArnValidator::Iam {
-            prefix: "policy/",
-            label: "IAM Policy",
-        },
-    },
-    ArnValidation {
-        service: "iam",
-        resource: "OidcProvider",
-        regex: "^arn:(aws|aws-cn|aws-us-gov):iam::[^:]*:oidc-provider/.+$",
-        validator: ArnValidator::Iam {
-            prefix: "oidc-provider/",
-            label: "IAM OIDC Provider",
-        },
-    },
-    ArnValidation {
-        service: "kms",
-        resource: "Key",
-        regex: "^arn:(aws|aws-cn|aws-us-gov):kms:[^:]*:[^:]*:key/.+$",
-        validator: ArnValidator::Service {
-            service: "kms",
-            prefix: Some("key/"),
-            label: "KMS Key",
-        },
-    },
-    ArnValidation {
-        service: "s3",
-        resource: "Bucket",
-        regex: "^arn:(aws|aws-cn|aws-us-gov):s3:::.+$",
-        validator: ArnValidator::Service {
-            service: "s3",
-            prefix: None,
-            label: "s3",
-        },
-    },
-    ArnValidation {
-        service: "cloudfront",
-        resource: "Distribution",
-        regex: "^arn:(aws|aws-cn|aws-us-gov):cloudfront::[^:]*:distribution/.+$",
-        validator: ArnValidator::Service {
-            service: "cloudfront",
-            prefix: Some("distribution/"),
-            label: "cloudfront",
-        },
-    },
-    ArnValidation {
-        service: "ecs",
-        resource: "Cluster",
-        regex: "^arn:(aws|aws-cn|aws-us-gov):ecs:[^:]*:[^:]*:cluster/.+$",
-        validator: ArnValidator::Service {
-            service: "ecs",
-            prefix: Some("cluster/"),
-            label: "ecs",
-        },
-    },
-    ArnValidation {
-        service: "dynamodb",
-        resource: "Table",
-        regex: "^arn:(aws|aws-cn|aws-us-gov):dynamodb:[^:]*:[^:]*:table/.+$",
-        validator: ArnValidator::Service {
-            service: "dynamodb",
-            prefix: Some("table/"),
-            label: "dynamodb",
-        },
-    },
-    ArnValidation {
-        service: "logs",
-        resource: "LogGroup",
-        regex: "^arn:(aws|aws-cn|aws-us-gov):logs:[^:]*:[^:]*:log-group:.+$",
-        validator: ArnValidator::Service {
-            service: "logs",
-            prefix: Some("log-group:"),
-            label: "logs",
-        },
-    },
-];
-
-static KNOWN_SERVICES: &[&str] = &[
-    "cloudfront",
-    "dynamodb",
-    "ec2",
-    "ecs",
-    "iam",
-    "kms",
-    "logs",
-    "organizations",
-    "s3",
-    "wafv2",
-];
-
-fn arn_emit_choice(service: &str, resource: &str) -> ArnEmitChoice {
-    if let Some(entry) = ARN_VALIDATIONS
-        .iter()
-        .find(|v| v.service == service && v.resource == resource)
-    {
-        ArnEmitChoice::PerKind(entry)
-    } else if let Some(&known) = KNOWN_SERVICES.iter().find(|&&known| known == service) {
-        ArnEmitChoice::ServicePrefix(known)
-    } else {
-        ArnEmitChoice::Generic
-    }
-}
-
 fn resource_identity_parts(name: &str) -> Option<(&str, &str)> {
     name.split_once('.')
 }
 
-fn arn_validator_for(validator: ArnValidator) -> String {
-    match validator {
-        ArnValidator::Iam { prefix, label } => format!(
-            r#"|value| {{
-            if let Value::Concrete(ConcreteValue::String(s)) = value {{
-                let s = s.expose_plaintext();
-                carina_aws_types::validate_iam_arn(s, {prefix:?})
-                    .map_err(|reason| format!("Invalid {label} ARN '{{}}': {{}}", s, reason))
-            }} else {{
-                Err("Expected string".to_string())
-            }}
-        }}"#
-        ),
-        ArnValidator::Service {
-            service,
-            prefix,
-            label,
-        } => {
-            let prefix_expr = match prefix {
-                Some(prefix) => format!("Some({prefix:?})"),
-                None => "None".to_string(),
-            };
-            format!(
-                r#"|value| {{
-            if let Value::Concrete(ConcreteValue::String(s)) = value {{
-                let s = s.expose_plaintext();
-                carina_aws_types::validate_service_arn(s, {service:?}, {prefix_expr})
-                    .map_err(|reason| format!("Invalid {label} ARN '{{}}': {{}}", s, reason))
-            }} else {{
-                Err("Expected string".to_string())
-            }}
-        }}"#
-            )
+fn arn_constructor(service: &str, resource: &str) -> &'static str {
+    match (service, resource) {
+        ("iam", "Role") => "carina_aws_types::iam_role_arn()",
+        ("iam", "Policy") => "carina_aws_types::iam_policy_arn()",
+        ("iam", "OidcProvider") => "crate::schemas::catalog::iam_oidc_provider_arn()",
+        ("kms", "Key") => "carina_aws_types::kms_key_arn()",
+        ("organizations", "Account") => "crate::schemas::catalog::organizations_account_arn()",
+        ("organizations", "Organization") => {
+            "crate::schemas::catalog::organizations_organization_arn()"
         }
+        ("s3", "Bucket") => "crate::schemas::catalog::s3_bucket_arn()",
+        ("cloudfront", "Distribution") => "crate::schemas::catalog::cloudfront_distribution_arn()",
+        ("dynamodb", "Table") => "crate::schemas::catalog::dynamodb_table_arn()",
+        ("ec2", "IpamPool") => "crate::schemas::catalog::ec2_ipam_pool_arn()",
+        ("ec2", "Ipam") => "crate::schemas::catalog::ec2_ipam_arn()",
+        ("ecs", "Cluster") => "crate::schemas::catalog::ecs_cluster_arn()",
+        ("logs", "LogGroup") => "crate::schemas::catalog::logs_log_group_arn()",
+        ("wafv2", "WebAcl") => "crate::schemas::catalog::wafv2_web_acl_arn()",
+        _ => "carina_aws_types::arn()",
     }
 }
 
-fn arn_validator_expression(choice: ArnEmitChoice) -> String {
-    match choice {
-        ArnEmitChoice::PerKind(entry) => arn_validator_for(entry.validator),
-        ArnEmitChoice::ServicePrefix(service) => format!(
-            r#"|value| {{
-            if let Value::Concrete(ConcreteValue::String(s)) = value {{
-                let s = s.expose_plaintext();
-                carina_aws_types::validate_service_arn(s, {service:?}, None)
-                    .map_err(|reason| format!("Invalid {service} ARN '{{}}': {{}}", s, reason))
-            }} else {{
-                Err("Expected string".to_string())
-            }}
-        }}"#
-        ),
-        ArnEmitChoice::Generic => unreachable!("generic ARN helper has no validator expression"),
-    }
-}
-
-fn emit_arn_helper(service: &str, resource: &str, choice: ArnEmitChoice) -> String {
-    if matches!(choice, ArnEmitChoice::Generic) {
-        return "pub fn arn() -> AttributeType {\n    carina_aws_types::arn()\n}\n\n".to_string();
-    }
-
-    let regex_expr = match choice {
-        ArnEmitChoice::PerKind(entry) => format!("Some({:?}.to_string())", entry.regex),
-        ArnEmitChoice::ServicePrefix(service) => {
-            format!(
-                "Some(\"^arn:(aws|aws-cn|aws-us-gov):{}:.*$\".to_string())",
-                service
-            )
-        }
-        ArnEmitChoice::Generic => unreachable!("handled above"),
-    };
-    let validator_expr = arn_validator_expression(choice);
+fn emit_arn_helper(service: &str, resource: &str) -> String {
+    let constructor = arn_constructor(service, resource);
     format!(
         r#"pub fn arn() -> AttributeType {{
-    AttributeType::refined_string_with_validator(
-        carina_aws_types::provider_type("{service}", "{resource}", "Arn"),
-        {regex_expr},
-        None,
-        legacy_validator({validator_expr}),
-        None,
-    )
+    {constructor}
 }}
 
 "#
@@ -2832,8 +2618,7 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
         let has_synthetic_arn = synthetic_attributes()
             .iter()
             .any(|synth| synth.cfn_type == type_name && synth.attr_name == "arn");
-        (has_schema_arn || has_synthetic_arn)
-            .then(|| emit_arn_helper(service, resource, arn_emit_choice(service, resource)))
+        (has_schema_arn || has_synthetic_arn).then(|| emit_arn_helper(service, resource))
     });
     let has_arn_helper = arn_helper.is_some();
 
@@ -2860,8 +2645,6 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
     let mut enums: BTreeMap<String, EnumInfo> = BTreeMap::new();
     let mut ranged_ints: BTreeMap<String, (Option<i64>, Option<i64>)> = BTreeMap::new();
     let mut ranged_floats: BTreeMap<String, (Option<i64>, Option<i64>)> = BTreeMap::new();
-    let mut int_enums: BTreeMap<String, Vec<i64>> = BTreeMap::new();
-    let mut ranged_lists: BTreeMap<String, (Option<i64>, Option<i64>)> = BTreeMap::new();
     let mut patterns: BTreeMap<String, String> = BTreeMap::new();
     let mut ranged_strings: BTreeMap<String, (Option<u64>, Option<u64>)> = BTreeMap::new();
     // Combined pattern + length constraints: (pattern, min_length, max_length) set
@@ -2905,31 +2688,15 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
             Some("integer") => {
                 if let Some(TypeOverride::IntRange(min, max)) = resource_override {
                     ranged_ints.insert(prop_name.clone(), (Some(*min), Some(*max)));
-                } else if let Some(TypeOverride::IntEnum(values)) = resource_override {
-                    int_enums.insert(prop_name.clone(), values.clone());
+                } else if let Some(TypeOverride::IntEnum(_)) = resource_override {
+                    // Exact integer enums are emitted declaratively by
+                    // `int_enum_type`; they need no generated callback.
                 } else if prop.minimum.is_some() || prop.maximum.is_some() {
                     ranged_ints.insert(prop_name.clone(), (prop.minimum, prop.maximum));
                 } else if let Some(&(min, max)) =
                     known_int_range_overrides().get(prop_name.as_str())
                 {
                     ranged_ints.insert(prop_name.clone(), (Some(min), Some(max)));
-                }
-                // Collect integer enum values (only if no resource-scoped override)
-                if resource_override.is_none()
-                    && let Some(enum_values) = &prop.enum_values
-                {
-                    let values: Vec<i64> = enum_values
-                        .iter()
-                        .filter_map(|v| match v {
-                            EnumValue::Int(i) => Some(*i),
-                            _ => None,
-                        })
-                        .collect();
-                    if !values.is_empty()
-                        && enum_values.iter().all(|v| matches!(v, EnumValue::Int(_)))
-                    {
-                        int_enums.insert(prop_name.clone(), values);
-                    }
                 }
             }
             Some("number") => {
@@ -2943,9 +2710,7 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
                     ranged_floats.insert(prop_name.clone(), (Some(min), Some(max)));
                 }
             }
-            Some("array") if prop.min_items.is_some() || prop.max_items.is_some() => {
-                ranged_lists.insert(prop_name.clone(), (prop.min_items, prop.max_items));
-            }
+            Some("array") => {}
             Some("string") => {
                 // Collect string length constraints (only for plain strings without
                 // enum values or type overrides that would take precedence)
@@ -3056,34 +2821,6 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
                             } else if !ranged_ints.contains_key(field_name) {
                                 ranged_ints.insert(field_name.clone(), (Some(min), Some(max)));
                             }
-                        }
-                    }
-                    // Collect array item count constraints from definitions
-                    if prop_type == Some("array")
-                        && (field_prop.min_items.is_some() || field_prop.max_items.is_some())
-                        && !ranged_lists.contains_key(field_name)
-                    {
-                        ranged_lists.insert(
-                            field_name.clone(),
-                            (field_prop.min_items, field_prop.max_items),
-                        );
-                    }
-                    // Also collect integer enums from definitions
-                    if prop_type == Some("integer")
-                        && let Some(enum_values) = &field_prop.enum_values
-                    {
-                        let values: Vec<i64> = enum_values
-                            .iter()
-                            .filter_map(|v| match v {
-                                EnumValue::Int(i) => Some(*i),
-                                _ => None,
-                            })
-                            .collect();
-                        if !values.is_empty()
-                            && enum_values.iter().all(|v| matches!(v, EnumValue::Int(_)))
-                            && !int_enums.contains_key(field_name)
-                        {
-                            int_enums.insert(field_name.clone(), values);
                         }
                     }
                     // Also collect pattern constraints from definitions
@@ -3231,17 +2968,15 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
     // stale bodies so the upcoming attribute-emission phase re-walks
     // every def with the qualified enums in scope. (carina#3350.)
     //
-    // Note: pattern / range / int-enum caches do not embed enum
-    // `type_name`s — they key on pattern strings, numeric bounds, and
-    // integer values — so they survive qualification unchanged.
+    // Note: pattern / range caches do not embed enum `type_name`s — they
+    // key on pattern strings and numeric bounds — so they survive
+    // qualification unchanged.
     EMITTED_DEFS.with(|s| s.borrow_mut().clear());
     reset_property_mode_emission_state();
 
     let has_enums = !enums.is_empty();
     let has_ranged_ints = !ranged_ints.is_empty();
     let has_ranged_floats = !ranged_floats.is_empty();
-    let has_int_enums = !int_enums.is_empty();
-    let has_ranged_lists = !ranged_lists.is_empty();
     let has_patterns = !patterns.is_empty();
     let has_ranged_strings = !ranged_strings.is_empty();
     // Enums use AttributeType::Custom with AttributeType::String base
@@ -3249,13 +2984,8 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
         needs_attribute_type = true;
     }
 
-    // Ranged ints/floats/lists/strings use AttributeType::Custom with AttributeType::Int/Float/List/String base
-    if has_ranged_ints || has_ranged_floats || has_ranged_lists || has_ranged_strings {
-        needs_attribute_type = true;
-    }
-
-    // Int enums use AttributeType::Custom with AttributeType::Int base
-    if has_int_enums {
+    // Ranged ints/floats/strings use refined scalar constructors.
+    if has_ranged_ints || has_ranged_floats || has_ranged_strings {
         needs_attribute_type = true;
     }
 
@@ -3359,37 +3089,6 @@ fn {}(value: &Value) -> Result<(), String> {{
         ));
     }
 
-    // Generate validation functions for integer enum properties
-    for (prop_name, values) in &int_enums {
-        let fn_name = format!("validate_{}_int_enum", prop_name.to_snake_case());
-        let const_name = format!("VALID_{}_VALUES", prop_name.to_snake_case().to_uppercase());
-        let values_str = values
-            .iter()
-            .map(|v| v.to_string())
-            .collect::<Vec<_>>()
-            .join(", ");
-        body.push_str(&format!(
-            r#"#[allow(dead_code)]
-const {}: &[i64] = &[{}];
-
-#[allow(dead_code)]
-fn {}(value: &Value) -> Result<(), String> {{
-    if let Value::Concrete(ConcreteValue::Int(n)) = value {{
-        if {}.contains(n) {{
-            Ok(())
-        }} else {{
-            Err(format!("Value {{}} is not a valid value", n))
-        }}
-    }} else {{
-        Err("Expected integer".to_string())
-    }}
-}}
-
-"#,
-            const_name, values_str, fn_name, const_name
-        ));
-    }
-
     // Generate pattern validation functions for string properties (deduplicated)
     // Multiple properties with the same pattern share one validation function.
     // Skip patterns that are only used with combined length constraints
@@ -3442,39 +3141,6 @@ fn {}(value: &Value) -> Result<(), String> {{
             body.push_str("        Err(\"Expected string\".to_string())\n");
             body.push_str("    }\n");
             body.push_str("}\n\n");
-        }
-    }
-
-    // Generate validation functions for array item count constraints (deduplicated)
-    // Multiple properties with the same min/max items share one validation function.
-    {
-        let mut generated_items: HashSet<(Option<i64>, Option<i64>)> = HashSet::new();
-        for (min, max) in ranged_lists.values() {
-            let key = (*min, *max);
-            if generated_items.contains(&key) {
-                continue;
-            }
-            generated_items.insert(key);
-            let fn_name = list_items_fn_name(*min, *max);
-            let (condition, range_display) = list_items_condition_and_display(*min, *max);
-            body.push_str(&format!(
-                r#"#[allow(dead_code)]
-fn {}(value: &Value) -> Result<(), String> {{
-    if let Value::Concrete(ConcreteValue::List(items)) = value {{
-        let len = items.len();
-        if {} {{
-            Err(format!("List has {{}} items, expected {}", len))
-        }} else {{
-            Ok(())
-        }}
-    }} else {{
-        Err("Expected list".to_string())
-    }}
-}}
-
-"#,
-                fn_name, condition, range_display
-            ));
         }
     }
 
@@ -3921,42 +3587,6 @@ fn {}(value: &Value) -> Result<(), String> {{
         }
     }
 
-    // Same shape for integer enum validators referenced from cyclic
-    // nested fields (carina#3340).
-    let extra_int_enums = take_emitted_int_enums();
-    for (prop_name, values) in &extra_int_enums {
-        if int_enums.contains_key(prop_name) {
-            continue;
-        }
-        let fn_name = format!("validate_{}_int_enum", prop_name.to_snake_case());
-        let const_name = format!("VALID_{}_VALUES", prop_name.to_snake_case().to_uppercase());
-        let values_str = values
-            .iter()
-            .map(|v| v.to_string())
-            .collect::<Vec<_>>()
-            .join(", ");
-        body.push_str(&format!(
-            r#"
-#[allow(dead_code)]
-const {}: &[i64] = &[{}];
-
-#[allow(dead_code)]
-fn {}(value: &Value) -> Result<(), String> {{
-    if let Value::Concrete(ConcreteValue::Int(n)) = value {{
-        if {}.contains(n) {{
-            Ok(())
-        }} else {{
-            Err(format!("Value {{}} is not a valid value", n))
-        }}
-    }} else {{
-        Err("Expected integer".to_string())
-    }}
-}}
-"#,
-            const_name, values_str, fn_name, const_name
-        ));
-    }
-
     // And the standalone (no-length) patterns recorded by the
     // recursion guard. Skip any the pre-scan already emitted.
     for pattern in &extra_standalone {
@@ -4102,8 +3732,6 @@ use carina_core::schema::{{{}}};
     let has_defaults = body.contains(".with_default(");
     if has_ranged_ints
         || has_ranged_floats
-        || has_int_enums
-        || has_ranged_lists
         || has_ranged_strings
         || has_defaults
         || has_patterns
@@ -5031,19 +4659,6 @@ fn int_range_condition_and_display(min: Option<i64>, max: Option<i64>) -> (Strin
 }
 
 /// Generate condition string and display string for float range validation.
-/// Generate condition string and display string for list item count validation.
-fn list_items_condition_and_display(min: Option<i64>, max: Option<i64>) -> (String, String) {
-    match (min, max) {
-        (Some(min), Some(max)) => (
-            format!("!({}..={}).contains(&len)", min, max),
-            format!("{}..={}", min, max),
-        ),
-        (Some(min), None) => (format!("len < {}", min), format!("{}..", min)),
-        (None, Some(max)) => (format!("len > {}", max), format!("..={}", max)),
-        (None, None) => unreachable!("at least one bound must be present"),
-    }
-}
-
 fn float_range_condition_and_display(min: Option<i64>, max: Option<i64>) -> (String, String) {
     match (min, max) {
         // Clippy 1.95 flags `n < x || n > y` as `manual_range_contains`;
@@ -5176,17 +4791,6 @@ fn string_length_fn_name(min: Option<u64>, max: Option<u64>) -> String {
     }
 }
 
-/// Generate a constraint-based function name for list items validation.
-/// E.g., `validate_list_items_1_100` or `validate_list_items_max_10`.
-fn list_items_fn_name(min: Option<i64>, max: Option<i64>) -> String {
-    match (min, max) {
-        (Some(min), Some(max)) => format!("validate_list_items_{min}_{max}"),
-        (Some(min), None) => format!("validate_list_items_min_{min}"),
-        (None, Some(max)) => format!("validate_list_items_max_{max}"),
-        (None, None) => unreachable!("at least one bound must be present"),
-    }
-}
-
 /// Generate a constraint-based function name for pattern validation.
 /// Uses a hash of the pattern to create a unique but deterministic name.
 fn pattern_fn_name(pattern: &str) -> String {
@@ -5236,27 +4840,15 @@ fn refined_int_type(identity: &str, range: &str) -> String {
     format!("AttributeType::refined_int({identity}, {range})")
 }
 
-fn refined_int_type_with_validator(identity: &str, range: &str, validator: &str) -> String {
-    format!(
-        "AttributeType::refined_int_with_validator({identity}, {range}, legacy_validator({validator}))"
-    )
-}
-
 fn int_enum_type(resource_type: &str, prop_name: &str, values: &[i64]) -> String {
-    let identity_parts = match (resource_type, prop_name) {
-        ("AWS::EC2::FlowLog", "MaxAggregationInterval") => Some(("ec2", "FlowLog")),
-        ("AWS::Logs::LogGroup", "RetentionInDays") => Some(("logs", "LogGroup")),
-        _ => None,
-    };
-    if let Some((service, resource)) = identity_parts {
-        let identity = format!(
-            "carina_aws_types::provider_type({}, {}, {})",
-            rust_lit(service),
-            rust_lit(resource),
-            rust_lit(prop_name)
-        );
-        let validator = format!("validate_{}_int_enum", prop_name.to_snake_case());
-        return refined_int_type_with_validator(&identity, "None", &validator);
+    match (resource_type, prop_name) {
+        ("AWS::EC2::FlowLog", "MaxAggregationInterval") => {
+            return "crate::schemas::catalog::ec2_flow_log_max_aggregation_interval()".to_string();
+        }
+        ("AWS::Logs::LogGroup", "RetentionInDays") => {
+            return "crate::schemas::catalog::logs_log_group_retention_in_days()".to_string();
+        }
+        _ => {}
     }
 
     let members = values
@@ -5273,7 +4865,7 @@ fn refined_float_type(identity: &str, range: &str) -> String {
     format!("AttributeType::refined_float({identity}, {range})")
 }
 
-fn refined_list_type(element_type: &str, ordered: bool, length: &str, _validator: &str) -> String {
+fn refined_list_type(element_type: &str, ordered: bool, length: &str) -> String {
     format!("AttributeType::refined_list({element_type}, {ordered}, {length})")
 }
 
@@ -6682,7 +6274,6 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
                     _ => None,
                 })
                 .collect();
-            record_int_enum(prop_name, &values);
             return (int_enum_type(&schema.type_name, prop_name, &values), None);
         }
 
@@ -6825,7 +6416,6 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
                 );
             }
             if let Some(TypeOverride::IntEnum(values)) = res_override {
-                record_int_enum(prop_name, values);
                 return (int_enum_type(&schema.type_name, prop_name, values), None);
             }
             // Use CF min/max if available (including one-sided), otherwise check known overrides
@@ -6941,7 +6531,6 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
             };
             // Wrap in Custom type if minItems/maxItems constraints exist
             if prop.min_items.is_some() || prop.max_items.is_some() {
-                let validate_fn = list_items_fn_name(prop.min_items, prop.max_items);
                 let ordered = list_ctor == "AttributeType::list";
                 let inner = list_type
                     .strip_prefix(&format!("{list_ctor}("))
@@ -6951,10 +6540,7 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
                     prop.min_items.and_then(|v| u64::try_from(v).ok()),
                     prop.max_items.and_then(|v| u64::try_from(v).ok()),
                 );
-                (
-                    refined_list_type(inner, ordered, &length, &validate_fn),
-                    item_enum,
-                )
+                (refined_list_type(inner, ordered, &length), item_enum)
             } else {
                 (list_type, item_enum)
             }
@@ -10668,21 +10254,12 @@ mod tests {
         );
         assert_eq!(
             type_str,
-            concat!(
-                "AttributeType::refined_int_with_validator(",
-                "carina_aws_types::provider_type(\"logs\", \"LogGroup\", \"RetentionInDays\"), ",
-                "None, legacy_validator(validate_retention_in_days_int_enum))"
-            )
+            "crate::schemas::catalog::logs_log_group_retention_in_days()"
         );
 
         assert_eq!(
             int_enum_type("AWS::EC2::FlowLog", "MaxAggregationInterval", &[60, 600]),
-            concat!(
-                "AttributeType::refined_int_with_validator(",
-                "carina_aws_types::provider_type(\"ec2\", \"FlowLog\", ",
-                "\"MaxAggregationInterval\"), None, ",
-                "legacy_validator(validate_max_aggregation_interval_int_enum))"
-            )
+            "crate::schemas::catalog::ec2_flow_log_max_aggregation_interval()"
         );
 
         assert!(
@@ -10943,23 +10520,23 @@ mod tests {
     }
 
     #[test]
-    fn arn_emit_choice_has_table_service_and_generic_paths() {
-        assert!(matches!(
-            arn_emit_choice("iam", "OidcProvider"),
-            ArnEmitChoice::PerKind(entry) if entry.validator
-                == ArnValidator::Iam {
-                    prefix: "oidc-provider/",
-                    label: "IAM OIDC Provider",
-                }
-        ));
-        assert!(matches!(
-            arn_emit_choice("organizations", "Account"),
-            ArnEmitChoice::ServicePrefix("organizations")
-        ));
-        assert!(matches!(
-            arn_emit_choice("unknownservice", "Thing"),
-            ArnEmitChoice::Generic
-        ));
+    fn arn_constructor_routes_shared_overlay_and_generic_paths() {
+        assert_eq!(
+            arn_constructor("iam", "OidcProvider"),
+            "crate::schemas::catalog::iam_oidc_provider_arn()"
+        );
+        assert_eq!(
+            arn_constructor("organizations", "Account"),
+            "crate::schemas::catalog::organizations_account_arn()"
+        );
+        assert_eq!(
+            arn_constructor("cloudfront", "Distribution"),
+            "crate::schemas::catalog::cloudfront_distribution_arn()"
+        );
+        assert_eq!(
+            arn_constructor("unknownservice", "Thing"),
+            "carina_aws_types::arn()"
+        );
     }
 
     #[test]
@@ -10968,7 +10545,7 @@ mod tests {
         let generated =
             generate_schema_code(&schema, "AWS::S3::Bucket").expect("generate s3 bucket");
         assert!(generated.contains("pub fn arn() -> AttributeType"));
-        assert!(generated.contains("carina_aws_types::provider_type(\"s3\", \"Bucket\", \"Arn\")"));
+        assert!(generated.contains("crate::schemas::catalog::s3_bucket_arn()"));
         assert!(generated.contains("AttributeSchema::provider_populated(\"arn\", self::arn())"));
     }
 
@@ -10978,7 +10555,7 @@ mod tests {
         let generated = generate_schema_code(&schema, "AWS::Organizations::Account")
             .expect("generate organizations account");
         assert!(generated.contains("pub fn arn() -> AttributeType"));
-        assert!(generated.contains("validate_service_arn(s, \"organizations\", None)"));
+        assert!(generated.contains("crate::schemas::catalog::organizations_account_arn()"));
     }
 
     #[test]
@@ -13408,7 +12985,7 @@ mod tests {
             "scalar string types whose name merely contains 'list' must still accept defaults"
         );
         assert!(attr_type_accepts_scalar_default(
-            "AttributeType::refined_int_with_validator(None, None, legacy_validator(f))"
+            "AttributeType::refined_int_with_validator(identity, None, legacy_validator(f))"
         ));
         assert!(attr_type_accepts_scalar_default("carina_aws_types::arn()"));
         assert!(!attr_type_accepts_scalar_default(
@@ -14022,9 +13599,9 @@ mod tests {
     }
 
     #[test]
-    fn test_generate_schema_code_emits_list_items_validation() {
-        // Test that generate_schema_code emits validation functions for array properties
-        // with minItems/maxItems constraints (via struct field in a definition)
+    fn test_generate_schema_code_emits_list_length_without_callback() {
+        // Test that generate_schema_code emits declarative length bounds for array
+        // properties with minItems/maxItems constraints, without a callback.
         let mut dns_props = BTreeMap::new();
         dns_props.insert(
             "PrivateDnsSpecifiedDomains".to_string(),
@@ -14085,18 +13662,9 @@ mod tests {
         };
 
         let generated = generate_schema_code(&schema, "AWS::EC2::VPCEndpoint").unwrap();
-        assert!(
-            generated.contains("validate_list_items_1_10"),
-            "should generate items validation function: {generated}"
-        );
-        assert!(
-            generated.contains("Value::Concrete(ConcreteValue::List(items))"),
-            "validation function should check Value::List: {generated}"
-        );
-        assert!(
-            generated.contains("1..=10"),
-            "should show range 1..=10 in validation: {generated}"
-        );
+        assert!(generated.contains("Some((Some(1), Some(10)))"));
+        assert!(!generated.contains("validate_list_items_"));
+        assert!(!generated.contains("ConcreteValue::List"));
     }
 
     #[test]
@@ -14780,8 +14348,9 @@ mod tests {
     }
 
     #[test]
-    fn test_dedup_list_items_validation_functions() {
-        // Two array properties with identical minItems/maxItems should share one validation function
+    fn test_does_not_emit_list_validation_functions() {
+        // Multiple arrays retain their declarative minItems/maxItems constraints without
+        // generating either per-property or shared callback functions.
         let mut def_props = BTreeMap::new();
         def_props.insert(
             "AllowedOrigins".to_string(),
@@ -14866,11 +14435,11 @@ mod tests {
             "Should not generate per-property items function: {generated}"
         );
 
-        // Should have exactly one shared items validation function
+        // Length constraints are declarative; no shared callback is emitted.
         let fn_count = generated.matches("fn validate_list_items_").count();
         assert_eq!(
-            fn_count, 1,
-            "Should generate exactly one shared items validation function, got {fn_count}: {generated}"
+            fn_count, 0,
+            "Should not generate list validation functions, got {fn_count}: {generated}"
         );
     }
 

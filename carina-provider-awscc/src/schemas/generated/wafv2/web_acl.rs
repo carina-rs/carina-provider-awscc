@@ -6,27 +6,11 @@
 
 use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
 use carina_core::resource::{ConcreteValue, Value};
-use carina_core::schema::{
-    AttributeSchema, AttributeType, ResourceSchema, StructField, legacy_validator, types,
-};
+use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField, types};
 use regex::Regex;
 
 pub fn arn() -> AttributeType {
-    AttributeType::refined_string_with_validator(
-        carina_aws_types::provider_type("wafv2", "WebAcl", "Arn"),
-        Some("^arn:(aws|aws-cn|aws-us-gov):wafv2:.*$".to_string()),
-        None,
-        legacy_validator(|value| {
-            if let Value::Concrete(ConcreteValue::String(s)) = value {
-                let s = s.expose_plaintext();
-                carina_aws_types::validate_service_arn(s, "wafv2", None)
-                    .map_err(|reason| format!("Invalid wafv2 ARN '{}': {}", s, reason))
-            } else {
-                Err("Expected string".to_string())
-            }
-        }),
-        None,
-    )
+    crate::schemas::catalog::wafv2_web_acl_arn()
 }
 
 const VALID_AWS_MANAGED_RULES_ANTI_D_DO_S_RULE_SET_SENSITIVITY_TO_BLOCK: &[&str] =
@@ -182,104 +166,6 @@ fn validate_size_range(value: &Value) -> Result<(), String> {
         Err(format!("Value {} is out of range 0..=21474836480", n))
     } else {
         Ok(())
-    }
-}
-
-#[allow(dead_code)]
-fn validate_list_items_max_5(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::List(items)) = value {
-        let len = items.len();
-        if len > 5 {
-            Err(format!("List has {} items, expected ..=5", len))
-        } else {
-            Ok(())
-        }
-    } else {
-        Err("Expected list".to_string())
-    }
-}
-
-#[allow(dead_code)]
-fn validate_list_items_1_199(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::List(items)) = value {
-        let len = items.len();
-        if !(1..=199).contains(&len) {
-            Err(format!("List has {} items, expected 1..=199", len))
-        } else {
-            Ok(())
-        }
-    } else {
-        Err("Expected list".to_string())
-    }
-}
-
-#[allow(dead_code)]
-fn validate_list_items_1_10(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::List(items)) = value {
-        let len = items.len();
-        if !(1..=10).contains(&len) {
-            Err(format!("List has {} items, expected 1..=10", len))
-        } else {
-            Ok(())
-        }
-    } else {
-        Err("Expected list".to_string())
-    }
-}
-
-#[allow(dead_code)]
-fn validate_list_items_1_5(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::List(items)) = value {
-        let len = items.len();
-        if !(1..=5).contains(&len) {
-            Err(format!("List has {} items, expected 1..=5", len))
-        } else {
-            Ok(())
-        }
-    } else {
-        Err("Expected list".to_string())
-    }
-}
-
-#[allow(dead_code)]
-fn validate_list_items_1_3(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::List(items)) = value {
-        let len = items.len();
-        if !(1..=3).contains(&len) {
-            Err(format!("List has {} items, expected 1..=3", len))
-        } else {
-            Ok(())
-        }
-    } else {
-        Err("Expected list".to_string())
-    }
-}
-
-#[allow(dead_code)]
-fn validate_list_items_min_1(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::List(items)) = value {
-        let len = items.len();
-        if len < 1 {
-            Err(format!("List has {} items, expected 1..", len))
-        } else {
-            Ok(())
-        }
-    } else {
-        Err("Expected list".to_string())
-    }
-}
-
-#[allow(dead_code)]
-fn validate_list_items_max_100(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::List(items)) = value {
-        let len = items.len();
-        if len > 100 {
-            Err(format!("List has {} items, expected ..=100", len))
-        } else {
-            Ok(())
-        }
-    } else {
-        Err("Expected list".to_string())
     }
 }
 

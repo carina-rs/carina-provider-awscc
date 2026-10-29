@@ -6,47 +6,14 @@
 
 use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
 use carina_core::resource::{ConcreteValue, Value};
-use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, legacy_validator};
+use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema};
 use regex::Regex;
 
 pub fn arn() -> AttributeType {
-    AttributeType::refined_string_with_validator(
-        carina_aws_types::provider_type("logs", "LogGroup", "Arn"),
-        Some("^arn:(aws|aws-cn|aws-us-gov):logs:[^:]*:[^:]*:log-group:.+$".to_string()),
-        None,
-        legacy_validator(|value| {
-            if let Value::Concrete(ConcreteValue::String(s)) = value {
-                let s = s.expose_plaintext();
-                carina_aws_types::validate_service_arn(s, "logs", Some("log-group:"))
-                    .map_err(|reason| format!("Invalid logs ARN '{}': {}", s, reason))
-            } else {
-                Err("Expected string".to_string())
-            }
-        }),
-        None,
-    )
+    crate::schemas::catalog::logs_log_group_arn()
 }
 
 const VALID_LOG_GROUP_CLASS: &[&str] = &["STANDARD", "INFREQUENT_ACCESS", "DELIVERY"];
-
-#[allow(dead_code)]
-const VALID_RETENTION_IN_DAYS_VALUES: &[i64] = &[
-    1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096, 1827, 2192, 2557, 2922,
-    3288, 3653,
-];
-
-#[allow(dead_code)]
-fn validate_retention_in_days_int_enum(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::Int(n)) = value {
-        if VALID_RETENTION_IN_DAYS_VALUES.contains(n) {
-            Ok(())
-        } else {
-            Err(format!("Value {} is not a valid value", n))
-        }
-    } else {
-        Err("Expected integer".to_string())
-    }
-}
 
 /// Returns the schema config for logs_log_group (AWS::Logs::LogGroup)
 #[rustfmt::skip]
@@ -122,7 +89,7 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_resource_policy_document_attribute());
     #[inline(never)]
     fn build_retention_in_days_attribute() -> AttributeSchema {
-        AttributeSchema::optional("retention_in_days", AttributeType::refined_int_with_validator(carina_aws_types::provider_type("logs", "LogGroup", "RetentionInDays"), None, legacy_validator(validate_retention_in_days_int_enum)))
+        AttributeSchema::optional("retention_in_days", crate::schemas::catalog::logs_log_group_retention_in_days())
                 .with_description("The number of days to retain the log events in the specified log group. Possible values are: 1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096, 1827, 2192, 2557, 2922, 3288, and 3653. To set a log group so that its log events do not expire, do not specify this property.")
                 .with_provider_name("RetentionInDays")
             .build()

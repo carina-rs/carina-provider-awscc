@@ -25,34 +25,6 @@ const VALID_IMAGE_TAG_MUTABILITY: &[&str] = &[
 const VALID_IMAGE_TAG_MUTABILITY_EXCLUSION_FILTER_IMAGE_TAG_MUTABILITY_EXCLUSION_FILTER_TYPE:
     &[&str] = &["WILDCARD"];
 
-#[allow(dead_code)]
-fn validate_list_items_1_5(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::List(items)) = value {
-        let len = items.len();
-        if !(1..=5).contains(&len) {
-            Err(format!("List has {} items, expected 1..=5", len))
-        } else {
-            Ok(())
-        }
-    } else {
-        Err("Expected list".to_string())
-    }
-}
-
-#[allow(dead_code)]
-fn validate_list_items_max_50(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::List(items)) = value {
-        let len = items.len();
-        if len > 50 {
-            Err(format!("List has {} items, expected ..=50", len))
-        } else {
-            Ok(())
-        }
-    } else {
-        Err("Expected list".to_string())
-    }
-}
-
 /// Returns the schema config for ecr_repository (AWS::ECR::Repository)
 #[rustfmt::skip]
 pub fn ecr_repository_config() -> AwsccSchemaConfig {

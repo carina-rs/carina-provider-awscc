@@ -11,20 +11,6 @@ use regex::Regex;
 
 const VALID_STATUS: &[&str] = &["CREATE_IN_PROGRESS", "DELETE_IN_PROGRESS", "ACTIVE"];
 
-#[allow(dead_code)]
-fn validate_list_items_max_75(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::List(items)) = value {
-        let len = items.len();
-        if len > 75 {
-            Err(format!("List has {} items, expected ..=75", len))
-        } else {
-            Ok(())
-        }
-    } else {
-        Err("Expected list".to_string())
-    }
-}
-
 /// Returns the schema config for sso_instance (AWS::SSO::Instance)
 #[rustfmt::skip]
 pub fn sso_instance_config() -> AwsccSchemaConfig {

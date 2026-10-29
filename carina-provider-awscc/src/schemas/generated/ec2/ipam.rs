@@ -7,25 +7,11 @@
 use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
 use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{
-    AttributeSchema, AttributeType, OperationConfig, ResourceSchema, StructField, legacy_validator,
+    AttributeSchema, AttributeType, OperationConfig, ResourceSchema, StructField,
 };
 
 pub fn arn() -> AttributeType {
-    AttributeType::refined_string_with_validator(
-        carina_aws_types::provider_type("ec2", "Ipam", "Arn"),
-        Some("^arn:(aws|aws-cn|aws-us-gov):ec2:.*$".to_string()),
-        None,
-        legacy_validator(|value| {
-            if let Value::Concrete(ConcreteValue::String(s)) = value {
-                let s = s.expose_plaintext();
-                carina_aws_types::validate_service_arn(s, "ec2", None)
-                    .map_err(|reason| format!("Invalid ec2 ARN '{}': {}", s, reason))
-            } else {
-                Err("Expected string".to_string())
-            }
-        }),
-        None,
-    )
+    crate::schemas::catalog::ec2_ipam_arn()
 }
 
 const VALID_METERED_ACCOUNT: &[&str] = &["ipam-owner", "resource-owner"];

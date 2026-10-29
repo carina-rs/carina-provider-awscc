@@ -9,34 +9,6 @@ use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField};
 use regex::Regex;
 
-#[allow(dead_code)]
-fn validate_list_items_max_20(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::List(items)) = value {
-        let len = items.len();
-        if len > 20 {
-            Err(format!("List has {} items, expected ..=20", len))
-        } else {
-            Ok(())
-        }
-    } else {
-        Err("Expected list".to_string())
-    }
-}
-
-#[allow(dead_code)]
-fn validate_list_items_max_50(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::List(items)) = value {
-        let len = items.len();
-        if len > 50 {
-            Err(format!("List has {} items, expected ..=50", len))
-        } else {
-            Ok(())
-        }
-    } else {
-        Err("Expected list".to_string())
-    }
-}
-
 /// Returns the schema config for sso_permission_set (AWS::SSO::PermissionSet)
 #[rustfmt::skip]
 pub fn sso_permission_set_config() -> AwsccSchemaConfig {

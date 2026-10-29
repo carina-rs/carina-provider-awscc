@@ -5,27 +5,10 @@
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
 use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
-use carina_core::resource::{ConcreteValue, Value};
-use carina_core::schema::{
-    AttributeSchema, AttributeType, ResourceSchema, StructField, legacy_validator,
-};
+use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField};
 
 pub fn arn() -> AttributeType {
-    AttributeType::refined_string_with_validator(
-        carina_aws_types::provider_type("cloudfront", "Distribution", "Arn"),
-        Some("^arn:(aws|aws-cn|aws-us-gov):cloudfront::[^:]*:distribution/.+$".to_string()),
-        None,
-        legacy_validator(|value| {
-            if let Value::Concrete(ConcreteValue::String(s)) = value {
-                let s = s.expose_plaintext();
-                carina_aws_types::validate_service_arn(s, "cloudfront", Some("distribution/"))
-                    .map_err(|reason| format!("Invalid cloudfront ARN '{}': {}", s, reason))
-            } else {
-                Err("Expected string".to_string())
-            }
-        }),
-        None,
-    )
+    crate::schemas::catalog::cloudfront_distribution_arn()
 }
 
 const VALID_CACHE_BEHAVIOR_ALLOWED_METHODS: &[&str] =

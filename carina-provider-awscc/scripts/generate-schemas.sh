@@ -130,25 +130,10 @@ emit_virtual_helper_modules() {
 //!
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
-use carina_core::resource::{ConcreteValue, Value};
-use carina_core::schema::{AttributeType, legacy_validator};
+use carina_core::schema::AttributeType;
 
 pub fn arn() -> AttributeType {
-    AttributeType::refined_string_with_validator(
-        carina_aws_types::provider_type("iam", "Policy", "Arn"),
-        Some("^arn:(aws|aws-cn|aws-us-gov):iam::[^:]*:policy/.+$".to_string()),
-        None,
-        legacy_validator(|value| {
-            if let Value::Concrete(ConcreteValue::String(s)) = value {
-                let s = s.expose_plaintext();
-                carina_aws_types::validate_iam_arn(s, "policy/")
-                    .map_err(|reason| format!("Invalid IAM Policy ARN '{}': {}", s, reason))
-            } else {
-                Err("Expected string".to_string())
-            }
-        }),
-        None,
-    )
+    carina_aws_types::iam_policy_arn()
 }
 EOF
 }
