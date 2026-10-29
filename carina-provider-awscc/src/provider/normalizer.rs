@@ -1,11 +1,10 @@
-//! State normalization and state hydration.
+//! State normalization.
 //!
 //! This module contains standalone functions used by `ProviderNormalizer` to normalize
-//! read state and restore unreturned attributes from saved state.
+//! read state.
 
 use std::collections::HashMap;
 
-use carina_core::provider::SavedAttrs;
 use carina_core::resource::{ConcreteValue, ResourceId, State, Value};
 use carina_core::schema::RawShape;
 
@@ -95,38 +94,6 @@ where
             new_attrs.insert(key, canon);
         }
         state.attributes = new_attrs;
-    }
-}
-
-/// Restore unreturned attributes from saved state into current read states.
-///
-/// CloudControl API doesn't always return all properties in GetResource responses
-/// (create-only properties, and some normal properties like `description`).
-/// We carry them forward from the previously saved attribute values.
-pub fn restore_unreturned_attrs_impl<S>(current_states: &mut S, saved_attrs: &SavedAttrs)
-where
-    for<'a> &'a mut S: IntoIterator<Item = (&'a ResourceId, &'a mut State)>,
-{
-    for (resource_id, state) in current_states {
-        if !state.exists || resource_id.provider != "awscc" {
-            continue;
-        }
-        let config = match crate::schemas::generated::get_config_by_type(&resource_id.resource_type)
-        {
-            Some(c) => c,
-            None => continue,
-        };
-        let saved = match saved_attrs.get(resource_id) {
-            Some(attrs) => attrs,
-            None => continue,
-        };
-        for dsl_name in config.schema.attributes().keys() {
-            if !state.attributes.contains_key(dsl_name)
-                && let Some(value) = saved.get(dsl_name)
-            {
-                state.attributes.insert(dsl_name.clone(), value.clone());
-            }
-        }
     }
 }
 
@@ -249,8 +216,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_restore_unreturned_attrs_impl_create_only() {
+    #[tokio::test]
+    async fn hydrate_read_state_leaves_unreturned_create_only_attribute_absent() {
         let id = ResourceId::with_provider_identity("awscc", "ec2.NatGateway", "test", None);
         let mut state = State::existing(id.clone(), HashMap::new());
         state.attributes.insert(
@@ -270,18 +237,22 @@ mod tests {
         saved_attrs.insert(id.clone(), saved);
         let saved_attrs = saved_attrs_from_decoded(saved_attrs);
 
-        restore_unreturned_attrs_impl(&mut current_states, saved_attrs.as_provider_saved_attrs());
+        carina_core::provider::hydrate_provider_states(
+            &crate::AwsccNormalizer,
+            &mut current_states,
+            saved_attrs.as_provider_saved_attrs(),
+        )
+        .await
+        .expect("read-state hydration should succeed");
 
-        assert_eq!(
-            current_states[&id].attributes.get("subnet_id"),
-            Some(&Value::Concrete(ConcreteValue::String(
-                "subnet-abc".to_string().into()
-            )))
+        assert!(
+            !current_states[&id].attributes.contains_key("subnet_id"),
+            "an omitted create-only attribute must remain absent"
         );
     }
 
-    #[test]
-    fn test_restore_unreturned_attrs_skips_non_awscc() {
+    #[tokio::test]
+    async fn hydrate_read_state_is_a_noop_for_non_awscc_state() {
         let id = ResourceId::with_provider_identity("aws", "s3.Bucket", "test", None);
         let state = State::existing(id.clone(), HashMap::new());
 
@@ -297,13 +268,19 @@ mod tests {
         saved_attrs.insert(id.clone(), saved);
         let saved_attrs = saved_attrs_from_decoded(saved_attrs);
 
-        restore_unreturned_attrs_impl(&mut current_states, saved_attrs.as_provider_saved_attrs());
+        carina_core::provider::hydrate_provider_states(
+            &crate::AwsccNormalizer,
+            &mut current_states,
+            saved_attrs.as_provider_saved_attrs(),
+        )
+        .await
+        .expect("read-state hydration should succeed");
 
         assert!(!current_states[&id].attributes.contains_key("some_attr"));
     }
 
-    #[test]
-    fn test_restore_unreturned_attrs_skips_already_present() {
+    #[tokio::test]
+    async fn hydrate_read_state_keeps_returned_attribute_unchanged() {
         let id = ResourceId::with_provider_identity("awscc", "ec2.NatGateway", "test", None);
         let mut attrs = HashMap::new();
         attrs.insert(
@@ -324,7 +301,13 @@ mod tests {
         saved_attrs.insert(id.clone(), saved);
         let saved_attrs = saved_attrs_from_decoded(saved_attrs);
 
-        restore_unreturned_attrs_impl(&mut current_states, saved_attrs.as_provider_saved_attrs());
+        carina_core::provider::hydrate_provider_states(
+            &crate::AwsccNormalizer,
+            &mut current_states,
+            saved_attrs.as_provider_saved_attrs(),
+        )
+        .await
+        .expect("read-state hydration should succeed");
 
         assert_eq!(
             current_states[&id].attributes.get("subnet_id"),
@@ -334,8 +317,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_restore_unreturned_attrs_impl_non_create_only() {
+    #[tokio::test]
+    async fn hydrate_read_state_leaves_unreturned_non_write_only_attribute_absent() {
         let id =
             ResourceId::with_provider_identity("awscc", "ec2.SecurityGroupEgress", "test", None);
         let mut state = State::existing(id.clone(), HashMap::new());
@@ -362,13 +345,17 @@ mod tests {
         saved_attrs.insert(id.clone(), saved);
         let saved_attrs = saved_attrs_from_decoded(saved_attrs);
 
-        restore_unreturned_attrs_impl(&mut current_states, saved_attrs.as_provider_saved_attrs());
+        carina_core::provider::hydrate_provider_states(
+            &crate::AwsccNormalizer,
+            &mut current_states,
+            saved_attrs.as_provider_saved_attrs(),
+        )
+        .await
+        .expect("read-state hydration should succeed");
 
-        assert_eq!(
-            current_states[&id].attributes.get("description"),
-            Some(&Value::Concrete(ConcreteValue::String(
-                "Allow all outbound".to_string().into()
-            )))
+        assert!(
+            !current_states[&id].attributes.contains_key("description"),
+            "an optional non-write-only attribute omitted by the read must remain absent"
         );
     }
 

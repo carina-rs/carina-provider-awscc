@@ -44,7 +44,6 @@ pub use cloudcontrol::{
 };
 pub use normalizer::{
     canonicalize_string_or_list_states_impl, normalize_state_string_dsl_transforms_impl,
-    restore_unreturned_attrs_impl,
 };
 #[doc(hidden)]
 pub use operations::{

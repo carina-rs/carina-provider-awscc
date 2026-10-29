@@ -13,10 +13,8 @@
 //!
 //! Live AWS also returned the CloudControl identifier as
 //! `<ResourceArn>|<WebACLArn>`. The create-side assertion pins that separator
-//! and segment order; it does not prove mock storage preservation because
-//! `merge_desired_attributes` backfills missing authored attributes before
-//! canonicalization. The standalone read by the mock's UUID key exercises stored
-//! state preservation and provider-name mapping.
+//! and segment order. The standalone read by the mock's UUID key exercises
+//! stored state preservation and provider-name mapping.
 
 mod common;
 

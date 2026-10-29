@@ -1729,7 +1729,7 @@ mod tests {
     }
 
     #[test]
-    fn hydrate_read_state_round_trips_saved_write_only_redacted_secret() {
+    fn hydrate_read_state_does_not_restore_saved_write_only_redacted_secret() {
         let provider = AwsccProcessProvider::new();
         let digest = concat!(
             "$argon2id$v=19$m=19456,t=2,p=1$MDEyMzQ1Njc4OWFiY2RlZg$",
@@ -1760,16 +1760,15 @@ mod tests {
 
         provider
             .hydrate_read_state(&mut states, &saved_attrs)
-            .expect("saved write-only redacted secrets must survive hydration");
+            .expect("no-op hydration should still accept persisted saved attributes");
 
         let hydrated = states
             .values()
             .next()
             .expect("hydrated state must remain present");
-        assert_eq!(
-            hydrated.attributes.get("address"),
-            Some(&proto::PersistedValue::RedactedSecret(digest)),
-            "state-side serialization must preserve the structural redacted secret"
+        assert!(
+            !hydrated.attributes.contains_key("address"),
+            "provider hydration must not fabricate an attribute omitted by the read"
         );
     }
 
