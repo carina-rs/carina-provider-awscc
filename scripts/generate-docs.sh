@@ -34,6 +34,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CACHE_DIR="$PROJECT_ROOT/cfn-schema-cache"
 DOCS_DIR="$PROJECT_ROOT/generated-docs/awscc"
 EXAMPLES_DIR="$PROJECT_ROOT/examples"
+SERVICE_TITLES_FILE="$PROJECT_ROOT/docs/registry/service-titles.json"
 SCHEMAS_DIR="$PROJECT_ROOT/carina-provider-awscc/src/schemas/generated"
 mkdir -p "$CACHE_DIR"
 rm -rf "$DOCS_DIR"
@@ -41,26 +42,61 @@ mkdir -p "$DOCS_DIR"
 
 cd "$PROJECT_ROOT"
 
-# Map a lowercase service code to its canonical AWS display name.
-# Naive uppercasing produces unreadable strings like "AWSCC LOGS LogGroup ..."
-# in the frontmatter description. Keep this list aligned with the services
-# present in carina-provider-awscc/src/schemas/generated/.
+# Look up a lowercase service code's canonical AWS display name.
 service_display_name() {
-    case "$1" in
-        s3)            echo "S3" ;;
-        ec2)           echo "EC2" ;;
-        iam)           echo "IAM" ;;
-        sts)           echo "STS" ;;
-        sso)           echo "IAM Identity Center" ;;
-        logs)          echo "CloudWatch Logs" ;;
-        route53)       echo "Route 53" ;;
-        identitystore) echo "Identity Store" ;;
-        organizations) echo "Organizations" ;;
-        cloudfront)    echo "CloudFront" ;;
-        wafv2)         echo "WAFv2" ;;
-        elasticloadbalancingv2) echo "Elastic Load Balancing v2" ;;
-        *)             echo "$1" | tr '[:lower:]' '[:upper:]' ;;
-    esac
+    python3 - "$SERVICE_TITLES_FILE" "$1" <<'PY'
+import json
+import sys
+
+
+class DuplicateJSONKeyError(ValueError):
+    def __init__(self, key):
+        super().__init__(key)
+        self.key = key
+
+
+def reject_duplicate_json_keys(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise DuplicateJSONKeyError(key)
+        result[key] = value
+    return result
+
+
+path, service_id = sys.argv[1:]
+try:
+    with open(path, encoding="utf-8") as file:
+        titles = json.load(file, object_pairs_hook=reject_duplicate_json_keys)
+except DuplicateJSONKeyError as error:
+    print(
+        f"error: {path}: duplicate AWS service title key {error.key!r}",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+except (OSError, UnicodeError, json.JSONDecodeError) as error:
+    print(f"error: cannot read AWS service titles from {path}: {error}", file=sys.stderr)
+    raise SystemExit(1)
+
+if not isinstance(titles, dict):
+    print(f"error: AWS service titles file is not a JSON object: {path}", file=sys.stderr)
+    raise SystemExit(1)
+if service_id not in titles:
+    print(
+        f"error: AWS service {service_id!r} has no display title in {path}",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+
+title = titles[service_id]
+if not isinstance(title, str):
+    print(
+        f"error: display title for AWS service {service_id!r} is not a string in {path}",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+print(title)
+PY
 }
 
 # Derive resource types from generated schema files (single source of truth).
