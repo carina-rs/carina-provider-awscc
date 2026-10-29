@@ -14,6 +14,7 @@
 
 use anyhow::{Context, Result};
 use carina_aws_types::dsl_enum_value;
+use carina_provider_awscc::schemas::catalog::AwsccType;
 use clap::Parser;
 use heck::{ToPascalCase, ToSnakeCase};
 use regex::Regex;
@@ -30,12 +31,6 @@ use std::sync::LazyLock;
 // records the def's body into [`STRUCT_DEFS_OUT`] for later emission
 // into `ResourceSchema.defs`. The set is per-resource — cleared at the
 // top of each resource generation pass.
-/// `(pattern, min, max)` triples accumulated by the recursion guard.
-type PatternWithLength = (String, Option<u64>, Option<u64>);
-/// `(min, max, is_float)` tuple keyed by prop name for int / float
-/// range validators accumulated by the recursion guard.
-type RangeValidator = (Option<i64>, Option<i64>, bool);
-
 #[derive(Debug, Clone)]
 struct StructReadOnlyUse {
     property_path: Vec<String>,
@@ -109,32 +104,6 @@ thread_local! {
     /// resource emitter to populate `ResourceSchema.defs`.
     #[allow(clippy::missing_const_for_thread_local)]
     static EMITTED_DEFS: RefCell<BTreeMap<String, String>> = RefCell::new(BTreeMap::new());
-    /// Patterns discovered during recursive expansion of CFN `$ref`
-    /// struct definitions. The original pre-scan walks only the
-    /// top-level properties + definitions one hop deep; once the
-    /// recursion guard lets `generate_struct_type` walk N levels deep
-    /// into a cyclic struct, the patterns inside those nested levels
-    /// must still be emitted as `fn` definitions or the generated
-    /// file will reference undefined symbols. Populated by
-    /// `cfn_type_to_carina_type_with_enum` at every pattern emission
-    /// site; the resource emitter drains this into the same
-    /// `pattern_with_lengths` set used by the existing pre-scan
-    /// emitter (carina#3340).
-    #[allow(clippy::missing_const_for_thread_local)]
-    static EMITTED_PATTERNS_WITH_LENGTHS: RefCell<BTreeSet<PatternWithLength>> =
-        RefCell::new(BTreeSet::new());
-    #[allow(clippy::missing_const_for_thread_local)]
-    static EMITTED_STANDALONE_PATTERNS: RefCell<BTreeSet<String>> =
-        RefCell::new(BTreeSet::new());
-    /// `(prop_name -> (min, max, is_float))` for integer/number range
-    /// validators referenced by the recursive cycle expansion. Same
-    /// rationale as `EMITTED_PATTERNS_WITH_LENGTHS`: the existing
-    /// `ranged_ints` / `ranged_floats` pre-scan walks only one hop
-    /// into definitions; nested cyclic fields can reference
-    /// `validate_<snake>_range` fns the pre-scan never collected.
-    #[allow(clippy::missing_const_for_thread_local)]
-    static EMITTED_RANGE_VALIDATORS: RefCell<BTreeMap<String, RangeValidator>> =
-        RefCell::new(BTreeMap::new());
     /// Provider paths whose generated `AttributeSchema` or `StructField`
     /// actually uses the `provider_populated` constructor in the current
     /// emission pass.
@@ -170,9 +139,6 @@ thread_local! {
 fn reset_recursion_guard() {
     IN_PROGRESS_DEFS.with(|s| s.borrow_mut().clear());
     EMITTED_DEFS.with(|s| s.borrow_mut().clear());
-    EMITTED_PATTERNS_WITH_LENGTHS.with(|s| s.borrow_mut().clear());
-    EMITTED_STANDALONE_PATTERNS.with(|s| s.borrow_mut().clear());
-    EMITTED_RANGE_VALIDATORS.with(|s| s.borrow_mut().clear());
     reset_property_mode_emission_state();
 }
 
@@ -188,44 +154,6 @@ fn reset_property_mode_emission_state() {
 /// return them as a sorted `BTreeMap`. Empty for non-cyclic resources.
 fn take_emitted_defs() -> BTreeMap<String, String> {
     EMITTED_DEFS.with(|s| std::mem::take(&mut *s.borrow_mut()))
-}
-
-/// Record a pattern+length validator emission so the function-emitter
-/// can produce its matching `fn` definition. Called from every
-/// emission site in `cfn_type_to_carina_type_with_enum` that
-/// references a `validate_string_pattern_<hash>_len_<min>_<max>`
-/// symbol. The pre-scan over `definitions` already collects most
-/// patterns; this set is the cycle-recursion safety net that catches
-/// patterns nested deeper than the pre-scan walks (carina#3340).
-fn record_pattern_with_length(pattern: &str, min: Option<u64>, max: Option<u64>) {
-    EMITTED_PATTERNS_WITH_LENGTHS.with(|s| {
-        s.borrow_mut().insert((pattern.to_string(), min, max));
-    });
-}
-
-fn record_standalone_pattern(pattern: &str) {
-    EMITTED_STANDALONE_PATTERNS.with(|s| {
-        s.borrow_mut().insert(pattern.to_string());
-    });
-}
-
-fn take_emitted_patterns_with_lengths() -> BTreeSet<(String, Option<u64>, Option<u64>)> {
-    EMITTED_PATTERNS_WITH_LENGTHS.with(|s| std::mem::take(&mut *s.borrow_mut()))
-}
-
-fn take_emitted_standalone_patterns() -> BTreeSet<String> {
-    EMITTED_STANDALONE_PATTERNS.with(|s| std::mem::take(&mut *s.borrow_mut()))
-}
-
-fn record_range_validator(prop_name: &str, min: Option<i64>, max: Option<i64>, is_float: bool) {
-    EMITTED_RANGE_VALIDATORS.with(|s| {
-        s.borrow_mut()
-            .insert(prop_name.to_string(), (min, max, is_float));
-    });
-}
-
-fn take_emitted_range_validators() -> BTreeMap<String, (Option<i64>, Option<i64>, bool)> {
-    EMITTED_RANGE_VALIDATORS.with(|s| std::mem::take(&mut *s.borrow_mut()))
 }
 
 /// Exit status used when a schema is deliberately skipped (NON_PROVISIONABLE).
@@ -420,37 +348,77 @@ fn resource_identity_parts(name: &str) -> Option<(&str, &str)> {
     name.split_once('.')
 }
 
-fn arn_constructor(service: &str, resource: &str) -> &'static str {
-    match (service, resource) {
-        ("iam", "Role") => "carina_aws_types::iam_role_arn()",
-        ("iam", "Policy") => "carina_aws_types::iam_policy_arn()",
-        ("iam", "OidcProvider") => "crate::schemas::catalog::iam_oidc_provider_arn()",
-        ("kms", "Key") => "carina_aws_types::kms_key_arn()",
-        ("organizations", "Account") => "crate::schemas::catalog::organizations_account_arn()",
-        ("organizations", "Organization") => {
-            "crate::schemas::catalog::organizations_organization_arn()"
-        }
-        ("s3", "Bucket") => "crate::schemas::catalog::s3_bucket_arn()",
-        ("cloudfront", "Distribution") => "crate::schemas::catalog::cloudfront_distribution_arn()",
-        ("dynamodb", "Table") => "crate::schemas::catalog::dynamodb_table_arn()",
-        ("ec2", "IpamPool") => "crate::schemas::catalog::ec2_ipam_pool_arn()",
-        ("ec2", "Ipam") => "crate::schemas::catalog::ec2_ipam_arn()",
-        ("ecs", "Cluster") => "crate::schemas::catalog::ecs_cluster_arn()",
-        ("logs", "LogGroup") => "crate::schemas::catalog::logs_log_group_arn()",
-        ("wafv2", "WebAcl") => "crate::schemas::catalog::wafv2_web_acl_arn()",
-        _ => "carina_aws_types::arn()",
-    }
+fn is_resource_identity(
+    identity: &carina_core::schema::TypeIdentity,
+    service: &str,
+    resource: &str,
+    kind: &str,
+) -> bool {
+    identity.provider.as_deref() == Some("aws")
+        && identity.kind == kind
+        && matches!(
+            identity.segments.as_slice(),
+            [identity_service, identity_resource]
+                if identity_service == service && identity_resource == resource
+        )
 }
 
-fn emit_arn_helper(service: &str, resource: &str) -> String {
-    let constructor = arn_constructor(service, resource);
-    format!(
+fn catalog_knows_service(service: &str) -> bool {
+    AwsccType::ALL
+        .iter()
+        .copied()
+        .map(AwsccType::identity)
+        .chain(
+            carina_aws_types::AwsType::ALL
+                .iter()
+                .copied()
+                .map(carina_aws_types::AwsType::identity),
+        )
+        .any(|identity| {
+            identity
+                .segments
+                .first()
+                .is_some_and(|known| known == service)
+        })
+}
+
+fn arn_constructor(service: &str, resource: &str) -> Result<String> {
+    if let Some(awscc_type) = AwsccType::ALL
+        .iter()
+        .copied()
+        .find(|awscc_type| is_resource_identity(&awscc_type.identity(), service, resource, "Arn"))
+    {
+        return Ok(awscc_type.constructor_path().to_string());
+    }
+
+    if let Some(aws_type) = carina_aws_types::AwsType::ALL
+        .iter()
+        .copied()
+        .find(|aws_type| is_resource_identity(&aws_type.identity(), service, resource, "Arn"))
+    {
+        return Ok(format!(
+            "carina_aws_types::AwsType::{aws_type:?}.attribute_type()"
+        ));
+    }
+
+    if catalog_knows_service(service) {
+        anyhow::bail!(
+            "AWS service {service:?} is cataloged, but resource {resource:?} has no Arn row; add it to AwsType or AwsccType"
+        );
+    }
+
+    Ok("carina_aws_types::arn()".to_string())
+}
+
+fn emit_arn_helper(service: &str, resource: &str) -> Result<String> {
+    let constructor = arn_constructor(service, resource)?;
+    Ok(format!(
         r#"pub fn arn() -> AttributeType {{
     {constructor}
 }}
 
 "#
-    )
+    ))
 }
 
 #[derive(Parser, Debug)]
@@ -483,6 +451,10 @@ struct Args {
     /// e.g., AWS::EC2::SecurityGroupEgress -> ec2.security_group_egress
     #[arg(long)]
     print_dsl_resource_name: bool,
+
+    /// Print a helper-only module containing the catalog-derived ARN constructor
+    #[arg(long)]
+    print_arn_helper_module: bool,
 
     /// Output format: rust (default) or markdown (for documentation)
     #[arg(long, default_value = "rust")]
@@ -875,6 +847,24 @@ fn dsl_resource_name_from_type(type_name: &str) -> Result<String> {
     Ok(format!("{}.{}", service, resource))
 }
 
+fn generate_arn_helper_module(type_name: &str) -> Result<String> {
+    let dsl_resource = dsl_resource_name_from_type(type_name)?;
+    let (service, resource) = resource_identity_parts(&dsl_resource)
+        .context("DSL resource name must contain a service and resource")?;
+    let display_name = type_name
+        .strip_prefix("AWS::")
+        .unwrap_or(type_name)
+        .replace("::", " ");
+    let helper = emit_arn_helper(service, resource)?;
+    Ok(format!(
+        "//! Auto-generated helper schema module for AWSCC {display_name} identifiers\n\
+         //!\n\
+         //! DO NOT EDIT MANUALLY - regenerate with carina-codegen\n\n\
+         use carina_core::schema::AttributeType;\n\n\
+         {helper}"
+    ))
+}
+
 fn is_string_property(schema: &CfnSchema, property: &CfnProperty) -> bool {
     if matches!(
         property.prop_type.as_ref().and_then(TypeValue::as_str),
@@ -1046,6 +1036,11 @@ fn main() -> Result<()> {
 
     if args.print_dsl_resource_name {
         println!("{}", dsl_resource_name_from_type(&args.type_name)?);
+        return Ok(());
+    }
+
+    if args.print_arn_helper_module {
+        print!("{}", generate_arn_helper_module(&args.type_name)?);
         return Ok(());
     }
 
@@ -1752,6 +1747,24 @@ fn type_display_string(
                 let res_override =
                     resource_type_overrides().get(&(schema.type_name.as_str(), prop_name));
                 if let Some(TypeOverride::IntEnum(values)) = res_override {
+                    let observed_values = prop
+                        .enum_values
+                        .as_ref()
+                        .and_then(|enum_values| {
+                            enum_values
+                                .iter()
+                                .map(|value| match value {
+                                    EnumValue::Int(value) => Some(*value),
+                                    _ => None,
+                                })
+                                .collect::<Option<Vec<_>>>()
+                        })
+                        .filter(|values| !values.is_empty());
+                    let _ = int_enum_type(
+                        &schema.type_name,
+                        prop_name,
+                        observed_values.as_deref().unwrap_or(values),
+                    );
                     let values_str = values
                         .iter()
                         .map(|v| v.to_string())
@@ -2613,13 +2626,17 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
     let dsl_resource = dsl_resource_name_from_type(type_name)?;
     // Namespace for AWS type identities: aws.ec2.Vpc
     let namespace = format!("aws.{}", dsl_resource);
-    let arn_helper = resource_identity_parts(&dsl_resource).and_then(|(service, resource)| {
-        let has_schema_arn = schema.properties.contains_key("Arn");
-        let has_synthetic_arn = synthetic_attributes()
-            .iter()
-            .any(|synth| synth.cfn_type == type_name && synth.attr_name == "arn");
-        (has_schema_arn || has_synthetic_arn).then(|| emit_arn_helper(service, resource))
-    });
+    let arn_helper = match resource_identity_parts(&dsl_resource) {
+        Some((service, resource))
+            if schema.properties.contains_key("Arn")
+                || synthetic_attributes()
+                    .iter()
+                    .any(|synth| synth.cfn_type == type_name && synth.attr_name == "arn") =>
+        {
+            Some(emit_arn_helper(service, resource)?)
+        }
+        _ => None,
+    };
     let has_arn_helper = arn_helper.is_some();
 
     // Build create-only properties set
@@ -2638,19 +2655,13 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
 
     let required: HashSet<String> = schema.required.iter().cloned().collect();
 
-    // Pre-scan properties to determine which imports are needed and collect enum info
+    // Pre-scan properties to determine which imports are needed and collect enum info.
+    // Numeric, length, and pattern constraints are represented declaratively in
+    // `AttributeType`; they do not need generated callback functions.
     let mut needs_types = false;
     let mut needs_attribute_type = false;
     let mut needs_struct_field = false;
     let mut enums: BTreeMap<String, EnumInfo> = BTreeMap::new();
-    let mut ranged_ints: BTreeMap<String, (Option<i64>, Option<i64>)> = BTreeMap::new();
-    let mut ranged_floats: BTreeMap<String, (Option<i64>, Option<i64>)> = BTreeMap::new();
-    let mut patterns: BTreeMap<String, String> = BTreeMap::new();
-    let mut ranged_strings: BTreeMap<String, (Option<u64>, Option<u64>)> = BTreeMap::new();
-    // Combined pattern + length constraints: (pattern, min_length, max_length) set
-    let mut pattern_with_lengths: BTreeSet<(String, Option<u64>, Option<u64>)> = BTreeSet::new();
-    // Patterns that are used standalone (without length constraints)
-    let mut patterns_used_standalone: BTreeSet<String> = BTreeSet::new();
 
     for (prop_name, prop) in &schema.properties {
         if is_deprecated_property(prop) {
@@ -2670,7 +2681,7 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
         if let Some(info) = enum_info {
             enums.insert(prop_name.clone(), info);
         }
-        // Check resource-scoped overrides for enum, int range, and int enum
+        // Check resource-scoped enum overrides.
         let resource_override = resource_type_overrides().get(&(type_name, prop_name.as_str()));
         if let Some(TypeOverride::Enum(values) | TypeOverride::EnumUnordered(values)) =
             resource_override
@@ -2682,235 +2693,6 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
                     values: values.iter().map(|v| v.to_string()).collect(),
                 },
             );
-        }
-        // Collect ranged integer/number properties (including one-sided ranges)
-        match prop.prop_type.as_ref().and_then(|t| t.as_str()) {
-            Some("integer") => {
-                if let Some(TypeOverride::IntRange(min, max)) = resource_override {
-                    ranged_ints.insert(prop_name.clone(), (Some(*min), Some(*max)));
-                } else if let Some(TypeOverride::IntEnum(_)) = resource_override {
-                    // Exact integer enums are emitted declaratively by
-                    // `int_enum_type`; they need no generated callback.
-                } else if prop.minimum.is_some() || prop.maximum.is_some() {
-                    ranged_ints.insert(prop_name.clone(), (prop.minimum, prop.maximum));
-                } else if let Some(&(min, max)) =
-                    known_int_range_overrides().get(prop_name.as_str())
-                {
-                    ranged_ints.insert(prop_name.clone(), (Some(min), Some(max)));
-                }
-            }
-            Some("number") => {
-                if let Some(TypeOverride::IntRange(min, max)) = resource_override {
-                    ranged_floats.insert(prop_name.clone(), (Some(*min), Some(*max)));
-                } else if prop.minimum.is_some() || prop.maximum.is_some() {
-                    ranged_floats.insert(prop_name.clone(), (prop.minimum, prop.maximum));
-                } else if let Some(&(min, max)) =
-                    known_int_range_overrides().get(prop_name.as_str())
-                {
-                    ranged_floats.insert(prop_name.clone(), (Some(min), Some(max)));
-                }
-            }
-            Some("array") => {}
-            Some("string") => {
-                // Collect string length constraints (only for plain strings without
-                // enum values or type overrides that would take precedence)
-                // Treat minLength=0 as no constraint since usize is always >= 0
-                let effective_min = prop.min_length.filter(|&m| m > 0);
-                if effective_min.is_some() || prop.max_length.is_some() {
-                    let has_desc_enum = prop
-                        .description
-                        .as_ref()
-                        .and_then(|d| extract_enum_from_description(d))
-                        .is_some();
-                    if prop.enum_values.is_none()
-                        && !enums.contains_key(prop_name)
-                        && !has_desc_enum
-                        && infer_string_type(prop_name, &schema.type_name).is_none()
-                        && !prop_name.ends_with("PolicyDocument")
-                        && prop_name != "Tags"
-                        && prop.pattern.is_none()
-                        && !matches!(
-                            resource_type_overrides().get(&(schema.type_name.as_str(), prop_name)),
-                            Some(TypeOverride::ToDsl(_))
-                        )
-                    {
-                        ranged_strings.insert(prop_name.clone(), (effective_min, prop.max_length));
-                    }
-                }
-            }
-            _ => {}
-        }
-        // Collect pattern constraints for string properties (or array items with patterns)
-        if attr_type.contains("validate_") && attr_type.contains("_pattern") {
-            // Pattern can come from the property directly, from a $ref definition,
-            // or from array items (e.g., type: array, items: { pattern: ... })
-            // Track which source provided the pattern so we use the correct length constraints.
-            let pattern_source: Option<(String, Option<u64>, Option<u64>)> = prop
-                .pattern
-                .as_ref()
-                .map(|p| (p.clone(), prop.min_length, prop.max_length))
-                .or_else(|| {
-                    prop.ref_path
-                        .as_ref()
-                        .and_then(|ref_path| resolve_ref_classified(schema, ref_path))
-                        .and_then(|def| match def {
-                            ResolvedDef::StringPattern {
-                                pattern,
-                                min_length,
-                                max_length,
-                            } => Some((pattern.to_string(), min_length, max_length)),
-                            _ => None,
-                        })
-                })
-                .or_else(|| {
-                    prop.items.as_ref().and_then(|items| {
-                        items
-                            .pattern
-                            .as_ref()
-                            .map(|p| (p.clone(), items.min_length, items.max_length))
-                    })
-                });
-            if let Some((pattern, min_length, max_length)) = pattern_source {
-                // Check if this pattern also has length constraints
-                let effective_min = min_length.filter(|&m| m > 0);
-                let has_length = effective_min.is_some() || max_length.is_some();
-                if has_length {
-                    pattern_with_lengths.insert((pattern.clone(), effective_min, max_length));
-                } else {
-                    patterns_used_standalone.insert(pattern.clone());
-                }
-                patterns.insert(prop_name.clone(), pattern);
-            }
-        }
-    }
-
-    // Also scan definitions for struct field integer/number properties
-    let int_overrides = known_int_range_overrides();
-    if let Some(definitions) = &schema.definitions {
-        for def in definitions.values() {
-            if let Some(props) = &def.properties {
-                for (field_name, field_prop) in props {
-                    if is_deprecated_property(field_prop) {
-                        continue;
-                    }
-                    let prop_type = field_prop.prop_type.as_ref().and_then(|t| t.as_str());
-                    if matches!(prop_type, Some("integer") | Some("number")) {
-                        // Collect ranges from definitions (including one-sided ranges)
-                        if field_prop.minimum.is_some() || field_prop.maximum.is_some() {
-                            if prop_type == Some("number") {
-                                if !ranged_floats.contains_key(field_name) {
-                                    ranged_floats.insert(
-                                        field_name.clone(),
-                                        (field_prop.minimum, field_prop.maximum),
-                                    );
-                                }
-                            } else if !ranged_ints.contains_key(field_name) {
-                                ranged_ints.insert(
-                                    field_name.clone(),
-                                    (field_prop.minimum, field_prop.maximum),
-                                );
-                            }
-                        } else if int_overrides.contains_key(field_name.as_str()) {
-                            // Fall back to known overrides
-                            let (min, max) = int_overrides[field_name.as_str()];
-                            if prop_type == Some("number") {
-                                if !ranged_floats.contains_key(field_name) {
-                                    ranged_floats
-                                        .insert(field_name.clone(), (Some(min), Some(max)));
-                                }
-                            } else if !ranged_ints.contains_key(field_name) {
-                                ranged_ints.insert(field_name.clone(), (Some(min), Some(max)));
-                            }
-                        }
-                    }
-                    // Also collect pattern constraints from definitions
-                    if prop_type == Some("string")
-                        && field_prop.pattern.is_some()
-                        && !patterns.contains_key(field_name)
-                    {
-                        // Check if this field would actually use a pattern type
-                        // (skip if it has a known type override)
-                        let (field_type, _) = cfn_type_to_carina_type_with_enum(
-                            field_prop, field_name, schema, &namespace, &enums,
-                        );
-                        if field_type.contains("validate_") && field_type.contains("_pattern") {
-                            let pattern = field_prop.pattern.clone().unwrap();
-                            // Check if this pattern also has length constraints
-                            let effective_min = field_prop.min_length.filter(|&m| m > 0);
-                            let has_length =
-                                effective_min.is_some() || field_prop.max_length.is_some();
-                            if has_length {
-                                pattern_with_lengths.insert((
-                                    pattern.clone(),
-                                    effective_min,
-                                    field_prop.max_length,
-                                ));
-                            } else {
-                                patterns_used_standalone.insert(pattern.clone());
-                            }
-                            patterns.insert(field_name.clone(), pattern);
-                        }
-                    }
-                    // Collect pattern constraints from $ref to string definitions with patterns
-                    if let Some(ref_path) = &field_prop.ref_path
-                        && let Some(ResolvedDef::StringPattern {
-                            pattern,
-                            min_length,
-                            max_length,
-                        }) = resolve_ref_classified(schema, ref_path)
-                        && !patterns.contains_key(field_name)
-                    {
-                        let (field_type, _) = cfn_type_to_carina_type_with_enum(
-                            field_prop, field_name, schema, &namespace, &enums,
-                        );
-                        if field_type.contains("validate_") && field_type.contains("_pattern") {
-                            // Check length constraints from the $ref definition
-                            let effective_min = min_length.filter(|&m| m > 0);
-                            let has_length = effective_min.is_some() || max_length.is_some();
-                            if has_length {
-                                pattern_with_lengths.insert((
-                                    pattern.to_string(),
-                                    effective_min,
-                                    max_length,
-                                ));
-                            } else {
-                                patterns_used_standalone.insert(pattern.to_string());
-                            }
-                            patterns.insert(field_name.clone(), pattern.to_string());
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // Also scan definitions for struct field string length constraints
-    // (including array items with string length constraints)
-    // Skip the standard "Tag" definition since it's handled by tags_type().
-    // Non-standard tag definitions like "HostedZoneTag" are rendered as structs
-    // and need their validators collected.
-    if let Some(definitions) = &schema.definitions {
-        for (def_name, def) in definitions {
-            if def_name == "Tag" {
-                continue;
-            }
-            if let Some(props) = &def.properties {
-                for (field_name, field_prop) in props {
-                    if is_deprecated_property(field_prop) {
-                        continue;
-                    }
-                    collect_string_length_constraints(field_name, field_prop, &mut ranged_strings);
-                }
-            }
-        }
-    }
-    // Also scan top-level array items for string length constraints
-    for (prop_name, prop) in &schema.properties {
-        if is_deprecated_property(prop) {
-            continue;
-        }
-        if let Some(items) = &prop.items {
-            collect_string_length_constraints(prop_name, items, &mut ranged_strings);
         }
     }
 
@@ -2961,36 +2743,19 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
     qualify_nested_enum_type_names(&mut enums);
 
     // The top-level prop pre-scan above recursed into `$ref` struct
-    // definitions to populate `enums` and the various pattern/range
-    // caches. That same recursion also populated `EMITTED_DEFS` with
+    // definitions to populate `enums`. That same recursion also populated
+    // `EMITTED_DEFS` with
     // def bodies that hard-coded the *unqualified* enum `type_name`s.
     // Now that qualification has rewritten the enums map, drop those
     // stale bodies so the upcoming attribute-emission phase re-walks
     // every def with the qualified enums in scope. (carina#3350.)
     //
-    // Note: pattern / range caches do not embed enum `type_name`s — they
-    // key on pattern strings and numeric bounds — so they survive
-    // qualification unchanged.
     EMITTED_DEFS.with(|s| s.borrow_mut().clear());
     reset_property_mode_emission_state();
 
     let has_enums = !enums.is_empty();
-    let has_ranged_ints = !ranged_ints.is_empty();
-    let has_ranged_floats = !ranged_floats.is_empty();
-    let has_patterns = !patterns.is_empty();
-    let has_ranged_strings = !ranged_strings.is_empty();
     // Enums use AttributeType::Custom with AttributeType::String base
     if has_enums {
-        needs_attribute_type = true;
-    }
-
-    // Ranged ints/floats/strings use refined scalar constructors.
-    if has_ranged_ints || has_ranged_floats || has_ranged_strings {
-        needs_attribute_type = true;
-    }
-
-    // Patterns use AttributeType::Custom with AttributeType::String base
-    if has_patterns {
         needs_attribute_type = true;
     }
 
@@ -3040,181 +2805,6 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
             "const {}: &[&str] = &[{}];\n\n",
             const_name, values_str
         ));
-    }
-
-    // Generate range validation functions for integer properties
-    for (prop_name, (min, max)) in &ranged_ints {
-        let fn_name = format!("validate_{}_range", prop_name.to_snake_case());
-        let (condition, range_display) = int_range_condition_and_display(*min, *max);
-        body.push_str(&format!(
-            r#"#[allow(dead_code)]
-fn {}(value: &Value) -> Result<(), String> {{
-    if let Value::Concrete(ConcreteValue::Int(n)) = value {{
-        if {} {{
-            Err(format!("Value {{}} is out of range {}", n))
-        }} else {{
-            Ok(())
-        }}
-    }} else {{
-        Err("Expected integer".to_string())
-    }}
-}}
-
-"#,
-            fn_name, condition, range_display
-        ));
-    }
-
-    // Generate range validation functions for float (number) properties
-    for (prop_name, (min, max)) in &ranged_floats {
-        let fn_name = format!("validate_{}_range", prop_name.to_snake_case());
-        let (condition, range_display) = float_range_condition_and_display(*min, *max);
-        body.push_str(&format!(
-            r#"#[allow(dead_code)]
-fn {}(value: &Value) -> Result<(), String> {{
-    let n = match value {{
-        Value::Concrete(ConcreteValue::Int(i)) => *i as f64,
-        Value::Concrete(ConcreteValue::Float(f)) => *f,
-        _ => return Err("Expected number".to_string()),
-    }};
-    if {} {{
-        Err(format!("Value {{}} is out of range {}", n))
-    }} else {{
-        Ok(())
-    }}
-}}
-
-"#,
-            fn_name, condition, range_display
-        ));
-    }
-
-    // Generate pattern validation functions for string properties (deduplicated)
-    // Multiple properties with the same pattern share one validation function.
-    // Skip patterns that are only used with combined length constraints
-    // (those get combined validation functions generated separately).
-    {
-        let mut generated_patterns: HashSet<String> = HashSet::new();
-        for pattern in patterns.values() {
-            if generated_patterns.contains(pattern) {
-                continue;
-            }
-            // Skip if this pattern is only used with combined length constraints
-            if pattern_with_lengths.iter().any(|(p, _, _)| p == pattern)
-                && !patterns_used_standalone.contains(pattern)
-            {
-                generated_patterns.insert(pattern.clone());
-                continue;
-            }
-            generated_patterns.insert(pattern.clone());
-            let fn_name = pattern_fn_name(pattern);
-            // Convert PCRE-specific constructs to Rust regex equivalents
-            // (falling back to `.*` if the pattern uses unsupported features).
-            let rust_pattern = rust_compatible_pattern(pattern);
-            // Escape for Rust string literal (double the backslashes, escape quotes)
-            let escaped_for_rust = rust_pattern.replace('\\', "\\\\").replace('"', "\\\"");
-            // For the error message, also escape { and } for the inner format!() macro
-            let escaped_for_msg = escaped_for_rust.replace('{', "{{").replace('}', "}}");
-            body.push_str("#[allow(dead_code)]\n");
-            body.push_str("fn ");
-            body.push_str(&fn_name);
-            body.push_str("(value: &Value) -> Result<(), String> {\n");
-            body.push_str("    if let Value::Concrete(ConcreteValue::String(s)) = value {\n");
-            body.push_str("        let s = s.expose_plaintext();\n");
-            body.push_str(
-                "        static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {\n",
-            );
-            body.push_str(&format!(
-                "            Regex::new(\"{}\").expect(\"invalid pattern regex\")\n", // rust-lit-guard: allow (already escaped; preserves regex syntax)
-                escaped_for_rust
-            ));
-            body.push_str("        });\n");
-            body.push_str("        if RE.is_match(s) {\n");
-            body.push_str("            Ok(())\n");
-            body.push_str("        } else {\n");
-            body.push_str(&format!(
-                "            Err(format!(\"Value '{{}}' does not match pattern {}\", s))\n",
-                escaped_for_msg
-            ));
-            body.push_str("        }\n");
-            body.push_str("    } else {\n");
-            body.push_str("        Err(\"Expected string\".to_string())\n");
-            body.push_str("    }\n");
-            body.push_str("}\n\n");
-        }
-    }
-
-    // Generate length validation functions for string properties (deduplicated)
-    // Multiple properties with the same min/max length share one validation function.
-    {
-        let mut generated_lengths: HashSet<(Option<u64>, Option<u64>)> = HashSet::new();
-        for (min, max) in ranged_strings.values() {
-            let key = (*min, *max);
-            if generated_lengths.contains(&key) {
-                continue;
-            }
-            generated_lengths.insert(key);
-            let fn_name = string_length_fn_name(*min, *max);
-            let (condition, range_display) = string_length_condition_and_display(*min, *max);
-            body.push_str(&format!(
-                r#"#[allow(dead_code)]
-fn {}(value: &Value) -> Result<(), String> {{
-    if let Value::Concrete(ConcreteValue::String(s)) = value {{
-        let s = s.expose_plaintext();
-        let len = s.chars().count();
-        if {} {{
-            Err(format!("String length {{}} is out of range {}", len))
-        }} else {{
-            Ok(())
-        }}
-    }} else {{
-        Ok(())
-    }}
-}}
-
-"#,
-                fn_name, condition, range_display
-            ));
-        }
-    }
-
-    // Generate combined pattern + length validation functions (deduplicated)
-    {
-        let mut generated_combined: HashSet<String> = HashSet::new();
-        for (pattern, min, max) in &pattern_with_lengths {
-            let fn_name = pattern_and_length_fn_name(pattern, *min, *max);
-            if generated_combined.contains(&fn_name) {
-                continue;
-            }
-            generated_combined.insert(fn_name.clone());
-            let rust_pattern = rust_compatible_pattern(pattern);
-            let escaped_for_rust = rust_pattern.replace('\\', "\\\\").replace('"', "\\\"");
-            let escaped_for_msg = escaped_for_rust.replace('{', "{{").replace('}', "}}");
-            let (len_condition, range_display) = string_length_condition_and_display(*min, *max);
-            body.push_str(&format!(
-                r#"#[allow(dead_code)]
-fn {fn_name}(value: &Value) -> Result<(), String> {{
-    if let Value::Concrete(ConcreteValue::String(s)) = value {{
-        let s = s.expose_plaintext();
-        static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {{
-            Regex::new("{escaped_for_rust}").expect("invalid pattern regex")
-        }});
-        if !RE.is_match(s) {{
-            return Err(format!("Value '{{}}' does not match pattern {escaped_for_msg}", s));
-        }}
-        let len = s.chars().count();
-        if {len_condition} {{
-            return Err(format!("String length {{}} is out of range {range_display}", len));
-        }}
-        Ok(())
-    }} else {{
-        Err("Expected string".to_string())
-    }}
-}}
-
-"#
-            ));
-        }
     }
 
     // Generate config function
@@ -3486,139 +3076,6 @@ pub fn {}() -> AwsccSchemaConfig {{
         type_name, dsl_resource, primary_identifier, tags_expr
     ));
 
-    // carina#3340: emit validator fns for patterns that the cycle
-    // expansion in `cfn_type_to_carina_type_with_enum` referenced
-    // but the original `pattern_with_lengths` pre-scan didn't see.
-    // The pre-scan walks top-level properties + each definition one
-    // hop deep; with the recursion guard, `generate_struct_type` can
-    // recurse arbitrarily many hops into cyclic CFN structures
-    // (WAFv2 `WebACL.Statement` → `AndStatement` → ...) and emit
-    // pattern validators that the pre-scan would never have visited.
-    // Each emission site records its (pattern, min, max) into
-    // `EMITTED_PATTERNS_WITH_LENGTHS`; here we drain that set,
-    // subtract anything the pre-scan already emitted, and append the
-    // remaining `fn` definitions. Rust allows fn definitions in any
-    // order, so appending after the schema body works.
-    let extra_pwl = take_emitted_patterns_with_lengths();
-    let extra_standalone = take_emitted_standalone_patterns();
-    let already_pwl: HashSet<(String, Option<u64>, Option<u64>)> =
-        pattern_with_lengths.iter().cloned().collect();
-    for (pattern, min, max) in &extra_pwl {
-        if already_pwl.contains(&(pattern.clone(), *min, *max)) {
-            continue;
-        }
-        let fn_name = pattern_and_length_fn_name(pattern, *min, *max);
-        let rust_pattern = rust_compatible_pattern(pattern);
-        let escaped_for_rust = rust_pattern.replace('\\', "\\\\").replace('"', "\\\"");
-        let escaped_for_msg = escaped_for_rust.replace('{', "{{").replace('}', "}}");
-        let (len_condition, range_display) = string_length_condition_and_display(*min, *max);
-        body.push_str(&format!(
-            r#"
-#[allow(dead_code)]
-fn {fn_name}(value: &Value) -> Result<(), String> {{
-    if let Value::Concrete(ConcreteValue::String(s)) = value {{
-        let s = s.expose_plaintext();
-        static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {{
-            Regex::new("{escaped_for_rust}").expect("invalid pattern regex")
-        }});
-        if !RE.is_match(s) {{
-            return Err(format!("Value '{{}}' does not match pattern {escaped_for_msg}", s));
-        }}
-        let len = s.chars().count();
-        if {len_condition} {{
-            return Err(format!("String length {{}} is out of range {range_display}", len));
-        }}
-        Ok(())
-    }} else {{
-        Err("Expected string".to_string())
-    }}
-}}
-"#
-        ));
-    }
-    // Same shape for int / float range validators referenced by
-    // cyclic nested struct fields (carina#3340).
-    let extra_ranges = take_emitted_range_validators();
-    for (prop_name, (min, max, is_float)) in &extra_ranges {
-        // Skip if pre-scan already emitted via ranged_ints / ranged_floats.
-        if ranged_ints.contains_key(prop_name) || ranged_floats.contains_key(prop_name) {
-            continue;
-        }
-        let fn_name = format!("validate_{}_range", prop_name.to_snake_case());
-        if *is_float {
-            let (condition, range_display) = float_range_condition_and_display(*min, *max);
-            body.push_str(&format!(
-                r#"
-#[allow(dead_code)]
-fn {}(value: &Value) -> Result<(), String> {{
-    let n = match value {{
-        Value::Concrete(ConcreteValue::Int(i)) => *i as f64,
-        Value::Concrete(ConcreteValue::Float(f)) => *f,
-        _ => return Err("Expected number".to_string()),
-    }};
-    if {} {{
-        Err(format!("Value {{}} is out of range {}", n))
-    }} else {{
-        Ok(())
-    }}
-}}
-"#,
-                fn_name, condition, range_display
-            ));
-        } else {
-            let (condition, range_display) = int_range_condition_and_display(*min, *max);
-            body.push_str(&format!(
-                r#"
-#[allow(dead_code)]
-fn {}(value: &Value) -> Result<(), String> {{
-    if let Value::Concrete(ConcreteValue::Int(n)) = value {{
-        if {} {{
-            Err(format!("Value {{}} is out of range {}", n))
-        }} else {{
-            Ok(())
-        }}
-    }} else {{
-        Err("Expected integer".to_string())
-    }}
-}}
-"#,
-                fn_name, condition, range_display
-            ));
-        }
-    }
-
-    // And the standalone (no-length) patterns recorded by the
-    // recursion guard. Skip any the pre-scan already emitted.
-    for pattern in &extra_standalone {
-        if patterns_used_standalone.contains(pattern) || patterns.values().any(|p| p == pattern) {
-            continue;
-        }
-        let fn_name = pattern_fn_name(pattern);
-        let rust_pattern = rust_compatible_pattern(pattern);
-        let escaped_for_rust = rust_pattern.replace('\\', "\\\\").replace('"', "\\\"");
-        let escaped_for_msg = escaped_for_rust.replace('{', "{{").replace('}', "}}");
-        body.push_str(&format!(
-            r#"
-#[allow(dead_code)]
-fn {fn_name}(value: &Value) -> Result<(), String> {{
-    if let Value::Concrete(ConcreteValue::String(s)) = value {{
-        let s = s.expose_plaintext();
-        static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {{
-            Regex::new("{escaped_for_rust}").expect("invalid pattern regex")
-        }});
-        if RE.is_match(s) {{
-            Ok(())
-        }} else {{
-            Err(format!("Value '{{}}' does not match pattern {escaped_for_msg}", s))
-        }}
-    }} else {{
-        Err("Expected string".to_string())
-    }}
-}}
-"#
-        ));
-    }
-
     // Generate enum_valid_values() function that exposes VALID_* constants
     body.push_str(&format!(
         "\n/// Returns the resource type name and all enum valid values for this module\n\
@@ -3730,17 +3187,8 @@ use carina_core::schema::{{{}}};
         resource, type_name, schema_imports_str, config_import
     ));
     let has_defaults = body.contains(".with_default(");
-    if has_ranged_ints
-        || has_ranged_floats
-        || has_ranged_strings
-        || has_defaults
-        || has_patterns
-        || body.contains("Value::")
-    {
+    if has_defaults || body.contains("Value::") {
         code.push_str("use carina_core::resource::{ConcreteValue, Value};\n");
-    }
-    if body.contains("Regex::new(") {
-        code.push_str("use regex::Regex;\n");
     }
     code.push('\n');
     code.push_str(&body);
@@ -4645,35 +4093,6 @@ fn enum_info_for_override(field_name: &str, values: &[&'static str]) -> EnumInfo
     }
 }
 
-/// Generate condition string and display string for integer range validation.
-fn int_range_condition_and_display(min: Option<i64>, max: Option<i64>) -> (String, String) {
-    match (min, max) {
-        (Some(min), Some(max)) => (
-            format!("*n < {} || *n > {}", min, max),
-            format!("{}..={}", min, max),
-        ),
-        (Some(min), None) => (format!("*n < {}", min), format!("{}..", min)),
-        (None, Some(max)) => (format!("*n > {}", max), format!("..={}", max)),
-        (None, None) => unreachable!("at least one bound must be present"),
-    }
-}
-
-/// Generate condition string and display string for float range validation.
-fn float_range_condition_and_display(min: Option<i64>, max: Option<i64>) -> (String, String) {
-    match (min, max) {
-        // Clippy 1.95 flags `n < x || n > y` as `manual_range_contains`;
-        // emit the `!RangeInclusive::contains` form directly so generated
-        // files stay `-D warnings` clean (carina#3340 post-emit drain).
-        (Some(min), Some(max)) => (
-            format!("!({}.0..={}.0).contains(&n)", min, max),
-            format!("{}..={}", min, max),
-        ),
-        (Some(min), None) => (format!("n < {}.0", min), format!("{}..", min)),
-        (None, Some(max)) => (format!("n > {}.0", max), format!("..={}", max)),
-        (None, None) => unreachable!("at least one bound must be present"),
-    }
-}
-
 /// Format a range display string for type names.
 fn range_display_string(min: Option<i64>, max: Option<i64>) -> String {
     match (min, max) {
@@ -4744,31 +4163,6 @@ fn is_literal_enum_value(s: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | ':' | '.' | '/'))
 }
 
-/// Recursively collect string length constraints from a property and its array items.
-/// Treats minLength=0 as no constraint since usize is always >= 0.
-fn collect_string_length_constraints(
-    prop_name: &str,
-    prop: &CfnProperty,
-    ranged_strings: &mut BTreeMap<String, (Option<u64>, Option<u64>)>,
-) {
-    let prop_type = prop.prop_type.as_ref().and_then(|t| t.as_str());
-    let effective_min = prop.min_length.filter(|&m| m > 0);
-    if prop_type == Some("string")
-        && (effective_min.is_some() || prop.max_length.is_some())
-        && prop.enum_values.is_none()
-        && prop.pattern.is_none()
-        && !ranged_strings.contains_key(prop_name)
-    {
-        ranged_strings.insert(prop_name.to_string(), (effective_min, prop.max_length));
-    }
-    // Recurse into array items
-    if prop_type == Some("array")
-        && let Some(items) = &prop.items
-    {
-        collect_string_length_constraints(prop_name, items, ranged_strings);
-    }
-}
-
 /// Format a range display string for string length type names.
 fn string_length_display(min: Option<u64>, max: Option<u64>) -> String {
     match (min, max) {
@@ -4777,28 +4171,6 @@ fn string_length_display(min: Option<u64>, max: Option<u64>) -> String {
         (None, Some(max)) => format!("..={}", max),
         (None, None) => unreachable!("at least one bound must be present"),
     }
-}
-
-/// Generate a constraint-based function name for string length validation.
-/// E.g., `validate_string_length_max_1024` or `validate_string_length_1_512`.
-fn string_length_fn_name(min: Option<u64>, max: Option<u64>) -> String {
-    let effective_min = min.filter(|&m| m > 0);
-    match (effective_min, max) {
-        (Some(min), Some(max)) => format!("validate_string_length_{min}_{max}"),
-        (Some(min), None) => format!("validate_string_length_min_{min}"),
-        (None, Some(max)) => format!("validate_string_length_max_{max}"),
-        (None, None) => unreachable!("at least one bound must be present"),
-    }
-}
-
-/// Generate a constraint-based function name for pattern validation.
-/// Uses a hash of the pattern to create a unique but deterministic name.
-fn pattern_fn_name(pattern: &str) -> String {
-    use std::hash::{DefaultHasher, Hash, Hasher};
-    let mut hasher = DefaultHasher::new();
-    pattern.hash(&mut hasher);
-    let hash = hasher.finish();
-    format!("validate_string_pattern_{:016x}", hash)
 }
 
 /// Emit a Rust expression for `Option<String>` pattern field. Escapes `"` and `\`
@@ -4840,15 +4212,23 @@ fn refined_int_type(identity: &str, range: &str) -> String {
     format!("AttributeType::refined_int({identity}, {range})")
 }
 
+fn catalog_type_for_property(resource_type: &str, prop_name: &str) -> Option<AwsccType> {
+    let dsl_resource = dsl_resource_name_from_type(resource_type).ok()?;
+    let (service, resource) = resource_identity_parts(&dsl_resource)?;
+    AwsccType::ALL.iter().copied().find(|awscc_type| {
+        is_resource_identity(&awscc_type.identity(), service, resource, prop_name)
+    })
+}
+
 fn int_enum_type(resource_type: &str, prop_name: &str, values: &[i64]) -> String {
-    match (resource_type, prop_name) {
-        ("AWS::EC2::FlowLog", "MaxAggregationInterval") => {
-            return "crate::schemas::catalog::ec2_flow_log_max_aggregation_interval()".to_string();
-        }
-        ("AWS::Logs::LogGroup", "RetentionInDays") => {
-            return "crate::schemas::catalog::logs_log_group_retention_in_days()".to_string();
-        }
-        _ => {}
+    if let Some(awscc_type) = catalog_type_for_property(resource_type, prop_name)
+        && let Some(expected) = awscc_type.allowed_int_values()
+    {
+        assert_eq!(
+            values, expected,
+            "CloudFormation integer-enum values for {resource_type}.{prop_name} drifted from the AwsccType catalog"
+        );
+        return awscc_type.constructor_path().to_string();
     }
 
     let members = values
@@ -4891,62 +4271,6 @@ fn emit_float_range_option(min: Option<i64>, max: Option<i64>) -> String {
         None => "None".to_string(),
     };
     format!("Some(({min_str}, {max_str}))")
-}
-
-/// Convert a CloudFormation regex pattern into one that Rust's `regex` crate can
-/// compile. Rust's regex does not support PCRE lookaround (`(?=`, `(?!`, `(?<=`,
-/// `(?<!`) or the `\Z` end-of-string anchor. Patterns that cannot be converted
-/// fall back to the permissive `.*` so the generated validator still compiles
-/// and the length constraint (if any) still runs.
-fn rust_compatible_pattern(pattern: &str) -> String {
-    // Cheap fixups first: convert PCRE-only anchors that have Rust equivalents.
-    let candidate = pattern.replace("\\Z", "\\z");
-    if regex::Regex::new(&candidate).is_ok() {
-        return candidate;
-    }
-    // Pattern uses a feature Rust's regex crate doesn't support (typically
-    // lookaround). Fall back to match-anything so the generated code compiles.
-    ".*".to_string()
-}
-
-/// Generate a constraint-based function name for combined pattern + length validation.
-/// Uses a hash of the pattern combined with length bounds.
-fn pattern_and_length_fn_name(pattern: &str, min: Option<u64>, max: Option<u64>) -> String {
-    use std::hash::{DefaultHasher, Hash, Hasher};
-    let mut hasher = DefaultHasher::new();
-    pattern.hash(&mut hasher);
-    let hash = hasher.finish();
-    let effective_min = min.filter(|&m| m > 0);
-    match (effective_min, max) {
-        (Some(min_val), Some(max_val)) => {
-            format!(
-                "validate_string_pattern_{:016x}_len_{min_val}_{max_val}",
-                hash
-            )
-        }
-        (Some(min_val), None) => {
-            format!("validate_string_pattern_{:016x}_len_min_{min_val}", hash)
-        }
-        (None, Some(max_val)) => {
-            format!("validate_string_pattern_{:016x}_len_max_{max_val}", hash)
-        }
-        (None, None) => pattern_fn_name(pattern),
-    }
-}
-
-/// Generate condition string and display string for string length validation.
-/// Treats min=0 as no minimum since `usize` is always >= 0.
-fn string_length_condition_and_display(min: Option<u64>, max: Option<u64>) -> (String, String) {
-    let effective_min = min.filter(|&m| m > 0);
-    match (effective_min, max) {
-        (Some(min), Some(max)) => (
-            format!("!({}..={}).contains(&len)", min, max),
-            format!("{}..={}", min, max),
-        ),
-        (Some(min), None) => (format!("len < {}", min), format!("{}..", min)),
-        (None, Some(max)) => (format!("len > {}", max), format!("..={}", max)),
-        (None, None) => unreachable!("at least one bound must be present"),
-    }
 }
 
 /// Known integer range overrides for properties where CloudFormation schemas
@@ -6226,12 +5550,6 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
                             return ("/* enum */".to_string(), Some(enum_info));
                         }
                         let effective_min = min_length.filter(|&m| m > 0);
-                        let has_length = effective_min.is_some() || max_length.is_some();
-                        if has_length {
-                            record_pattern_with_length(pattern, effective_min, max_length);
-                        } else {
-                            record_standalone_pattern(pattern);
-                        };
                         let pattern_expr = emit_pattern_option(Some(pattern));
                         let length_expr = emit_length_option(effective_min, max_length);
                         return (
@@ -6346,11 +5664,6 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
             if let Some(ref pattern) = prop.pattern
                 && is_numeric_string_pattern(pattern)
             {
-                if has_length {
-                    record_pattern_with_length(pattern, effective_min, prop.max_length);
-                } else {
-                    record_standalone_pattern(pattern);
-                };
                 let pattern_expr = emit_pattern_option(Some(pattern));
                 let length_expr = emit_length_option(effective_min, prop.max_length);
                 return (
@@ -6373,11 +5686,6 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
 
             // Check for regex pattern constraint
             if let Some(pattern) = &prop.pattern {
-                if has_length {
-                    record_pattern_with_length(pattern, effective_min, prop.max_length);
-                } else {
-                    record_standalone_pattern(pattern);
-                };
                 let pattern_expr = emit_pattern_option(Some(pattern));
                 let length_expr = emit_length_option(effective_min, prop.max_length);
                 return (
@@ -6409,7 +5717,6 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
             let res_override =
                 resource_type_overrides().get(&(schema.type_name.as_str(), prop_name));
             if let Some(TypeOverride::IntRange(min, max)) = res_override {
-                record_range_validator(prop_name, Some(*min), Some(*max), false);
                 return (
                     refined_int_type("None", &emit_int_range_option(Some(*min), Some(*max))),
                     None,
@@ -6428,8 +5735,6 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
                         .map(|&(min, max)| (Some(min), Some(max)))
                 };
             if let Some((min, max)) = range {
-                // Generate a ranged int type with validation
-                record_range_validator(prop_name, min, max, false);
                 (
                     refined_int_type("None", &emit_int_range_option(min, max)),
                     None,
@@ -6446,7 +5751,6 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
             let res_override =
                 resource_type_overrides().get(&(schema.type_name.as_str(), prop_name));
             if let Some(TypeOverride::IntRange(min, max)) = res_override {
-                record_range_validator(prop_name, Some(*min), Some(*max), true);
                 return (
                     refined_float_type("None", &emit_float_range_option(Some(*min), Some(*max))),
                     None,
@@ -6462,8 +5766,6 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
                         .map(|&(min, max)| (Some(min), Some(max)))
                 };
             if let Some((min, max)) = range {
-                // Generate a ranged float type with validation
-                record_range_validator(prop_name, min, max, true);
                 (
                     refined_float_type("None", &emit_float_range_option(min, max)),
                     None,
@@ -10202,16 +9504,19 @@ mod tests {
 
     #[test]
     fn test_selected_integer_enum_uses_identified_validator() {
+        let retention_values = AwsccType::LogsLogGroupRetentionInDays
+            .allowed_int_values()
+            .unwrap();
         let prop = CfnProperty {
             prop_type: Some(TypeValue::Single("integer".to_string())),
             description: Some("Retention in days.".to_string()),
-            enum_values: Some(vec![
-                EnumValue::Int(1),
-                EnumValue::Int(3),
-                EnumValue::Int(5),
-                EnumValue::Int(7),
-                EnumValue::Int(14),
-            ]),
+            enum_values: Some(
+                retention_values
+                    .iter()
+                    .copied()
+                    .map(EnumValue::Int)
+                    .collect(),
+            ),
             items: None,
             ref_path: None,
             insertion_order: None,
@@ -10258,7 +9563,13 @@ mod tests {
         );
 
         assert_eq!(
-            int_enum_type("AWS::EC2::FlowLog", "MaxAggregationInterval", &[60, 600]),
+            int_enum_type(
+                "AWS::EC2::FlowLog",
+                "MaxAggregationInterval",
+                AwsccType::Ec2FlowLogMaxAggregationInterval
+                    .allowed_int_values()
+                    .unwrap()
+            ),
             "crate::schemas::catalog::ec2_flow_log_max_aggregation_interval()"
         );
 
@@ -10365,14 +9676,19 @@ mod tests {
     #[test]
     fn test_type_display_string_int_enum_resource_override() {
         // RetentionInDays on AWS::Logs::LogGroup has a resource-scoped IntEnum override
+        let retention_values = AwsccType::LogsLogGroupRetentionInDays
+            .allowed_int_values()
+            .unwrap();
         let prop = CfnProperty {
             prop_type: Some(TypeValue::Single("integer".to_string())),
             description: Some("Retention in days.".to_string()),
-            enum_values: Some(vec![
-                EnumValue::Int(1),
-                EnumValue::Int(3),
-                EnumValue::Int(5),
-            ]),
+            enum_values: Some(
+                retention_values
+                    .iter()
+                    .copied()
+                    .map(EnumValue::Int)
+                    .collect(),
+            ),
             items: None,
             ref_path: None,
             insertion_order: None,
@@ -10409,10 +9725,12 @@ mod tests {
         let enums = BTreeMap::new();
         // Resource-scoped override takes precedence over schema enum values
         let result = type_display_string("RetentionInDays", &prop, &schema, &enums);
-        assert_eq!(
-            result,
-            "IntEnum([1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096, 1827, 2192, 2557, 2922, 3288, 3653])"
-        );
+        let expected = retention_values
+            .iter()
+            .map(i64::to_string)
+            .collect::<Vec<_>>()
+            .join(", ");
+        assert_eq!(result, format!("IntEnum([{expected}])"));
     }
 
     #[test]
@@ -10522,20 +9840,121 @@ mod tests {
     #[test]
     fn arn_constructor_routes_shared_overlay_and_generic_paths() {
         assert_eq!(
-            arn_constructor("iam", "OidcProvider"),
+            arn_constructor("iam", "OidcProvider").unwrap(),
             "crate::schemas::catalog::iam_oidc_provider_arn()"
         );
         assert_eq!(
-            arn_constructor("organizations", "Account"),
+            arn_constructor("organizations", "Account").unwrap(),
             "crate::schemas::catalog::organizations_account_arn()"
         );
         assert_eq!(
-            arn_constructor("cloudfront", "Distribution"),
+            arn_constructor("cloudfront", "Distribution").unwrap(),
             "crate::schemas::catalog::cloudfront_distribution_arn()"
         );
         assert_eq!(
-            arn_constructor("unknownservice", "Thing"),
+            arn_constructor("iam", "Role").unwrap(),
+            "carina_aws_types::AwsType::IamRoleArn.attribute_type()"
+        );
+        assert_eq!(
+            arn_constructor("unknownservice", "Thing").unwrap(),
             "carina_aws_types::arn()"
+        );
+    }
+
+    #[test]
+    fn review_regression_known_service_arn_requires_a_catalog_row() {
+        let type_name = "AWS::EC2::NewCataloglessResource";
+        let schema = CfnSchema {
+            type_name: type_name.to_string(),
+            description: None,
+            properties: BTreeMap::from([(
+                "Arn".to_string(),
+                CfnProperty {
+                    prop_type: Some(TypeValue::Single("string".to_string())),
+                    ..Default::default()
+                },
+            )]),
+            required: vec![],
+            read_only_properties: vec!["/properties/Arn".to_string()],
+            create_only_properties: vec![],
+            write_only_properties: vec![],
+            primary_identifier: None,
+            definitions: None,
+            tagging: None,
+            one_of: vec![],
+            any_of: vec![],
+            handlers: BTreeMap::new(),
+        };
+        let error = generate_schema_code(&schema, type_name)
+            .expect_err("a cataloged service must require an exact ARN row");
+        assert!(
+            error.to_string().contains("has no Arn row"),
+            "unexpected codegen error: {error:#}"
+        );
+    }
+
+    #[test]
+    fn virtual_arn_module_uses_the_same_catalog_path() {
+        let module = generate_arn_helper_module("AWS::IAM::Policy").unwrap();
+        assert!(module.contains("carina_aws_types::AwsType::IamPolicyArn.attribute_type()"));
+        assert!(!module.contains("carina_aws_types::iam_policy_arn()"));
+    }
+
+    #[test]
+    fn review_regression_catalog_int_enum_rejects_mismatched_values() {
+        let mismatch = std::panic::catch_unwind(|| {
+            int_enum_type("AWS::EC2::FlowLog", "MaxAggregationInterval", &[60, 61])
+        });
+        assert!(
+            mismatch.is_err(),
+            "catalog-selected integer enums must fail codegen when CFN values drift"
+        );
+    }
+
+    #[test]
+    fn review_regression_declarative_constraints_emit_no_dead_helpers() {
+        let schema = CfnSchema {
+            type_name: "AWS::Test::Resource".to_string(),
+            description: None,
+            properties: BTreeMap::from([
+                (
+                    "Count".to_string(),
+                    CfnProperty {
+                        prop_type: Some(TypeValue::Single("integer".to_string())),
+                        minimum: Some(1),
+                        maximum: Some(10),
+                        ..Default::default()
+                    },
+                ),
+                (
+                    "Label".to_string(),
+                    CfnProperty {
+                        prop_type: Some(TypeValue::Single("string".to_string())),
+                        pattern: Some("^[a-z]+$".to_string()),
+                        min_length: Some(1),
+                        max_length: Some(10),
+                        ..Default::default()
+                    },
+                ),
+            ]),
+            required: vec![],
+            read_only_properties: vec![],
+            create_only_properties: vec![],
+            write_only_properties: vec![],
+            primary_identifier: None,
+            definitions: None,
+            tagging: None,
+            one_of: vec![],
+            any_of: vec![],
+            handlers: BTreeMap::new(),
+        };
+
+        let generated = generate_synthetic_schema_code(&schema).expect("generate fixture");
+        assert!(
+            !generated.contains("fn validate_count_range")
+                && !generated.contains("fn validate_string_length_")
+                && !generated.contains("fn validate_string_pattern_"),
+            "declarative range, length, and pattern metadata must not emit dead callbacks: {generated}"
         );
     }
 
@@ -11424,14 +10843,21 @@ mod tests {
         let overrides = resource_type_overrides();
         assert_eq!(
             overrides.get(&("AWS::EC2::FlowLog", "MaxAggregationInterval")),
-            Some(&TypeOverride::IntEnum(vec![60, 600]))
+            Some(&TypeOverride::IntEnum(
+                AwsccType::Ec2FlowLogMaxAggregationInterval
+                    .allowed_int_values()
+                    .unwrap()
+                    .to_vec()
+            ))
         );
         assert_eq!(
             overrides.get(&("AWS::Logs::LogGroup", "RetentionInDays")),
-            Some(&TypeOverride::IntEnum(vec![
-                1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096, 1827, 2192,
-                2557, 2922, 3288, 3653
-            ]))
+            Some(&TypeOverride::IntEnum(
+                AwsccType::LogsLogGroupRetentionInDays
+                    .allowed_int_values()
+                    .unwrap()
+                    .to_vec()
+            ))
         );
     }
 
@@ -13413,7 +12839,7 @@ mod tests {
     }
 
     #[test]
-    fn test_pattern_validation_generated_in_schema_code() {
+    fn test_pattern_constraint_is_declarative_in_schema_code() {
         let mut properties = BTreeMap::new();
         properties.insert(
             "LogGroupName".to_string(),
@@ -13443,13 +12869,14 @@ mod tests {
 
         let code = generate_schema_code(&schema, "AWS::Logs::LogGroup").unwrap();
         assert!(
-            code.contains("fn validate_string_pattern_"),
-            "Generated code should contain pattern validation function:\n{}",
+            code.contains("AttributeType::refined_string(None, Some(")
+                && code.contains(r"{1,512}\\Z"),
+            "Generated code should retain the pattern as type metadata:\n{}",
             code
         );
         assert!(
-            code.contains("Regex::new"),
-            "Pattern validation should use Regex:\n{}",
+            !code.contains("fn validate_string_pattern_") && !code.contains("Regex::new"),
+            "Pattern metadata should not emit an unreferenced callback:\n{}",
             code
         );
     }
@@ -13699,10 +13126,9 @@ mod tests {
 
         let generated = generate_schema_code(&schema, "AWS::Logs::LogGroup").unwrap();
 
-        // Should generate a length validation function
         assert!(
-            generated.contains("validate_string_length_1_512"),
-            "Should generate length validation function: {generated}"
+            !generated.contains("validate_string_length_"),
+            "Should not generate a dead length validation function: {generated}"
         );
 
         // Should use AttributeType::Custom wrapping String
@@ -13711,12 +13137,6 @@ mod tests {
                 "AttributeType::refined_string(None, None, Some((Some(1), Some(512))), None)"
             ),
             "Should wrap String in Custom type with length constraint: {generated}"
-        );
-
-        // Should display length range
-        assert!(
-            generated.contains("1..=512"),
-            "Should display length range: {generated}"
         );
     }
 
@@ -13752,12 +13172,10 @@ mod tests {
         let generated = generate_synthetic_schema_code(&schema).unwrap();
 
         assert!(
-            generated.contains("validate_string_length_min_1"),
-            "Should generate length validation function for min-only: {generated}"
-        );
-        assert!(
-            generated.contains("1.."),
-            "Should display open-ended range for min-only: {generated}"
+            generated
+                .contains("AttributeType::refined_string(None, None, Some((Some(1), None)), None)")
+                && !generated.contains("validate_string_length_"),
+            "Should retain a declarative minimum without a helper: {generated}"
         );
     }
 
@@ -13793,12 +13211,10 @@ mod tests {
         let generated = generate_synthetic_schema_code(&schema).unwrap();
 
         assert!(
-            generated.contains("validate_string_length_max_256"),
-            "Should generate length validation function for max-only: {generated}"
-        );
-        assert!(
-            generated.contains("..=256"),
-            "Should display open-ended range for max-only: {generated}"
+            generated.contains(
+                "AttributeType::refined_string(None, None, Some((None, Some(256))), None)"
+            ) && !generated.contains("validate_string_length_"),
+            "Should retain a declarative maximum without a helper: {generated}"
         );
     }
 
@@ -13948,8 +13364,7 @@ mod tests {
 
     #[test]
     fn test_ref_pattern_collected_in_generate_schema_code() {
-        // When a struct field uses $ref to a definition with a pattern,
-        // the pattern validation function should be generated in the schema code.
+        // A struct field using $ref retains the definition's pattern metadata.
         let mut rule_props = BTreeMap::new();
         rule_props.insert(
             "ExpirationDate".to_string(),
@@ -14034,15 +13449,19 @@ mod tests {
 
         let generated = generate_synthetic_schema_code(&schema).unwrap();
         assert!(
-            generated.contains("fn validate_string_pattern_"),
-            "Should generate hash-based pattern validation function for $ref definition pattern: {generated}"
+            generated.contains("AttributeType::refined_string(None, Some(")
+                && generated.contains(r#"^(\\d{4})"#),
+            "Should retain $ref pattern metadata: {generated}"
+        );
+        assert!(
+            !generated.contains("fn validate_string_pattern_"),
+            "Should not emit a dead $ref pattern callback: {generated}"
         );
     }
 
     #[test]
     fn test_top_level_ref_pattern_collected_in_generate_schema_code() {
-        // When a top-level property uses $ref to a definition with a pattern,
-        // the pattern validation function should be generated.
+        // A top-level property using $ref retains the definition's pattern.
         let mut definitions = BTreeMap::new();
         definitions.insert(
             "iso8601UTC".to_string(),
@@ -14081,14 +13500,18 @@ mod tests {
 
         let generated = generate_synthetic_schema_code(&schema).unwrap();
         assert!(
-            generated.contains("fn validate_string_pattern_"),
-            "Should generate hash-based pattern validation function for top-level $ref pattern: {generated}"
+            generated.contains("AttributeType::refined_string(None, Some(")
+                && generated.contains(r"(\\d{4})"),
+            "Should retain top-level $ref pattern metadata: {generated}"
+        );
+        assert!(
+            !generated.contains("fn validate_string_pattern_"),
+            "Should not emit a dead top-level $ref callback: {generated}"
         );
     }
 
     #[test]
-    fn test_dedup_string_length_validation_functions() {
-        // Two properties with identical maxLength constraints should share one validation function
+    fn test_repeated_string_lengths_stay_declarative() {
         let mut properties = BTreeMap::new();
         properties.insert(
             "Name".to_string(),
@@ -14127,36 +13550,21 @@ mod tests {
 
         let generated = generate_synthetic_schema_code(&schema).unwrap();
 
-        // Should NOT have per-property validation functions
-        assert!(
-            !generated.contains("fn validate_name_length"),
-            "Should not generate per-property length function: {generated}"
-        );
-        assert!(
-            !generated.contains("fn validate_prefix_length"),
-            "Should not generate per-property length function: {generated}"
-        );
-
-        // Should have a single shared validation function named by constraints
-        let fn_count = generated.matches("fn validate_string_length_").count();
+        let constraint =
+            "AttributeType::refined_string(None, None, Some((None, Some(1024))), None)";
         assert_eq!(
-            fn_count, 1,
-            "Should generate exactly one shared length validation function, got {fn_count}: {generated}"
+            generated.matches(constraint).count(),
+            2,
+            "Both properties should carry the declarative bound: {generated}"
         );
-
-        // Both properties should reference the same validation function
-        let ref_count = generated.matches("validate_string_length_max_1024").count();
         assert!(
-            ref_count == 1,
-            "Both properties should reference the shared function (1 def; refined String carries length directly), got {ref_count}: {generated}"
+            !generated.contains("fn validate_string_length_"),
+            "Repeated bounds should not emit a helper: {generated}"
         );
     }
 
     #[test]
-    fn test_non_standard_tag_definition_generates_validators() {
-        // Non-standard tag definitions like "HostedZoneTag" should have their
-        // string length validators generated. Only the standard "Tag" definition
-        // is skipped (handled by tags_type()).
+    fn test_non_standard_tag_definition_keeps_declarative_lengths() {
         let mut properties = BTreeMap::new();
         properties.insert(
             "HostedZoneTags".to_string(),
@@ -14217,14 +13625,21 @@ mod tests {
 
         let generated = generate_schema_code(&schema, "AWS::Route53::HostedZone").unwrap();
 
-        // The HostedZoneTag struct fields should have validators generated
         assert!(
-            generated.contains("fn validate_string_length_max_128"),
-            "Should generate validate_string_length_max_128 for HostedZoneTag.Key: {generated}"
+            generated.contains(
+                "AttributeType::refined_string(None, None, Some((None, Some(128))), None)"
+            ),
+            "HostedZoneTag.Key should retain maxLength 128: {generated}"
         );
         assert!(
-            generated.contains("fn validate_string_length_max_256"),
-            "Should generate validate_string_length_max_256 for HostedZoneTag.Value: {generated}"
+            generated.contains(
+                "AttributeType::refined_string(None, None, Some((None, Some(256))), None)"
+            ),
+            "HostedZoneTag.Value should retain maxLength 256: {generated}"
+        );
+        assert!(
+            !generated.contains("fn validate_string_length_"),
+            "Non-standard tags should not emit dead helpers: {generated}"
         );
     }
 
@@ -14246,10 +13661,7 @@ mod tests {
     }
 
     #[test]
-    fn test_string_length_validation_uses_char_count() {
-        // String length validation should use s.chars().count() (character count)
-        // instead of s.len() (byte count) to correctly handle multi-byte characters.
-        // e.g., "テスト" is 3 characters but 9 bytes in UTF-8.
+    fn test_string_length_validation_is_declarative() {
         let mut properties = BTreeMap::new();
         properties.insert(
             "DisplayName".to_string(),
@@ -14279,20 +13691,20 @@ mod tests {
 
         let generated = generate_synthetic_schema_code(&schema).unwrap();
 
-        // Should use chars().count() for character-based length, not byte-based len()
         assert!(
-            generated.contains("s.chars().count()"),
-            "String length validation should use s.chars().count() instead of s.len(): {generated}"
+            generated.contains(
+                "AttributeType::refined_string(None, None, Some((None, Some(10))), None)"
+            ),
+            "String length should remain declarative: {generated}"
         );
         assert!(
-            !generated.contains("let len = s.len()"),
-            "String length validation should NOT use s.len() for string properties: {generated}"
+            !generated.contains("fn validate_string_length_"),
+            "String length should not emit a dead helper: {generated}"
         );
     }
 
     #[test]
-    fn test_dedup_pattern_validation_functions() {
-        // Two properties with identical pattern constraints should share one validation function
+    fn test_repeated_patterns_stay_declarative() {
         let mut properties = BTreeMap::new();
         properties.insert(
             "ObjectSizeGreaterThan".to_string(),
@@ -14329,21 +13741,14 @@ mod tests {
 
         let generated = generate_synthetic_schema_code(&schema).unwrap();
 
-        // Should NOT have per-property pattern validation functions
-        assert!(
-            !generated.contains("fn validate_object_size_greater_than_pattern"),
-            "Should not generate per-property pattern function: {generated}"
-        );
-        assert!(
-            !generated.contains("fn validate_object_size_less_than_pattern"),
-            "Should not generate per-property pattern function: {generated}"
-        );
-
-        // Should have exactly one shared pattern validation function
-        let fn_count = generated.matches("fn validate_string_pattern_").count();
         assert_eq!(
-            fn_count, 1,
-            "Should generate exactly one shared pattern validation function, got {fn_count}: {generated}"
+            generated.matches(r#"Some("[0-9]+".to_string())"#).count(),
+            2,
+            "Both properties should retain their pattern metadata: {generated}"
+        );
+        assert!(
+            !generated.contains("fn validate_string_pattern_"),
+            "Repeated patterns should not emit a helper: {generated}"
         );
     }
 
@@ -14808,11 +14213,7 @@ mod tests {
     }
 
     #[test]
-    fn test_array_items_pattern_with_length_generates_combined_validator() {
-        // When an array property has items with both pattern and length constraints,
-        // the generated code must emit a combined pattern+length validator function.
-        // Regression test: previously the codegen used the array container's (empty)
-        // length constraints instead of the items' constraints.
+    fn test_array_items_pattern_with_length_stays_declarative() {
         let schema = CfnSchema {
             type_name: "AWS::Test::ArrayPattern".to_string(),
             description: None,
@@ -14849,16 +14250,16 @@ mod tests {
 
         let code = generate_synthetic_schema_code(&schema).expect("codegen should succeed");
 
-        // The combined validator function must be defined
         assert!(
-            code.contains("fn validate_string_pattern_") && code.contains("_len_40_40"),
-            "Should generate combined pattern+length validator function, got:\n{code}"
+            code.contains(
+                r#"AttributeType::refined_string(None, Some("[0-9A-Fa-f]{40}".to_string()), Some((Some(40), Some(40))), None)"#
+            ),
+            "Array items should retain both constraints, got:\n{code}"
         );
-
-        // The validator should check both pattern and length
         assert!(
-            code.contains("[0-9A-Fa-f]{40}") && code.contains("40..=40"),
-            "Validator should check both pattern and length range"
+            !code.contains("fn validate_string_pattern_")
+                && !code.contains("fn validate_string_length_"),
+            "Array item constraints should not emit dead helpers"
         );
     }
 

@@ -7,7 +7,6 @@
 use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
 use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema};
-use regex::Regex;
 
 pub fn arn() -> AttributeType {
     crate::schemas::catalog::logs_log_group_arn()
@@ -113,29 +112,6 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "LogGroupName", dsl_name: "log_group_name" }],
         tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
         schema,
-    }
-}
-
-#[allow(dead_code)]
-fn validate_string_pattern_b6dfbc56753dfe38_len_1_512(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::String(s)) = value {
-        let s = s.expose_plaintext();
-        static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-            Regex::new("^[.\\-_/#A-Za-z0-9]{1,512}\\z").expect("invalid pattern regex")
-        });
-        if !RE.is_match(s) {
-            return Err(format!(
-                "Value '{}' does not match pattern ^[.\\-_/#A-Za-z0-9]{{1,512}}\\z",
-                s
-            ));
-        }
-        let len = s.chars().count();
-        if !(1..=512).contains(&len) {
-            return Err(format!("String length {} is out of range 1..=512", len));
-        }
-        Ok(())
-    } else {
-        Err("Expected string".to_string())
     }
 }
 

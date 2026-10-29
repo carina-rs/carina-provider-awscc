@@ -5,9 +5,7 @@
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
 use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
-use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField};
-use regex::Regex;
 
 const VALID_FUNCTION_CONFIG_RUNTIME: &[&str] = &["cloudfront-js-1.0", "cloudfront-js-2.0"];
 
@@ -103,52 +101,6 @@ pub fn cloudfront_function_config() -> AwsccSchemaConfig {
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "FunctionARN", dsl_name: "function_arn" }],
         tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
         schema,
-    }
-}
-
-#[allow(dead_code)]
-fn validate_string_pattern_6d706baa1fcf763c_len_max_256(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::String(s)) = value {
-        let s = s.expose_plaintext();
-        static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-            Regex::new("^([\\p{L}\\p{Z}\\p{N}_.:/=+\\-@]*)$").expect("invalid pattern regex")
-        });
-        if !RE.is_match(s) {
-            return Err(format!(
-                "Value '{}' does not match pattern ^([\\p{{L}}\\p{{Z}}\\p{{N}}_.:/=+\\-@]*)$",
-                s
-            ));
-        }
-        let len = s.chars().count();
-        if len > 256 {
-            return Err(format!("String length {} is out of range ..=256", len));
-        }
-        Ok(())
-    } else {
-        Err("Expected string".to_string())
-    }
-}
-
-#[allow(dead_code)]
-fn validate_string_pattern_6d706baa1fcf763c_len_1_128(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::String(s)) = value {
-        let s = s.expose_plaintext();
-        static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-            Regex::new("^([\\p{L}\\p{Z}\\p{N}_.:/=+\\-@]*)$").expect("invalid pattern regex")
-        });
-        if !RE.is_match(s) {
-            return Err(format!(
-                "Value '{}' does not match pattern ^([\\p{{L}}\\p{{Z}}\\p{{N}}_.:/=+\\-@]*)$",
-                s
-            ));
-        }
-        let len = s.chars().count();
-        if !(1..=128).contains(&len) {
-            return Err(format!("String length {} is out of range 1..=128", len));
-        }
-        Ok(())
-    } else {
-        Err("Expected string".to_string())
     }
 }
 

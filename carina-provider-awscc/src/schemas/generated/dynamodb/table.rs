@@ -5,7 +5,6 @@
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
 use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
-use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField};
 
 pub fn arn() -> AttributeType {
@@ -32,71 +31,6 @@ const VALID_STREAM_SPECIFICATION_STREAM_VIEW_TYPE: &[&str] =
     &["KEYS_ONLY", "NEW_IMAGE", "OLD_IMAGE", "NEW_AND_OLD_IMAGES"];
 
 const VALID_TABLE_CLASS: &[&str] = &["STANDARD", "STANDARD_INFREQUENT_ACCESS"];
-
-#[allow(dead_code)]
-fn validate_max_read_request_units_range(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::Int(n)) = value {
-        if *n < 1 {
-            Err(format!("Value {} is out of range 1..", n))
-        } else {
-            Ok(())
-        }
-    } else {
-        Err("Expected integer".to_string())
-    }
-}
-
-#[allow(dead_code)]
-fn validate_max_write_request_units_range(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::Int(n)) = value {
-        if *n < 1 {
-            Err(format!("Value {} is out of range 1..", n))
-        } else {
-            Ok(())
-        }
-    } else {
-        Err("Expected integer".to_string())
-    }
-}
-
-#[allow(dead_code)]
-fn validate_read_units_per_second_range(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::Int(n)) = value {
-        if *n < 1 {
-            Err(format!("Value {} is out of range 1..", n))
-        } else {
-            Ok(())
-        }
-    } else {
-        Err("Expected integer".to_string())
-    }
-}
-
-#[allow(dead_code)]
-fn validate_recovery_period_in_days_range(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::Int(n)) = value {
-        if *n < 1 || *n > 35 {
-            Err(format!("Value {} is out of range 1..=35", n))
-        } else {
-            Ok(())
-        }
-    } else {
-        Err("Expected integer".to_string())
-    }
-}
-
-#[allow(dead_code)]
-fn validate_write_units_per_second_range(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::Int(n)) = value {
-        if *n < 1 {
-            Err(format!("Value {} is out of range 1..", n))
-        } else {
-            Ok(())
-        }
-    } else {
-        Err("Expected integer".to_string())
-    }
-}
 
 /// Returns the schema config for dynamodb_table (AWS::DynamoDB::Table)
 #[rustfmt::skip]

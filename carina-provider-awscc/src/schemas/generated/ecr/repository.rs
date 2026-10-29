@@ -5,9 +5,7 @@
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
 use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
-use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField};
-use regex::Regex;
 
 pub fn arn() -> AttributeType {
     carina_aws_types::arn()
@@ -146,70 +144,6 @@ pub fn ecr_repository_config() -> AwsccSchemaConfig {
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "RepositoryName", dsl_name: "repository_name" }],
         tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
         schema,
-    }
-}
-
-#[allow(dead_code)]
-fn validate_string_pattern_129eac93eb23f686_len_2_256(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::String(s)) = value {
-        let s = s.expose_plaintext();
-        static RE: std::sync::LazyLock<Regex> =
-            std::sync::LazyLock::new(|| Regex::new(".*").expect("invalid pattern regex"));
-        if !RE.is_match(s) {
-            return Err(format!("Value '{}' does not match pattern .*", s));
-        }
-        let len = s.chars().count();
-        if !(2..=256).contains(&len) {
-            return Err(format!("String length {} is out of range 2..=256", len));
-        }
-        Ok(())
-    } else {
-        Err("Expected string".to_string())
-    }
-}
-
-#[allow(dead_code)]
-fn validate_string_pattern_e1adf41049631046_len_12_12(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::String(s)) = value {
-        let s = s.expose_plaintext();
-        static RE: std::sync::LazyLock<Regex> =
-            std::sync::LazyLock::new(|| Regex::new("^[0-9]{12}$").expect("invalid pattern regex"));
-        if !RE.is_match(s) {
-            return Err(format!(
-                "Value '{}' does not match pattern ^[0-9]{{12}}$",
-                s
-            ));
-        }
-        let len = s.chars().count();
-        if !(12..=12).contains(&len) {
-            return Err(format!("String length {} is out of range 12..=12", len));
-        }
-        Ok(())
-    } else {
-        Err("Expected string".to_string())
-    }
-}
-
-#[allow(dead_code)]
-fn validate_string_pattern_84868325b990ae65_len_1_128(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::String(s)) = value {
-        let s = s.expose_plaintext();
-        static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-            Regex::new("^[0-9a-zA-Z._*-]{1,128}").expect("invalid pattern regex")
-        });
-        if !RE.is_match(s) {
-            return Err(format!(
-                "Value '{}' does not match pattern ^[0-9a-zA-Z._*-]{{1,128}}",
-                s
-            ));
-        }
-        let len = s.chars().count();
-        if !(1..=128).contains(&len) {
-            return Err(format!("String length {} is out of range 1..=128", len));
-        }
-        Ok(())
-    } else {
-        Err("Expected string".to_string())
     }
 }
 

@@ -5,7 +5,6 @@
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
 use crate::schemas::config::AwsccSchemaConfig;
-use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField};
 
 const VALID_ACCESS_CONTROL_ALLOW_METHODS_ITEMS: &[&str] = &[
@@ -24,20 +23,6 @@ const VALID_REFERRER_POLICY_REFERRER_POLICY: &[&str] = &[
     "strict-origin-when-cross-origin",
     "unsafe-url",
 ];
-
-#[allow(dead_code)]
-fn validate_sampling_rate_range(value: &Value) -> Result<(), String> {
-    let n = match value {
-        Value::Concrete(ConcreteValue::Int(i)) => *i as f64,
-        Value::Concrete(ConcreteValue::Float(f)) => *f,
-        _ => return Err("Expected number".to_string()),
-    };
-    if !(0.0..=100.0).contains(&n) {
-        Err(format!("Value {} is out of range 0..=100", n))
-    } else {
-        Ok(())
-    }
-}
 
 /// Returns the schema config for cloudfront_response_headers_policy (AWS::CloudFront::ResponseHeadersPolicy)
 #[rustfmt::skip]

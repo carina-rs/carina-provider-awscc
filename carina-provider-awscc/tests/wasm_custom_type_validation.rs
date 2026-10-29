@@ -26,10 +26,12 @@ fn release_wasm_path() -> Option<PathBuf> {
 #[tokio::test(flavor = "multi_thread")]
 async fn flow_log_integer_validator_dispatches_through_the_wasm_guest() {
     let Some(wasm_path) = release_wasm_path() else {
-        eprintln!(
-            "SKIP: release WASM component not found; build with: \
-             cargo build --offline -p carina-provider-awscc --target wasm32-wasip2 --release"
-        );
+        let message = "release WASM component not found; build with: \
+            cargo build --offline -p carina-provider-awscc --target wasm32-wasip2 --release";
+        if std::env::var_os("CI").is_some() {
+            panic!("CI requires the guest-bridge validation test: {message}");
+        }
+        eprintln!("SKIP: {message}");
         return;
     };
 
@@ -73,6 +75,10 @@ async fn flow_log_integer_validator_dispatches_through_the_wasm_guest() {
     let errors = validate(61).expect_err(
         "guest bridge must parse and reject integer witness 61 before any operation call",
     );
+    // The host canonicalizes ConcreteValue::Int(61) with i64::to_string. This
+    // value-bearing diagnostic is emitted only after the guest parses that text
+    // as i64 and invokes the integer callback. The public bridge does not expose
+    // the raw WIT string for an independent equality assertion here.
     assert!(
         errors
             .iter()

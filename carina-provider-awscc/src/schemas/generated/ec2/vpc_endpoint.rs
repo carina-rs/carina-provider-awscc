@@ -5,7 +5,6 @@
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
 use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
-use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField};
 
 const VALID_DNS_OPTIONS_SPECIFICATION_DNS_RECORD_IP_TYPE: &[&str] = &[
@@ -35,21 +34,6 @@ const VALID_VPC_ENDPOINT_TYPE: &[&str] = &[
     "ServiceNetwork",
     "Resource",
 ];
-
-#[allow(dead_code)]
-fn validate_string_length_1_255(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::String(s)) = value {
-        let s = s.expose_plaintext();
-        let len = s.chars().count();
-        if !(1..=255).contains(&len) {
-            Err(format!("String length {} is out of range 1..=255", len))
-        } else {
-            Ok(())
-        }
-    } else {
-        Ok(())
-    }
-}
 
 /// Returns the schema config for ec2_vpc_endpoint (AWS::EC2::VPCEndpoint)
 #[rustfmt::skip]

@@ -48,6 +48,13 @@ fn protocol_output_error(
     CoreProviderError::internal_caused_by(context, error)
 }
 
+fn provider_config_decode_error(error: protocol_convert::ProtocolConvertError) -> String {
+    // The v12 `CarinaProvider` config methods return `Result<(), String>`, so
+    // their ABI cannot retain a typed source. `CoreProviderError`'s Display
+    // includes the conversion cause, preserving the complete chain in text.
+    protocol_input_error("failed to decode provider configuration", error).to_string()
+}
+
 fn read_outcome_to_proto(
     outcome: &CoreReadOutcome,
 ) -> Result<proto::ReadOutcome, CoreProviderError> {
@@ -109,6 +116,29 @@ fn observation_to_proto(
             Err(error) => proto::Observation::ReadFailed(error.to_wire()),
         },
         CoreObservation::ReadFailed(error) => proto::Observation::ReadFailed(error.to_wire()),
+    }
+}
+
+fn finish_encoded<Finishing, Encoded, Step, Verdict>(
+    finishing: Finishing,
+    encoded: Result<Encoded, CoreProviderError>,
+    succeeded: impl FnOnce(Finishing, Encoded) -> Step,
+    failed: impl FnOnce(
+        Finishing,
+        proto::Observation<proto::ReadOutcome, proto::ProviderError>,
+        proto::ProviderError,
+    ) -> Verdict,
+) -> Result<Step, Verdict> {
+    match encoded {
+        Ok(encoded) => Ok(succeeded(finishing, encoded)),
+        Err(error) => {
+            let error = error.to_wire();
+            Err(failed(
+                finishing,
+                proto::Observation::ReadFailed(error.clone()),
+                error,
+            ))
+        }
     }
 }
 
@@ -176,13 +206,12 @@ impl CcIssuedCreate for GuestIssuedCreate {
         attributes: HashMap<String, CoreValue>,
     ) -> Result<Self::Step, Self::Verdict> {
         let finishing = self.0.canonicalize(identifier);
-        match issued_create_attributes_to_proto(&attributes) {
-            Ok(attributes) => Ok(finishing.succeeded(attributes)),
-            Err(error) => {
-                let error = error.to_wire();
-                Err(finishing.failed(proto::Observation::ReadFailed(error.clone()), error))
-            }
-        }
+        finish_encoded(
+            finishing,
+            issued_create_attributes_to_proto(&attributes),
+            |finishing, attributes| finishing.succeeded(attributes),
+            |finishing, observation, error| finishing.failed(observation, error),
+        )
     }
 
     fn partial(
@@ -193,19 +222,20 @@ impl CcIssuedCreate for GuestIssuedCreate {
         missing_attributes: Vec<String>,
     ) -> Result<Self::Step, Self::Verdict> {
         let finishing = self.0.canonicalize(identifier);
-        match partial_create_attributes_to_proto(&attributes) {
-            Ok(attributes) => Ok(finishing.partial(
-                attributes,
-                proto::PartialReadDiagnostic {
-                    reason,
-                    missing_attributes,
-                },
-            )),
-            Err(error) => {
-                let error = error.to_wire();
-                Err(finishing.failed(proto::Observation::ReadFailed(error.clone()), error))
-            }
-        }
+        finish_encoded(
+            finishing,
+            partial_create_attributes_to_proto(&attributes),
+            |finishing, attributes| {
+                finishing.partial(
+                    attributes,
+                    proto::PartialReadDiagnostic {
+                        reason,
+                        missing_attributes,
+                    },
+                )
+            },
+            |finishing, observation, error| finishing.failed(observation, error),
+        )
     }
 
     fn failed(
@@ -253,15 +283,12 @@ impl CcIssuedCreate for GuestPolledIssuedCreate {
         attributes: HashMap<String, CoreValue>,
     ) -> Result<Self::Step, Self::Verdict> {
         let finishing = self.0.canonicalize(identifier);
-        match issued_create_attributes_to_proto(&attributes) {
-            Ok(attributes) => Ok(finishing.succeeded(attributes)),
-            Err(error) => {
-                let error = error.to_wire();
-                Err(finishing
-                    .failed(proto::Observation::ReadFailed(error.clone()), error)
-                    .into())
-            }
-        }
+        finish_encoded(
+            finishing,
+            issued_create_attributes_to_proto(&attributes),
+            |finishing, attributes| finishing.succeeded(attributes),
+            |finishing, observation, error| finishing.failed(observation, error).into(),
+        )
     }
 
     fn partial(
@@ -272,21 +299,20 @@ impl CcIssuedCreate for GuestPolledIssuedCreate {
         missing_attributes: Vec<String>,
     ) -> Result<Self::Step, Self::Verdict> {
         let finishing = self.0.canonicalize(identifier);
-        match partial_create_attributes_to_proto(&attributes) {
-            Ok(attributes) => Ok(finishing.partial(
-                attributes,
-                proto::PartialReadDiagnostic {
-                    reason,
-                    missing_attributes,
-                },
-            )),
-            Err(error) => {
-                let error = error.to_wire();
-                Err(finishing
-                    .failed(proto::Observation::ReadFailed(error.clone()), error)
-                    .into())
-            }
-        }
+        finish_encoded(
+            finishing,
+            partial_create_attributes_to_proto(&attributes),
+            |finishing, attributes| {
+                finishing.partial(
+                    attributes,
+                    proto::PartialReadDiagnostic {
+                        reason,
+                        missing_attributes,
+                    },
+                )
+            },
+            |finishing, observation, error| finishing.failed(observation, error).into(),
+        )
     }
 
     fn failed(
@@ -368,13 +394,12 @@ impl CcResumedCreate for GuestResumedCreate {
         state: CoreAppliedState,
     ) -> Result<Self::Step, Self::Verdict> {
         let finishing = self.0.canonicalize(identifier);
-        match resumed_state_to_proto(&state) {
-            Ok(state) => Ok(finishing.completed(FoundRead::from_applied_state(state))),
-            Err(error) => {
-                let error = error.to_wire();
-                Err(finishing.failed(proto::Observation::ReadFailed(error.clone()), error))
-            }
-        }
+        finish_encoded(
+            finishing,
+            resumed_state_to_proto(&state),
+            |finishing, state| finishing.completed(FoundRead::from_applied_state(state)),
+            |finishing, observation, error| finishing.failed(observation, error),
+        )
     }
 
     fn failed(
@@ -445,15 +470,12 @@ impl CcIssuedCreate for GuestResentIssuedCreate {
         attributes: HashMap<String, CoreValue>,
     ) -> Result<Self::Step, Self::Verdict> {
         let finishing = self.0.canonicalize(identifier);
-        match issued_create_attributes_to_proto(&attributes) {
-            Ok(attributes) => Ok(finishing.succeeded(attributes).into()),
-            Err(error) => {
-                let error = error.to_wire();
-                Err(finishing
-                    .failed(proto::Observation::ReadFailed(error.clone()), error)
-                    .into())
-            }
-        }
+        finish_encoded(
+            finishing,
+            issued_create_attributes_to_proto(&attributes),
+            |finishing, attributes| finishing.succeeded(attributes).into(),
+            |finishing, observation, error| finishing.failed(observation, error).into(),
+        )
     }
 
     fn partial(
@@ -464,23 +486,22 @@ impl CcIssuedCreate for GuestResentIssuedCreate {
         missing_attributes: Vec<String>,
     ) -> Result<Self::Step, Self::Verdict> {
         let finishing = self.0.canonicalize(identifier);
-        match partial_create_attributes_to_proto(&attributes) {
-            Ok(attributes) => Ok(finishing
-                .partial(
-                    attributes,
-                    proto::PartialReadDiagnostic {
-                        reason,
-                        missing_attributes,
-                    },
-                )
-                .into()),
-            Err(error) => {
-                let error = error.to_wire();
-                Err(finishing
-                    .failed(proto::Observation::ReadFailed(error.clone()), error)
-                    .into())
-            }
-        }
+        finish_encoded(
+            finishing,
+            partial_create_attributes_to_proto(&attributes),
+            |finishing, attributes| {
+                finishing
+                    .partial(
+                        attributes,
+                        proto::PartialReadDiagnostic {
+                            reason,
+                            missing_attributes,
+                        },
+                    )
+                    .into()
+            },
+            |finishing, observation, error| finishing.failed(observation, error).into(),
+        )
     }
 
     fn failed(
@@ -648,9 +669,8 @@ impl CarinaProvider for AwsccProcessProvider {
         use carina_provider_awscc::provider::assume_role::{
             check_cross_account, extract_assume_role,
         };
-        let core_attrs = protocol_convert::protocol_to_core_value_map(attrs).map_err(|error| {
-            protocol_input_error("failed to decode provider configuration", error).to_string()
-        })?;
+        let core_attrs = protocol_convert::protocol_to_core_value_map(attrs)
+            .map_err(provider_config_decode_error)?;
         let assume_role = extract_assume_role(core_attrs.get("assume_role"))?;
         if let Some(ar) = &assume_role {
             let allowed = extract_string_list(&core_attrs, "allowed_account_ids");
@@ -660,13 +680,12 @@ impl CarinaProvider for AwsccProcessProvider {
     }
 
     fn initialize(&mut self, attrs: &BTreeMap<String, proto::Value>) -> Result<(), String> {
-        let core_attrs = protocol_convert::protocol_to_core_value_map(attrs).map_err(|error| {
-            protocol_input_error("failed to decode provider configuration", error).to_string()
-        })?;
-        let ordered_attrs: indexmap::IndexMap<_, _> = core_attrs.clone().into_iter().collect();
+        let core_attrs = protocol_convert::protocol_to_core_value_map(attrs)
+            .map_err(provider_config_decode_error)?;
+        let cfg = extract_account_guard_config(&core_attrs)?;
+        let ordered_attrs: indexmap::IndexMap<_, _> = core_attrs.into_iter().collect();
         let region =
             carina_core::utils::extract_region_from_attrs(&ordered_attrs, "ap-northeast-1");
-        let cfg = extract_account_guard_config(&core_attrs)?;
         let provider = self
             .runtime
             .block_on(AwsccProvider::new_with_config(&region, &cfg));
@@ -1324,24 +1343,12 @@ mod tests {
         }
     }
 
-    fn is_awscc_stricter_shared_identity(identity: &CoreTypeIdentity) -> bool {
-        [
-            carina_aws_types::AwsType::IamOidcProviderArn,
-            carina_aws_types::AwsType::OrganizationsAccountArn,
-            carina_aws_types::AwsType::OrganizationsOrganizationArn,
-            carina_aws_types::AwsType::S3BucketArn,
-        ]
-        .into_iter()
-        .any(|aws_type| aws_type.identity() == *identity)
-    }
-
     fn valid_bridge_sample(identity: &CoreTypeIdentity) -> &'static str {
         if let Some(awscc_type) = schemas::catalog::AwsccType::ALL
             .iter()
             .copied()
             .find(|awscc_type| awscc_type.identity() == *identity)
         {
-            assert!(awscc_type.has_validator());
             return awscc_type.valid_sample();
         }
         if let Some(aws_type) = carina_aws_types::AwsType::ALL
@@ -1349,10 +1356,7 @@ mod tests {
             .copied()
             .find(|aws_type| aws_type.identity() == *identity)
         {
-            assert!(
-                aws_type.has_validator() || is_awscc_stricter_shared_identity(identity),
-                "callback-bearing shared identity {identity} is not declared validated or an AWSCC refinement"
-            );
+            assert!(aws_type.has_validator());
             return aws_type.valid_sample();
         }
 
@@ -1687,6 +1691,20 @@ mod tests {
             .expect_err("cross-account role outside allowed_account_ids must fail");
         assert!(err.contains("412038850359"), "must name target: {err}");
         assert!(err.contains("111111111111"), "must name allow list: {err}");
+    }
+
+    #[test]
+    fn provider_config_decode_error_keeps_the_conversion_cause_in_text() {
+        let provider = AwsccProcessProvider::new();
+        let attrs = BTreeMap::from([("region".to_string(), proto::Value::Float(f64::NAN))]);
+        let error = provider
+            .validate_config(&attrs)
+            .expect_err("non-finite provider configuration must fail decoding");
+        assert!(
+            error.contains("failed to decode provider configuration")
+                && error.contains("non-finite float"),
+            "v12's string-only config error must retain the complete chain: {error}"
+        );
     }
 
     #[test]

@@ -5,7 +5,6 @@
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
 use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
-use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{
     AttributeSchema, AttributeType, OperationConfig, ResourceSchema, StructField, types,
 };
@@ -13,19 +12,6 @@ use carina_core::schema::{
 const VALID_AVAILABILITY_MODE: &[&str] = &["zonal", "regional"];
 
 const VALID_CONNECTIVITY_TYPE: &[&str] = &["public", "private"];
-
-#[allow(dead_code)]
-fn validate_secondary_private_ip_address_count_range(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::Int(n)) = value {
-        if *n < 1 {
-            Err(format!("Value {} is out of range 1..", n))
-        } else {
-            Ok(())
-        }
-    } else {
-        Err("Expected integer".to_string())
-    }
-}
 
 /// Returns the schema config for ec2_nat_gateway (AWS::EC2::NatGateway)
 #[rustfmt::skip]

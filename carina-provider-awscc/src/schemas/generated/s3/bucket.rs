@@ -5,9 +5,7 @@
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
 use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
-use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField};
-use regex::Regex;
 
 pub fn arn() -> AttributeType {
     crate::schemas::catalog::s3_bucket_arn()
@@ -139,62 +137,6 @@ const VALID_TRANSITION_STORAGE_CLASS: &[&str] = &[
 ];
 
 const VALID_VERSIONING_CONFIGURATION_STATUS: &[&str] = &["Enabled", "Suspended"];
-
-#[allow(dead_code)]
-fn validate_days_after_initiation_range(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::Int(n)) = value {
-        if *n < 0 {
-            Err(format!("Value {} is out of range 0..", n))
-        } else {
-            Ok(())
-        }
-    } else {
-        Err("Expected integer".to_string())
-    }
-}
-
-#[allow(dead_code)]
-fn validate_max_age_range(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::Int(n)) = value {
-        if *n < 0 {
-            Err(format!("Value {} is out of range 0..", n))
-        } else {
-            Ok(())
-        }
-    } else {
-        Err("Expected integer".to_string())
-    }
-}
-
-#[allow(dead_code)]
-fn validate_string_length_max_255(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::String(s)) = value {
-        let s = s.expose_plaintext();
-        let len = s.chars().count();
-        if len > 255 {
-            Err(format!("String length {} is out of range ..=255", len))
-        } else {
-            Ok(())
-        }
-    } else {
-        Ok(())
-    }
-}
-
-#[allow(dead_code)]
-fn validate_string_length_max_1024(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::String(s)) = value {
-        let s = s.expose_plaintext();
-        let len = s.chars().count();
-        if len > 1024 {
-            Err(format!("String length {} is out of range ..=1024", len))
-        } else {
-            Ok(())
-        }
-    } else {
-        Ok(())
-    }
-}
 
 /// Returns the schema config for s3_bucket (AWS::S3::Bucket)
 #[rustfmt::skip]
@@ -852,45 +794,6 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "BucketName", dsl_name: "bucket_name" }],
         tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
         schema,
-    }
-}
-
-#[allow(dead_code)]
-fn validate_string_pattern_3ee03875337c12ab_len_max_20(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::String(s)) = value {
-        let s = s.expose_plaintext();
-        static RE: std::sync::LazyLock<Regex> =
-            std::sync::LazyLock::new(|| Regex::new("[0-9]+").expect("invalid pattern regex"));
-        if !RE.is_match(s) {
-            return Err(format!("Value '{}' does not match pattern [0-9]+", s));
-        }
-        let len = s.chars().count();
-        if len > 20 {
-            return Err(format!("String length {} is out of range ..=20", len));
-        }
-        Ok(())
-    } else {
-        Err("Expected string".to_string())
-    }
-}
-
-#[allow(dead_code)]
-fn validate_string_pattern_cc806c69dc4cdaf7(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::String(s)) = value {
-        let s = s.expose_plaintext();
-        static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-            Regex::new("^(\\d{4})-(0[0-9]|1[0-2])-([0-2]\\d|3[01])T([01]\\d|2[0-4]):([0-5]\\d):([0-6]\\d)((\\.\\d{3})?)Z$").expect("invalid pattern regex")
-        });
-        if RE.is_match(s) {
-            Ok(())
-        } else {
-            Err(format!(
-                "Value '{}' does not match pattern ^(\\d{{4}})-(0[0-9]|1[0-2])-([0-2]\\d|3[01])T([01]\\d|2[0-4]):([0-5]\\d):([0-6]\\d)((\\.\\d{{3}})?)Z$",
-                s
-            ))
-        }
-    } else {
-        Err("Expected string".to_string())
     }
 }
 
