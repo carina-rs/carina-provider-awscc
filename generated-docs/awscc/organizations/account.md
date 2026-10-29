@@ -1,6 +1,5 @@
 ---
 title: "awscc.organizations.Account"
-description: "AWSCC Organizations Account resource reference"
 ---
 
 

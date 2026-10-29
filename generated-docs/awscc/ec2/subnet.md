@@ -1,6 +1,5 @@
 ---
 title: "awscc.ec2.Subnet"
-description: "AWSCC EC2 Subnet resource reference"
 ---
 
 

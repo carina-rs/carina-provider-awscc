@@ -1,6 +1,5 @@
 ---
 title: "awscc.s3.BucketPolicy"
-description: "AWSCC S3 BucketPolicy resource reference"
 ---
 
 

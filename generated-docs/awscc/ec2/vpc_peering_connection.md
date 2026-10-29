@@ -1,6 +1,5 @@
 ---
 title: "awscc.ec2.VpcPeeringConnection"
-description: "AWSCC EC2 VpcPeeringConnection resource reference"
 ---
 
 

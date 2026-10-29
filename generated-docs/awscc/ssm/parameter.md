@@ -1,6 +1,5 @@
 ---
 title: "awscc.ssm.Parameter"
-description: "AWSCC SSM Parameter resource reference"
 ---
 
 

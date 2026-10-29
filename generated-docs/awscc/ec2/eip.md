@@ -1,6 +1,5 @@
 ---
 title: "awscc.ec2.Eip"
-description: "AWSCC EC2 Eip resource reference"
 ---
 
 

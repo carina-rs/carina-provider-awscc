@@ -1,6 +1,5 @@
 ---
 title: "awscc.ec2.IpamPool"
-description: "AWSCC EC2 IpamPool resource reference"
 ---
 
 

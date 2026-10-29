@@ -1,6 +1,5 @@
 ---
 title: "awscc.elasticloadbalancingv2.Listener"
-description: "AWSCC Elastic Load Balancing v2 Listener resource reference"
 ---
 
 

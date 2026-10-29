@@ -1,6 +1,5 @@
 ---
 title: "awscc.ec2.VpcGatewayAttachment"
-description: "AWSCC EC2 VpcGatewayAttachment resource reference"
 ---
 
 

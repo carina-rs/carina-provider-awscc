@@ -1,6 +1,5 @@
 ---
 title: "awscc.ec2.TransitGateway"
-description: "AWSCC EC2 TransitGateway resource reference"
 ---
 
 

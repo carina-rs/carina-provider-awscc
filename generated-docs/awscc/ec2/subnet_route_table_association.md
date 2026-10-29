@@ -1,6 +1,5 @@
 ---
 title: "awscc.ec2.SubnetRouteTableAssociation"
-description: "AWSCC EC2 SubnetRouteTableAssociation resource reference"
 ---
 
 

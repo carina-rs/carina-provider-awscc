@@ -34,70 +34,12 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CACHE_DIR="$PROJECT_ROOT/cfn-schema-cache"
 DOCS_DIR="$PROJECT_ROOT/generated-docs/awscc"
 EXAMPLES_DIR="$PROJECT_ROOT/examples"
-SERVICE_TITLES_FILE="$PROJECT_ROOT/docs/registry/service-titles.json"
 SCHEMAS_DIR="$PROJECT_ROOT/carina-provider-awscc/src/schemas/generated"
 mkdir -p "$CACHE_DIR"
 rm -rf "$DOCS_DIR"
 mkdir -p "$DOCS_DIR"
 
 cd "$PROJECT_ROOT"
-
-# Look up a lowercase service code's canonical AWS display name.
-service_display_name() {
-    python3 - "$SERVICE_TITLES_FILE" "$1" <<'PY'
-import json
-import sys
-
-
-class DuplicateJSONKeyError(ValueError):
-    def __init__(self, key):
-        super().__init__(key)
-        self.key = key
-
-
-def reject_duplicate_json_keys(pairs):
-    result = {}
-    for key, value in pairs:
-        if key in result:
-            raise DuplicateJSONKeyError(key)
-        result[key] = value
-    return result
-
-
-path, service_id = sys.argv[1:]
-try:
-    with open(path, encoding="utf-8") as file:
-        titles = json.load(file, object_pairs_hook=reject_duplicate_json_keys)
-except DuplicateJSONKeyError as error:
-    print(
-        f"error: {path}: duplicate AWS service title key {error.key!r}",
-        file=sys.stderr,
-    )
-    raise SystemExit(1)
-except (OSError, UnicodeError, json.JSONDecodeError) as error:
-    print(f"error: cannot read AWS service titles from {path}: {error}", file=sys.stderr)
-    raise SystemExit(1)
-
-if not isinstance(titles, dict):
-    print(f"error: AWS service titles file is not a JSON object: {path}", file=sys.stderr)
-    raise SystemExit(1)
-if service_id not in titles:
-    print(
-        f"error: AWS service {service_id!r} has no display title in {path}",
-        file=sys.stderr,
-    )
-    raise SystemExit(1)
-
-title = titles[service_id]
-if not isinstance(title, str):
-    print(
-        f"error: display title for AWS service {service_id!r} is not a string in {path}",
-        file=sys.stderr,
-    )
-    raise SystemExit(1)
-print(title)
-PY
-}
 
 # Derive resource types from generated schema files (single source of truth).
 # Each .rs file (excluding mod.rs) has a header comment:
@@ -136,7 +78,7 @@ for TYPE_NAME in "${RESOURCE_TYPES[@]}"; do
     # (carina-provider-awscc/src/schemas/generated/<svc>/<resource>.rs) and the
     # 1:1 basename invariant enforced by scripts/check-docs-drift.sh.
     # Strategy Y casing makes the DSL surface PascalCase ("VpcEndpoint"),
-    # so we convert here only for the filename. Title, description, and the
+    # so we convert here only for the filename. The title and the
     # markdown body keep the codegen's PascalCase DSL form.
     RESOURCE_FILE=$(echo "$RESOURCE" | sed -E 's/([a-z0-9])([A-Z])/\1_\2/g' | tr '[:upper:]' '[:lower:]')
     FULL_RESOURCE=$("$CODEGEN_BIN" --type-name "$TYPE_NAME" --print-full-resource-name)
@@ -196,12 +138,10 @@ for TYPE_NAME in "${RESOURCE_TYPES[@]}"; do
     # Add Starlight frontmatter
     if [ -f "$OUTPUT_FILE" ]; then
         DSL_NAME_FULL="awscc.$DSL_NAME"
-        SERVICE_DISPLAY=$(service_display_name "$SERVICE")
         FRONTMATTER_TMPFILE=$(mktemp)
         {
             echo "---"
             echo "title: \"$DSL_NAME_FULL\""
-            echo "description: \"AWSCC $SERVICE_DISPLAY $RESOURCE resource reference\""
             echo "---"
             echo ""
             sed '1{/^# /d;}' "$OUTPUT_FILE"

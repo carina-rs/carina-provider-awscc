@@ -1,6 +1,5 @@
 ---
 title: "awscc.ec2.VpcEndpoint"
-description: "AWSCC EC2 VpcEndpoint resource reference"
 ---
 
 

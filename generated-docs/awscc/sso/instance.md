@@ -1,6 +1,5 @@
 ---
 title: "awscc.sso.Instance"
-description: "AWSCC IAM Identity Center Instance resource reference"
 ---
 
 

@@ -1,6 +1,5 @@
 ---
 title: "awscc.ec2.FlowLog"
-description: "AWSCC EC2 FlowLog resource reference"
 ---
 
 

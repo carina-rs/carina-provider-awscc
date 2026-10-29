@@ -1,6 +1,5 @@
 ---
 title: "awscc.ec2.TransitGatewayAttachment"
-description: "AWSCC EC2 TransitGatewayAttachment resource reference"
 ---
 
 

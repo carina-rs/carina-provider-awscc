@@ -1,6 +1,5 @@
 ---
 title: "awscc.kms.Key"
-description: "AWSCC KMS Key resource reference"
 ---
 
 

@@ -1,6 +1,5 @@
 ---
 title: "awscc.elasticloadbalancingv2.LoadBalancer"
-description: "AWSCC Elastic Load Balancing v2 LoadBalancer resource reference"
 ---
 
 
