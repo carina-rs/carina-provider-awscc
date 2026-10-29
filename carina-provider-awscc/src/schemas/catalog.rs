@@ -1,9 +1,9 @@
 //! AWSCC-only schema identities and AWSCC refinements of shared AWS identities.
 //!
 //! `carina-aws-types` owns identities shared by the AWS and AWSCC providers.
-//! This catalog contains only identities introduced by AWSCC schemas. Its row
-//! format deliberately mirrors `carina_aws_types::AwsType`; adding a new
-//! catalog field must update both declarations together.
+//! This catalog contains only identities introduced by AWSCC schemas and
+//! refinements that add AWSCC-specific validation. Its rows use the exported
+//! `carina_aws_types::define_aws_type_catalog` grammar shared with `AwsType`.
 
 use carina_aws_types::AwsType;
 use carina_core::resource::{ConcreteValue, Value};
@@ -93,155 +93,13 @@ fn validated_int_enum(identity: TypeIdentity, valid_values: &'static [i64]) -> A
     )
 }
 
-macro_rules! define_awscc_types {
-    (
-        overlay {
-            $(
-                $(#[$overlay_meta:meta])*
-                $overlay_variant:ident => $overlay_wrapper:ident {
-                    segments: [$($overlay_segment:literal),* $(,)?],
-                    kind: $overlay_kind:literal,
-                    valid_sample: $overlay_valid_sample:literal,
-                    constructor: $overlay_constructor:expr $(,)?
-                }
-            ),* $(,)?
-        }
-        refinements {
-            $(
-                $(#[$refinement_meta:meta])*
-                $refinement_variant:ident => $refinement_wrapper:ident {
-                    refines: $refined_aws_type:path,
-                    constructor: $refinement_constructor:expr $(,)?
-                }
-            ),* $(,)?
-        }
-        int_enums {
-            $(
-                $(#[$int_meta:meta])*
-                $int_variant:ident => $int_wrapper:ident {
-                    segments: [$($int_segment:literal),* $(,)?],
-                    kind: $int_kind:literal,
-                    valid_sample: $int_valid_sample:literal,
-                    values: [$($int_value:literal),+ $(,)?] $(,)?
-                }
-            ),* $(,)?
-        }
-    ) => {
-        /// Every identity and shared-identity refinement declared by AWSCC.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-        pub enum AwsccType {
-            $($overlay_variant,)*
-            $($refinement_variant,)*
-            $($int_variant),*
-        }
-
-        impl AwsccType {
-            /// Closed enumeration of all AWSCC catalog rows.
-            pub const ALL: &'static [Self] = &[
-                $(Self::$overlay_variant,)*
-                $(Self::$refinement_variant,)*
-                $(Self::$int_variant),*
-            ];
-
-            /// Structured identity owned or refined by this row.
-            pub fn identity(self) -> TypeIdentity {
-                match self {
-                    $(Self::$overlay_variant => {
-                        let segments: &[&str] = &[$($overlay_segment),*];
-                        $crate::schemas::catalog::overlay_identity(segments, $overlay_kind)
-                    },)*
-                    $(Self::$refinement_variant => $refined_aws_type.identity(),)*
-                    $(Self::$int_variant => {
-                        let segments: &[&str] = &[$($int_segment),*];
-                        $crate::schemas::catalog::overlay_identity(segments, $int_kind)
-                    }),*
-                }
-            }
-
-            /// Shared AWS catalog row whose identity this row refines.
-            pub const fn refines(self) -> Option<AwsType> {
-                match self {
-                    $(Self::$overlay_variant => None,)*
-                    $(Self::$refinement_variant => Some($refined_aws_type),)*
-                    $(Self::$int_variant => None),*
-                }
-            }
-
-            /// Known-valid provider-facing value for this row.
-            pub const fn valid_sample(self) -> &'static str {
-                match self {
-                    $(Self::$overlay_variant => $overlay_valid_sample,)*
-                    $(Self::$refinement_variant => $refined_aws_type.valid_sample(),)*
-                    $(Self::$int_variant => $int_valid_sample),*
-                }
-            }
-
-            /// Allowed values for an integer-enum row.
-            pub const fn allowed_int_values(self) -> Option<&'static [i64]> {
-                match self {
-                    $(Self::$overlay_variant => None,)*
-                    $(Self::$refinement_variant => None,)*
-                    $(Self::$int_variant => Some(&[$($int_value),+])),*
-                }
-            }
-
-            /// Rust constructor expression emitted by schema codegen.
-            pub const fn constructor_path(self) -> &'static str {
-                match self {
-                    $(Self::$overlay_variant => concat!(
-                        "crate::schemas::catalog::",
-                        stringify!($overlay_wrapper),
-                        "()",
-                    ),)*
-                    $(Self::$refinement_variant => concat!(
-                        "crate::schemas::catalog::",
-                        stringify!($refinement_wrapper),
-                        "()",
-                    ),)*
-                    $(Self::$int_variant => concat!(
-                        "crate::schemas::catalog::",
-                        stringify!($int_wrapper),
-                        "()",
-                    )),*
-                }
-            }
-
-            /// Construct this row's identity-bearing attribute type.
-            pub fn attribute_type(self) -> AttributeType {
-                match self {
-                    $(Self::$overlay_variant => ($overlay_constructor)(self.identity()),)*
-                    $(Self::$refinement_variant => ($refinement_constructor)(self.identity()),)*
-                    $(Self::$int_variant => validated_int_enum(
-                        self.identity(),
-                        &[$($int_value),+],
-                    )),*
-                }
-            }
-        }
-
-        $(
-            $(#[$overlay_meta])*
-            pub fn $overlay_wrapper() -> AttributeType {
-                AwsccType::$overlay_variant.attribute_type()
-            }
-        )*
-        $(
-            $(#[$refinement_meta])*
-            pub fn $refinement_wrapper() -> AttributeType {
-                AwsccType::$refinement_variant.attribute_type()
-            }
-        )*
-        $(
-            $(#[$int_meta])*
-            pub fn $int_wrapper() -> AttributeType {
-                AwsccType::$int_variant.attribute_type()
-            }
-        )*
-    };
-}
-
-define_awscc_types! {
-    overlay {
+carina_aws_types::define_aws_type_catalog! {
+    /// Every identity and shared-identity refinement declared by AWSCC.
+    pub enum AwsccType {
+        identity_constructor: overlay_identity,
+        refinement_type: AwsType,
+        constructor_path_prefix: "crate::schemas::catalog::",
+        rows: {
         /// CloudFront distribution ARN.
         CloudFrontDistributionArn => cloudfront_distribution_arn {
             segments: ["cloudfront", "Distribution"],
@@ -333,8 +191,6 @@ define_awscc_types! {
                 "wafv2",
             ),
         },
-    }
-    refinements {
         /// AWSCC keeps the stricter OIDC callback while reusing the shared identity.
         IamOidcProviderArn => iam_oidc_provider_arn {
             refines: AwsType::IamOidcProviderArn,
@@ -378,14 +234,13 @@ define_awscc_types! {
                 "s3",
             ),
         },
-    }
-    int_enums {
         /// Cloud Control FlowLog aggregation interval enum.
         Ec2FlowLogMaxAggregationInterval => ec2_flow_log_max_aggregation_interval {
             segments: ["ec2", "FlowLog"],
             kind: "MaxAggregationInterval",
             valid_sample: "60",
             values: [60, 600],
+            constructor: validated_int_enum,
         },
         /// Cloud Control LogGroup retention-day enum.
         LogsLogGroupRetentionInDays => logs_log_group_retention_in_days {
@@ -396,7 +251,9 @@ define_awscc_types! {
                 1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096,
                 1827, 2192, 2557, 2922, 3288, 3653,
             ],
+            constructor: validated_int_enum,
         },
+        }
     }
 }
 
@@ -521,5 +378,43 @@ mod tests {
                 RawShape::Int { .. }
             ));
         }
+    }
+
+    #[test]
+    fn catalog_metadata_snapshot() {
+        const EXPECTED: &str = r#"CloudFrontDistributionArn|aws|cloudfront/Distribution|Arn|None|arn:aws:cloudfront::123456789012:distribution/E1234567890ABC|None|crate::schemas::catalog::cloudfront_distribution_arn()
+DynamoDbTableArn|aws|dynamodb/Table|Arn|None|arn:aws:dynamodb:ap-northeast-1:123456789012:table/example|None|crate::schemas::catalog::dynamodb_table_arn()
+Ec2IpamPoolArn|aws|ec2/IpamPool|Arn|None|arn:aws:ec2:ap-northeast-1:123456789012:ipam-pool/ipam-pool-12345678|None|crate::schemas::catalog::ec2_ipam_pool_arn()
+Ec2IpamArn|aws|ec2/Ipam|Arn|None|arn:aws:ec2:ap-northeast-1:123456789012:ipam/ipam-12345678|None|crate::schemas::catalog::ec2_ipam_arn()
+EcsClusterArn|aws|ecs/Cluster|Arn|None|arn:aws:ecs:ap-northeast-1:123456789012:cluster/example|None|crate::schemas::catalog::ecs_cluster_arn()
+LogsLogGroupArn|aws|logs/LogGroup|Arn|None|arn:aws:logs:ap-northeast-1:123456789012:log-group:example|None|crate::schemas::catalog::logs_log_group_arn()
+Wafv2WebAclArn|aws|wafv2/WebAcl|Arn|None|arn:aws:wafv2:ap-northeast-1:123456789012:regional/webacl/example/12345678-1234-1234-1234-123456789abc|None|crate::schemas::catalog::wafv2_web_acl_arn()
+IamOidcProviderArn|aws|iam/OidcProvider|Arn|Some(IamOidcProviderArn)|arn:aws:iam::123456789012:oidc-provider/example.com|None|crate::schemas::catalog::iam_oidc_provider_arn()
+OrganizationsAccountArn|aws|organizations/Account|Arn|Some(OrganizationsAccountArn)|arn:aws:organizations::123456789012:account/o-example/123456789012|None|crate::schemas::catalog::organizations_account_arn()
+OrganizationsOrganizationArn|aws|organizations/Organization|Arn|Some(OrganizationsOrganizationArn)|arn:aws:organizations::123456789012:organization/o-example|None|crate::schemas::catalog::organizations_organization_arn()
+S3BucketArn|aws|s3/Bucket|Arn|Some(S3BucketArn)|arn:aws:s3:::example-bucket|None|crate::schemas::catalog::s3_bucket_arn()
+Ec2FlowLogMaxAggregationInterval|aws|ec2/FlowLog|MaxAggregationInterval|None|60|Some([60, 600])|crate::schemas::catalog::ec2_flow_log_max_aggregation_interval()
+LogsLogGroupRetentionInDays|aws|logs/LogGroup|RetentionInDays|None|30|Some([1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096, 1827, 2192, 2557, 2922, 3288, 3653])|crate::schemas::catalog::logs_log_group_retention_in_days()"#;
+
+        let snapshot = AwsccType::ALL
+            .iter()
+            .copied()
+            .map(|awscc_type| {
+                let identity = awscc_type.identity();
+                format!(
+                    "{awscc_type:?}|{}|{}|{}|{:?}|{}|{:?}|{}",
+                    identity.provider.as_deref().unwrap_or("<none>"),
+                    identity.segments.join("/"),
+                    identity.kind,
+                    awscc_type.refines(),
+                    awscc_type.valid_sample(),
+                    awscc_type.allowed_int_values(),
+                    awscc_type.constructor_path(),
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert_eq!(snapshot, EXPECTED);
     }
 }
