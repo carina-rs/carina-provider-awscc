@@ -1,6 +1,5 @@
 ---
 title: "awscc.ecr.Repository"
-description: "AWSCC ECR Repository resource reference"
 ---
 
 

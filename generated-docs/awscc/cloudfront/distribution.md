@@ -1,6 +1,5 @@
 ---
 title: "awscc.cloudfront.Distribution"
-description: "AWSCC CloudFront Distribution resource reference"
 ---
 
 

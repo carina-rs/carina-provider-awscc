@@ -1,6 +1,5 @@
 ---
 title: "awscc.ec2.RouteTable"
-description: "AWSCC EC2 RouteTable resource reference"
 ---
 
 

@@ -1,6 +1,5 @@
 ---
 title: "awscc.ec2.EgressOnlyInternetGateway"
-description: "AWSCC EC2 EgressOnlyInternetGateway resource reference"
 ---
 
 

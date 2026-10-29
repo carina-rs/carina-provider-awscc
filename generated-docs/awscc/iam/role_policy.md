@@ -1,6 +1,5 @@
 ---
 title: "awscc.iam.RolePolicy"
-description: "AWSCC IAM RolePolicy resource reference"
 ---
 
 

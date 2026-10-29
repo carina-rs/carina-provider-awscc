@@ -1,6 +1,5 @@
 ---
 title: "awscc.iam.OidcProvider"
-description: "AWSCC IAM OidcProvider resource reference"
 ---
 
 

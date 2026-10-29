@@ -1,6 +1,5 @@
 ---
 title: "awscc.wafv2.WebAclAssociation"
-description: "AWSCC WAFv2 WebAclAssociation resource reference"
 ---
 
 

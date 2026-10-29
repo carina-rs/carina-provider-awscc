@@ -1,6 +1,5 @@
 ---
 title: "awscc.identitystore.Group"
-description: "AWSCC Identity Store Group resource reference"
 ---
 
 

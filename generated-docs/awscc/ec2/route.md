@@ -1,6 +1,5 @@
 ---
 title: "awscc.ec2.Route"
-description: "AWSCC EC2 Route resource reference"
 ---
 
 

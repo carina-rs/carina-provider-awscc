@@ -1,6 +1,5 @@
 ---
 title: "awscc.s3.Bucket"
-description: "AWSCC S3 Bucket resource reference"
 ---
 
 

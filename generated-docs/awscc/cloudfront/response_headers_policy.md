@@ -1,6 +1,5 @@
 ---
 title: "awscc.cloudfront.ResponseHeadersPolicy"
-description: "AWSCC CloudFront ResponseHeadersPolicy resource reference"
 ---
 
 

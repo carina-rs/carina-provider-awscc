@@ -1,6 +1,5 @@
 ---
 title: "awscc.sso.PermissionSet"
-description: "AWSCC IAM Identity Center PermissionSet resource reference"
 ---
 
 

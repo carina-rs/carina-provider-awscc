@@ -1,6 +1,5 @@
 ---
 title: "awscc.ec2.VpnGateway"
-description: "AWSCC EC2 VpnGateway resource reference"
 ---
 
 

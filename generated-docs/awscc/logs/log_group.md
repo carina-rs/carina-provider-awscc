@@ -1,6 +1,5 @@
 ---
 title: "awscc.logs.LogGroup"
-description: "AWSCC CloudWatch Logs LogGroup resource reference"
 ---
 
 

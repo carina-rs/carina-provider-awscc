@@ -1,6 +1,5 @@
 ---
 title: "awscc.dynamodb.Table"
-description: "AWSCC DYNAMODB Table resource reference"
 ---
 
 

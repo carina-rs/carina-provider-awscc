@@ -1,6 +1,5 @@
 ---
 title: "awscc.ec2.SecurityGroupEgress"
-description: "AWSCC EC2 SecurityGroupEgress resource reference"
 ---
 
 

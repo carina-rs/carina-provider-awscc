@@ -1,6 +1,5 @@
 ---
 title: "awscc.cloudfront.OriginAccessControl"
-description: "AWSCC CloudFront OriginAccessControl resource reference"
 ---
 
 

@@ -1,6 +1,5 @@
 ---
 title: "awscc.iam.Role"
-description: "AWSCC IAM Role resource reference"
 ---
 
 

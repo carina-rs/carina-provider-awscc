@@ -1,6 +1,5 @@
 ---
 title: "awscc.elasticloadbalancingv2.TargetGroup"
-description: "AWSCC Elastic Load Balancing v2 TargetGroup resource reference"
 ---
 
 

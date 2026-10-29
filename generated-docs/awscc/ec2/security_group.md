@@ -1,6 +1,5 @@
 ---
 title: "awscc.ec2.SecurityGroup"
-description: "AWSCC EC2 SecurityGroup resource reference"
 ---
 
 

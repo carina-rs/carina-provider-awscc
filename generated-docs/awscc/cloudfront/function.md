@@ -1,6 +1,5 @@
 ---
 title: "awscc.cloudfront.Function"
-description: "AWSCC CloudFront Function resource reference"
 ---
 
 

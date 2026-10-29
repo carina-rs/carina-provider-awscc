@@ -1,6 +1,5 @@
 ---
 title: "awscc.ec2.NatGateway"
-description: "AWSCC EC2 NatGateway resource reference"
 ---
 
 

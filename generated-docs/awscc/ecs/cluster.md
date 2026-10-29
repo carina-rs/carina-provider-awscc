@@ -1,6 +1,5 @@
 ---
 title: "awscc.ecs.Cluster"
-description: "AWSCC ECS Cluster resource reference"
 ---
 
 

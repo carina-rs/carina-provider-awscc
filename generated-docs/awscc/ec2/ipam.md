@@ -1,6 +1,5 @@
 ---
 title: "awscc.ec2.Ipam"
-description: "AWSCC EC2 Ipam resource reference"
 ---
 
 

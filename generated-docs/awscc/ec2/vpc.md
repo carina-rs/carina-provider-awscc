@@ -1,6 +1,5 @@
 ---
 title: "awscc.ec2.Vpc"
-description: "AWSCC EC2 Vpc resource reference"
 ---
 
 

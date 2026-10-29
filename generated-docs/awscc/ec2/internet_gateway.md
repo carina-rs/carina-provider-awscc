@@ -1,6 +1,5 @@
 ---
 title: "awscc.ec2.InternetGateway"
-description: "AWSCC EC2 InternetGateway resource reference"
 ---
 
 
