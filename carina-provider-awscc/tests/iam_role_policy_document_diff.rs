@@ -38,7 +38,10 @@ fn assume_role_policy_document(actions: &[&str], principal_arns: &[&str]) -> Val
 
 #[test]
 fn iam_role_policy_document_diff_ignores_unordered_value_list_reordering() {
-    let schema = iam_role_config().schema;
+    let schema = iam_role_config()
+        .schema
+        .validate()
+        .expect("iam.Role schema must be valid");
     let original = assume_role_policy_document(
         &["sts:AssumeRole", "sts:TagSession"],
         &[

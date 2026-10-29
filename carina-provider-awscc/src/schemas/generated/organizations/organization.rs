@@ -11,11 +11,7 @@ use regex::Regex;
 
 pub fn arn() -> AttributeType {
     AttributeType::refined_string_with_validator(
-        Some(carina_aws_types::provider_type(
-            "organizations",
-            "Organization",
-            "Arn",
-        )),
+        carina_aws_types::provider_type("organizations", "Organization", "Arn"),
         Some("^arn:(aws|aws-cn|aws-us-gov):organizations:.*$".to_string()),
         None,
         legacy_validator(|value| {
@@ -43,46 +39,47 @@ pub fn organizations_organization_config() -> AwsccSchemaConfig {
         schema: ResourceSchema::new("organizations.Organization")
 	        .with_description("Resource schema for AWS::Organizations::Organization")
         .attribute(
-            AttributeSchema::new("arn", self::arn())
-                .read_only()
+            AttributeSchema::provider_populated("arn", self::arn())
                 .with_description("The Amazon Resource Name (ARN) of an organization. (read-only)")
-                .with_provider_name("Arn"),
+                .with_provider_name("Arn")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("feature_set", AttributeType::enum_(carina_core::schema::enum_identity("FeatureSet", Some("aws.organizations.Organization")), Some(vec!["ALL".to_string(), "CONSOLIDATED_BILLING".to_string()]), vec![("ALL".to_string(), "all".to_string()), ("CONSOLIDATED_BILLING".to_string(), "consolidated_billing".to_string())], None, None))
+            AttributeSchema::optional("feature_set", AttributeType::enum_(carina_core::schema::enum_identity("FeatureSet", Some("aws.organizations.Organization")), Some(vec!["ALL".to_string(), "CONSOLIDATED_BILLING".to_string()]), vec![("ALL".to_string(), "all".to_string()), ("CONSOLIDATED_BILLING".to_string(), "consolidated_billing".to_string())], None, None))
                 .with_description("Specifies the feature set supported by the new organization. Each feature set supports different levels of functionality.")
                 .with_provider_name("FeatureSet")
-                .with_default(Value::Concrete(ConcreteValue::String("ALL".to_string().into()))),
+                .with_default(Value::Concrete(ConcreteValue::String("ALL".to_string().into())))
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("id", AttributeType::refined_string(None, Some("^o-[a-z0-9]{10,32}$".to_string()), None, None))
-                .read_only()
+            AttributeSchema::provider_populated("id", AttributeType::refined_string(None, Some("^o-[a-z0-9]{10,32}$".to_string()), None, None))
                 .with_description("The unique identifier (ID) of an organization. (read-only)")
-                .with_provider_name("Id"),
+                .with_provider_name("Id")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("management_account_arn", carina_aws_types::arn())
-                .read_only()
+            AttributeSchema::provider_populated("management_account_arn", carina_aws_types::arn())
                 .with_description("The Amazon Resource Name (ARN) of the account that is designated as the management account for the organization. (read-only)")
-                .with_provider_name("ManagementAccountArn"),
+                .with_provider_name("ManagementAccountArn")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("management_account_email", AttributeType::refined_string(None, Some("[^\\s@]+@[^\\s@]+\\.[^\\s@]+".to_string()), Some((Some(6), Some(64))), None))
-                .read_only()
+            AttributeSchema::provider_populated("management_account_email", AttributeType::refined_string(None, Some("[^\\s@]+@[^\\s@]+\\.[^\\s@]+".to_string()), Some((Some(6), Some(64))), None))
                 .with_description("The email address that is associated with the AWS account that is designated as the management account for the organization. (read-only)")
-                .with_provider_name("ManagementAccountEmail"),
+                .with_provider_name("ManagementAccountEmail")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("management_account_id", carina_aws_types::aws_account_id())
-                .read_only()
+            AttributeSchema::provider_populated("management_account_id", carina_aws_types::aws_account_id())
                 .with_description("The unique identifier (ID) of the management account of an organization. (read-only)")
-                .with_provider_name("ManagementAccountId"),
+                .with_provider_name("ManagementAccountId")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("root_id", AttributeType::refined_string(None, Some("^r-[0-9a-z]{4,32}$".to_string()), Some((None, Some(64))), None))
-                .read_only()
+            AttributeSchema::provider_populated("root_id", AttributeType::refined_string(None, Some("^r-[0-9a-z]{4,32}$".to_string()), Some((None, Some(64))), None))
                 .with_description("The unique identifier (ID) for the root. (read-only)")
-                .with_provider_name("RootId"),
+                .with_provider_name("RootId")
+                .build(),
         )
         .with_conflicting_replacement()
     }

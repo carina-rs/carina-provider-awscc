@@ -11,11 +11,7 @@ use regex::Regex;
 
 pub fn arn() -> AttributeType {
     AttributeType::refined_string_with_validator(
-        Some(carina_aws_types::provider_type(
-            "iam",
-            "OidcProvider",
-            "Arn",
-        )),
+        carina_aws_types::provider_type("iam", "OidcProvider", "Arn"),
         Some("^arn:(aws|aws-cn|aws-us-gov):iam::[^:]*:oidc-provider/.+$".to_string()),
         None,
         legacy_validator(|value| {
@@ -76,13 +72,13 @@ pub fn iam_oidc_provider_config() -> AwsccSchemaConfig {
         schema: ResourceSchema::new("iam.OidcProvider")
             .with_description("Resource Type definition for AWS::IAM::OIDCProvider")
             .attribute(
-                AttributeSchema::new("arn", self::arn())
-                    .read_only()
+                AttributeSchema::provider_populated("arn", self::arn())
                     .with_description("Amazon Resource Name (ARN) of the OIDC provider (read-only)")
-                    .with_provider_name("Arn"),
+                    .with_provider_name("Arn")
+                    .build(),
             )
             .attribute(
-                AttributeSchema::new(
+                AttributeSchema::optional(
                     "client_id_list",
                     AttributeType::unordered_list(AttributeType::refined_string(
                         None,
@@ -91,15 +87,17 @@ pub fn iam_oidc_provider_config() -> AwsccSchemaConfig {
                         None,
                     )),
                 )
-                .with_provider_name("ClientIdList"),
+                .with_provider_name("ClientIdList")
+                .build(),
             )
             .attribute(
-                AttributeSchema::new("tags", carina_aws_types::tags_type())
+                AttributeSchema::optional("tags", carina_aws_types::tags_type())
                     .with_provider_name("Tags")
-                    .with_block_name("tag"),
+                    .with_block_name("tag")
+                    .build(),
             )
             .attribute(
-                AttributeSchema::new(
+                AttributeSchema::optional(
                     "thumbprint_list",
                     AttributeType::refined_list(
                         AttributeType::refined_string(
@@ -110,31 +108,24 @@ pub fn iam_oidc_provider_config() -> AwsccSchemaConfig {
                         ),
                         false,
                         Some((None, Some(5))),
-                        legacy_validator(validate_list_items_max_5),
                     ),
                 )
-                .with_provider_name("ThumbprintList"),
+                .with_provider_name("ThumbprintList")
+                .build(),
             )
             .attribute(
-                AttributeSchema::new(
+                AttributeSchema::optional(
                     "url",
                     AttributeType::refined_string(None, None, Some((Some(1), Some(255))), None),
                 )
                 .create_only()
-                .with_provider_name("Url"),
+                .with_provider_name("Url")
+                .build(),
             )
             .with_coexisting_replacement()
-            .with_validator(|attrs| {
-                let mut errors = Vec::new();
-                if let Err(mut e) = carina_aws_types::validate_tags_map(attrs) {
-                    errors.append(&mut e);
-                }
-                if errors.is_empty() {
-                    Ok(())
-                } else {
-                    Err(errors)
-                }
-            }),
+            .with_declared_validators(vec![
+                carina_provider_protocol::types::ValidatorType::TagsKeyValueCheck,
+            ]),
     }
 }
 

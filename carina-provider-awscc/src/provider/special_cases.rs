@@ -64,7 +64,7 @@ impl AwsccProvider {
     /// Handle special attributes for create
     pub(crate) fn create_special_attributes(
         &self,
-        _resource: &Resource,
+        _resource: &Resource<impl Sized>,
         _desired_state: &mut serde_json::Map<String, serde_json::Value>,
     ) {
     }

@@ -28,16 +28,16 @@ pub fn wafv2_web_acl_association_config() -> AwsccSchemaConfig {
                 "Associates WebACL to Application Load Balancer, CloudFront or API Gateway.",
             )
             .attribute(
-                AttributeSchema::new("resource_arn", carina_aws_types::arn())
-                    .required()
+                AttributeSchema::required("resource_arn", carina_aws_types::arn())
                     .create_only()
-                    .with_provider_name("ResourceArn"),
+                    .with_provider_name("ResourceArn")
+                    .build(),
             )
             .attribute(
-                AttributeSchema::new("web_acl_arn", carina_aws_types::arn())
-                    .required()
+                AttributeSchema::required("web_acl_arn", carina_aws_types::arn())
                     .create_only()
-                    .with_provider_name("WebACLArn"),
+                    .with_provider_name("WebACLArn")
+                    .build(),
             )
             .with_conflicting_replacement(),
     }

@@ -78,19 +78,18 @@ where
             Some(c) => c,
             None => continue,
         };
-        // Route provider state through `Schema::canonicalize_state_attr` so
+        // Route provider state through the validated attribute cursor so
         // cyclic CFN attributes (`AttributeType::Ref`) resolve against this
-        // resource's def map. The old defs-less wrapper silently used an
-        // empty definition map and panicked on every Ref-containing attribute
-        // (carina#3345 Symptom B — `ec2_vpc_endpoint/{gateway,interface}`
-        // plan-verify).
-        let schema_view = carina_core::schema::Schema::with_defs(config.schema.defs().clone());
+        // resource's definition map and retain their effective ancestry.
+        let schema = config
+            .schema
+            .clone()
+            .validate()
+            .unwrap_or_else(|error| panic!("{error}"));
         let mut new_attrs = HashMap::with_capacity(state.attributes.len());
         for (key, value) in std::mem::take(&mut state.attributes) {
-            let canon = match config.schema.attributes().get(key.as_str()) {
-                Some(attr_schema) => {
-                    schema_view.canonicalize_state_attr(attr_schema.attr_type(), value)
-                }
+            let canon = match schema.effective_attribute(key.as_str()) {
+                Some(attribute) => attribute.canonicalize_state(value),
                 None => value,
             };
             new_attrs.insert(key, canon);
@@ -162,7 +161,7 @@ mod tests {
             "availability_zone".to_string(),
             Value::Concrete(ConcreteValue::String("ap-northeast-1a".to_string().into())),
         );
-        let mut resources = vec![resource];
+        let mut resources = vec![resource.into()];
 
         crate::AwsccNormalizer
             .normalize_desired(&mut resources)

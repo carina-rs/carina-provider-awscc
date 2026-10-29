@@ -46,82 +46,93 @@ pub fn ec2_security_group_ingress_config() -> AwsccSchemaConfig {
         schema: ResourceSchema::new("ec2.SecurityGroupIngress")
 	        .with_description("Resource Type definition for AWS::EC2::SecurityGroupIngress")
         .attribute(
-            AttributeSchema::new("cidr_ip", types::ipv4_cidr())
+            AttributeSchema::optional("cidr_ip", types::ipv4_cidr())
                 .create_only()
                 .with_description("The IPv4 ranges")
-                .with_provider_name("CidrIp"),
+                .with_provider_name("CidrIp")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("cidr_ipv6", types::ipv6_cidr())
+            AttributeSchema::optional("cidr_ipv6", types::ipv6_cidr())
                 .create_only()
                 .with_description("[VPC only] The IPv6 ranges")
-                .with_provider_name("CidrIpv6"),
+                .with_provider_name("CidrIpv6")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("description", AttributeType::string())
+            AttributeSchema::optional("description", AttributeType::string())
                 .with_description("Updates the description of an ingress (inbound) security group rule. You can replace an existing description, or add a description to a rule that did not have one previously")
-                .with_provider_name("Description"),
+                .with_provider_name("Description")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("from_port", AttributeType::refined_int(None, Some((Some(-1), Some(65535)))))
+            AttributeSchema::optional("from_port", AttributeType::refined_int(None, Some((Some(-1), Some(65535)))))
                 .create_only()
                 .with_description("The start of port range for the TCP and UDP protocols, or an ICMP/ICMPv6 type number. A value of -1 indicates all ICMP/ICMPv6 types. If you specify all ICMP/ICMPv6 types, you must specify all codes. Use this for ICMP and any protocol that uses ports.")
-                .with_provider_name("FromPort"),
+                .with_provider_name("FromPort")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("group_id", carina_aws_types::security_group_id())
+            AttributeSchema::optional("group_id", carina_aws_types::security_group_id())
                 .create_only()
                 .with_description("The ID of the security group. You must specify either the security group ID or the security group name in the request. For security groups in a nondefault VPC, you must specify the security group ID. You must specify the GroupName property or the GroupId property. For security groups that are in a VPC, you must use the GroupId property.")
-                .with_provider_name("GroupId"),
+                .with_provider_name("GroupId")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("group_name", AttributeType::string())
+            AttributeSchema::optional("group_name", AttributeType::string())
                 .create_only()
                 .with_description("The name of the security group.")
-                .with_provider_name("GroupName"),
+                .with_provider_name("GroupName")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("id", AttributeType::string())
-                .read_only()
+            AttributeSchema::provider_populated("id", AttributeType::string())
                 .with_description("The Security Group Rule Id (read-only)")
-                .with_provider_name("Id"),
+                .with_provider_name("Id")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("ip_protocol", AttributeType::enum_(carina_core::schema::enum_identity("IpProtocol", Some("aws.ec2.SecurityGroupIngress")), Some(vec!["tcp".to_string(), "udp".to_string(), "icmp".to_string(), "icmpv6".to_string(), "-1".to_string()]), vec![("tcp".to_string(), "tcp".to_string()), ("udp".to_string(), "udp".to_string()), ("icmp".to_string(), "icmp".to_string()), ("icmpv6".to_string(), "icmpv6".to_string()), ("-1".to_string(), "all".to_string())], None, None))
-                .required()
+            AttributeSchema::required("ip_protocol", AttributeType::enum_(carina_core::schema::enum_identity("IpProtocol", Some("aws.ec2.SecurityGroupIngress")), Some(vec!["tcp".to_string(), "udp".to_string(), "icmp".to_string(), "icmpv6".to_string(), "-1".to_string()]), vec![("tcp".to_string(), "tcp".to_string()), ("udp".to_string(), "udp".to_string()), ("icmp".to_string(), "icmp".to_string()), ("icmpv6".to_string(), "icmpv6".to_string()), ("-1".to_string(), "all".to_string())], None, None))
                 .create_only()
                 .with_description("The IP protocol name (tcp, udp, icmp, icmpv6) or number (see Protocol Numbers). [VPC only] Use -1 to specify all protocols. When authorizing security group rules, specifying -1 or a protocol number other than tcp, udp, icmp, or icmpv6 allows traffic on all ports, regardless of any port range you specify. For tcp, udp, and icmp, you must specify a port range. For icmpv6, the port range is optional; if you omit the port range, traffic for all types and codes is allowed.")
-                .with_provider_name("IpProtocol"),
+                .with_provider_name("IpProtocol")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("source_prefix_list_id", carina_aws_types::prefix_list_id())
+            AttributeSchema::optional("source_prefix_list_id", carina_aws_types::prefix_list_id())
                 .create_only()
                 .with_description("[EC2-VPC only] The ID of a prefix list. ")
-                .with_provider_name("SourcePrefixListId"),
+                .with_provider_name("SourcePrefixListId")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("source_security_group_id", carina_aws_types::security_group_id())
+            AttributeSchema::optional("source_security_group_id", carina_aws_types::security_group_id())
                 .create_only()
                 .with_description("The ID of the security group. You must specify either the security group ID or the security group name. For security groups in a nondefault VPC, you must specify the security group ID.")
-                .with_provider_name("SourceSecurityGroupId"),
+                .with_provider_name("SourceSecurityGroupId")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("source_security_group_name", AttributeType::string())
+            AttributeSchema::optional("source_security_group_name", AttributeType::string())
                 .create_only()
                 .with_description("[EC2-Classic, default VPC] The name of the source security group. You must specify the GroupName property or the GroupId property. For security groups that are in a VPC, you must use the GroupId property.")
-                .with_provider_name("SourceSecurityGroupName"),
+                .with_provider_name("SourceSecurityGroupName")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("source_security_group_owner_id", carina_aws_types::aws_account_id())
+            AttributeSchema::optional("source_security_group_owner_id", carina_aws_types::aws_account_id())
                 .create_only()
                 .with_description("[nondefault VPC] The AWS account ID that owns the source security group. You can't specify this property with an IP address range. If you specify SourceSecurityGroupName or SourceSecurityGroupId and that security group is owned by a different account than the account creating the stack, you must specify the SourceSecurityGroupOwnerId; otherwise, this property is optional.")
-                .with_provider_name("SourceSecurityGroupOwnerId"),
+                .with_provider_name("SourceSecurityGroupOwnerId")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("to_port", AttributeType::refined_int(None, Some((Some(-1), Some(65535)))))
+            AttributeSchema::optional("to_port", AttributeType::refined_int(None, Some((Some(-1), Some(65535)))))
                 .create_only()
                 .with_description("The end of port range for the TCP and UDP protocols, or an ICMP/ICMPv6 code. A value of -1 indicates all ICMP/ICMPv6 codes for the specified ICMP type. If you specify all ICMP/ICMPv6 types, you must specify all codes. Use this for ICMP and any protocol that uses ports.")
-                .with_provider_name("ToPort"),
+                .with_provider_name("ToPort")
+                .build(),
         )
         .with_conflicting_replacement()
     }

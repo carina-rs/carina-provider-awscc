@@ -19,73 +19,75 @@ pub fn ec2_eip_config() -> AwsccSchemaConfig {
         schema: ResourceSchema::new("ec2.Eip")
 	        .with_description("Specifies an Elastic IP (EIP) address and can, optionally, associate it with an Amazon EC2 instance.  You can allocate an Elastic IP address from an address pool owned by AWS or from an address pool created from a public IPv4 address range that you have brought to AWS for use with your AWS resources using bring your own IP addresses (BYOIP). For more information, see [Bring Your Own IP Addresses (BYOIP)](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-byoip.html) in the *Amazon EC2 User Guide*.  For more information, see [Elastic IP Addresses](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/elastic-ip-addresses-eip.html) in the *Amazon EC2 User Guide*.")
         .attribute(
-            AttributeSchema::new("address", types::ipv4_address())
+            AttributeSchema::optional("address", types::ipv4_address())
                 .create_only()
                 .write_only()
                 .with_description("")
-                .with_provider_name("Address"),
+                .with_provider_name("Address")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("allocation_id", carina_aws_types::allocation_id())
-                .read_only()
+            AttributeSchema::provider_populated("allocation_id", carina_aws_types::allocation_id())
                 .with_description(" (read-only)")
-                .with_provider_name("AllocationId"),
+                .with_provider_name("AllocationId")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("domain", AttributeType::enum_(carina_core::schema::enum_identity("Domain", Some("aws.ec2.Eip")), Some(vec!["vpc".to_string(), "standard".to_string()]), vec![("vpc".to_string(), "vpc".to_string()), ("standard".to_string(), "standard".to_string())], None, None))
+            AttributeSchema::optional("domain", AttributeType::enum_(carina_core::schema::enum_identity("Domain", Some("aws.ec2.Eip")), Some(vec!["vpc".to_string(), "standard".to_string()]), vec![("vpc".to_string(), "vpc".to_string()), ("standard".to_string(), "standard".to_string())], None, None))
                 .with_description("The network (``vpc``). If you define an Elastic IP address and associate it with a VPC that is defined in the same template, you must declare a dependency on the VPC-gateway attachment by using the [DependsOn Attribute](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-attribute-dependson.html) on this resource.")
-                .with_provider_name("Domain"),
+                .with_provider_name("Domain")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("instance_id", carina_aws_types::instance_id())
+            AttributeSchema::optional("instance_id", carina_aws_types::instance_id())
                 .with_description("The ID of the instance. Updates to the ``InstanceId`` property may require *some interruptions*. Updates on an EIP reassociates the address on its associated resource.")
-                .with_provider_name("InstanceId"),
+                .with_provider_name("InstanceId")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("ipam_pool_id", carina_aws_types::ipam_pool_id())
+            AttributeSchema::optional("ipam_pool_id", carina_aws_types::ipam_pool_id())
                 .create_only()
                 .write_only()
                 .with_description("")
-                .with_provider_name("IpamPoolId"),
+                .with_provider_name("IpamPoolId")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("network_border_group", AttributeType::string())
+            AttributeSchema::optional("network_border_group", AttributeType::string())
                 .create_only()
                 .with_description("A unique set of Availability Zones, Local Zones, or Wavelength Zones from which AWS advertises IP addresses. Use this parameter to limit the IP address to this location. IP addresses cannot move between network border groups. Use [DescribeAvailabilityZones](https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeAvailabilityZones.html) to view the network border groups.")
-                .with_provider_name("NetworkBorderGroup"),
+                .with_provider_name("NetworkBorderGroup")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("public_ip", types::ipv4_address())
-                .read_only()
+            AttributeSchema::provider_populated("public_ip", types::ipv4_address())
                 .with_description(" (read-only)")
-                .with_provider_name("PublicIp"),
+                .with_provider_name("PublicIp")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("public_ipv4_pool", AttributeType::string())
+            AttributeSchema::optional("public_ipv4_pool", AttributeType::string())
                 .with_description("The ID of an address pool that you own. Use this parameter to let Amazon EC2 select an address from the address pool. Updates to the ``PublicIpv4Pool`` property may require *some interruptions*. Updates on an EIP reassociates the address on its associated resource.")
-                .with_provider_name("PublicIpv4Pool"),
+                .with_provider_name("PublicIpv4Pool")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("tags", carina_aws_types::tags_type())
+            AttributeSchema::optional("tags", carina_aws_types::tags_type())
                 .with_description("Any tags assigned to the Elastic IP address. Updates to the ``Tags`` property may require *some interruptions*. Updates on an EIP reassociates the address on its associated resource.")
                 .with_provider_name("Tags")
-                .with_block_name("tag"),
+                .with_block_name("tag")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("transfer_address", types::ipv4_address())
+            AttributeSchema::optional("transfer_address", types::ipv4_address())
                 .create_only()
                 .write_only()
                 .with_description("The Elastic IP address you are accepting for transfer. You can only accept one transferred address. For more information on Elastic IP address transfers, see [Transfer Elastic IP addresses](https://docs.aws.amazon.com/vpc/latest/userguide/vpc-eips.html#transfer-EIPs-intro) in the *Amazon Virtual Private Cloud User Guide*.")
-                .with_provider_name("TransferAddress"),
+                .with_provider_name("TransferAddress")
+                .build(),
         )
         .with_conflicting_replacement()
-        .with_validator(|attrs| {
-            let mut errors = Vec::new();
-            if let Err(mut e) = carina_aws_types::validate_tags_map(attrs) {
-                errors.append(&mut e);
-            }
-            if errors.is_empty() { Ok(()) } else { Err(errors) }
-        })
+        .with_declared_validators(vec![carina_provider_protocol::types::ValidatorType::TagsKeyValueCheck])
     }
 }
 

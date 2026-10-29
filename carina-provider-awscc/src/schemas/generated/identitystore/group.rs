@@ -19,28 +19,29 @@ pub fn identitystore_group_config() -> AwsccSchemaConfig {
         schema: ResourceSchema::new("identitystore.Group")
 	        .with_description("Resource Type definition for AWS::IdentityStore::Group")
         .attribute(
-            AttributeSchema::new("description", AttributeType::refined_string(None, Some("^[\\p{L}\\p{M}\\p{S}\\p{N}\\p{P}\\t\\n\\r  　]+$".to_string()), Some((Some(1), Some(1024))), None))
+            AttributeSchema::optional("description", AttributeType::refined_string(None, Some("^[\\p{L}\\p{M}\\p{S}\\p{N}\\p{P}\\t\\n\\r  　]+$".to_string()), Some((Some(1), Some(1024))), None))
                 .with_description("A string containing the description of the group.")
-                .with_provider_name("Description"),
+                .with_provider_name("Description")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("display_name", AttributeType::refined_string(None, Some("^[\\p{L}\\p{M}\\p{S}\\p{N}\\p{P}\\t\\n\\r  ]+$".to_string()), Some((Some(1), Some(1024))), None))
-                .required()
+            AttributeSchema::required("display_name", AttributeType::refined_string(None, Some("^[\\p{L}\\p{M}\\p{S}\\p{N}\\p{P}\\t\\n\\r  ]+$".to_string()), Some((Some(1), Some(1024))), None))
                 .with_description("A string containing the name of the group. This value is commonly displayed when the group is referenced.")
-                .with_provider_name("DisplayName"),
+                .with_provider_name("DisplayName")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("group_id", carina_aws_types::sso_principal_id())
-                .read_only()
+            AttributeSchema::provider_populated("group_id", carina_aws_types::sso_principal_id())
                 .with_description("The unique identifier for a group in the identity store. (read-only)")
-                .with_provider_name("GroupId"),
+                .with_provider_name("GroupId")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("identity_store_id", carina_aws_types::identity_store_id())
-                .required()
+            AttributeSchema::required("identity_store_id", carina_aws_types::identity_store_id())
                 .create_only()
                 .with_description("The globally unique identifier for the identity store.")
-                .with_provider_name("IdentityStoreId"),
+                .with_provider_name("IdentityStoreId")
+                .build(),
         )
         .with_unique_name_attribute("display_name")
     }

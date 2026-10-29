@@ -48,78 +48,77 @@ pub fn ec2_security_group_config() -> AwsccSchemaConfig {
         schema: ResourceSchema::new("ec2.SecurityGroup")
 	        .with_description("Resource Type definition for AWS::EC2::SecurityGroup")
         .attribute(
-            AttributeSchema::new("group_description", AttributeType::string())
-                .required()
+            AttributeSchema::required("group_description", AttributeType::string())
                 .create_only()
                 .with_description("A description for the security group.")
-                .with_provider_name("GroupDescription"),
+                .with_provider_name("GroupDescription")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("group_id", carina_aws_types::security_group_id())
-                .read_only()
+            AttributeSchema::provider_populated("group_id", carina_aws_types::security_group_id())
                 .with_description("The group ID of the specified security group. (read-only)")
-                .with_provider_name("GroupId"),
+                .with_provider_name("GroupId")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("group_name", AttributeType::string())
+            AttributeSchema::optional("group_name", AttributeType::string())
                 .create_only()
                 .with_description("The name of the security group.")
-                .with_provider_name("GroupName"),
+                .with_provider_name("GroupName")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("id", carina_aws_types::security_group_id())
-                .read_only()
+            AttributeSchema::provider_populated("id", carina_aws_types::security_group_id())
                 .with_description("The group name or group ID depending on whether the SG is created in default or specific VPC (read-only)")
-                .with_provider_name("Id"),
+                .with_provider_name("Id")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("security_group_egress", AttributeType::unordered_list(AttributeType::struct_("Egress".to_string(), vec![StructField::new("cidr_ip", types::ipv4_cidr()).with_provider_name("CidrIp"),
-                    StructField::new("cidr_ipv6", types::ipv6_cidr()).with_provider_name("CidrIpv6"),
-                    StructField::new("description", AttributeType::string()).with_provider_name("Description"),
-                    StructField::new("destination_prefix_list_id", carina_aws_types::prefix_list_id()).with_provider_name("DestinationPrefixListId"),
-                    StructField::new("destination_security_group_id", carina_aws_types::security_group_id()).with_provider_name("DestinationSecurityGroupId"),
-                    StructField::new("from_port", AttributeType::refined_int(None, Some((Some(-1), Some(65535))))).with_provider_name("FromPort"),
-                    StructField::new("ip_protocol", AttributeType::enum_(carina_core::schema::enum_identity("IpProtocol", Some("aws.ec2.SecurityGroup.Egress")), Some(vec!["tcp".to_string(), "udp".to_string(), "icmp".to_string(), "icmpv6".to_string(), "-1".to_string()]), vec![("tcp".to_string(), "tcp".to_string()), ("udp".to_string(), "udp".to_string()), ("icmp".to_string(), "icmp".to_string()), ("icmpv6".to_string(), "icmpv6".to_string()), ("-1".to_string(), "all".to_string())], None, None)).required().with_provider_name("IpProtocol"),
-                    StructField::new("to_port", AttributeType::refined_int(None, Some((Some(-1), Some(65535))))).with_provider_name("ToPort")])))
+            AttributeSchema::optional("security_group_egress", AttributeType::unordered_list(AttributeType::struct_("Egress".to_string(), vec![StructField::optional("cidr_ip", types::ipv4_cidr()).with_provider_name("CidrIp").build(),
+                    StructField::optional("cidr_ipv6", types::ipv6_cidr()).with_provider_name("CidrIpv6").build(),
+                    StructField::optional("description", AttributeType::string()).with_provider_name("Description").build(),
+                    StructField::optional("destination_prefix_list_id", carina_aws_types::prefix_list_id()).with_provider_name("DestinationPrefixListId").build(),
+                    StructField::optional("destination_security_group_id", carina_aws_types::security_group_id()).with_provider_name("DestinationSecurityGroupId").build(),
+                    StructField::optional("from_port", AttributeType::refined_int(None, Some((Some(-1), Some(65535))))).with_provider_name("FromPort").build(),
+                    StructField::required("ip_protocol", AttributeType::enum_(carina_core::schema::enum_identity("IpProtocol", Some("aws.ec2.SecurityGroup.Egress")), Some(vec!["tcp".to_string(), "udp".to_string(), "icmp".to_string(), "icmpv6".to_string(), "-1".to_string()]), vec![("tcp".to_string(), "tcp".to_string()), ("udp".to_string(), "udp".to_string()), ("icmp".to_string(), "icmp".to_string()), ("icmpv6".to_string(), "icmpv6".to_string()), ("-1".to_string(), "all".to_string())], None, None)).with_provider_name("IpProtocol").build(),
+                    StructField::optional("to_port", AttributeType::refined_int(None, Some((Some(-1), Some(65535))))).with_provider_name("ToPort").build()])))
                 .with_description("[VPC only] The outbound rules associated with the security group. There is a short interruption during which you cannot connect to the security group.")
                 .with_provider_name("SecurityGroupEgress")
-                .with_block_name("security_group_egress"),
+                .with_block_name("security_group_egress")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("security_group_ingress", AttributeType::unordered_list(AttributeType::struct_("Ingress".to_string(), vec![StructField::new("cidr_ip", types::ipv4_cidr()).with_provider_name("CidrIp"),
-                    StructField::new("cidr_ipv6", types::ipv6_cidr()).with_provider_name("CidrIpv6"),
-                    StructField::new("description", AttributeType::string()).with_provider_name("Description"),
-                    StructField::new("from_port", AttributeType::refined_int(None, Some((Some(-1), Some(65535))))).with_provider_name("FromPort"),
-                    StructField::new("ip_protocol", AttributeType::enum_(carina_core::schema::enum_identity("IpProtocol", Some("aws.ec2.SecurityGroup.Ingress")), Some(vec!["tcp".to_string(), "udp".to_string(), "icmp".to_string(), "icmpv6".to_string(), "-1".to_string()]), vec![("tcp".to_string(), "tcp".to_string()), ("udp".to_string(), "udp".to_string()), ("icmp".to_string(), "icmp".to_string()), ("icmpv6".to_string(), "icmpv6".to_string()), ("-1".to_string(), "all".to_string())], None, None)).required().with_provider_name("IpProtocol"),
-                    StructField::new("source_prefix_list_id", carina_aws_types::prefix_list_id()).with_provider_name("SourcePrefixListId"),
-                    StructField::new("source_security_group_id", carina_aws_types::security_group_id()).with_provider_name("SourceSecurityGroupId"),
-                    StructField::new("source_security_group_name", AttributeType::string()).write_only().with_provider_name("SourceSecurityGroupName"),
-                    StructField::new("source_security_group_owner_id", carina_aws_types::aws_account_id()).with_provider_name("SourceSecurityGroupOwnerId"),
-                    StructField::new("to_port", AttributeType::refined_int(None, Some((Some(-1), Some(65535))))).with_provider_name("ToPort")])))
+            AttributeSchema::optional("security_group_ingress", AttributeType::unordered_list(AttributeType::struct_("Ingress".to_string(), vec![StructField::optional("cidr_ip", types::ipv4_cidr()).with_provider_name("CidrIp").build(),
+                    StructField::optional("cidr_ipv6", types::ipv6_cidr()).with_provider_name("CidrIpv6").build(),
+                    StructField::optional("description", AttributeType::string()).with_provider_name("Description").build(),
+                    StructField::optional("from_port", AttributeType::refined_int(None, Some((Some(-1), Some(65535))))).with_provider_name("FromPort").build(),
+                    StructField::required("ip_protocol", AttributeType::enum_(carina_core::schema::enum_identity("IpProtocol", Some("aws.ec2.SecurityGroup.Ingress")), Some(vec!["tcp".to_string(), "udp".to_string(), "icmp".to_string(), "icmpv6".to_string(), "-1".to_string()]), vec![("tcp".to_string(), "tcp".to_string()), ("udp".to_string(), "udp".to_string()), ("icmp".to_string(), "icmp".to_string()), ("icmpv6".to_string(), "icmpv6".to_string()), ("-1".to_string(), "all".to_string())], None, None)).with_provider_name("IpProtocol").build(),
+                    StructField::optional("source_prefix_list_id", carina_aws_types::prefix_list_id()).with_provider_name("SourcePrefixListId").build(),
+                    StructField::optional("source_security_group_id", carina_aws_types::security_group_id()).with_provider_name("SourceSecurityGroupId").build(),
+                    StructField::optional("source_security_group_name", AttributeType::string()).write_only().with_provider_name("SourceSecurityGroupName").build(),
+                    StructField::optional("source_security_group_owner_id", carina_aws_types::aws_account_id()).with_provider_name("SourceSecurityGroupOwnerId").build(),
+                    StructField::optional("to_port", AttributeType::refined_int(None, Some((Some(-1), Some(65535))))).with_provider_name("ToPort").build()])))
                 .with_description("The inbound rules associated with the security group. There is a short interruption during which you cannot connect to the security group.")
                 .with_provider_name("SecurityGroupIngress")
-                .with_block_name("security_group_ingress"),
+                .with_block_name("security_group_ingress")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("tags", carina_aws_types::tags_type())
+            AttributeSchema::optional("tags", carina_aws_types::tags_type())
                 .with_description("Any tags assigned to the security group.")
                 .with_provider_name("Tags")
-                .with_block_name("tag"),
+                .with_block_name("tag")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("vpc_id", carina_aws_types::vpc_id())
+            AttributeSchema::optional("vpc_id", carina_aws_types::vpc_id())
                 .create_only()
                 .with_description("The ID of the VPC for the security group.")
-                .with_provider_name("VpcId"),
+                .with_provider_name("VpcId")
+                .build(),
         )
         .with_unique_name_attribute("group_name")
-        .with_validator(|attrs| {
-            let mut errors = Vec::new();
-            if let Err(mut e) = carina_aws_types::validate_tags_map(attrs) {
-                errors.append(&mut e);
-            }
-            if errors.is_empty() { Ok(()) } else { Err(errors) }
-        })
+        .with_declared_validators(vec![carina_provider_protocol::types::ValidatorType::TagsKeyValueCheck])
     }
 }
 

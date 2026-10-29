@@ -12,7 +12,7 @@ use carina_core::schema::{
 
 pub fn arn() -> AttributeType {
     AttributeType::refined_string_with_validator(
-        Some(carina_aws_types::provider_type("ec2", "Ipam", "Arn")),
+        carina_aws_types::provider_type("ec2", "Ipam", "Arn"),
         Some("^arn:(aws|aws-cn|aws-us-gov):ec2:.*$".to_string()),
         None,
         legacy_validator(|value| {
@@ -72,89 +72,96 @@ pub fn ec2_ipam_config() -> AwsccSchemaConfig {
         schema: ResourceSchema::new("ec2.Ipam")
 	        .with_description("Resource Schema of AWS::EC2::IPAM Type")
         .attribute(
-            AttributeSchema::new("arn", self::arn())
-                .read_only()
+            AttributeSchema::provider_populated("arn", self::arn())
                 .with_description("The Amazon Resource Name (ARN) of the IPAM. (read-only)")
-                .with_provider_name("Arn"),
+                .with_provider_name("Arn")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("default_resource_discovery_association_id", AttributeType::string())
-                .read_only()
+            AttributeSchema::provider_populated("default_resource_discovery_association_id", AttributeType::string())
                 .with_description("The Id of the default association to the default resource discovery, created with this IPAM. (read-only)")
-                .with_provider_name("DefaultResourceDiscoveryAssociationId"),
+                .with_provider_name("DefaultResourceDiscoveryAssociationId")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("default_resource_discovery_id", AttributeType::string())
-                .read_only()
+            AttributeSchema::provider_populated("default_resource_discovery_id", AttributeType::string())
                 .with_description("The Id of the default resource discovery, created with this IPAM. (read-only)")
-                .with_provider_name("DefaultResourceDiscoveryId"),
+                .with_provider_name("DefaultResourceDiscoveryId")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("default_resource_discovery_organizational_unit_exclusions", AttributeType::unordered_list(AttributeType::struct_("IpamOrganizationalUnitExclusion".to_string(), vec![StructField::new("organizations_entity_path", AttributeType::refined_string(None, None, Some((Some(1), None)), None)).required().with_description("An AWS Organizations entity path. Build the path for the OU(s) using AWS Organizations IDs separated by a '/'. Include all child OUs by ending the path with '/*'.").with_provider_name("OrganizationsEntityPath")])))
+            AttributeSchema::optional("default_resource_discovery_organizational_unit_exclusions", AttributeType::unordered_list(AttributeType::struct_("IpamOrganizationalUnitExclusion".to_string(), vec![StructField::required("organizations_entity_path", AttributeType::refined_string(None, None, Some((Some(1), None)), None)).with_description("An AWS Organizations entity path. Build the path for the OU(s) using AWS Organizations IDs separated by a '/'. Include all child OUs by ending the path with '/*'.").with_provider_name("OrganizationsEntityPath").build()])))
                 .with_description("A set of organizational unit (OU) exclusions for the default resource discovery, created with this IPAM.")
                 .with_provider_name("DefaultResourceDiscoveryOrganizationalUnitExclusions")
-                .with_block_name("default_resource_discovery_organizational_unit_exclusion"),
+                .with_block_name("default_resource_discovery_organizational_unit_exclusion")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("description", AttributeType::string())
-                .with_provider_name("Description"),
+            AttributeSchema::optional("description", AttributeType::string())
+                .with_provider_name("Description")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("enable_private_gua", AttributeType::bool())
+            AttributeSchema::optional("enable_private_gua", AttributeType::bool())
                 .with_description("Enable provisioning of GUA space in private pools.")
-                .with_provider_name("EnablePrivateGua"),
+                .with_provider_name("EnablePrivateGua")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("ipam_id", carina_aws_types::ipam_id())
-                .read_only()
+            AttributeSchema::provider_populated("ipam_id", carina_aws_types::ipam_id())
                 .with_description("Id of the IPAM. (read-only)")
-                .with_provider_name("IpamId"),
+                .with_provider_name("IpamId")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("metered_account", AttributeType::enum_(carina_core::schema::enum_identity("MeteredAccount", Some("aws.ec2.Ipam")), Some(vec!["ipam-owner".to_string(), "resource-owner".to_string()]), vec![("ipam-owner".to_string(), "ipam_owner".to_string()), ("resource-owner".to_string(), "resource_owner".to_string())], None, None))
+            AttributeSchema::optional("metered_account", AttributeType::enum_(carina_core::schema::enum_identity("MeteredAccount", Some("aws.ec2.Ipam")), Some(vec!["ipam-owner".to_string(), "resource-owner".to_string()]), vec![("ipam-owner".to_string(), "ipam_owner".to_string()), ("resource-owner".to_string(), "resource_owner".to_string())], None, None))
                 .with_description("A metered account is an account that is charged for active IP addresses managed in IPAM")
-                .with_provider_name("MeteredAccount"),
+                .with_provider_name("MeteredAccount")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("operating_regions", AttributeType::unordered_list(AttributeType::struct_("IpamOperatingRegion".to_string(), vec![StructField::new("region_name", carina_aws_types::aws_region()).required().with_description("The name of the region.").with_provider_name("RegionName")])))
+            AttributeSchema::optional("operating_regions", AttributeType::unordered_list(AttributeType::struct_("IpamOperatingRegion".to_string(), vec![StructField::required("region_name", carina_aws_types::aws_region()).with_description("The name of the region.").with_provider_name("RegionName").build()])))
                 .with_description("The regions IPAM is enabled for. Allows pools to be created in these regions, as well as enabling monitoring")
                 .with_provider_name("OperatingRegions")
-                .with_block_name("operating_region"),
+                .with_block_name("operating_region")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("private_default_scope_id", AttributeType::string())
-                .read_only()
+            AttributeSchema::provider_populated("private_default_scope_id", AttributeType::string())
                 .with_description("The Id of the default scope for publicly routable IP space, created with this IPAM. (read-only)")
-                .with_provider_name("PrivateDefaultScopeId"),
+                .with_provider_name("PrivateDefaultScopeId")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("public_default_scope_id", AttributeType::refined_string(None, None, Some((None, Some(255))), None))
-                .read_only()
+            AttributeSchema::provider_populated("public_default_scope_id", AttributeType::refined_string(None, None, Some((None, Some(255))), None))
                 .with_description("The Id of the default scope for publicly routable IP space, created with this IPAM. (read-only)")
-                .with_provider_name("PublicDefaultScopeId"),
+                .with_provider_name("PublicDefaultScopeId")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("resource_discovery_association_count", AttributeType::int())
-                .read_only()
+            AttributeSchema::provider_populated("resource_discovery_association_count", AttributeType::int())
                 .with_description("The count of resource discoveries associated with this IPAM. (read-only)")
-                .with_provider_name("ResourceDiscoveryAssociationCount"),
+                .with_provider_name("ResourceDiscoveryAssociationCount")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("scope_count", AttributeType::int())
-                .read_only()
+            AttributeSchema::provider_populated("scope_count", AttributeType::int())
                 .with_description("The number of scopes that currently exist in this IPAM. (read-only)")
-                .with_provider_name("ScopeCount"),
+                .with_provider_name("ScopeCount")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("tags", carina_aws_types::tags_type())
+            AttributeSchema::optional("tags", carina_aws_types::tags_type())
                 .with_description("An array of key-value pairs to apply to this resource.")
                 .with_provider_name("Tags")
-                .with_block_name("tag"),
+                .with_block_name("tag")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("tier", AttributeType::enum_(carina_core::schema::enum_identity("Tier", Some("aws.ec2.Ipam")), Some(vec!["free".to_string(), "advanced".to_string()]), vec![("free".to_string(), "free".to_string()), ("advanced".to_string(), "advanced".to_string())], None, None))
+            AttributeSchema::optional("tier", AttributeType::enum_(carina_core::schema::enum_identity("Tier", Some("aws.ec2.Ipam")), Some(vec!["free".to_string(), "advanced".to_string()]), vec![("free".to_string(), "free".to_string()), ("advanced".to_string(), "advanced".to_string())], None, None))
                 .with_description("The tier of the IPAM.")
-                .with_provider_name("Tier"),
+                .with_provider_name("Tier")
+                .build(),
         )
         .with_conflicting_replacement()
         .with_operation_config(OperationConfig {
@@ -164,13 +171,7 @@ pub fn ec2_ipam_config() -> AwsccSchemaConfig {
             create_max_retries: None,
             update_timeout_secs: None,
         })
-        .with_validator(|attrs| {
-            let mut errors = Vec::new();
-            if let Err(mut e) = carina_aws_types::validate_tags_map(attrs) {
-                errors.append(&mut e);
-            }
-            if errors.is_empty() { Ok(()) } else { Err(errors) }
-        })
+        .with_declared_validators(vec![carina_provider_protocol::types::ValidatorType::TagsKeyValueCheck])
     }
 }
 

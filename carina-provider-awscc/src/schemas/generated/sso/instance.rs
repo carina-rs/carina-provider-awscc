@@ -35,47 +35,43 @@ pub fn sso_instance_config() -> AwsccSchemaConfig {
         schema: ResourceSchema::new("sso.Instance")
 	        .with_description("Resource Type definition for Identity Center (SSO) Instance")
         .attribute(
-            AttributeSchema::new("identity_store_id", carina_aws_types::identity_store_id())
-                .read_only()
+            AttributeSchema::provider_populated("identity_store_id", carina_aws_types::identity_store_id())
                 .with_description("The ID of the identity store associated with the created Identity Center (SSO) Instance (read-only)")
-                .with_provider_name("IdentityStoreId"),
+                .with_provider_name("IdentityStoreId")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("instance_arn", carina_aws_types::sso_instance_arn())
-                .read_only()
+            AttributeSchema::provider_populated("instance_arn", carina_aws_types::sso_instance_arn())
                 .with_description("The SSO Instance ARN that is returned upon creation of the Identity Center (SSO) Instance (read-only)")
-                .with_provider_name("InstanceArn"),
+                .with_provider_name("InstanceArn")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("name", AttributeType::refined_string(None, Some("^[\\w+=,.@-]+$".to_string()), Some((Some(1), Some(32))), None))
+            AttributeSchema::optional("name", AttributeType::refined_string(None, Some("^[\\w+=,.@-]+$".to_string()), Some((Some(1), Some(32))), None))
                 .with_description("The name you want to assign to this Identity Center (SSO) Instance")
-                .with_provider_name("Name"),
+                .with_provider_name("Name")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("owner_account_id", carina_aws_types::aws_account_id())
-                .read_only()
+            AttributeSchema::provider_populated("owner_account_id", carina_aws_types::aws_account_id())
                 .with_description("The AWS accountId of the owner of the Identity Center (SSO) Instance (read-only)")
-                .with_provider_name("OwnerAccountId"),
+                .with_provider_name("OwnerAccountId")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("status", AttributeType::enum_(carina_core::schema::enum_identity("Status", Some("aws.sso.Instance")), Some(vec!["CREATE_IN_PROGRESS".to_string(), "DELETE_IN_PROGRESS".to_string(), "ACTIVE".to_string()]), vec![("CREATE_IN_PROGRESS".to_string(), "create_in_progress".to_string()), ("DELETE_IN_PROGRESS".to_string(), "delete_in_progress".to_string()), ("ACTIVE".to_string(), "active".to_string())], None, None))
-                .read_only()
+            AttributeSchema::provider_populated("status", AttributeType::enum_(carina_core::schema::enum_identity("Status", Some("aws.sso.Instance")), Some(vec!["CREATE_IN_PROGRESS".to_string(), "DELETE_IN_PROGRESS".to_string(), "ACTIVE".to_string()]), vec![("CREATE_IN_PROGRESS".to_string(), "create_in_progress".to_string()), ("DELETE_IN_PROGRESS".to_string(), "delete_in_progress".to_string()), ("ACTIVE".to_string(), "active".to_string())], None, None))
                 .with_description("The status of the Identity Center (SSO) Instance, create_in_progress/delete_in_progress/active (read-only)")
-                .with_provider_name("Status"),
+                .with_provider_name("Status")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("tags", carina_aws_types::tags_type())
+            AttributeSchema::optional("tags", carina_aws_types::tags_type())
                 .with_provider_name("Tags")
-                .with_block_name("tag"),
+                .with_block_name("tag")
+                .build(),
         )
         .with_conflicting_replacement()
-        .with_validator(|attrs| {
-            let mut errors = Vec::new();
-            if let Err(mut e) = carina_aws_types::validate_tags_map(attrs) {
-                errors.append(&mut e);
-            }
-            if errors.is_empty() { Ok(()) } else { Err(errors) }
-        })
+        .with_declared_validators(vec![carina_provider_protocol::types::ValidatorType::TagsKeyValueCheck])
     }
 }
 

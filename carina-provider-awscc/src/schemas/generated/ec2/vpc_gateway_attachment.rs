@@ -17,27 +17,29 @@ pub fn ec2_vpc_gateway_attachment_config() -> AwsccSchemaConfig {
         schema: ResourceSchema::new("ec2.VpcGatewayAttachment")
 	        .with_description("Resource Type definition for AWS::EC2::VPCGatewayAttachment")
         .attribute(
-            AttributeSchema::new("attachment_type", AttributeType::string())
-                .read_only()
+            AttributeSchema::provider_populated("attachment_type", AttributeType::string())
                 .with_description("Used to identify if this resource is an Internet Gateway or Vpn Gateway Attachment  (read-only)")
-                .with_provider_name("AttachmentType"),
+                .with_provider_name("AttachmentType")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("internet_gateway_id", carina_aws_types::internet_gateway_id())
+            AttributeSchema::optional("internet_gateway_id", carina_aws_types::internet_gateway_id())
                 .with_description("The ID of the internet gateway. You must specify either InternetGatewayId or VpnGatewayId, but not both.")
-                .with_provider_name("InternetGatewayId"),
+                .with_provider_name("InternetGatewayId")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("vpc_id", carina_aws_types::vpc_id())
-                .required()
+            AttributeSchema::required("vpc_id", carina_aws_types::vpc_id())
                 .create_only()
                 .with_description("The ID of the VPC.")
-                .with_provider_name("VpcId"),
+                .with_provider_name("VpcId")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("vpn_gateway_id", carina_aws_types::vpn_gateway_id())
+            AttributeSchema::optional("vpn_gateway_id", carina_aws_types::vpn_gateway_id())
                 .with_description("The ID of the virtual private gateway. You must specify either InternetGatewayId or VpnGatewayId, but not both.")
-                .with_provider_name("VpnGatewayId"),
+                .with_provider_name("VpnGatewayId")
+                .build(),
         )
         .with_conflicting_replacement()
         .with_operation_config(OperationConfig {

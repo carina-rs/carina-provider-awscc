@@ -13,11 +13,7 @@ use regex::Regex;
 
 pub fn arn() -> AttributeType {
     AttributeType::refined_string_with_validator(
-        Some(carina_aws_types::provider_type(
-            "organizations",
-            "Account",
-            "Arn",
-        )),
+        carina_aws_types::provider_type("organizations", "Account", "Arn"),
         Some("^arn:(aws|aws-cn|aws-us-gov):organizations:.*$".to_string()),
         None,
         legacy_validator(|value| {
@@ -55,85 +51,82 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
         schema: ResourceSchema::new("organizations.Account")
 	        .with_description("You can use AWS::Organizations::Account to manage accounts in organization.")
         .attribute(
-            AttributeSchema::new("account_id", carina_aws_types::aws_account_id())
-                .read_only()
+            AttributeSchema::provider_populated("account_id", carina_aws_types::aws_account_id())
                 .with_description("If the account was created successfully, the unique identifier (ID) of the new account. (read-only)")
-                .with_provider_name("AccountId"),
+                .with_provider_name("AccountId")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("account_name", AttributeType::refined_string(None, Some("[\\u0020-\\u007E]+".to_string()), Some((Some(1), Some(50))), None))
-                .required()
+            AttributeSchema::required("account_name", AttributeType::refined_string(None, Some("[\\u0020-\\u007E]+".to_string()), Some((Some(1), Some(50))), None))
                 .with_description("The friendly name of the member account.")
-                .with_provider_name("AccountName"),
+                .with_provider_name("AccountName")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("arn", self::arn())
-                .read_only()
+            AttributeSchema::provider_populated("arn", self::arn())
                 .with_description("The Amazon Resource Name (ARN) of the account. (read-only)")
-                .with_provider_name("Arn"),
+                .with_provider_name("Arn")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("email", types::email())
-                .required()
+            AttributeSchema::required("email", types::email())
                 .with_description("The email address of the owner to assign to the new member account.")
-                .with_provider_name("Email"),
+                .with_provider_name("Email")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("joined_method", AttributeType::enum_(carina_core::schema::enum_identity("JoinedMethod", Some("aws.organizations.Account")), Some(vec!["INVITED".to_string(), "CREATED".to_string()]), vec![("INVITED".to_string(), "invited".to_string()), ("CREATED".to_string(), "created".to_string())], None, None))
-                .read_only()
+            AttributeSchema::provider_populated("joined_method", AttributeType::enum_(carina_core::schema::enum_identity("JoinedMethod", Some("aws.organizations.Account")), Some(vec!["INVITED".to_string(), "CREATED".to_string()]), vec![("INVITED".to_string(), "invited".to_string()), ("CREATED".to_string(), "created".to_string())], None, None))
                 .with_description("The method by which the account joined the organization. (read-only)")
-                .with_provider_name("JoinedMethod"),
+                .with_provider_name("JoinedMethod")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("joined_timestamp", AttributeType::string())
-                .read_only()
+            AttributeSchema::provider_populated("joined_timestamp", AttributeType::string())
                 .with_description("The date the account became a part of the organization. (read-only)")
-                .with_provider_name("JoinedTimestamp"),
+                .with_provider_name("JoinedTimestamp")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("parent_ids", AttributeType::unordered_list(AttributeType::refined_string(None, Some("^(r-[0-9a-z]{4,32})|(ou-[0-9a-z]{4,32}-[a-z0-9]{8,32})$".to_string()), None, None)))
+            AttributeSchema::optional("parent_ids", AttributeType::unordered_list(AttributeType::refined_string(None, Some("^(r-[0-9a-z]{4,32})|(ou-[0-9a-z]{4,32}-[a-z0-9]{8,32})$".to_string()), None, None)))
                 .with_description("List of parent nodes for the member account. Currently only one parent at a time is supported. Default is root.")
-                .with_provider_name("ParentIds"),
+                .with_provider_name("ParentIds")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("paths", AttributeType::list(AttributeType::refined_string(None, Some("^(o-[a-z0-9]{10,32}/r-[0-9a-z]{4,32}(/ou-[0-9a-z]{4,32}-[a-z0-9]{8,32})*(/\\d{12})*)/".to_string()), None, None)))
-                .read_only()
+            AttributeSchema::provider_populated("paths", AttributeType::list(AttributeType::refined_string(None, Some("^(o-[a-z0-9]{10,32}/r-[0-9a-z]{4,32}(/ou-[0-9a-z]{4,32}-[a-z0-9]{8,32})*(/\\d{12})*)/".to_string()), None, None)))
                 .with_description("The paths in the organization where the account exists. (read-only)")
-                .with_provider_name("Paths"),
+                .with_provider_name("Paths")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("role_name", AttributeType::refined_string(None, Some("[\\w+=,.@-]{1,64}".to_string()), Some((Some(1), Some(64))), None))
+            AttributeSchema::optional("role_name", AttributeType::refined_string(None, Some("[\\w+=,.@-]{1,64}".to_string()), Some((Some(1), Some(64))), None))
                 .write_only()
                 .with_description("The name of an IAM role that AWS Organizations automatically preconfigures in the new member account. Default name is OrganizationAccountAccessRole if not specified.")
                 .with_provider_name("RoleName")
-                .with_default(Value::Concrete(ConcreteValue::String("OrganizationAccountAccessRole".to_string().into()))),
+                .with_default(Value::Concrete(ConcreteValue::String("OrganizationAccountAccessRole".to_string().into())))
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("state", AttributeType::enum_(carina_core::schema::enum_identity("State", Some("aws.organizations.Account")), Some(vec!["PENDING_ACTIVATION".to_string(), "ACTIVE".to_string(), "SUSPENDED".to_string(), "PENDING_CLOSURE".to_string(), "CLOSED".to_string()]), vec![("PENDING_ACTIVATION".to_string(), "pending_activation".to_string()), ("ACTIVE".to_string(), "active".to_string()), ("SUSPENDED".to_string(), "suspended".to_string()), ("PENDING_CLOSURE".to_string(), "pending_closure".to_string()), ("CLOSED".to_string(), "closed".to_string())], None, None))
-                .read_only()
+            AttributeSchema::provider_populated("state", AttributeType::enum_(carina_core::schema::enum_identity("State", Some("aws.organizations.Account")), Some(vec!["PENDING_ACTIVATION".to_string(), "ACTIVE".to_string(), "SUSPENDED".to_string(), "PENDING_CLOSURE".to_string(), "CLOSED".to_string()]), vec![("PENDING_ACTIVATION".to_string(), "pending_activation".to_string()), ("ACTIVE".to_string(), "active".to_string()), ("SUSPENDED".to_string(), "suspended".to_string()), ("PENDING_CLOSURE".to_string(), "pending_closure".to_string()), ("CLOSED".to_string(), "closed".to_string())], None, None))
                 .with_description("The state of the account in the organization. (read-only)")
-                .with_provider_name("State"),
+                .with_provider_name("State")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("status", AttributeType::enum_(carina_core::schema::enum_identity("Status", Some("aws.organizations.Account")), Some(vec!["ACTIVE".to_string(), "SUSPENDED".to_string(), "PENDING_CLOSURE".to_string()]), vec![("ACTIVE".to_string(), "active".to_string()), ("SUSPENDED".to_string(), "suspended".to_string()), ("PENDING_CLOSURE".to_string(), "pending_closure".to_string())], None, None))
-                .read_only()
+            AttributeSchema::provider_populated("status", AttributeType::enum_(carina_core::schema::enum_identity("Status", Some("aws.organizations.Account")), Some(vec!["ACTIVE".to_string(), "SUSPENDED".to_string(), "PENDING_CLOSURE".to_string()]), vec![("ACTIVE".to_string(), "active".to_string()), ("SUSPENDED".to_string(), "suspended".to_string()), ("PENDING_CLOSURE".to_string(), "pending_closure".to_string())], None, None))
                 .with_description("The status of the account in the organization. (read-only)")
-                .with_provider_name("Status"),
+                .with_provider_name("Status")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("tags", carina_aws_types::tags_type())
+            AttributeSchema::optional("tags", carina_aws_types::tags_type())
                 .with_description("A list of tags that you want to attach to the newly created account. For each tag in the list, you must specify both a tag key and a value.")
                 .with_provider_name("Tags")
-                .with_block_name("tag"),
+                .with_block_name("tag")
+                .build(),
         )
         .with_conflicting_replacement()
-        .with_validator(|attrs| {
-            let mut errors = Vec::new();
-            if let Err(mut e) = carina_aws_types::validate_tags_map(attrs) {
-                errors.append(&mut e);
-            }
-            if errors.is_empty() { Ok(()) } else { Err(errors) }
-        })
+        .with_declared_validators(vec![carina_provider_protocol::types::ValidatorType::TagsKeyValueCheck])
     }
 }
 

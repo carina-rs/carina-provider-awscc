@@ -49,94 +49,98 @@ pub fn ec2_flow_log_config() -> AwsccSchemaConfig {
         schema: ResourceSchema::new("ec2.FlowLog")
 	        .with_description("Specifies a VPC flow log, which enables you to capture IP traffic for a specific network interface, subnet, or VPC.")
         .attribute(
-            AttributeSchema::new("deliver_cross_account_role", super::super::iam::role::arn())
+            AttributeSchema::optional("deliver_cross_account_role", super::super::iam::role::arn())
                 .create_only()
                 .with_description("The ARN of the IAM role that allows Amazon EC2 to publish flow logs across accounts.")
-                .with_provider_name("DeliverCrossAccountRole"),
+                .with_provider_name("DeliverCrossAccountRole")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("deliver_logs_permission_arn", super::super::iam::role::arn())
+            AttributeSchema::optional("deliver_logs_permission_arn", super::super::iam::role::arn())
                 .create_only()
                 .with_description("The ARN for the IAM role that permits Amazon EC2 to publish flow logs to a CloudWatch Logs log group in your account. If you specify LogDestinationType as s3 or kinesis-data-firehose, do not specify DeliverLogsPermissionArn or LogGroupName.")
-                .with_provider_name("DeliverLogsPermissionArn"),
+                .with_provider_name("DeliverLogsPermissionArn")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("destination_options", AttributeType::struct_("DestinationOptions".to_string(), vec![StructField::new("file_format", AttributeType::enum_(carina_core::schema::enum_identity("FileFormat", Some("aws.ec2.FlowLog.DestinationOptions")), Some(vec!["plain-text".to_string(), "parquet".to_string()]), vec![("plain-text".to_string(), "plain_text".to_string()), ("parquet".to_string(), "parquet".to_string())], None, None)).required().with_provider_name("FileFormat"),
-                    StructField::new("hive_compatible_partitions", AttributeType::bool()).required().with_provider_name("HiveCompatiblePartitions"),
-                    StructField::new("per_hour_partition", AttributeType::bool()).required().with_provider_name("PerHourPartition")]))
+            AttributeSchema::optional("destination_options", AttributeType::struct_("DestinationOptions".to_string(), vec![StructField::required("file_format", AttributeType::enum_(carina_core::schema::enum_identity("FileFormat", Some("aws.ec2.FlowLog.DestinationOptions")), Some(vec!["plain-text".to_string(), "parquet".to_string()]), vec![("plain-text".to_string(), "plain_text".to_string()), ("parquet".to_string(), "parquet".to_string())], None, None)).with_provider_name("FileFormat").build(),
+                    StructField::required("hive_compatible_partitions", AttributeType::bool()).with_provider_name("HiveCompatiblePartitions").build(),
+                    StructField::required("per_hour_partition", AttributeType::bool()).with_provider_name("PerHourPartition").build()]))
                 .create_only()
-                .with_provider_name("DestinationOptions"),
+                .with_provider_name("DestinationOptions")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("id", carina_aws_types::flow_log_id())
-                .read_only()
+            AttributeSchema::provider_populated("id", carina_aws_types::flow_log_id())
                 .with_description("The Flow Log ID (read-only)")
-                .with_provider_name("Id"),
+                .with_provider_name("Id")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("log_destination", carina_aws_types::arn())
+            AttributeSchema::optional("log_destination", carina_aws_types::arn())
                 .create_only()
                 .with_description("Specifies the destination to which the flow log data is to be published. Flow log data can be published to a CloudWatch Logs log group, an Amazon S3 bucket, or a Kinesis Firehose stream. The value specified for this parameter depends on the value specified for LogDestinationType.")
-                .with_provider_name("LogDestination"),
+                .with_provider_name("LogDestination")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("log_destination_type", AttributeType::enum_(carina_core::schema::enum_identity("LogDestinationType", Some("aws.ec2.FlowLog")), Some(vec!["cloud-watch-logs".to_string(), "s3".to_string(), "kinesis-data-firehose".to_string()]), vec![("cloud-watch-logs".to_string(), "cloud_watch_logs".to_string()), ("s3".to_string(), "s3".to_string()), ("kinesis-data-firehose".to_string(), "kinesis_data_firehose".to_string())], None, None))
+            AttributeSchema::optional("log_destination_type", AttributeType::enum_(carina_core::schema::enum_identity("LogDestinationType", Some("aws.ec2.FlowLog")), Some(vec!["cloud-watch-logs".to_string(), "s3".to_string(), "kinesis-data-firehose".to_string()]), vec![("cloud-watch-logs".to_string(), "cloud_watch_logs".to_string()), ("s3".to_string(), "s3".to_string()), ("kinesis-data-firehose".to_string(), "kinesis_data_firehose".to_string())], None, None))
                 .create_only()
                 .with_description("Specifies the type of destination to which the flow log data is to be published. Flow log data can be published to CloudWatch Logs or Amazon S3.")
-                .with_provider_name("LogDestinationType"),
+                .with_provider_name("LogDestinationType")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("log_format", AttributeType::string())
+            AttributeSchema::optional("log_format", AttributeType::string())
                 .create_only()
                 .with_description("The fields to include in the flow log record, in the order in which they should appear.")
-                .with_provider_name("LogFormat"),
+                .with_provider_name("LogFormat")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("log_group_name", AttributeType::string())
+            AttributeSchema::optional("log_group_name", AttributeType::string())
                 .create_only()
                 .with_description("The name of a new or existing CloudWatch Logs log group where Amazon EC2 publishes your flow logs. If you specify LogDestinationType as s3 or kinesis-data-firehose, do not specify DeliverLogsPermissionArn or LogGroupName.")
-                .with_provider_name("LogGroupName"),
+                .with_provider_name("LogGroupName")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("max_aggregation_interval", AttributeType::refined_int_with_validator(None, None, legacy_validator(validate_max_aggregation_interval_int_enum)))
+            AttributeSchema::optional("max_aggregation_interval", AttributeType::refined_int_with_validator(carina_aws_types::provider_type("ec2", "FlowLog", "MaxAggregationInterval"), None, legacy_validator(validate_max_aggregation_interval_int_enum)))
                 .create_only()
                 .with_description("The maximum interval of time during which a flow of packets is captured and aggregated into a flow log record. You can specify 60 seconds (1 minute) or 600 seconds (10 minutes).")
-                .with_provider_name("MaxAggregationInterval"),
+                .with_provider_name("MaxAggregationInterval")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("resource_id", AttributeType::string())
-                .required()
+            AttributeSchema::required("resource_id", AttributeType::string())
                 .create_only()
                 .with_description("The ID of the subnet, network interface, or VPC for which you want to create a flow log.")
-                .with_provider_name("ResourceId"),
+                .with_provider_name("ResourceId")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("resource_type", AttributeType::enum_(carina_core::schema::enum_identity("ResourceType", Some("aws.ec2.FlowLog")), Some(vec!["NetworkInterface".to_string(), "Subnet".to_string(), "VPC".to_string(), "TransitGateway".to_string(), "TransitGatewayAttachment".to_string(), "RegionalNatGateway".to_string()]), vec![("NetworkInterface".to_string(), "network_interface".to_string()), ("Subnet".to_string(), "subnet".to_string()), ("VPC".to_string(), "vpc".to_string()), ("TransitGateway".to_string(), "transit_gateway".to_string()), ("TransitGatewayAttachment".to_string(), "transit_gateway_attachment".to_string()), ("RegionalNatGateway".to_string(), "regional_nat_gateway".to_string())], None, None))
-                .required()
+            AttributeSchema::required("resource_type", AttributeType::enum_(carina_core::schema::enum_identity("ResourceType", Some("aws.ec2.FlowLog")), Some(vec!["NetworkInterface".to_string(), "Subnet".to_string(), "VPC".to_string(), "TransitGateway".to_string(), "TransitGatewayAttachment".to_string(), "RegionalNatGateway".to_string()]), vec![("NetworkInterface".to_string(), "network_interface".to_string()), ("Subnet".to_string(), "subnet".to_string()), ("VPC".to_string(), "vpc".to_string()), ("TransitGateway".to_string(), "transit_gateway".to_string()), ("TransitGatewayAttachment".to_string(), "transit_gateway_attachment".to_string()), ("RegionalNatGateway".to_string(), "regional_nat_gateway".to_string())], None, None))
                 .create_only()
                 .with_description("The type of resource for which to create the flow log. For example, if you specified a VPC ID for the ResourceId property, specify VPC for this property.")
-                .with_provider_name("ResourceType"),
+                .with_provider_name("ResourceType")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("tags", carina_aws_types::tags_type())
+            AttributeSchema::optional("tags", carina_aws_types::tags_type())
                 .with_description("The tags to apply to the flow logs.")
                 .with_provider_name("Tags")
-                .with_block_name("tag"),
+                .with_block_name("tag")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("traffic_type", AttributeType::enum_(carina_core::schema::enum_identity("TrafficType", Some("aws.ec2.FlowLog")), Some(vec!["ACCEPT".to_string(), "ALL".to_string(), "REJECT".to_string()]), vec![("ACCEPT".to_string(), "accept".to_string()), ("ALL".to_string(), "all".to_string()), ("REJECT".to_string(), "reject".to_string())], None, None))
+            AttributeSchema::optional("traffic_type", AttributeType::enum_(carina_core::schema::enum_identity("TrafficType", Some("aws.ec2.FlowLog")), Some(vec!["ACCEPT".to_string(), "ALL".to_string(), "REJECT".to_string()]), vec![("ACCEPT".to_string(), "accept".to_string()), ("ALL".to_string(), "all".to_string()), ("REJECT".to_string(), "reject".to_string())], None, None))
                 .create_only()
                 .with_description("The type of traffic to log. You can log traffic that the resource accepts or rejects, or all traffic.")
-                .with_provider_name("TrafficType"),
+                .with_provider_name("TrafficType")
+                .build(),
         )
         .with_conflicting_replacement()
-        .with_validator(|attrs| {
-            let mut errors = Vec::new();
-            if let Err(mut e) = carina_aws_types::validate_tags_map(attrs) {
-                errors.append(&mut e);
-            }
-            if errors.is_empty() { Ok(()) } else { Err(errors) }
-        })
+        .with_declared_validators(vec![carina_provider_protocol::types::ValidatorType::TagsKeyValueCheck])
     }
 }
 

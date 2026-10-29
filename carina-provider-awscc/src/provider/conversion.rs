@@ -547,7 +547,20 @@ pub(crate) fn value_to_json(value: &Value) -> Option<serde_json::Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use carina_core::schema::{DslTransform, StructField, legacy_validator};
+    use carina_core::schema::{
+        DslTransform, RootlessType, StructField, ValidatedConfigSchema, legacy_validator,
+    };
+
+    fn test_rootless_type(attr_type: AttributeType) -> RootlessType {
+        const NAME: &str = "test_value";
+        ValidatedConfigSchema::validate(std::collections::BTreeMap::from([(
+            NAME.to_string(),
+            attr_type,
+        )]))
+        .expect("test attribute type must pass config-schema admission")
+        .rootless_type(NAME)
+        .expect("test attribute type must be present")
+    }
 
     fn test_enum(
         name: &str,
@@ -723,8 +736,12 @@ mod tests {
     #[test]
     fn test_aws_value_to_dsl_bare_struct_returns_map() {
         let fields = vec![
-            StructField::new("status", AttributeType::string()).with_provider_name("Status"),
-            StructField::new("mfa_delete", AttributeType::string()).with_provider_name("MfaDelete"),
+            StructField::optional("status", AttributeType::string())
+                .with_provider_name("Status")
+                .build(),
+            StructField::optional("mfa_delete", AttributeType::string())
+                .with_provider_name("MfaDelete")
+                .build(),
         ];
         let attr_type = AttributeType::struct_("VersioningConfiguration".to_string(), fields);
         let json_val = serde_json::json!({
@@ -756,8 +773,12 @@ mod tests {
     #[test]
     fn test_dsl_value_to_aws_map_for_bare_struct() {
         let fields = vec![
-            StructField::new("status", AttributeType::string()).with_provider_name("Status"),
-            StructField::new("mfa_delete", AttributeType::string()).with_provider_name("MfaDelete"),
+            StructField::optional("status", AttributeType::string())
+                .with_provider_name("Status")
+                .build(),
+            StructField::optional("mfa_delete", AttributeType::string())
+                .with_provider_name("MfaDelete")
+                .build(),
         ];
         let attr_type = AttributeType::struct_("VersioningConfiguration".to_string(), fields);
 
@@ -789,8 +810,12 @@ mod tests {
     #[test]
     fn test_dsl_value_to_aws_list_for_bare_struct() {
         let fields = vec![
-            StructField::new("status", AttributeType::string()).with_provider_name("Status"),
-            StructField::new("mfa_delete", AttributeType::string()).with_provider_name("MfaDelete"),
+            StructField::optional("status", AttributeType::string())
+                .with_provider_name("Status")
+                .build(),
+            StructField::optional("mfa_delete", AttributeType::string())
+                .with_provider_name("MfaDelete")
+                .build(),
         ];
         let attr_type = AttributeType::struct_("VersioningConfiguration".to_string(), fields);
 
@@ -823,8 +848,11 @@ mod tests {
 
     #[test]
     fn test_bare_struct_roundtrip_no_spurious_diff() {
-        let fields =
-            vec![StructField::new("status", AttributeType::string()).with_provider_name("Status")];
+        let fields = vec![
+            StructField::optional("status", AttributeType::string())
+                .with_provider_name("Status")
+                .build(),
+        ];
         let attr_type = AttributeType::struct_("VersioningConfiguration".to_string(), fields);
 
         // Simulate AWS API response (JSON object)
@@ -990,7 +1018,7 @@ mod tests {
             )),
             vec![],
         );
-        let enum_schema = carina_core::schema::Schema::flat(inner.clone());
+        let enum_schema = test_rootless_type(inner.clone());
         let attr_type = AttributeType::list(inner);
         let value = Value::Concrete(ConcreteValue::List(vec![
             enum_schema.canonicalize_state(Value::Concrete(ConcreteValue::String("GET".into()))),
@@ -1144,7 +1172,7 @@ mod tests {
             )),
             vec![],
         );
-        let enum_schema = carina_core::schema::Schema::flat(inner_type.clone());
+        let enum_schema = test_rootless_type(inner_type.clone());
         let attr_type = AttributeType::map(inner_type);
 
         let mut map = IndexMap::new();
@@ -1469,8 +1497,7 @@ mod tests {
             .into_iter()
             .collect(),
         ));
-        let value =
-            carina_core::schema::Schema::flat(attr_type.clone()).canonicalize_state(raw_value);
+        let value = test_rootless_type(attr_type.clone()).canonicalize_state(raw_value);
 
         let result = dsl_value_to_aws_with_defs(
             &value,
@@ -1779,9 +1806,9 @@ mod tests {
         use carina_aws_types::aws_region;
 
         let fields = vec![
-            StructField::new("region_name", aws_region())
-                .required()
-                .with_provider_name("RegionName"),
+            StructField::required("region_name", aws_region())
+                .with_provider_name("RegionName")
+                .build(),
         ];
         let attr_type = AttributeType::list(AttributeType::struct_(
             "IpamOperatingRegion".to_string(),
@@ -1964,7 +1991,7 @@ mod tests {
             None,
             None,
         );
-        let schema = carina_core::schema::Schema::flat(attr_type);
+        let schema = test_rootless_type(attr_type);
         let value =
             schema.canonicalize_state(Value::Concrete(ConcreteValue::String("Allow".into())));
 
@@ -2221,9 +2248,20 @@ mod tests {
         let snake_case_value = Value::Concrete(ConcreteValue::enum_identifier(
             "aws.s3.Bucket.OwnershipControls.OwnershipControlsRule.ObjectOwnership.bucket_owner_enforced",
         ));
-        let ownership_schema =
-            carina_core::schema::Schema::flat(object_ownership.field_type().clone());
-        ownership_schema
+        let validated_schema = config
+            .schema
+            .clone()
+            .validate()
+            .expect("s3.Bucket schema must be valid");
+        let ownership_type = validated_schema
+            .effective_node_at_path(&[
+                "ownership_controls".to_string(),
+                "rules".to_string(),
+                "object_ownership".to_string(),
+            ])
+            .expect("object_ownership path must resolve")
+            .value_type();
+        ownership_type
             .validate(&snake_case_value)
             .expect("snake_case DSL spelling must validate");
 
@@ -2235,12 +2273,12 @@ mod tests {
             "aws.s3.Bucket.OwnershipControls.OwnershipControlsRule.ObjectOwnership.BucketOwnerEnforced",
         ));
         assert!(
-            ownership_schema.validate(&pascal_value).is_err(),
+            ownership_type.validate(&pascal_value).is_err(),
             "PascalCase API spelling must be rejected in DSL position",
         );
 
         // The provider boundary carries the host-resolved API spelling.
-        let canonical_value = ownership_schema.canonicalize_state(Value::Concrete(
+        let canonical_value = ownership_type.canonicalize_state(Value::Concrete(
             ConcreteValue::String("BucketOwnerEnforced".into()),
         ));
         assert_canonical_enum(
@@ -2331,7 +2369,7 @@ mod tests {
     #[test]
     fn test_aws_value_to_dsl_custom_without_to_dsl_passes_through() {
         let attr_type = AttributeType::refined_string_with_validator(
-            Some(carina_core::schema::TypeIdentity::bare("DnsName")),
+            carina_core::schema::TypeIdentity::bare("DnsName"),
             None,
             None,
             legacy_validator(|_| Ok(())),

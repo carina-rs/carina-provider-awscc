@@ -33,38 +33,34 @@ pub fn ec2_vpn_gateway_config() -> AwsccSchemaConfig {
         schema: ResourceSchema::new("ec2.VpnGateway")
 	        .with_description("Specifies a virtual private gateway. A virtual private gateway is the endpoint on the VPC side of your VPN connection. You can create a virtual private gateway before creating the VPC itself.  For more information, see [](https://docs.aws.amazon.com/vpn/latest/s2svpn/VPC_VPN.html) in the *User Guide*.")
         .attribute(
-            AttributeSchema::new("amazon_side_asn", AttributeType::refined_int(None, Some((Some(1), Some(4294967294)))))
+            AttributeSchema::optional("amazon_side_asn", AttributeType::refined_int(None, Some((Some(1), Some(4294967294)))))
                 .create_only()
                 .with_description("The private Autonomous System Number (ASN) for the Amazon side of a BGP session.")
-                .with_provider_name("AmazonSideAsn"),
+                .with_provider_name("AmazonSideAsn")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("tags", carina_aws_types::tags_type())
+            AttributeSchema::optional("tags", carina_aws_types::tags_type())
                 .with_description("Any tags assigned to the virtual private gateway.")
                 .with_provider_name("Tags")
-                .with_block_name("tag"),
+                .with_block_name("tag")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("type", AttributeType::enum_(carina_core::schema::enum_identity("Type", Some("aws.ec2.VpnGateway")), Some(vec!["ipsec.1".to_string()]), vec![("ipsec.1".to_string(), "ipsec_1".to_string())], None, None))
-                .required()
+            AttributeSchema::required("type", AttributeType::enum_(carina_core::schema::enum_identity("Type", Some("aws.ec2.VpnGateway")), Some(vec!["ipsec.1".to_string()]), vec![("ipsec.1".to_string(), "ipsec_1".to_string())], None, None))
                 .create_only()
                 .with_description("The type of VPN connection the virtual private gateway supports.")
-                .with_provider_name("Type"),
+                .with_provider_name("Type")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("vpn_gateway_id", carina_aws_types::vpn_gateway_id())
-                .read_only()
+            AttributeSchema::provider_populated("vpn_gateway_id", carina_aws_types::vpn_gateway_id())
                 .with_description(" (read-only)")
-                .with_provider_name("VPNGatewayId"),
+                .with_provider_name("VPNGatewayId")
+                .build(),
         )
         .with_coexisting_replacement()
-        .with_validator(|attrs| {
-            let mut errors = Vec::new();
-            if let Err(mut e) = carina_aws_types::validate_tags_map(attrs) {
-                errors.append(&mut e);
-            }
-            if errors.is_empty() { Ok(()) } else { Err(errors) }
-        })
+        .with_declared_validators(vec![carina_provider_protocol::types::ValidatorType::TagsKeyValueCheck])
     }
 }
 

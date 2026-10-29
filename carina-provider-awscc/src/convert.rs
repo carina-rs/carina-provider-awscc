@@ -4,7 +4,7 @@
 //! needed because carina-plugin-host depends on wasmtime which cannot
 //! compile to wasm32-wasip2.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use carina_core::provider::{
     AppliedState as CoreAppliedState, PatchOp as CorePatchOp, ReadOutcome as CoreReadOutcome,
@@ -12,34 +12,38 @@ use carina_core::provider::{
 };
 use carina_core::resource::{
     ConcreteValue, DataSource as CoreDataSource, DeferredValue, Directives as CoreDirectives,
-    RedactedSecretHash, Resource as CoreResource, ResourceId as CoreResourceId,
-    ResourceIdentity as CoreResourceIdentity, ResourceIdentityError as CoreResourceIdentityError,
-    State as CoreState, Value as CoreValue,
+    RedactedSecretHash, Resource as CoreResource, ResourceId as CoreResourceId, State as CoreState,
+    Value as CoreValue,
 };
+#[cfg(test)]
 use carina_core::schema::{
     AttributeSchema as CoreAttributeSchema, AttributeSchemaParts as CoreAttributeSchemaParts,
     AttributeType as CoreAttributeType, InputMode as CoreInputMode, RawShape as CoreRawShape,
-    ResourceSchema as CoreResourceSchema, ResourceSchemaParts as CoreResourceSchemaParts,
-    ResourceValidation as CoreResourceValidation, StructField as CoreStructField,
-    StructFieldParts as CoreStructFieldParts, UniqueNameSpec as CoreUniqueNameSpec,
+    ResourceSchemaParts as CoreResourceSchemaParts, ResourceValidation as CoreResourceValidation,
+    StructField as CoreStructField, StructFieldParts as CoreStructFieldParts,
+    UniqueNameSpec as CoreUniqueNameSpec, ValidatedResourceSchema as CoreValidatedResourceSchema,
     legacy_validator,
 };
 use carina_provider_protocol::types::{
     AppliedPersistedState as ProtoAppliedPersistedState, AppliedState as ProtoAppliedState,
-    AttributeSchema as ProtoAttributeSchema, AttributeType as ProtoAttributeType,
     Directives as ProtoDirectives, PartialReadDiagnostic as ProtoPartialReadDiagnostic,
     PatchOp as ProtoPatchOp, PersistedState as ProtoPersistedState,
     PersistedValue as ProtoPersistedValue, ReadOutcome as ProtoReadOutcome,
-    Resource as ProtoResource, ResourceId as ProtoResourceId,
-    ResourceSchema as ProtoResourceSchema, State as ProtoState, StructField as ProtoStructField,
-    UniqueNameSpec as ProtoUniqueNameSpec, UpdateOutcome as ProtoUpdateOutcome,
-    UpdatePatch as ProtoUpdatePatch, Value as ProtoValue,
+    Resource as ProtoResource, ResourceId as ProtoResourceId, State as ProtoState,
+    UpdateOutcome as ProtoUpdateOutcome, UpdatePatch as ProtoUpdatePatch, Value as ProtoValue,
+};
+#[cfg(test)]
+use carina_provider_protocol::types::{
+    AttributeSchema as ProtoAttributeSchema, AttributeType as ProtoAttributeType,
+    ResourceSchema as ProtoResourceSchema, StructField as ProtoStructField,
+    UniqueNameSpec as ProtoUniqueNameSpec,
 };
 
 #[derive(Debug, thiserror::Error)]
 #[error("persisted state contains an invalid redacted-secret digest")]
 pub struct PersistedValueDecodeError;
 
+#[cfg(test)]
 #[derive(Debug, thiserror::Error)]
 enum StructFieldDecodeError {
     #[error("struct field `{name}` cannot be both required and read-only")]
@@ -51,23 +55,11 @@ enum StructFieldDecodeError {
 // -- ResourceId --
 
 pub fn core_to_proto_resource_id(id: &CoreResourceId) -> ProtoResourceId {
-    id.to_wire()
+    carina_core::protocol_convert::resource_id_to_protocol(id)
 }
 
 pub fn proto_to_core_resource_id(id: &ProtoResourceId) -> CoreResourceId {
-    match CoreResourceIdentity::try_from(id.identity.clone()) {
-        Ok(identity) => CoreResourceId::with_provider_identity(
-            id.provider.clone(),
-            id.resource_type.clone(),
-            identity,
-            None,
-        ),
-        Err(CoreResourceIdentityError::Empty) => CoreResourceId::pending_with_provider(
-            id.provider.clone(),
-            id.resource_type.clone(),
-            None,
-        ),
-    }
+    carina_core::protocol_convert::protocol_to_resource_id(id)
 }
 
 // -- Value --
@@ -168,13 +160,13 @@ pub fn proto_to_core_value(v: &ProtoValue) -> CoreValue {
     }
 }
 
-pub fn core_to_proto_value_map(m: &HashMap<String, CoreValue>) -> HashMap<String, ProtoValue> {
+pub fn core_to_proto_value_map(m: &HashMap<String, CoreValue>) -> BTreeMap<String, ProtoValue> {
     m.iter()
         .map(|(k, v)| (k.clone(), core_to_proto_value(v)))
         .collect()
 }
 
-pub fn proto_to_core_value_map(m: &HashMap<String, ProtoValue>) -> HashMap<String, CoreValue> {
+pub fn proto_to_core_value_map(m: &BTreeMap<String, ProtoValue>) -> HashMap<String, CoreValue> {
     m.iter()
         .map(|(k, v)| (k.clone(), proto_to_core_value(v)))
         .collect()
@@ -252,7 +244,7 @@ pub fn core_to_proto_persisted_value(v: &CoreValue) -> ProtoPersistedValue {
 
 fn core_to_proto_persisted_value_map(
     m: &HashMap<String, CoreValue>,
-) -> HashMap<String, ProtoPersistedValue> {
+) -> BTreeMap<String, ProtoPersistedValue> {
     m.iter()
         .map(|(k, v)| (k.clone(), core_to_proto_persisted_value(v)))
         .collect()
@@ -296,7 +288,7 @@ pub fn proto_to_core_persisted_value(
 }
 
 pub fn proto_to_core_persisted_value_map(
-    m: &HashMap<String, ProtoPersistedValue>,
+    m: &BTreeMap<String, ProtoPersistedValue>,
 ) -> Result<HashMap<String, CoreValue>, PersistedValueDecodeError> {
     m.iter()
         .map(|(k, v)| proto_to_core_persisted_value(v).map(|value| (k.clone(), value)))
@@ -361,10 +353,10 @@ pub fn proto_to_core_persisted_state(
 
 fn core_to_proto_update_state(
     state: &CoreAppliedState,
-    mut state_after_patch: ProtoPersistedState,
+    state_after_patch: ProtoPersistedState,
 ) -> ProtoAppliedPersistedState {
     let mut attributes = core_to_proto_persisted_value_map(state.attributes());
-    for (key, value) in state_after_patch.attributes.drain() {
+    for (key, value) in state_after_patch.attributes {
         attributes.entry(key).or_insert(value);
     }
     ProtoAppliedPersistedState {
@@ -396,7 +388,7 @@ pub fn core_to_proto_update_outcome(
 
 // -- Resource --
 
-pub fn core_to_proto_resource(r: &CoreResource) -> ProtoResource {
+pub fn core_to_proto_resource<S>(r: &CoreResource<S>) -> ProtoResource {
     ProtoResource {
         id: core_to_proto_resource_id(&r.id),
         attributes: core_to_proto_value_map(&r.resolved_attributes()),
@@ -461,6 +453,7 @@ pub fn proto_to_core_data_source(r: &ProtoResource) -> CoreDataSource {
 
 // -- AttributeType --
 
+#[cfg(test)]
 fn proto_attr_type_to_core(
     t: &ProtoAttributeType,
 ) -> Result<CoreAttributeType, StructFieldDecodeError> {
@@ -524,7 +517,6 @@ fn proto_attr_type_to_core(
             proto_attr_type_to_core(element_type)?,
             *ordered,
             *length,
-            legacy_validator(|_| Ok(())),
         ),
         ProtoAttributeType::Map { inner, key } => CoreAttributeType::map_with_key(
             proto_attr_type_to_core(key)?,
@@ -573,12 +565,7 @@ fn proto_attr_type_to_core(
                     element_type,
                     ordered,
                     ..
-                } => CoreAttributeType::refined_list(
-                    element_type.clone(),
-                    ordered,
-                    *length,
-                    legacy_validator(|_| Ok(())),
-                ),
+                } => CoreAttributeType::refined_list(element_type.clone(), ordered, *length),
                 other => panic!("unsupported Custom base in provider protocol: {other:?}"),
             }
         }
@@ -617,11 +604,12 @@ fn proto_attr_type_to_core(
     })
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 fn proto_to_core_attribute_type(t: &ProtoAttributeType) -> CoreAttributeType {
     proto_attr_type_to_core(t).expect("test attribute type must decode")
 }
 
+#[cfg(test)]
 fn proto_to_core_struct_field(
     f: &ProtoStructField,
 ) -> Result<CoreStructField, StructFieldDecodeError> {
@@ -642,30 +630,66 @@ fn proto_to_core_struct_field(
     }
 
     let input_mode = proto_input_mode_to_core(name, *required, *read_only)?;
-    let mut field = CoreStructField::new(name.clone(), proto_attr_type_to_core(field_type)?);
-    field = match input_mode {
-        CoreInputMode::Optional => field,
-        CoreInputMode::Required => field.required(),
-        CoreInputMode::ProviderPopulated => field.read_only(),
-    };
-    if let Some(description) = description {
-        field = field.with_description(description.clone());
-    }
-    if let Some(provider_name) = provider_name {
-        field = field.with_provider_name(provider_name.clone());
-    }
-    if let Some(block_name) = block_name {
-        field = field.with_block_name(block_name.clone());
-    }
-    if *write_only {
-        field = field.write_only();
-    }
-    if *deferred_populate {
-        field = field.deferred_populate();
-    }
-    Ok(field)
+    let field_type = proto_attr_type_to_core(field_type)?;
+    Ok(match input_mode {
+        CoreInputMode::Optional => {
+            let mut field = CoreStructField::optional(name.clone(), field_type);
+            if let Some(description) = description {
+                field = field.with_description(description.clone());
+            }
+            if let Some(provider_name) = provider_name {
+                field = field.with_provider_name(provider_name.clone());
+            }
+            if let Some(block_name) = block_name {
+                field = field.with_block_name(block_name.clone());
+            }
+            if *write_only {
+                field = field.write_only();
+            }
+            if *deferred_populate {
+                field = field.deferred_populate();
+            }
+            field.build()
+        }
+        CoreInputMode::Required => {
+            let mut field = CoreStructField::required(name.clone(), field_type);
+            if let Some(description) = description {
+                field = field.with_description(description.clone());
+            }
+            if let Some(provider_name) = provider_name {
+                field = field.with_provider_name(provider_name.clone());
+            }
+            if let Some(block_name) = block_name {
+                field = field.with_block_name(block_name.clone());
+            }
+            if *write_only {
+                field = field.write_only();
+            }
+            if *deferred_populate {
+                field = field.deferred_populate();
+            }
+            field.build()
+        }
+        CoreInputMode::ProviderPopulated => {
+            let mut field = CoreStructField::provider_populated(name.clone(), field_type);
+            if let Some(description) = description {
+                field = field.with_description(description.clone());
+            }
+            if let Some(provider_name) = provider_name {
+                field = field.with_provider_name(provider_name.clone());
+            }
+            if let Some(block_name) = block_name {
+                field = field.with_block_name(block_name.clone());
+            }
+            if *deferred_populate {
+                field = field.deferred_populate();
+            }
+            field.build()
+        }
+    })
 }
 
+#[cfg(test)]
 fn proto_input_mode_to_core(
     name: &str,
     required: bool,
@@ -681,6 +705,7 @@ fn proto_input_mode_to_core(
     }
 }
 
+#[cfg(test)]
 fn core_to_proto_attribute_type(t: &CoreAttributeType) -> ProtoAttributeType {
     // `raw_shape()` is the Ref-preserving projection (carina#3349 / #3352).
     // `shape(defs)` would auto-resolve Ref and either flatten the
@@ -775,18 +800,19 @@ fn core_to_proto_attribute_type(t: &CoreAttributeType) -> ProtoAttributeType {
     }
 }
 
+#[cfg(test)]
 fn core_to_proto_struct_field(f: &CoreStructField) -> ProtoStructField {
     let CoreStructFieldParts {
         name,
         field_type,
-        input_mode,
+        declared_input_mode,
         description,
         provider_name,
         block_name,
         deferred_populate,
         write_only,
     } = f.parts();
-    let (required, read_only) = core_input_mode_to_proto(input_mode);
+    let (required, read_only) = core_input_mode_to_proto(declared_input_mode);
     ProtoStructField {
         name: name.to_string(),
         field_type: core_to_proto_attribute_type(field_type),
@@ -800,11 +826,12 @@ fn core_to_proto_struct_field(f: &CoreStructField) -> ProtoStructField {
     }
 }
 
+#[cfg(test)]
 fn core_to_proto_attribute_schema(a: &CoreAttributeSchema) -> ProtoAttributeSchema {
     let CoreAttributeSchemaParts {
         name,
         attr_type,
-        input_mode,
+        declared_input_mode,
         default,
         description,
         // The protocol has no field for completions.
@@ -817,7 +844,7 @@ fn core_to_proto_attribute_schema(a: &CoreAttributeSchema) -> ProtoAttributeSche
         identity,
         deferred_populate,
     } = a.parts();
-    let (required, read_only) = core_input_mode_to_proto(input_mode);
+    let (required, read_only) = core_input_mode_to_proto(declared_input_mode);
     ProtoAttributeSchema {
         name: name.to_string(),
         attr_type: core_to_proto_attribute_type(attr_type),
@@ -835,6 +862,7 @@ fn core_to_proto_attribute_schema(a: &CoreAttributeSchema) -> ProtoAttributeSche
     }
 }
 
+#[cfg(test)]
 fn core_input_mode_to_proto(input_mode: CoreInputMode) -> (bool, bool) {
     match input_mode {
         CoreInputMode::Optional => (false, false),
@@ -843,9 +871,11 @@ fn core_input_mode_to_proto(input_mode: CoreInputMode) -> (bool, bool) {
     }
 }
 
-pub fn core_to_proto_schema(s: &CoreResourceSchema) -> ProtoResourceSchema {
+#[cfg(test)]
+pub fn core_to_proto_schema(s: &CoreValidatedResourceSchema) -> ProtoResourceSchema {
     use carina_core::schema::SchemaKind as CoreSchemaKind;
     use carina_provider_protocol::types::SchemaKind as ProtoSchemaKind;
+    let s = s.as_schema();
     let CoreResourceSchemaParts {
         resource_type,
         attributes,
@@ -883,8 +913,6 @@ pub fn core_to_proto_schema(s: &CoreResourceSchema) -> ProtoResourceSchema {
         validators: match validation {
             CoreResourceValidation::Declared(validators) => validators.clone(),
             CoreResourceValidation::None => vec![],
-            // Native callbacks are not portable across the protocol.
-            CoreResourceValidation::InProcess(_native_callback) => vec![],
         },
         exclusive_required: exclusive_required.to_vec(),
         // Cyclic CFN struct definitions reachable via Ref (carina#3340).
@@ -895,6 +923,7 @@ pub fn core_to_proto_schema(s: &CoreResourceSchema) -> ProtoResourceSchema {
     }
 }
 
+#[cfg(test)]
 fn core_to_proto_unique_name(spec: &CoreUniqueNameSpec) -> ProtoUniqueNameSpec {
     match spec {
         CoreUniqueNameSpec::Attribute(attribute) => {
@@ -1061,9 +1090,7 @@ mod tests {
         let pattern = "^[a-z]+$";
         let length = (Some(1u64), Some(256u64));
         let core_type = CoreAttributeType::refined_string_with_validator(
-            Some(carina_core::schema::TypeIdentity::from_dotted(
-                "awscc.wafv2.WebACL.EntityDescription",
-            )),
+            carina_core::schema::TypeIdentity::from_dotted("awscc.wafv2.WebACL.EntityDescription"),
             Some(pattern.to_string()),
             Some(length),
             legacy_validator(|_| Ok(())),
@@ -1108,13 +1135,8 @@ mod tests {
     fn anonymous_custom_pattern_only_crosses_proto_boundary() {
         let pattern =
             "^[a-zA-Z0-9=:#@/\\-,.][a-zA-Z0-9+=:#@/\\-,.\\s]+[a-zA-Z0-9+=:#@/\\-,.]{1,256}$";
-        let core_type = CoreAttributeType::refined_string_with_validator(
-            None,
-            Some(pattern.to_string()),
-            None,
-            legacy_validator(|_| Ok(())),
-            None,
-        );
+        let core_type =
+            CoreAttributeType::refined_string(None, Some(pattern.to_string()), None, None);
 
         let proto_type = core_to_proto_attribute_type(&core_type);
         let roundtripped = proto_to_core_attribute_type(&proto_type);
@@ -1257,21 +1279,25 @@ mod tests {
 
     #[test]
     fn core_to_proto_schema_initializes_empty_validators() {
-        let schema = CoreResourceSchema::new("s3.Bucket");
+        let schema = carina_core::schema::ResourceSchema::new("s3.Bucket")
+            .validate()
+            .expect("empty fixture schema must be valid");
         let proto = core_to_proto_schema(&schema);
         assert!(proto.validators.is_empty());
     }
 
     #[test]
     fn nested_struct_field_write_only_round_trips_through_protocol() {
-        let core = CoreStructField::new("client_secret", CoreAttributeType::string()).write_only();
+        let core = CoreStructField::optional("client_secret", CoreAttributeType::string())
+            .write_only()
+            .build();
 
         let protocol = core_to_proto_struct_field(&core);
         assert!(protocol.write_only);
 
         let round_tripped =
             proto_to_core_struct_field(&protocol).expect("write-only field should decode");
-        assert!(round_tripped.is_write_only());
+        assert!(round_tripped.parts().write_only);
     }
 
     #[test]
@@ -1307,20 +1333,25 @@ mod tests {
         let schema = carina_provider_awscc::schemas::generated::kms::key::kms_key_config()
             .schema
             .attribute(
-                CoreAttributeSchema::new(
+                CoreAttributeSchema::provider_populated(
                     "transport_probe",
                     CoreAttributeType::struct_(
                         "TransportProbe",
                         vec![
-                            CoreStructField::new("result", CoreAttributeType::string())
-                                .read_only()
-                                .deferred_populate(),
+                            CoreStructField::provider_populated(
+                                "result",
+                                CoreAttributeType::string(),
+                            )
+                            .deferred_populate()
+                            .build(),
                         ],
                     ),
                 )
-                .read_only()
-                .deferred_populate(),
-            );
+                .deferred_populate()
+                .build(),
+            )
+            .validate()
+            .expect("schema transport fixture must be valid");
 
         let proto = core_to_proto_schema(&schema);
         let proto_probe = &proto.attributes["transport_probe"];

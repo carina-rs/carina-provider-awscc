@@ -17,24 +17,24 @@ pub fn ec2_subnet_route_table_association_config() -> AwsccSchemaConfig {
         schema: ResourceSchema::new("ec2.SubnetRouteTableAssociation")
 	        .with_description("Associates a subnet with a route table. The subnet and route table must be in the same VPC. This association causes traffic originating from the subnet to be routed according to the routes in the route table. A route table can be associated with multiple subnets. To create a route table, see [AWS::EC2::RouteTable](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-routetable.html).")
         .attribute(
-            AttributeSchema::new("id", carina_aws_types::subnet_route_table_association_id())
-                .read_only()
+            AttributeSchema::provider_populated("id", carina_aws_types::subnet_route_table_association_id())
                 .with_description(" (read-only)")
-                .with_provider_name("Id"),
+                .with_provider_name("Id")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("route_table_id", carina_aws_types::route_table_id())
-                .required()
+            AttributeSchema::required("route_table_id", carina_aws_types::route_table_id())
                 .create_only()
                 .with_description("The ID of the route table. The physical ID changes when the route table ID is changed.")
-                .with_provider_name("RouteTableId"),
+                .with_provider_name("RouteTableId")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("subnet_id", carina_aws_types::subnet_id())
-                .required()
+            AttributeSchema::required("subnet_id", carina_aws_types::subnet_id())
                 .create_only()
                 .with_description("The ID of the subnet.")
-                .with_provider_name("SubnetId"),
+                .with_provider_name("SubnetId")
+                .build(),
         )
         .with_conflicting_replacement()
     }

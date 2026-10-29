@@ -17,63 +17,62 @@ pub fn ec2_vpc_peering_connection_config() -> AwsccSchemaConfig {
         schema: ResourceSchema::new("ec2.VpcPeeringConnection")
 	        .with_description("Resource Type definition for AWS::EC2::VPCPeeringConnection")
         .attribute(
-            AttributeSchema::new("assume_role_region", carina_aws_types::aws_region())
+            AttributeSchema::optional("assume_role_region", carina_aws_types::aws_region())
                 .create_only()
                 .write_only()
                 .with_description("The Region code to use when calling Security Token Service (STS) to assume the PeerRoleArn, if provided.")
-                .with_provider_name("AssumeRoleRegion"),
+                .with_provider_name("AssumeRoleRegion")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("id", carina_aws_types::vpc_peering_connection_id())
-                .read_only()
-                .with_provider_name("Id"),
+            AttributeSchema::provider_populated("id", carina_aws_types::vpc_peering_connection_id())
+                .with_provider_name("Id")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("peer_owner_id", carina_aws_types::aws_account_id())
+            AttributeSchema::optional("peer_owner_id", carina_aws_types::aws_account_id())
                 .create_only()
                 .with_description("The AWS account ID of the owner of the accepter VPC.")
-                .with_provider_name("PeerOwnerId"),
+                .with_provider_name("PeerOwnerId")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("peer_region", carina_aws_types::aws_region())
+            AttributeSchema::optional("peer_region", carina_aws_types::aws_region())
                 .create_only()
                 .with_description("The Region code for the accepter VPC, if the accepter VPC is located in a Region other than the Region in which you make the request.")
-                .with_provider_name("PeerRegion"),
+                .with_provider_name("PeerRegion")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("peer_role_arn", super::super::iam::role::arn())
+            AttributeSchema::optional("peer_role_arn", super::super::iam::role::arn())
                 .create_only()
                 .write_only()
                 .with_description("The Amazon Resource Name (ARN) of the VPC peer role for the peering connection in another AWS account.")
-                .with_provider_name("PeerRoleArn"),
+                .with_provider_name("PeerRoleArn")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("peer_vpc_id", carina_aws_types::vpc_id())
-                .required()
+            AttributeSchema::required("peer_vpc_id", carina_aws_types::vpc_id())
                 .create_only()
                 .with_description("The ID of the VPC with which you are creating the VPC peering connection. You must specify this parameter in the request.")
-                .with_provider_name("PeerVpcId"),
+                .with_provider_name("PeerVpcId")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("tags", carina_aws_types::tags_type())
+            AttributeSchema::optional("tags", carina_aws_types::tags_type())
                 .with_provider_name("Tags")
-                .with_block_name("tag"),
+                .with_block_name("tag")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("vpc_id", carina_aws_types::vpc_id())
-                .required()
+            AttributeSchema::required("vpc_id", carina_aws_types::vpc_id())
                 .create_only()
                 .with_description("The ID of the VPC.")
-                .with_provider_name("VpcId"),
+                .with_provider_name("VpcId")
+                .build(),
         )
         .with_conflicting_replacement()
-        .with_validator(|attrs| {
-            let mut errors = Vec::new();
-            if let Err(mut e) = carina_aws_types::validate_tags_map(attrs) {
-                errors.append(&mut e);
-            }
-            if errors.is_empty() { Ok(()) } else { Err(errors) }
-        })
+        .with_declared_validators(vec![carina_provider_protocol::types::ValidatorType::TagsKeyValueCheck])
     }
 }
 

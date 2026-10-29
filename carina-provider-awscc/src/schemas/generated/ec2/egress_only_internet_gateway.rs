@@ -23,40 +23,36 @@ pub fn ec2_egress_only_internet_gateway_config() -> AwsccSchemaConfig {
         schema: ResourceSchema::new("ec2.EgressOnlyInternetGateway")
             .with_description("Resource Type definition for AWS::EC2::EgressOnlyInternetGateway")
             .attribute(
-                AttributeSchema::new("id", carina_aws_types::egress_only_internet_gateway_id())
-                    .read_only()
-                    .with_description(
-                        "Service Generated ID of the EgressOnlyInternetGateway (read-only)",
-                    )
-                    .with_provider_name("Id"),
+                AttributeSchema::provider_populated(
+                    "id",
+                    carina_aws_types::egress_only_internet_gateway_id(),
+                )
+                .with_description(
+                    "Service Generated ID of the EgressOnlyInternetGateway (read-only)",
+                )
+                .with_provider_name("Id")
+                .build(),
             )
             .attribute(
-                AttributeSchema::new("tags", carina_aws_types::tags_type())
+                AttributeSchema::optional("tags", carina_aws_types::tags_type())
                     .with_description("Any tags assigned to the egress only internet gateway.")
                     .with_provider_name("Tags")
-                    .with_block_name("tag"),
+                    .with_block_name("tag")
+                    .build(),
             )
             .attribute(
-                AttributeSchema::new("vpc_id", carina_aws_types::vpc_id())
-                    .required()
+                AttributeSchema::required("vpc_id", carina_aws_types::vpc_id())
                     .create_only()
                     .with_description(
                         "The ID of the VPC for which to create the egress-only internet gateway.",
                     )
-                    .with_provider_name("VpcId"),
+                    .with_provider_name("VpcId")
+                    .build(),
             )
             .with_coexisting_replacement()
-            .with_validator(|attrs| {
-                let mut errors = Vec::new();
-                if let Err(mut e) = carina_aws_types::validate_tags_map(attrs) {
-                    errors.append(&mut e);
-                }
-                if errors.is_empty() {
-                    Ok(())
-                } else {
-                    Err(errors)
-                }
-            }),
+            .with_declared_validators(vec![
+                carina_provider_protocol::types::ValidatorType::TagsKeyValueCheck,
+            ]),
     }
 }
 

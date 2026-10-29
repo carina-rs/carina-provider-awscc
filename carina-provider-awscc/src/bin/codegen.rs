@@ -141,7 +141,8 @@ thread_local! {
     static EMITTED_INT_ENUMS: RefCell<BTreeMap<String, Vec<i64>>> =
         RefCell::new(BTreeMap::new());
     /// Provider paths whose generated `AttributeSchema` or `StructField`
-    /// actually carries `.read_only()` in the current emission pass.
+    /// actually uses the `provider_populated` constructor in the current
+    /// emission pass.
     #[allow(clippy::missing_const_for_thread_local)]
     static EMITTED_READ_ONLY_PATHS: RefCell<Vec<Vec<String>>> = RefCell::new(Vec::new());
     /// Read-only signatures produced by each emitted struct name. Reusing a
@@ -654,7 +655,7 @@ fn emit_arn_helper(service: &str, resource: &str, choice: ArnEmitChoice) -> Stri
     format!(
         r#"pub fn arn() -> AttributeType {{
     AttributeType::refined_string_with_validator(
-        Some(carina_aws_types::provider_type("{service}", "{resource}", "Arn")),
+        carina_aws_types::provider_type("{service}", "{resource}", "Arn"),
         {regex_expr},
         None,
         legacy_validator({validator_expr}),
@@ -3619,21 +3620,23 @@ pub fn {}() -> AwsccSchemaConfig {{
             has_arn_helper,
         );
 
+        let constructor = if is_read_only {
+            "provider_populated"
+        } else if is_required {
+            "required"
+        } else {
+            "optional"
+        };
         let mut attr_code = format!(
-            "        .attribute(\n            AttributeSchema::new(\"{}\", {})", // rust-lit-guard: allow (snake_case output cannot contain " or \\)
-            attr_name, attr_type
+            "        .attribute(\n            AttributeSchema::{}(\"{}\", {})", // rust-lit-guard: allow (snake_case output cannot contain " or \\)
+            constructor, attr_name, attr_type
         );
-
-        if is_required {
-            attr_code.push_str("\n                .required()");
-        }
 
         if is_create_only {
             attr_code.push_str("\n                .create_only()");
         }
 
         if is_read_only {
-            attr_code.push_str("\n                .read_only()");
             record_emitted_read_only_path(&property_path);
         }
 
@@ -3687,6 +3690,7 @@ pub fn {}() -> AwsccSchemaConfig {{
         // attribute assignment (Value::Map) so the block_name is safe to add.
         if (attr_type.contains("list(AttributeType::struct_")
             || is_list_of_struct_property(prop, schema))
+            && !is_read_only
             && let Some(singular) = compute_block_name(&attr_name)
         {
             attr_code.push_str(&format!(
@@ -3695,7 +3699,7 @@ pub fn {}() -> AwsccSchemaConfig {{
             ));
         }
 
-        attr_code.push_str(",\n        )\n");
+        attr_code.push_str("\n                .build(),\n        )\n");
         body.push_str(&attr_code);
     }
 
@@ -3720,9 +3724,9 @@ pub fn {}() -> AwsccSchemaConfig {{
         body.push_str(&format!(
             concat!(
                 "        .attribute(\n",
-                "            AttributeSchema::new({}, {})\n",
-                "                .read_only()\n",
-                "                .with_description(\"{} (read-only)\"),\n        )\n", // rust-lit-guard: allow (already escaped and newline-collapsed)
+                "            AttributeSchema::provider_populated({}, {})\n",
+                "                .with_description(\"{} (read-only)\")\n", // rust-lit-guard: allow (already escaped and newline-collapsed)
+                "                .build(),\n        )\n", // rust-lit-guard: allow (already escaped and newline-collapsed)
             ),
             rust_lit(synth.attr_name),
             if has_arn_helper && synth.attr_name == "arn" {
@@ -3763,16 +3767,10 @@ pub fn {}() -> AwsccSchemaConfig {{
         body.push_str(&format!("        .exclusive_required(&[{}])\n", fields_str));
     }
 
-    // Tags map-shape check is still emitted as a closure. It's a local
-    // safety net; the host side re-attaches the equivalent check via
-    // `ValidatorType::TagsKeyValueCheck` (see `main.rs::schemas`).
+    // Tags map-shape validation is portable schema data so native and WASM
+    // consumers admit the same schema and enforce the same rule.
     if tags.is_some() {
-        body.push_str("        .with_validator(|attrs| {\n");
-        body.push_str("            let mut errors = Vec::new();\n");
-        body.push_str("            if let Err(mut e) = carina_aws_types::validate_tags_map(attrs) {\n                errors.append(&mut e);\n            }\n");
-        body.push_str(
-            "            if errors.is_empty() { Ok(()) } else { Err(errors) }\n        })\n",
-        );
+        body.push_str("        .with_declared_validators(vec![carina_provider_protocol::types::ValidatorType::TagsKeyValueCheck])\n");
     }
 
     // carina#3340: drain any cyclic-struct definitions that the
@@ -4827,13 +4825,20 @@ fn generate_struct_type(
             let is_write_only = is_write_only_property_path(schema, &field_path);
             let is_required = required_set.contains(field_name.as_str()) && !is_read_only;
 
-            let mut field_code =
-                format!("StructField::new({}, {})", rust_lit(&snake_name), field_type);
-            if is_required {
-                field_code.push_str(".required()");
-            }
+            let constructor = if is_read_only {
+                "provider_populated"
+            } else if is_required {
+                "required"
+            } else {
+                "optional"
+            };
+            let mut field_code = format!(
+                "StructField::{}({}, {})",
+                constructor,
+                rust_lit(&snake_name),
+                field_type
+            );
             if is_read_only {
-                field_code.push_str(".read_only()");
                 record_emitted_read_only_path(&field_path);
             }
             if is_write_only {
@@ -4857,10 +4862,13 @@ fn generate_struct_type(
             // attribute assignment (Value::Map) so the block_name is safe to add.
             if (field_type.contains("list(AttributeType::struct_")
                 || is_list_of_struct_property(field_prop, schema))
+                && !is_read_only
                 && let Some(singular) = compute_block_name(&snake_name)
             {
                 field_code.push_str(&format!(".with_block_name({})", rust_lit(&singular)));
             }
+
+            field_code.push_str(".build()");
 
             field_code
         })
@@ -5206,14 +5214,39 @@ fn refined_int_type_with_validator(identity: &str, range: &str, validator: &str)
     )
 }
 
+fn int_enum_type(resource_type: &str, prop_name: &str, values: &[i64]) -> String {
+    let identity_parts = match (resource_type, prop_name) {
+        ("AWS::EC2::FlowLog", "MaxAggregationInterval") => Some(("ec2", "FlowLog")),
+        ("AWS::Logs::LogGroup", "RetentionInDays") => Some(("logs", "LogGroup")),
+        _ => None,
+    };
+    if let Some((service, resource)) = identity_parts {
+        let identity = format!(
+            "carina_aws_types::provider_type({}, {}, {})",
+            rust_lit(service),
+            rust_lit(resource),
+            rust_lit(prop_name)
+        );
+        let validator = format!("validate_{}_int_enum", prop_name.to_snake_case());
+        return refined_int_type_with_validator(&identity, "None", &validator);
+    }
+
+    let members = values
+        .iter()
+        .map(|value| {
+            format!("AttributeType::refined_int(None, Some((Some({value}), Some({value}))))")
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("AttributeType::union(vec![{members}])")
+}
+
 fn refined_float_type(identity: &str, range: &str) -> String {
     format!("AttributeType::refined_float({identity}, {range})")
 }
 
-fn refined_list_type(element_type: &str, ordered: bool, length: &str, validator: &str) -> String {
-    format!(
-        "AttributeType::refined_list({element_type}, {ordered}, {length}, legacy_validator({validator}))"
-    )
+fn refined_list_type(element_type: &str, ordered: bool, length: &str, _validator: &str) -> String {
+    format!("AttributeType::refined_list({element_type}, {ordered}, {length})")
 }
 
 fn emit_int_range_option(min: Option<i64>, max: Option<i64>) -> String {
@@ -5893,7 +5926,7 @@ fn identity_properties() -> &'static HashSet<(&'static str, &'static str)> {
 /// Attributes that do **not** exist in the CloudFormation schema but that
 /// the provider synthesizes on the read path so downstream `.crn`
 /// references can resolve. Each entry expands into an extra
-/// `AttributeSchema::new(...).read_only()` block in the generated schema
+/// `AttributeSchema::provider_populated(...)` block in the generated schema
 /// with no `provider_name` (the missing `provider_name` is what tells the
 /// read-path mapper to skip CFN lookup and rely on synthesis instead).
 ///
@@ -6622,12 +6655,7 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
                 })
                 .collect();
             record_int_enum(prop_name, &values);
-            let _ = values;
-            let validate_fn = format!("validate_{}_int_enum", prop_name.to_snake_case());
-            return (
-                refined_int_type_with_validator("None", "None", &validate_fn),
-                None,
-            );
+            return (int_enum_type(&schema.type_name, prop_name, &values), None);
         }
 
         let type_name = prop_name.to_pascal_case();
@@ -6770,11 +6798,7 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
             }
             if let Some(TypeOverride::IntEnum(values)) = res_override {
                 record_int_enum(prop_name, values);
-                let validate_fn = format!("validate_{}_int_enum", prop_name.to_snake_case());
-                return (
-                    refined_int_type_with_validator("None", "None", &validate_fn),
-                    None,
-                );
+                return (int_enum_type(&schema.type_name, prop_name, values), None);
             }
             // Use CF min/max if available (including one-sided), otherwise check known overrides
             let range: Option<(Option<i64>, Option<i64>)> =
@@ -7331,14 +7355,16 @@ mod tests {
         let source = include_str!("codegen.rs");
         let escaped_literal_shape = "\\\"{}\\\""; // rust-lit-guard: allow
         let raw_literal_shapes = [
-            r#""{}".to_string()"#,       // rust-lit-guard: allow
-            r#"string_enum("{}"#,        // rust-lit-guard: allow
-            r#"struct_("{}"#,            // rust-lit-guard: allow
-            r#"ref_("{}"#,               // rust-lit-guard: allow
-            r#"StructField::new("{}"#,   // rust-lit-guard: allow
-            r#"with_provider_name("{}"#, // rust-lit-guard: allow
-            r#"with_block_name("{}"#,    // rust-lit-guard: allow
-            r#"with_description("{}"#,   // rust-lit-guard: allow
+            r#""{}".to_string()"#,                    // rust-lit-guard: allow
+            r#"string_enum("{}"#,                     // rust-lit-guard: allow
+            r#"struct_("{}"#,                         // rust-lit-guard: allow
+            r#"ref_("{}"#,                            // rust-lit-guard: allow
+            r#"StructField::required("{}"#,           // rust-lit-guard: allow
+            r#"StructField::optional("{}"#,           // rust-lit-guard: allow
+            r#"StructField::provider_populated("{}"#, // rust-lit-guard: allow
+            r#"with_provider_name("{}"#,              // rust-lit-guard: allow
+            r#"with_block_name("{}"#,                 // rust-lit-guard: allow
+            r#"with_description("{}"#,                // rust-lit-guard: allow
         ];
 
         let offenders: Vec<String> = source
@@ -7762,22 +7788,25 @@ mod tests {
 
         assert!(
             generated.contains(
-                r#"StructField::new("function_arn", carina_aws_types::arn()).read_only()"#
+                r#"StructField::provider_populated("function_arn", carina_aws_types::arn())"#
             ),
             "FunctionMetadata.FunctionARN must be provider-populated: {generated}"
         );
 
         let function_metadata = generated
-            .split("AttributeSchema::new(\"function_metadata\"")
+            .split("AttributeSchema::provider_populated(\"function_metadata\"")
             .nth(1)
-            .and_then(|tail| tail.split("AttributeSchema::new(\"name\"").next())
+            .and_then(|tail| tail.split("AttributeSchema::required(\"name\"").next())
             .expect("generated Function schema should contain function_metadata before name");
         let function_metadata_attribute_builders = function_metadata
-            .split(r#".with_provider_name("FunctionARN")]))"#)
+            .split(r#".with_provider_name("FunctionARN").build()]))"#)
             .nth(1)
             .expect("function_metadata should contain its nested FunctionARN field");
         assert!(
-            function_metadata_attribute_builders.contains(".read_only()"),
+            function_metadata_attribute_builders.contains(
+                r#".with_provider_name("FunctionMetadata")
+                .build()"#
+            ),
             "FunctionMetadata contains only provider-populated fields, so the top-level attribute must be read-only: {function_metadata_attribute_builders}"
         );
     }
@@ -7799,20 +7828,23 @@ mod tests {
         for field in ["table_namespace", "table_arn"] {
             assert!(
                 s3_tables_destination.contains(&format!(
-                    r#"StructField::new("{field}", carina_aws_types::arn()).read_only()"#
+                    r#"StructField::provider_populated("{field}", carina_aws_types::arn())"#
                 )) || s3_tables_destination.contains(&format!(
-                    r#"StructField::new("{field}", AttributeType::string()).read_only()"#
+                    r#"StructField::provider_populated("{field}", AttributeType::string())"#
                 )),
                 "S3TablesDestination.{field} must be provider-populated: {s3_tables_destination}"
             );
         }
         let table_name = s3_tables_destination
-            .split(r#"StructField::new("table_name"#)
+            .split(r#"StructField::required("table_name"#)
             .nth(1)
-            .and_then(|tail| tail.split(r#"StructField::new("table_namespace"#).next())
+            .and_then(|tail| {
+                tail.split(r#"StructField::provider_populated("table_namespace"#)
+                    .next()
+            })
             .expect("S3TablesDestination should contain table_name before table_namespace");
         assert!(
-            !table_name.contains(".read_only()"),
+            !table_name.contains("provider_populated"),
             "S3TablesDestination.TableName must remain writable: {table_name}"
         );
 
@@ -7821,39 +7853,41 @@ mod tests {
             .nth(1)
             .expect("generated S3 schema should contain MetadataConfiguration");
         let destination = metadata_configuration
-            .split(r#"StructField::new("destination"#)
+            .split(r#"StructField::provider_populated("destination"#)
             .nth(1)
             .and_then(|tail| {
-                tail.split(r#"StructField::new("inventory_table_configuration"#)
+                tail.split(r#"StructField::optional("inventory_table_configuration"#)
                     .next()
             })
             .expect("MetadataConfiguration should contain destination");
         assert!(
-            destination.contains(".read_only()"),
+            destination.contains(r#".with_provider_name("Destination").build()"#),
             "MetadataConfiguration.Destination must be provider-populated: {destination}"
         );
 
         let inventory_table_configuration = metadata_configuration
-            .split(r#"StructField::new("inventory_table_configuration""#)
+            .split(r#"StructField::optional("inventory_table_configuration""#)
             .nth(1)
             .and_then(|tail| {
-                tail.split(r#"StructField::new("journal_table_configuration""#)
+                tail.split(r#"StructField::required("journal_table_configuration""#)
                     .next()
             })
             .expect("MetadataConfiguration should contain InventoryTableConfiguration");
         assert!(
-            inventory_table_configuration
-                .contains(r#"StructField::new("table_arn", carina_aws_types::arn()).read_only()"#),
+            inventory_table_configuration.contains(
+                r#"StructField::provider_populated("table_arn", carina_aws_types::arn())"#
+            ),
             "InventoryTableConfiguration.TableArn must be provider-populated: {inventory_table_configuration}"
         );
         assert!(
-            inventory_table_configuration
-                .contains(r#"StructField::new("table_name", AttributeType::string()).read_only()"#),
+            inventory_table_configuration.contains(
+                r#"StructField::provider_populated("table_name", AttributeType::string())"#
+            ),
             "InventoryTableConfiguration.TableName must be provider-populated: {inventory_table_configuration}"
         );
 
         let journal_table_configuration = metadata_configuration
-            .split(r#"StructField::new("journal_table_configuration""#)
+            .split(r#"StructField::required("journal_table_configuration""#)
             .nth(1)
             .and_then(|tail| {
                 tail.split(r#".with_provider_name("JournalTableConfiguration")"#)
@@ -7861,13 +7895,15 @@ mod tests {
             })
             .expect("MetadataConfiguration should contain JournalTableConfiguration");
         assert!(
-            journal_table_configuration
-                .contains(r#"StructField::new("table_arn", carina_aws_types::arn()).read_only()"#),
+            journal_table_configuration.contains(
+                r#"StructField::provider_populated("table_arn", carina_aws_types::arn())"#
+            ),
             "JournalTableConfiguration.TableArn must be provider-populated: {journal_table_configuration}"
         );
         assert!(
-            journal_table_configuration
-                .contains(r#"StructField::new("table_name", AttributeType::string()).read_only()"#),
+            journal_table_configuration.contains(
+                r#"StructField::provider_populated("table_name", AttributeType::string())"#
+            ),
             "JournalTableConfiguration.TableName must be provider-populated: {journal_table_configuration}"
         );
     }
@@ -7916,12 +7952,14 @@ mod tests {
             &BTreeMap::new(),
         );
         assert!(
-            generated.contains(r#"StructField::new("owned", AttributeType::string()).read_only()"#),
+            generated
+                .contains(r#"StructField::provider_populated("owned", AttributeType::string())"#),
             "Items[*].Owned must be provider-populated: {generated}"
         );
         assert!(
-            !generated
-                .contains(r#"StructField::new("writable", AttributeType::string()).read_only()"#),
+            !generated.contains(
+                r#"StructField::provider_populated("writable", AttributeType::string())"#
+            ),
             "Items[*].Writable must remain writable: {generated}"
         );
     }
@@ -7990,18 +8028,19 @@ mod tests {
             .expect("both $ref item array forms should generate");
         for attribute in ["direct_items", "referenced_items"] {
             let attribute_body = generated
-                .split(&format!(r#"AttributeSchema::new("{attribute}""#))
+                .split(&format!(r#"AttributeSchema::optional("{attribute}""#))
                 .nth(1)
                 .and_then(|tail| tail.split(".with_provider_name(").next())
                 .unwrap_or_else(|| panic!("generated schema should contain {attribute}"));
             assert!(
-                attribute_body
-                    .contains(r#"StructField::new("owned", AttributeType::string()).read_only()"#),
+                attribute_body.contains(
+                    r#"StructField::provider_populated("owned", AttributeType::string())"#
+                ),
                 "{attribute}[*].Owned must be provider-populated: {attribute_body}"
             );
             assert!(
                 !attribute_body.contains(
-                    r#"StructField::new("writable", AttributeType::string()).read_only()"#
+                    r#"StructField::provider_populated("writable", AttributeType::string())"#
                 ),
                 "{attribute}[*].Writable must remain writable: {attribute_body}"
             );
@@ -8182,14 +8221,11 @@ mod tests {
         let generated = generate_synthetic_schema_code(&schema)
             .expect("nested fully read-only structs should generate");
         assert!(
-            generated.contains(
-                r#".with_provider_name("Arn")])).read_only().with_provider_name("Meta")"#
-            ),
+            generated.contains(r#"StructField::provider_populated("meta", AttributeType::struct_("Meta".to_string(), vec![StructField::provider_populated("arn", "#),
             "Config.Meta must be provider-populated when every emitted child is read-only: {generated}"
         );
         assert!(
-            !generated
-                .contains(r#".with_provider_name("Arn")])).required().with_provider_name("Meta")"#),
+            !generated.contains(r#"StructField::required("meta", "#),
             "Config.Meta must not remain required when it is provider-populated: {generated}"
         );
     }
@@ -10514,8 +10550,7 @@ mod tests {
     }
 
     #[test]
-    fn test_integer_enum_produces_custom_type() {
-        // Integer enum values should produce Custom IntEnum type
+    fn test_selected_integer_enum_uses_identified_validator() {
         let prop = CfnProperty {
             prop_type: Some(TypeValue::Single("integer".to_string())),
             description: Some("Retention in days.".to_string()),
@@ -10566,20 +10601,29 @@ mod tests {
             "",
             &BTreeMap::new(),
         );
-        assert!(
-            type_str.contains("AttributeType::refined_int_with_validator("),
-            "Integer enum should produce refined int type, got: {}",
-            type_str
+        assert_eq!(
+            type_str,
+            concat!(
+                "AttributeType::refined_int_with_validator(",
+                "carina_aws_types::provider_type(\"logs\", \"LogGroup\", \"RetentionInDays\"), ",
+                "None, legacy_validator(validate_retention_in_days_int_enum))"
+            )
         );
-        assert!(
-            type_str.contains("legacy_validator("),
-            "Refined int should carry a validator, got: {}",
-            type_str
+
+        assert_eq!(
+            int_enum_type("AWS::EC2::FlowLog", "MaxAggregationInterval", &[60, 600]),
+            concat!(
+                "AttributeType::refined_int_with_validator(",
+                "carina_aws_types::provider_type(\"ec2\", \"FlowLog\", ",
+                "\"MaxAggregationInterval\"), None, ",
+                "legacy_validator(validate_max_aggregation_interval_int_enum))"
+            )
         );
+
         assert!(
-            type_str.contains("validate_retention_in_days_int_enum"),
-            "Should reference int enum validation function, got: {}",
-            type_str
+            int_enum_type("AWS::Other::Widget", "Priority", &[1, 3])
+                .starts_with("AttributeType::union(vec!["),
+            "unselected integer enums must remain anonymous exact-range unions"
         );
     }
 
@@ -10859,11 +10903,8 @@ mod tests {
         let generated =
             generate_schema_code(&schema, "AWS::S3::Bucket").expect("generate s3 bucket");
         assert!(generated.contains("pub fn arn() -> AttributeType"));
-        assert!(
-            generated
-                .contains("Some(carina_aws_types::provider_type(\"s3\", \"Bucket\", \"Arn\"))")
-        );
-        assert!(generated.contains("AttributeSchema::new(\"arn\", self::arn())"));
+        assert!(generated.contains("carina_aws_types::provider_type(\"s3\", \"Bucket\", \"Arn\")"));
+        assert!(generated.contains("AttributeSchema::provider_populated(\"arn\", self::arn())"));
     }
 
     #[test]
@@ -12551,11 +12592,11 @@ mod tests {
         };
         let generated = generate_synthetic_schema_code(&schema).unwrap();
         assert!(
-            generated.contains("StructField::new(\"priority\", AttributeType::refined_int("),
+            generated.contains("StructField::required(\"priority\", AttributeType::refined_int("),
             "nested struct field via scalar integer $ref must generate as int: {generated}"
         );
         assert!(
-            !generated.contains("StructField::new(\"priority\", AttributeType::string()"),
+            !generated.contains("StructField::required(\"priority\", AttributeType::string()"),
             "nested struct field via scalar integer $ref must not generate as string: {generated}"
         );
     }
@@ -13362,7 +13403,7 @@ mod tests {
 
         assert!(
             generated.contains(
-                r#"AttributeSchema::new("key_policy", carina_aws_types::iam_policy_document())"#
+                r#"AttributeSchema::optional("key_policy", carina_aws_types::iam_policy_document())"#
             ),
             "Should resolve KeyPolicy to iam_policy_document: {generated}"
         );
@@ -13816,8 +13857,8 @@ mod tests {
             "refined list should carry element type, ordering, and length: {type_str}"
         );
         assert!(
-            type_str.contains("validate_list_items_1_10"),
-            "should reference items validation function: {type_str}"
+            !type_str.contains("validate_list_items_1_10"),
+            "refined-list bounds are validated by the schema type itself: {type_str}"
         );
     }
 
@@ -13861,8 +13902,12 @@ mod tests {
             "array with only minItems should produce refined list type: {type_str}"
         );
         assert!(
-            type_str.contains("validate_list_items_min_1"),
-            "should reference min-items validator: {type_str}"
+            type_str.contains("AttributeType::string(), true, Some((Some(1), None))"),
+            "refined list should carry its minimum length directly: {type_str}"
+        );
+        assert!(
+            !type_str.contains("validate_list_items_min_1"),
+            "refined-list bounds are validated by the schema type itself: {type_str}"
         );
     }
 
@@ -14557,12 +14602,12 @@ mod tests {
 
         assert!(
             generated.contains(
-                r#"AttributeSchema::new("name", AttributeType::refined_string(None, None, Some((None, Some(1024))), Some(carina_core::schema::DslTransform::StripSuffix(".".to_string()))))"#
+                r#"AttributeSchema::optional("name", AttributeType::refined_string(None, None, Some((None, Some(1024))), Some(carina_core::schema::DslTransform::StripSuffix(".".to_string()))))"#
             ),
             "Route53 HostedZone.Name should be refined String with max length and StripSuffix transform: {generated}"
         );
         assert!(
-            !generated.contains(r#"AttributeSchema::new("name", AttributeType::enum_"#),
+            !generated.contains(r#"AttributeSchema::optional("name", AttributeType::enum_"#),
             "Route53 HostedZone.Name must not be emitted as a pseudo enum: {generated}"
         );
     }
@@ -15869,7 +15914,7 @@ mod tests {
         );
         // Name should NOT have .write_only()
         let name_section = code
-            .split("AttributeSchema::new(\"name\"")
+            .split("AttributeSchema::optional(\"name\"")
             .nth(1)
             .unwrap_or("");
         let name_attr_end = name_section
@@ -15979,7 +16024,7 @@ mod tests {
 
         assert!(
             code.contains(
-                r#"StructField::new("secret_field", AttributeType::string()).write_only()"#
+                r#"StructField::optional("secret_field", AttributeType::string()).write_only()"#
             ),
             "the matched nested field must be write-only: {code}"
         );
@@ -16066,13 +16111,15 @@ mod tests {
         let generated = generate_synthetic_schema_code(&schema)
             .expect("a matched array wildcard write-only pointer should generate");
         assert!(
-            generated
-                .contains(r#"StructField::new("secret", AttributeType::string()).write_only()"#),
+            generated.contains(
+                r#"StructField::optional("secret", AttributeType::string()).write_only()"#
+            ),
             "Items[*].Secret must be provider-omitted: {generated}"
         );
         assert!(
-            !generated
-                .contains(r#"StructField::new("visible", AttributeType::string()).write_only()"#),
+            !generated.contains(
+                r#"StructField::optional("visible", AttributeType::string()).write_only()"#
+            ),
             "Items[*].Visible must remain observable: {generated}"
         );
     }
@@ -16119,13 +16166,15 @@ mod tests {
         let generated = generate_synthetic_schema_code(&schema)
             .expect("a matched write-only pointer through $ref array items should generate");
         assert!(
-            generated
-                .contains(r#"StructField::new("secret", AttributeType::string()).write_only()"#),
+            generated.contains(
+                r#"StructField::optional("secret", AttributeType::string()).write_only()"#
+            ),
             "Items[*].Secret must be provider-omitted: {generated}"
         );
         assert!(
-            !generated
-                .contains(r#"StructField::new("visible", AttributeType::string()).write_only()"#),
+            !generated.contains(
+                r#"StructField::optional("visible", AttributeType::string()).write_only()"#
+            ),
             "Items[*].Visible must remain observable: {generated}"
         );
     }
@@ -16908,7 +16957,7 @@ mod tests {
         let generated = generate_schema_code(&schema, "AWS::CloudFront::Distribution").unwrap();
         // The struct field must emit as Enum, not String.
         assert!(
-            generated.contains("StructField::new(\"price_class\", AttributeType::enum_("),
+            generated.contains("StructField::optional(\"price_class\", AttributeType::enum_("),
             "nested-field overlay should promote price_class to Enum: {generated}"
         );
         // All three documented values must be present.

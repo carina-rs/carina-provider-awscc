@@ -17,25 +17,20 @@ pub fn ec2_internet_gateway_config() -> AwsccSchemaConfig {
         schema: ResourceSchema::new("ec2.InternetGateway")
 	        .with_description("Allocates an internet gateway for use with a VPC. After creating the Internet gateway, you then attach it to a VPC.")
         .attribute(
-            AttributeSchema::new("internet_gateway_id", carina_aws_types::internet_gateway_id())
-                .read_only()
+            AttributeSchema::provider_populated("internet_gateway_id", carina_aws_types::internet_gateway_id())
                 .with_description(" (read-only)")
-                .with_provider_name("InternetGatewayId"),
+                .with_provider_name("InternetGatewayId")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("tags", carina_aws_types::tags_type())
+            AttributeSchema::optional("tags", carina_aws_types::tags_type())
                 .with_description("Any tags to assign to the internet gateway.")
                 .with_provider_name("Tags")
-                .with_block_name("tag"),
+                .with_block_name("tag")
+                .build(),
         )
         .with_coexisting_replacement()
-        .with_validator(|attrs| {
-            let mut errors = Vec::new();
-            if let Err(mut e) = carina_aws_types::validate_tags_map(attrs) {
-                errors.append(&mut e);
-            }
-            if errors.is_empty() { Ok(()) } else { Err(errors) }
-        })
+        .with_declared_validators(vec![carina_provider_protocol::types::ValidatorType::TagsKeyValueCheck])
     }
 }
 

@@ -19,34 +19,34 @@ pub fn identitystore_group_membership_config() -> AwsccSchemaConfig {
         schema: ResourceSchema::new("identitystore.GroupMembership")
 	        .with_description("Resource Type Definition for AWS:IdentityStore::GroupMembership")
         .attribute(
-            AttributeSchema::new("group_id", carina_aws_types::sso_principal_id())
-                .required()
+            AttributeSchema::required("group_id", carina_aws_types::sso_principal_id())
                 .create_only()
                 .with_description("The unique identifier for a group in the identity store.")
-                .with_provider_name("GroupId"),
+                .with_provider_name("GroupId")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("identity_store_id", carina_aws_types::identity_store_id())
-                .required()
+            AttributeSchema::required("identity_store_id", carina_aws_types::identity_store_id())
                 .create_only()
                 .with_description("The globally unique identifier for the identity store.")
-                .with_provider_name("IdentityStoreId"),
+                .with_provider_name("IdentityStoreId")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("member_id", AttributeType::struct_("MemberId".to_string(), vec![StructField::new("user_id", AttributeType::refined_string(None, Some("^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$".to_string()), Some((Some(1), Some(47))), None)).required().with_description("The identifier for a user in the identity store.").with_provider_name("UserId")]))
-                .required()
+            AttributeSchema::required("member_id", AttributeType::struct_("MemberId".to_string(), vec![StructField::required("user_id", AttributeType::refined_string(None, Some("^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$".to_string()), Some((Some(1), Some(47))), None)).with_description("The identifier for a user in the identity store.").with_provider_name("UserId").build()]))
                 .create_only()
                 .with_description("An object containing the identifier of a group member.")
-                .with_provider_name("MemberId"),
+                .with_provider_name("MemberId")
+                .build(),
         )
         .attribute(
-            AttributeSchema::new("membership_id", AttributeType::refined_string(None, Some("^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$".to_string()), Some((Some(1), Some(47))), None))
-                .read_only()
+            AttributeSchema::provider_populated("membership_id", AttributeType::refined_string(None, Some("^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$".to_string()), Some((Some(1), Some(47))), None))
                 .with_description("The identifier for a GroupMembership in the identity store. (read-only)")
-                .with_provider_name("MembershipId"),
+                .with_provider_name("MembershipId")
+                .build(),
         )
         .with_coexisting_replacement()
-        .with_def("MemberId", AttributeType::struct_("MemberId".to_string(), vec![StructField::new("user_id", AttributeType::refined_string(None, Some("^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$".to_string()), Some((Some(1), Some(47))), None)).required().with_description("The identifier for a user in the identity store.").with_provider_name("UserId")]))
+        .with_def("MemberId", AttributeType::struct_("MemberId".to_string(), vec![StructField::required("user_id", AttributeType::refined_string(None, Some("^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$".to_string()), Some((Some(1), Some(47))), None)).with_description("The identifier for a user in the identity store.").with_provider_name("UserId").build()]))
     }
 }
 

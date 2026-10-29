@@ -46,31 +46,31 @@ pub fn sso_assignment_config() -> AwsccSchemaConfig {
         schema: ResourceSchema::new("sso.Assignment")
             .with_description("Resource Type definition for SSO assignmet")
             .attribute(
-                AttributeSchema::new("instance_arn", carina_aws_types::sso_instance_arn())
-                    .required()
+                AttributeSchema::required("instance_arn", carina_aws_types::sso_instance_arn())
                     .create_only()
                     .with_description("The sso instance that the permission set is owned.")
-                    .with_provider_name("InstanceArn"),
+                    .with_provider_name("InstanceArn")
+                    .build(),
             )
             .attribute(
-                AttributeSchema::new(
+                AttributeSchema::required(
                     "permission_set_arn",
                     carina_aws_types::sso_permission_set_arn(),
                 )
-                .required()
                 .create_only()
                 .with_description("The permission set that the assignment will be assigned")
-                .with_provider_name("PermissionSetArn"),
+                .with_provider_name("PermissionSetArn")
+                .build(),
             )
             .attribute(
-                AttributeSchema::new("principal_id", carina_aws_types::sso_principal_id())
-                    .required()
+                AttributeSchema::required("principal_id", carina_aws_types::sso_principal_id())
                     .create_only()
                     .with_description("The assignee's identifier, user id/group id")
-                    .with_provider_name("PrincipalId"),
+                    .with_provider_name("PrincipalId")
+                    .build(),
             )
             .attribute(
-                AttributeSchema::new(
+                AttributeSchema::required(
                     "principal_type",
                     AttributeType::enum_(
                         carina_core::schema::enum_identity(
@@ -86,20 +86,20 @@ pub fn sso_assignment_config() -> AwsccSchemaConfig {
                         None,
                     ),
                 )
-                .required()
                 .create_only()
                 .with_description("The assignee's type, user/group")
-                .with_provider_name("PrincipalType"),
+                .with_provider_name("PrincipalType")
+                .build(),
             )
             .attribute(
-                AttributeSchema::new("target_id", carina_aws_types::aws_account_id())
-                    .required()
+                AttributeSchema::required("target_id", carina_aws_types::aws_account_id())
                     .create_only()
                     .with_description("The account id to be provisioned.")
-                    .with_provider_name("TargetId"),
+                    .with_provider_name("TargetId")
+                    .build(),
             )
             .attribute(
-                AttributeSchema::new(
+                AttributeSchema::required(
                     "target_type",
                     AttributeType::enum_(
                         carina_core::schema::enum_identity(
@@ -112,10 +112,10 @@ pub fn sso_assignment_config() -> AwsccSchemaConfig {
                         None,
                     ),
                 )
-                .required()
                 .create_only()
                 .with_description("The type of resource to be provisioned to, only aws account now")
-                .with_provider_name("TargetType"),
+                .with_provider_name("TargetType")
+                .build(),
             )
             .with_coexisting_replacement(),
     }
