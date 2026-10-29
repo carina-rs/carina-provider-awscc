@@ -5,55 +5,10 @@
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
 use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
-use carina_core::resource::{ConcreteValue, Value};
-use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, legacy_validator};
-use regex::Regex;
+use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema};
 
 pub fn arn() -> AttributeType {
-    AttributeType::refined_string_with_validator(
-        carina_aws_types::provider_type("iam", "OidcProvider", "Arn"),
-        Some("^arn:(aws|aws-cn|aws-us-gov):iam::[^:]*:oidc-provider/.+$".to_string()),
-        None,
-        legacy_validator(|value| {
-            if let Value::Concrete(ConcreteValue::String(s)) = value {
-                let s = s.expose_plaintext();
-                carina_aws_types::validate_iam_arn(s, "oidc-provider/")
-                    .map_err(|reason| format!("Invalid IAM OIDC Provider ARN '{}': {}", s, reason))
-            } else {
-                Err("Expected string".to_string())
-            }
-        }),
-        None,
-    )
-}
-
-#[allow(dead_code)]
-fn validate_list_items_max_5(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::List(items)) = value {
-        let len = items.len();
-        if len > 5 {
-            Err(format!("List has {} items, expected ..=5", len))
-        } else {
-            Ok(())
-        }
-    } else {
-        Err("Expected list".to_string())
-    }
-}
-
-#[allow(dead_code)]
-fn validate_string_length_1_255(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::String(s)) = value {
-        let s = s.expose_plaintext();
-        let len = s.chars().count();
-        if !(1..=255).contains(&len) {
-            Err(format!("String length {} is out of range 1..=255", len))
-        } else {
-            Ok(())
-        }
-    } else {
-        Ok(())
-    }
+    crate::schemas::catalog::iam_oidc_provider_arn()
 }
 
 /// Returns the schema config for iam_oidc_provider (AWS::IAM::OIDCProvider)
@@ -108,29 +63,6 @@ pub fn iam_oidc_provider_config() -> AwsccSchemaConfig {
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "Arn", dsl_name: "arn" }],
         tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
         schema,
-    }
-}
-
-#[allow(dead_code)]
-fn validate_string_pattern_57ee0c44b504b839_len_40_40(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::String(s)) = value {
-        let s = s.expose_plaintext();
-        static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-            Regex::new("[0-9A-Fa-f]{40}").expect("invalid pattern regex")
-        });
-        if !RE.is_match(s) {
-            return Err(format!(
-                "Value '{}' does not match pattern [0-9A-Fa-f]{{40}}",
-                s
-            ));
-        }
-        let len = s.chars().count();
-        if !(40..=40).contains(&len) {
-            return Err(format!("String length {} is out of range 40..=40", len));
-        }
-        Ok(())
-    } else {
-        Err("Expected string".to_string())
     }
 }
 

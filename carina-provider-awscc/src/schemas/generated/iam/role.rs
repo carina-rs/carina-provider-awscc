@@ -6,39 +6,10 @@
 
 use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
 use carina_core::resource::{ConcreteValue, Value};
-use carina_core::schema::{
-    AttributeSchema, AttributeType, ResourceSchema, StructField, legacy_validator,
-};
+use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField};
 
 pub fn arn() -> AttributeType {
-    AttributeType::refined_string_with_validator(
-        carina_aws_types::provider_type("iam", "Role", "Arn"),
-        Some("^arn:(aws|aws-cn|aws-us-gov):iam::[^:]*:role/.+$".to_string()),
-        None,
-        legacy_validator(|value| {
-            if let Value::Concrete(ConcreteValue::String(s)) = value {
-                let s = s.expose_plaintext();
-                carina_aws_types::validate_iam_arn(s, "role/")
-                    .map_err(|reason| format!("Invalid IAM Role ARN '{}': {}", s, reason))
-            } else {
-                Err("Expected string".to_string())
-            }
-        }),
-        None,
-    )
-}
-
-#[allow(dead_code)]
-fn validate_max_session_duration_range(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::Int(n)) = value {
-        if *n < 3600 || *n > 43200 {
-            Err(format!("Value {} is out of range 3600..=43200", n))
-        } else {
-            Ok(())
-        }
-    } else {
-        Err("Expected integer".to_string())
-    }
+    carina_aws_types::AwsType::IamRoleArn.attribute_type()
 }
 
 /// Returns the schema config for iam_role (AWS::IAM::Role)

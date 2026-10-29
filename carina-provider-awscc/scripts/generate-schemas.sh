@@ -125,32 +125,10 @@ resource_module_name() {
 # not managed resources, so they must stay out of GENERATED_TYPES/configs().
 emit_virtual_helper_modules() {
     mkdir -p "$OUTPUT_DIR/iam"
-    cat > "$OUTPUT_DIR/iam/policy.rs" << 'EOF'
-//! Auto-generated helper schema module for AWSCC IAM Policy identifiers
-//!
-//! DO NOT EDIT MANUALLY - regenerate with carina-codegen
-
-use carina_core::resource::{ConcreteValue, Value};
-use carina_core::schema::{AttributeType, legacy_validator};
-
-pub fn arn() -> AttributeType {
-    AttributeType::refined_string_with_validator(
-        carina_aws_types::provider_type("iam", "Policy", "Arn"),
-        Some("^arn:(aws|aws-cn|aws-us-gov):iam::[^:]*:policy/.+$".to_string()),
-        None,
-        legacy_validator(|value| {
-            if let Value::Concrete(ConcreteValue::String(s)) = value {
-                let s = s.expose_plaintext();
-                carina_aws_types::validate_iam_arn(s, "policy/")
-                    .map_err(|reason| format!("Invalid IAM Policy ARN '{}': {}", s, reason))
-            } else {
-                Err("Expected string".to_string())
-            }
-        }),
-        None,
-    )
-}
-EOF
+    "$CODEGEN_BIN" \
+        --type-name "AWS::IAM::Policy" \
+        --print-arn-helper-module \
+        > "$OUTPUT_DIR/iam/policy.rs"
 }
 
 virtual_modules_for_service() {
@@ -221,6 +199,7 @@ for TYPE_NAME in "${RESOURCE_TYPES[@]}"; do
         *)
             echo "  ERROR: Failed to generate $TYPE_NAME"
             rm -f "$OUTPUT_FILE"
+            exit "$EXIT_CODE"
             ;;
     esac
 done

@@ -5,62 +5,17 @@
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
 use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
-use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{
-    AttributeSchema, AttributeType, OperationConfig, ResourceSchema, StructField, legacy_validator,
+    AttributeSchema, AttributeType, OperationConfig, ResourceSchema, StructField,
 };
 
 pub fn arn() -> AttributeType {
-    AttributeType::refined_string_with_validator(
-        carina_aws_types::provider_type("ec2", "Ipam", "Arn"),
-        Some("^arn:(aws|aws-cn|aws-us-gov):ec2:.*$".to_string()),
-        None,
-        legacy_validator(|value| {
-            if let Value::Concrete(ConcreteValue::String(s)) = value {
-                let s = s.expose_plaintext();
-                carina_aws_types::validate_service_arn(s, "ec2", None)
-                    .map_err(|reason| format!("Invalid ec2 ARN '{}': {}", s, reason))
-            } else {
-                Err("Expected string".to_string())
-            }
-        }),
-        None,
-    )
+    crate::schemas::catalog::ec2_ipam_arn()
 }
 
 const VALID_METERED_ACCOUNT: &[&str] = &["ipam-owner", "resource-owner"];
 
 const VALID_TIER: &[&str] = &["free", "advanced"];
-
-#[allow(dead_code)]
-fn validate_string_length_min_1(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::String(s)) = value {
-        let s = s.expose_plaintext();
-        let len = s.chars().count();
-        if len < 1 {
-            Err(format!("String length {} is out of range 1..", len))
-        } else {
-            Ok(())
-        }
-    } else {
-        Ok(())
-    }
-}
-
-#[allow(dead_code)]
-fn validate_string_length_max_255(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::String(s)) = value {
-        let s = s.expose_plaintext();
-        let len = s.chars().count();
-        if len > 255 {
-            Err(format!("String length {} is out of range ..=255", len))
-        } else {
-            Ok(())
-        }
-    } else {
-        Ok(())
-    }
-}
 
 /// Returns the schema config for ec2_ipam (AWS::EC2::IPAM)
 #[rustfmt::skip]

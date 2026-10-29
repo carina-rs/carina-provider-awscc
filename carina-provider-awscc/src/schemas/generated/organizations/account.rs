@@ -6,27 +6,10 @@
 
 use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
 use carina_core::resource::{ConcreteValue, Value};
-use carina_core::schema::{
-    AttributeSchema, AttributeType, ResourceSchema, legacy_validator, types,
-};
-use regex::Regex;
+use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, types};
 
 pub fn arn() -> AttributeType {
-    AttributeType::refined_string_with_validator(
-        carina_aws_types::provider_type("organizations", "Account", "Arn"),
-        Some("^arn:(aws|aws-cn|aws-us-gov):organizations:.*$".to_string()),
-        None,
-        legacy_validator(|value| {
-            if let Value::Concrete(ConcreteValue::String(s)) = value {
-                let s = s.expose_plaintext();
-                carina_aws_types::validate_service_arn(s, "organizations", None)
-                    .map_err(|reason| format!("Invalid organizations ARN '{}': {}", s, reason))
-            } else {
-                Err("Expected string".to_string())
-            }
-        }),
-        None,
-    )
+    crate::schemas::catalog::organizations_account_arn()
 }
 
 const VALID_JOINED_METHOD: &[&str] = &["INVITED", "CREATED"];
@@ -154,131 +137,6 @@ pub fn organizations_account_config() -> AwsccSchemaConfig {
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "AccountId", dsl_name: "account_id" }],
         tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
         schema,
-    }
-}
-
-#[allow(dead_code)]
-fn validate_string_pattern_9329bdea96a93739_len_max_256(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::String(s)) = value {
-        let s = s.expose_plaintext();
-        static RE: std::sync::LazyLock<Regex> =
-            std::sync::LazyLock::new(|| Regex::new("[\\s\\S]*").expect("invalid pattern regex"));
-        if !RE.is_match(s) {
-            return Err(format!("Value '{}' does not match pattern [\\s\\S]*", s));
-        }
-        let len = s.chars().count();
-        if len > 256 {
-            return Err(format!("String length {} is out of range ..=256", len));
-        }
-        Ok(())
-    } else {
-        Err("Expected string".to_string())
-    }
-}
-
-#[allow(dead_code)]
-fn validate_string_pattern_9329bdea96a93739_len_1_128(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::String(s)) = value {
-        let s = s.expose_plaintext();
-        static RE: std::sync::LazyLock<Regex> =
-            std::sync::LazyLock::new(|| Regex::new("[\\s\\S]*").expect("invalid pattern regex"));
-        if !RE.is_match(s) {
-            return Err(format!("Value '{}' does not match pattern [\\s\\S]*", s));
-        }
-        let len = s.chars().count();
-        if !(1..=128).contains(&len) {
-            return Err(format!("String length {} is out of range 1..=128", len));
-        }
-        Ok(())
-    } else {
-        Err("Expected string".to_string())
-    }
-}
-
-#[allow(dead_code)]
-fn validate_string_pattern_3af299ea99241fab_len_1_50(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::String(s)) = value {
-        let s = s.expose_plaintext();
-        static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-            Regex::new("[\\u0020-\\u007E]+").expect("invalid pattern regex")
-        });
-        if !RE.is_match(s) {
-            return Err(format!(
-                "Value '{}' does not match pattern [\\u0020-\\u007E]+",
-                s
-            ));
-        }
-        let len = s.chars().count();
-        if !(1..=50).contains(&len) {
-            return Err(format!("String length {} is out of range 1..=50", len));
-        }
-        Ok(())
-    } else {
-        Err("Expected string".to_string())
-    }
-}
-
-#[allow(dead_code)]
-fn validate_string_pattern_253e7eb79a4beec5_len_1_64(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::String(s)) = value {
-        let s = s.expose_plaintext();
-        static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-            Regex::new("[\\w+=,.@-]{1,64}").expect("invalid pattern regex")
-        });
-        if !RE.is_match(s) {
-            return Err(format!(
-                "Value '{}' does not match pattern [\\w+=,.@-]{{1,64}}",
-                s
-            ));
-        }
-        let len = s.chars().count();
-        if !(1..=64).contains(&len) {
-            return Err(format!("String length {} is out of range 1..=64", len));
-        }
-        Ok(())
-    } else {
-        Err("Expected string".to_string())
-    }
-}
-
-#[allow(dead_code)]
-fn validate_string_pattern_f777bea2efc17af6(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::String(s)) = value {
-        let s = s.expose_plaintext();
-        static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-            Regex::new("^(o-[a-z0-9]{10,32}/r-[0-9a-z]{4,32}(/ou-[0-9a-z]{4,32}-[a-z0-9]{8,32})*(/\\d{12})*)/").expect("invalid pattern regex")
-        });
-        if RE.is_match(s) {
-            Ok(())
-        } else {
-            Err(format!(
-                "Value '{}' does not match pattern ^(o-[a-z0-9]{{10,32}}/r-[0-9a-z]{{4,32}}(/ou-[0-9a-z]{{4,32}}-[a-z0-9]{{8,32}})*(/\\d{{12}})*)/",
-                s
-            ))
-        }
-    } else {
-        Err("Expected string".to_string())
-    }
-}
-
-#[allow(dead_code)]
-fn validate_string_pattern_6fa92970742ee8e6(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::String(s)) = value {
-        let s = s.expose_plaintext();
-        static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-            Regex::new("^(r-[0-9a-z]{4,32})|(ou-[0-9a-z]{4,32}-[a-z0-9]{8,32})$")
-                .expect("invalid pattern regex")
-        });
-        if RE.is_match(s) {
-            Ok(())
-        } else {
-            Err(format!(
-                "Value '{}' does not match pattern ^(r-[0-9a-z]{{4,32}})|(ou-[0-9a-z]{{4,32}}-[a-z0-9]{{8,32}})$",
-                s
-            ))
-        }
-    } else {
-        Err("Expected string".to_string())
     }
 }
 

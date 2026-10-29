@@ -5,34 +5,7 @@
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
 use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
-use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField, types};
-
-#[allow(dead_code)]
-fn validate_ipv4_netmask_length_range(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::Int(n)) = value {
-        if *n < 0 || *n > 32 {
-            Err(format!("Value {} is out of range 0..=32", n))
-        } else {
-            Ok(())
-        }
-    } else {
-        Err("Expected integer".to_string())
-    }
-}
-
-#[allow(dead_code)]
-fn validate_ipv6_netmask_length_range(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::Int(n)) = value {
-        if *n < 0 || *n > 128 {
-            Err(format!("Value {} is out of range 0..=128", n))
-        } else {
-            Ok(())
-        }
-    } else {
-        Err("Expected integer".to_string())
-    }
-}
 
 /// Returns the schema config for ec2_subnet (AWS::EC2::Subnet)
 #[rustfmt::skip]

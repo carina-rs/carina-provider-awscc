@@ -99,14 +99,14 @@ pub trait CcIssuedCreate {
         self,
         identifier: AppliedIdentifier,
         attributes: HashMap<String, Value>,
-    ) -> Self::Step;
+    ) -> Result<Self::Step, Self::Verdict>;
     fn partial(
         self,
         identifier: AppliedIdentifier,
         attributes: HashMap<String, Value>,
         reason: String,
         missing_attributes: Vec<String>,
-    ) -> Self::Step;
+    ) -> Result<Self::Step, Self::Verdict>;
     fn failed(
         self,
         identifier: AppliedIdentifier,
@@ -166,7 +166,11 @@ pub trait CcResumedCreate {
     type Verdict;
 
     fn identifier(&self) -> &AppliedIdentifier;
-    fn completed(self, identifier: AppliedIdentifier, state: AppliedState) -> Self::Step;
+    fn completed(
+        self,
+        identifier: AppliedIdentifier,
+        state: AppliedState,
+    ) -> Result<Self::Step, Self::Verdict>;
     fn failed(
         self,
         identifier: AppliedIdentifier,
@@ -315,8 +319,10 @@ impl CcIssuedCreate for IssuedCreate {
         self,
         identifier: AppliedIdentifier,
         attributes: HashMap<String, Value>,
-    ) -> Self::Step {
-        CoreCreateStep::Done(self.canonicalize(identifier).succeeded(attributes))
+    ) -> Result<Self::Step, Self::Verdict> {
+        Ok(CoreCreateStep::Done(
+            self.canonicalize(identifier).succeeded(attributes),
+        ))
     }
 
     fn partial(
@@ -325,12 +331,12 @@ impl CcIssuedCreate for IssuedCreate {
         attributes: HashMap<String, Value>,
         reason: String,
         missing_attributes: Vec<String>,
-    ) -> Self::Step {
+    ) -> Result<Self::Step, Self::Verdict> {
         let finishing = self.canonicalize(identifier);
-        match diagnostic(reason, missing_attributes) {
+        Ok(match diagnostic(reason, missing_attributes) {
             Some(diagnostic) => CoreCreateStep::Done(finishing.partial(attributes, diagnostic)),
             None => CoreCreateStep::Done(finishing.succeeded(attributes)),
-        }
+        })
     }
 
     fn failed(
@@ -403,8 +409,14 @@ impl CcResumedCreate for ResumedCreate {
         self.identifier()
     }
 
-    fn completed(self, identifier: AppliedIdentifier, state: AppliedState) -> Self::Step {
-        CoreResumeStep::Done(self.canonicalize(identifier).completed(state))
+    fn completed(
+        self,
+        identifier: AppliedIdentifier,
+        state: AppliedState,
+    ) -> Result<Self::Step, Self::Verdict> {
+        Ok(CoreResumeStep::Done(
+            self.canonicalize(identifier).completed(state),
+        ))
     }
 
     fn failed(
@@ -504,8 +516,10 @@ impl CcIssuedCreate for ResentIssuedCreate {
         self,
         identifier: AppliedIdentifier,
         attributes: HashMap<String, Value>,
-    ) -> Self::Step {
-        CoreResumeStep::Done(self.canonicalize(identifier).succeeded(attributes))
+    ) -> Result<Self::Step, Self::Verdict> {
+        Ok(CoreResumeStep::Done(
+            self.canonicalize(identifier).succeeded(attributes),
+        ))
     }
 
     fn partial(
@@ -514,12 +528,12 @@ impl CcIssuedCreate for ResentIssuedCreate {
         attributes: HashMap<String, Value>,
         reason: String,
         missing_attributes: Vec<String>,
-    ) -> Self::Step {
+    ) -> Result<Self::Step, Self::Verdict> {
         let finishing = self.canonicalize(identifier);
-        match diagnostic(reason, missing_attributes) {
+        Ok(match diagnostic(reason, missing_attributes) {
             Some(diagnostic) => CoreResumeStep::Done(finishing.partial(attributes, diagnostic)),
             None => CoreResumeStep::Done(finishing.succeeded(attributes)),
-        }
+        })
     }
 
     fn failed(
@@ -1156,7 +1170,7 @@ impl AwsccProvider {
         let completion = self
             .create_completion_from_read(resource, config, wait_identifier, read_back)
             .await;
-        Ok(match completion {
+        match completion {
             CreateCompletion::Success {
                 identifier,
                 attributes,
@@ -1167,7 +1181,7 @@ impl AwsccProvider {
                 reason,
                 missing_attributes,
             } => issued.partial(identifier, attributes, reason, missing_attributes),
-        })
+        }
     }
 
     async fn failed_issued<I: CcIssuedCreate>(
@@ -1661,7 +1675,7 @@ impl AwsccProvider {
                     canonical_identifier.clone(),
                     attributes,
                 );
-                Ok(resumed.completed(canonical_identifier, state))
+                resumed.completed(canonical_identifier, state)
             }
             Ok(SynthesisStatus::Missing {
                 attributes: missing,
@@ -2862,7 +2876,8 @@ mod tests {
             self,
             _identifier: AppliedIdentifier,
             _attributes: HashMap<String, Value>,
-        ) -> Self::Step {
+        ) -> Result<Self::Step, Self::Verdict> {
+            Ok(())
         }
 
         fn partial(
@@ -2871,7 +2886,8 @@ mod tests {
             _attributes: HashMap<String, Value>,
             _reason: String,
             _missing_attributes: Vec<String>,
-        ) -> Self::Step {
+        ) -> Result<Self::Step, Self::Verdict> {
+            Ok(())
         }
 
         fn failed(

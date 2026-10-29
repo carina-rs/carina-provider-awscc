@@ -5,10 +5,7 @@
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
 use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
-use carina_core::resource::{ConcreteValue, Value};
-use carina_core::schema::{
-    AttributeSchema, AttributeType, ResourceSchema, StructField, legacy_validator,
-};
+use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField};
 
 const VALID_LOG_DESTINATION_TYPE: &[&str] = &["cloud-watch-logs", "s3", "kinesis-data-firehose"];
 
@@ -22,22 +19,6 @@ const VALID_RESOURCE_TYPE: &[&str] = &[
 ];
 
 const VALID_TRAFFIC_TYPE: &[&str] = &["ACCEPT", "ALL", "REJECT"];
-
-#[allow(dead_code)]
-const VALID_MAX_AGGREGATION_INTERVAL_VALUES: &[i64] = &[60, 600];
-
-#[allow(dead_code)]
-fn validate_max_aggregation_interval_int_enum(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::Int(n)) = value {
-        if VALID_MAX_AGGREGATION_INTERVAL_VALUES.contains(n) {
-            Ok(())
-        } else {
-            Err(format!("Value {} is not a valid value", n))
-        }
-    } else {
-        Err("Expected integer".to_string())
-    }
-}
 
 /// Returns the schema config for ec2_flow_log (AWS::EC2::FlowLog)
 #[rustfmt::skip]
@@ -118,7 +99,7 @@ pub fn ec2_flow_log_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_log_group_name_attribute());
     #[inline(never)]
     fn build_max_aggregation_interval_attribute() -> AttributeSchema {
-        AttributeSchema::optional("max_aggregation_interval", AttributeType::refined_int_with_validator(carina_aws_types::provider_type("ec2", "FlowLog", "MaxAggregationInterval"), None, legacy_validator(validate_max_aggregation_interval_int_enum)))
+        AttributeSchema::optional("max_aggregation_interval", crate::schemas::catalog::ec2_flow_log_max_aggregation_interval())
                 .create_only()
                 .with_description("The maximum interval of time during which a flow of packets is captured and aggregated into a flow log record. You can specify 60 seconds (1 minute) or 600 seconds (10 minutes).")
                 .with_provider_name("MaxAggregationInterval")

@@ -5,38 +5,11 @@
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
 use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
-use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField, types};
 
 const VALID_EGRESS_IP_PROTOCOL: &[&str] = &["tcp", "udp", "icmp", "icmpv6", "-1"];
 
 const VALID_INGRESS_IP_PROTOCOL: &[&str] = &["tcp", "udp", "icmp", "icmpv6", "-1"];
-
-#[allow(dead_code)]
-fn validate_from_port_range(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::Int(n)) = value {
-        if *n < -1 || *n > 65535 {
-            Err(format!("Value {} is out of range -1..=65535", n))
-        } else {
-            Ok(())
-        }
-    } else {
-        Err("Expected integer".to_string())
-    }
-}
-
-#[allow(dead_code)]
-fn validate_to_port_range(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::Int(n)) = value {
-        if *n < -1 || *n > 65535 {
-            Err(format!("Value {} is out of range -1..=65535", n))
-        } else {
-            Ok(())
-        }
-    } else {
-        Err("Expected integer".to_string())
-    }
-}
 
 /// Returns the schema config for ec2_security_group (AWS::EC2::SecurityGroup)
 #[rustfmt::skip]

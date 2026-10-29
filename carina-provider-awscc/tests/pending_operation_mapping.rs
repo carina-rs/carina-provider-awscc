@@ -541,11 +541,11 @@ impl CcIssuedCreate for TestIssuedCreate {
         self,
         identifier: AppliedIdentifier,
         attributes: HashMap<String, Value>,
-    ) -> Self::Step {
-        TestCreateStep::Succeeded {
+    ) -> Result<Self::Step, Self::Verdict> {
+        Ok(TestCreateStep::Succeeded {
             identifier,
             attributes,
-        }
+        })
     }
 
     fn partial(
@@ -554,8 +554,8 @@ impl CcIssuedCreate for TestIssuedCreate {
         _attributes: HashMap<String, Value>,
         reason: String,
         _missing_attributes: Vec<String>,
-    ) -> Self::Step {
-        TestCreateStep::Partial { identifier, reason }
+    ) -> Result<Self::Step, Self::Verdict> {
+        Ok(TestCreateStep::Partial { identifier, reason })
     }
 
     fn failed(
@@ -642,8 +642,12 @@ impl CcResumedCreate for TestIssuedCreate {
         &self.identifier
     }
 
-    fn completed(self, identifier: AppliedIdentifier, state: AppliedState) -> Self::Step {
-        TestCreateStep::Completed { identifier, state }
+    fn completed(
+        self,
+        identifier: AppliedIdentifier,
+        state: AppliedState,
+    ) -> Result<Self::Step, Self::Verdict> {
+        Ok(TestCreateStep::Completed { identifier, state })
     }
 
     fn failed(

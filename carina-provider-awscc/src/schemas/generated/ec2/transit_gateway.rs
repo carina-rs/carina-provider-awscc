@@ -5,7 +5,6 @@
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
 use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
-use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{AttributeSchema, AttributeType, OperationConfig, ResourceSchema, types};
 
 const VALID_AUTO_ACCEPT_SHARED_ATTACHMENTS: &[&str] = &["enable", "disable"];
@@ -25,19 +24,6 @@ const VALID_MULTICAST_SUPPORT: &[&str] = &["enable", "disable"];
 const VALID_SECURITY_GROUP_REFERENCING_SUPPORT: &[&str] = &["enable", "disable"];
 
 const VALID_VPN_ECMP_SUPPORT: &[&str] = &["enable", "disable"];
-
-#[allow(dead_code)]
-fn validate_amazon_side_asn_range(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::Int(n)) = value {
-        if *n < 1 || *n > 4294967294 {
-            Err(format!("Value {} is out of range 1..=4294967294", n))
-        } else {
-            Ok(())
-        }
-    } else {
-        Err("Expected integer".to_string())
-    }
-}
 
 /// Returns the schema config for ec2_transit_gateway (AWS::EC2::TransitGateway)
 #[rustfmt::skip]

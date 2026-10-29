@@ -6,24 +6,10 @@
 
 use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
 use carina_core::resource::{ConcreteValue, Value};
-use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, legacy_validator};
+use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema};
 
 pub fn arn() -> AttributeType {
-    AttributeType::refined_string_with_validator(
-        carina_aws_types::provider_type("kms", "Key", "Arn"),
-        Some("^arn:(aws|aws-cn|aws-us-gov):kms:[^:]*:[^:]*:key/.+$".to_string()),
-        None,
-        legacy_validator(|value| {
-            if let Value::Concrete(ConcreteValue::String(s)) = value {
-                let s = s.expose_plaintext();
-                carina_aws_types::validate_service_arn(s, "kms", Some("key/"))
-                    .map_err(|reason| format!("Invalid KMS Key ARN '{}': {}", s, reason))
-            } else {
-                Err("Expected string".to_string())
-            }
-        }),
-        None,
-    )
+    carina_aws_types::AwsType::KmsKeyArn.attribute_type()
 }
 
 const VALID_KEY_SPEC: &[&str] = &[
@@ -54,47 +40,6 @@ const VALID_KEY_USAGE: &[&str] = &[
 ];
 
 const VALID_ORIGIN: &[&str] = &["AWS_KMS", "EXTERNAL"];
-
-#[allow(dead_code)]
-fn validate_pending_window_in_days_range(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::Int(n)) = value {
-        if *n < 7 || *n > 30 {
-            Err(format!("Value {} is out of range 7..=30", n))
-        } else {
-            Ok(())
-        }
-    } else {
-        Err("Expected integer".to_string())
-    }
-}
-
-#[allow(dead_code)]
-fn validate_rotation_period_in_days_range(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::Int(n)) = value {
-        if *n < 90 || *n > 2560 {
-            Err(format!("Value {} is out of range 90..=2560", n))
-        } else {
-            Ok(())
-        }
-    } else {
-        Err("Expected integer".to_string())
-    }
-}
-
-#[allow(dead_code)]
-fn validate_string_length_max_8192(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::String(s)) = value {
-        let s = s.expose_plaintext();
-        let len = s.chars().count();
-        if len > 8192 {
-            Err(format!("String length {} is out of range ..=8192", len))
-        } else {
-            Ok(())
-        }
-    } else {
-        Ok(())
-    }
-}
 
 /// Returns the schema config for kms_key (AWS::KMS::Key)
 #[rustfmt::skip]

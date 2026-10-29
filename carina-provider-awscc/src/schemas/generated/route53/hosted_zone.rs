@@ -5,38 +5,7 @@
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
 use crate::schemas::config::AwsccSchemaConfig;
-use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField};
-
-#[allow(dead_code)]
-fn validate_string_length_max_256(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::String(s)) = value {
-        let s = s.expose_plaintext();
-        let len = s.chars().count();
-        if len > 256 {
-            Err(format!("String length {} is out of range ..=256", len))
-        } else {
-            Ok(())
-        }
-    } else {
-        Ok(())
-    }
-}
-
-#[allow(dead_code)]
-fn validate_string_length_max_128(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::String(s)) = value {
-        let s = s.expose_plaintext();
-        let len = s.chars().count();
-        if len > 128 {
-            Err(format!("String length {} is out of range ..=128", len))
-        } else {
-            Ok(())
-        }
-    } else {
-        Ok(())
-    }
-}
 
 /// Returns the schema config for route53_hosted_zone (AWS::Route53::HostedZone)
 #[rustfmt::skip]

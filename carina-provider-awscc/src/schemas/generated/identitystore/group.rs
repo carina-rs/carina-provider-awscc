@@ -5,9 +5,7 @@
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
 use crate::schemas::config::AwsccSchemaConfig;
-use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema};
-use regex::Regex;
 
 /// Returns the schema config for identitystore_group (AWS::IdentityStore::Group)
 #[rustfmt::skip]
@@ -55,54 +53,6 @@ pub fn identitystore_group_config() -> AwsccSchemaConfig {
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "GroupId", dsl_name: "group_id" }, crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "IdentityStoreId", dsl_name: "identity_store_id" }],
         tags: None,
         schema,
-    }
-}
-
-#[allow(dead_code)]
-fn validate_string_pattern_a301e45ae2f7df12_len_1_1024(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::String(s)) = value {
-        let s = s.expose_plaintext();
-        static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-            Regex::new("^[\\p{L}\\p{M}\\p{S}\\p{N}\\p{P}\\t\\n\\r  ]+$")
-                .expect("invalid pattern regex")
-        });
-        if !RE.is_match(s) {
-            return Err(format!(
-                "Value '{}' does not match pattern ^[\\p{{L}}\\p{{M}}\\p{{S}}\\p{{N}}\\p{{P}}\\t\\n\\r  ]+$",
-                s
-            ));
-        }
-        let len = s.chars().count();
-        if !(1..=1024).contains(&len) {
-            return Err(format!("String length {} is out of range 1..=1024", len));
-        }
-        Ok(())
-    } else {
-        Err("Expected string".to_string())
-    }
-}
-
-#[allow(dead_code)]
-fn validate_string_pattern_3e29f1c0497511f3_len_1_1024(value: &Value) -> Result<(), String> {
-    if let Value::Concrete(ConcreteValue::String(s)) = value {
-        let s = s.expose_plaintext();
-        static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-            Regex::new("^[\\p{L}\\p{M}\\p{S}\\p{N}\\p{P}\\t\\n\\r  　]+$")
-                .expect("invalid pattern regex")
-        });
-        if !RE.is_match(s) {
-            return Err(format!(
-                "Value '{}' does not match pattern ^[\\p{{L}}\\p{{M}}\\p{{S}}\\p{{N}}\\p{{P}}\\t\\n\\r  　]+$",
-                s
-            ));
-        }
-        let len = s.chars().count();
-        if !(1..=1024).contains(&len) {
-            return Err(format!("String length {} is out of range 1..=1024", len));
-        }
-        Ok(())
-    } else {
-        Err("Expected string".to_string())
     }
 }
 

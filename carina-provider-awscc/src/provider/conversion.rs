@@ -966,7 +966,7 @@ mod tests {
     #[test]
     fn test_dsl_value_to_aws_passes_through_validator_only_string() {
         let attr_type = AttributeType::enum_(
-            carina_aws_types::provider_bare_type(&[], "Region"),
+            carina_aws_types::AwsType::Region.identity(),
             None,
             vec![],
             Some(legacy_validator(|_| Ok(()))),
@@ -990,7 +990,7 @@ mod tests {
     #[should_panic(expected = "unresolved enum identifier must not reach AWS value conversion")]
     fn test_dsl_value_to_aws_rejects_unresolved_enum_identifier() {
         let attr_type = AttributeType::enum_(
-            carina_aws_types::provider_bare_type(&[], "Region"),
+            carina_aws_types::AwsType::Region.identity(),
             None,
             vec![],
             Some(legacy_validator(|_| Ok(()))),
