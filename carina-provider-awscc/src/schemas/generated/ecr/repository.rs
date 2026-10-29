@@ -142,6 +142,7 @@ pub fn ecr_repository_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::ECR::Repository",
         resource_type_name: "ecr.Repository",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "RepositoryName", dsl_name: "repository_name" }],
+        exclusive_groups: &[],
         tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
         schema,
     }

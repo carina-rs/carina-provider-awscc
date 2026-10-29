@@ -8,6 +8,8 @@
 //! sibling-resource state alone (the actual fix for
 //! `carina-rs/carina#2559`).
 
+use std::collections::HashSet;
+
 use carina_core::provider::{PatchOp, ProviderError, ProviderResult, UpdatePatch};
 use serde_json::json;
 
@@ -74,6 +76,10 @@ impl UpdatePatchPlan {
 ///   cases — matches the Terraform AWSCC provider's behavior).
 /// - [`PatchOp::Remove`] →
 ///   `{"op": "remove", "path": "/<aws_name>"}`.
+/// - After mapping, a sent Add/Replace/Reassert for a member of an exclusive
+///   group appends one `remove` for every other member that is neither added
+///   nor already removed by this patch. Group and member declaration order
+///   determines the appended operation order.
 ///
 /// Read-only and create-only attributes are filtered out: CloudControl rejects
 /// patches that touch them. Add/Replace operations that are filtered out remain in
@@ -89,6 +95,7 @@ pub(crate) fn build_update_patches(
     patch: &UpdatePatch,
 ) -> UpdatePatchPlan {
     let mut plan = UpdatePatchPlan::default();
+    let mut sent_add_keys = HashSet::new();
 
     for op in &patch.ops {
         let key = op.key();
@@ -127,6 +134,9 @@ pub(crate) fn build_update_patches(
                 continue;
             };
             if let Some(patch_op) = tags_property.update_patch(op) {
+                if patch_op.get("op").and_then(serde_json::Value::as_str) == Some("add") {
+                    sent_add_keys.insert(key.to_string());
+                }
                 plan.ops.push(patch_op);
             } else if requires_confirmation {
                 plan.mark_unsent(key);
@@ -161,6 +171,7 @@ pub(crate) fn build_update_patches(
                         "path": format!("/{}", aws_name),
                         "value": aws_value,
                     }));
+                    sent_add_keys.insert(key.to_string());
                 } else if requires_confirmation {
                     plan.mark_unsent(key);
                 }
@@ -169,6 +180,47 @@ pub(crate) fn build_update_patches(
                 plan.ops.push(json!({
                     "op": "remove",
                     "path": format!("/{}", aws_name),
+                }));
+            }
+        }
+    }
+
+    let mut removed_paths = plan
+        .ops
+        .iter()
+        .filter(|op| op.get("op").and_then(serde_json::Value::as_str) == Some("remove"))
+        .filter_map(|op| {
+            op.get("path")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string)
+        })
+        .collect::<HashSet<_>>();
+    for group in config.exclusive_groups {
+        if !group
+            .attributes
+            .iter()
+            .any(|attribute| sent_add_keys.contains(*attribute))
+        {
+            continue;
+        }
+
+        for attribute in group.attributes {
+            if sent_add_keys.contains(*attribute) {
+                continue;
+            }
+            let Some(provider_name) = config
+                .schema
+                .attributes()
+                .get(*attribute)
+                .and_then(|schema| schema.provider_name())
+            else {
+                continue;
+            };
+            let path = format!("/{provider_name}");
+            if removed_paths.insert(path.clone()) {
+                plan.ops.push(json!({
+                    "op": "remove",
+                    "path": path,
                 }));
             }
         }
@@ -201,6 +253,10 @@ mod tests {
 
     fn get_vpc_config() -> &'static AwsccSchemaConfig {
         get_schema_config("ec2.Vpc").expect("ec2.vpc schema should exist")
+    }
+
+    fn get_route_config() -> &'static AwsccSchemaConfig {
+        get_schema_config("ec2.Route").expect("ec2.Route schema should exist")
     }
 
     fn replace(key: &str, value: Value) -> PatchOp {
@@ -380,6 +436,118 @@ mod tests {
     }
 
     #[test]
+    fn route_add_nat_gateway_removes_every_other_target_once() {
+        let patch = UpdatePatch {
+            ops: vec![
+                add("nat_gateway_id", string("nat-0123456789abcdef0")),
+                remove("gateway_id"),
+            ],
+        };
+
+        let ops = build_update_patches(get_route_config(), "ec2.Route", &patch).ops;
+
+        assert_eq!(
+            ops,
+            [
+                json!({
+                    "op": "add",
+                    "path": "/NatGatewayId",
+                    "value": "nat-0123456789abcdef0",
+                }),
+                json!({"op": "remove", "path": "/GatewayId"}),
+                json!({"op": "remove", "path": "/CarrierGatewayId"}),
+                json!({"op": "remove", "path": "/CoreNetworkArn"}),
+                json!({
+                    "op": "remove",
+                    "path": "/EgressOnlyInternetGatewayId",
+                }),
+                json!({"op": "remove", "path": "/InstanceId"}),
+                json!({"op": "remove", "path": "/LocalGatewayId"}),
+                json!({"op": "remove", "path": "/NetworkInterfaceId"}),
+                json!({"op": "remove", "path": "/TransitGatewayId"}),
+                json!({"op": "remove", "path": "/VpcEndpointId"}),
+                json!({
+                    "op": "remove",
+                    "path": "/VpcPeeringConnectionId",
+                }),
+            ]
+        );
+        assert_eq!(
+            ops.iter()
+                .filter(|op| op["op"] == "remove" && op["path"] == "/GatewayId")
+                .count(),
+            1
+        );
+        assert!(
+            !ops.iter()
+                .any(|op| op["op"] == "remove" && op["path"] == "/NatGatewayId")
+        );
+    }
+
+    #[test]
+    fn route_replace_network_interface_removes_every_other_target() {
+        let patch = UpdatePatch {
+            ops: vec![replace(
+                "network_interface_id",
+                string("eni-0123456789abcdef0"),
+            )],
+        };
+
+        let ops = build_update_patches(get_route_config(), "ec2.Route", &patch).ops;
+
+        assert_eq!(ops[0]["op"], "add");
+        assert_eq!(ops[0]["path"], "/NetworkInterfaceId");
+        assert_eq!(ops.len(), 11, "one add plus ten removes: {ops:?}");
+        let removed_paths = ops[1..]
+            .iter()
+            .map(|op| op["path"].as_str().expect("remove path"))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            removed_paths,
+            [
+                "/CarrierGatewayId",
+                "/CoreNetworkArn",
+                "/EgressOnlyInternetGatewayId",
+                "/GatewayId",
+                "/InstanceId",
+                "/LocalGatewayId",
+                "/NatGatewayId",
+                "/TransitGatewayId",
+                "/VpcEndpointId",
+                "/VpcPeeringConnectionId",
+            ]
+        );
+        assert!(ops[1..].iter().all(|op| op["op"] == "remove"));
+    }
+
+    #[test]
+    fn route_patch_without_target_change_emits_no_extra_removes() {
+        let ops =
+            build_update_patches(get_route_config(), "ec2.Route", &UpdatePatch::default()).ops;
+
+        assert!(ops.is_empty());
+    }
+
+    #[test]
+    fn resource_without_exclusive_groups_is_unaffected() {
+        assert!(get_vpc_config().exclusive_groups.is_empty());
+        let patch = UpdatePatch {
+            ops: vec![replace("enable_dns_support", bool_(false))],
+        };
+
+        let ops = build_update_patches(get_vpc_config(), "ec2.Vpc", &patch).ops;
+
+        assert_eq!(
+            ops,
+            [json!({
+                "op": "add",
+                "path": "/EnableDnsSupport",
+                "value": false,
+            })]
+        );
+    }
+
+    #[test]
     fn test_reassert_op_emits_converted_add_without_confirmation() {
         let config = get_schema_config("ssm.Parameter").expect("ssm.Parameter schema should exist");
         let patch = UpdatePatch {
@@ -539,6 +707,7 @@ mod tests {
             aws_type_name: "AWS::Test::Resource",
             resource_type_name: "test.Resource",
             primary_identifier: &[],
+            exclusive_groups: &[],
             tags: None,
             schema: ResourceSchema::new("test.Resource")
                 .attribute(
@@ -574,6 +743,7 @@ mod tests {
             aws_type_name: "AWS::Test::Resource",
             resource_type_name: "test.Resource",
             primary_identifier: &[],
+            exclusive_groups: &[],
             tags: None,
             schema: ResourceSchema::new("test.Resource").attribute(
                 AttributeSchema::optional("unmapped_attribute", AttributeType::string()).build(),
@@ -819,6 +989,7 @@ mod tests {
             aws_type_name: "AWS::Test::Resource",
             resource_type_name: "test.Resource",
             primary_identifier: &[],
+            exclusive_groups: &[],
             tags: Some(crate::schemas::config::TagsProperty {
                 provider_name: "ResourceTags",
                 wire: crate::schemas::config::TagsWire::KeyValueList,

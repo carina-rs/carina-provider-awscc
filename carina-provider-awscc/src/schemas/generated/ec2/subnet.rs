@@ -205,6 +205,7 @@ pub fn ec2_subnet_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::EC2::Subnet",
         resource_type_name: "ec2.Subnet",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "SubnetId", dsl_name: "subnet_id" }],
+        exclusive_groups: &[],
         tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
         schema,
     }

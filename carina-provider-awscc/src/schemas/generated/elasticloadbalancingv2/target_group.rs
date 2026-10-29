@@ -238,6 +238,7 @@ pub fn elasticloadbalancingv2_target_group_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::ElasticLoadBalancingV2::TargetGroup",
         resource_type_name: "elasticloadbalancingv2.TargetGroup",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "TargetGroupArn", dsl_name: "target_group_arn" }],
+        exclusive_groups: &[],
         tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
         schema,
     }

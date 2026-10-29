@@ -259,6 +259,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::EC2::IPAMPool",
         resource_type_name: "ec2.IpamPool",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "IpamPoolId", dsl_name: "ipam_pool_id" }],
+        exclusive_groups: &[],
         tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
         schema,
     }

@@ -108,6 +108,7 @@ pub fn ec2_security_group_egress_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::EC2::SecurityGroupEgress",
         resource_type_name: "ec2.SecurityGroupEgress",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "Id", dsl_name: "id" }],
+        exclusive_groups: &[],
         tags: None,
         schema,
     }

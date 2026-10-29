@@ -722,6 +722,87 @@ fn derive_tags_property(schema: &CfnSchema) -> Result<Option<GeneratedTagsProper
     }))
 }
 
+fn validate_mutually_exclusive_property_groups(
+    schema: &CfnSchema,
+    groups: &[&[&str]],
+) -> Result<Vec<Vec<String>>> {
+    let mut dsl_groups = Vec::with_capacity(groups.len());
+
+    for (group_index, group) in groups.iter().enumerate() {
+        if group.len() < 2 {
+            anyhow::bail!(
+                "{} mutually exclusive property group {} has {} member(s); expected at least 2",
+                schema.type_name,
+                group_index + 1,
+                group.len()
+            );
+        }
+
+        let mut dsl_group = Vec::with_capacity(group.len());
+        for &property_name in *group {
+            let property = schema.properties.get(property_name).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "{} mutually exclusive property group {} member {property_name:?} is not a top-level schema property",
+                    schema.type_name,
+                    group_index + 1
+                )
+            })?;
+            let property_path = [property_name.to_string()];
+            if is_property_read_only(schema, property, &property_path) {
+                anyhow::bail!(
+                    "{} mutually exclusive property group {} member {property_name:?} is read-only and not updatable",
+                    schema.type_name,
+                    group_index + 1
+                );
+            }
+            let is_create_only = schema
+                .create_only_properties
+                .iter()
+                .filter_map(|pointer| cfn_property_path(pointer))
+                .any(|path| path.starts_with(&property_path));
+            if is_create_only {
+                anyhow::bail!(
+                    "{} mutually exclusive property group {} member {property_name:?} is create-only and not updatable",
+                    schema.type_name,
+                    group_index + 1
+                );
+            }
+            dsl_group.push(property_name.to_snake_case());
+        }
+        dsl_groups.push(dsl_group);
+    }
+
+    Ok(dsl_groups)
+}
+
+fn derive_mutually_exclusive_property_groups(schema: &CfnSchema) -> Result<Vec<Vec<String>>> {
+    let groups = mutually_exclusive_property_groups()
+        .get(schema.type_name.as_str())
+        .copied()
+        .unwrap_or(&[]);
+    validate_mutually_exclusive_property_groups(schema, groups)
+}
+
+fn emit_exclusive_groups_slice(groups: &[Vec<String>]) -> String {
+    if groups.is_empty() {
+        return "&[]".to_string();
+    }
+
+    let entries = groups
+        .iter()
+        .map(|group| {
+            let attributes = group
+                .iter()
+                .map(|attribute| rust_lit(attribute).to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("ExclusiveGroup {{ attributes: &[{attributes}] }}")
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("&[{entries}]")
+}
+
 fn is_key_value_tag_array(property: &CfnProperty, schema: &CfnSchema) -> bool {
     if property.prop_type.as_ref().and_then(TypeValue::as_str) != Some("array") {
         return false;
@@ -1907,6 +1988,7 @@ fn type_display_string(
 
 fn generate_markdown(schema: &CfnSchema, type_name: &str) -> Result<String> {
     reset_recursion_guard();
+    derive_mutually_exclusive_property_groups(schema)?;
 
     let mut md = String::new();
 
@@ -2774,8 +2856,11 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
         },
     );
 
-    // Detect mutually exclusive field groups from schema structure and descriptions
-    let exclusive_groups = detect_exclusive_fields(schema, type_name);
+    // Detect mutually exclusive required fields for validation, and derive the
+    // separately curated updatable groups used to build CloudControl patches.
+    let exclusive_required_groups = detect_exclusive_fields(schema, type_name);
+    let exclusive_groups = derive_mutually_exclusive_property_groups(schema)?;
+    let exclusive_groups_expr = emit_exclusive_groups_slice(&exclusive_groups);
 
     // Build the body into a separate buffer so import selection can scan it
     // for `legacy_validator(` mentions instead of
@@ -3019,7 +3104,7 @@ pub fn {}() -> AwsccSchemaConfig {{
     // Mutually exclusive required groups are emitted as declarative data so
     // the constraint survives the WASM plugin boundary (function-pointer
     // validators are lost when schemas cross into the host).
-    for group in &exclusive_groups {
+    for group in &exclusive_required_groups {
         let fields_str = group
             .iter()
             .map(|f| {
@@ -3068,12 +3153,13 @@ pub fn {}() -> AwsccSchemaConfig {{
         aws_type_name: "{}",
         resource_type_name: "{}",
         primary_identifier: {},
+        exclusive_groups: {},
         tags: {},
         schema,
     }}
 }}
 "#,
-        type_name, dsl_resource, primary_identifier, tags_expr
+        type_name, dsl_resource, primary_identifier, exclusive_groups_expr, tags_expr
     ));
 
     // Generate enum_valid_values() function that exposes VALID_* constants
@@ -3169,10 +3255,16 @@ pub fn {}() -> AwsccSchemaConfig {{
         schema_imports.push("OperationConfig");
     }
     let schema_imports_str = schema_imports.join(", ");
-    let config_import = if body.contains("TagsProperty") {
-        "use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};"
-    } else {
-        "use crate::schemas::config::AwsccSchemaConfig;"
+    let config_import = match (
+        body.contains("ExclusiveGroup"),
+        body.contains("TagsProperty"),
+    ) {
+        (true, true) => {
+            "use crate::schemas::config::{AwsccSchemaConfig, ExclusiveGroup, TagsProperty, TagsWire};"
+        }
+        (true, false) => "use crate::schemas::config::{AwsccSchemaConfig, ExclusiveGroup};",
+        (false, true) => "use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};",
+        (false, false) => "use crate::schemas::config::AwsccSchemaConfig;",
     };
     code.push_str(&format!(
         r#"//! {} schema definition for AWS Cloud Control
@@ -4313,6 +4405,35 @@ fn known_string_type_overrides() -> &'static HashMap<&'static str, &'static str>
         m
     });
     &OVERRIDES
+}
+
+/// Resource-keyed groups of updatable CloudFormation properties where exactly
+/// one member may be present in CloudControl's update model.
+fn mutually_exclusive_property_groups()
+-> &'static HashMap<&'static str, &'static [&'static [&'static str]]> {
+    const EC2_ROUTE_TARGETS: &[&str] = &[
+        "CarrierGatewayId",
+        "CoreNetworkArn",
+        "EgressOnlyInternetGatewayId",
+        "GatewayId",
+        "InstanceId",
+        "LocalGatewayId",
+        "NatGatewayId",
+        "NetworkInterfaceId",
+        "TransitGatewayId",
+        "VpcEndpointId",
+        "VpcPeeringConnectionId",
+    ];
+    const EC2_ROUTE_GROUPS: &[&[&str]] = &[EC2_ROUTE_TARGETS];
+
+    static GROUPS: LazyLock<HashMap<&'static str, &'static [&'static [&'static str]]>> =
+        LazyLock::new(|| {
+            // Measured with carina-test-009 in ap-northeast-1 on 2026-10-29:
+            // CloudControl's Route read mirrors GatewayId into VpcEndpointId, and
+            // an update may remove an absent JSON Patch path successfully.
+            HashMap::from([("AWS::EC2::Route", EC2_ROUTE_GROUPS)])
+        });
+    &GROUPS
 }
 
 /// Unified resource-specific property type overrides.
@@ -6943,7 +7064,7 @@ mod tests {
             ref_path: Some("#/definitions/Item".to_string()),
             ..Default::default()
         };
-        let mut schema = empty_schema("AWS::EC2::Route");
+        let mut schema = empty_schema("AWS::Test::NestedReadOnlyRefArray");
         schema.properties = BTreeMap::from([
             (
                 "DirectItems".to_string(),
@@ -7002,7 +7123,7 @@ mod tests {
 
     #[test]
     fn test_shared_definition_with_path_dependent_read_only_fields_is_rejected() {
-        let mut schema = empty_schema("AWS::EC2::Route");
+        let mut schema = empty_schema("AWS::Test::PathDependentReadOnly");
         let shared_ref = CfnProperty {
             ref_path: Some("#/definitions/Shared".to_string()),
             ..Default::default()
@@ -7038,7 +7159,10 @@ mod tests {
 
         for (generator, result) in [
             ("Rust", generate_synthetic_schema_code(&schema)),
-            ("Markdown", generate_markdown(&schema, "AWS::EC2::Route")),
+            (
+                "Markdown",
+                generate_markdown(&schema, "AWS::Test::PathDependentReadOnly"),
+            ),
         ] {
             let error = result.expect_err(
                 "a shared definition with path-dependent read-only fields must fail closed",
@@ -7056,7 +7180,7 @@ mod tests {
 
     #[test]
     fn test_unmatched_nested_read_only_pointer_is_rejected() {
-        let mut schema = empty_schema("AWS::EC2::Route");
+        let mut schema = empty_schema("AWS::Test::UnmatchedReadOnly");
         schema.properties.insert(
             "Config".to_string(),
             CfnProperty {
@@ -14570,6 +14694,109 @@ mod tests {
         .unwrap();
 
         assert_eq!(derive_tags_property(&schema).unwrap(), None);
+    }
+
+    fn schema_with_updatable_properties(names: &[&str]) -> CfnSchema {
+        let mut schema = empty_schema("AWS::Test::Resource");
+        schema.properties = names
+            .iter()
+            .map(|name| {
+                (
+                    (*name).to_string(),
+                    CfnProperty {
+                        prop_type: Some(TypeValue::Single("string".to_string())),
+                        ..Default::default()
+                    },
+                )
+            })
+            .collect();
+        schema
+    }
+
+    #[test]
+    fn mutually_exclusive_group_with_fewer_than_two_members_is_rejected() {
+        let schema = schema_with_updatable_properties(&["Only"]);
+
+        let error = validate_mutually_exclusive_property_groups(&schema, &[&["Only"]])
+            .expect_err("a one-member group must fail codegen");
+
+        assert!(error.to_string().contains("expected at least 2"));
+    }
+
+    #[test]
+    fn mutually_exclusive_group_member_must_be_a_top_level_property() {
+        let schema = schema_with_updatable_properties(&["Present"]);
+
+        let error =
+            validate_mutually_exclusive_property_groups(&schema, &[&["Present", "Missing"]])
+                .expect_err("a missing group member must fail codegen");
+
+        assert!(error.to_string().contains("Missing"));
+        assert!(
+            error
+                .to_string()
+                .contains("not a top-level schema property")
+        );
+    }
+
+    #[test]
+    fn mutually_exclusive_group_member_must_not_be_read_only() {
+        let mut schema = schema_with_updatable_properties(&["First", "Second"]);
+        schema.read_only_properties = vec!["/properties/First".to_string()];
+
+        let error = validate_mutually_exclusive_property_groups(&schema, &[&["First", "Second"]])
+            .expect_err("a read-only group member must fail codegen");
+
+        assert!(error.to_string().contains("First"));
+        assert!(error.to_string().contains("read-only and not updatable"));
+    }
+
+    #[test]
+    fn mutually_exclusive_group_member_must_not_be_create_only() {
+        let mut schema = schema_with_updatable_properties(&["First", "Second"]);
+        schema.create_only_properties = vec!["/properties/Second".to_string()];
+
+        let error = validate_mutually_exclusive_property_groups(&schema, &[&["First", "Second"]])
+            .expect_err("a create-only group member must fail codegen");
+
+        assert!(error.to_string().contains("Second"));
+        assert!(error.to_string().contains("create-only and not updatable"));
+    }
+
+    #[test]
+    fn ec2_route_mutually_exclusive_group_is_valid_and_uses_dsl_names() {
+        let schema: CfnSchema = serde_json::from_str(include_str!(
+            "../../../cfn-schema-cache/AWS__EC2__Route.json"
+        ))
+        .expect("cached Route schema should deserialize");
+
+        let groups = derive_mutually_exclusive_property_groups(&schema)
+            .expect("the curated Route target group should be valid");
+
+        assert_eq!(
+            groups,
+            [vec![
+                "carrier_gateway_id",
+                "core_network_arn",
+                "egress_only_internet_gateway_id",
+                "gateway_id",
+                "instance_id",
+                "local_gateway_id",
+                "nat_gateway_id",
+                "network_interface_id",
+                "transit_gateway_id",
+                "vpc_endpoint_id",
+                "vpc_peering_connection_id",
+            ]]
+        );
+        let generated = generate_schema_code(&schema, "AWS::EC2::Route")
+            .expect("Route schema generation should succeed");
+        assert!(
+            generated.contains("use crate::schemas::config::{AwsccSchemaConfig, ExclusiveGroup};")
+        );
+        assert!(generated.contains(
+            "ExclusiveGroup { attributes: &[\"carrier_gateway_id\", \"core_network_arn\""
+        ));
     }
 
     // --- Exclusive field detection tests ---

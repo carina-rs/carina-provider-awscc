@@ -167,6 +167,7 @@ pub fn ec2_transit_gateway_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::EC2::TransitGateway",
         resource_type_name: "ec2.TransitGateway",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "Id", dsl_name: "id" }],
+        exclusive_groups: &[],
         tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
         schema,
     }

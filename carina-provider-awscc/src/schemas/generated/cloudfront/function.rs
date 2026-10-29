@@ -99,6 +99,7 @@ pub fn cloudfront_function_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::CloudFront::Function",
         resource_type_name: "cloudfront.Function",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "FunctionARN", dsl_name: "function_arn" }],
+        exclusive_groups: &[],
         tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
         schema,
     }

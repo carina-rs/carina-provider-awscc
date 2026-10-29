@@ -69,6 +69,7 @@ pub fn sso_instance_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::SSO::Instance",
         resource_type_name: "sso.Instance",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "InstanceArn", dsl_name: "instance_arn" }],
+        exclusive_groups: &[],
         tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
         schema,
     }

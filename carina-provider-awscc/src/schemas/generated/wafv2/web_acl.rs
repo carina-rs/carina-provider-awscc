@@ -1326,6 +1326,7 @@ pub fn wafv2_web_acl_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::WAFv2::WebACL",
         resource_type_name: "wafv2.WebAcl",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "Name", dsl_name: "name" }, crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "Id", dsl_name: "id" }, crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "Scope", dsl_name: "scope" }],
+        exclusive_groups: &[],
         tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
         schema,
     }

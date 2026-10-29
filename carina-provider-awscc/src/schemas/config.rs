@@ -22,10 +22,18 @@ pub struct AwsccSchemaConfig {
     pub resource_type_name: &'static str,
     /// CloudFormation primaryIdentifier fields and their generated DSL attributes.
     pub primary_identifier: &'static [PrimaryIdentifierAttribute],
+    /// Groups of updatable attributes where CloudControl accepts exactly one member.
+    pub exclusive_groups: &'static [ExclusiveGroup],
     /// CloudControl tag property metadata, when the resource exposes tags.
     pub tags: Option<TagsProperty>,
     /// The resource schema with attribute definitions
     pub schema: ResourceSchema,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ExclusiveGroup {
+    /// DSL attribute names, matching keys in `schema.attributes()`.
+    pub attributes: &'static [&'static str],
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

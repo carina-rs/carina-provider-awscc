@@ -149,6 +149,7 @@ pub fn ec2_flow_log_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::EC2::FlowLog",
         resource_type_name: "ec2.FlowLog",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "Id", dsl_name: "id" }],
+        exclusive_groups: &[],
         tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
         schema,
     }

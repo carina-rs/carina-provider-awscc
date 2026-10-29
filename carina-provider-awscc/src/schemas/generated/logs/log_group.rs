@@ -110,6 +110,7 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::Logs::LogGroup",
         resource_type_name: "logs.LogGroup",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "LogGroupName", dsl_name: "log_group_name" }],
+        exclusive_groups: &[],
         tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
         schema,
     }

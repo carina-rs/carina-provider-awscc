@@ -45,6 +45,7 @@ pub fn ec2_route_table_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::EC2::RouteTable",
         resource_type_name: "ec2.RouteTable",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "RouteTableId", dsl_name: "route_table_id" }],
+        exclusive_groups: &[],
         tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
         schema,
     }

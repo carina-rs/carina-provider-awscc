@@ -175,6 +175,7 @@ pub fn kms_key_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::KMS::Key",
         resource_type_name: "kms.Key",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "KeyId", dsl_name: "key_id" }],
+        exclusive_groups: &[],
         tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
         schema,
     }

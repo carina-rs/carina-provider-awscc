@@ -56,6 +56,7 @@ pub fn ec2_vpn_gateway_config() -> AwsccSchemaConfig {
         aws_type_name: "AWS::EC2::VPNGateway",
         resource_type_name: "ec2.VpnGateway",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "VPNGatewayId", dsl_name: "vpn_gateway_id" }],
+        exclusive_groups: &[],
         tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
         schema,
     }
