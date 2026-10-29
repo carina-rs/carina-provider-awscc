@@ -1502,19 +1502,11 @@ fi
 # ── Provider source injection ────────────────────────────────────────
 # Provider blocks require source and version attributes.
 # Inject them dynamically so .crn files don't need to hard-code binary paths.
-AWSCC_PROVIDER_BIN="${AWSCC_PROVIDER_BIN:-$PROJECT_ROOT/target/wasm32-wasip2/release/carina-provider-awscc.wasm}"
+source "$SCRIPT_DIR/shared/_provider_env.sh" || exit 1
+configure_awscc_provider_environment || exit 1
 
 # Read provider version from workspace Cargo.toml to avoid hardcoding
 PROVIDER_VERSION=$(grep '^version = ' "$PROJECT_ROOT/Cargo.toml" | head -1 | sed 's/version = "\(.*\)"/\1/')
-
-# Validate that the awscc provider binary is a WASM component, not a native binary.
-# Native binaries are no longer supported and will cause cryptic linker errors.
-if [ -n "$AWSCC_PROVIDER_BIN" ] && [ -f "$AWSCC_PROVIDER_BIN" ] && [[ "$AWSCC_PROVIDER_BIN" != *.wasm ]]; then
-    echo "ERROR: AWSCC_PROVIDER_BIN points to a non-WASM binary: $AWSCC_PROVIDER_BIN"
-    echo "       Provider binaries must be .wasm components."
-    echo "       Unset AWSCC_PROVIDER_BIN to use the default WASM build, or point it to a .wasm file."
-    exit 1
-fi
 
 # inject_provider_source: Create a temp copy of a .crn file with source/version
 # injected into provider blocks. Prints the temp file path.
