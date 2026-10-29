@@ -8,51 +8,45 @@ use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
 use carina_core::schema::{AttributeSchema, ResourceSchema};
 
 /// Returns the schema config for ec2_egress_only_internet_gateway (AWS::EC2::EgressOnlyInternetGateway)
+#[rustfmt::skip]
 pub fn ec2_egress_only_internet_gateway_config() -> AwsccSchemaConfig {
+    let mut schema = ResourceSchema::new("ec2.EgressOnlyInternetGateway")
+        .with_description("Resource Type definition for AWS::EC2::EgressOnlyInternetGateway");
+    #[inline(never)]
+    fn build_id_attribute() -> AttributeSchema {
+        AttributeSchema::provider_populated("id", carina_aws_types::egress_only_internet_gateway_id())
+                .with_description("Service Generated ID of the EgressOnlyInternetGateway (read-only)")
+                .with_provider_name("Id")
+            .build()
+    }
+    schema = schema.attribute(build_id_attribute());
+    #[inline(never)]
+    fn build_tags_attribute() -> AttributeSchema {
+        AttributeSchema::optional("tags", carina_aws_types::tags_type())
+                .with_description("Any tags assigned to the egress only internet gateway.")
+                .with_provider_name("Tags")
+                .with_block_name("tag")
+            .build()
+    }
+    schema = schema.attribute(build_tags_attribute());
+    #[inline(never)]
+    fn build_vpc_id_attribute() -> AttributeSchema {
+        AttributeSchema::required("vpc_id", carina_aws_types::vpc_id())
+                .create_only()
+                .with_description("The ID of the VPC for which to create the egress-only internet gateway.")
+                .with_provider_name("VpcId")
+            .build()
+    }
+    schema = schema.attribute(build_vpc_id_attribute());
+    schema = schema
+        .with_coexisting_replacement();
+    schema = schema.with_declared_validators(vec![carina_provider_protocol::types::ValidatorType::TagsKeyValueCheck]);
     AwsccSchemaConfig {
         aws_type_name: "AWS::EC2::EgressOnlyInternetGateway",
         resource_type_name: "ec2.EgressOnlyInternetGateway",
-        primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute {
-            provider_name: "Id",
-            dsl_name: "id",
-        }],
-        tags: Some(TagsProperty {
-            provider_name: "Tags",
-            wire: TagsWire::KeyValueList,
-        }),
-        schema: ResourceSchema::new("ec2.EgressOnlyInternetGateway")
-            .with_description("Resource Type definition for AWS::EC2::EgressOnlyInternetGateway")
-            .attribute(
-                AttributeSchema::provider_populated(
-                    "id",
-                    carina_aws_types::egress_only_internet_gateway_id(),
-                )
-                .with_description(
-                    "Service Generated ID of the EgressOnlyInternetGateway (read-only)",
-                )
-                .with_provider_name("Id")
-                .build(),
-            )
-            .attribute(
-                AttributeSchema::optional("tags", carina_aws_types::tags_type())
-                    .with_description("Any tags assigned to the egress only internet gateway.")
-                    .with_provider_name("Tags")
-                    .with_block_name("tag")
-                    .build(),
-            )
-            .attribute(
-                AttributeSchema::required("vpc_id", carina_aws_types::vpc_id())
-                    .create_only()
-                    .with_description(
-                        "The ID of the VPC for which to create the egress-only internet gateway.",
-                    )
-                    .with_provider_name("VpcId")
-                    .build(),
-            )
-            .with_coexisting_replacement()
-            .with_declared_validators(vec![
-                carina_provider_protocol::types::ValidatorType::TagsKeyValueCheck,
-            ]),
+        primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "Id", dsl_name: "id" }],
+        tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
+        schema,
     }
 }
 

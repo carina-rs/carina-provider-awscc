@@ -10,60 +10,75 @@ use carina_core::schema::{
 };
 
 /// Returns the schema config for ec2_transit_gateway_attachment (AWS::EC2::TransitGatewayAttachment)
+#[rustfmt::skip]
 pub fn ec2_transit_gateway_attachment_config() -> AwsccSchemaConfig {
-    AwsccSchemaConfig {
-        aws_type_name: "AWS::EC2::TransitGatewayAttachment",
-        resource_type_name: "ec2.TransitGatewayAttachment",
-        primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "Id", dsl_name: "id" }],
-        tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
-        schema: ResourceSchema::new("ec2.TransitGatewayAttachment")
-	        .with_description("Resource Type definition for AWS::EC2::TransitGatewayAttachment")
-        .attribute(
-            AttributeSchema::provider_populated("id", carina_aws_types::transit_gateway_attachment_id())
+    let mut schema = ResourceSchema::new("ec2.TransitGatewayAttachment")
+        .with_description("Resource Type definition for AWS::EC2::TransitGatewayAttachment");
+    #[inline(never)]
+    fn build_id_attribute() -> AttributeSchema {
+        AttributeSchema::provider_populated("id", carina_aws_types::transit_gateway_attachment_id())
                 .with_provider_name("Id")
-                .build(),
-        )
-        .attribute(
-            AttributeSchema::optional("options", AttributeType::struct_("Options".to_string(), vec![StructField::optional("appliance_mode_support", AttributeType::enum_(carina_core::schema::enum_identity("ApplianceModeSupport", Some("aws.ec2.TransitGatewayAttachment.Options")), Some(vec!["enable".to_string(), "disable".to_string()]), vec![("enable".to_string(), "enable".to_string()), ("disable".to_string(), "disable".to_string())], None, None)).with_description("Indicates whether to enable Ipv6 Support for Vpc Attachment. Valid Values: enable | disable").with_provider_name("ApplianceModeSupport").build(),
+            .build()
+    }
+    schema = schema.attribute(build_id_attribute());
+    #[inline(never)]
+    fn build_options_attribute() -> AttributeSchema {
+        AttributeSchema::optional("options", AttributeType::struct_("Options".to_string(), vec![StructField::optional("appliance_mode_support", AttributeType::enum_(carina_core::schema::enum_identity("ApplianceModeSupport", Some("aws.ec2.TransitGatewayAttachment.Options")), Some(vec!["enable".to_string(), "disable".to_string()]), vec![("enable".to_string(), "enable".to_string()), ("disable".to_string(), "disable".to_string())], None, None)).with_description("Indicates whether to enable Ipv6 Support for Vpc Attachment. Valid Values: enable | disable").with_provider_name("ApplianceModeSupport").build(),
                     StructField::optional("dns_support", AttributeType::enum_(carina_core::schema::enum_identity("DnsSupport", Some("aws.ec2.TransitGatewayAttachment.Options")), Some(vec!["enable".to_string(), "disable".to_string()]), vec![("enable".to_string(), "enable".to_string()), ("disable".to_string(), "disable".to_string())], None, None)).with_description("Indicates whether to enable DNS Support for Vpc Attachment. Valid Values: enable | disable").with_provider_name("DnsSupport").build(),
                     StructField::optional("ipv6_support", AttributeType::enum_(carina_core::schema::enum_identity("Ipv6Support", Some("aws.ec2.TransitGatewayAttachment.Options")), Some(vec!["enable".to_string(), "disable".to_string()]), vec![("enable".to_string(), "enable".to_string()), ("disable".to_string(), "disable".to_string())], None, None)).with_description("Indicates whether to enable Ipv6 Support for Vpc Attachment. Valid Values: enable | disable").with_provider_name("Ipv6Support").build(),
                     StructField::optional("security_group_referencing_support", AttributeType::enum_(carina_core::schema::enum_identity("SecurityGroupReferencingSupport", Some("aws.ec2.TransitGatewayAttachment.Options")), Some(vec!["enable".to_string(), "disable".to_string()]), vec![("enable".to_string(), "enable".to_string()), ("disable".to_string(), "disable".to_string())], None, None)).with_description("Indicates whether to enable Security Group referencing support for Vpc Attachment. Valid Values: enable | disable").with_provider_name("SecurityGroupReferencingSupport").build()]))
                 .with_description("The options for the transit gateway vpc attachment.")
                 .with_provider_name("Options")
-                .build(),
-        )
-        .attribute(
-            AttributeSchema::required("subnet_ids", AttributeType::unordered_list(carina_aws_types::subnet_id()))
+            .build()
+    }
+    schema = schema.attribute(build_options_attribute());
+    #[inline(never)]
+    fn build_subnet_ids_attribute() -> AttributeSchema {
+        AttributeSchema::required("subnet_ids", AttributeType::unordered_list(carina_aws_types::subnet_id()))
                 .with_provider_name("SubnetIds")
-                .build(),
-        )
-        .attribute(
-            AttributeSchema::optional("tags", carina_aws_types::tags_type())
+            .build()
+    }
+    schema = schema.attribute(build_subnet_ids_attribute());
+    #[inline(never)]
+    fn build_tags_attribute() -> AttributeSchema {
+        AttributeSchema::optional("tags", carina_aws_types::tags_type())
                 .with_provider_name("Tags")
                 .with_block_name("tag")
-                .build(),
-        )
-        .attribute(
-            AttributeSchema::required("transit_gateway_id", carina_aws_types::transit_gateway_id())
+            .build()
+    }
+    schema = schema.attribute(build_tags_attribute());
+    #[inline(never)]
+    fn build_transit_gateway_id_attribute() -> AttributeSchema {
+        AttributeSchema::required("transit_gateway_id", carina_aws_types::transit_gateway_id())
                 .create_only()
                 .with_provider_name("TransitGatewayId")
-                .build(),
-        )
-        .attribute(
-            AttributeSchema::required("vpc_id", carina_aws_types::vpc_id())
+            .build()
+    }
+    schema = schema.attribute(build_transit_gateway_id_attribute());
+    #[inline(never)]
+    fn build_vpc_id_attribute() -> AttributeSchema {
+        AttributeSchema::required("vpc_id", carina_aws_types::vpc_id())
                 .create_only()
                 .with_provider_name("VpcId")
-                .build(),
-        )
-        .with_coexisting_replacement()
-        .with_operation_config(OperationConfig {
+            .build()
+    }
+    schema = schema.attribute(build_vpc_id_attribute());
+    schema = schema
+        .with_coexisting_replacement();
+    schema = schema.with_operation_config(OperationConfig {
             delete_timeout_secs: Some(1800),
             delete_max_retries: Some(24),
             create_timeout_secs: None,
             create_max_retries: None,
             update_timeout_secs: None,
-        })
-        .with_declared_validators(vec![carina_provider_protocol::types::ValidatorType::TagsKeyValueCheck])
+    });
+    schema = schema.with_declared_validators(vec![carina_provider_protocol::types::ValidatorType::TagsKeyValueCheck]);
+    AwsccSchemaConfig {
+        aws_type_name: "AWS::EC2::TransitGatewayAttachment",
+        resource_type_name: "ec2.TransitGatewayAttachment",
+        primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "Id", dsl_name: "id" }],
+        tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
+        schema,
     }
 }
 

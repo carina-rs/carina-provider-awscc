@@ -3560,24 +3560,16 @@ fn {fn_name}(value: &Value) -> Result<(), String> {{
     let primary_identifier =
         emit_primary_identifier(schema.primary_identifier.as_deref(), &schema.properties)?;
 
+    // Build every schema incrementally through non-inlined top-level helpers.
+    // This keeps generated builder frame sizes bounded independently of how
+    // large a resource schema grows.
     body.push_str(&format!(
         r#"/// Returns the schema config for {} ({})
+#[rustfmt::skip]
 pub fn {}() -> AwsccSchemaConfig {{
-    AwsccSchemaConfig {{
-        aws_type_name: "{}",
-        resource_type_name: "{}",
-        primary_identifier: {},
-        tags: {},
-        schema: ResourceSchema::new("{}")
-	"#,
-        full_resource,
-        type_name,
-        config_fn_name,
-        type_name,
-        dsl_resource,
-        primary_identifier,
-        tags_expr,
-        schema_name
+    let mut schema = ResourceSchema::new("{}")
+"#,
+        full_resource, type_name, config_fn_name, schema_name
     ));
 
     // Add description
@@ -3591,6 +3583,8 @@ pub fn {}() -> AwsccSchemaConfig {{
             escaped_desc
         ));
     }
+    body.pop();
+    body.push_str(";\n");
 
     // Generate attributes for each property
     for (prop_name, prop) in &schema.properties {
@@ -3627,9 +3621,10 @@ pub fn {}() -> AwsccSchemaConfig {{
         } else {
             "optional"
         };
+        let attr_builder_fn = format!("build_{}_attribute", attr_name);
         let mut attr_code = format!(
-            "        .attribute(\n            AttributeSchema::{}(\"{}\", {})", // rust-lit-guard: allow (snake_case output cannot contain " or \\)
-            constructor, attr_name, attr_type
+            "    #[inline(never)]\n    fn {}() -> AttributeSchema {{\n        AttributeSchema::{}(\"{}\", {})", // rust-lit-guard: allow (snake_case output cannot contain " or \\)
+            attr_builder_fn, constructor, attr_name, attr_type
         );
 
         if is_create_only {
@@ -3699,7 +3694,10 @@ pub fn {}() -> AwsccSchemaConfig {{
             ));
         }
 
-        attr_code.push_str("\n                .build(),\n        )\n");
+        attr_code.push_str(&format!(
+            "\n            .build()\n    }}\n    schema = schema.attribute({}());\n",
+            attr_builder_fn
+        ));
         body.push_str(&attr_code);
     }
 
@@ -3721,35 +3719,45 @@ pub fn {}() -> AwsccSchemaConfig {{
                 .replace('"', "\\\"")
                 .replace('\n', " "),
         );
+        let attr_type = if has_arn_helper && synth.attr_name == "arn" {
+            "self::arn()"
+        } else {
+            synth.attr_type
+        };
         body.push_str(&format!(
             concat!(
-                "        .attribute(\n",
-                "            AttributeSchema::provider_populated({}, {})\n",
-                "                .with_description(\"{} (read-only)\")\n", // rust-lit-guard: allow (already escaped and newline-collapsed)
-                "                .build(),\n        )\n", // rust-lit-guard: allow (already escaped and newline-collapsed)
+                "    #[inline(never)]\n",
+                "    fn build_{}_attribute() -> AttributeSchema {{\n",
+                "        AttributeSchema::provider_populated({}, {})\n",
+                "            .with_description(\"{} (read-only)\")\n", // rust-lit-guard: allow (already escaped and newline-collapsed)
+                "            .build()\n",
+                "    }}\n",
+                "    schema = schema.attribute(build_{}_attribute());\n", // rust-lit-guard: allow (snake_case identifier)
             ),
+            synth.attr_name,
             rust_lit(synth.attr_name),
-            if has_arn_helper && synth.attr_name == "arn" {
-                "self::arn()"
-            } else {
-                synth.attr_type
-            },
+            attr_type,
             escaped,
+            synth.attr_name,
         ));
     }
 
-    emit_replacement_class_builder(&mut body, declared_replacement_class(&schema_name, schema)?);
+    let replacement_class = declared_replacement_class(&schema_name, schema)?;
+    body.push_str("    schema = schema\n");
+    emit_replacement_class_builder(&mut body, replacement_class);
+    body.pop();
+    body.push_str(";\n");
 
     // Per-resource operational config for resources with slow CloudControl operations.
     let op_config = operation_config_for_type(type_name);
     if let Some(cfg) = op_config {
-        body.push_str("        .with_operation_config(OperationConfig {\n");
+        body.push_str("    schema = schema.with_operation_config(OperationConfig {\n");
         emit_option_field(&mut body, "delete_timeout_secs", cfg.delete_timeout_secs);
         emit_option_field(&mut body, "delete_max_retries", cfg.delete_max_retries);
         emit_option_field(&mut body, "create_timeout_secs", cfg.create_timeout_secs);
         emit_option_field(&mut body, "create_max_retries", cfg.create_max_retries);
         emit_option_field(&mut body, "update_timeout_secs", cfg.update_timeout_secs);
-        body.push_str("        })\n");
+        body.push_str("    });\n");
     }
 
     // Mutually exclusive required groups are emitted as declarative data so
@@ -3764,13 +3772,16 @@ pub fn {}() -> AwsccSchemaConfig {{
             })
             .collect::<Vec<_>>()
             .join(", ");
-        body.push_str(&format!("        .exclusive_required(&[{}])\n", fields_str));
+        body.push_str(&format!(
+            "    schema = schema.exclusive_required(&[{}]);\n",
+            fields_str
+        ));
     }
 
     // Tags map-shape validation is portable schema data so native and WASM
     // consumers admit the same schema and enforce the same rule.
     if tags.is_some() {
-        body.push_str("        .with_declared_validators(vec![carina_provider_protocol::types::ValidatorType::TagsKeyValueCheck])\n");
+        body.push_str("    schema = schema.with_declared_validators(vec![carina_provider_protocol::types::ValidatorType::TagsKeyValueCheck]);\n");
     }
 
     // carina#3340: drain any cyclic-struct definitions that the
@@ -3781,16 +3792,33 @@ pub fn {}() -> AwsccSchemaConfig {{
     // valid `AttributeType` expression (the same string the inline
     // attribute emitter would have produced).
     let defs = take_emitted_defs();
-    for (def_name, def_body) in &defs {
+    for (def_index, (def_name, def_body)) in defs.iter().enumerate() {
         body.push_str(&format!(
-            "        .with_def({}, {})\n",
+            concat!(
+                "    #[inline(never)]\n",
+                "    fn build_schema_def_{}() -> AttributeType {{ {} }}\n",
+                "    schema = schema.with_def({}, build_schema_def_{}());\n",
+            ),
+            def_index,
+            def_body,
             rust_lit(def_name),
-            def_body
+            def_index,
         ));
     }
 
-    // Close the schema (ResourceSchema) and the AwsccSchemaConfig struct
-    body.push_str("    }\n}\n");
+    // Close the schema (ResourceSchema) and the AwsccSchemaConfig struct.
+    body.push_str(&format!(
+        r#"    AwsccSchemaConfig {{
+        aws_type_name: "{}",
+        resource_type_name: "{}",
+        primary_identifier: {},
+        tags: {},
+        schema,
+    }}
+}}
+"#,
+        type_name, dsl_resource, primary_identifier, tags_expr
+    ));
 
     // carina#3340: emit validator fns for patterns that the cycle
     // expansion in `cfn_type_to_carina_type_with_enum` referenced
@@ -7143,6 +7171,43 @@ mod tests {
         generate_schema_code(schema, "AWS::EC2::Route")
     }
 
+    #[test]
+    fn test_generate_schema_code_uses_helper_shape_for_small_schema() {
+        let mut properties = BTreeMap::new();
+        properties.insert(
+            "Name".to_string(),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("string".to_string())),
+                ..Default::default()
+            },
+        );
+        let schema = CfnSchema {
+            type_name: "AWS::Test::Small".to_string(),
+            description: None,
+            properties,
+            required: vec![],
+            read_only_properties: vec![],
+            create_only_properties: vec![],
+            write_only_properties: vec![],
+            primary_identifier: None,
+            definitions: None,
+            tagging: None,
+            one_of: vec![],
+            any_of: vec![],
+            handlers: BTreeMap::new(),
+        };
+
+        let generated = generate_synthetic_schema_code(&schema).unwrap();
+
+        assert!(generated.contains("#[rustfmt::skip]\npub fn ec2_route_config()"));
+        assert!(
+            generated
+                .contains("#[inline(never)]\n    fn build_name_attribute() -> AttributeSchema")
+        );
+        assert!(generated.contains("schema = schema.attribute(build_name_attribute());"));
+        assert!(!generated.contains("schema: ResourceSchema::new("));
+    }
+
     fn has_resource_enum_override(type_name: &str, property_path: &str) -> bool {
         resource_type_overrides()
             .iter()
@@ -7805,7 +7870,7 @@ mod tests {
         assert!(
             function_metadata_attribute_builders.contains(
                 r#".with_provider_name("FunctionMetadata")
-                .build()"#
+            .build()"#
             ),
             "FunctionMetadata contains only provider-populated fields, so the top-level attribute must be read-only: {function_metadata_attribute_builders}"
         );

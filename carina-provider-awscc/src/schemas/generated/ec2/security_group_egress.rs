@@ -37,83 +37,106 @@ fn validate_to_port_range(value: &Value) -> Result<(), String> {
 }
 
 /// Returns the schema config for ec2_security_group_egress (AWS::EC2::SecurityGroupEgress)
+#[rustfmt::skip]
 pub fn ec2_security_group_egress_config() -> AwsccSchemaConfig {
+    let mut schema = ResourceSchema::new("ec2.SecurityGroupEgress")
+        .with_description("Adds the specified outbound (egress) rule to a security group.  An outbound rule permits instances to send traffic to the specified IPv4 or IPv6 address range, the IP addresses that are specified by a prefix list, or the instances that are associated with a destination security group. For more information, see [Security group rules](https://docs.aws.amazon.com/vpc/latest/userguide/security-group-rules.html).  You must specify exactly one of the following destinations: an IPv4 address range, an IPv6 address range, a prefix list, or a security group.  You must specify a protocol for each rule (for example, TCP). If the protocol is TCP or UDP, you must also specify a port or port range. If the protocol is ICMP or ICMPv6, you must also specify the ICMP/ICMPv6 type and code. To specify all types or all codes, use -1.  Rule changes are propagated to instances associated with the security group as quickly as possible. However, a small delay might occur.");
+    #[inline(never)]
+    fn build_cidr_ip_attribute() -> AttributeSchema {
+        AttributeSchema::optional("cidr_ip", types::ipv4_cidr())
+                .create_only()
+                .with_description("The IPv4 address range, in CIDR format. You must specify exactly one of the following: ``CidrIp``, ``CidrIpv6``, ``DestinationPrefixListId``, or ``DestinationSecurityGroupId``. For examples of rules that you can add to security groups for specific access scenarios, see [Security group rules for different use cases](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/security-group-rules-reference.html) in the *User Guide*.")
+                .with_provider_name("CidrIp")
+            .build()
+    }
+    schema = schema.attribute(build_cidr_ip_attribute());
+    #[inline(never)]
+    fn build_cidr_ipv6_attribute() -> AttributeSchema {
+        AttributeSchema::optional("cidr_ipv6", types::ipv6_cidr())
+                .create_only()
+                .with_description("The IPv6 address range, in CIDR format. You must specify exactly one of the following: ``CidrIp``, ``CidrIpv6``, ``DestinationPrefixListId``, or ``DestinationSecurityGroupId``. For examples of rules that you can add to security groups for specific access scenarios, see [Security group rules for different use cases](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/security-group-rules-reference.html) in the *User Guide*.")
+                .with_provider_name("CidrIpv6")
+            .build()
+    }
+    schema = schema.attribute(build_cidr_ipv6_attribute());
+    #[inline(never)]
+    fn build_description_attribute() -> AttributeSchema {
+        AttributeSchema::optional("description", AttributeType::string())
+                .with_description("The description of an egress (outbound) security group rule. Constraints: Up to 255 characters in length. Allowed characters are a-z, A-Z, 0-9, spaces, and ._-:/()#,@[]+=;{}!$*")
+                .with_provider_name("Description")
+            .build()
+    }
+    schema = schema.attribute(build_description_attribute());
+    #[inline(never)]
+    fn build_destination_prefix_list_id_attribute() -> AttributeSchema {
+        AttributeSchema::optional("destination_prefix_list_id", carina_aws_types::prefix_list_id())
+                .create_only()
+                .with_description("The prefix list IDs for an AWS service. This is the AWS service to access through a VPC endpoint from instances associated with the security group. You must specify exactly one of the following: ``CidrIp``, ``CidrIpv6``, ``DestinationPrefixListId``, or ``DestinationSecurityGroupId``.")
+                .with_provider_name("DestinationPrefixListId")
+            .build()
+    }
+    schema = schema.attribute(build_destination_prefix_list_id_attribute());
+    #[inline(never)]
+    fn build_destination_security_group_id_attribute() -> AttributeSchema {
+        AttributeSchema::optional("destination_security_group_id", carina_aws_types::security_group_id())
+                .create_only()
+                .with_description("The ID of the security group. You must specify exactly one of the following: ``CidrIp``, ``CidrIpv6``, ``DestinationPrefixListId``, or ``DestinationSecurityGroupId``.")
+                .with_provider_name("DestinationSecurityGroupId")
+            .build()
+    }
+    schema = schema.attribute(build_destination_security_group_id_attribute());
+    #[inline(never)]
+    fn build_from_port_attribute() -> AttributeSchema {
+        AttributeSchema::optional("from_port", AttributeType::refined_int(None, Some((Some(-1), Some(65535)))))
+                .create_only()
+                .with_description("If the protocol is TCP or UDP, this is the start of the port range. If the protocol is ICMP or ICMPv6, this is the ICMP type or -1 (all ICMP types).")
+                .with_provider_name("FromPort")
+            .build()
+    }
+    schema = schema.attribute(build_from_port_attribute());
+    #[inline(never)]
+    fn build_group_id_attribute() -> AttributeSchema {
+        AttributeSchema::required("group_id", carina_aws_types::security_group_id())
+                .create_only()
+                .with_description("The ID of the security group. You must specify either the security group ID or the security group name in the request. For security groups in a nondefault VPC, you must specify the security group ID.")
+                .with_provider_name("GroupId")
+            .build()
+    }
+    schema = schema.attribute(build_group_id_attribute());
+    #[inline(never)]
+    fn build_id_attribute() -> AttributeSchema {
+        AttributeSchema::provider_populated("id", AttributeType::string())
+                .with_description(" (read-only)")
+                .with_provider_name("Id")
+            .build()
+    }
+    schema = schema.attribute(build_id_attribute());
+    #[inline(never)]
+    fn build_ip_protocol_attribute() -> AttributeSchema {
+        AttributeSchema::required("ip_protocol", AttributeType::enum_(carina_core::schema::enum_identity("IpProtocol", Some("aws.ec2.SecurityGroupEgress")), Some(vec!["tcp".to_string(), "udp".to_string(), "icmp".to_string(), "icmpv6".to_string(), "-1".to_string()]), vec![("tcp".to_string(), "tcp".to_string()), ("udp".to_string(), "udp".to_string()), ("icmp".to_string(), "icmp".to_string()), ("icmpv6".to_string(), "icmpv6".to_string()), ("-1".to_string(), "all".to_string())], None, None))
+                .create_only()
+                .with_description("The IP protocol name (``tcp``, ``udp``, ``icmp``, ``icmpv6``) or number (see [Protocol Numbers](https://docs.aws.amazon.com/http://www.iana.org/assignments/protocol-numbers/protocol-numbers.xhtml)). Use ``-1`` to specify all protocols. When authorizing security group rules, specifying ``-1`` or a protocol number other than ``tcp``, ``udp``, ``icmp``, or ``icmpv6`` allows traffic on all ports, regardless of any port range you specify. For ``tcp``, ``udp``, and ``icmp``, you must specify a port range. For ``icmpv6``, the port range is optional; if you omit the port range, traffic for all types and codes is allowed.")
+                .with_provider_name("IpProtocol")
+            .build()
+    }
+    schema = schema.attribute(build_ip_protocol_attribute());
+    #[inline(never)]
+    fn build_to_port_attribute() -> AttributeSchema {
+        AttributeSchema::optional("to_port", AttributeType::refined_int(None, Some((Some(-1), Some(65535)))))
+                .create_only()
+                .with_description("If the protocol is TCP or UDP, this is the end of the port range. If the protocol is ICMP or ICMPv6, this is the ICMP code or -1 (all ICMP codes). If the start port is -1 (all ICMP types), then the end port must be -1 (all ICMP codes).")
+                .with_provider_name("ToPort")
+            .build()
+    }
+    schema = schema.attribute(build_to_port_attribute());
+    schema = schema
+        .with_conflicting_replacement();
     AwsccSchemaConfig {
         aws_type_name: "AWS::EC2::SecurityGroupEgress",
         resource_type_name: "ec2.SecurityGroupEgress",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "Id", dsl_name: "id" }],
         tags: None,
-        schema: ResourceSchema::new("ec2.SecurityGroupEgress")
-	        .with_description("Adds the specified outbound (egress) rule to a security group.  An outbound rule permits instances to send traffic to the specified IPv4 or IPv6 address range, the IP addresses that are specified by a prefix list, or the instances that are associated with a destination security group. For more information, see [Security group rules](https://docs.aws.amazon.com/vpc/latest/userguide/security-group-rules.html).  You must specify exactly one of the following destinations: an IPv4 address range, an IPv6 address range, a prefix list, or a security group.  You must specify a protocol for each rule (for example, TCP). If the protocol is TCP or UDP, you must also specify a port or port range. If the protocol is ICMP or ICMPv6, you must also specify the ICMP/ICMPv6 type and code. To specify all types or all codes, use -1.  Rule changes are propagated to instances associated with the security group as quickly as possible. However, a small delay might occur.")
-        .attribute(
-            AttributeSchema::optional("cidr_ip", types::ipv4_cidr())
-                .create_only()
-                .with_description("The IPv4 address range, in CIDR format. You must specify exactly one of the following: ``CidrIp``, ``CidrIpv6``, ``DestinationPrefixListId``, or ``DestinationSecurityGroupId``. For examples of rules that you can add to security groups for specific access scenarios, see [Security group rules for different use cases](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/security-group-rules-reference.html) in the *User Guide*.")
-                .with_provider_name("CidrIp")
-                .build(),
-        )
-        .attribute(
-            AttributeSchema::optional("cidr_ipv6", types::ipv6_cidr())
-                .create_only()
-                .with_description("The IPv6 address range, in CIDR format. You must specify exactly one of the following: ``CidrIp``, ``CidrIpv6``, ``DestinationPrefixListId``, or ``DestinationSecurityGroupId``. For examples of rules that you can add to security groups for specific access scenarios, see [Security group rules for different use cases](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/security-group-rules-reference.html) in the *User Guide*.")
-                .with_provider_name("CidrIpv6")
-                .build(),
-        )
-        .attribute(
-            AttributeSchema::optional("description", AttributeType::string())
-                .with_description("The description of an egress (outbound) security group rule. Constraints: Up to 255 characters in length. Allowed characters are a-z, A-Z, 0-9, spaces, and ._-:/()#,@[]+=;{}!$*")
-                .with_provider_name("Description")
-                .build(),
-        )
-        .attribute(
-            AttributeSchema::optional("destination_prefix_list_id", carina_aws_types::prefix_list_id())
-                .create_only()
-                .with_description("The prefix list IDs for an AWS service. This is the AWS service to access through a VPC endpoint from instances associated with the security group. You must specify exactly one of the following: ``CidrIp``, ``CidrIpv6``, ``DestinationPrefixListId``, or ``DestinationSecurityGroupId``.")
-                .with_provider_name("DestinationPrefixListId")
-                .build(),
-        )
-        .attribute(
-            AttributeSchema::optional("destination_security_group_id", carina_aws_types::security_group_id())
-                .create_only()
-                .with_description("The ID of the security group. You must specify exactly one of the following: ``CidrIp``, ``CidrIpv6``, ``DestinationPrefixListId``, or ``DestinationSecurityGroupId``.")
-                .with_provider_name("DestinationSecurityGroupId")
-                .build(),
-        )
-        .attribute(
-            AttributeSchema::optional("from_port", AttributeType::refined_int(None, Some((Some(-1), Some(65535)))))
-                .create_only()
-                .with_description("If the protocol is TCP or UDP, this is the start of the port range. If the protocol is ICMP or ICMPv6, this is the ICMP type or -1 (all ICMP types).")
-                .with_provider_name("FromPort")
-                .build(),
-        )
-        .attribute(
-            AttributeSchema::required("group_id", carina_aws_types::security_group_id())
-                .create_only()
-                .with_description("The ID of the security group. You must specify either the security group ID or the security group name in the request. For security groups in a nondefault VPC, you must specify the security group ID.")
-                .with_provider_name("GroupId")
-                .build(),
-        )
-        .attribute(
-            AttributeSchema::provider_populated("id", AttributeType::string())
-                .with_description(" (read-only)")
-                .with_provider_name("Id")
-                .build(),
-        )
-        .attribute(
-            AttributeSchema::required("ip_protocol", AttributeType::enum_(carina_core::schema::enum_identity("IpProtocol", Some("aws.ec2.SecurityGroupEgress")), Some(vec!["tcp".to_string(), "udp".to_string(), "icmp".to_string(), "icmpv6".to_string(), "-1".to_string()]), vec![("tcp".to_string(), "tcp".to_string()), ("udp".to_string(), "udp".to_string()), ("icmp".to_string(), "icmp".to_string()), ("icmpv6".to_string(), "icmpv6".to_string()), ("-1".to_string(), "all".to_string())], None, None))
-                .create_only()
-                .with_description("The IP protocol name (``tcp``, ``udp``, ``icmp``, ``icmpv6``) or number (see [Protocol Numbers](https://docs.aws.amazon.com/http://www.iana.org/assignments/protocol-numbers/protocol-numbers.xhtml)). Use ``-1`` to specify all protocols. When authorizing security group rules, specifying ``-1`` or a protocol number other than ``tcp``, ``udp``, ``icmp``, or ``icmpv6`` allows traffic on all ports, regardless of any port range you specify. For ``tcp``, ``udp``, and ``icmp``, you must specify a port range. For ``icmpv6``, the port range is optional; if you omit the port range, traffic for all types and codes is allowed.")
-                .with_provider_name("IpProtocol")
-                .build(),
-        )
-        .attribute(
-            AttributeSchema::optional("to_port", AttributeType::refined_int(None, Some((Some(-1), Some(65535)))))
-                .create_only()
-                .with_description("If the protocol is TCP or UDP, this is the end of the port range. If the protocol is ICMP or ICMPv6, this is the ICMP code or -1 (all ICMP codes). If the start port is -1 (all ICMP types), then the end port must be -1 (all ICMP codes).")
-                .with_provider_name("ToPort")
-                .build(),
-        )
-        .with_conflicting_replacement()
+        schema,
     }
 }
 

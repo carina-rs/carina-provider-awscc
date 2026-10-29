@@ -39,42 +39,47 @@ fn validate_to_port_range(value: &Value) -> Result<(), String> {
 }
 
 /// Returns the schema config for ec2_security_group (AWS::EC2::SecurityGroup)
+#[rustfmt::skip]
 pub fn ec2_security_group_config() -> AwsccSchemaConfig {
-    AwsccSchemaConfig {
-        aws_type_name: "AWS::EC2::SecurityGroup",
-        resource_type_name: "ec2.SecurityGroup",
-        primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "Id", dsl_name: "id" }],
-        tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
-        schema: ResourceSchema::new("ec2.SecurityGroup")
-	        .with_description("Resource Type definition for AWS::EC2::SecurityGroup")
-        .attribute(
-            AttributeSchema::required("group_description", AttributeType::string())
+    let mut schema = ResourceSchema::new("ec2.SecurityGroup")
+        .with_description("Resource Type definition for AWS::EC2::SecurityGroup");
+    #[inline(never)]
+    fn build_group_description_attribute() -> AttributeSchema {
+        AttributeSchema::required("group_description", AttributeType::string())
                 .create_only()
                 .with_description("A description for the security group.")
                 .with_provider_name("GroupDescription")
-                .build(),
-        )
-        .attribute(
-            AttributeSchema::provider_populated("group_id", carina_aws_types::security_group_id())
+            .build()
+    }
+    schema = schema.attribute(build_group_description_attribute());
+    #[inline(never)]
+    fn build_group_id_attribute() -> AttributeSchema {
+        AttributeSchema::provider_populated("group_id", carina_aws_types::security_group_id())
                 .with_description("The group ID of the specified security group. (read-only)")
                 .with_provider_name("GroupId")
-                .build(),
-        )
-        .attribute(
-            AttributeSchema::optional("group_name", AttributeType::string())
+            .build()
+    }
+    schema = schema.attribute(build_group_id_attribute());
+    #[inline(never)]
+    fn build_group_name_attribute() -> AttributeSchema {
+        AttributeSchema::optional("group_name", AttributeType::string())
                 .create_only()
                 .with_description("The name of the security group.")
                 .with_provider_name("GroupName")
-                .build(),
-        )
-        .attribute(
-            AttributeSchema::provider_populated("id", carina_aws_types::security_group_id())
+            .build()
+    }
+    schema = schema.attribute(build_group_name_attribute());
+    #[inline(never)]
+    fn build_id_attribute() -> AttributeSchema {
+        AttributeSchema::provider_populated("id", carina_aws_types::security_group_id())
                 .with_description("The group name or group ID depending on whether the SG is created in default or specific VPC (read-only)")
                 .with_provider_name("Id")
-                .build(),
-        )
-        .attribute(
-            AttributeSchema::optional("security_group_egress", AttributeType::unordered_list(AttributeType::struct_("Egress".to_string(), vec![StructField::optional("cidr_ip", types::ipv4_cidr()).with_provider_name("CidrIp").build(),
+            .build()
+    }
+    schema = schema.attribute(build_id_attribute());
+    #[inline(never)]
+    fn build_security_group_egress_attribute() -> AttributeSchema {
+        AttributeSchema::optional("security_group_egress", AttributeType::unordered_list(AttributeType::struct_("Egress".to_string(), vec![StructField::optional("cidr_ip", types::ipv4_cidr()).with_provider_name("CidrIp").build(),
                     StructField::optional("cidr_ipv6", types::ipv6_cidr()).with_provider_name("CidrIpv6").build(),
                     StructField::optional("description", AttributeType::string()).with_provider_name("Description").build(),
                     StructField::optional("destination_prefix_list_id", carina_aws_types::prefix_list_id()).with_provider_name("DestinationPrefixListId").build(),
@@ -85,10 +90,12 @@ pub fn ec2_security_group_config() -> AwsccSchemaConfig {
                 .with_description("[VPC only] The outbound rules associated with the security group. There is a short interruption during which you cannot connect to the security group.")
                 .with_provider_name("SecurityGroupEgress")
                 .with_block_name("security_group_egress")
-                .build(),
-        )
-        .attribute(
-            AttributeSchema::optional("security_group_ingress", AttributeType::unordered_list(AttributeType::struct_("Ingress".to_string(), vec![StructField::optional("cidr_ip", types::ipv4_cidr()).with_provider_name("CidrIp").build(),
+            .build()
+    }
+    schema = schema.attribute(build_security_group_egress_attribute());
+    #[inline(never)]
+    fn build_security_group_ingress_attribute() -> AttributeSchema {
+        AttributeSchema::optional("security_group_ingress", AttributeType::unordered_list(AttributeType::struct_("Ingress".to_string(), vec![StructField::optional("cidr_ip", types::ipv4_cidr()).with_provider_name("CidrIp").build(),
                     StructField::optional("cidr_ipv6", types::ipv6_cidr()).with_provider_name("CidrIpv6").build(),
                     StructField::optional("description", AttributeType::string()).with_provider_name("Description").build(),
                     StructField::optional("from_port", AttributeType::refined_int(None, Some((Some(-1), Some(65535))))).with_provider_name("FromPort").build(),
@@ -101,24 +108,36 @@ pub fn ec2_security_group_config() -> AwsccSchemaConfig {
                 .with_description("The inbound rules associated with the security group. There is a short interruption during which you cannot connect to the security group.")
                 .with_provider_name("SecurityGroupIngress")
                 .with_block_name("security_group_ingress")
-                .build(),
-        )
-        .attribute(
-            AttributeSchema::optional("tags", carina_aws_types::tags_type())
+            .build()
+    }
+    schema = schema.attribute(build_security_group_ingress_attribute());
+    #[inline(never)]
+    fn build_tags_attribute() -> AttributeSchema {
+        AttributeSchema::optional("tags", carina_aws_types::tags_type())
                 .with_description("Any tags assigned to the security group.")
                 .with_provider_name("Tags")
                 .with_block_name("tag")
-                .build(),
-        )
-        .attribute(
-            AttributeSchema::optional("vpc_id", carina_aws_types::vpc_id())
+            .build()
+    }
+    schema = schema.attribute(build_tags_attribute());
+    #[inline(never)]
+    fn build_vpc_id_attribute() -> AttributeSchema {
+        AttributeSchema::optional("vpc_id", carina_aws_types::vpc_id())
                 .create_only()
                 .with_description("The ID of the VPC for the security group.")
                 .with_provider_name("VpcId")
-                .build(),
-        )
-        .with_unique_name_attribute("group_name")
-        .with_declared_validators(vec![carina_provider_protocol::types::ValidatorType::TagsKeyValueCheck])
+            .build()
+    }
+    schema = schema.attribute(build_vpc_id_attribute());
+    schema = schema
+        .with_unique_name_attribute("group_name");
+    schema = schema.with_declared_validators(vec![carina_provider_protocol::types::ValidatorType::TagsKeyValueCheck]);
+    AwsccSchemaConfig {
+        aws_type_name: "AWS::EC2::SecurityGroup",
+        resource_type_name: "ec2.SecurityGroup",
+        primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "Id", dsl_name: "id" }],
+        tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
+        schema,
     }
 }
 

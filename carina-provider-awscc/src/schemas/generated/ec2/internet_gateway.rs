@@ -8,29 +8,36 @@ use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
 use carina_core::schema::{AttributeSchema, ResourceSchema};
 
 /// Returns the schema config for ec2_internet_gateway (AWS::EC2::InternetGateway)
+#[rustfmt::skip]
 pub fn ec2_internet_gateway_config() -> AwsccSchemaConfig {
+    let mut schema = ResourceSchema::new("ec2.InternetGateway")
+        .with_description("Allocates an internet gateway for use with a VPC. After creating the Internet gateway, you then attach it to a VPC.");
+    #[inline(never)]
+    fn build_internet_gateway_id_attribute() -> AttributeSchema {
+        AttributeSchema::provider_populated("internet_gateway_id", carina_aws_types::internet_gateway_id())
+                .with_description(" (read-only)")
+                .with_provider_name("InternetGatewayId")
+            .build()
+    }
+    schema = schema.attribute(build_internet_gateway_id_attribute());
+    #[inline(never)]
+    fn build_tags_attribute() -> AttributeSchema {
+        AttributeSchema::optional("tags", carina_aws_types::tags_type())
+                .with_description("Any tags to assign to the internet gateway.")
+                .with_provider_name("Tags")
+                .with_block_name("tag")
+            .build()
+    }
+    schema = schema.attribute(build_tags_attribute());
+    schema = schema
+        .with_coexisting_replacement();
+    schema = schema.with_declared_validators(vec![carina_provider_protocol::types::ValidatorType::TagsKeyValueCheck]);
     AwsccSchemaConfig {
         aws_type_name: "AWS::EC2::InternetGateway",
         resource_type_name: "ec2.InternetGateway",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "InternetGatewayId", dsl_name: "internet_gateway_id" }],
         tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
-        schema: ResourceSchema::new("ec2.InternetGateway")
-	        .with_description("Allocates an internet gateway for use with a VPC. After creating the Internet gateway, you then attach it to a VPC.")
-        .attribute(
-            AttributeSchema::provider_populated("internet_gateway_id", carina_aws_types::internet_gateway_id())
-                .with_description(" (read-only)")
-                .with_provider_name("InternetGatewayId")
-                .build(),
-        )
-        .attribute(
-            AttributeSchema::optional("tags", carina_aws_types::tags_type())
-                .with_description("Any tags to assign to the internet gateway.")
-                .with_provider_name("Tags")
-                .with_block_name("tag")
-                .build(),
-        )
-        .with_coexisting_replacement()
-        .with_declared_validators(vec![carina_provider_protocol::types::ValidatorType::TagsKeyValueCheck])
+        schema,
     }
 }
 

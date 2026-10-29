@@ -8,38 +8,34 @@ use crate::schemas::config::AwsccSchemaConfig;
 use carina_core::schema::{AttributeSchema, ResourceSchema};
 
 /// Returns the schema config for wafv2_web_acl_association (AWS::WAFv2::WebACLAssociation)
+#[rustfmt::skip]
 pub fn wafv2_web_acl_association_config() -> AwsccSchemaConfig {
+    let mut schema = ResourceSchema::new("wafv2.WebAclAssociation")
+        .with_description("Associates WebACL to Application Load Balancer, CloudFront or API Gateway.");
+    #[inline(never)]
+    fn build_resource_arn_attribute() -> AttributeSchema {
+        AttributeSchema::required("resource_arn", carina_aws_types::arn())
+                .create_only()
+                .with_provider_name("ResourceArn")
+            .build()
+    }
+    schema = schema.attribute(build_resource_arn_attribute());
+    #[inline(never)]
+    fn build_web_acl_arn_attribute() -> AttributeSchema {
+        AttributeSchema::required("web_acl_arn", carina_aws_types::arn())
+                .create_only()
+                .with_provider_name("WebACLArn")
+            .build()
+    }
+    schema = schema.attribute(build_web_acl_arn_attribute());
+    schema = schema
+        .with_conflicting_replacement();
     AwsccSchemaConfig {
         aws_type_name: "AWS::WAFv2::WebACLAssociation",
         resource_type_name: "wafv2.WebAclAssociation",
-        primary_identifier: &[
-            crate::schemas::config::PrimaryIdentifierAttribute {
-                provider_name: "ResourceArn",
-                dsl_name: "resource_arn",
-            },
-            crate::schemas::config::PrimaryIdentifierAttribute {
-                provider_name: "WebACLArn",
-                dsl_name: "web_acl_arn",
-            },
-        ],
+        primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "ResourceArn", dsl_name: "resource_arn" }, crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "WebACLArn", dsl_name: "web_acl_arn" }],
         tags: None,
-        schema: ResourceSchema::new("wafv2.WebAclAssociation")
-            .with_description(
-                "Associates WebACL to Application Load Balancer, CloudFront or API Gateway.",
-            )
-            .attribute(
-                AttributeSchema::required("resource_arn", carina_aws_types::arn())
-                    .create_only()
-                    .with_provider_name("ResourceArn")
-                    .build(),
-            )
-            .attribute(
-                AttributeSchema::required("web_acl_arn", carina_aws_types::arn())
-                    .create_only()
-                    .with_provider_name("WebACLArn")
-                    .build(),
-            )
-            .with_conflicting_replacement(),
+        schema,
     }
 }
 

@@ -16,36 +16,45 @@ const VALID_ORIGIN_ACCESS_CONTROL_CONFIG_SIGNING_BEHAVIOR: &[&str] =
 const VALID_ORIGIN_ACCESS_CONTROL_CONFIG_SIGNING_PROTOCOL: &[&str] = &["sigv4"];
 
 /// Returns the schema config for cloudfront_origin_access_control (AWS::CloudFront::OriginAccessControl)
+#[rustfmt::skip]
 pub fn cloudfront_origin_access_control_config() -> AwsccSchemaConfig {
-    AwsccSchemaConfig {
-        aws_type_name: "AWS::CloudFront::OriginAccessControl",
-        resource_type_name: "cloudfront.OriginAccessControl",
-        primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "Id", dsl_name: "id" }],
-        tags: None,
-        schema: ResourceSchema::new("cloudfront.OriginAccessControl")
-	        .with_description("Creates a new origin access control in CloudFront. After you create an origin access control, you can add it to an origin in a CloudFront distribution so that CloudFront sends authenticated (signed) requests to the origin.  This makes it possible to block public access to the origin, allowing viewers (users) to access the origin's content only through CloudFront.  For more information about using a CloudFront origin access control, see [Restricting access to an origin](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-restricting-access-to-origin.html) in the *Amazon CloudFront Developer Guide*.")
-        .attribute(
-            AttributeSchema::provider_populated("id", AttributeType::string())
+    let mut schema = ResourceSchema::new("cloudfront.OriginAccessControl")
+        .with_description("Creates a new origin access control in CloudFront. After you create an origin access control, you can add it to an origin in a CloudFront distribution so that CloudFront sends authenticated (signed) requests to the origin.  This makes it possible to block public access to the origin, allowing viewers (users) to access the origin's content only through CloudFront.  For more information about using a CloudFront origin access control, see [Restricting access to an origin](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-restricting-access-to-origin.html) in the *Amazon CloudFront Developer Guide*.");
+    #[inline(never)]
+    fn build_id_attribute() -> AttributeSchema {
+        AttributeSchema::provider_populated("id", AttributeType::string())
                 .with_description(" (read-only)")
                 .with_provider_name("Id")
-                .build(),
-        )
-        .attribute(
-            AttributeSchema::required("origin_access_control_config", AttributeType::struct_("OriginAccessControlConfig".to_string(), vec![StructField::optional("description", AttributeType::string()).with_description("A description of the origin access control.").with_provider_name("Description").build(),
+            .build()
+    }
+    schema = schema.attribute(build_id_attribute());
+    #[inline(never)]
+    fn build_origin_access_control_config_attribute() -> AttributeSchema {
+        AttributeSchema::required("origin_access_control_config", AttributeType::struct_("OriginAccessControlConfig".to_string(), vec![StructField::optional("description", AttributeType::string()).with_description("A description of the origin access control.").with_provider_name("Description").build(),
                     StructField::required("name", AttributeType::string()).with_description("A name to identify the origin access control. You can specify up to 64 characters.").with_provider_name("Name").build(),
                     StructField::required("origin_access_control_origin_type", AttributeType::enum_(carina_core::schema::enum_identity("OriginAccessControlOriginType", Some("aws.cloudfront.OriginAccessControl.OriginAccessControlConfig")), Some(vec!["s3".to_string(), "mediastore".to_string(), "lambda".to_string(), "mediapackagev2".to_string()]), vec![("s3".to_string(), "s3".to_string()), ("mediastore".to_string(), "mediastore".to_string()), ("lambda".to_string(), "lambda".to_string()), ("mediapackagev2".to_string(), "mediapackagev2".to_string())], None, None)).with_description("The type of origin that this origin access control is for.").with_provider_name("OriginAccessControlOriginType").build(),
                     StructField::required("signing_behavior", AttributeType::enum_(carina_core::schema::enum_identity("SigningBehavior", Some("aws.cloudfront.OriginAccessControl.OriginAccessControlConfig")), Some(vec!["always".to_string(), "never".to_string(), "no-override".to_string()]), vec![("always".to_string(), "always".to_string()), ("never".to_string(), "never".to_string()), ("no-override".to_string(), "no_override".to_string())], None, None)).with_description("Specifies which requests CloudFront signs (adds authentication information to). Specify ``always`` for the most common use case. For more information, see [origin access control advanced settings](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-restricting-access-to-s3.html#oac-advanced-settings) in the *Amazon CloudFront Developer Guide*. This field can have one of the following values: + ``always`` – CloudFront signs all origin requests, overwriting the ``Authorization`` header from the viewer request if one exists. + ``never`` – CloudFront doesn't sign any origin requests. This value turns off origin access control for all origins in all distributions that use this origin access control. + ``no-override`` – If the viewer request doesn't contain the ``Authorization`` header, then CloudFront signs the origin request. If the viewer request contains the ``Authorization`` header, then CloudFront doesn't sign the origin request and instead passes along the ``Authorization`` header from the viewer request. *WARNING: To pass along the Authorization header from the viewer request, you must add the Authorization header to a cache policy for all cache behaviors that use origins associated with this origin access control.*").with_provider_name("SigningBehavior").build(),
                     StructField::required("signing_protocol", AttributeType::enum_(carina_core::schema::enum_identity("SigningProtocol", Some("aws.cloudfront.OriginAccessControl.OriginAccessControlConfig")), Some(vec!["sigv4".to_string()]), vec![("sigv4".to_string(), "sigv4".to_string())], None, None)).with_description("The signing protocol of the origin access control, which determines how CloudFront signs (authenticates) requests. The only valid value is ``sigv4``.").with_provider_name("SigningProtocol").build()]))
                 .with_description("The origin access control.")
                 .with_provider_name("OriginAccessControlConfig")
-                .build(),
-        )
-        .with_conflicting_replacement()
-        .with_def("OriginAccessControlConfig", AttributeType::struct_("OriginAccessControlConfig".to_string(), vec![StructField::optional("description", AttributeType::string()).with_description("A description of the origin access control.").with_provider_name("Description").build(),
+            .build()
+    }
+    schema = schema.attribute(build_origin_access_control_config_attribute());
+    schema = schema
+        .with_conflicting_replacement();
+    #[inline(never)]
+    fn build_schema_def_0() -> AttributeType { AttributeType::struct_("OriginAccessControlConfig".to_string(), vec![StructField::optional("description", AttributeType::string()).with_description("A description of the origin access control.").with_provider_name("Description").build(),
                     StructField::required("name", AttributeType::string()).with_description("A name to identify the origin access control. You can specify up to 64 characters.").with_provider_name("Name").build(),
                     StructField::required("origin_access_control_origin_type", AttributeType::enum_(carina_core::schema::enum_identity("OriginAccessControlOriginType", Some("aws.cloudfront.OriginAccessControl.OriginAccessControlConfig")), Some(vec!["s3".to_string(), "mediastore".to_string(), "lambda".to_string(), "mediapackagev2".to_string()]), vec![("s3".to_string(), "s3".to_string()), ("mediastore".to_string(), "mediastore".to_string()), ("lambda".to_string(), "lambda".to_string()), ("mediapackagev2".to_string(), "mediapackagev2".to_string())], None, None)).with_description("The type of origin that this origin access control is for.").with_provider_name("OriginAccessControlOriginType").build(),
                     StructField::required("signing_behavior", AttributeType::enum_(carina_core::schema::enum_identity("SigningBehavior", Some("aws.cloudfront.OriginAccessControl.OriginAccessControlConfig")), Some(vec!["always".to_string(), "never".to_string(), "no-override".to_string()]), vec![("always".to_string(), "always".to_string()), ("never".to_string(), "never".to_string()), ("no-override".to_string(), "no_override".to_string())], None, None)).with_description("Specifies which requests CloudFront signs (adds authentication information to). Specify ``always`` for the most common use case. For more information, see [origin access control advanced settings](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-restricting-access-to-s3.html#oac-advanced-settings) in the *Amazon CloudFront Developer Guide*. This field can have one of the following values: + ``always`` – CloudFront signs all origin requests, overwriting the ``Authorization`` header from the viewer request if one exists. + ``never`` – CloudFront doesn't sign any origin requests. This value turns off origin access control for all origins in all distributions that use this origin access control. + ``no-override`` – If the viewer request doesn't contain the ``Authorization`` header, then CloudFront signs the origin request. If the viewer request contains the ``Authorization`` header, then CloudFront doesn't sign the origin request and instead passes along the ``Authorization`` header from the viewer request. *WARNING: To pass along the Authorization header from the viewer request, you must add the Authorization header to a cache policy for all cache behaviors that use origins associated with this origin access control.*").with_provider_name("SigningBehavior").build(),
-                    StructField::required("signing_protocol", AttributeType::enum_(carina_core::schema::enum_identity("SigningProtocol", Some("aws.cloudfront.OriginAccessControl.OriginAccessControlConfig")), Some(vec!["sigv4".to_string()]), vec![("sigv4".to_string(), "sigv4".to_string())], None, None)).with_description("The signing protocol of the origin access control, which determines how CloudFront signs (authenticates) requests. The only valid value is ``sigv4``.").with_provider_name("SigningProtocol").build()]))
+                    StructField::required("signing_protocol", AttributeType::enum_(carina_core::schema::enum_identity("SigningProtocol", Some("aws.cloudfront.OriginAccessControl.OriginAccessControlConfig")), Some(vec!["sigv4".to_string()]), vec![("sigv4".to_string(), "sigv4".to_string())], None, None)).with_description("The signing protocol of the origin access control, which determines how CloudFront signs (authenticates) requests. The only valid value is ``sigv4``.").with_provider_name("SigningProtocol").build()]) }
+    schema = schema.with_def("OriginAccessControlConfig", build_schema_def_0());
+    AwsccSchemaConfig {
+        aws_type_name: "AWS::CloudFront::OriginAccessControl",
+        resource_type_name: "cloudfront.OriginAccessControl",
+        primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "Id", dsl_name: "id" }],
+        tags: None,
+        schema,
     }
 }
 
