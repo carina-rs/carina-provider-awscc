@@ -27,7 +27,7 @@ The globally unique identifier for the identity store.
 
 ### `member_id`
 
-- **Type:** [Struct(MemberId)](#memberid)
+- **Type:** [Struct(MemberId)](#member_id-1)
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -35,7 +35,7 @@ An object containing the identifier of a group member.
 
 ## Struct Definitions
 
-### MemberId
+### member_id
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|

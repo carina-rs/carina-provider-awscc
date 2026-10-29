@@ -91,7 +91,7 @@ The type of IP address used for this target group. The possible values are ipv4 
 
 ### `matcher`
 
-- **Type:** [Struct(Matcher)](#matcher)
+- **Type:** [Struct(Matcher)](#matcher-1)
 - **Required:** No
 
 [HTTP/HTTPS health checks] The HTTP or gRPC codes to use when checking for a successful response from a target.
@@ -144,7 +144,7 @@ The port that the target control agent uses to communicate the available capacit
 
 ### `target_group_attributes`
 
-- **Type:** [List\<TargetGroupAttribute\>](#targetgroupattribute)
+- **Type:** List\<[Struct(TargetGroupAttribute)](#target_group_attributes-1)\>
 - **Required:** No
 
 The attributes.
@@ -159,7 +159,7 @@ The type of target that you must specify when registering targets with this targ
 
 ### `targets`
 
-- **Type:** [List\<TargetDescription\>](#targetdescription)
+- **Type:** List\<[Struct(TargetDescription)](#targets-1)\>
 - **Required:** No
 
 The targets.
@@ -227,14 +227,21 @@ Shorthand formats: `instance` or `TargetType.instance`
 
 ## Struct Definitions
 
-### Matcher
+### matcher
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `grpc_code` | String | No | You can specify values between 0 and 99. You can specify multiple values, or a range of values. The default value is 12. |
 | `http_code` | String | No | For Application Load Balancers, you can specify values between 200 and 499, and the default value is 200. You can specify multiple values or a range of values.  |
 
-### TargetDescription
+### target_group_attributes
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `key` | String | No | The value of the attribute. |
+| `value` | String | No | The name of the attribute. |
+
+### targets
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -242,13 +249,6 @@ Shorthand formats: `instance` or `TargetType.instance`
 | `id` | String | Yes | The ID of the target. If the target type of the target group is instance, specify an instance ID. If the target type is ip, specify an IP address. If the target type is lambda, specify the ARN of the Lambda function. If the target type is alb, specify the ARN of the Application Load Balancer target.  |
 | `port` | Int | No | The port on which the target is listening. If the target group protocol is GENEVE, the supported port is 6081. If the target type is alb, the targeted Application Load Balancer must have at least one listener whose port matches the target group port. Not used if the target is a Lambda function. |
 | `quic_server_id` | String | No | The Server ID used by targets when using QUIC or TCP_QUIC protocols. |
-
-### TargetGroupAttribute
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `key` | String | No | The value of the attribute. |
-| `value` | String | No | The name of the attribute. |
 
 ## Attribute Reference
 

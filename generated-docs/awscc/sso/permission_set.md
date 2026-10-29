@@ -11,7 +11,7 @@ Resource Type definition for SSO PermissionSet
 
 ### `customer_managed_policy_references`
 
-- **Type:** [List\<CustomerManagedPolicyReference\>](#customermanagedpolicyreference) (items: ..=20)
+- **Type:** List\<[Struct(CustomerManagedPolicyReference)](#customer_managed_policy_reference)\> (items: ..=20)
 - **Required:** No
 
 ### `description`
@@ -51,7 +51,7 @@ The name you want to assign to this permission set.
 
 ### `permissions_boundary`
 
-- **Type:** [Struct(PermissionsBoundary)](#permissionsboundary)
+- **Type:** [Struct(PermissionsBoundary)](#permissions_boundary-1)
 - **Required:** No
 
 ### `relay_state_type`
@@ -75,18 +75,20 @@ The length of time that a user can be signed in to an AWS account.
 
 ## Struct Definitions
 
-### CustomerManagedPolicyReference
+### customer_managed_policy_reference
+
+Used by: `customer_managed_policy_references`, `permissions_boundary.customer_managed_policy_reference`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `name` | String(pattern, len: 1..=128) | Yes |  |
 | `path` | String(pattern, len: 1..=512) | No |  |
 
-### PermissionsBoundary
+### permissions_boundary
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `customer_managed_policy_reference` | [Struct(CustomerManagedPolicyReference)](#customermanagedpolicyreference) | No |  |
+| `customer_managed_policy_reference` | [Struct(CustomerManagedPolicyReference)](#customer_managed_policy_reference) | No |  |
 | `managed_policy_arn` | Arn | No |  |
 
 ## Attribute Reference

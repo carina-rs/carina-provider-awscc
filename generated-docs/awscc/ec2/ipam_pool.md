@@ -111,7 +111,7 @@ The region of this pool. If not set, this will default to "None" which will disa
 
 ### `provisioned_cidrs`
 
-- **Type:** [List\<ProvisionedCidr\>](#provisionedcidr)
+- **Type:** List\<[Struct(ProvisionedCidr)](#provisioned_cidrs-1)\>
 - **Required:** No
 
 A list of cidrs representing the address space available for allocation in this pool.
@@ -142,7 +142,7 @@ The Id of this pool's source. If set, all space provisioned in this pool must be
 
 ### `source_resource`
 
-- **Type:** [Struct(SourceResource)](#sourceresource)
+- **Type:** [Struct(SourceResource)](#source_resource-1)
 - **Required:** No
 - **Create-only:** Yes
 
@@ -206,13 +206,13 @@ Shorthand formats: `create_in_progress` or `State.create_in_progress`
 
 ## Struct Definitions
 
-### ProvisionedCidr
+### provisioned_cidrs
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `cidr` | Cidr | Yes |  |
 
-### SourceResource
+### source_resource
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|

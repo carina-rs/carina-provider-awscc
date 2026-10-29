@@ -146,7 +146,7 @@ The Amazon Resource Name (ARN) of the Outpost.
 
 ### `private_dns_name_options_on_launch`
 
-- **Type:** [Struct(PrivateDnsNameOptionsOnLaunch)](#privatednsnameoptionsonlaunch)
+- **Type:** [Struct(PrivateDnsNameOptionsOnLaunch)](#private_dns_name_options_on_launch-1)
 - **Required:** No
 
 The hostname type for EC2 instances launched into this subnet and how DNS A and AAAA record queries to the instances should be handled. For more information, see [Amazon EC2 instance hostname types](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-naming.html) in the *User Guide*. Available options: + EnableResourceNameDnsAAAARecord (true | false) + EnableResourceNameDnsARecord (true | false) + HostnameType (ip-name | resource-name)
@@ -168,7 +168,7 @@ The ID of the VPC the subnet is in. If you update this property, you must also u
 
 ## Enum Values
 
-### internet_gateway_block_mode (InternetGatewayBlockMode)
+### block_public_access_states.internet_gateway_block_mode (InternetGatewayBlockMode)
 
 | Value | DSL Identifier |
 |-------|----------------|
@@ -178,7 +178,7 @@ The ID of the VPC the subnet is in. If you update this property, you must also u
 
 Shorthand formats: `off` or `InternetGatewayBlockMode.off`
 
-### hostname_type (HostnameType)
+### private_dns_name_options_on_launch.hostname_type (HostnameType)
 
 | Value | DSL Identifier |
 |-------|----------------|
@@ -189,25 +189,25 @@ Shorthand formats: `ip_name` or `HostnameType.ip_name`
 
 ## Struct Definitions
 
-### BlockPublicAccessStates
+### block_public_access_states
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `internet_gateway_block_mode` | [Enum (InternetGatewayBlockMode)](#internet_gateway_block_mode-internetgatewayblockmode) | No | The mode of VPC BPA. Options here are off, block-bidirectional, block-ingress  |
+| `internet_gateway_block_mode` | [Enum (InternetGatewayBlockMode)](#block_public_access_statesinternet_gateway_block_mode-internetgatewayblockmode) | No | The mode of VPC BPA. Options here are off, block-bidirectional, block-ingress  |
 
-### PrivateDnsNameOptionsOnLaunch
+### private_dns_name_options_on_launch
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `enable_resource_name_dns_aaaa_record` | Bool | No |  |
 | `enable_resource_name_dns_a_record` | Bool | No |  |
-| `hostname_type` | [Enum (HostnameType)](#hostname_type-hostnametype) | No |  |
+| `hostname_type` | [Enum (HostnameType)](#private_dns_name_options_on_launchhostname_type-hostnametype) | No |  |
 
 ## Attribute Reference
 
 ### `block_public_access_states`
 
-- **Type:** [Struct(BlockPublicAccessStates)](#blockpublicaccessstates)
+- **Type:** [Struct(BlockPublicAccessStates)](#block_public_access_states)
 
 
 

@@ -123,8 +123,9 @@ cargo run --bin codegen -- --type-name AWS::EC2::VPC --print-module-name       #
 cargo run --bin codegen -- --type-name AWS::EC2::VPC --print-full-resource-name # ec2_vpc
 cargo run --bin codegen -- --type-name AWS::EC2::VPC --print-dsl-resource-name  # ec2.vpc
 
-# Generate Markdown documentation
-cargo run --bin codegen -- --file schema.json --type-name AWS::EC2::VPC --format markdown
+# Generate Markdown documentation, including a matching example when present
+cargo run --bin codegen -- --file schema.json --type-name AWS::EC2::VPC \
+  --format markdown --examples-dir examples
 ```
 
 ## Type Mapping
@@ -151,4 +152,20 @@ Downloaded CloudFormation schemas are cached in `carina-provider-awscc/cfn-schem
 aws-vault exec <profile> -- ./scripts/generate-docs.sh
 ```
 
-Output goes to `generated-docs/awscc/`. Each resource gets a Markdown file with Starlight/Astro frontmatter. Example code from `examples/{resource}/main.crn` is automatically inserted if present.
+Output goes to `generated-docs/awscc/`. Each resource gets a Markdown file with
+Starlight/Astro frontmatter. Codegen inserts example code from
+`examples/{resource}/main.crn` before validating the page, when that file is
+present; the shell script only adds frontmatter and removes the generated H1.
+
+Struct and enum section headings use the DSL field path. A `$ref` definition
+reached from more than one path instead uses its `snake_case` definition name,
+includes a `Used by` line, and lends that heading prefix to nested sections;
+`PageBuilder` resolves any resulting slug collisions.
+
+`carina-docgen` allocates registry-compatible heading ids when headings are
+written, resolves enum and struct links from typed targets when the page is
+finished, and checks the finished Markdown. Generation fails on a missing
+target, a dead local fragment, a Markdown link hidden inside a code span, or a
+duplicated enum/struct section heading. The docs-bundle CI job runs the same
+checker over the shipped tarball after its pages have had their H1 headings
+reconstructed from frontmatter.

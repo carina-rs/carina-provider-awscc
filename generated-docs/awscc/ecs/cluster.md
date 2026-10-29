@@ -45,28 +45,28 @@ A user-generated string that you use to identify your cluster. If you don't spec
 
 ### `cluster_settings`
 
-- **Type:** [List\<ClusterSettings\>](#clustersettings)
+- **Type:** List\<[Struct(ClusterSettings)](#cluster_settings-1)\>
 - **Required:** No
 
 The settings to use when creating a cluster. This parameter is used to turn on CloudWatch Container Insights with enhanced observability or CloudWatch Container Insights for a cluster. Container Insights with enhanced observability provides all the Container Insights metrics, plus additional task and container metrics. This version supports enhanced observability for Amazon ECS clusters using the Amazon EC2 and Fargate launch types. After you configure Container Insights with enhanced observability on Amazon ECS, Container Insights auto-collects detailed infrastructure telemetry from the cluster level down to the container level in your environment and displays these critical performance data in curated dashboards removing the heavy lifting in observability set-up. For more information, see [Monitor Amazon ECS containers using Container Insights with enhanced observability](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/cloudwatch-container-insights.html) in the *Amazon Elastic Container Service Developer Guide*.
 
 ### `configuration`
 
-- **Type:** [Struct(ClusterConfiguration)](#clusterconfiguration)
+- **Type:** [Struct(ClusterConfiguration)](#configuration-1)
 - **Required:** No
 
 The execute command and managed storage configuration for the cluster.
 
 ### `default_capacity_provider_strategy`
 
-- **Type:** [List\<CapacityProviderStrategyItem\>](#capacityproviderstrategyitem)
+- **Type:** List\<[Struct(CapacityProviderStrategyItem)](#default_capacity_provider_strategy-1)\>
 - **Required:** No
 
 The default capacity provider strategy for the cluster. When services or tasks are run in the cluster with no launch type or capacity provider strategy specified, the default capacity provider strategy is used.
 
 ### `service_connect_defaults`
 
-- **Type:** [Struct(ServiceConnectDefaults)](#serviceconnectdefaults)
+- **Type:** [Struct(ServiceConnectDefaults)](#service_connect_defaults-1)
 - **Required:** No
 - **Write-only:** Yes
 
@@ -81,7 +81,7 @@ The metadata that you apply to the cluster to help you categorize and organize t
 
 ## Enum Values
 
-### value (Value)
+### cluster_settings.value (Value)
 
 | Value | DSL Identifier |
 |-------|----------------|
@@ -91,7 +91,7 @@ The metadata that you apply to the cluster to help you categorize and organize t
 
 Shorthand formats: `enhanced` or `Value.enhanced`
 
-### logging (Logging)
+### configuration.execute_command_configuration.logging (Logging)
 
 | Value | DSL Identifier |
 |-------|----------------|
@@ -103,37 +103,29 @@ Shorthand formats: `none` or `Logging.none`
 
 ## Struct Definitions
 
-### CapacityProviderStrategyItem
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `base` | Int | No | The *base* value designates how many tasks, at a minimum, to run on the specified capacity provider for each service. Only one capacity provider in a capacity provider strategy can have a *base* defined. If no value is specified, the default value of ``0`` is used. Base value characteristics: + Only one capacity provider in a strategy can have a base defined + The default value is ``0`` if not specified + The valid range is 0 to 100,000 + Base requirements are satisfied first before weight distribution |
-| `capacity_provider` | String | No | The short name of the capacity provider. This can be either an AWS managed capacity provider (``FARGATE`` or ``FARGATE_SPOT``) or the name of a custom capacity provider that you created. |
-| `weight` | Int | No | The *weight* value designates the relative percentage of the total number of tasks launched that should use the specified capacity provider. The ``weight`` value is taken into consideration after the ``base`` value, if defined, is satisfied. If no ``weight`` value is specified, the default value of ``0`` is used. When multiple capacity providers are specified within a capacity provider strategy, at least one of the capacity providers must have a weight value greater than zero and any capacity providers with a weight of ``0`` can't be used to place tasks. If you specify multiple capacity providers in a strategy that all have a weight of ``0``, any ``RunTask`` or ``CreateService`` actions using the capacity provider strategy will fail. Weight value characteristics: + Weight is considered after the base value is satisfied + The default value is ``0`` if not specified + The valid range is 0 to 1,000 + At least one capacity provider must have a weight greater than zero + Capacity providers with weight of ``0`` cannot place tasks Task distribution logic: 1. Base satisfaction: The minimum number of tasks specified by the base value are placed on that capacity provider 1. Weight distribution: After base requirements are met, additional tasks are distributed according to weight ratios Examples: Equal Distribution: Two capacity providers both with weight ``1`` will split tasks evenly after base requirements are met. Weighted Distribution: If capacityProviderA has weight ``1`` and capacityProviderB has weight ``4``, then for every 1 task on A, 4 tasks will run on B. |
-
-### ClusterConfiguration
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `execute_command_configuration` | [Struct(ExecuteCommandConfiguration)](#executecommandconfiguration) | No | The details of the execute command configuration. |
-| `managed_storage_configuration` | [Struct(ManagedStorageConfiguration)](#managedstorageconfiguration) | No | The details of the managed storage configuration. |
-
-### ClusterSettings
+### cluster_settings
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `name` | String | No | The name of the cluster setting. The value is ``containerInsights``. |
-| `value` | [Enum (Value)](#value-value) | No | The value to set for the cluster setting. The supported values are ``enhanced``, ``enabled``, and ``disabled``. To use Container Insights with enhanced observability, set the ``containerInsights`` account setting to ``enhanced``. To use Container Insights, set the ``containerInsights`` account setting to ``enabled``. If a cluster value is specified, it will override the ``containerInsights`` value set with [PutAccountSetting](https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_PutAccountSetting.html) or [PutAccountSettingDefault](https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_PutAccountSettingDefault.html). |
+| `value` | [Enum (Value)](#cluster_settingsvalue-value) | No | The value to set for the cluster setting. The supported values are ``enhanced``, ``enabled``, and ``disabled``. To use Container Insights with enhanced observability, set the ``containerInsights`` account setting to ``enhanced``. To use Container Insights, set the ``containerInsights`` account setting to ``enabled``. If a cluster value is specified, it will override the ``containerInsights`` value set with [PutAccountSetting](https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_PutAccountSetting.html) or [PutAccountSettingDefault](https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_PutAccountSettingDefault.html). |
 
-### ExecuteCommandConfiguration
+### configuration
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `execute_command_configuration` | [Struct(ExecuteCommandConfiguration)](#configurationexecute_command_configuration) | No | The details of the execute command configuration. |
+| `managed_storage_configuration` | [Struct(ManagedStorageConfiguration)](#configurationmanaged_storage_configuration) | No | The details of the managed storage configuration. |
+
+### configuration.execute_command_configuration
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `kms_key_id` | KmsKeyArn | No | Specify an KMSlong key ID to encrypt the data between the local client and the container. |
-| `log_configuration` | [Struct(ExecuteCommandLogConfiguration)](#executecommandlogconfiguration) | No | The log configuration for the results of the execute command actions. The logs can be sent to CloudWatch Logs or an Amazon S3 bucket. When ``logging=OVERRIDE`` is specified, a ``logConfiguration`` must be provided. |
-| `logging` | [Enum (Logging)](#logging-logging) | No | The log setting to use for redirecting logs for your execute command results. The following log settings are available. + ``NONE``: The execute command session is not logged. + ``DEFAULT``: The ``awslogs`` configuration in the task definition is used. If no logging parameter is specified, it defaults to this value. If no ``awslogs`` log driver is configured in the task definition, the output won't be logged. + ``OVERRIDE``: Specify the logging details as a part of ``logConfiguration``. If the ``OVERRIDE`` logging option is specified, the ``logConfiguration`` is required. |
+| `log_configuration` | [Struct(ExecuteCommandLogConfiguration)](#configurationexecute_command_configurationlog_configuration) | No | The log configuration for the results of the execute command actions. The logs can be sent to CloudWatch Logs or an Amazon S3 bucket. When ``logging=OVERRIDE`` is specified, a ``logConfiguration`` must be provided. |
+| `logging` | [Enum (Logging)](#configurationexecute_command_configurationlogging-logging) | No | The log setting to use for redirecting logs for your execute command results. The following log settings are available. + ``NONE``: The execute command session is not logged. + ``DEFAULT``: The ``awslogs`` configuration in the task definition is used. If no logging parameter is specified, it defaults to this value. If no ``awslogs`` log driver is configured in the task definition, the output won't be logged. + ``OVERRIDE``: Specify the logging details as a part of ``logConfiguration``. If the ``OVERRIDE`` logging option is specified, the ``logConfiguration`` is required. |
 
-### ExecuteCommandLogConfiguration
+### configuration.execute_command_configuration.log_configuration
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -143,14 +135,22 @@ Shorthand formats: `none` or `Logging.none`
 | `s3_encryption_enabled` | Bool | No | Determines whether to use encryption on the S3 logs. If not specified, encryption is not used. |
 | `s3_key_prefix` | String | No | An optional folder in the S3 bucket to place logs in. |
 
-### ManagedStorageConfiguration
+### configuration.managed_storage_configuration
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `fargate_ephemeral_storage_kms_key_id` | String | No | Specify the KMSlong key ID for Fargate ephemeral storage. When you specify a ``fargateEphemeralStorageKmsKeyId``, AWS Fargate uses the key to encrypt data at rest in ephemeral storage. For more information about Fargate ephemeral storage encryption, see [Customer managed keys for Fargate ephemeral storage for Amazon ECS](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/fargate-storage-encryption.html) in the *Amazon Elastic Container Service Developer Guide*. The key must be a single Region key. |
 | `kms_key_id` | KmsKeyArn | No | Specify a KMSlong key ID to encrypt Amazon ECS managed storage. When you specify a ``kmsKeyId``, Amazon ECS uses the key to encrypt data volumes managed by Amazon ECS that are attached to tasks in the cluster. The following data volumes are managed by Amazon ECS: Amazon EBS. For more information about encryption of Amazon EBS volumes attached to Amazon ECS tasks, see [Encrypt data stored in Amazon EBS volumes for Amazon ECS](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ebs-kms-encryption.html) in the *Amazon Elastic Container Service Developer Guide*. The key must be a single Region key. |
 
-### ServiceConnectDefaults
+### default_capacity_provider_strategy
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `base` | Int | No | The *base* value designates how many tasks, at a minimum, to run on the specified capacity provider for each service. Only one capacity provider in a capacity provider strategy can have a *base* defined. If no value is specified, the default value of ``0`` is used. Base value characteristics: + Only one capacity provider in a strategy can have a base defined + The default value is ``0`` if not specified + The valid range is 0 to 100,000 + Base requirements are satisfied first before weight distribution |
+| `capacity_provider` | String | No | The short name of the capacity provider. This can be either an AWS managed capacity provider (``FARGATE`` or ``FARGATE_SPOT``) or the name of a custom capacity provider that you created. |
+| `weight` | Int | No | The *weight* value designates the relative percentage of the total number of tasks launched that should use the specified capacity provider. The ``weight`` value is taken into consideration after the ``base`` value, if defined, is satisfied. If no ``weight`` value is specified, the default value of ``0`` is used. When multiple capacity providers are specified within a capacity provider strategy, at least one of the capacity providers must have a weight value greater than zero and any capacity providers with a weight of ``0`` can't be used to place tasks. If you specify multiple capacity providers in a strategy that all have a weight of ``0``, any ``RunTask`` or ``CreateService`` actions using the capacity provider strategy will fail. Weight value characteristics: + Weight is considered after the base value is satisfied + The default value is ``0`` if not specified + The valid range is 0 to 1,000 + At least one capacity provider must have a weight greater than zero + Capacity providers with weight of ``0`` cannot place tasks Task distribution logic: 1. Base satisfaction: The minimum number of tasks specified by the base value are placed on that capacity provider 1. Weight distribution: After base requirements are met, additional tasks are distributed according to weight ratios Examples: Equal Distribution: Two capacity providers both with weight ``1`` will split tasks evenly after base requirements are met. Weighted Distribution: If capacityProviderA has weight ``1`` and capacityProviderB has weight ``4``, then for every 1 task on A, 4 tasks will run on B. |
+
+### service_connect_defaults
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|

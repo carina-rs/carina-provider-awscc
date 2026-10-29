@@ -14,6 +14,7 @@
 
 use anyhow::{Context, Result};
 use carina_aws_types::dsl_enum_value;
+use carina_docgen::{Heading, PageBuilder};
 use carina_provider_awscc::schemas::catalog::AwsccType;
 use clap::Parser;
 use heck::{ToPascalCase, ToSnakeCase};
@@ -22,6 +23,7 @@ use serde::Deserialize;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::io::{self, Read};
+use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
 // carina#3340: in-progress recursion guard for cyclic CFN $ref
@@ -459,6 +461,10 @@ struct Args {
     /// Output format: rust (default) or markdown (for documentation)
     #[arg(long, default_value = "rust")]
     format: String,
+
+    /// Directory containing generated-doc examples (`<service>_<resource>/main.crn`).
+    #[arg(long)]
+    examples_dir: Option<PathBuf>,
 }
 
 /// CloudFormation Resource Schema
@@ -909,6 +915,53 @@ fn full_resource_name_from_type(type_name: &str) -> Result<String> {
     Ok(format!("{}_{}", service, resource))
 }
 
+fn load_markdown_example(examples_dir: Option<&Path>, type_name: &str) -> Result<Option<String>> {
+    let Some(examples_dir) = examples_dir else {
+        return Ok(None);
+    };
+    if !examples_dir.is_dir() {
+        anyhow::bail!(
+            "--examples-dir must be an existing directory: {}",
+            examples_dir.display()
+        );
+    }
+    let path = examples_dir
+        .join(full_resource_name_from_type(type_name)?)
+        .join("main.crn");
+    match std::fs::read_to_string(&path) {
+        Ok(source) => Ok(Some(preprocess_markdown_example(&source))),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error).with_context(|| format!("Failed to read {}", path.display())),
+    }
+}
+
+fn preprocess_markdown_example(source: &str) -> String {
+    let mut filtered = Vec::new();
+    let mut in_provider_block = false;
+    for line in source.split_inclusive('\n') {
+        if !in_provider_block && line.starts_with("provider ") {
+            in_provider_block = true;
+            continue;
+        }
+        if in_provider_block {
+            if line.starts_with('}') {
+                in_provider_block = false;
+            }
+            continue;
+        }
+        if line.starts_with('#') {
+            continue;
+        }
+        filtered.push(line);
+    }
+
+    let first_content = filtered
+        .iter()
+        .position(|line| !line.strip_suffix('\n').unwrap_or(line).is_empty())
+        .unwrap_or(filtered.len());
+    filtered[first_content..].concat()
+}
+
 /// Compute DSL resource name (service.resource) from CloudFormation type name
 /// e.g., "AWS::EC2::SecurityGroupEgress" -> "ec2.SecurityGroupEgress"
 /// and "AWS::EC2::VPC" -> "ec2.Vpc" (acronyms normalised via snake -> pascal).
@@ -1152,7 +1205,10 @@ fn main() -> Result<()> {
 
     // Generate output based on format
     let output = match args.format.as_str() {
-        "markdown" | "md" => generate_markdown(&schema, &args.type_name)?,
+        "markdown" | "md" => {
+            let example = load_markdown_example(args.examples_dir.as_deref(), &args.type_name)?;
+            generate_markdown_with_example(&schema, &args.type_name, example.as_deref())?
+        }
         "rust" => generate_schema_code(&schema, &args.type_name)?,
         other => anyhow::bail!("Unknown format: {}. Use 'rust' or 'markdown'.", other),
     };
@@ -1175,12 +1231,118 @@ struct StructDefInfo {
     def_name: String,
     /// Structural path from the resource root to this definition.
     struct_path: Vec<String>,
-    /// CloudFormation property path from the resource root to this definition.
-    property_path: Vec<String>,
+    /// First CloudFormation property path through which this definition was reached.
+    first_property_path: Vec<String>,
+    /// Every distinct property path through which this definition is reached.
+    property_paths: BTreeSet<Vec<String>>,
     /// Properties of the definition
     properties: BTreeMap<String, CfnProperty>,
     /// Required fields
     required: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct MarkdownEnumKey {
+    namespace: String,
+    type_name: String,
+}
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+enum MarkdownStructKey {
+    /// A named `$ref` definition. Reaching the same definition through
+    /// multiple property paths must still produce exactly one target.
+    Definition(String),
+    /// An inline object. Its writable DSL field path is its identity because
+    /// the same property name can describe unrelated objects under different
+    /// parents.
+    Inline(Vec<String>),
+}
+
+impl MarkdownStructKey {
+    fn stable_identity(&self) -> String {
+        match self {
+            Self::Definition(name) => format!("definition {name}"),
+            Self::Inline(property_path) => {
+                format!("inline {}", markdown_heading_path(property_path).join("."))
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct MarkdownStructFieldKey {
+    struct_key: MarkdownStructKey,
+    field_name: String,
+}
+
+#[derive(Default)]
+struct MarkdownEnumTargets {
+    properties: BTreeMap<String, MarkdownEnumKey>,
+    struct_fields: BTreeMap<MarkdownStructFieldKey, MarkdownEnumKey>,
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+enum MarkdownTarget {
+    Enum(MarkdownEnumKey),
+    Struct(MarkdownStructKey),
+}
+
+#[derive(Debug)]
+enum MarkdownType {
+    Plain(String),
+    Linked(MarkdownLinkedType),
+}
+
+#[derive(Debug)]
+enum MarkdownLinkedType {
+    Enum(MarkdownEnumKey),
+    Struct {
+        key: MarkdownStructKey,
+        name: String,
+    },
+    List {
+        item: Box<MarkdownLinkedType>,
+        suffix: Option<String>,
+    },
+}
+
+impl MarkdownType {
+    fn write_to(&self, page: &mut PageBuilder<MarkdownTarget>) {
+        match self {
+            Self::Plain(value) => page.push_str(value),
+            Self::Linked(value) => value.write_to(page),
+        }
+    }
+}
+
+impl MarkdownLinkedType {
+    fn write_to(&self, page: &mut PageBuilder<MarkdownTarget>) {
+        match self {
+            Self::Enum(key) => page.link(
+                MarkdownTarget::Enum(key.clone()),
+                format!("Enum ({})", key.type_name),
+            ),
+            Self::Struct { key, name } => page.link(
+                MarkdownTarget::Struct(key.clone()),
+                format!("Struct({name})"),
+            ),
+            Self::List { item, suffix } => {
+                page.push_str("List\\<");
+                item.write_to(page);
+                page.push_str("\\>");
+                if let Some(suffix) = suffix {
+                    page.push_str(suffix);
+                }
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+struct MarkdownEnum {
+    prop_name: String,
+    heading_path: Vec<String>,
+    info: EnumInfo,
 }
 
 fn decode_json_pointer_segment(segment: &str) -> String {
@@ -1513,6 +1675,15 @@ fn is_deprecated_property(prop: &CfnProperty) -> bool {
         .is_some_and(|description| description.starts_with("(Deprecated.)"))
 }
 
+fn documented_top_level_properties(
+    schema: &CfnSchema,
+) -> impl Iterator<Item = (&String, &CfnProperty)> {
+    schema
+        .properties
+        .iter()
+        .filter(|(_, property)| !is_deprecated_property(property))
+}
+
 fn is_struct_property(prop: &CfnProperty, schema: &CfnSchema) -> bool {
     if prop
         .properties
@@ -1689,38 +1860,8 @@ fn override_type_to_display_name(override_type: &str) -> &str {
 }
 
 /// Determine the display string for a property's type in markdown docs
-fn type_display_string(
-    prop_name: &str,
-    prop: &CfnProperty,
-    schema: &CfnSchema,
-    enums: &BTreeMap<String, EnumInfo>,
-) -> String {
-    if enums.contains_key(prop_name) {
-        let enum_link = format!(
-            "[Enum ({})](#{}-{})",
-            enums[prop_name].type_name,
-            prop_name.to_snake_case(),
-            enums[prop_name].type_name.to_lowercase()
-        );
-        // Check if property is an array type — if so, wrap as List<Enum>
-        let is_array = prop
-            .prop_type
-            .as_ref()
-            .and_then(|t| t.as_str())
-            .map(|t| t == "array")
-            .unwrap_or(false);
-        let is_ref_array = prop
-            .ref_path
-            .as_ref()
-            .and_then(|ref_path| resolve_ref_classified(schema, ref_path))
-            .map(|def| matches!(def, ResolvedDef::Array { .. }))
-            .unwrap_or(false);
-        if is_array || is_ref_array {
-            format!("List\\<{}\\>", enum_link)
-        } else {
-            enum_link
-        }
-    } else if prop_name == "Tags" {
+fn type_display_string(prop_name: &str, prop: &CfnProperty, schema: &CfnSchema) -> String {
+    if prop_name == "Tags" {
         "`Map<String, String>`".to_string()
     } else if !prop.one_of.is_empty() {
         if let Some(array_variant) = prop
@@ -1728,7 +1869,7 @@ fn type_display_string(
             .iter()
             .find(|variant| property_resolves_to_array(variant, schema))
         {
-            return type_display_string(prop_name, array_variant, schema, enums);
+            return type_display_string(prop_name, array_variant, schema);
         }
 
         let has_mergeable_object_variant = prop.one_of.iter().any(|variant| {
@@ -1751,21 +1892,20 @@ fn type_display_string(
         if ref_path.contains("/Tag") {
             "`Map<String, String>`".to_string()
         } else {
-            // Classify the resolved def once. Only Struct/OneOf (rendered as a
-            // struct link) and Scalar (awscc#291: WAFv2 `Priority`/`Limit` are
-            // $refs to scalar integer defs — recurse for the Int/Float/Bool
-            // display with the def's range) get a non-string display; every
-            // other shape falls back to the name-based heuristic, as before.
+            // Scalar refs (awscc#291: WAFv2 `Priority`/`Limit`) recurse for
+            // their Int/Float/Bool display with the definition's range. A
+            // struct-shaped ref gets a plain label here; the typed Markdown
+            // path is solely responsible for turning it into a link.
             match resolve_ref_classified(schema, ref_path) {
                 Some(ResolvedDef::Struct { .. } | ResolvedDef::OneOf { .. }) => {
                     let def_name = ref_def_name(ref_path).unwrap_or(prop_name);
-                    format!("[Struct({})](#{})", def_name, def_name.to_lowercase())
+                    format!("Struct({def_name})")
                 }
                 Some(scalar @ ResolvedDef::Scalar { .. }) => {
                     let scalar_prop = scalar
                         .scalar_as_property()
                         .expect("Scalar variant always rebuilds a scalar property");
-                    type_display_string(prop_name, &scalar_prop, schema, enums)
+                    type_display_string(prop_name, &scalar_prop, schema)
                 }
                 Some(
                     ResolvedDef::Enum { .. }
@@ -1921,24 +2061,16 @@ fn type_display_string(
                 let base_display = if let Some(items) = &prop.items {
                     if let Some(ref_path) = &items.ref_path {
                         if !ref_path.contains("/Tag") {
-                            // Classify the item def once. Struct items link to
-                            // the struct; a registered enum (keyed on the
-                            // property name) renders List<Enum>; scalar items
-                            // (awscc#291) render List<Int>/Float/Bool to mirror
-                            // the schema-code array branch; anything else falls
-                            // back to List<String>.
+                            // Keep this renderer fragment-free. Typed enum and
+                            // struct links are emitted only by MarkdownType;
+                            // scalar items (awscc#291) still mirror the
+                            // schema-code array branch here.
                             let item_def = resolve_ref_classified(schema, ref_path);
-                            if let Some(ResolvedDef::Struct { .. }) = item_def
+                            if let Some(ResolvedDef::Struct { .. } | ResolvedDef::OneOf { .. }) =
+                                item_def
                                 && let Some(def_name) = ref_def_name(ref_path)
                             {
-                                format!("[List\\<{}\\>](#{})", def_name, def_name.to_lowercase())
-                            } else if enums.contains_key(prop_name) {
-                                format!(
-                                    "List\\<[Enum ({})](#{}-{})\\>",
-                                    enums[prop_name].type_name,
-                                    prop_name.to_snake_case(),
-                                    enums[prop_name].type_name.to_lowercase()
-                                )
+                                format!("`List<{def_name}>`")
                             } else if let Some(scalar_prop) =
                                 item_def.as_ref().and_then(ResolvedDef::scalar_as_property)
                             {
@@ -1974,7 +2106,7 @@ fn type_display_string(
                 if let Some(props) = &prop.properties
                     && !props.is_empty()
                 {
-                    format!("[Struct({})](#{})", prop_name, prop_name.to_lowercase())
+                    format!("Struct({prop_name})")
                 } else if prop_name.ends_with("PolicyDocument") {
                     "PolicyDocument".to_string()
                 } else {
@@ -1986,11 +2118,412 @@ fn type_display_string(
     }
 }
 
+fn markdown_property_is_array(prop: &CfnProperty, schema: &CfnSchema) -> bool {
+    property_resolves_to_array(prop, schema)
+        || prop
+            .one_of
+            .iter()
+            .any(|variant| markdown_property_is_array(variant, schema))
+}
+
+struct MarkdownStructDef {
+    key: MarkdownStructKey,
+    name: String,
+    properties: BTreeMap<String, CfnProperty>,
+    required: Vec<String>,
+}
+
+/// Classify exactly the property shapes that own a Markdown struct target.
+/// Both target collection and type rendering use this function, so rendering
+/// cannot create a struct link unless the same property shape is collectable.
+fn markdown_struct_def(
+    prop_name: &str,
+    prop: &CfnProperty,
+    schema: &CfnSchema,
+    property_path: &[String],
+) -> Option<MarkdownStructDef> {
+    // Preserve the pre-PageBuilder precedence: a direct non-array oneOf is a
+    // String display, not a struct target. Array variants are selected by the
+    // callers before classification.
+    if !prop.one_of.is_empty() {
+        return None;
+    }
+
+    if let Some(ref_path) = &prop.ref_path
+        && !ref_path.contains("/Tag")
+        && let Some(def_name) = ref_def_name(ref_path)
+    {
+        match resolve_ref_classified(schema, ref_path) {
+            Some(ResolvedDef::Struct {
+                properties,
+                required,
+            }) => {
+                return Some(MarkdownStructDef {
+                    key: MarkdownStructKey::Definition(def_name.to_string()),
+                    name: def_name.to_string(),
+                    properties: properties.clone(),
+                    required: required.to_vec(),
+                });
+            }
+            Some(ResolvedDef::OneOf { variants }) => {
+                let properties = variants
+                    .iter()
+                    .filter_map(|variant| variant.properties.as_ref())
+                    .flat_map(|properties| properties.iter())
+                    .map(|(name, property)| (name.clone(), property.clone()))
+                    .collect::<BTreeMap<_, _>>();
+                if !properties.is_empty() {
+                    return Some(MarkdownStructDef {
+                        key: MarkdownStructKey::Definition(def_name.to_string()),
+                        name: def_name.to_string(),
+                        properties,
+                        required: Vec::new(),
+                    });
+                }
+            }
+            Some(
+                ResolvedDef::Enum { .. }
+                | ResolvedDef::Array { .. }
+                | ResolvedDef::StringPattern { .. }
+                | ResolvedDef::Scalar { .. }
+                | ResolvedDef::Opaque,
+            )
+            | None => {}
+        }
+    }
+
+    if prop.prop_type.as_ref().and_then(TypeValue::as_str) == Some("object")
+        && let Some(properties) = &prop.properties
+        && !properties.is_empty()
+    {
+        return Some(MarkdownStructDef {
+            key: MarkdownStructKey::Inline(property_path.to_vec()),
+            name: prop_name.to_string(),
+            properties: properties.clone(),
+            required: prop.required.clone(),
+        });
+    }
+
+    None
+}
+
+fn markdown_array_items<'a>(
+    prop: &'a CfnProperty,
+    schema: &'a CfnSchema,
+) -> Option<&'a CfnProperty> {
+    if prop.prop_type.as_ref().and_then(TypeValue::as_str) == Some("array") {
+        return prop.items.as_deref();
+    }
+    prop.ref_path
+        .as_deref()
+        .and_then(|ref_path| resolve_ref_classified(schema, ref_path))
+        .and_then(|resolved| match resolved {
+            ResolvedDef::Array { items } => Some(items),
+            ResolvedDef::Struct { .. }
+            | ResolvedDef::OneOf { .. }
+            | ResolvedDef::Enum { .. }
+            | ResolvedDef::StringPattern { .. }
+            | ResolvedDef::Scalar { .. }
+            | ResolvedDef::Opaque => None,
+        })
+}
+
+fn markdown_list_type(item: MarkdownLinkedType, prop: &CfnProperty) -> MarkdownLinkedType {
+    let suffix = if prop.min_items.is_some() || prop.max_items.is_some() {
+        Some(format!(
+            " (items: {})",
+            range_display_string(prop.min_items, prop.max_items)
+        ))
+    } else {
+        None
+    };
+    MarkdownLinkedType::List {
+        item: Box::new(item),
+        suffix,
+    }
+}
+
+fn markdown_link_type(
+    prop_name: &str,
+    prop: &CfnProperty,
+    schema: &CfnSchema,
+    enum_target: Option<&MarkdownEnumKey>,
+    property_path: &[String],
+) -> Option<MarkdownLinkedType> {
+    if let Some(key) = enum_target {
+        let enum_type = MarkdownLinkedType::Enum(key.clone());
+        return Some(if markdown_property_is_array(prop, schema) {
+            markdown_list_type(enum_type, prop)
+        } else {
+            enum_type
+        });
+    }
+
+    if !prop.one_of.is_empty() {
+        return prop
+            .one_of
+            .iter()
+            .find(|variant| markdown_property_is_array(variant, schema))
+            .and_then(|variant| {
+                markdown_link_type(prop_name, variant, schema, None, property_path)
+            });
+    }
+
+    if let Some(struct_def) = markdown_struct_def(prop_name, prop, schema, property_path) {
+        return Some(MarkdownLinkedType::Struct {
+            key: struct_def.key,
+            name: struct_def.name,
+        });
+    }
+
+    if let Some(items) = markdown_array_items(prop, schema) {
+        let item_path = extend_property_path(property_path, "*");
+        let item_type = markdown_link_type(prop_name, items, schema, None, &item_path)?;
+        return Some(markdown_list_type(item_type, prop));
+    }
+
+    None
+}
+
+fn markdown_type(
+    prop_name: &str,
+    prop: &CfnProperty,
+    schema: &CfnSchema,
+    enum_target: Option<&MarkdownEnumKey>,
+    property_path: &[String],
+) -> MarkdownType {
+    markdown_link_type(prop_name, prop, schema, enum_target, property_path)
+        .map(MarkdownType::Linked)
+        .unwrap_or_else(|| MarkdownType::Plain(type_display_string(prop_name, prop, schema)))
+}
+
+fn markdown_heading_path(property_path: &[String]) -> Vec<String> {
+    property_path
+        .iter()
+        .filter(|segment| segment.as_str() != "*")
+        .map(|segment| segment.to_snake_case())
+        .collect()
+}
+
+fn markdown_section_heading_path(
+    property_path: &[String],
+    struct_defs: &BTreeMap<MarkdownStructKey, StructDefInfo>,
+    strict_ancestor_of: Option<&StructDefInfo>,
+) -> Vec<String> {
+    let heading_path_depth = |path: &[String]| {
+        path.iter()
+            .filter(|segment| segment.as_str() != "*")
+            .count()
+    };
+
+    // Inline struct identity is its full property path, so only a named
+    // definition can have more than one distinct path.
+    let Some((shared_ancestor, ancestor_path)) = struct_defs
+        .values()
+        .filter(|def_info| {
+            def_info.property_paths.len() > 1
+                && strict_ancestor_of.is_none_or(|descendant| {
+                    heading_path_depth(&def_info.first_property_path)
+                        < heading_path_depth(&descendant.first_property_path)
+                })
+        })
+        .flat_map(|def_info| {
+            def_info
+                .property_paths
+                .iter()
+                .filter(|ancestor_path| property_path.starts_with(ancestor_path))
+                .map(move |ancestor_path| (def_info, ancestor_path))
+        })
+        .max_by_key(|(_, ancestor_path)| heading_path_depth(ancestor_path))
+    else {
+        return markdown_heading_path(property_path);
+    };
+
+    let mut heading_path = vec![shared_ancestor.def_name.to_snake_case()];
+    heading_path.extend(markdown_heading_path(&property_path[ancestor_path.len()..]));
+    heading_path
+}
+
+fn register_markdown_enum(
+    markdown_enums: &mut BTreeMap<MarkdownEnumKey, MarkdownEnum>,
+    enum_namespace: String,
+    heading_path: Vec<String>,
+    prop_name: String,
+    info: &EnumInfo,
+) -> Result<MarkdownEnumKey> {
+    let key = MarkdownEnumKey {
+        namespace: enum_namespace,
+        type_name: info.type_name.clone(),
+    };
+    if let Some(existing) = markdown_enums.get_mut(&key) {
+        if existing.info.values != info.values {
+            anyhow::bail!(
+                "Markdown enum identity {}.{} has conflicting values {:?} and {:?}",
+                key.namespace,
+                key.type_name,
+                existing.info.values,
+                info.values
+            );
+        }
+        if heading_path < existing.heading_path {
+            existing.heading_path = heading_path;
+            existing.prop_name = prop_name;
+        }
+    } else {
+        markdown_enums.insert(
+            key.clone(),
+            MarkdownEnum {
+                prop_name,
+                heading_path,
+                info: info.clone(),
+            },
+        );
+    }
+
+    Ok(key)
+}
+
+fn collect_markdown_enums(
+    namespace: &str,
+    property_enums: &BTreeMap<String, EnumInfo>,
+    struct_field_enums: &BTreeMap<MarkdownStructFieldKey, EnumInfo>,
+    struct_defs: &BTreeMap<MarkdownStructKey, StructDefInfo>,
+) -> Result<(BTreeMap<MarkdownEnumKey, MarkdownEnum>, MarkdownEnumTargets)> {
+    let mut markdown_enums: BTreeMap<MarkdownEnumKey, MarkdownEnum> = BTreeMap::new();
+    let mut targets = MarkdownEnumTargets::default();
+
+    for (prop_name, info) in property_enums {
+        let key = register_markdown_enum(
+            &mut markdown_enums,
+            namespace.to_string(),
+            markdown_section_heading_path(std::slice::from_ref(prop_name), struct_defs, None),
+            prop_name.clone(),
+            info,
+        )?;
+        targets.properties.insert(prop_name.clone(), key);
+    }
+
+    for (source_key, info) in struct_field_enums {
+        let def_info = struct_defs.get(&source_key.struct_key).with_context(|| {
+            format!(
+                "enum {}.{} has no enclosing Markdown struct definition",
+                source_key.struct_key.stable_identity(),
+                source_key.field_name
+            )
+        })?;
+        let field_path =
+            extend_property_path(&def_info.first_property_path, &source_key.field_name);
+        let heading_path = markdown_section_heading_path(&field_path, struct_defs, None);
+        let key = register_markdown_enum(
+            &mut markdown_enums,
+            namespace_with_struct_path(namespace, &def_info.struct_path),
+            heading_path,
+            source_key.field_name.clone(),
+            info,
+        )?;
+        targets.struct_fields.insert(source_key.clone(), key);
+    }
+
+    Ok((markdown_enums, targets))
+}
+
+fn markdown_enum_heading_texts(
+    enums: &BTreeMap<MarkdownEnumKey, MarkdownEnum>,
+) -> Vec<(MarkdownEnumKey, String)> {
+    let candidates: Vec<_> = enums
+        .iter()
+        .map(|(key, enum_doc)| {
+            let base = format!(
+                "{} ({})",
+                enum_doc.heading_path.join("."),
+                enum_doc.info.type_name
+            );
+            let identity = format!("{} {}", key.namespace, key.type_name);
+            (key.clone(), base, identity)
+        })
+        .collect();
+    let mut base_counts = HashMap::new();
+    for (_, heading, _) in &candidates {
+        *base_counts
+            .entry(carina_docgen::heading_slug(heading))
+            .or_insert(0_usize) += 1;
+    }
+    let mut used_slugs = HashSet::new();
+    let mut headings: Vec<_> = candidates
+        .into_iter()
+        .map(|(key, base, identity)| {
+            let primary = if base_counts[&carina_docgen::heading_slug(&base)] > 1 {
+                format!("{base} — {identity}")
+            } else {
+                base
+            };
+            let heading = claim_unique_markdown_heading(primary, &identity, &mut used_slugs);
+            (key, heading)
+        })
+        .collect();
+    sort_markdown_headings(&mut headings);
+    headings
+}
+
+fn markdown_struct_heading_texts(
+    struct_defs: &BTreeMap<MarkdownStructKey, StructDefInfo>,
+) -> Vec<(MarkdownStructKey, String)> {
+    let mut used_slugs = HashSet::new();
+    let mut headings: Vec<_> = struct_defs
+        .iter()
+        .map(|(key, def_info)| {
+            let base =
+                markdown_section_heading_path(&def_info.first_property_path, struct_defs, None)
+                    .join(".");
+            let heading =
+                claim_unique_markdown_heading(base, &key.stable_identity(), &mut used_slugs);
+            (key.clone(), heading)
+        })
+        .collect();
+    sort_markdown_headings(&mut headings);
+    headings
+}
+
+fn sort_markdown_headings<K: Ord>(headings: &mut [(K, String)]) {
+    headings.sort_by(|(left_key, left_heading), (right_key, right_heading)| {
+        left_heading
+            .cmp(right_heading)
+            .then_with(|| left_key.cmp(right_key))
+    });
+}
+
+fn claim_unique_markdown_heading(
+    primary: String,
+    stable_identity: &str,
+    used_slugs: &mut HashSet<String>,
+) -> String {
+    let candidates = [primary.clone(), format!("{primary} — {stable_identity}")];
+    for candidate in candidates {
+        if used_slugs.insert(carina_docgen::heading_slug(&candidate)) {
+            return candidate;
+        }
+    }
+    for suffix in 2.. {
+        let candidate = format!("{primary} {suffix}");
+        if used_slugs.insert(carina_docgen::heading_slug(&candidate)) {
+            return candidate;
+        }
+    }
+    unreachable!("an integer suffix always yields a fresh heading")
+}
+
+#[cfg(test)]
 fn generate_markdown(schema: &CfnSchema, type_name: &str) -> Result<String> {
+    generate_markdown_with_example(schema, type_name, None)
+}
+
+fn generate_markdown_with_example(
+    schema: &CfnSchema,
+    type_name: &str,
+    example: Option<&str>,
+) -> Result<String> {
     reset_recursion_guard();
     derive_mutually_exclusive_property_groups(schema)?;
-
-    let mut md = String::new();
 
     let dsl_resource = dsl_resource_name_from_type(type_name)?;
     let namespace = format!("aws.{}", dsl_resource);
@@ -2012,13 +2545,11 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str) -> Result<String> {
     let required: HashSet<String> = schema.required.iter().cloned().collect();
 
     // Collect enum info and struct definitions
-    let mut enums: BTreeMap<String, EnumInfo> = BTreeMap::new();
-    let mut struct_defs: BTreeMap<String, StructDefInfo> = BTreeMap::new();
+    let mut property_enums: BTreeMap<String, EnumInfo> = BTreeMap::new();
+    let mut struct_field_enums: BTreeMap<MarkdownStructFieldKey, EnumInfo> = BTreeMap::new();
+    let mut struct_defs: BTreeMap<MarkdownStructKey, StructDefInfo> = BTreeMap::new();
 
-    for (prop_name, prop) in &schema.properties {
-        if is_deprecated_property(prop) {
-            continue;
-        }
+    for (prop_name, prop) in documented_top_level_properties(schema) {
         // Apply resource-scoped enum overlay (awscc#357) for top-level
         // properties. The nested-struct loop below already does the same
         // thing for `Struct.Field` keys (awscc#246); without this branch a
@@ -2029,7 +2560,7 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str) -> Result<String> {
         if let Some(TypeOverride::Enum(values) | TypeOverride::EnumUnordered(values)) =
             resource_type_overrides().get(&(type_name, prop_name.as_str()))
         {
-            enums.insert(prop_name.clone(), enum_info_for_override(prop_name, values));
+            property_enums.insert(prop_name.clone(), enum_info_for_override(prop_name, values));
             collect_struct_defs(
                 prop,
                 prop_name,
@@ -2041,9 +2572,9 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str) -> Result<String> {
             continue;
         }
         let (_, enum_info) =
-            cfn_type_to_carina_type_with_enum(prop, prop_name, schema, &namespace, &enums);
+            cfn_type_to_carina_type_with_enum(prop, prop_name, schema, &namespace, &property_enums);
         if let Some(info) = enum_info {
-            enums.insert(prop_name.clone(), info);
+            property_enums.insert(prop_name.clone(), info);
         }
         // Collect struct definitions from $ref
         collect_struct_defs(
@@ -2057,47 +2588,47 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str) -> Result<String> {
     }
 
     // Scan struct definition fields for enum info (const values, $ref to enum-only definitions)
-    for (def_name, def_info) in &struct_defs {
+    for (struct_key, def_info) in &struct_defs {
         for (field_name, field_prop) in &def_info.properties {
             if is_deprecated_property(field_prop) {
                 continue;
             }
-            let composite_key = format!("{}.{}", def_name, field_name);
+            let source_key = MarkdownStructFieldKey {
+                struct_key: struct_key.clone(),
+                field_name: field_name.clone(),
+            };
+            let override_key = format!("{}.{}", def_info.def_name, field_name);
             // Apply nested-field enum overlay (awscc#246) — same lookup as
             // `generate_schema_code`, so the markdown's enum tables stay in
             // sync with the generated Rust schema.
             if let Some(nested_override) =
-                resource_type_overrides().get(&(type_name, composite_key.as_str()))
+                resource_type_overrides().get(&(type_name, override_key.as_str()))
             {
                 match nested_override {
                     TypeOverride::Enum(values) | TypeOverride::EnumUnordered(values) => {
-                        enums.insert(
-                            composite_key.clone(),
-                            enum_info_for_override(field_name, values),
-                        );
+                        struct_field_enums
+                            .insert(source_key, enum_info_for_override(field_name, values));
                         continue;
                     }
                     TypeOverride::StringType(_) => continue,
                     _ => {}
                 }
             }
-            let field_path = extend_property_path(&def_info.property_path, field_name);
+            let field_path = extend_property_path(&def_info.first_property_path, field_name);
             let (_, enum_info) = cfn_type_to_carina_type_with_enum_with_paths(
                 field_prop,
                 field_name,
                 schema,
                 &namespace,
-                &enums,
+                &property_enums,
                 &def_info.struct_path,
                 &field_path,
             );
             if let Some(info) = enum_info {
-                enums.insert(composite_key, info);
+                struct_field_enums.insert(source_key, info);
             }
         }
     }
-
-    qualify_nested_enum_type_names(&mut enums);
 
     // Validate nested read-only pointers against the same AttributeType
     // emitter used for generated Rust. Markdown has its own presentation
@@ -2109,16 +2640,13 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str) -> Result<String> {
             || synthetic_attributes()
                 .iter()
                 .any(|synth| synth.cfn_type == type_name && synth.attr_name == "arn"));
-    for (prop_name, prop) in &schema.properties {
-        if is_deprecated_property(prop) {
-            continue;
-        }
+    for (prop_name, prop) in documented_top_level_properties(schema) {
         let _ = generate_top_level_attribute_type(
             prop_name,
             prop,
             schema,
             &namespace,
-            &enums,
+            &property_enums,
             has_arn_helper,
         );
         let property_path = [prop_name.clone()];
@@ -2133,22 +2661,31 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str) -> Result<String> {
     validate_emitted_nested_write_only_properties(schema)?;
     reset_recursion_guard();
 
+    let (markdown_enums, enum_targets) = collect_markdown_enums(
+        &namespace,
+        &property_enums,
+        &struct_field_enums,
+        &struct_defs,
+    )?;
+    let enum_heading_texts = markdown_enum_heading_texts(&markdown_enums);
+    let struct_heading_texts = markdown_struct_heading_texts(&struct_defs);
+    let mut page = PageBuilder::new();
+
     // Title
-    md.push_str(&format!("# awscc.{}\n\n", dsl_resource));
-    md.push_str(&format!("CloudFormation Type: `{}`\n\n", type_name));
+    page.heading(Heading::plain(1, format!("awscc.{dsl_resource}")))?;
+    page.push_str(&format!("CloudFormation Type: `{type_name}`\n\n"));
 
     // Description
     if let Some(desc) = &schema.description {
-        md.push_str(&format!("{}\n\n", desc));
+        page.push_str(&format!("{desc}\n\n"));
     }
 
-    // Argument Reference (writable attributes)
-    md.push_str("## Argument Reference\n\n");
+    write_markdown_example(&mut page, example)?;
 
-    for (prop_name, prop) in &schema.properties {
-        if is_deprecated_property(prop) {
-            continue;
-        }
+    // Argument Reference (writable attributes)
+    page.heading(Heading::plain(2, "Argument Reference"))?;
+
+    for (prop_name, prop) in documented_top_level_properties(schema) {
         let property_path = [prop_name.clone()];
         if is_property_read_only(schema, prop, &property_path) {
             continue;
@@ -2156,62 +2693,52 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str) -> Result<String> {
 
         let attr_name = prop_name.to_snake_case();
         let is_required = required.contains(prop_name);
-        let type_display = type_display_string(prop_name, prop, schema, &enums);
+        let type_display = markdown_type(
+            prop_name,
+            prop,
+            schema,
+            enum_targets.properties.get(prop_name),
+            &property_path,
+        );
 
-        md.push_str(&format!("### `{}`\n\n", attr_name));
-        md.push_str(&format!("- **Type:** {}\n", type_display));
+        page.heading(Heading::code(3, &attr_name))?;
+        page.push_str("- **Type:** ");
+        type_display.write_to(&mut page);
+        page.push_str("\n");
         if is_required {
-            md.push_str("- **Required:** Yes\n");
+            page.push_str("- **Required:** Yes\n");
         } else {
-            md.push_str("- **Required:** No\n");
+            page.push_str("- **Required:** No\n");
         }
         if create_only.contains(prop_name) {
-            md.push_str("- **Create-only:** Yes\n");
+            page.push_str("- **Create-only:** Yes\n");
         }
         if write_only.contains(prop_name) {
-            md.push_str("- **Write-only:** Yes\n");
+            page.push_str("- **Write-only:** Yes\n");
         }
         if let Some(default_val) = &prop.default_value
             && let Some(display) = json_default_to_markdown(default_val)
         {
-            md.push_str(&format!("- **Default:** `{}`\n", display));
+            page.push_str(&format!("- **Default:** `{display}`\n"));
         }
-        md.push('\n');
+        page.push_str("\n");
 
         if let Some(d) = &prop.description {
             let desc = collapse_whitespace(&d.replace('\n', " "));
-            md.push_str(&format!("{}\n\n", desc));
+            page.push_str(&format!("{desc}\n\n"));
         }
     }
 
     // Enum values section
-    if !enums.is_empty() {
+    if !markdown_enums.is_empty() {
         let aliases = known_enum_aliases();
-        md.push_str("## Enum Values\n\n");
-        let mut rendered_enums: HashSet<(String, String, Vec<String>)> = HashSet::new();
-        for (prop_name, enum_info) in &enums {
-            // Skip duplicate enum types with identical values
-            // (e.g., Ingress.IpProtocol and Egress.IpProtocol share the same type and values)
-            let enum_namespace = prop_name
-                .split_once('.')
-                .and_then(|(def_name, _)| struct_defs.get(def_name))
-                .map(|def_info| namespace_with_struct_path(&namespace, &def_info.struct_path))
-                .unwrap_or_else(|| namespace.clone());
-            let key = (
-                enum_namespace.clone(),
-                enum_info.type_name.clone(),
-                enum_info.values.clone(),
-            );
-            if !rendered_enums.insert(key) {
-                continue;
-            }
-            // For composite keys "DefName.FieldName", use just "FieldName" for display
-            let field_name = prop_name
-                .split('.')
-                .next_back()
-                .unwrap_or(prop_name.as_str());
-            let attr_name = field_name.to_snake_case();
-            let prop_aliases = aliases.get(field_name);
+        page.heading(Heading::plain(2, "Enum Values"))?;
+        for (key, heading_text) in &enum_heading_texts {
+            let enum_doc = markdown_enums
+                .get(key)
+                .expect("every enum heading must refer to a discovered enum");
+            let enum_info = &enum_doc.info;
+            let prop_aliases = aliases.get(enum_doc.prop_name.as_str());
             // Per #199 / D7: render the snake_case DSL spelling in the
             // "DSL Identifier" column and the "Shorthand formats" line.
             // The hand-curated `known_enum_aliases` table wins over the
@@ -2224,19 +2751,22 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str) -> Result<String> {
                 }
                 dsl_enum_value(value)
             };
-            md.push_str(&format!("### {} ({})\n\n", attr_name, enum_info.type_name));
-            md.push_str("| Value | DSL Identifier |\n");
-            md.push_str("|-------|----------------|\n");
+            page.target_heading(
+                MarkdownTarget::Enum(key.clone()),
+                Heading::plain(3, heading_text),
+            )?;
+            page.push_str("| Value | DSL Identifier |\n");
+            page.push_str("|-------|----------------|\n");
             for value in &enum_info.values {
                 let dsl_value = dsl_for(value);
-                let dsl_id = format!("{}.{}.{}", enum_namespace, enum_info.type_name, dsl_value);
-                md.push_str(&format!("| `{}` | `{}` |\n", value, dsl_id));
+                let dsl_id = format!("{}.{}.{}", key.namespace, enum_info.type_name, dsl_value);
+                page.push_str(&format!("| `{value}` | `{dsl_id}` |\n"));
             }
-            md.push('\n');
+            page.push_str("\n");
             let empty = String::new();
             let first_value = enum_info.values.first().unwrap_or(&empty);
             let first_dsl = dsl_for(first_value);
-            md.push_str(&format!(
+            page.push_str(&format!(
                 "Shorthand formats: `{}` or `{}.{}`\n\n",
                 first_dsl, enum_info.type_name, first_dsl,
             ));
@@ -2245,11 +2775,32 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str) -> Result<String> {
 
     // Struct Definitions section
     if !struct_defs.is_empty() {
-        md.push_str("## Struct Definitions\n\n");
-        for def_info in struct_defs.values() {
-            md.push_str(&format!("### {}\n\n", def_info.def_name));
-            md.push_str("| Field | Type | Required | Description |\n");
-            md.push_str("|-------|------|----------|-------------|\n");
+        page.heading(Heading::plain(2, "Struct Definitions"))?;
+        for (key, heading_text) in &struct_heading_texts {
+            let def_info = struct_defs
+                .get(key)
+                .expect("every struct heading must refer to a discovered struct");
+            page.target_heading(
+                MarkdownTarget::Struct(key.clone()),
+                Heading::plain(3, heading_text),
+            )?;
+            let used_by = def_info
+                .property_paths
+                .iter()
+                .map(|path| {
+                    markdown_section_heading_path(path, &struct_defs, Some(def_info)).join(".")
+                })
+                .collect::<BTreeSet<_>>();
+            if used_by.len() > 1 {
+                let used_by = used_by
+                    .into_iter()
+                    .map(|path| format!("`{path}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                page.push_str(&format!("Used by: {used_by}\n\n"));
+            }
+            page.push_str("| Field | Type | Required | Description |\n");
+            page.push_str("|-------|------|----------|-------------|\n");
             let required_set: HashSet<&str> =
                 def_info.required.iter().map(|s| s.as_str()).collect();
             let overrides = known_enum_overrides();
@@ -2257,35 +2808,28 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str) -> Result<String> {
                 if is_deprecated_property(field_prop) {
                     continue;
                 }
-                let field_path = extend_property_path(&def_info.property_path, field_name);
+                let field_path = extend_property_path(&def_info.first_property_path, field_name);
                 let snake_name = field_name.to_snake_case();
                 let is_read_only = is_property_read_only(schema, field_prop, &field_path);
                 let is_req = required_set.contains(field_name.as_str()) && !is_read_only;
-                let composite_key = format!("{}.{}", def_info.def_name, field_name);
-                let field_type_display: String = if enums.contains_key(&composite_key) {
-                    let enum_info = &enums[&composite_key];
-                    let enum_link = format!(
-                        "[Enum ({})](#{}-{})",
-                        enum_info.type_name,
-                        snake_name,
-                        enum_info.type_name.to_lowercase()
-                    );
-                    let is_array = field_prop
-                        .prop_type
-                        .as_ref()
-                        .and_then(|t| t.as_str())
-                        .map(|t| t == "array")
-                        .unwrap_or(false);
-                    if is_array {
-                        format!("List\\<{}\\>", enum_link)
-                    } else {
-                        enum_link
-                    }
-                } else if overrides.contains_key(field_name.as_str()) {
-                    "Enum".to_string()
-                } else {
-                    type_display_string(field_name, field_prop, schema, &enums)
+                let source_key = MarkdownStructFieldKey {
+                    struct_key: key.clone(),
+                    field_name: field_name.clone(),
                 };
+                let field_type_display =
+                    if let Some(enum_target) = enum_targets.struct_fields.get(&source_key) {
+                        markdown_type(
+                            field_name,
+                            field_prop,
+                            schema,
+                            Some(enum_target),
+                            &field_path,
+                        )
+                    } else if overrides.contains_key(field_name.as_str()) {
+                        MarkdownType::Plain("Enum".to_string())
+                    } else {
+                        markdown_type(field_name, field_prop, schema, None, &field_path)
+                    };
                 let mut desc = collapse_whitespace(
                     &field_prop
                         .description
@@ -2299,15 +2843,15 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str) -> Result<String> {
                     }
                     desc.push_str("Provider-populated; cannot be set.");
                 }
-                md.push_str(&format!(
-                    "| `{}` | {} | {} | {} |\n",
-                    snake_name,
-                    field_type_display,
+                page.push_str(&format!("| `{snake_name}` | "));
+                field_type_display.write_to(&mut page);
+                page.push_str(&format!(
+                    " | {} | {} |\n",
                     if is_req { "Yes" } else { "No" },
                     desc
                 ));
             }
-            md.push('\n');
+            page.push_str("\n");
         }
     }
 
@@ -2316,44 +2860,71 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str) -> Result<String> {
         .iter()
         .filter(|s| s.cfn_type == type_name)
         .collect();
-    let has_read_only = schema.properties.iter().any(|(name, property)| {
+    let has_read_only = documented_top_level_properties(schema).any(|(name, property)| {
         let property_path = [name.clone()];
         is_property_read_only(schema, property, &property_path)
     }) || !synth_for_type.is_empty();
     if has_read_only {
-        md.push_str("## Attribute Reference\n\n");
+        page.heading(Heading::plain(2, "Attribute Reference"))?;
 
-        for (prop_name, prop) in &schema.properties {
+        for (prop_name, prop) in documented_top_level_properties(schema) {
             let property_path = [prop_name.clone()];
             if !is_property_read_only(schema, prop, &property_path) {
                 continue;
             }
 
             let attr_name = prop_name.to_snake_case();
-            let type_display = type_display_string(prop_name, prop, schema, &enums);
+            let type_display = markdown_type(
+                prop_name,
+                prop,
+                schema,
+                enum_targets.properties.get(prop_name),
+                &property_path,
+            );
 
-            md.push_str(&format!("### `{}`\n\n", attr_name));
-            md.push_str(&format!("- **Type:** {}\n", type_display));
+            page.heading(Heading::code(3, &attr_name))?;
+            page.push_str("- **Type:** ");
+            type_display.write_to(&mut page);
+            page.push_str("\n");
 
             if let Some(d) = &prop.description {
                 let desc = collapse_whitespace(&d.replace('\n', " "));
-                md.push_str(&format!("\n{}\n\n", desc));
+                page.push_str(&format!("\n{desc}\n\n"));
             } else {
-                md.push('\n');
+                page.push_str("\n");
             }
         }
 
         for synth in synth_for_type {
-            md.push_str(&format!("### `{}`\n\n", synth.attr_name));
-            md.push_str("- **Type:** String\n\n");
-            md.push_str(&format!(
+            page.heading(Heading::code(3, synth.attr_name))?;
+            page.push_str("- **Type:** String\n\n");
+            page.push_str(&format!(
                 "{}\n\n",
                 collapse_whitespace(&synth.description.replace('\n', " "))
             ));
         }
     }
 
-    Ok(md)
+    page.finish()
+        .with_context(|| format!("generated invalid Markdown for awscc.{dsl_resource}"))
+}
+
+fn write_markdown_example(
+    page: &mut PageBuilder<MarkdownTarget>,
+    example: Option<&str>,
+) -> Result<()> {
+    let Some(example) = example else {
+        return Ok(());
+    };
+
+    page.heading(Heading::plain(2, "Example"))?;
+    page.push_str("```crn\n");
+    page.push_str(example);
+    if !example.ends_with('\n') {
+        page.push_str("\n");
+    }
+    page.push_str("```\n\n");
+    Ok(())
 }
 
 /// Collect struct definitions from properties for markdown documentation
@@ -2363,169 +2934,101 @@ fn collect_struct_defs(
     schema: &CfnSchema,
     struct_path: &[String],
     property_path: &[String],
-    struct_defs: &mut BTreeMap<String, StructDefInfo>,
+    struct_defs: &mut BTreeMap<MarkdownStructKey, StructDefInfo>,
 ) {
-    // Handle $ref. Only struct-shaped defs (inline properties, or a oneOf
-    // merged into one struct) contribute a struct def; the other shapes carry
-    // no nested structs to collect.
-    if let Some(ref_path) = &prop.ref_path
-        && !ref_path.contains("/Tag")
-        && let Some(def_name) = ref_def_name(ref_path)
-        && let Some(resolved) = resolve_ref_classified(schema, ref_path)
-    {
-        match resolved {
-            ResolvedDef::Struct {
-                properties,
-                required,
-            } => {
-                let def_path = extend_struct_path(struct_path, def_name);
-                if !struct_defs.contains_key(def_name) {
-                    struct_defs.insert(
-                        def_name.to_string(),
-                        StructDefInfo {
-                            def_name: def_name.to_string(),
-                            struct_path: def_path.clone(),
-                            property_path: property_path.to_vec(),
-                            properties: properties.clone(),
-                            required: required.to_vec(),
-                        },
-                    );
-                    // Recursively collect nested struct defs
-                    for (field_name, field_prop) in properties {
-                        if is_deprecated_property(field_prop) {
-                            continue;
-                        }
-                        let field_path = extend_property_path(property_path, field_name);
-                        collect_struct_defs(
-                            field_prop,
-                            field_name,
-                            schema,
-                            &def_path,
-                            &field_path,
-                            struct_defs,
-                        );
-                    }
-                }
-            }
-            ResolvedDef::OneOf { variants } => {
-                // Merge oneOf variant properties into a single struct
-                let mut merged_props = BTreeMap::new();
-                for variant in variants {
-                    if let Some(props) = &variant.properties {
-                        for (k, v) in props {
-                            merged_props.insert(k.clone(), v.clone());
-                        }
-                    }
-                }
-                let def_path = extend_struct_path(struct_path, def_name);
-                if !merged_props.is_empty() && !struct_defs.contains_key(def_name) {
-                    struct_defs.insert(
-                        def_name.to_string(),
-                        StructDefInfo {
-                            def_name: def_name.to_string(),
-                            struct_path: def_path.clone(),
-                            property_path: property_path.to_vec(),
-                            properties: merged_props.clone(),
-                            required: vec![], // oneOf variants are mutually exclusive
-                        },
-                    );
-                    // Recursively collect struct defs from merged properties
-                    for (field_name, field_prop) in &merged_props {
-                        if is_deprecated_property(field_prop) {
-                            continue;
-                        }
-                        let field_path = extend_property_path(property_path, field_name);
-                        collect_struct_defs(
-                            field_prop,
-                            field_name,
-                            schema,
-                            &def_path,
-                            &field_path,
-                            struct_defs,
-                        );
-                    }
-                }
-            }
-            ResolvedDef::Enum { .. }
-            | ResolvedDef::Array { .. }
-            | ResolvedDef::StringPattern { .. }
-            | ResolvedDef::Scalar { .. }
-            | ResolvedDef::Opaque => {
-                // No struct body to collect for these shapes.
-            }
+    if !prop.one_of.is_empty() {
+        if let Some(array_variant) = prop
+            .one_of
+            .iter()
+            .find(|variant| markdown_property_is_array(variant, schema))
+        {
+            collect_struct_defs(
+                array_variant,
+                prop_name,
+                schema,
+                struct_path,
+                property_path,
+                struct_defs,
+            );
         }
+        return;
     }
-    // Handle array items with $ref. Only struct-shaped items contribute.
-    if let Some(items) = &prop.items
-        && let Some(ref_path) = &items.ref_path
-        && !ref_path.contains("/Tag")
-        && let Some(def_name) = ref_def_name(ref_path)
-        && let Some(ResolvedDef::Struct {
+
+    if let Some(struct_def) = markdown_struct_def(prop_name, prop, schema, property_path) {
+        let MarkdownStructDef {
+            key,
+            name,
             properties,
             required,
-        }) = resolve_ref_classified(schema, ref_path)
-        && !struct_defs.contains_key(def_name)
-    {
-        let def_path = extend_struct_path(struct_path, def_name);
-        let item_path = extend_property_path(property_path, "*");
-        struct_defs.insert(
-            def_name.to_string(),
-            StructDefInfo {
-                def_name: def_name.to_string(),
-                struct_path: def_path.clone(),
-                property_path: item_path.clone(),
-                properties: properties.clone(),
-                required: required.to_vec(),
-            },
-        );
-        // Recursively collect nested struct defs
-        for (field_name, field_prop) in properties {
-            if is_deprecated_property(field_prop) {
-                continue;
+        } = struct_def;
+        let def_path = extend_struct_path(struct_path, &name);
+        let should_walk_children = match struct_defs.entry(key) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(StructDefInfo {
+                    def_name: name,
+                    struct_path: def_path.clone(),
+                    first_property_path: property_path.to_vec(),
+                    property_paths: BTreeSet::from([property_path.to_vec()]),
+                    properties: properties.clone(),
+                    required,
+                });
+                true
             }
-            let field_path = extend_property_path(&item_path, field_name);
-            collect_struct_defs(
-                field_prop,
-                field_name,
-                schema,
-                &def_path,
-                &field_path,
-                struct_defs,
-            );
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                entry
+                    .get_mut()
+                    .property_paths
+                    .insert(property_path.to_vec());
+                false
+            }
+        };
+        if should_walk_children {
+            for (field_name, field_prop) in &properties {
+                if is_deprecated_property(field_prop) {
+                    continue;
+                }
+                let field_path = extend_property_path(property_path, field_name);
+                collect_struct_defs(
+                    field_prop,
+                    field_name,
+                    schema,
+                    &def_path,
+                    &field_path,
+                    struct_defs,
+                );
+            }
         }
+        return;
     }
-    // Handle inline object with properties
-    if let Some(type_val) = &prop.prop_type
-        && type_val.as_str() == Some("object")
-        && let Some(props) = &prop.properties
-        && !props.is_empty()
-        && !struct_defs.contains_key(prop_name)
-    {
-        let def_path = extend_struct_path(struct_path, prop_name);
-        struct_defs.insert(
-            prop_name.to_string(),
-            StructDefInfo {
-                def_name: prop_name.to_string(),
-                struct_path: def_path.clone(),
-                property_path: property_path.to_vec(),
-                properties: props.clone(),
-                required: prop.required.clone(),
-            },
+
+    let Some(items) = markdown_array_items(prop, schema) else {
+        return;
+    };
+    let array_def_name = prop.ref_path.as_deref().and_then(|ref_path| {
+        matches!(
+            resolve_ref_classified(schema, ref_path),
+            Some(ResolvedDef::Array { .. })
+        )
+        .then(|| ref_def_name(ref_path))
+        .flatten()
+    });
+    let should_visit = array_def_name.is_none_or(|name| {
+        IN_PROGRESS_DEFS.with(|defs| defs.borrow_mut().insert(name.to_string()))
+    });
+    if should_visit {
+        let item_path = extend_property_path(property_path, "*");
+        collect_struct_defs(
+            items,
+            prop_name,
+            schema,
+            struct_path,
+            &item_path,
+            struct_defs,
         );
-        // Recursively collect nested struct defs
-        for (field_name, field_prop) in props {
-            if is_deprecated_property(field_prop) {
-                continue;
-            }
-            let field_path = extend_property_path(property_path, field_name);
-            collect_struct_defs(
-                field_prop,
-                field_name,
-                schema,
-                &def_path,
-                &field_path,
-                struct_defs,
-            );
+        if let Some(name) = array_def_name {
+            IN_PROGRESS_DEFS.with(|defs| {
+                defs.borrow_mut().remove(name);
+            });
         }
     }
 }
@@ -8957,9 +9460,8 @@ mod tests {
             any_of: vec![],
             handlers: BTreeMap::new(),
         };
-        let enums = BTreeMap::new();
         assert_eq!(
-            type_display_string("ResourceTags", &prop, &schema, &enums),
+            type_display_string("ResourceTags", &prop, &schema),
             "`List<Map<String, String>>`"
         );
     }
@@ -9025,9 +9527,8 @@ mod tests {
             any_of: vec![],
             handlers: BTreeMap::new(),
         };
-        let enums = BTreeMap::new();
         assert_eq!(
-            type_display_string("Items", &prop, &schema, &enums),
+            type_display_string("Items", &prop, &schema),
             "`List<String>`"
         );
     }
@@ -9065,8 +9566,7 @@ mod tests {
             any_of: vec![],
             handlers: BTreeMap::new(),
         };
-        let enums = BTreeMap::new();
-        let display = type_display_string("Limit", &prop, &schema, &enums);
+        let display = type_display_string("Limit", &prop, &schema);
         assert!(
             display.starts_with("Int"),
             "scalar integer $ref must display as Int, got: {display}"
@@ -9112,8 +9612,7 @@ mod tests {
             any_of: vec![],
             handlers: BTreeMap::new(),
         };
-        let enums = BTreeMap::new();
-        let display = type_display_string("Weights", &prop, &schema, &enums);
+        let display = type_display_string("Weights", &prop, &schema);
         assert_eq!(display, "`List<Int>`", "got: {display}");
     }
 
@@ -9157,9 +9656,8 @@ mod tests {
             any_of: vec![],
             handlers: BTreeMap::new(),
         };
-        let enums = BTreeMap::new();
         assert_eq!(
-            type_display_string("SomeList", &prop, &schema, &enums),
+            type_display_string("SomeList", &prop, &schema),
             "`List<String>`"
         );
     }
@@ -9229,8 +9727,6 @@ mod tests {
             any_of: vec![],
             handlers: BTreeMap::new(),
         };
-        let enums = BTreeMap::new();
-
         // Case 1: array with no items
         let prop = CfnProperty {
             prop_type: Some(TypeValue::Single("array".to_string())),
@@ -9254,7 +9750,7 @@ mod tests {
             format: None,
             ..Default::default()
         };
-        let result = type_display_string("Prop1", &prop, &schema, &enums);
+        let result = type_display_string("Prop1", &prop, &schema);
         assert_ne!(
             result, "List",
             "array with no items should not return bare 'List'"
@@ -9304,7 +9800,7 @@ mod tests {
             format: None,
             ..Default::default()
         };
-        let result = type_display_string("Prop2", &prop, &schema, &enums);
+        let result = type_display_string("Prop2", &prop, &schema);
         assert_ne!(
             result, "List",
             "array with Tag ref should not return bare 'List'"
@@ -9354,7 +9850,7 @@ mod tests {
             format: None,
             ..Default::default()
         };
-        let result = type_display_string("Prop3", &prop, &schema, &enums);
+        let result = type_display_string("Prop3", &prop, &schema);
         assert_ne!(
             result, "List",
             "array with unresolvable ref should not return bare 'List'"
@@ -9404,7 +9900,7 @@ mod tests {
             format: None,
             ..Default::default()
         };
-        let result = type_display_string("Prop4", &prop, &schema, &enums);
+        let result = type_display_string("Prop4", &prop, &schema);
         assert_ne!(
             result, "List",
             "array with typeless items should not return bare 'List'"
@@ -9743,8 +10239,7 @@ mod tests {
             any_of: vec![],
             handlers: BTreeMap::new(),
         };
-        let enums = BTreeMap::new();
-        let result = type_display_string("SecondaryPrivateIpAddressCount", &prop, &schema, &enums);
+        let result = type_display_string("SecondaryPrivateIpAddressCount", &prop, &schema);
         assert_eq!(result, "Int(1..)");
     }
 
@@ -9792,8 +10287,7 @@ mod tests {
             any_of: vec![],
             handlers: BTreeMap::new(),
         };
-        let enums = BTreeMap::new();
-        let result = type_display_string("Priority", &prop, &schema, &enums);
+        let result = type_display_string("Priority", &prop, &schema);
         assert_eq!(result, "IntEnum([1, 3, 5])");
     }
 
@@ -9846,9 +10340,8 @@ mod tests {
             any_of: vec![],
             handlers: BTreeMap::new(),
         };
-        let enums = BTreeMap::new();
         // Resource-scoped override takes precedence over schema enum values
-        let result = type_display_string("RetentionInDays", &prop, &schema, &enums);
+        let result = type_display_string("RetentionInDays", &prop, &schema);
         let expected = retention_values
             .iter()
             .map(i64::to_string)
@@ -9896,8 +10389,7 @@ mod tests {
             any_of: vec![],
             handlers: BTreeMap::new(),
         };
-        let enums = BTreeMap::new();
-        let result = type_display_string("Ipv4NetmaskLength", &prop, &schema, &enums);
+        let result = type_display_string("Ipv4NetmaskLength", &prop, &schema);
         assert_eq!(result, "Int(0..=32)");
     }
 
@@ -12193,11 +12685,669 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join("\n")
         );
+        assert!(
+            md.contains("### security_group_egress.ip_protocol (IpProtocol)"),
+            "Egress enum heading should use the writable DSL field path:\n{md}"
+        );
+        assert!(
+            md.contains("### security_group_ingress.ip_protocol (IpProtocol)"),
+            "Ingress enum heading should use the writable DSL field path:\n{md}"
+        );
         assert_eq!(
             md.matches("### ip_protocol (IpProtocol)").count(),
-            2,
-            "The enum kind remains plain while the namespace carries the struct path.",
+            0,
+            "Structurally distinct enum identities must not share an ambiguous heading.",
         );
+        carina_docgen::check_page(&md).expect("generated Markdown should pass shared checks");
+    }
+
+    #[test]
+    fn test_markdown_struct_link_uses_allocated_slug_after_attribute_collision() {
+        for (type_name, expected) in [
+            (
+                "AWS::EC2::TransitGatewayAttachment",
+                "- **Type:** [Struct(Options)](#options-1)",
+            ),
+            (
+                "AWS::ElasticLoadBalancingV2::TargetGroup",
+                "- **Type:** [Struct(Matcher)](#matcher-1)",
+            ),
+        ] {
+            let schema = cfn_schema_for_codegen_tests(type_name);
+            let md = generate_markdown(&schema, type_name).unwrap();
+
+            assert!(md.contains(expected), "missing {expected}:\n{md}");
+            carina_docgen::check_page(&md).expect("generated Markdown should pass shared checks");
+        }
+    }
+
+    #[test]
+    fn test_markdown_definition_sections_are_sorted_by_visible_heading() {
+        let schema = cfn_schema_for_codegen_tests("AWS::CloudFront::Distribution");
+        let md = generate_markdown(&schema, "AWS::CloudFront::Distribution").unwrap();
+
+        let enum_section = md
+            .split_once("## Enum Values\n\n")
+            .expect("enum values section")
+            .1
+            .split_once("\n## Struct Definitions")
+            .expect("struct definitions section")
+            .0;
+        let struct_rest = md
+            .split_once("## Struct Definitions\n\n")
+            .expect("struct definitions section")
+            .1;
+        let struct_section = struct_rest
+            .split_once("\n## Attribute Reference")
+            .map_or(struct_rest, |(section, _)| section);
+
+        for (name, section) in [("enum", enum_section), ("struct", struct_section)] {
+            let headings: Vec<&str> = section
+                .lines()
+                .filter(|line| line.starts_with("### "))
+                .collect();
+            let mut sorted = headings.clone();
+            sorted.sort_unstable();
+            assert_eq!(headings, sorted, "{name} headings were not sorted:\n{md}");
+        }
+    }
+
+    #[test]
+    fn test_markdown_definition_heading_uses_name_when_reached_by_multiple_paths() {
+        let struct_definition = |field_name: &str| {
+            def(
+                Some("object"),
+                Some(BTreeMap::from([(
+                    field_name.to_string(),
+                    CfnProperty {
+                        prop_type: Some(TypeValue::Single("string".to_string())),
+                        ..Default::default()
+                    },
+                )])),
+                vec![],
+                None,
+                None,
+                None,
+            )
+        };
+        let struct_ref = |definition: &str| CfnProperty {
+            ref_path: Some(format!("#/definitions/{definition}")),
+            ..Default::default()
+        };
+
+        let mut schema = empty_schema("AWS::Test::SharedDefinition");
+        schema.properties = BTreeMap::from([
+            ("Left".to_string(), struct_ref("SharedOptions")),
+            ("Only".to_string(), struct_ref("UniqueOptions")),
+            ("Right".to_string(), struct_ref("SharedOptions")),
+        ]);
+        schema.definitions = Some(BTreeMap::from([
+            (
+                "SharedOptions".to_string(),
+                struct_definition("SharedField"),
+            ),
+            (
+                "UniqueOptions".to_string(),
+                struct_definition("UniqueField"),
+            ),
+        ]));
+
+        let md = generate_markdown(&schema, "AWS::Test::SharedDefinition").unwrap();
+
+        assert_eq!(md.matches("### shared_options\n\n").count(), 1, "{md}");
+        assert_eq!(
+            md.matches("[Struct(SharedOptions)](#shared_options)")
+                .count(),
+            2,
+            "{md}"
+        );
+        assert_eq!(md.matches("### only\n\n").count(), 1, "{md}");
+        assert_eq!(
+            md.matches("[Struct(UniqueOptions)](#only-1)").count(),
+            1,
+            "{md}"
+        );
+        assert!(!md.contains("### unique_options\n\n"), "{md}");
+        carina_docgen::check_page(&md).expect("generated Markdown should pass shared checks");
+    }
+
+    #[test]
+    fn test_markdown_shared_definition_anchors_nested_sections_and_lists_uses() {
+        let struct_ref = |definition: &str| CfnProperty {
+            ref_path: Some(format!("#/definitions/{definition}")),
+            ..Default::default()
+        };
+        let mut schema = empty_schema("AWS::Test::SharedNestedDefinition");
+        schema.properties = BTreeMap::from([
+            ("Left".to_string(), struct_ref("SharedOptions")),
+            ("Right".to_string(), struct_ref("SharedOptions")),
+        ]);
+        schema.definitions = Some(BTreeMap::from([(
+            "SharedOptions".to_string(),
+            def(
+                Some("object"),
+                Some(BTreeMap::from([
+                    (
+                        "Details".to_string(),
+                        CfnProperty {
+                            prop_type: Some(TypeValue::Single("object".to_string())),
+                            properties: Some(BTreeMap::from([(
+                                "Label".to_string(),
+                                CfnProperty {
+                                    prop_type: Some(TypeValue::Single("string".to_string())),
+                                    ..Default::default()
+                                },
+                            )])),
+                            ..Default::default()
+                        },
+                    ),
+                    (
+                        "Mode".to_string(),
+                        CfnProperty {
+                            enum_values: Some(vec![
+                                EnumValue::Str("fast".to_string()),
+                                EnumValue::Str("slow".to_string()),
+                            ]),
+                            ..Default::default()
+                        },
+                    ),
+                ])),
+                vec![],
+                None,
+                None,
+                None,
+            ),
+        )]));
+
+        let md = generate_markdown(&schema, "AWS::Test::SharedNestedDefinition").unwrap();
+
+        assert!(
+            md.contains("### shared_options\n\nUsed by: `left`, `right`\n\n"),
+            "{md}"
+        );
+        assert!(
+            md.contains("| `details` | [Struct(Details)](#shared_optionsdetails) |"),
+            "{md}"
+        );
+        assert!(
+            md.contains("| `mode` | [Enum (Mode)](#shared_optionsmode-mode) |"),
+            "{md}"
+        );
+        assert_eq!(
+            md.matches("### shared_options.details\n\n").count(),
+            1,
+            "{md}"
+        );
+        assert_eq!(
+            md.matches("### shared_options.mode (Mode)\n\n").count(),
+            1,
+            "{md}"
+        );
+        assert!(!md.contains("### left.details\n\n"), "{md}");
+        assert!(!md.contains("### left.mode (Mode)\n\n"), "{md}");
+        carina_docgen::check_page(&md).expect("generated Markdown should pass shared checks");
+    }
+
+    #[test]
+    fn test_markdown_nested_shared_definition_omits_single_resolved_use() {
+        let struct_ref = |definition: &str| CfnProperty {
+            ref_path: Some(format!("#/definitions/{definition}")),
+            ..Default::default()
+        };
+        let mut schema = empty_schema("AWS::Test::NestedSharedDefinition");
+        schema.properties = BTreeMap::from([
+            ("Left".to_string(), struct_ref("Outer")),
+            ("Right".to_string(), struct_ref("Outer")),
+        ]);
+        schema.definitions = Some(BTreeMap::from([
+            (
+                "Inner".to_string(),
+                def(
+                    Some("object"),
+                    Some(BTreeMap::from([(
+                        "Value".to_string(),
+                        CfnProperty {
+                            prop_type: Some(TypeValue::Single("string".to_string())),
+                            ..Default::default()
+                        },
+                    )])),
+                    vec![],
+                    None,
+                    None,
+                    None,
+                ),
+            ),
+            (
+                "Outer".to_string(),
+                def(
+                    Some("object"),
+                    Some(BTreeMap::from([(
+                        "InnerField".to_string(),
+                        struct_ref("Inner"),
+                    )])),
+                    vec![],
+                    None,
+                    None,
+                    None,
+                ),
+            ),
+        ]));
+
+        let md = generate_markdown(&schema, "AWS::Test::NestedSharedDefinition").unwrap();
+
+        assert!(md.contains("### outer.inner_field\n\n| Field |"), "{md}");
+        assert!(!md.contains("Used by: `outer.inner_field`"), "{md}");
+        assert!(!md.contains("Used by: `left.inner_field`"), "{md}");
+        assert!(!md.contains("Used by: `right.inner_field`"), "{md}");
+        carina_docgen::check_page(&md).expect("generated Markdown should pass shared checks");
+    }
+
+    #[test]
+    fn test_markdown_used_by_paths_follow_all_shared_ancestor_paths() {
+        let schema = cfn_schema_for_codegen_tests("AWS::WAFv2::WebACL");
+        let md = generate_markdown(&schema, "AWS::WAFv2::WebACL").unwrap();
+
+        assert!(
+            md.contains(concat!(
+                "Used by: `allow_action.custom_request_handling`, ",
+                "`rule_action.captcha.custom_request_handling`, ",
+                "`rule_action.challenge.custom_request_handling`, ",
+                "`rule_action.count.custom_request_handling`"
+            )),
+            "{md}"
+        );
+        assert!(
+            md.contains(concat!(
+                "Used by: `block_action.custom_response.response_headers`, ",
+                "`custom_request_handling.insert_headers`"
+            )),
+            "{md}"
+        );
+        assert!(
+            md.contains("Used by: `statement.byte_match_statement.text_transformations`"),
+            "{md}"
+        );
+        carina_docgen::check_page(&md).expect("generated Markdown should pass shared checks");
+    }
+
+    #[test]
+    fn test_markdown_example_is_preprocessed_and_validated_inside_codegen() {
+        let source = concat!(
+            "\n",
+            "# leading comment\n",
+            "provider awscc {\n",
+            "  region = \"us-east-1\"\n",
+            "}\n",
+            "\n",
+            "resource transit_gateway_attachment \"fixture\" {}\n",
+            "# trailing comment\n",
+        );
+        let example = preprocess_markdown_example(source);
+        assert_eq!(
+            example,
+            "resource transit_gateway_attachment \"fixture\" {}\n"
+        );
+
+        let schema = cfn_schema_for_codegen_tests("AWS::EC2::TransitGatewayAttachment");
+        let md = generate_markdown_with_example(
+            &schema,
+            "AWS::EC2::TransitGatewayAttachment",
+            Some(&example),
+        )
+        .unwrap();
+
+        let example_position = md.find("## Example\n\n```crn\n").expect("example heading");
+        let arguments_position = md.find("## Argument Reference").expect("argument heading");
+        assert!(example_position < arguments_position, "{md}");
+        assert!(md.contains(&format!("```crn\n{example}```\n\n")), "{md}");
+        carina_docgen::check_page(&md).expect("the page checked by codegen should be valid");
+    }
+
+    #[test]
+    fn test_load_markdown_example_rejects_non_directory() {
+        let not_directory = tempfile::NamedTempFile::new().unwrap();
+
+        let error = load_markdown_example(
+            Some(not_directory.path()),
+            "AWS::EC2::TransitGatewayAttachment",
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "--examples-dir must be an existing directory: {}",
+                not_directory.path().display()
+            )
+        );
+    }
+
+    #[test]
+    fn test_markdown_collects_struct_below_ref_to_array_definition() {
+        let schema = cfn_schema_for_codegen_tests("AWS::WAFv2::WebACL");
+
+        let md = generate_markdown(&schema, "AWS::WAFv2::WebACL")
+            .expect("array-definition item structs should have target headings");
+
+        assert!(
+            md.contains("### application_config.attributes\n\n| Field |"),
+            "{md}"
+        );
+        carina_docgen::check_page(&md).expect("generated Markdown should pass shared checks");
+    }
+
+    #[test]
+    fn test_markdown_distinguishes_same_named_inline_structs_by_field_path() {
+        fn parent(option_field: &str, option_type: &str, mode_values: &[&str]) -> CfnProperty {
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
+                properties: Some(BTreeMap::from([(
+                    "Options".to_string(),
+                    CfnProperty {
+                        prop_type: Some(TypeValue::Single("object".to_string())),
+                        properties: Some(BTreeMap::from([
+                            (
+                                "Mode".to_string(),
+                                CfnProperty {
+                                    enum_values: Some(
+                                        mode_values
+                                            .iter()
+                                            .map(|value| EnumValue::Str((*value).to_string()))
+                                            .collect(),
+                                    ),
+                                    ..Default::default()
+                                },
+                            ),
+                            (
+                                option_field.to_string(),
+                                CfnProperty {
+                                    prop_type: Some(TypeValue::Single(option_type.to_string())),
+                                    ..Default::default()
+                                },
+                            ),
+                        ])),
+                        ..Default::default()
+                    },
+                )])),
+                ..Default::default()
+            }
+        }
+
+        let mut schema = empty_schema("AWS::Test::InlineOptions");
+        schema.properties = BTreeMap::from([
+            ("Left".to_string(), parent("Alpha", "string", &["a", "b"])),
+            (
+                "Right".to_string(),
+                parent("Retries", "integer", &["x", "y"]),
+            ),
+        ]);
+
+        let md = generate_markdown(&schema, "AWS::Test::InlineOptions").unwrap();
+
+        assert!(md.contains("[Struct(Options)](#leftoptions)"), "{md}");
+        assert!(md.contains("[Struct(Options)](#rightoptions)"), "{md}");
+        assert_eq!(md.matches("### left.options\n\n").count(), 1, "{md}");
+        assert_eq!(md.matches("### right.options\n\n").count(), 1, "{md}");
+        assert!(md.contains("| `alpha` | String |"), "{md}");
+        assert!(md.contains("| `retries` | Int |"), "{md}");
+        assert_eq!(
+            md.matches("### left.options.mode (Mode)\n\n").count(),
+            1,
+            "{md}"
+        );
+        assert_eq!(
+            md.matches("### right.options.mode (Mode)\n\n").count(),
+            1,
+            "{md}"
+        );
+        assert!(
+            md.contains("| `mode` | [Enum (Mode)](#leftoptionsmode-mode) |"),
+            "{md}"
+        );
+        assert!(
+            md.contains("| `mode` | [Enum (Mode)](#rightoptionsmode-mode) |"),
+            "{md}"
+        );
+        assert!(
+            md.contains("aws.test.InlineOptions.Left.Options.Mode.a"),
+            "{md}"
+        );
+        assert!(
+            md.contains("aws.test.InlineOptions.Right.Options.Mode.x"),
+            "{md}"
+        );
+        carina_docgen::check_page(&md).expect("generated Markdown should pass shared checks");
+    }
+
+    #[test]
+    fn test_markdown_collects_one_of_struct_referenced_by_array_item() {
+        let mut schema = empty_schema("AWS::Test::OneOfArray");
+        schema.properties.insert(
+            "Entries".to_string(),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("array".to_string())),
+                items: Some(Box::new(CfnProperty {
+                    ref_path: Some("#/definitions/Choice".to_string()),
+                    ..Default::default()
+                })),
+                ..Default::default()
+            },
+        );
+        schema.definitions = Some(BTreeMap::from([(
+            "Choice".to_string(),
+            CfnDefinition {
+                one_of: vec![
+                    CfnProperty {
+                        properties: Some(BTreeMap::from([(
+                            "Alpha".to_string(),
+                            CfnProperty {
+                                prop_type: Some(TypeValue::Single("string".to_string())),
+                                ..Default::default()
+                            },
+                        )])),
+                        ..Default::default()
+                    },
+                    CfnProperty {
+                        properties: Some(BTreeMap::from([(
+                            "Retries".to_string(),
+                            CfnProperty {
+                                prop_type: Some(TypeValue::Single("integer".to_string())),
+                                ..Default::default()
+                            },
+                        )])),
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            },
+        )]));
+
+        let md = generate_markdown(&schema, "AWS::Test::OneOfArray")
+            .expect("a linked OneOf array item must have a registered target heading");
+
+        assert!(
+            md.contains("- **Type:** List\\<[Struct(Choice)](#entries-1)\\>"),
+            "{md}"
+        );
+        assert!(md.contains("### entries\n\n| Field |"), "{md}");
+        assert!(md.contains("| `alpha` | String |"), "{md}");
+        assert!(md.contains("| `retries` | Int |"), "{md}");
+        carina_docgen::check_page(&md).expect("generated Markdown should pass shared checks");
+    }
+
+    #[test]
+    fn test_markdown_direct_non_array_one_of_keeps_string_precedence() {
+        let mut schema = empty_schema("AWS::Test::DirectOneOf");
+        schema.properties.insert(
+            "Choice".to_string(),
+            CfnProperty {
+                one_of: vec![CfnProperty {
+                    properties: Some(BTreeMap::from([(
+                        "Alpha".to_string(),
+                        CfnProperty {
+                            prop_type: Some(TypeValue::Single("string".to_string())),
+                            ..Default::default()
+                        },
+                    )])),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+        );
+
+        let md = generate_markdown(&schema, "AWS::Test::DirectOneOf").unwrap();
+
+        assert!(md.contains("### `choice`\n\n- **Type:** String\n"), "{md}");
+        assert!(!md.contains("## Struct Definitions"), "{md}");
+    }
+
+    #[test]
+    fn test_markdown_plain_values_never_contain_fragment_links() {
+        let struct_definition = CfnDefinition {
+            def_type: Some("object".to_string()),
+            properties: Some(BTreeMap::from([(
+                "Value".to_string(),
+                CfnProperty {
+                    prop_type: Some(TypeValue::Single("string".to_string())),
+                    ..Default::default()
+                },
+            )])),
+            ..Default::default()
+        };
+        let mut schema = empty_schema("AWS::Test::PlainTypes");
+        schema.definitions = Some(BTreeMap::from([("Options".to_string(), struct_definition)]));
+        let enum_prop = CfnProperty {
+            prop_type: Some(TypeValue::Single("string".to_string())),
+            ..Default::default()
+        };
+        let struct_ref = CfnProperty {
+            ref_path: Some("#/definitions/Options".to_string()),
+            ..Default::default()
+        };
+        let struct_list = CfnProperty {
+            prop_type: Some(TypeValue::Single("array".to_string())),
+            items: Some(Box::new(struct_ref.clone())),
+            ..Default::default()
+        };
+        let inline_struct = CfnProperty {
+            prop_type: Some(TypeValue::Single("object".to_string())),
+            properties: Some(BTreeMap::from([(
+                "Value".to_string(),
+                CfnProperty {
+                    prop_type: Some(TypeValue::Single("string".to_string())),
+                    ..Default::default()
+                },
+            )])),
+            ..Default::default()
+        };
+        let plain_values = [
+            MarkdownType::Plain(type_display_string("Mode", &enum_prop, &schema)),
+            MarkdownType::Plain(type_display_string("Options", &struct_ref, &schema)),
+            MarkdownType::Plain(type_display_string("OptionsList", &struct_list, &schema)),
+            MarkdownType::Plain(type_display_string(
+                "InlineOptions",
+                &inline_struct,
+                &schema,
+            )),
+        ];
+
+        let offenders: Vec<&str> = plain_values
+            .iter()
+            .filter_map(|value| match value {
+                MarkdownType::Plain(value) if value.contains("](#") => Some(value.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            offenders.is_empty(),
+            "MarkdownType::Plain contained fragment links: {offenders:?}"
+        );
+    }
+
+    #[test]
+    fn test_truly_identical_nested_enum_identity_is_emitted_once() {
+        let protocol = CfnDefinition {
+            def_type: Some("string".to_string()),
+            properties: None,
+            required: vec![],
+            enum_values: Some(vec![
+                EnumValue::Str("tcp".to_string()),
+                EnumValue::Str("udp".to_string()),
+            ]),
+            items: None,
+            one_of: vec![],
+            pattern: None,
+            min_length: None,
+            max_length: None,
+            minimum: None,
+            maximum: None,
+            format: None,
+        };
+        let shared_protocol = || CfnProperty {
+            ref_path: Some("#/definitions/Protocol".to_string()),
+            ..Default::default()
+        };
+        let rule = CfnDefinition {
+            def_type: Some("object".to_string()),
+            properties: Some(BTreeMap::from([
+                ("DestinationProtocol".to_string(), shared_protocol()),
+                ("SourceProtocol".to_string(), shared_protocol()),
+            ])),
+            required: vec![],
+            enum_values: None,
+            items: None,
+            one_of: vec![],
+            pattern: None,
+            min_length: None,
+            max_length: None,
+            minimum: None,
+            maximum: None,
+            format: None,
+        };
+        let schema = CfnSchema {
+            type_name: "AWS::Test::Resource".to_string(),
+            description: None,
+            properties: BTreeMap::from([(
+                "Rules".to_string(),
+                CfnProperty {
+                    ref_path: Some("#/definitions/Rule".to_string()),
+                    ..Default::default()
+                },
+            )]),
+            required: vec![],
+            read_only_properties: vec![],
+            create_only_properties: vec![],
+            write_only_properties: vec![],
+            primary_identifier: None,
+            definitions: Some(BTreeMap::from([
+                ("Protocol".to_string(), protocol),
+                ("Rule".to_string(), rule),
+            ])),
+            tagging: None,
+            one_of: vec![],
+            any_of: vec![],
+            handlers: BTreeMap::new(),
+        };
+
+        let md = generate_markdown(&schema, "AWS::Test::Resource").unwrap();
+
+        assert_eq!(
+            md.matches("### rules.destination_protocol (Protocol)")
+                .count(),
+            1,
+            "one runtime enum identity should have one section:\n{md}"
+        );
+        assert_eq!(
+            md.matches("(#rulesdestination_protocol-protocol)").count(),
+            2,
+            "both struct fields should link to that one section:\n{md}"
+        );
+        assert_eq!(
+            md.matches("aws.test.Resource.Rule.Protocol.tcp").count(),
+            1,
+            "the shared enum table should be emitted once:\n{md}"
+        );
+        carina_docgen::check_page(&md).expect("generated Markdown should pass shared checks");
     }
 
     #[test]
@@ -12730,10 +13880,9 @@ mod tests {
             any_of: vec![],
             handlers: BTreeMap::new(),
         };
-        let enums = BTreeMap::new();
         // Tags property should display Map<String, String>
         assert_eq!(
-            type_display_string("Tags", &prop, &schema, &enums),
+            type_display_string("Tags", &prop, &schema),
             "`Map<String, String>`"
         );
     }
@@ -12759,10 +13908,9 @@ mod tests {
             any_of: vec![],
             handlers: BTreeMap::new(),
         };
-        let enums = BTreeMap::new();
         // Generic object should display Map<String, String>
         assert_eq!(
-            type_display_string("DataProtectionPolicy", &prop, &schema, &enums),
+            type_display_string("DataProtectionPolicy", &prop, &schema),
             "`Map<String, String>`"
         );
     }
@@ -12859,6 +14007,35 @@ mod tests {
             md.contains("The resource ID."),
             "Should show description for read-only attribute: {md}"
         );
+    }
+
+    #[test]
+    fn test_markdown_skips_deprecated_read_only_top_level_object() {
+        let mut schema = empty_schema("AWS::Test::DeprecatedReadOnly");
+        schema.properties.insert(
+            "Info".to_string(),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
+                description: Some("(Deprecated.) Legacy provider output.".to_string()),
+                properties: Some(BTreeMap::from([(
+                    "Value".to_string(),
+                    CfnProperty {
+                        prop_type: Some(TypeValue::Single("string".to_string())),
+                        ..Default::default()
+                    },
+                )])),
+                ..Default::default()
+            },
+        );
+        schema.read_only_properties = vec!["/properties/Info".to_string()];
+
+        let md = generate_markdown(&schema, "AWS::Test::DeprecatedReadOnly")
+            .expect("deprecated read-only properties must not create unresolved links");
+
+        assert!(!md.contains("### `info`"), "{md}");
+        assert!(!md.contains("Struct(Info)"), "{md}");
+        assert!(!md.contains("## Attribute Reference"), "{md}");
+        carina_docgen::check_page(&md).expect("generated Markdown should pass shared checks");
     }
 
     #[test]
@@ -14032,7 +15209,7 @@ mod tests {
             any_of: vec![],
             handlers: BTreeMap::new(),
         };
-        let display = type_display_string("SomeValue", &prop, &schema, &BTreeMap::new());
+        let display = type_display_string("SomeValue", &prop, &schema);
         assert!(
             display.contains("int64"),
             "int64 format should appear in display: {display}"
@@ -14099,7 +15276,7 @@ mod tests {
             any_of: vec![],
             handlers: BTreeMap::new(),
         };
-        let display = type_display_string("Url", &prop, &schema, &BTreeMap::new());
+        let display = type_display_string("Url", &prop, &schema);
         assert!(
             display.contains("uri"),
             "uri format should appear in display: {display}"
@@ -14173,8 +15350,7 @@ mod tests {
             any_of: vec![],
             handlers: BTreeMap::new(),
         };
-        let display =
-            type_display_string("ObjectSizeGreaterThan", &prop, &schema, &BTreeMap::new());
+        let display = type_display_string("ObjectSizeGreaterThan", &prop, &schema);
         assert!(
             display.contains("NumericString"),
             "Numeric string should show NumericString in display: {display}"
@@ -14205,7 +15381,7 @@ mod tests {
             any_of: vec![],
             handlers: BTreeMap::new(),
         };
-        let display = type_display_string("Value", &prop, &schema, &BTreeMap::new());
+        let display = type_display_string("Value", &prop, &schema);
         assert!(
             display.contains("double"),
             "double format should appear in display: {display}"
