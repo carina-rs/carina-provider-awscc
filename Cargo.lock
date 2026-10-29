@@ -450,9 +450,9 @@ dependencies = [
 
 [[package]]
 name = "aws-smithy-async"
-version = "1.2.14"
+version = "1.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ffcaf626bdda484571968400c326a244598634dc75fd451325a54ad1a59acfc"
+checksum = "de681a9df7ff79823b759ee17061076ec049cd61a8fa28ece4293d89c9f6964e"
 dependencies = [
  "futures-util",
  "pin-project-lite",
@@ -595,9 +595,9 @@ dependencies = [
 
 [[package]]
 name = "aws-smithy-runtime-api"
-version = "1.12.3"
+version = "1.19.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9db177daa6ba8afb9ee1aefcf548c907abcf52065e394ee11a92780057fe0e8c"
+checksum = "06788004dea79018413f381891da6dcca23196acd79c4d51b767fbdacc76eae4"
 dependencies = [
  "aws-smithy-async",
  "aws-smithy-runtime-api-macros",
@@ -613,9 +613,9 @@ dependencies = [
 
 [[package]]
 name = "aws-smithy-runtime-api-macros"
-version = "1.0.0"
+version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8d7396fd9500589e62e460e987ecb671bad374934e55ec3b5f498cc7a8a8a7b7"
+checksum = "ce237f890a2283c9b328955c3b0918d2d5bf66a1cb6ceccd36a0047246fbc6e6"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -635,9 +635,9 @@ dependencies = [
 
 [[package]]
 name = "aws-smithy-types"
-version = "1.5.0"
+version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32b42fcf341259d85ca10fac9a2f6448a8ec691c6955a18e45bc3b71a85fab85"
+checksum = "55752025c39c0e094962fd73f1c57014b191f678612e517f219468e575af9822"
 dependencies = [
  "base64-simd",
  "bytes",
@@ -650,7 +650,6 @@ dependencies = [
  "itoa",
  "num-integer",
  "pin-project-lite",
- "pin-utils",
  "ryu",
  "serde",
  "time",
@@ -937,19 +936,19 @@ dependencies = [
 [[package]]
 name = "carina-aws-types"
 version = "0.4.0"
-source = "git+https://github.com/carina-rs/carina-provider-aws?rev=e7f582f7#e7f582f72e72b96e074f3539e5f3a20970898bdb"
+source = "git+https://github.com/carina-rs/carina-provider-aws?rev=200e614#200e6146669a1ada95a000a78473340ec0a86f6c"
 dependencies = [
- "aws-runtime",
  "aws-smithy-runtime-api",
  "aws-smithy-types",
  "carina-core",
+ "carina-plugin-sdk",
  "heck",
 ]
 
 [[package]]
 name = "carina-core"
 version = "0.7.1"
-source = "git+https://github.com/carina-rs/carina?rev=25792468#25792468ae3031c4a6b8eaf2f1c25bc9f6ee3477"
+source = "git+https://github.com/carina-rs/carina?rev=26524bb1#26524bb12a83a5f22dfbcc07fa9b9b8a875a86f7"
 dependencies = [
  "argon2",
  "carina-provider-protocol",
@@ -979,7 +978,7 @@ dependencies = [
 [[package]]
 name = "carina-plugin-host"
 version = "0.7.1"
-source = "git+https://github.com/carina-rs/carina?rev=25792468#25792468ae3031c4a6b8eaf2f1c25bc9f6ee3477"
+source = "git+https://github.com/carina-rs/carina?rev=26524bb1#26524bb12a83a5f22dfbcc07fa9b9b8a875a86f7"
 dependencies = [
  "carina-core",
  "carina-provider-protocol",
@@ -1008,7 +1007,7 @@ dependencies = [
 [[package]]
 name = "carina-plugin-sdk"
 version = "0.7.1"
-source = "git+https://github.com/carina-rs/carina?rev=25792468#25792468ae3031c4a6b8eaf2f1c25bc9f6ee3477"
+source = "git+https://github.com/carina-rs/carina?rev=26524bb1#26524bb12a83a5f22dfbcc07fa9b9b8a875a86f7"
 dependencies = [
  "aws-smithy-runtime-api",
  "aws-smithy-types",
@@ -1061,7 +1060,7 @@ dependencies = [
 [[package]]
 name = "carina-provider-protocol"
 version = "0.3.0"
-source = "git+https://github.com/carina-rs/carina?rev=25792468#25792468ae3031c4a6b8eaf2f1c25bc9f6ee3477"
+source = "git+https://github.com/carina-rs/carina?rev=26524bb1#26524bb12a83a5f22dfbcc07fa9b9b8a875a86f7"
 dependencies = [
  "serde",
  "serde_json",
@@ -1070,7 +1069,7 @@ dependencies = [
 [[package]]
 name = "carina-provider-resolver"
 version = "0.7.1"
-source = "git+https://github.com/carina-rs/carina?rev=25792468#25792468ae3031c4a6b8eaf2f1c25bc9f6ee3477"
+source = "git+https://github.com/carina-rs/carina?rev=26524bb1#26524bb12a83a5f22dfbcc07fa9b9b8a875a86f7"
 dependencies = [
  "base64 0.22.1",
  "carina-core",
@@ -1095,7 +1094,7 @@ dependencies = [
 [[package]]
 name = "carina-sigstore-tlog"
 version = "0.7.1"
-source = "git+https://github.com/carina-rs/carina?rev=25792468#25792468ae3031c4a6b8eaf2f1c25bc9f6ee3477"
+source = "git+https://github.com/carina-rs/carina?rev=26524bb1#26524bb12a83a5f22dfbcc07fa9b9b8a875a86f7"
 dependencies = [
  "base64 0.22.1",
  "p256",
