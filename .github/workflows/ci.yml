@@ -148,6 +148,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Verify service titles stay synchronized with carina-provider-aws
+        run: |
+          upstream_file="$RUNNER_TEMP/carina-provider-aws-service-titles.json"
+          curl -fsSL https://raw.githubusercontent.com/carina-rs/carina-provider-aws/main/docs/registry/service-titles.json -o "$upstream_file"
+          if ! cmp -s docs/registry/service-titles.json "$upstream_file"; then
+            echo "::error::docs/registry/service-titles.json differs from carina-provider-aws main; sync the copy from carina-provider-aws."
+            diff -u docs/registry/service-titles.json "$upstream_file" || true
+            exit 1
+          fi
       - name: Test docs bundle tooling
         run: python3 -m unittest discover -s scripts -p 'test_docs_bundle.py'
       - name: Build and validate docs bundle
