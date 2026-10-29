@@ -43,8 +43,7 @@ use crate::provider::AwsccProviderConfig;
 
 /// Schema extension for the AWSCC provider.
 ///
-/// Handles provider-local state normalization and hydration of unreturned
-/// attributes from saved state.
+/// Handles provider-local state normalization.
 pub struct AwsccNormalizer;
 
 impl ProviderNormalizer for AwsccNormalizer {
@@ -75,13 +74,10 @@ impl ProviderNormalizer for AwsccNormalizer {
 
     fn hydrate_read_state<'a>(
         &'a self,
-        current_states: &'a mut StateTransformMap,
-        saved_attrs: &'a SavedAttrs,
+        _current_states: &'a mut StateTransformMap,
+        _saved_attrs: &'a SavedAttrs,
     ) -> BoxFuture<'a, ProviderResult<()>> {
-        Box::pin(async move {
-            crate::provider::restore_unreturned_attrs_impl(current_states, saved_attrs);
-            Ok(())
-        })
+        ready_noop()
     }
 }
 

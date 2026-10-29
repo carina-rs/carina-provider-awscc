@@ -1244,7 +1244,7 @@ impl AwsccProvider {
             }
         };
 
-        let mut attributes = merge_desired_attributes(read_state.attributes(), resource, config);
+        let mut attributes = read_state.attributes().clone();
         let canonical_identifier =
             match canonicalize_identifier_from_read(config, &resource.id, &attributes) {
                 Ok(Some(identifier)) => identifier,
@@ -1808,7 +1808,7 @@ impl AwsccProvider {
             .await
             .map_err(|error| error.for_resource(id.clone()))?;
         let desired = post_update_attributes(from, patch);
-        self.finish_update_step(id, identifier, desired, config, patch_plan, step)
+        self.finish_update_step(id, identifier, desired, patch_plan, step)
             .await
     }
 
@@ -1838,7 +1838,7 @@ impl AwsccProvider {
             .await
             .map_err(|error| error.for_resource(id.clone()))?;
         let desired = post_update_attributes(from, patch);
-        self.finish_update_step(id, identifier, desired, config, patch_plan, step)
+        self.finish_update_step(id, identifier, desired, patch_plan, step)
             .await
     }
 
@@ -1847,7 +1847,6 @@ impl AwsccProvider {
         id: &ResourceId,
         identifier: &AppliedIdentifier,
         desired: HashMap<String, Value>,
-        config: &AwsccSchemaConfig,
         patch_plan: UpdatePatchPlan,
         step: OperationStep<WaitOutcome, ProviderError, CcUpdateToken>,
     ) -> ProviderResult<CcUpdateStep> {
@@ -1875,7 +1874,6 @@ impl AwsccProvider {
             read_back,
             desired,
             &patch_plan,
-            config,
             handler_failure.as_deref(),
         );
         Ok(OperationStep::Done(outcome))
@@ -2248,27 +2246,7 @@ fn primary_identifier_segment(value: &Value) -> Option<String> {
     }
 }
 
-fn merge_desired_attributes(
-    read_attributes: &HashMap<String, Value>,
-    resource: &Resource<impl Sized>,
-    config: &crate::schemas::config::AwsccSchemaConfig,
-) -> HashMap<String, Value> {
-    let mut attributes = read_attributes.clone();
-    // Preserve desired attributes not returned by CloudControl API.
-    // CloudControl doesn't always return all properties in GetResource responses
-    // (create-only properties, and some normal properties like `description`).
-    // Carry them forward from the desired state.
-    for dsl_name in config.schema.attributes().keys() {
-        if !attributes.contains_key(dsl_name)
-            && let Some(value) = resource.get_attr(dsl_name.as_str())
-        {
-            attributes.insert(dsl_name.to_string(), value.clone());
-        }
-    }
-    attributes
-}
-
-/// Merge the post-update desired attributes into a read-back and classify the outcome.
+/// Classify a post-update read-back without fabricating omitted attributes.
 ///
 /// When the handler reported failure, no operation was dropped before sending, and every
 /// confirmation-required sent attribute is present in the read-back, this deliberately
@@ -2281,10 +2259,9 @@ fn update_outcome_from_read_back(
     read_back: ProviderResult<ReadOutcome>,
     desired: HashMap<String, Value>,
     patch_plan: &UpdatePatchPlan,
-    config: &AwsccSchemaConfig,
     handler_failure: Option<&str>,
 ) -> UpdateOutcome {
-    let mut attributes = match read_back {
+    let attributes = match read_back {
         Ok(ReadOutcome::Found { state }) => state.attributes().clone(),
         Ok(ReadOutcome::NotFound { .. }) => {
             return update_partial_without_read_back(
@@ -2327,15 +2304,6 @@ fn update_outcome_from_read_back(
         .filter(|key| patch_plan.unsent.contains(key) || !attributes.contains_key(key.as_str()))
         .cloned()
         .collect::<Vec<_>>();
-
-    for dsl_name in config.schema.attributes().keys() {
-        if !attributes.contains_key(dsl_name)
-            && !unconfirmed_attributes.contains(dsl_name)
-            && let Some(value) = desired.get(dsl_name)
-        {
-            attributes.insert(dsl_name.clone(), value.clone());
-        }
-    }
 
     let state = AppliedState::from_identifier(id.clone(), identifier.clone(), attributes);
 
@@ -2417,9 +2385,8 @@ fn unsent_attributes_reason(attributes: &[String]) -> String {
 /// This helper canonicalizes the read shape at the provider boundary:
 /// when an optional list- or map-typed attribute is absent from the
 /// AWS response, an empty `Value::List` / `Value::Map` is inserted in
-/// its place. Scalars and structs are not synthesized — for them
-/// "absent" really means "untracked", and downstream carry-forward
-/// reuses the saved/desired value.
+/// its place. Scalars and structs are not synthesized — for them an absent
+/// value remains an honest absence for the differ to reconcile.
 ///
 /// Tags are skipped here because they go through a dedicated parsing
 /// path in [`AwsccProvider::read_resource`].
@@ -2481,10 +2448,10 @@ fn map_aws_props_to_attributes(
 /// Reconstruct the post-update desired-state attribute map: take the
 /// current provider-side `from` state and apply each patch op on top.
 ///
-/// Used by `update_resource` to know which attributes to carry forward
-/// when CloudControl's read response omits them. The map is the same
-/// logical shape as the old `to: Resource.attributes`, but built
-/// without exposing a full `Resource` to the update path.
+/// Used by `update_resource` to preserve accepted state only when no read-back
+/// is available. The map is the same logical shape as the old
+/// `to: Resource.attributes`, but built without exposing a full `Resource` to
+/// the update path.
 fn post_update_attributes(
     from: &State,
     patch: &UpdatePatch,
@@ -3102,6 +3069,35 @@ mod tests {
         assert!(reason.contains("empty canonical identifier"));
     }
 
+    #[tokio::test]
+    async fn create_read_back_does_not_fabricate_unreturned_desired_attribute() {
+        let service = PartialCreateCloudControlService::new(true);
+        let provider = provider_with_partial_create_service(service).await;
+        let resource = partial_create_bucket_resource().with_attribute(
+            "object_lock_enabled",
+            Value::Concrete(ConcreteValue::Bool(true)),
+        );
+        let config = crate::schemas::generated::s3::bucket::s3_bucket_config();
+        let wait_identifier = test_identifier("partial-bucket");
+        let read_back = ReadOutcome::found(AppliedState::from_identifier(
+            resource.id.clone(),
+            wait_identifier.clone(),
+            HashMap::from([("bucket_name".to_string(), test_string("partial-bucket"))]),
+        ));
+
+        let outcome = provider
+            .create_completion_from_read(&resource, &config, wait_identifier, Ok(read_back))
+            .await;
+
+        let CreateCompletion::Success { attributes, .. } = outcome else {
+            panic!("complete read-back should produce a successful create");
+        };
+        assert!(
+            !attributes.contains_key("object_lock_enabled"),
+            "an attribute omitted by the create read-back must not be fabricated from desired config"
+        );
+    }
+
     #[derive(Clone, Copy, Debug)]
     enum IamRoleReadMode {
         WithRoleName,
@@ -3684,7 +3680,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn update_resource_carries_forward_patched_write_only_attribute() {
+    async fn update_read_back_does_not_fabricate_patched_write_only_attribute() {
         let service = PartialUpdateCloudControlService::new(true, true);
         let provider = provider_with_partial_update_service(service).await;
         let from = partial_update_bucket_state();
@@ -3703,16 +3699,14 @@ mod tests {
         let UpdateOutcome::Success { state } = outcome else {
             panic!("expected success for an absent patched write-only attribute");
         };
-        assert_eq!(
-            state.attributes().get("access_control"),
-            Some(&Value::Concrete(ConcreteValue::String(
-                "private".to_string().into()
-            )))
+        assert!(
+            !state.attributes().contains_key("access_control"),
+            "a write-only attribute omitted by the read-back must remain absent"
         );
     }
 
     #[tokio::test]
-    async fn update_resource_carries_forward_unpatched_attribute_absent_from_read_back() {
+    async fn update_read_back_does_not_fabricate_unreturned_desired_attribute() {
         let service = PartialUpdateCloudControlService::new(true, true);
         let provider = provider_with_partial_update_service(service).await;
         let mut from = partial_update_bucket_state();
@@ -3735,14 +3729,14 @@ mod tests {
         let UpdateOutcome::Success { state } = outcome else {
             panic!("expected success when only an unpatched attribute is absent");
         };
-        assert_eq!(
-            state.attributes().get("object_lock_enabled"),
-            Some(&Value::Concrete(ConcreteValue::Bool(false)))
+        assert!(
+            !state.attributes().contains_key("object_lock_enabled"),
+            "an attribute omitted by the update read-back must not be fabricated from desired config"
         );
     }
 
     #[tokio::test]
-    async fn update_resource_carries_unpatched_redacted_secret_without_sending_digest() {
+    async fn update_read_back_omits_unpatched_redacted_secret_without_sending_digest() {
         let service = PartialUpdateCloudControlService::new(true, true);
         let provider = provider_with_partial_update_service(service.clone()).await;
         let mut from = partial_update_bucket_state();
@@ -3771,7 +3765,10 @@ mod tests {
         let UpdateOutcome::Success { state } = outcome else {
             panic!("expected success when an unpatched secret is absent from read-back");
         };
-        assert_eq!(state.attributes().get("access_control"), Some(&redacted));
+        assert!(
+            !state.attributes().contains_key("access_control"),
+            "an unpatched secret omitted by the read-back must remain absent"
+        );
 
         let request_body = service
             .update_request_body
@@ -4421,7 +4418,7 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn create_iam_role_synthesizes_arn_when_cloudcontrol_omits_arn() {
+    async fn create_iam_role_does_not_use_desired_role_name_when_read_omits_it() {
         let cloudcontrol = IamRoleCreateCloudControlService::new(false);
         let sts = CallerIdentityService::new();
         let provider =
@@ -4429,25 +4426,26 @@ mod tests {
 
         let outcome = dispatch_test_create(&provider, iam_role_resource(true))
             .await
-            .expect("IAM role create should succeed");
+            .expect("IAM role create should report a partial read-back");
 
-        let CreateOutcomeKind::Success { state } = outcome.into_kind() else {
-            panic!("expected full success when role_name can be carried forward");
+        let CreateOutcomeKind::PartialSuccess { state, diagnostic } = outcome.into_kind() else {
+            panic!("an omitted primary identifier must prevent full success");
         };
         assert!(cloudcontrol.saw_create_resource.load(Ordering::SeqCst));
         assert!(cloudcontrol.saw_get_resource.load(Ordering::SeqCst));
         assert!(
-            sts.saw_get_caller_identity.load(Ordering::SeqCst),
-            "ARN synthesis must use the existing account lookup"
+            !sts.saw_get_caller_identity.load(Ordering::SeqCst),
+            "ARN synthesis must not use a desired value that the read omitted"
         );
+        assert!(
+            !state.attributes().contains_key("role_name"),
+            "the read-back must not fabricate RoleName from desired config"
+        );
+        assert!(!state.attributes().contains_key("arn"));
+        assert_eq!(diagnostic.missing_attributes(), &["RoleName".to_string()]);
         assert_eq!(
-            state.attributes().get("arn"),
-            Some(&Value::Concrete(ConcreteValue::String(
-                "arn:aws-us-gov:iam::123456789012:role/service-role/flow-log-role"
-                    .to_string()
-                    .into()
-            ))),
-            "synthesis must derive the partition from the provider region instead of hardcoding aws"
+            diagnostic.reason(),
+            "read-back missing primaryIdentifier attributes: RoleName"
         );
     }
 
@@ -4457,28 +4455,42 @@ mod tests {
         let sts = CallerIdentityService::failing();
         let provider =
             provider_with_iam_role_create_service(cloudcontrol.clone(), sts.clone()).await;
+        let resource = iam_role_resource(true);
+        let config = crate::schemas::generated::iam::role::iam_role_config();
+        let wait_identifier = test_identifier("flow-log-role");
+        let read_back = ReadOutcome::found(AppliedState::from_identifier(
+            resource.id.clone(),
+            wait_identifier.clone(),
+            HashMap::from([
+                ("path".to_string(), test_string("/service-role/")),
+                ("role_name".to_string(), test_string("flow-log-role")),
+                ("role_id".to_string(), test_string("AROATESTROLEID")),
+            ]),
+        ));
 
-        let outcome = dispatch_test_create(&provider, iam_role_resource(true))
-            .await
-            .expect("post-create synthesis failure must become partial success");
+        let outcome = provider
+            .create_completion_from_read(&resource, &config, wait_identifier.clone(), Ok(read_back))
+            .await;
 
-        let CreateOutcomeKind::PartialSuccess { state, diagnostic } = outcome.into_kind() else {
+        let CreateCompletion::Partial {
+            identifier,
+            attributes,
+            reason,
+            ..
+        } = outcome
+        else {
             panic!("synthesis failure must preserve the created resource");
         };
-        assert!(cloudcontrol.saw_create_resource.load(Ordering::SeqCst));
-        assert!(cloudcontrol.saw_get_resource.load(Ordering::SeqCst));
+        assert_eq!(identifier, wait_identifier);
+        assert!(!cloudcontrol.saw_create_resource.load(Ordering::SeqCst));
+        assert!(!cloudcontrol.saw_get_resource.load(Ordering::SeqCst));
         assert!(sts.saw_get_caller_identity.load(Ordering::SeqCst));
-        assert_eq!(state.identifier().as_str(), "flow-log-role");
         assert_eq!(
-            state.attributes().get("role_name"),
+            attributes.get("role_name"),
             Some(&test_string("flow-log-role"))
         );
-        assert!(
-            diagnostic
-                .reason()
-                .contains("Failed to call sts:GetCallerIdentity")
-        );
-        assert!(diagnostic.reason().contains("synthesis denied"));
+        assert!(reason.contains("Failed to call sts:GetCallerIdentity"));
+        assert!(reason.contains("synthesis denied"));
     }
 
     #[tokio::test(start_paused = true)]
@@ -4806,7 +4818,8 @@ mod tests {
                 )
                 .with_attribute("auto_publish", Value::Concrete(ConcreteValue::Bool(true))),
         );
-        let current = State::existing(desired.id.clone(), attributes).with_identifier(function_arn);
+        let mut current =
+            State::existing(desired.id.clone(), attributes).with_identifier(function_arn);
 
         let persisted = PersistedAttributes::from_typed_persisted_wire_values(HashMap::from([(
             "auto_publish".to_string(),
@@ -4828,19 +4841,32 @@ mod tests {
         )
         .lift(&registry);
 
-        let mut current_states = HashMap::from([(desired.id.clone(), current)]);
-        crate::provider::restore_unreturned_attrs_impl(
-            &mut current_states,
-            saved_attrs.as_provider_saved_attrs(),
+        assert!(
+            !current.attributes.contains_key("auto_publish"),
+            "the provider read must leave omitted AutoPublish absent"
         );
-        let current = current_states
-            .remove(&desired.id)
-            .expect("hydrated function state should remain present");
-        assert_eq!(
-            current.attributes.get("auto_publish"),
-            Some(&Value::Concrete(ConcreteValue::Bool(true))),
-            "provider hydration must restore AutoPublish from persisted provenance"
+
+        // The host's managed-read boundary restores recorded top-level
+        // write-only values before calling the differ. Model that boundary
+        // here without reintroducing provider-owned hydration.
+        let auto_publish = saved_attrs
+            .as_provider_saved_attrs()
+            .get(&desired.id)
+            .and_then(|attributes| attributes.get("auto_publish"))
+            .expect("persisted AutoPublish provenance should be available")
+            .clone();
+        assert!(
+            config
+                .schema
+                .attributes()
+                .get("auto_publish")
+                .expect("AutoPublish schema should exist")
+                .is_write_only(),
+            "only schema-declared write-only provenance may be restored"
         );
+        current
+            .attributes
+            .insert("auto_publish".to_string(), auto_publish);
 
         let diff =
             carina_core::differ::diff(&desired, &current, &saved_attrs, None, Some(&config.schema));
@@ -4978,9 +5004,8 @@ mod tests {
         );
     }
 
-    /// Scalar absence still means "untracked" — the carry-forward path
-    /// in `read_resource` populates these from saved state. Synthesizing
-    /// a default here would clobber that.
+    /// Scalar absence remains observable as absence. Synthesizing a default
+    /// here would hide provider drift.
     #[test]
     fn absent_optional_scalar_is_not_fabricated() {
         let attrs = make_schema_attrs(vec![(
@@ -5000,7 +5025,7 @@ mod tests {
 
         assert!(
             !result.contains_key("description"),
-            "absent scalar attributes must not be synthesized; carry-forward owns that case"
+            "absent scalar attributes must not be synthesized"
         );
     }
 
