@@ -8,46 +8,59 @@ use crate::schemas::config::AwsccSchemaConfig;
 use carina_core::schema::{AttributeSchema, AttributeType, OperationConfig, ResourceSchema};
 
 /// Returns the schema config for ec2_vpc_gateway_attachment (AWS::EC2::VPCGatewayAttachment)
+#[rustfmt::skip]
 pub fn ec2_vpc_gateway_attachment_config() -> AwsccSchemaConfig {
-    AwsccSchemaConfig {
-        aws_type_name: "AWS::EC2::VPCGatewayAttachment",
-        resource_type_name: "ec2.VpcGatewayAttachment",
-        primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "AttachmentType", dsl_name: "attachment_type" }, crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "VpcId", dsl_name: "vpc_id" }],
-        tags: None,
-        schema: ResourceSchema::new("ec2.VpcGatewayAttachment")
-	        .with_description("Resource Type definition for AWS::EC2::VPCGatewayAttachment")
-        .attribute(
-            AttributeSchema::new("attachment_type", AttributeType::string())
-                .read_only()
+    let mut schema = ResourceSchema::new("ec2.VpcGatewayAttachment")
+        .with_description("Resource Type definition for AWS::EC2::VPCGatewayAttachment");
+    #[inline(never)]
+    fn build_attachment_type_attribute() -> AttributeSchema {
+        AttributeSchema::provider_populated("attachment_type", AttributeType::string())
                 .with_description("Used to identify if this resource is an Internet Gateway or Vpn Gateway Attachment  (read-only)")
-                .with_provider_name("AttachmentType"),
-        )
-        .attribute(
-            AttributeSchema::new("internet_gateway_id", carina_aws_types::internet_gateway_id())
+                .with_provider_name("AttachmentType")
+            .build()
+    }
+    schema = schema.attribute(build_attachment_type_attribute());
+    #[inline(never)]
+    fn build_internet_gateway_id_attribute() -> AttributeSchema {
+        AttributeSchema::optional("internet_gateway_id", carina_aws_types::internet_gateway_id())
                 .with_description("The ID of the internet gateway. You must specify either InternetGatewayId or VpnGatewayId, but not both.")
-                .with_provider_name("InternetGatewayId"),
-        )
-        .attribute(
-            AttributeSchema::new("vpc_id", carina_aws_types::vpc_id())
-                .required()
+                .with_provider_name("InternetGatewayId")
+            .build()
+    }
+    schema = schema.attribute(build_internet_gateway_id_attribute());
+    #[inline(never)]
+    fn build_vpc_id_attribute() -> AttributeSchema {
+        AttributeSchema::required("vpc_id", carina_aws_types::vpc_id())
                 .create_only()
                 .with_description("The ID of the VPC.")
-                .with_provider_name("VpcId"),
-        )
-        .attribute(
-            AttributeSchema::new("vpn_gateway_id", carina_aws_types::vpn_gateway_id())
+                .with_provider_name("VpcId")
+            .build()
+    }
+    schema = schema.attribute(build_vpc_id_attribute());
+    #[inline(never)]
+    fn build_vpn_gateway_id_attribute() -> AttributeSchema {
+        AttributeSchema::optional("vpn_gateway_id", carina_aws_types::vpn_gateway_id())
                 .with_description("The ID of the virtual private gateway. You must specify either InternetGatewayId or VpnGatewayId, but not both.")
-                .with_provider_name("VpnGatewayId"),
-        )
-        .with_conflicting_replacement()
-        .with_operation_config(OperationConfig {
+                .with_provider_name("VpnGatewayId")
+            .build()
+    }
+    schema = schema.attribute(build_vpn_gateway_id_attribute());
+    schema = schema
+        .with_conflicting_replacement();
+    schema = schema.with_operation_config(OperationConfig {
             delete_timeout_secs: Some(1800),
             delete_max_retries: None,
             create_timeout_secs: None,
             create_max_retries: None,
             update_timeout_secs: None,
-        })
-        .exclusive_required(&["internet_gateway_id", "vpn_gateway_id"])
+    });
+    schema = schema.exclusive_required(&["internet_gateway_id", "vpn_gateway_id"]);
+    AwsccSchemaConfig {
+        aws_type_name: "AWS::EC2::VPCGatewayAttachment",
+        resource_type_name: "ec2.VpcGatewayAttachment",
+        primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "AttachmentType", dsl_name: "attachment_type" }, crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "VpcId", dsl_name: "vpc_id" }],
+        tags: None,
+        schema,
     }
 }
 

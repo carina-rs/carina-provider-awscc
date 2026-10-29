@@ -428,17 +428,23 @@ mod tests {
         );
 
         let bindings = ResolvedBindings::default();
-        let module_gate = ModuleConstraintGate::new(&[]);
+        let module_gate = ModuleConstraintGate::from_live_compositions(&[]);
         let mut schemas = SchemaRegistry::new();
-        for schema in crate::schemas::all_schemas() {
-            schemas.insert("awscc", schema);
-        }
+        schemas.insert(
+            "awscc",
+            crate::schemas::generated::cloudfront::function::cloudfront_function_config()
+                .schema
+                .validate()
+                .expect("CloudFront Function test schema must pass admission"),
+        );
+        let factories: Vec<Box<dyn carina_core::provider::ProviderFactory>> =
+            vec![Box::new(crate::OwnerOnlyAwsccFactory)];
         let preparation = ProviderPreparationContext::new(
             &bindings,
             &module_gate,
             &[],
             &AwsccNormalizer,
-            &[],
+            &factories,
             &schemas,
         );
         let desired = prepare_provider_ready_resource(desired, &preparation)
@@ -536,14 +542,15 @@ mod tests {
             tags: None,
             schema: ResourceSchema::new("test.Resource")
                 .attribute(
-                    AttributeSchema::new("read_only", AttributeType::string())
-                        .read_only()
-                        .with_provider_name("ReadOnly"),
+                    AttributeSchema::provider_populated("read_only", AttributeType::string())
+                        .with_provider_name("ReadOnly")
+                        .build(),
                 )
                 .attribute(
-                    AttributeSchema::new("create_only", AttributeType::string())
+                    AttributeSchema::optional("create_only", AttributeType::string())
                         .create_only()
-                        .with_provider_name("CreateOnly"),
+                        .with_provider_name("CreateOnly")
+                        .build(),
                 ),
         };
         let patch = UpdatePatch {
@@ -568,10 +575,9 @@ mod tests {
             resource_type_name: "test.Resource",
             primary_identifier: &[],
             tags: None,
-            schema: ResourceSchema::new("test.Resource").attribute(AttributeSchema::new(
-                "unmapped_attribute",
-                AttributeType::string(),
-            )),
+            schema: ResourceSchema::new("test.Resource").attribute(
+                AttributeSchema::optional("unmapped_attribute", AttributeType::string()).build(),
+            ),
         };
         let patch = UpdatePatch {
             ops: vec![replace(
@@ -818,8 +824,9 @@ mod tests {
                 wire: crate::schemas::config::TagsWire::KeyValueList,
             }),
             schema: ResourceSchema::new("test.Resource").attribute(
-                AttributeSchema::new("tags", carina_aws_types::tags_type())
-                    .with_provider_name("ResourceTags"),
+                AttributeSchema::optional("tags", carina_aws_types::tags_type())
+                    .with_provider_name("ResourceTags")
+                    .build(),
             ),
         };
         let mut tags = IndexMap::new();

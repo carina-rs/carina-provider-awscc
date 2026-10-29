@@ -833,7 +833,7 @@ fn create_token(value: JsonValue) -> CcCreateToken {
 }
 
 fn pending_create_for_token(
-    resource: &Resource,
+    resource: &Resource<impl Sized>,
     token: &CcCreateToken,
 ) -> carina_core::provider::PendingCreate {
     let pending_token = PendingToken::new(
@@ -879,7 +879,7 @@ async fn resume_request_for_unchecked_resource(
     // Deliberately omit schemas from this test-only preparation context so an
     // invalid provider payload reaches the provider's pre-send validation.
     let bindings = ResolvedBindings::default();
-    let module_gate = ModuleConstraintGate::new(&[]);
+    let module_gate = ModuleConstraintGate::from_live_compositions(&[]);
     let schemas = SchemaRegistry::new();
     let preparation = ProviderPreparationContext::new(
         &bindings,
@@ -1020,7 +1020,7 @@ fn in_flight_create_token(identifier: Option<&str>) -> CcCreateToken {
 
 async fn poll_test_create(
     provider: &AwsccProvider,
-    resource: &Resource,
+    resource: &Resource<impl Sized>,
     token: CcCreateToken,
 ) -> Result<TestCreateStep, TestCreateVerdict> {
     let poll = test_create_poll(&token);

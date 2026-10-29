@@ -1,7 +1,5 @@
 mod common;
 
-use std::collections::HashMap;
-
 use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::TypeError;
 use carina_provider_awscc::schemas::generated::s3::bucket::s3_bucket_config;
@@ -31,32 +29,38 @@ fn arn_identity_is_provider_scoped() {
 #[test]
 fn nested_metadata_table_arn_is_provider_populated_and_rejects_assignment() {
     let config = s3_bucket_config();
-    let attributes = HashMap::from([(
-        "metadata_table_configuration".to_string(),
-        map([(
-            "s3_tables_destination",
-            map([
-                (
-                    "table_bucket_arn",
-                    string("arn:aws:s3tables:us-east-1:123456789012:bucket/example"),
-                ),
-                ("table_name", string("example")),
-                (
-                    "table_arn",
-                    string("arn:aws:s3tables:us-east-1:123456789012:bucket/example/table/example"),
-                ),
-            ]),
-        )]),
+    let schema = config
+        .schema
+        .validate()
+        .expect("S3 bucket schema must pass admission");
+    let metadata_table_configuration = schema
+        .effective_attribute("metadata_table_configuration")
+        .expect("S3 bucket metadata_table_configuration must exist");
+    let value = map([(
+        "s3_tables_destination",
+        map([
+            (
+                "table_bucket_arn",
+                string("arn:aws:s3tables:us-east-1:123456789012:bucket/example"),
+            ),
+            ("table_name", string("example")),
+            (
+                "table_arn",
+                string("arn:aws:s3tables:us-east-1:123456789012:bucket/example/table/example"),
+            ),
+        ]),
     )]);
 
-    let errors = config
-        .schema
-        .validate(&attributes)
+    let error = metadata_table_configuration
+        .validate(&value)
         .expect_err("assigning S3TablesDestination.TableArn must fail validation");
     assert!(
         matches!(
-            errors.as_slice(),
-            [TypeError::StructFieldError { field, inner }]
+            error,
+            TypeError::StructFieldError {
+                ref field,
+                ref inner,
+            }
                 if field == "s3_tables_destination"
                     && matches!(
                         inner.as_ref(),
@@ -69,6 +73,6 @@ fn nested_metadata_table_arn_is_provider_populated_and_rejects_assignment() {
                                 )
                     )
         ),
-        "expected a nested provider-populated table_arn error, got {errors:?}"
+        "expected a nested provider-populated table_arn error, got {error:?}"
     );
 }

@@ -3,14 +3,20 @@
 pub mod config;
 pub mod generated;
 
-use carina_core::schema::ResourceSchema;
+use carina_core::schema::ValidatedResourceSchema;
 
 /// Returns all AWS Cloud Control schemas.
 /// Auto-generated from CloudFormation schemas with per-resource operational config.
-pub fn all_schemas() -> Vec<ResourceSchema> {
+pub fn all_schemas() -> Vec<ValidatedResourceSchema> {
     generated::configs()
         .iter()
-        .map(|c| c.schema.clone())
+        .map(|config| {
+            config
+                .schema
+                .clone()
+                .validate()
+                .unwrap_or_else(|error| panic!("{error}"))
+        })
         .collect()
 }
 
@@ -50,7 +56,12 @@ mod tests {
         let managed = vec![ResolvedResource::new(resource)];
 
         let mut schemas = SchemaRegistry::new();
-        schemas.insert("awscc", schema);
+        schemas.insert(
+            "awscc",
+            schema
+                .validate()
+                .expect("tag-change fixture schema must be valid"),
+        );
         assert!(
             schemas
                 .get(
@@ -176,10 +187,56 @@ mod tests {
     }
 
     #[test]
+    fn generated_integer_enum_validators_preserve_diagnostics() {
+        let cases = [
+            (
+                super::generated::ec2::flow_log::ec2_flow_log_config().schema,
+                "max_aggregation_interval",
+                61,
+                "aws.ec2.FlowLog.MaxAggregationInterval",
+                "Validation failed: Value 61 is not a valid value",
+            ),
+            (
+                super::generated::logs::log_group::logs_log_group_config().schema,
+                "retention_in_days",
+                2,
+                "aws.logs.LogGroup.RetentionInDays",
+                "Validation failed: Value 2 is not a valid value",
+            ),
+        ];
+
+        for (schema, attribute_name, invalid, expected_identity, expected_error) in cases {
+            let schema = schema
+                .validate()
+                .expect("generated integer-enum schema must pass admission");
+            let attribute = schema
+                .effective_attribute(attribute_name)
+                .unwrap_or_else(|| panic!("missing generated attribute {attribute_name}"));
+            match attribute.field_type().raw_shape() {
+                RawShape::Int {
+                    identity: Some(identity),
+                    ..
+                } => assert_eq!(identity.to_string(), expected_identity),
+                other => panic!("{attribute_name} must be an identity-bound Int, was {other:?}"),
+            }
+
+            let error = attribute
+                .validate(&Value::Concrete(ConcreteValue::Int(invalid)))
+                .expect_err("an undeclared integer-enum value must fail validation")
+                .to_string();
+
+            assert_eq!(error, expected_error);
+
+            println!("{attribute_name}: {error}");
+        }
+    }
+
+    #[test]
     fn generated_string_enum_identities_are_unique_within_each_resource() {
         let mut failures = Vec::new();
 
-        for schema in super::all_schemas() {
+        for validated_schema in super::all_schemas() {
+            let schema = validated_schema.as_schema();
             let mut collector = StringEnumIdentityCollector::new();
 
             for (def_name, def) in schema.defs() {
@@ -187,7 +244,7 @@ mod tests {
                     break;
                 }
                 collect_string_enum_identities(
-                    &schema,
+                    schema,
                     def,
                     &format!("def:{def_name}"),
                     Some(def_name),
@@ -201,7 +258,7 @@ mod tests {
                     break;
                 }
                 collect_string_enum_identities(
-                    &schema,
+                    schema,
                     attr.attr_type(),
                     &format!("inline:{attr_name}"),
                     None,

@@ -19,7 +19,6 @@
 
 mod common;
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use aws_config::{BehaviorVersion, Region};
@@ -183,44 +182,38 @@ fn function_arn_is_assignable_to_distribution_function_association() {
 #[test]
 fn function_metadata_is_provider_populated_and_rejects_assignment() {
     let config = cloudfront_function_config();
-    let function_metadata = config
+    let schema = config
         .schema
-        .attributes()
-        .get("function_metadata")
+        .validate()
+        .expect("CloudFront function schema must pass admission");
+    let function_metadata = schema
+        .effective_attribute("function_metadata")
         .expect("Function.function_metadata should exist");
     assert!(
         function_metadata.is_read_only(),
         "FunctionMetadata contains only provider-populated fields"
     );
 
-    let attributes = HashMap::from([
-        ("name".to_string(), string(FUNCTION_NAME)),
-        ("function_code".to_string(), string(FUNCTION_CODE)),
-        (
-            "function_config".to_string(),
-            map([
-                ("comment", string("Rewrite the registry root request")),
-                ("runtime", enum_identifier("cloudfront_js_2_0")),
-            ]),
-        ),
-        (
-            "function_metadata".to_string(),
-            map([(
-                "function_arn",
-                string("arn:aws:cloudfront::123456789012:function/user-supplied"),
-            )]),
-        ),
-    ]);
-    let errors = config
-        .schema
-        .validate(&attributes)
+    let value = map([(
+        "function_arn",
+        string("arn:aws:cloudfront::123456789012:function/user-supplied"),
+    )]);
+    let error = function_metadata
+        .validate(&value)
         .expect_err("assigning FunctionMetadata must fail validation");
     assert!(
         matches!(
-            errors.as_slice(),
-            [TypeError::ReadOnlyAttribute { name }] if name == "function_metadata"
+            error,
+            TypeError::StructFieldError {
+                ref field,
+                ref inner,
+            } if field == "function_arn"
+                && matches!(
+                    inner.as_ref(),
+                    TypeError::ReadOnlyAttribute { name } if name == "function_arn"
+                )
         ),
-        "expected a provider-populated function_metadata error, got {errors:?}"
+        "expected a provider-populated function_metadata field error, got {error:?}"
     );
 }
 

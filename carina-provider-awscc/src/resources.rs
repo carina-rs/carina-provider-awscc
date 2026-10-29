@@ -162,7 +162,7 @@ mod tests {
             seen: &mut std::collections::HashSet<String>,
         ) {
             let field_path = format!("{}.{}", parent_path, field.name());
-            if is_list_of_struct(field.field_type(), defs) && field.block_name().is_none() {
+            if is_list_of_struct(field.field_type(), defs) && field.parts().block_name.is_none() {
                 missing.push(field_path.clone());
             }
             // Recurse into the field type regardless
@@ -252,10 +252,16 @@ mod tests {
     #[test]
     fn vpc_gateway_attachment_rejects_both_internet_and_vpn_gateway() {
         use carina_core::resource::{ConcreteValue, Value};
+        use carina_core::schema::validators;
         use std::collections::HashMap;
 
         let config = get_config("ec2.VpcGatewayAttachment").unwrap();
         let schema = &config.schema;
+        let exclusive = schema
+            .exclusive_required_groups()
+            .first()
+            .expect("gateway alternatives must be declared");
+        let exclusive = exclusive.iter().map(String::as_str).collect::<Vec<_>>();
 
         // Providing both internet_gateway_id and vpn_gateway_id should fail validation
         let mut attrs = HashMap::new();
@@ -272,7 +278,7 @@ mod tests {
             Value::Concrete(ConcreteValue::String("vgw-12345678".to_string().into())),
         );
 
-        let result = schema.validate(&attrs);
+        let result = validators::validate_exclusive_required(&attrs, &exclusive);
         assert!(
             result.is_err(),
             "Expected validation error when both internet_gateway_id and vpn_gateway_id are specified"
@@ -294,10 +300,16 @@ mod tests {
     #[test]
     fn vpc_gateway_attachment_accepts_single_gateway() {
         use carina_core::resource::{ConcreteValue, Value};
+        use carina_core::schema::validators;
         use std::collections::HashMap;
 
         let config = get_config("ec2.VpcGatewayAttachment").unwrap();
         let schema = &config.schema;
+        let exclusive = schema
+            .exclusive_required_groups()
+            .first()
+            .expect("gateway alternatives must be declared");
+        let exclusive = exclusive.iter().map(String::as_str).collect::<Vec<_>>();
 
         // Only internet_gateway_id - should pass
         let mut attrs_igw = HashMap::new();
@@ -310,7 +322,7 @@ mod tests {
             Value::Concrete(ConcreteValue::String("igw-12345678".to_string().into())),
         );
         assert!(
-            schema.validate(&attrs_igw).is_ok(),
+            validators::validate_exclusive_required(&attrs_igw, &exclusive).is_ok(),
             "Should accept internet_gateway_id alone"
         );
 
@@ -325,7 +337,7 @@ mod tests {
             Value::Concrete(ConcreteValue::String("vgw-12345678".to_string().into())),
         );
         assert!(
-            schema.validate(&attrs_vpn).is_ok(),
+            validators::validate_exclusive_required(&attrs_vpn, &exclusive).is_ok(),
             "Should accept vpn_gateway_id alone"
         );
     }
@@ -335,10 +347,16 @@ mod tests {
     #[test]
     fn vpc_gateway_attachment_rejects_neither_gateway() {
         use carina_core::resource::{ConcreteValue, Value};
+        use carina_core::schema::validators;
         use std::collections::HashMap;
 
         let config = get_config("ec2.VpcGatewayAttachment").unwrap();
         let schema = &config.schema;
+        let exclusive = schema
+            .exclusive_required_groups()
+            .first()
+            .expect("gateway alternatives must be declared");
+        let exclusive = exclusive.iter().map(String::as_str).collect::<Vec<_>>();
 
         // Neither gateway specified - should fail
         let mut attrs = HashMap::new();
@@ -347,7 +365,7 @@ mod tests {
             Value::Concrete(ConcreteValue::String("vpc-12345678".to_string().into())),
         );
 
-        let result = schema.validate(&attrs);
+        let result = validators::validate_exclusive_required(&attrs, &exclusive);
         assert!(
             result.is_err(),
             "Expected validation error when neither internet_gateway_id nor vpn_gateway_id is specified"

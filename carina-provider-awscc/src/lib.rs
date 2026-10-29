@@ -20,19 +20,20 @@ pub use provider::{
 };
 pub use sdk_config::BoundedSdkConfig;
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use indexmap::IndexMap;
 
 use carina_core::effect::PlanOp;
 use carina_core::provider::{
-    AppliedIdentifier, BoxFuture, CanonicalCustomTypeValue, CanonicalProviderConfigAttributes,
-    CreateAttempt, CreateFailure, CreateOutcome, CreateRequest, DeleteRequest, Provider,
-    ProviderFactory, ProviderNormalizer, ProviderReadyConfig, ProviderReadyDataSource,
-    ProviderResult, ReadOutcome, ReadRequest, ResumeCreateRequest, ResumeFailure, ResumeOutcome,
-    SavedAttrs, StateTransformMap, UpdateOutcome, UpdateRequest, ready_noop,
+    AppliedIdentifier, BoxFuture, CanonicalProviderConfigAttributes, CreateAttempt, CreateFailure,
+    CreateOutcome, CreateRequest, DeleteRequest, Provider, ProviderError, ProviderFactory,
+    ProviderNormalizer, ProviderReadyConfig, ProviderReadyDataSource, ProviderResult, ReadOutcome,
+    ReadRequest, ResumeCreateRequest, ResumeFailure, ResumeOutcome, SavedAttrs, StateTransformMap,
+    UpdateOutcome, UpdateRequest, ready_noop,
 };
-use carina_core::resource::{ConcreteValue, Resource, ResourceId, State, Value};
+use carina_core::resource::{ConcreteValue, ProviderResource, ResourceId, State, Value};
+use carina_core::schema::{ValidatedConfigSchema, ValidatedResourceSchema};
 
 use crate::provider::AwsccProviderConfig;
 
@@ -48,7 +49,7 @@ impl ProviderNormalizer for AwsccNormalizer {
     // open-enum API values and leak DSL strings to AWS.
     fn normalize_desired<'a>(
         &'a self,
-        _resources: &'a mut [Resource],
+        _resources: &'a mut [ProviderResource],
     ) -> BoxFuture<'a, ProviderResult<()>> {
         ready_noop()
     }
@@ -83,6 +84,56 @@ impl ProviderNormalizer for AwsccNormalizer {
 /// Factory for creating and configuring the AWSCC Provider
 pub struct AwsccProviderFactory;
 
+/// Minimal factory used by checked-preparation tests.
+///
+/// The real schema declaration comes from the test's `SchemaRegistry`; the
+/// preparation context only needs an `awscc` factory owner to dispatch that
+/// declaration's attached validator.
+#[cfg(test)]
+pub(crate) struct OwnerOnlyAwsccFactory;
+
+#[cfg(test)]
+impl ProviderFactory for OwnerOnlyAwsccFactory {
+    fn name(&self) -> &str {
+        "awscc"
+    }
+
+    fn display_name(&self) -> &str {
+        "AWS Cloud Control schema-only test factory"
+    }
+
+    fn provider_config_attribute_types(&self) -> ValidatedConfigSchema {
+        ValidatedConfigSchema::default()
+    }
+
+    fn validate_config(
+        &self,
+        _attributes: &CanonicalProviderConfigAttributes,
+    ) -> ProviderResult<()> {
+        Ok(())
+    }
+
+    fn extract_region(&self, _attributes: &IndexMap<String, Value>) -> String {
+        "ap-northeast-1".to_string()
+    }
+
+    fn create_provider(
+        &self,
+        _binding: Option<&str>,
+        _config: &ProviderReadyConfig,
+    ) -> BoxFuture<'_, ProviderResult<Box<dyn Provider>>> {
+        Box::pin(async {
+            Err::<Box<dyn Provider>, _>(ProviderError::internal(
+                "schema-only test factory cannot create providers",
+            ))
+        })
+    }
+
+    fn schemas(&self) -> Vec<ValidatedResourceSchema> {
+        Vec::new()
+    }
+}
+
 impl ProviderFactory for AwsccProviderFactory {
     fn name(&self) -> &str {
         "awscc"
@@ -92,26 +143,10 @@ impl ProviderFactory for AwsccProviderFactory {
         "AWS Cloud Control provider"
     }
 
-    fn provider_config_attribute_types(
-        &self,
-    ) -> HashMap<String, carina_core::schema::AttributeType> {
+    fn provider_config_attribute_types(&self) -> ValidatedConfigSchema {
         use carina_core::schema::AttributeType;
-        let mut types = HashMap::new();
-        types.insert(
-            "region".to_string(),
-            AttributeType::enum_(
-                carina_core::schema::enum_identity("Region", Some("aws")),
-                Some(
-                    carina_aws_types::REGIONS
-                        .iter()
-                        .map(|(code, _)| code.to_string())
-                        .collect(),
-                ),
-                carina_aws_types::region_dsl_aliases(),
-                None,
-                None,
-            ),
-        );
+        let mut types = BTreeMap::new();
+        types.insert("region".to_string(), carina_aws_types::aws_region());
         types.insert(
             "allowed_account_ids".to_string(),
             AttributeType::unordered_list(AttributeType::string()),
@@ -121,46 +156,27 @@ impl ProviderFactory for AwsccProviderFactory {
             AttributeType::unordered_list(AttributeType::string()),
         );
         types.insert("assume_role".to_string(), assume_role_attribute_type());
-        types
+        ValidatedConfigSchema::validate(types)
+            .expect("AWSCC provider config schema must pass admission")
     }
 
     fn validate_config(
         &self,
         attributes: &CanonicalProviderConfigAttributes,
-    ) -> Result<(), String> {
+    ) -> ProviderResult<()> {
         // Cross-account guardrail: when `assume_role.role_arn` parses to
         // an account id that is not in `allowed_account_ids` (when that
         // list is configured), refuse the configuration. Avoids the
         // foot-gun of an assume-role silently landing in the wrong AWS
         // account (awscc#260).
         use crate::provider::assume_role::{check_cross_account, extract_assume_role};
-        let assume_role = extract_assume_role(attributes.get("assume_role"))?;
+        let assume_role = extract_assume_role(attributes.get("assume_role"))
+            .map_err(ProviderError::invalid_input)?;
         if let Some(ar) = &assume_role {
             let allowed = extract_string_list_attr(attributes, "allowed_account_ids");
-            check_cross_account(&ar.role_arn, &allowed)?;
+            check_cross_account(&ar.role_arn, &allowed).map_err(ProviderError::invalid_input)?;
         }
         Ok(())
-    }
-
-    fn validate_custom_type(
-        &self,
-        identity: &carina_core::schema::TypeIdentity,
-        value: &CanonicalCustomTypeValue,
-    ) -> Result<(), String> {
-        use carina_core::parser::ValidatorFn;
-        use std::sync::OnceLock;
-        static VALIDATORS: OnceLock<HashMap<String, ValidatorFn>> = OnceLock::new();
-        let validators = VALIDATORS.get_or_init(schemas::config::awscc_validators);
-        // The inner map is still keyed on snake-cased semantic names —
-        // project the identity's kind through `pascal_to_snake` at this
-        // single boundary. Provider-axis collisions are already
-        // filtered by the host before the call reaches us.
-        let key = carina_core::parser::pascal_to_snake(&identity.kind);
-        if let Some(validator) = validators.get(&key) {
-            validator(value.as_str())
-        } else {
-            Ok(())
-        }
     }
 
     fn extract_region(&self, attributes: &IndexMap<String, Value>) -> String {
@@ -192,7 +208,7 @@ impl ProviderFactory for AwsccProviderFactory {
         Box::pin(async { Ok(Box::new(AwsccNormalizer) as Box<dyn ProviderNormalizer>) })
     }
 
-    fn schemas(&self) -> Vec<carina_core::schema::ResourceSchema> {
+    fn schemas(&self) -> Vec<ValidatedResourceSchema> {
         schemas::all_schemas()
     }
 
@@ -249,15 +265,18 @@ fn assume_role_attribute_type() -> carina_core::schema::AttributeType {
     AttributeType::struct_(
         "AssumeRole".to_string(),
         vec![
-            StructField::new("role_arn", AttributeType::string())
-                .required()
-                .with_description("IAM role ARN to assume."),
-            StructField::new("session_name", AttributeType::string())
-                .with_description("STS session name to associate with the assumed-role session."),
-            StructField::new("external_id", AttributeType::string())
-                .with_description("External ID required by the trust policy of the assumed role."),
-            StructField::new("duration", AttributeType::duration())
-                .with_description("Assumed-role session duration (e.g., 30min, 1h, 15s)."),
+            StructField::required("role_arn", AttributeType::string())
+                .with_description("IAM role ARN to assume.")
+                .build(),
+            StructField::optional("session_name", AttributeType::string())
+                .with_description("STS session name to associate with the assumed-role session.")
+                .build(),
+            StructField::optional("external_id", AttributeType::string())
+                .with_description("External ID required by the trust policy of the assumed role.")
+                .build(),
+            StructField::optional("duration", AttributeType::duration())
+                .with_description("Assumed-role session duration (e.g., 30min, 1h, 15s).")
+                .build(),
         ],
     )
 }
@@ -402,13 +421,13 @@ mod tests {
         let factory = AwsccProviderFactory;
         let types = factory.provider_config_attribute_types();
         assert!(matches!(
-            types.get("allowed_account_ids").map(|t| t
+            types.parts().get("allowed_account_ids").map(|t| t
                 .shape_ref_free()
                 .expect("provider config types are Ref-free")),
             Some(carina_core::schema::Shape::List { .. })
         ));
         assert!(matches!(
-            types.get("forbidden_account_ids").map(|t| t
+            types.parts().get("forbidden_account_ids").map(|t| t
                 .shape_ref_free()
                 .expect("provider config types are Ref-free")),
             Some(carina_core::schema::Shape::List { .. })
@@ -426,6 +445,7 @@ mod tests {
         let factory = AwsccProviderFactory;
         let types = factory.provider_config_attribute_types();
         let ty = types
+            .parts()
             .get("assume_role")
             .expect("assume_role must be declared as a provider config attribute");
         match ty
@@ -444,13 +464,19 @@ mod tests {
                     .iter()
                     .find(|f| f.name() == "role_arn")
                     .expect("assume_role.role_arn must be declared");
-                assert!(role_arn.is_required(), "role_arn must be required");
+                assert!(
+                    role_arn.parts().declared_input_mode.is_required(),
+                    "role_arn must be required"
+                );
                 for opt in ["session_name", "external_id", "duration"] {
                     let f = fields
                         .iter()
                         .find(|f| f.name() == opt)
                         .unwrap_or_else(|| panic!("assume_role.{opt} must be declared"));
-                    assert!(!f.is_required(), "assume_role.{opt} must be optional");
+                    assert!(
+                        !f.parts().declared_input_mode.is_required(),
+                        "assume_role.{opt} must be optional"
+                    );
                 }
             }
             other => panic!("assume_role must be a Struct, was {other:?}"),
@@ -460,11 +486,11 @@ mod tests {
     #[test]
     fn extract_region_reads_provider_ready_canonical_enum() {
         let factory = AwsccProviderFactory;
-        let region_type = factory
-            .provider_config_attribute_types()
-            .remove("region")
+        let config = factory.provider_config_attribute_types();
+        let region_type = config
+            .rootless_type("region")
             .expect("region provider config type");
-        let region = carina_core::schema::Schema::flat(region_type)
+        let region = region_type
             .canonicalize_state(Value::Concrete(ConcreteValue::String("us-west-2".into())));
         assert!(matches!(
             &region,
@@ -688,7 +714,7 @@ mod tests {
         let schema = factory
             .schemas()
             .into_iter()
-            .find(|s| s.resource_type() == "cloudfront.Distribution")
+            .find(|schema| schema.parts().resource_type == "cloudfront.Distribution")
             .expect("cloudfront.Distribution schema must be present");
 
         // Recursively collect the `ordered` flag of every List whose
@@ -735,9 +761,15 @@ mod tests {
         }
 
         let mut found = Vec::new();
-        for attr in schema.attributes().values() {
+        for attr in schema.parts().attributes.values() {
             let mut seen = std::collections::HashSet::new();
-            collect(attr.attr_type(), None, schema.defs(), &mut seen, &mut found);
+            collect(
+                attr.attr_type(),
+                None,
+                schema.parts().defs,
+                &mut seen,
+                &mut found,
+            );
         }
 
         assert!(

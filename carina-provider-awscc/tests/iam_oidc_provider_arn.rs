@@ -21,5 +21,5 @@ fn arn_accepts_eks_multi_segment_oidc_provider() {
             .to_string()
             .into(),
     ));
-    assert!(validate(&v).is_ok());
+    assert!(validate.expect("arn() should carry its identity-bound validator")(&v).is_ok());
 }

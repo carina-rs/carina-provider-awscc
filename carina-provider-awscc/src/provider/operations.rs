@@ -4,7 +4,7 @@
 //! between DSL resources and the Cloud Control API. It handles attribute mapping,
 //! tags, special cases, and default values.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::future::Future;
 use std::time::Duration;
 
@@ -18,7 +18,7 @@ use carina_core::provider::{
     UpdatePatch,
 };
 use carina_core::resource::{ConcreteValue, Directives, Resource, ResourceId, State, Value};
-use carina_core::schema::{AttributeSchema, AttributeType, Schema, Shape};
+use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, Shape};
 use carina_provider_protocol::{
     DEFAULT_OPERATION_BUDGET, DriveError, DriveOutcome, OperationKind, OperationStep, drive_pending,
 };
@@ -648,7 +648,7 @@ impl AwsccProvider {
 
     fn create_desired_state(
         &self,
-        resource: &Resource,
+        resource: &Resource<impl Sized>,
         config: &AwsccSchemaConfig,
     ) -> ProviderResult<serde_json::Value> {
         let mut desired_state = serde_json::Map::new();
@@ -694,7 +694,7 @@ impl AwsccProvider {
     /// Perform the initial, non-blocking CloudControl create step.
     pub async fn create_step<A: CcCreateAttempt>(
         &self,
-        resource: &Resource,
+        resource: &Resource<impl Sized>,
         attempt: A,
     ) -> Result<A::Step, A::Verdict> {
         let token = NotIssuedCreate::start();
@@ -760,7 +760,7 @@ impl AwsccProvider {
 
     async fn resend_not_issued_create_step<U: CcResumeAttempt>(
         &self,
-        resource: &Resource,
+        resource: &Resource<impl Sized>,
         config: &AwsccSchemaConfig,
         token: NotIssuedCreate,
         attempt: U,
@@ -790,7 +790,7 @@ impl AwsccProvider {
 
     async fn resend_unconfirmed_create_step<U: CcResumeAttempt>(
         &self,
-        resource: &Resource,
+        resource: &Resource<impl Sized>,
         config: &AwsccSchemaConfig,
         token: UnconfirmedCreate,
         attempt: U,
@@ -821,7 +821,7 @@ impl AwsccProvider {
     /// Perform one CloudControl status or re-issue step for create.
     pub async fn poll_create_step<U: CcPollAttempt>(
         &self,
-        resource: &Resource,
+        resource: &Resource<impl Sized>,
         token: CcCreateToken,
         poll: CcCreatePoll<U, U::Issued>,
     ) -> Result<U::Step, U::Verdict> {
@@ -969,7 +969,7 @@ impl AwsccProvider {
 
     async fn finish_polled_status<U: CcPollAttempt>(
         &self,
-        resource: &Resource,
+        resource: &Resource<impl Sized>,
         config: &AwsccSchemaConfig,
         poll: CcCreatePoll<U, U::Issued>,
         status: CcCreateStatus,
@@ -1023,7 +1023,7 @@ impl AwsccProvider {
 
     async fn recover_expired_poll<U: CcPollAttempt>(
         &self,
-        resource: &Resource,
+        resource: &Resource<impl Sized>,
         config: &AwsccSchemaConfig,
         poll: CcCreatePoll<U, U::Issued>,
         token: InFlightCreateRequest,
@@ -1058,7 +1058,7 @@ impl AwsccProvider {
 
     async fn complete_polled_success<U: CcPollAttempt>(
         &self,
-        resource: &Resource,
+        resource: &Resource<impl Sized>,
         config: &AwsccSchemaConfig,
         poll: CcCreatePoll<U, U::Issued>,
         token: InFlightCreateRequest,
@@ -1093,7 +1093,7 @@ impl AwsccProvider {
 
     async fn finish_polled_failure<U: CcPollAttempt>(
         &self,
-        resource: &Resource,
+        resource: &Resource<impl Sized>,
         config: &AwsccSchemaConfig,
         poll: CcCreatePoll<U, U::Issued>,
         failure: CreateTerminalFailure,
@@ -1147,7 +1147,7 @@ impl AwsccProvider {
 
     async fn finish_create_success<I: CcIssuedCreate>(
         &self,
-        resource: &Resource,
+        resource: &Resource<impl Sized>,
         config: &AwsccSchemaConfig,
         issued: I,
         wait_identifier: AppliedIdentifier,
@@ -1196,7 +1196,7 @@ impl AwsccProvider {
 
     async fn create_completion_from_read(
         &self,
-        resource: &Resource,
+        resource: &Resource<impl Sized>,
         config: &AwsccSchemaConfig,
         wait_identifier: AppliedIdentifier,
         read_back: ProviderResult<ReadOutcome>,
@@ -1293,7 +1293,7 @@ impl AwsccProvider {
 
     pub(crate) async fn drive_native_create(
         &self,
-        resource: &Resource,
+        resource: &Resource<impl Sized>,
         attempt: CreateAttempt,
     ) -> Result<CreateOutcome, CreateFailure> {
         let budget =
@@ -1333,7 +1333,7 @@ impl AwsccProvider {
     /// Continue one create step loaded from persisted state.
     pub async fn resume_create_step<U: CcResumeAttempt>(
         &self,
-        resource: &Resource,
+        resource: &Resource<impl Sized>,
         token: CcCreateToken,
         resume: CcCreateResume<U, U::Resumed>,
     ) -> Result<U::Step, U::Verdict> {
@@ -1412,7 +1412,7 @@ impl AwsccProvider {
 
     async fn finish_resumed_status<U: CcResumeAttempt>(
         &self,
-        resource: &Resource,
+        resource: &Resource<impl Sized>,
         config: &AwsccSchemaConfig,
         resume: CcCreateResume<U, U::Resumed>,
         status: CcCreateStatus,
@@ -1469,7 +1469,7 @@ impl AwsccProvider {
 
     async fn recover_expired_resume<U: CcResumeAttempt>(
         &self,
-        resource: &Resource,
+        resource: &Resource<impl Sized>,
         config: &AwsccSchemaConfig,
         resume: CcCreateResume<U, U::Resumed>,
         token: InFlightCreateRequest,
@@ -1504,7 +1504,7 @@ impl AwsccProvider {
 
     async fn complete_resumed_success<U: CcResumeAttempt>(
         &self,
-        resource: &Resource,
+        resource: &Resource<impl Sized>,
         config: &AwsccSchemaConfig,
         resume: CcCreateResume<U, U::Resumed>,
         token: InFlightCreateRequest,
@@ -1539,7 +1539,7 @@ impl AwsccProvider {
 
     async fn finish_resumed_failure<U: CcResumeAttempt>(
         &self,
-        resource: &Resource,
+        resource: &Resource<impl Sized>,
         config: &AwsccSchemaConfig,
         resume: CcCreateResume<U, U::Resumed>,
         failure: CreateTerminalFailure,
@@ -1591,7 +1591,7 @@ impl AwsccProvider {
 
     async fn finish_resumed_read<R: CcResumedCreate>(
         &self,
-        resource: &Resource,
+        resource: &Resource<impl Sized>,
         config: &AwsccSchemaConfig,
         resumed: R,
         wait_identifier: AppliedIdentifier,
@@ -2236,7 +2236,7 @@ fn primary_identifier_segment(value: &Value) -> Option<String> {
 
 fn merge_desired_attributes(
     read_attributes: &HashMap<String, Value>,
-    resource: &Resource,
+    resource: &Resource<impl Sized>,
     config: &crate::schemas::config::AwsccSchemaConfig,
 ) -> HashMap<String, Value> {
     let mut attributes = read_attributes.clone();
@@ -2411,12 +2411,15 @@ fn unsent_attributes_reason(attributes: &[String]) -> String {
 /// path in [`AwsccProvider::read_resource`].
 fn map_aws_props_to_attributes(
     props: &serde_json::Value,
-    schema_attributes: &HashMap<String, AttributeSchema>,
+    schema_attributes: &BTreeMap<String, AttributeSchema>,
     resource_type: &str,
     defs: &std::collections::BTreeMap<String, AttributeType>,
 ) -> HashMap<String, Value> {
     let mut attributes = HashMap::new();
-    let schema_view = Schema::with_defs(defs.clone());
+    let schema_view = defs.iter().fold(
+        ResourceSchema::new(resource_type),
+        |schema, (name, attr_type)| schema.with_def(name.clone(), attr_type.clone()),
+    );
 
     for (dsl_name, attr_schema) in schema_attributes {
         if dsl_name == "tags" {
@@ -2494,8 +2497,9 @@ fn post_update_attributes(
 mod tests {
     use super::*;
     use carina_core::provider::{
-        AppliedIdentifier, CreateFailureKind, CreateOutcome, CreateOutcomeKind, Observation,
-        PatchOp, PersistedAttributes, RawSavedAttrs, ReadOutcome, UpdateOutcome,
+        AppliedIdentifier, CreateFailureKind, CreateObservation, CreateOutcome, CreateOutcomeKind,
+        Observation, PatchOp, PersistedAttributes, RawSavedAttrs, ReadOutcome, UnobservedReason,
+        UpdateOutcome,
     };
     use carina_core::resource::{DeferredValue, UnknownReason};
     use carina_core::schema::{AttributeType, SchemaRegistry};
@@ -2524,23 +2528,50 @@ mod tests {
         resource: Resource,
     ) -> Result<CreateOutcome, CreateFailure> {
         let id = resource.id.clone();
-        let bindings = carina_core::binding_index::ResolvedBindings::default();
-        let module_gate = carina_core::executor::ModuleConstraintGate::new(&[]);
-        let mut schemas = carina_core::schema::SchemaRegistry::new();
-        for schema in crate::schemas::all_schemas() {
-            schemas.insert("awscc", schema);
-        }
-        let preparation = carina_core::executor::ProviderPreparationContext::new(
-            &bindings,
-            &module_gate,
-            &[],
-            &crate::AwsccNormalizer,
-            &[],
-            &schemas,
-        );
-        let request = carina_core::executor::prepare_create_request(resource, &preparation)
-            .await
-            .expect("test resource should pass checked create preparation");
+        let request = std::thread::Builder::new()
+            .name("awscc-test-preparation".to_string())
+            .stack_size(8 * 1024 * 1024)
+            .spawn(move || {
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("test preparation runtime should build");
+                runtime.block_on(async move {
+                    let bindings = carina_core::binding_index::ResolvedBindings::default();
+                    let module_gate =
+                        carina_core::executor::ModuleConstraintGate::from_live_compositions(&[]);
+                    let mut schemas = carina_core::schema::SchemaRegistry::new();
+                    let schema =
+                        crate::schemas::generated::get_config_by_type(&resource.id.resource_type)
+                            .unwrap_or_else(|| {
+                                panic!(
+                                    "missing dispatch-test schema for {}",
+                                    resource.id.resource_type
+                                )
+                            })
+                            .schema
+                            .clone()
+                            .validate()
+                            .expect("test schema must pass admission");
+                    schemas.insert("awscc", schema);
+                    let factories: Vec<Box<dyn carina_core::provider::ProviderFactory>> =
+                        vec![Box::new(crate::OwnerOnlyAwsccFactory)];
+                    let preparation = carina_core::executor::ProviderPreparationContext::new(
+                        &bindings,
+                        &module_gate,
+                        &[],
+                        &crate::AwsccNormalizer,
+                        &factories,
+                        &schemas,
+                    );
+                    carina_core::executor::prepare_create_request(resource, &preparation)
+                        .await
+                        .expect("test resource should pass checked create preparation")
+                })
+            })
+            .expect("test preparation thread should spawn")
+            .join()
+            .expect("test preparation thread should not panic");
         carina_core::executor::dispatch_create(provider, &id, request).await
     }
 
@@ -4318,7 +4349,10 @@ mod tests {
             "provider must retry read with the identifier from failed progress"
         );
         assert_eq!(created.identifier().as_str(), "partial-bucket");
-        assert!(matches!(created.observation(), Observation::ReadFailed(_)));
+        assert!(matches!(
+            created.observation(),
+            CreateObservation::Unobserved(UnobservedReason::ReadFailed(_))
+        ));
         assert!(error.to_string().contains("post-create read denied"));
     }
 
@@ -4360,7 +4394,7 @@ mod tests {
             "provider must retry read with the identifier from failed progress"
         );
         assert_eq!(created.identifier().as_str(), "partial-bucket");
-        let Observation::Read(ReadOutcome::Found { state }) = created.observation() else {
+        let CreateObservation::Observed(state) = created.observation() else {
             panic!("successful read-back must be retained as the failure observation");
         };
         assert_eq!(state.identifier().as_str(), "partial-bucket");
@@ -4508,7 +4542,7 @@ mod tests {
         assert_eq!(created.identifier().as_str(), "flow-log-role");
         assert!(matches!(
             created.observation(),
-            Observation::Read(ReadOutcome::NotFound { .. })
+            CreateObservation::Unobserved(UnobservedReason::NotFound)
         ));
         assert!(
             !sts.saw_get_caller_identity.load(Ordering::SeqCst),
@@ -4547,14 +4581,18 @@ mod tests {
 
     fn make_schema_attrs(
         entries: Vec<(&str, &str, AttributeType, bool)>,
-    ) -> HashMap<String, AttributeSchema> {
-        let mut map = HashMap::new();
+    ) -> BTreeMap<String, AttributeSchema> {
+        let mut map = BTreeMap::new();
         for (dsl_name, provider_name, attr_type, required) in entries {
-            let mut s = AttributeSchema::new(dsl_name, attr_type)
-                .with_provider_name(provider_name.to_string());
-            if required {
-                s = s.required();
-            }
+            let s = if required {
+                AttributeSchema::required(dsl_name, attr_type)
+                    .with_provider_name(provider_name.to_string())
+                    .build()
+            } else {
+                AttributeSchema::optional(dsl_name, attr_type)
+                    .with_provider_name(provider_name.to_string())
+                    .build()
+            };
             map.insert(dsl_name.to_string(), s);
         }
         map
@@ -4760,7 +4798,14 @@ mod tests {
         )]))
         .expect("AutoPublish should encode as persisted provider state");
         let mut registry = SchemaRegistry::new();
-        registry.insert("awscc", config.schema.clone());
+        registry.insert(
+            "awscc",
+            config
+                .schema
+                .clone()
+                .validate()
+                .expect("cloudfront.Function schema must be valid"),
+        );
         let saved_attrs = RawSavedAttrs::from_persisted(
             HashMap::from([(desired.id.clone(), persisted)]),
             HashMap::new(),

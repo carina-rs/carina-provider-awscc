@@ -2,7 +2,7 @@
 //! identity used by the AWS provider's Route53 alias-target sink.
 
 use carina_core::resource::{ConcreteValue, Value};
-use carina_core::schema::{AttributeType, Schema, TypeInSchema};
+use carina_core::schema::{AttributeType, TypeInSchema};
 use carina_provider_awscc::schemas::generated::elasticloadbalancingv2::load_balancer::elasticloadbalancingv2_load_balancer_config;
 use carina_provider_awscc::schemas::generated::route53::hosted_zone::route53_hosted_zone_config;
 
@@ -56,14 +56,13 @@ fn hosted_zone_id_producers_validate_route53_values() {
         ),
         ("HostedZone.id", route53_hosted_zone_config(), "id"),
     ] {
-        let producer_type = config
+        let schema = config
             .schema
-            .attributes()
-            .get(attribute_name)
-            .unwrap_or_else(|| panic!("{label} must exist"))
-            .attr_type()
-            .clone();
-        let schema = Schema::flat(producer_type);
+            .validate()
+            .unwrap_or_else(|error| panic!("{label} schema must be valid: {error}"));
+        let producer_type = schema
+            .effective_attribute(attribute_name)
+            .unwrap_or_else(|| panic!("{label} must exist"));
 
         for hosted_zone_id in [
             "Z35SXDOTRQ7X7K",
@@ -71,7 +70,7 @@ fn hosted_zone_id_producers_validate_route53_values() {
             "Z2P70J7HTTTPLU",
             "Z05136711ZXUHBDOA8D5O",
         ] {
-            let result = schema.validate(&Value::Concrete(ConcreteValue::String(
+            let result = producer_type.validate(&Value::Concrete(ConcreteValue::String(
                 hosted_zone_id.to_string().into(),
             )));
             assert!(
@@ -82,7 +81,7 @@ fn hosted_zone_id_producers_validate_route53_values() {
 
         for hosted_zone_id in ["", "/hostedzone/Z05136711ZXUHBDOA8D5O"] {
             assert!(
-                schema
+                producer_type
                     .validate(&Value::Concrete(ConcreteValue::String(
                         hosted_zone_id.to_string().into()
                     )))

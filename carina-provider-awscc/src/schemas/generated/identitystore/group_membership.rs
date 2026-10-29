@@ -10,43 +10,56 @@ use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, Struct
 use regex::Regex;
 
 /// Returns the schema config for identitystore_group_membership (AWS::IdentityStore::GroupMembership)
+#[rustfmt::skip]
 pub fn identitystore_group_membership_config() -> AwsccSchemaConfig {
+    let mut schema = ResourceSchema::new("identitystore.GroupMembership")
+        .with_description("Resource Type Definition for AWS:IdentityStore::GroupMembership");
+    #[inline(never)]
+    fn build_group_id_attribute() -> AttributeSchema {
+        AttributeSchema::required("group_id", carina_aws_types::sso_principal_id())
+                .create_only()
+                .with_description("The unique identifier for a group in the identity store.")
+                .with_provider_name("GroupId")
+            .build()
+    }
+    schema = schema.attribute(build_group_id_attribute());
+    #[inline(never)]
+    fn build_identity_store_id_attribute() -> AttributeSchema {
+        AttributeSchema::required("identity_store_id", carina_aws_types::identity_store_id())
+                .create_only()
+                .with_description("The globally unique identifier for the identity store.")
+                .with_provider_name("IdentityStoreId")
+            .build()
+    }
+    schema = schema.attribute(build_identity_store_id_attribute());
+    #[inline(never)]
+    fn build_member_id_attribute() -> AttributeSchema {
+        AttributeSchema::required("member_id", AttributeType::struct_("MemberId".to_string(), vec![StructField::required("user_id", AttributeType::refined_string(None, Some("^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$".to_string()), Some((Some(1), Some(47))), None)).with_description("The identifier for a user in the identity store.").with_provider_name("UserId").build()]))
+                .create_only()
+                .with_description("An object containing the identifier of a group member.")
+                .with_provider_name("MemberId")
+            .build()
+    }
+    schema = schema.attribute(build_member_id_attribute());
+    #[inline(never)]
+    fn build_membership_id_attribute() -> AttributeSchema {
+        AttributeSchema::provider_populated("membership_id", AttributeType::refined_string(None, Some("^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$".to_string()), Some((Some(1), Some(47))), None))
+                .with_description("The identifier for a GroupMembership in the identity store. (read-only)")
+                .with_provider_name("MembershipId")
+            .build()
+    }
+    schema = schema.attribute(build_membership_id_attribute());
+    schema = schema
+        .with_coexisting_replacement();
+    #[inline(never)]
+    fn build_schema_def_0() -> AttributeType { AttributeType::struct_("MemberId".to_string(), vec![StructField::required("user_id", AttributeType::refined_string(None, Some("^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$".to_string()), Some((Some(1), Some(47))), None)).with_description("The identifier for a user in the identity store.").with_provider_name("UserId").build()]) }
+    schema = schema.with_def("MemberId", build_schema_def_0());
     AwsccSchemaConfig {
         aws_type_name: "AWS::IdentityStore::GroupMembership",
         resource_type_name: "identitystore.GroupMembership",
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "MembershipId", dsl_name: "membership_id" }, crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "IdentityStoreId", dsl_name: "identity_store_id" }],
         tags: None,
-        schema: ResourceSchema::new("identitystore.GroupMembership")
-	        .with_description("Resource Type Definition for AWS:IdentityStore::GroupMembership")
-        .attribute(
-            AttributeSchema::new("group_id", carina_aws_types::sso_principal_id())
-                .required()
-                .create_only()
-                .with_description("The unique identifier for a group in the identity store.")
-                .with_provider_name("GroupId"),
-        )
-        .attribute(
-            AttributeSchema::new("identity_store_id", carina_aws_types::identity_store_id())
-                .required()
-                .create_only()
-                .with_description("The globally unique identifier for the identity store.")
-                .with_provider_name("IdentityStoreId"),
-        )
-        .attribute(
-            AttributeSchema::new("member_id", AttributeType::struct_("MemberId".to_string(), vec![StructField::new("user_id", AttributeType::refined_string(None, Some("^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$".to_string()), Some((Some(1), Some(47))), None)).required().with_description("The identifier for a user in the identity store.").with_provider_name("UserId")]))
-                .required()
-                .create_only()
-                .with_description("An object containing the identifier of a group member.")
-                .with_provider_name("MemberId"),
-        )
-        .attribute(
-            AttributeSchema::new("membership_id", AttributeType::refined_string(None, Some("^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$".to_string()), Some((Some(1), Some(47))), None))
-                .read_only()
-                .with_description("The identifier for a GroupMembership in the identity store. (read-only)")
-                .with_provider_name("MembershipId"),
-        )
-        .with_coexisting_replacement()
-        .with_def("MemberId", AttributeType::struct_("MemberId".to_string(), vec![StructField::new("user_id", AttributeType::refined_string(None, Some("^([0-9a-f]{10}-|)[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$".to_string()), Some((Some(1), Some(47))), None)).required().with_description("The identifier for a user in the identity store.").with_provider_name("UserId")]))
+        schema,
     }
 }
 

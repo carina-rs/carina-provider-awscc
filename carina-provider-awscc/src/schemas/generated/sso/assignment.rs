@@ -12,112 +12,72 @@ const VALID_PRINCIPAL_TYPE: &[&str] = &["USER", "GROUP"];
 const VALID_TARGET_TYPE: &[&str] = &["AWS_ACCOUNT"];
 
 /// Returns the schema config for sso_assignment (AWS::SSO::Assignment)
+#[rustfmt::skip]
 pub fn sso_assignment_config() -> AwsccSchemaConfig {
+    let mut schema = ResourceSchema::new("sso.Assignment")
+        .with_description("Resource Type definition for SSO assignmet");
+    #[inline(never)]
+    fn build_instance_arn_attribute() -> AttributeSchema {
+        AttributeSchema::required("instance_arn", carina_aws_types::sso_instance_arn())
+                .create_only()
+                .with_description("The sso instance that the permission set is owned.")
+                .with_provider_name("InstanceArn")
+            .build()
+    }
+    schema = schema.attribute(build_instance_arn_attribute());
+    #[inline(never)]
+    fn build_permission_set_arn_attribute() -> AttributeSchema {
+        AttributeSchema::required("permission_set_arn", carina_aws_types::sso_permission_set_arn())
+                .create_only()
+                .with_description("The permission set that the assignment will be assigned")
+                .with_provider_name("PermissionSetArn")
+            .build()
+    }
+    schema = schema.attribute(build_permission_set_arn_attribute());
+    #[inline(never)]
+    fn build_principal_id_attribute() -> AttributeSchema {
+        AttributeSchema::required("principal_id", carina_aws_types::sso_principal_id())
+                .create_only()
+                .with_description("The assignee's identifier, user id/group id")
+                .with_provider_name("PrincipalId")
+            .build()
+    }
+    schema = schema.attribute(build_principal_id_attribute());
+    #[inline(never)]
+    fn build_principal_type_attribute() -> AttributeSchema {
+        AttributeSchema::required("principal_type", AttributeType::enum_(carina_core::schema::enum_identity("PrincipalType", Some("aws.sso.Assignment")), Some(vec!["USER".to_string(), "GROUP".to_string()]), vec![("USER".to_string(), "user".to_string()), ("GROUP".to_string(), "group".to_string())], None, None))
+                .create_only()
+                .with_description("The assignee's type, user/group")
+                .with_provider_name("PrincipalType")
+            .build()
+    }
+    schema = schema.attribute(build_principal_type_attribute());
+    #[inline(never)]
+    fn build_target_id_attribute() -> AttributeSchema {
+        AttributeSchema::required("target_id", carina_aws_types::aws_account_id())
+                .create_only()
+                .with_description("The account id to be provisioned.")
+                .with_provider_name("TargetId")
+            .build()
+    }
+    schema = schema.attribute(build_target_id_attribute());
+    #[inline(never)]
+    fn build_target_type_attribute() -> AttributeSchema {
+        AttributeSchema::required("target_type", AttributeType::enum_(carina_core::schema::enum_identity("TargetType", Some("aws.sso.Assignment")), Some(vec!["AWS_ACCOUNT".to_string()]), vec![("AWS_ACCOUNT".to_string(), "aws_account".to_string())], None, None))
+                .create_only()
+                .with_description("The type of resource to be provisioned to, only aws account now")
+                .with_provider_name("TargetType")
+            .build()
+    }
+    schema = schema.attribute(build_target_type_attribute());
+    schema = schema
+        .with_coexisting_replacement();
     AwsccSchemaConfig {
         aws_type_name: "AWS::SSO::Assignment",
         resource_type_name: "sso.Assignment",
-        primary_identifier: &[
-            crate::schemas::config::PrimaryIdentifierAttribute {
-                provider_name: "InstanceArn",
-                dsl_name: "instance_arn",
-            },
-            crate::schemas::config::PrimaryIdentifierAttribute {
-                provider_name: "TargetId",
-                dsl_name: "target_id",
-            },
-            crate::schemas::config::PrimaryIdentifierAttribute {
-                provider_name: "TargetType",
-                dsl_name: "target_type",
-            },
-            crate::schemas::config::PrimaryIdentifierAttribute {
-                provider_name: "PermissionSetArn",
-                dsl_name: "permission_set_arn",
-            },
-            crate::schemas::config::PrimaryIdentifierAttribute {
-                provider_name: "PrincipalType",
-                dsl_name: "principal_type",
-            },
-            crate::schemas::config::PrimaryIdentifierAttribute {
-                provider_name: "PrincipalId",
-                dsl_name: "principal_id",
-            },
-        ],
+        primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "InstanceArn", dsl_name: "instance_arn" }, crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "TargetId", dsl_name: "target_id" }, crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "TargetType", dsl_name: "target_type" }, crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "PermissionSetArn", dsl_name: "permission_set_arn" }, crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "PrincipalType", dsl_name: "principal_type" }, crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "PrincipalId", dsl_name: "principal_id" }],
         tags: None,
-        schema: ResourceSchema::new("sso.Assignment")
-            .with_description("Resource Type definition for SSO assignmet")
-            .attribute(
-                AttributeSchema::new("instance_arn", carina_aws_types::sso_instance_arn())
-                    .required()
-                    .create_only()
-                    .with_description("The sso instance that the permission set is owned.")
-                    .with_provider_name("InstanceArn"),
-            )
-            .attribute(
-                AttributeSchema::new(
-                    "permission_set_arn",
-                    carina_aws_types::sso_permission_set_arn(),
-                )
-                .required()
-                .create_only()
-                .with_description("The permission set that the assignment will be assigned")
-                .with_provider_name("PermissionSetArn"),
-            )
-            .attribute(
-                AttributeSchema::new("principal_id", carina_aws_types::sso_principal_id())
-                    .required()
-                    .create_only()
-                    .with_description("The assignee's identifier, user id/group id")
-                    .with_provider_name("PrincipalId"),
-            )
-            .attribute(
-                AttributeSchema::new(
-                    "principal_type",
-                    AttributeType::enum_(
-                        carina_core::schema::enum_identity(
-                            "PrincipalType",
-                            Some("aws.sso.Assignment"),
-                        ),
-                        Some(vec!["USER".to_string(), "GROUP".to_string()]),
-                        vec![
-                            ("USER".to_string(), "user".to_string()),
-                            ("GROUP".to_string(), "group".to_string()),
-                        ],
-                        None,
-                        None,
-                    ),
-                )
-                .required()
-                .create_only()
-                .with_description("The assignee's type, user/group")
-                .with_provider_name("PrincipalType"),
-            )
-            .attribute(
-                AttributeSchema::new("target_id", carina_aws_types::aws_account_id())
-                    .required()
-                    .create_only()
-                    .with_description("The account id to be provisioned.")
-                    .with_provider_name("TargetId"),
-            )
-            .attribute(
-                AttributeSchema::new(
-                    "target_type",
-                    AttributeType::enum_(
-                        carina_core::schema::enum_identity(
-                            "TargetType",
-                            Some("aws.sso.Assignment"),
-                        ),
-                        Some(vec!["AWS_ACCOUNT".to_string()]),
-                        vec![("AWS_ACCOUNT".to_string(), "aws_account".to_string())],
-                        None,
-                        None,
-                    ),
-                )
-                .required()
-                .create_only()
-                .with_description("The type of resource to be provisioned to, only aws account now")
-                .with_provider_name("TargetType"),
-            )
-            .with_coexisting_replacement(),
+        schema,
     }
 }
 

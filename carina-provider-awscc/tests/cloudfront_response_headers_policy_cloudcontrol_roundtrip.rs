@@ -256,17 +256,35 @@ fn response_headers_policy_id_matches_existing_cloudfront_id_reference_pattern()
 #[test]
 fn response_headers_policy_schema_validates_nested_access_control_allow_methods() {
     let config = cloudfront_response_headers_policy_config();
+    let schema = config
+        .schema
+        .validate()
+        .expect("CloudFront response headers policy schema must pass admission");
+    let policy_config = schema
+        .effective_attribute("response_headers_policy_config")
+        .expect("ResponseHeadersPolicy.response_headers_policy_config should exist");
     let valid = response_headers_policy_resource(&["get"]);
     let invalid = response_headers_policy_resource(&["GTE"]);
+    let valid = valid.resolved_attributes();
+    let invalid = invalid.resolved_attributes();
 
     assert!(
-        config.schema.validate(&valid.resolved_attributes()).is_ok(),
+        policy_config
+            .validate(
+                valid
+                    .get("response_headers_policy_config")
+                    .expect("valid resource should contain response_headers_policy_config"),
+            )
+            .is_ok(),
         "whole-resource schema validation should accept the nested DSL enum value `get`"
     );
     assert!(
-        config
-            .schema
-            .validate(&invalid.resolved_attributes())
+        policy_config
+            .validate(
+                invalid
+                    .get("response_headers_policy_config")
+                    .expect("invalid resource should contain response_headers_policy_config"),
+            )
             .is_err(),
         "whole-resource schema validation should reject the nested unknown HTTP method `GTE`"
     );

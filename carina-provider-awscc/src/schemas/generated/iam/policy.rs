@@ -7,7 +7,7 @@ use carina_core::schema::{AttributeType, legacy_validator};
 
 pub fn arn() -> AttributeType {
     AttributeType::refined_string_with_validator(
-        Some(carina_aws_types::provider_type("iam", "Policy", "Arn")),
+        carina_aws_types::provider_type("iam", "Policy", "Arn"),
         Some("^arn:(aws|aws-cn|aws-us-gov):iam::[^:]*:policy/.+$".to_string()),
         None,
         legacy_validator(|value| {
