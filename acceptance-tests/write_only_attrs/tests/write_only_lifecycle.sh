@@ -8,12 +8,12 @@ source "$(dirname "$0")/../../shared/_helpers.sh"
 echo "Test: write-only attribute lifecycle"
 echo ""
 
-WORK_DIR=$(mktemp -d)
+register_acceptance_work_dir \
+    "write_only_attrs/write_only_lifecycle" "$SCRIPT_DIR/step1_create.crn" WORK_DIR
 ACTIVE_WORK_DIR="$WORK_DIR"
 cd "$WORK_DIR"
 
 # Step 1: Create with write-only attribute
-cp "$SCRIPT_DIR/step1_create.crn" "$WORK_DIR/main.crn"
 run_step "step1: apply (create with write-only attr)" "$CARINA_BIN" apply --auto-approve .
 run_step "step1: plan-verify (no changes)" "$CARINA_BIN" plan .
 
@@ -66,7 +66,7 @@ run_step "step3: plan-verify (no changes)" "$CARINA_BIN" plan .
 echo "  Cleanup: destroying resources..."
 "$CARINA_BIN" destroy --auto-approve . > /dev/null 2>&1 || true
 "$CARINA_BIN" destroy --auto-approve . > /dev/null 2>&1 || true
-rm -rf "$WORK_DIR"
+release_acceptance_work_dir "$WORK_DIR" || TEST_FAILED=$((TEST_FAILED + 1))
 ACTIVE_WORK_DIR=""
 
 finish_test

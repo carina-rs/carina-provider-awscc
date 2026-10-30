@@ -5,9 +5,8 @@ source "$(dirname "$0")/../../shared/_helpers.sh"
 echo "Test: module attributes access"
 echo ""
 
-WORK_DIR=$(mktemp -d)
+register_acceptance_work_dir "module/attributes_access.crn" "$SCRIPT_DIR/attributes_access.crn" WORK_DIR
 ACTIVE_WORK_DIR="$WORK_DIR"
-cp "$SCRIPT_DIR/attributes_access.crn" "$WORK_DIR/main.crn"
 cp -r "$SCRIPT_DIR/modules" "$WORK_DIR/modules"
 cd "$WORK_DIR"
 
@@ -32,7 +31,7 @@ assert_state_queries_equal "assert: route_table vpc_id matches module vpc" \
 
 echo "  Cleanup: destroying resources..."
 "$CARINA_BIN" destroy --auto-approve . > /dev/null 2>&1 || true
-rm -rf "$WORK_DIR"
+release_acceptance_work_dir "$WORK_DIR" || TEST_FAILED=$((TEST_FAILED + 1))
 ACTIVE_WORK_DIR=""
 
 finish_test

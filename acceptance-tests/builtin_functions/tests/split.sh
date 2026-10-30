@@ -5,9 +5,8 @@ source "$(dirname "$0")/../../shared/_helpers.sh"
 echo "Test: split() function"
 echo ""
 
-WORK_DIR=$(mktemp -d)
+register_acceptance_work_dir "builtin_functions/split.crn" "$SCRIPT_DIR/split.crn" WORK_DIR
 ACTIVE_WORK_DIR="$WORK_DIR"
-cp "$SCRIPT_DIR/split.crn" "$WORK_DIR/main.crn"
 cd "$WORK_DIR"
 
 run_step "step1: apply" "$CARINA_BIN" apply --auto-approve .
@@ -20,7 +19,7 @@ assert_state_value \
 
 echo "  Cleanup: destroying resources..."
 "$CARINA_BIN" destroy --auto-approve . > /dev/null 2>&1 || true
-rm -rf "$WORK_DIR"
+release_acceptance_work_dir "$WORK_DIR" || TEST_FAILED=$((TEST_FAILED + 1))
 ACTIVE_WORK_DIR=""
 
 finish_test

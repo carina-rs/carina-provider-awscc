@@ -107,18 +107,17 @@ cleanup() {
         echo "  Cleanup: destroying CloudFront distribution resources..."
         (cd "$ACTIVE_WORK_DIR" && with_account_creds run_with_timeout 3600 "$CARINA_BIN" destroy --auto-approve . 2>&1)
         (cd "$ACTIVE_WORK_DIR" && with_account_creds run_with_timeout 3600 "$CARINA_BIN" destroy --auto-approve . 2>&1)
-        rm -rf "$ACTIVE_WORK_DIR"
+        echo "  Registry entry retained after EXIT cleanup: $ACTIVE_WORK_DIR" >&2
         ACTIVE_WORK_DIR=""
     fi
 }
 trap cleanup EXIT
 
-WORK_DIR="$(mktemp -d)"
-ACTIVE_WORK_DIR="$WORK_DIR"
-
 inject_provider_source "$SCRIPT_DIR/basic.crn" INJECTED_DIR || exit 1
-cp "$INJECTED_DIR/main.crn" "$WORK_DIR/main.crn"
+register_acceptance_work_dir \
+    "cloudfront_distribution/basic.crn" "$INJECTED_DIR/main.crn" WORK_DIR
 rm -rf "$INJECTED_DIR"
+ACTIVE_WORK_DIR="$WORK_DIR"
 
 echo "Running CloudFront distribution acceptance test with AWS_PROFILE=${AWS_PROFILE:-}"
 echo ""
@@ -128,7 +127,9 @@ record_step "apply" apply_distribution
 plan_verify "$WORK_DIR"
 record_step "destroy" destroy_distribution
 
-rm -rf "$WORK_DIR"
+if ! release_acceptance_work_dir "$WORK_DIR"; then
+    TOTAL_FAILED=$((TOTAL_FAILED + 1))
+fi
 ACTIVE_WORK_DIR=""
 
 echo ""

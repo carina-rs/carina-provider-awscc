@@ -5,9 +5,8 @@ source "$(dirname "$0")/../../shared/_helpers.sh"
 echo "Test: if expression (true condition)"
 echo ""
 
-WORK_DIR=$(mktemp -d)
+register_acceptance_work_dir "if_expression/if_true.crn" "$SCRIPT_DIR/if_true.crn" WORK_DIR
 ACTIVE_WORK_DIR="$WORK_DIR"
-cp "$SCRIPT_DIR/if_true.crn" "$WORK_DIR/main.crn"
 cd "$WORK_DIR"
 
 run_step "step1: apply" "$CARINA_BIN" apply --auto-approve .
@@ -21,7 +20,7 @@ assert_state_value "assert: vpc Name = 'if-true-test'" \
 
 echo "  Cleanup: destroying resources..."
 "$CARINA_BIN" destroy --auto-approve . > /dev/null 2>&1 || true
-rm -rf "$WORK_DIR"
+release_acceptance_work_dir "$WORK_DIR" || TEST_FAILED=$((TEST_FAILED + 1))
 ACTIVE_WORK_DIR=""
 
 finish_test

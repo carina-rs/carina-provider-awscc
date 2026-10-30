@@ -319,7 +319,7 @@ cleanup() {
     fi
 
     if [ -n "$ACTIVE_WORK_DIR" ] && [ -d "$ACTIVE_WORK_DIR" ]; then
-        rm -rf "$ACTIVE_WORK_DIR"
+        echo "  Registry entry retained after EXIT cleanup: $ACTIVE_WORK_DIR" >&2
     fi
     if [ -n "$CERT_TEMP_DIR" ] && [ -d "$CERT_TEMP_DIR" ]; then
         rm -rf "$CERT_TEMP_DIR"
@@ -329,8 +329,6 @@ cleanup() {
 }
 trap cleanup EXIT
 
-WORK_DIR="$(mktemp -d)"
-ACTIVE_WORK_DIR="$WORK_DIR"
 CERT_TEMP_DIR="$(mktemp -d)"
 
 echo "Running ELBv2 Listener OIDC update acceptance test with AWS_PROFILE=${AWS_PROFILE:-}"
@@ -350,7 +348,16 @@ if ! load_certificate_arn; then
     exit 1
 fi
 
-install_config "$SCRIPT_DIR/step1.crn"
+inject_provider_source "$SCRIPT_DIR/step1.crn" INJECTED_DIR || exit 1
+REGISTERED_CONFIG="$CERT_TEMP_DIR/registered-main.crn"
+sed "s|$CERTIFICATE_PLACEHOLDER|$CERTIFICATE_ARN|g" \
+    "$INJECTED_DIR/main.crn" > "$REGISTERED_CONFIG"
+register_acceptance_work_dir \
+    "elasticloadbalancingv2_listener_oidc" "$REGISTERED_CONFIG" WORK_DIR
+rm -rf "$INJECTED_DIR"
+rm -f "$REGISTERED_CONFIG"
+ACTIVE_WORK_DIR="$WORK_DIR"
+
 record_step "init" "$CARINA_BIN" init "$WORK_DIR"
 record_step "step1: apply HTTPS OIDC listener" apply_listener
 plan_verify "$WORK_DIR"
@@ -387,8 +394,11 @@ if [ "$destroy_succeeded" -eq 1 ] \
     && [ "$target_group_gone_succeeded" -eq 1 ] \
     && [ "$certificate_delete_succeeded" -eq 1 ] \
     && [ "$certificate_gone_succeeded" -eq 1 ]; then
-    rm -rf "$WORK_DIR" "$CERT_TEMP_DIR"
+    if ! release_acceptance_work_dir "$WORK_DIR"; then
+        TOTAL_FAILED=$((TOTAL_FAILED + 1))
+    fi
     ACTIVE_WORK_DIR=""
+    rm -rf "$CERT_TEMP_DIR"
     CERT_TEMP_DIR=""
 fi
 
