@@ -1,0 +1,35 @@
+# Budgets Budget - Basic test
+#
+# AWS Budgets is a global service whose API and verified Cloud Control path use
+# us-east-1. The email address is syntactically valid but intentionally inert.
+
+provider awscc {
+  region = aws.Region.us_east_1
+}
+
+awscc.budgets.Budget {
+  budget = {
+    budget_limit = {
+      amount = 5.0
+      unit   = 'USD'
+    }
+
+    budget_name  = 'carina-acc-test-monthly-cost'
+    budget_type  = 'COST'
+    time_unit    = 'MONTHLY'
+  }
+
+  notifications_with_subscribers = [{
+    notification = {
+      comparison_operator = 'GREATER_THAN'
+      notification_type   = 'ACTUAL'
+      threshold           = 80.0
+      threshold_type      = 'PERCENTAGE'
+    }
+
+    subscribers  = [{
+      address           = 'carina-acc-test@example.com'
+      subscription_type = 'EMAIL'
+    }]
+  }]
+}

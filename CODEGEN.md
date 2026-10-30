@@ -71,6 +71,29 @@ aws-vault exec <profile> -- ./carina-provider-awscc/scripts/generate-schemas.sh 
 
 That's it. The Cloud Control API provider handles read/create/update/delete generically.
 
+### Handlerless Cloud Control Types
+
+Codegen normally treats the schema's `handlers` map as the single source for
+both Cloud Control support and per-operation IAM permissions. Use
+`HANDLERLESS_CLOUD_CONTROL_TYPES` only when a registry schema omits that map
+despite the type being provisionable.
+
+Every allowlist entry requires all of the following evidence:
+
+1. `cloudformation describe-type` reports a provisionable `ProvisioningType`
+   such as `FULLY_MUTABLE` or `IMMUTABLE`.
+2. At least one Cloud Control operation succeeds for the type in the measured
+   account and Region.
+3. Authoritative AWS documentation identifies non-empty IAM permissions for
+   create, read, update, delete, and list. Cite the source URL next to the
+   entry, including separate tag operations only when the resource's
+   CloudFormation and IAM documentation requires them.
+
+Record the measurement date and Region in the source comment. The typed entry
+couples provisionability to its five permission sets, and its const constructor
+rejects an empty operation set at compile time. If the registry later publishes
+handlers for that type, remove the allowlist entry and use those handlers.
+
 ## Generated File Structure
 
 ```
@@ -139,6 +162,7 @@ cargo run --bin codegen -- --file schema.json --type-name AWS::EC2::VPC \
 | `number` | `AttributeType::Float` |
 | `object` (properties) | `AttributeType::Struct` with `StructField` |
 | `["object","string"]` | `carina_aws_types::iam_policy_document()` when the property name ends in `PolicyDocument` or is listed in `NONSTANDARD_IAM_POLICY_DOCUMENT_PROPERTIES`; otherwise codegen panics and names the property so it can be classified explicitly |
+| `$ref` to a `Tag*` definition | `carina_aws_types::tags_type()` only when the definition is an object with exactly direct-string `Key` and `Value` properties, or has no `properties` and exactly one `patternProperties` entry whose value is a direct string |
 | `array` | `AttributeType::unordered_list()` |
 
 CloudFormation `number` properties map to `Float` unless registered as `IntegerFromNumber` in `resource_type_overrides()`. That override maps them to `Int` using the property's CloudFormation `minimum` and `maximum`.

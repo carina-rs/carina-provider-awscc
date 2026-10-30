@@ -1,0 +1,31 @@
+# CloudWatch Alarm Example
+#
+# Creates an alarm for Lambda errors and tags it for discovery and ownership.
+
+provider awscc {
+  region = awscc.Region.ap_northeast_1
+}
+
+awscc.cloudwatch.Alarm {
+  alarm_name        = 'carina-registry-publish-api-errors'
+  alarm_description = 'Registry publish API Lambda errors'
+
+  comparison_operator = 'GreaterThanThreshold'
+  datapoints_to_alarm = 1
+  evaluation_periods  = 2
+  metric_name         = 'Errors'
+  namespace           = 'AWS/Lambda'
+  period              = 60
+  statistic           = 'Sum'
+  threshold           = 0.5
+
+  dimensions = [{
+    name  = 'FunctionName'
+    value = 'carina-registry-publish-api'
+  }]
+
+  tags = {
+    Environment = 'production'
+    Project     = 'carina-registry'
+  }
+}
