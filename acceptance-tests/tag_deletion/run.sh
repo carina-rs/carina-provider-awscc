@@ -203,15 +203,13 @@ run_test() {
 
     # Step 1: Apply initial config (resource with two tags)
     if ! run_step "$work_dir" "step1: apply initial (two tags)" "apply" "--auto-approve"; then
-        destroy_work_dir "$work_dir"
-        ACTIVE_WORK_DIR=""
+        cleanup_registered_work_dir "$work_dir" destroy_work_dir || true
         return 1
     fi
 
     # Step 1b: Plan-verify initial state
     if ! run_plan_verify "$work_dir" "step1: plan-verify initial"; then
-        destroy_work_dir "$work_dir"
-        ACTIVE_WORK_DIR=""
+        cleanup_registered_work_dir "$work_dir" destroy_work_dir || true
         return 1
     fi
 
@@ -220,29 +218,23 @@ run_test() {
 
     # Step 2: Apply modified config (tag(s) removed)
     if ! run_step "$work_dir" "step2: apply tag removal" "apply" "--auto-approve"; then
-        destroy_work_dir "$work_dir"
-        ACTIVE_WORK_DIR=""
+        cleanup_registered_work_dir "$work_dir" destroy_work_dir || true
         return 1
     fi
 
     # Step 3: Plan-verify after tag removal (must be idempotent)
     if ! run_plan_verify "$work_dir" "step3: plan-verify after tag removal"; then
-        destroy_work_dir "$work_dir"
-        ACTIVE_WORK_DIR=""
+        cleanup_registered_work_dir "$work_dir" destroy_work_dir || true
         return 1
     fi
 
     # Step 4: Destroy
-    if ! destroy_work_dir "$work_dir"; then
-        echo "  WARNING: Destroy/state verification failed; registry entry retained:"
-        echo "    $work_dir"
+    if ! cleanup_registered_work_dir "$work_dir" destroy_work_dir; then
         TOTAL_FAILED=$((TOTAL_FAILED + 1))
-        ACTIVE_WORK_DIR=""
         echo ""
         return 1
     fi
 
-    ACTIVE_WORK_DIR=""
     echo ""
 }
 

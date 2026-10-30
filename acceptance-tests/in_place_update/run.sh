@@ -239,15 +239,15 @@ run_test() {
 
     # Step 1: Apply initial config
     if ! run_step "$work_dir" "step1: apply initial" "apply" "$step1" "--auto-approve"; then
-        destroy_work_dir "$work_dir" "$step2" "$step1"
-        ACTIVE_WORK_DIR=""
+        cleanup_registered_work_dir \
+            "$work_dir" destroy_work_dir "$step2" "$step1" || true
         return 1
     fi
 
     # Step 1b: Plan-verify initial state
     if ! run_plan_verify "$work_dir" "step1: plan-verify initial" "$step1"; then
-        destroy_work_dir "$work_dir" "$step2" "$step1"
-        ACTIVE_WORK_DIR=""
+        cleanup_registered_work_dir \
+            "$work_dir" destroy_work_dir "$step2" "$step1" || true
         return 1
     fi
 
@@ -260,8 +260,8 @@ run_test() {
 
     # Step 2: Apply modified config (in-place update)
     if ! run_step "$work_dir" "step2: apply in-place update" "apply" "$step2" "--auto-approve"; then
-        destroy_work_dir "$work_dir" "$step2" "$step1"
-        ACTIVE_WORK_DIR=""
+        cleanup_registered_work_dir \
+            "$work_dir" destroy_work_dir "$step2" "$step1" || true
         return 1
     fi
 
@@ -274,29 +274,26 @@ run_test() {
 
     # Assert identifiers preserved (in-place update should NOT replace any resource)
     if ! assert_identifiers "assert: identifiers preserved after update" "$ids_after_step1" "$ids_after_step2" "equal"; then
-        destroy_work_dir "$work_dir" "$step2" "$step1"
-        ACTIVE_WORK_DIR=""
+        cleanup_registered_work_dir \
+            "$work_dir" destroy_work_dir "$step2" "$step1" || true
         return 1
     fi
 
     # Step 3: Plan-verify after update
     if ! run_plan_verify "$work_dir" "step3: plan-verify after update" "$step2"; then
-        destroy_work_dir "$work_dir" "$step2" "$step1"
-        ACTIVE_WORK_DIR=""
+        cleanup_registered_work_dir \
+            "$work_dir" destroy_work_dir "$step2" "$step1" || true
         return 1
     fi
 
     # Step 4: Destroy (use destroy_work_dir to try both configs and retry)
-    if ! destroy_work_dir "$work_dir" "$step2" "$step1"; then
-        echo "  WARNING: Destroy/state verification failed; registry entry retained:"
-        echo "    $work_dir"
+    if ! cleanup_registered_work_dir \
+        "$work_dir" destroy_work_dir "$step2" "$step1"; then
         TOTAL_FAILED=$((TOTAL_FAILED + 1))
-        ACTIVE_WORK_DIR=""
         echo ""
         return 1
     fi
 
-    ACTIVE_WORK_DIR=""
     echo ""
 }
 

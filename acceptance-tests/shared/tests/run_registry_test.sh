@@ -5,6 +5,7 @@ set -euo pipefail
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SHARED_DIR="$(cd "$TEST_DIR/.." && pwd)"
 RUN_TESTS="$SHARED_DIR/../run-tests.sh"
+TAG_DELETION_RUNNER="$SHARED_DIR/../tag_deletion/run.sh"
 TEST_TMP="$(mktemp -d)"
 trap 'rm -rf "$TEST_TMP"' EXIT
 
@@ -21,6 +22,32 @@ set -euo pipefail
 
 command_name="${1:-}"
 printf '%s\n' "$*" >> "$STUB_COMMAND_LOG"
+
+if [ -n "${STUB_RUNNER_CALL_LOG:-}" ]; then
+    case "$command_name" in
+        init|apply|plan|destroy)
+            call_name="$command_name"
+            call_work_dir=$(pwd -P)
+            ;;
+        state)
+            if [ "${2:-}" = "show" ] && [ "${3:-}" = "--json" ]; then
+                call_name="state show"
+                call_work_dir=$(cd "${4:?missing entry path}" && pwd -P)
+            fi
+            ;;
+    esac
+    if [ -n "${call_name:-}" ]; then
+        registry_entry_count=0
+        if [ -d "${STUB_RUNNER_REGISTRY_ROOT:-}" ]; then
+            registry_entry_count=$(find "$STUB_RUNNER_REGISTRY_ROOT" \
+                -type d -name 'test_*' | wc -l | tr -d '[:space:]')
+        fi
+        printf '%s\t%s\t%s\n' \
+            "$call_name" "$call_work_dir" "$registry_entry_count" \
+            >> "$STUB_RUNNER_CALL_LOG"
+    fi
+fi
+
 if [ "$command_name" = "state" ] && [ "${2:-}" = "show" ] && [ "${3:-}" = "--json" ]; then
     entry="${4:?missing entry path}"
     printf '%s\n' "$entry" >> "$STUB_STATE_LOG"
@@ -38,7 +65,7 @@ fi
 
 if [ "$command_name" = "destroy" ]; then
     entry="${@: -1}"
-    if [ -f "$entry/.stub-destroy-fail" ]; then
+    if [ "${STUB_DESTROY_FAIL:-0}" = 1 ] || [ -f "$entry/.stub-destroy-fail" ]; then
         echo "stub destroy failure" >&2
         exit 23
     fi
@@ -53,6 +80,11 @@ if [ "$command_name" = "apply" ]; then
         '{"schema_version":1,"state":"present","resources":[{"identity":"stub"}]}' \
         > "$entry/.stub-state.json"
     exit 0
+fi
+
+if [ "$command_name" = "plan" ] && [ "${STUB_PLAN_FAIL:-0}" = 1 ]; then
+    echo "stub plan failure" >&2
+    exit 29
 fi
 
 if [ "$command_name" = "init" ] || [ "$command_name" = "validate" ] || \
@@ -147,6 +179,41 @@ assert_contains() {
         *"$needle"*) ;;
         *) fail "expected output to contain '$needle'; got: $haystack" ;;
     esac
+}
+
+assert_runner_reused_entry() {
+    local call_log="$1"
+    local expected_work_dir="$2"
+    local expect_state_show="$3"
+    local call_name
+    local call_work_dir
+    local registry_entry_count
+    local saw_apply=0
+    local saw_plan=0
+    local saw_destroy=0
+    local saw_state_show=0
+
+    [ -s "$call_log" ] || fail "multi-step runner made no recorded Carina calls"
+    while IFS=$'\t' read -r call_name call_work_dir registry_entry_count; do
+        [ "$call_work_dir" = "$expected_work_dir" ] || \
+            fail "$call_name used $call_work_dir instead of $expected_work_dir"
+        [ "$registry_entry_count" = 1 ] || \
+            fail "$call_name observed $registry_entry_count registry entries instead of 1"
+        case "$call_name" in
+            apply) saw_apply=1 ;;
+            plan) saw_plan=1 ;;
+            destroy) saw_destroy=1 ;;
+            "state show") saw_state_show=1 ;;
+        esac
+    done < "$call_log"
+
+    [ "$saw_apply" -eq 1 ] || fail "multi-step runner never invoked apply"
+    [ "$saw_plan" -eq 1 ] || fail "multi-step runner never invoked plan"
+    [ "$saw_destroy" -eq 1 ] || fail "multi-step runner never invoked destroy"
+    if [ "$expect_state_show" -eq 1 ]; then
+        [ "$saw_state_show" -eq 1 ] || \
+            fail "multi-step runner never state-checked its registry entry"
+    fi
 }
 
 use_case_home() {
@@ -743,30 +810,53 @@ pass "cleanup retains and names an entry when state inspection fails"
 
 next_test
 use_case_home "awscc-multi-step"
-if ! (
-    export AWS_PROFILE="account-g"
-    SCRIPT_DIR="$TEST_TMP"
-    source "$SHARED_DIR/_helpers.sh"
-
-    step1="$TEST_TMP/awscc-step1.crn"
-    step2="$TEST_TMP/awscc-step2.crn"
-    printf '%s\n' 'provider awscc { step = 1 }' > "$step1"
-    printf '%s\n' 'provider awscc { step = 2 }' > "$step2"
-
-    register_acceptance_work_dir "awscc/multi-step" "$step1" WORK_DIR
-    ACTIVE_WORK_DIR="$WORK_DIR"
-    cp "$step2" "$WORK_DIR/main.crn"
-
-    listed_entries=$(carina_registry_list_entries "account-g")
-    [ "$listed_entries" = "$WORK_DIR" ] || exit 1
-    grep -q 'step = 2' "$WORK_DIR/main.crn" || exit 1
-
-    release_acceptance_work_dir "$WORK_DIR"
-    ACTIVE_WORK_DIR=""
-) >"$TEST_TMP/awscc-multi-step.out" 2>&1; then
-    fail "AWSCC multi-step helper did not reuse one entry: $(cat "$TEST_TMP/awscc-multi-step.out")"
+runner_call_log="$TEST_TMP/awscc-multi-step.calls"
+: > "$runner_call_log"
+export STUB_RUNNER_CALL_LOG="$runner_call_log"
+export STUB_RUNNER_REGISTRY_ROOT
+STUB_RUNNER_REGISTRY_ROOT=$(carina_registry_runs_root)
+if ! runner_output=$(
+    AWS_PROFILE="account-g" /bin/bash "$TAG_DELETION_RUNNER" \
+        "s3_bucket_all_tags" 2>&1
+); then
+    fail "AWSCC multi-step runner failed: $runner_output"
 fi
-pass "AWSCC multi-step helper reuses one registered entry across steps"
+runner_work_dir=$(awk -F '\t' 'NR == 1 { print $2 }' "$runner_call_log")
+[ -n "$runner_work_dir" ] || fail "AWSCC multi-step runner recorded no work directory"
+assert_runner_reused_entry "$runner_call_log" "$runner_work_dir" 1
+[ ! -e "$runner_work_dir" ] || \
+    fail "AWSCC multi-step runner retained its released entry: $runner_work_dir"
+[ -z "$(carina_registry_list_entries "account-g")" ] || \
+    fail "AWSCC multi-step runner left a registry entry after successful destroy"
+unset STUB_RUNNER_CALL_LOG STUB_RUNNER_REGISTRY_ROOT
+pass "AWSCC multi-step runner reuses and releases exactly one registry entry"
+
+next_test
+use_case_home "awscc-multi-step-destroy-failure"
+runner_call_log="$TEST_TMP/awscc-multi-step-destroy-failure.calls"
+: > "$runner_call_log"
+export STUB_RUNNER_CALL_LOG="$runner_call_log"
+export STUB_RUNNER_REGISTRY_ROOT
+STUB_RUNNER_REGISTRY_ROOT=$(carina_registry_runs_root)
+if runner_output=$(
+    AWS_PROFILE="account-h" STUB_PLAN_FAIL=1 STUB_DESTROY_FAIL=1 \
+        /bin/bash "$TAG_DELETION_RUNNER" "s3_bucket_all_tags" 2>&1
+); then
+    fail "AWSCC multi-step runner ignored an early plan and cleanup destroy failure"
+fi
+retained_entry=$(carina_registry_list_entries "account-h")
+[ -n "$retained_entry" ] || fail "destroy failure retained no registry entry"
+case "$retained_entry" in
+    *$'\n'*) fail "destroy failure retained more than one registry entry: $retained_entry" ;;
+esac
+retained_work_dir=$(cd "$retained_entry" && pwd -P)
+assert_runner_reused_entry "$runner_call_log" "$retained_work_dir" 0
+assert_contains "$runner_output" \
+    "WARNING: Destroy/state verification failed; registry entry retained:"
+assert_contains "$runner_output" "$retained_entry"
+[ -d "$retained_entry" ] || fail "destroy failure entry was removed"
+unset STUB_RUNNER_CALL_LOG STUB_RUNNER_REGISTRY_ROOT
+pass "AWSCC multi-step runner names its retained entry after early cleanup fails"
 
 next_test
 use_case_home "no-match"

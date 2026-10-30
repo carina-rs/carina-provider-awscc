@@ -248,6 +248,29 @@ carina_state_identifiers() {
     printf '%s\n' "$identifiers" | LC_ALL=C sort
 }
 
+# Run a suite cleanup function, report any retained registry entry consistently,
+# and disable the EXIT cleanup for the work directory. Remaining arguments are
+# passed to the cleanup function after work_dir.
+cleanup_registered_work_dir() {
+    if [ "$#" -lt 2 ]; then
+        echo "ERROR: cleanup_registered_work_dir expects a work directory and cleanup function" >&2
+        return 2
+    fi
+
+    local work_dir="$1"
+    local cleanup_function="$2"
+    local cleanup_status=0
+    shift 2
+
+    if ! "$cleanup_function" "$work_dir" "$@"; then
+        echo "  WARNING: Destroy/state verification failed; registry entry retained:"
+        echo "    $work_dir"
+        cleanup_status=1
+    fi
+    ACTIVE_WORK_DIR=""
+    return "$cleanup_status"
+}
+
 # Handle an identifier snapshot failure in the multi-step suites. Remaining
 # arguments are passed to the suite's destroy_work_dir after work_dir.
 handle_identifier_read_failure() {
@@ -258,8 +281,7 @@ handle_identifier_read_failure() {
     printf "  %-55s %s\n" "assert: read identifiers $step" "FAIL"
     echo "  ERROR: could not read identifiers $step"
     TOTAL_FAILED=$((TOTAL_FAILED + 1))
-    destroy_work_dir "$work_dir" "$@" || true
-    ACTIVE_WORK_DIR=""
+    cleanup_registered_work_dir "$work_dir" destroy_work_dir "$@" || true
 }
 
 assert_state_value() {
