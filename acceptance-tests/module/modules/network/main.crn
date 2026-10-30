@@ -3,9 +3,9 @@
 # Creates a VPC and subnet. Demonstrates intra-module resource references.
 
 arguments {
-  cidr_block : String
-  subnet_cidr: String
-  az         : String
+  cidr_block : Ipv4Cidr
+  subnet_cidr: Ipv4Cidr
+  az         : aws.AvailabilityZone.ZoneName
 }
 
 let vpc = awscc.ec2.Vpc {

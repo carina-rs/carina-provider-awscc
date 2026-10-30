@@ -98,14 +98,6 @@ run_step() {
     fi
 }
 
-# Extract all resource identifiers from carina.state.json as a sorted newline-separated string.
-# Args: work_dir
-# Outputs: sorted identifiers (one per line), or empty if none found
-get_identifiers() {
-    local work_dir="$1"
-    jq -r '.resources[].identifier // empty' "$work_dir/carina.state.json" 2>/dev/null | sort || true
-}
-
 # Assert that two identifier sets match the expected relationship
 # Args: description ids_after_step1 ids_after_step2 expected("equal"|"different")
 assert_identifiers() {
@@ -115,13 +107,6 @@ assert_identifiers() {
     local expected="$4"
 
     printf "  %-55s " "$description"
-
-    if [ -z "$ids1" ] || [ -z "$ids2" ]; then
-        echo "FAIL"
-        echo "  ERROR: Could not extract identifiers (step1='$ids1', step2='$ids2')"
-        TOTAL_FAILED=$((TOTAL_FAILED + 1))
-        return 1
-    fi
 
     if [ "$expected" = "equal" ]; then
         if [ "$ids1" = "$ids2" ]; then
@@ -262,7 +247,10 @@ run_test() {
 
     # Capture identifiers after step 1
     local ids_after_step1
-    ids_after_step1=$(get_identifiers "$work_dir")
+    if ! ids_after_step1=$(carina_state_identifiers "$work_dir"); then
+        handle_identifier_read_failure "after step 1" "$work_dir" "$step2" "$step1"
+        return 1
+    fi
 
     # Step 2: Apply modified config (in-place update)
     if ! run_step "$work_dir" "step2: apply in-place update" "apply" "$step2" "--auto-approve"; then
@@ -274,7 +262,10 @@ run_test() {
 
     # Capture identifiers after step 2
     local ids_after_step2
-    ids_after_step2=$(get_identifiers "$work_dir")
+    if ! ids_after_step2=$(carina_state_identifiers "$work_dir"); then
+        handle_identifier_read_failure "after step 2" "$work_dir" "$step2" "$step1"
+        return 1
+    fi
 
     # Assert identifiers preserved (in-place update should NOT replace any resource)
     if ! assert_identifiers "assert: identifiers preserved after update" "$ids_after_step1" "$ids_after_step2" "equal"; then

@@ -17,31 +17,35 @@ run_step "step2: plan-verify" "$CARINA_BIN" plan .
 # 2 iterations x 1 resource per module (vpc) = 2 resources
 assert_state_resource_count "assert: 2 resources created" "2" "$WORK_DIR"
 
-# Verify dot-path bindings exist
-assert_state_value "assert: networks[\"dev\"].vpc exists" \
-    '[.resources[] | select(.binding == "networks[\"dev\"].vpc")] | length' \
+# vpc_only's VPC is anonymous, so it has no binding. Its identity is the
+# canonical map-instance prefix followed by the schema-derived identity.
+DEV_VPC='[.resources[] | select(.resource_type == "ec2.Vpc" and (.identity | startswith("networks.dev.")))]'
+STG_VPC='[.resources[] | select(.resource_type == "ec2.Vpc" and (.identity | startswith("networks.stg.")))]'
+
+assert_state_value "assert: networks.dev anonymous VPC exists" \
+    "$DEV_VPC | length" \
     '1' "$WORK_DIR"
 
-assert_state_value "assert: networks[\"stg\"].vpc exists" \
-    '[.resources[] | select(.binding == "networks[\"stg\"].vpc")] | length' \
+assert_state_value "assert: networks.stg anonymous VPC exists" \
+    "$STG_VPC | length" \
     '1' "$WORK_DIR"
 
 # Verify CIDRs are correct
 assert_state_value "assert: dev vpc cidr_block = '10.0.0.0/16'" \
-    '[.resources[] | select(.binding == "networks[\"dev\"].vpc")] | .[0].attributes.cidr_block' \
+    "$DEV_VPC | .[0].current.attributes.cidr_block" \
     '10.0.0.0/16' "$WORK_DIR"
 
 assert_state_value "assert: stg vpc cidr_block = '10.1.0.0/16'" \
-    '[.resources[] | select(.binding == "networks[\"stg\"].vpc")] | .[0].attributes.cidr_block' \
+    "$STG_VPC | .[0].current.attributes.cidr_block" \
     '10.1.0.0/16' "$WORK_DIR"
 
 # Verify tags contain environment name
 assert_state_value "assert: dev vpc Name tag" \
-    '[.resources[] | select(.binding == "networks[\"dev\"].vpc")] | .[0].attributes.tags.Name' \
+    "$DEV_VPC | .[0].current.attributes.tags.Name" \
     'for-module-test-dev' "$WORK_DIR"
 
 assert_state_value "assert: stg vpc Name tag" \
-    '[.resources[] | select(.binding == "networks[\"stg\"].vpc")] | .[0].attributes.tags.Name' \
+    "$STG_VPC | .[0].current.attributes.tags.Name" \
     'for-module-test-stg' "$WORK_DIR"
 
 echo "  Cleanup: destroying resources..."

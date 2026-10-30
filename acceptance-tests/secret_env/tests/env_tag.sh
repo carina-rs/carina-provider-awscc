@@ -20,7 +20,7 @@ assert_state_resource_count "assert: 1 resource created" "1" "$WORK_DIR"
 
 # Verify the env() value was correctly applied
 assert_state_value "assert: Environment tag = 'production'" \
-    '.resources[0].attributes.tags.Environment' \
+    '.resources[0].current.attributes.tags.Environment' \
     'production' "$WORK_DIR"
 
 echo "  Cleanup: destroying resources..."

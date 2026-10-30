@@ -6,8 +6,8 @@
 #
 # AWS authentication:
 #   Set AWS_PROFILE to one of the carina-test-00X profiles. The script
-#   resolves fresh STS credentials from that profile before each carina
-#   invocation (via `aws configure export-credentials`), so long-running
+#   resolves fresh STS credentials from that profile before each AWS-facing
+#   carina invocation (via `aws configure export-credentials`), so long-running
 #   replace/destroy cycles are not bound to a single SSO access-token
 #   lifetime (see carina-rs/carina-provider-awscc#157). The first run
 #   in a session needs `aws sso login --sso-session carina`.
@@ -97,14 +97,6 @@ run_step() {
     fi
 }
 
-# Extract all resource identifiers from carina.state.json as a sorted newline-separated string.
-# Args: work_dir
-# Outputs: sorted identifiers (one per line), or empty if none found
-get_identifiers() {
-    local work_dir="$1"
-    jq -r '.resources[].identifier // empty' "$work_dir/carina.state.json" 2>/dev/null | sort || true
-}
-
 # Assert that two identifier sets match the expected relationship
 # Args: description ids_after_step1 ids_after_step2 expected("equal"|"different")
 #
@@ -118,13 +110,6 @@ assert_identifiers() {
     local expected="$4"
 
     printf "  %-55s " "$description"
-
-    if [ -z "$ids1" ] || [ -z "$ids2" ]; then
-        echo "FAIL"
-        echo "  ERROR: Could not extract identifiers (step1='$ids1', step2='$ids2')"
-        TOTAL_FAILED=$((TOTAL_FAILED + 1))
-        return 1
-    fi
 
     if [ "$expected" = "equal" ]; then
         if [ "$ids1" = "$ids2" ]; then
@@ -195,18 +180,25 @@ assert_ec2_vpc_state() {
 
     printf "  %-55s " "$description"
 
+    local json
+    if ! json=$(carina_state_json "$work_dir"); then
+        echo "FAIL"
+        echo "  ERROR: carina state show --json failed"
+        TOTAL_FAILED=$((TOTAL_FAILED + 1))
+        return 1
+    fi
+
     local summary
     if ! summary=$(jq -r --arg cidr "$expected_cidr" '
         [.resources[] | select(.resource_type == "ec2.Vpc")] as $vpcs
-        | if (($vpcs | length) == 1 and $vpcs[0].attributes.cidr_block == $cidr) then
+        | if (($vpcs | length) == 1 and $vpcs[0].current.attributes.cidr_block == $cidr) then
             "ok"
           else
-            "count=\($vpcs | length) cidrs=\($vpcs | map(.attributes.cidr_block // "<missing>") | join(","))"
+            "count=\($vpcs | length) cidrs=\($vpcs | map(.current.attributes.cidr_block // "<missing>") | join(","))"
           end
-    ' "$work_dir/carina.state.json" 2>&1); then
+    ' <<< "$json"); then
         echo "FAIL"
-        echo "  ERROR: could not inspect state:"
-        echo "  $summary"
+        echo "  ERROR: could not inspect state"
         TOTAL_FAILED=$((TOTAL_FAILED + 1))
         return 1
     fi
@@ -285,7 +277,7 @@ swap_crn() {
     local src="$1"
     local target="$2"
     local injected_dir
-    injected_dir=$(inject_provider_source "$src")
+    inject_provider_source "$src" injected_dir || return 1
     cp "$injected_dir/main.crn" "$target/main.crn"
     rm -rf "$injected_dir"
 }
@@ -340,7 +332,10 @@ run_test() {
 
     # Capture identifiers after step 1
     local ids_after_step1
-    ids_after_step1=$(get_identifiers "$work_dir")
+    if ! ids_after_step1=$(carina_state_identifiers "$work_dir"); then
+        handle_identifier_read_failure "after step 1" "$work_dir"
+        return 1
+    fi
 
     # Swap in step2 config (providers are the same, lock already present)
     swap_crn "$step2" "$work_dir"
@@ -363,7 +358,10 @@ run_test() {
 
     # Capture identifiers after step 2
     local ids_after_step2
-    ids_after_step2=$(get_identifiers "$work_dir")
+    if ! ids_after_step2=$(carina_state_identifiers "$work_dir"); then
+        handle_identifier_read_failure "after step 2" "$work_dir"
+        return 1
+    fi
 
     # Assert identifiers changed (create_before_destroy should replace at least one resource)
     if ! assert_identifiers "assert: identifiers changed after replace" "$ids_after_step1" "$ids_after_step2" "different"; then

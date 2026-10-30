@@ -16,20 +16,20 @@ run_step "step2: plan-verify" "$CARINA_BIN" plan .
 assert_state_resource_count "assert: 2 resources created" "2" "$WORK_DIR"
 
 # Map iteration produces resources keyed by map key
-assert_state_value "assert: vpcs[\"dev\"] Name = 'for-map-test-dev'" \
-    '[.resources[] | select(.binding == "vpcs[\"dev\"]")] | .[0].attributes.tags.Name' \
+assert_state_value "assert: vpcs.dev Name = 'for-map-test-dev'" \
+    '[.resources[] | select(.binding == "vpcs.dev")] | .[0].current.attributes.tags.Name' \
     'for-map-test-dev' "$WORK_DIR"
 
-assert_state_value "assert: vpcs[\"dev\"] cidr_block = '10.0.0.0/16'" \
-    '[.resources[] | select(.binding == "vpcs[\"dev\"]")] | .[0].attributes.cidr_block' \
+assert_state_value "assert: vpcs.dev cidr_block = '10.0.0.0/16'" \
+    '[.resources[] | select(.binding == "vpcs.dev")] | .[0].current.attributes.cidr_block' \
     '10.0.0.0/16' "$WORK_DIR"
 
-assert_state_value "assert: vpcs[\"stg\"] Name = 'for-map-test-stg'" \
-    '[.resources[] | select(.binding == "vpcs[\"stg\"]")] | .[0].attributes.tags.Name' \
+assert_state_value "assert: vpcs.stg Name = 'for-map-test-stg'" \
+    '[.resources[] | select(.binding == "vpcs.stg")] | .[0].current.attributes.tags.Name' \
     'for-map-test-stg' "$WORK_DIR"
 
-assert_state_value "assert: vpcs[\"stg\"] cidr_block = '10.1.0.0/16'" \
-    '[.resources[] | select(.binding == "vpcs[\"stg\"]")] | .[0].attributes.cidr_block' \
+assert_state_value "assert: vpcs.stg cidr_block = '10.1.0.0/16'" \
+    '[.resources[] | select(.binding == "vpcs.stg")] | .[0].current.attributes.cidr_block' \
     '10.1.0.0/16' "$WORK_DIR"
 
 echo "  Cleanup: destroying resources..."

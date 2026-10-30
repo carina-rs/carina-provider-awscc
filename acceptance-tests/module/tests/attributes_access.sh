@@ -20,21 +20,15 @@ assert_state_resource_count "assert: 3 resources created" "3" "$WORK_DIR"
 
 # Verify route table exists with correct tag
 assert_state_value "assert: route_table Name tag" \
-    '[.resources[] | select(.resource_type == "ec2.route_table")] | .[0].attributes.tags.Name' \
+    '[.resources[] | select(.resource_type == "ec2.RouteTable")] | .[0].current.attributes.tags.Name' \
     'module-attr-test' "$WORK_DIR"
 
 # Verify route table's vpc_id matches the module's vpc
-RT_VPC_ID=$(jq -r '[.resources[] | select(.resource_type == "ec2.route_table")] | .[0].attributes.vpc_id' "$WORK_DIR/carina.state.json")
-VPC_VPC_ID=$(jq -r '[.resources[] | select(.resource_type == "ec2.vpc")] | .[0].attributes.vpc_id' "$WORK_DIR/carina.state.json")
-
-printf "  %-50s" "assert: route_table vpc_id matches module vpc"
-if [ "$RT_VPC_ID" = "$VPC_VPC_ID" ] && [ -n "$RT_VPC_ID" ] && [ "$RT_VPC_ID" != "null" ]; then
-    echo "OK"
-    TEST_PASSED=$((TEST_PASSED + 1))
-else
-    echo "FAIL (rt=$RT_VPC_ID, vpc=$VPC_VPC_ID)"
-    TEST_FAILED=$((TEST_FAILED + 1))
-fi
+assert_state_queries_equal "assert: route_table vpc_id matches module vpc" \
+    '.resources[] | select(.resource_type == "ec2.RouteTable") | .current.attributes.vpc_id' \
+    'route_table' \
+    '.resources[] | select(.resource_type == "ec2.Vpc") | .current.attributes.vpc_id' \
+    'vpc' "$WORK_DIR"
 
 echo "  Cleanup: destroying resources..."
 "$CARINA_BIN" destroy --auto-approve . > /dev/null 2>&1 || true

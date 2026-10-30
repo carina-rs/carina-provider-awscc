@@ -1,5 +1,5 @@
 #!/bin/bash
-# Test: secret(decrypt()) — KMS-encrypted value decrypted and stored as hash
+# Test: secret(decrypt()) — decrypted value is redacted in public state output
 # Requires carina-test-000 account with alias/carina-test KMS key
 source "$(dirname "$0")/../../shared/_helpers.sh"
 
@@ -16,26 +16,30 @@ run_step "step2: plan-verify" "$CARINA_BIN" plan .
 
 assert_state_resource_count "assert: 1 resource created" "1" "$WORK_DIR"
 
-# Verify state does NOT contain plaintext
+# Read raw state on purpose: this checks bytes at rest; state show re-serializes.
 printf "  %-50s" "assert: state does not contain plaintext"
-if grep -q "decrypt-test-value" "$WORK_DIR/carina.state.json"; then
-    echo "FAIL (plaintext found in state!)"
-    TEST_FAILED=$((TEST_FAILED + 1))
-else
-    echo "OK"
-    TEST_PASSED=$((TEST_PASSED + 1))
-fi
+set +e
+LC_ALL=C grep -Fq -- "decrypt-test-value" "$WORK_DIR/carina.state.json"
+case $? in
+    0)
+        echo "FAIL (plaintext found in state!)"
+        TEST_FAILED=$((TEST_FAILED + 1))
+        ;;
+    1)
+        echo "OK"
+        TEST_PASSED=$((TEST_PASSED + 1))
+        ;;
+    *)
+        echo "FAIL (could not inspect raw state)"
+        TEST_FAILED=$((TEST_FAILED + 1))
+        ;;
+esac
+set -e
 
-# Verify state contains argon2 hash for the decrypted tag
-printf "  %-50s" "assert: state contains secret hash"
-SECRET_DIGEST=$(jq -r '.resources[0].attributes.tags.DecryptedTag["$secret"] // empty' "$WORK_DIR/carina.state.json" 2>/dev/null)
-if echo "$SECRET_DIGEST" | grep -q '^\$argon2id\$'; then
-    echo "OK"
-    TEST_PASSED=$((TEST_PASSED + 1))
-else
-    echo "FAIL (expected structural \$secret with \$argon2id\$ digest, got '$SECRET_DIGEST')"
-    TEST_FAILED=$((TEST_FAILED + 1))
-fi
+# Public state must expose only the schema-v1 redaction marker.
+assert_state_value "assert: decrypted tag is redacted" \
+    '.resources[0].current.attributes.tags.DecryptedTag == {"redacted": true}' \
+    'true' "$WORK_DIR"
 
 # Verify the actual AWS resource has the decrypted value
 # (plan idempotency confirms the value was sent correctly)

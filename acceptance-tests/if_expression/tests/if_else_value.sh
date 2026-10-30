@@ -16,11 +16,11 @@ run_step "step2: plan-verify" "$CARINA_BIN" plan .
 assert_state_resource_count "assert: 1 resource created" "1" "$WORK_DIR"
 
 assert_state_value "assert: vpc cidr_block = '10.0.0.0/16'" \
-    '.resources[0].attributes.cidr_block' \
+    '.resources[0].current.attributes.cidr_block' \
     '10.0.0.0/16' "$WORK_DIR"
 
 assert_state_value "assert: vpc Name = 'prod-vpc'" \
-    '.resources[0].attributes.tags.Name' \
+    '.resources[0].current.attributes.tags.Name' \
     'prod-vpc' "$WORK_DIR"
 
 echo "  Cleanup: destroying resources..."

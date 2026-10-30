@@ -14,7 +14,7 @@ run_step "step1: apply" "$CARINA_BIN" apply --auto-approve .
 run_step "step2: plan-verify" "$CARINA_BIN" plan .
 assert_state_value \
     "assert: subnet cidr_block = '10.0.1.0/24'" \
-    '.resources[] | select(.resource_type == "ec2.subnet") | .attributes.cidr_block' \
+    '.resources[] | select(.resource_type == "ec2.Subnet") | .current.attributes.cidr_block' \
     '10.0.1.0/24' \
     "$WORK_DIR"
 
