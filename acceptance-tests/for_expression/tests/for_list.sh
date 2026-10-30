@@ -18,19 +18,19 @@ assert_state_resource_count "assert: 2 resources created" "2" "$WORK_DIR"
 # Verify each VPC has the correct tags
 # Resources are vpcs[0] and vpcs[1] with cidr_subnet("10.0.0.0/8", 8, 0) = 10.0.0.0/16 and cidr_subnet("10.0.0.0/8", 8, 1) = 10.1.0.0/16
 assert_state_value "assert: vpcs[0] Name = 'for-list-test-dev'" \
-    '[.resources[] | select(.binding == "vpcs[0]")] | .[0].attributes.tags.Name' \
+    '[.resources[] | select(.binding == "vpcs[0]")] | .[0].current.attributes.tags.Name' \
     'for-list-test-dev' "$WORK_DIR"
 
 assert_state_value "assert: vpcs[0] cidr_block = '10.0.0.0/16'" \
-    '[.resources[] | select(.binding == "vpcs[0]")] | .[0].attributes.cidr_block' \
+    '[.resources[] | select(.binding == "vpcs[0]")] | .[0].current.attributes.cidr_block' \
     '10.0.0.0/16' "$WORK_DIR"
 
 assert_state_value "assert: vpcs[1] Name = 'for-list-test-stg'" \
-    '[.resources[] | select(.binding == "vpcs[1]")] | .[0].attributes.tags.Name' \
+    '[.resources[] | select(.binding == "vpcs[1]")] | .[0].current.attributes.tags.Name' \
     'for-list-test-stg' "$WORK_DIR"
 
 assert_state_value "assert: vpcs[1] cidr_block = '10.1.0.0/16'" \
-    '[.resources[] | select(.binding == "vpcs[1]")] | .[0].attributes.cidr_block' \
+    '[.resources[] | select(.binding == "vpcs[1]")] | .[0].current.attributes.cidr_block' \
     '10.1.0.0/16' "$WORK_DIR"
 
 echo "  Cleanup: destroying resources..."

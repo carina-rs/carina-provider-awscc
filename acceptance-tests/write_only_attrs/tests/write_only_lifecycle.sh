@@ -1,6 +1,6 @@
 #!/bin/bash
 # Test: write-only attribute full lifecycle
-# 1. Create NAT Gateway with max_drain_duration_seconds=120 → plan idempotent, value in state
+# 1. Create with max_drain_duration_seconds=120 → plan idempotent, public value redacted
 # 2. Change to 240 → plan detects change
 # 3. Remove attribute → plan detects removal
 source "$(dirname "$0")/../../shared/_helpers.sh"
@@ -17,21 +17,10 @@ cp "$SCRIPT_DIR/step1_create.crn" "$WORK_DIR/main.crn"
 run_step "step1: apply (create with write-only attr)" "$CARINA_BIN" apply --auto-approve .
 run_step "step1: plan-verify (no changes)" "$CARINA_BIN" plan .
 
-# Verify write-only value is persisted in state
-assert_state_value "assert: max_drain_duration_seconds = 120 in state" \
-    '[.resources[] | select(.name | test("nat"))] | .[0].attributes.max_drain_duration_seconds' \
-    '120' "$WORK_DIR"
-
-# Verify value is in state (either API returned it or write-only persistence saved it)
-printf "  %-50s" "assert: max_drain_duration_seconds in state attrs"
-HAS_ATTR=$(jq '[.resources[] | select(.name | test("nat"))] | .[0].attributes | has("max_drain_duration_seconds")' "$WORK_DIR/carina.state.json" 2>/dev/null)
-if [ "$HAS_ATTR" = "true" ]; then
-    echo "OK"
-    TEST_PASSED=$((TEST_PASSED + 1))
-else
-    echo "FAIL (attribute not found in state)"
-    TEST_FAILED=$((TEST_FAILED + 1))
-fi
+# Accepted write-only values are redacted in schema-v1 public state.
+assert_state_value "assert: max_drain_duration_seconds is redacted" \
+    '([.resources[] | select(.resource_type == "ec2.NatGateway")] | .[0].current.attributes.max_drain_duration_seconds) == {"redacted": true}' \
+    'true' "$WORK_DIR"
 
 # Step 2: Change write-only value (120 → 240)
 cp "$SCRIPT_DIR/step2_change.crn" "$WORK_DIR/main.crn"
@@ -51,10 +40,10 @@ fi
 run_step "step2: apply (update write-only attr)" "$CARINA_BIN" apply --auto-approve .
 run_step "step2: plan-verify (no changes)" "$CARINA_BIN" plan .
 
-# Verify updated value in state
-assert_state_value "assert: max_drain_duration_seconds = 240 in state" \
-    '[.resources[] | select(.name | test("nat"))] | .[0].attributes.max_drain_duration_seconds' \
-    '240' "$WORK_DIR"
+# The updated accepted write-only value remains redacted in public state.
+assert_state_value "assert: updated max_drain_duration_seconds is redacted" \
+    '([.resources[] | select(.resource_type == "ec2.NatGateway")] | .[0].current.attributes.max_drain_duration_seconds) == {"redacted": true}' \
+    'true' "$WORK_DIR"
 
 # Step 3: Remove write-only attribute
 cp "$SCRIPT_DIR/step3_remove.crn" "$WORK_DIR/main.crn"

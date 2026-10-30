@@ -14,7 +14,7 @@ run_step "step1: apply" "$CARINA_BIN" apply --auto-approve .
 run_step "step2: plan-verify" "$CARINA_BIN" plan .
 assert_state_value \
     "assert: tag Name = 'web-test-vpc'" \
-    '.resources[0].attributes.tags.Name' \
+    '.resources[0].current.attributes.tags.Name' \
     'web-test-vpc' \
     "$WORK_DIR"
 

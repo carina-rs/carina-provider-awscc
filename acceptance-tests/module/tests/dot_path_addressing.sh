@@ -14,28 +14,26 @@ cd "$WORK_DIR"
 run_step "step1: apply" "$CARINA_BIN" apply --auto-approve .
 run_step "step2: plan-verify" "$CARINA_BIN" plan .
 
-# Module resources should use dot-path addressing (network.vpc, network.subnet)
-# not underscore (network_vpc, network_subnet)
-assert_state_value "assert: binding uses dot path (network.vpc)" \
-    '[.resources[] | select(.binding == "network.vpc")] | length' \
+assert_state_resource_count "assert: 2 resources" "2" "$WORK_DIR"
+
+# An anonymous module call gets a hash-derived network_<hex> prefix. Its
+# resources must still use dot-path suffixes, not flattened underscores.
+assert_state_value "assert: hashed binding uses dot path (.vpc)" \
+    '[.resources[] | select((.binding // "") | test("^network_[0-9a-f]+\\.vpc$"))] | length' \
     '1' "$WORK_DIR"
 
-assert_state_value "assert: binding uses dot path (network.subnet)" \
-    '[.resources[] | select(.binding == "network.subnet")] | length' \
+assert_state_value "assert: hashed binding uses dot path (.subnet)" \
+    '[.resources[] | select((.binding // "") | test("^network_[0-9a-f]+\\.subnet$"))] | length' \
     '1' "$WORK_DIR"
 
-# Verify no underscore-style bindings exist
-assert_state_value "assert: no underscore binding (network_vpc)" \
-    '[.resources[] | select(.binding == "network_vpc")] | length' \
+# Verify neither stable nor hash-derived prefixes use flattened underscores.
+assert_state_value "assert: no underscore-flattened binding" \
+    '[.resources[] | select((.binding // "") | test("^network(_[0-9a-f]+)?_(vpc|subnet)$"))] | length' \
     '0' "$WORK_DIR"
 
-assert_state_value "assert: no underscore binding (network_subnet)" \
-    '[.resources[] | select(.binding == "network_subnet")] | length' \
-    '0' "$WORK_DIR"
-
-# Verify state version is v4
-assert_state_value "assert: state version = 4" \
-    '.version' '4' "$WORK_DIR"
+# Verify the supported public state output uses schema version 1.
+assert_state_value "assert: state schema version = 1" \
+    '.schema_version' '1' "$WORK_DIR"
 
 echo "  Cleanup: destroying resources..."
 "$CARINA_BIN" destroy --auto-approve . > /dev/null 2>&1 || true

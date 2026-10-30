@@ -11,7 +11,7 @@ let network = use { source = './modules/network' }
 let net = network {
   cidr_block  = '10.0.0.0/16'
   subnet_cidr = '10.0.1.0/24'
-  az          = 'ap-northeast-1a'
+  az          = aws.AvailabilityZone.ZoneName.ap_northeast_1a
 }
 
 # Use module attributes to create a resource that depends on module output

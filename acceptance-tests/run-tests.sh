@@ -1499,31 +1499,10 @@ if [ ! -f "$CARINA_BIN" ]; then
     exit 1
 fi
 
-# ── Provider source injection ────────────────────────────────────────
-# Provider blocks require source and version attributes.
-# Inject them dynamically so .crn files don't need to hard-code binary paths.
+# ── Provider source injection and local-provider trust ───────────────
+# This runs after the provider build because carina rejects grants for missing
+# files. It also validates and absolutizes the path used in file:// sources.
 source "$SCRIPT_DIR/shared/_provider_env.sh" || exit 1
-configure_awscc_provider_environment || exit 1
-
-# Read provider version from workspace Cargo.toml to avoid hardcoding
-PROVIDER_VERSION=$(grep '^version = ' "$PROJECT_ROOT/Cargo.toml" | head -1 | sed 's/version = "\(.*\)"/\1/')
-
-# inject_provider_source: Create a temp copy of a .crn file with source/version
-# injected into provider blocks. Prints the temp file path.
-# Args: original_crn_file
-inject_provider_source() {
-    local original="$1"
-    local tmp_file
-    tmp_file=$(mktemp).crn
-
-    sed \
-        -e '/^provider awscc {/a\
-  source = "file://'"$AWSCC_PROVIDER_BIN"'"\
-  version = "'"$PROVIDER_VERSION"'"' \
-        "$original" > "$tmp_file"
-
-    echo "$tmp_file"
-}
 
 # Find test files
 # matches_any_filter: returns 0 if rel_path matches any filter, or if no filters given
@@ -1670,11 +1649,11 @@ if [ "$COMMAND" = "cleanup" ]; then
             TEST_INDEX=0
             for TEST_FILE in "${TESTS[@]}"; do
                 REL_PATH="${TEST_FILE#$SCRIPT_DIR/}"
-                INJECTED_FILE=$(inject_provider_source "$TEST_FILE")
+                inject_provider_source "$TEST_FILE" INJECTED_DIR || exit 1
                 TEST_STATE_DIR="$STATE_DIR/test_${TEST_INDEX}"
                 mkdir -p "$TEST_STATE_DIR"
-                cp "$INJECTED_FILE" "$TEST_STATE_DIR/main.crn"
-                rm -f "$INJECTED_FILE"
+                cp "$INJECTED_DIR/main.crn" "$TEST_STATE_DIR/main.crn"
+                rm -rf "$INJECTED_DIR"
                 TEST_INDEX=$((TEST_INDEX + 1))
                 # Skip if no state file exists — nothing to destroy
                 if [ ! -f "$TEST_STATE_DIR/carina.state.json" ]; then
@@ -1850,14 +1829,14 @@ if [ "$COMMAND" = "full" ]; then
                 fi
 
                 REL_PATH="${TEST_FILE#$SCRIPT_DIR/}"
-                INJECTED_FILE=$(inject_provider_source "$TEST_FILE")
+                inject_provider_source "$TEST_FILE" INJECTED_DIR || exit 1
 
                 # Use a separate state directory per test to prevent
                 # state file cross-contamination between tests (issue #537)
                 CURRENT_STATE_DIR="$SLOT_DIR/test_${TEST_INDEX}"
                 mkdir -p "$CURRENT_STATE_DIR"
-                cp "$INJECTED_FILE" "$CURRENT_STATE_DIR/main.crn"
-                rm -f "$INJECTED_FILE"
+                cp "$INJECTED_DIR/main.crn" "$CURRENT_STATE_DIR/main.crn"
+                rm -rf "$INJECTED_DIR"
                 TEST_INDEX=$((TEST_INDEX + 1))
 
                 # Initialize backend lock and install providers before apply
@@ -2007,7 +1986,7 @@ for TEST_FILE in "${TESTS[@]}"; do
     REL_PATH="${TEST_FILE#$SCRIPT_DIR/}"
     printf "  %-55s " "$REL_PATH"
 
-    INJECTED_FILE=$(inject_provider_source "$TEST_FILE")
+    inject_provider_source "$TEST_FILE" INJECTED_DIR || exit 1
 
     AUTO_APPROVE=""
     if [ "$COMMAND" = "apply" ] || [ "$COMMAND" = "destroy" ]; then
@@ -2018,8 +1997,8 @@ for TEST_FILE in "${TESTS[@]}"; do
     if [ "$COMMAND" != "validate" ]; then
         STATE_DIR="$WORK_DIR/test_${TEST_INDEX}"
         mkdir -p "$STATE_DIR"
-        cp "$INJECTED_FILE" "$STATE_DIR/main.crn"
-        rm -f "$INJECTED_FILE"
+        cp "$INJECTED_DIR/main.crn" "$STATE_DIR/main.crn"
+        rm -rf "$INJECTED_DIR"
         TEST_INDEX=$((TEST_INDEX + 1))
         TARGET_PATH="$STATE_DIR"
 
@@ -2033,8 +2012,8 @@ for TEST_FILE in "${TESTS[@]}"; do
     else
         # For validate, create a temp directory with the injected file
         VALIDATE_DIR=$(mktemp -d)
-        cp "$INJECTED_FILE" "$VALIDATE_DIR/main.crn"
-        rm -f "$INJECTED_FILE"
+        cp "$INJECTED_DIR/main.crn" "$VALIDATE_DIR/main.crn"
+        rm -rf "$INJECTED_DIR"
         TARGET_PATH="$VALIDATE_DIR"
 
         # `carina validate` loads the provider WASM to do schema-driven

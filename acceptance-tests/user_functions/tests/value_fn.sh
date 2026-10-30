@@ -16,7 +16,7 @@ run_step "step2: plan-verify" "$CARINA_BIN" plan .
 assert_state_resource_count "assert: 1 resource created" "1" "$WORK_DIR"
 
 assert_state_value "assert: Name = 'test-web-vpc'" \
-    '.resources[0].attributes.tags.Name' \
+    '.resources[0].current.attributes.tags.Name' \
     'test-web-vpc' "$WORK_DIR"
 
 echo "  Cleanup: destroying resources..."

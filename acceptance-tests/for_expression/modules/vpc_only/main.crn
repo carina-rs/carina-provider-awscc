@@ -1,5 +1,5 @@
 arguments {
-  cidr_block: String
+  cidr_block: Ipv4Cidr
   env_name  : String
 }
 

@@ -62,7 +62,7 @@ PASSED=0
 FAILED=0
 
 WORK_DIR=$(mktemp -d)
-INJECTED_DIR=$(inject_provider_source "$SCRIPT_DIR/basic.crn")
+inject_provider_source "$SCRIPT_DIR/basic.crn" INJECTED_DIR || exit 1
 cp "$INJECTED_DIR/main.crn" "$WORK_DIR/main.crn"
 rm -rf "$INJECTED_DIR"
 

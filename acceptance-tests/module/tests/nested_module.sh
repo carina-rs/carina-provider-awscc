@@ -33,21 +33,15 @@ assert_state_value "assert: infra.rt exists" \
 
 # Verify route table has correct tag
 assert_state_value "assert: rt Name tag" \
-    '[.resources[] | select(.binding == "infra.rt")] | .[0].attributes.tags.Name' \
+    '[.resources[] | select(.binding == "infra.rt")] | .[0].current.attributes.tags.Name' \
     'nested-module-test-rt' "$WORK_DIR"
 
 # Verify route table references the correct VPC (from nested network module)
-RT_VPC_ID=$(jq -r '[.resources[] | select(.binding == "infra.rt")] | .[0].attributes.vpc_id' "$WORK_DIR/carina.state.json")
-VPC_VPC_ID=$(jq -r '[.resources[] | select(.binding == "infra.net.vpc")] | .[0].attributes.vpc_id' "$WORK_DIR/carina.state.json")
-
-printf "  %-50s" "assert: rt vpc_id matches nested vpc"
-if [ "$RT_VPC_ID" = "$VPC_VPC_ID" ] && [ -n "$RT_VPC_ID" ] && [ "$RT_VPC_ID" != "null" ]; then
-    echo "OK"
-    TEST_PASSED=$((TEST_PASSED + 1))
-else
-    echo "FAIL (rt=$RT_VPC_ID, vpc=$VPC_VPC_ID)"
-    TEST_FAILED=$((TEST_FAILED + 1))
-fi
+assert_state_queries_equal "assert: rt vpc_id matches nested vpc" \
+    '.resources[] | select(.binding == "infra.rt") | .current.attributes.vpc_id' \
+    'rt' \
+    '.resources[] | select(.binding == "infra.net.vpc") | .current.attributes.vpc_id' \
+    'vpc' "$WORK_DIR"
 
 echo "  Cleanup: destroying resources..."
 "$CARINA_BIN" destroy --auto-approve . > /dev/null 2>&1 || true

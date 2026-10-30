@@ -136,7 +136,7 @@ plan_ssl_policy_update() {
 install_config() {
     local source_crn="$1"
     local injected_dir
-    injected_dir=$(inject_provider_source "$source_crn")
+    inject_provider_source "$source_crn" injected_dir || return 1
     if ! sed "s|$CERTIFICATE_PLACEHOLDER|$CERTIFICATE_ARN|g" \
         "$injected_dir/main.crn" > "$ACTIVE_WORK_DIR/main.crn"; then
         rm -rf "$injected_dir"

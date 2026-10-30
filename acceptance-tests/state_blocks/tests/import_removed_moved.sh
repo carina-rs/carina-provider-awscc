@@ -21,9 +21,12 @@ run_step "step1: create vpc" "$CARINA_BIN" apply --auto-approve .
 assert_state_resource_count "assert: 1 resource in state" "1" "$WORK_DIR"
 
 # Save the VPC ID for later import
-VPC_ID=$(jq -r '.resources[0].identifier' "$WORK_DIR/carina.state.json")
-printf "  %-50s" "info: vpc_id"
-echo "$VPC_ID"
+if ! VPC_ID=$(carina_state_query "$WORK_DIR" '.resources[] | .current.identifier'); then
+    printf "  %-50s%s\n" "info: vpc_id" "FAIL (state read failed)"
+    TEST_FAILED=$((TEST_FAILED + 1))
+    finish_test
+fi
+printf "  %-50s%s\n" "info: vpc_id" "$VPC_ID"
 
 # Step 2: Move vpc -> main_vpc
 cp "$SCRIPT_DIR/step2_moved.crn" "$WORK_DIR/main.crn"
@@ -32,9 +35,11 @@ run_step "step2: plan-verify (no changes)" "$CARINA_BIN" plan .
 
 # Verify the resource name changed in state
 assert_state_value "assert: resource name = 'main_vpc'" \
-    '.resources[0].name' 'main_vpc' "$WORK_DIR"
+    '.resources[] | .binding' \
+    'main_vpc' "$WORK_DIR"
 assert_state_value "assert: identifier preserved" \
-    '.resources[0].identifier' "$VPC_ID" "$WORK_DIR"
+    '.resources[] | .current.identifier' \
+    "$VPC_ID" "$WORK_DIR"
 
 # Step 3: Remove from state (VPC still exists in AWS)
 cp "$SCRIPT_DIR/step3_removed.crn" "$WORK_DIR/main.crn"
@@ -58,9 +63,11 @@ run_step "step4: plan-verify (no changes)" "$CARINA_BIN" plan .
 
 assert_state_resource_count "assert: 1 resource in state" "1" "$WORK_DIR"
 assert_state_value "assert: resource name = 'imported_vpc'" \
-    '.resources[0].name' 'imported_vpc' "$WORK_DIR"
+    '.resources[] | .binding' \
+    'imported_vpc' "$WORK_DIR"
 assert_state_value "assert: identifier = vpc_id" \
-    '.resources[0].identifier' "$VPC_ID" "$WORK_DIR"
+    '.resources[] | .current.identifier' \
+    "$VPC_ID" "$WORK_DIR"
 
 # Step 5: Destroy normally
 echo "  Cleanup: destroying resources..."

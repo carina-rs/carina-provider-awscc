@@ -12,8 +12,8 @@ cd "$WORK_DIR"
 
 run_step "step1: apply" "$CARINA_BIN" apply --auto-approve .
 run_step "step2: plan-verify" "$CARINA_BIN" plan .
-assert_state_value "assert: tag MinPort = 'port-8080'" '.resources[0].attributes.tags.MinPort' 'port-8080' "$WORK_DIR"
-assert_state_value "assert: tag MaxPort = 'port-9090'" '.resources[0].attributes.tags.MaxPort' 'port-9090' "$WORK_DIR"
+assert_state_value "assert: tag MinPort = 'port-8080'" '.resources[0].current.attributes.tags.MinPort' 'port-8080' "$WORK_DIR"
+assert_state_value "assert: tag MaxPort = 'port-9090'" '.resources[0].current.attributes.tags.MaxPort' 'port-9090' "$WORK_DIR"
 
 echo "  Cleanup: destroying resources..."
 "$CARINA_BIN" destroy --auto-approve . > /dev/null 2>&1 || true
