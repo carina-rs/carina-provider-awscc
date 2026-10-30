@@ -3,10 +3,13 @@
 ## Persistent run registry and cleanup
 
 Stateful acceptance tests register each fixture under
-`${CARINA_ACCEPTANCE_HOME:-$HOME/.cache/carina-acceptance}/carina-provider-awscc/runs/<run-id>/`.
-Each entry keeps its injected `main.crn`, local Carina state, and metadata for
-the fixture, AWS account, and creating host. Each run also records its creating
-host, PID, and process start time so PID reuse is not mistaken for a live run.
+`${CARINA_ACCEPTANCE_HOME:-$HOME/.cache/carina-acceptance}/<repo>/runs/<run-id>/`.
+`<repo>` is derived from the Git checkout's common directory, so a main
+checkout and its linked worktrees share the same registry. An explicitly set
+`CARINA_ACCEPTANCE_REPO` overrides the derived name. Each entry keeps its
+injected `main.crn`, local Carina state, and metadata for the fixture, AWS
+account, and creating host. Each run also records its creating host, PID, and
+process start time so PID reuse is not mistaken for a live run.
 Temporary log directories may be removed, but a registry entry is removed only
 after `carina state show --json` reports absent state or an empty resource list.
 

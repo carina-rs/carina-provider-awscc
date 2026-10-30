@@ -286,6 +286,60 @@ worktree_repo_name=$(
 pass "repository name is identical from the main checkout and a worktree"
 
 next_test
+registry_clone_source="$(cd "$SHARED_DIR/../.." && pwd)"
+source_repo_name=$(
+    unset CARINA_ACCEPTANCE_REPO
+    PROJECT_ROOT="$registry_clone_source"
+    carina_registry_repo_name
+)
+renamed_clone="$TEST_TMP/${source_repo_name}-renamed-checkout"
+renamed_home="$TEST_TMP/renamed-clone-registry"
+renamed_source="$TEST_TMP/renamed-clone-source.crn"
+git clone -q "$registry_clone_source" "$renamed_clone"
+[ "$(basename "$renamed_clone")" != "$source_repo_name" ] || \
+    fail "temporary clone was not renamed"
+cp "$RUN_TESTS" "$renamed_clone/acceptance-tests/run-tests.sh"
+cp "$SHARED_DIR/_helpers.sh" \
+    "$renamed_clone/acceptance-tests/shared/_helpers.sh"
+cp "$SHARED_DIR/_run_registry.sh" \
+    "$renamed_clone/acceptance-tests/shared/_run_registry.sh"
+cp "$SHARED_DIR/_provider_env.sh" \
+    "$renamed_clone/acceptance-tests/shared/_provider_env.sh"
+printf '%s\n' 'provider test {}' > "$renamed_source"
+if ! renamed_entry=$(
+    unset CARINA_ACCEPTANCE_REPO
+    AWS_PROFILE="carina-test-004" \
+        CARINA_ACCEPTANCE_HOME="$renamed_home" \
+        SCRIPT_DIR="$renamed_clone/acceptance-tests/custom-suite" \
+        /bin/bash -c '
+            set -euo pipefail
+            source "$1"
+            register_acceptance_work_dir \
+                "renamed_suite/basic.crn" "$2" entry
+            printf "%s\n" "$entry"
+        ' _ "$renamed_clone/acceptance-tests/shared/_helpers.sh" \
+        "$renamed_source"
+    ); then
+    fail "suite registration in renamed clone failed"
+fi
+renamed_registry_root="$renamed_home/$(basename "$renamed_clone")"
+case "$renamed_entry" in
+    "$renamed_registry_root"/runs/*/carina-test-004/test_0) ;;
+    *) fail "suite registered outside the derived clone registry: $renamed_entry" ;;
+esac
+if ! renamed_cleanup_output=$(
+    unset CARINA_ACCEPTANCE_REPO
+    CARINA_ACCEPTANCE_HOME="$renamed_home" \
+        /bin/bash "$renamed_clone/acceptance-tests/run-tests.sh" cleanup 2>&1
+    ); then
+    fail "run-tests.sh cleanup in renamed clone failed: $renamed_cleanup_output"
+fi
+[ ! -e "$renamed_entry" ] || \
+    fail "run-tests.sh cleanup did not find the suite entry: $renamed_entry"
+assert_contains "$renamed_cleanup_output" "$renamed_entry"
+pass "renamed clone registration and cleanup share the derived registry root"
+
+next_test
 registration_source="$TEST_TMP/custom-registration.crn"
 registration_home="$TEST_TMP/custom-registration-registry"
 printf '%s\n' 'provider test {}' > "$registration_source"
