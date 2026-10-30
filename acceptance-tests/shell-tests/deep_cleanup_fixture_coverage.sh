@@ -321,10 +321,12 @@ fi
 # in deep_cleanup_account or one of its reachable helpers. Multiple commands
 # are comma-separated only when the same DSL type has multiple fixture forms.
 command cat > "$SWEEP_MAPPINGS_FILE" <<'EOF'
+awscc.budgets.Budget|aws budgets delete-budget
 awscc.cloudfront.Distribution|aws cloudfront delete-distribution
 awscc.cloudfront.Function|aws cloudfront delete-function
 awscc.cloudfront.OriginAccessControl|aws cloudfront delete-origin-access-control
 awscc.cloudfront.ResponseHeadersPolicy|aws cloudfront delete-response-headers-policy
+awscc.cloudwatch.Alarm|aws cloudwatch delete-alarms
 awscc.dynamodb.Table|aws dynamodb delete-table
 awscc.ec2.EgressOnlyInternetGateway|aws ec2 delete-egress-only-internet-gateway
 awscc.ec2.Eip|aws ec2 release-address

@@ -10,7 +10,9 @@ use carina_core::effect::PlanOp;
 
 use super::config::AwsccSchemaConfig;
 
+pub mod budgets;
 pub mod cloudfront;
+pub mod cloudwatch;
 pub mod dynamodb;
 pub mod ec2;
 pub mod ecr;
@@ -69,6 +71,8 @@ static ENUM_VALID_VALUES: LazyLock<
         ec2::transit_gateway_attachment::enum_valid_values(),
         s3::bucket::enum_valid_values(),
         s3::bucket_policy::enum_valid_values(),
+        cloudwatch::alarm::enum_valid_values(),
+        budgets::budget::enum_valid_values(),
         scheduler::schedule::enum_valid_values(),
         scheduler::schedule_group::enum_valid_values(),
         ssm::parameter::enum_valid_values(),
@@ -134,6 +138,8 @@ fn build_configs() -> Vec<AwsccSchemaConfig> {
         ec2::transit_gateway_attachment::ec2_transit_gateway_attachment_config,
         s3::bucket::s3_bucket_config,
         s3::bucket_policy::s3_bucket_policy_config,
+        cloudwatch::alarm::cloudwatch_alarm_config,
+        budgets::budget::budgets_budget_config,
         scheduler::schedule::scheduler_schedule_config,
         scheduler::schedule_group::scheduler_schedule_group_config,
         ssm::parameter::ssm_parameter_config,
@@ -208,6 +214,8 @@ pub fn required_permissions(resource_type: &str, op: PlanOp) -> &'static [&'stat
         "ec2.TransitGatewayAttachment" => ec2::transit_gateway_attachment::required_permissions(op),
         "s3.Bucket" => s3::bucket::required_permissions(op),
         "s3.BucketPolicy" => s3::bucket_policy::required_permissions(op),
+        "cloudwatch.Alarm" => cloudwatch::alarm::required_permissions(op),
+        "budgets.Budget" => budgets::budget::required_permissions(op),
         "scheduler.Schedule" => scheduler::schedule::required_permissions(op),
         "scheduler.ScheduleGroup" => scheduler::schedule_group::required_permissions(op),
         "ssm.Parameter" => ssm::parameter::required_permissions(op),

@@ -100,6 +100,11 @@ fn emit_primary_identifier(
 thread_local! {
     #[allow(clippy::missing_const_for_thread_local)]
     static IN_PROGRESS_DEFS: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
+    /// Definition names for which generation emitted an `AttributeType::Ref`
+    /// because the definition was already in progress. List-item structs use
+    /// this to publish a schema def only when their inline body is recursive.
+    #[allow(clippy::missing_const_for_thread_local)]
+    static BACK_REFERENCED_DEFS: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
     /// Collected `(def_name, AttributeType-rendered Rust code)` for the
     /// resource currently being generated. Populated by the recursion
     /// guard in `cfn_type_to_carina_type_with_enum`; consumed by the
@@ -140,8 +145,19 @@ thread_local! {
 /// does not leak into resource B.
 fn reset_recursion_guard() {
     IN_PROGRESS_DEFS.with(|s| s.borrow_mut().clear());
+    BACK_REFERENCED_DEFS.with(|s| s.borrow_mut().clear());
     EMITTED_DEFS.with(|s| s.borrow_mut().clear());
     reset_property_mode_emission_state();
+}
+
+fn mark_back_reference(def_name: &str) {
+    BACK_REFERENCED_DEFS.with(|defs| {
+        defs.borrow_mut().insert(def_name.to_string());
+    });
+}
+
+fn was_back_referenced(def_name: &str) -> bool {
+    BACK_REFERENCED_DEFS.with(|defs| defs.borrow().contains(def_name))
 }
 
 fn reset_property_mode_emission_state() {
@@ -170,6 +186,13 @@ const EXIT_SKIPPED: i32 = 2;
 enum TypeOverride {
     /// Override to a specific string type (e.g., "super::super::iam::role::arn()")
     StringType(&'static str),
+    /// Replace the whole generated attribute type and its Markdown display.
+    /// Used when the CFN schema omits enough shape information that normal
+    /// inference cannot express the provider API type.
+    AttributeType {
+        expression: &'static str,
+        display: &'static str,
+    },
     /// Override to an enum with specific values
     Enum(Vec<&'static str>),
     /// Like [`TypeOverride::Enum`], but when the property is an array
@@ -190,6 +213,17 @@ enum TypeOverride {
     ToDsl(&'static str),
 }
 
+impl TypeOverride {
+    fn attribute_type_expression(&self) -> Option<&'static str> {
+        match self {
+            Self::StringType(expression) | Self::AttributeType { expression, .. } => {
+                Some(expression)
+            }
+            _ => None,
+        }
+    }
+}
+
 /// Information about a detected enum type
 #[derive(Debug, Clone)]
 struct EnumInfo {
@@ -207,6 +241,12 @@ enum ReplacementClass {
 }
 
 const REPLACEMENT_CLASSES: &[(&str, ReplacementClass)] = &[
+    // Alarm names are account/region-unique when set. CloudFormation generates
+    // one when omitted, so named replacements can use a temporary name.
+    (
+        "cloudwatch.Alarm",
+        ReplacementClass::Attribute("alarm_name"),
+    ),
     // Distribution aliases are globally unique and cannot coexist.
     ("cloudfront.Distribution", ReplacementClass::Conflicting),
     // The top-level create-only name is account-unique, so replacement must
@@ -334,6 +374,9 @@ const REPLACEMENT_CLASSES: &[(&str, ReplacementClass)] = &[
     ("s3.Bucket", ReplacementClass::Attribute("bucket_name")),
     // One policy per bucket; `bucket` is the parent, not this resource's own name.
     ("s3.BucketPolicy", ReplacementClass::Conflicting),
+    // BudgetName is nested in Budget and account-unique, so replacement cannot
+    // temporarily rename an explicitly named budget.
+    ("budgets.Budget", ReplacementClass::Conflicting),
     // Schedule names are user-chosen and replacement can use a temporary name
     // within the same schedule group.
     ("scheduler.Schedule", ReplacementClass::Attribute("name")),
@@ -503,36 +546,180 @@ struct CfnSchema {
     /// Top-level anyOf variants
     #[serde(default, rename = "anyOf")]
     any_of: Vec<CfnProperty>,
-    /// Cloud Control handlers (create/read/update/delete/list).
-    /// Absent or empty means the type is NON_PROVISIONABLE and cannot be
-    /// managed via Cloud Control API.
+    /// Cloud Control handlers (create/read/update/delete/list). Most
+    /// NON_PROVISIONABLE types omit this map, but the registry has known
+    /// provisionable exceptions; see [`HANDLERLESS_CLOUD_CONTROL_TYPES`].
     #[serde(default)]
     handlers: BTreeMap<String, serde_json::Value>,
 }
 
+#[derive(Debug)]
+struct HandlerlessPermissions {
+    create: &'static [&'static str],
+    read: &'static [&'static str],
+    update: &'static [&'static str],
+    delete: &'static [&'static str],
+    list: &'static [&'static str],
+}
+
+impl HandlerlessPermissions {
+    const fn complete(
+        create: &'static [&'static str],
+        read: &'static [&'static str],
+        update: &'static [&'static str],
+        delete: &'static [&'static str],
+        list: &'static [&'static str],
+    ) -> Self {
+        assert!(
+            !create.is_empty(),
+            "handlerless create permissions are empty"
+        );
+        assert!(!read.is_empty(), "handlerless read permissions are empty");
+        assert!(
+            !update.is_empty(),
+            "handlerless update permissions are empty"
+        );
+        assert!(
+            !delete.is_empty(),
+            "handlerless delete permissions are empty"
+        );
+        assert!(!list.is_empty(), "handlerless list permissions are empty");
+        Self {
+            create,
+            read,
+            update,
+            delete,
+            list,
+        }
+    }
+
+    fn for_operation(&self, operation: &str) -> &'static [&'static str] {
+        match operation {
+            "create" => self.create,
+            "read" => self.read,
+            "update" => self.update,
+            "delete" => self.delete,
+            "list" => self.list,
+            _ => panic!("unknown Cloud Control handler operation: {operation}"),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct HandlerlessCloudControlType {
+    type_name: &'static str,
+    permissions: HandlerlessPermissions,
+}
+
+impl HandlerlessCloudControlType {
+    const fn new(type_name: &'static str, permissions: HandlerlessPermissions) -> Self {
+        assert!(
+            !type_name.is_empty(),
+            "handlerless Cloud Control type is empty"
+        );
+        Self {
+            type_name,
+            permissions,
+        }
+    }
+}
+
+// Measured on 2026-10-30: CloudFormation DescribeType reported
+// AWS::Budgets::Budget as FULLY_MUTABLE, and Cloud Control ListResources
+// succeeded in us-east-1, even though the live registry schema has no handlers block.
+// Keep this fail-closed: every further handlerless exception needs its own
+// measured ProvisioningType and Cloud Control operation evidence.
+//
+// IAM operation mappings and their aws-portal dependencies:
+// https://docs.aws.amazon.com/service-authorization/latest/reference/list_budgets.html
+// ResourceTags is supported on create and update, requiring the documented
+// list/tag/untag operations in the corresponding lifecycle handlers:
+// https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-budgets-budget.html
+const HANDLERLESS_CLOUD_CONTROL_TYPES: &[HandlerlessCloudControlType] =
+    &[HandlerlessCloudControlType::new(
+        "AWS::Budgets::Budget",
+        HandlerlessPermissions::complete(
+            &[
+                "aws-portal:ModifyBilling",
+                "budgets:ModifyBudget",
+                "budgets:TagResource",
+            ],
+            &[
+                "aws-portal:ViewBilling",
+                "budgets:ListTagsForResource",
+                "budgets:ViewBudget",
+            ],
+            &[
+                "aws-portal:ModifyBilling",
+                "aws-portal:ViewBilling",
+                "budgets:ListTagsForResource",
+                "budgets:ModifyBudget",
+                "budgets:TagResource",
+                "budgets:UntagResource",
+            ],
+            &["aws-portal:ModifyBilling", "budgets:ModifyBudget"],
+            &["aws-portal:ViewBilling", "budgets:ViewBudget"],
+        ),
+    )];
+
+enum CloudControlPermissionSource<'a> {
+    SchemaHandlers(&'a BTreeMap<String, serde_json::Value>),
+    Handlerless(&'static HandlerlessCloudControlType),
+}
+
 impl CfnSchema {
     /// Returns true if the schema declares any Cloud Control handlers.
-    /// NON_PROVISIONABLE resource types have no handlers and cannot be
-    /// operated via Cloud Control API, so the codegen skips them.
     fn has_cloud_control_handlers(&self) -> bool {
         !self.handlers.is_empty()
+    }
+
+    fn cloud_control_permission_source(&self) -> Option<CloudControlPermissionSource<'_>> {
+        if let Some(entry) = HANDLERLESS_CLOUD_CONTROL_TYPES
+            .iter()
+            .find(|entry| entry.type_name == self.type_name)
+        {
+            assert!(
+                self.handlers.is_empty(),
+                "{} now declares Cloud Control handlers; remove its handlerless allowlist entry",
+                self.type_name
+            );
+            Some(CloudControlPermissionSource::Handlerless(entry))
+        } else if self.has_cloud_control_handlers() {
+            Some(CloudControlPermissionSource::SchemaHandlers(&self.handlers))
+        } else {
+            None
+        }
+    }
+
+    /// Returns true when the registry evidence says Cloud Control can operate
+    /// this resource, including measured exceptions whose schemas omit handlers.
+    fn is_cloud_control_provisionable(&self) -> bool {
+        self.cloud_control_permission_source().is_some()
     }
 }
 
 fn handler_permissions(schema: &CfnSchema, operation: &str) -> Vec<String> {
-    schema
-        .handlers
-        .get(operation)
-        .and_then(|handler| handler.get("permissions"))
-        .and_then(serde_json::Value::as_array)
-        .map(|permissions| {
-            permissions
-                .iter()
-                .filter_map(serde_json::Value::as_str)
-                .map(str::to_string)
-                .collect()
-        })
-        .unwrap_or_default()
+    match schema.cloud_control_permission_source() {
+        Some(CloudControlPermissionSource::Handlerless(entry)) => entry
+            .permissions
+            .for_operation(operation)
+            .iter()
+            .map(|permission| (*permission).to_string())
+            .collect(),
+        Some(CloudControlPermissionSource::SchemaHandlers(handlers)) => handlers
+            .get(operation)
+            .and_then(|handler| handler.get("permissions"))
+            .and_then(serde_json::Value::as_array)
+            .map(|permissions| {
+                permissions
+                    .iter()
+                    .filter_map(serde_json::Value::as_str)
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default(),
+        None => Vec::new(),
+    }
 }
 
 fn emit_permissions_slice(permissions: &[String]) -> String {
@@ -592,6 +779,46 @@ fn is_dsl_tags_property(schema: &CfnSchema, provider_name: &str) -> bool {
 
     tag_property.strip_prefix("/properties/") == Some(provider_name)
         && provider_name.to_snake_case() == "tags"
+}
+
+/// Whether a definition uses one of Carina's canonical tag-map shapes.
+///
+/// The `Tag` prefix remains a namespace guard because cached schemas also use
+/// the exact same Key/Value string-object shape for non-tag ELB attributes.
+/// The shape check prevents unrelated `Tag*` objects from silently losing
+/// fields when converted to Carina's map representation. CloudFormation uses
+/// either a Key/Value object or a single-pattern string map for these refs.
+fn is_tag_map_ref(schema: &CfnSchema, ref_path: &str) -> bool {
+    let Some(def_name) = ref_def_name(ref_path) else {
+        return false;
+    };
+    let Some(definition) = schema
+        .definitions
+        .as_ref()
+        .and_then(|definitions| definitions.get(def_name))
+    else {
+        return false;
+    };
+    let is_direct_string = |property: &CfnProperty| {
+        matches!(
+            property.prop_type.as_ref(),
+            Some(TypeValue::Single(property_type)) if property_type == "string"
+        )
+    };
+    let is_key_value_object = definition.properties.as_ref().is_some_and(|properties| {
+        properties.len() == 2
+            && properties.get("Key").is_some_and(is_direct_string)
+            && properties.get("Value").is_some_and(is_direct_string)
+    });
+    let is_single_pattern_string_map = definition.properties.is_none()
+        && definition
+            .pattern_properties
+            .as_ref()
+            .is_some_and(|patterns| patterns.len() == 1 && patterns.values().all(is_direct_string));
+
+    def_name.starts_with("Tag")
+        && definition.def_type.as_deref() == Some("object")
+        && (is_key_value_object || is_single_pattern_string_map)
 }
 
 /// Type can be a string or an array of strings in JSON Schema
@@ -911,6 +1138,9 @@ struct CfnDefinition {
     #[serde(rename = "type")]
     def_type: Option<String>,
     properties: Option<BTreeMap<String, CfnProperty>>,
+    /// JSON object-map value schemas keyed by key-pattern.
+    #[serde(default)]
+    pattern_properties: Option<BTreeMap<String, CfnProperty>>,
     #[serde(default)]
     required: Vec<String>,
     /// oneOf variants (union types)
@@ -1247,9 +1477,12 @@ fn main() -> Result<()> {
     let schema: CfnSchema =
         serde_json::from_str(&schema_json).context("Failed to parse CloudFormation schema")?;
 
-    if !schema.has_cloud_control_handlers() {
+    if !schema.is_cloud_control_provisionable() {
         eprintln!(
-            "Skipping {}: NON_PROVISIONABLE (no Cloud Control handlers).\n\
+            "Skipping {}: the schema has no Cloud Control handlers and no \
+             HANDLERLESS_CLOUD_CONTROL_TYPES allowlist entry.\n\
+             If DescribeType reports a provisionable type and a Cloud Control operation succeeds, \
+             follow CODEGEN.md to add a sourced handlerless capability record.\n\
              Use carina-provider-aws if you need to manage this resource via the AWS SDK directly.",
             args.type_name
         );
@@ -1936,7 +2169,11 @@ fn override_type_to_display_name(override_type: &str) -> &str {
 
 /// Determine the display string for a property's type in markdown docs
 fn type_display_string(prop_name: &str, prop: &CfnProperty, schema: &CfnSchema) -> String {
-    if object_string_union_is_iam_policy_document(prop, &schema.type_name, prop_name) {
+    if let Some(TypeOverride::AttributeType { display, .. }) =
+        resource_type_overrides().get(&(schema.type_name.as_str(), prop_name))
+    {
+        (*display).to_string()
+    } else if object_string_union_is_iam_policy_document(prop, &schema.type_name, prop_name) {
         "PolicyDocument".to_string()
     } else if prop_name == "Tags" {
         "`Map<String, String>`".to_string()
@@ -1966,7 +2203,7 @@ fn type_display_string(prop_name: &str, prop: &CfnProperty, schema: &CfnSchema) 
 
         "String".to_string()
     } else if let Some(ref_path) = &prop.ref_path {
-        if ref_path.contains("/Tag") {
+        if is_tag_map_ref(schema, ref_path) {
             "`Map<String, String>`".to_string()
         } else {
             // Scalar refs (awscc#291: WAFv2 `Priority`/`Limit`) recurse for
@@ -2137,7 +2374,7 @@ fn type_display_string(prop_name: &str, prop: &CfnProperty, schema: &CfnSchema) 
             Some("array") => {
                 let base_display = if let Some(items) = &prop.items {
                     if let Some(ref_path) = &items.ref_path {
-                        if !ref_path.contains("/Tag") {
+                        if !is_tag_map_ref(schema, ref_path) {
                             // Keep this renderer fragment-free. Typed enum and
                             // struct links are emitted only by MarkdownType;
                             // scalar items (awscc#291) still mirror the
@@ -2227,7 +2464,7 @@ fn markdown_struct_def(
     }
 
     if let Some(ref_path) = &prop.ref_path
-        && !ref_path.contains("/Tag")
+        && !is_tag_map_ref(schema, ref_path)
         && let Some(def_name) = ref_def_name(ref_path)
     {
         match resolve_ref_classified(schema, ref_path) {
@@ -2687,7 +2924,7 @@ fn generate_markdown_with_example(
                             .insert(source_key, enum_info_for_override(field_name, values));
                         continue;
                     }
-                    TypeOverride::StringType(_) => continue,
+                    TypeOverride::StringType(_) | TypeOverride::AttributeType { .. } => continue,
                     _ => {}
                 }
             }
@@ -2897,7 +3134,9 @@ fn generate_markdown_with_example(
                 let nested_override =
                     resource_type_overrides().get(&(type_name, nested_key.as_str()));
                 let field_type_display =
-                    if matches!(nested_override, Some(TypeOverride::IntegerFromNumber)) {
+                    if let Some(TypeOverride::AttributeType { display, .. }) = nested_override {
+                        MarkdownType::Plain((*display).to_string())
+                    } else if matches!(nested_override, Some(TypeOverride::IntegerFromNumber)) {
                         MarkdownType::Plain(integer_from_number_display(
                             field_prop,
                             type_name,
@@ -3148,11 +3387,14 @@ fn detect_exclusive_from_oneof(schema: &CfnSchema) -> Vec<Vec<String>> {
     groups
 }
 
-/// Regex for detecting "specify either X or Y" patterns in property descriptions.
-/// X and Y can be PascalCase names or ``backtick-quoted`` names.
+/// Regex for detecting unqualified "specify either X or Y" sentences in
+/// property descriptions. X and Y can be PascalCase names or
+/// ``backtick-quoted`` names.
 static EXCLUSIVE_DESC_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)specify either\s*`*([A-Z][A-Za-z0-9]*)`*\s+or\s+`*([A-Z][A-Za-z0-9]*)`*")
-        .unwrap()
+    Regex::new(
+        r"(?im)(?:^|[.!?]\s+|\n\s*)(?:you\s+must\s+)?specify\s+either\s*`*([A-Z][A-Za-z0-9]*)`*\s+or\s+`*([A-Z][A-Za-z0-9]*)`*",
+    )
+    .unwrap()
 });
 
 /// Detect mutually exclusive field groups from property description text.
@@ -3161,6 +3403,12 @@ static EXCLUSIVE_DESC_RE: LazyLock<Regex> = LazyLock::new(|| {
 /// - "You must specify either InternetGatewayId or VpnGatewayId, but not both"
 /// - "You must specify either``CidrBlock`` or ``Ipv4IpamPoolId``"
 /// - "Specify either X or Y"
+///
+/// A condition-qualified sentence such as "For an alarm based on a metric,
+/// you must specify either X or Y" is deliberately ignored. Carina's portable
+/// `exclusive_required` constraint means exactly one globally; treating a
+/// conditional clause as that unconditional rule rejects the other valid
+/// resource modes.
 fn detect_exclusive_from_descriptions(schema: &CfnSchema) -> Vec<Vec<String>> {
     let property_names: HashSet<&String> = schema.properties.keys().collect();
     let mut seen_groups: HashSet<Vec<String>> = HashSet::new();
@@ -3396,7 +3644,9 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
                                 );
                                 continue;
                             }
-                            TypeOverride::StringType(_) => continue,
+                            TypeOverride::StringType(_) | TypeOverride::AttributeType { .. } => {
+                                continue;
+                            }
                             _ => {}
                         }
                     }
@@ -3422,6 +3672,7 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
     // every def with the qualified enums in scope. (carina#3350.)
     //
     EMITTED_DEFS.with(|s| s.borrow_mut().clear());
+    BACK_REFERENCED_DEFS.with(|s| s.borrow_mut().clear());
     reset_property_mode_emission_state();
 
     let has_enums = !enums.is_empty();
@@ -4508,10 +4759,11 @@ fn generate_struct_type(
             // property, including any object children. Do not walk those
             // discarded children: read-only bookkeeping must describe the
             // AttributeType that is actually emitted.
-            let (field_type, mut enum_info) =
-                if let Some(TypeOverride::StringType(override_type)) = nested_override {
-                    (override_type.to_string(), None)
-                } else {
+            let (field_type, mut enum_info) = if let Some(override_type) =
+                nested_override.and_then(TypeOverride::attribute_type_expression)
+            {
+                (override_type.to_string(), None)
+            } else {
                     cfn_type_to_carina_type_with_enum_with_paths(
                         field_prop,
                         field_name,
@@ -4521,7 +4773,7 @@ fn generate_struct_type(
                         &current_struct_path,
                         &field_path,
                     )
-                };
+            };
             // `EnumUnordered` is element-handled identically to `Enum`;
             // it differs only in forcing `unordered_list` below
             // (carina#3093).
@@ -4529,7 +4781,10 @@ fn generate_struct_type(
                 nested_override
             {
                 enum_info = Some(enum_info_for_override(field_name, values));
-            } else if matches!(nested_override, Some(TypeOverride::StringType(_))) {
+            } else if nested_override
+                .and_then(TypeOverride::attribute_type_expression)
+                .is_some()
+            {
                 enum_info = None;
             }
             let field_force_unordered =
@@ -4540,8 +4795,10 @@ fn generate_struct_type(
             // Check if the original field type was a List (array)
             let is_list_field =
                 field_type.contains("::list(") || field_type.contains("::unordered_list(");
-            let field_type = if let Some(TypeOverride::StringType(s)) = nested_override {
-                s.to_string()
+            let field_type = if let Some(expression) =
+                nested_override.and_then(TypeOverride::attribute_type_expression)
+            {
+                expression.to_string()
             } else if matches!(nested_override, Some(TypeOverride::IntegerFromNumber)) {
                 integer_from_number_type(field_prop, &schema.type_name, &nested_key)
             } else if let Some(local_enum_info) = enum_info {
@@ -5203,6 +5460,24 @@ fn resource_type_overrides() -> &'static HashMap<(&'static str, &'static str), T
             m.insert(
                 ("AWS::S3::Bucket", "ReplaceKeyPrefixWith"),
                 TypeOverride::StringType("AttributeType::string()"),
+            );
+
+            // The CloudFormation schema publishes these two BudgetData fields
+            // only as bare objects. The Budgets API defines their map values:
+            // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_Budget.html
+            m.insert(
+                ("AWS::Budgets::Budget", "BudgetData.CostFilters"),
+                TypeOverride::AttributeType {
+                    expression: "AttributeType::map(AttributeType::list(AttributeType::string()))",
+                    display: "`Map<String, List<String>>`",
+                },
+            );
+            m.insert(
+                ("AWS::Budgets::Budget", "BudgetData.PlannedBudgetLimits"),
+                TypeOverride::AttributeType {
+                    expression: "AttributeType::map(AttributeType::ref_(\"Spend\".to_string()))",
+                    display: "`Map<String, Spend>`",
+                },
             );
 
             // SSO / IdentityStore identity semantics
@@ -6169,13 +6444,14 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
 
     // Handle $ref
     if let Some(ref_path) = &prop.ref_path {
-        if ref_path.contains("/Tag") {
+        if is_tag_map_ref(schema, ref_path) {
             return ("carina_aws_types::tags_type()".to_string(), None);
         }
 
         if let Some(def_name) = ref_def_name(ref_path)
             && IN_PROGRESS_DEFS.with(|s| s.borrow().contains(def_name))
         {
+            mark_back_reference(def_name);
             return (
                 format!("AttributeType::ref_({}.to_string())", rust_lit(def_name)),
                 None,
@@ -6548,17 +6824,37 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
             );
             let (list_type, item_enum) = if let Some(items) = &prop.items {
                 let item_path = extend_property_path(property_path, "*");
+                // The list-of-struct inlining path bypasses the normal `$ref`
+                // branch above. Apply the same in-progress guard here so both
+                // direct self-references and multi-definition list cycles
+                // terminate with a schema Ref.
+                if let Some(ref_path) = &items.ref_path
+                    && let Some(def_name) = ref_def_name(ref_path)
+                    && IN_PROGRESS_DEFS.with(|defs| defs.borrow().contains(def_name))
+                {
+                    mark_back_reference(def_name);
+                    (
+                        format!(
+                            "{}(AttributeType::ref_({}.to_string()))",
+                            list_ctor,
+                            rust_lit(def_name)
+                        ),
+                        None,
+                    )
                 // Struct-shaped $ref items are inlined as a list-of-struct;
                 // every other item shape (scalar/enum/array/string/opaque)
                 // falls through to the normal recursion below.
-                if let Some(ref_path) = &items.ref_path
-                    && !ref_path.contains("/Tag")
+                } else if let Some(ref_path) = &items.ref_path
+                    && !is_tag_map_ref(schema, ref_path)
                     && let Some(ResolvedDef::Struct {
                         properties,
                         required,
                     }) = resolve_ref_classified(schema, ref_path)
                 {
                     let def_name = ref_def_name(ref_path).unwrap_or(prop_name);
+                    IN_PROGRESS_DEFS.with(|defs| {
+                        defs.borrow_mut().insert(def_name.to_string());
+                    });
                     let struct_type = generate_struct_type(
                         def_name,
                         properties,
@@ -6571,6 +6867,15 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
                             provider: &item_path,
                         },
                     );
+                    IN_PROGRESS_DEFS.with(|defs| {
+                        defs.borrow_mut().remove(def_name);
+                    });
+                    if was_back_referenced(def_name) {
+                        EMITTED_DEFS.with(|defs| {
+                            defs.borrow_mut()
+                                .insert(def_name.to_string(), struct_type.clone());
+                        });
+                    }
                     (format!("{}({})", list_ctor, struct_type), None)
                 } else {
                     let (item_type, item_enum) = cfn_type_to_carina_type_with_enum_with_paths(
@@ -6616,7 +6921,9 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
             // for CFN union types whose first type is object.
             let res_override =
                 resource_type_overrides().get(&(schema.type_name.as_str(), prop_name));
-            if let Some(TypeOverride::StringType(override_type)) = res_override {
+            if let Some(override_type) =
+                res_override.and_then(TypeOverride::attribute_type_expression)
+            {
                 return (override_type.to_string(), None);
             }
 
@@ -7128,6 +7435,91 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_is_tag_map_ref_requires_canonical_tag_name_and_shape() {
+        let string_property = || CfnProperty {
+            prop_type: Some(TypeValue::Single("string".to_string())),
+            ..Default::default()
+        };
+        let key_value_properties = || {
+            BTreeMap::from([
+                ("Key".to_string(), string_property()),
+                ("Value".to_string(), string_property()),
+            ])
+        };
+        let object_definition = |properties| CfnDefinition {
+            def_type: Some("object".to_string()),
+            properties: Some(properties),
+            ..Default::default()
+        };
+
+        let mut tag_with_extra_properties = key_value_properties();
+        tag_with_extra_properties.insert("Values".to_string(), string_property());
+
+        let mut schema = empty_schema("AWS::Test::Resource");
+        schema.definitions = Some(BTreeMap::from([
+            ("Tag".to_string(), object_definition(key_value_properties())),
+            (
+                "TagWithExtraField".to_string(),
+                object_definition(tag_with_extra_properties),
+            ),
+            (
+                "AttributePair".to_string(),
+                object_definition(key_value_properties()),
+            ),
+        ]));
+
+        assert!(is_tag_map_ref(&schema, "#/definitions/Tag"));
+        assert!(
+            !is_tag_map_ref(&schema, "#/definitions/TagWithExtraField"),
+            "a Tag-prefixed definition with additional fields is not a canonical tag map"
+        );
+        assert!(
+            !is_tag_map_ref(&schema, "#/definitions/AttributePair"),
+            "non-Tag Key/Value definitions include ELB attributes and must retain their struct shape"
+        );
+    }
+
+    #[test]
+    fn test_is_tag_map_ref_accepts_only_direct_string_pattern_map() {
+        let schema: CfnSchema = serde_json::from_value(serde_json::json!({
+            "typeName": "AWS::Test::Resource",
+            "properties": {},
+            "definitions": {
+                "TagMap": {
+                    "type": "object",
+                    "patternProperties": {
+                        ".+": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 256
+                        }
+                    },
+                    "additionalProperties": false
+                },
+                "TagNumberMap": {
+                    "type": "object",
+                    "patternProperties": {
+                        ".+": {
+                            "type": "number"
+                        }
+                    },
+                    "additionalProperties": false
+                }
+            }
+        }))
+        .expect("synthetic tag-map schema should deserialize");
+
+        assert!(
+            is_tag_map_ref(&schema, "#/definitions/TagMap"),
+            "a single direct-string patternProperties entry is a canonical tag map"
+        );
+        assert!(
+            !is_tag_map_ref(&schema, "#/definitions/TagNumberMap"),
+            "patternProperties with non-string values is not a canonical tag map"
+        );
+    }
+
     fn emitted_replacement_class(class: ReplacementClass) -> String {
         let mut code = String::new();
         emit_replacement_class_builder(&mut code, class);
@@ -7259,6 +7651,241 @@ mod tests {
                 "{resource} must be registered with name-based replacement"
             );
         }
+    }
+
+    #[test]
+    fn test_cloudwatch_alarm_and_budgets_budget_are_registered() {
+        let alarm = cfn_schema_for_codegen_tests("AWS::CloudWatch::Alarm");
+        assert_eq!(
+            declared_replacement_class("cloudwatch.Alarm", &alarm).unwrap(),
+            ReplacementClass::Attribute("alarm_name")
+        );
+
+        let budget = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
+        assert_eq!(
+            declared_replacement_class("budgets.Budget", &budget).unwrap(),
+            ReplacementClass::Conflicting
+        );
+    }
+
+    #[test]
+    fn test_cloudwatch_alarm_numeric_shapes_and_evaluation_window() {
+        let schema = cfn_schema_for_codegen_tests("AWS::CloudWatch::Alarm");
+        assert_eq!(schema.properties.len(), 28);
+
+        let generated = generate_schema_code(&schema, "AWS::CloudWatch::Alarm")
+            .expect("CloudWatch Alarm schema generation should succeed");
+        let markdown = generate_markdown(&schema, "AWS::CloudWatch::Alarm")
+            .expect("CloudWatch Alarm markdown generation should succeed");
+
+        for property_name in [
+            "EvaluationPeriods",
+            "EvaluationInterval",
+            "DatapointsToAlarm",
+            "Period",
+        ] {
+            let property = schema
+                .properties
+                .get(property_name)
+                .expect("Alarm integer property");
+            assert_eq!(
+                property.prop_type.as_ref().and_then(TypeValue::as_str),
+                Some("integer"),
+                "{property_name} must use the CloudWatch API's integer shape"
+            );
+            let dsl_name = property_name.to_snake_case();
+            assert!(
+                generated.contains(&format!(
+                    "AttributeSchema::optional({}, AttributeType::int())",
+                    rust_lit(&dsl_name)
+                )),
+                "{property_name} must generate an Int attribute: {generated}"
+            );
+        }
+
+        let number_properties: Vec<&str> = schema
+            .properties
+            .iter()
+            .filter_map(|(name, property)| {
+                (property.prop_type.as_ref().and_then(TypeValue::as_str) == Some("number"))
+                    .then_some(name.as_str())
+            })
+            .collect();
+        assert_eq!(number_properties, vec!["Threshold"]);
+        assert!(
+            generated.contains("AttributeSchema::optional(\"threshold\", AttributeType::float())"),
+            "Threshold must remain Float: {generated}"
+        );
+        assert!(
+            markdown.contains("### `threshold`") && markdown.contains("- **Type:** Float"),
+            "Threshold docs must remain Float: {markdown}"
+        );
+
+        assert!(
+            generated.contains("AttributeType::struct_(\"EvaluationWindow\".to_string()"),
+            "EvaluationWindow oneOf must generate a struct: {generated}"
+        );
+        assert!(
+            generated.contains("StructField::optional(\"sliding_window\"")
+                && generated.contains("StructField::optional(\"wall_clock_window\""),
+            "EvaluationWindow must expose both union members: {generated}"
+        );
+    }
+
+    #[test]
+    fn test_cloudwatch_alarm_conditional_statistic_choice_is_not_globally_required() {
+        let schema = cfn_schema_for_codegen_tests("AWS::CloudWatch::Alarm");
+        let groups = detect_exclusive_from_descriptions(&schema);
+
+        assert!(
+            !groups.iter().any(|group| {
+                group == &["ExtendedStatistic".to_string(), "Statistic".to_string()]
+            }),
+            "the metric-only Statistic choice must not reject metric-math or PromQL alarms: {groups:?}"
+        );
+
+        let generated = generate_schema_code(&schema, "AWS::CloudWatch::Alarm")
+            .expect("CloudWatch Alarm schema generation should succeed");
+        assert!(
+            !generated.contains(
+                "schema = schema.exclusive_required(&[\"extended_statistic\", \"statistic\"]);"
+            ),
+            "a condition-qualified description must not become a global exactly-one constraint: {generated}"
+        );
+    }
+
+    #[test]
+    fn test_budgets_budget_recursive_expression_emits_schema_ref() {
+        let schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
+        assert_eq!(schema.properties.len(), 4);
+
+        let generated = generate_schema_code(&schema, "AWS::Budgets::Budget")
+            .expect("Budgets Budget schema generation should succeed");
+        let markdown = generate_markdown(&schema, "AWS::Budgets::Budget")
+            .expect("Budgets Budget markdown generation should succeed");
+
+        assert!(
+            generated.contains("schema = schema.with_def(\"Expression\""),
+            "the recursive Expression definition must be emitted once: {generated}"
+        );
+        assert!(
+            generated.contains("AttributeType::ref_(\"Expression\".to_string())"),
+            "recursive Expression edges must use AttributeType::Ref: {generated}"
+        );
+        for field in ["and", "or"] {
+            assert!(
+                generated.contains(&format!(
+                    "StructField::optional(\"{field}\", AttributeType::list(AttributeType::ref_(\"Expression\".to_string())))"
+                )),
+                "Expression.{field} must be List<Expression>: {generated}"
+            );
+        }
+        assert!(
+            generated.contains(
+                "StructField::optional(\"not\", AttributeType::ref_(\"Expression\".to_string()))"
+            ),
+            "Expression.Not must refer to Expression: {generated}"
+        );
+        assert!(
+            generated.contains(
+                "StructField::optional(\"tags\", AttributeType::struct_(\"TagValues\".to_string()"
+            ) && !generated
+                .contains("StructField::optional(\"tags\", carina_aws_types::tags_type())"),
+            "Expression.Tags is a Budgets filter expression, not a Key/Value tag map: {generated}"
+        );
+        assert!(
+            generated.contains("AttributeSchema::optional(\"notifications_with_subscribers\"")
+                && generated.contains(".create_only()"),
+            "NotificationsWithSubscribers must remain create-only: {generated}"
+        );
+        assert!(
+            markdown.contains("Expression") && markdown.contains("filter_expression"),
+            "Budget docs must include the recursive expression surface: {markdown}"
+        );
+    }
+
+    #[test]
+    fn test_budgets_budget_bare_object_fields_use_api_map_shapes() {
+        let schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
+        let generated = generate_schema_code(&schema, "AWS::Budgets::Budget")
+            .expect("Budgets Budget schema generation should succeed");
+        let markdown = generate_markdown(&schema, "AWS::Budgets::Budget")
+            .expect("Budgets Budget markdown generation should succeed");
+
+        assert!(
+            generated.contains(
+                "StructField::optional(\"cost_filters\", AttributeType::map(AttributeType::list(AttributeType::string())))"
+            ),
+            "CostFilters must be Map<String, List<String>>: {generated}"
+        );
+        assert!(
+            generated.contains(
+                "StructField::optional(\"planned_budget_limits\", AttributeType::map(AttributeType::ref_(\"Spend\".to_string())))"
+            ),
+            "PlannedBudgetLimits must be Map<String, Spend>: {generated}"
+        );
+        assert!(
+            markdown.contains("`Map<String, List<String>>`")
+                && markdown.contains("`Map<String, Spend>`"),
+            "Budget docs must expose both API map shapes: {markdown}"
+        );
+    }
+
+    #[test]
+    fn test_list_struct_mutual_cycle_emits_only_back_referenced_definition() {
+        let list_of = |definition: &str| CfnProperty {
+            prop_type: Some(TypeValue::Single("array".to_string())),
+            items: Some(Box::new(CfnProperty {
+                ref_path: Some(format!("#/definitions/{definition}")),
+                ..Default::default()
+            })),
+            ..Default::default()
+        };
+        let mut schema = empty_schema("AWS::Test::ListCycle");
+        schema
+            .properties
+            .insert("Roots".to_string(), list_of("CycleA"));
+        schema.definitions = Some(BTreeMap::from([
+            (
+                "CycleA".to_string(),
+                CfnDefinition {
+                    def_type: Some("object".to_string()),
+                    properties: Some(BTreeMap::from([(
+                        "Children".to_string(),
+                        list_of("CycleB"),
+                    )])),
+                    ..Default::default()
+                },
+            ),
+            (
+                "CycleB".to_string(),
+                CfnDefinition {
+                    def_type: Some("object".to_string()),
+                    properties: Some(BTreeMap::from([("Parents".to_string(), list_of("CycleA"))])),
+                    ..Default::default()
+                },
+            ),
+        ]));
+
+        let generated = generate_synthetic_schema_code(&schema)
+            .expect("a two-definition list-only cycle must terminate");
+        assert!(
+            generated.contains(
+                "StructField::optional(\"parents\", AttributeType::list(AttributeType::ref_(\"CycleA\".to_string())))"
+            ),
+            "the CycleB -> CycleA back-edge must use a schema ref: {generated}"
+        );
+        assert_eq!(
+            generated
+                .matches("schema = schema.with_def(\"CycleA\"")
+                .count(),
+            1,
+            "the referenced definition must be emitted exactly once: {generated}"
+        );
+        assert!(
+            !generated.contains("schema = schema.with_def(\"CycleB\""),
+            "an inline definition with no back-reference to itself must stay inline: {generated}"
+        );
     }
 
     #[test]
@@ -9722,7 +10349,29 @@ mod tests {
             create_only_properties: vec![],
             write_only_properties: vec![],
             primary_identifier: None,
-            definitions: None,
+            definitions: Some(BTreeMap::from([(
+                "Tag".to_string(),
+                CfnDefinition {
+                    def_type: Some("object".to_string()),
+                    properties: Some(BTreeMap::from([
+                        (
+                            "Key".to_string(),
+                            CfnProperty {
+                                prop_type: Some(TypeValue::Single("string".to_string())),
+                                ..Default::default()
+                            },
+                        ),
+                        (
+                            "Value".to_string(),
+                            CfnProperty {
+                                prop_type: Some(TypeValue::Single("string".to_string())),
+                                ..Default::default()
+                            },
+                        ),
+                    ])),
+                    ..Default::default()
+                },
+            )])),
             tagging: None,
             one_of: vec![],
             any_of: vec![],
@@ -12146,6 +12795,7 @@ mod tests {
                 max_length: None,
                 minimum: None,
                 maximum: None,
+                pattern_properties: None,
                 format: None,
             },
         );
@@ -12324,6 +12974,7 @@ mod tests {
                 max_length: None,
                 minimum: None,
                 maximum: None,
+                pattern_properties: None,
                 format: None,
             },
         );
@@ -12389,6 +13040,7 @@ mod tests {
                 max_length: None,
                 minimum: None,
                 maximum: None,
+                pattern_properties: None,
                 format: None,
             },
         );
@@ -12762,6 +13414,7 @@ mod tests {
                 max_length: None,
                 minimum: None,
                 maximum: None,
+                pattern_properties: None,
                 format: None,
             },
         );
@@ -12829,6 +13482,7 @@ mod tests {
                 max_length: None,
                 minimum: None,
                 maximum: None,
+                pattern_properties: None,
                 format: None,
             },
         );
@@ -12849,6 +13503,7 @@ mod tests {
                 max_length: None,
                 minimum: None,
                 maximum: None,
+                pattern_properties: None,
                 format: None,
             },
         );
@@ -12931,6 +13586,7 @@ mod tests {
                 max_length: None,
                 minimum: None,
                 maximum: None,
+                pattern_properties: None,
                 format: None,
             },
         );
@@ -12948,6 +13604,7 @@ mod tests {
                 max_length: None,
                 minimum: None,
                 maximum: None,
+                pattern_properties: None,
                 format: None,
             },
         );
@@ -12968,6 +13625,7 @@ mod tests {
                 max_length: None,
                 minimum: None,
                 maximum: None,
+                pattern_properties: None,
                 format: None,
             },
         );
@@ -13635,6 +14293,7 @@ mod tests {
             max_length: None,
             minimum: None,
             maximum: None,
+            pattern_properties: None,
             format: None,
         };
         let shared_protocol = || CfnProperty {
@@ -13656,6 +14315,7 @@ mod tests {
             max_length: None,
             minimum: None,
             maximum: None,
+            pattern_properties: None,
             format: None,
         };
         let schema = CfnSchema {
@@ -13747,6 +14407,7 @@ mod tests {
                 max_length: None,
                 minimum: None,
                 maximum: None,
+                pattern_properties: None,
                 format: None,
             },
         );
@@ -13764,6 +14425,7 @@ mod tests {
                 max_length: None,
                 minimum: None,
                 maximum: None,
+                pattern_properties: None,
                 format: None,
             },
         );
@@ -13859,6 +14521,7 @@ mod tests {
                 max_length: None,
                 minimum: None,
                 maximum: None,
+                pattern_properties: None,
                 format: None,
             },
         );
@@ -14714,6 +15377,7 @@ mod tests {
                 max_length: None,
                 minimum: None,
                 maximum: None,
+                pattern_properties: None,
                 format: None,
             },
         );
@@ -15454,6 +16118,7 @@ mod tests {
                 max_length: None,
                 minimum: None,
                 maximum: None,
+                pattern_properties: None,
                 format: None,
             },
         );
@@ -17199,6 +17864,55 @@ mod tests {
         }"#;
         let schema: CfnSchema = serde_json::from_str(json).unwrap();
         assert!(!schema.has_cloud_control_handlers());
+    }
+
+    #[test]
+    fn test_budgets_budget_is_provisionable_without_schema_handlers() {
+        let schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
+
+        assert!(schema.handlers.is_empty());
+        assert!(schema.is_cloud_control_provisionable());
+    }
+
+    #[test]
+    fn test_budgets_budget_handlerless_permissions_are_complete() {
+        let schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
+
+        assert_eq!(
+            handler_permissions(&schema, "create"),
+            [
+                "aws-portal:ModifyBilling",
+                "budgets:ModifyBudget",
+                "budgets:TagResource",
+            ]
+        );
+        assert_eq!(
+            handler_permissions(&schema, "read"),
+            [
+                "aws-portal:ViewBilling",
+                "budgets:ListTagsForResource",
+                "budgets:ViewBudget",
+            ]
+        );
+        assert_eq!(
+            handler_permissions(&schema, "update"),
+            [
+                "aws-portal:ModifyBilling",
+                "aws-portal:ViewBilling",
+                "budgets:ListTagsForResource",
+                "budgets:ModifyBudget",
+                "budgets:TagResource",
+                "budgets:UntagResource",
+            ]
+        );
+        assert_eq!(
+            handler_permissions(&schema, "delete"),
+            ["aws-portal:ModifyBilling", "budgets:ModifyBudget"]
+        );
+        assert_eq!(
+            handler_permissions(&schema, "list"),
+            ["aws-portal:ViewBilling", "budgets:ViewBudget"]
+        );
     }
 
     // === Issue #199: snake_case DSL spelling for every StringEnum value ===

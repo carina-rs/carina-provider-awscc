@@ -668,6 +668,99 @@ deep_cleanup_scheduler() {
     done
 }
 
+# Delete metric alarms owned by acceptance tests. The service-side filter
+# narrows the response; each returned JSON string is also checked locally so
+# malformed or unexpected output cannot broaden the deletion scope.
+deep_cleanup_cloudwatch_alarms() {
+    local account="$1"
+
+    local alarm_names_json
+    deep_cleanup_enumerate "$account" "acceptance-test CloudWatch alarms" alarm_names_json \
+        aws cloudwatch describe-alarms \
+        --alarm-name-prefix carina-acc-test \
+        --query '(MetricAlarms || `[]`)[].AlarmName' --output json
+    if [ "$DEEP_CLEANUP_LAST_ENUMERATION_SUCCEEDED" -eq 0 ]; then
+        echo "  Skipping CloudWatch alarm cleanup because alarms could not be enumerated."
+        return 0
+    fi
+
+    local alarm_names
+    if ! alarm_names=$(printf '%s\n' "$alarm_names_json" | \
+        jq -r 'if type == "array" and all(.[]; type == "string") then .[] else error("expected an array of alarm-name strings") end'); then
+        DEEP_CLEANUP_LAST_ENUMERATION_SUCCEEDED=0
+        DEEP_CLEANUP_ENUMERATION_FAILURE_COUNT=$((${DEEP_CLEANUP_ENUMERATION_FAILURE_COUNT:-0} + 1))
+        echo "  ERROR: Failed to parse acceptance-test CloudWatch alarms for account $account as JSON" >&2
+        echo "  Skipping CloudWatch alarm cleanup because alarms could not be enumerated."
+        return 0
+    fi
+
+    local alarm_name
+    while IFS= read -r alarm_name; do
+        [ -z "$alarm_name" ] && continue
+        case "$alarm_name" in
+            carina-acc-test*) ;;
+            *)
+                echo "  Skipping CloudWatch alarm outside acceptance-test prefix: $alarm_name"
+                continue
+                ;;
+        esac
+        echo "  Cleaning CloudWatch alarm $alarm_name..."
+        deep_cleanup_delete_resource "$account" "delete CloudWatch alarm $alarm_name" \
+            aws cloudwatch delete-alarms --alarm-names "$alarm_name"
+    done <<< "$alarm_names"
+}
+
+# Budgets is a global API served through us-east-1. Resolve the owning account
+# id first, then keep both list and delete calls pinned to that endpoint.
+deep_cleanup_budgets() {
+    local account="$1"
+
+    local aws_account_id
+    deep_cleanup_enumerate "$account" "AWS account ID for Budgets cleanup" aws_account_id \
+        aws sts get-caller-identity --query Account --output text
+    if [ "$DEEP_CLEANUP_LAST_ENUMERATION_SUCCEEDED" -eq 0 ] || \
+        [ -z "$aws_account_id" ] || [ "$aws_account_id" = "None" ]; then
+        echo "  Skipping Budgets cleanup because the AWS account ID could not be resolved."
+        return 0
+    fi
+
+    local budget_names_json
+    deep_cleanup_enumerate "$account" "acceptance-test Budgets" budget_names_json \
+        aws budgets describe-budgets \
+        --account-id "$aws_account_id" --region us-east-1 \
+        --query '(Budgets || `[]`)[?starts_with(BudgetName, `carina-acc-test`)].BudgetName' --output json
+    if [ "$DEEP_CLEANUP_LAST_ENUMERATION_SUCCEEDED" -eq 0 ]; then
+        echo "  Skipping Budgets cleanup because budgets could not be enumerated."
+        return 0
+    fi
+
+    local budget_names
+    if ! budget_names=$(printf '%s\n' "$budget_names_json" | \
+        jq -r 'if type == "array" and all(.[]; type == "string") then .[] else error("expected an array of budget-name strings") end'); then
+        DEEP_CLEANUP_LAST_ENUMERATION_SUCCEEDED=0
+        DEEP_CLEANUP_ENUMERATION_FAILURE_COUNT=$((${DEEP_CLEANUP_ENUMERATION_FAILURE_COUNT:-0} + 1))
+        echo "  ERROR: Failed to parse acceptance-test Budgets for account $account as JSON" >&2
+        echo "  Skipping Budgets cleanup because budgets could not be enumerated."
+        return 0
+    fi
+
+    local budget_name
+    while IFS= read -r budget_name; do
+        [ -z "$budget_name" ] && continue
+        case "$budget_name" in
+            carina-acc-test*) ;;
+            *)
+                echo "  Skipping Budget outside acceptance-test prefix: $budget_name"
+                continue
+                ;;
+        esac
+        echo "  Cleaning Budget $budget_name..."
+        deep_cleanup_delete_resource "$account" "delete Budget $budget_name" \
+            aws budgets delete-budget \
+            --account-id "$aws_account_id" --budget-name "$budget_name" --region us-east-1
+    done <<< "$budget_names"
+}
+
 # Runs a command with a hard wall-clock limit. This is used around AWS waiters,
 # whose generated polling limits can otherwise hold up an entire account sweep.
 deep_cleanup_with_timeout() {
@@ -1304,8 +1397,10 @@ deep_cleanup_account() {
     # 7. Delete orphaned regional WAFv2 web ACLs
     deep_cleanup_delete_wafv2_web_acls "$account"
 
-    # 8. Delete acceptance-test Scheduler schedules and groups before their roles.
+    # 8. Delete independent acceptance-test resources before their IAM dependencies.
     deep_cleanup_scheduler "$account"
+    deep_cleanup_cloudwatch_alarms "$account"
+    deep_cleanup_budgets "$account"
 
     # 9. Delete orphaned IAM OIDC providers tagged by acceptance tests
     local oidc_providers

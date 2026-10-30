@@ -1,0 +1,26 @@
+# CloudWatch Alarm - Basic test
+#
+# Creates a simple metric alarm with tags. No metric data is required: the
+# alarm can remain INSUFFICIENT_DATA for the lifetime of the acceptance test.
+
+provider awscc {
+  region = aws.Region.ap_northeast_1
+}
+
+awscc.cloudwatch.Alarm {
+  alarm_name        = 'carina-acc-test-cloudwatch-alarm'
+  alarm_description = 'Carina acceptance-test metric alarm'
+
+  comparison_operator = 'GreaterThanThreshold'
+  evaluation_periods  = 1
+  metric_name         = 'Errors'
+  namespace           = 'CarinaAcceptance'
+  period              = 60
+  statistic           = 'Sum'
+  threshold           = 0.5
+
+  tags = {
+    Environment = 'acceptance-test'
+    Project     = 'carina'
+  }
+}
