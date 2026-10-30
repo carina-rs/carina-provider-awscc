@@ -63,6 +63,8 @@ RESOURCE_TYPES=(
     "AWS::EC2::TransitGatewayAttachment"
     "AWS::S3::Bucket"
     "AWS::S3::BucketPolicy"
+    "AWS::Scheduler::Schedule"
+    "AWS::Scheduler::ScheduleGroup"
     "AWS::SSM::Parameter"
     "AWS::IAM::Role"
     "AWS::IAM::RolePolicy"

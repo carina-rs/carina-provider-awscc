@@ -139,6 +139,7 @@ for fn in \
     deep_cleanup_delete_supporting \
     deep_cleanup_cloudfront_unreferenced_resources \
     deep_cleanup_cloudfront_functions \
+    deep_cleanup_scheduler \
     deep_cleanup_with_timeout \
     deep_cleanup_wait_for_network_interface \
     deep_cleanup_list_wafv2_web_acls \

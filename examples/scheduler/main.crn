@@ -1,0 +1,43 @@
+# EventBridge Scheduler Example
+#
+# Creates two six-hour schedules in the default group, the only group Cloud
+# Control can read by Schedule.Name. Both target the Lambda function's live
+# alias.
+
+provider awscc {
+  region = awscc.Region.ap_northeast_1
+}
+
+awscc.scheduler.Schedule {
+  name = 'carina-registry-publish-refresh'
+
+  schedule_expression = 'rate(6 hours)'
+  state               = enabled
+
+  flexible_time_window = {
+    mode = off
+  }
+
+  target = {
+    arn      = 'arn:aws:lambda:ap-northeast-1:123456789012:function:carina-registry-publish-api:live'
+    role_arn = 'arn:aws:iam::123456789012:role/carina-registry-publish-scheduler'
+    input    = '{"operation":"refresh"}'
+  }
+}
+
+awscc.scheduler.Schedule {
+  name = 'carina-registry-publish-rerender'
+
+  schedule_expression = 'rate(6 hours)'
+  state               = enabled
+
+  flexible_time_window = {
+    mode = off
+  }
+
+  target = {
+    arn      = 'arn:aws:lambda:ap-northeast-1:123456789012:function:carina-registry-publish-api:live'
+    role_arn = 'arn:aws:iam::123456789012:role/carina-registry-publish-scheduler'
+    input    = '{"operation":"rerender"}'
+  }
+}

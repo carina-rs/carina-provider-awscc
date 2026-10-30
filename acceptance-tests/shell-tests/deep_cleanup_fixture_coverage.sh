@@ -360,6 +360,8 @@ awscc.logs.LogGroup|aws logs delete-log-group
 awscc.route53.HostedZone|aws route53 delete-hosted-zone
 awscc.s3.Bucket|aws s3 rb
 awscc.s3.BucketPolicy|aws s3api delete-bucket-policy
+awscc.scheduler.Schedule|aws scheduler delete-schedule
+awscc.scheduler.ScheduleGroup|aws scheduler delete-schedule-group
 awscc.wafv2.WebAcl|aws wafv2 delete-web-acl
 EOF
 

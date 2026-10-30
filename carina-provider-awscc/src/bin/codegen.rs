@@ -164,8 +164,8 @@ fn take_emitted_defs() -> BTreeMap<String, String> {
 const EXIT_SKIPPED: i32 = 2;
 
 /// Unified type override for resource-scoped property overrides.
-/// Allows overriding string type, enum values, integer range, or integer enum
-/// for a specific (resource_type, property_name) pair.
+/// Allows overriding string type, enum values, numeric shape, integer range,
+/// or integer enum for a specific (resource_type, property_name) pair.
 #[derive(Debug, Clone, PartialEq)]
 enum TypeOverride {
     /// Override to a specific string type (e.g., "super::super::iam::role::arn()")
@@ -182,6 +182,8 @@ enum TypeOverride {
     EnumUnordered(Vec<&'static str>),
     /// Override to an integer range (min, max)
     IntRange(i64, i64),
+    /// Treat a CFN `number` property as an integer while retaining its CFN bounds.
+    IntegerFromNumber,
     /// Override to an integer enum with specific allowed values
     IntEnum(Vec<i64>),
     /// Override to_dsl on a Custom type (Rust code for the closure)
@@ -332,6 +334,14 @@ const REPLACEMENT_CLASSES: &[(&str, ReplacementClass)] = &[
     ("s3.Bucket", ReplacementClass::Attribute("bucket_name")),
     // One policy per bucket; `bucket` is the parent, not this resource's own name.
     ("s3.BucketPolicy", ReplacementClass::Conflicting),
+    // Schedule names are user-chosen and replacement can use a temporary name
+    // within the same schedule group.
+    ("scheduler.Schedule", ReplacementClass::Attribute("name")),
+    // Schedule group names are user-chosen and unique within an account and region.
+    (
+        "scheduler.ScheduleGroup",
+        ReplacementClass::Attribute("name"),
+    ),
     // Parameter names are user-chosen and unique within an account and region.
     ("ssm.Parameter", ReplacementClass::Attribute("name")),
     // Every create-only field participates in the assignment's uniqueness key.
@@ -365,7 +375,7 @@ fn is_resource_identity(
         )
 }
 
-fn catalog_knows_service(service: &str) -> bool {
+fn catalog_knows_arn_service(service: &str) -> bool {
     AwsccType::ALL
         .iter()
         .copied()
@@ -377,10 +387,11 @@ fn catalog_knows_service(service: &str) -> bool {
                 .map(carina_aws_types::AwsType::identity),
         )
         .any(|identity| {
-            identity
-                .segments
-                .first()
-                .is_some_and(|known| known == service)
+            identity.kind == "Arn"
+                && identity
+                    .segments
+                    .first()
+                    .is_some_and(|known| known == service)
         })
 }
 
@@ -403,7 +414,7 @@ fn arn_constructor(service: &str, resource: &str) -> Result<String> {
         ));
     }
 
-    if catalog_knows_service(service) {
+    if catalog_knows_arn_service(service) {
         anyhow::bail!(
             "AWS service {service:?} is cataloged, but resource {resource:?} has no Arn row; add it to AwsType or AwsccType"
         );
@@ -1717,6 +1728,27 @@ fn is_deprecated_property(prop: &CfnProperty) -> bool {
         .is_some_and(|description| description.starts_with("(Deprecated.)"))
 }
 
+const SCHEDULER_GROUP_NAME_LIMITATION: &str = "Carina requires group_name to be omitted or set to \
+    the literal 'default'. Cloud Control identifies schedules by Name only and reads them in the \
+    default group, so a schedule in another group can be created but never read or tracked.";
+
+fn generated_property_description(
+    schema: &CfnSchema,
+    prop_name: &str,
+    prop: &CfnProperty,
+) -> Option<String> {
+    let mut description = prop.description.clone();
+    if schema.type_name == "AWS::Scheduler::Schedule" && prop_name == "GroupName" {
+        let description = description.get_or_insert_with(String::new);
+        if !description.is_empty() {
+            description.push(' ');
+        }
+        description.push_str(SCHEDULER_GROUP_NAME_LIMITATION);
+    }
+
+    description
+}
+
 fn documented_top_level_properties(
     schema: &CfnSchema,
 ) -> impl Iterator<Item = (&String, &CfnProperty)> {
@@ -1896,6 +1928,7 @@ fn override_type_to_display_name(override_type: &str) -> &str {
         "carina_aws_types::tgw_route_table_id()" => "TgwRouteTableId",
         "types::cidr()" => "Cidr",
         "types::email()" => "Email",
+        "crate::schemas::catalog::scheduler_schedule_group_name()" => "SchedulerScheduleGroupName",
         "AttributeType::string()" => "String",
         _ => "String",
     }
@@ -2767,7 +2800,7 @@ fn generate_markdown_with_example(
         }
         page.push_str("\n");
 
-        if let Some(d) = &prop.description {
+        if let Some(d) = generated_property_description(schema, prop_name, prop) {
             let desc = collapse_whitespace(&d.replace('\n', " "));
             page.push_str(&format!("{desc}\n\n"));
         }
@@ -2860,8 +2893,17 @@ fn generate_markdown_with_example(
                     struct_key: key.clone(),
                     field_name: field_name.clone(),
                 };
+                let nested_key = format!("{}.{}", def_info.def_name, field_name);
+                let nested_override =
+                    resource_type_overrides().get(&(type_name, nested_key.as_str()));
                 let field_type_display =
-                    if let Some(enum_target) = enum_targets.struct_fields.get(&source_key) {
+                    if matches!(nested_override, Some(TypeOverride::IntegerFromNumber)) {
+                        MarkdownType::Plain(integer_from_number_display(
+                            field_prop,
+                            type_name,
+                            &nested_key,
+                        ))
+                    } else if let Some(enum_target) = enum_targets.struct_fields.get(&source_key) {
                         markdown_type(
                             field_name,
                             field_prop,
@@ -3532,7 +3574,7 @@ pub fn {}() -> AwsccSchemaConfig {{
             attr_code.push_str("\n                .identity()");
         }
 
-        if let Some(desc) = &prop.description {
+        if let Some(desc) = generated_property_description(schema, prop_name, prop) {
             let escaped = collapse_whitespace(
                 &desc
                     .replace('\\', "\\\\")
@@ -4500,6 +4542,8 @@ fn generate_struct_type(
                 field_type.contains("::list(") || field_type.contains("::unordered_list(");
             let field_type = if let Some(TypeOverride::StringType(s)) = nested_override {
                 s.to_string()
+            } else if matches!(nested_override, Some(TypeOverride::IntegerFromNumber)) {
+                integer_from_number_type(field_prop, &schema.type_name, &nested_key)
             } else if let Some(local_enum_info) = enum_info {
                 let composite_key = format!("{}.{}", def_name, field_name);
                 let enum_type = if let Some(enum_info) =
@@ -4910,6 +4954,34 @@ fn emit_float_range_option(min: Option<i64>, max: Option<i64>) -> String {
         None => "None".to_string(),
     };
     format!("Some(({min_str}, {max_str}))")
+}
+
+fn integer_from_number_bounds(
+    prop: &CfnProperty,
+    type_name: &str,
+    property_name: &str,
+) -> (Option<i64>, Option<i64>) {
+    assert_eq!(
+        prop.prop_type.as_ref().and_then(TypeValue::as_str),
+        Some("number"),
+        "IntegerFromNumber override for {type_name}.{property_name} requires a CFN number property"
+    );
+    let bounds = (prop.minimum, prop.maximum);
+    assert!(
+        bounds.0.is_some() || bounds.1.is_some(),
+        "IntegerFromNumber override for {type_name}.{property_name} requires a CFN minimum or maximum"
+    );
+    bounds
+}
+
+fn integer_from_number_type(prop: &CfnProperty, type_name: &str, property_name: &str) -> String {
+    let (min, max) = integer_from_number_bounds(prop, type_name, property_name);
+    refined_int_type("None", &emit_int_range_option(min, max))
+}
+
+fn integer_from_number_display(prop: &CfnProperty, type_name: &str, property_name: &str) -> String {
+    let (min, max) = integer_from_number_bounds(prop, type_name, property_name);
+    format!("Int({})", range_display_string(min, max))
 }
 
 /// Known integer range overrides for properties where CloudFormation schemas
@@ -5461,6 +5533,16 @@ fn resource_type_overrides() -> &'static HashMap<(&'static str, &'static str), T
                 TypeOverride::Enum(ssl_protocols),
             );
 
+            // Cloud Control's Schedule identifier omits GroupName and reads
+            // Name in the default group. The catalog validator records the
+            // measured behavior and rejects non-default or unproven groups.
+            m.insert(
+                ("AWS::Scheduler::Schedule", "GroupName"),
+                TypeOverride::StringType(
+                    "crate::schemas::catalog::scheduler_schedule_group_name()",
+                ),
+            );
+
             // === IntRange overrides ===
 
             // VPN Gateway and Transit Gateway ASN range
@@ -5472,6 +5554,21 @@ fn resource_type_overrides() -> &'static HashMap<(&'static str, &'static str), T
                 ("AWS::EC2::TransitGateway", "AmazonSideAsn"),
                 TypeOverride::IntRange(1, 4294967294),
             );
+            // CloudFormation publishes these Scheduler API integers as `number`.
+            // Their ranges come from each property's CFN minimum/maximum.
+            for path in [
+                "FlexibleTimeWindow.MaximumWindowInMinutes",
+                "RetryPolicy.MaximumEventAgeInSeconds",
+                "RetryPolicy.MaximumRetryAttempts",
+                "EcsParameters.TaskCount",
+                "CapacityProviderStrategyItem.Base",
+                "CapacityProviderStrategyItem.Weight",
+            ] {
+                m.insert(
+                    ("AWS::Scheduler::Schedule", path),
+                    TypeOverride::IntegerFromNumber,
+                );
+            }
 
             // === IntEnum overrides ===
 
@@ -7147,6 +7244,134 @@ mod tests {
         assert_eq!(
             declared_replacement_class("cloudfront.Function", &function).unwrap(),
             ReplacementClass::Attribute("name")
+        );
+    }
+
+    #[test]
+    fn test_scheduler_resources_are_registered() {
+        for resource in ["scheduler.Schedule", "scheduler.ScheduleGroup"] {
+            assert_eq!(
+                REPLACEMENT_CLASSES
+                    .iter()
+                    .find(|(registered, _)| *registered == resource)
+                    .map(|(_, class)| *class),
+                Some(ReplacementClass::Attribute("name")),
+                "{resource} must be registered with name-based replacement"
+            );
+        }
+    }
+
+    #[test]
+    fn test_scheduler_api_integer_fields_are_integer_shaped() {
+        let schema = cfn_schema_for_codegen_tests("AWS::Scheduler::Schedule");
+        let generated = generate_schema_code(&schema, "AWS::Scheduler::Schedule")
+            .expect("Scheduler Schedule schema generation should succeed");
+        let markdown = generate_markdown(&schema, "AWS::Scheduler::Schedule")
+            .expect("Scheduler Schedule markdown generation should succeed");
+        let definitions = schema.definitions.as_ref().expect("Schedule definitions");
+
+        for provider_path in [
+            "FlexibleTimeWindow.MaximumWindowInMinutes",
+            "RetryPolicy.MaximumEventAgeInSeconds",
+            "RetryPolicy.MaximumRetryAttempts",
+            "EcsParameters.TaskCount",
+            "CapacityProviderStrategyItem.Base",
+            "CapacityProviderStrategyItem.Weight",
+        ] {
+            assert_eq!(
+                resource_type_overrides().get(&(schema.type_name.as_str(), provider_path)),
+                Some(&TypeOverride::IntegerFromNumber),
+                "{provider_path} must use the bounds-preserving integer marker"
+            );
+            let (definition_name, provider_name) = provider_path
+                .split_once('.')
+                .expect("nested Scheduler override path");
+            let field_prop = definitions
+                .get(definition_name)
+                .and_then(|definition| definition.properties.as_ref())
+                .and_then(|properties| properties.get(provider_name))
+                .expect("overridden field in cached Scheduler schema");
+            assert_eq!(
+                field_prop.prop_type.as_ref().and_then(TypeValue::as_str),
+                Some("number"),
+                "{provider_path} must remain a CFN number while this override exists"
+            );
+            assert!(
+                field_prop.minimum.is_some() || field_prop.maximum.is_some(),
+                "{provider_path} must declare a CFN range"
+            );
+            let field_name = provider_name.to_snake_case();
+            let range = emit_int_range_option(field_prop.minimum, field_prop.maximum);
+            let int_fragment = format!(
+                "StructField::optional(\"{field_name}\", \
+                 AttributeType::refined_int(None, {range}))"
+            );
+            assert!(
+                generated.contains(&int_fragment),
+                "{provider_path} must preserve its range and use the integer DSL shape: \
+                 {generated}"
+            );
+            assert!(
+                !generated.contains(&format!(
+                    "StructField::optional(\"{field_name}\", AttributeType::refined_float"
+                )),
+                "{provider_path} must not use the float DSL shape: {generated}"
+            );
+            assert!(
+                markdown.contains(&format!(
+                    "| `{field_name}` | Int({}) |",
+                    range_display_string(field_prop.minimum, field_prop.maximum)
+                )),
+                "{provider_path} docs must match the integer DSL shape: {markdown}"
+            );
+        }
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "IntegerFromNumber override for AWS::Test::IntegerSource.Nested.Count requires a CFN minimum or maximum"
+    )]
+    fn test_integer_from_number_requires_cfn_bounds() {
+        let prop = CfnProperty {
+            prop_type: Some(TypeValue::Single("number".to_string())),
+            ..Default::default()
+        };
+
+        integer_from_number_bounds(&prop, "AWS::Test::IntegerSource", "Nested.Count");
+    }
+
+    #[test]
+    fn test_scheduler_group_name_uses_default_group_validator_and_documents_limitation() {
+        let schema = cfn_schema_for_codegen_tests("AWS::Scheduler::Schedule");
+        let generated = generate_schema_code(&schema, "AWS::Scheduler::Schedule")
+            .expect("Scheduler Schedule schema generation should succeed");
+        assert!(
+            generated.contains(
+                "AttributeSchema::optional(\"group_name\", \
+                 crate::schemas::catalog::scheduler_schedule_group_name())"
+            ),
+            "Schedule.GroupName must use the Cloud Control default-group validator: {generated}"
+        );
+        assert!(
+            generated.contains(
+                "Cloud Control identifies schedules by Name only and reads them in the default \
+                 group, so a schedule in another group can be created but never read or tracked."
+            ),
+            "generated schema must explain the measured tracking limitation: {generated}"
+        );
+
+        let markdown = generate_markdown(&schema, "AWS::Scheduler::Schedule")
+            .expect("Scheduler Schedule markdown generation should succeed");
+        assert!(
+            markdown.contains("- **Type:** SchedulerScheduleGroupName"),
+            "Schedule.GroupName docs must expose the restricted type: {markdown}"
+        );
+        assert!(
+            markdown.contains(
+                "Cloud Control identifies schedules by Name only and reads them in the default \
+                 group, so a schedule in another group can be created but never read or tracked."
+            ),
+            "Schedule.GroupName docs must explain the measured tracking limitation: {markdown}"
         );
     }
 
@@ -10516,6 +10741,10 @@ mod tests {
         );
         assert_eq!(
             arn_constructor("unknownservice", "Thing").unwrap(),
+            "carina_aws_types::arn()"
+        );
+        assert_eq!(
+            arn_constructor("scheduler", "Schedule").unwrap(),
             "carina_aws_types::arn()"
         );
     }
