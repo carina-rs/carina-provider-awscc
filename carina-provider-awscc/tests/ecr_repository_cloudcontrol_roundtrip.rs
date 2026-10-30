@@ -5,11 +5,12 @@
 //! AWS::ECR::Repository, so the mock returns the create-time DesiredState
 //! verbatim on read. This test therefore asserts only structural preservation:
 //! the nested struct fields (`image_scanning_configuration`,
-//! `lifecycle_policy`) and the `tags` map survive the apply path as structured
-//! `Map` values instead of being flattened or stringified. It must NOT assert
-//! full shaped equality, because that would lock in a mock artifact rather
-//! than real AWS behaviour. Upgrade to full shaped equality once winterbaume
-//! registers a shaper for this type.
+//! `lifecycle_policy`), the `repository_policy_text` policy document, and the
+//! `tags` map survive the apply path as structured `Map` values instead of
+//! being flattened or stringified. It must NOT assert full shaped equality,
+//! because that would lock in a mock artifact rather than real AWS behaviour.
+//! Upgrade to full shaped equality once winterbaume registers a shaper for
+//! this type.
 //!
 //! Live AWS reconciliation (CloudControl against a real account) showed the
 //! real `GetResource` differs from the verbatim mock read in exactly the ways
@@ -17,10 +18,10 @@
 //! `RepositoryUri`, fills the schema default
 //! `EncryptionConfiguration.EncryptionType = AES256`, backfills
 //! `LifecyclePolicy.RegistryId` with the account id, and omits unset
-//! collection properties (`ImageTagMutabilityExclusionFilters`,
-//! `RepositoryPolicyText`) that the provider's desired-state normalization
-//! sends as empty collections. The create-time identifier is the repository
-//! name on both real AWS and the mock.
+//! collection properties such as `ImageTagMutabilityExclusionFilters` that the
+//! provider's desired-state normalization sends as empty collections. The
+//! create-time identifier is the repository name on both real AWS and the
+//! mock.
 
 mod common;
 
@@ -39,6 +40,7 @@ const TYPE_NAME: &str = "AWS::ECR::Repository";
 const ACCOUNT_ID: &str = "123456789012";
 const REGION: &str = "us-east-1";
 const REPOSITORY_NAME: &str = "carina-registry-publish-api";
+const LAMBDA_SOURCE_ARN: &str = "arn:aws:lambda:us-east-1:123456789012:function:registry-publish-*";
 const LIFECYCLE_POLICY_TEXT: &str = r#"{"rules":[{"rulePriority":1,"description":"keep last 10 images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":10},"action":{"type":"expire"}}]}"#;
 
 fn string(value: &str) -> Value {
@@ -53,6 +55,15 @@ fn enum_identifier(value: &str) -> Value {
     Value::Concrete(ConcreteValue::enum_identifier(value))
 }
 
+fn string_list(items: impl IntoIterator<Item = &'static str>) -> Value {
+    Value::Concrete(ConcreteValue::StringList(
+        items
+            .into_iter()
+            .map(|item| item.to_string().into())
+            .collect(),
+    ))
+}
+
 fn map(entries: impl IntoIterator<Item = (&'static str, Value)>) -> Value {
     Value::Concrete(ConcreteValue::Map(
         entries
@@ -62,9 +73,70 @@ fn map(entries: impl IntoIterator<Item = (&'static str, Value)>) -> Value {
     ))
 }
 
+fn list(items: impl IntoIterator<Item = Value>) -> Value {
+    Value::Concrete(ConcreteValue::List(items.into_iter().collect()))
+}
+
+fn repository_policy() -> Value {
+    map([
+        ("version", enum_identifier("2012_10_17")),
+        (
+            "statement",
+            list([map([
+                ("sid", string("AllowLambdaPull")),
+                ("effect", enum_identifier("allow")),
+                (
+                    "principal",
+                    map([("service", string("lambda.amazonaws.com"))]),
+                ),
+                (
+                    "action",
+                    string_list(["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"]),
+                ),
+                (
+                    "condition",
+                    map([(
+                        "string_like",
+                        map([("aws:sourceArn", string(LAMBDA_SOURCE_ARN))]),
+                    )]),
+                ),
+            ])]),
+        ),
+    ])
+}
+
+fn expected_repository_policy() -> Value {
+    map([
+        ("version", string("2012-10-17")),
+        (
+            "statement",
+            list([map([
+                ("sid", string("AllowLambdaPull")),
+                ("effect", string("Allow")),
+                (
+                    "principal",
+                    map([("service", string_list(["lambda.amazonaws.com"]))]),
+                ),
+                (
+                    "action",
+                    string_list(["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"]),
+                ),
+                (
+                    "condition",
+                    map([(
+                        "string_like",
+                        map([("aws:sourceArn", string_list([LAMBDA_SOURCE_ARN]))]),
+                    )]),
+                ),
+            ])]),
+        ),
+    ])
+}
+
 fn ecr_repository_resource() -> Resource {
     Resource::with_provider("awscc", "ecr.Repository", "publish_api_repo", None)
         .with_attribute("repository_name", string(REPOSITORY_NAME))
+        .with_attribute("repository_policy_text", repository_policy())
         .with_attribute("image_tag_mutability", enum_identifier("immutable"))
         .with_attribute(
             "image_scanning_configuration",
@@ -122,7 +194,7 @@ async fn stored_repository_identifier(cloudcontrol: &CloudControlService) -> Str
 }
 
 #[tokio::test(start_paused = true)]
-async fn ecr_repository_create_then_read_preserves_struct_and_map_fields() {
+async fn ecr_repository_create_then_read_round_trips_structured_repository_policy() {
     let (provider, cloudcontrol) = winterbaume_provider().await;
     let resource = ecr_repository_resource();
     let id = resource.id.clone();
@@ -165,6 +237,7 @@ async fn ecr_repository_create_then_read_preserves_struct_and_map_fields() {
         read.attributes(),
         &attributes([
             ("repository_name", string(REPOSITORY_NAME)),
+            ("repository_policy_text", expected_repository_policy()),
             ("image_tag_mutability", string("IMMUTABLE")),
             (
                 "image_scanning_configuration",
@@ -182,8 +255,14 @@ async fn ecr_repository_create_then_read_preserves_struct_and_map_fields() {
                 "image_tag_mutability_exclusion_filters",
                 Value::Concrete(ConcreteValue::List(vec![])),
             ),
-            ("repository_policy_text", map([])),
         ]),
-        "unregistered winterbaume type must preserve struct and map fields as structured values"
+        "unregistered winterbaume type must preserve structs, maps, and the policy document"
+    );
+    assert!(
+        matches!(
+            read.attributes().get("repository_policy_text"),
+            Some(Value::Concrete(ConcreteValue::Map(_)))
+        ),
+        "repository_policy_text must remain a structured policy document"
     );
 }

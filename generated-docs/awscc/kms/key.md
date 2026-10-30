@@ -82,7 +82,7 @@ Specifies whether the KMS key is enabled. Disabled KMS keys cannot be used in cr
 
 ### `key_policy`
 
-- **Type:** `Map<String, String>`
+- **Type:** PolicyDocument
 - **Required:** No
 - **Default:** `"{
     "Version": "2012-10-17",

@@ -1,0 +1,41 @@
+# ECR Repository - repository policy test
+#
+# Tests: a structured repository_policy_text grants Lambda image-pull actions
+# under an aws:sourceArn StringLike condition. The standard acceptance runner's
+# full mode verifies the read-back is idempotent with a no-change plan.
+
+provider awscc {
+  region = aws.Region.ap_northeast_1
+}
+
+awscc.ecr.Repository {
+  repository_name = 'carina-acc-test-lambda-pull'
+
+  repository_policy_text = {
+    version = aws.iam.PolicyDocument.Version.2012_10_17
+
+    statement {
+      sid    = 'AllowLambdaPull'
+      effect = aws.iam.PolicyDocument.Statement.Effect.allow
+
+      principal = {
+        service = 'lambda.amazonaws.com'
+      }
+
+      action = [
+        'ecr:BatchGetImage',
+        'ecr:GetDownloadUrlForLayer',
+      ]
+
+      condition = {
+        string_like = {
+          'aws:sourceArn' = 'arn:aws:lambda:ap-northeast-1:*:function:*'
+        }
+      }
+    }
+  }
+
+  tags = {
+    Environment = 'acceptance-test'
+  }
+}

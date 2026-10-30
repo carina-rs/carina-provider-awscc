@@ -600,6 +600,48 @@ impl TypeValue {
     }
 }
 
+/// IAM policy document properties whose CloudFormation names do not use the
+/// conventional `PolicyDocument` suffix.
+const NONSTANDARD_IAM_POLICY_DOCUMENT_PROPERTIES: &[(&str, &str)] = &[
+    ("AWS::KMS::Key", "KeyPolicy"),
+    ("AWS::ECR::Repository", "RepositoryPolicyText"),
+    ("AWS::SSO::PermissionSet", "InlinePolicy"),
+];
+
+fn is_object_string_union(prop: &CfnProperty) -> bool {
+    let Some(TypeValue::Multiple(types)) = &prop.prop_type else {
+        return false;
+    };
+
+    types.iter().any(|value| value == "object") && types.iter().any(|value| value == "string")
+}
+
+fn is_iam_policy_document_property(cfn_type: &str, prop_name: &str) -> bool {
+    prop_name.ends_with("PolicyDocument")
+        || NONSTANDARD_IAM_POLICY_DOCUMENT_PROPERTIES.contains(&(cfn_type, prop_name))
+}
+
+/// Classify CloudFormation's free-form JSON union before `TypeValue::as_str()`
+/// reduces it to its first member. Unknown unions must fail closed so a newly
+/// cached resource cannot silently become `Map<String, String>`.
+fn object_string_union_is_iam_policy_document(
+    prop: &CfnProperty,
+    cfn_type: &str,
+    prop_name: &str,
+) -> bool {
+    if !is_object_string_union(prop) {
+        return false;
+    }
+
+    if is_iam_policy_document_property(cfn_type, prop_name) {
+        return true;
+    }
+
+    panic!(
+        "unclassified object|string property {cfn_type}.{prop_name}; classify it as an IAM policy document in NONSTANDARD_IAM_POLICY_DOCUMENT_PROPERTIES or add explicit object|string handling"
+    );
+}
+
 /// Enum value can be a string or an integer in JSON Schema
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
@@ -1861,7 +1903,9 @@ fn override_type_to_display_name(override_type: &str) -> &str {
 
 /// Determine the display string for a property's type in markdown docs
 fn type_display_string(prop_name: &str, prop: &CfnProperty, schema: &CfnSchema) -> String {
-    if prop_name == "Tags" {
+    if object_string_union_is_iam_policy_document(prop, &schema.type_name, prop_name) {
+        "PolicyDocument".to_string()
+    } else if prop_name == "Tags" {
         "`Map<String, String>`".to_string()
     } else if !prop.one_of.is_empty() {
         if let Some(array_variant) = prop
@@ -1924,7 +1968,7 @@ fn type_display_string(prop_name: &str, prop: &CfnProperty, schema: &CfnSchema) 
     } else {
         match prop.prop_type.as_ref().and_then(|t| t.as_str()) {
             Some("string") => {
-                if prop_name.ends_with("PolicyDocument") {
+                if is_iam_policy_document_property(&schema.type_name, prop_name) {
                     "PolicyDocument".to_string()
                 } else {
                     let base = infer_string_type_display(prop_name, &schema.type_name);
@@ -2107,7 +2151,7 @@ fn type_display_string(prop_name: &str, prop: &CfnProperty, schema: &CfnSchema) 
                     && !props.is_empty()
                 {
                     format!("Struct({prop_name})")
-                } else if prop_name.ends_with("PolicyDocument") {
+                } else if is_iam_policy_document_property(&schema.type_name, prop_name) {
                     "PolicyDocument".to_string()
                 } else {
                     "`Map<String, String>`".to_string()
@@ -4968,11 +5012,6 @@ fn resource_type_overrides() -> &'static HashMap<(&'static str, &'static str), T
                 ("AWS::IAM::Role", "RoleId"),
                 TypeOverride::StringType("carina_aws_types::iam_role_id()"),
             );
-            // KMS KeyPolicy is an IAM policy document, though CFN types it object|string.
-            m.insert(
-                ("AWS::KMS::Key", "KeyPolicy"),
-                TypeOverride::StringType("carina_aws_types::iam_policy_document()"),
-            );
             // EC2 Route's GatewayId accepts both igw-* and vgw-*
             m.insert(
                 ("AWS::EC2::Route", "GatewayId"),
@@ -5974,6 +6013,10 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
     struct_path: &[String],
     property_path: &[String],
 ) -> (String, Option<EnumInfo>) {
+    if object_string_union_is_iam_policy_document(prop, &schema.type_name, prop_name) {
+        return ("carina_aws_types::iam_policy_document()".to_string(), None);
+    }
+
     // The declared tag property is special when its generated DSL name is
     // `tags`: it is a Map in Carina (Terraform-style).
     if is_dsl_tags_property(schema, prop_name) {
@@ -6263,7 +6306,7 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
             }
 
             // Check if this is a policy document field (CFN sometimes types these as "string")
-            if prop_name.ends_with("PolicyDocument") {
+            if is_iam_policy_document_property(&schema.type_name, prop_name) {
                 return ("carina_aws_types::iam_policy_document()".to_string(), None);
             }
 
@@ -6501,7 +6544,7 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
                 );
             }
             // Check if this is an IAM policy document
-            if prop_name.ends_with("PolicyDocument") {
+            if is_iam_policy_document_property(&schema.type_name, prop_name) {
                 return ("carina_aws_types::iam_policy_document()".to_string(), None);
             }
             // Empty object with no or empty properties and additionalProperties: false
@@ -11239,7 +11282,7 @@ mod tests {
     }
 
     #[test]
-    fn test_kms_key_policy_object_string_uses_iam_policy_document_override() {
+    fn test_kms_key_policy_object_string_maps_to_iam_policy_document() {
         let prop = CfnProperty {
             prop_type: Some(TypeValue::Multiple(vec![
                 "object".to_string(),
@@ -11268,6 +11311,88 @@ mod tests {
 
         assert_eq!(carina_type, "carina_aws_types::iam_policy_document()");
         assert!(enum_info.is_none());
+    }
+
+    #[test]
+    fn test_ecr_repository_policy_text_object_string_maps_to_iam_policy_document() {
+        let schema = cfn_schema_for_codegen_tests("AWS::ECR::Repository");
+        let prop = schema
+            .properties
+            .get("RepositoryPolicyText")
+            .expect("cached ECR Repository schema should declare RepositoryPolicyText");
+
+        let (carina_type, enum_info) = cfn_type_to_carina_type_with_enum(
+            prop,
+            "RepositoryPolicyText",
+            &schema,
+            "",
+            &BTreeMap::new(),
+        );
+
+        assert_eq!(carina_type, "carina_aws_types::iam_policy_document()");
+        assert!(enum_info.is_none());
+        assert_eq!(
+            type_display_string("RepositoryPolicyText", prop, &schema),
+            "PolicyDocument"
+        );
+    }
+
+    #[test]
+    fn test_sso_inline_policy_object_string_maps_to_iam_policy_document() {
+        let schema = cfn_schema_for_codegen_tests("AWS::SSO::PermissionSet");
+        let prop = schema
+            .properties
+            .get("InlinePolicy")
+            .expect("cached SSO PermissionSet schema should declare InlinePolicy");
+
+        let (carina_type, enum_info) =
+            cfn_type_to_carina_type_with_enum(prop, "InlinePolicy", &schema, "", &BTreeMap::new());
+
+        assert_eq!(carina_type, "carina_aws_types::iam_policy_document()");
+        assert!(enum_info.is_none());
+        assert_eq!(
+            type_display_string("InlinePolicy", prop, &schema),
+            "PolicyDocument"
+        );
+    }
+
+    #[test]
+    fn test_unlisted_object_string_property_requires_explicit_classification() {
+        let prop = CfnProperty {
+            prop_type: Some(TypeValue::Multiple(vec![
+                "object".to_string(),
+                "string".to_string(),
+            ])),
+            ..Default::default()
+        };
+        let schema = CfnSchema {
+            type_name: "AWS::Test::Resource".to_string(),
+            description: None,
+            properties: BTreeMap::new(),
+            required: vec![],
+            read_only_properties: vec![],
+            create_only_properties: vec![],
+            write_only_properties: vec![],
+            primary_identifier: None,
+            definitions: None,
+            tagging: None,
+            one_of: vec![],
+            any_of: vec![],
+            handlers: BTreeMap::new(),
+        };
+
+        let panic = std::panic::catch_unwind(|| {
+            cfn_type_to_carina_type_with_enum(&prop, "FreeFormJson", &schema, "", &BTreeMap::new())
+        })
+        .expect_err("an unlisted object|string property must fail classification");
+        let message = panic
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| panic.downcast_ref::<&str>().copied())
+            .expect("classification panic should contain a string message");
+
+        assert!(message.contains("AWS::Test::Resource.FreeFormJson"));
+        assert!(message.contains("classify"));
     }
 
     #[test]

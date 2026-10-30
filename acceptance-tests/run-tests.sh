@@ -1096,7 +1096,20 @@ deep_cleanup_account() {
             aws dynamodb delete-table --table-name "$table"
     done
 
-    # 4. Delete orphaned ECS clusters
+    # 4. Delete orphaned ECR repositories
+    local ecr_repositories
+    deep_cleanup_enumerate "$account" "ECR repositories" ecr_repositories \
+        aws ecr describe-repositories \
+        --query 'repositories[?starts_with(repositoryName, `carina-acc-test`)].repositoryName' --output text
+    local ecr_repository
+    for ecr_repository in $ecr_repositories; do
+        [ -z "$ecr_repository" ] && continue
+        echo "  Cleaning ECR repository $ecr_repository..."
+        deep_cleanup_delete_resource "$account" "delete ECR repository $ecr_repository" \
+            aws ecr delete-repository --repository-name "$ecr_repository" --force
+    done
+
+    # 5. Delete orphaned ECS clusters
     local ecs_clusters
     deep_cleanup_enumerate "$account" "ECS clusters" ecs_clusters \
         aws ecs list-clusters \
@@ -1108,7 +1121,7 @@ deep_cleanup_account() {
             aws ecs delete-cluster --cluster "$cluster_arn"
     done
 
-    # 5. Delete orphaned Route 53 hosted zones
+    # 6. Delete orphaned Route 53 hosted zones
     local hosted_zones
     deep_cleanup_enumerate "$account" "Route 53 hosted zones" hosted_zones \
         aws route53 list-hosted-zones \
@@ -1120,10 +1133,10 @@ deep_cleanup_account() {
             aws route53 delete-hosted-zone --id "$zone_id"
     done
 
-    # 6. Delete orphaned regional WAFv2 web ACLs
+    # 7. Delete orphaned regional WAFv2 web ACLs
     deep_cleanup_delete_wafv2_web_acls "$account"
 
-    # 7. Delete orphaned IAM OIDC providers tagged by acceptance tests
+    # 8. Delete orphaned IAM OIDC providers tagged by acceptance tests
     local oidc_providers
     deep_cleanup_enumerate "$account" "IAM OIDC providers" oidc_providers \
         aws iam list-open-id-connect-providers \
@@ -1143,7 +1156,7 @@ deep_cleanup_account() {
             aws iam delete-open-id-connect-provider --open-id-connect-provider-arn "$provider_arn"
     done
 
-    # 8. Delete orphaned IAM roles
+    # 9. Delete orphaned IAM roles
     local roles
     deep_cleanup_enumerate "$account" "IAM roles" roles \
         aws iam list-roles \
@@ -1174,7 +1187,7 @@ deep_cleanup_account() {
             aws iam delete-role --role-name "$role"
     done
 
-    # 9. Delete orphaned IAM customer managed policies
+    # 10. Delete orphaned IAM customer managed policies
     local iam_policies
     deep_cleanup_enumerate "$account" "IAM customer managed policies" iam_policies \
         aws iam list-policies --scope Local \
@@ -1227,7 +1240,7 @@ deep_cleanup_account() {
             aws iam delete-policy --policy-arn "$policy_arn"
     done
 
-    # 10. Delete orphaned log groups
+    # 11. Delete orphaned log groups
     local log_groups
     deep_cleanup_enumerate "$account" "CloudWatch log groups" log_groups \
         aws logs describe-log-groups \
@@ -1240,7 +1253,7 @@ deep_cleanup_account() {
             aws logs delete-log-group --log-group-name "$lg"
     done
 
-    # 11. Delete transit gateways
+    # 12. Delete transit gateways
     local tgws
     deep_cleanup_enumerate "$account" "transit gateways" tgws \
         aws ec2 describe-transit-gateways \
@@ -1264,7 +1277,7 @@ deep_cleanup_account() {
             aws ec2 delete-transit-gateway --transit-gateway-id "$tgw_id"
     done
 
-    # 12. Delete IPAMs and their private-scope pools
+    # 13. Delete IPAMs and their private-scope pools
     local ipams
     deep_cleanup_enumerate "$account" "IPAM cleanup candidates" ipams \
         aws ec2 describe-ipams \
@@ -1280,7 +1293,7 @@ deep_cleanup_account() {
             aws ec2 delete-ipam --ipam-id "$ipam_id" --cascade
     done
 
-    # 13. Release Elastic IPs not associated with anything
+    # 14. Release Elastic IPs not associated with anything
     local eips
     deep_cleanup_enumerate "$account" "unassociated Elastic IPs" eips \
         aws ec2 describe-addresses \
@@ -1292,7 +1305,7 @@ deep_cleanup_account() {
             aws ec2 release-address --allocation-id "$eip_id"
     done
 
-    # 14. Schedule tagged KMS customer managed keys for deletion
+    # 15. Schedule tagged KMS customer managed keys for deletion
     # list-keys exposes no manager, state, or tag fields. Describe each key first
     # so AWS-managed keys are rejected before list-resource-tags, which their key
     # policies may deny. Enabled, Disabled, and PendingReplicaDeletion are selected.
@@ -1365,7 +1378,7 @@ deep_cleanup_account() {
     local cloudfront_ordered_response_headers_policy_enumeration_succeeded="$DEEP_CLEANUP_LAST_ENUMERATION_SUCCEEDED"
     local cloudfront_in_use_response_headers_policies="$cloudfront_in_use_default_response_headers_policies $cloudfront_in_use_ordered_response_headers_policies"
 
-    # 15. Delete disabled, fully deployed CloudFront distributions
+    # 16. Delete disabled, fully deployed CloudFront distributions
     # These accounts are dedicated to acceptance tests, so untagged or oddly named
     # distributions are still test debris. Tag/name gating would strand exactly the
     # orphans this sweep exists to remove. Never auto-disable an enabled distribution,
@@ -1389,10 +1402,10 @@ deep_cleanup_account() {
             --id "$distribution_id" --if-match "$distribution_etag"
     done <<< "$cloudfront_distributions"
 
-    # 16. Delete acceptance-test CloudFront functions after distributions.
+    # 17. Delete acceptance-test CloudFront functions after distributions.
     deep_cleanup_cloudfront_functions "$account"
 
-    # 17. Delete unreferenced CloudFront origin access controls after distributions
+    # 18. Delete unreferenced CloudFront origin access controls after distributions
     # OACs cannot be tagged, and these dedicated acceptance-test accounts contain no
     # precious resources. Do not name-filter: every remaining OAC is cleanup debris.
     # Fail closed if the reference enumeration failed. Its blank output cannot mean
@@ -1411,7 +1424,7 @@ deep_cleanup_account() {
         "--id" \
         0
 
-    # 18. Delete unreferenced custom CloudFront response headers policies.
+    # 19. Delete unreferenced custom CloudFront response headers policies.
     # AWS-managed policies are excluded by --type custom. Fail closed if either
     # reference path could not be enumerated, because an empty result is not proof
     # that the remaining custom policies are unused.
