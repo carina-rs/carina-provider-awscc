@@ -23,7 +23,7 @@ The permission set description.
 
 ### `inline_policy`
 
-- **Type:** `Map<String, String>`
+- **Type:** PolicyDocument
 - **Required:** No
 
 The inline policy to put in permission set.

@@ -347,6 +347,7 @@ awscc.ec2.VpcEndpoint|aws ec2 delete-vpc-endpoints
 awscc.ec2.VpcGatewayAttachment|aws ec2 detach-internet-gateway,aws ec2 detach-vpn-gateway
 awscc.ec2.VpcPeeringConnection|aws ec2 delete-vpc-peering-connection
 awscc.ec2.VpnGateway|aws ec2 delete-vpn-gateway
+awscc.ecr.Repository|aws ecr delete-repository
 awscc.ecs.Cluster|aws ecs delete-cluster
 awscc.elasticloadbalancingv2.Listener|aws elbv2 delete-listener
 awscc.elasticloadbalancingv2.LoadBalancer|aws elbv2 delete-load-balancer

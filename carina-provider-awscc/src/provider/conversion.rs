@@ -139,6 +139,28 @@ pub(crate) fn aws_value_to_dsl_with_defs(
     let schema = resource_schema_with_defs(resource_type, defs);
     let shape = schema.shape_of(attr_type);
 
+    // CloudFormation types these IAM policy documents as `object|string`, so
+    // both object values and JSON-encoded object strings are schema-valid.
+    // Defensively normalize the string form from the resolved attribute type
+    // so every use of `iam_policy_document()` gets the same read behavior. A
+    // malformed (or non-object) string falls through to the existing generic
+    // string conversion below.
+    if let Shape::Struct {
+        name: "PolicyDocument",
+    } = shape
+        && let Some(policy_json) = value.as_str()
+        && let Ok(parsed_policy) = serde_json::from_str::<serde_json::Value>(policy_json)
+        && parsed_policy.is_object()
+    {
+        return aws_value_to_dsl_with_defs(
+            dsl_name,
+            &parsed_policy,
+            attr_type,
+            resource_type,
+            defs,
+        );
+    }
+
     // This feeds the read/import path, whose result is written to
     // state. State must hold the provider-side (API) value, NOT a
     // fully-qualified DSL string: carina-core's state canonicalization
@@ -1604,6 +1626,66 @@ mod tests {
         } else {
             panic!("Expected Value::Map, got: {:?}", result);
         }
+    }
+
+    #[test]
+    fn test_aws_value_to_dsl_iam_policy_document_parses_json_string_like_object() {
+        use carina_aws_types::iam_policy_document;
+
+        let attr_type = iam_policy_document();
+        let aws_object = json!({
+            "Version": "2012-10-17",
+            "Statement": [{
+                "Effect": "Allow",
+                "Action": "sso:GetRoleCredentials",
+                "Resource": "*"
+            }]
+        });
+        let aws_string = serde_json::Value::String(
+            serde_json::to_string(&aws_object).expect("policy object should serialize"),
+        );
+
+        let object_result = aws_value_to_dsl_with_defs(
+            "inline_policy",
+            &aws_object,
+            &attr_type,
+            "sso.PermissionSet",
+            &std::collections::BTreeMap::new(),
+        )
+        .expect("object policy document should convert");
+        let string_result = aws_value_to_dsl_with_defs(
+            "inline_policy",
+            &aws_string,
+            &attr_type,
+            "sso.PermissionSet",
+            &std::collections::BTreeMap::new(),
+        )
+        .expect("JSON-string policy document should convert");
+
+        assert_eq!(string_result, object_result);
+    }
+
+    #[test]
+    fn test_aws_value_to_dsl_iam_policy_document_keeps_invalid_json_string() {
+        use carina_aws_types::iam_policy_document;
+
+        let attr_type = iam_policy_document();
+        let invalid_policy = r#"{"Version":"2012-10-17""#;
+        let aws_string = serde_json::Value::String(invalid_policy.to_string());
+
+        let result = aws_value_to_dsl_with_defs(
+            "inline_policy",
+            &aws_string,
+            &attr_type,
+            "sso.PermissionSet",
+            &std::collections::BTreeMap::new(),
+        )
+        .expect("invalid JSON should retain the existing string conversion");
+
+        assert_eq!(
+            result,
+            Value::Concrete(ConcreteValue::String(invalid_policy.to_string().into()))
+        );
     }
 
     #[test]

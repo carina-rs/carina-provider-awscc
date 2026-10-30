@@ -138,6 +138,7 @@ cargo run --bin codegen -- --file schema.json --type-name AWS::EC2::VPC \
 | `boolean` | `AttributeType::Bool` |
 | `number` | `AttributeType::Float` |
 | `object` (properties) | `AttributeType::Struct` with `StructField` |
+| `["object","string"]` | `carina_aws_types::iam_policy_document()` when the property name ends in `PolicyDocument` or is listed in `NONSTANDARD_IAM_POLICY_DOCUMENT_PROPERTIES`; otherwise codegen panics and names the property so it can be classified explicitly |
 | `array` | `AttributeType::unordered_list()` |
 
 String types are inferred from property names (e.g., `SubnetId` maps to `subnet_id()` type). Resource-specific overrides are defined in `resource_type_overrides()` and `known_string_type_overrides()` within `codegen.rs`.

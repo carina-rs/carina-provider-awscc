@@ -101,7 +101,7 @@ pub fn ecr_repository_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_repository_name_attribute());
     #[inline(never)]
     fn build_repository_policy_text_attribute() -> AttributeSchema {
-        AttributeSchema::optional("repository_policy_text", AttributeType::map(AttributeType::string()))
+        AttributeSchema::optional("repository_policy_text", carina_aws_types::iam_policy_document())
                 .with_description("The JSON repository policy text to apply to the repository. For more information, see [Amazon ECR repository policies](https://docs.aws.amazon.com/AmazonECR/latest/userguide/repository-policy-examples.html) in the *Amazon Elastic Container Registry User Guide*.")
                 .with_provider_name("RepositoryPolicyText")
             .build()

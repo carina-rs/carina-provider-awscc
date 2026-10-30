@@ -84,7 +84,7 @@ The name to use for the repository. The repository name may be specified on its 
 
 ### `repository_policy_text`
 
-- **Type:** `Map<String, String>`
+- **Type:** PolicyDocument
 - **Required:** No
 
 The JSON repository policy text to apply to the repository. For more information, see [Amazon ECR repository policies](https://docs.aws.amazon.com/AmazonECR/latest/userguide/repository-policy-examples.html) in the *Amazon Elastic Container Registry User Guide*.
