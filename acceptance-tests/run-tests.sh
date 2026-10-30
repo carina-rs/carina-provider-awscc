@@ -500,6 +500,70 @@ deep_cleanup_cloudfront_functions() {
         --stage DEVELOPMENT
 }
 
+# Delete acceptance-test schedules from the default group, then delete
+# acceptance-owned non-default groups after their schedules. Scheduler's
+# native list/delete APIs require the group name, so preserve it throughout
+# the sweep instead of relying on Cloud Control's incomplete Name identifier.
+deep_cleanup_scheduler() {
+    local account="$1"
+
+    local default_schedules
+    deep_cleanup_enumerate "$account" "schedules in Scheduler default group" default_schedules \
+        aws scheduler list-schedules \
+        --group-name default --query 'Schedules[?starts_with(Name, `carina-acc-test`)].Name' --output text
+    if [ "$DEEP_CLEANUP_LAST_ENUMERATION_SUCCEEDED" -eq 0 ]; then
+        echo "  Skipping Scheduler default-group schedules because they could not be enumerated."
+    else
+        local default_schedule_name
+        for default_schedule_name in $default_schedules; do
+            [ -z "$default_schedule_name" ] && continue
+            [ "$default_schedule_name" = "None" ] && continue
+            echo "  Cleaning Scheduler schedule default/$default_schedule_name..."
+            deep_cleanup_delete_resource "$account" "delete Scheduler schedule default/$default_schedule_name" \
+                aws scheduler delete-schedule \
+                --group-name default --name "$default_schedule_name"
+        done
+    fi
+
+    local schedule_groups
+    deep_cleanup_enumerate "$account" "acceptance-test Scheduler schedule groups" schedule_groups \
+        aws scheduler list-schedule-groups \
+        --query 'ScheduleGroups[?starts_with(Name, `carina-acc-test`)].Name' --output text
+    if [ "$DEEP_CLEANUP_LAST_ENUMERATION_SUCCEEDED" -eq 0 ]; then
+        echo "  Skipping Scheduler cleanup because schedule groups could not be enumerated."
+        return 0
+    fi
+
+    local group_name
+    for group_name in $schedule_groups; do
+        [ -z "$group_name" ] && continue
+        [ "$group_name" = "None" ] && continue
+
+        local schedules
+        deep_cleanup_enumerate "$account" "schedules in Scheduler group $group_name" schedules \
+            aws scheduler list-schedules \
+            --group-name "$group_name" --query 'Schedules[].Name' --output text
+        if [ "$DEEP_CLEANUP_LAST_ENUMERATION_SUCCEEDED" -eq 0 ]; then
+            echo "  Skipping Scheduler group $group_name because its schedules could not be enumerated."
+            continue
+        fi
+
+        local schedule_name
+        for schedule_name in $schedules; do
+            [ -z "$schedule_name" ] && continue
+            [ "$schedule_name" = "None" ] && continue
+            echo "  Cleaning Scheduler schedule $group_name/$schedule_name..."
+            deep_cleanup_delete_resource "$account" "delete Scheduler schedule $group_name/$schedule_name" \
+                aws scheduler delete-schedule \
+                --group-name "$group_name" --name "$schedule_name"
+        done
+
+        echo "  Cleaning Scheduler schedule group $group_name..."
+        deep_cleanup_delete_resource "$account" "delete Scheduler schedule group $group_name" \
+            aws scheduler delete-schedule-group --name "$group_name"
+    done
+}
+
 # Runs a command with a hard wall-clock limit. This is used around AWS waiters,
 # whose generated polling limits can otherwise hold up an entire account sweep.
 deep_cleanup_with_timeout() {
@@ -1136,7 +1200,10 @@ deep_cleanup_account() {
     # 7. Delete orphaned regional WAFv2 web ACLs
     deep_cleanup_delete_wafv2_web_acls "$account"
 
-    # 8. Delete orphaned IAM OIDC providers tagged by acceptance tests
+    # 8. Delete acceptance-test Scheduler schedules and groups before their roles.
+    deep_cleanup_scheduler "$account"
+
+    # 9. Delete orphaned IAM OIDC providers tagged by acceptance tests
     local oidc_providers
     deep_cleanup_enumerate "$account" "IAM OIDC providers" oidc_providers \
         aws iam list-open-id-connect-providers \
@@ -1156,7 +1223,7 @@ deep_cleanup_account() {
             aws iam delete-open-id-connect-provider --open-id-connect-provider-arn "$provider_arn"
     done
 
-    # 9. Delete orphaned IAM roles
+    # 10. Delete orphaned IAM roles
     local roles
     deep_cleanup_enumerate "$account" "IAM roles" roles \
         aws iam list-roles \
@@ -1187,7 +1254,7 @@ deep_cleanup_account() {
             aws iam delete-role --role-name "$role"
     done
 
-    # 10. Delete orphaned IAM customer managed policies
+    # 11. Delete orphaned IAM customer managed policies
     local iam_policies
     deep_cleanup_enumerate "$account" "IAM customer managed policies" iam_policies \
         aws iam list-policies --scope Local \
@@ -1240,7 +1307,7 @@ deep_cleanup_account() {
             aws iam delete-policy --policy-arn "$policy_arn"
     done
 
-    # 11. Delete orphaned log groups
+    # 12. Delete orphaned log groups
     local log_groups
     deep_cleanup_enumerate "$account" "CloudWatch log groups" log_groups \
         aws logs describe-log-groups \
@@ -1253,7 +1320,7 @@ deep_cleanup_account() {
             aws logs delete-log-group --log-group-name "$lg"
     done
 
-    # 12. Delete transit gateways
+    # 13. Delete transit gateways
     local tgws
     deep_cleanup_enumerate "$account" "transit gateways" tgws \
         aws ec2 describe-transit-gateways \
@@ -1277,7 +1344,7 @@ deep_cleanup_account() {
             aws ec2 delete-transit-gateway --transit-gateway-id "$tgw_id"
     done
 
-    # 13. Delete IPAMs and their private-scope pools
+    # 14. Delete IPAMs and their private-scope pools
     local ipams
     deep_cleanup_enumerate "$account" "IPAM cleanup candidates" ipams \
         aws ec2 describe-ipams \
@@ -1293,7 +1360,7 @@ deep_cleanup_account() {
             aws ec2 delete-ipam --ipam-id "$ipam_id" --cascade
     done
 
-    # 14. Release Elastic IPs not associated with anything
+    # 15. Release Elastic IPs not associated with anything
     local eips
     deep_cleanup_enumerate "$account" "unassociated Elastic IPs" eips \
         aws ec2 describe-addresses \
@@ -1305,7 +1372,7 @@ deep_cleanup_account() {
             aws ec2 release-address --allocation-id "$eip_id"
     done
 
-    # 15. Schedule tagged KMS customer managed keys for deletion
+    # 16. Schedule tagged KMS customer managed keys for deletion
     # list-keys exposes no manager, state, or tag fields. Describe each key first
     # so AWS-managed keys are rejected before list-resource-tags, which their key
     # policies may deny. Enabled, Disabled, and PendingReplicaDeletion are selected.
@@ -1378,7 +1445,7 @@ deep_cleanup_account() {
     local cloudfront_ordered_response_headers_policy_enumeration_succeeded="$DEEP_CLEANUP_LAST_ENUMERATION_SUCCEEDED"
     local cloudfront_in_use_response_headers_policies="$cloudfront_in_use_default_response_headers_policies $cloudfront_in_use_ordered_response_headers_policies"
 
-    # 16. Delete disabled, fully deployed CloudFront distributions
+    # 17. Delete disabled, fully deployed CloudFront distributions
     # These accounts are dedicated to acceptance tests, so untagged or oddly named
     # distributions are still test debris. Tag/name gating would strand exactly the
     # orphans this sweep exists to remove. Never auto-disable an enabled distribution,
@@ -1402,10 +1469,10 @@ deep_cleanup_account() {
             --id "$distribution_id" --if-match "$distribution_etag"
     done <<< "$cloudfront_distributions"
 
-    # 17. Delete acceptance-test CloudFront functions after distributions.
+    # 18. Delete acceptance-test CloudFront functions after distributions.
     deep_cleanup_cloudfront_functions "$account"
 
-    # 18. Delete unreferenced CloudFront origin access controls after distributions
+    # 19. Delete unreferenced CloudFront origin access controls after distributions
     # OACs cannot be tagged, and these dedicated acceptance-test accounts contain no
     # precious resources. Do not name-filter: every remaining OAC is cleanup debris.
     # Fail closed if the reference enumeration failed. Its blank output cannot mean
@@ -1424,7 +1491,7 @@ deep_cleanup_account() {
         "--id" \
         0
 
-    # 19. Delete unreferenced custom CloudFront response headers policies.
+    # 20. Delete unreferenced custom CloudFront response headers policies.
     # AWS-managed policies are excluded by --type custom. Fail closed if either
     # reference path could not be enumerated, because an empty result is not proof
     # that the remaining custom policies are unused.

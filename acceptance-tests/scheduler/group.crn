@@ -1,0 +1,16 @@
+# EventBridge Scheduler - ScheduleGroup test
+#
+# ScheduleGroup is covered independently because Cloud Control cannot track a
+# Schedule placed in a non-default group.
+
+provider awscc {
+  region = aws.Region.ap_northeast_1
+}
+
+awscc.scheduler.ScheduleGroup {
+  name = 'carina-acc-test-scheduler-group'
+
+  tags = {
+    Environment = 'acceptance-test'
+  }
+}

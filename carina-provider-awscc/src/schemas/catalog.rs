@@ -93,6 +93,47 @@ fn validated_int_enum(identity: TypeIdentity, valid_values: &'static [i64]) -> A
     )
 }
 
+fn validated_scheduler_schedule_group_name(identity: TypeIdentity) -> AttributeType {
+    // Measured with carina-test-008 in ap-northeast-1 on 2026-10-30: creating
+    // AWS::Scheduler::Schedule in a non-default group succeeded, but Carina's
+    // post-create read returned not_found. The direct checks were:
+    //
+    //   aws cloudcontrol get-resource --type-name AWS::Scheduler::Schedule \
+    //     --identifier carina-acc-test-scheduler
+    //     -> ResourceNotFoundException (HandlerErrorCode NotFound)
+    //
+    //   aws cloudcontrol get-resource --type-name AWS::Scheduler::Schedule \
+    //     --identifier 'group|name'
+    //     -> ValidationException: not valid for identifier [/properties/Name]
+    //
+    // Deleting the group cascaded to the schedule; direct schedule deletion
+    // through Cloud Control was not measured. Require a statically provable
+    // default group so Carina never creates a resource it cannot read/track.
+    AttributeType::refined_string_with_validator(
+        identity,
+        None,
+        Some((Some(1), Some(64))),
+        legacy_validator(|value| {
+            if let Value::Concrete(ConcreteValue::String(value)) = value {
+                if value.expose_plaintext() == "default" {
+                    Ok(())
+                } else {
+                    Err(
+                        "Cloud Control identifies schedules by Name only and reads them in the \
+                         default group; group_name must be omitted or the literal 'default', \
+                         because a schedule in another group can be created but never read or \
+                         tracked"
+                            .to_string(),
+                    )
+                }
+            } else {
+                Err("group_name must be omitted or the literal 'default'".to_string())
+            }
+        }),
+        None,
+    )
+}
+
 carina_aws_types::define_aws_type_catalog! {
     /// Every identity and shared-identity refinement declared by AWSCC.
     pub enum AwsccType {
@@ -253,6 +294,18 @@ carina_aws_types::define_aws_type_catalog! {
             ],
             constructor: validated_int_enum,
         },
+        /// Scheduler Schedule group name.
+        ///
+        /// Cloud Control identifies schedules by `Name` only and reads them in
+        /// the default group. Carina therefore accepts only an omitted group
+        /// name or the literal `default`; a schedule in another group can be
+        /// created but never read or tracked.
+        SchedulerScheduleGroupName => scheduler_schedule_group_name {
+            segments: ["scheduler", "Schedule"],
+            kind: "GroupName",
+            valid_sample: "default",
+            constructor: validated_scheduler_schedule_group_name,
+        },
         }
     }
 }
@@ -394,7 +447,8 @@ OrganizationsAccountArn|aws|organizations/Account|Arn|Some(OrganizationsAccountA
 OrganizationsOrganizationArn|aws|organizations/Organization|Arn|Some(OrganizationsOrganizationArn)|arn:aws:organizations::123456789012:organization/o-example|None|crate::schemas::catalog::organizations_organization_arn()
 S3BucketArn|aws|s3/Bucket|Arn|Some(S3BucketArn)|arn:aws:s3:::example-bucket|None|crate::schemas::catalog::s3_bucket_arn()
 Ec2FlowLogMaxAggregationInterval|aws|ec2/FlowLog|MaxAggregationInterval|None|60|Some([60, 600])|crate::schemas::catalog::ec2_flow_log_max_aggregation_interval()
-LogsLogGroupRetentionInDays|aws|logs/LogGroup|RetentionInDays|None|30|Some([1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096, 1827, 2192, 2557, 2922, 3288, 3653])|crate::schemas::catalog::logs_log_group_retention_in_days()"#;
+LogsLogGroupRetentionInDays|aws|logs/LogGroup|RetentionInDays|None|30|Some([1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096, 1827, 2192, 2557, 2922, 3288, 3653])|crate::schemas::catalog::logs_log_group_retention_in_days()
+SchedulerScheduleGroupName|aws|scheduler/Schedule|GroupName|None|default|None|crate::schemas::catalog::scheduler_schedule_group_name()"#;
 
         let snapshot = AwsccType::ALL
             .iter()

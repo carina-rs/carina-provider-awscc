@@ -1,0 +1,66 @@
+# EventBridge Scheduler - Basic test
+#
+# Creates a schedule in the default group, the only group Cloud Control can
+# read by Schedule.Name. The universal target is intentionally side-effect
+# free during the acceptance test's short lifetime.
+
+provider awscc {
+  region = aws.Region.ap_northeast_1
+}
+
+let scheduler_role = awscc.iam.Role {
+  role_name_prefix = 'carina-acc-test-scheduler-'
+
+  assume_role_policy_document = {
+    version = aws.iam.PolicyDocument.Version.2012_10_17
+    statement {
+      effect = aws.iam.PolicyDocument.Statement.Effect.allow
+
+      principal = {
+        service = 'scheduler.amazonaws.com'
+      }
+
+      action = 'sts:AssumeRole'
+    }
+  }
+
+  tags = {
+    Environment = 'acceptance-test'
+  }
+}
+
+awscc.iam.RolePolicy {
+  role_name   = scheduler_role.role_name
+  policy_name = 'scheduler-put-metric-data'
+
+  policy_document = {
+    version = aws.iam.PolicyDocument.Version.2012_10_17
+    statement {
+      effect   = aws.iam.PolicyDocument.Statement.Effect.allow
+      action   = 'cloudwatch:PutMetricData'
+      resource = '*'
+    }
+  }
+}
+
+awscc.scheduler.Schedule {
+  name = 'carina-acc-test-scheduler'
+
+  schedule_expression = 'rate(6 hours)'
+  state               = enabled
+
+  flexible_time_window = {
+    mode = off
+  }
+
+  target = {
+    arn      = 'arn:aws:scheduler:::aws-sdk:cloudwatch:putMetricData'
+    role_arn = scheduler_role.arn
+    input    = '{"Namespace":"CarinaAcceptance","MetricData":[{"MetricName":"SchedulerTarget","Value":1}]}'
+
+    retry_policy = {
+      maximum_event_age_in_seconds = 3600
+      maximum_retry_attempts       = 0
+    }
+  }
+}
