@@ -5,7 +5,8 @@
 # dependent resources (subnet) appear as cascading updates in the plan.
 #
 # Usage:
-#   aws-vault exec carina-test-000 -- ./carina-provider-awscc/acceptance-tests/cascade_without_cbd/run.sh
+#   env AWS_PROFILE="carina-test-000" \
+#     ./carina-provider-awscc/acceptance-tests/cascade_without_cbd/run.sh
 
 set -euo pipefail
 
@@ -15,8 +16,8 @@ source "$SCRIPT_DIR/../shared/_helpers.sh"
 
 STEP1="$SCRIPT_DIR/step1.crn"
 STEP2="$SCRIPT_DIR/step2.crn"
-WORK_DIR=$(mktemp -d)
-trap 'rm -rf "$WORK_DIR"' EXIT
+register_acceptance_work_dir "cascade_without_cbd" "$STEP1" WORK_DIR
+ACTIVE_WORK_DIR="$WORK_DIR"
 
 PASS=0
 FAIL=0
@@ -68,11 +69,11 @@ destroy_work_dir() {
     fi
     set -e
 
-    if [ "$any_success" = true ]; then
+    if [ "$any_success" = true ] && release_acceptance_work_dir "$WORK_DIR"; then
         echo "  ✓ destroy (cleanup)"
         PASS=$((PASS + 1))
     else
-        echo "  ✗ destroy (cleanup)"
+        echo "  ✗ destroy/state verification (registry retained: $WORK_DIR)"
         FAIL=$((FAIL + 1))
     fi
 }
@@ -124,6 +125,7 @@ fi
 
 # Cleanup: destroy
 destroy_work_dir
+ACTIVE_WORK_DIR=""
 
 echo ""
 echo "════════════════════════════════════════"

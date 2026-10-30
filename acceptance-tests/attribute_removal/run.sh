@@ -2,7 +2,7 @@
 # Multi-step acceptance tests for AWSCC attribute removal via CloudControl "remove" patch
 #
 # Usage:
-#   aws-vault exec <profile> -- ./run.sh [filter]
+#   env AWS_PROFILE="<profile>" ./run.sh [filter]
 #
 # Tests:
 #   ec2_vpc_endpoint - Remove policy_document from VPC endpoint
@@ -49,7 +49,7 @@ signal_cleanup() {
         cd "$ACTIVE_WORK_DIR" && "$CARINA_BIN" destroy --auto-approve . 2>&1
         swap_crn "$ACTIVE_STEP1" "$ACTIVE_WORK_DIR"
         cd "$ACTIVE_WORK_DIR" && "$CARINA_BIN" destroy --auto-approve . 2>&1
-        rm -rf "$ACTIVE_WORK_DIR"
+        echo "Registry entry retained after interruption: $ACTIVE_WORK_DIR"
         ACTIVE_WORK_DIR=""
     fi
     exit 1
@@ -147,7 +147,7 @@ destroy_work_dir() {
     if [ "$any_success" = false ]; then
         return 1
     fi
-    return 0
+    release_acceptance_work_dir "$work_dir"
 }
 
 # Run a single multi-step attribute removal test
@@ -164,7 +164,15 @@ run_test() {
     fi
 
     local work_dir
-    work_dir=$(mktemp -d)
+    local injected_dir
+    inject_provider_source "$step1" injected_dir || return 1
+    if ! register_acceptance_work_dir \
+        "attribute_removal/$test_name" "$injected_dir/main.crn" work_dir; then
+        rm -rf "$injected_dir"
+        TOTAL_FAILED=$((TOTAL_FAILED + 1))
+        return 1
+    fi
+    rm -rf "$injected_dir"
 
     # Register for signal cleanup
     ACTIVE_WORK_DIR="$work_dir"
@@ -176,48 +184,40 @@ run_test() {
 
     # Step 1: Apply initial config (with policy_document)
     if ! run_step "$work_dir" "step1: apply initial (with attribute)" "apply" "$step1" "--auto-approve"; then
-        destroy_work_dir "$work_dir" "$step2" "$step1"
-        rm -rf "$work_dir"
-        ACTIVE_WORK_DIR=""
+        cleanup_registered_work_dir \
+            "$work_dir" destroy_work_dir "$step2" "$step1" || true
         return 1
     fi
 
     # Step 1b: Plan-verify initial state
     if ! run_plan_verify "$work_dir" "step1: plan-verify initial" "$step1"; then
-        destroy_work_dir "$work_dir" "$step2" "$step1"
-        rm -rf "$work_dir"
-        ACTIVE_WORK_DIR=""
+        cleanup_registered_work_dir \
+            "$work_dir" destroy_work_dir "$step2" "$step1" || true
         return 1
     fi
 
     # Step 2: Apply modified config (attribute removed)
     if ! run_step "$work_dir" "step2: apply attribute removal" "apply" "$step2" "--auto-approve"; then
-        destroy_work_dir "$work_dir" "$step2" "$step1"
-        rm -rf "$work_dir"
-        ACTIVE_WORK_DIR=""
+        cleanup_registered_work_dir \
+            "$work_dir" destroy_work_dir "$step2" "$step1" || true
         return 1
     fi
 
     # Step 3: Plan-verify after attribute removal (must be idempotent)
     if ! run_plan_verify "$work_dir" "step3: plan-verify after attribute removal" "$step2"; then
-        destroy_work_dir "$work_dir" "$step2" "$step1"
-        rm -rf "$work_dir"
-        ACTIVE_WORK_DIR=""
+        cleanup_registered_work_dir \
+            "$work_dir" destroy_work_dir "$step2" "$step1" || true
         return 1
     fi
 
     # Step 4: Destroy (use destroy_work_dir to try both configs and retry)
-    if ! destroy_work_dir "$work_dir" "$step2" "$step1"; then
-        echo "  WARNING: All destroy attempts failed. Preserving work dir for debugging:"
-        echo "    $work_dir"
+    if ! cleanup_registered_work_dir \
+        "$work_dir" destroy_work_dir "$step2" "$step1"; then
         TOTAL_FAILED=$((TOTAL_FAILED + 1))
-        ACTIVE_WORK_DIR=""
         echo ""
         return 1
     fi
 
-    rm -rf "$work_dir"
-    ACTIVE_WORK_DIR=""
     echo ""
 }
 

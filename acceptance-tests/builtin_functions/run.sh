@@ -2,7 +2,7 @@
 # Runs all builtin function acceptance tests
 #
 # Usage:
-#   aws-vault exec <profile> -- ./run.sh [filter]
+#   env AWS_PROFILE="<profile>" ./run.sh [filter]
 #
 # Each test is a separate script in tests/. The optional filter argument
 # is matched against test filenames (without .sh extension).

@@ -11,12 +11,12 @@ source "$(dirname "$0")/../../shared/_helpers.sh"
 echo "Test: import, removed, and moved state blocks"
 echo ""
 
-WORK_DIR=$(mktemp -d)
+register_acceptance_work_dir \
+    "state_blocks/import_removed_moved" "$SCRIPT_DIR/step1_create.crn" WORK_DIR
 ACTIVE_WORK_DIR="$WORK_DIR"
 cd "$WORK_DIR"
 
 # Step 1: Create VPC normally
-cp "$SCRIPT_DIR/step1_create.crn" "$WORK_DIR/main.crn"
 run_step "step1: create vpc" "$CARINA_BIN" apply --auto-approve .
 assert_state_resource_count "assert: 1 resource in state" "1" "$WORK_DIR"
 
@@ -85,7 +85,7 @@ else
     TEST_PASSED=$((TEST_PASSED + 1))
 fi
 
-rm -rf "$WORK_DIR"
+release_acceptance_work_dir "$WORK_DIR" || TEST_FAILED=$((TEST_FAILED + 1))
 ACTIVE_WORK_DIR=""
 
 finish_test

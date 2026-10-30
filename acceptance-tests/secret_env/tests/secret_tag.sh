@@ -5,9 +5,8 @@ source "$(dirname "$0")/../../shared/_helpers.sh"
 echo "Test: secret(env()) in tag value"
 echo ""
 
-WORK_DIR=$(mktemp -d)
+register_acceptance_work_dir "secret_env/secret_tag.crn" "$SCRIPT_DIR/secret_tag.crn" WORK_DIR
 ACTIVE_WORK_DIR="$WORK_DIR"
-cp "$SCRIPT_DIR/secret_tag.crn" "$WORK_DIR/main.crn"
 cd "$WORK_DIR"
 
 # Set the secret value via environment variable
@@ -50,7 +49,7 @@ run_step "step3: plan still idempotent" "$CARINA_BIN" plan .
 
 echo "  Cleanup: destroying resources..."
 "$CARINA_BIN" destroy --auto-approve . > /dev/null 2>&1 || true
-rm -rf "$WORK_DIR"
+release_acceptance_work_dir "$WORK_DIR" || TEST_FAILED=$((TEST_FAILED + 1))
 ACTIVE_WORK_DIR=""
 
 finish_test

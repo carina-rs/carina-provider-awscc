@@ -23,16 +23,6 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
 source "$SCRIPT_DIR/../shared/_helpers.sh"
 
-# The EXIT trap in _helpers.sh runs cleanup() against ACTIVE_WORK_DIR; we
-# manage our own temp dir, so override the trap with our own cleanup.
-WORK_DIR=""
-negative_cleanup() {
-    if [ -n "$WORK_DIR" ] && [ -d "$WORK_DIR" ]; then
-        rm -rf "$WORK_DIR"
-    fi
-}
-trap negative_cleanup EXIT INT TERM
-
 # ── with_account_creds: resolve credentials for $AWS_PROFILE into env vars ──
 with_account_creds() {
     local account="${AWS_PROFILE:-}"
@@ -61,10 +51,11 @@ echo ""
 PASSED=0
 FAILED=0
 
-WORK_DIR=$(mktemp -d)
 inject_provider_source "$SCRIPT_DIR/basic.crn" INJECTED_DIR || exit 1
-cp "$INJECTED_DIR/main.crn" "$WORK_DIR/main.crn"
+register_acceptance_work_dir \
+    "allowed_account_ids_guard/basic.crn" "$INJECTED_DIR/main.crn" WORK_DIR
 rm -rf "$INJECTED_DIR"
+ACTIVE_WORK_DIR="$WORK_DIR"
 
 # carina init must succeed — the guard fires during apply, not init.
 printf "  %-55s " "init"
@@ -115,6 +106,11 @@ else
     echo "$APPLY_OUTPUT" | sed 's/^/    /'
     FAILED=$((FAILED + 1))
 fi
+
+if ! release_acceptance_work_dir "$WORK_DIR"; then
+    FAILED=$((FAILED + 1))
+fi
+ACTIVE_WORK_DIR=""
 
 echo ""
 echo "════════════════════════════════════════"

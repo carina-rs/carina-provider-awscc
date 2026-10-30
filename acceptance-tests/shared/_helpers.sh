@@ -14,6 +14,10 @@ if [ -z "$SCRIPT_DIR" ]; then
 fi
 PROJECT_ROOT="$(cd "$HELPERS_DIR/../.." && pwd)"
 
+# Registry/state helpers are kept in a side-effect-free shared file so the
+# top-level runner can use them without inheriting this file's EXIT trap.
+source "$HELPERS_DIR/_run_registry.sh"
+
 # Resolve the carina-rs sibling base through the canonical .git directory so
 # linked worktrees and main checkouts both produce the same path.
 resolve_sibling_base() {
@@ -95,15 +99,74 @@ prepare_work_dir() {
     (cd "$work_dir" && "$CARINA_BIN" init . >/dev/null)
 }
 
+# Custom/multi-step suites run outside run-tests.sh but must preserve the same
+# persistent state. One sourced helper process owns one run and increments the
+# test index for each registered entry.
+CARINA_CUSTOM_RUN_DIR=""
+CARINA_CUSTOM_TEST_INDEX=0
+
+acceptance_registry_account() {
+    local account="${AWS_PROFILE:-}"
+
+    if [ -z "$account" ]; then
+        echo "ERROR: set AWS_PROFILE to the profile name used by this acceptance test" >&2
+        return 1
+    fi
+    printf '%s\n' "$account"
+}
+
+# register_acceptance_work_dir: Register main.crn and assign the resulting path
+# to a caller variable without a subshell (so run/index globals persist).
+# Args: fixture_path main_crn result_variable
+register_acceptance_work_dir() {
+    if [ "$#" -ne 3 ]; then
+        echo "ERROR: register_acceptance_work_dir expects fixture_path, main_crn, and result_variable" >&2
+        return 2
+    fi
+
+    local fixture_path="$1"
+    local main_crn="$2"
+    local result_variable="$3"
+    local account
+    local entry_dir
+
+    account=$(acceptance_registry_account) || return $?
+    if [ -z "$CARINA_CUSTOM_RUN_DIR" ]; then
+        CARINA_CUSTOM_RUN_DIR=$(carina_registry_create_run) || return $?
+    fi
+    entry_dir=$(carina_registry_register_entry \
+        "$CARINA_CUSTOM_RUN_DIR" "$account" "$CARINA_CUSTOM_TEST_INDEX" \
+        "$fixture_path" "$main_crn") || return $?
+    CARINA_CUSTOM_TEST_INDEX=$((CARINA_CUSTOM_TEST_INDEX + 1))
+    printf -v "$result_variable" '%s' "$entry_dir"
+}
+
+# release_acceptance_work_dir: Release only after supported state inspection
+# proves the entry is absent/empty. On failure, print the durable path.
+release_acceptance_work_dir() {
+    local work_dir="$1"
+
+    if carina_registry_release_entry "$work_dir"; then
+        return 0
+    fi
+    echo "  Registry entry retained: $work_dir" >&2
+    return 1
+}
+
 ACTIVE_WORK_DIR=""
 cleanup() {
     if [ -n "$ACTIVE_WORK_DIR" ] && [ -d "$ACTIVE_WORK_DIR" ] && \
        compgen -G "$ACTIVE_WORK_DIR/*.crn" > /dev/null; then
         echo "  Cleanup: destroying resources..."
         cd "$ACTIVE_WORK_DIR"
-        "$CARINA_BIN" destroy --auto-approve . 2>/dev/null || true
-        "$CARINA_BIN" destroy --auto-approve . 2>/dev/null || true
-        rm -f carina.state.json carina-backend.lock carina-providers.lock
+        if declare -F with_account_creds >/dev/null; then
+            with_account_creds "$CARINA_BIN" destroy --auto-approve . 2>/dev/null || true
+            with_account_creds "$CARINA_BIN" destroy --auto-approve . 2>/dev/null || true
+        else
+            "$CARINA_BIN" destroy --auto-approve . 2>/dev/null || true
+            "$CARINA_BIN" destroy --auto-approve . 2>/dev/null || true
+        fi
+        echo "  Registry entry retained after EXIT cleanup: $ACTIVE_WORK_DIR" >&2
     fi
 }
 trap cleanup EXIT
@@ -121,21 +184,6 @@ run_step() {
         echo "FAIL"
         TEST_FAILED=$((TEST_FAILED + 1))
     fi
-}
-
-# carina_state_json: Read local state through carina's supported interface.
-# Reject any output whose schema_version is not 1 (carina#4106 contract).
-# Args: work_dir
-carina_state_json() {
-    local state_json
-
-    state_json=$("$CARINA_BIN" state show --json "$1") || return $?
-    if ! jq -e '.schema_version == 1' <<< "$state_json" >/dev/null; then
-        echo "ERROR: carina state JSON schema_version must be 1" >&2
-        return 1
-    fi
-
-    printf '%s\n' "$state_json"
 }
 
 # carina_state_query: Extract exactly one non-empty value from local state.
@@ -198,6 +246,29 @@ carina_state_identifiers() {
     printf '%s\n' "$identifiers" | LC_ALL=C sort
 }
 
+# Run a suite cleanup function, report any retained registry entry consistently,
+# and disable the EXIT cleanup for the work directory. Remaining arguments are
+# passed to the cleanup function after work_dir.
+cleanup_registered_work_dir() {
+    if [ "$#" -lt 2 ]; then
+        echo "ERROR: cleanup_registered_work_dir expects a work directory and cleanup function" >&2
+        return 2
+    fi
+
+    local work_dir="$1"
+    local cleanup_function="$2"
+    local cleanup_status=0
+    shift 2
+
+    if ! "$cleanup_function" "$work_dir" "$@"; then
+        echo "  WARNING: Destroy/state verification failed; registry entry retained:"
+        echo "    $work_dir"
+        cleanup_status=1
+    fi
+    ACTIVE_WORK_DIR=""
+    return "$cleanup_status"
+}
+
 # Handle an identifier snapshot failure in the multi-step suites. Remaining
 # arguments are passed to the suite's destroy_work_dir after work_dir.
 handle_identifier_read_failure() {
@@ -208,9 +279,7 @@ handle_identifier_read_failure() {
     printf "  %-55s %s\n" "assert: read identifiers $step" "FAIL"
     echo "  ERROR: could not read identifiers $step"
     TOTAL_FAILED=$((TOTAL_FAILED + 1))
-    destroy_work_dir "$work_dir" "$@" || true
-    rm -rf "$work_dir"
-    ACTIVE_WORK_DIR=""
+    cleanup_registered_work_dir "$work_dir" destroy_work_dir "$@" || true
 }
 
 assert_state_value() {

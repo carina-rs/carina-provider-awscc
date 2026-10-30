@@ -187,17 +187,19 @@ cleanup() {
         echo "  Cleanup: destroying CloudFront Function resources..."
         (cd "$ACTIVE_WORK_DIR" && with_account_creds run_with_timeout 600 "$CARINA_BIN" destroy --auto-approve . 2>&1)
         (cd "$ACTIVE_WORK_DIR" && with_account_creds run_with_timeout 600 "$CARINA_BIN" destroy --auto-approve . 2>&1)
-        rm -rf "$ACTIVE_WORK_DIR"
+        echo "  Registry entry retained after EXIT cleanup: $ACTIVE_WORK_DIR" >&2
         ACTIVE_WORK_DIR=""
     fi
 }
 trap cleanup EXIT
 
-WORK_DIR="$(mktemp -d)"
+inject_provider_source "$SCRIPT_DIR/step1.crn" INJECTED_DIR || exit 1
+register_acceptance_work_dir \
+    "cloudfront_function_publish" "$INJECTED_DIR/main.crn" WORK_DIR
+rm -rf "$INJECTED_DIR"
 ACTIVE_WORK_DIR="$WORK_DIR"
 EXPECTED_CODE="$WORK_DIR/expected-step2.js"
 
-install_config "$SCRIPT_DIR/step1.crn"
 extract_function_code "$SCRIPT_DIR/step2.crn" "$EXPECTED_CODE"
 
 echo "Running CloudFront Function publish acceptance test with AWS_PROFILE=${AWS_PROFILE:-}"
@@ -219,7 +221,9 @@ record_step "assert: function is gone" assert_function_gone
 gone_succeeded="$LAST_STEP_SUCCEEDED"
 
 if [ "$destroy_succeeded" -eq 1 ] && [ "$gone_succeeded" -eq 1 ]; then
-    rm -rf "$WORK_DIR"
+    if ! release_acceptance_work_dir "$WORK_DIR"; then
+        TOTAL_FAILED=$((TOTAL_FAILED + 1))
+    fi
     ACTIVE_WORK_DIR=""
 fi
 

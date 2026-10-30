@@ -34,6 +34,8 @@ jobs:
         with:
           targets: wasm32-wasip2
       - uses: Swatinem/rust-cache@v2
+      - name: Test acceptance run registry
+        run: bash acceptance-tests/shared/tests/run_registry_test.sh
       - run: cargo build -p carina-provider-awscc --target wasm32-wasip2 --release
       - run: cargo test
 

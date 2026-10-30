@@ -5,9 +5,8 @@ source "$(dirname "$0")/../../shared/_helpers.sh"
 echo "Test: local let bindings inside resource blocks"
 echo ""
 
-WORK_DIR=$(mktemp -d)
+register_acceptance_work_dir "builtin_functions/local_let.crn" "$SCRIPT_DIR/local_let.crn" WORK_DIR
 ACTIVE_WORK_DIR="$WORK_DIR"
-cp "$SCRIPT_DIR/local_let.crn" "$WORK_DIR/main.crn"
 cd "$WORK_DIR"
 
 run_step "step1: apply" "$CARINA_BIN" apply --auto-approve .
@@ -17,7 +16,7 @@ assert_state_value "assert: tag Env = 'PRODUCTION'" '.resources[0].current.attri
 
 echo "  Cleanup: destroying resources..."
 "$CARINA_BIN" destroy --auto-approve . > /dev/null 2>&1 || true
-rm -rf "$WORK_DIR"
+release_acceptance_work_dir "$WORK_DIR" || TEST_FAILED=$((TEST_FAILED + 1))
 ACTIVE_WORK_DIR=""
 
 finish_test
