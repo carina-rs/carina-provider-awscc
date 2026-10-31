@@ -24,6 +24,7 @@ use serde::Deserialize;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::io::{self, Read};
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
@@ -1724,7 +1725,38 @@ fn full_resource_name_from_type(type_name: &str) -> Result<String> {
     Ok(format!("{}_{}", service, resource))
 }
 
-fn load_markdown_example(examples_dir: &Path, type_name: &str) -> Result<String> {
+#[derive(Debug)]
+struct DocExample {
+    checked_type_name: String,
+    rendered: String,
+}
+
+impl DocExample {
+    fn checked(rendered: String, path: &Path, type_name: &str) -> Result<Self> {
+        let dsl_resource = dsl_resource_name_from_type(type_name)?;
+        require_documented_resource(&rendered, path, &dsl_resource)?;
+        Ok(Self {
+            checked_type_name: type_name.to_string(),
+            rendered,
+        })
+    }
+
+    fn ensure_type(&self, type_name: &str) -> Result<()> {
+        if self.checked_type_name != type_name {
+            anyhow::bail!(
+                "Documentation example checked for {} cannot render {type_name}",
+                self.checked_type_name
+            );
+        }
+        Ok(())
+    }
+
+    fn as_str(&self) -> &str {
+        &self.rendered
+    }
+}
+
+fn load_markdown_example(examples_dir: &Path, type_name: &str) -> Result<DocExample> {
     let path = examples_dir
         .join(full_resource_name_from_type(type_name)?)
         .join("main.crn");
@@ -1737,10 +1769,19 @@ fn load_markdown_example(examples_dir: &Path, type_name: &str) -> Result<String>
             return Err(error).with_context(|| format!("Failed to read {}", path.display()));
         }
     };
-    let example = preprocess_markdown_example(&source);
+    let example = preprocess_markdown_example(&source)?;
+    check_markdown_example(&source, example, &path, type_name)
+}
+
+fn check_markdown_example(
+    source: &str,
+    rendered: String,
+    path: &Path,
+    type_name: &str,
+) -> Result<DocExample> {
     let dsl_resource = dsl_resource_name_from_type(type_name)?;
-    require_documented_resource(&source, &path, &dsl_resource)?;
-    Ok(example)
+    require_documented_resource(source, path, &dsl_resource)?;
+    DocExample::checked(rendered, path, type_name)
 }
 
 fn require_documented_resource(source: &str, path: &Path, dsl_resource: &str) -> Result<()> {
@@ -1762,31 +1803,285 @@ fn require_documented_resource(source: &str, path: &Path, dsl_resource: &str) ->
     Ok(())
 }
 
-fn preprocess_markdown_example(source: &str) -> String {
-    let mut filtered = Vec::new();
-    let mut in_provider_block = false;
-    for line in source.split_inclusive('\n') {
-        if !in_provider_block && line.starts_with("provider ") {
-            in_provider_block = true;
-            continue;
-        }
-        if in_provider_block {
-            if line.starts_with('}') {
-                in_provider_block = false;
-            }
-            continue;
-        }
-        if line.starts_with('#') {
-            continue;
-        }
-        filtered.push(line);
+fn preprocess_markdown_example(source: &str) -> Result<String> {
+    let heredocs = carina_core::heredoc::preprocess_heredocs(source)
+        .context("Failed to preprocess heredocs in documentation example")?
+        .heredocs;
+    let mut heredoc_ranges = Vec::with_capacity(heredocs.len());
+    let mut search_from = 0;
+    for heredoc in heredocs {
+        let relative_start = source[search_from..].find(&heredoc).ok_or_else(|| {
+            anyhow::anyhow!("carina-core returned a heredoc absent from its source")
+        })?;
+        let start = search_from + relative_start;
+        let end = start + heredoc.len();
+        heredoc_ranges.push(start..end);
+        search_from = end;
     }
 
+    // Keep byte offsets stable while making heredoc syntax and bodies invisible
+    // to the structural scan below. Newlines remain visible so line removal can
+    // still use the original source positions.
+    let mut masked = source.as_bytes().to_vec();
+    for range in heredoc_ranges {
+        for byte in &mut masked[range] {
+            if *byte != b'\n' {
+                *byte = b' ';
+            }
+        }
+    }
+
+    let removals = markdown_example_removals(&masked)?;
+    let mut filtered = String::with_capacity(source.len());
+    let mut kept_from = 0;
+    for removal in removals {
+        filtered.push_str(&source[kept_from..removal.start]);
+        kept_from = removal.end;
+    }
+    filtered.push_str(&source[kept_from..]);
+
+    let filtered: Vec<&str> = filtered.split_inclusive('\n').collect();
     let first_content = filtered
         .iter()
         .position(|line| !line.strip_suffix('\n').unwrap_or(line).is_empty())
         .unwrap_or(filtered.len());
-    filtered[first_content..].concat()
+    Ok(filtered[first_content..].concat())
+}
+
+fn markdown_example_removals(masked: &[u8]) -> Result<Vec<Range<usize>>> {
+    let mut removals = Vec::new();
+    let mut cursor = 0;
+    let mut line_start = 0;
+    let mut brace_depth = 0usize;
+
+    while cursor < masked.len() {
+        match masked[cursor] {
+            b'\n' => {
+                cursor += 1;
+                line_start = cursor;
+            }
+            b' ' | b'\t' | b'\r' => cursor += 1,
+            b'#' if brace_depth == 0 && line_prefix_is_whitespace(masked, line_start, cursor) => {
+                let end = line_removal_end(masked, cursor);
+                removals.push(line_start..end);
+                cursor = end;
+                line_start = cursor;
+            }
+            b'/' if masked.get(cursor + 1) == Some(&b'/')
+                && brace_depth == 0
+                && line_prefix_is_whitespace(masked, line_start, cursor) =>
+            {
+                let end = line_removal_end(masked, cursor);
+                removals.push(line_start..end);
+                cursor = end;
+                line_start = cursor;
+            }
+            b'#' => cursor = skip_line_comment(masked, cursor),
+            b'/' if masked.get(cursor + 1) == Some(&b'/') => {
+                cursor = skip_line_comment(masked, cursor)
+            }
+            b'/' if masked.get(cursor + 1) == Some(&b'*') => {
+                let end = skip_block_comment(masked, cursor);
+                update_line_start(masked, cursor, end, &mut line_start);
+                cursor = end;
+            }
+            b'\'' => {
+                let end = skip_single_quoted_string(masked, cursor);
+                update_line_start(masked, cursor, end, &mut line_start);
+                cursor = end;
+            }
+            b'"' => {
+                let end = skip_double_quoted_string(masked, cursor);
+                update_line_start(masked, cursor, end, &mut line_start);
+                cursor = end;
+            }
+            b'{' => {
+                brace_depth += 1;
+                cursor += 1;
+            }
+            b'}' => {
+                brace_depth = brace_depth.saturating_sub(1);
+                cursor += 1;
+            }
+            byte if byte.is_ascii_alphabetic() || byte == b'_' => {
+                let token_start = cursor;
+                cursor += 1;
+                while masked
+                    .get(cursor)
+                    .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')
+                {
+                    cursor += 1;
+                }
+                let is_provider = &masked[token_start..cursor] == b"provider"
+                    && brace_depth == 0
+                    && line_prefix_is_whitespace(masked, line_start, token_start)
+                    && masked
+                        .get(cursor)
+                        .is_some_and(|byte| byte.is_ascii_whitespace());
+                if !is_provider {
+                    continue;
+                }
+
+                let block_end = find_provider_block_end(masked, cursor).ok_or_else(|| {
+                    anyhow::anyhow!("parsed provider block has no balanced closing brace")
+                })?;
+                let removal_end = provider_removal_end(masked, block_end);
+                removals.push(line_start..removal_end);
+                update_line_start(masked, cursor, removal_end, &mut line_start);
+                cursor = removal_end;
+            }
+            _ => cursor += 1,
+        }
+    }
+
+    Ok(removals)
+}
+
+fn line_prefix_is_whitespace(source: &[u8], start: usize, end: usize) -> bool {
+    source[start..end]
+        .iter()
+        .all(|byte| matches!(byte, b' ' | b'\t' | b'\r'))
+}
+
+fn line_removal_end(source: &[u8], start: usize) -> usize {
+    source[start..]
+        .iter()
+        .position(|byte| *byte == b'\n')
+        .map_or(source.len(), |relative| start + relative + 1)
+}
+
+fn provider_removal_end(source: &[u8], block_end: usize) -> usize {
+    let line_end = source[block_end..]
+        .iter()
+        .position(|byte| *byte == b'\n')
+        .map_or(source.len(), |relative| block_end + relative);
+    if line_prefix_is_whitespace(source, block_end, line_end) {
+        (line_end + usize::from(line_end < source.len())).min(source.len())
+    } else {
+        block_end
+    }
+}
+
+fn find_provider_block_end(source: &[u8], mut cursor: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    let mut found_opening = false;
+    while cursor < source.len() {
+        match source[cursor] {
+            b'#' => cursor = skip_line_comment(source, cursor),
+            b'/' if source.get(cursor + 1) == Some(&b'/') => {
+                cursor = skip_line_comment(source, cursor)
+            }
+            b'/' if source.get(cursor + 1) == Some(&b'*') => {
+                cursor = skip_block_comment(source, cursor)
+            }
+            b'\'' => cursor = skip_single_quoted_string(source, cursor),
+            b'"' => cursor = skip_double_quoted_string(source, cursor),
+            b'{' => {
+                found_opening = true;
+                depth += 1;
+                cursor += 1;
+            }
+            b'}' if found_opening => {
+                depth -= 1;
+                cursor += 1;
+                if depth == 0 {
+                    return Some(cursor);
+                }
+            }
+            _ => cursor += 1,
+        }
+    }
+    None
+}
+
+fn skip_line_comment(source: &[u8], start: usize) -> usize {
+    source[start..]
+        .iter()
+        .position(|byte| *byte == b'\n')
+        .map_or(source.len(), |relative| start + relative)
+}
+
+fn skip_block_comment(source: &[u8], start: usize) -> usize {
+    let mut cursor = start + 2;
+    let mut depth = 1usize;
+    while cursor < source.len() {
+        if source.get(cursor..cursor + 2) == Some(b"/*") {
+            depth += 1;
+            cursor += 2;
+        } else if source.get(cursor..cursor + 2) == Some(b"*/") {
+            depth -= 1;
+            cursor += 2;
+            if depth == 0 {
+                return cursor;
+            }
+        } else {
+            cursor += 1;
+        }
+    }
+    source.len()
+}
+
+fn skip_single_quoted_string(source: &[u8], start: usize) -> usize {
+    let mut cursor = start + 1;
+    while cursor < source.len() {
+        match source[cursor] {
+            b'\\' => cursor = (cursor + 2).min(source.len()),
+            b'\'' => return cursor + 1,
+            _ => cursor += 1,
+        }
+    }
+    source.len()
+}
+
+fn skip_double_quoted_string(source: &[u8], start: usize) -> usize {
+    let mut cursor = start + 1;
+    while cursor < source.len() {
+        match source[cursor] {
+            b'\\' => cursor = (cursor + 2).min(source.len()),
+            b'"' => return cursor + 1,
+            b'$' if source.get(cursor + 1) == Some(&b'{') => {
+                cursor = skip_interpolation(source, cursor + 2)
+            }
+            _ => cursor += 1,
+        }
+    }
+    source.len()
+}
+
+fn skip_interpolation(source: &[u8], mut cursor: usize) -> usize {
+    let mut depth = 1usize;
+    while cursor < source.len() {
+        match source[cursor] {
+            b'#' => cursor = skip_line_comment(source, cursor),
+            b'/' if source.get(cursor + 1) == Some(&b'/') => {
+                cursor = skip_line_comment(source, cursor)
+            }
+            b'/' if source.get(cursor + 1) == Some(&b'*') => {
+                cursor = skip_block_comment(source, cursor)
+            }
+            b'\'' => cursor = skip_single_quoted_string(source, cursor),
+            b'"' => cursor = skip_double_quoted_string(source, cursor),
+            b'{' => {
+                depth += 1;
+                cursor += 1;
+            }
+            b'}' => {
+                depth -= 1;
+                cursor += 1;
+                if depth == 0 {
+                    return cursor;
+                }
+            }
+            _ => cursor += 1,
+        }
+    }
+    source.len()
+}
+
+fn update_line_start(source: &[u8], start: usize, end: usize, line_start: &mut usize) {
+    if let Some(relative) = source[start..end].iter().rposition(|byte| *byte == b'\n') {
+        *line_start = start + relative + 1;
+    }
 }
 
 /// Compute DSL resource name (service.resource) from CloudFormation type name
@@ -3522,7 +3817,8 @@ fn claim_unique_markdown_heading(
     unreachable!("an integer suffix always yields a fresh heading")
 }
 
-fn generate_markdown(schema: &CfnSchema, type_name: &str, example: &str) -> Result<String> {
+fn generate_markdown(schema: &CfnSchema, type_name: &str, example: &DocExample) -> Result<String> {
+    example.ensure_type(type_name)?;
     reset_recursion_guard();
     derive_mutually_exclusive_property_groups(schema)?;
 
@@ -3993,7 +4289,11 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str, example: &str) -> Resu
         .with_context(|| format!("generated invalid Markdown for awscc.{dsl_resource}"))
 }
 
-fn write_markdown_example(page: &mut PageBuilder<MarkdownTarget>, example: &str) -> Result<()> {
+fn write_markdown_example(
+    page: &mut PageBuilder<MarkdownTarget>,
+    example: &DocExample,
+) -> Result<()> {
+    let example = example.as_str();
     page.heading(Heading::plain(2, "Example"))?;
     page.push_str("```crn\n");
     page.push_str(example);
@@ -8148,7 +8448,22 @@ mod tests {
     use super::*;
 
     const EXTRACT_ENUM_SNAPSHOT_PRE_365: &str = "tests/fixtures/extract_enum_snapshot_pre_365.json";
-    const MARKDOWN_EXAMPLE: &str = "awscc.test.Resource {}\n";
+
+    fn markdown_example(type_name: &str) -> DocExample {
+        let dsl_resource = dsl_resource_name_from_type(type_name).unwrap();
+        let source = format!("awscc.{dsl_resource} {{}}\n");
+        check_markdown_example(
+            &source,
+            source.clone(),
+            Path::new("test-markdown-example.crn"),
+            type_name,
+        )
+        .unwrap()
+    }
+
+    fn generate_test_markdown(schema: &CfnSchema, type_name: &str) -> Result<String> {
+        generate_markdown(schema, type_name, &markdown_example(type_name))
+    }
 
     fn write_markdown_example_fixture(
         examples_dir: &Path,
@@ -8793,7 +9108,7 @@ mod tests {
             let schema = cfn_schema_for_codegen_tests(type_name);
             let generated = generate_schema_code(&schema, type_name)
                 .unwrap_or_else(|error| panic!("{type_name} schema generation failed: {error}"));
-            let markdown = generate_markdown(&schema, type_name, MARKDOWN_EXAMPLE)
+            let markdown = generate_test_markdown(&schema, type_name)
                 .unwrap_or_else(|error| panic!("{type_name} markdown generation failed: {error}"));
 
             assert!(
@@ -8887,7 +9202,7 @@ mod tests {
             TEST_EMPTY_OBJECT_PROPERTIES[0].property_path,
         )));
 
-        let markdown = generate_markdown(&schema, "AWS::Test::AcronymPath", MARKDOWN_EXAMPLE)
+        let markdown = generate_test_markdown(&schema, "AWS::Test::AcronymPath")
             .expect("raw acronym parent must classify during Markdown rendering");
         assert!(
             markdown.contains("| `marker` | Empty struct (`{}`) |"),
@@ -8934,7 +9249,7 @@ mod tests {
         assert!(generated.contains("StructField::optional(\"enabled\""));
         assert!(!generated.contains("child_policy"), "{generated}");
 
-        let markdown = generate_markdown(&schema, "AWS::Test::NestedOmission", MARKDOWN_EXAMPLE)
+        let markdown = generate_test_markdown(&schema, "AWS::Test::NestedOmission")
             .expect("nested omission must be documentable");
         assert!(!markdown.contains("| `child_policy` |"), "{markdown}");
         assert!(markdown.contains("`config.child_policy`"), "{markdown}");
@@ -9465,7 +9780,7 @@ mod tests {
         ] {
             assert_empty_field(&waf_generated, field);
         }
-        let waf_markdown = generate_markdown(&waf_schema, "AWS::WAFv2::WebACL", MARKDOWN_EXAMPLE)
+        let waf_markdown = generate_test_markdown(&waf_schema, "AWS::WAFv2::WebACL")
             .expect("WAFv2 WebACL markdown generation should succeed");
         assert!(
             waf_markdown.contains("| `all_query_arguments` | Empty struct (`{}`) |"),
@@ -9488,7 +9803,7 @@ mod tests {
         let schema = cfn_schema_for_codegen_tests("AWS::SNS::Topic");
         let generated = generate_schema_code(&schema, "AWS::SNS::Topic")
             .expect("SNS Topic schema generation should succeed");
-        let markdown = generate_markdown(&schema, "AWS::SNS::Topic", MARKDOWN_EXAMPLE)
+        let markdown = generate_test_markdown(&schema, "AWS::SNS::Topic")
             .expect("SNS Topic markdown generation should succeed");
 
         assert!(!generated.contains("build_subscription_attribute"));
@@ -9505,7 +9820,7 @@ mod tests {
 
         let generated = generate_schema_code(&schema, "AWS::CloudWatch::Alarm")
             .expect("CloudWatch Alarm schema generation should succeed");
-        let markdown = generate_markdown(&schema, "AWS::CloudWatch::Alarm", MARKDOWN_EXAMPLE)
+        let markdown = generate_test_markdown(&schema, "AWS::CloudWatch::Alarm")
             .expect("CloudWatch Alarm markdown generation should succeed");
 
         for property_name in [
@@ -9589,7 +9904,7 @@ mod tests {
 
         let generated = generate_schema_code(&schema, "AWS::Budgets::Budget")
             .expect("Budgets Budget schema generation should succeed");
-        let markdown = generate_markdown(&schema, "AWS::Budgets::Budget", MARKDOWN_EXAMPLE)
+        let markdown = generate_test_markdown(&schema, "AWS::Budgets::Budget")
             .expect("Budgets Budget markdown generation should succeed");
 
         assert!(
@@ -9637,7 +9952,7 @@ mod tests {
         let schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
         let generated = generate_schema_code(&schema, "AWS::Budgets::Budget")
             .expect("Budgets Budget schema generation should succeed");
-        let markdown = generate_markdown(&schema, "AWS::Budgets::Budget", MARKDOWN_EXAMPLE)
+        let markdown = generate_test_markdown(&schema, "AWS::Budgets::Budget")
             .expect("Budgets Budget markdown generation should succeed");
 
         assert!(
@@ -9721,7 +10036,7 @@ mod tests {
         let schema = cfn_schema_for_codegen_tests("AWS::Scheduler::Schedule");
         let generated = generate_schema_code(&schema, "AWS::Scheduler::Schedule")
             .expect("Scheduler Schedule schema generation should succeed");
-        let markdown = generate_markdown(&schema, "AWS::Scheduler::Schedule", MARKDOWN_EXAMPLE)
+        let markdown = generate_test_markdown(&schema, "AWS::Scheduler::Schedule")
             .expect("Scheduler Schedule markdown generation should succeed");
         let definitions = schema.definitions.as_ref().expect("Schedule definitions");
 
@@ -9818,7 +10133,7 @@ mod tests {
             "generated schema must explain the measured tracking limitation: {generated}"
         );
 
-        let markdown = generate_markdown(&schema, "AWS::Scheduler::Schedule", MARKDOWN_EXAMPLE)
+        let markdown = generate_test_markdown(&schema, "AWS::Scheduler::Schedule")
             .expect("Scheduler Schedule markdown generation should succeed");
         assert!(
             markdown.contains("- **Type:** SchedulerScheduleGroupName"),
@@ -10082,7 +10397,7 @@ mod tests {
             "map value struct fields must be generated: {generated}"
         );
 
-        let markdown = generate_markdown(&schema, "AWS::WAFv2::WebACL", MARKDOWN_EXAMPLE)
+        let markdown = generate_test_markdown(&schema, "AWS::WAFv2::WebACL")
             .expect("typed object map markdown generation should succeed");
         assert!(
             markdown.contains("Map\\<String, [Struct(CustomResponseBody)]"),
@@ -10683,11 +10998,7 @@ mod tests {
             ("Rust", generate_synthetic_schema_code(&schema)),
             (
                 "Markdown",
-                generate_markdown(
-                    &schema,
-                    "AWS::Test::PathDependentReadOnly",
-                    MARKDOWN_EXAMPLE,
-                ),
+                generate_test_markdown(&schema, "AWS::Test::PathDependentReadOnly"),
             ),
         ] {
             let error = result.expect_err(
@@ -10769,11 +11080,7 @@ mod tests {
             ("Rust", generate_synthetic_schema_code(&schema)),
             (
                 "Markdown",
-                generate_markdown(
-                    &schema,
-                    "AWS::ElasticLoadBalancingV2::Listener",
-                    MARKDOWN_EXAMPLE,
-                ),
+                generate_test_markdown(&schema, "AWS::ElasticLoadBalancingV2::Listener"),
             ),
         ] {
             let error = result.expect_err(
@@ -10876,7 +11183,7 @@ mod tests {
         ]);
         schema.read_only_properties = vec!["/properties/Left/Config/Owned".to_string()];
 
-        let error = generate_markdown(&schema, "AWS::Test::InlineCollision", MARKDOWN_EXAMPLE)
+        let error = generate_test_markdown(&schema, "AWS::Test::InlineCollision")
             .expect_err("Markdown must not reuse the first path for ambiguous inline structs");
         let message = error.to_string();
         assert!(message.contains("Config"), "{message}");
@@ -15577,7 +15884,7 @@ mod tests {
             ),
         )]));
 
-        let md = generate_markdown(&schema, &schema.type_name, MARKDOWN_EXAMPLE).unwrap();
+        let md = generate_test_markdown(&schema, &schema.type_name).unwrap();
         let expected = format!(
             "| `ipv6_support` | [Enum (Ipv6Support)](#optionsipv6_support-ipv6support) | No | {} |",
             description.replace('|', "\\|")
@@ -15648,7 +15955,7 @@ mod tests {
             handlers: BTreeMap::new(),
         };
 
-        let md = generate_markdown(&schema, "AWS::S3::Bucket", MARKDOWN_EXAMPLE).unwrap();
+        let md = generate_test_markdown(&schema, "AWS::S3::Bucket").unwrap();
         assert!(
             md.contains("Enum (ObjectLockEnabled)"),
             "Struct field with const_value should display as Enum in markdown, got:\n{}",
@@ -15737,7 +16044,7 @@ mod tests {
             handlers: BTreeMap::new(),
         };
 
-        let md = generate_markdown(&schema, "AWS::S3::Bucket", MARKDOWN_EXAMPLE).unwrap();
+        let md = generate_test_markdown(&schema, "AWS::S3::Bucket").unwrap();
         assert!(
             md.contains("Enum (RetentionMode)"),
             "Struct field with $ref to enum-only definition should display as Enum, got:\n{}",
@@ -15874,7 +16181,7 @@ mod tests {
             handlers: BTreeMap::new(),
         };
 
-        let md = generate_markdown(&schema, "AWS::EC2::SecurityGroup", MARKDOWN_EXAMPLE).unwrap();
+        let md = generate_test_markdown(&schema, "AWS::EC2::SecurityGroup").unwrap();
         let egress_count = md
             .matches("aws.ec2.SecurityGroup.Egress.IpProtocol.tcp")
             .count();
@@ -15930,7 +16237,7 @@ mod tests {
             ),
         ] {
             let schema = cfn_schema_for_codegen_tests(type_name);
-            let md = generate_markdown(&schema, type_name, MARKDOWN_EXAMPLE).unwrap();
+            let md = generate_test_markdown(&schema, type_name).unwrap();
 
             assert!(md.contains(expected), "missing {expected}:\n{md}");
             carina_docgen::check_page(&md).expect("generated Markdown should pass shared checks");
@@ -15940,8 +16247,7 @@ mod tests {
     #[test]
     fn test_markdown_definition_sections_are_sorted_by_visible_heading() {
         let schema = cfn_schema_for_codegen_tests("AWS::CloudFront::Distribution");
-        let md =
-            generate_markdown(&schema, "AWS::CloudFront::Distribution", MARKDOWN_EXAMPLE).unwrap();
+        let md = generate_test_markdown(&schema, "AWS::CloudFront::Distribution").unwrap();
 
         let enum_section = md
             .split_once("## Enum Values\n\n")
@@ -16009,8 +16315,7 @@ mod tests {
             ),
         ]));
 
-        let md =
-            generate_markdown(&schema, "AWS::Test::SharedDefinition", MARKDOWN_EXAMPLE).unwrap();
+        let md = generate_test_markdown(&schema, "AWS::Test::SharedDefinition").unwrap();
 
         assert_eq!(md.matches("### shared_options\n\n").count(), 1, "{md}");
         assert_eq!(
@@ -16077,12 +16382,7 @@ mod tests {
             ),
         )]));
 
-        let md = generate_markdown(
-            &schema,
-            "AWS::Test::SharedNestedDefinition",
-            MARKDOWN_EXAMPLE,
-        )
-        .unwrap();
+        let md = generate_test_markdown(&schema, "AWS::Test::SharedNestedDefinition").unwrap();
 
         assert!(
             md.contains("### shared_options\n\nUsed by: `left`, `right`\n\n"),
@@ -16156,12 +16456,7 @@ mod tests {
             ),
         ]));
 
-        let md = generate_markdown(
-            &schema,
-            "AWS::Test::NestedSharedDefinition",
-            MARKDOWN_EXAMPLE,
-        )
-        .unwrap();
+        let md = generate_test_markdown(&schema, "AWS::Test::NestedSharedDefinition").unwrap();
 
         assert!(md.contains("### outer.inner_field\n\n| Field |"), "{md}");
         assert!(!md.contains("Used by: `outer.inner_field`"), "{md}");
@@ -16173,7 +16468,7 @@ mod tests {
     #[test]
     fn test_markdown_used_by_paths_follow_all_shared_ancestor_paths() {
         let schema = cfn_schema_for_codegen_tests("AWS::WAFv2::WebACL");
-        let md = generate_markdown(&schema, "AWS::WAFv2::WebACL", MARKDOWN_EXAMPLE).unwrap();
+        let md = generate_test_markdown(&schema, "AWS::WAFv2::WebACL").unwrap();
 
         assert!(
             md.contains(concat!(
@@ -16200,6 +16495,7 @@ mod tests {
 
     #[test]
     fn test_markdown_example_is_preprocessed_and_validated_inside_codegen() {
+        let type_name = "AWS::EC2::TransitGatewayAttachment";
         let source = concat!(
             "\n",
             "# leading comment\n",
@@ -16207,24 +16503,126 @@ mod tests {
             "  region = \"us-east-1\"\n",
             "}\n",
             "\n",
-            "resource transit_gateway_attachment \"fixture\" {}\n",
+            "awscc.ec2.TransitGatewayAttachment {}\n",
             "# trailing comment\n",
         );
-        let example = preprocess_markdown_example(source);
-        assert_eq!(
-            example,
-            "resource transit_gateway_attachment \"fixture\" {}\n"
-        );
+        let rendered = preprocess_markdown_example(source).unwrap();
+        assert_eq!(rendered, "awscc.ec2.TransitGatewayAttachment {}\n");
+        let example = check_markdown_example(
+            source,
+            rendered,
+            Path::new("test-markdown-example.crn"),
+            type_name,
+        )
+        .unwrap();
 
-        let schema = cfn_schema_for_codegen_tests("AWS::EC2::TransitGatewayAttachment");
-        let md =
-            generate_markdown(&schema, "AWS::EC2::TransitGatewayAttachment", &example).unwrap();
+        let schema = cfn_schema_for_codegen_tests(type_name);
+        let md = generate_markdown(&schema, type_name, &example).unwrap();
 
         let example_position = md.find("## Example\n\n```crn\n").expect("example heading");
         let arguments_position = md.find("## Argument Reference").expect("argument heading");
         assert!(example_position < arguments_position, "{md}");
-        assert!(md.contains(&format!("```crn\n{example}```\n\n")), "{md}");
+        assert!(
+            md.contains(&format!("```crn\n{}```\n\n", example.as_str())),
+            "{md}"
+        );
         carina_docgen::check_page(&md).expect("the page checked by codegen should be valid");
+    }
+
+    #[test]
+    fn test_markdown_example_one_line_provider_keeps_resource() {
+        let examples_dir = tempfile::tempdir().unwrap();
+        let type_name = "AWS::EC2::TransitGatewayAttachment";
+        write_markdown_example_fixture(
+            examples_dir.path(),
+            type_name,
+            concat!(
+                "provider awscc { region = awscc.Region.ap_northeast_1 }\n",
+                "awscc.ec2.TransitGatewayAttachment {}\n",
+            ),
+        );
+
+        let example = load_markdown_example(examples_dir.path(), type_name).unwrap();
+
+        assert_eq!(example.as_str(), "awscc.ec2.TransitGatewayAttachment {}\n");
+    }
+
+    #[test]
+    fn test_markdown_example_indented_provider_closing_brace_keeps_resource() {
+        let examples_dir = tempfile::tempdir().unwrap();
+        let type_name = "AWS::EC2::TransitGatewayAttachment";
+        write_markdown_example_fixture(
+            examples_dir.path(),
+            type_name,
+            concat!(
+                "provider awscc {\n",
+                "  region = awscc.Region.ap_northeast_1\n",
+                "  }\n",
+                "awscc.ec2.TransitGatewayAttachment {}\n",
+            ),
+        );
+
+        let example = load_markdown_example(examples_dir.path(), type_name).unwrap();
+
+        assert_eq!(example.as_str(), "awscc.ec2.TransitGatewayAttachment {}\n");
+    }
+
+    #[test]
+    fn test_markdown_example_preserves_hash_line_in_heredoc_body() {
+        let examples_dir = tempfile::tempdir().unwrap();
+        let type_name = "AWS::EC2::TransitGatewayAttachment";
+        let source = concat!(
+            "# reader-facing comment\n",
+            "awscc.ec2.TransitGatewayAttachment {\n",
+            "  description = <<EOT\n",
+            "# not a comment\n",
+            "EOT\n",
+            "}\n",
+        );
+        write_markdown_example_fixture(examples_dir.path(), type_name, source);
+
+        let example = load_markdown_example(examples_dir.path(), type_name).unwrap();
+
+        assert_eq!(
+            example.as_str(),
+            concat!(
+                "awscc.ec2.TransitGatewayAttachment {\n",
+                "  description = <<EOT\n",
+                "# not a comment\n",
+                "EOT\n",
+                "}\n",
+            )
+        );
+    }
+
+    #[test]
+    fn test_checked_markdown_example_rejects_rendered_text_without_resource() {
+        let type_name = "AWS::EC2::TransitGatewayAttachment";
+        let source = "awscc.ec2.TransitGatewayAttachment {}\n";
+        let path = Path::new("test-markdown-example.crn");
+
+        let error = check_markdown_example(source, String::new(), path, type_name).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Example file test-markdown-example.crn must declare resource \
+             awscc.ec2.TransitGatewayAttachment"
+        );
+    }
+
+    #[test]
+    fn test_generate_markdown_rejects_example_checked_for_another_type() {
+        let type_name = "AWS::EC2::TransitGatewayAttachment";
+        let schema = cfn_schema_for_codegen_tests(type_name);
+        let example = markdown_example("AWS::EC2::VPC");
+
+        let error = generate_markdown(&schema, type_name, &example).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Documentation example checked for AWS::EC2::VPC cannot render \
+             AWS::EC2::TransitGatewayAttachment"
+        );
     }
 
     #[test]
@@ -16442,7 +16840,9 @@ mod tests {
         );
 
         assert_eq!(
-            load_markdown_example(examples_dir.path(), type_name).unwrap(),
+            load_markdown_example(examples_dir.path(), type_name)
+                .unwrap()
+                .as_str(),
             "let attachment = awscc.ec2.TransitGatewayAttachment {}\n"
         );
     }
@@ -16451,7 +16851,7 @@ mod tests {
     fn test_markdown_collects_struct_below_ref_to_array_definition() {
         let schema = cfn_schema_for_codegen_tests("AWS::WAFv2::WebACL");
 
-        let md = generate_markdown(&schema, "AWS::WAFv2::WebACL", MARKDOWN_EXAMPLE)
+        let md = generate_test_markdown(&schema, "AWS::WAFv2::WebACL")
             .expect("array-definition item structs should have target headings");
 
         assert!(
@@ -16507,7 +16907,7 @@ mod tests {
             ),
         ]);
 
-        let md = generate_markdown(&schema, "AWS::Test::InlineOptions", MARKDOWN_EXAMPLE).unwrap();
+        let md = generate_test_markdown(&schema, "AWS::Test::InlineOptions").unwrap();
 
         assert!(md.contains("[Struct(Options)](#leftoptions)"), "{md}");
         assert!(md.contains("[Struct(Options)](#rightoptions)"), "{md}");
@@ -16587,7 +16987,7 @@ mod tests {
             },
         )]));
 
-        let md = generate_markdown(&schema, "AWS::Test::OneOfArray", MARKDOWN_EXAMPLE)
+        let md = generate_test_markdown(&schema, "AWS::Test::OneOfArray")
             .expect("a linked OneOf array item must have a registered target heading");
 
         assert!(
@@ -16620,7 +17020,7 @@ mod tests {
             },
         );
 
-        let md = generate_markdown(&schema, "AWS::Test::DirectOneOf", MARKDOWN_EXAMPLE).unwrap();
+        let md = generate_test_markdown(&schema, "AWS::Test::DirectOneOf").unwrap();
 
         assert!(md.contains("### `choice`\n\n- **Type:** String\n"), "{md}");
         assert!(!md.contains("## Struct Definitions"), "{md}");
@@ -16756,7 +17156,7 @@ mod tests {
             handlers: BTreeMap::new(),
         };
 
-        let md = generate_markdown(&schema, "AWS::Test::Resource", MARKDOWN_EXAMPLE).unwrap();
+        let md = generate_test_markdown(&schema, "AWS::Test::Resource").unwrap();
 
         assert_eq!(
             md.matches("### rules.destination_protocol (Protocol)")
@@ -16875,7 +17275,7 @@ mod tests {
             handlers: BTreeMap::new(),
         };
 
-        let md = generate_markdown(&schema, "AWS::Test::Resource", MARKDOWN_EXAMPLE).unwrap();
+        let md = generate_test_markdown(&schema, "AWS::Test::Resource").unwrap();
 
         // With structural disambiguation, the two Status enums keep the same
         // plain kind and differ by namespace.
@@ -16964,7 +17364,7 @@ mod tests {
             handlers: BTreeMap::new(),
         };
 
-        let md = generate_markdown(&schema, "AWS::Test::Resource", MARKDOWN_EXAMPLE).unwrap();
+        let md = generate_test_markdown(&schema, "AWS::Test::Resource").unwrap();
 
         // The struct field table should contain a link, not plain "Enum".
         assert!(
@@ -17222,7 +17622,7 @@ mod tests {
             handlers: BTreeMap::new(),
         };
 
-        let md = generate_markdown(&schema, "AWS::EC2::VPNGateway", MARKDOWN_EXAMPLE).unwrap();
+        let md = generate_test_markdown(&schema, "AWS::EC2::VPNGateway").unwrap();
 
         assert!(
             md.contains("[Enum (Type)](#type-type)"),
@@ -17276,7 +17676,7 @@ mod tests {
             handlers: BTreeMap::new(),
         };
 
-        let md = generate_markdown(&schema, "AWS::Test::Resource", MARKDOWN_EXAMPLE).unwrap();
+        let md = generate_test_markdown(&schema, "AWS::Test::Resource").unwrap();
 
         assert!(
             md.contains("**Default:** `\"/\"`"),
@@ -17388,7 +17788,7 @@ mod tests {
             handlers: BTreeMap::new(),
         };
 
-        let md = generate_markdown(&schema, "AWS::Test::Resource", MARKDOWN_EXAMPLE).unwrap();
+        let md = generate_test_markdown(&schema, "AWS::Test::Resource").unwrap();
 
         assert!(
             md.contains("**Create-only:** Yes"),
@@ -17434,7 +17834,7 @@ mod tests {
             handlers: BTreeMap::new(),
         };
 
-        let md = generate_markdown(&schema, "AWS::Test::Resource", MARKDOWN_EXAMPLE).unwrap();
+        let md = generate_test_markdown(&schema, "AWS::Test::Resource").unwrap();
 
         assert!(
             md.contains("## Attribute Reference"),
@@ -17466,7 +17866,7 @@ mod tests {
         );
         schema.read_only_properties = vec!["/properties/Info".to_string()];
 
-        let md = generate_markdown(&schema, "AWS::Test::DeprecatedReadOnly", MARKDOWN_EXAMPLE)
+        let md = generate_test_markdown(&schema, "AWS::Test::DeprecatedReadOnly")
             .expect("deprecated read-only properties must not create unresolved links");
 
         assert!(!md.contains("### `info`"), "{md}");
@@ -19840,7 +20240,7 @@ mod tests {
             handlers: BTreeMap::new(),
         };
 
-        let md = generate_markdown(&schema, "AWS::Test::Resource", MARKDOWN_EXAMPLE).unwrap();
+        let md = generate_test_markdown(&schema, "AWS::Test::Resource").unwrap();
 
         assert!(
             md.contains("**Write-only:** Yes"),
@@ -19941,7 +20341,7 @@ mod tests {
             ("Rust", generate_synthetic_schema_code(&schema)),
             (
                 "Markdown",
-                generate_markdown(&schema, "AWS::Test::DeprecatedWriteOnly", MARKDOWN_EXAMPLE),
+                generate_test_markdown(&schema, "AWS::Test::DeprecatedWriteOnly"),
             ),
         ] {
             let generated =
@@ -20080,11 +20480,7 @@ mod tests {
             ("Rust", generate_synthetic_schema_code(&schema)),
             (
                 "Markdown",
-                generate_markdown(
-                    &schema,
-                    "AWS::Test::NestedWriteOnlyMissing",
-                    MARKDOWN_EXAMPLE,
-                ),
+                generate_test_markdown(&schema, "AWS::Test::NestedWriteOnlyMissing"),
             ),
         ] {
             let error = result
@@ -20138,11 +20534,7 @@ mod tests {
             ("Rust", generate_synthetic_schema_code(&schema)),
             (
                 "Markdown",
-                generate_markdown(
-                    &schema,
-                    "AWS::Test::NestedWriteOnlySharedRef",
-                    MARKDOWN_EXAMPLE,
-                ),
+                generate_test_markdown(&schema, "AWS::Test::NestedWriteOnlySharedRef"),
             ),
         ] {
             let error = result.expect_err(
@@ -20202,11 +20594,7 @@ mod tests {
             ("Rust", generate_synthetic_schema_code(&schema)),
             (
                 "Markdown",
-                generate_markdown(
-                    &schema,
-                    "AWS::Test::NestedWriteOnlyInlineCollision",
-                    MARKDOWN_EXAMPLE,
-                ),
+                generate_test_markdown(&schema, "AWS::Test::NestedWriteOnlyInlineCollision"),
             ),
         ] {
             let error = result.expect_err(
@@ -20248,11 +20636,7 @@ mod tests {
             ("Rust", generate_synthetic_schema_code(&schema)),
             (
                 "Markdown",
-                generate_markdown(
-                    &schema,
-                    "AWS::Test::NestedReadWriteConflict",
-                    MARKDOWN_EXAMPLE,
-                ),
+                generate_test_markdown(&schema, "AWS::Test::NestedReadWriteConflict"),
             ),
         ] {
             let error = result
@@ -20612,7 +20996,7 @@ mod tests {
             any_of: vec![],
             handlers: BTreeMap::new(),
         };
-        let md = generate_markdown(&schema, "AWS::S3::Bucket", MARKDOWN_EXAMPLE).unwrap();
+        let md = generate_test_markdown(&schema, "AWS::S3::Bucket").unwrap();
         // DSL Identifier column must use snake_case
         assert!(
             md.contains("`aws.s3.Bucket.ObjectOwnership.bucket_owner_enforced`"),
