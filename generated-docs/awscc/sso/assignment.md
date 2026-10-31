@@ -10,22 +10,8 @@ Resource Type definition for SSO assignmet
 ## Example
 
 ```crn
-let identity_center = awscc.sso.Instance {
-  name = 'example-identity-center'
-
-  tags = {
-    Environment = 'example'
-  }
-}
-
-let developers = awscc.identitystore.Group {
-  identity_store_id = identity_center.identity_store_id
-  display_name      = 'ExampleDevelopers'
-  description       = 'Developers for the example workload'
-}
-
 let read_only = awscc.sso.PermissionSet {
-  instance_arn     = identity_center.instance_arn
+  instance_arn     = 'arn:aws:sso:::instance/ssoins-1234567890abcdef'
   name             = 'ExampleReadOnly'
   description      = 'Read-only access for the example workload'
   session_duration = 'PT1H'
@@ -41,11 +27,11 @@ let read_only = awscc.sso.PermissionSet {
 }
 
 awscc.sso.Assignment {
-  instance_arn       = identity_center.instance_arn
+  instance_arn       = 'arn:aws:sso:::instance/ssoins-1234567890abcdef'
   permission_set_arn = read_only.permission_set_arn
-  principal_id       = developers.group_id
+  principal_id       = '12345678-1234-1234-1234-123456789012'
   principal_type     = aws.sso.Assignment.PrincipalType.group
-  target_id          = identity_center.owner_account_id
+  target_id          = '123456789012'
   target_type        = aws.sso.Assignment.TargetType.aws_account
 }
 ```

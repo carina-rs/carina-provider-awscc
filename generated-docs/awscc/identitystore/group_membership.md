@@ -17,7 +17,7 @@ let developers = awscc.identitystore.Group {
 }
 
 awscc.identitystore.GroupMembership {
-  identity_store_id = 'd-1234567890'
+  identity_store_id = developers.identity_store_id
   group_id          = developers.group_id
 
   member_id = {

@@ -29,12 +29,7 @@ awscc.cloudfront.Distribution {
         aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.CachedMethods.head,
       ]
 
-      forwarded_values       = {
-        query_string = false
-        cookies      = {
-          forward = aws.cloudfront.Distribution.DistributionConfig.CacheBehavior.ForwardedValues.Cookies.Forward.none
-        }
-      }
+      cache_policy_id         = '658327ea-f89d-4fab-a63d-7e88639e58f6'
     }
 
     origin {

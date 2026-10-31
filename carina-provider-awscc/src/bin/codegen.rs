@@ -523,7 +523,10 @@ struct Args {
     format: String,
 
     /// Directory containing generated-doc examples (`<service>_<resource>/main.crn`).
-    #[arg(long)]
+    #[arg(
+        long,
+        required_if_eq_any([("format", "markdown"), ("format", "md")])
+    )]
     examples_dir: Option<PathBuf>,
 }
 
@@ -1688,10 +1691,7 @@ fn full_resource_name_from_type(type_name: &str) -> Result<String> {
     Ok(format!("{}_{}", service, resource))
 }
 
-fn load_markdown_example(examples_dir: Option<&Path>, type_name: &str) -> Result<Option<String>> {
-    let Some(examples_dir) = examples_dir else {
-        return Ok(None);
-    };
+fn load_markdown_example(examples_dir: &Path, type_name: &str) -> Result<String> {
     if !examples_dir.is_dir() {
         anyhow::bail!(
             "--examples-dir must be an existing directory: {}",
@@ -1702,7 +1702,7 @@ fn load_markdown_example(examples_dir: Option<&Path>, type_name: &str) -> Result
         .join(full_resource_name_from_type(type_name)?)
         .join("main.crn");
     match std::fs::read_to_string(&path) {
-        Ok(source) => Ok(Some(preprocess_markdown_example(&source))),
+        Ok(source) => Ok(preprocess_markdown_example(&source)),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             anyhow::bail!("Example file not found: {}", path.display())
         }
@@ -1984,8 +1984,12 @@ fn main() -> Result<()> {
     // Generate output based on format
     let output = match args.format.as_str() {
         "markdown" | "md" => {
-            let example = load_markdown_example(args.examples_dir.as_deref(), &args.type_name)?;
-            generate_markdown_with_example(&schema, &args.type_name, example.as_deref())?
+            let examples_dir = args
+                .examples_dir
+                .as_deref()
+                .expect("clap requires --examples-dir for Markdown output");
+            let example = load_markdown_example(examples_dir, &args.type_name)?;
+            generate_markdown(&schema, &args.type_name, &example)?
         }
         "rust" => generate_schema_code(&schema, &args.type_name)?,
         other => anyhow::bail!("Unknown format: {}. Use 'rust' or 'markdown'.", other),
@@ -3470,16 +3474,7 @@ fn claim_unique_markdown_heading(
     unreachable!("an integer suffix always yields a fresh heading")
 }
 
-#[cfg(test)]
-fn generate_markdown(schema: &CfnSchema, type_name: &str) -> Result<String> {
-    generate_markdown_with_example(schema, type_name, None)
-}
-
-fn generate_markdown_with_example(
-    schema: &CfnSchema,
-    type_name: &str,
-    example: Option<&str>,
-) -> Result<String> {
+fn generate_markdown(schema: &CfnSchema, type_name: &str, example: &str) -> Result<String> {
     reset_recursion_guard();
     derive_mutually_exclusive_property_groups(schema)?;
 
@@ -3950,14 +3945,7 @@ fn generate_markdown_with_example(
         .with_context(|| format!("generated invalid Markdown for awscc.{dsl_resource}"))
 }
 
-fn write_markdown_example(
-    page: &mut PageBuilder<MarkdownTarget>,
-    example: Option<&str>,
-) -> Result<()> {
-    let Some(example) = example else {
-        return Ok(());
-    };
-
+fn write_markdown_example(page: &mut PageBuilder<MarkdownTarget>, example: &str) -> Result<()> {
     page.heading(Heading::plain(2, "Example"))?;
     page.push_str("```crn\n");
     page.push_str(example);
@@ -8112,6 +8100,7 @@ mod tests {
     use super::*;
 
     const EXTRACT_ENUM_SNAPSHOT_PRE_365: &str = "tests/fixtures/extract_enum_snapshot_pre_365.json";
+    const MARKDOWN_EXAMPLE: &str = "awscc.test.Resource {}\n";
 
     fn cfn_schema_for_codegen_tests(type_name: &str) -> CfnSchema {
         let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -8743,7 +8732,7 @@ mod tests {
             let schema = cfn_schema_for_codegen_tests(type_name);
             let generated = generate_schema_code(&schema, type_name)
                 .unwrap_or_else(|error| panic!("{type_name} schema generation failed: {error}"));
-            let markdown = generate_markdown(&schema, type_name)
+            let markdown = generate_markdown(&schema, type_name, MARKDOWN_EXAMPLE)
                 .unwrap_or_else(|error| panic!("{type_name} markdown generation failed: {error}"));
 
             assert!(
@@ -8837,7 +8826,7 @@ mod tests {
             TEST_EMPTY_OBJECT_PROPERTIES[0].property_path,
         )));
 
-        let markdown = generate_markdown(&schema, "AWS::Test::AcronymPath")
+        let markdown = generate_markdown(&schema, "AWS::Test::AcronymPath", MARKDOWN_EXAMPLE)
             .expect("raw acronym parent must classify during Markdown rendering");
         assert!(
             markdown.contains("| `marker` | Empty struct (`{}`) |"),
@@ -8884,7 +8873,7 @@ mod tests {
         assert!(generated.contains("StructField::optional(\"enabled\""));
         assert!(!generated.contains("child_policy"), "{generated}");
 
-        let markdown = generate_markdown(&schema, "AWS::Test::NestedOmission")
+        let markdown = generate_markdown(&schema, "AWS::Test::NestedOmission", MARKDOWN_EXAMPLE)
             .expect("nested omission must be documentable");
         assert!(!markdown.contains("| `child_policy` |"), "{markdown}");
         assert!(markdown.contains("`config.child_policy`"), "{markdown}");
@@ -9415,7 +9404,7 @@ mod tests {
         ] {
             assert_empty_field(&waf_generated, field);
         }
-        let waf_markdown = generate_markdown(&waf_schema, "AWS::WAFv2::WebACL")
+        let waf_markdown = generate_markdown(&waf_schema, "AWS::WAFv2::WebACL", MARKDOWN_EXAMPLE)
             .expect("WAFv2 WebACL markdown generation should succeed");
         assert!(
             waf_markdown.contains("| `all_query_arguments` | Empty struct (`{}`) |"),
@@ -9438,7 +9427,7 @@ mod tests {
         let schema = cfn_schema_for_codegen_tests("AWS::SNS::Topic");
         let generated = generate_schema_code(&schema, "AWS::SNS::Topic")
             .expect("SNS Topic schema generation should succeed");
-        let markdown = generate_markdown(&schema, "AWS::SNS::Topic")
+        let markdown = generate_markdown(&schema, "AWS::SNS::Topic", MARKDOWN_EXAMPLE)
             .expect("SNS Topic markdown generation should succeed");
 
         assert!(!generated.contains("build_subscription_attribute"));
@@ -9455,7 +9444,7 @@ mod tests {
 
         let generated = generate_schema_code(&schema, "AWS::CloudWatch::Alarm")
             .expect("CloudWatch Alarm schema generation should succeed");
-        let markdown = generate_markdown(&schema, "AWS::CloudWatch::Alarm")
+        let markdown = generate_markdown(&schema, "AWS::CloudWatch::Alarm", MARKDOWN_EXAMPLE)
             .expect("CloudWatch Alarm markdown generation should succeed");
 
         for property_name in [
@@ -9539,7 +9528,7 @@ mod tests {
 
         let generated = generate_schema_code(&schema, "AWS::Budgets::Budget")
             .expect("Budgets Budget schema generation should succeed");
-        let markdown = generate_markdown(&schema, "AWS::Budgets::Budget")
+        let markdown = generate_markdown(&schema, "AWS::Budgets::Budget", MARKDOWN_EXAMPLE)
             .expect("Budgets Budget markdown generation should succeed");
 
         assert!(
@@ -9587,7 +9576,7 @@ mod tests {
         let schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
         let generated = generate_schema_code(&schema, "AWS::Budgets::Budget")
             .expect("Budgets Budget schema generation should succeed");
-        let markdown = generate_markdown(&schema, "AWS::Budgets::Budget")
+        let markdown = generate_markdown(&schema, "AWS::Budgets::Budget", MARKDOWN_EXAMPLE)
             .expect("Budgets Budget markdown generation should succeed");
 
         assert!(
@@ -9671,7 +9660,7 @@ mod tests {
         let schema = cfn_schema_for_codegen_tests("AWS::Scheduler::Schedule");
         let generated = generate_schema_code(&schema, "AWS::Scheduler::Schedule")
             .expect("Scheduler Schedule schema generation should succeed");
-        let markdown = generate_markdown(&schema, "AWS::Scheduler::Schedule")
+        let markdown = generate_markdown(&schema, "AWS::Scheduler::Schedule", MARKDOWN_EXAMPLE)
             .expect("Scheduler Schedule markdown generation should succeed");
         let definitions = schema.definitions.as_ref().expect("Schedule definitions");
 
@@ -9768,7 +9757,7 @@ mod tests {
             "generated schema must explain the measured tracking limitation: {generated}"
         );
 
-        let markdown = generate_markdown(&schema, "AWS::Scheduler::Schedule")
+        let markdown = generate_markdown(&schema, "AWS::Scheduler::Schedule", MARKDOWN_EXAMPLE)
             .expect("Scheduler Schedule markdown generation should succeed");
         assert!(
             markdown.contains("- **Type:** SchedulerScheduleGroupName"),
@@ -10032,7 +10021,7 @@ mod tests {
             "map value struct fields must be generated: {generated}"
         );
 
-        let markdown = generate_markdown(&schema, "AWS::WAFv2::WebACL")
+        let markdown = generate_markdown(&schema, "AWS::WAFv2::WebACL", MARKDOWN_EXAMPLE)
             .expect("typed object map markdown generation should succeed");
         assert!(
             markdown.contains("Map\\<String, [Struct(CustomResponseBody)]"),
@@ -10633,7 +10622,11 @@ mod tests {
             ("Rust", generate_synthetic_schema_code(&schema)),
             (
                 "Markdown",
-                generate_markdown(&schema, "AWS::Test::PathDependentReadOnly"),
+                generate_markdown(
+                    &schema,
+                    "AWS::Test::PathDependentReadOnly",
+                    MARKDOWN_EXAMPLE,
+                ),
             ),
         ] {
             let error = result.expect_err(
@@ -10715,7 +10708,11 @@ mod tests {
             ("Rust", generate_synthetic_schema_code(&schema)),
             (
                 "Markdown",
-                generate_markdown(&schema, "AWS::ElasticLoadBalancingV2::Listener"),
+                generate_markdown(
+                    &schema,
+                    "AWS::ElasticLoadBalancingV2::Listener",
+                    MARKDOWN_EXAMPLE,
+                ),
             ),
         ] {
             let error = result.expect_err(
@@ -10818,7 +10815,7 @@ mod tests {
         ]);
         schema.read_only_properties = vec!["/properties/Left/Config/Owned".to_string()];
 
-        let error = generate_markdown(&schema, "AWS::Test::InlineCollision")
+        let error = generate_markdown(&schema, "AWS::Test::InlineCollision", MARKDOWN_EXAMPLE)
             .expect_err("Markdown must not reuse the first path for ambiguous inline structs");
         let message = error.to_string();
         assert!(message.contains("Config"), "{message}");
@@ -15519,7 +15516,7 @@ mod tests {
             ),
         )]));
 
-        let md = generate_markdown(&schema, &schema.type_name).unwrap();
+        let md = generate_markdown(&schema, &schema.type_name, MARKDOWN_EXAMPLE).unwrap();
         let expected = format!(
             "| `ipv6_support` | [Enum (Ipv6Support)](#optionsipv6_support-ipv6support) | No | {} |",
             description.replace('|', "\\|")
@@ -15590,7 +15587,7 @@ mod tests {
             handlers: BTreeMap::new(),
         };
 
-        let md = generate_markdown(&schema, "AWS::S3::Bucket").unwrap();
+        let md = generate_markdown(&schema, "AWS::S3::Bucket", MARKDOWN_EXAMPLE).unwrap();
         assert!(
             md.contains("Enum (ObjectLockEnabled)"),
             "Struct field with const_value should display as Enum in markdown, got:\n{}",
@@ -15679,7 +15676,7 @@ mod tests {
             handlers: BTreeMap::new(),
         };
 
-        let md = generate_markdown(&schema, "AWS::S3::Bucket").unwrap();
+        let md = generate_markdown(&schema, "AWS::S3::Bucket", MARKDOWN_EXAMPLE).unwrap();
         assert!(
             md.contains("Enum (RetentionMode)"),
             "Struct field with $ref to enum-only definition should display as Enum, got:\n{}",
@@ -15816,7 +15813,7 @@ mod tests {
             handlers: BTreeMap::new(),
         };
 
-        let md = generate_markdown(&schema, "AWS::EC2::SecurityGroup").unwrap();
+        let md = generate_markdown(&schema, "AWS::EC2::SecurityGroup", MARKDOWN_EXAMPLE).unwrap();
         let egress_count = md
             .matches("aws.ec2.SecurityGroup.Egress.IpProtocol.tcp")
             .count();
@@ -15872,7 +15869,7 @@ mod tests {
             ),
         ] {
             let schema = cfn_schema_for_codegen_tests(type_name);
-            let md = generate_markdown(&schema, type_name).unwrap();
+            let md = generate_markdown(&schema, type_name, MARKDOWN_EXAMPLE).unwrap();
 
             assert!(md.contains(expected), "missing {expected}:\n{md}");
             carina_docgen::check_page(&md).expect("generated Markdown should pass shared checks");
@@ -15882,7 +15879,8 @@ mod tests {
     #[test]
     fn test_markdown_definition_sections_are_sorted_by_visible_heading() {
         let schema = cfn_schema_for_codegen_tests("AWS::CloudFront::Distribution");
-        let md = generate_markdown(&schema, "AWS::CloudFront::Distribution").unwrap();
+        let md =
+            generate_markdown(&schema, "AWS::CloudFront::Distribution", MARKDOWN_EXAMPLE).unwrap();
 
         let enum_section = md
             .split_once("## Enum Values\n\n")
@@ -15950,7 +15948,8 @@ mod tests {
             ),
         ]));
 
-        let md = generate_markdown(&schema, "AWS::Test::SharedDefinition").unwrap();
+        let md =
+            generate_markdown(&schema, "AWS::Test::SharedDefinition", MARKDOWN_EXAMPLE).unwrap();
 
         assert_eq!(md.matches("### shared_options\n\n").count(), 1, "{md}");
         assert_eq!(
@@ -16017,7 +16016,12 @@ mod tests {
             ),
         )]));
 
-        let md = generate_markdown(&schema, "AWS::Test::SharedNestedDefinition").unwrap();
+        let md = generate_markdown(
+            &schema,
+            "AWS::Test::SharedNestedDefinition",
+            MARKDOWN_EXAMPLE,
+        )
+        .unwrap();
 
         assert!(
             md.contains("### shared_options\n\nUsed by: `left`, `right`\n\n"),
@@ -16091,7 +16095,12 @@ mod tests {
             ),
         ]));
 
-        let md = generate_markdown(&schema, "AWS::Test::NestedSharedDefinition").unwrap();
+        let md = generate_markdown(
+            &schema,
+            "AWS::Test::NestedSharedDefinition",
+            MARKDOWN_EXAMPLE,
+        )
+        .unwrap();
 
         assert!(md.contains("### outer.inner_field\n\n| Field |"), "{md}");
         assert!(!md.contains("Used by: `outer.inner_field`"), "{md}");
@@ -16103,7 +16112,7 @@ mod tests {
     #[test]
     fn test_markdown_used_by_paths_follow_all_shared_ancestor_paths() {
         let schema = cfn_schema_for_codegen_tests("AWS::WAFv2::WebACL");
-        let md = generate_markdown(&schema, "AWS::WAFv2::WebACL").unwrap();
+        let md = generate_markdown(&schema, "AWS::WAFv2::WebACL", MARKDOWN_EXAMPLE).unwrap();
 
         assert!(
             md.contains(concat!(
@@ -16147,12 +16156,8 @@ mod tests {
         );
 
         let schema = cfn_schema_for_codegen_tests("AWS::EC2::TransitGatewayAttachment");
-        let md = generate_markdown_with_example(
-            &schema,
-            "AWS::EC2::TransitGatewayAttachment",
-            Some(&example),
-        )
-        .unwrap();
+        let md =
+            generate_markdown(&schema, "AWS::EC2::TransitGatewayAttachment", &example).unwrap();
 
         let example_position = md.find("## Example\n\n```crn\n").expect("example heading");
         let arguments_position = md.find("## Argument Reference").expect("argument heading");
@@ -16162,14 +16167,33 @@ mod tests {
     }
 
     #[test]
+    fn test_markdown_format_requires_examples_dir() {
+        let error = Args::try_parse_from([
+            "carina-codegen",
+            "--type-name",
+            "AWS::EC2::TransitGatewayAttachment",
+            "--format",
+            "markdown",
+        ])
+        .expect_err("Markdown output without --examples-dir must be rejected");
+
+        assert_eq!(
+            error.kind(),
+            clap::error::ErrorKind::MissingRequiredArgument
+        );
+        assert!(
+            error.to_string().contains("--examples-dir <EXAMPLES_DIR>"),
+            "{error}"
+        );
+    }
+
+    #[test]
     fn test_load_markdown_example_rejects_non_directory() {
         let not_directory = tempfile::NamedTempFile::new().unwrap();
 
-        let error = load_markdown_example(
-            Some(not_directory.path()),
-            "AWS::EC2::TransitGatewayAttachment",
-        )
-        .unwrap_err();
+        let error =
+            load_markdown_example(not_directory.path(), "AWS::EC2::TransitGatewayAttachment")
+                .unwrap_err();
 
         assert_eq!(
             error.to_string(),
@@ -16188,11 +16212,9 @@ mod tests {
             .join("ec2_transit_gateway_attachment")
             .join("main.crn");
 
-        let error = load_markdown_example(
-            Some(examples_dir.path()),
-            "AWS::EC2::TransitGatewayAttachment",
-        )
-        .unwrap_err();
+        let error =
+            load_markdown_example(examples_dir.path(), "AWS::EC2::TransitGatewayAttachment")
+                .unwrap_err();
 
         assert_eq!(
             error.to_string(),
@@ -16204,7 +16226,7 @@ mod tests {
     fn test_markdown_collects_struct_below_ref_to_array_definition() {
         let schema = cfn_schema_for_codegen_tests("AWS::WAFv2::WebACL");
 
-        let md = generate_markdown(&schema, "AWS::WAFv2::WebACL")
+        let md = generate_markdown(&schema, "AWS::WAFv2::WebACL", MARKDOWN_EXAMPLE)
             .expect("array-definition item structs should have target headings");
 
         assert!(
@@ -16260,7 +16282,7 @@ mod tests {
             ),
         ]);
 
-        let md = generate_markdown(&schema, "AWS::Test::InlineOptions").unwrap();
+        let md = generate_markdown(&schema, "AWS::Test::InlineOptions", MARKDOWN_EXAMPLE).unwrap();
 
         assert!(md.contains("[Struct(Options)](#leftoptions)"), "{md}");
         assert!(md.contains("[Struct(Options)](#rightoptions)"), "{md}");
@@ -16340,7 +16362,7 @@ mod tests {
             },
         )]));
 
-        let md = generate_markdown(&schema, "AWS::Test::OneOfArray")
+        let md = generate_markdown(&schema, "AWS::Test::OneOfArray", MARKDOWN_EXAMPLE)
             .expect("a linked OneOf array item must have a registered target heading");
 
         assert!(
@@ -16373,7 +16395,7 @@ mod tests {
             },
         );
 
-        let md = generate_markdown(&schema, "AWS::Test::DirectOneOf").unwrap();
+        let md = generate_markdown(&schema, "AWS::Test::DirectOneOf", MARKDOWN_EXAMPLE).unwrap();
 
         assert!(md.contains("### `choice`\n\n- **Type:** String\n"), "{md}");
         assert!(!md.contains("## Struct Definitions"), "{md}");
@@ -16509,7 +16531,7 @@ mod tests {
             handlers: BTreeMap::new(),
         };
 
-        let md = generate_markdown(&schema, "AWS::Test::Resource").unwrap();
+        let md = generate_markdown(&schema, "AWS::Test::Resource", MARKDOWN_EXAMPLE).unwrap();
 
         assert_eq!(
             md.matches("### rules.destination_protocol (Protocol)")
@@ -16628,7 +16650,7 @@ mod tests {
             handlers: BTreeMap::new(),
         };
 
-        let md = generate_markdown(&schema, "AWS::Test::Resource").unwrap();
+        let md = generate_markdown(&schema, "AWS::Test::Resource", MARKDOWN_EXAMPLE).unwrap();
 
         // With structural disambiguation, the two Status enums keep the same
         // plain kind and differ by namespace.
@@ -16717,7 +16739,7 @@ mod tests {
             handlers: BTreeMap::new(),
         };
 
-        let md = generate_markdown(&schema, "AWS::Test::Resource").unwrap();
+        let md = generate_markdown(&schema, "AWS::Test::Resource", MARKDOWN_EXAMPLE).unwrap();
 
         // The struct field table should contain a link, not plain "Enum".
         assert!(
@@ -16975,7 +16997,7 @@ mod tests {
             handlers: BTreeMap::new(),
         };
 
-        let md = generate_markdown(&schema, "AWS::EC2::VPNGateway").unwrap();
+        let md = generate_markdown(&schema, "AWS::EC2::VPNGateway", MARKDOWN_EXAMPLE).unwrap();
 
         assert!(
             md.contains("[Enum (Type)](#type-type)"),
@@ -17029,7 +17051,7 @@ mod tests {
             handlers: BTreeMap::new(),
         };
 
-        let md = generate_markdown(&schema, "AWS::Test::Resource").unwrap();
+        let md = generate_markdown(&schema, "AWS::Test::Resource", MARKDOWN_EXAMPLE).unwrap();
 
         assert!(
             md.contains("**Default:** `\"/\"`"),
@@ -17141,7 +17163,7 @@ mod tests {
             handlers: BTreeMap::new(),
         };
 
-        let md = generate_markdown(&schema, "AWS::Test::Resource").unwrap();
+        let md = generate_markdown(&schema, "AWS::Test::Resource", MARKDOWN_EXAMPLE).unwrap();
 
         assert!(
             md.contains("**Create-only:** Yes"),
@@ -17187,7 +17209,7 @@ mod tests {
             handlers: BTreeMap::new(),
         };
 
-        let md = generate_markdown(&schema, "AWS::Test::Resource").unwrap();
+        let md = generate_markdown(&schema, "AWS::Test::Resource", MARKDOWN_EXAMPLE).unwrap();
 
         assert!(
             md.contains("## Attribute Reference"),
@@ -17219,7 +17241,7 @@ mod tests {
         );
         schema.read_only_properties = vec!["/properties/Info".to_string()];
 
-        let md = generate_markdown(&schema, "AWS::Test::DeprecatedReadOnly")
+        let md = generate_markdown(&schema, "AWS::Test::DeprecatedReadOnly", MARKDOWN_EXAMPLE)
             .expect("deprecated read-only properties must not create unresolved links");
 
         assert!(!md.contains("### `info`"), "{md}");
@@ -19593,7 +19615,7 @@ mod tests {
             handlers: BTreeMap::new(),
         };
 
-        let md = generate_markdown(&schema, "AWS::Test::Resource").unwrap();
+        let md = generate_markdown(&schema, "AWS::Test::Resource", MARKDOWN_EXAMPLE).unwrap();
 
         assert!(
             md.contains("**Write-only:** Yes"),
@@ -19694,7 +19716,7 @@ mod tests {
             ("Rust", generate_synthetic_schema_code(&schema)),
             (
                 "Markdown",
-                generate_markdown(&schema, "AWS::Test::DeprecatedWriteOnly"),
+                generate_markdown(&schema, "AWS::Test::DeprecatedWriteOnly", MARKDOWN_EXAMPLE),
             ),
         ] {
             let generated =
@@ -19833,7 +19855,11 @@ mod tests {
             ("Rust", generate_synthetic_schema_code(&schema)),
             (
                 "Markdown",
-                generate_markdown(&schema, "AWS::Test::NestedWriteOnlyMissing"),
+                generate_markdown(
+                    &schema,
+                    "AWS::Test::NestedWriteOnlyMissing",
+                    MARKDOWN_EXAMPLE,
+                ),
             ),
         ] {
             let error = result
@@ -19887,7 +19913,11 @@ mod tests {
             ("Rust", generate_synthetic_schema_code(&schema)),
             (
                 "Markdown",
-                generate_markdown(&schema, "AWS::Test::NestedWriteOnlySharedRef"),
+                generate_markdown(
+                    &schema,
+                    "AWS::Test::NestedWriteOnlySharedRef",
+                    MARKDOWN_EXAMPLE,
+                ),
             ),
         ] {
             let error = result.expect_err(
@@ -19947,7 +19977,11 @@ mod tests {
             ("Rust", generate_synthetic_schema_code(&schema)),
             (
                 "Markdown",
-                generate_markdown(&schema, "AWS::Test::NestedWriteOnlyInlineCollision"),
+                generate_markdown(
+                    &schema,
+                    "AWS::Test::NestedWriteOnlyInlineCollision",
+                    MARKDOWN_EXAMPLE,
+                ),
             ),
         ] {
             let error = result.expect_err(
@@ -19989,7 +20023,11 @@ mod tests {
             ("Rust", generate_synthetic_schema_code(&schema)),
             (
                 "Markdown",
-                generate_markdown(&schema, "AWS::Test::NestedReadWriteConflict"),
+                generate_markdown(
+                    &schema,
+                    "AWS::Test::NestedReadWriteConflict",
+                    MARKDOWN_EXAMPLE,
+                ),
             ),
         ] {
             let error = result
@@ -20349,7 +20387,7 @@ mod tests {
             any_of: vec![],
             handlers: BTreeMap::new(),
         };
-        let md = generate_markdown(&schema, "AWS::S3::Bucket").unwrap();
+        let md = generate_markdown(&schema, "AWS::S3::Bucket", MARKDOWN_EXAMPLE).unwrap();
         // DSL Identifier column must use snake_case
         assert!(
             md.contains("`aws.s3.Bucket.ObjectOwnership.bucket_owner_enforced`"),

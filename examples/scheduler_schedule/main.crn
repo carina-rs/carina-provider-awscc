@@ -1,6 +1,7 @@
 # EventBridge Scheduler Schedule Example
 #
-# Creates an SNS target, an invocation role, and a six-hour schedule.
+# Creates an SNS target, an invocation role, and a six-hour schedule in the
+# default group, the only group Cloud Control can read by Schedule.Name.
 
 provider awscc {
   region = awscc.Region.ap_northeast_1
@@ -49,6 +50,7 @@ awscc.iam.RolePolicy {
 awscc.scheduler.Schedule {
   name                = 'carina-example-publish-notification'
   description         = 'Publish a notification every six hours'
+  group_name          = 'default'
   schedule_expression = 'rate(6 hours)'
   state               = aws.scheduler.Schedule.ScheduleState.enabled
 
@@ -59,6 +61,6 @@ awscc.scheduler.Schedule {
   target = {
     arn      = notifications.topic_arn
     role_arn = scheduler_role.arn
-    input    = '{"operation":"refresh"}'
+    input    = 'Scheduled notification from Carina'
   }
 }

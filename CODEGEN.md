@@ -146,7 +146,7 @@ cargo run --bin codegen -- --type-name AWS::EC2::VPC --print-module-name       #
 cargo run --bin codegen -- --type-name AWS::EC2::VPC --print-full-resource-name # ec2_vpc
 cargo run --bin codegen -- --type-name AWS::EC2::VPC --print-dsl-resource-name  # ec2.vpc
 
-# Generate Markdown documentation, including a matching example when present
+# Generate Markdown documentation, including the required matching example
 cargo run --bin codegen -- --file schema.json --type-name AWS::EC2::VPC \
   --format markdown --examples-dir examples
 ```
@@ -201,8 +201,9 @@ aws-vault exec <profile> -- ./scripts/generate-docs.sh
 
 Output goes to `generated-docs/awscc/`. Each resource gets a Markdown file with
 Starlight/Astro frontmatter. Codegen inserts example code from
-`examples/{resource}/main.crn` before validating the page, when that file is
-present; the shell script only adds frontmatter and removes the generated H1.
+`examples/{service}_{resource}/main.crn` before validating the page. This file
+is required for every documented resource, and the docs build fails when it is
+missing; the shell script only adds frontmatter and removes the generated H1.
 
 Struct and enum section headings use the DSL field path. A `$ref` definition
 reached from more than one path instead uses its `snake_case` definition name,

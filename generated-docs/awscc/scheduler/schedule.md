@@ -53,6 +53,7 @@ awscc.iam.RolePolicy {
 awscc.scheduler.Schedule {
   name                = 'carina-example-publish-notification'
   description         = 'Publish a notification every six hours'
+  group_name          = 'default'
   schedule_expression = 'rate(6 hours)'
   state               = aws.scheduler.Schedule.ScheduleState.enabled
 
@@ -63,7 +64,7 @@ awscc.scheduler.Schedule {
   target = {
     arn      = notifications.topic_arn
     role_arn = scheduler_role.arn
-    input    = '{"operation":"refresh"}'
+    input    = 'Scheduled notification from Carina'
   }
 }
 ```

@@ -10,16 +10,8 @@ Resource Type definition for SSO PermissionSet
 ## Example
 
 ```crn
-let identity_center = awscc.sso.Instance {
-  name = 'example-identity-center'
-
-  tags = {
-    Environment = 'example'
-  }
-}
-
 awscc.sso.PermissionSet {
-  instance_arn     = identity_center.instance_arn
+  instance_arn     = 'arn:aws:sso:::instance/ssoins-1234567890abcdef'
   name             = 'ExampleReadOnly'
   description      = 'Read-only access for the example workload'
   session_duration = 'PT1H'
