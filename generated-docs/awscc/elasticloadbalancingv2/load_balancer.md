@@ -12,12 +12,12 @@ Specifies an Application Load Balancer, a Network Load Balancer, or a Gateway Lo
 ```crn
 awscc.elasticloadbalancingv2.LoadBalancer {
   name            = 'registry-alb'
-  type            = 'application'
-  scheme          = 'internet-facing'
+  type            = aws.elasticloadbalancingv2.LoadBalancer.Type.application
+  scheme          = aws.elasticloadbalancingv2.LoadBalancer.Scheme.internet_facing
   subnets         = ['subnet-aaaa1111', 'subnet-bbbb2222']
   security_groups = ['sg-cccc3333']
 
-  tag {
+  tags = {
     Environment = 'example'
     Workload    = 'registry'
   }

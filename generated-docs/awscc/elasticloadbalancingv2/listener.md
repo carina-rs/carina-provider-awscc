@@ -13,14 +13,14 @@ Specifies a listener for an Application Load Balancer, Network Load Balancer, or
 awscc.elasticloadbalancingv2.Listener {
   load_balancer_arn = 'arn:aws:elasticloadbalancing:ap-northeast-1:123456789012:loadbalancer/app/registry-alb/abc123'
   port              = 443
-  protocol          = 'HTTPS'
+  protocol          = aws.elasticloadbalancingv2.Listener.Protocol.https
 
   certificate {
     certificate_arn = 'arn:aws:acm:ap-northeast-1:123456789012:certificate/aaaa-bbbb'
   }
 
   default_action {
-    type             = 'forward'
+    type             = aws.elasticloadbalancingv2.Listener.Action.Type.forward
     target_group_arn = 'arn:aws:elasticloadbalancing:ap-northeast-1:123456789012:targetgroup/registry-tg/def456'
   }
 }

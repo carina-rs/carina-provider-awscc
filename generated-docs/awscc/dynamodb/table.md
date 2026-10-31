@@ -16,7 +16,7 @@ The ``AWS::DynamoDB::Table`` resource creates a DDB table. For more information,
 ```crn
 awscc.dynamodb.Table {
   table_name   = 'jti-store'
-  billing_mode = awscc.dynamodb.Table.BillingMode.pay_per_request
+  billing_mode = aws.dynamodb.Table.BillingMode.pay_per_request
 
   attribute_definition {
     attribute_name = 'jti'

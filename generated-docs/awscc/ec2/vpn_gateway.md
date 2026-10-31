@@ -12,7 +12,7 @@ Specifies a virtual private gateway. A virtual private gateway is the endpoint o
 
 ```crn
 awscc.ec2.VpnGateway {
-  type = awscc.ec2.VpnGateway.Type.ipsec.1
+  type = aws.ec2.VpnGateway.Type.ipsec_1
 
   tags = {
     Environment = 'example'

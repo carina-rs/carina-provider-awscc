@@ -109,7 +109,7 @@ awscc.ec2.SubnetRouteTableAssociation {
 # --- Elastic IPs and NAT Gateways ---
 
 let eip_1a = awscc.ec2.Eip {
-  domain = awscc.ec2.Eip.Domain.vpc
+  domain = aws.ec2.Eip.Domain.vpc
 
   tags = {
     Name = 'nat-gw-ap-northeast-1a'
@@ -117,7 +117,7 @@ let eip_1a = awscc.ec2.Eip {
 }
 
 let eip_1c = awscc.ec2.Eip {
-  domain = awscc.ec2.Eip.Domain.vpc
+  domain = aws.ec2.Eip.Domain.vpc
 
   tags = {
     Name = 'nat-gw-ap-northeast-1c'
@@ -125,7 +125,7 @@ let eip_1c = awscc.ec2.Eip {
 }
 
 let eip_1d = awscc.ec2.Eip {
-  domain = awscc.ec2.Eip.Domain.vpc
+  domain = aws.ec2.Eip.Domain.vpc
 
   tags = {
     Name = 'nat-gw-ap-northeast-1d'

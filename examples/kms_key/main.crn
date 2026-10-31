@@ -8,10 +8,10 @@ awscc.kms.Key {
   description = 'Example signing key'
 
   key_policy = {
-    version = '2012-10-17'
+    version = aws.iam.PolicyDocument.Version.2012_10_17
     statement {
       sid    = 'AllowRootAccountAccess'
-      effect = 'Allow'
+      effect = aws.iam.PolicyDocument.Statement.Effect.allow
 
       principal = {
         aws = 'arn:aws:iam::111122223333:root'
@@ -22,8 +22,8 @@ awscc.kms.Key {
     }
   }
 
-  key_usage              = awscc.kms.Key.KeyUsage.sign_verify
-  key_spec               = awscc.kms.Key.KeySpec.ecc_nist_p256
+  key_usage              = aws.kms.Key.KeyUsage.sign_verify
+  key_spec               = aws.kms.Key.KeySpec.ecc_nist_p256
   enable_key_rotation    = false
   pending_window_in_days = 7
 

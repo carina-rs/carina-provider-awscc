@@ -27,7 +27,7 @@ let public_subnet = awscc.ec2.Subnet {
 }
 
 let eip = awscc.ec2.Eip {
-  domain = awscc.ec2.Eip.Domain.vpc
+  domain = aws.ec2.Eip.Domain.vpc
 }
 
 awscc.ec2.NatGateway {

@@ -15,9 +15,9 @@ awscc.iam.Role {
   role_name = 'my-example-role'
 
   assume_role_policy_document = {
-    version = '2012-10-17'
+    version = aws.iam.PolicyDocument.Version.2012_10_17
     statement {
-      effect = 'Allow'
+      effect = aws.iam.PolicyDocument.Statement.Effect.allow
 
       principal = {
         service = 'lambda.amazonaws.com'
