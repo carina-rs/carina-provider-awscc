@@ -1,9 +1,55 @@
 # WAFv2 Web ACL Association Example
 #
-# Creates a regional web ACL and associates it with an application load balancer.
+# Creates a regional web ACL and associates it with an internal application load balancer.
 
 provider awscc {
   region = awscc.Region.ap_northeast_1
+}
+
+let vpc = awscc.ec2.Vpc {
+  cidr_block           = '10.0.0.0/16'
+  enable_dns_support   = true
+  enable_dns_hostnames = true
+
+  tags = {
+    Environment = 'example'
+  }
+}
+
+let subnet_a = awscc.ec2.Subnet {
+  vpc_id            = vpc.vpc_id
+  cidr_block        = '10.0.1.0/24'
+  availability_zone = 'ap-northeast-1a'
+
+  tags = {
+    Environment = 'example'
+  }
+}
+
+let subnet_c = awscc.ec2.Subnet {
+  vpc_id            = vpc.vpc_id
+  cidr_block        = '10.0.2.0/24'
+  availability_zone = 'ap-northeast-1c'
+
+  tags = {
+    Environment = 'example'
+  }
+}
+
+let load_balancer_security_group = awscc.ec2.SecurityGroup {
+  vpc_id            = vpc.vpc_id
+  group_description = 'Allow HTTP traffic to the example load balancer'
+
+  security_group_ingress {
+    ip_protocol = tcp
+    from_port   = 80
+    to_port     = 80
+    cidr_ip     = '10.0.0.0/16'
+  }
+
+  tags = {
+    Environment = 'example'
+  }
 }
 
 let web_acl = awscc.wafv2.WebAcl {
@@ -29,9 +75,9 @@ let web_acl = awscc.wafv2.WebAcl {
 let load_balancer = awscc.elasticloadbalancingv2.LoadBalancer {
   name            = 'carina-example-alb'
   type            = aws.elasticloadbalancingv2.LoadBalancer.Type.application
-  scheme          = aws.elasticloadbalancingv2.LoadBalancer.Scheme.internet_facing
-  subnets         = ['subnet-aaaa1111', 'subnet-bbbb2222']
-  security_groups = ['sg-cccc3333']
+  scheme          = aws.elasticloadbalancingv2.LoadBalancer.Scheme.internal
+  subnets         = [subnet_a.subnet_id, subnet_c.subnet_id]
+  security_groups = [load_balancer_security_group.group_id]
 
   tags = {
     Environment = 'example'

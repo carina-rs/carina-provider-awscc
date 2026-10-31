@@ -27,6 +27,21 @@ let example_bucket = awscc.s3.Bucket {
   }
 }
 
+let bucket_reader = awscc.iam.Role {
+  assume_role_policy_document = {
+    version = aws.iam.PolicyDocument.Version.2012_10_17
+    statement {
+      effect = aws.iam.PolicyDocument.Statement.Effect.allow
+
+      principal = {
+        service = 'lambda.amazonaws.com'
+      }
+
+      action = 'sts:AssumeRole'
+    }
+  }
+}
+
 awscc.s3.BucketPolicy {
   bucket = example_bucket.bucket_name
 
@@ -37,7 +52,7 @@ awscc.s3.BucketPolicy {
       effect = aws.iam.PolicyDocument.Statement.Effect.allow
 
       principal = {
-        aws = 'arn:aws:iam::123456789012:root'
+        aws = bucket_reader.arn
       }
 
       action   = 's3:ListBucket'

@@ -26,10 +26,10 @@ Creates a new public or private hosted zone. You create records in a public host
 
 ```crn
 awscc.route53.HostedZone {
-  name = 'example.com.'
+  name = 'example-carina.com.'
 
   hosted_zone_config = {
-    comment = 'Public hosted zone for example.com'
+    comment = 'Public hosted zone for example-carina.com.'
   }
 
   hosted_zone_tag {

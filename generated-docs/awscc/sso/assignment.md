@@ -27,7 +27,7 @@ let read_only = awscc.sso.PermissionSet {
 }
 
 awscc.sso.Assignment {
-  instance_arn       = 'arn:aws:sso:::instance/ssoins-1234567890abcdef'
+  instance_arn       = read_only.instance_arn
   permission_set_arn = read_only.permission_set_arn
   principal_id       = '12345678-1234-1234-1234-123456789012'
   principal_type     = aws.sso.Assignment.PrincipalType.group

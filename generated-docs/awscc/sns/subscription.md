@@ -20,10 +20,9 @@ let alerts = awscc.sns.Topic {
 }
 
 awscc.sns.Subscription {
-  topic_arn            = alerts.topic_arn
-  protocol             = 'email'
-  endpoint             = 'alerts@example.com'
-  raw_message_delivery = false
+  topic_arn = alerts.topic_arn
+  protocol  = 'email'
+  endpoint  = 'alerts@example.com'
 }
 ```
 
