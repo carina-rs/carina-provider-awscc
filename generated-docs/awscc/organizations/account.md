@@ -7,7 +7,19 @@ CloudFormation Type: `AWS::Organizations::Account`
 
 You can use AWS::Organizations::Account to manage accounts in organization.
 
-This resource is protected from destruction by default because deleting it closes the AWS account. To opt out, set `directives { prevent_destroy = false }`.
+## Example
+
+```crn
+awscc.organizations.Account {
+  account_name = 'example-workloads'
+  email        = 'workloads@example.com'
+  role_name    = 'OrganizationAccountAccessRole'
+
+  tags = {
+    Environment = 'example'
+  }
+}
+```
 
 ## Argument Reference
 

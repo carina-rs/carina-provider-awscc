@@ -7,6 +7,49 @@ CloudFormation Type: `AWS::SSO::Assignment`
 
 Resource Type definition for SSO assignmet
 
+## Example
+
+```crn
+let identity_center = awscc.sso.Instance {
+  name = 'example-identity-center'
+
+  tags = {
+    Environment = 'example'
+  }
+}
+
+let developers = awscc.identitystore.Group {
+  identity_store_id = identity_center.identity_store_id
+  display_name      = 'ExampleDevelopers'
+  description       = 'Developers for the example workload'
+}
+
+let read_only = awscc.sso.PermissionSet {
+  instance_arn     = identity_center.instance_arn
+  name             = 'ExampleReadOnly'
+  description      = 'Read-only access for the example workload'
+  session_duration = 'PT1H'
+
+  inline_policy = {
+    version = aws.iam.PolicyDocument.Version.2012_10_17
+    statement {
+      effect   = aws.iam.PolicyDocument.Statement.Effect.allow
+      action   = 's3:ListAllMyBuckets'
+      resource = '*'
+    }
+  }
+}
+
+awscc.sso.Assignment {
+  instance_arn       = identity_center.instance_arn
+  permission_set_arn = read_only.permission_set_arn
+  principal_id       = developers.group_id
+  principal_type     = aws.sso.Assignment.PrincipalType.group
+  target_id          = identity_center.owner_account_id
+  target_type        = aws.sso.Assignment.TargetType.aws_account
+}
+```
+
 ## Argument Reference
 
 ### `instance_arn`

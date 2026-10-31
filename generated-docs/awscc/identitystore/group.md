@@ -7,6 +7,16 @@ CloudFormation Type: `AWS::IdentityStore::Group`
 
 Resource Type definition for AWS::IdentityStore::Group
 
+## Example
+
+```crn
+awscc.identitystore.Group {
+  identity_store_id = 'd-1234567890'
+  display_name      = 'ExampleDevelopers'
+  description       = 'Developers for the example workload'
+}
+```
+
 ## Argument Reference
 
 ### `description`

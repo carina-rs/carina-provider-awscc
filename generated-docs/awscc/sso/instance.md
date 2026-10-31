@@ -7,6 +7,18 @@ CloudFormation Type: `AWS::SSO::Instance`
 
 Resource Type definition for Identity Center (SSO) Instance
 
+## Example
+
+```crn
+awscc.sso.Instance {
+  name = 'example-identity-center'
+
+  tags = {
+    Environment = 'example'
+  }
+}
+```
+
 ## Argument Reference
 
 ### `name`

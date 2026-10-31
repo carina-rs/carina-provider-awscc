@@ -1,0 +1,42 @@
+# IAM Role Policy Example
+#
+# Creates a Lambda execution role and attaches an inline permissions policy.
+
+provider awscc {
+  region = awscc.Region.ap_northeast_1
+}
+
+let execution_role = awscc.iam.Role {
+  role_name = 'my-example-execution-role'
+
+  assume_role_policy_document = {
+    version = aws.iam.PolicyDocument.Version.2012_10_17
+    statement {
+      effect = aws.iam.PolicyDocument.Statement.Effect.allow
+
+      principal = {
+        service = 'lambda.amazonaws.com'
+      }
+
+      action = 'sts:AssumeRole'
+    }
+  }
+
+  tags = {
+    Environment = 'example'
+  }
+}
+
+awscc.iam.RolePolicy {
+  policy_name = 'ListBuckets'
+  role_name   = execution_role.role_name
+
+  policy_document = {
+    version = aws.iam.PolicyDocument.Version.2012_10_17
+    statement {
+      effect   = aws.iam.PolicyDocument.Statement.Effect.allow
+      action   = 's3:ListAllMyBuckets'
+      resource = '*'
+    }
+  }
+}

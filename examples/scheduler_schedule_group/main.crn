@@ -1,0 +1,16 @@
+# EventBridge Scheduler Schedule Group Example
+#
+# Creates a tagged group for organizing related schedules.
+
+provider awscc {
+  region = awscc.Region.ap_northeast_1
+}
+
+awscc.scheduler.ScheduleGroup {
+  name = 'carina-example-schedules'
+
+  tags = {
+    Environment = 'example'
+    Project     = 'carina'
+  }
+}

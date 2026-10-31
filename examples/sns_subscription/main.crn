@@ -1,0 +1,23 @@
+# SNS Subscription Example
+#
+# Creates a topic and subscribes an email endpoint to it.
+
+provider awscc {
+  region = awscc.Region.ap_northeast_1
+}
+
+let alerts = awscc.sns.Topic {
+  topic_name   = 'carina-example-subscription-alerts'
+  display_name = 'Carina example alerts'
+
+  tags = {
+    Environment = 'example'
+  }
+}
+
+awscc.sns.Subscription {
+  topic_arn            = alerts.topic_arn
+  protocol             = 'email'
+  endpoint             = 'alerts@example.com'
+  raw_message_delivery = false
+}

@@ -7,6 +7,19 @@ CloudFormation Type: `AWS::Scheduler::ScheduleGroup`
 
 Definition of AWS::Scheduler::ScheduleGroup Resource Type
 
+## Example
+
+```crn
+awscc.scheduler.ScheduleGroup {
+  name = 'carina-example-schedules'
+
+  tags = {
+    Environment = 'example'
+    Project     = 'carina'
+  }
+}
+```
+
 ## Argument Reference
 
 ### `name`

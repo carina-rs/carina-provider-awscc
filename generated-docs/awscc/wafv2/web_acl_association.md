@@ -7,6 +7,47 @@ CloudFormation Type: `AWS::WAFv2::WebACLAssociation`
 
 Associates WebACL to Application Load Balancer, CloudFront or API Gateway.
 
+## Example
+
+```crn
+let web_acl = awscc.wafv2.WebAcl {
+  name        = 'carina-example-associated-web-acl'
+  description = 'Regional protection for the example load balancer'
+  scope       = aws.wafv2.WebAcl.Scope.regional
+
+  default_action = {
+    allow = {}
+  }
+
+  visibility_config = {
+    cloud_watch_metrics_enabled = true
+    metric_name                 = 'carina-example-associated-web-acl'
+    sampled_requests_enabled    = true
+  }
+
+  tags = {
+    Environment = 'example'
+  }
+}
+
+let load_balancer = awscc.elasticloadbalancingv2.LoadBalancer {
+  name            = 'carina-example-alb'
+  type            = aws.elasticloadbalancingv2.LoadBalancer.Type.application
+  scheme          = aws.elasticloadbalancingv2.LoadBalancer.Scheme.internet_facing
+  subnets         = ['subnet-aaaa1111', 'subnet-bbbb2222']
+  security_groups = ['sg-cccc3333']
+
+  tags = {
+    Environment = 'example'
+  }
+}
+
+awscc.wafv2.WebAclAssociation {
+  resource_arn = load_balancer.load_balancer_arn
+  web_acl_arn  = web_acl.arn
+}
+```
+
 ## Argument Reference
 
 ### `resource_arn`

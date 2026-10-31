@@ -1,0 +1,35 @@
+# IAM Identity Center Permission Set Example
+#
+# Creates an Identity Center instance and a one-hour read-only permission set.
+
+provider awscc {
+  region = awscc.Region.ap_northeast_1
+}
+
+let identity_center = awscc.sso.Instance {
+  name = 'example-identity-center'
+
+  tags = {
+    Environment = 'example'
+  }
+}
+
+awscc.sso.PermissionSet {
+  instance_arn     = identity_center.instance_arn
+  name             = 'ExampleReadOnly'
+  description      = 'Read-only access for the example workload'
+  session_duration = 'PT1H'
+
+  inline_policy = {
+    version = aws.iam.PolicyDocument.Version.2012_10_17
+    statement {
+      effect   = aws.iam.PolicyDocument.Statement.Effect.allow
+      action   = 's3:ListAllMyBuckets'
+      resource = '*'
+    }
+  }
+
+  tags = {
+    Environment = 'example'
+  }
+}

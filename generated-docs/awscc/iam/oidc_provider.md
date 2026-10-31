@@ -7,6 +7,20 @@ CloudFormation Type: `AWS::IAM::OIDCProvider`
 
 Resource Type definition for AWS::IAM::OIDCProvider
 
+## Example
+
+```crn
+awscc.iam.OidcProvider {
+  url             = 'https://token.actions.githubusercontent.com'
+  client_id_list  = ['sts.amazonaws.com']
+  thumbprint_list = ['0123456789abcdef0123456789abcdef01234567']
+
+  tags = {
+    Environment = 'example'
+  }
+}
+```
+
 ## Argument Reference
 
 ### `client_id_list`

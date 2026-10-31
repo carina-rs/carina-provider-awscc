@@ -1,0 +1,64 @@
+# EventBridge Scheduler Schedule Example
+#
+# Creates an SNS target, an invocation role, and a six-hour schedule.
+
+provider awscc {
+  region = awscc.Region.ap_northeast_1
+}
+
+let notifications = awscc.sns.Topic {
+  topic_name   = 'carina-example-scheduled-notifications'
+  display_name = 'Carina scheduled notifications'
+
+  tags = {
+    Environment = 'example'
+  }
+}
+
+let scheduler_role = awscc.iam.Role {
+  role_name = 'carina-example-scheduler-role'
+
+  assume_role_policy_document = {
+    version = aws.iam.PolicyDocument.Version.2012_10_17
+    statement {
+      effect = aws.iam.PolicyDocument.Statement.Effect.allow
+
+      principal = {
+        service = 'scheduler.amazonaws.com'
+      }
+
+      action = 'sts:AssumeRole'
+    }
+  }
+}
+
+awscc.iam.RolePolicy {
+  policy_name = 'PublishScheduledNotifications'
+  role_name   = scheduler_role.role_name
+
+  policy_document = {
+    version = aws.iam.PolicyDocument.Version.2012_10_17
+    statement {
+      effect   = aws.iam.PolicyDocument.Statement.Effect.allow
+      action   = 'sns:Publish'
+      resource = notifications.topic_arn
+    }
+  }
+}
+
+awscc.scheduler.Schedule {
+  name                = 'carina-example-publish-notification'
+  description         = 'Publish a notification every six hours'
+  schedule_expression = 'rate(6 hours)'
+  state               = aws.scheduler.Schedule.ScheduleState.enabled
+
+  flexible_time_window = {
+    mode = aws.scheduler.Schedule.FlexibleTimeWindow.FlexibleTimeWindowMode.off
+  }
+
+  target = {
+    arn      = notifications.topic_arn
+    role_arn = scheduler_role.arn
+    input    = '{"operation":"refresh"}'
+  }
+}

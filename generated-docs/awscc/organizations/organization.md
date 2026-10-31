@@ -7,6 +7,14 @@ CloudFormation Type: `AWS::Organizations::Organization`
 
 Resource schema for AWS::Organizations::Organization
 
+## Example
+
+```crn
+awscc.organizations.Organization {
+  feature_set = aws.organizations.Organization.FeatureSet.all
+}
+```
+
 ## Argument Reference
 
 ### `feature_set`

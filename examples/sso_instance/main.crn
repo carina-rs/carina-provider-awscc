@@ -1,0 +1,15 @@
+# IAM Identity Center Instance Example
+#
+# Creates an IAM Identity Center instance for the current account.
+
+provider awscc {
+  region = awscc.Region.ap_northeast_1
+}
+
+awscc.sso.Instance {
+  name = 'example-identity-center'
+
+  tags = {
+    Environment = 'example'
+  }
+}

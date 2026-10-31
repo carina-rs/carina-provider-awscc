@@ -1703,7 +1703,9 @@ fn load_markdown_example(examples_dir: Option<&Path>, type_name: &str) -> Result
         .join("main.crn");
     match std::fs::read_to_string(&path) {
         Ok(source) => Ok(Some(preprocess_markdown_example(&source))),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            anyhow::bail!("Example file not found: {}", path.display())
+        }
         Err(error) => Err(error).with_context(|| format!("Failed to read {}", path.display())),
     }
 }
@@ -16175,6 +16177,26 @@ mod tests {
                 "--examples-dir must be an existing directory: {}",
                 not_directory.path().display()
             )
+        );
+    }
+
+    #[test]
+    fn test_load_markdown_example_rejects_missing_example() {
+        let examples_dir = tempfile::tempdir().unwrap();
+        let expected_path = examples_dir
+            .path()
+            .join("ec2_transit_gateway_attachment")
+            .join("main.crn");
+
+        let error = load_markdown_example(
+            Some(examples_dir.path()),
+            "AWS::EC2::TransitGatewayAttachment",
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!("Example file not found: {}", expected_path.display())
         );
     }
 

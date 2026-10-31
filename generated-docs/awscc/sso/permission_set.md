@@ -7,6 +7,38 @@ CloudFormation Type: `AWS::SSO::PermissionSet`
 
 Resource Type definition for SSO PermissionSet
 
+## Example
+
+```crn
+let identity_center = awscc.sso.Instance {
+  name = 'example-identity-center'
+
+  tags = {
+    Environment = 'example'
+  }
+}
+
+awscc.sso.PermissionSet {
+  instance_arn     = identity_center.instance_arn
+  name             = 'ExampleReadOnly'
+  description      = 'Read-only access for the example workload'
+  session_duration = 'PT1H'
+
+  inline_policy = {
+    version = aws.iam.PolicyDocument.Version.2012_10_17
+    statement {
+      effect   = aws.iam.PolicyDocument.Statement.Effect.allow
+      action   = 's3:ListAllMyBuckets'
+      resource = '*'
+    }
+  }
+
+  tags = {
+    Environment = 'example'
+  }
+}
+```
+
 ## Argument Reference
 
 ### `customer_managed_policy_references`
