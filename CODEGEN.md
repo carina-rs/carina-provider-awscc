@@ -202,8 +202,12 @@ aws-vault exec <profile> -- ./scripts/generate-docs.sh
 Output goes to `generated-docs/awscc/`. Each resource gets a Markdown file with
 Starlight/Astro frontmatter. Codegen inserts example code from
 `examples/{service}_{resource}/main.crn` before validating the page. This file
-is required for every documented resource, and the docs build fails when it is
-missing; the shell script only adds frontmatter and removes the generated H1.
+is required for every documented resource and must declare that documented
+`awscc.<service>.<Type>` resource. The Markdown preprocessor drops the provider
+block and column-0 `#` lines, so put reader-facing notes in indented comments
+inside a resource body. The docs build fails when an example is missing or does
+not declare the documented resource; the shell script only adds frontmatter and
+removes the generated H1.
 
 Struct and enum section headings use the DSL field path. A `$ref` definition
 reached from more than one path instead uses its `snake_case` definition name,

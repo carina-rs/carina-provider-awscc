@@ -14,7 +14,7 @@ Creates a new origin access control in CloudFront. After you create an origin ac
 ```crn
 awscc.cloudfront.OriginAccessControl {
   origin_access_control_config = {
-    name                              = 'example-s3-origin'
+    name                              = 'carina-example-s3-origin'
     description                       = 'Sign requests to the example S3 origin'
     origin_access_control_origin_type = aws.cloudfront.OriginAccessControl.OriginAccessControlConfig.OriginAccessControlOriginType.s3
     signing_behavior                  = aws.cloudfront.OriginAccessControl.OriginAccessControlConfig.SigningBehavior.always

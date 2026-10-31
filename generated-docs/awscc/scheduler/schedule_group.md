@@ -17,7 +17,6 @@ awscc.scheduler.ScheduleGroup {
 
   tags = {
     Environment = 'example'
-    Project     = 'carina'
   }
 }
 ```

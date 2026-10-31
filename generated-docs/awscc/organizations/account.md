@@ -11,7 +11,7 @@ You can use AWS::Organizations::Account to manage accounts in organization.
 
 ```crn
 awscc.organizations.Account {
-  account_name = 'example-workloads'
+  account_name = 'carina-example-workloads'
   # Replace this placeholder with a real email address you control. Apply from
   # the organization's management account; this creates a real member account.
   email        = 'workloads@example.com'

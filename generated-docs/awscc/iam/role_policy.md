@@ -14,7 +14,7 @@ Adds or updates an inline policy document that is embedded in the specified IAM 
 
 ```crn
 let execution_role = awscc.iam.Role {
-  role_name = 'my-example-execution-role'
+  role_name = 'carina-example-execution-role'
 
   assume_role_policy_document = {
     version = aws.iam.PolicyDocument.Version.2012_10_17

@@ -45,7 +45,7 @@ let load_balancer_security_group = awscc.ec2.SecurityGroup {
   group_description = 'Allow HTTP traffic to the example load balancer'
 
   security_group_ingress {
-    ip_protocol = tcp
+    ip_protocol = aws.ec2.SecurityGroup.Ingress.IpProtocol.tcp
     from_port   = 80
     to_port     = 80
     cidr_ip     = '10.0.0.0/16'

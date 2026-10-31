@@ -29,7 +29,8 @@ awscc.cloudfront.Distribution {
         aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.CachedMethods.head,
       ]
 
-      cache_policy_id         = '658327ea-f89d-4fab-a63d-7e88639e58f6'
+      # AWS managed CachingOptimized cache policy.
+      cache_policy_id        = '658327ea-f89d-4fab-a63d-7e88639e58f6'
     }
 
     origin {

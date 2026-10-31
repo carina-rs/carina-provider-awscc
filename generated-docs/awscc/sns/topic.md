@@ -18,7 +18,6 @@ awscc.sns.Topic {
 
   tags = {
     Environment = 'example'
-    Project     = 'carina'
   }
 }
 ```

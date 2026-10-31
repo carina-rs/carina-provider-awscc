@@ -14,6 +14,7 @@
 
 use anyhow::{Context, Result};
 use carina_aws_types::dsl_enum_value;
+use carina_core::parser::{ProviderContext, parse_file};
 use carina_docgen::{Heading, PageBuilder, TableCell};
 use carina_provider_awscc::schemas::catalog::AwsccType;
 use clap::{Parser, ValueEnum};
@@ -535,7 +536,7 @@ struct Args {
     #[arg(long, default_value = "rust")]
     format: OutputFormat,
 
-    /// Directory containing generated-doc examples (`<service>_<resource>/main.crn`).
+    /// Directory containing generated-doc examples (`<service>_<resource>/main.crn`); required for Markdown output.
     #[arg(long)]
     examples_dir: Option<PathBuf>,
 }
@@ -1727,13 +1728,38 @@ fn load_markdown_example(examples_dir: &Path, type_name: &str) -> Result<String>
     let path = examples_dir
         .join(full_resource_name_from_type(type_name)?)
         .join("main.crn");
-    match std::fs::read_to_string(&path) {
-        Ok(source) => Ok(preprocess_markdown_example(&source)),
+    let source = match std::fs::read_to_string(&path) {
+        Ok(source) => source,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             anyhow::bail!("Example file not found: {}", path.display())
         }
-        Err(error) => Err(error).with_context(|| format!("Failed to read {}", path.display())),
+        Err(error) => {
+            return Err(error).with_context(|| format!("Failed to read {}", path.display()));
+        }
+    };
+    let example = preprocess_markdown_example(&source);
+    let dsl_resource = dsl_resource_name_from_type(type_name)?;
+    require_documented_resource(&example, &path, &dsl_resource)?;
+    Ok(example)
+}
+
+fn require_documented_resource(example: &str, path: &Path, dsl_resource: &str) -> Result<()> {
+    let expected_resource = format!("awscc.{dsl_resource}");
+    let parsed = parse_file(example, path, &ProviderContext::default()).with_context(|| {
+        format!(
+            "Example file {} must parse and declare resource {expected_resource}",
+            path.display()
+        )
+    })?;
+    if !parsed.resources.iter().any(|resource| {
+        resource.id.provider == "awscc" && resource.id.resource_type == dsl_resource
+    }) {
+        anyhow::bail!(
+            "Example file {} must declare resource {expected_resource}",
+            path.display()
+        );
     }
+    Ok(())
 }
 
 fn preprocess_markdown_example(source: &str) -> String {
@@ -8123,6 +8149,19 @@ mod tests {
 
     const EXTRACT_ENUM_SNAPSHOT_PRE_365: &str = "tests/fixtures/extract_enum_snapshot_pre_365.json";
     const MARKDOWN_EXAMPLE: &str = "awscc.test.Resource {}\n";
+
+    fn write_markdown_example_fixture(
+        examples_dir: &Path,
+        type_name: &str,
+        source: &str,
+    ) -> PathBuf {
+        let path = examples_dir
+            .join(full_resource_name_from_type(type_name).unwrap())
+            .join("main.crn");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, source).unwrap();
+        path
+    }
 
     fn cfn_schema_for_codegen_tests(type_name: &str) -> CfnSchema {
         let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -16272,6 +16311,79 @@ mod tests {
         assert_eq!(
             error.to_string(),
             format!("Example file not found: {}", expected_path.display())
+        );
+    }
+
+    #[test]
+    fn test_load_markdown_example_rejects_empty_preprocessed_example() {
+        let examples_dir = tempfile::tempdir().unwrap();
+        let type_name = "AWS::EC2::TransitGatewayAttachment";
+        let path = write_markdown_example_fixture(
+            examples_dir.path(),
+            type_name,
+            concat!(
+                "# Reader-facing title that preprocessing removes\n",
+                "provider awscc {\n",
+                "  region = awscc.Region.ap_northeast_1\n",
+                "}\n",
+            ),
+        );
+
+        let error = load_markdown_example(examples_dir.path(), type_name).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "Example file {} must declare resource awscc.ec2.TransitGatewayAttachment",
+                path.display()
+            )
+        );
+    }
+
+    #[test]
+    fn test_load_markdown_example_rejects_example_without_documented_resource() {
+        let examples_dir = tempfile::tempdir().unwrap();
+        let type_name = "AWS::EC2::TransitGatewayAttachment";
+        let path = write_markdown_example_fixture(
+            examples_dir.path(),
+            type_name,
+            concat!(
+                "awscc.ec2.Vpc {\n",
+                "  description = 'not awscc.ec2.TransitGatewayAttachment {}'\n",
+                "}\n",
+            ),
+        );
+
+        let error = load_markdown_example(examples_dir.path(), type_name).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "Example file {} must declare resource awscc.ec2.TransitGatewayAttachment",
+                path.display()
+            )
+        );
+    }
+
+    #[test]
+    fn test_load_markdown_example_accepts_documented_resource() {
+        let examples_dir = tempfile::tempdir().unwrap();
+        let type_name = "AWS::EC2::TransitGatewayAttachment";
+        write_markdown_example_fixture(
+            examples_dir.path(),
+            type_name,
+            concat!(
+                "provider awscc {\n",
+                "  region = awscc.Region.ap_northeast_1\n",
+                "}\n",
+                "\n",
+                "let attachment = awscc.ec2.TransitGatewayAttachment {}\n",
+            ),
+        );
+
+        assert_eq!(
+            load_markdown_example(examples_dir.path(), type_name).unwrap(),
+            "let attachment = awscc.ec2.TransitGatewayAttachment {}\n"
         );
     }
 

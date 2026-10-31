@@ -11,7 +11,11 @@ Resource Type definition for Identity Center (SSO) Instance
 
 ```crn
 awscc.sso.Instance {
-  name = 'example-identity-center'
+  # Creates an account instance. Apply from a standalone or member account
+  # that has no IAM Identity Center instance. AWS rejects this in the
+  # organization's management account and where organization policy disallows
+  # account instances.
+  name = 'carina-example-identity-center'
 
   tags = {
     Environment = 'example'
