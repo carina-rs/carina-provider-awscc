@@ -144,7 +144,7 @@ cargo run --bin codegen -- --file cfn-schema-cache/AWS__EC2__VPC.json --type-nam
 # Print resource names (useful for scripting)
 cargo run --bin codegen -- --type-name AWS::EC2::VPC --print-module-name       # vpc
 cargo run --bin codegen -- --type-name AWS::EC2::VPC --print-full-resource-name # ec2_vpc
-cargo run --bin codegen -- --type-name AWS::EC2::VPC --print-dsl-resource-name  # ec2.vpc
+cargo run --bin codegen -- --type-name AWS::EC2::VPC --print-dsl-resource-name  # ec2.Vpc
 
 # Generate Markdown documentation, including the required matching example
 cargo run --bin codegen -- --file schema.json --type-name AWS::EC2::VPC \

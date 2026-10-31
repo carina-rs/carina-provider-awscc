@@ -1739,13 +1739,13 @@ fn load_markdown_example(examples_dir: &Path, type_name: &str) -> Result<String>
     };
     let example = preprocess_markdown_example(&source);
     let dsl_resource = dsl_resource_name_from_type(type_name)?;
-    require_documented_resource(&example, &path, &dsl_resource)?;
+    require_documented_resource(&source, &path, &dsl_resource)?;
     Ok(example)
 }
 
-fn require_documented_resource(example: &str, path: &Path, dsl_resource: &str) -> Result<()> {
+fn require_documented_resource(source: &str, path: &Path, dsl_resource: &str) -> Result<()> {
     let expected_resource = format!("awscc.{dsl_resource}");
-    let parsed = parse_file(example, path, &ProviderContext::default()).with_context(|| {
+    let parsed = parse_file(source, path, &ProviderContext::default()).with_context(|| {
         format!(
             "Example file {} must parse and declare resource {expected_resource}",
             path.display()
@@ -16362,6 +16362,66 @@ mod tests {
                 "Example file {} must declare resource awscc.ec2.TransitGatewayAttachment",
                 path.display()
             )
+        );
+    }
+
+    #[test]
+    fn test_load_markdown_example_rejects_documented_resource_under_wrong_provider() {
+        let examples_dir = tempfile::tempdir().unwrap();
+        let type_name = "AWS::EC2::TransitGatewayAttachment";
+        let path = write_markdown_example_fixture(
+            examples_dir.path(),
+            type_name,
+            "aws.ec2.TransitGatewayAttachment {}\n",
+        );
+
+        let error = load_markdown_example(examples_dir.path(), type_name).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "Example file {} must declare resource awscc.ec2.TransitGatewayAttachment",
+                path.display()
+            )
+        );
+    }
+
+    #[test]
+    fn test_load_markdown_example_reports_parse_error_at_raw_source_line() {
+        let examples_dir = tempfile::tempdir().unwrap();
+        let type_name = "AWS::EC2::TransitGatewayAttachment";
+        let path = write_markdown_example_fixture(
+            examples_dir.path(),
+            type_name,
+            concat!(
+                "# Header line 1\n",
+                "# Header line 2\n",
+                "# Header line 3\n",
+                "# Header line 4\n",
+                "provider awscc {\n",
+                "  region = awscc.Region.ap_northeast_1\n",
+                "}\n",
+                "@\n",
+            ),
+        );
+
+        let error = load_markdown_example(examples_dir.path(), type_name).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "Example file {} must parse and declare resource awscc.ec2.TransitGatewayAttachment",
+                path.display()
+            )
+        );
+        let chain: Vec<String> = error.chain().map(ToString::to_string).collect();
+        assert!(
+            chain.len() > 1,
+            "parse error source must be preserved: {chain:?}"
+        );
+        assert!(
+            chain.iter().skip(1).any(|message| message.contains("8:1")),
+            "parse error must report the raw source line: {chain:?}"
         );
     }
 
