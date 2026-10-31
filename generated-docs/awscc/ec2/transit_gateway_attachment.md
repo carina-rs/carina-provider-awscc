@@ -110,10 +110,10 @@ Shorthand formats: `enable` or `SecurityGroupReferencingSupport.enable`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `appliance_mode_support` | [Enum (ApplianceModeSupport)](#optionsappliance_mode_support-appliancemodesupport) | No | Indicates whether to enable Ipv6 Support for Vpc Attachment. Valid Values: enable | disable |
-| `dns_support` | [Enum (DnsSupport)](#optionsdns_support-dnssupport) | No | Indicates whether to enable DNS Support for Vpc Attachment. Valid Values: enable | disable |
-| `ipv6_support` | [Enum (Ipv6Support)](#optionsipv6_support-ipv6support) | No | Indicates whether to enable Ipv6 Support for Vpc Attachment. Valid Values: enable | disable |
-| `security_group_referencing_support` | [Enum (SecurityGroupReferencingSupport)](#optionssecurity_group_referencing_support-securitygroupreferencingsupport) | No | Indicates whether to enable Security Group referencing support for Vpc Attachment. Valid Values: enable | disable |
+| `appliance_mode_support` | [Enum (ApplianceModeSupport)](#optionsappliance_mode_support-appliancemodesupport) | No | Indicates whether to enable Ipv6 Support for Vpc Attachment. Valid Values: enable \| disable |
+| `dns_support` | [Enum (DnsSupport)](#optionsdns_support-dnssupport) | No | Indicates whether to enable DNS Support for Vpc Attachment. Valid Values: enable \| disable |
+| `ipv6_support` | [Enum (Ipv6Support)](#optionsipv6_support-ipv6support) | No | Indicates whether to enable Ipv6 Support for Vpc Attachment. Valid Values: enable \| disable |
+| `security_group_referencing_support` | [Enum (SecurityGroupReferencingSupport)](#optionssecurity_group_referencing_support-securitygroupreferencingsupport) | No | Indicates whether to enable Security Group referencing support for Vpc Attachment. Valid Values: enable \| disable |
 
 ## Attribute Reference
 

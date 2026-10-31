@@ -621,7 +621,7 @@ Shorthand formats: `http` or `Protocol.http`
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `allowed_headers` | `List<String>` | No | Headers that are specified in the ``Access-Control-Request-Headers`` header. These headers are allowed in a preflight OPTIONS request. In response to any preflight OPTIONS request, Amazon S3 returns any requested headers that are allowed. |
-| `allowed_methods` | List\<[Enum (AllowedMethods)](#cors_configurationcors_rulesallowed_methods-allowedmethods)\> | Yes | An HTTP method that you allow the origin to run. *Allowed values*: ``GET`` | ``PUT`` | ``HEAD`` | ``POST`` | ``DELETE`` |
+| `allowed_methods` | List\<[Enum (AllowedMethods)](#cors_configurationcors_rulesallowed_methods-allowedmethods)\> | Yes | An HTTP method that you allow the origin to run. *Allowed values*: ``GET`` \| ``PUT`` \| ``HEAD`` \| ``POST`` \| ``DELETE`` |
 | `allowed_origins` | `List<String>` | Yes | One or more origins you want customers to be able to access the bucket from. |
 | `exposed_headers` | `List<String>` | No | One or more headers in the response that you want customers to be able to access from their applications (for example, from a JavaScript ``XMLHttpRequest`` object). |
 | `id` | String(len: ..=255) | No | A unique identifier for this rule. The value must be no more than 255 characters. |
@@ -635,7 +635,7 @@ Used by: `analytics_configurations.storage_class_analysis.data_export.destinatio
 |-------|------|----------|-------------|
 | `bucket_account_id` | AwsAccountId | No | The account ID that owns the destination S3 bucket. If no account ID is provided, the owner is not validated before exporting data. Although this value is optional, we strongly recommend that you set it to help prevent problems if the destination bucket ownership changes. |
 | `bucket_arn` | Arn | Yes | The Amazon Resource Name (ARN) of the bucket to which data is exported. |
-| `format` | [Enum (Format)](#destinationformat-format) | Yes | Specifies the file format used when exporting data to Amazon S3. *Allowed values*: ``CSV`` | ``ORC`` | ``Parquet`` |
+| `format` | [Enum (Format)](#destinationformat-format) | Yes | Specifies the file format used when exporting data to Amazon S3. *Allowed values*: ``CSV`` \| ``ORC`` \| ``Parquet`` |
 | `prefix` | String | No | The prefix to use when exporting data. The prefix is prepended to all results. |
 
 ### intelligent_tiering_configurations
@@ -1008,7 +1008,7 @@ Used by: `notification_configuration.lambda_configurations.filter`, `notificatio
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `status` | [Enum (Status)](#replication_configurationrulessource_selection_criteriareplica_modificationsstatus-status) | Yes | Specifies whether Amazon S3 replicates modifications on replicas. *Allowed values*: ``Enabled`` | ``Disabled`` |
+| `status` | [Enum (Status)](#replication_configurationrulessource_selection_criteriareplica_modificationsstatus-status) | Yes | Specifies whether Amazon S3 replicates modifications on replicas. *Allowed values*: ``Enabled`` \| ``Disabled`` |
 
 ### replication_configuration.rules.source_selection_criteria.sse_kms_encrypted_objects
 

@@ -936,7 +936,7 @@ dependencies = [
 [[package]]
 name = "carina-aws-types"
 version = "0.4.0"
-source = "git+https://github.com/carina-rs/carina-provider-aws?rev=d851323#d8513234c67e0259d46e0526678c081f48024305"
+source = "git+https://github.com/carina-rs/carina-provider-aws?rev=40f37f1#40f37f1c0080bf0c7d0b8970c238e6daf41e4275"
 dependencies = [
  "aws-smithy-runtime-api",
  "aws-smithy-types",
@@ -978,7 +978,7 @@ dependencies = [
 [[package]]
 name = "carina-docgen"
 version = "0.7.4"
-source = "git+https://github.com/carina-rs/carina-provider-aws?rev=d851323#d8513234c67e0259d46e0526678c081f48024305"
+source = "git+https://github.com/carina-rs/carina-provider-aws?rev=40f37f1#40f37f1c0080bf0c7d0b8970c238e6daf41e4275"
 dependencies = [
  "comrak",
  "finl_unicode",
