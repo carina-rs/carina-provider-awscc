@@ -246,22 +246,48 @@ mod tests {
         assert!(config.tags.is_some(), "OIDCProvider should support tags");
     }
 
+    fn validate_vpc_gateway_attachment(
+        attributes: &std::collections::HashMap<String, carina_core::resource::Value>,
+    ) -> Result<(), Vec<carina_core::schema::TypeError>> {
+        use carina_core::schema::{FieldGroupKind, SchemaKind, SchemaRegistry};
+
+        static CUSTOM_TYPES: std::sync::LazyLock<carina_core::parser::ProviderCustomTypes> =
+            std::sync::LazyLock::new(|| {
+                carina_core::provider::provider_custom_types_from_factories(std::sync::Arc::new(
+                    vec![Box::new(crate::AwsccProviderFactory)
+                        as Box<dyn carina_core::provider::ProviderFactory>],
+                ))
+            });
+
+        let config = get_config("ec2.VpcGatewayAttachment").unwrap();
+        let [group] = config.schema.field_groups() else {
+            panic!("gateway alternatives must have exactly one field group")
+        };
+        assert_eq!(group.kind(), FieldGroupKind::ExactlyOne);
+        assert_eq!(group.fields(), ["internet_gateway_id", "vpn_gateway_id"]);
+
+        let mut registry = SchemaRegistry::new();
+        registry.insert(
+            "awscc",
+            config
+                .schema
+                .clone()
+                .validate()
+                .expect("gateway attachment schema must pass admission"),
+        );
+        registry
+            .get("awscc", "ec2.VpcGatewayAttachment", SchemaKind::Resource)
+            .expect("gateway attachment schema must be registered")
+            .validate_with_resolver(attributes, &|_| false, &*CUSTOM_TYPES)
+    }
+
     /// VPCGatewayAttachment requires exactly one of internet_gateway_id or vpn_gateway_id.
     /// Specifying both should be rejected by the schema validator.
     /// See: https://github.com/carina-rs/carina/issues/925
     #[test]
     fn vpc_gateway_attachment_rejects_both_internet_and_vpn_gateway() {
         use carina_core::resource::{ConcreteValue, Value};
-        use carina_core::schema::validators;
         use std::collections::HashMap;
-
-        let config = get_config("ec2.VpcGatewayAttachment").unwrap();
-        let schema = &config.schema;
-        let exclusive = schema
-            .exclusive_required_groups()
-            .first()
-            .expect("gateway alternatives must be declared");
-        let exclusive = exclusive.iter().map(String::as_str).collect::<Vec<_>>();
 
         // Providing both internet_gateway_id and vpn_gateway_id should fail validation
         let mut attrs = HashMap::new();
@@ -278,7 +304,7 @@ mod tests {
             Value::Concrete(ConcreteValue::String("vgw-12345678".to_string().into())),
         );
 
-        let result = validators::validate_exclusive_required(&attrs, &exclusive);
+        let result = validate_vpc_gateway_attachment(&attrs);
         assert!(
             result.is_err(),
             "Expected validation error when both internet_gateway_id and vpn_gateway_id are specified"
@@ -300,16 +326,7 @@ mod tests {
     #[test]
     fn vpc_gateway_attachment_accepts_single_gateway() {
         use carina_core::resource::{ConcreteValue, Value};
-        use carina_core::schema::validators;
         use std::collections::HashMap;
-
-        let config = get_config("ec2.VpcGatewayAttachment").unwrap();
-        let schema = &config.schema;
-        let exclusive = schema
-            .exclusive_required_groups()
-            .first()
-            .expect("gateway alternatives must be declared");
-        let exclusive = exclusive.iter().map(String::as_str).collect::<Vec<_>>();
 
         // Only internet_gateway_id - should pass
         let mut attrs_igw = HashMap::new();
@@ -322,7 +339,7 @@ mod tests {
             Value::Concrete(ConcreteValue::String("igw-12345678".to_string().into())),
         );
         assert!(
-            validators::validate_exclusive_required(&attrs_igw, &exclusive).is_ok(),
+            validate_vpc_gateway_attachment(&attrs_igw).is_ok(),
             "Should accept internet_gateway_id alone"
         );
 
@@ -337,7 +354,7 @@ mod tests {
             Value::Concrete(ConcreteValue::String("vgw-12345678".to_string().into())),
         );
         assert!(
-            validators::validate_exclusive_required(&attrs_vpn, &exclusive).is_ok(),
+            validate_vpc_gateway_attachment(&attrs_vpn).is_ok(),
             "Should accept vpn_gateway_id alone"
         );
     }
@@ -347,16 +364,7 @@ mod tests {
     #[test]
     fn vpc_gateway_attachment_rejects_neither_gateway() {
         use carina_core::resource::{ConcreteValue, Value};
-        use carina_core::schema::validators;
         use std::collections::HashMap;
-
-        let config = get_config("ec2.VpcGatewayAttachment").unwrap();
-        let schema = &config.schema;
-        let exclusive = schema
-            .exclusive_required_groups()
-            .first()
-            .expect("gateway alternatives must be declared");
-        let exclusive = exclusive.iter().map(String::as_str).collect::<Vec<_>>();
 
         // Neither gateway specified - should fail
         let mut attrs = HashMap::new();
@@ -365,7 +373,7 @@ mod tests {
             Value::Concrete(ConcreteValue::String("vpc-12345678".to_string().into())),
         );
 
-        let result = validators::validate_exclusive_required(&attrs, &exclusive);
+        let result = validate_vpc_gateway_attachment(&attrs);
         assert!(
             result.is_err(),
             "Expected validation error when neither internet_gateway_id nor vpn_gateway_id is specified"

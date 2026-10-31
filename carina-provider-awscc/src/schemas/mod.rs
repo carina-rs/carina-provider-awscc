@@ -4,7 +4,10 @@ pub mod catalog;
 pub mod config;
 pub mod generated;
 
-use carina_core::schema::ValidatedResourceSchema;
+use carina_core::provider::ProviderFactory;
+use carina_core::schema::{
+    SchemaRegistry, ValidatedProviderSchemaWitness, ValidatedResourceSchema,
+};
 
 /// Returns all AWS Cloud Control schemas.
 /// Auto-generated from CloudFormation schemas with per-resource operational config.
@@ -21,6 +24,27 @@ pub fn all_schemas() -> Vec<ValidatedResourceSchema> {
         .collect()
 }
 
+/// Return the provider's aggregate schema witness. Reference forms are empty
+/// until AWSCC reference forms are designed as separate feature work.
+pub fn provider_schema_witness() -> ValidatedProviderSchemaWitness {
+    ValidatedProviderSchemaWitness::new(
+        all_schemas(),
+        crate::AwsccProviderFactory.provider_config_attribute_types(),
+        Default::default(),
+    )
+    .expect("AWSCC provider schemas must form one valid aggregate witness")
+}
+
+/// Build a registry from the same aggregate witness exposed by the factory.
+pub fn schema_registry() -> SchemaRegistry {
+    let witness = provider_schema_witness();
+    let mut registry = SchemaRegistry::new();
+    registry
+        .insert_provider_witness("awscc", &witness)
+        .expect("AWSCC provider witness must populate its schema registry");
+    registry
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -34,6 +58,34 @@ mod tests {
     use carina_core::schema::{AttributeType, RawShape, ResourceSchema, Shape, ShapeWalkBudget};
     use carina_core::schema::{SchemaKind, SchemaRegistry};
     use indexmap::IndexMap;
+
+    #[test]
+    fn only_organizations_account_defaults_to_prevent_destroy() {
+        let schemas = super::all_schemas();
+        let protected = schemas
+            .iter()
+            .filter(|schema| schema.as_schema().prevents_destroy_by_default())
+            .map(|schema| schema.as_schema().resource_type().to_string())
+            .collect::<Vec<_>>();
+
+        assert_eq!(protected, ["organizations.Account"]);
+        assert!(
+            schemas
+                .iter()
+                .find(|schema| schema.as_schema().resource_type() == "organizations.Account")
+                .expect("Organizations Account schema must be generated")
+                .as_schema()
+                .prevents_destroy_by_default()
+        );
+        assert!(
+            !schemas
+                .iter()
+                .find(|schema| schema.as_schema().resource_type() == "s3.Bucket")
+                .expect("S3 Bucket schema must be generated")
+                .as_schema()
+                .prevents_destroy_by_default()
+        );
+    }
 
     #[test]
     fn internet_gateway_tag_change_plans_update() {
@@ -92,11 +144,12 @@ mod tests {
         );
         let orphans = Orphans::new();
         let saved_attrs = RawSavedAttrs::default().lift(&schemas);
+        let providers = crate::test_comparison_router();
 
         let plan = create_plan(
             &managed,
             &[],
-            &carina_core::provider::ProviderRouter::new(),
+            &providers,
             PlanPriorStates::new(&current_states, &orphans),
             &HashMap::new(),
             &schemas,
@@ -222,7 +275,9 @@ mod tests {
             }
 
             let error = attribute
-                .validate(&Value::Concrete(ConcreteValue::Int(invalid)))
+                .validate(&Value::<carina_core::resource::NoPlaceholder>::Concrete(
+                    ConcreteValue::Int(invalid),
+                ))
                 .expect_err("an undeclared integer-enum value must fail validation")
                 .to_string();
 
@@ -407,7 +462,7 @@ mod tests {
                     depth + 1,
                 );
             }
-            RawShape::Struct { name, fields } => {
+            RawShape::Struct { name, fields, .. } => {
                 if schema.defs().contains_key(name) && current_named_def != Some(name) {
                     collector.stack.remove(&ptr);
                     return;

@@ -5,11 +5,19 @@ use carina_core::parser::{ParsedFile, ProviderContext};
 use carina_core::provider::{
     ProviderFactory, collect_schemas, provider_custom_types_from_factories,
 };
-use carina_core::resource::{ConcreteValue, Resource, Value};
-use carina_core::schema::SchemaRegistry;
+use carina_core::resource::{
+    ConcreteValue, ModuleSource, ParserPlaceholder, Resource as GenericResource,
+    Value as GenericValue,
+};
+use carina_core::schema::{
+    ReferenceForms, SchemaRegistry, ValidatedConfigSchema, ValidatedProviderSchemaWitness,
+};
 use carina_core::validation::validate_resources;
 use carina_provider_awscc::schemas::generated::wafv2::web_acl::wafv2_web_acl_config;
 use indexmap::IndexMap;
+
+type Resource = GenericResource<ModuleSource, ParserPlaceholder>;
+type Value = GenericValue<ParserPlaceholder>;
 
 struct Wafv2SchemaFactory;
 
@@ -33,7 +41,10 @@ impl ProviderFactory for Wafv2SchemaFactory {
         Ok(())
     }
 
-    fn extract_region(&self, _attributes: &IndexMap<String, Value>) -> String {
+    fn extract_region(
+        &self,
+        _attributes: &IndexMap<String, carina_core::resource::Value>,
+    ) -> String {
         "ap-northeast-1".to_string()
     }
 
@@ -41,9 +52,10 @@ impl ProviderFactory for Wafv2SchemaFactory {
         &self,
         _binding: Option<&str>,
         _config: &carina_core::provider::ProviderReadyConfig,
+        _initialize_outcome: carina_core::provider::InitializeOutcomeMint,
     ) -> carina_core::provider::BoxFuture<
         '_,
-        carina_core::provider::ProviderResult<Box<dyn carina_core::provider::Provider>>,
+        carina_core::provider::ProviderResult<carina_core::provider::ProviderInitialization>,
     > {
         Box::pin(async {
             Err(carina_core::provider::ProviderError::internal(
@@ -59,6 +71,15 @@ impl ProviderFactory for Wafv2SchemaFactory {
                 .validate()
                 .expect("WebACL schema must be valid"),
         ]
+    }
+
+    fn schema_witness(&self) -> ValidatedProviderSchemaWitness {
+        ValidatedProviderSchemaWitness::new(
+            self.schemas(),
+            ValidatedConfigSchema::default(),
+            ReferenceForms::new(),
+        )
+        .expect("WebACL schema-only witness must be valid")
     }
 }
 
@@ -179,10 +200,8 @@ fn validate_web_acl(resource: Resource) -> Result<(), String> {
         resource_types: ProviderContext::resource_types_from_schema_registry(&schemas),
         ..ProviderContext::default()
     };
-    let parsed = ParsedFile {
-        resources: vec![resource],
-        ..ParsedFile::default()
-    };
+    let mut parsed = ParsedFile::default();
+    parsed.resources = vec![resource];
 
     validate_resources(
         &parsed,

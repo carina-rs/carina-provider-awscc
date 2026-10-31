@@ -29,6 +29,7 @@ const VALID_STATUS: &[&str] = &["ACTIVE", "SUSPENDED", "PENDING_CLOSURE"];
 pub fn organizations_account_config() -> AwsccSchemaConfig {
     let mut schema = ResourceSchema::new("organizations.Account")
         .with_description("You can use AWS::Organizations::Account to manage accounts in organization.");
+    schema = schema.default_prevent_destroy();
     #[inline(never)]
     fn build_account_id_attribute() -> AttributeSchema {
         AttributeSchema::provider_populated("account_id", carina_aws_types::aws_account_id())

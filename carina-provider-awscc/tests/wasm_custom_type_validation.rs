@@ -48,27 +48,24 @@ async fn flow_log_integer_validator_dispatches_through_the_wasm_guest() {
         .get("awscc", "ec2.FlowLog", SchemaKind::Resource)
         .expect("ec2.FlowLog schema must cross the WASM boundary");
     let custom_types = provider_custom_types_from_factories(Arc::clone(&factories));
-    let validate = |value| {
-        flow_log.validate_with_resolver(
-            &HashMap::from([
-                (
-                    "max_aggregation_interval".to_string(),
-                    Value::Concrete(ConcreteValue::Int(value)),
-                ),
-                (
-                    "resource_id".to_string(),
-                    Value::Concrete(ConcreteValue::String("vpc-0123456789abcdef0".into())),
-                ),
-                (
-                    "resource_type".to_string(),
-                    Value::Concrete(ConcreteValue::enum_identifier(
-                        "aws.ec2.FlowLog.ResourceType.vpc",
-                    )),
-                ),
-            ]),
-            &|_| false,
-            &custom_types,
-        )
+    let validate = |value: i64| {
+        let attributes: HashMap<String, Value> = HashMap::from([
+            (
+                "max_aggregation_interval".to_string(),
+                Value::Concrete(ConcreteValue::Int(value)),
+            ),
+            (
+                "resource_id".to_string(),
+                Value::Concrete(ConcreteValue::String("vpc-0123456789abcdef0".into())),
+            ),
+            (
+                "resource_type".to_string(),
+                Value::Concrete(ConcreteValue::enum_identifier(
+                    "aws.ec2.FlowLog.ResourceType.vpc",
+                )),
+            ),
+        ]);
+        flow_log.validate_with_resolver(&attributes, &|_| false, &custom_types)
     };
 
     validate(60).expect("guest bridge must parse and accept integer witness 60");

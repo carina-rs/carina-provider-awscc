@@ -3,12 +3,14 @@ use carina_core::executor::{
     ModuleConstraintGate, ProviderPreparationContext, prepare_provider_ready_resource,
 };
 use carina_core::provider::{
-    AppliedIdentifier, AppliedState, CreateRequest, ProviderFactory, ProviderReadyResource,
+    AppliedIdentifier, AppliedState, CreateFailure, CreateOutcome, CreateRequest,
+    InitializeOutcomeMint, ProviderFactory, ProviderInitialization, ProviderReadyResource,
     ReadOutcome,
 };
-use carina_core::resource::Resource;
-use carina_core::schema::AttributeType;
-use carina_core::schema::SchemaRegistry;
+use carina_core::resource::{Resource, ResourceId};
+use carina_core::schema::{
+    AttributeType, SchemaRegistry, ValidatedConfigSchema, ValidatedProviderSchemaWitness,
+};
 use carina_provider_awscc::AwsccNormalizer;
 
 /// The schema under test comes from `SchemaRegistry`; this fixture only
@@ -46,22 +48,42 @@ impl ProviderFactory for OwnerOnlyAwsccFactory {
         &self,
         _binding: Option<&str>,
         _config: &carina_core::provider::ProviderReadyConfig,
+        _initialize_outcome: InitializeOutcomeMint,
     ) -> carina_core::provider::BoxFuture<
         '_,
-        carina_core::provider::ProviderResult<Box<dyn carina_core::provider::Provider>>,
+        carina_core::provider::ProviderResult<ProviderInitialization>,
     > {
         Box::pin(async {
-            Err::<Box<dyn carina_core::provider::Provider>, _>(
-                carina_core::provider::ProviderError::internal(
-                    "schema-only test factory cannot create providers",
-                ),
-            )
+            Err(carina_core::provider::ProviderError::internal(
+                "schema-only test factory cannot create providers",
+            ))
         })
     }
 
     fn schemas(&self) -> Vec<carina_core::schema::ValidatedResourceSchema> {
         Vec::new()
     }
+
+    fn schema_witness(&self) -> ValidatedProviderSchemaWitness {
+        ValidatedProviderSchemaWitness::new(
+            Vec::new(),
+            ValidatedConfigSchema::default(),
+            Default::default(),
+        )
+        .expect("empty schema-only provider witness must be valid")
+    }
+}
+
+/// Dispatch a create while retaining core's cancellation receiver until the
+/// provider future settles, as required by the protocol-v13 create boundary.
+#[allow(dead_code)]
+pub async fn dispatch_create<P: carina_core::provider::Provider + ?Sized>(
+    provider: &P,
+    id: &ResourceId,
+    request: CreateRequest,
+) -> Result<CreateOutcome, CreateFailure> {
+    let (create, _cancellation) = carina_core::executor::dispatch_create(provider, id, request);
+    create.await
 }
 
 #[allow(dead_code)]
