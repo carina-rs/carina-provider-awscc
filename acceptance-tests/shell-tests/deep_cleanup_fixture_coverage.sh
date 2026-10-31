@@ -12,9 +12,10 @@
 # flag: such a flag would stay true after someone deleted the sweep pass, while
 # anchoring coverage to the sweep text makes that deletion fail this test.
 #
-# The allowlist is only for types AWS removes as a side effect of deleting their
-# parent, so no sweep pass is expected. Each reason is validated data rather
-# than a comment; an entry with no reason fails. Known gaps are types with
+# The allowlist is for types AWS removes with their parent or that have no
+# deletion API and expire automatically, so no sweep pass is expected. Each
+# reason is validated data rather than a comment; an entry with no reason
+# fails. Known gaps are types with
 # fixtures but no current sweep pass. They are reported without failing, but
 # the list is self-retiring: once a listed type gains its sweep command, the
 # test fails until the entry is removed. Without that check, known gaps would
@@ -304,7 +305,7 @@ awk '
     }
 ' "$SWEEP_TEXT_FILE" | LC_ALL=C sort -u > "$SWEEP_COMMANDS_FILE"
 
-MUTATION_VERB_PATTERN='^(delete-|release-|revoke-|disassociate-|detach-|schedule-)|^rb$'
+MUTATION_VERB_PATTERN='^(delete-|release-|revoke-|disassociate-|detach-|schedule-)|^(rb|unsubscribe)$'
 sweep_mutation_count=$(awk -v mutation_verb_pattern="$MUTATION_VERB_PATTERN" '
     $3 ~ mutation_verb_pattern {
         count++
@@ -364,6 +365,8 @@ awscc.s3.Bucket|aws s3 rb
 awscc.s3.BucketPolicy|aws s3api delete-bucket-policy
 awscc.scheduler.Schedule|aws scheduler delete-schedule
 awscc.scheduler.ScheduleGroup|aws scheduler delete-schedule-group
+awscc.sns.Subscription|aws sns unsubscribe
+awscc.sns.Topic|aws sns delete-topic
 awscc.wafv2.WebAcl|aws wafv2 delete-web-acl
 EOF
 
@@ -372,6 +375,7 @@ awscc.ec2.IpamPool|Deleted with its parent awscc.ec2.Ipam by delete-ipam --casca
 awscc.ec2.Route|Deleted with its parent awscc.ec2.RouteTable.
 awscc.elasticloadbalancingv2.Listener|Deleted with its parent awscc.elasticloadbalancingv2.LoadBalancer.
 awscc.s3.BucketPolicy|Deleted with its parent awscc.s3.Bucket.
+awscc.sns.Subscription|Confirmed subscriptions are deleted with their SNS topic; pending subscriptions have no deletion API and are left for SNS to expire.
 EOF
 
 # Intentionally empty: record fixture types with no cleanup pass here, with a

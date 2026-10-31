@@ -65,6 +65,8 @@ RESOURCE_TYPES=(
     "AWS::S3::BucketPolicy"
     "AWS::CloudWatch::Alarm"
     "AWS::Budgets::Budget"
+    "AWS::SNS::Topic"
+    "AWS::SNS::Subscription"
     "AWS::Scheduler::Schedule"
     "AWS::Scheduler::ScheduleGroup"
     "AWS::SSM::Parameter"

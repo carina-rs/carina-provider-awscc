@@ -140,6 +140,7 @@ for fn in \
     deep_cleanup_cloudfront_unreferenced_resources \
     deep_cleanup_cloudfront_functions \
     deep_cleanup_scheduler \
+    deep_cleanup_sns \
     deep_cleanup_with_timeout \
     deep_cleanup_wait_for_network_interface \
     deep_cleanup_list_wafv2_web_acls \
@@ -1567,6 +1568,9 @@ with_account_creds() {
                 ;;
             "aws ec2 describe-security-groups"*)
                 printf '%s\t%s\n' "$SOURCE_SG_ID" "$DEST_SG_ID"
+                ;;
+            "aws sns list-topics "*)
+                printf '[]\n'
                 ;;
             "aws ec2 describe-security-group-rules"*)
                 if [[ "$command" == *"Name=group-id,Values=$SOURCE_SG_ID"* ]]; then

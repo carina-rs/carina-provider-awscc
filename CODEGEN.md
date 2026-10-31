@@ -161,13 +161,33 @@ cargo run --bin codegen -- --file schema.json --type-name AWS::EC2::VPC \
 | `boolean` | `AttributeType::Bool` |
 | `number` | `AttributeType::Float` |
 | `object` (properties) | `AttributeType::Struct` with `StructField` |
-| `["object","string"]` | `carina_aws_types::iam_policy_document()` when the property name ends in `PolicyDocument` or is listed in `NONSTANDARD_IAM_POLICY_DOCUMENT_PROPERTIES`; otherwise codegen panics and names the property so it can be classified explicitly |
+| bare `object` (no properties or `patternProperties`) | Must be classified explicitly: `EMPTY_OBJECT_PROPERTIES` emits an empty `Struct`, `STRING_MAP_PROPERTIES` emits `Map<String, String>`, a dedicated `AttributeType` override emits its declared type, and `FREE_FORM_JSON_PROPERTIES` is omitted pending [carina-rs/carina#4144](https://github.com/carina-rs/carina/issues/4144); an unclassified property makes codegen panic with its CloudFormation type and property path |
+| `object` with direct-string `patternProperties` | `AttributeType::Map<String, String>` |
+| `object` with one `patternProperties` value that `$ref`s an object struct | `AttributeType::Map<String, Struct>` using the referenced definition; every other object-map value shape is rejected |
+| `["object","string"]` | `carina_aws_types::iam_policy_document()` only for a typed path listed in `IAM_POLICY_DOCUMENT_PROPERTIES` or `NONSTANDARD_IAM_POLICY_DOCUMENT_PROPERTIES`; properties listed in `FREE_FORM_JSON_PROPERTIES` are omitted pending the JSON-document type tracked by [carina-rs/carina#4144](https://github.com/carina-rs/carina/issues/4144) and documented as not yet supported; every other union makes codegen panic and name the unclassified property |
 | `$ref` to a `Tag*` definition | `carina_aws_types::tags_type()` only when the definition is an object with exactly direct-string `Key` and `Value` properties, or has no `properties` and exactly one `patternProperties` entry whose value is a direct string |
 | `array` | `AttributeType::unordered_list()` |
 
 CloudFormation `number` properties map to `Float` unless registered as `IntegerFromNumber` in `resource_type_overrides()`. That override maps them to `Int` using the property's CloudFormation `minimum` and `maximum`.
 
 String types are inferred from property names (e.g., `SubnetId` maps to `subnet_id()` type). Resource-specific overrides are defined in `resource_type_overrides()` and `known_string_type_overrides()` within `codegen.rs`.
+
+### Classifying bare objects
+
+Every reachable bare CloudFormation object must use the single `CfnPropertyPath` key builder. The key preserves raw CloudFormation spelling: a top-level property is `Prop`, and a nested property is `<RawParentDefinitionOrInlineProperty>.<Prop>` (for example, `SSESpecification.Marker`, not `SseSpecification.Marker`). Schema generation, definition pre-scan, nested type overrides, cache coverage, and Markdown rendering all use this same key. Unreferenced definitions are not emitted and are skipped by the cache walker. Do not derive a key from a generated Rust struct name or match only the leaf property name.
+
+Inline parents are keyed by their raw property name in the one-level `CfnPropertyPath`; if an inline parent collides with a definition name, the key must become definition-qualified rather than adding another leaf-name heuristic.
+
+Classify each shape in exactly one place. Codegen rejects multiple matching classifications at lookup time, and the table-disjointness test checks IAM, free-form JSON, empty-object, string-map, omitted-property, and dedicated `AttributeType` override keys together:
+
+- `FREE_FORM_JSON_PROPERTIES` contains heterogeneous or recursive JSON documents that Carina cannot represent until [carina-rs/carina#4144](https://github.com/carina-rs/carina/issues/4144) lands. These properties are omitted from generated schemas and regular property tables, then listed in the generated unsupported note.
+- `EMPTY_OBJECT_PROPERTIES` contains marker objects whose only meaningful value is `{}`. They generate a closed empty struct, so `{}` validates and any field is an error.
+- `STRING_MAP_PROPERTIES` is only for genuine homogeneous string-to-string maps.
+- `IAM_POLICY_DOCUMENT_PROPERTIES` explicitly lists every cached path that previously matched the old `*PolicyDocument` suffix rule; `NONSTANDARD_IAM_POLICY_DOCUMENT_PROPERTIES` lists policy paths with other names. Both tables are typed-path and stale-row checked.
+- A dedicated `AttributeType` override handles a known non-generic shape, such as the Budgets maps.
+- `OMITTED_RESOURCE_PROPERTIES` contains otherwise representable properties deliberately excluded because their provider read-back conflicts with the resource model.
+
+Omission works at both top level and inside generated structs. Generated resource docs collect `FREE_FORM_JSON_PROPERTIES` and `OMITTED_RESOURCE_PROPERTIES` under **Not yet supported**, resolve a reachable nested definition back to its complete snake-case provider/DSL path (for example, `config.child_policy`), and include the table reason. If no provider path is available, the note labels the raw `<Definition>.<Property>` key as a **definition-qualified name**, not as a DSL path. The cache-coverage test fails for both an unclassified bare object and a stale classification row. An unclassified codegen panic points back to this section.
 
 ## Schema Cache
 

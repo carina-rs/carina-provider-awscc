@@ -761,6 +761,51 @@ deep_cleanup_budgets() {
     done <<< "$budget_names"
 }
 
+# Delete acceptance-test SNS topics. SNS has no server-side topic-name prefix
+# filter, so the CLI query narrows the response and every ARN is checked again
+# locally before any mutation.
+# DeleteTopic removes confirmed subscriptions; pending subscriptions cannot be removed via the API and are left for SNS to expire.
+deep_cleanup_sns() {
+    local account="$1"
+
+    local topic_arns_json
+    deep_cleanup_enumerate "$account" "acceptance-test SNS topics" topic_arns_json \
+        aws sns list-topics \
+        --query '(Topics || `[]`)[?contains(TopicArn, `:carina-acc-test`)].TopicArn' --output json
+    if [ "$DEEP_CLEANUP_LAST_ENUMERATION_SUCCEEDED" -eq 0 ]; then
+        echo "  Skipping SNS cleanup because topics could not be enumerated."
+        return 0
+    fi
+
+    local topic_arns
+    if ! topic_arns=$(printf '%s\n' "$topic_arns_json" | \
+        jq -r 'if type == "array" and all(.[]; type == "string") then .[] else error("expected an array of topic-ARN strings") end'); then
+        DEEP_CLEANUP_LAST_ENUMERATION_SUCCEEDED=0
+        DEEP_CLEANUP_ENUMERATION_FAILURE_COUNT=$((${DEEP_CLEANUP_ENUMERATION_FAILURE_COUNT:-0} + 1))
+        echo "  ERROR: Failed to parse acceptance-test SNS topics for account $account as JSON" >&2
+        echo "  Skipping SNS cleanup because topics could not be enumerated."
+        return 0
+    fi
+
+    local topic_arn
+    while IFS= read -r topic_arn; do
+        [ -z "$topic_arn" ] && continue
+        case "$topic_arn" in
+            arn:aws:sns:*:*:carina-acc-test*|\
+            arn:aws-cn:sns:*:*:carina-acc-test*|\
+            arn:aws-us-gov:sns:*:*:carina-acc-test*) ;;
+            *)
+                echo "  Skipping SNS topic outside acceptance-test prefix: $topic_arn"
+                continue
+                ;;
+        esac
+
+        echo "  Cleaning SNS topic $topic_arn..."
+        deep_cleanup_delete_resource "$account" "delete SNS topic $topic_arn" \
+            aws sns delete-topic --topic-arn "$topic_arn"
+    done <<< "$topic_arns"
+}
+
 # Runs a command with a hard wall-clock limit. This is used around AWS waiters,
 # whose generated polling limits can otherwise hold up an entire account sweep.
 deep_cleanup_with_timeout() {
@@ -1401,6 +1446,7 @@ deep_cleanup_account() {
     deep_cleanup_scheduler "$account"
     deep_cleanup_cloudwatch_alarms "$account"
     deep_cleanup_budgets "$account"
+    deep_cleanup_sns "$account"
 
     # 9. Delete orphaned IAM OIDC providers tagged by acceptance tests
     local oidc_providers
