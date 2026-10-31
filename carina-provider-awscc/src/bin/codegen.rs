@@ -16,7 +16,7 @@ use anyhow::{Context, Result};
 use carina_aws_types::dsl_enum_value;
 use carina_docgen::{Heading, PageBuilder, TableCell};
 use carina_provider_awscc::schemas::catalog::AwsccType;
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use heck::{ToPascalCase, ToSnakeCase};
 use regex::Regex;
 use serde::Deserialize;
@@ -483,6 +483,19 @@ fn emit_arn_helper(service: &str, resource: &str) -> Result<String> {
     ))
 }
 
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum OutputFormat {
+    #[value(alias = "md")]
+    Markdown,
+    Rust,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+enum OutputMode {
+    Markdown { examples_dir: PathBuf },
+    Rust,
+}
+
 #[derive(Parser, Debug)]
 #[command(name = "carina-codegen")]
 #[command(about = "Generate Carina schema code from CloudFormation schemas")]
@@ -520,14 +533,33 @@ struct Args {
 
     /// Output format: rust (default) or markdown (for documentation)
     #[arg(long, default_value = "rust")]
-    format: String,
+    format: OutputFormat,
 
     /// Directory containing generated-doc examples (`<service>_<resource>/main.crn`).
-    #[arg(
-        long,
-        required_if_eq_any([("format", "markdown"), ("format", "md")])
-    )]
+    #[arg(long)]
     examples_dir: Option<PathBuf>,
+}
+
+impl TryFrom<&Args> for OutputMode {
+    type Error = anyhow::Error;
+
+    fn try_from(args: &Args) -> Result<Self> {
+        match args.format {
+            OutputFormat::Markdown => {
+                let Some(examples_dir) = args.examples_dir.clone() else {
+                    anyhow::bail!("--examples-dir is required when --format is markdown");
+                };
+                if !examples_dir.is_dir() {
+                    anyhow::bail!(
+                        "--examples-dir must be an existing directory: {}",
+                        examples_dir.display()
+                    );
+                }
+                Ok(Self::Markdown { examples_dir })
+            }
+            OutputFormat::Rust => Ok(Self::Rust),
+        }
+    }
 }
 
 /// CloudFormation Resource Schema
@@ -1692,12 +1724,6 @@ fn full_resource_name_from_type(type_name: &str) -> Result<String> {
 }
 
 fn load_markdown_example(examples_dir: &Path, type_name: &str) -> Result<String> {
-    if !examples_dir.is_dir() {
-        anyhow::bail!(
-            "--examples-dir must be an existing directory: {}",
-            examples_dir.display()
-        );
-    }
     let path = examples_dir
         .join(full_resource_name_from_type(type_name)?)
         .join("main.crn");
@@ -1932,6 +1958,7 @@ fn dsl_aliases_code(
 
 fn main() -> Result<()> {
     let args = Args::parse();
+    let output_mode = OutputMode::try_from(&args)?;
 
     if args.print_module_name {
         println!("{}", module_name_from_type(&args.type_name)?);
@@ -1982,17 +2009,12 @@ fn main() -> Result<()> {
     }
 
     // Generate output based on format
-    let output = match args.format.as_str() {
-        "markdown" | "md" => {
-            let examples_dir = args
-                .examples_dir
-                .as_deref()
-                .expect("clap requires --examples-dir for Markdown output");
-            let example = load_markdown_example(examples_dir, &args.type_name)?;
+    let output = match output_mode {
+        OutputMode::Markdown { examples_dir } => {
+            let example = load_markdown_example(&examples_dir, &args.type_name)?;
             generate_markdown(&schema, &args.type_name, &example)?
         }
-        "rust" => generate_schema_code(&schema, &args.type_name)?,
-        other => anyhow::bail!("Unknown format: {}. Use 'rust' or 'markdown'.", other),
+        OutputMode::Rust => generate_schema_code(&schema, &args.type_name)?,
     };
 
     // Output
@@ -16168,32 +16190,63 @@ mod tests {
 
     #[test]
     fn test_markdown_format_requires_examples_dir() {
-        let error = Args::try_parse_from([
+        let args = Args::try_parse_from([
             "carina-codegen",
             "--type-name",
             "AWS::EC2::TransitGatewayAttachment",
             "--format",
             "markdown",
         ])
-        .expect_err("Markdown output without --examples-dir must be rejected");
+        .expect("the format should be parsed before mode validation");
+        let error = OutputMode::try_from(&args)
+            .expect_err("Markdown output without --examples-dir must be rejected");
 
         assert_eq!(
-            error.kind(),
-            clap::error::ErrorKind::MissingRequiredArgument
-        );
-        assert!(
-            error.to_string().contains("--examples-dir <EXAMPLES_DIR>"),
-            "{error}"
+            error.to_string(),
+            "--examples-dir is required when --format is markdown"
         );
     }
 
     #[test]
-    fn test_load_markdown_example_rejects_non_directory() {
-        let not_directory = tempfile::NamedTempFile::new().unwrap();
+    fn test_markdown_format_alias_maps_to_markdown_mode() {
+        let examples_dir = tempfile::tempdir().unwrap();
+        let examples_dir_arg = examples_dir.path().to_string_lossy();
+        let args = Args::try_parse_from([
+            "carina-codegen",
+            "--type-name",
+            "AWS::EC2::TransitGatewayAttachment",
+            "--format",
+            "md",
+            "--examples-dir",
+            examples_dir_arg.as_ref(),
+        ])
+        .expect("md should be accepted as an alias for markdown");
 
-        let error =
-            load_markdown_example(not_directory.path(), "AWS::EC2::TransitGatewayAttachment")
-                .unwrap_err();
+        assert_eq!(
+            OutputMode::try_from(&args).unwrap(),
+            OutputMode::Markdown {
+                examples_dir: examples_dir.path().to_path_buf()
+            }
+        );
+    }
+
+    #[test]
+    fn test_output_mode_rejects_non_directory() {
+        let not_directory = tempfile::NamedTempFile::new().unwrap();
+        let examples_dir_arg = not_directory.path().to_string_lossy();
+        let args = Args::try_parse_from([
+            "carina-codegen",
+            "--type-name",
+            "AWS::EC2::TransitGatewayAttachment",
+            "--format",
+            "markdown",
+            "--examples-dir",
+            examples_dir_arg.as_ref(),
+        ])
+        .expect("the examples path should be parsed before mode validation");
+
+        let error = OutputMode::try_from(&args)
+            .expect_err("Markdown output should reject a non-directory examples path");
 
         assert_eq!(
             error.to_string(),
