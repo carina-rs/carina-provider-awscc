@@ -12,10 +12,10 @@ Resource Type definition for AWS::ElasticLoadBalancingV2::TargetGroup
 ```crn
 awscc.elasticloadbalancingv2.TargetGroup {
   name              = 'registry-tg'
-  protocol          = 'HTTP'
+  protocol          = aws.elasticloadbalancingv2.TargetGroup.Protocol.http
   port              = 8080
   vpc_id            = 'vpc-dddd4444'
-  target_type       = 'ip'
+  target_type       = aws.elasticloadbalancingv2.TargetGroup.TargetType.ip
   health_check_path = '/health'
 
   target {
@@ -23,7 +23,7 @@ awscc.elasticloadbalancingv2.TargetGroup {
     port = 8080
   }
 
-  tag {
+  tags = {
     Environment = 'example'
     Workload    = 'registry'
   }

@@ -12,7 +12,7 @@ The ``AWS::ECR::Repository`` resource specifies an Amazon Elastic Container Regi
 ```crn
 awscc.ecr.Repository {
   repository_name      = 'registry-publish-api'
-  image_tag_mutability = awscc.ecr.Repository.ImageTagMutability.immutable
+  image_tag_mutability = aws.ecr.Repository.ImageTagMutability.immutable
 
   image_scanning_configuration = {
     scan_on_push = true
