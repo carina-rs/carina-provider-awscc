@@ -25,6 +25,14 @@ pub fn sns_subscription_config() -> AwsccSchemaConfig {
     }
     schema = schema.attribute(build_arn_attribute());
     #[inline(never)]
+    fn build_delivery_policy_attribute() -> AttributeSchema {
+        AttributeSchema::optional("delivery_policy", crate::schemas::awscc_types::sns_subscription_delivery_policy())
+                .with_description("The delivery policy JSON assigned to the subscription. Enables the subscriber to define the message delivery retry strategy in the case of an HTTP/S endpoint subscribed to the topic.")
+                .with_provider_name("DeliveryPolicy")
+            .build()
+    }
+    schema = schema.attribute(build_delivery_policy_attribute());
+    #[inline(never)]
     fn build_endpoint_attribute() -> AttributeSchema {
         AttributeSchema::optional("endpoint", AttributeType::string())
                 .create_only()
@@ -59,6 +67,14 @@ pub fn sns_subscription_config() -> AwsccSchemaConfig {
     }
     schema = schema.attribute(build_raw_message_delivery_attribute());
     #[inline(never)]
+    fn build_redrive_policy_attribute() -> AttributeSchema {
+        AttributeSchema::optional("redrive_policy", crate::schemas::awscc_types::sns_subscription_redrive_policy())
+                .with_description("When specified, sends undeliverable messages to the specified Amazon SQS dead-letter queue. Messages that can't be delivered due to client errors are held in the dead-letter queue for further analysis or reprocessing.")
+                .with_provider_name("RedrivePolicy")
+            .build()
+    }
+    schema = schema.attribute(build_redrive_policy_attribute());
+    #[inline(never)]
     fn build_region_attribute() -> AttributeSchema {
         AttributeSchema::optional("region", carina_aws_types::aws_region())
                 .write_only()
@@ -67,6 +83,14 @@ pub fn sns_subscription_config() -> AwsccSchemaConfig {
             .build()
     }
     schema = schema.attribute(build_region_attribute());
+    #[inline(never)]
+    fn build_replay_policy_attribute() -> AttributeSchema {
+        AttributeSchema::optional("replay_policy", crate::schemas::awscc_types::sns_subscription_replay_policy())
+                .with_description("Specifies whether Amazon SNS resends the notification to the subscription when a message's attribute changes.")
+                .with_provider_name("ReplayPolicy")
+            .build()
+    }
+    schema = schema.attribute(build_replay_policy_attribute());
     #[inline(never)]
     fn build_subscription_role_arn_attribute() -> AttributeSchema {
         AttributeSchema::optional("subscription_role_arn", carina_aws_types::arn())

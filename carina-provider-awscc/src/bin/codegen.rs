@@ -182,6 +182,12 @@ const EXIT_SKIPPED: i32 = 2;
 /// Unified type override for resource-scoped property overrides.
 /// Allows overriding string type, enum values, numeric shape, integer range,
 /// or integer enum for a specific (resource_type, property_name) pair.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct AttributeTypeOverrideDefault {
+    value_expression: &'static str,
+    markdown: &'static str,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 enum TypeOverride {
     /// Override to a specific string type (e.g., "super::super::iam::role::arn()")
@@ -192,6 +198,8 @@ enum TypeOverride {
     AttributeType {
         expression: &'static str,
         display: &'static str,
+        block_name: Option<&'static str>,
+        default: Option<AttributeTypeOverrideDefault>,
     },
     /// Override to an enum with specific values
     Enum(Vec<&'static str>),
@@ -933,48 +941,11 @@ struct ClassifiedProperty {
 /// These properties come back together when the JSON-document type from
 /// [carina-rs/carina#4144](https://github.com/carina-rs/carina/issues/4144)
 /// lands.
-const FREE_FORM_JSON_PROPERTIES: &[ClassifiedProperty] = &[
-    ClassifiedProperty {
-        cfn_type: "AWS::SNS::Subscription",
-        property_path: CfnPropertyPath::new(None, "DeliveryPolicy"),
-        reason: "Cloud Control canonicalizes this free-form JSON document to an object.",
-    },
-    ClassifiedProperty {
-        cfn_type: "AWS::SNS::Subscription",
-        property_path: CfnPropertyPath::new(None, "FilterPolicy"),
-        reason: "Cloud Control canonicalizes this free-form JSON document to an object.",
-    },
-    ClassifiedProperty {
-        cfn_type: "AWS::SNS::Subscription",
-        property_path: CfnPropertyPath::new(None, "RedrivePolicy"),
-        reason: "Cloud Control canonicalizes this free-form JSON document to an object.",
-    },
-    ClassifiedProperty {
-        cfn_type: "AWS::SNS::Subscription",
-        property_path: CfnPropertyPath::new(None, "ReplayPolicy"),
-        reason: "Cloud Control canonicalizes this free-form JSON document to an object.",
-    },
-    ClassifiedProperty {
-        cfn_type: "AWS::SNS::Topic",
-        property_path: CfnPropertyPath::new(None, "DataProtectionPolicy"),
-        reason: "This policy can contain nested, heterogeneous JSON values.",
-    },
-    ClassifiedProperty {
-        cfn_type: "AWS::SNS::Topic",
-        property_path: CfnPropertyPath::new(None, "ArchivePolicy"),
-        reason: "This policy can contain nested, heterogeneous JSON values.",
-    },
-    ClassifiedProperty {
-        cfn_type: "AWS::Logs::LogGroup",
-        property_path: CfnPropertyPath::new(None, "DataProtectionPolicy"),
-        reason: "This policy can contain nested, heterogeneous JSON values.",
-    },
-    ClassifiedProperty {
-        cfn_type: "AWS::Logs::LogGroup",
-        property_path: CfnPropertyPath::new(None, "FieldIndexPolicies"),
-        reason: "Each field-index policy is a free-form JSON document whose Fields value is an array.",
-    },
-];
+const FREE_FORM_JSON_PROPERTIES: &[ClassifiedProperty] = &[ClassifiedProperty {
+    cfn_type: "AWS::SNS::Subscription",
+    property_path: CfnPropertyPath::new(None, "FilterPolicy"),
+    reason: "Filter keys are user-defined message attribute or body-property names, and the operator grammar nests recursively; this remains blocked on carina-rs/carina#4144.",
+}];
 
 #[cfg(test)]
 const TEST_FREE_FORM_JSON_PROPERTIES: &[ClassifiedProperty] = &[ClassifiedProperty {
@@ -1091,13 +1062,25 @@ const TEST_EMPTY_OBJECT_PROPERTIES: &[ClassifiedProperty] = &[];
 /// explicit table is the only place a future bare string map may opt in.
 const STRING_MAP_PROPERTIES: &[ClassifiedProperty] = &[];
 
-/// Properties deliberately excluded because their Cloud Control read shape
-/// conflicts with a separately managed resource.
-const OMITTED_RESOURCE_PROPERTIES: &[ClassifiedProperty] = &[ClassifiedProperty {
-    cfn_type: "AWS::SNS::Topic",
-    property_path: CfnPropertyPath::new(None, "Subscription"),
-    reason: "Cloud Control aggregates separately managed topic subscriptions; use awscc.sns.Subscription instead.",
-}];
+/// Otherwise representable properties deliberately excluded for a documented
+/// provider limitation, recorded separately for each row.
+const OMITTED_RESOURCE_PROPERTIES: &[ClassifiedProperty] = &[
+    ClassifiedProperty {
+        cfn_type: "AWS::SNS::Topic",
+        property_path: CfnPropertyPath::new(None, "Subscription"),
+        reason: "Cloud Control aggregates separately managed topic subscriptions; use awscc.sns.Subscription instead.",
+    },
+    ClassifiedProperty {
+        cfn_type: "AWS::SNS::Topic",
+        property_path: CfnPropertyPath::new(None, "DataProtectionPolicy"),
+        // Cloud Control create/get was tested in both directions with
+        // carina-test-008 on 2026-10-31. AWS rejected this property in
+        // ap-northeast-1 and us-east-1 because SNS message data protection is
+        // no longer available to new customers, so no real read shape can be
+        // verified.
+        reason: "AWS SNS message data protection is no longer available to new customers; Cloud Control rejected it in ap-northeast-1 and us-east-1 on 2026-10-31.",
+    },
+];
 
 fn find_omitted_property<'a>(
     table: &'a [ClassifiedProperty],
@@ -1274,6 +1257,7 @@ fn classify_bare_object(
     if let Some(TypeOverride::AttributeType {
         expression,
         display,
+        ..
     }) = resource_type_override(cfn_type, property_path)
     {
         matches.push(BareObjectClassification::TypedOverride {
@@ -1357,7 +1341,10 @@ fn object_string_union_is_iam_policy_document(
 
     match classify_bare_object(cfn_type, property_path) {
         Some(BareObjectClassification::IamPolicyDocument(_)) => return true,
-        Some(BareObjectClassification::FreeFormJson(_)) => return false,
+        Some(
+            BareObjectClassification::FreeFormJson(_)
+            | BareObjectClassification::TypedOverride { .. },
+        ) => return false,
         Some(classification) => panic!(
             "object|string property {cfn_type}.{property_path} has incompatible classification in {}; classify it as an IAM policy document or an omitted free-form JSON document; see CODEGEN.md#classifying-bare-objects",
             classification.owner_name()
@@ -3679,7 +3666,14 @@ fn generate_markdown_with_example(
         if write_only.contains(prop_name) {
             page.push_str("- **Write-only:** Yes\n");
         }
-        if let Some(default_val) = &prop.default_value
+        let override_default =
+            match resource_type_override(type_name, CfnPropertyPath::new(None, prop_name)) {
+                Some(TypeOverride::AttributeType { default, .. }) => *default,
+                _ => None,
+            };
+        if let Some(default) = override_default {
+            page.push_str(&format!("- **Default:** `{}`\n", default.markdown));
+        } else if let Some(default_val) = &prop.default_value
             && let Some(display) = json_default_to_markdown(default_val)
         {
             page.push_str(&format!("- **Default:** `{display}`\n"));
@@ -3723,7 +3717,7 @@ fn generate_markdown_with_example(
         }
         if !omitted_resource_properties.is_empty() {
             page.push_str(
-                "These CloudFormation properties are deliberately omitted because their provider read-back conflicts with Carina's resource model:\n\n",
+                "These CloudFormation properties are deliberately omitted for the provider-specific reasons below:\n\n",
             );
             for entry in omitted_resource_properties {
                 let (name, definition_qualified) =
@@ -4221,6 +4215,12 @@ fn generate_top_level_attribute_type(
         return "self::arn()".to_string();
     }
 
+    if let Some(TypeOverride::AttributeType { expression, .. }) =
+        resource_type_override(&schema.type_name, CfnPropertyPath::new(None, prop_name))
+    {
+        return (*expression).to_string();
+    }
+
     if let Some(enum_info) = enums.get(prop_name) {
         let aliases = known_enum_aliases();
         let prop_aliases = aliases.get(prop_name);
@@ -4605,25 +4605,46 @@ pub fn {}() -> AwsccSchemaConfig {{
         // a JSON-string default on a structured policy document) would cause a
         // perpetual phantom diff. Policy document fields follow the IAM Role
         // convention: omit the Carina default and let AWS apply its server default.
-        if let Some(default_val) = &prop.default_value
+        let override_default = match resource_type_override(
+            &schema.type_name,
+            CfnPropertyPath::new(None, prop_name),
+        ) {
+            Some(TypeOverride::AttributeType { default, .. }) => *default,
+            _ => None,
+        };
+        if let Some(default) = override_default {
+            attr_code.push_str(&format!(
+                "\n                .with_default({})",
+                default.value_expression
+            ));
+        } else if let Some(default_val) = &prop.default_value
             && let Some(default_code) = json_default_to_value_code(default_val)
             && attr_type_accepts_scalar_default(&attr_type)
         {
-            attr_code.push_str(&format!(
-                "\n                .with_default({})",
-                default_code
-            ));
+            attr_code.push_str(&format!("\n                .with_default({default_code})"));
         }
 
         // Add block_name for List(Struct) attributes with a natural singular form.
         // Even if the singular form conflicts with an existing field name,
         // resolve_block_names distinguishes block syntax (Value::List) from
         // attribute assignment (Value::Map) so the block_name is safe to add.
-        if (attr_type.contains("list(AttributeType::struct_")
-            || is_list_of_struct_property(prop, schema))
-            && !is_read_only
-            && let Some(singular) = compute_block_name(&attr_name)
-        {
+        let override_block_name = match resource_type_override(
+            &schema.type_name,
+            CfnPropertyPath::new(None, prop_name),
+        ) {
+            Some(TypeOverride::AttributeType { block_name, .. }) => *block_name,
+            _ => None,
+        };
+        let block_name = override_block_name.map(str::to_owned).or_else(|| {
+            if attr_type.contains("list(AttributeType::struct_")
+                || is_list_of_struct_property(prop, schema)
+            {
+                compute_block_name(&attr_name)
+            } else {
+                None
+            }
+        });
+        if !is_read_only && let Some(singular) = block_name {
             attr_code.push_str(&format!(
                 "\n                .with_block_name({})",
                 rust_lit(&singular)
@@ -6400,6 +6421,8 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             TypeOverride::AttributeType {
                 expression: "AttributeType::map(AttributeType::list(AttributeType::string()))",
                 display: "`Map<String, List<String>>`",
+                block_name: None,
+                default: None,
             },
         );
         m.insert(
@@ -6407,6 +6430,70 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             TypeOverride::AttributeType {
                 expression: "AttributeType::map(AttributeType::ref_(\"Spend\".to_string()))",
                 display: "`Map<String, Spend>`",
+                block_name: None,
+                default: None,
+            },
+        );
+
+        // Cloud Control create/get in both directions with carina-test-008 in
+        // ap-northeast-1 on 2026-10-31 returned these policy values as native
+        // JSON objects/arrays, never JSON strings. Keep each override at its
+        // full CFN property path so unrelated name suffixes cannot match it.
+        m.insert(
+            ("AWS::SNS::Subscription", "RedrivePolicy"),
+            TypeOverride::AttributeType {
+                expression: "crate::schemas::awscc_types::sns_subscription_redrive_policy()",
+                display: "`Struct(SubscriptionRedrivePolicy)`",
+                block_name: None,
+                default: None,
+            },
+        );
+        m.insert(
+            ("AWS::SNS::Subscription", "DeliveryPolicy"),
+            TypeOverride::AttributeType {
+                expression: "crate::schemas::awscc_types::sns_subscription_delivery_policy()",
+                display: "`Struct(SubscriptionDeliveryPolicy)`",
+                block_name: None,
+                default: None,
+            },
+        );
+        m.insert(
+            ("AWS::SNS::Subscription", "ReplayPolicy"),
+            TypeOverride::AttributeType {
+                expression: "crate::schemas::awscc_types::sns_subscription_replay_policy()",
+                display: "`Struct(SubscriptionReplayPolicy)`",
+                block_name: None,
+                default: None,
+            },
+        );
+        m.insert(
+            ("AWS::SNS::Topic", "ArchivePolicy"),
+            TypeOverride::AttributeType {
+                expression: "crate::schemas::awscc_types::sns_topic_archive_policy()",
+                display: "`Struct(TopicArchivePolicy)`",
+                block_name: None,
+                default: None,
+            },
+        );
+        m.insert(
+            ("AWS::Logs::LogGroup", "FieldIndexPolicies"),
+            TypeOverride::AttributeType {
+                expression: "crate::schemas::awscc_types::logs_field_index_policies()",
+                display: "`List<Struct(FieldIndexPolicy)>`",
+                block_name: Some("field_index_policy"),
+                default: Some(AttributeTypeOverrideDefault {
+                    value_expression: "Value::Concrete(ConcreteValue::List(vec![]))",
+                    markdown: "[]",
+                }),
+            },
+        );
+        m.insert(
+            ("AWS::Logs::LogGroup", "DataProtectionPolicy"),
+            TypeOverride::AttributeType {
+                expression: "crate::schemas::awscc_types::logs_data_protection_policy()",
+                display: "`Struct(LogGroupDataProtectionPolicy)`",
+                block_name: None,
+                default: None,
             },
         );
 
@@ -8668,40 +8755,67 @@ mod tests {
     }
 
     #[test]
-    fn test_free_form_json_properties_are_omitted_and_documented() {
-        let cases: &[(&str, &[&str])] = &[
-            (
-                "AWS::SNS::Subscription",
-                &[
-                    "DeliveryPolicy",
-                    "FilterPolicy",
-                    "RedrivePolicy",
-                    "ReplayPolicy",
-                ],
-            ),
-            (
-                "AWS::SNS::Topic",
-                &["DataProtectionPolicy", "ArchivePolicy"],
-            ),
-            (
-                "AWS::Logs::LogGroup",
-                &["DataProtectionPolicy", "FieldIndexPolicies"],
-            ),
+    fn test_typed_json_policy_classifications_use_exact_full_paths() {
+        let expected_typed = [
+            ("AWS::SNS::Subscription", "DeliveryPolicy"),
+            ("AWS::SNS::Subscription", "RedrivePolicy"),
+            ("AWS::SNS::Subscription", "ReplayPolicy"),
+            ("AWS::SNS::Topic", "ArchivePolicy"),
+            ("AWS::Logs::LogGroup", "DataProtectionPolicy"),
+            ("AWS::Logs::LogGroup", "FieldIndexPolicies"),
         ];
+        for (cfn_type, property) in expected_typed {
+            assert!(
+                matches!(
+                    resource_type_override(cfn_type, CfnPropertyPath::new(None, property)),
+                    Some(TypeOverride::AttributeType { .. })
+                ),
+                "{cfn_type}.{property} must have a full-path AttributeType override"
+            );
+            assert!(
+                matches!(
+                    classify_bare_object(cfn_type, CfnPropertyPath::new(None, property)),
+                    Some(BareObjectClassification::TypedOverride { .. })
+                ),
+                "{cfn_type}.{property} must be classified exactly once as a typed override"
+            );
+        }
 
-        let expected_entries = cases
-            .iter()
-            .flat_map(|(type_name, property_names)| {
-                property_names.iter().map(move |property_name| {
-                    (*type_name, CfnPropertyPath::new(None, property_name))
-                })
-            })
-            .collect::<BTreeSet<_>>();
+        let topic_data_protection = find_omitted_property(
+            OMITTED_RESOURCE_PROPERTIES,
+            "AWS::SNS::Topic",
+            CfnPropertyPath::new(None, "DataProtectionPolicy"),
+        )
+        .expect("SNS Topic DataProtectionPolicy must have a measured omission reason");
+        assert!(
+            topic_data_protection
+                .reason
+                .contains("no longer available to new customers")
+        );
+        assert!(matches!(
+            classify_bare_object(
+                "AWS::SNS::Topic",
+                CfnPropertyPath::new(None, "DataProtectionPolicy")
+            ),
+            Some(BareObjectClassification::OmittedResource(_))
+        ));
+
+        let expected_entries = BTreeSet::from([(
+            "AWS::SNS::Subscription",
+            CfnPropertyPath::new(None, "FilterPolicy"),
+        )]);
         let actual_entries = FREE_FORM_JSON_PROPERTIES
             .iter()
             .map(|entry| (entry.cfn_type, entry.property_path))
             .collect::<BTreeSet<_>>();
         assert_eq!(actual_entries, expected_entries);
+        assert!(matches!(
+            classify_bare_object(
+                "AWS::SNS::Subscription",
+                CfnPropertyPath::new(None, "FilterPolicy")
+            ),
+            Some(BareObjectClassification::FreeFormJson(_))
+        ));
         assert!(
             FREE_FORM_JSON_PROPERTIES
                 .iter()
@@ -8709,33 +8823,39 @@ mod tests {
             "every omitted free-form JSON property must document why it is unsupported"
         );
 
-        for (type_name, property_names) in cases {
-            let schema = cfn_schema_for_codegen_tests(type_name);
-            let generated = generate_schema_code(&schema, type_name)
-                .unwrap_or_else(|error| panic!("{type_name} schema generation failed: {error}"));
-            let markdown = generate_markdown(&schema, type_name)
-                .unwrap_or_else(|error| panic!("{type_name} markdown generation failed: {error}"));
-
+        let subscription = cfn_schema_for_codegen_tests("AWS::SNS::Subscription");
+        let subscription_generated =
+            generate_schema_code(&subscription, "AWS::SNS::Subscription").unwrap();
+        for property in ["DeliveryPolicy", "RedrivePolicy", "ReplayPolicy"] {
             assert!(
-                markdown.contains("## Not yet supported"),
-                "{type_name} must document its omitted JSON properties: {markdown}"
+                subscription_generated
+                    .contains(&format!("build_{}_attribute", property.to_snake_case())),
+                "AWS::SNS::Subscription.{property} must be emitted"
             );
-            for property_name in *property_names {
-                let attr_name = property_name.to_snake_case();
-                assert!(
-                    !generated.contains(&format!("build_{attr_name}_attribute")),
-                    "{type_name}.{property_name} must not be emitted: {generated}"
-                );
-                assert!(
-                    !markdown.contains(&format!("### `{attr_name}`")),
-                    "{type_name}.{property_name} must not be an argument: {markdown}"
-                );
-                assert!(
-                    markdown.contains(&format!("`{attr_name}`")),
-                    "{type_name}.{property_name} must be named in the unsupported note: {markdown}"
-                );
-            }
         }
+        assert!(!subscription_generated.contains("build_filter_policy_attribute"));
+
+        let subscription_markdown =
+            generate_markdown(&subscription, "AWS::SNS::Subscription").unwrap();
+        assert!(subscription_markdown.contains("`filter_policy`"));
+
+        let topic = cfn_schema_for_codegen_tests("AWS::SNS::Topic");
+        let topic_generated = generate_schema_code(&topic, "AWS::SNS::Topic").unwrap();
+        assert!(topic_generated.contains("build_archive_policy_attribute"));
+        assert!(!topic_generated.contains("build_data_protection_policy_attribute"));
+        let topic_markdown = generate_markdown(&topic, "AWS::SNS::Topic").unwrap();
+        assert!(topic_markdown.contains("`data_protection_policy`"));
+
+        let log_group = cfn_schema_for_codegen_tests("AWS::Logs::LogGroup");
+        let log_group_generated = generate_schema_code(&log_group, "AWS::Logs::LogGroup").unwrap();
+        assert!(log_group_generated.contains("build_data_protection_policy_attribute"));
+        assert!(log_group_generated.contains("build_field_index_policies_attribute"));
+        assert!(
+            log_group_generated
+                .contains(".with_default(Value::Concrete(ConcreteValue::List(vec![])))")
+        );
+        let log_group_markdown = generate_markdown(&log_group, "AWS::Logs::LogGroup").unwrap();
+        assert!(log_group_markdown.contains("- **Default:** `[]`"));
     }
 
     fn synthetic_struct_schema(

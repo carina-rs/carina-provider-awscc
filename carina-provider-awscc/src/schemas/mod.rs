@@ -1,5 +1,6 @@
 //! AWS Cloud Control resource schema definitions
 
+pub mod awscc_types;
 pub mod catalog;
 pub mod config;
 pub mod generated;
@@ -34,6 +35,305 @@ mod tests {
     use carina_core::schema::{AttributeType, RawShape, ResourceSchema, Shape, ShapeWalkBudget};
     use carina_core::schema::{SchemaKind, SchemaRegistry};
     use indexmap::IndexMap;
+
+    fn nested_field_type<'a>(
+        schema: &'a ResourceSchema,
+        parent: &'a AttributeType,
+        dsl_name: &str,
+        provider_name: &str,
+        required: bool,
+    ) -> &'a AttributeType {
+        let fields = schema
+            .struct_fields_with_budget(parent, &mut ShapeWalkBudget::new(256))
+            .unwrap_or_else(|| panic!("expected struct containing {dsl_name}"));
+        let field = fields
+            .iter()
+            .find(|field| field.name() == dsl_name)
+            .unwrap_or_else(|| panic!("missing struct field {dsl_name}"));
+        assert_eq!(field.provider_name(), Some(provider_name));
+        assert_eq!(field.parts().declared_input_mode.is_required(), required);
+        assert!(
+            field
+                .description()
+                .is_some_and(|description| !description.is_empty()),
+            "{dsl_name} must have a description"
+        );
+        field.field_type()
+    }
+
+    fn list_element<'a>(
+        schema: &'a ResourceSchema,
+        attr_type: &'a AttributeType,
+    ) -> &'a AttributeType {
+        let Shape::List { element_type, .. } = schema.shape_of(attr_type) else {
+            panic!("expected list type");
+        };
+        element_type
+    }
+
+    fn assert_all_nested_fields_are_described(schema: &ResourceSchema, attr_type: &AttributeType) {
+        match schema.shape_of(attr_type) {
+            Shape::Struct { .. } => {
+                for field in schema
+                    .struct_fields_with_budget(attr_type, &mut ShapeWalkBudget::new(256))
+                    .expect("struct must expose fields")
+                {
+                    assert!(
+                        field
+                            .description()
+                            .is_some_and(|description| !description.is_empty()),
+                        "{} must have a description",
+                        field.name()
+                    );
+                    assert_all_nested_fields_are_described(schema, field.field_type());
+                }
+            }
+            Shape::List { element_type, .. } => {
+                assert_all_nested_fields_are_described(schema, element_type);
+            }
+            _ => {}
+        }
+    }
+
+    #[test]
+    fn generated_policy_document_shapes_preserve_aws_keys_and_constraints() {
+        let subscription = super::generated::sns::subscription::sns_subscription_config();
+        let subscription_schema = &subscription.schema;
+        assert!(
+            !subscription_schema
+                .attributes()
+                .contains_key("filter_policy")
+        );
+
+        let redrive = subscription_schema
+            .attributes()
+            .get("redrive_policy")
+            .expect("redrive_policy must be generated")
+            .attr_type();
+        let dead_letter_arn = nested_field_type(
+            subscription_schema,
+            redrive,
+            "dead_letter_target_arn",
+            "deadLetterTargetArn",
+            true,
+        );
+        assert!(matches!(
+            subscription_schema.shape_of(dead_letter_arn),
+            Shape::String { .. }
+        ));
+
+        let delivery = subscription_schema
+            .attributes()
+            .get("delivery_policy")
+            .expect("delivery_policy must be generated")
+            .attr_type();
+        let healthy = nested_field_type(
+            subscription_schema,
+            delivery,
+            "healthy_retry_policy",
+            "healthyRetryPolicy",
+            false,
+        );
+        let expected_retry_fields = [
+            ("min_delay_target", "minDelayTarget"),
+            ("max_delay_target", "maxDelayTarget"),
+            ("num_retries", "numRetries"),
+            ("num_no_delay_retries", "numNoDelayRetries"),
+            ("num_min_delay_retries", "numMinDelayRetries"),
+            ("num_max_delay_retries", "numMaxDelayRetries"),
+            ("backoff_function", "backoffFunction"),
+        ];
+        for (dsl_name, provider_name) in expected_retry_fields {
+            nested_field_type(subscription_schema, healthy, dsl_name, provider_name, false);
+        }
+        let min_delay = nested_field_type(
+            subscription_schema,
+            healthy,
+            "min_delay_target",
+            "minDelayTarget",
+            false,
+        );
+        assert!(matches!(
+            subscription_schema.shape_of(min_delay),
+            Shape::Int {
+                range: Some((Some(1), Some(3600))),
+                ..
+            }
+        ));
+        let num_retries = nested_field_type(
+            subscription_schema,
+            healthy,
+            "num_retries",
+            "numRetries",
+            false,
+        );
+        assert!(matches!(
+            subscription_schema.shape_of(num_retries),
+            Shape::Int {
+                range: Some((Some(0), Some(100))),
+                ..
+            }
+        ));
+        let throttle = nested_field_type(
+            subscription_schema,
+            delivery,
+            "throttle_policy",
+            "throttlePolicy",
+            false,
+        );
+        nested_field_type(
+            subscription_schema,
+            throttle,
+            "max_receives_per_second",
+            "maxReceivesPerSecond",
+            false,
+        );
+        let request = nested_field_type(
+            subscription_schema,
+            delivery,
+            "request_policy",
+            "requestPolicy",
+            false,
+        );
+        let header_content_type = nested_field_type(
+            subscription_schema,
+            request,
+            "header_content_type",
+            "headerContentType",
+            false,
+        );
+        let Shape::Enum { values, .. } = subscription_schema.shape_of(header_content_type) else {
+            panic!("header_content_type must be an enum");
+        };
+        assert_eq!(values.expect("closed content-type enum").len(), 12);
+        nested_field_type(
+            subscription_schema,
+            delivery,
+            "guaranteed",
+            "guaranteed",
+            false,
+        );
+
+        let replay = subscription_schema
+            .attributes()
+            .get("replay_policy")
+            .expect("replay_policy must be generated")
+            .attr_type();
+        nested_field_type(subscription_schema, replay, "point_type", "PointType", true);
+        nested_field_type(
+            subscription_schema,
+            replay,
+            "starting_point",
+            "StartingPoint",
+            true,
+        );
+        nested_field_type(
+            subscription_schema,
+            replay,
+            "ending_point",
+            "EndingPoint",
+            false,
+        );
+
+        let topic = super::generated::sns::topic::sns_topic_config();
+        assert!(
+            !topic
+                .schema
+                .attributes()
+                .contains_key("data_protection_policy")
+        );
+        let archive = topic
+            .schema
+            .attributes()
+            .get("archive_policy")
+            .expect("archive_policy must be generated")
+            .attr_type();
+        let retention = nested_field_type(
+            &topic.schema,
+            archive,
+            "message_retention_period",
+            "MessageRetentionPeriod",
+            true,
+        );
+        assert!(matches!(
+            topic.schema.shape_of(retention),
+            Shape::Int {
+                range: Some((Some(1), Some(365))),
+                ..
+            }
+        ));
+
+        let logs = super::generated::logs::log_group::logs_log_group_config();
+        let field_policies_attribute = logs
+            .schema
+            .attributes()
+            .get("field_index_policies")
+            .expect("field_index_policies must be generated");
+        assert!(matches!(
+            field_policies_attribute.default_value(),
+            Some(Value::Concrete(ConcreteValue::List(items))) if items.is_empty()
+        ));
+        let field_policies = field_policies_attribute.attr_type();
+        let Shape::List { ordered, .. } = logs.schema.shape_of(field_policies) else {
+            panic!("field_index_policies must be a list");
+        };
+        assert!(!ordered);
+        nested_field_type(
+            &logs.schema,
+            list_element(&logs.schema, field_policies),
+            "fields",
+            "Fields",
+            true,
+        );
+
+        let data_policy = logs
+            .schema
+            .attributes()
+            .get("data_protection_policy")
+            .expect("data_protection_policy must be generated")
+            .attr_type();
+        for (dsl_name, provider_name, required) in [
+            ("name", "Name", true),
+            ("description", "Description", false),
+            ("version", "Version", true),
+            ("configuration", "Configuration", false),
+            ("statement", "Statement", true),
+        ] {
+            nested_field_type(&logs.schema, data_policy, dsl_name, provider_name, required);
+        }
+        let statements =
+            nested_field_type(&logs.schema, data_policy, "statement", "Statement", true);
+        let statement = list_element(&logs.schema, statements);
+        let operation = nested_field_type(&logs.schema, statement, "operation", "Operation", true);
+        let audit = nested_field_type(&logs.schema, operation, "audit", "Audit", false);
+        nested_field_type(
+            &logs.schema,
+            audit,
+            "findings_destination",
+            "FindingsDestination",
+            true,
+        );
+        let deidentify =
+            nested_field_type(&logs.schema, operation, "deidentify", "Deidentify", false);
+        let mask = nested_field_type(&logs.schema, deidentify, "mask_config", "MaskConfig", true);
+        assert!(
+            logs.schema
+                .struct_fields_with_budget(mask, &mut ShapeWalkBudget::new(256))
+                .expect("mask_config must be an empty struct")
+                .is_empty()
+        );
+
+        for (schema, attr_type) in [
+            (subscription_schema, redrive),
+            (subscription_schema, delivery),
+            (subscription_schema, replay),
+            (&topic.schema, archive),
+            (&logs.schema, field_policies),
+            (&logs.schema, data_policy),
+        ] {
+            assert_all_nested_fields_are_described(schema, attr_type);
+        }
+    }
 
     #[test]
     fn internet_gateway_tag_change_plans_update() {

@@ -185,7 +185,7 @@ Classify each shape in exactly one place. Codegen rejects multiple matching clas
 - `STRING_MAP_PROPERTIES` is only for genuine homogeneous string-to-string maps.
 - `IAM_POLICY_DOCUMENT_PROPERTIES` explicitly lists every cached path that previously matched the old `*PolicyDocument` suffix rule; `NONSTANDARD_IAM_POLICY_DOCUMENT_PROPERTIES` lists policy paths with other names. Both tables are typed-path and stale-row checked.
 - A dedicated `AttributeType` override handles a known non-generic shape, such as the Budgets maps.
-- `OMITTED_RESOURCE_PROPERTIES` contains otherwise representable properties deliberately excluded because their provider read-back conflicts with the resource model.
+- `OMITTED_RESOURCE_PROPERTIES` contains otherwise representable properties deliberately excluded for a documented per-row provider limitation (for example, conflicting read-back or an unavailable AWS capability).
 
 Omission works at both top level and inside generated structs. Generated resource docs collect `FREE_FORM_JSON_PROPERTIES` and `OMITTED_RESOURCE_PROPERTIES` under **Not yet supported**, resolve a reachable nested definition back to its complete snake-case provider/DSL path (for example, `config.child_policy`), and include the table reason. If no provider path is available, the note labels the raw `<Definition>.<Property>` key as a **definition-qualified name**, not as a DSL path. The cache-coverage test fails for both an unclassified bare object and a stale classification row. An unclassified codegen panic points back to this section.
 

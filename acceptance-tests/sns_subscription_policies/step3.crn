@@ -1,0 +1,27 @@
+# SNS Subscription typed policies - remove replay and archive before destroy
+
+provider awscc {
+  region = aws.Region.ap_northeast_1
+}
+
+let fifo_topic = awscc.sns.Topic {
+  topic_name                  = 'carina-acc-test-sns-policies-fifo.fifo'
+  fifo_topic                  = true
+  content_based_deduplication = true
+
+  tags = {
+    Environment = 'acceptance-test'
+    Project     = 'carina'
+  }
+}
+
+awscc.sns.Subscription {
+  topic_arn            = fifo_topic.topic_arn
+  protocol             = 'sqs'
+  endpoint             = '__FIFO_QUEUE_ARN__'
+  raw_message_delivery = true
+
+  redrive_policy = {
+    dead_letter_target_arn = '__FIFO_DLQ_ARN__'
+  }
+}

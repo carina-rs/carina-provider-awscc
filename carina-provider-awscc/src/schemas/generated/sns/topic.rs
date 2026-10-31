@@ -16,6 +16,14 @@ pub fn sns_topic_config() -> AwsccSchemaConfig {
     let mut schema = ResourceSchema::new("sns.Topic")
         .with_description("The ``AWS::SNS::Topic`` resource creates a topic to which notifications can be published.   One account can create a maximum of 100,000 standard topics and 1,000 FIFO topics. For more information, see [endpoints and quotas](https://docs.aws.amazon.com/general/latest/gr/sns.html) in the *General Reference*.    The structure of ``AUTHPARAMS`` depends on the .signature of the API request. For more information, see [Examples of the complete Signature Version 4 signing process](https://docs.aws.amazon.com/general/latest/gr/sigv4-signed-request-examples.html) in the *General Reference*.");
     #[inline(never)]
+    fn build_archive_policy_attribute() -> AttributeSchema {
+        AttributeSchema::optional("archive_policy", crate::schemas::awscc_types::sns_topic_archive_policy())
+                .with_description("The ``ArchivePolicy`` determines the number of days SNS retains messages in FIFO topics. You can set a retention period ranging from 1 to 365 days. This property is only applicable to FIFO topics; attempting to use it with standard topics will result in a creation failure.")
+                .with_provider_name("ArchivePolicy")
+            .build()
+    }
+    schema = schema.attribute(build_archive_policy_attribute());
+    #[inline(never)]
     fn build_content_based_deduplication_attribute() -> AttributeSchema {
         AttributeSchema::optional("content_based_deduplication", AttributeType::bool())
                 .with_description("``ContentBasedDeduplication`` enables deduplication of messages based on their content for FIFO topics. By default, this property is set to false. If you create a FIFO topic with ``ContentBasedDeduplication`` set to false, you must provide a ``MessageDeduplicationId`` for each ``Publish`` action. When set to true, SNS automatically generates a ``MessageDeduplicationId`` using a SHA-256 hash of the message body (excluding message attributes). You can optionally override this generated value by specifying a ``MessageDeduplicationId`` in the ``Publish`` action. Note that this property only applies to FIFO topics; using it with standard topics will cause the creation to fail.")

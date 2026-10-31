@@ -26,6 +26,13 @@ awscc.logs.LogGroup {
 
 ## Argument Reference
 
+### `data_protection_policy`
+
+- **Type:** `Struct(LogGroupDataProtectionPolicy)`
+- **Required:** No
+
+Creates a data protection policy and assigns it to the log group. A data protection policy can help safeguard sensitive data that's ingested by the log group by auditing and masking the sensitive log data. When a user who does not have permission to view masked data views a log event that includes masked data, the sensitive data is replaced by asterisks.
+
 ### `deletion_protection_enabled`
 
 - **Type:** Bool
@@ -33,6 +40,14 @@ awscc.logs.LogGroup {
 - **Default:** `false`
 
 Indicates whether deletion protection is enabled for this log group. When enabled, deletion protection blocks all deletion operations until it is explicitly disabled.
+
+### `field_index_policies`
+
+- **Type:** `List<Struct(FieldIndexPolicy)>`
+- **Required:** No
+- **Default:** `[]`
+
+Creates or updates a *field index policy* for the specified log group. Only log groups in the Standard log class support field index policies. For more information about log classes, see [Log classes](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/CloudWatch_Logs_Log_Classes.html). You can use field index policies to create *field indexes* on fields found in log events in the log group. Creating field indexes lowers the costs for CWL Insights queries that reference those field indexes, because these queries attempt to skip the processing of log events that are known to not match the indexed field. Good fields to index are fields that you often need to query for and fields that have high cardinality of values Common examples of indexes include request ID, session ID, userID, and instance IDs. For more information, see [Create field indexes to improve query performance and reduce costs](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/CloudWatchLogs-Field-Indexing.html). Currently, this array supports only one field index policy object.
 
 ### `kms_key_id`
 
@@ -77,13 +92,6 @@ The number of days to retain the log events in the specified log group. Possible
 - **Required:** No
 
 An array of key-value pairs to apply to the log group. For more information, see [Tag](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-resource-tags.html).
-
-## Not yet supported
-
-These CloudFormation properties require the free-form JSON document type tracked by [carina-rs/carina#4144](https://github.com/carina-rs/carina/issues/4144):
-
-- `data_protection_policy` — This policy can contain nested, heterogeneous JSON values.
-- `field_index_policies` — Each field-index policy is a free-form JSON document whose Fields value is an array.
 
 ## Enum Values
 

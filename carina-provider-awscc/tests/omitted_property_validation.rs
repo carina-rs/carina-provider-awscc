@@ -114,38 +114,18 @@ fn resource_with(resource_type: &'static str, attribute: &'static str, value: Va
 fn omitted_properties_are_unknown_attribute_errors_at_host_validation() {
     let (schemas, context) = validation_context();
 
-    for attribute in [
-        "delivery_policy",
+    assert_omitted_attribute_is_rejected(
+        &schemas,
+        &context,
+        subscription_with("filter_policy", string(r#"{"event":["created"]}"#)),
         "filter_policy",
-        "redrive_policy",
-        "replay_policy",
-    ] {
-        assert_omitted_attribute_is_rejected(
-            &schemas,
-            &context,
-            subscription_with(attribute, string(r#"{"event":["created"]}"#)),
-            attribute,
-        );
-    }
+    );
 
-    for attribute in ["archive_policy", "data_protection_policy", "subscription"] {
+    for attribute in ["data_protection_policy", "subscription"] {
         assert_omitted_attribute_is_rejected(
             &schemas,
             &context,
             resource_with("sns.Topic", attribute, string(r#"{"Name":"example"}"#)),
-            attribute,
-        );
-    }
-
-    for attribute in ["data_protection_policy", "field_index_policies"] {
-        assert_omitted_attribute_is_rejected(
-            &schemas,
-            &context,
-            resource_with(
-                "logs.LogGroup",
-                attribute,
-                string(r#"[{"Fields":["requestId"]}]"#),
-            ),
             attribute,
         );
     }

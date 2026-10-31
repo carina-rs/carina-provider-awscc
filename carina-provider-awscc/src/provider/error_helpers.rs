@@ -183,15 +183,34 @@ fn is_not_found_error_code(code: &str) -> bool {
 
 /// Terminal CloudControl operation status returned after a successful API call.
 #[derive(Debug, Error)]
-#[error("{status_message}")]
-pub(crate) struct CloudControlOperationFailure {
-    status_message: String,
+pub(crate) enum CloudControlOperationFailure {
+    #[error("{status_message}")]
+    Generic { status_message: String },
+    #[error(
+        "{status_message}\n  remediation: remove `archive_policy` from the configuration, run `carina apply`, then run `carina destroy`"
+    )]
+    SnsTopicArchivePolicy { status_message: String },
 }
 
 impl CloudControlOperationFailure {
     pub(crate) fn new(status_message: impl Into<String>) -> Self {
-        Self {
+        Self::Generic {
             status_message: status_message.into(),
+        }
+    }
+
+    pub(crate) fn for_delete(type_name: &str, status_message: impl Into<String>) -> Self {
+        let status_message = status_message.into();
+        // Cloud Control delete was measured with carina-test-008 in
+        // ap-northeast-1 on 2026-10-31: deleting AWS::SNS::Topic with an
+        // ArchivePolicy fails with this status. Do not clear the policy
+        // automatically because it protects archived messages for replay.
+        if type_name == "AWS::SNS::Topic"
+            && status_message.contains("Cannot delete a topic with an ArchivePolicy")
+        {
+            Self::SnsTopicArchivePolicy { status_message }
+        } else {
+            Self::Generic { status_message }
         }
     }
 }
@@ -274,5 +293,30 @@ mod tests {
             1,
             "wire conversion must render the AWS reason exactly once: {wire_rendered}"
         );
+    }
+
+    #[test]
+    fn sns_topic_archive_policy_delete_failure_keeps_aws_reason_and_adds_remediation() {
+        const AWS_MESSAGE: &str = "Invalid state: Cannot delete a topic with an ArchivePolicy";
+
+        let cause = CloudControlOperationFailure::for_delete("AWS::SNS::Topic", AWS_MESSAGE);
+        assert!(matches!(
+            cause,
+            CloudControlOperationFailure::SnsTopicArchivePolicy { .. }
+        ));
+
+        let rendered = cause.to_string();
+        assert_eq!(rendered.matches(AWS_MESSAGE).count(), 1);
+        assert!(rendered.contains("remove `archive_policy` from the configuration"));
+        assert!(rendered.contains("run `carina apply`"));
+        assert!(rendered.contains("run `carina destroy`"));
+
+        let unrelated =
+            CloudControlOperationFailure::for_delete("AWS::SNS::Subscription", AWS_MESSAGE);
+        assert!(matches!(
+            unrelated,
+            CloudControlOperationFailure::Generic { .. }
+        ));
+        assert_eq!(unrelated.to_string(), AWS_MESSAGE);
     }
 }

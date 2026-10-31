@@ -7,6 +7,7 @@
 # Tests:
 #   ec2_vpc_endpoint - Remove policy_document from VPC endpoint
 #   logs_log_group   - Remove retention_in_days from log group
+#   sns_topic_archive_policy - Remove archive_policy before topic destroy
 #
 # Filter (optional): substring to match test names (e.g. "ec2_vpc_endpoint")
 
@@ -236,6 +237,12 @@ run_test "logs_log_group" \
     "$SCRIPT_DIR/logs_log_group_step1.crn" \
     "$SCRIPT_DIR/logs_log_group_step2.crn" \
     "Test 2: Logs Log Group (remove retention_in_days)"
+
+# Test 3: SNS FIFO Topic - remove archive_policy before Cloud Control delete
+run_test "sns_topic_archive_policy" \
+    "$SCRIPT_DIR/sns_topic_archive_policy_step1.crn" \
+    "$SCRIPT_DIR/sns_topic_archive_policy_step2.crn" \
+    "Test 3: SNS FIFO Topic (remove archive_policy before destroy)"
 
 echo "════════════════════════════════════════"
 echo "Total: $TOTAL_PASSED passed, $TOTAL_FAILED failed"

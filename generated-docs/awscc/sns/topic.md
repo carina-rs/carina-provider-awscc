@@ -11,6 +11,13 @@ The ``AWS::SNS::Topic`` resource creates a topic to which notifications can be p
 
 ## Argument Reference
 
+### `archive_policy`
+
+- **Type:** `Struct(TopicArchivePolicy)`
+- **Required:** No
+
+The ``ArchivePolicy`` determines the number of days SNS retains messages in FIFO topics. You can set a retention period ranging from 1 to 365 days. This property is only applicable to FIFO topics; attempting to use it with standard topics will result in a creation failure.
+
 ### `content_based_deduplication`
 
 - **Type:** Bool
@@ -92,14 +99,10 @@ Tracing mode of an SNS topic. By default ``TracingConfig`` is set to ``PassThrou
 
 ## Not yet supported
 
-These CloudFormation properties require the free-form JSON document type tracked by [carina-rs/carina#4144](https://github.com/carina-rs/carina/issues/4144):
-
-- `data_protection_policy` — This policy can contain nested, heterogeneous JSON values.
-- `archive_policy` — This policy can contain nested, heterogeneous JSON values.
-
-These CloudFormation properties are deliberately omitted because their provider read-back conflicts with Carina's resource model:
+These CloudFormation properties are deliberately omitted for the provider-specific reasons below:
 
 - `subscription` — Cloud Control aggregates separately managed topic subscriptions; use awscc.sns.Subscription instead.
+- `data_protection_policy` — AWS SNS message data protection is no longer available to new customers; Cloud Control rejected it in ap-northeast-1 and us-east-1 on 2026-10-31.
 
 ## Enum Values
 
