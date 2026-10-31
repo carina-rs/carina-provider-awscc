@@ -14,7 +14,6 @@ use aws_config::{BehaviorVersion, Region};
 use carina_core::differ::{Diff, diff};
 use carina_core::provider::{CreateOutcomeKind, Provider, RawSavedAttrs, ReadRequest};
 use carina_core::resource::{ConcreteValue, ResolvedResource, Resource, Value};
-use carina_core::schema::SchemaRegistry;
 use carina_provider_awscc::AwsccProvider;
 use carina_provider_awscc::provider::AwsccProviderConfig;
 use carina_provider_awscc::schemas::generated::sns::subscription::sns_subscription_config;
@@ -135,7 +134,7 @@ async fn sns_subscription_create_then_read_omits_filter_policy_without_a_diff() 
     let id = resource.id.clone();
     let request = common::create_request(resource.clone()).await;
 
-    let created = carina_core::executor::dispatch_create(&provider, &id, request)
+    let created = common::dispatch_create(&provider, &id, request)
         .await
         .expect("sns.Subscription create_resource should succeed");
     let created = match created.into_kind() {
@@ -179,9 +178,21 @@ async fn sns_subscription_create_then_read_omits_filter_policy_without_a_diff() 
 
     let current = read.into_state_for_writeback();
     let desired = ResolvedResource::new(resource);
-    let saved = RawSavedAttrs::default().lift(&SchemaRegistry::new());
+    let registry = carina_provider_awscc::schemas::schema_registry();
+    let saved = RawSavedAttrs::default().lift(&registry);
+    let router = carina_provider_awscc::test_comparison_router();
+    let comparison = router
+        .comparison_for(&registry, &desired.id)
+        .expect("SNS Subscription comparison context");
     let config = sns_subscription_config();
-    let result = diff(&desired, &current, &saved, None, Some(&config.schema));
+    let result = diff(
+        &desired,
+        &current,
+        &saved,
+        None,
+        Some(&config.schema),
+        comparison.context(),
+    );
     assert!(
         matches!(result, Diff::NoChange(_)),
         "object-shaped FilterPolicy read-back must not produce a diff: {result:?}"

@@ -1,38 +1,42 @@
-use std::collections::{BTreeMap, HashMap};
-use std::sync::LazyLock;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use carina_plugin_sdk::{
     CarinaProvider, CreateAttempt as SdkCreateAttempt, CreateStep as SdkCreateStep,
-    CreateVerdict as SdkCreateVerdict, DeleteOutcome as SdkDeleteOutcome, FoundRead,
-    IssuedCreate as SdkIssuedCreate, Pending, Poll as SdkPoll, PollAttempt as SdkPollAttempt,
-    PollVerdict as SdkPollVerdict, Resume as SdkResume, ResumeAttempt as SdkResumeAttempt,
-    ResumeStep as SdkResumeStep, ResumeVerdict as SdkResumeVerdict,
-    ResumedCreate as SdkResumedCreate, UpdateOutcome as SdkUpdateOutcome,
+    CreateVerdict as SdkCreateVerdict, DeleteOutcome as SdkDeleteOutcome, DesiredAttribute,
+    DesiredResource, FoundRead, IssuedCreate as SdkIssuedCreate, NormalizedResource, Pending,
+    Poll as SdkPoll, PollAttempt as SdkPollAttempt, PollVerdict as SdkPollVerdict,
+    Resume as SdkResume, ResumeAttempt as SdkResumeAttempt, ResumeStep as SdkResumeStep,
+    ResumeVerdict as SdkResumeVerdict, ResumedCreate as SdkResumedCreate,
+    UpdateOutcome as SdkUpdateOutcome,
 };
 use carina_provider_protocol::OperationStep;
 use carina_provider_protocol::types as proto;
 
-use carina_core::executor::normalized::NormalizedResource;
+use carina_core::executor::normalized::NormalizedResource as CoreNormalizedResource;
 use carina_core::protocol_convert;
 use carina_core::provider::{
     AppliedIdentifier as CoreAppliedIdentifier, AppliedState as CoreAppliedState,
     DeleteRequest as CoreDeleteRequest, LiftedSavedAttrs, Observation as CoreObservation,
-    PersistedAttributes, Provider, ProviderError as CoreProviderError, ProviderFactory,
-    ProviderNormalizer, RawSavedAttrs, ReadOutcome as CoreReadOutcome,
-    ReadRequest as CoreReadRequest, Sent as CoreSent,
+    PersistedAttributes, Provider, ProviderDirectiveSchema as CoreProviderDirectiveSchema,
+    ProviderError as CoreProviderError, ProviderFactory, RawSavedAttrs,
+    ReadOutcome as CoreReadOutcome, ReadRequest as CoreReadRequest, Sent as CoreSent,
 };
-use carina_core::resource::{ConcreteValue, ResourceId as CoreResourceId, Value as CoreValue};
-use carina_core::schema::{SchemaRegistry, ValidatedConfigSchema, ValidatedResourceSchema};
+use carina_core::resource::{
+    ConcreteValue, DataSource as CoreDataSource, Directives as CoreDirectives,
+    ProviderResource as CoreProviderResource, Resource as CoreResource,
+    ResourceId as CoreResourceId, Value as CoreValue,
+};
+use carina_core::schema::{
+    ReferenceForms, SchemaKind, SchemaRegistry, ValidatedConfigSchema, ValidatedResourceSchema,
+};
 
 use carina_provider_awscc::provider::{
     AwsccProvider, AwsccProviderConfig, CcCreateAttempt, CcCreatePoll, CcCreateResume,
     CcCreateToken, CcDeleteToken, CcIssuedCreate, CcPollAttempt, CcResumeAttempt, CcResumedCreate,
-    CcUpdateToken, NotAppliedCreate, UndeterminedCreate,
+    CcUpdateToken, InFlightCreate, NotAppliedCreate,
 };
 use carina_provider_awscc::schemas;
 use carina_provider_awscc::{AwsccNormalizer, AwsccProviderFactory};
-
-const CREATE_POLL_AFTER_SECS: u32 = 5;
 
 fn protocol_input_error(
     context: &'static str,
@@ -48,8 +52,43 @@ fn protocol_output_error(
     CoreProviderError::internal_caused_by(context, error)
 }
 
+fn wire_directives_to_core(directives: &proto::Directives) -> CoreDirectives {
+    CoreDirectives::default()
+        .with_force_delete(directives.force_delete)
+        .with_create_before_destroy(directives.create_before_destroy)
+        .with_prevent_destroy(directives.prevent_destroy)
+}
+
+fn protocol_resource_to_core(
+    resource: &proto::Resource,
+) -> Result<CoreResource, protocol_convert::ProtocolConvertError> {
+    let mut core = CoreResource::from_id(protocol_convert::protocol_to_resource_id(&resource.id));
+    core.attributes = protocol_convert::protocol_to_core_value_map(&resource.attributes)?
+        .into_iter()
+        .collect();
+    core.directives = wire_directives_to_core(&resource.directives);
+    Ok(core)
+}
+
+fn protocol_data_source_to_core(
+    resource: &proto::Resource,
+) -> Result<CoreDataSource, protocol_convert::ProtocolConvertError> {
+    let id = protocol_convert::protocol_to_resource_id(&resource.id);
+    let mut core = CoreDataSource::pending_with_provider(
+        id.provider.clone(),
+        id.resource_type.clone(),
+        id.provider_instance.clone(),
+    );
+    core.id = id;
+    core.attributes = protocol_convert::protocol_to_core_value_map(&resource.attributes)?
+        .into_iter()
+        .collect();
+    core.directives = wire_directives_to_core(&resource.directives);
+    Ok(core)
+}
+
 fn provider_config_decode_error(error: protocol_convert::ProtocolConvertError) -> String {
-    // The v12 `CarinaProvider` config methods return `Result<(), String>`, so
+    // The `CarinaProvider` config methods return errors as strings, so
     // their ABI cannot retain a typed source. `CoreProviderError`'s Display
     // includes the conversion cause, preserving the complete chain in text.
     protocol_input_error("failed to decode provider configuration", error).to_string()
@@ -144,7 +183,7 @@ fn finish_encoded<Finishing, Encoded, Step, Verdict>(
 
 impl CcCreateAttempt for GuestCreateAttempt {
     type Step = SdkCreateStep<CcCreateToken>;
-    type Verdict = SdkCreateVerdict;
+    type Verdict = SdkCreateVerdict<CcCreateToken>;
     type Issued = GuestIssuedCreate;
 
     fn untracked(self, failure: NotAppliedCreate) -> Self::Verdict {
@@ -161,22 +200,24 @@ impl CcCreateAttempt for GuestCreateAttempt {
         sent: CoreSent,
         poll_after_secs: u32,
     ) -> Result<Self::Step, Self::Verdict> {
+        let token = token.with_poll_after_secs(poll_after_secs);
         Ok(self.0.pending(token, sent, poll_after_secs))
     }
 }
 
 impl CcPollAttempt for GuestPollAttempt {
     type Step = SdkCreateStep<CcCreateToken>;
-    type Verdict = SdkPollVerdict;
+    type Verdict = SdkPollVerdict<CcCreateToken>;
     type Issued = GuestPolledIssuedCreate;
 
     fn untracked(self, failure: NotAppliedCreate) -> Self::Verdict {
         self.0.untracked(failure.into_error().to_wire())
     }
 
-    fn undetermined(self, _token: CcCreateToken, failure: UndeterminedCreate) -> Self::Verdict {
+    fn preserve(self, token: CcCreateToken, failure: InFlightCreate) -> Self::Verdict {
         let error = failure.into_error();
-        self.0.undetermined(error.to_wire())
+        let poll_after_secs = token.poll_after_secs();
+        self.0.preserve(token, poll_after_secs, error.to_wire())
     }
 
     fn issued(self, identifier: CoreAppliedIdentifier) -> Self::Issued {
@@ -188,13 +229,14 @@ impl CcPollAttempt for GuestPollAttempt {
         token: CcCreateToken,
         poll_after_secs: u32,
     ) -> Result<Self::Step, Self::Verdict> {
+        let token = token.with_poll_after_secs(poll_after_secs);
         Ok(self.0.pending(token, poll_after_secs))
     }
 }
 
 impl CcIssuedCreate for GuestIssuedCreate {
     type Step = SdkCreateStep<CcCreateToken>;
-    type Verdict = SdkCreateVerdict;
+    type Verdict = SdkCreateVerdict<CcCreateToken>;
 
     fn identifier(&self) -> &CoreAppliedIdentifier {
         self.0.identifier()
@@ -253,11 +295,9 @@ impl CcIssuedCreate for GuestIssuedCreate {
         self.0.discarded(error.to_wire())
     }
 
-    fn preserve(self, _token: CcCreateToken, error: CoreProviderError) -> Self::Verdict {
-        self.0.failed(
-            proto::Observation::ReadFailed(error.to_wire()),
-            error.to_wire(),
-        )
+    fn preserve(self, token: CcCreateToken, error: CoreProviderError) -> Self::Verdict {
+        let poll_after_secs = token.poll_after_secs();
+        self.0.preserve(token, poll_after_secs, error.to_wire())
     }
 
     fn pending(
@@ -265,13 +305,14 @@ impl CcIssuedCreate for GuestIssuedCreate {
         token: CcCreateToken,
         poll_after_secs: u32,
     ) -> Result<Self::Step, Self::Verdict> {
+        let token = token.with_poll_after_secs(poll_after_secs);
         Ok(self.0.pending(token, poll_after_secs))
     }
 }
 
 impl CcIssuedCreate for GuestPolledIssuedCreate {
     type Step = SdkCreateStep<CcCreateToken>;
-    type Verdict = SdkPollVerdict;
+    type Verdict = SdkPollVerdict<CcCreateToken>;
 
     fn identifier(&self) -> &CoreAppliedIdentifier {
         self.0.identifier()
@@ -331,12 +372,10 @@ impl CcIssuedCreate for GuestPolledIssuedCreate {
         self.0.discarded(error.to_wire()).into()
     }
 
-    fn preserve(self, _token: CcCreateToken, error: CoreProviderError) -> Self::Verdict {
+    fn preserve(self, token: CcCreateToken, error: CoreProviderError) -> Self::Verdict {
+        let poll_after_secs = token.poll_after_secs();
         self.0
-            .failed(
-                proto::Observation::ReadFailed(error.to_wire()),
-                error.to_wire(),
-            )
+            .preserve(token, poll_after_secs, error.to_wire())
             .into()
     }
 
@@ -345,13 +384,14 @@ impl CcIssuedCreate for GuestPolledIssuedCreate {
         token: CcCreateToken,
         poll_after_secs: u32,
     ) -> Result<Self::Step, Self::Verdict> {
+        let token = token.with_poll_after_secs(poll_after_secs);
         Ok(self.0.pending(token, poll_after_secs))
     }
 }
 
 impl CcResumeAttempt for GuestResumeAttempt {
     type Step = SdkResumeStep<CcCreateToken>;
-    type Verdict = SdkResumeVerdict;
+    type Verdict = SdkResumeVerdict<CcCreateToken>;
     type Resumed = GuestResumedCreate;
     type Resent = GuestResentCreateAttempt;
 
@@ -359,8 +399,9 @@ impl CcResumeAttempt for GuestResumeAttempt {
         self.0.untracked(failure.into_error().to_wire())
     }
 
-    fn preserve(self, error: CoreProviderError) -> Self::Verdict {
-        self.0.undetermined(error.to_wire())
+    fn preserve(self, token: CcCreateToken, error: CoreProviderError) -> Self::Verdict {
+        let poll_after_secs = token.poll_after_secs();
+        self.0.preserve(token, poll_after_secs, error.to_wire())
     }
 
     fn issued(self, identifier: CoreAppliedIdentifier) -> Self::Resumed {
@@ -372,6 +413,7 @@ impl CcResumeAttempt for GuestResumeAttempt {
         token: CcCreateToken,
         poll_after_secs: u32,
     ) -> Result<Self::Step, Self::Verdict> {
+        let token = token.with_poll_after_secs(poll_after_secs);
         Ok(self.0.pending(token, poll_after_secs))
     }
 
@@ -382,7 +424,7 @@ impl CcResumeAttempt for GuestResumeAttempt {
 
 impl CcResumedCreate for GuestResumedCreate {
     type Step = SdkResumeStep<CcCreateToken>;
-    type Verdict = SdkResumeVerdict;
+    type Verdict = SdkResumeVerdict<CcCreateToken>;
 
     fn identifier(&self) -> &CoreAppliedIdentifier {
         self.0.identifier()
@@ -417,11 +459,9 @@ impl CcResumedCreate for GuestResumedCreate {
         self.0.discarded(error.to_wire())
     }
 
-    fn preserve(self, error: CoreProviderError) -> Self::Verdict {
-        self.0.failed(
-            proto::Observation::ReadFailed(error.to_wire()),
-            error.to_wire(),
-        )
+    fn preserve(self, token: CcCreateToken, error: CoreProviderError) -> Self::Verdict {
+        let poll_after_secs = token.poll_after_secs();
+        self.0.preserve(token, poll_after_secs, error.to_wire())
     }
 
     fn pending(
@@ -429,13 +469,14 @@ impl CcResumedCreate for GuestResumedCreate {
         token: CcCreateToken,
         poll_after_secs: u32,
     ) -> Result<Self::Step, Self::Verdict> {
+        let token = token.with_poll_after_secs(poll_after_secs);
         Ok(self.0.pending(token, poll_after_secs))
     }
 }
 
 impl CcCreateAttempt for GuestResentCreateAttempt {
     type Step = SdkResumeStep<CcCreateToken>;
-    type Verdict = SdkResumeVerdict;
+    type Verdict = SdkResumeVerdict<CcCreateToken>;
     type Issued = GuestResentIssuedCreate;
 
     fn untracked(self, failure: NotAppliedCreate) -> Self::Verdict {
@@ -452,13 +493,14 @@ impl CcCreateAttempt for GuestResentCreateAttempt {
         sent: CoreSent,
         poll_after_secs: u32,
     ) -> Result<Self::Step, Self::Verdict> {
+        let token = token.with_poll_after_secs(poll_after_secs);
         Ok(self.0.pending(token, sent, poll_after_secs).into())
     }
 }
 
 impl CcIssuedCreate for GuestResentIssuedCreate {
     type Step = SdkResumeStep<CcCreateToken>;
-    type Verdict = SdkResumeVerdict;
+    type Verdict = SdkResumeVerdict<CcCreateToken>;
 
     fn identifier(&self) -> &CoreAppliedIdentifier {
         self.0.identifier()
@@ -520,12 +562,10 @@ impl CcIssuedCreate for GuestResentIssuedCreate {
         self.0.discarded(error.to_wire()).into()
     }
 
-    fn preserve(self, _token: CcCreateToken, error: CoreProviderError) -> Self::Verdict {
+    fn preserve(self, token: CcCreateToken, error: CoreProviderError) -> Self::Verdict {
+        let poll_after_secs = token.poll_after_secs();
         self.0
-            .failed(
-                proto::Observation::ReadFailed(error.to_wire()),
-                error.to_wire(),
-            )
+            .preserve(token, poll_after_secs, error.to_wire())
             .into()
     }
 
@@ -534,6 +574,7 @@ impl CcIssuedCreate for GuestResentIssuedCreate {
         token: CcCreateToken,
         poll_after_secs: u32,
     ) -> Result<Self::Step, Self::Verdict> {
+        let token = token.with_poll_after_secs(poll_after_secs);
         Ok(self.0.pending(token, poll_after_secs).into())
     }
 }
@@ -576,38 +617,50 @@ impl AwsccProcessProvider {
             .expect("Provider not initialized; call initialize() first")
     }
 
-    fn schema_registry() -> &'static SchemaRegistry {
-        static REGISTRY: LazyLock<SchemaRegistry> = LazyLock::new(|| {
-            let mut registry = SchemaRegistry::new();
-            for config in schemas::generated::configs() {
-                registry.insert(
-                    "awscc",
-                    config
-                        .schema
-                        .clone()
-                        .validate()
-                        .unwrap_or_else(|error| panic!("{error}")),
-                );
+    fn schema_registry() -> SchemaRegistry {
+        schemas::schema_registry()
+    }
+
+    fn normalize_core_desired(
+        &self,
+        resources: &mut [CoreProviderResource],
+        deferred_by_resource: &[BTreeSet<String>],
+    ) -> Result<(), CoreProviderError> {
+        self.normalizer
+            .normalize_desired_with_host_deferred(resources, deferred_by_resource)?;
+
+        // Deferred names never enter the mutable resource. Keep the assertion
+        // at the protocol boundary so a future desired normalizer cannot
+        // accidentally materialize a host-owned value.
+        for (resource, deferred) in resources.iter().zip(deferred_by_resource) {
+            if let Some(name) = deferred
+                .iter()
+                .find(|name| resource.attributes.contains_key(name.as_str()))
+            {
+                return Err(CoreProviderError::internal(format!(
+                    "desired normalizer materialized host-deferred attribute `{name}`"
+                ))
+                .for_resource(resource.id.clone()));
             }
-            registry
-        });
-        &REGISTRY
+        }
+        Ok(())
     }
 
     fn normalize_create_resource(
         &self,
         resource: &proto::Resource,
-    ) -> Result<NormalizedResource, CoreProviderError> {
-        let core_resource = protocol_convert::protocol_to_resource(resource).map_err(|error| {
+    ) -> Result<CoreNormalizedResource, CoreProviderError> {
+        let core_resource = protocol_resource_to_core(resource).map_err(|error| {
             protocol_input_error("failed to decode create request", error)
                 .for_resource(protocol_convert::protocol_to_resource_id(&resource.id))
         })?;
+        let schemas = Self::schema_registry();
         self.runtime.block_on(
             carina_core::executor::normalized::apply_desired_normalization(
                 core_resource,
                 &[],
                 &self.normalizer,
-                Self::schema_registry(),
+                &schemas,
             ),
         )
     }
@@ -631,10 +684,22 @@ impl AwsccProcessProvider {
         }
     }
 
-    fn core_delete_request(request: proto::DeleteRequest) -> CoreDeleteRequest {
-        CoreDeleteRequest {
-            directives: protocol_convert::protocol_to_directives(&request.directives),
-        }
+    fn core_delete_request(
+        id: &CoreResourceId,
+        request: proto::DeleteRequest,
+    ) -> Result<CoreDeleteRequest, CoreProviderError> {
+        let schemas = Self::schema_registry();
+        let Some(schema) = schemas.get("awscc", &id.resource_type, SchemaKind::Resource) else {
+            return Err(CoreProviderError::internal(
+                "missing schema while resolving delete directives",
+            )
+            .for_resource(id.clone()));
+        };
+        let directives = wire_directives_to_core(&request.directives);
+        Ok(CoreDeleteRequest::resolve(
+            &directives,
+            CoreProviderDirectiveSchema::Available(schema.schema().as_schema()),
+        ))
     }
 }
 
@@ -654,6 +719,10 @@ impl CarinaProvider for AwsccProcessProvider {
 
     fn schemas(&self) -> Vec<ValidatedResourceSchema> {
         schemas::all_schemas()
+    }
+
+    fn reference_forms(&self) -> ReferenceForms {
+        ReferenceForms::new()
     }
 
     fn provider_config_attribute_types(&self) -> ValidatedConfigSchema {
@@ -679,7 +748,10 @@ impl CarinaProvider for AwsccProcessProvider {
         Ok(())
     }
 
-    fn initialize(&mut self, attrs: &BTreeMap<String, proto::Value>) -> Result<(), String> {
+    fn initialize(
+        &mut self,
+        attrs: &BTreeMap<String, proto::Value>,
+    ) -> Result<proto::ReferenceScope, String> {
         let core_attrs = protocol_convert::protocol_to_core_value_map(attrs)
             .map_err(provider_config_decode_error)?;
         let cfg = extract_account_guard_config(&core_attrs)?;
@@ -697,7 +769,10 @@ impl CarinaProvider for AwsccProcessProvider {
             return Err(err.to_string());
         }
         self.provider = Some(provider);
-        Ok(())
+        // This change declares no ReferenceForm table. Returning an available
+        // scope would therefore add no capability; in particular, do not add
+        // a new STS call solely to discover an account for an empty forms set.
+        Ok(proto::ReferenceScope::Unavailable)
     }
 
     fn config_completions(&self) -> HashMap<String, Vec<proto::CompletionValue>> {
@@ -740,13 +815,12 @@ impl CarinaProvider for AwsccProcessProvider {
         &self,
         resource: &proto::Resource,
     ) -> Result<proto::State, proto::ProviderError> {
-        let core_data_source =
-            protocol_convert::protocol_to_data_source(resource).map_err(|error| {
-                Self::convert_error(
-                    protocol_input_error("failed to decode data source", error)
-                        .for_resource(protocol_convert::protocol_to_resource_id(&resource.id)),
-                )
-            })?;
+        let core_data_source = protocol_data_source_to_core(resource).map_err(|error| {
+            Self::convert_error(
+                protocol_input_error("failed to decode data source", error)
+                    .for_resource(protocol_convert::protocol_to_resource_id(&resource.id)),
+            )
+        })?;
         let result = self.runtime.block_on(
             self.provider()
                 .read_data_source_resource(&core_data_source.id),
@@ -767,7 +841,7 @@ impl CarinaProvider for AwsccProcessProvider {
         _id: &proto::ResourceId,
         request: proto::CreateRequest,
         attempt: SdkCreateAttempt,
-    ) -> Result<SdkCreateStep<Self::CreateToken>, SdkCreateVerdict> {
+    ) -> Result<SdkCreateStep<Self::CreateToken>, SdkCreateVerdict<Self::CreateToken>> {
         let normalized_resource = match self.normalize_create_resource(&request.resource) {
             Ok(resource) => resource,
             Err(error) => return Err(attempt.untracked(Self::convert_error(error))),
@@ -783,15 +857,19 @@ impl CarinaProvider for AwsccProcessProvider {
         _id: &proto::ResourceId,
         request: proto::CreateRequest,
         poll: SdkPoll<Self::CreateToken>,
-    ) -> Result<SdkCreateStep<Self::CreateToken>, SdkPollVerdict> {
+    ) -> Result<SdkCreateStep<Self::CreateToken>, SdkPollVerdict<Self::CreateToken>> {
         let normalized_resource = match self.normalize_create_resource(&request.resource) {
             Ok(resource) => resource,
             Err(error) => {
                 let error = Self::convert_error(error);
                 return match poll {
-                    SdkPoll::Unissued(attempt, _token) => Err(attempt.undetermined(error)),
+                    SdkPoll::Unissued(attempt, token) => {
+                        let poll_after_secs = token.poll_after_secs();
+                        Err(attempt.preserve(token, poll_after_secs, error))
+                    }
                     SdkPoll::Issued(issued, token) => {
-                        Ok(issued.pending(token, CREATE_POLL_AFTER_SECS))
+                        let poll_after_secs = token.poll_after_secs();
+                        Err(issued.preserve(token, poll_after_secs, error).into())
                     }
                 };
             }
@@ -816,15 +894,19 @@ impl CarinaProvider for AwsccProcessProvider {
         _id: &proto::ResourceId,
         request: proto::CreateRequest,
         resume: SdkResume<Self::CreateToken>,
-    ) -> Result<SdkResumeStep<Self::CreateToken>, SdkResumeVerdict> {
+    ) -> Result<SdkResumeStep<Self::CreateToken>, SdkResumeVerdict<Self::CreateToken>> {
         let normalized_resource = match self.normalize_create_resource(&request.resource) {
             Ok(resource) => resource,
             Err(error) => {
                 let error = Self::convert_error(error);
                 return match resume {
-                    SdkResume::Unissued(attempt, _token) => Err(attempt.undetermined(error)),
+                    SdkResume::Unissued(attempt, token) => {
+                        let poll_after_secs = token.poll_after_secs();
+                        Err(attempt.preserve(token, poll_after_secs, error))
+                    }
                     SdkResume::Issued(resumed, token) => {
-                        Ok(resumed.pending(token, CREATE_POLL_AFTER_SECS))
+                        let poll_after_secs = token.poll_after_secs();
+                        Err(resumed.preserve(token, poll_after_secs, error))
                     }
                 };
             }
@@ -943,7 +1025,8 @@ impl CarinaProvider for AwsccProcessProvider {
         request: proto::DeleteRequest,
     ) -> Result<SdkDeleteOutcome<Self::DeleteToken>, proto::ProviderError> {
         let core_id = protocol_convert::protocol_to_resource_id(id);
-        let core_request = Self::core_delete_request(request);
+        let core_request =
+            Self::core_delete_request(&core_id, request).map_err(Self::convert_error)?;
         let result = self.runtime.block_on(self.provider().delete_step(
             &core_id,
             identifier,
@@ -965,7 +1048,8 @@ impl CarinaProvider for AwsccProcessProvider {
         pending: Pending<Self::DeleteToken>,
     ) -> Result<SdkDeleteOutcome<Self::DeleteToken>, proto::ProviderError> {
         let core_id = protocol_convert::protocol_to_resource_id(id);
-        let core_request = Self::core_delete_request(request);
+        let core_request =
+            Self::core_delete_request(&core_id, request).map_err(Self::convert_error)?;
         let result = self.runtime.block_on(self.provider().poll_delete_step(
             &core_id,
             identifier,
@@ -1001,35 +1085,70 @@ impl CarinaProvider for AwsccProcessProvider {
 
     fn normalize_desired(
         &self,
-        resources: Vec<proto::Resource>,
-    ) -> Result<Vec<proto::Resource>, proto::ProviderError> {
+        resources: Vec<DesiredResource>,
+    ) -> Result<Vec<NormalizedResource>, proto::ProviderError> {
         let mut core_resources = Vec::with_capacity(resources.len());
+        let mut deferred_by_resource = Vec::with_capacity(resources.len());
         for resource in &resources {
-            let resource = protocol_convert::protocol_to_resource(resource).map_err(|error| {
-                Self::convert_error(
-                    protocol_input_error("failed to decode desired resource", error)
-                        .for_resource(protocol_convert::protocol_to_resource_id(&resource.id)),
-                )
-            })?;
-            core_resources.push(resource.into());
+            let core_id = protocol_convert::protocol_to_resource_id(resource.id());
+            let mut core = CoreResource::from_id(core_id.clone());
+            let mut deferred = BTreeSet::new();
+            for (name, attribute) in resource.attributes() {
+                match attribute {
+                    DesiredAttribute::Known(value) => {
+                        let value =
+                            protocol_convert::protocol_to_core_value(value).map_err(|error| {
+                                Self::convert_error(
+                                    protocol_input_error(
+                                        "failed to decode desired resource attribute",
+                                        error,
+                                    )
+                                    .for_resource(core_id.clone()),
+                                )
+                            })?;
+                        core.set_attr(name.to_string(), value);
+                    }
+                    DesiredAttribute::Deferred => {
+                        deferred.insert(name.to_string());
+                    }
+                    DesiredAttribute::Absent => unreachable!(
+                        "DesiredResource::attributes yields only known or deferred names"
+                    ),
+                }
+            }
+            core_resources.push(CoreProviderResource::from(core));
+            deferred_by_resource.push(deferred);
         }
-        // Guest-side: drive the now-async normalizer on the guest's own
-        // outermost runtime — same pattern as the guest's `Provider`
-        // CRUD methods. Not a nested runtime: the host drives the WASM
-        // call, the guest drives its internal async (carina#3112).
-        self.runtime
-            .block_on(self.normalizer.normalize_desired(&mut core_resources))
+        // Deferred names stay outside the core resource. The parallel typed
+        // metadata keeps Deferred distinct from Absent without a sentinel.
+        self.normalize_core_desired(&mut core_resources, &deferred_by_resource)
             .map_err(Self::convert_error)?;
         let mut normalized = Vec::with_capacity(core_resources.len());
-        for resource in &core_resources {
-            let resource =
-                protocol_convert::try_resource_to_protocol(resource).map_err(|error| {
-                    Self::convert_error(
-                        protocol_output_error("failed to encode normalized resource", error)
+        for (mut desired, resource) in resources.into_iter().zip(core_resources) {
+            for (name, value) in &resource.attributes {
+                let value =
+                    protocol_convert::try_core_to_protocol_value(value).map_err(|error| {
+                        Self::convert_error(
+                            protocol_output_error("failed to encode normalized attribute", error)
+                                .for_resource(resource.id.clone()),
+                        )
+                    })?;
+                match desired.attribute_mut(name) {
+                    DesiredAttribute::Known(current) => *current = value,
+                    DesiredAttribute::Absent => {
+                        return Err(Self::convert_error(
+                            CoreProviderError::internal(format!(
+                                "desired normalizer attempted to write absent attribute `{name}`"
+                            ))
                             .for_resource(resource.id.clone()),
-                    )
-                })?;
-            normalized.push(resource);
+                        ));
+                    }
+                    DesiredAttribute::Deferred => unreachable!(
+                        "typed normalization and the boundary assertion exclude deferred names"
+                    ),
+                }
+            }
+            normalized.push(desired.finish());
         }
         Ok(normalized)
     }
@@ -1097,9 +1216,9 @@ impl CarinaProvider for AwsccProcessProvider {
                 })?;
             core_states.insert(core_state.id.clone(), core_state);
         }
-        let core_saved =
-            decode_persisted_saved_attrs(saved_attrs, &key_to_id, Self::schema_registry())
-                .map_err(Self::convert_error)?;
+        let schemas = Self::schema_registry();
+        let core_saved = decode_persisted_saved_attrs(saved_attrs, &key_to_id, &schemas)
+            .map_err(Self::convert_error)?;
         self.runtime
             .block_on(carina_core::provider::hydrate_provider_states(
                 &self.normalizer,
@@ -1578,7 +1697,7 @@ mod tests {
             .get("assume_role")
             .expect("assume_role must be declared as a provider config attribute");
         match ty.raw_shape() {
-            RawShape::Struct { name, fields } => {
+            RawShape::Struct { name, fields, .. } => {
                 assert_eq!(name, "AssumeRole");
                 let role_arn = fields
                     .iter()
@@ -1836,7 +1955,7 @@ mod tests {
         let decoded = decode_persisted_saved_attrs(
             &saved_attrs,
             &key_to_id,
-            AwsccProcessProvider::schema_registry(),
+            &AwsccProcessProvider::schema_registry(),
         )
         .expect("ordinary persisted values should decode");
 
@@ -1866,15 +1985,18 @@ mod tests {
             .iter()
             .find(|schema| schema.parts().resource_type == "ec2.Vpc")
             .expect("ec2.vpc schema should exist");
-        let exclusive_required = vpc.parts().exclusive_required;
+        let field_groups = vpc.parts().field_groups;
         assert!(
-            exclusive_required
-                .iter()
-                .any(|g| g.contains(&"cidr_block".to_string())
-                    && g.contains(&"ipv4_ipam_pool_id".to_string())),
+            field_groups.iter().any(|group| group.kind()
+                == carina_core::schema::FieldGroupKind::ExactlyOne
+                && group.fields().iter().any(|field| field == "cidr_block")
+                && group
+                    .fields()
+                    .iter()
+                    .any(|field| field == "ipv4_ipam_pool_id")),
             "vpc schema should expose cidr_block/ipv4_ipam_pool_id as a declarative \
-             exclusive_required group, got: {:?}",
-            exclusive_required
+             exactly-one field group, got: {:?}",
+            field_groups
         );
     }
 }

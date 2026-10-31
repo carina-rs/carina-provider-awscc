@@ -13,9 +13,9 @@ use carina_core::schema::RawShape;
 /// The host owns state enum canonicalization. This pass intentionally keeps
 /// enum values untouched and only applies non-enum string transforms such as
 /// Route53 hosted-zone trailing-dot stripping.
-pub fn normalize_state_string_dsl_transforms_impl<S>(current_states: &mut S)
+pub fn normalize_state_string_dsl_transforms_impl<'a, I>(current_states: I)
 where
-    for<'a> &'a mut S: IntoIterator<Item = (&'a ResourceId, &'a mut State)>,
+    I: IntoIterator<Item = (&'a ResourceId, &'a mut State)>,
 {
     for (resource_id, state) in current_states {
         if !state.exists || resource_id.provider != "awscc" {
@@ -64,9 +64,9 @@ where
 /// every downstream consumer (state writeback, plan display, the
 /// differ) see the same shape as the canonicalized desired side.
 /// See carina-rs/carina#2481, sub-issue 5.
-pub fn canonicalize_string_or_list_states_impl<S>(current_states: &mut S)
+pub fn canonicalize_string_or_list_states_impl<'a, I>(current_states: I)
 where
-    for<'a> &'a mut S: IntoIterator<Item = (&'a ResourceId, &'a mut State)>,
+    I: IntoIterator<Item = (&'a ResourceId, &'a mut State)>,
 {
     for (resource_id, state) in current_states {
         if !state.exists || resource_id.provider != "awscc" {
@@ -391,9 +391,20 @@ mod tests {
                 "example.com".to_string().into()
             )))
         );
-        let saved_attrs = RawSavedAttrs::default().lift(&SchemaRegistry::new());
-        let diff =
-            carina_core::differ::diff(&desired, current, &saved_attrs, None, Some(&config.schema));
+        let registry = crate::schemas::schema_registry();
+        let saved_attrs = RawSavedAttrs::default().lift(&registry);
+        let router = crate::test_comparison_router();
+        let comparison = router
+            .comparison_for(&registry, &desired.id)
+            .expect("HostedZone comparison context");
+        let diff = carina_core::differ::diff(
+            &desired,
+            current,
+            &saved_attrs,
+            None,
+            Some(&config.schema),
+            comparison.context(),
+        );
         assert!(
             matches!(diff, carina_core::differ::Diff::NoChange(_)),
             "expected no diff for Route53 HostedZone name with trailing dot, got {diff:?}"

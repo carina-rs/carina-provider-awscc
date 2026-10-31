@@ -5,11 +5,17 @@ use carina_core::parser::{ParsedFile, ProviderContext};
 use carina_core::provider::{
     ProviderFactory, collect_schemas, provider_custom_types_from_factories,
 };
-use carina_core::resource::{ConcreteValue, Resource, Value};
+use carina_core::resource::{
+    ConcreteValue, ModuleSource, ParserPlaceholder, Resource as GenericResource,
+    Value as GenericValue,
+};
 use carina_core::schema::SchemaRegistry;
 use carina_core::validation::validate_resources;
 use carina_provider_awscc::AwsccProviderFactory;
 use indexmap::IndexMap;
+
+type Resource = GenericResource<ModuleSource, ParserPlaceholder>;
+type Value = GenericValue<ParserPlaceholder>;
 
 fn string(value: &str) -> Value {
     Value::Concrete(ConcreteValue::String(value.to_string().into()))
@@ -72,10 +78,8 @@ fn assert_omitted_attribute_is_rejected(
     );
 
     let resource_id = resource.id.to_string();
-    let parsed = ParsedFile {
-        resources: vec![resource],
-        ..ParsedFile::default()
-    };
+    let mut parsed = ParsedFile::default();
+    parsed.resources = vec![resource];
     let error = match validate_resources(
         &parsed,
         schemas,
@@ -199,11 +203,10 @@ fn validate_resource(
     context: &ProviderContext,
     resource: Resource,
 ) -> Result<(), String> {
+    let mut parsed = ParsedFile::default();
+    parsed.resources = vec![resource];
     validate_resources(
-        &ParsedFile {
-            resources: vec![resource],
-            ..ParsedFile::default()
-        },
+        &parsed,
         schemas,
         &HashSet::from(["awscc".to_string()]),
         context,

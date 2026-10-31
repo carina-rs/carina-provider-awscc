@@ -1,5 +1,5 @@
 use carina_core::diff_helpers::resource_attribute_values_equal;
-use carina_core::resource::{ConcreteValue, Value};
+use carina_core::resource::{ConcreteValue, ResourceId, Value};
 use carina_provider_awscc::schemas::generated::iam::role::iam_role_config;
 use indexmap::IndexMap;
 
@@ -63,6 +63,12 @@ fn iam_role_policy_document_diff_ignores_unordered_value_list_reordering() {
             "arn:aws:iam::777788889999:role/gamma",
         ],
     );
+    let registry = carina_provider_awscc::schemas::schema_registry();
+    let router = carina_provider_awscc::test_comparison_router();
+    let id = ResourceId::with_provider_identity("awscc", "iam.Role", "policy-diff", None);
+    let comparison = router
+        .comparison_for(&registry, &id)
+        .expect("IAM Role comparison context");
 
     assert!(
         resource_attribute_values_equal(
@@ -70,6 +76,7 @@ fn iam_role_policy_document_diff_ignores_unordered_value_list_reordering() {
             &reordered,
             Some(&schema),
             "assume_role_policy_document",
+            comparison.context(),
         ),
         "IAM action and principal AWS lists must compare without regard to order"
     );
@@ -79,6 +86,7 @@ fn iam_role_policy_document_diff_ignores_unordered_value_list_reordering() {
             &changed,
             Some(&schema),
             "assume_role_policy_document",
+            comparison.context(),
         ),
         "a changed principal ARN must remain a real policy difference"
     );

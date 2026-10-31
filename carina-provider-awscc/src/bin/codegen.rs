@@ -3642,6 +3642,12 @@ fn generate_markdown_with_example(
         page.push_str(&format!("{desc}\n\n"));
     }
 
+    if resource_type_overrides().prevents_destroy_by_default(type_name) {
+        page.push_str(
+            "This resource is protected from destruction by default because deleting it closes the AWS account. To opt out, set `directives { prevent_destroy = false }`.\n\n",
+        );
+    }
+
     write_markdown_example(&mut page, example)?;
 
     // Argument Reference (writable attributes)
@@ -4140,7 +4146,7 @@ static EXCLUSIVE_DESC_RE: LazyLock<Regex> = LazyLock::new(|| {
 ///
 /// A condition-qualified sentence such as "For an alarm based on a metric,
 /// you must specify either X or Y" is deliberately ignored. Carina's portable
-/// `exclusive_required` constraint means exactly one globally; treating a
+/// exactly-one field group means exactly one globally; treating a
 /// conditional clause as that unconditional rule rejects the other valid
 /// resource modes.
 fn detect_exclusive_from_descriptions(schema: &CfnSchema) -> Vec<Vec<String>> {
@@ -4518,6 +4524,9 @@ pub fn {}() -> AwsccSchemaConfig {{
     }
     body.pop();
     body.push_str(";\n");
+    if resource_type_overrides().prevents_destroy_by_default(type_name) {
+        body.push_str("    schema = schema.default_prevent_destroy();\n");
+    }
 
     // Generate attributes for each property
     for (prop_name, prop) in &schema.properties {
@@ -4709,7 +4718,7 @@ pub fn {}() -> AwsccSchemaConfig {{
             .collect::<Vec<_>>()
             .join(", ");
         body.push_str(&format!(
-            "    schema = schema.exclusive_required(&[{}]);\n",
+            "    schema = schema.field_group(FieldGroup::exactly_one([{}]).expect(\"generated exactly-one field group must be valid\"));\n",
             fields_str
         ));
     }
@@ -4826,6 +4835,9 @@ pub fn {}() -> AwsccSchemaConfig {{
         needs_types = true;
     }
     let mut schema_imports = vec!["AttributeSchema", "ResourceSchema"];
+    if body.contains("FieldGroup::") {
+        schema_imports.push("FieldGroup");
+    }
     if needs_attribute_type {
         schema_imports.insert(1, "AttributeType");
     }
@@ -6185,9 +6197,21 @@ struct ResourceTypeOverrides {
     #[cfg(test)]
     flat: HashMap<(&'static str, &'static str), TypeOverride>,
     by_type: HashMap<&'static str, ResourceOverridesForType>,
+    default_prevent_destroy: HashSet<&'static str>,
 }
 
 impl ResourceTypeOverrides {
+    fn default_prevent_destroy(&mut self, cfn_type: &'static str) {
+        assert!(
+            self.default_prevent_destroy.insert(cfn_type),
+            "duplicate default_prevent_destroy override for {cfn_type}"
+        );
+    }
+
+    fn prevents_destroy_by_default(&self, cfn_type: &str) -> bool {
+        self.default_prevent_destroy.contains(cfn_type)
+    }
+
     fn insert(
         &mut self,
         (cfn_type, property_path): (&'static str, &'static str),
@@ -6253,6 +6277,10 @@ impl ResourceTypeOverrides {
 fn resource_type_overrides() -> &'static ResourceTypeOverrides {
     static OVERRIDES: LazyLock<ResourceTypeOverrides> = LazyLock::new(|| {
         let mut m = ResourceTypeOverrides::default();
+
+        // Deleting this Cloud Control resource closes the AWS member account;
+        // require an explicit lifecycle opt-out before destruction (aws#572).
+        m.default_prevent_destroy("AWS::Organizations::Account");
 
         // === StringType overrides ===
 
@@ -8881,7 +8909,7 @@ mod tests {
             )
             .validate()
             .expect("synthetic nested-omission schema must validate");
-        let unknown_value = carina_core::resource::Value::Concrete(
+        let unknown_value: carina_core::resource::Value = carina_core::resource::Value::Concrete(
             carina_core::resource::ConcreteValue::Map(indexmap::IndexMap::from([
                 (
                     "enabled".to_string(),
@@ -9497,9 +9525,7 @@ mod tests {
         let generated = generate_schema_code(&schema, "AWS::CloudWatch::Alarm")
             .expect("CloudWatch Alarm schema generation should succeed");
         assert!(
-            !generated.contains(
-                "schema = schema.exclusive_required(&[\"extended_statistic\", \"statistic\"]);"
-            ),
+            !generated.contains("FieldGroup::exactly_one([\"extended_statistic\", \"statistic\"]"),
             "a condition-qualified description must not become a global exactly-one constraint: {generated}"
         );
     }
@@ -19390,7 +19416,7 @@ mod tests {
     #[test]
     fn test_generated_code_contains_validator_for_detected_exclusives() {
         // Full integration: generate_schema_code should produce a declarative
-        // .exclusive_required(&[...]) for description-detected exclusive
+        // FieldGroup::exactly_one([...]) for description-detected exclusive
         // fields — not a closure. Closures don't cross the WASM boundary.
         let mut props = BTreeMap::new();
         props.insert(
@@ -19438,8 +19464,8 @@ mod tests {
         };
         let code = generate_schema_code(&schema, "AWS::EC2::VPCGatewayAttachment").unwrap();
         assert!(
-            code.contains(".exclusive_required(&["),
-            "Generated code should emit declarative .exclusive_required: {code}"
+            code.contains("FieldGroup::exactly_one(["),
+            "Generated code should emit a declarative exactly-one field group: {code}"
         );
         assert!(
             code.contains("\"internet_gateway_id\"") && code.contains("\"vpn_gateway_id\""),
