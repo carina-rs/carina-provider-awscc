@@ -14,7 +14,7 @@
 
 use anyhow::{Context, Result};
 use carina_aws_types::dsl_enum_value;
-use carina_docgen::{Heading, PageBuilder};
+use carina_docgen::{Heading, PageBuilder, TableCell};
 use carina_provider_awscc::schemas::catalog::AwsccType;
 use clap::Parser;
 use heck::{ToPascalCase, ToSnakeCase};
@@ -2092,6 +2092,19 @@ impl MarkdownType {
             Self::Linked(value) => value.write_to(page),
         }
     }
+
+    fn table_cell(&self) -> TableCell<MarkdownTarget> {
+        let mut cell = TableCell::new();
+        self.write_to_table_cell(&mut cell);
+        cell
+    }
+
+    fn write_to_table_cell(&self, cell: &mut TableCell<MarkdownTarget>) {
+        match self {
+            Self::Plain(value) => cell.push_text(value),
+            Self::Linked(value) => value.write_to_table_cell(cell),
+        }
+    }
 }
 
 impl MarkdownLinkedType {
@@ -2117,6 +2130,32 @@ impl MarkdownLinkedType {
                 page.push_str("Map\\<String, ");
                 value.write_to(page);
                 page.push_str("\\>");
+            }
+        }
+    }
+
+    fn write_to_table_cell(&self, cell: &mut TableCell<MarkdownTarget>) {
+        match self {
+            Self::Enum(key) => cell.push_link(
+                MarkdownTarget::Enum(key.clone()),
+                format!("Enum ({})", key.type_name),
+            ),
+            Self::Struct { key, name } => cell.push_link(
+                MarkdownTarget::Struct(key.clone()),
+                format!("Struct({name})"),
+            ),
+            Self::List { item, suffix } => {
+                cell.push_text("List\\<");
+                item.write_to_table_cell(cell);
+                cell.push_text("\\>");
+                if let Some(suffix) = suffix {
+                    cell.push_text(suffix);
+                }
+            }
+            Self::Map { value } => {
+                cell.push_text("Map\\<String, ");
+                value.write_to_table_cell(cell);
+                cell.push_text("\\>");
             }
         }
     }
@@ -3728,13 +3767,12 @@ fn generate_markdown_with_example(
                 MarkdownTarget::Enum(key.clone()),
                 Heading::plain(3, heading_text),
             )?;
-            page.push_str("| Value | DSL Identifier |\n");
-            page.push_str("|-------|----------------|\n");
-            for value in &enum_info.values {
+            let rows = enum_info.values.iter().map(|value| {
                 let dsl_value = dsl_for(value);
                 let dsl_id = format!("{}.{}.{}", key.namespace, enum_info.type_name, dsl_value);
-                page.push_str(&format!("| `{value}` | `{dsl_id}` |\n"));
-            }
+                [TableCell::code(value), TableCell::code(dsl_id)]
+            });
+            page.table(["Value", "DSL Identifier"], rows)?;
             page.push_str("\n");
             let empty = String::new();
             let first_value = enum_info.values.first().unwrap_or(&empty);
@@ -3772,11 +3810,10 @@ fn generate_markdown_with_example(
                     .join(", ");
                 page.push_str(&format!("Used by: {used_by}\n\n"));
             }
-            page.push_str("| Field | Type | Required | Description |\n");
-            page.push_str("|-------|------|----------|-------------|\n");
             let required_set: HashSet<&str> =
                 def_info.required.iter().map(|s| s.as_str()).collect();
             let overrides = known_enum_overrides();
+            let mut rows = Vec::new();
             for (field_name, field_prop) in &def_info.properties {
                 if is_deprecated_property(field_prop) {
                     continue;
@@ -3838,14 +3875,14 @@ fn generate_markdown_with_example(
                     }
                     desc.push_str("Provider-populated; cannot be set.");
                 }
-                page.push_str(&format!("| `{snake_name}` | "));
-                field_type_display.write_to(&mut page);
-                page.push_str(&format!(
-                    " | {} | {} |\n",
-                    if is_req { "Yes" } else { "No" },
-                    desc
-                ));
+                rows.push([
+                    TableCell::code(snake_name),
+                    field_type_display.table_cell(),
+                    TableCell::text(if is_req { "Yes" } else { "No" }),
+                    TableCell::text(desc),
+                ]);
             }
+            page.table(["Field", "Type", "Required", "Description"], rows)?;
             page.push_str("\n");
         }
     }
@@ -15422,6 +15459,49 @@ mod tests {
             generated.contains("AttributeType::list(AttributeType::enum_("),
             "array with enum items should generate list(Enum): {generated}"
         );
+    }
+
+    #[test]
+    fn test_markdown_struct_description_escapes_table_delimiter() {
+        let description = "Indicates whether to enable Ipv6 Support for Vpc Attachment. Valid Values: enable | disable";
+        let mut schema = empty_schema("AWS::Test::Resource");
+        schema.properties.insert(
+            "Options".to_string(),
+            CfnProperty {
+                ref_path: Some("#/definitions/Options".to_string()),
+                ..Default::default()
+            },
+        );
+        schema.definitions = Some(BTreeMap::from([(
+            "Options".to_string(),
+            def(
+                Some("object"),
+                Some(BTreeMap::from([(
+                    "Ipv6Support".to_string(),
+                    CfnProperty {
+                        prop_type: Some(TypeValue::Single("string".to_string())),
+                        description: Some(description.to_string()),
+                        ..Default::default()
+                    },
+                )])),
+                vec![],
+                None,
+                None,
+                None,
+            ),
+        )]));
+
+        let md = generate_markdown(&schema, &schema.type_name).unwrap();
+        let expected = format!(
+            "| `ipv6_support` | [Enum (Ipv6Support)](#optionsipv6_support-ipv6support) | No | {} |",
+            description.replace('|', "\\|")
+        );
+
+        assert!(
+            md.lines().any(|line| line == expected),
+            "struct description must remain one four-cell table row:\n{md}"
+        );
+        carina_docgen::check_page(&md).expect("generated Markdown should pass shared checks");
     }
 
     #[test]

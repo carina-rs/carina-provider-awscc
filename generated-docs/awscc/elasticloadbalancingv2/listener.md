@@ -209,7 +209,7 @@ Shorthand formats: `http` or `Protocol.http`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `content_type` | [Enum (ContentType)](#default_actionsfixed_response_configcontent_type-contenttype) | No | The content type. Valid Values: text/plain | text/css | text/html | application/javascript | application/json |
+| `content_type` | [Enum (ContentType)](#default_actionsfixed_response_configcontent_type-contenttype) | No | The content type. Valid Values: text/plain \| text/css \| text/html \| application/javascript \| application/json |
 | `message_body` | String | No | The message. |
 | `status_code` | String | Yes | The HTTP response code (2XX, 4XX, or 5XX). |
 
