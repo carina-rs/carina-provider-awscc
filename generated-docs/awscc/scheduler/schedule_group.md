@@ -11,6 +11,8 @@ Definition of AWS::Scheduler::ScheduleGroup Resource Type
 
 ```crn
 awscc.scheduler.ScheduleGroup {
+  # Cloud Control cannot read back schedules in a custom group by name; keep
+  # Carina-managed schedules in the default group.
   name = 'carina-example-schedules'
 
   tags = {

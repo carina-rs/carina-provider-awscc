@@ -22,6 +22,9 @@ let alerts = awscc.sns.Topic {
 awscc.sns.Subscription {
   topic_arn = alerts.topic_arn
   protocol  = 'email'
+  # Replace this placeholder with an email address you control. SNS sends a
+  # confirmation email; the subscription delivers nothing until the recipient
+  # confirms it.
   endpoint  = 'alerts@example.com'
 }
 ```

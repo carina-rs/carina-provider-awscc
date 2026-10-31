@@ -11,6 +11,7 @@ Resource Type definition for SSO PermissionSet
 
 ```crn
 awscc.sso.PermissionSet {
+  # Replace this placeholder with your organization's IAM Identity Center instance ARN.
   instance_arn     = 'arn:aws:sso:::instance/ssoins-1234567890abcdef'
   name             = 'ExampleReadOnly'
   description      = 'Read-only access for the example workload'

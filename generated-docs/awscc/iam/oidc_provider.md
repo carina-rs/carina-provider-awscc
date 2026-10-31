@@ -11,9 +11,8 @@ Resource Type definition for AWS::IAM::OIDCProvider
 
 ```crn
 awscc.iam.OidcProvider {
-  url             = 'https://token.actions.githubusercontent.com'
-  client_id_list  = ['sts.amazonaws.com']
-  thumbprint_list = ['0123456789abcdef0123456789abcdef01234567']
+  url            = 'https://token.actions.githubusercontent.com'
+  client_id_list = ['sts.amazonaws.com']
 
   tags = {
     Environment = 'example'

@@ -50,6 +50,8 @@ awscc.iam.RolePolicy {
 awscc.scheduler.Schedule {
   name                = 'carina-example-publish-notification'
   description         = 'Publish a notification every six hours'
+  # Cloud Control cannot read back schedules in a custom group by name; keep
+  # Carina-managed schedules in the default group.
   group_name          = 'default'
   schedule_expression = 'rate(6 hours)'
   state               = aws.scheduler.Schedule.ScheduleState.enabled
