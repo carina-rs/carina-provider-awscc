@@ -26,6 +26,7 @@ pub mod organizations;
 pub mod route53;
 pub mod s3;
 pub mod scheduler;
+pub mod sns;
 pub mod ssm;
 pub mod sso;
 pub mod wafv2;
@@ -73,6 +74,8 @@ static ENUM_VALID_VALUES: LazyLock<
         s3::bucket_policy::enum_valid_values(),
         cloudwatch::alarm::enum_valid_values(),
         budgets::budget::enum_valid_values(),
+        sns::topic::enum_valid_values(),
+        sns::subscription::enum_valid_values(),
         scheduler::schedule::enum_valid_values(),
         scheduler::schedule_group::enum_valid_values(),
         ssm::parameter::enum_valid_values(),
@@ -140,6 +143,8 @@ fn build_configs() -> Vec<AwsccSchemaConfig> {
         s3::bucket_policy::s3_bucket_policy_config,
         cloudwatch::alarm::cloudwatch_alarm_config,
         budgets::budget::budgets_budget_config,
+        sns::topic::sns_topic_config,
+        sns::subscription::sns_subscription_config,
         scheduler::schedule::scheduler_schedule_config,
         scheduler::schedule_group::scheduler_schedule_group_config,
         ssm::parameter::ssm_parameter_config,
@@ -216,6 +221,8 @@ pub fn required_permissions(resource_type: &str, op: PlanOp) -> &'static [&'stat
         "s3.BucketPolicy" => s3::bucket_policy::required_permissions(op),
         "cloudwatch.Alarm" => cloudwatch::alarm::required_permissions(op),
         "budgets.Budget" => budgets::budget::required_permissions(op),
+        "sns.Topic" => sns::topic::required_permissions(op),
+        "sns.Subscription" => sns::subscription::required_permissions(op),
         "scheduler.Schedule" => scheduler::schedule::required_permissions(op),
         "scheduler.ScheduleGroup" => scheduler::schedule_group::required_permissions(op),
         "ssm.Parameter" => ssm::parameter::required_permissions(op),

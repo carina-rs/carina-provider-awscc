@@ -33,7 +33,7 @@ Collection of application attributes.
 
 ### `custom_response_bodies`
 
-- **Type:** String
+- **Type:** Map\<String, [Struct(CustomResponseBody)](#custom_response_bodies-1)\>
 - **Required:** No
 
 ### `data_protection_config`
@@ -93,6 +93,27 @@ Collection of Rules.
 - **Required:** Yes
 
 ## Enum Values
+
+### association_config.request_body.default_size_inspection_limit (SizeInspectionLimit)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `KB_16` | `aws.wafv2.WebAcl.AssociationConfig.RequestBodyAssociatedResourceTypeConfig.SizeInspectionLimit.kb_16` |
+| `KB_32` | `aws.wafv2.WebAcl.AssociationConfig.RequestBodyAssociatedResourceTypeConfig.SizeInspectionLimit.kb_32` |
+| `KB_48` | `aws.wafv2.WebAcl.AssociationConfig.RequestBodyAssociatedResourceTypeConfig.SizeInspectionLimit.kb_48` |
+| `KB_64` | `aws.wafv2.WebAcl.AssociationConfig.RequestBodyAssociatedResourceTypeConfig.SizeInspectionLimit.kb_64` |
+
+Shorthand formats: `kb_16` or `SizeInspectionLimit.kb_16`
+
+### custom_response_bodies.content_type (ResponseContentType)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `TEXT_PLAIN` | `aws.wafv2.WebAcl.CustomResponseBody.ResponseContentType.text_plain` |
+| `TEXT_HTML` | `aws.wafv2.WebAcl.CustomResponseBody.ResponseContentType.text_html` |
+| `APPLICATION_JSON` | `aws.wafv2.WebAcl.CustomResponseBody.ResponseContentType.application_json` |
+
+Shorthand formats: `text_plain` or `ResponseContentType.text_plain`
 
 ### data_protection_config.data_protections.action (DataProtectionAction)
 
@@ -481,7 +502,13 @@ Used by: `default_action.allow`, `rules.action.allow`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `request_body` | String | No |  |
+| `request_body` | Map\<String, [Struct(RequestBodyAssociatedResourceTypeConfig)](#association_configrequest_body)\> | No |  |
+
+### association_config.request_body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `default_size_inspection_limit` | [Enum (SizeInspectionLimit)](#association_configrequest_bodydefault_size_inspection_limit-sizeinspectionlimit) | Yes |  |
 
 ### block_action
 
@@ -531,6 +558,13 @@ Used by: `allow_action.custom_request_handling`, `rule_action.captcha.custom_req
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `insert_headers` | List\<[Struct(CustomHTTPHeader)](#custom_http_header)\> (items: 1..) | Yes | Collection of HTTP headers. |
+
+### custom_response_bodies
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `content` | String | Yes |  |
+| `content_type` | [Enum (ResponseContentType)](#custom_response_bodiescontent_type-responsecontenttype) | Yes |  |
 
 ### data_protection_config
 
@@ -583,7 +617,7 @@ Used by: `statement.byte_match_statement.field_to_match`, `statement.regex_match
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `all_query_arguments` | `Map<String, String>` | No | All query arguments of a web request. |
+| `all_query_arguments` | Empty struct (`{}`) | No | All query arguments of a web request. |
 | `body` | [Struct(Body)](#field_to_matchbody) | No |  |
 | `cookies` | [Struct(Cookies)](#field_to_matchcookies) | No |  |
 | `header_order` | [Struct(HeaderOrder)](#field_to_matchheader_order) | No |  |
@@ -591,12 +625,12 @@ Used by: `statement.byte_match_statement.field_to_match`, `statement.regex_match
 | `ja3_fingerprint` | [Struct(JA3Fingerprint)](#field_to_matchja3_fingerprint) | No |  |
 | `ja4_fingerprint` | [Struct(JA4Fingerprint)](#field_to_matchja4_fingerprint) | No |  |
 | `json_body` | [Struct(JsonBody)](#field_to_matchjson_body) | No |  |
-| `method` | `Map<String, String>` | No | The HTTP method of a web request. The method indicates the type of operation that the request is asking the origin to perform. |
-| `query_string` | `Map<String, String>` | No | The query string of a web request. This is the part of a URL that appears after a ? character, if any. |
+| `method` | Empty struct (`{}`) | No | The HTTP method of a web request. The method indicates the type of operation that the request is asking the origin to perform. |
+| `query_string` | Empty struct (`{}`) | No | The query string of a web request. This is the part of a URL that appears after a ? character, if any. |
 | `single_header` | [Struct(SingleHeader)](#field_to_matchsingle_header) | No |  |
 | `single_query_argument` | [Struct(SingleQueryArgument)](#field_to_matchsingle_query_argument) | No | One query argument in a web request, identified by name, for example UserName or SalesRegion. The name can be up to 30 characters long and isn't case sensitive. |
 | `uri_fragment` | [Struct(UriFragment)](#field_to_matchuri_fragment) | No |  |
-| `uri_path` | `Map<String, String>` | No | The path component of the URI of a web request. This is the part of a web request that identifies a resource, for example, /images/daily-ad.jpg. |
+| `uri_path` | Empty struct (`{}`) | No | The path component of the URI of a web request. This is the part of a web request that identifies a resource, for example, /images/daily-ad.jpg. |
 
 ### field_to_match.body
 
@@ -616,7 +650,7 @@ Used by: `statement.byte_match_statement.field_to_match`, `statement.regex_match
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `all` | `Map<String, String>` | No | Inspect all parts of the web request cookies. |
+| `all` | Empty struct (`{}`) | No | Inspect all parts of the web request cookies. |
 | `excluded_cookies` | `List<String>` (items: 1..=199) | No |  |
 | `included_cookies` | `List<String>` (items: 1..=199) | No |  |
 
@@ -638,7 +672,7 @@ Used by: `statement.byte_match_statement.field_to_match`, `statement.regex_match
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `all` | `Map<String, String>` | No | Inspect all parts of the web request headers. |
+| `all` | Empty struct (`{}`) | No | Inspect all parts of the web request headers. |
 | `excluded_headers` | `List<String>` (items: 1..=199) | No |  |
 | `included_headers` | `List<String>` (items: 1..=199) | No |  |
 
@@ -667,7 +701,7 @@ Used by: `statement.byte_match_statement.field_to_match`, `statement.regex_match
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `all` | `Map<String, String>` | No | Inspect all parts of the web request's JSON body. |
+| `all` | Empty struct (`{}`) | No | Inspect all parts of the web request's JSON body. |
 | `included_paths` | `List<String>` | No |  |
 
 ### field_to_match.single_header
@@ -809,8 +843,8 @@ Used by: `statement.managed_rule_group_statement.rule_action_overrides`, `statem
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `count` | `Map<String, String>` | No | Count traffic towards application. |
-| `none` | `Map<String, String>` | No | Keep the RuleGroup or ManagedRuleGroup behavior as is. |
+| `count` | Empty struct (`{}`) | No | Count traffic towards application. |
+| `none` | Empty struct (`{}`) | No | Keep the RuleGroup or ManagedRuleGroup behavior as is. |
 
 ### rules.rule_labels
 
@@ -1017,12 +1051,12 @@ Used by: `rules.statement`, `rules.statement.and_statement.statements`, `rules.s
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `asn` | String | No |  |
+| `asn` | Empty struct (`{}`) | No |  |
 | `cookie` | [Struct(RateLimitCookie)](#statementrate_based_statementcustom_keyscookie) | No |  |
-| `forwarded_ip` | Ipv4Address | No |  |
-| `http_method` | String | No |  |
+| `forwarded_ip` | Empty struct (`{}`) | No |  |
+| `http_method` | Empty struct (`{}`) | No |  |
 | `header` | [Struct(RateLimitHeader)](#statementrate_based_statementcustom_keysheader) | No |  |
-| `ip` | Ipv4Address | No |  |
+| `ip` | Empty struct (`{}`) | No |  |
 | `ja3_fingerprint` | [Struct(RateLimitJA3Fingerprint)](#statementrate_based_statementcustom_keysja3_fingerprint) | No |  |
 | `ja4_fingerprint` | [Struct(RateLimitJA4Fingerprint)](#statementrate_based_statementcustom_keysja4_fingerprint) | No |  |
 | `label_namespace` | [Struct(RateLimitLabelNamespace)](#statementrate_based_statementcustom_keyslabel_namespace) | No |  |

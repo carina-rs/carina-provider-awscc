@@ -374,6 +374,12 @@ const REPLACEMENT_CLASSES: &[(&str, ReplacementClass)] = &[
     ("s3.Bucket", ReplacementClass::Attribute("bucket_name")),
     // One policy per bucket; `bucket` is the parent, not this resource's own name.
     ("s3.BucketPolicy", ReplacementClass::Conflicting),
+    // A temporary-name suffix would make a FIFO topic name stop ending in
+    // `.fifo`, so SNS topics cannot use create-before-destroy replacement.
+    ("sns.Topic", ReplacementClass::Conflicting),
+    // Subscribe is idempotent for a topic/protocol/endpoint tuple and returns
+    // the same ARN; create-before-destroy would then delete that subscription.
+    ("sns.Subscription", ReplacementClass::Conflicting),
     // BudgetName is nested in Budget and account-unique, so replacement cannot
     // temporarily rename an explicitly named budget.
     ("budgets.Budget", ReplacementClass::Conflicting),
@@ -838,13 +844,482 @@ impl TypeValue {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct CfnPropertyPath<'a> {
+    parent: Option<&'a str>,
+    property: &'a str,
+}
+
+impl<'a> CfnPropertyPath<'a> {
+    /// Build the one canonical classification/override key for a CFN
+    /// property. `parent` is the raw definition name (or raw inline-property
+    /// name), never the PascalCased Rust struct namespace.
+    const fn new(parent: Option<&'a str>, property: &'a str) -> Self {
+        Self { parent, property }
+    }
+}
+
+impl std::fmt::Display for CfnPropertyPath<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(parent) = self.parent {
+            write!(f, "{parent}.{}", self.property)
+        } else {
+            f.write_str(self.property)
+        }
+    }
+}
+
+type IamPolicyDocumentProperty = (&'static str, CfnPropertyPath<'static>);
+
+/// IAM policy documents whose names previously matched the implicit
+/// `*PolicyDocument` suffix rule. The cache contains only these seven paths,
+/// so they are explicit and walker-checked like every other classification.
+const IAM_POLICY_DOCUMENT_PROPERTIES: &[IamPolicyDocumentProperty] = &[
+    (
+        "AWS::S3::BucketPolicy",
+        CfnPropertyPath::new(None, "PolicyDocument"),
+    ),
+    (
+        "AWS::Logs::LogGroup",
+        CfnPropertyPath::new(None, "ResourcePolicyDocument"),
+    ),
+    (
+        "AWS::EC2::VPCEndpoint",
+        CfnPropertyPath::new(None, "PolicyDocument"),
+    ),
+    (
+        "AWS::IAM::RolePolicy",
+        CfnPropertyPath::new(None, "PolicyDocument"),
+    ),
+    (
+        "AWS::IAM::Role",
+        CfnPropertyPath::new(Some("Policy"), "PolicyDocument"),
+    ),
+    (
+        "AWS::IAM::Role",
+        CfnPropertyPath::new(None, "AssumeRolePolicyDocument"),
+    ),
+    (
+        "AWS::DynamoDB::Table",
+        CfnPropertyPath::new(Some("ResourcePolicy"), "PolicyDocument"),
+    ),
+];
+
 /// IAM policy document properties whose CloudFormation names do not use the
 /// conventional `PolicyDocument` suffix.
-const NONSTANDARD_IAM_POLICY_DOCUMENT_PROPERTIES: &[(&str, &str)] = &[
-    ("AWS::KMS::Key", "KeyPolicy"),
-    ("AWS::ECR::Repository", "RepositoryPolicyText"),
-    ("AWS::SSO::PermissionSet", "InlinePolicy"),
+const NONSTANDARD_IAM_POLICY_DOCUMENT_PROPERTIES: &[IamPolicyDocumentProperty] = &[
+    ("AWS::KMS::Key", CfnPropertyPath::new(None, "KeyPolicy")),
+    (
+        "AWS::ECR::Repository",
+        CfnPropertyPath::new(None, "RepositoryPolicyText"),
+    ),
+    (
+        "AWS::SSO::PermissionSet",
+        CfnPropertyPath::new(None, "InlinePolicy"),
+    ),
 ];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ClassifiedProperty {
+    cfn_type: &'static str,
+    property_path: CfnPropertyPath<'static>,
+    reason: &'static str,
+}
+
+/// Free-form JSON properties omitted until Carina has an `AttributeType` for
+/// recursive, heterogeneous JSON documents. Neither String nor
+/// Map<String, String> preserves Cloud Control's canonical object read-back.
+///
+/// These properties come back together when the JSON-document type from
+/// [carina-rs/carina#4144](https://github.com/carina-rs/carina/issues/4144)
+/// lands.
+const FREE_FORM_JSON_PROPERTIES: &[ClassifiedProperty] = &[
+    ClassifiedProperty {
+        cfn_type: "AWS::SNS::Subscription",
+        property_path: CfnPropertyPath::new(None, "DeliveryPolicy"),
+        reason: "Cloud Control canonicalizes this free-form JSON document to an object.",
+    },
+    ClassifiedProperty {
+        cfn_type: "AWS::SNS::Subscription",
+        property_path: CfnPropertyPath::new(None, "FilterPolicy"),
+        reason: "Cloud Control canonicalizes this free-form JSON document to an object.",
+    },
+    ClassifiedProperty {
+        cfn_type: "AWS::SNS::Subscription",
+        property_path: CfnPropertyPath::new(None, "RedrivePolicy"),
+        reason: "Cloud Control canonicalizes this free-form JSON document to an object.",
+    },
+    ClassifiedProperty {
+        cfn_type: "AWS::SNS::Subscription",
+        property_path: CfnPropertyPath::new(None, "ReplayPolicy"),
+        reason: "Cloud Control canonicalizes this free-form JSON document to an object.",
+    },
+    ClassifiedProperty {
+        cfn_type: "AWS::SNS::Topic",
+        property_path: CfnPropertyPath::new(None, "DataProtectionPolicy"),
+        reason: "This policy can contain nested, heterogeneous JSON values.",
+    },
+    ClassifiedProperty {
+        cfn_type: "AWS::SNS::Topic",
+        property_path: CfnPropertyPath::new(None, "ArchivePolicy"),
+        reason: "This policy can contain nested, heterogeneous JSON values.",
+    },
+    ClassifiedProperty {
+        cfn_type: "AWS::Logs::LogGroup",
+        property_path: CfnPropertyPath::new(None, "DataProtectionPolicy"),
+        reason: "This policy can contain nested, heterogeneous JSON values.",
+    },
+    ClassifiedProperty {
+        cfn_type: "AWS::Logs::LogGroup",
+        property_path: CfnPropertyPath::new(None, "FieldIndexPolicies"),
+        reason: "Each field-index policy is a free-form JSON document whose Fields value is an array.",
+    },
+];
+
+#[cfg(test)]
+const TEST_FREE_FORM_JSON_PROPERTIES: &[ClassifiedProperty] = &[ClassifiedProperty {
+    cfn_type: "AWS::Test::NestedOmission",
+    property_path: CfnPropertyPath::new(Some("ParentConfig"), "ChildPolicy"),
+    reason: "Synthetic nested omission used to exercise the canonical raw-CFN path.",
+}];
+
+#[cfg(not(test))]
+const TEST_FREE_FORM_JSON_PROPERTIES: &[ClassifiedProperty] = &[];
+
+/// Bare objects whose only meaningful provider value is `{}`. These must be
+/// represented as empty structs so the DSL accepts `field = {}` while still
+/// rejecting arbitrary keys.
+const EMPTY_OBJECT_PROPERTIES: &[ClassifiedProperty] = &[
+    ClassifiedProperty {
+        cfn_type: "AWS::CloudWatch::Alarm",
+        property_path: CfnPropertyPath::new(Some("EvaluationWindow"), "SlidingWindow"),
+        reason: "SlidingWindow is a marker selecting the rolling evaluation-window mode.",
+    },
+    ClassifiedProperty {
+        cfn_type: "AWS::S3::Bucket",
+        property_path: CfnPropertyPath::new(Some("TargetObjectKeyFormat"), "SimplePrefix"),
+        reason: "SimplePrefix is a marker selecting the non-partitioned log-object key format.",
+    },
+    ClassifiedProperty {
+        cfn_type: "AWS::WAFv2::WebACL",
+        property_path: CfnPropertyPath::new(Some("FieldToMatch"), "AllQueryArguments"),
+        reason: "AllQueryArguments is an empty marker selecting every query argument.",
+    },
+    ClassifiedProperty {
+        cfn_type: "AWS::WAFv2::WebACL",
+        property_path: CfnPropertyPath::new(Some("FieldToMatch"), "UriPath"),
+        reason: "UriPath is an empty marker selecting the request URI path.",
+    },
+    ClassifiedProperty {
+        cfn_type: "AWS::WAFv2::WebACL",
+        property_path: CfnPropertyPath::new(Some("FieldToMatch"), "QueryString"),
+        reason: "QueryString is an empty marker selecting the request query string.",
+    },
+    ClassifiedProperty {
+        cfn_type: "AWS::WAFv2::WebACL",
+        property_path: CfnPropertyPath::new(Some("FieldToMatch"), "Method"),
+        reason: "Method is an empty marker selecting the request HTTP method.",
+    },
+    ClassifiedProperty {
+        cfn_type: "AWS::WAFv2::WebACL",
+        property_path: CfnPropertyPath::new(Some("OverrideAction"), "Count"),
+        reason: "Count is an empty marker selecting the count override action.",
+    },
+    ClassifiedProperty {
+        cfn_type: "AWS::WAFv2::WebACL",
+        property_path: CfnPropertyPath::new(Some("OverrideAction"), "None"),
+        reason: "None is an empty marker preserving the referenced rule action.",
+    },
+    ClassifiedProperty {
+        cfn_type: "AWS::WAFv2::WebACL",
+        property_path: CfnPropertyPath::new(Some("JsonMatchPattern"), "All"),
+        reason: "All is an empty marker selecting every JSON-body element.",
+    },
+    ClassifiedProperty {
+        cfn_type: "AWS::WAFv2::WebACL",
+        property_path: CfnPropertyPath::new(Some("HeaderMatchPattern"), "All"),
+        reason: "All is an empty marker selecting every request header.",
+    },
+    ClassifiedProperty {
+        cfn_type: "AWS::WAFv2::WebACL",
+        property_path: CfnPropertyPath::new(Some("CookieMatchPattern"), "All"),
+        reason: "All is an empty marker selecting every request cookie.",
+    },
+    ClassifiedProperty {
+        cfn_type: "AWS::WAFv2::WebACL",
+        property_path: CfnPropertyPath::new(Some("RateBasedStatementCustomKey"), "ForwardedIP"),
+        reason: "ForwardedIP is an empty marker selecting the forwarded IP custom key.",
+    },
+    ClassifiedProperty {
+        cfn_type: "AWS::WAFv2::WebACL",
+        property_path: CfnPropertyPath::new(Some("RateBasedStatementCustomKey"), "HTTPMethod"),
+        reason: "HTTPMethod is an empty marker selecting the HTTP method custom key.",
+    },
+    ClassifiedProperty {
+        cfn_type: "AWS::WAFv2::WebACL",
+        property_path: CfnPropertyPath::new(Some("RateBasedStatementCustomKey"), "IP"),
+        reason: "IP is an empty marker selecting the source IP custom key.",
+    },
+    ClassifiedProperty {
+        cfn_type: "AWS::WAFv2::WebACL",
+        property_path: CfnPropertyPath::new(Some("RateBasedStatementCustomKey"), "ASN"),
+        reason: "ASN is an empty marker selecting the autonomous-system-number custom key.",
+    },
+];
+
+#[cfg(test)]
+const TEST_EMPTY_OBJECT_PROPERTIES: &[ClassifiedProperty] = &[
+    ClassifiedProperty {
+        cfn_type: "AWS::Test::AcronymPath",
+        property_path: CfnPropertyPath::new(Some("SSESpecification"), "Marker"),
+        reason: "Synthetic acronym-parent marker used to verify raw-CFN path spelling.",
+    },
+    ClassifiedProperty {
+        cfn_type: "AWS::Test::ArrayReference",
+        property_path: CfnPropertyPath::new(None, "Markers"),
+        reason: "Synthetic array item used to verify classification at the referencing path.",
+    },
+];
+
+#[cfg(not(test))]
+const TEST_EMPTY_OBJECT_PROPERTIES: &[ClassifiedProperty] = &[];
+
+/// Bare objects that are genuinely homogeneous string-to-string maps.
+///
+/// The current cache has no such *bare* object: known string maps publish
+/// `patternProperties` and are handled by their existing map/tag paths. This
+/// explicit table is the only place a future bare string map may opt in.
+const STRING_MAP_PROPERTIES: &[ClassifiedProperty] = &[];
+
+/// Properties deliberately excluded because their Cloud Control read shape
+/// conflicts with a separately managed resource.
+const OMITTED_RESOURCE_PROPERTIES: &[ClassifiedProperty] = &[ClassifiedProperty {
+    cfn_type: "AWS::SNS::Topic",
+    property_path: CfnPropertyPath::new(None, "Subscription"),
+    reason: "Cloud Control aggregates separately managed topic subscriptions; use awscc.sns.Subscription instead.",
+}];
+
+fn find_omitted_property<'a>(
+    table: &'a [ClassifiedProperty],
+    cfn_type: &str,
+    property_path: CfnPropertyPath<'_>,
+) -> Option<&'a ClassifiedProperty> {
+    table
+        .iter()
+        .find(|entry| entry.cfn_type == cfn_type && entry.property_path == property_path)
+}
+
+fn free_form_json_property(
+    cfn_type: &str,
+    property_path: CfnPropertyPath<'_>,
+) -> Option<&'static ClassifiedProperty> {
+    find_omitted_property(FREE_FORM_JSON_PROPERTIES, cfn_type, property_path)
+        .or_else(|| find_omitted_property(TEST_FREE_FORM_JSON_PROPERTIES, cfn_type, property_path))
+}
+
+fn should_omit_property(cfn_type: &str, property_path: CfnPropertyPath<'_>) -> bool {
+    free_form_json_property(cfn_type, property_path).is_some()
+        || find_omitted_property(OMITTED_RESOURCE_PROPERTIES, cfn_type, property_path).is_some()
+}
+
+fn should_omit_top_level_property(cfn_type: &str, property_name: &str) -> bool {
+    should_omit_property(cfn_type, CfnPropertyPath::new(None, property_name))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BareObjectClassification {
+    IamPolicyDocument(&'static IamPolicyDocumentProperty),
+    FreeFormJson(&'static ClassifiedProperty),
+    EmptyObject(&'static ClassifiedProperty),
+    StringMap(&'static ClassifiedProperty),
+    OmittedResource(&'static ClassifiedProperty),
+    TypedOverride {
+        expression: &'static str,
+        display: &'static str,
+    },
+}
+
+impl BareObjectClassification {
+    fn owner_name(self) -> &'static str {
+        match self {
+            Self::IamPolicyDocument(entry)
+                if IAM_POLICY_DOCUMENT_PROPERTIES
+                    .iter()
+                    .any(|candidate| std::ptr::eq(candidate, entry)) =>
+            {
+                "IAM_POLICY_DOCUMENT_PROPERTIES"
+            }
+            Self::IamPolicyDocument(_) => "NONSTANDARD_IAM_POLICY_DOCUMENT_PROPERTIES",
+            Self::FreeFormJson(entry)
+                if FREE_FORM_JSON_PROPERTIES
+                    .iter()
+                    .any(|candidate| std::ptr::eq(candidate, entry)) =>
+            {
+                "FREE_FORM_JSON_PROPERTIES"
+            }
+            Self::FreeFormJson(_) => "TEST_FREE_FORM_JSON_PROPERTIES",
+            Self::EmptyObject(entry)
+                if EMPTY_OBJECT_PROPERTIES
+                    .iter()
+                    .any(|candidate| std::ptr::eq(candidate, entry)) =>
+            {
+                "EMPTY_OBJECT_PROPERTIES"
+            }
+            Self::EmptyObject(_) => "TEST_EMPTY_OBJECT_PROPERTIES",
+            Self::StringMap(_) => "STRING_MAP_PROPERTIES",
+            Self::OmittedResource(_) => "OMITTED_RESOURCE_PROPERTIES",
+            Self::TypedOverride { .. } => "resource_type_overrides AttributeType",
+        }
+    }
+}
+
+fn unique_bare_object_classification(
+    cfn_type: &str,
+    property_path: CfnPropertyPath<'_>,
+    mut matches: Vec<BareObjectClassification>,
+) -> Option<BareObjectClassification> {
+    if matches.len() > 1 {
+        let owners = matches
+            .iter()
+            .map(|classification| classification.owner_name())
+            .collect::<Vec<_>>()
+            .join(", ");
+        panic!(
+            "multiply classified bare object {cfn_type}.{property_path}: {owners}; each shape must be classified in exactly one place; see CODEGEN.md#classifying-bare-objects"
+        );
+    }
+    matches.pop()
+}
+
+fn property_declares_object(prop: &CfnProperty) -> bool {
+    match &prop.prop_type {
+        Some(TypeValue::Single(value)) => value == "object",
+        Some(TypeValue::Multiple(values)) => values.iter().any(|value| value == "object"),
+        None => false,
+    }
+}
+
+fn is_direct_bare_object(prop: &CfnProperty) -> bool {
+    property_declares_object(prop)
+        && prop.ref_path.is_none()
+        && prop.one_of.is_empty()
+        && prop.properties.as_ref().is_none_or(BTreeMap::is_empty)
+        && prop
+            .pattern_properties
+            .as_ref()
+            .is_none_or(BTreeMap::is_empty)
+}
+
+fn is_bare_object_definition(definition: &CfnDefinition) -> bool {
+    definition.def_type.as_deref() == Some("object")
+        && definition.one_of.is_empty()
+        && definition.items.is_none()
+        && definition.enum_values.is_none()
+        && definition
+            .properties
+            .as_ref()
+            .is_none_or(BTreeMap::is_empty)
+        && definition
+            .pattern_properties
+            .as_ref()
+            .is_none_or(BTreeMap::is_empty)
+}
+
+fn property_is_bare_object(prop: &CfnProperty, schema: &CfnSchema) -> bool {
+    if let Some(ref_path) = &prop.ref_path {
+        return resolve_ref(schema, ref_path).is_some_and(is_bare_object_definition);
+    }
+    is_direct_bare_object(prop)
+}
+
+fn resource_type_override(
+    cfn_type: &str,
+    property_path: CfnPropertyPath<'_>,
+) -> Option<&'static TypeOverride> {
+    resource_type_overrides().get_path(cfn_type, property_path)
+}
+
+fn classify_bare_object(
+    cfn_type: &str,
+    property_path: CfnPropertyPath<'_>,
+) -> Option<BareObjectClassification> {
+    let mut matches = Vec::new();
+    for table in [
+        IAM_POLICY_DOCUMENT_PROPERTIES,
+        NONSTANDARD_IAM_POLICY_DOCUMENT_PROPERTIES,
+    ] {
+        if let Some(entry) = table.iter().find(|(entry_type, entry_path)| {
+            *entry_type == cfn_type && *entry_path == property_path
+        }) {
+            matches.push(BareObjectClassification::IamPolicyDocument(entry));
+        }
+    }
+    for table in [FREE_FORM_JSON_PROPERTIES, TEST_FREE_FORM_JSON_PROPERTIES] {
+        if let Some(entry) = find_omitted_property(table, cfn_type, property_path) {
+            matches.push(BareObjectClassification::FreeFormJson(entry));
+        }
+    }
+    for table in [EMPTY_OBJECT_PROPERTIES, TEST_EMPTY_OBJECT_PROPERTIES] {
+        if let Some(entry) = find_omitted_property(table, cfn_type, property_path) {
+            matches.push(BareObjectClassification::EmptyObject(entry));
+        }
+    }
+    if let Some(entry) = find_omitted_property(STRING_MAP_PROPERTIES, cfn_type, property_path) {
+        matches.push(BareObjectClassification::StringMap(entry));
+    }
+    if let Some(entry) = find_omitted_property(OMITTED_RESOURCE_PROPERTIES, cfn_type, property_path)
+    {
+        matches.push(BareObjectClassification::OmittedResource(entry));
+    }
+    if let Some(TypeOverride::AttributeType {
+        expression,
+        display,
+    }) = resource_type_override(cfn_type, property_path)
+    {
+        matches.push(BareObjectClassification::TypedOverride {
+            expression,
+            display,
+        });
+    }
+
+    unique_bare_object_classification(cfn_type, property_path, matches)
+}
+
+fn classify_bare_object_or_panic(
+    cfn_type: &str,
+    property_path: CfnPropertyPath<'_>,
+) -> BareObjectClassification {
+    classify_bare_object(cfn_type, property_path).unwrap_or_else(|| {
+        panic!(
+            "unclassified bare object {cfn_type}.{property_path}; classify it in FREE_FORM_JSON_PROPERTIES, EMPTY_OBJECT_PROPERTIES, or STRING_MAP_PROPERTIES, or add a dedicated typed override; see CODEGEN.md#classifying-bare-objects"
+        )
+    })
+}
+
+fn bare_object_attribute_type(
+    cfn_type: &str,
+    property_path: CfnPropertyPath<'_>,
+    prop_name: &str,
+) -> String {
+    match classify_bare_object_or_panic(cfn_type, property_path) {
+        BareObjectClassification::IamPolicyDocument(_) => {
+            "carina_aws_types::iam_policy_document()".to_string()
+        }
+        BareObjectClassification::EmptyObject(_) => format!(
+            r#"AttributeType::struct_({}.to_string(), vec![])"#,
+            rust_lit(&prop_name.to_pascal_case())
+        ),
+        BareObjectClassification::StringMap(_) => {
+            "AttributeType::map(AttributeType::string())".to_string()
+        }
+        BareObjectClassification::TypedOverride { expression, .. } => expression.to_string(),
+        BareObjectClassification::FreeFormJson(entry)
+        | BareObjectClassification::OmittedResource(entry) => panic!(
+            "omitted property {}.{} reached AttributeType generation: {}",
+            entry.cfn_type, entry.property_path, entry.reason
+        ),
+    }
+}
 
 fn is_object_string_union(prop: &CfnProperty) -> bool {
     let Some(TypeValue::Multiple(types)) = &prop.prop_type else {
@@ -854,9 +1329,18 @@ fn is_object_string_union(prop: &CfnProperty) -> bool {
     types.iter().any(|value| value == "object") && types.iter().any(|value| value == "string")
 }
 
-fn is_iam_policy_document_property(cfn_type: &str, prop_name: &str) -> bool {
-    prop_name.ends_with("PolicyDocument")
-        || NONSTANDARD_IAM_POLICY_DOCUMENT_PROPERTIES.contains(&(cfn_type, prop_name))
+fn iam_policy_document_property(
+    cfn_type: &str,
+    property_path: CfnPropertyPath<'_>,
+) -> Option<&'static IamPolicyDocumentProperty> {
+    IAM_POLICY_DOCUMENT_PROPERTIES
+        .iter()
+        .chain(NONSTANDARD_IAM_POLICY_DOCUMENT_PROPERTIES)
+        .find(|(entry_type, entry_path)| *entry_type == cfn_type && *entry_path == property_path)
+}
+
+fn is_iam_policy_document_property(cfn_type: &str, property_path: CfnPropertyPath<'_>) -> bool {
+    iam_policy_document_property(cfn_type, property_path).is_some()
 }
 
 /// Classify CloudFormation's free-form JSON union before `TypeValue::as_str()`
@@ -865,18 +1349,24 @@ fn is_iam_policy_document_property(cfn_type: &str, prop_name: &str) -> bool {
 fn object_string_union_is_iam_policy_document(
     prop: &CfnProperty,
     cfn_type: &str,
-    prop_name: &str,
+    property_path: CfnPropertyPath<'_>,
 ) -> bool {
     if !is_object_string_union(prop) {
         return false;
     }
 
-    if is_iam_policy_document_property(cfn_type, prop_name) {
-        return true;
+    match classify_bare_object(cfn_type, property_path) {
+        Some(BareObjectClassification::IamPolicyDocument(_)) => return true,
+        Some(BareObjectClassification::FreeFormJson(_)) => return false,
+        Some(classification) => panic!(
+            "object|string property {cfn_type}.{property_path} has incompatible classification in {}; classify it as an IAM policy document or an omitted free-form JSON document; see CODEGEN.md#classifying-bare-objects",
+            classification.owner_name()
+        ),
+        None => {}
     }
 
     panic!(
-        "unclassified object|string property {cfn_type}.{prop_name}; classify it as an IAM policy document in NONSTANDARD_IAM_POLICY_DOCUMENT_PROPERTIES or add explicit object|string handling"
+        "unclassified object|string property {cfn_type}.{property_path}; classify it as an IAM policy document in IAM_POLICY_DOCUMENT_PROPERTIES or NONSTANDARD_IAM_POLICY_DOCUMENT_PROPERTIES, or as an omitted document in FREE_FORM_JSON_PROPERTIES; see CODEGEN.md#classifying-bare-objects"
     );
 }
 
@@ -1590,6 +2080,9 @@ enum MarkdownLinkedType {
         item: Box<MarkdownLinkedType>,
         suffix: Option<String>,
     },
+    Map {
+        value: Box<MarkdownLinkedType>,
+    },
 }
 
 impl MarkdownType {
@@ -1619,6 +2112,11 @@ impl MarkdownLinkedType {
                 if let Some(suffix) = suffix {
                     page.push_str(suffix);
                 }
+            }
+            Self::Map { value } => {
+                page.push_str("Map\\<String, ");
+                value.write_to(page);
+                page.push_str("\\>");
             }
         }
     }
@@ -1985,10 +2483,10 @@ fn generated_property_description(
 fn documented_top_level_properties(
     schema: &CfnSchema,
 ) -> impl Iterator<Item = (&String, &CfnProperty)> {
-    schema
-        .properties
-        .iter()
-        .filter(|(_, property)| !is_deprecated_property(property))
+    schema.properties.iter().filter(|(name, property)| {
+        !is_deprecated_property(property)
+            && !should_omit_top_level_property(&schema.type_name, name)
+    })
 }
 
 fn is_struct_property(prop: &CfnProperty, schema: &CfnSchema) -> bool {
@@ -2050,7 +2548,7 @@ fn list_element_type_display(items: &CfnProperty, prop_name: &str, resource_type
 fn infer_string_type_display(prop_name: &str, resource_type: &str) -> String {
     // Check resource-specific overrides first (StringType only for display)
     if let Some(TypeOverride::StringType(override_type)) =
-        resource_type_overrides().get(&(resource_type, prop_name))
+        resource_type_override(resource_type, CfnPropertyPath::new(None, prop_name))
     {
         return override_type_to_display_name(override_type).to_string();
     }
@@ -2168,22 +2666,69 @@ fn override_type_to_display_name(override_type: &str) -> &str {
 }
 
 /// Determine the display string for a property's type in markdown docs
+#[cfg(test)]
 fn type_display_string(prop_name: &str, prop: &CfnProperty, schema: &CfnSchema) -> String {
+    type_display_string_at(
+        prop_name,
+        prop,
+        schema,
+        CfnPropertyPath::new(None, prop_name),
+    )
+}
+
+fn object_map_type_display(
+    prop_name: &str,
+    schema: &CfnSchema,
+    property_path: CfnPropertyPath<'_>,
+    value: &CfnProperty,
+) -> String {
+    match object_map_value_or_panic(schema, property_path, value) {
+        ObjectMapValueKind::DirectString => "`Map<String, String>`".to_string(),
+        ObjectMapValueKind::Struct => {
+            let struct_name = value
+                .ref_path
+                .as_deref()
+                .and_then(ref_def_name)
+                .unwrap_or(prop_name);
+            format!("`Map<String, Struct({struct_name})>`")
+        }
+    }
+}
+
+fn type_display_string_at(
+    prop_name: &str,
+    prop: &CfnProperty,
+    schema: &CfnSchema,
+    cfn_property_path: CfnPropertyPath<'_>,
+) -> String {
     if let Some(TypeOverride::AttributeType { display, .. }) =
-        resource_type_overrides().get(&(schema.type_name.as_str(), prop_name))
+        resource_type_override(&schema.type_name, cfn_property_path)
     {
         (*display).to_string()
-    } else if object_string_union_is_iam_policy_document(prop, &schema.type_name, prop_name) {
+    } else if object_string_union_is_iam_policy_document(prop, &schema.type_name, cfn_property_path)
+    {
         "PolicyDocument".to_string()
     } else if prop_name == "Tags" {
         "`Map<String, String>`".to_string()
+    } else if property_is_bare_object(prop, schema) {
+        match classify_bare_object_or_panic(&schema.type_name, cfn_property_path) {
+            BareObjectClassification::IamPolicyDocument(_) => "PolicyDocument".to_string(),
+            BareObjectClassification::EmptyObject(_) => "Empty struct (`{}`)".to_string(),
+            BareObjectClassification::StringMap(_) => "`Map<String, String>`".to_string(),
+            BareObjectClassification::TypedOverride { display, .. } => display.to_string(),
+            BareObjectClassification::FreeFormJson(entry)
+            | BareObjectClassification::OmittedResource(entry) => panic!(
+                "omitted property {}.{} reached Markdown type generation: {}",
+                entry.cfn_type, entry.property_path, entry.reason
+            ),
+        }
     } else if !prop.one_of.is_empty() {
         if let Some(array_variant) = prop
             .one_of
             .iter()
             .find(|variant| property_resolves_to_array(variant, schema))
         {
-            return type_display_string(prop_name, array_variant, schema);
+            return type_display_string_at(prop_name, array_variant, schema, cfn_property_path);
         }
 
         let has_mergeable_object_variant = prop.one_of.iter().any(|variant| {
@@ -2215,11 +2760,14 @@ fn type_display_string(prop_name: &str, prop: &CfnProperty, schema: &CfnSchema) 
                     let def_name = ref_def_name(ref_path).unwrap_or(prop_name);
                     format!("Struct({def_name})")
                 }
+                Some(ResolvedDef::ObjectMap { value }) => {
+                    object_map_type_display(prop_name, schema, cfn_property_path, value)
+                }
                 Some(scalar @ ResolvedDef::Scalar { .. }) => {
                     let scalar_prop = scalar
                         .scalar_as_property()
                         .expect("Scalar variant always rebuilds a scalar property");
-                    type_display_string(prop_name, &scalar_prop, schema)
+                    type_display_string_at(prop_name, &scalar_prop, schema, cfn_property_path)
                 }
                 Some(
                     ResolvedDef::Enum { .. }
@@ -2238,7 +2786,7 @@ fn type_display_string(prop_name: &str, prop: &CfnProperty, schema: &CfnSchema) 
     } else {
         match prop.prop_type.as_ref().and_then(|t| t.as_str()) {
             Some("string") => {
-                if is_iam_policy_document_property(&schema.type_name, prop_name) {
+                if is_iam_policy_document_property(&schema.type_name, cfn_property_path) {
                     "PolicyDocument".to_string()
                 } else {
                     let base = infer_string_type_display(prop_name, &schema.type_name);
@@ -2279,8 +2827,7 @@ fn type_display_string(prop_name: &str, prop: &CfnProperty, schema: &CfnSchema) 
             Some("boolean") => "Bool".to_string(),
             Some("integer") => {
                 // Check resource-scoped overrides first
-                let res_override =
-                    resource_type_overrides().get(&(schema.type_name.as_str(), prop_name));
+                let res_override = resource_type_override(&schema.type_name, cfn_property_path);
                 if let Some(TypeOverride::IntEnum(values)) = res_override {
                     let observed_values = prop
                         .enum_values
@@ -2345,8 +2892,7 @@ fn type_display_string(prop_name: &str, prop: &CfnProperty, schema: &CfnSchema) 
             }
             Some("number") => {
                 // Check resource-scoped overrides first
-                let res_override =
-                    resource_type_overrides().get(&(schema.type_name.as_str(), prop_name));
+                let res_override = resource_type_override(&schema.type_name, cfn_property_path);
                 if let Some(TypeOverride::IntRange(min, max)) = res_override {
                     return format!("Float({})", range_display_string(Some(*min), Some(*max)));
                 }
@@ -2421,10 +2967,13 @@ fn type_display_string(prop_name: &str, prop: &CfnProperty, schema: &CfnSchema) 
                     && !props.is_empty()
                 {
                     format!("Struct({prop_name})")
-                } else if is_iam_policy_document_property(&schema.type_name, prop_name) {
-                    "PolicyDocument".to_string()
+                } else if let Some(value) = direct_object_map_value(prop) {
+                    object_map_type_display(prop_name, schema, cfn_property_path, value)
                 } else {
-                    "`Map<String, String>`".to_string()
+                    panic!(
+                        "unsupported object property {}.{}; expected a struct, direct-string map, tag map, typed map of struct, or classified bare object; see CODEGEN.md#classifying-bare-objects",
+                        schema.type_name, cfn_property_path
+                    );
                 }
             }
             _ => "String".to_string(),
@@ -2496,7 +3045,8 @@ fn markdown_struct_def(
                 }
             }
             Some(
-                ResolvedDef::Enum { .. }
+                ResolvedDef::ObjectMap { .. }
+                | ResolvedDef::Enum { .. }
                 | ResolvedDef::Array { .. }
                 | ResolvedDef::StringPattern { .. }
                 | ResolvedDef::Scalar { .. }
@@ -2534,6 +3084,7 @@ fn markdown_array_items<'a>(
         .and_then(|resolved| match resolved {
             ResolvedDef::Array { items } => Some(items),
             ResolvedDef::Struct { .. }
+            | ResolvedDef::ObjectMap { .. }
             | ResolvedDef::OneOf { .. }
             | ResolvedDef::Enum { .. }
             | ResolvedDef::StringPattern { .. }
@@ -2563,6 +3114,7 @@ fn markdown_link_type(
     schema: &CfnSchema,
     enum_target: Option<&MarkdownEnumKey>,
     property_path: &[String],
+    cfn_parent: Option<&str>,
 ) -> Option<MarkdownLinkedType> {
     if let Some(key) = enum_target {
         let enum_type = MarkdownLinkedType::Enum(key.clone());
@@ -2579,8 +3131,20 @@ fn markdown_link_type(
             .iter()
             .find(|variant| markdown_property_is_array(variant, schema))
             .and_then(|variant| {
-                markdown_link_type(prop_name, variant, schema, None, property_path)
+                markdown_link_type(prop_name, variant, schema, None, property_path, cfn_parent)
             });
+    }
+
+    if let Some(value) = property_object_map_value(prop, schema) {
+        object_map_value_or_panic(schema, CfnPropertyPath::new(cfn_parent, prop_name), value);
+        let value_path = extend_property_path(property_path, "*");
+        if let Some(value_type) =
+            markdown_link_type(prop_name, value, schema, None, &value_path, cfn_parent)
+        {
+            return Some(MarkdownLinkedType::Map {
+                value: Box::new(value_type),
+            });
+        }
     }
 
     if let Some(struct_def) = markdown_struct_def(prop_name, prop, schema, property_path) {
@@ -2592,7 +3156,7 @@ fn markdown_link_type(
 
     if let Some(items) = markdown_array_items(prop, schema) {
         let item_path = extend_property_path(property_path, "*");
-        let item_type = markdown_link_type(prop_name, items, schema, None, &item_path)?;
+        let item_type = markdown_link_type(prop_name, items, schema, None, &item_path, cfn_parent)?;
         return Some(markdown_list_type(item_type, prop));
     }
 
@@ -2605,10 +3169,25 @@ fn markdown_type(
     schema: &CfnSchema,
     enum_target: Option<&MarkdownEnumKey>,
     property_path: &[String],
+    cfn_parent: Option<&str>,
 ) -> MarkdownType {
-    markdown_link_type(prop_name, prop, schema, enum_target, property_path)
-        .map(MarkdownType::Linked)
-        .unwrap_or_else(|| MarkdownType::Plain(type_display_string(prop_name, prop, schema)))
+    markdown_link_type(
+        prop_name,
+        prop,
+        schema,
+        enum_target,
+        property_path,
+        cfn_parent,
+    )
+    .map(MarkdownType::Linked)
+    .unwrap_or_else(|| {
+        MarkdownType::Plain(type_display_string_at(
+            prop_name,
+            prop,
+            schema,
+            CfnPropertyPath::new(cfn_parent, prop_name),
+        ))
+    })
 }
 
 fn markdown_heading_path(property_path: &[String]) -> Vec<String> {
@@ -2617,6 +3196,30 @@ fn markdown_heading_path(property_path: &[String]) -> Vec<String> {
         .filter(|segment| segment.as_str() != "*")
         .map(|segment| segment.to_snake_case())
         .collect()
+}
+
+fn classified_property_doc_name(
+    entry: &ClassifiedProperty,
+    struct_defs: &BTreeMap<MarkdownStructKey, StructDefInfo>,
+) -> (String, bool) {
+    let Some(parent) = entry.property_path.parent else {
+        return (entry.property_path.property.to_snake_case(), false);
+    };
+    if let Some(def_info) = struct_defs.values().find(|def_info| {
+        def_info.def_name == parent
+            && def_info
+                .properties
+                .contains_key(entry.property_path.property)
+    }) {
+        let field_path =
+            extend_property_path(&def_info.first_property_path, entry.property_path.property);
+        return (markdown_heading_path(&field_path).join("."), false);
+    }
+
+    // A classification can mention a registry definition that is not
+    // reachable from this resource's emitted property graph. Do not present
+    // that raw definition name as though it were a valid DSL path.
+    (entry.property_path.to_string(), true)
 }
 
 fn markdown_section_heading_path(
@@ -2872,7 +3475,7 @@ fn generate_markdown_with_example(
         // mirrored into the markdown — `cfn_type_to_carina_type_with_enum`
         // does not consult `resource_type_overrides` itself.
         if let Some(TypeOverride::Enum(values) | TypeOverride::EnumUnordered(values)) =
-            resource_type_overrides().get(&(type_name, prop_name.as_str()))
+            resource_type_override(type_name, CfnPropertyPath::new(None, prop_name))
         {
             property_enums.insert(prop_name.clone(), enum_info_for_override(prop_name, values));
             collect_struct_defs(
@@ -2881,6 +3484,7 @@ fn generate_markdown_with_example(
                 schema,
                 &[],
                 std::slice::from_ref(prop_name),
+                None,
                 &mut struct_defs,
             );
             continue;
@@ -2897,6 +3501,7 @@ fn generate_markdown_with_example(
             schema,
             &[],
             std::slice::from_ref(prop_name),
+            None,
             &mut struct_defs,
         );
     }
@@ -2907,17 +3512,18 @@ fn generate_markdown_with_example(
             if is_deprecated_property(field_prop) {
                 continue;
             }
+            let cfn_property_path = CfnPropertyPath::new(Some(&def_info.def_name), field_name);
+            if should_omit_property(type_name, cfn_property_path) {
+                continue;
+            }
             let source_key = MarkdownStructFieldKey {
                 struct_key: struct_key.clone(),
                 field_name: field_name.clone(),
             };
-            let override_key = format!("{}.{}", def_info.def_name, field_name);
             // Apply nested-field enum overlay (awscc#246) — same lookup as
             // `generate_schema_code`, so the markdown's enum tables stay in
             // sync with the generated Rust schema.
-            if let Some(nested_override) =
-                resource_type_overrides().get(&(type_name, override_key.as_str()))
-            {
+            if let Some(nested_override) = resource_type_override(type_name, cfn_property_path) {
                 match nested_override {
                     TypeOverride::Enum(values) | TypeOverride::EnumUnordered(values) => {
                         struct_field_enums
@@ -2935,8 +3541,11 @@ fn generate_markdown_with_example(
                 schema,
                 &namespace,
                 &property_enums,
-                &def_info.struct_path,
-                &field_path,
+                CfnTypeGenerationPaths {
+                    structural: &def_info.struct_path,
+                    provider: &field_path,
+                    cfn_parent: Some(&def_info.def_name),
+                },
             );
             if let Some(info) = enum_info {
                 struct_field_enums.insert(source_key, info);
@@ -3013,6 +3622,7 @@ fn generate_markdown_with_example(
             schema,
             enum_targets.properties.get(prop_name),
             &property_path,
+            None,
         );
 
         page.heading(Heading::code(3, &attr_name))?;
@@ -3040,6 +3650,55 @@ fn generate_markdown_with_example(
         if let Some(d) = generated_property_description(schema, prop_name, prop) {
             let desc = collapse_whitespace(&d.replace('\n', " "));
             page.push_str(&format!("{desc}\n\n"));
+        }
+    }
+
+    let unsupported_json_properties = FREE_FORM_JSON_PROPERTIES
+        .iter()
+        .chain(TEST_FREE_FORM_JSON_PROPERTIES)
+        .filter(|entry| entry.cfn_type == type_name)
+        .collect::<Vec<_>>();
+    let omitted_resource_properties = OMITTED_RESOURCE_PROPERTIES
+        .iter()
+        .filter(|entry| entry.cfn_type == type_name)
+        .collect::<Vec<_>>();
+    if !unsupported_json_properties.is_empty() || !omitted_resource_properties.is_empty() {
+        page.heading(Heading::plain(2, "Not yet supported"))?;
+        if !unsupported_json_properties.is_empty() {
+            page.push_str(
+                "These CloudFormation properties require the free-form JSON document type tracked by [carina-rs/carina#4144](https://github.com/carina-rs/carina/issues/4144):\n\n",
+            );
+            for entry in unsupported_json_properties {
+                let (name, definition_qualified) =
+                    classified_property_doc_name(entry, &struct_defs);
+                if definition_qualified {
+                    page.push_str(&format!(
+                        "- Definition-qualified name `{name}` — {}\n",
+                        entry.reason
+                    ));
+                } else {
+                    page.push_str(&format!("- `{name}` — {}\n", entry.reason));
+                }
+            }
+            page.push_str("\n");
+        }
+        if !omitted_resource_properties.is_empty() {
+            page.push_str(
+                "These CloudFormation properties are deliberately omitted because their provider read-back conflicts with Carina's resource model:\n\n",
+            );
+            for entry in omitted_resource_properties {
+                let (name, definition_qualified) =
+                    classified_property_doc_name(entry, &struct_defs);
+                if definition_qualified {
+                    page.push_str(&format!(
+                        "- Definition-qualified name `{name}` — {}\n",
+                        entry.reason
+                    ));
+                } else {
+                    page.push_str(&format!("- `{name}` — {}\n", entry.reason));
+                }
+            }
+            page.push_str("\n");
         }
     }
 
@@ -3122,6 +3781,10 @@ fn generate_markdown_with_example(
                 if is_deprecated_property(field_prop) {
                     continue;
                 }
+                let cfn_property_path = CfnPropertyPath::new(Some(&def_info.def_name), field_name);
+                if should_omit_property(type_name, cfn_property_path) {
+                    continue;
+                }
                 let field_path = extend_property_path(&def_info.first_property_path, field_name);
                 let snake_name = field_name.to_snake_case();
                 let is_read_only = is_property_read_only(schema, field_prop, &field_path);
@@ -3130,9 +3793,8 @@ fn generate_markdown_with_example(
                     struct_key: key.clone(),
                     field_name: field_name.clone(),
                 };
-                let nested_key = format!("{}.{}", def_info.def_name, field_name);
-                let nested_override =
-                    resource_type_overrides().get(&(type_name, nested_key.as_str()));
+                let nested_key = cfn_property_path.to_string();
+                let nested_override = resource_type_override(type_name, cfn_property_path);
                 let field_type_display =
                     if let Some(TypeOverride::AttributeType { display, .. }) = nested_override {
                         MarkdownType::Plain((*display).to_string())
@@ -3149,11 +3811,19 @@ fn generate_markdown_with_example(
                             schema,
                             Some(enum_target),
                             &field_path,
+                            Some(&def_info.def_name),
                         )
                     } else if overrides.contains_key(field_name.as_str()) {
                         MarkdownType::Plain("Enum".to_string())
                     } else {
-                        markdown_type(field_name, field_prop, schema, None, &field_path)
+                        markdown_type(
+                            field_name,
+                            field_prop,
+                            schema,
+                            None,
+                            &field_path,
+                            Some(&def_info.def_name),
+                        )
                     };
                 let mut desc = collapse_whitespace(
                     &field_prop
@@ -3205,6 +3875,7 @@ fn generate_markdown_with_example(
                 schema,
                 enum_targets.properties.get(prop_name),
                 &property_path,
+                None,
             );
 
             page.heading(Heading::code(3, &attr_name))?;
@@ -3259,6 +3930,7 @@ fn collect_struct_defs(
     schema: &CfnSchema,
     struct_path: &[String],
     property_path: &[String],
+    cfn_parent: Option<&str>,
     struct_defs: &mut BTreeMap<MarkdownStructKey, StructDefInfo>,
 ) {
     if !prop.one_of.is_empty() {
@@ -3273,6 +3945,7 @@ fn collect_struct_defs(
                 schema,
                 struct_path,
                 property_path,
+                cfn_parent,
                 struct_defs,
             );
         }
@@ -3286,6 +3959,7 @@ fn collect_struct_defs(
             properties,
             required,
         } = struct_def;
+        let struct_cfn_parent = name.clone();
         let def_path = extend_struct_path(struct_path, &name);
         let should_walk_children = match struct_defs.entry(key) {
             std::collections::btree_map::Entry::Vacant(entry) => {
@@ -3312,6 +3986,12 @@ fn collect_struct_defs(
                 if is_deprecated_property(field_prop) {
                     continue;
                 }
+                if should_omit_property(
+                    &schema.type_name,
+                    CfnPropertyPath::new(Some(&struct_cfn_parent), field_name),
+                ) {
+                    continue;
+                }
                 let field_path = extend_property_path(property_path, field_name);
                 collect_struct_defs(
                     field_prop,
@@ -3319,10 +3999,26 @@ fn collect_struct_defs(
                     schema,
                     &def_path,
                     &field_path,
+                    Some(&struct_cfn_parent),
                     struct_defs,
                 );
             }
         }
+        return;
+    }
+
+    if let Some(value) = property_object_map_value(prop, schema) {
+        object_map_value_or_panic(schema, CfnPropertyPath::new(cfn_parent, prop_name), value);
+        let value_path = extend_property_path(property_path, "*");
+        collect_struct_defs(
+            value,
+            prop_name,
+            schema,
+            struct_path,
+            &value_path,
+            cfn_parent,
+            struct_defs,
+        );
         return;
     }
 
@@ -3348,6 +4044,7 @@ fn collect_struct_defs(
             schema,
             struct_path,
             &item_path,
+            cfn_parent,
             struct_defs,
         );
         if let Some(name) = array_def_name {
@@ -3517,7 +4214,7 @@ fn generate_top_level_attribute_type(
         if is_array || is_ref_array {
             let list_ctor = list_constructor(
                 prop.insertion_order,
-                override_forces_unordered(schema.type_name.as_str(), prop_name),
+                override_forces_unordered(&schema.type_name, CfnPropertyPath::new(None, prop_name)),
             );
             return format!("{}({})", list_ctor, enum_type);
         }
@@ -3583,7 +4280,9 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
     let mut enums: BTreeMap<String, EnumInfo> = BTreeMap::new();
 
     for (prop_name, prop) in &schema.properties {
-        if is_deprecated_property(prop) {
+        if is_deprecated_property(prop)
+            || should_omit_top_level_property(&schema.type_name, prop_name)
+        {
             continue;
         }
         let (attr_type, enum_info) =
@@ -3601,7 +4300,8 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
             enums.insert(prop_name.clone(), info);
         }
         // Check resource-scoped enum overrides.
-        let resource_override = resource_type_overrides().get(&(type_name, prop_name.as_str()));
+        let resource_override =
+            resource_type_override(type_name, CfnPropertyPath::new(None, prop_name));
         if let Some(TypeOverride::Enum(values) | TypeOverride::EnumUnordered(values)) =
             resource_override
         {
@@ -3626,7 +4326,11 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
                     if is_deprecated_property(field_prop) {
                         continue;
                     }
-                    let composite_key = format!("{}.{}", def_name, field_name);
+                    let cfn_property_path = CfnPropertyPath::new(Some(def_name), field_name);
+                    if should_omit_property(&schema.type_name, cfn_property_path) {
+                        continue;
+                    }
+                    let composite_key = cfn_property_path.to_string();
                     // Curated nested-field enum overlay (awscc#246). Wins over
                     // the natural cfn_type inference so that fields the CFN
                     // schema leaves as plain strings still register as enums
@@ -3634,7 +4338,7 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
                     // and an enum_valid_values() entry alongside StringEnum
                     // emission in `generate_struct_type`).
                     if let Some(nested_override) =
-                        resource_type_overrides().get(&(type_name, composite_key.as_str()))
+                        resource_type_override(&schema.type_name, cfn_property_path)
                     {
                         match nested_override {
                             TypeOverride::Enum(values) | TypeOverride::EnumUnordered(values) => {
@@ -3650,8 +4354,19 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
                             _ => {}
                         }
                     }
-                    let (_, field_enum_info) = cfn_type_to_carina_type_with_enum(
-                        field_prop, field_name, schema, &namespace, &enums,
+                    let structural_path = [def_name.clone()];
+                    let provider_path = [field_name.clone()];
+                    let (_, field_enum_info) = cfn_type_to_carina_type_with_enum_with_paths(
+                        field_prop,
+                        field_name,
+                        schema,
+                        &namespace,
+                        &enums,
+                        CfnTypeGenerationPaths {
+                            structural: &structural_path,
+                            provider: &provider_path,
+                            cfn_parent: Some(def_name),
+                        },
                     );
                     if let Some(info) = field_enum_info {
                         enums.insert(composite_key, info);
@@ -3769,6 +4484,9 @@ pub fn {}() -> AwsccSchemaConfig {{
 
     // Generate attributes for each property
     for (prop_name, prop) in &schema.properties {
+        if should_omit_top_level_property(&schema.type_name, prop_name) {
+            continue;
+        }
         let attr_name = prop_name.to_snake_case();
         let property_path = [prop_name.clone()];
         let is_read_only = is_property_read_only(schema, prop, &property_path);
@@ -4578,6 +5296,8 @@ enum ResolvedDef<'a> {
         properties: &'a BTreeMap<String, CfnProperty>,
         required: &'a [String],
     },
+    /// Object map whose `patternProperties` declares one value schema.
+    ObjectMap { value: &'a CfnProperty },
     /// `oneOf` union of variants.
     OneOf { variants: &'a [CfnProperty] },
     /// Enum-only def (a fixed list of values, no properties). Takes
@@ -4614,8 +5334,9 @@ enum ResolvedDef<'a> {
 /// Classify a resolved `$ref` definition into the single shape it represents.
 ///
 /// The precedence below is the canonical order the schema-code `$ref` branch
-/// has always used: properties → oneOf → enum → array → string-pattern →
-/// scalar → opaque. It is the one place that order lives; every `ResolvedDef`
+/// has always used, extended with the object-map shape: properties → object
+/// map → oneOf → enum → array → string-pattern → scalar → opaque. It is the
+/// one place that order lives; every `ResolvedDef`
 /// consumer inherits it by matching the result. Preserving this order keeps
 /// generated output byte-identical (e.g. an integer-typed enum classifies as
 /// `Enum`, not `Scalar`, because the enum arm comes first).
@@ -4626,6 +5347,17 @@ fn classify_def(def: &CfnDefinition) -> ResolvedDef<'_> {
         return ResolvedDef::Struct {
             properties: props,
             required: &def.required,
+        };
+    }
+    if def.def_type.as_deref() == Some("object")
+        && let Some(patterns) = &def.pattern_properties
+        && patterns.len() == 1
+    {
+        return ResolvedDef::ObjectMap {
+            value: patterns
+                .values()
+                .next()
+                .expect("one patternProperties entry"),
         };
     }
     if !def.one_of.is_empty() {
@@ -4667,6 +5399,83 @@ fn classify_def(def: &CfnDefinition) -> ResolvedDef<'_> {
         };
     }
     ResolvedDef::Opaque
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ObjectMapValueKind {
+    DirectString,
+    Struct,
+}
+
+fn is_direct_string_property(property: &CfnProperty) -> bool {
+    matches!(
+        property.prop_type.as_ref(),
+        Some(TypeValue::Single(property_type)) if property_type == "string"
+    ) && property.ref_path.is_none()
+        && property.one_of.is_empty()
+        && property.any_of.is_empty()
+}
+
+fn classify_object_map_value(
+    schema: &CfnSchema,
+    value: &CfnProperty,
+) -> Option<ObjectMapValueKind> {
+    if is_direct_string_property(value) {
+        return Some(ObjectMapValueKind::DirectString);
+    }
+    if value
+        .properties
+        .as_ref()
+        .is_some_and(|properties| !properties.is_empty())
+        || value.ref_path.as_deref().is_some_and(|ref_path| {
+            matches!(
+                resolve_ref_classified(schema, ref_path),
+                Some(ResolvedDef::Struct { .. })
+            )
+        })
+    {
+        return Some(ObjectMapValueKind::Struct);
+    }
+    None
+}
+
+fn object_map_value_or_panic(
+    schema: &CfnSchema,
+    property_path: CfnPropertyPath<'_>,
+    value: &CfnProperty,
+) -> ObjectMapValueKind {
+    classify_object_map_value(schema, value).unwrap_or_else(|| {
+        panic!(
+            "unsupported object map {}.{}; patternProperties values must be direct strings or structs; see CODEGEN.md#classifying-bare-objects",
+            schema.type_name, property_path
+        )
+    })
+}
+
+fn direct_object_map_value(prop: &CfnProperty) -> Option<&CfnProperty> {
+    let patterns = prop.pattern_properties.as_ref()?;
+    (patterns.len() == 1).then(|| {
+        patterns
+            .values()
+            .next()
+            .expect("one patternProperties entry")
+    })
+}
+
+fn property_object_map_value<'a>(
+    prop: &'a CfnProperty,
+    schema: &'a CfnSchema,
+) -> Option<&'a CfnProperty> {
+    if let Some(value) = direct_object_map_value(prop) {
+        return Some(value);
+    }
+    prop.ref_path
+        .as_deref()
+        .and_then(|ref_path| resolve_ref_classified(schema, ref_path))
+        .and_then(|resolved| match resolved {
+            ResolvedDef::ObjectMap { value } => Some(value),
+            _ => None,
+        })
 }
 
 /// Resolve a `$ref` path and classify the target in one step.
@@ -4741,6 +5550,12 @@ fn generate_struct_type(
                 record_skipped_deprecated_write_only_path(schema, &field_path);
                 return false;
             }
+            if should_omit_property(
+                &schema.type_name,
+                CfnPropertyPath::new(Some(def_name), field_name),
+            ) {
+                return false;
+            }
             true
         })
         .map(|(field_name, field_prop)| {
@@ -4752,9 +5567,9 @@ fn generate_struct_type(
             // ("AWS::Service::Type", "DefName.FieldName"), promote it to a
             // synthetic StringEnum here. List fields (`array<string>`) keep
             // the list wrapping below; only the item type changes.
-            let nested_key = format!("{}.{}", def_name, field_name);
-            let nested_override =
-                resource_type_overrides().get(&(schema.type_name.as_str(), nested_key.as_str()));
+            let cfn_property_path = CfnPropertyPath::new(Some(def_name), field_name);
+            let nested_key = cfn_property_path.to_string();
+            let nested_override = resource_type_override(&schema.type_name, cfn_property_path);
             // A composite StringType override replaces the entire source
             // property, including any object children. Do not walk those
             // discarded children: read-only bookkeeping must describe the
@@ -4770,8 +5585,11 @@ fn generate_struct_type(
                         schema,
                         namespace,
                         enums,
-                        &current_struct_path,
-                        &field_path,
+                        CfnTypeGenerationPaths {
+                            structural: &current_struct_path,
+                            provider: &field_path,
+                            cfn_parent: Some(def_name),
+                        },
                     )
             };
             // `EnumUnordered` is element-handled identically to `Enum`;
@@ -5319,567 +6137,640 @@ fn mutually_exclusive_property_groups()
 ///
 /// Two-layer system: global overrides (known_*_overrides) apply by property name,
 /// resource-specific overrides here take precedence.
-fn resource_type_overrides() -> &'static HashMap<(&'static str, &'static str), TypeOverride> {
-    static OVERRIDES: LazyLock<HashMap<(&'static str, &'static str), TypeOverride>> =
-        LazyLock::new(|| {
-            let mut m = HashMap::new();
+#[derive(Default)]
+struct ResourceOverridesForType {
+    top_level: HashMap<&'static str, TypeOverride>,
+    nested: HashMap<&'static str, HashMap<&'static str, TypeOverride>>,
+}
 
-            // === StringType overrides ===
+#[derive(Default)]
+struct ResourceTypeOverrides {
+    #[cfg(test)]
+    flat: HashMap<(&'static str, &'static str), TypeOverride>,
+    by_type: HashMap<&'static str, ResourceOverridesForType>,
+}
 
-            // IAM Role's Arn is always an IAM Role ARN
-            m.insert(
-                ("AWS::IAM::Role", "Arn"),
-                TypeOverride::StringType("super::super::iam::role::arn()"),
-            );
-            // IAM OIDCProvider's Arn is always an IAM OIDC Provider ARN
-            m.insert(
-                ("AWS::IAM::OIDCProvider", "Arn"),
-                TypeOverride::StringType("super::super::iam::oidc_provider::arn()"),
-            );
-            // IAM Role's RoleId uses AROA prefix pattern
-            m.insert(
-                ("AWS::IAM::Role", "RoleId"),
-                TypeOverride::StringType("carina_aws_types::iam_role_id()"),
-            );
-            // EC2 Route's GatewayId accepts both igw-* and vgw-*
-            m.insert(
-                ("AWS::EC2::Route", "GatewayId"),
-                TypeOverride::StringType("carina_aws_types::gateway_id()"),
-            );
-            // Generic "Id" attributes on resources where the specific ID type is known
-            m.insert(
-                ("AWS::EC2::EgressOnlyInternetGateway", "Id"),
-                TypeOverride::StringType("carina_aws_types::egress_only_internet_gateway_id()"),
-            );
-            m.insert(
-                ("AWS::EC2::TransitGateway", "Id"),
-                TypeOverride::StringType("carina_aws_types::transit_gateway_id()"),
-            );
-            m.insert(
-                ("AWS::EC2::VPCPeeringConnection", "Id"),
-                TypeOverride::StringType("carina_aws_types::vpc_peering_connection_id()"),
-            );
-            m.insert(
-                ("AWS::EC2::VPCEndpoint", "Id"),
-                TypeOverride::StringType("carina_aws_types::vpc_endpoint_id()"),
-            );
-            m.insert(
-                ("AWS::EC2::SecurityGroup", "Id"),
-                TypeOverride::StringType("carina_aws_types::security_group_id()"),
-            );
-            m.insert(
-                ("AWS::EC2::TransitGatewayAttachment", "Id"),
-                TypeOverride::StringType("carina_aws_types::transit_gateway_attachment_id()"),
-            );
-            m.insert(
-                ("AWS::EC2::FlowLog", "Id"),
-                TypeOverride::StringType("carina_aws_types::flow_log_id()"),
-            );
-            m.insert(
-                ("AWS::EC2::SubnetRouteTableAssociation", "Id"),
-                TypeOverride::StringType("carina_aws_types::subnet_route_table_association_id()"),
-            );
-            // Hosted-zone ID producers must carry the shared Route 53 identity so
-            // they can flow into Route53 alias-target sinks. The cached CFN schemas
-            // expose both read-only attributes as unrefined strings. CloudControl
-            // HostedZone create/read in us-east-1 on 2026-10-04 returned the same
-            // unprefixed Z... ID from the create response and read-back state.
-            m.insert(
-                (
-                    "AWS::ElasticLoadBalancingV2::LoadBalancer",
-                    "CanonicalHostedZoneID",
-                ),
-                TypeOverride::StringType("carina_aws_types::route53_hosted_zone_id()"),
-            );
-            m.insert(
-                ("AWS::Route53::HostedZone", "Id"),
-                TypeOverride::StringType("carina_aws_types::route53_hosted_zone_id()"),
-            );
-            // EIP Address and TransferAddress are IPv4 addresses
-            m.insert(
-                ("AWS::EC2::EIP", "Address"),
-                TypeOverride::StringType("types::ipv4_address()"),
-            );
-            m.insert(
-                ("AWS::EC2::EIP", "TransferAddress"),
-                TypeOverride::StringType("types::ipv4_address()"),
-            );
-            // FlowLog LogDestination is an ARN (S3 bucket, CloudWatch log group, or Firehose)
-            m.insert(
-                ("AWS::EC2::FlowLog", "LogDestination"),
-                TypeOverride::StringType("carina_aws_types::arn()"),
-            );
-            // S3 Bucket notification ARNs
-            m.insert(
-                ("AWS::S3::Bucket", "Function"),
-                TypeOverride::StringType("carina_aws_types::arn()"),
-            );
-            m.insert(
-                ("AWS::S3::Bucket", "Queue"),
-                TypeOverride::StringType("carina_aws_types::arn()"),
-            );
-            m.insert(
-                ("AWS::S3::Bucket", "Topic"),
-                TypeOverride::StringType("carina_aws_types::arn()"),
-            );
-            // S3 Bucket replication role is an IAM Role ARN
-            m.insert(
-                ("AWS::S3::Bucket", "Role"),
-                TypeOverride::StringType("super::super::iam::role::arn()"),
-            );
-            // S3 Bucket replication destination account
-            m.insert(
-                ("AWS::S3::Bucket", "Account"),
-                TypeOverride::StringType("carina_aws_types::aws_account_id()"),
-            );
-            // VPC CidrBlockAssociations are association IDs (vpc-cidr-assoc-xxx), not CIDRs
-            m.insert(
-                ("AWS::EC2::VPC", "CidrBlockAssociations"),
-                TypeOverride::StringType("carina_aws_types::vpc_cidr_block_association_id()"),
-            );
-            // Transit Gateway route table IDs use tgw-rtb- prefix, not rtb-
-            m.insert(
-                ("AWS::EC2::TransitGateway", "AssociationDefaultRouteTableId"),
-                TypeOverride::StringType("carina_aws_types::tgw_route_table_id()"),
-            );
-            m.insert(
-                ("AWS::EC2::TransitGateway", "PropagationDefaultRouteTableId"),
-                TypeOverride::StringType("carina_aws_types::tgw_route_table_id()"),
-            );
-            // Transit Gateway CIDR blocks support both IPv4 and IPv6
-            m.insert(
-                ("AWS::EC2::TransitGateway", "TransitGatewayCidrBlocks"),
-                TypeOverride::StringType("types::cidr()"),
-            );
-            // IPAM Pool provisioned CIDRs support both IPv4 and IPv6
-            m.insert(
-                ("AWS::EC2::IPAMPool", "Cidr"),
-                TypeOverride::StringType("types::cidr()"),
-            );
-            // S3 ReplaceKeyPrefixWith is a free-form string, not an enum
-            m.insert(
-                ("AWS::S3::Bucket", "ReplaceKeyPrefixWith"),
-                TypeOverride::StringType("AttributeType::string()"),
-            );
+impl ResourceTypeOverrides {
+    fn insert(
+        &mut self,
+        (cfn_type, property_path): (&'static str, &'static str),
+        override_type: TypeOverride,
+    ) {
+        #[cfg(test)]
+        let flat_override = override_type.clone();
+        let resource = self.by_type.entry(cfn_type).or_default();
+        let previous = if let Some((parent, property)) = property_path.split_once('.') {
+            resource
+                .nested
+                .entry(parent)
+                .or_default()
+                .insert(property, override_type)
+        } else {
+            resource.top_level.insert(property_path, override_type)
+        };
+        assert!(
+            previous.is_none(),
+            "duplicate resource type override {cfn_type}.{property_path}"
+        );
+        #[cfg(test)]
+        assert!(
+            self.flat
+                .insert((cfn_type, property_path), flat_override)
+                .is_none(),
+            "duplicate flat resource type override {cfn_type}.{property_path}"
+        );
+    }
 
-            // The CloudFormation schema publishes these two BudgetData fields
-            // only as bare objects. The Budgets API defines their map values:
-            // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_Budget.html
-            m.insert(
-                ("AWS::Budgets::Budget", "BudgetData.CostFilters"),
-                TypeOverride::AttributeType {
-                    expression: "AttributeType::map(AttributeType::list(AttributeType::string()))",
-                    display: "`Map<String, List<String>>`",
-                },
-            );
-            m.insert(
-                ("AWS::Budgets::Budget", "BudgetData.PlannedBudgetLimits"),
-                TypeOverride::AttributeType {
-                    expression: "AttributeType::map(AttributeType::ref_(\"Spend\".to_string()))",
-                    display: "`Map<String, Spend>`",
-                },
-            );
+    fn get_path(
+        &self,
+        cfn_type: &str,
+        property_path: CfnPropertyPath<'_>,
+    ) -> Option<&TypeOverride> {
+        let resource = self.by_type.get(cfn_type)?;
+        match property_path.parent {
+            Some(parent) => resource.nested.get(parent)?.get(property_path.property),
+            None => resource.top_level.get(property_path.property),
+        }
+    }
 
-            // SSO / IdentityStore identity semantics
-            //
-            // Sinks (consumers in assignments, permission sets):
-            m.insert(
-                ("AWS::SSO::Assignment", "TargetId"),
-                TypeOverride::StringType("carina_aws_types::aws_account_id()"),
-            );
-            m.insert(
-                ("AWS::SSO::Assignment", "PrincipalId"),
-                TypeOverride::StringType("carina_aws_types::sso_principal_id()"),
-            );
-            m.insert(
-                ("AWS::SSO::Assignment", "InstanceArn"),
-                TypeOverride::StringType("carina_aws_types::sso_instance_arn()"),
-            );
-            m.insert(
-                ("AWS::SSO::PermissionSet", "InstanceArn"),
-                TypeOverride::StringType("carina_aws_types::sso_instance_arn()"),
-            );
-            //
-            // Sources (produced by SSO/IdentityStore resources themselves).
-            // Without these, the sinks above can only accept values from
-            // hand-typed literals — references to the canonical producers
-            // fail with "expected SsoInstanceArn, got Arn".
-            m.insert(
-                ("AWS::SSO::Instance", "InstanceArn"),
-                TypeOverride::StringType("carina_aws_types::sso_instance_arn()"),
-            );
-            m.insert(
-                ("AWS::SSO::Instance", "IdentityStoreId"),
-                TypeOverride::StringType("carina_aws_types::identity_store_id()"),
-            );
-            m.insert(
-                ("AWS::SSO::PermissionSet", "PermissionSetArn"),
-                TypeOverride::StringType("carina_aws_types::sso_permission_set_arn()"),
-            );
-            m.insert(
-                ("AWS::SSO::Assignment", "PermissionSetArn"),
-                TypeOverride::StringType("carina_aws_types::sso_permission_set_arn()"),
-            );
-            m.insert(
-                ("AWS::IdentityStore::Group", "GroupId"),
-                TypeOverride::StringType("carina_aws_types::sso_principal_id()"),
-            );
-            m.insert(
-                ("AWS::IdentityStore::Group", "IdentityStoreId"),
-                TypeOverride::StringType("carina_aws_types::identity_store_id()"),
-            );
-            m.insert(
-                ("AWS::IdentityStore::GroupMembership", "IdentityStoreId"),
-                TypeOverride::StringType("carina_aws_types::identity_store_id()"),
-            );
-            m.insert(
-                ("AWS::IdentityStore::GroupMembership", "GroupId"),
-                TypeOverride::StringType("carina_aws_types::sso_principal_id()"),
-            );
+    #[cfg(test)]
+    fn get(&self, (cfn_type, property_path): &(&str, &str)) -> Option<&TypeOverride> {
+        let property_path = property_path.split_once('.').map_or_else(
+            || CfnPropertyPath::new(None, property_path),
+            |(parent, property)| CfnPropertyPath::new(Some(parent), property),
+        );
+        self.get_path(cfn_type, property_path)
+    }
 
-            // ELBv2 fixed-response status codes are constrained to ^(2|4|5)\d{2}$.
-            // The CFN schema leaves them as plain strings; CloudControl only catches
-            // bad values at apply-time. http_response_status_code is a carina-core
-            // built-in (TypeIdentity::bare("HttpResponseStatusCode")).
-            m.insert(
-                (
-                    "AWS::ElasticLoadBalancingV2::Listener",
-                    "FixedResponseConfig.StatusCode",
-                ),
-                TypeOverride::StringType("carina_core::schema::types::http_response_status_code()"),
-            );
+    #[cfg(test)]
+    fn iter(&self) -> impl Iterator<Item = (&(&'static str, &'static str), &TypeOverride)> {
+        self.flat.iter()
+    }
 
-            // === Enum overrides ===
+    #[cfg(test)]
+    fn keys(&self) -> impl Iterator<Item = &(&'static str, &'static str)> {
+        self.flat.keys()
+    }
+}
 
-            // VPN Gateway Type only accepts "ipsec.1"
-            m.insert(
-                ("AWS::EC2::VPNGateway", "Type"),
-                TypeOverride::Enum(vec!["ipsec.1"]),
-            );
-            // EC2 VPC InstanceTenancy is a pre-existing generated enum. The
-            // cached description lists `default` and `dedicated` as bullet
-            // leaders, but only mentions `host` inside a bullet body. Keep the
-            // heuristic scoped to leading value-list bullets and pin the full
-            // provider value set here.
-            m.insert(
-                ("AWS::EC2::VPC", "InstanceTenancy"),
-                TypeOverride::Enum(vec!["default", "dedicated", "host"]),
-            );
+fn resource_type_overrides() -> &'static ResourceTypeOverrides {
+    static OVERRIDES: LazyLock<ResourceTypeOverrides> = LazyLock::new(|| {
+        let mut m = ResourceTypeOverrides::default();
 
-            // ELBv2 TargetGroup TargetType / Protocol (awscc#357). The CFN
-            // descriptions carry no value list, so the description-scraping
-            // heuristic in `extract_enum_from_description` returns nothing
-            // and the type would otherwise stay a free-form string.
-            //
-            // Scope these by resource type — `Protocol` is a field name
-            // shared with `Listener.Protocol` and the listener uses a
-            // different value union (it adds `QUIC`/`TCP_QUIC`), so we must
-            // NOT let a field-name-only override (`known_enum_overrides`)
-            // leak this list across resources.
-            m.insert(
-                ("AWS::ElasticLoadBalancingV2::TargetGroup", "TargetType"),
-                TypeOverride::Enum(vec!["instance", "ip", "lambda", "alb"]),
-            );
-            m.insert(
-                ("AWS::ElasticLoadBalancingV2::TargetGroup", "Protocol"),
-                TypeOverride::Enum(vec![
-                    "HTTP", "HTTPS", "TCP", "TLS", "UDP", "TCP_UDP", "GENEVE",
-                ]),
-            );
+        // === StringType overrides ===
 
-            // ELBv2 LoadBalancer closed string values (awscc#365). The
-            // CFN descriptions either have no value-list sentence (`Type`,
-            // `Scheme`) or contain unrelated backticked cross-references
-            // (`EnablePrefixForIpv6SourceNat`). Keep these resource-scoped:
-            // `Type` and `Scheme` are generic field names and must not leak
-            // into siblings like VPNGateway.Type.
-            m.insert(
-                ("AWS::ElasticLoadBalancingV2::LoadBalancer", "Type"),
-                TypeOverride::Enum(vec!["application", "network", "gateway"]),
-            );
-            m.insert(
-                ("AWS::ElasticLoadBalancingV2::LoadBalancer", "Scheme"),
-                TypeOverride::Enum(vec!["internet-facing", "internal"]),
-            );
-            m.insert(
-                (
-                    "AWS::ElasticLoadBalancingV2::LoadBalancer",
-                    "EnablePrefixForIpv6SourceNat",
-                ),
-                TypeOverride::Enum(vec!["on", "off"]),
-            );
-            m.insert(
-                (
-                    "AWS::ElasticLoadBalancingV2::LoadBalancer",
-                    "EnforceSecurityGroupInboundRulesOnPrivateLinkTraffic",
-                ),
-                TypeOverride::Enum(vec!["on", "off"]),
-            );
-            // LoadBalancerAttribute.Key intentionally has no enum overlay.
-            // Pre-365 Strategy 1 extracted attribute VALUES (`true`, `false`,
-            // modes, etc.) as the Key enum because the real attribute keys
-            // are bullet leaders containing dots and were filtered out by
-            // `looks_like_enum_value`. Later value-list sentences in the
-            // bullet bodies describe per-key values, not legal Key names, so
-            // force this field back to plain String.
-            m.insert(
-                (
-                    "AWS::ElasticLoadBalancingV2::LoadBalancer",
-                    "LoadBalancerAttribute.Key",
-                ),
-                TypeOverride::StringType("AttributeType::string()"),
-            );
+        // IAM Role's Arn is always an IAM Role ARN
+        m.insert(
+            ("AWS::IAM::Role", "Arn"),
+            TypeOverride::StringType("super::super::iam::role::arn()"),
+        );
+        // IAM OIDCProvider's Arn is always an IAM OIDC Provider ARN
+        m.insert(
+            ("AWS::IAM::OIDCProvider", "Arn"),
+            TypeOverride::StringType("super::super::iam::oidc_provider::arn()"),
+        );
+        // IAM Role's RoleId uses AROA prefix pattern
+        m.insert(
+            ("AWS::IAM::Role", "RoleId"),
+            TypeOverride::StringType("carina_aws_types::iam_role_id()"),
+        );
+        // EC2 Route's GatewayId accepts both igw-* and vgw-*
+        m.insert(
+            ("AWS::EC2::Route", "GatewayId"),
+            TypeOverride::StringType("carina_aws_types::gateway_id()"),
+        );
+        // Generic "Id" attributes on resources where the specific ID type is known
+        m.insert(
+            ("AWS::EC2::EgressOnlyInternetGateway", "Id"),
+            TypeOverride::StringType("carina_aws_types::egress_only_internet_gateway_id()"),
+        );
+        m.insert(
+            ("AWS::EC2::TransitGateway", "Id"),
+            TypeOverride::StringType("carina_aws_types::transit_gateway_id()"),
+        );
+        m.insert(
+            ("AWS::EC2::VPCPeeringConnection", "Id"),
+            TypeOverride::StringType("carina_aws_types::vpc_peering_connection_id()"),
+        );
+        m.insert(
+            ("AWS::EC2::VPCEndpoint", "Id"),
+            TypeOverride::StringType("carina_aws_types::vpc_endpoint_id()"),
+        );
+        m.insert(
+            ("AWS::EC2::SecurityGroup", "Id"),
+            TypeOverride::StringType("carina_aws_types::security_group_id()"),
+        );
+        m.insert(
+            ("AWS::EC2::TransitGatewayAttachment", "Id"),
+            TypeOverride::StringType("carina_aws_types::transit_gateway_attachment_id()"),
+        );
+        m.insert(
+            ("AWS::EC2::FlowLog", "Id"),
+            TypeOverride::StringType("carina_aws_types::flow_log_id()"),
+        );
+        m.insert(
+            ("AWS::EC2::SubnetRouteTableAssociation", "Id"),
+            TypeOverride::StringType("carina_aws_types::subnet_route_table_association_id()"),
+        );
+        // Hosted-zone ID producers must carry the shared Route 53 identity so
+        // they can flow into Route53 alias-target sinks. The cached CFN schemas
+        // expose both read-only attributes as unrefined strings. CloudControl
+        // HostedZone create/read in us-east-1 on 2026-10-04 returned the same
+        // unprefixed Z... ID from the create response and read-back state.
+        m.insert(
+            (
+                "AWS::ElasticLoadBalancingV2::LoadBalancer",
+                "CanonicalHostedZoneID",
+            ),
+            TypeOverride::StringType("carina_aws_types::route53_hosted_zone_id()"),
+        );
+        m.insert(
+            ("AWS::Route53::HostedZone", "Id"),
+            TypeOverride::StringType("carina_aws_types::route53_hosted_zone_id()"),
+        );
+        // EIP Address and TransferAddress are IPv4 addresses
+        m.insert(
+            ("AWS::EC2::EIP", "Address"),
+            TypeOverride::StringType("types::ipv4_address()"),
+        );
+        m.insert(
+            ("AWS::EC2::EIP", "TransferAddress"),
+            TypeOverride::StringType("types::ipv4_address()"),
+        );
+        // FlowLog LogDestination is an ARN (S3 bucket, CloudWatch log group, or Firehose)
+        m.insert(
+            ("AWS::EC2::FlowLog", "LogDestination"),
+            TypeOverride::StringType("carina_aws_types::arn()"),
+        );
+        // S3 Bucket notification ARNs
+        m.insert(
+            ("AWS::S3::Bucket", "Function"),
+            TypeOverride::StringType("carina_aws_types::arn()"),
+        );
+        m.insert(
+            ("AWS::S3::Bucket", "Queue"),
+            TypeOverride::StringType("carina_aws_types::arn()"),
+        );
+        m.insert(
+            ("AWS::S3::Bucket", "Topic"),
+            TypeOverride::StringType("carina_aws_types::arn()"),
+        );
+        // S3 Bucket replication role is an IAM Role ARN
+        m.insert(
+            ("AWS::S3::Bucket", "Role"),
+            TypeOverride::StringType("super::super::iam::role::arn()"),
+        );
+        // S3 Bucket replication destination account
+        m.insert(
+            ("AWS::S3::Bucket", "Account"),
+            TypeOverride::StringType("carina_aws_types::aws_account_id()"),
+        );
+        // VPC CidrBlockAssociations are association IDs (vpc-cidr-assoc-xxx), not CIDRs
+        m.insert(
+            ("AWS::EC2::VPC", "CidrBlockAssociations"),
+            TypeOverride::StringType("carina_aws_types::vpc_cidr_block_association_id()"),
+        );
+        // Transit Gateway route table IDs use tgw-rtb- prefix, not rtb-
+        m.insert(
+            ("AWS::EC2::TransitGateway", "AssociationDefaultRouteTableId"),
+            TypeOverride::StringType("carina_aws_types::tgw_route_table_id()"),
+        );
+        m.insert(
+            ("AWS::EC2::TransitGateway", "PropagationDefaultRouteTableId"),
+            TypeOverride::StringType("carina_aws_types::tgw_route_table_id()"),
+        );
+        // Transit Gateway CIDR blocks support both IPv4 and IPv6
+        m.insert(
+            ("AWS::EC2::TransitGateway", "TransitGatewayCidrBlocks"),
+            TypeOverride::StringType("types::cidr()"),
+        );
+        // IPAM Pool provisioned CIDRs support both IPv4 and IPv6
+        m.insert(
+            ("AWS::EC2::IPAMPool", "Cidr"),
+            TypeOverride::StringType("types::cidr()"),
+        );
+        // S3 ReplaceKeyPrefixWith is a free-form string, not an enum
+        m.insert(
+            ("AWS::S3::Bucket", "ReplaceKeyPrefixWith"),
+            TypeOverride::StringType("AttributeType::string()"),
+        );
 
-            // ELBv2 Listener Action.Type (awscc#359). The CFN description
-            // is literally "The type of action." with no value list, but
-            // the sibling fields' descriptions enumerate the closed set
-            // ("Specify only when ``Type`` is ``forward``" etc.). Real AWS
-            // values: forward, authenticate-oidc, authenticate-cognito,
-            // redirect, fixed-response, jwt-validation.
-            //
-            // Resource-scoped for the same reason as TargetGroup.Protocol:
-            // `Type` is a generic field name (it also shows up on
-            // VPNGateway with a different value set), so a field-name-only
-            // entry would silently clobber sibling resources.
-            m.insert(
-                ("AWS::ElasticLoadBalancingV2::Listener", "Action.Type"),
-                TypeOverride::Enum(vec![
-                    "forward",
-                    "authenticate-oidc",
-                    "authenticate-cognito",
-                    "redirect",
-                    "fixed-response",
-                    "jwt-validation",
-                ]),
-            );
+        // The CloudFormation schema publishes these two BudgetData fields
+        // only as bare objects. The Budgets API defines their map values:
+        // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_Budget.html
+        m.insert(
+            ("AWS::Budgets::Budget", "BudgetData.CostFilters"),
+            TypeOverride::AttributeType {
+                expression: "AttributeType::map(AttributeType::list(AttributeType::string()))",
+                display: "`Map<String, List<String>>`",
+            },
+        );
+        m.insert(
+            ("AWS::Budgets::Budget", "BudgetData.PlannedBudgetLimits"),
+            TypeOverride::AttributeType {
+                expression: "AttributeType::map(AttributeType::ref_(\"Spend\".to_string()))",
+                display: "`Map<String, Spend>`",
+            },
+        );
 
-            // ELBv2 Listener RedirectConfig placeholders (awscc#363,
-            // carina#3494). Protocol, Host, Port, Path, and Query are
-            // sibling string types in carina-core so each field accepts
-            // its documented `#{...}` placeholder without widening the
-            // others. StatusCode remains a closed enum below because it
-            // has no placeholder form.
-            m.insert(
-                (
-                    "AWS::ElasticLoadBalancingV2::Listener",
-                    "RedirectConfig.Protocol",
-                ),
-                TypeOverride::StringType("carina_core::schema::types::redirect_protocol()"),
-            );
-            m.insert(
-                (
-                    "AWS::ElasticLoadBalancingV2::Listener",
-                    "RedirectConfig.Host",
-                ),
-                TypeOverride::StringType("carina_core::schema::types::redirect_host()"),
-            );
-            m.insert(
-                (
-                    "AWS::ElasticLoadBalancingV2::Listener",
-                    "RedirectConfig.Port",
-                ),
-                TypeOverride::StringType("carina_core::schema::types::redirect_port()"),
-            );
-            m.insert(
-                (
-                    "AWS::ElasticLoadBalancingV2::Listener",
-                    "RedirectConfig.Path",
-                ),
-                TypeOverride::StringType("carina_core::schema::types::redirect_path()"),
-            );
-            m.insert(
-                (
-                    "AWS::ElasticLoadBalancingV2::Listener",
-                    "RedirectConfig.Query",
-                ),
-                TypeOverride::StringType("carina_core::schema::types::redirect_query()"),
-            );
-            // ELBv2 Listener RedirectConfig.StatusCode (awscc#360). The
-            // description ("either permanent (HTTP 301) or temporary
-            // (HTTP 302)") names the values in prose but the CFN string
-            // form uses the underscored variants `HTTP_301` / `HTTP_302`.
-            // No existing matcher recovers this mapping; pin the two
-            // canonical values.
-            m.insert(
-                (
-                    "AWS::ElasticLoadBalancingV2::Listener",
-                    "RedirectConfig.StatusCode",
-                ),
-                TypeOverride::Enum(vec!["HTTP_301", "HTTP_302"]),
-            );
+        // SSO / IdentityStore identity semantics
+        //
+        // Sinks (consumers in assignments, permission sets):
+        m.insert(
+            ("AWS::SSO::Assignment", "TargetId"),
+            TypeOverride::StringType("carina_aws_types::aws_account_id()"),
+        );
+        m.insert(
+            ("AWS::SSO::Assignment", "PrincipalId"),
+            TypeOverride::StringType("carina_aws_types::sso_principal_id()"),
+        );
+        m.insert(
+            ("AWS::SSO::Assignment", "InstanceArn"),
+            TypeOverride::StringType("carina_aws_types::sso_instance_arn()"),
+        );
+        m.insert(
+            ("AWS::SSO::PermissionSet", "InstanceArn"),
+            TypeOverride::StringType("carina_aws_types::sso_instance_arn()"),
+        );
+        //
+        // Sources (produced by SSO/IdentityStore resources themselves).
+        // Without these, the sinks above can only accept values from
+        // hand-typed literals — references to the canonical producers
+        // fail with "expected SsoInstanceArn, got Arn".
+        m.insert(
+            ("AWS::SSO::Instance", "InstanceArn"),
+            TypeOverride::StringType("carina_aws_types::sso_instance_arn()"),
+        );
+        m.insert(
+            ("AWS::SSO::Instance", "IdentityStoreId"),
+            TypeOverride::StringType("carina_aws_types::identity_store_id()"),
+        );
+        m.insert(
+            ("AWS::SSO::PermissionSet", "PermissionSetArn"),
+            TypeOverride::StringType("carina_aws_types::sso_permission_set_arn()"),
+        );
+        m.insert(
+            ("AWS::SSO::Assignment", "PermissionSetArn"),
+            TypeOverride::StringType("carina_aws_types::sso_permission_set_arn()"),
+        );
+        m.insert(
+            ("AWS::IdentityStore::Group", "GroupId"),
+            TypeOverride::StringType("carina_aws_types::sso_principal_id()"),
+        );
+        m.insert(
+            ("AWS::IdentityStore::Group", "IdentityStoreId"),
+            TypeOverride::StringType("carina_aws_types::identity_store_id()"),
+        );
+        m.insert(
+            ("AWS::IdentityStore::GroupMembership", "IdentityStoreId"),
+            TypeOverride::StringType("carina_aws_types::identity_store_id()"),
+        );
+        m.insert(
+            ("AWS::IdentityStore::GroupMembership", "GroupId"),
+            TypeOverride::StringType("carina_aws_types::sso_principal_id()"),
+        );
 
-            // CloudFront Distribution: fields the CFN schema leaves as plain
-            // strings but are documented as a closed value set (awscc#246).
-            // Keys use "DefName.FieldName" composite form so the lookup hits
-            // each nested struct field at codegen time. Source for the value
-            // lists: AWS docs + Terraform AWS provider validators.
-            m.insert(
-                (
-                    "AWS::CloudFront::Distribution",
-                    "DistributionConfig.PriceClass",
-                ),
-                TypeOverride::Enum(vec!["PriceClass_100", "PriceClass_200", "PriceClass_All"]),
-            );
-            m.insert(
-                (
-                    "AWS::CloudFront::Distribution",
-                    "DistributionConfig.HttpVersion",
-                ),
-                TypeOverride::Enum(vec!["http1.1", "http2", "http2and3", "http3"]),
-            );
-            m.insert(
-                ("AWS::CloudFront::Distribution", "Cookies.Forward"),
-                TypeOverride::Enum(vec!["all", "none", "whitelist"]),
-            );
-            // AllowedMethods / CachedMethods appear in both DefaultCacheBehavior
-            // and CacheBehavior with identical semantics; register both.
-            let allowed_methods = vec!["GET", "HEAD", "OPTIONS", "PUT", "PATCH", "POST", "DELETE"];
-            let cached_methods = vec!["GET", "HEAD", "OPTIONS"];
-            m.insert(
-                (
-                    "AWS::CloudFront::Distribution",
-                    "DefaultCacheBehavior.AllowedMethods",
-                ),
-                TypeOverride::EnumUnordered(allowed_methods.clone()),
-            );
-            m.insert(
-                (
-                    "AWS::CloudFront::Distribution",
-                    "CacheBehavior.AllowedMethods",
-                ),
-                TypeOverride::EnumUnordered(allowed_methods),
-            );
-            m.insert(
-                (
-                    "AWS::CloudFront::Distribution",
-                    "DefaultCacheBehavior.CachedMethods",
-                ),
-                TypeOverride::EnumUnordered(cached_methods.clone()),
-            );
-            m.insert(
-                (
-                    "AWS::CloudFront::Distribution",
-                    "CacheBehavior.CachedMethods",
-                ),
-                TypeOverride::EnumUnordered(cached_methods),
-            );
-            // ResponseHeadersPolicy CORS methods are also an order-insensitive
-            // set whose valid values appear only in the CFN description.
-            m.insert(
-                (
-                    "AWS::CloudFront::ResponseHeadersPolicy",
-                    "AccessControlAllowMethods.Items",
-                ),
-                TypeOverride::EnumUnordered(vec![
-                    "GET", "DELETE", "HEAD", "OPTIONS", "PATCH", "POST", "PUT", "ALL",
-                ]),
-            );
-            // The CFN schema describes Runtime as a plain string, while the
-            // CloudFront Functions API exposes this closed runtime set.
-            m.insert(
-                ("AWS::CloudFront::Function", "FunctionConfig.Runtime"),
-                TypeOverride::Enum(vec!["cloudfront-js-1.0", "cloudfront-js-2.0"]),
-            );
-            // OriginProtocolPolicy: the modern CustomOriginConfig path is
-            // already CFN-enum, but the LegacyCustomOrigin definition is
-            // plain string. Override there.
-            m.insert(
-                (
-                    "AWS::CloudFront::Distribution",
-                    "LegacyCustomOrigin.OriginProtocolPolicy",
-                ),
-                TypeOverride::Enum(vec!["http-only", "https-only", "match-viewer"]),
-            );
-            // OriginSSLProtocols: list-of-string in both LegacyCustomOrigin
-            // and CustomOriginConfig; AWS-documented closed set.
-            let ssl_protocols = vec!["SSLv3", "TLSv1", "TLSv1.1", "TLSv1.2"];
-            m.insert(
-                (
-                    "AWS::CloudFront::Distribution",
-                    "LegacyCustomOrigin.OriginSSLProtocols",
-                ),
-                TypeOverride::Enum(ssl_protocols.clone()),
-            );
-            m.insert(
-                (
-                    "AWS::CloudFront::Distribution",
-                    "CustomOriginConfig.OriginSSLProtocols",
-                ),
-                TypeOverride::Enum(ssl_protocols),
-            );
+        // ELBv2 fixed-response status codes are constrained to ^(2|4|5)\d{2}$.
+        // The CFN schema leaves them as plain strings; CloudControl only catches
+        // bad values at apply-time. http_response_status_code is a carina-core
+        // built-in (TypeIdentity::bare("HttpResponseStatusCode")).
+        m.insert(
+            (
+                "AWS::ElasticLoadBalancingV2::Listener",
+                "FixedResponseConfig.StatusCode",
+            ),
+            TypeOverride::StringType("carina_core::schema::types::http_response_status_code()"),
+        );
 
-            // Cloud Control's Schedule identifier omits GroupName and reads
-            // Name in the default group. The catalog validator records the
-            // measured behavior and rejects non-default or unproven groups.
+        // === Enum overrides ===
+
+        // VPN Gateway Type only accepts "ipsec.1"
+        m.insert(
+            ("AWS::EC2::VPNGateway", "Type"),
+            TypeOverride::Enum(vec!["ipsec.1"]),
+        );
+        // EC2 VPC InstanceTenancy is a pre-existing generated enum. The
+        // cached description lists `default` and `dedicated` as bullet
+        // leaders, but only mentions `host` inside a bullet body. Keep the
+        // heuristic scoped to leading value-list bullets and pin the full
+        // provider value set here.
+        m.insert(
+            ("AWS::EC2::VPC", "InstanceTenancy"),
+            TypeOverride::Enum(vec!["default", "dedicated", "host"]),
+        );
+
+        // ELBv2 TargetGroup TargetType / Protocol (awscc#357). The CFN
+        // descriptions carry no value list, so the description-scraping
+        // heuristic in `extract_enum_from_description` returns nothing
+        // and the type would otherwise stay a free-form string.
+        //
+        // Scope these by resource type — `Protocol` is a field name
+        // shared with `Listener.Protocol` and the listener uses a
+        // different value union (it adds `QUIC`/`TCP_QUIC`), so we must
+        // NOT let a field-name-only override (`known_enum_overrides`)
+        // leak this list across resources.
+        m.insert(
+            ("AWS::ElasticLoadBalancingV2::TargetGroup", "TargetType"),
+            TypeOverride::Enum(vec!["instance", "ip", "lambda", "alb"]),
+        );
+        m.insert(
+            ("AWS::ElasticLoadBalancingV2::TargetGroup", "Protocol"),
+            TypeOverride::Enum(vec![
+                "HTTP", "HTTPS", "TCP", "TLS", "UDP", "TCP_UDP", "GENEVE",
+            ]),
+        );
+
+        // ELBv2 LoadBalancer closed string values (awscc#365). The
+        // CFN descriptions either have no value-list sentence (`Type`,
+        // `Scheme`) or contain unrelated backticked cross-references
+        // (`EnablePrefixForIpv6SourceNat`). Keep these resource-scoped:
+        // `Type` and `Scheme` are generic field names and must not leak
+        // into siblings like VPNGateway.Type.
+        m.insert(
+            ("AWS::ElasticLoadBalancingV2::LoadBalancer", "Type"),
+            TypeOverride::Enum(vec!["application", "network", "gateway"]),
+        );
+        m.insert(
+            ("AWS::ElasticLoadBalancingV2::LoadBalancer", "Scheme"),
+            TypeOverride::Enum(vec!["internet-facing", "internal"]),
+        );
+        m.insert(
+            (
+                "AWS::ElasticLoadBalancingV2::LoadBalancer",
+                "EnablePrefixForIpv6SourceNat",
+            ),
+            TypeOverride::Enum(vec!["on", "off"]),
+        );
+        m.insert(
+            (
+                "AWS::ElasticLoadBalancingV2::LoadBalancer",
+                "EnforceSecurityGroupInboundRulesOnPrivateLinkTraffic",
+            ),
+            TypeOverride::Enum(vec!["on", "off"]),
+        );
+        // LoadBalancerAttribute.Key intentionally has no enum overlay.
+        // Pre-365 Strategy 1 extracted attribute VALUES (`true`, `false`,
+        // modes, etc.) as the Key enum because the real attribute keys
+        // are bullet leaders containing dots and were filtered out by
+        // `looks_like_enum_value`. Later value-list sentences in the
+        // bullet bodies describe per-key values, not legal Key names, so
+        // force this field back to plain String.
+        m.insert(
+            (
+                "AWS::ElasticLoadBalancingV2::LoadBalancer",
+                "LoadBalancerAttribute.Key",
+            ),
+            TypeOverride::StringType("AttributeType::string()"),
+        );
+
+        // ELBv2 Listener Action.Type (awscc#359). The CFN description
+        // is literally "The type of action." with no value list, but
+        // the sibling fields' descriptions enumerate the closed set
+        // ("Specify only when ``Type`` is ``forward``" etc.). Real AWS
+        // values: forward, authenticate-oidc, authenticate-cognito,
+        // redirect, fixed-response, jwt-validation.
+        //
+        // Resource-scoped for the same reason as TargetGroup.Protocol:
+        // `Type` is a generic field name (it also shows up on
+        // VPNGateway with a different value set), so a field-name-only
+        // entry would silently clobber sibling resources.
+        m.insert(
+            ("AWS::ElasticLoadBalancingV2::Listener", "Action.Type"),
+            TypeOverride::Enum(vec![
+                "forward",
+                "authenticate-oidc",
+                "authenticate-cognito",
+                "redirect",
+                "fixed-response",
+                "jwt-validation",
+            ]),
+        );
+
+        // ELBv2 Listener RedirectConfig placeholders (awscc#363,
+        // carina#3494). Protocol, Host, Port, Path, and Query are
+        // sibling string types in carina-core so each field accepts
+        // its documented `#{...}` placeholder without widening the
+        // others. StatusCode remains a closed enum below because it
+        // has no placeholder form.
+        m.insert(
+            (
+                "AWS::ElasticLoadBalancingV2::Listener",
+                "RedirectConfig.Protocol",
+            ),
+            TypeOverride::StringType("carina_core::schema::types::redirect_protocol()"),
+        );
+        m.insert(
+            (
+                "AWS::ElasticLoadBalancingV2::Listener",
+                "RedirectConfig.Host",
+            ),
+            TypeOverride::StringType("carina_core::schema::types::redirect_host()"),
+        );
+        m.insert(
+            (
+                "AWS::ElasticLoadBalancingV2::Listener",
+                "RedirectConfig.Port",
+            ),
+            TypeOverride::StringType("carina_core::schema::types::redirect_port()"),
+        );
+        m.insert(
+            (
+                "AWS::ElasticLoadBalancingV2::Listener",
+                "RedirectConfig.Path",
+            ),
+            TypeOverride::StringType("carina_core::schema::types::redirect_path()"),
+        );
+        m.insert(
+            (
+                "AWS::ElasticLoadBalancingV2::Listener",
+                "RedirectConfig.Query",
+            ),
+            TypeOverride::StringType("carina_core::schema::types::redirect_query()"),
+        );
+        // ELBv2 Listener RedirectConfig.StatusCode (awscc#360). The
+        // description ("either permanent (HTTP 301) or temporary
+        // (HTTP 302)") names the values in prose but the CFN string
+        // form uses the underscored variants `HTTP_301` / `HTTP_302`.
+        // No existing matcher recovers this mapping; pin the two
+        // canonical values.
+        m.insert(
+            (
+                "AWS::ElasticLoadBalancingV2::Listener",
+                "RedirectConfig.StatusCode",
+            ),
+            TypeOverride::Enum(vec!["HTTP_301", "HTTP_302"]),
+        );
+
+        // CloudFront Distribution: fields the CFN schema leaves as plain
+        // strings but are documented as a closed value set (awscc#246).
+        // Keys use "DefName.FieldName" composite form so the lookup hits
+        // each nested struct field at codegen time. Source for the value
+        // lists: AWS docs + Terraform AWS provider validators.
+        m.insert(
+            (
+                "AWS::CloudFront::Distribution",
+                "DistributionConfig.PriceClass",
+            ),
+            TypeOverride::Enum(vec!["PriceClass_100", "PriceClass_200", "PriceClass_All"]),
+        );
+        m.insert(
+            (
+                "AWS::CloudFront::Distribution",
+                "DistributionConfig.HttpVersion",
+            ),
+            TypeOverride::Enum(vec!["http1.1", "http2", "http2and3", "http3"]),
+        );
+        m.insert(
+            ("AWS::CloudFront::Distribution", "Cookies.Forward"),
+            TypeOverride::Enum(vec!["all", "none", "whitelist"]),
+        );
+        // AllowedMethods / CachedMethods appear in both DefaultCacheBehavior
+        // and CacheBehavior with identical semantics; register both.
+        let allowed_methods = vec!["GET", "HEAD", "OPTIONS", "PUT", "PATCH", "POST", "DELETE"];
+        let cached_methods = vec!["GET", "HEAD", "OPTIONS"];
+        m.insert(
+            (
+                "AWS::CloudFront::Distribution",
+                "DefaultCacheBehavior.AllowedMethods",
+            ),
+            TypeOverride::EnumUnordered(allowed_methods.clone()),
+        );
+        m.insert(
+            (
+                "AWS::CloudFront::Distribution",
+                "CacheBehavior.AllowedMethods",
+            ),
+            TypeOverride::EnumUnordered(allowed_methods),
+        );
+        m.insert(
+            (
+                "AWS::CloudFront::Distribution",
+                "DefaultCacheBehavior.CachedMethods",
+            ),
+            TypeOverride::EnumUnordered(cached_methods.clone()),
+        );
+        m.insert(
+            (
+                "AWS::CloudFront::Distribution",
+                "CacheBehavior.CachedMethods",
+            ),
+            TypeOverride::EnumUnordered(cached_methods),
+        );
+        // ResponseHeadersPolicy CORS methods are also an order-insensitive
+        // set whose valid values appear only in the CFN description.
+        m.insert(
+            (
+                "AWS::CloudFront::ResponseHeadersPolicy",
+                "AccessControlAllowMethods.Items",
+            ),
+            TypeOverride::EnumUnordered(vec![
+                "GET", "DELETE", "HEAD", "OPTIONS", "PATCH", "POST", "PUT", "ALL",
+            ]),
+        );
+        // The CFN schema describes Runtime as a plain string, while the
+        // CloudFront Functions API exposes this closed runtime set.
+        m.insert(
+            ("AWS::CloudFront::Function", "FunctionConfig.Runtime"),
+            TypeOverride::Enum(vec!["cloudfront-js-1.0", "cloudfront-js-2.0"]),
+        );
+        // OriginProtocolPolicy: the modern CustomOriginConfig path is
+        // already CFN-enum, but the LegacyCustomOrigin definition is
+        // plain string. Override there.
+        m.insert(
+            (
+                "AWS::CloudFront::Distribution",
+                "LegacyCustomOrigin.OriginProtocolPolicy",
+            ),
+            TypeOverride::Enum(vec!["http-only", "https-only", "match-viewer"]),
+        );
+        // OriginSSLProtocols: list-of-string in both LegacyCustomOrigin
+        // and CustomOriginConfig; AWS-documented closed set.
+        let ssl_protocols = vec!["SSLv3", "TLSv1", "TLSv1.1", "TLSv1.2"];
+        m.insert(
+            (
+                "AWS::CloudFront::Distribution",
+                "LegacyCustomOrigin.OriginSSLProtocols",
+            ),
+            TypeOverride::Enum(ssl_protocols.clone()),
+        );
+        m.insert(
+            (
+                "AWS::CloudFront::Distribution",
+                "CustomOriginConfig.OriginSSLProtocols",
+            ),
+            TypeOverride::Enum(ssl_protocols),
+        );
+
+        // Cloud Control's Schedule identifier omits GroupName and reads
+        // Name in the default group. The catalog validator records the
+        // measured behavior and rejects non-default or unproven groups.
+        m.insert(
+            ("AWS::Scheduler::Schedule", "GroupName"),
+            TypeOverride::StringType("crate::schemas::catalog::scheduler_schedule_group_name()"),
+        );
+
+        // === IntRange overrides ===
+
+        // VPN Gateway and Transit Gateway ASN range
+        m.insert(
+            ("AWS::EC2::VPNGateway", "AmazonSideAsn"),
+            TypeOverride::IntRange(1, 4294967294),
+        );
+        m.insert(
+            ("AWS::EC2::TransitGateway", "AmazonSideAsn"),
+            TypeOverride::IntRange(1, 4294967294),
+        );
+        // CloudFormation publishes these Scheduler API integers as `number`.
+        // Their ranges come from each property's CFN minimum/maximum.
+        for path in [
+            "FlexibleTimeWindow.MaximumWindowInMinutes",
+            "RetryPolicy.MaximumEventAgeInSeconds",
+            "RetryPolicy.MaximumRetryAttempts",
+            "EcsParameters.TaskCount",
+            "CapacityProviderStrategyItem.Base",
+            "CapacityProviderStrategyItem.Weight",
+        ] {
             m.insert(
-                ("AWS::Scheduler::Schedule", "GroupName"),
-                TypeOverride::StringType(
-                    "crate::schemas::catalog::scheduler_schedule_group_name()",
-                ),
+                ("AWS::Scheduler::Schedule", path),
+                TypeOverride::IntegerFromNumber,
             );
+        }
 
-            // === IntRange overrides ===
+        // === IntEnum overrides ===
 
-            // VPN Gateway and Transit Gateway ASN range
-            m.insert(
-                ("AWS::EC2::VPNGateway", "AmazonSideAsn"),
-                TypeOverride::IntRange(1, 4294967294),
-            );
-            m.insert(
-                ("AWS::EC2::TransitGateway", "AmazonSideAsn"),
-                TypeOverride::IntRange(1, 4294967294),
-            );
-            // CloudFormation publishes these Scheduler API integers as `number`.
-            // Their ranges come from each property's CFN minimum/maximum.
-            for path in [
-                "FlexibleTimeWindow.MaximumWindowInMinutes",
-                "RetryPolicy.MaximumEventAgeInSeconds",
-                "RetryPolicy.MaximumRetryAttempts",
-                "EcsParameters.TaskCount",
-                "CapacityProviderStrategyItem.Base",
-                "CapacityProviderStrategyItem.Weight",
-            ] {
-                m.insert(
-                    ("AWS::Scheduler::Schedule", path),
-                    TypeOverride::IntegerFromNumber,
-                );
-            }
+        // FlowLog max aggregation interval: 60 or 600 seconds
+        m.insert(
+            ("AWS::EC2::FlowLog", "MaxAggregationInterval"),
+            TypeOverride::IntEnum(vec![60, 600]),
+        );
+        // CloudWatch Logs retention: specific allowed day counts
+        m.insert(
+            ("AWS::Logs::LogGroup", "RetentionInDays"),
+            TypeOverride::IntEnum(vec![
+                1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096, 1827, 2192,
+                2557, 2922, 3288, 3653,
+            ]),
+        );
 
-            // === IntEnum overrides ===
+        // === ToDsl overrides ===
 
-            // FlowLog max aggregation interval: 60 or 600 seconds
-            m.insert(
-                ("AWS::EC2::FlowLog", "MaxAggregationInterval"),
-                TypeOverride::IntEnum(vec![60, 600]),
-            );
-            // CloudWatch Logs retention: specific allowed day counts
-            m.insert(
-                ("AWS::Logs::LogGroup", "RetentionInDays"),
-                TypeOverride::IntEnum(vec![
-                    1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096, 1827,
-                    2192, 2557, 2922, 3288, 3653,
-                ]),
-            );
+        // Route 53 HostedZone Name: AWS returns FQDN with trailing dot
+        m.insert(
+            ("AWS::Route53::HostedZone", "Name"),
+            TypeOverride::ToDsl(
+                r#"Some(carina_core::schema::DslTransform::StripSuffix(".".to_string()))"#,
+            ),
+        );
 
-            // === ToDsl overrides ===
-
-            // Route 53 HostedZone Name: AWS returns FQDN with trailing dot
-            m.insert(
-                ("AWS::Route53::HostedZone", "Name"),
-                TypeOverride::ToDsl(
-                    r#"Some(carina_core::schema::DslTransform::StripSuffix(".".to_string()))"#,
-                ),
-            );
-
-            m
-        });
+        m
+    });
     &OVERRIDES
 }
 
 /// Return the `to_dsl` code for a Custom type, checking for ToDsl overrides.
 fn to_dsl_code_for(resource_type: &str, prop_name: &str) -> &'static str {
     if let Some(TypeOverride::ToDsl(code)) =
-        resource_type_overrides().get(&(resource_type, prop_name))
+        resource_type_override(resource_type, CfnPropertyPath::new(None, prop_name))
     {
         code
     } else {
@@ -5944,7 +6835,7 @@ struct SyntheticAttribute {
 fn infer_string_type(prop_name: &str, resource_type: &str) -> Option<String> {
     // Check resource-specific overrides first (StringType only for string inference)
     if let Some(TypeOverride::StringType(override_type)) =
-        resource_type_overrides().get(&(resource_type, prop_name))
+        resource_type_override(resource_type, CfnPropertyPath::new(None, prop_name))
     {
         return Some(override_type.to_string());
     }
@@ -6306,9 +7197,9 @@ fn is_ipam_pool_id_property(prop_name: &str) -> bool {
 /// (carina#3093). `key` is the property name for top-level props or
 /// `"DefName.FieldName"` for nested struct fields — whichever the
 /// caller used to look the override up.
-fn override_forces_unordered(type_name: &str, key: &str) -> bool {
+fn override_forces_unordered(type_name: &str, property_path: CfnPropertyPath<'_>) -> bool {
     matches!(
-        resource_type_overrides().get(&(type_name, key)),
+        resource_type_override(type_name, property_path),
         Some(TypeOverride::EnumUnordered(_))
     )
 }
@@ -6346,8 +7237,11 @@ fn cfn_type_to_carina_type_with_enum(
         schema,
         namespace,
         enums,
-        &[],
-        &property_path,
+        CfnTypeGenerationPaths {
+            structural: &[],
+            provider: &property_path,
+            cfn_parent: None,
+        },
     )
 }
 
@@ -6376,17 +7270,70 @@ fn property_resolves_to_array(prop: &CfnProperty, schema: &CfnSchema) -> bool {
         .is_some_and(|resolved| matches!(resolved, ResolvedDef::Array { .. }))
 }
 
+#[derive(Clone, Copy)]
+struct CfnTypeGenerationPaths<'a> {
+    structural: &'a [String],
+    provider: &'a [String],
+    cfn_parent: Option<&'a str>,
+}
+
+fn generate_object_map_type(
+    value: &CfnProperty,
+    prop_name: &str,
+    schema: &CfnSchema,
+    namespace: &str,
+    enums: &BTreeMap<String, EnumInfo>,
+    paths: CfnTypeGenerationPaths<'_>,
+) -> (String, Option<EnumInfo>) {
+    let property_path = CfnPropertyPath::new(paths.cfn_parent, prop_name);
+    match object_map_value_or_panic(schema, property_path, value) {
+        ObjectMapValueKind::DirectString => (
+            "AttributeType::map(AttributeType::string())".to_string(),
+            None,
+        ),
+        ObjectMapValueKind::Struct => {
+            let value_provider_path = extend_property_path(paths.provider, "*");
+            let (value_type, enum_info) = cfn_type_to_carina_type_with_enum_with_paths(
+                value,
+                prop_name,
+                schema,
+                namespace,
+                enums,
+                CfnTypeGenerationPaths {
+                    provider: &value_provider_path,
+                    ..paths
+                },
+            );
+            assert!(
+                enum_info.is_none(),
+                "typed object-map values must resolve to structs"
+            );
+            (format!("AttributeType::map({value_type})"), None)
+        }
+    }
+}
+
 fn cfn_type_to_carina_type_with_enum_with_paths(
     prop: &CfnProperty,
     prop_name: &str,
     schema: &CfnSchema,
     namespace: &str,
     enums: &BTreeMap<String, EnumInfo>,
-    struct_path: &[String],
-    property_path: &[String],
+    paths: CfnTypeGenerationPaths<'_>,
 ) -> (String, Option<EnumInfo>) {
-    if object_string_union_is_iam_policy_document(prop, &schema.type_name, prop_name) {
+    let struct_path = paths.structural;
+    let property_path = paths.provider;
+    let cfn_parent = paths.cfn_parent;
+    let cfn_property_path = CfnPropertyPath::new(cfn_parent, prop_name);
+    if object_string_union_is_iam_policy_document(prop, &schema.type_name, cfn_property_path) {
         return ("carina_aws_types::iam_policy_document()".to_string(), None);
+    }
+
+    if property_is_bare_object(prop, schema) {
+        return (
+            bare_object_attribute_type(&schema.type_name, cfn_property_path, prop_name),
+            None,
+        );
     }
 
     // The declared tag property is special when its generated DSL name is
@@ -6421,8 +7368,7 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
                 schema,
                 namespace,
                 enums,
-                struct_path,
-                property_path,
+                paths,
             );
         }
 
@@ -6497,6 +7443,11 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
                     });
                     return (body, None);
                 }
+                ResolvedDef::ObjectMap { value } => {
+                    return generate_object_map_type(
+                        value, prop_name, schema, namespace, enums, paths,
+                    );
+                }
                 ResolvedDef::OneOf { variants } => {
                     let mut merged_props = BTreeMap::new();
                     for variant in variants {
@@ -6564,8 +7515,10 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
                         schema,
                         namespace,
                         enums,
-                        struct_path,
-                        &item_path,
+                        CfnTypeGenerationPaths {
+                            provider: &item_path,
+                            ..paths
+                        },
                     );
                     let effective_item_type = if item_enum.is_some() {
                         "AttributeType::string()".to_string()
@@ -6574,7 +7527,7 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
                     };
                     let list_ctor = list_constructor(
                         prop.insertion_order,
-                        override_forces_unordered(schema.type_name.as_str(), prop_name),
+                        override_forces_unordered(&schema.type_name, cfn_property_path),
                     );
                     return (format!("{}({})", list_ctor, effective_item_type), item_enum);
                 }
@@ -6606,12 +7559,20 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
                             schema,
                             namespace,
                             enums,
-                            struct_path,
-                            property_path,
+                            paths,
                         );
                     }
                 }
-                ResolvedDef::Opaque => {}
+                ResolvedDef::Opaque => {
+                    if resolve_ref(schema, ref_path)
+                        .is_some_and(|definition| definition.def_type.as_deref() == Some("object"))
+                    {
+                        panic!(
+                            "unsupported object definition {}.{} referenced by {ref_path}; expected a struct, direct-string map, tag map, typed map of struct, or classified bare object; see CODEGEN.md#classifying-bare-objects",
+                            schema.type_name, cfn_property_path
+                        );
+                    }
+                }
             }
         }
         if let Some(inferred) = infer_string_type(prop_name, &schema.type_name) {
@@ -6662,7 +7623,7 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
     match prop.prop_type.as_ref().and_then(|t| t.as_str()) {
         Some("string") => {
             if let Some(TypeOverride::ToDsl(to_dsl)) =
-                resource_type_overrides().get(&(schema.type_name.as_str(), prop_name))
+                resource_type_override(&schema.type_name, cfn_property_path)
             {
                 let length_expr =
                     emit_length_option(prop.min_length.filter(|&m| m > 0), prop.max_length);
@@ -6679,7 +7640,7 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
             }
 
             // Check if this is a policy document field (CFN sometimes types these as "string")
-            if is_iam_policy_document_property(&schema.type_name, prop_name) {
+            if is_iam_policy_document_property(&schema.type_name, cfn_property_path) {
                 return ("carina_aws_types::iam_policy_document()".to_string(), None);
             }
 
@@ -6754,8 +7715,7 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
         Some("boolean") => ("AttributeType::bool()".to_string(), None),
         Some("integer") => {
             // Check resource-scoped overrides first
-            let res_override =
-                resource_type_overrides().get(&(schema.type_name.as_str(), prop_name));
+            let res_override = resource_type_override(&schema.type_name, cfn_property_path);
             if let Some(TypeOverride::IntRange(min, max)) = res_override {
                 return (
                     refined_int_type("None", &emit_int_range_option(Some(*min), Some(*max))),
@@ -6788,8 +7748,7 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
         }
         Some("number") => {
             // Check resource-scoped overrides first
-            let res_override =
-                resource_type_overrides().get(&(schema.type_name.as_str(), prop_name));
+            let res_override = resource_type_override(&schema.type_name, cfn_property_path);
             if let Some(TypeOverride::IntRange(min, max)) = res_override {
                 return (
                     refined_float_type("None", &emit_float_range_option(Some(*min), Some(*max))),
@@ -6820,7 +7779,7 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
         Some("array") => {
             let list_ctor = list_constructor(
                 prop.insertion_order,
-                override_forces_unordered(schema.type_name.as_str(), prop_name),
+                override_forces_unordered(&schema.type_name, cfn_property_path),
             );
             let (list_type, item_enum) = if let Some(items) = &prop.items {
                 let item_path = extend_property_path(property_path, "*");
@@ -6884,8 +7843,10 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
                         schema,
                         namespace,
                         enums,
-                        struct_path,
-                        &item_path,
+                        CfnTypeGenerationPaths {
+                            provider: &item_path,
+                            ..paths
+                        },
                     );
                     // If array items have enum values, propagate the enum info so the
                     // caller can register it. The item type uses String as a placeholder;
@@ -6919,8 +7880,7 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
         Some("object") => {
             // Check known string type overrides first, mirroring the string branch
             // for CFN union types whose first type is object.
-            let res_override =
-                resource_type_overrides().get(&(schema.type_name.as_str(), prop_name));
+            let res_override = resource_type_override(&schema.type_name, cfn_property_path);
             if let Some(override_type) =
                 res_override.and_then(TypeOverride::attribute_type_expression)
             {
@@ -6947,26 +7907,13 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
                     None,
                 );
             }
-            // Check if this is an IAM policy document
-            if is_iam_policy_document_property(&schema.type_name, prop_name) {
-                return ("carina_aws_types::iam_policy_document()".to_string(), None);
+            if let Some(value) = direct_object_map_value(prop) {
+                return generate_object_map_type(value, prop_name, schema, namespace, enums, paths);
             }
-            // Empty object with no or empty properties and additionalProperties: false
-            // -> empty Struct (e.g., SimplePrefix)
-            if prop.additional_properties == Some(false) {
-                let struct_name = prop_name.to_pascal_case();
-                return (
-                    format!(
-                        r#"AttributeType::struct_({}.to_string(), vec![])"#,
-                        rust_lit(&struct_name)
-                    ),
-                    None,
-                );
-            }
-            (
-                "AttributeType::map(AttributeType::string())".to_string(),
-                None,
-            )
+            panic!(
+                "unsupported object property {}.{}; expected a struct, direct-string map, tag map, typed map of struct, or classified bare object; see CODEGEN.md#classifying-bare-objects",
+                schema.type_name, cfn_property_path
+            );
         }
         _ => {
             // Fallback: apply name-based heuristics for properties with no explicit type
@@ -7669,6 +8616,772 @@ mod tests {
     }
 
     #[test]
+    fn test_sns_resources_are_registered() {
+        let topic = cfn_schema_for_codegen_tests("AWS::SNS::Topic");
+        assert_eq!(
+            declared_replacement_class("sns.Topic", &topic).unwrap(),
+            ReplacementClass::Conflicting
+        );
+
+        let subscription = cfn_schema_for_codegen_tests("AWS::SNS::Subscription");
+        assert_eq!(
+            declared_replacement_class("sns.Subscription", &subscription).unwrap(),
+            ReplacementClass::Conflicting
+        );
+    }
+
+    #[test]
+    fn test_free_form_json_properties_are_omitted_and_documented() {
+        let cases: &[(&str, &[&str])] = &[
+            (
+                "AWS::SNS::Subscription",
+                &[
+                    "DeliveryPolicy",
+                    "FilterPolicy",
+                    "RedrivePolicy",
+                    "ReplayPolicy",
+                ],
+            ),
+            (
+                "AWS::SNS::Topic",
+                &["DataProtectionPolicy", "ArchivePolicy"],
+            ),
+            (
+                "AWS::Logs::LogGroup",
+                &["DataProtectionPolicy", "FieldIndexPolicies"],
+            ),
+        ];
+
+        let expected_entries = cases
+            .iter()
+            .flat_map(|(type_name, property_names)| {
+                property_names.iter().map(move |property_name| {
+                    (*type_name, CfnPropertyPath::new(None, property_name))
+                })
+            })
+            .collect::<BTreeSet<_>>();
+        let actual_entries = FREE_FORM_JSON_PROPERTIES
+            .iter()
+            .map(|entry| (entry.cfn_type, entry.property_path))
+            .collect::<BTreeSet<_>>();
+        assert_eq!(actual_entries, expected_entries);
+        assert!(
+            FREE_FORM_JSON_PROPERTIES
+                .iter()
+                .all(|entry| !entry.reason.is_empty()),
+            "every omitted free-form JSON property must document why it is unsupported"
+        );
+
+        for (type_name, property_names) in cases {
+            let schema = cfn_schema_for_codegen_tests(type_name);
+            let generated = generate_schema_code(&schema, type_name)
+                .unwrap_or_else(|error| panic!("{type_name} schema generation failed: {error}"));
+            let markdown = generate_markdown(&schema, type_name)
+                .unwrap_or_else(|error| panic!("{type_name} markdown generation failed: {error}"));
+
+            assert!(
+                markdown.contains("## Not yet supported"),
+                "{type_name} must document its omitted JSON properties: {markdown}"
+            );
+            for property_name in *property_names {
+                let attr_name = property_name.to_snake_case();
+                assert!(
+                    !generated.contains(&format!("build_{attr_name}_attribute")),
+                    "{type_name}.{property_name} must not be emitted: {generated}"
+                );
+                assert!(
+                    !markdown.contains(&format!("### `{attr_name}`")),
+                    "{type_name}.{property_name} must not be an argument: {markdown}"
+                );
+                assert!(
+                    markdown.contains(&format!("`{attr_name}`")),
+                    "{type_name}.{property_name} must be named in the unsupported note: {markdown}"
+                );
+            }
+        }
+    }
+
+    fn synthetic_struct_schema(
+        type_name: &str,
+        top_level_name: &str,
+        definition_name: &str,
+        fields: BTreeMap<String, CfnProperty>,
+    ) -> CfnSchema {
+        let mut schema = empty_schema(type_name);
+        schema.properties.insert(
+            top_level_name.to_string(),
+            CfnProperty {
+                ref_path: Some(format!("#/definitions/{definition_name}")),
+                ..Default::default()
+            },
+        );
+        schema.definitions = Some(BTreeMap::from([(
+            definition_name.to_string(),
+            CfnDefinition {
+                def_type: Some("object".to_string()),
+                properties: Some(fields),
+                ..Default::default()
+            },
+        )]));
+        schema
+    }
+
+    #[test]
+    fn test_raw_acronym_parent_path_agrees_in_prescan_generation_walker_and_docs() {
+        let marker = CfnProperty {
+            prop_type: Some(TypeValue::Single("object".to_string())),
+            properties: Some(BTreeMap::new()),
+            ..Default::default()
+        };
+        let schema = synthetic_struct_schema(
+            "AWS::Test::AcronymPath",
+            "Config",
+            "SSESpecification",
+            BTreeMap::from([("Marker".to_string(), marker.clone())]),
+        );
+        let raw_path = CfnPropertyPath::new(Some("SSESpecification"), "Marker");
+
+        let (prescanned_type, _) = cfn_type_to_carina_type_with_enum_with_paths(
+            &marker,
+            "Marker",
+            &schema,
+            "aws.test.AcronymPath",
+            &BTreeMap::new(),
+            CfnTypeGenerationPaths {
+                structural: &["SseSpecification".to_string()],
+                provider: &["Config".to_string(), "Marker".to_string()],
+                cfn_parent: Some("SSESpecification"),
+            },
+        );
+        assert!(prescanned_type.contains("vec![]"), "{prescanned_type}");
+
+        let generated = generate_synthetic_schema_code(&schema)
+            .expect("raw acronym parent must classify during generation");
+        assert!(
+            generated.contains(
+                "StructField::optional(\"marker\", AttributeType::struct_(\"Marker\".to_string(), vec![]))"
+            ),
+            "{generated}"
+        );
+
+        let used_rows = assert_schema_bare_objects_classified(&schema);
+        assert!(used_rows.contains(&(
+            TEST_EMPTY_OBJECT_PROPERTIES[0].cfn_type,
+            TEST_EMPTY_OBJECT_PROPERTIES[0].property_path,
+        )));
+
+        let markdown = generate_markdown(&schema, "AWS::Test::AcronymPath")
+            .expect("raw acronym parent must classify during Markdown rendering");
+        assert!(
+            markdown.contains("| `marker` | Empty struct (`{}`) |"),
+            "{markdown}"
+        );
+        assert!(
+            classify_bare_object(
+                &schema.type_name,
+                CfnPropertyPath::new(Some("OtherSpecification"), "Marker"),
+            )
+            .is_none(),
+            "classification must not fall back to a matching leaf name"
+        );
+        assert_eq!(raw_path.to_string(), "SSESpecification.Marker");
+    }
+
+    #[test]
+    fn test_nested_free_form_json_is_omitted_documented_and_rejected_by_schema_shape() {
+        let schema = synthetic_struct_schema(
+            "AWS::Test::NestedOmission",
+            "Config",
+            "ParentConfig",
+            BTreeMap::from([
+                (
+                    "Enabled".to_string(),
+                    CfnProperty {
+                        prop_type: Some(TypeValue::Single("boolean".to_string())),
+                        ..Default::default()
+                    },
+                ),
+                (
+                    "ChildPolicy".to_string(),
+                    CfnProperty {
+                        prop_type: Some(TypeValue::Single("object".to_string())),
+                        properties: Some(BTreeMap::new()),
+                        ..Default::default()
+                    },
+                ),
+            ]),
+        );
+
+        let generated = generate_synthetic_schema_code(&schema)
+            .expect("nested free-form JSON must be skipped before type generation");
+        assert!(generated.contains("StructField::optional(\"enabled\""));
+        assert!(!generated.contains("child_policy"), "{generated}");
+
+        let markdown = generate_markdown(&schema, "AWS::Test::NestedOmission")
+            .expect("nested omission must be documentable");
+        assert!(!markdown.contains("| `child_policy` |"), "{markdown}");
+        assert!(markdown.contains("`config.child_policy`"), "{markdown}");
+
+        // This is the exact parent Struct shape emitted above after omission.
+        // Carina's schema validator must reject the removed field instead of
+        // silently discarding it.
+        let parent_schema = carina_core::schema::ResourceSchema::new("test.NestedOmission")
+            .attribute(
+                carina_core::schema::AttributeSchema::optional(
+                    "config",
+                    carina_core::schema::AttributeType::struct_(
+                        "ParentConfig".to_string(),
+                        vec![
+                            carina_core::schema::StructField::optional(
+                                "enabled",
+                                carina_core::schema::AttributeType::bool(),
+                            )
+                            .build(),
+                        ],
+                    ),
+                )
+                .build(),
+            )
+            .validate()
+            .expect("synthetic nested-omission schema must validate");
+        let unknown_value = carina_core::resource::Value::Concrete(
+            carina_core::resource::ConcreteValue::Map(indexmap::IndexMap::from([
+                (
+                    "enabled".to_string(),
+                    carina_core::resource::Value::Concrete(
+                        carina_core::resource::ConcreteValue::Bool(true),
+                    ),
+                ),
+                (
+                    "child_policy".to_string(),
+                    carina_core::resource::Value::Concrete(
+                        carina_core::resource::ConcreteValue::Map(indexmap::IndexMap::new()),
+                    ),
+                ),
+            ])),
+        );
+        let error = parent_schema
+            .effective_attribute("config")
+            .expect("synthetic config attribute")
+            .validate(&unknown_value)
+            .expect_err("an omitted nested field must be unknown")
+            .to_string();
+        assert!(error.contains("child_policy"), "{error}");
+        assert!(error.to_lowercase().contains("unknown"), "{error}");
+    }
+
+    type UsedClassificationRows = BTreeSet<(&'static str, CfnPropertyPath<'static>)>;
+
+    #[test]
+    fn test_iam_policy_classification_does_not_match_an_unlisted_suffix_leaf() {
+        assert!(!is_iam_policy_document_property(
+            "AWS::Test::PolicyCollision",
+            CfnPropertyPath::new(None, "PolicyDocument"),
+        ));
+    }
+
+    #[test]
+    fn test_unreferenced_definitions_are_not_classification_inputs() {
+        let mut schema = empty_schema("AWS::Test::UnreferencedDefinitions");
+        schema.definitions = Some(BTreeMap::from([
+            (
+                "UnusedMarker".to_string(),
+                CfnDefinition {
+                    def_type: Some("object".to_string()),
+                    properties: Some(BTreeMap::new()),
+                    ..Default::default()
+                },
+            ),
+            (
+                "UnusedMarkers".to_string(),
+                CfnDefinition {
+                    def_type: Some("array".to_string()),
+                    items: Some(Box::new(CfnProperty {
+                        prop_type: Some(TypeValue::Single("object".to_string())),
+                        properties: Some(BTreeMap::new()),
+                        ..Default::default()
+                    })),
+                    ..Default::default()
+                },
+            ),
+        ]));
+
+        assert!(assert_schema_bare_objects_classified(&schema).is_empty());
+    }
+
+    #[test]
+    fn test_array_definition_items_are_classified_at_the_referencing_property_path() {
+        let mut schema = empty_schema("AWS::Test::ArrayReference");
+        schema.properties.insert(
+            "Markers".to_string(),
+            CfnProperty {
+                ref_path: Some("#/definitions/MarkerList".to_string()),
+                ..Default::default()
+            },
+        );
+        schema.definitions = Some(BTreeMap::from([(
+            "MarkerList".to_string(),
+            CfnDefinition {
+                def_type: Some("array".to_string()),
+                items: Some(Box::new(CfnProperty {
+                    prop_type: Some(TypeValue::Single("object".to_string())),
+                    properties: Some(BTreeMap::new()),
+                    ..Default::default()
+                })),
+                ..Default::default()
+            },
+        )]));
+
+        let used_rows = assert_schema_bare_objects_classified(&schema);
+        assert!(used_rows.contains(&(
+            TEST_EMPTY_OBJECT_PROPERTIES[1].cfn_type,
+            TEST_EMPTY_OBJECT_PROPERTIES[1].property_path,
+        )));
+    }
+
+    fn collect_property_refs(prop: &CfnProperty, refs: &mut BTreeSet<String>) {
+        if let Some(ref_path) = &prop.ref_path
+            && let Some(def_name) = ref_def_name(ref_path)
+        {
+            refs.insert(def_name.to_string());
+        }
+        if let Some(items) = &prop.items {
+            collect_property_refs(items, refs);
+        }
+        for child in prop
+            .properties
+            .iter()
+            .flat_map(|properties| properties.values())
+            .chain(
+                prop.pattern_properties
+                    .iter()
+                    .flat_map(|properties| properties.values()),
+            )
+            .chain(prop.one_of.iter())
+            .chain(prop.any_of.iter())
+        {
+            collect_property_refs(child, refs);
+        }
+    }
+
+    fn record_classified_row(
+        classification: BareObjectClassification,
+        used_rows: &mut UsedClassificationRows,
+    ) {
+        let entry = match classification {
+            BareObjectClassification::FreeFormJson(entry)
+            | BareObjectClassification::EmptyObject(entry)
+            | BareObjectClassification::StringMap(entry)
+            | BareObjectClassification::OmittedResource(entry) => {
+                Some((entry.cfn_type, entry.property_path))
+            }
+            BareObjectClassification::IamPolicyDocument(entry) => Some(*entry),
+            BareObjectClassification::TypedOverride { .. } => None,
+        };
+        if let Some(entry) = entry {
+            used_rows.insert(entry);
+        }
+    }
+
+    fn assert_property_classified(
+        schema: &CfnSchema,
+        prop_name: &str,
+        prop: &CfnProperty,
+        parent_struct: Option<&str>,
+        used_rows: &mut UsedClassificationRows,
+        active_array_definitions: &mut BTreeSet<String>,
+    ) {
+        let property_path = CfnPropertyPath::new(parent_struct, prop_name);
+        let mut omitted = false;
+        for table in [
+            FREE_FORM_JSON_PROPERTIES,
+            TEST_FREE_FORM_JSON_PROPERTIES,
+            OMITTED_RESOURCE_PROPERTIES,
+        ] {
+            if let Some(entry) = find_omitted_property(table, &schema.type_name, property_path) {
+                used_rows.insert((entry.cfn_type, entry.property_path));
+                omitted = true;
+            }
+        }
+        if omitted {
+            return;
+        }
+        if let Some(entry) = iam_policy_document_property(&schema.type_name, property_path) {
+            used_rows.insert(*entry);
+        }
+
+        if property_is_bare_object(prop, schema) {
+            let classification = classify_bare_object(&schema.type_name, property_path)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "unclassified cached bare object {}.{}; use FREE_FORM_JSON_PROPERTIES, EMPTY_OBJECT_PROPERTIES, STRING_MAP_PROPERTIES, or a dedicated typed override",
+                        schema.type_name, property_path
+                    )
+                });
+            record_classified_row(classification, used_rows);
+            return;
+        }
+
+        if is_dsl_tags_property(schema, prop_name)
+            || prop
+                .ref_path
+                .as_deref()
+                .is_some_and(|ref_path| is_tag_map_ref(schema, ref_path))
+        {
+            return;
+        }
+
+        if let Some(ref_path) = &prop.ref_path
+            && let Some(resolved) = resolve_ref_classified(schema, ref_path)
+        {
+            match resolved {
+                ResolvedDef::ObjectMap { value } => {
+                    object_map_value_or_panic(schema, property_path, value);
+                    return;
+                }
+                ResolvedDef::Opaque
+                    if resolve_ref(schema, ref_path).is_some_and(|definition| {
+                        definition.def_type.as_deref() == Some("object")
+                    }) =>
+                {
+                    panic!(
+                        "unsupported cached object definition {}.{} referenced by {ref_path}; expected a struct, direct-string map, tag map, typed map of struct, or classified bare object",
+                        schema.type_name, property_path
+                    );
+                }
+                // Array-definition items must keep the referencing property
+                // path, so they are handled by the dedicated branch below.
+                ResolvedDef::Array { .. } => {}
+                // Every other resolved ref owns its shape; reachable struct
+                // and oneOf children are walked from the definitions pass.
+                _ => return,
+            }
+        }
+
+        if property_declares_object(prop) {
+            if let Some(properties) = &prop.properties
+                && !properties.is_empty()
+            {
+                // Walked below.
+            } else if let Some(value) = direct_object_map_value(prop) {
+                object_map_value_or_panic(schema, property_path, value);
+                if value
+                    .properties
+                    .as_ref()
+                    .is_some_and(|properties| !properties.is_empty())
+                {
+                    assert_property_classified(
+                        schema,
+                        prop_name,
+                        value,
+                        parent_struct,
+                        used_rows,
+                        active_array_definitions,
+                    );
+                }
+                return;
+            } else {
+                panic!(
+                    "unsupported cached object property {}.{}; expected a struct, direct-string map, tag map, typed map of struct, or classified bare object",
+                    schema.type_name, property_path
+                );
+            }
+        }
+
+        // Array definitions are emitted through the property that references
+        // them, so their item shape uses that property's canonical path.
+        if let Some(ref_path) = &prop.ref_path
+            && let Some(definition_name) = ref_def_name(ref_path)
+            && let Some(definition) = schema
+                .definitions
+                .as_ref()
+                .and_then(|definitions| definitions.get(definition_name))
+            && definition.def_type.as_deref() == Some("array")
+            && let Some(items) = &definition.items
+        {
+            if active_array_definitions.insert(definition_name.to_string()) {
+                assert_property_classified(
+                    schema,
+                    prop_name,
+                    items,
+                    parent_struct,
+                    used_rows,
+                    active_array_definitions,
+                );
+                active_array_definitions.remove(definition_name);
+            }
+            return;
+        }
+
+        if !prop.one_of.is_empty() {
+            // Match codegen's compatibility-union behavior: when one variant
+            // is an array, only that representable source shape is walked.
+            if let Some(array_variant) = prop
+                .one_of
+                .iter()
+                .find(|variant| property_resolves_to_array(variant, schema))
+            {
+                assert_property_classified(
+                    schema,
+                    prop_name,
+                    array_variant,
+                    parent_struct,
+                    used_rows,
+                    active_array_definitions,
+                );
+                return;
+            }
+            for variant in &prop.one_of {
+                if let Some(properties) = &variant.properties {
+                    for (field_name, field_prop) in properties {
+                        assert_property_classified(
+                            schema,
+                            field_name,
+                            field_prop,
+                            Some(prop_name),
+                            used_rows,
+                            active_array_definitions,
+                        );
+                    }
+                }
+            }
+        }
+
+        if let Some(properties) = &prop.properties {
+            for (field_name, field_prop) in properties {
+                assert_property_classified(
+                    schema,
+                    field_name,
+                    field_prop,
+                    Some(prop_name),
+                    used_rows,
+                    active_array_definitions,
+                );
+            }
+        }
+        if let Some(items) = &prop.items {
+            assert_property_classified(
+                schema,
+                prop_name,
+                items,
+                parent_struct,
+                used_rows,
+                active_array_definitions,
+            );
+        }
+    }
+
+    fn reachable_definition_names(schema: &CfnSchema) -> BTreeSet<String> {
+        let mut reachable = BTreeSet::new();
+        for property in schema.properties.values() {
+            collect_property_refs(property, &mut reachable);
+        }
+
+        let mut expanded = BTreeSet::new();
+        while let Some(definition_name) = reachable
+            .iter()
+            .find(|definition_name| !expanded.contains(*definition_name))
+            .cloned()
+        {
+            expanded.insert(definition_name.clone());
+            let Some(definition) = schema
+                .definitions
+                .as_ref()
+                .and_then(|definitions| definitions.get(&definition_name))
+            else {
+                continue;
+            };
+            for property in definition
+                .properties
+                .iter()
+                .flat_map(|properties| properties.values())
+                .chain(
+                    definition
+                        .pattern_properties
+                        .iter()
+                        .flat_map(|properties| properties.values()),
+                )
+                .chain(definition.items.iter().map(Box::as_ref))
+                .chain(definition.one_of.iter())
+            {
+                collect_property_refs(property, &mut reachable);
+            }
+        }
+        reachable
+    }
+
+    fn assert_schema_bare_objects_classified(schema: &CfnSchema) -> UsedClassificationRows {
+        let reachable_definitions = reachable_definition_names(schema);
+
+        let mut used_rows = BTreeSet::new();
+        let mut active_array_definitions = BTreeSet::new();
+        for (property_name, property) in &schema.properties {
+            assert_property_classified(
+                schema,
+                property_name,
+                property,
+                None,
+                &mut used_rows,
+                &mut active_array_definitions,
+            );
+        }
+        if let Some(definitions) = &schema.definitions {
+            for (definition_name, definition) in definitions {
+                if !reachable_definitions.contains(definition_name) {
+                    continue;
+                }
+                if is_bare_object_definition(definition) {
+                    // The referencing property already classified this shape
+                    // using the path codegen uses to emit it.
+                    continue;
+                }
+                if let Some(properties) = &definition.properties {
+                    for (field_name, field_prop) in properties {
+                        assert_property_classified(
+                            schema,
+                            field_name,
+                            field_prop,
+                            Some(definition_name),
+                            &mut used_rows,
+                            &mut active_array_definitions,
+                        );
+                    }
+                }
+                for variant in &definition.one_of {
+                    if let Some(properties) = &variant.properties {
+                        for (field_name, field_prop) in properties {
+                            assert_property_classified(
+                                schema,
+                                field_name,
+                                field_prop,
+                                Some(definition_name),
+                                &mut used_rows,
+                                &mut active_array_definitions,
+                            );
+                        }
+                    }
+                }
+                // Array-definition items are walked from each referencing
+                // property above so their classification path matches codegen.
+            }
+        }
+        used_rows
+    }
+
+    #[test]
+    fn test_every_cached_bare_object_is_explicitly_classified_without_stale_rows() {
+        let mut used_rows = BTreeSet::new();
+        for path in cached_schema_paths() {
+            let raw = std::fs::read_to_string(&path).expect("cached CFN schema");
+            let schema: CfnSchema = serde_json::from_str(&raw).expect("cached CFN schema parses");
+            used_rows.extend(assert_schema_bare_objects_classified(&schema));
+        }
+
+        for table in [
+            FREE_FORM_JSON_PROPERTIES,
+            EMPTY_OBJECT_PROPERTIES,
+            OMITTED_RESOURCE_PROPERTIES,
+            STRING_MAP_PROPERTIES,
+        ] {
+            assert!(
+                table.iter().all(|entry| !entry.reason.is_empty()),
+                "every classification row needs a reason"
+            );
+            for entry in table {
+                assert!(
+                    used_rows.contains(&(entry.cfn_type, entry.property_path)),
+                    "stale classification row {}.{} was not used by any cached schema",
+                    entry.cfn_type,
+                    entry.property_path
+                );
+            }
+        }
+        for table in [
+            IAM_POLICY_DOCUMENT_PROPERTIES,
+            NONSTANDARD_IAM_POLICY_DOCUMENT_PROPERTIES,
+        ] {
+            for entry in table {
+                assert!(
+                    used_rows.contains(entry),
+                    "stale IAM policy-document row {}.{} was not used by any cached schema",
+                    entry.0,
+                    entry.1
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_empty_marker_objects_generate_empty_structs() {
+        let assert_empty_field = |generated: &str, field: &str| {
+            let needle = format!("StructField::optional(\"{field}\", AttributeType::struct_(");
+            let emitted_empty_field = generated.match_indices(&needle).find_map(|(start, _)| {
+                let end = generated[start..]
+                    .find(".build()")
+                    .map_or(generated.len(), |end| start + end);
+                let emitted_field = &generated[start..end];
+                emitted_field.contains("vec![]").then_some(emitted_field)
+            });
+            let emitted_empty_field = emitted_empty_field
+                .unwrap_or_else(|| panic!("{field} must generate as an empty struct: {generated}"));
+            assert!(
+                !emitted_empty_field.contains("AttributeType::map("),
+                "{field} must not remain a string map: {emitted_empty_field}"
+            );
+        };
+
+        let waf_schema = cfn_schema_for_codegen_tests("AWS::WAFv2::WebACL");
+        let waf_generated = generate_schema_code(&waf_schema, "AWS::WAFv2::WebACL")
+            .expect("WAFv2 WebACL schema generation should succeed");
+        for field in [
+            "all_query_arguments",
+            "uri_path",
+            "query_string",
+            "method",
+            "count",
+            "none",
+            "all",
+            "forwarded_ip",
+            "http_method",
+            "ip",
+            "asn",
+        ] {
+            assert_empty_field(&waf_generated, field);
+        }
+        let waf_markdown = generate_markdown(&waf_schema, "AWS::WAFv2::WebACL")
+            .expect("WAFv2 WebACL markdown generation should succeed");
+        assert!(
+            waf_markdown.contains("| `all_query_arguments` | Empty struct (`{}`) |"),
+            "WAF marker docs must expose an empty struct, not a map: {waf_markdown}"
+        );
+
+        let s3_schema = cfn_schema_for_codegen_tests("AWS::S3::Bucket");
+        let s3_generated = generate_schema_code(&s3_schema, "AWS::S3::Bucket")
+            .expect("S3 Bucket schema generation should succeed");
+        assert_empty_field(&s3_generated, "simple_prefix");
+
+        let alarm_schema = cfn_schema_for_codegen_tests("AWS::CloudWatch::Alarm");
+        let alarm_generated = generate_schema_code(&alarm_schema, "AWS::CloudWatch::Alarm")
+            .expect("CloudWatch Alarm schema generation should succeed");
+        assert_empty_field(&alarm_generated, "sliding_window");
+    }
+
+    #[test]
+    fn test_sns_topic_inline_subscription_is_omitted() {
+        let schema = cfn_schema_for_codegen_tests("AWS::SNS::Topic");
+        let generated = generate_schema_code(&schema, "AWS::SNS::Topic")
+            .expect("SNS Topic schema generation should succeed");
+        let markdown = generate_markdown(&schema, "AWS::SNS::Topic")
+            .expect("SNS Topic markdown generation should succeed");
+
+        assert!(!generated.contains("build_subscription_attribute"));
+        assert!(!markdown.contains("### `subscription`"));
+        assert!(markdown.contains("## Not yet supported"));
+        assert!(markdown.contains("`subscription`"));
+        assert!(markdown.contains("use awscc.sns.Subscription instead"));
+    }
+
+    #[test]
     fn test_cloudwatch_alarm_numeric_shapes_and_evaluation_window() {
         let schema = cfn_schema_for_codegen_tests("AWS::CloudWatch::Alarm");
         assert_eq!(schema.properties.len(), 28);
@@ -7905,14 +9618,17 @@ mod tests {
             "CapacityProviderStrategyItem.Base",
             "CapacityProviderStrategyItem.Weight",
         ] {
-            assert_eq!(
-                resource_type_overrides().get(&(schema.type_name.as_str(), provider_path)),
-                Some(&TypeOverride::IntegerFromNumber),
-                "{provider_path} must use the bounds-preserving integer marker"
-            );
             let (definition_name, provider_name) = provider_path
                 .split_once('.')
                 .expect("nested Scheduler override path");
+            assert_eq!(
+                resource_type_override(
+                    &schema.type_name,
+                    CfnPropertyPath::new(Some(definition_name), provider_name),
+                ),
+                Some(&TypeOverride::IntegerFromNumber),
+                "{provider_path} must use the bounds-preserving integer marker"
+            );
             let field_prop = definitions
                 .get(definition_name)
                 .and_then(|definition| definition.properties.as_ref())
@@ -8174,6 +9890,299 @@ mod tests {
             }
             _ => panic!("expected Scalar"),
         }
+    }
+
+    #[test]
+    fn test_pattern_properties_object_ref_generates_typed_struct_map_and_docs() {
+        let mut schema = empty_schema("AWS::WAFv2::WebACL");
+        schema.properties.insert(
+            "CustomResponseBodies".to_string(),
+            CfnProperty {
+                ref_path: Some("#/definitions/CustomResponseBodies".to_string()),
+                ..Default::default()
+            },
+        );
+        schema.definitions = Some(BTreeMap::from([
+            (
+                "CustomResponseBodies".to_string(),
+                CfnDefinition {
+                    def_type: Some("object".to_string()),
+                    pattern_properties: Some(BTreeMap::from([(
+                        "^[a-z]+$".to_string(),
+                        CfnProperty {
+                            ref_path: Some("#/definitions/CustomResponseBody".to_string()),
+                            ..Default::default()
+                        },
+                    )])),
+                    ..Default::default()
+                },
+            ),
+            (
+                "CustomResponseBody".to_string(),
+                CfnDefinition {
+                    def_type: Some("object".to_string()),
+                    properties: Some(BTreeMap::from([
+                        (
+                            "Content".to_string(),
+                            CfnProperty {
+                                prop_type: Some(TypeValue::Single("string".to_string())),
+                                ..Default::default()
+                            },
+                        ),
+                        (
+                            "ContentType".to_string(),
+                            CfnProperty {
+                                prop_type: Some(TypeValue::Single("string".to_string())),
+                                ..Default::default()
+                            },
+                        ),
+                    ])),
+                    required: vec!["Content".to_string(), "ContentType".to_string()],
+                    ..Default::default()
+                },
+            ),
+        ]));
+
+        reset_recursion_guard();
+        let property = schema
+            .properties
+            .get("CustomResponseBodies")
+            .expect("synthetic map property");
+        let (generated, enum_info) = cfn_type_to_carina_type_with_enum(
+            property,
+            "CustomResponseBodies",
+            &schema,
+            "aws.wafv2.WebAcl",
+            &BTreeMap::new(),
+        );
+        assert!(enum_info.is_none());
+        assert!(
+            generated.contains(
+                "AttributeType::map(AttributeType::struct_(\"CustomResponseBody\".to_string()"
+            ),
+            "patternProperties $ref values must generate a typed struct map: {generated}"
+        );
+        assert!(
+            generated.contains("StructField::required(\"content\", AttributeType::string())"),
+            "map value struct fields must be generated: {generated}"
+        );
+
+        let markdown = generate_markdown(&schema, "AWS::WAFv2::WebACL")
+            .expect("typed object map markdown generation should succeed");
+        assert!(
+            markdown.contains("Map\\<String, [Struct(CustomResponseBody)]"),
+            "typed object-map docs must link the map value struct: {markdown}"
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "unsupported object map")]
+    fn test_pattern_properties_rejects_non_string_non_struct_values() {
+        let mut schema = empty_schema("AWS::Test::UnsupportedObjectMap");
+        schema.definitions = Some(BTreeMap::from([(
+            "UnsupportedMap".to_string(),
+            CfnDefinition {
+                def_type: Some("object".to_string()),
+                pattern_properties: Some(BTreeMap::from([(
+                    ".*".to_string(),
+                    CfnProperty {
+                        prop_type: Some(TypeValue::Single("integer".to_string())),
+                        ..Default::default()
+                    },
+                )])),
+                ..Default::default()
+            },
+        )]));
+        let property = CfnProperty {
+            ref_path: Some("#/definitions/UnsupportedMap".to_string()),
+            ..Default::default()
+        };
+
+        reset_recursion_guard();
+        let _ = cfn_type_to_carina_type_with_enum(
+            &property,
+            "UnsupportedMap",
+            &schema,
+            "aws.test.UnsupportedObjectMap",
+            &BTreeMap::new(),
+        );
+    }
+
+    #[test]
+    fn test_nested_object_map_diagnostics_use_canonical_cfn_path() {
+        let mut schema = empty_schema("AWS::Test::UnsupportedNestedObjectMap");
+        schema.properties.insert(
+            "Config".to_string(),
+            CfnProperty {
+                ref_path: Some("#/definitions/Container".to_string()),
+                ..Default::default()
+            },
+        );
+        schema.definitions = Some(BTreeMap::from([
+            (
+                "Container".to_string(),
+                CfnDefinition {
+                    def_type: Some("object".to_string()),
+                    properties: Some(BTreeMap::from([(
+                        "NestedMap".to_string(),
+                        CfnProperty {
+                            ref_path: Some("#/definitions/UnsupportedMap".to_string()),
+                            ..Default::default()
+                        },
+                    )])),
+                    ..Default::default()
+                },
+            ),
+            (
+                "UnsupportedMap".to_string(),
+                CfnDefinition {
+                    def_type: Some("object".to_string()),
+                    pattern_properties: Some(BTreeMap::from([(
+                        ".*".to_string(),
+                        CfnProperty {
+                            prop_type: Some(TypeValue::Single("integer".to_string())),
+                            ..Default::default()
+                        },
+                    )])),
+                    ..Default::default()
+                },
+            ),
+        ]));
+        let expected_path = "AWS::Test::UnsupportedNestedObjectMap.Container.NestedMap";
+        let nested_map = schema
+            .definitions
+            .as_ref()
+            .and_then(|definitions| definitions.get("Container"))
+            .and_then(|definition| definition.properties.as_ref())
+            .and_then(|properties| properties.get("NestedMap"))
+            .expect("synthetic nested object map");
+
+        let markdown_type_panic = std::panic::catch_unwind(|| {
+            markdown_type(
+                "NestedMap",
+                nested_map,
+                &schema,
+                None,
+                &["Config".to_string(), "NestedMap".to_string()],
+                Some("Container"),
+            )
+        })
+        .expect_err("unsupported nested object map must fail Markdown type generation");
+        let markdown_type_message = markdown_type_panic
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| markdown_type_panic.downcast_ref::<&str>().copied())
+            .expect("Markdown type panic should contain a string message");
+        assert!(
+            markdown_type_message.contains(expected_path),
+            "Markdown type diagnostic must use the canonical CFN path: {markdown_type_message}"
+        );
+
+        reset_recursion_guard();
+        let mut struct_defs = BTreeMap::new();
+        let config = schema
+            .properties
+            .get("Config")
+            .expect("synthetic top-level config property");
+        let collect_panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            collect_struct_defs(
+                config,
+                "Config",
+                &schema,
+                &[],
+                &["Config".to_string()],
+                None,
+                &mut struct_defs,
+            );
+        }))
+        .expect_err("unsupported nested object map must fail struct collection");
+        let collect_message = collect_panic
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| collect_panic.downcast_ref::<&str>().copied())
+            .expect("struct collection panic should contain a string message");
+        assert!(
+            collect_message.contains(expected_path),
+            "struct collection diagnostic must use the canonical CFN path: {collect_message}"
+        );
+    }
+
+    #[test]
+    fn test_classification_tables_are_disjoint() {
+        let mut owners: BTreeMap<(&str, CfnPropertyPath<'_>), Vec<&str>> = BTreeMap::new();
+        let mut record = |cfn_type, property_path, table| {
+            owners
+                .entry((cfn_type, property_path))
+                .or_default()
+                .push(table);
+        };
+
+        for (table_name, table) in [
+            ("FREE_FORM_JSON_PROPERTIES", FREE_FORM_JSON_PROPERTIES),
+            (
+                "TEST_FREE_FORM_JSON_PROPERTIES",
+                TEST_FREE_FORM_JSON_PROPERTIES,
+            ),
+            ("EMPTY_OBJECT_PROPERTIES", EMPTY_OBJECT_PROPERTIES),
+            ("TEST_EMPTY_OBJECT_PROPERTIES", TEST_EMPTY_OBJECT_PROPERTIES),
+            ("STRING_MAP_PROPERTIES", STRING_MAP_PROPERTIES),
+            ("OMITTED_RESOURCE_PROPERTIES", OMITTED_RESOURCE_PROPERTIES),
+        ] {
+            for entry in table {
+                record(entry.cfn_type, entry.property_path, table_name);
+            }
+        }
+        for (table_name, table) in [
+            (
+                "IAM_POLICY_DOCUMENT_PROPERTIES",
+                IAM_POLICY_DOCUMENT_PROPERTIES,
+            ),
+            (
+                "NONSTANDARD_IAM_POLICY_DOCUMENT_PROPERTIES",
+                NONSTANDARD_IAM_POLICY_DOCUMENT_PROPERTIES,
+            ),
+        ] {
+            for (cfn_type, property_path) in table {
+                record(cfn_type, *property_path, table_name);
+            }
+        }
+        for (&(cfn_type, property_path), override_type) in resource_type_overrides().iter() {
+            if matches!(override_type, TypeOverride::AttributeType { .. }) {
+                let property_path = property_path.split_once('.').map_or_else(
+                    || CfnPropertyPath::new(None, property_path),
+                    |(parent, property)| CfnPropertyPath::new(Some(parent), property),
+                );
+                record(
+                    cfn_type,
+                    property_path,
+                    "resource_type_overrides AttributeType",
+                );
+            }
+        }
+
+        let duplicates = owners
+            .into_iter()
+            .filter(|(_, owners)| owners.len() > 1)
+            .collect::<Vec<_>>();
+        assert!(
+            duplicates.is_empty(),
+            "each classified shape must have exactly one owner: {duplicates:?}"
+        );
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "each shape must be classified in exactly one place; see CODEGEN.md#classifying-bare-objects"
+    )]
+    fn test_multiple_bare_object_classifications_panic() {
+        let _ = unique_bare_object_classification(
+            "AWS::Test::Duplicate",
+            CfnPropertyPath::new(None, "Document"),
+            vec![
+                BareObjectClassification::FreeFormJson(&FREE_FORM_JSON_PROPERTIES[0]),
+                BareObjectClassification::EmptyObject(&EMPTY_OBJECT_PROPERTIES[0]),
+            ],
+        );
     }
 
     /// carina#3093: `list_constructor` must let an override force
@@ -12274,6 +14283,35 @@ mod tests {
     }
 
     #[test]
+    fn test_unlisted_bare_object_property_requires_explicit_classification() {
+        let prop = CfnProperty {
+            prop_type: Some(TypeValue::Single("object".to_string())),
+            properties: Some(BTreeMap::new()),
+            // This exact shape previously reached the bare-object fallback and
+            // silently became Map<String, String>.
+            additional_properties: None,
+            ..Default::default()
+        };
+        let schema = empty_schema("AWS::Test::Resource");
+
+        let panic = std::panic::catch_unwind(|| {
+            cfn_type_to_carina_type_with_enum(&prop, "BareObject", &schema, "", &BTreeMap::new())
+        })
+        .expect_err("an unlisted bare object property must fail classification");
+        let message = panic
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| panic.downcast_ref::<&str>().copied())
+            .expect("classification panic should contain a string message");
+
+        assert!(message.contains("AWS::Test::Resource.BareObject"));
+        assert!(message.contains("FREE_FORM_JSON_PROPERTIES"));
+        assert!(message.contains("EMPTY_OBJECT_PROPERTIES"));
+        assert!(message.contains("STRING_MAP_PROPERTIES"));
+        assert!(message.contains("CODEGEN.md#classifying-bare-objects"));
+    }
+
+    #[test]
     fn test_property_oneof_array_ref_maps_to_list_of_struct() {
         let mut key_schema_props = BTreeMap::new();
         key_schema_props.insert(
@@ -14905,13 +16943,20 @@ mod tests {
     }
 
     #[test]
-    fn test_type_display_string_generic_object_shows_map_string() {
+    fn test_type_display_string_pattern_map_shows_map_string() {
         let prop = CfnProperty {
             prop_type: Some(TypeValue::Single("object".to_string())),
+            pattern_properties: Some(BTreeMap::from([(
+                "[a-zA-Z0-9]+".to_string(),
+                CfnProperty {
+                    prop_type: Some(TypeValue::Single("string".to_string())),
+                    ..Default::default()
+                },
+            )])),
             ..Default::default()
         };
         let schema = CfnSchema {
-            type_name: "AWS::Logs::LogGroup".to_string(),
+            type_name: "AWS::ElasticLoadBalancingV2::Listener".to_string(),
             description: None,
             properties: BTreeMap::new(),
             required: vec![],
@@ -14925,9 +16970,9 @@ mod tests {
             any_of: vec![],
             handlers: BTreeMap::new(),
         };
-        // Generic object should display Map<String, String>
+        // A schema-declared homogeneous map remains Map<String, String>.
         assert_eq!(
-            type_display_string("DataProtectionPolicy", &prop, &schema),
+            type_display_string("AuthenticationRequestExtraParams", &prop, &schema),
             "`Map<String, String>`"
         );
     }

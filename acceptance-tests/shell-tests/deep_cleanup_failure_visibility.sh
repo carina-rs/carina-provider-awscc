@@ -67,7 +67,8 @@ for guarded_fn in \
     deep_cleanup_cloudfront_functions \
     deep_cleanup_scheduler \
     deep_cleanup_cloudwatch_alarms \
-    deep_cleanup_budgets
+    deep_cleanup_budgets \
+    deep_cleanup_sns
 do
     direct_calls_log="$WORK_DIR/direct-${guarded_fn}-aws-calls.log"
     if extract_function "$guarded_fn" | grep -nF "with_account_creds" > "$direct_calls_log"; then
@@ -87,6 +88,7 @@ for fn in \
     deep_cleanup_scheduler \
     deep_cleanup_cloudwatch_alarms \
     deep_cleanup_budgets \
+    deep_cleanup_sns \
     deep_cleanup_with_timeout \
     deep_cleanup_wait_for_network_interface \
     deep_cleanup_list_wafv2_web_acls \
@@ -238,6 +240,9 @@ with_account_creds() {
             "aws budgets describe-budgets "*)
                 printf '[]\n'
                 ;;
+            "aws sns list-topics "*)
+                printf '[]\n'
+                ;;
             *)
                 :
                 ;;
@@ -261,6 +266,7 @@ for fn in \
     deep_cleanup_scheduler \
     deep_cleanup_cloudwatch_alarms \
     deep_cleanup_budgets \
+    deep_cleanup_sns \
     deep_cleanup_with_timeout \
     deep_cleanup_wait_for_network_interface \
     deep_cleanup_list_wafv2_web_acls \

@@ -1,0 +1,31 @@
+# The email subscription stays PendingConfirmation for the whole test. A
+# pending subscription reads back with no pending field, so plan-verify
+# asserting no changes is the pending-state assertion. Plan-verify also asserts
+# that the Topic's inline subscription read-back, which includes this
+# separately managed subscription, does not show as a diff.
+#
+# Destroying a pending subscription is reported SUCCESS by Cloud Control, but
+# only detaches it because a pending subscription cannot be unsubscribed. The
+# subscription therefore outlives the test until SNS expires it.
+#
+# SNS Topic and Subscription - Basic test
+
+provider awscc {
+  region = aws.Region.ap_northeast_1
+}
+
+let topic = awscc.sns.Topic {
+  topic_name   = 'carina-acc-test-sns-topic'
+  display_name = 'Carina acceptance alerts'
+
+  tags = {
+    Environment = 'acceptance-test'
+    Project     = 'carina'
+  }
+}
+
+awscc.sns.Subscription {
+  topic_arn = topic.topic_arn
+  protocol  = 'email'
+  endpoint  = 'carina-acc-test@example.com'
+}
