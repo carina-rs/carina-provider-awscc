@@ -10,7 +10,6 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-use aws_config::{BehaviorVersion, Region};
 use aws_sdk_cloudcontrol::operation::create_resource::CreateResourceError;
 use aws_smithy_runtime_api::client::{
     http::{
@@ -24,7 +23,7 @@ use carina_core::executor::{ModuleConstraintGate, ProviderPreparationContext};
 use carina_core::provider::{
     AppliedIdentifier, AppliedState, CreateAttempt, CreateFailureKind, DeleteRequest, Observation,
     PatchOp, PendingToken, Poll, ProviderDirectiveSchema, ProviderError, ReadOutcome,
-    ResumeCreateRequest, ResumeFailureKind, Sent, UpdateOutcome, UpdatePatch,
+    ResumeCreateRequest, ResumeFailureKind, Sent, UpdateOutcome, UpdateOutcomeKind, UpdatePatch,
 };
 use carina_core::resource::{ConcreteValue, Directives, Resource, ResourceId, State, Value};
 use carina_core::schema::SchemaRegistry;
@@ -36,7 +35,7 @@ use carina_provider_awscc::{
     AwsccNormalizer, AwsccProvider, BoundedSdkConfig, CcCreateToken, CcDeleteToken, CcRequestPhase,
     CcUpdateToken, InFlightCreate, RequestToken,
 };
-use carina_provider_protocol::OperationStep;
+use carina_provider_protocol::{OperationStep, PendingPhase};
 use indexmap::IndexMap;
 use serde_json::{Value as JsonValue, json};
 use winterbaume_core::{MockAws, MockRequest, MockResponse, MockService, json_error_response};
@@ -758,15 +757,15 @@ async fn provider_with_post_send_failures(
         "us-test-{}",
         NEXT_TEST_REGION.fetch_add(1, Ordering::Relaxed)
     );
-    let config = aws_config::defaults(BehaviorVersion::latest())
+    let config = mock
+        .sdk_config(&region)
+        .await
+        .into_builder()
         .http_client(http_client)
-        .credentials_provider(mock.credentials_provider())
-        .region(Region::new(region))
-        .load()
-        .await;
+        .build();
     (
         AwsccProvider::from_sdk_config(
-            carina_provider_awscc::BoundedSdkConfig::new(config),
+            carina_provider_awscc::BoundedSdkConfig::for_test(config),
             &AwsccProviderConfig::default(),
         )
         .await,
@@ -789,14 +788,9 @@ async fn provider_with_initialization_error() -> AwsccProvider {
         .with_service(cloudcontrol)
         .with_service(Arc::new(DeniedSts))
         .build();
-    let config = aws_config::defaults(BehaviorVersion::latest())
-        .http_client(mock.http_client())
-        .credentials_provider(mock.credentials_provider())
-        .region(Region::new("us-init-error-1"))
-        .load()
-        .await;
+    let config = mock.sdk_config("us-init-error-1").await;
     let provider = AwsccProvider::from_sdk_config(
-        BoundedSdkConfig::new(config),
+        BoundedSdkConfig::for_test(config),
         &AwsccProviderConfig {
             allowed_account_ids: vec!["123456789012".to_string()],
             ..AwsccProviderConfig::default()
@@ -972,7 +966,11 @@ fn expect_update_pending(
         OperationStep::Pending {
             pending,
             poll_after_secs,
-        } => (pending, poll_after_secs),
+            phase,
+        } => {
+            assert_eq!(phase, PendingPhase::Operation);
+            (pending, poll_after_secs)
+        }
         OperationStep::Done(outcome) => panic!("expected pending update, got {outcome:?}"),
         OperationStep::Verdict(error) => panic!("expected pending update, got {error}"),
     }
@@ -1048,7 +1046,11 @@ fn expect_delete_pending(
         OperationStep::Pending {
             pending,
             poll_after_secs,
-        } => (pending, poll_after_secs),
+            phase,
+        } => {
+            assert_eq!(phase, PendingPhase::Operation);
+            (pending, poll_after_secs)
+        }
         OperationStep::Done(()) => panic!("expected pending delete"),
         OperationStep::Verdict(error) => panic!("expected pending delete, got {error}"),
     }
@@ -3382,6 +3384,7 @@ async fn update_success_reads_back_after_one_status_call() {
         OperationStep::Pending {
             pending,
             poll_after_secs,
+            ..
         } => {
             assert_eq!(poll_after_secs, 1);
             pending
@@ -3399,7 +3402,10 @@ async fn update_success_reads_back_after_one_status_call() {
         .await
         .expect("poll update")
     {
-        OperationStep::Done(UpdateOutcome::Success { state }) => {
+        OperationStep::Done(outcome) => {
+            let UpdateOutcomeKind::Success { state } = outcome.kind() else {
+                panic!("expected successful update, got {outcome:?}");
+            };
             assert_eq!(state.identifier().as_str(), VPC_ID);
         }
         other => panic!("expected successful update, got {other:?}"),
@@ -3431,6 +3437,7 @@ async fn update_not_issued_resends_the_original_patch() {
         OperationStep::Pending {
             pending,
             poll_after_secs,
+            ..
         } => (pending, poll_after_secs),
         other => panic!("expected pending update, got {other:?}"),
     };
@@ -3830,7 +3837,10 @@ async fn update_without_request_token_settles_and_reads_back() {
         .await
         .expect("update without request token")
     {
-        OperationStep::Done(UpdateOutcome::Success { state }) => {
+        OperationStep::Done(outcome) => {
+            let UpdateOutcomeKind::Success { state } = outcome.kind() else {
+                panic!("expected successful update, got {outcome:?}");
+            };
             assert_eq!(state.identifier().as_str(), VPC_ID);
         }
         other => panic!("expected settled update, got {other:?}"),
@@ -3855,7 +3865,7 @@ async fn empty_update_patch_settles_without_update_request() {
             .update_step(&id, &vpc_identifier(), &from, &patch)
             .await
             .expect("empty update"),
-        OperationStep::Done(UpdateOutcome::Success { .. })
+        OperationStep::Done(outcome) if matches!(outcome.kind(), UpdateOutcomeKind::Success { .. })
     ));
     assert_eq!(service.calls("UpdateResource"), 0);
     assert_eq!(service.calls("GetResource"), 1);

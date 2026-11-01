@@ -4659,6 +4659,8 @@ pub fn {}() -> AwsccSchemaConfig {{
         emit_option_field(&mut body, "create_timeout_secs", cfg.create_timeout_secs);
         emit_option_field(&mut body, "create_max_retries", cfg.create_max_retries);
         emit_option_field(&mut body, "update_timeout_secs", cfg.update_timeout_secs);
+        // Host-driven read-back remains a separate change (awscc#540).
+        body.push_str("            read_back: None,\n");
         body.push_str("    });\n");
     }
 

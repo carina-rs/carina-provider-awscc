@@ -4,13 +4,13 @@ use carina_plugin_sdk::{
     CarinaProvider, CreateAttempt as SdkCreateAttempt, CreateStep as SdkCreateStep,
     CreateVerdict as SdkCreateVerdict, DeleteOutcome as SdkDeleteOutcome, DesiredAttribute,
     DesiredResource, FoundRead, IssuedCreate as SdkIssuedCreate, NormalizedResource, Pending,
-    Poll as SdkPoll, PollAttempt as SdkPollAttempt, PollVerdict as SdkPollVerdict,
-    Resume as SdkResume, ResumeAttempt as SdkResumeAttempt, ResumeStep as SdkResumeStep,
-    ResumeVerdict as SdkResumeVerdict, ResumedCreate as SdkResumedCreate,
-    UpdateOutcome as SdkUpdateOutcome,
+    PendingDelete, Poll as SdkPoll, PollAttempt as SdkPollAttempt, PollRequest,
+    PollVerdict as SdkPollVerdict, Resume as SdkResume, ResumeAttempt as SdkResumeAttempt,
+    ResumeStep as SdkResumeStep, ResumeVerdict as SdkResumeVerdict,
+    ResumedCreate as SdkResumedCreate, UpdateOutcome as SdkUpdateOutcome,
 };
-use carina_provider_protocol::OperationStep;
 use carina_provider_protocol::types as proto;
+use carina_provider_protocol::{OperationStep, PendingPhase};
 
 use carina_core::executor::normalized::NormalizedResource as CoreNormalizedResource;
 use carina_core::protocol_convert;
@@ -668,7 +668,7 @@ impl AwsccProcessProvider {
     fn map_step<T, Token, Outcome>(
         result: Result<OperationStep<T, CoreProviderError, Token>, CoreProviderError>,
         done: impl FnOnce(T) -> Outcome,
-        pending: impl FnOnce(Pending<Token>) -> Outcome,
+        pending: impl FnOnce(PendingDelete<Token>) -> Outcome,
     ) -> Result<Outcome, CoreProviderError> {
         match result {
             Ok(OperationStep::Done(value)) => Ok(done(value)),
@@ -676,10 +676,14 @@ impl AwsccProcessProvider {
             Ok(OperationStep::Pending {
                 pending: token,
                 poll_after_secs,
-            }) => Ok(pending(Pending {
+                phase: PendingPhase::Operation,
+            }) => Ok(pending(PendingDelete {
                 token,
                 poll_after_secs,
             })),
+            Ok(OperationStep::Pending { phase, .. }) => Err(CoreProviderError::internal(format!(
+                "unexpected pending phase for delete: {phase:?}"
+            ))),
             Err(error) => Err(error),
         }
     }
@@ -857,6 +861,7 @@ impl CarinaProvider for AwsccProcessProvider {
         _id: &proto::ResourceId,
         request: proto::CreateRequest,
         poll: SdkPoll<Self::CreateToken>,
+        _poll_request: PollRequest,
     ) -> Result<SdkCreateStep<Self::CreateToken>, SdkPollVerdict<Self::CreateToken>> {
         let normalized_resource = match self.normalize_create_resource(&request.resource) {
             Ok(resource) => resource,
@@ -894,6 +899,7 @@ impl CarinaProvider for AwsccProcessProvider {
         _id: &proto::ResourceId,
         request: proto::CreateRequest,
         resume: SdkResume<Self::CreateToken>,
+        _poll_request: PollRequest,
     ) -> Result<SdkResumeStep<Self::CreateToken>, SdkResumeVerdict<Self::CreateToken>> {
         let normalized_resource = match self.normalize_create_resource(&request.resource) {
             Ok(resource) => resource,
@@ -964,9 +970,11 @@ impl CarinaProvider for AwsccProcessProvider {
             Ok(OperationStep::Pending {
                 pending: token,
                 poll_after_secs,
+                phase,
             }) => Ok(SdkUpdateOutcome::Pending(Pending {
                 token,
                 poll_after_secs,
+                phase,
             })),
         }
     }
@@ -977,6 +985,7 @@ impl CarinaProvider for AwsccProcessProvider {
         identifier: &proto::AppliedIdentifier,
         request: proto::UpdateRequest,
         pending: Pending<Self::UpdateToken>,
+        _poll_request: PollRequest,
     ) -> Result<SdkUpdateOutcome<Self::UpdateToken>, proto::ProviderError> {
         let core_id = protocol_convert::protocol_to_resource_id(id);
         let state_after_patch = request.state_after_patch();
@@ -1011,9 +1020,11 @@ impl CarinaProvider for AwsccProcessProvider {
             Ok(OperationStep::Pending {
                 pending: token,
                 poll_after_secs,
+                phase,
             }) => Ok(SdkUpdateOutcome::Pending(Pending {
                 token,
                 poll_after_secs,
+                phase,
             })),
         }
     }
@@ -1045,7 +1056,7 @@ impl CarinaProvider for AwsccProcessProvider {
         id: &proto::ResourceId,
         identifier: &proto::AppliedIdentifier,
         request: proto::DeleteRequest,
-        pending: Pending<Self::DeleteToken>,
+        pending: PendingDelete<Self::DeleteToken>,
     ) -> Result<SdkDeleteOutcome<Self::DeleteToken>, proto::ProviderError> {
         let core_id = protocol_convert::protocol_to_resource_id(id);
         let core_request =
@@ -1326,7 +1337,7 @@ fn main() {
 #[cfg(target_arch = "wasm32")]
 carina_plugin_sdk::export_provider!(
     AwsccProcessProvider,
-    http,
+    aws,
     egress: ["**.amazonaws.com", "**.amazonaws.com.cn"],
 );
 
@@ -1342,6 +1353,23 @@ mod tests {
     };
     use carina_plugin_sdk::types::{TypeIdentity as WireTypeIdentity, ValidatorType};
     use carina_plugin_sdk::{ProviderSchemaCache, dispatch_custom_type_validation};
+
+    #[test]
+    fn delete_step_rejects_read_back_phase() {
+        let error = AwsccProcessProvider::map_step::<(), _, ()>(
+            Ok(OperationStep::Pending {
+                pending: "delete-token",
+                poll_after_secs: 5,
+                phase: PendingPhase::ReadBack,
+            }),
+            |_| panic!("a pending delete cannot be done"),
+            |_| panic!("a delete cannot enter read-back polling"),
+        )
+        .expect_err("read-back is an internal phase error for delete");
+
+        assert_eq!(error.variant_name(), "internal");
+        assert!(error.to_string().contains("ReadBack"));
+    }
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     enum CallbackScalar {
@@ -1578,7 +1606,7 @@ mod tests {
     fn non_finite_update_output_surfaces_as_a_provider_error() {
         let state = non_finite_state();
         let id = state.id().clone();
-        let outcome = carina_core::provider::UpdateOutcome::Success { state };
+        let outcome = carina_core::provider::UpdateOutcome::success(state);
         let state_after_patch = proto::PersistedState {
             id: protocol_convert::resource_id_to_protocol(&id),
             identifier: None,

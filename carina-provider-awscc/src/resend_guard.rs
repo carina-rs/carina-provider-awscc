@@ -16,7 +16,7 @@ use aws_smithy_types::body::SdkBody;
 use aws_smithy_types::error::display::DisplayErrorContext;
 use aws_smithy_types::retry::RetryConfig;
 use aws_smithy_types::timeout::TimeoutConfig;
-use carina_aws_types::SendOutcome;
+use carina_aws_types::{FinalAttempt, SendClassification};
 use carina_plugin_sdk::wasi_http::{SendPhase, transport_connector_error_for_test};
 
 use crate::provider::{AwsccProviderConfig, NotIssuedCreate};
@@ -111,7 +111,7 @@ fn bounded_config(connector: ScriptedConnector) -> BoundedSdkConfig {
         .timeout_config(TimeoutConfig::disabled())
         .retry_config(RetryConfig::standard().with_max_attempts(10))
         .build();
-    BoundedSdkConfig::new(config)
+    BoundedSdkConfig::for_test(config)
 }
 
 fn cloudcontrol_client(connector: ScriptedConnector) -> aws_sdk_cloudcontrol::Client {
@@ -185,7 +185,7 @@ async fn permanent_create_rejection_is_rejected_and_fails_not_issued_create() {
         .expect_err("the service should reject invalid desired state");
 
     assert_eq!(connector.requests(), 1);
-    assert_eq!(SendOutcome::classify(&error), SendOutcome::Rejected);
+    assert_eq!(SendClassification::of(&error), SendClassification::Rejected);
     assert_resend_guard(&client);
 }
 
@@ -233,7 +233,12 @@ async fn timeout_before_final_rejection_keeps_operation_maybe_sent() {
         .expect_err("the second attempt should surface the validation error");
 
     assert_eq!(connector.requests(), 2);
-    assert_eq!(SendOutcome::classify(&error), SendOutcome::MaybeSent);
+    assert_eq!(
+        SendClassification::of(&error),
+        SendClassification::MaybeSent {
+            final_attempt: FinalAttempt::Sent
+        }
+    );
     assert_resend_guard(&client);
 }
 
@@ -333,7 +338,12 @@ async fn readonly_get_resource_exhausts_maybe_sent_transport_retries_as_maybe_se
         .expect_err("three maybe-sent failures should exhaust the production retry budget");
 
     assert_eq!(connector.requests(), 3);
-    assert_eq!(SendOutcome::classify(&error), SendOutcome::MaybeSent);
+    assert_eq!(
+        SendClassification::of(&error),
+        SendClassification::MaybeSent {
+            final_attempt: FinalAttempt::Sent
+        }
+    );
     assert_resend_guard(&client);
 }
 
@@ -379,7 +389,12 @@ async fn create_resource_does_not_retry_after_maybe_sent_transport_error() {
     let rendered = DisplayErrorContext(&error).to_string();
 
     assert_eq!(connector.requests(), 1);
-    assert_eq!(SendOutcome::classify(&error), SendOutcome::MaybeSent);
+    assert_eq!(
+        SendClassification::of(&error),
+        SendClassification::MaybeSent {
+            final_attempt: FinalAttempt::Sent
+        }
+    );
     assert!(rendered.contains("dispatch failure: other"), "{rendered}");
     assert_resend_guard(&client);
 }

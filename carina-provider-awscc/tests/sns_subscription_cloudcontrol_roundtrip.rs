@@ -11,7 +11,6 @@ mod common;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use aws_config::{BehaviorVersion, Region};
 use carina_core::differ::{Diff, diff};
 use carina_core::provider::{CreateOutcomeKind, Provider, RawSavedAttrs, ReadRequest};
 use carina_core::resource::{ConcreteValue, Resource, Value};
@@ -105,16 +104,11 @@ async fn winterbaume_provider() -> (AwsccProvider, Arc<CloudControlService>) {
     let mock = MockAws::builder()
         .with_service(Arc::clone(&cloudcontrol))
         .build();
-    let config = aws_config::defaults(BehaviorVersion::latest())
-        .http_client(mock.http_client())
-        .credentials_provider(mock.credentials_provider())
-        .region(Region::new(REGION))
-        .load()
-        .await;
+    let config = mock.sdk_config(REGION).await;
 
     (
         AwsccProvider::from_sdk_config(
-            carina_provider_awscc::BoundedSdkConfig::new(config),
+            carina_provider_awscc::BoundedSdkConfig::for_test(config),
             &AwsccProviderConfig::default(),
         )
         .await,

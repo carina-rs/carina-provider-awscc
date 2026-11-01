@@ -19,8 +19,11 @@ use carina_core::provider::{
 };
 use carina_core::resource::{ConcreteValue, Resource, ResourceId, State, Value};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, Shape};
+#[cfg(test)]
+use carina_provider_protocol::PendingPhase;
 use carina_provider_protocol::{
-    DEFAULT_OPERATION_BUDGET, DriveError, DriveOutcome, OperationKind, OperationStep, drive_pending,
+    DEFAULT_OPERATION_BUDGET, DEFAULT_READ_BACK_BUDGET, DriveError, DriveOutcome, OperationKind,
+    OperationStep, drive_pending,
 };
 use indexmap::IndexMap;
 
@@ -56,7 +59,7 @@ async fn drive_operation<T, Token, Initial, Poll, PollFuture, Sleep, SleepFuture
     kind: OperationKind,
     budget: Duration,
     initial: Initial,
-    poll: Poll,
+    mut poll: Poll,
     sleep: Sleep,
 ) -> ProviderResult<T>
 where
@@ -67,8 +70,18 @@ where
     Sleep: FnMut(Duration) -> SleepFuture,
     SleepFuture: Future<Output = ()>,
 {
-    match drive_pending(budget, initial, poll, sleep).await {
-        Ok(DriveOutcome::Done(value)) => Ok(value),
+    // Existing continuations stay in the operation phase, so the required
+    // read-back budget uses the protocol default and never becomes active.
+    match drive_pending(
+        budget,
+        DEFAULT_READ_BACK_BUDGET,
+        initial,
+        |token, _finality| poll(token),
+        sleep,
+    )
+    .await
+    {
+        Ok(DriveOutcome::Done(value)) => Ok(value.into_output()),
         Ok(DriveOutcome::Verdict(error)) => Err(error),
         Ok(DriveOutcome::OverBudget {
             last_pending: _last_pending,
@@ -84,6 +97,10 @@ where
             ))
             .for_resource(id.clone()))
         }
+        Ok(DriveOutcome::ProtocolViolation { .. }) => Err(ProviderError::internal(
+            "Cloud Control operation returned an invalid pending phase",
+        )
+        .for_resource(id.clone())),
         Err(DriveError::Initial(error)) | Err(DriveError::Poll { error, .. }) => Err(error),
     }
 }
@@ -1892,10 +1909,12 @@ impl AwsccProvider {
             OperationStep::Pending {
                 pending,
                 poll_after_secs,
+                phase,
             } => {
                 return Ok(OperationStep::Pending {
                     pending,
                     poll_after_secs,
+                    phase,
                 });
             }
             OperationStep::Verdict(error) => return Ok(OperationStep::Verdict(error)),
@@ -2084,9 +2103,11 @@ impl AwsccProvider {
             OperationStep::Pending {
                 pending,
                 poll_after_secs,
+                phase,
             } => Ok(OperationStep::Pending {
                 pending: CcDeleteToken::DetachIgw(pending),
                 poll_after_secs,
+                phase,
             }),
             OperationStep::Verdict(error) => Ok(OperationStep::Verdict(error)),
             OperationStep::Done(WaitOutcome::Success { .. }) => self
@@ -2137,9 +2158,11 @@ fn wrap_delete_phase(step: OperationStep<(), ProviderError, CcRequestPhase>) -> 
         OperationStep::Pending {
             pending,
             poll_after_secs,
+            phase,
         } => OperationStep::Pending {
             pending: CcDeleteToken::Delete(pending),
             poll_after_secs,
+            phase,
         },
     }
 }
@@ -2343,7 +2366,7 @@ fn update_outcome_from_read_back(
     let state = AppliedState::from_identifier(id.clone(), identifier.clone(), attributes);
 
     if unconfirmed_attributes.is_empty() {
-        return UpdateOutcome::Success { state };
+        return UpdateOutcome::success(state);
     }
 
     let reason = update_confirmation_failure_reason(
@@ -2515,7 +2538,7 @@ mod tests {
     use carina_core::provider::{
         AppliedIdentifier, CreateFailureKind, CreateObservation, CreateOutcome, CreateOutcomeKind,
         Observation, PatchOp, PersistedAttributes, RawSavedAttrs, ReadOutcome, UnobservedReason,
-        UpdateOutcome,
+        UpdateOutcomeKind,
     };
     use carina_core::resource::DeferredValue;
     use carina_core::schema::{AttributeType, SchemaRegistry};
@@ -2596,15 +2619,22 @@ mod tests {
     #[tokio::test]
     async fn native_driver_maps_over_budget_to_provider_timeout() {
         let id = ResourceId::with_provider_identity("awscc", "ec2.Vpc", "budget", None);
-        let error = drive_operation(
+        let error = drive_operation::<(), _, _, _, _, _, _>(
             &id,
             OperationKind::Create,
             Duration::ZERO,
             std::future::ready(Ok::<_, ProviderError>(OperationStep::Pending {
                 pending: (),
                 poll_after_secs: 5,
+                phase: PendingPhase::Operation,
             })),
-            |_| std::future::ready(Ok(OperationStep::Done(()))),
+            |pending| {
+                std::future::ready(Ok(OperationStep::Pending {
+                    pending,
+                    poll_after_secs: 5,
+                    phase: PendingPhase::Operation,
+                }))
+            },
             |_| std::future::ready(()),
         )
         .await
@@ -2616,6 +2646,59 @@ mod tests {
                 .to_string()
                 .contains("create of ec2.Vpc did not finish within 0ns")
         );
+    }
+
+    #[tokio::test]
+    async fn native_driver_accepts_completion_on_final_poll() {
+        let id = ResourceId::with_provider_identity("awscc", "ec2.Vpc", "final_poll", None);
+        let mut polls = 0;
+        drive_operation(
+            &id,
+            OperationKind::Update,
+            Duration::ZERO,
+            std::future::ready(Ok::<_, ProviderError>(OperationStep::Pending {
+                pending: (),
+                poll_after_secs: 5,
+                phase: PendingPhase::Operation,
+            })),
+            |_| {
+                polls += 1;
+                std::future::ready(Ok(OperationStep::Done(())))
+            },
+            |_| std::future::ready(()),
+        )
+        .await
+        .expect("the final poll may settle an operation after its budget expires");
+
+        assert_eq!(polls, 1);
+    }
+
+    #[tokio::test]
+    async fn native_driver_maps_phase_regression_to_internal_error() {
+        let id = ResourceId::with_provider_identity("awscc", "ec2.Vpc", "phase", None);
+        let error = drive_operation::<(), _, _, _, _, _, _>(
+            &id,
+            OperationKind::Update,
+            Duration::from_secs(300),
+            std::future::ready(Ok::<_, ProviderError>(OperationStep::Pending {
+                pending: (),
+                poll_after_secs: 0,
+                phase: PendingPhase::ReadBack,
+            })),
+            |_| {
+                std::future::ready(Ok(OperationStep::Pending {
+                    pending: (),
+                    poll_after_secs: 0,
+                    phase: PendingPhase::Operation,
+                }))
+            },
+            |_| std::future::ready(()),
+        )
+        .await
+        .expect_err("phase regression must be an internal provider error");
+
+        assert_eq!(error.variant_name(), "internal");
+        assert!(error.to_string().contains("invalid pending phase"));
     }
 
     fn web_acl_association_state(
@@ -2822,18 +2905,11 @@ mod tests {
     async fn provider_with_partial_create_service(
         service: Arc<PartialCreateCloudControlService>,
     ) -> AwsccProvider {
-        use aws_config::{BehaviorVersion, Region};
-
         let mock = MockAws::builder().with_service(service).build();
-        let config = aws_config::defaults(BehaviorVersion::latest())
-            .http_client(mock.http_client())
-            .credentials_provider(mock.credentials_provider())
-            .region(Region::new("us-east-1"))
-            .load()
-            .await;
+        let config = mock.sdk_config("us-east-1").await;
 
         AwsccProvider::from_sdk_config(
-            crate::BoundedSdkConfig::new(config),
+            crate::BoundedSdkConfig::for_test(config),
             &super::super::AwsccProviderConfig::default(),
         )
         .await
@@ -3318,21 +3394,14 @@ mod tests {
         cloudcontrol: Arc<IamRoleCreateCloudControlService>,
         sts: Arc<CallerIdentityService>,
     ) -> AwsccProvider {
-        use aws_config::{BehaviorVersion, Region};
-
         let mock = MockAws::builder()
             .with_service(cloudcontrol)
             .with_service(sts)
             .build();
-        let config = aws_config::defaults(BehaviorVersion::latest())
-            .http_client(mock.http_client())
-            .credentials_provider(mock.credentials_provider())
-            .region(Region::new("us-gov-west-1"))
-            .load()
-            .await;
+        let config = mock.sdk_config("us-gov-west-1").await;
 
         AwsccProvider::from_sdk_config(
-            crate::BoundedSdkConfig::new(config),
+            crate::BoundedSdkConfig::for_test(config),
             &super::super::AwsccProviderConfig::default(),
         )
         .await
@@ -3469,18 +3538,11 @@ mod tests {
     async fn provider_with_partial_update_service(
         service: Arc<PartialUpdateCloudControlService>,
     ) -> AwsccProvider {
-        use aws_config::{BehaviorVersion, Region};
-
         let mock = MockAws::builder().with_service(service).build();
-        let config = aws_config::defaults(BehaviorVersion::latest())
-            .http_client(mock.http_client())
-            .credentials_provider(mock.credentials_provider())
-            .region(Region::new("us-east-1"))
-            .load()
-            .await;
+        let config = mock.sdk_config("us-east-1").await;
 
         AwsccProvider::from_sdk_config(
-            crate::BoundedSdkConfig::new(config),
+            crate::BoundedSdkConfig::for_test(config),
             &super::super::AwsccProviderConfig::default(),
         )
         .await
@@ -3577,7 +3639,7 @@ mod tests {
             .await
             .expect("update should return a partial outcome");
 
-        let UpdateOutcome::PartialSuccess { state, diagnostic } = outcome else {
+        let UpdateOutcomeKind::PartialSuccess { state, diagnostic } = outcome.kind() else {
             panic!("expected partial success when read-back omits a patched attribute");
         };
         assert!(service.saw_update_resource.load(Ordering::SeqCst));
@@ -3622,7 +3684,7 @@ mod tests {
                 .await
                 .expect("an unsent requested update should return a partial outcome");
 
-            let UpdateOutcome::PartialSuccess { state, diagnostic } = outcome else {
+            let UpdateOutcomeKind::PartialSuccess { state, diagnostic } = outcome.kind() else {
                 panic!("expected partial success when the create-only value is {label}");
             };
             assert!(service.saw_update_resource.load(Ordering::SeqCst));
@@ -3673,7 +3735,7 @@ mod tests {
             .await
             .expect("update should succeed");
 
-        let UpdateOutcome::Success { state } = outcome else {
+        let UpdateOutcomeKind::Success { state } = outcome.kind() else {
             panic!("expected success when read-back confirms the patched attribute");
         };
         assert_eq!(
@@ -3706,7 +3768,7 @@ mod tests {
             .await
             .expect("confirmed read-back should preserve pre-existing success behavior");
 
-        let UpdateOutcome::Success { state } = outcome else {
+        let UpdateOutcomeKind::Success { state } = outcome.kind() else {
             panic!("expected success when the patched attribute is present in read-back");
         };
         assert_eq!(
@@ -3733,7 +3795,7 @@ mod tests {
             .await
             .expect("update should succeed");
 
-        let UpdateOutcome::Success { state } = outcome else {
+        let UpdateOutcomeKind::Success { state } = outcome.kind() else {
             panic!("expected success for an absent patched write-only attribute");
         };
         assert!(
@@ -3763,7 +3825,7 @@ mod tests {
             .await
             .expect("update should succeed");
 
-        let UpdateOutcome::Success { state } = outcome else {
+        let UpdateOutcomeKind::Success { state } = outcome.kind() else {
             panic!("expected success when only an unpatched attribute is absent");
         };
         assert!(
@@ -3799,7 +3861,7 @@ mod tests {
             .await
             .expect("update should succeed");
 
-        let UpdateOutcome::Success { state } = outcome else {
+        let UpdateOutcomeKind::Success { state } = outcome.kind() else {
             panic!("expected success when an unpatched secret is absent from read-back");
         };
         assert!(
@@ -3848,7 +3910,7 @@ mod tests {
             .await
             .expect("unset update should succeed");
 
-        let UpdateOutcome::Success { state } = outcome else {
+        let UpdateOutcomeKind::Success { state } = outcome.kind() else {
             panic!("expected success when the removed attribute is absent");
         };
         assert!(
@@ -3875,7 +3937,7 @@ mod tests {
             .await
             .expect("update should return a partial outcome");
 
-        let UpdateOutcome::PartialSuccess { state, diagnostic } = outcome else {
+        let UpdateOutcomeKind::PartialSuccess { state, diagnostic } = outcome.kind() else {
             panic!("expected partial success when read-back omits a patched attribute");
         };
         assert!(!state.attributes().contains_key("object_lock_enabled"));
@@ -3906,7 +3968,7 @@ mod tests {
             .await
             .expect("update should succeed");
 
-        let UpdateOutcome::Success { state } = outcome else {
+        let UpdateOutcomeKind::Success { state } = outcome.kind() else {
             panic!("expected success when wait succeeds");
         };
         assert!(service.saw_update_resource.load(Ordering::SeqCst));
@@ -3932,7 +3994,7 @@ mod tests {
             .await
             .expect("clearing all tags should succeed");
 
-        let UpdateOutcome::Success { state } = outcome else {
+        let UpdateOutcomeKind::Success { state } = outcome.kind() else {
             panic!("expected success when read-back omits the cleared tags property");
         };
         assert_eq!(
@@ -4049,7 +4111,7 @@ mod tests {
             .await
             .expect("update should return a partial outcome instead of error");
 
-        let UpdateOutcome::PartialSuccess { state, diagnostic } = outcome else {
+        let UpdateOutcomeKind::PartialSuccess { state, diagnostic } = outcome.kind() else {
             panic!("expected partial success when post-update read fails");
         };
         assert!(service.saw_update_resource.load(Ordering::SeqCst));
@@ -4085,7 +4147,7 @@ mod tests {
             .await
             .expect("update should return a partial outcome instead of losing its identifier");
 
-        let UpdateOutcome::PartialSuccess { state, diagnostic } = outcome else {
+        let UpdateOutcomeKind::PartialSuccess { state, diagnostic } = outcome.kind() else {
             panic!("expected partial success when post-update read returns not_found");
         };
         assert!(service.saw_update_resource.load(Ordering::SeqCst));
@@ -4118,7 +4180,7 @@ mod tests {
             .await
             .expect("update should return a partial outcome instead of losing its identifier");
 
-        let UpdateOutcome::PartialSuccess { state, diagnostic } = outcome else {
+        let UpdateOutcomeKind::PartialSuccess { state, diagnostic } = outcome.kind() else {
             panic!("expected partial success when failed-update read-back returns not_found");
         };
         assert!(service.saw_update_resource.load(Ordering::SeqCst));
@@ -4149,7 +4211,7 @@ mod tests {
             .await
             .expect("update should return a partial outcome instead of losing its identifier");
 
-        let UpdateOutcome::PartialSuccess { state, diagnostic } = outcome else {
+        let UpdateOutcomeKind::PartialSuccess { state, diagnostic } = outcome.kind() else {
             panic!("expected partial success when post-update read fails");
         };
         assert!(service.saw_update_resource.load(Ordering::SeqCst));
@@ -4193,7 +4255,7 @@ mod tests {
             .await
             .expect("failed read-back should return a partial outcome");
 
-        let UpdateOutcome::PartialSuccess { state, diagnostic } = outcome else {
+        let UpdateOutcomeKind::PartialSuccess { state, diagnostic } = outcome.kind() else {
             panic!("expected partial success when the post-update read fails");
         };
         assert!(
@@ -4226,7 +4288,7 @@ mod tests {
             .await
             .expect("failed read-back should return a partial outcome");
 
-        let UpdateOutcome::PartialSuccess { state, diagnostic } = outcome else {
+        let UpdateOutcomeKind::PartialSuccess { state, diagnostic } = outcome.kind() else {
             panic!("a failed handler and failed read must not degrade to success");
         };
         assert!(!state.attributes().contains_key("access_control"));
@@ -4254,7 +4316,7 @@ mod tests {
             .await
             .expect("failed read-back should return a partial outcome");
 
-        let UpdateOutcome::PartialSuccess { state, diagnostic } = outcome else {
+        let UpdateOutcomeKind::PartialSuccess { state, diagnostic } = outcome.kind() else {
             panic!("expected partial success when the post-update read fails");
         };
         assert!(
@@ -4294,7 +4356,7 @@ mod tests {
             .await
             .expect("update should recover when post-update read succeeds");
 
-        let UpdateOutcome::Success { state } = outcome else {
+        let UpdateOutcomeKind::Success { state } = outcome.kind() else {
             panic!("expected full success when post-update read succeeds");
         };
         assert!(service.saw_update_resource.load(Ordering::SeqCst));

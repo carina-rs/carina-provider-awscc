@@ -392,8 +392,8 @@ pub(crate) fn extract_provider_config(attributes: &IndexMap<String, Value>) -> A
 /// Schema for the provider-level `assume_role` block. Mirrors the
 /// Terraform AWS provider's `assume_role` (MVP field set: `role_arn`,
 /// `session_name`, `external_id`, `duration`). When present, the
-/// provider chains an `sts:AssumeRole` call on top of the ambient
-/// credential chain (awscc#260).
+/// provider chains an `sts:AssumeRole` call on top of base credentials
+/// (host-supplied on wasm32, the default chain natively) (awscc#260).
 fn assume_role_attribute_type() -> carina_core::schema::AttributeType {
     use carina_core::schema::{AttributeType, StructField};
     AttributeType::struct_(
@@ -670,23 +670,16 @@ mod tests {
 
     #[cfg(not(target_arch = "wasm32"))]
     async fn provider_for_required_permissions_tests() -> AwsccProvider {
-        use aws_config::BehaviorVersion;
-        use aws_config::Region;
         use winterbaume_cloudcontrol::CloudControlService;
         use winterbaume_core::MockAws;
 
         let mock = MockAws::builder()
             .with_service(CloudControlService::new())
             .build();
-        let config = aws_config::defaults(BehaviorVersion::latest())
-            .http_client(mock.http_client())
-            .credentials_provider(mock.credentials_provider())
-            .region(Region::new("us-east-1"))
-            .load()
-            .await;
+        let config = mock.sdk_config("us-east-1").await;
 
         AwsccProvider::from_sdk_config(
-            BoundedSdkConfig::new(config),
+            BoundedSdkConfig::for_test(config),
             &AwsccProviderConfig::default(),
         )
         .await
