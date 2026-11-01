@@ -70,7 +70,7 @@ awscc.budgets.Budget {
 | `auto_adjust_data` | [Struct(AutoAdjustData)](#budgetauto_adjust_data) | No |  |
 | `billing_view_arn` | Arn | No |  |
 | `budget_limit` | [Struct(Spend)](#budgetbudget_limit) | No |  |
-| `budget_name` | String | No |  |
+| `budget_name` | String | No | Create-only. Anonymous identifiers hash only declared identity values. |
 | `budget_type` | String | Yes |  |
 | `cost_filters` | `Map<String, List<String>>` | No |  |
 | `cost_types` | [Struct(CostTypes)](#budgetcost_types) | No |  |

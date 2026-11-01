@@ -936,7 +936,7 @@ dependencies = [
 [[package]]
 name = "carina-aws-types"
 version = "0.4.0"
-source = "git+https://github.com/carina-rs/carina-provider-aws?rev=1918d05#1918d05cda583e0de123b0fe2de850b63ddb9272"
+source = "git+https://github.com/carina-rs/carina-provider-aws?rev=0df5e85#0df5e853fc8147275d98b08fbf5b7dcd37c7623f"
 dependencies = [
  "aws-credential-types",
  "aws-smithy-runtime-api",
@@ -950,7 +950,7 @@ dependencies = [
 [[package]]
 name = "carina-core"
 version = "0.9.0"
-source = "git+https://github.com/carina-rs/carina?rev=c78d6f21#c78d6f21d69495e0b7432abb892aefbb46e97e26"
+source = "git+https://github.com/carina-rs/carina?rev=c9d72368#c9d723686d283cca449210b0a29c42912f26812b"
 dependencies = [
  "argon2",
  "carina-provider-protocol",
@@ -980,7 +980,7 @@ dependencies = [
 [[package]]
 name = "carina-docgen"
 version = "0.7.4"
-source = "git+https://github.com/carina-rs/carina-provider-aws?rev=1918d05#1918d05cda583e0de123b0fe2de850b63ddb9272"
+source = "git+https://github.com/carina-rs/carina-provider-aws?rev=0df5e85#0df5e853fc8147275d98b08fbf5b7dcd37c7623f"
 dependencies = [
  "anyhow",
  "carina-core",
@@ -991,7 +991,7 @@ dependencies = [
 [[package]]
 name = "carina-plugin-host"
 version = "0.9.0"
-source = "git+https://github.com/carina-rs/carina?rev=c78d6f21#c78d6f21d69495e0b7432abb892aefbb46e97e26"
+source = "git+https://github.com/carina-rs/carina?rev=c9d72368#c9d723686d283cca449210b0a29c42912f26812b"
 dependencies = [
  "carina-core",
  "carina-provider-protocol",
@@ -1020,7 +1020,7 @@ dependencies = [
 [[package]]
 name = "carina-plugin-sdk"
 version = "0.9.0"
-source = "git+https://github.com/carina-rs/carina?rev=c78d6f21#c78d6f21d69495e0b7432abb892aefbb46e97e26"
+source = "git+https://github.com/carina-rs/carina?rev=c9d72368#c9d723686d283cca449210b0a29c42912f26812b"
 dependencies = [
  "aws-smithy-runtime-api",
  "aws-smithy-types",
@@ -1075,7 +1075,7 @@ dependencies = [
 [[package]]
 name = "carina-provider-protocol"
 version = "0.3.0"
-source = "git+https://github.com/carina-rs/carina?rev=c78d6f21#c78d6f21d69495e0b7432abb892aefbb46e97e26"
+source = "git+https://github.com/carina-rs/carina?rev=c9d72368#c9d723686d283cca449210b0a29c42912f26812b"
 dependencies = [
  "psl",
  "serde",
@@ -1085,7 +1085,7 @@ dependencies = [
 [[package]]
 name = "carina-provider-resolver"
 version = "0.9.0"
-source = "git+https://github.com/carina-rs/carina?rev=c78d6f21#c78d6f21d69495e0b7432abb892aefbb46e97e26"
+source = "git+https://github.com/carina-rs/carina?rev=c9d72368#c9d723686d283cca449210b0a29c42912f26812b"
 dependencies = [
  "base64 0.22.1",
  "carina-core",
@@ -1112,7 +1112,7 @@ dependencies = [
 [[package]]
 name = "carina-sigstore-tlog"
 version = "0.9.0"
-source = "git+https://github.com/carina-rs/carina?rev=c78d6f21#c78d6f21d69495e0b7432abb892aefbb46e97e26"
+source = "git+https://github.com/carina-rs/carina?rev=c9d72368#c9d723686d283cca449210b0a29c42912f26812b"
 dependencies = [
  "base64 0.22.1",
  "p256",
