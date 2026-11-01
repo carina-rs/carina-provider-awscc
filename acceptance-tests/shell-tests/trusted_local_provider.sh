@@ -1,5 +1,5 @@
 #!/bin/bash
-# Test trusted-local-provider setup without invoking carina or AWS.
+# Test local-provider trust and egress consent setup without invoking carina or AWS.
 
 set -euo pipefail
 
@@ -51,22 +51,51 @@ file_mode() {
 run_helpers_case() {
     local working_dir="$1"
     local awscc_wasm="$2"
-    local preset_value="$3"
+    local operator_trust="$3"
+    local operator_acceptance="$4"
 
     (
         cd "$working_dir"
         env \
             CARINA_BIN="$CARINA_STUB" \
             _TEST_AWSCC_WASM="$awscc_wasm" \
-            CARINA_TRUST_LOCAL_PROVIDER="$preset_value" \
             HELPERS_FILE="$HELPERS_FILE" \
+            TEST_OPERATOR_ACCEPTANCE="$operator_acceptance" \
+            TEST_OPERATOR_TRUST="$operator_trust" \
             TEST_SCRIPT_DIR="$SCRIPT_DIR" \
             /bin/bash -c '
                 SCRIPT_DIR="$TEST_SCRIPT_DIR"
+                if [ -n "$TEST_OPERATOR_TRUST" ]; then
+                    CARINA_TRUST_LOCAL_PROVIDER="$TEST_OPERATOR_TRUST"
+                else
+                    unset CARINA_TRUST_LOCAL_PROVIDER
+                fi
+                if [ -n "$TEST_OPERATOR_ACCEPTANCE" ]; then
+                    CARINA_ACCEPT_EGRESS="$TEST_OPERATOR_ACCEPTANCE"
+                else
+                    unset CARINA_ACCEPT_EGRESS
+                fi
                 source "$HELPERS_FILE"
                 printenv CARINA_TRUST_LOCAL_PROVIDER
+                printenv CARINA_ACCEPT_EGRESS
             '
     )
+}
+
+assert_rejected_provider_path() {
+    local description="$1"
+    local provider_path="$2"
+    local expected_fragment="$3"
+    local output=""
+    local status=0
+
+    output="$(run_helpers_case "$WORK_DIR" "$provider_path" "" "" 2>&1)" || status=$?
+    if [ "$status" -eq 0 ]; then
+        fail "$description unexpectedly succeeded"
+    fi
+    if [[ "$output" != *"$expected_fragment"* ]]; then
+        fail "$description did not produce the expected error: $output"
+    fi
 }
 
 mkdir -p "$WORK_DIR/bin" "$WORK_DIR/providers" "$WORK_DIR/relative"
@@ -75,8 +104,20 @@ AWSCC_WASM="$WORK_DIR/providers/awscc.wasm"
 OPERATOR_WASM="$WORK_DIR/providers/operator.wasm"
 RELATIVE_WASM="$WORK_DIR/relative/awscc.wasm"
 COLON_WASM="$WORK_DIR/providers/colon:awscc.wasm"
+COMMA_WASM="$WORK_DIR/providers/comma,awscc.wasm"
+COLON_TARGET_DIR="$WORK_DIR/provider:target"
+COMMA_TARGET_DIR="$WORK_DIR/provider,target"
+COLON_LINK_DIR="$WORK_DIR/colon-link"
+COMMA_LINK_DIR="$WORK_DIR/comma-link"
+COLON_LINK_WASM="$COLON_LINK_DIR/awscc.wasm"
+COMMA_LINK_WASM="$COMMA_LINK_DIR/awscc.wasm"
 INJECTION_SOURCE="$WORK_DIR/injection.crn"
-touch "$CARINA_STUB" "$AWSCC_WASM" "$OPERATOR_WASM" "$RELATIVE_WASM" "$COLON_WASM"
+mkdir -p "$COLON_TARGET_DIR" "$COMMA_TARGET_DIR"
+touch "$CARINA_STUB" "$AWSCC_WASM" "$OPERATOR_WASM" \
+    "$RELATIVE_WASM" "$COLON_WASM" "$COMMA_WASM" \
+    "$COLON_TARGET_DIR/awscc.wasm" "$COMMA_TARGET_DIR/awscc.wasm"
+ln -s "$COLON_TARGET_DIR" "$COLON_LINK_DIR"
+ln -s "$COMMA_TARGET_DIR" "$COMMA_LINK_DIR"
 
 cat > "$INJECTION_SOURCE" <<'CRN'
 provider awscc {
@@ -92,26 +133,37 @@ AWSCC_WASM_ABS="$(absolute_file_path "$AWSCC_WASM")"
 OPERATOR_WASM_ABS="$(absolute_file_path "$OPERATOR_WASM")"
 RELATIVE_WASM_ABS="$(absolute_file_path "$RELATIVE_WASM")"
 
-actual="$(run_helpers_case "$WORK_DIR" "$AWSCC_WASM" "")"
-assert_equal "single provider grant" "$AWSCC_WASM_ABS=aws" "$actual"
+actual="$(run_helpers_case "$WORK_DIR" "$AWSCC_WASM" "" "")"
+expected="$AWSCC_WASM_ABS=aws"$'\n'"file://$AWSCC_WASM_ABS"
+assert_equal "single provider access" "$expected" "$actual"
 
-actual="$(run_helpers_case "$WORK_DIR" "relative/awscc.wasm" "")"
-assert_equal "relative provider path" "$RELATIVE_WASM_ABS=aws" "$actual"
+actual="$(run_helpers_case "$WORK_DIR" "relative/awscc.wasm" "" "")"
+expected="$RELATIVE_WASM_ABS=aws"$'\n'"file://$RELATIVE_WASM_ABS"
+assert_equal "relative provider path" "$expected" "$actual"
 
-preset="$OPERATOR_WASM_ABS=github"
-actual="$(run_helpers_case "$WORK_DIR" "$AWSCC_WASM" "$preset")"
-assert_equal "operator preset value" "$preset:$AWSCC_WASM_ABS=aws" "$actual"
+operator_trust="$OPERATOR_WASM_ABS=github"
+operator_acceptance="github.com/example/provider"
+actual="$(run_helpers_case \
+    "$WORK_DIR" "$AWSCC_WASM" "$operator_trust" "$operator_acceptance")"
+expected="$operator_trust:$AWSCC_WASM_ABS=aws"$'\n'\
+"$operator_acceptance,file://$AWSCC_WASM_ABS"
+assert_equal "operator preset values" "$expected" "$actual"
 
-COLON_OUTPUT="$WORK_DIR/colon-output"
-if run_helpers_case "$WORK_DIR" "$COLON_WASM" "" >"$COLON_OUTPUT" 2>&1; then
-    fail "provider WASM path containing ':' unexpectedly succeeded"
-fi
-if ! grep -F "ERROR: _TEST_AWSCC_WASM provider WASM path contains ':' and cannot be used in CARINA_TRUST_LOCAL_PROVIDER:" "$COLON_OUTPUT" >/dev/null; then
-    fail "provider WASM path containing ':' did not produce the expected error"
-fi
+assert_rejected_provider_path \
+    "provider path containing ':'" "$COLON_WASM" \
+    "ERROR: _TEST_AWSCC_WASM provider WASM path contains ':' and cannot be used in CARINA_TRUST_LOCAL_PROVIDER:"
+assert_rejected_provider_path \
+    "provider path containing ','" "$COMMA_WASM" \
+    "ERROR: _TEST_AWSCC_WASM provider WASM path contains ',' and cannot be used in CARINA_ACCEPT_EGRESS:"
+assert_rejected_provider_path \
+    "canonical symlink target containing ':'" "$COLON_LINK_WASM" \
+    "ERROR: _TEST_AWSCC_WASM provider WASM path contains ':' and cannot be used in CARINA_TRUST_LOCAL_PROVIDER:"
+assert_rejected_provider_path \
+    "canonical symlink target containing ','" "$COMMA_LINK_WASM" \
+    "ERROR: _TEST_AWSCC_WASM provider WASM path contains ',' and cannot be used in CARINA_ACCEPT_EGRESS:"
 
 MISSING_OUTPUT="$WORK_DIR/missing-output"
-if run_helpers_case "$WORK_DIR" "missing/awscc.wasm" "" >"$MISSING_OUTPUT" 2>&1; then
+if run_helpers_case "$WORK_DIR" "missing/awscc.wasm" "" "" >"$MISSING_OUTPUT" 2>&1; then
     fail "missing provider WASM unexpectedly succeeded"
 fi
 if ! grep -F "ERROR: configured provider WASM does not exist (_TEST_AWSCC_WASM):" "$MISSING_OUTPUT" >/dev/null; then
@@ -178,4 +230,4 @@ if env \
     fail "prepare_work_dir did not propagate provider-injection failure"
 fi
 
-echo "trusted_local_provider: OK"
+echo "trusted_local_provider: trust and egress consent OK"

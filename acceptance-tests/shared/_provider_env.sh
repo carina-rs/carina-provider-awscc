@@ -1,6 +1,7 @@
 #!/bin/bash
-# Resolve the local awscc provider WASM used by the acceptance harness and
-# grant that exact file AWS-family trust to every carina subprocess.
+# Resolve the local awscc provider WASM used by the acceptance harness, grant
+# that exact file AWS-family trust, and accept its declared egress for every
+# carina subprocess.
 #
 # Callers must set PROJECT_ROOT before sourcing this file. The top-level runner
 # sources it after building the provider; custom suites source it through
@@ -8,6 +9,7 @@
 
 _TEST_AWSCC_WASM="${_TEST_AWSCC_WASM:-$PROJECT_ROOT/target/wasm32-wasip2/release/carina-provider-awscc.wasm}"
 _TEST_OPERATOR_TRUST_LOCAL_PROVIDER="${CARINA_TRUST_LOCAL_PROVIDER:-}"
+_TEST_OPERATOR_ACCEPT_EGRESS="${CARINA_ACCEPT_EGRESS:-}"
 
 PROVIDER_VERSION=$(grep '^version = ' "$PROJECT_ROOT/Cargo.toml" | head -1 | sed 's/version = "\(.*\)"/\1/')
 
@@ -32,10 +34,6 @@ resolve_provider_wasm_path() {
         echo "ERROR: configured provider WASM is not a file ($variable_name): $configured_path" >&2
         return 1
     fi
-    if [[ "$configured_path" == *:* ]]; then
-        echo "ERROR: $variable_name provider WASM path contains ':' and cannot be used in CARINA_TRUST_LOCAL_PROVIDER: $configured_path" >&2
-        return 1
-    fi
     if [[ "$configured_path" != *.wasm ]]; then
         echo "ERROR: $variable_name points to a non-WASM binary: $configured_path" >&2
         echo "       Provider binaries must be .wasm components." >&2
@@ -44,20 +42,31 @@ resolve_provider_wasm_path() {
 
     provider_dir="$(cd "$(dirname "$configured_path")" && pwd -P)"
     configured_path="$provider_dir/$(basename "$configured_path")"
+    if [[ "$configured_path" == *:* ]]; then
+        echo "ERROR: $variable_name provider WASM path contains ':' and cannot be used in CARINA_TRUST_LOCAL_PROVIDER: $configured_path" >&2
+        return 1
+    fi
+    if [[ "$configured_path" == *,* ]]; then
+        echo "ERROR: $variable_name provider WASM path contains ',' and cannot be used in CARINA_ACCEPT_EGRESS: $configured_path" >&2
+        return 1
+    fi
     printf -v "$variable_name" '%s' "$configured_path"
 }
 
 export_local_provider_trust() {
+    local accepted_source=""
     local grants=""
 
     resolve_provider_wasm_path _TEST_AWSCC_WASM || return 1
 
     if [ -n "${_TEST_AWSCC_WASM:-}" ]; then
         grants="$_TEST_AWSCC_WASM=aws"
+        accepted_source="file://$_TEST_AWSCC_WASM"
     fi
 
     CARINA_TRUST_LOCAL_PROVIDER="${_TEST_OPERATOR_TRUST_LOCAL_PROVIDER}${_TEST_OPERATOR_TRUST_LOCAL_PROVIDER:+:}$grants"
-    export CARINA_TRUST_LOCAL_PROVIDER
+    CARINA_ACCEPT_EGRESS="${_TEST_OPERATOR_ACCEPT_EGRESS}${_TEST_OPERATOR_ACCEPT_EGRESS:+,}$accepted_source"
+    export CARINA_ACCEPT_EGRESS CARINA_TRUST_LOCAL_PROVIDER
 }
 
 _inject_provider_source_filter() {
