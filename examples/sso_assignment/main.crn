@@ -1,0 +1,42 @@
+# IAM Identity Center Assignment Example
+#
+# Creates a permission set and AWS account assignment. This requires the
+# organization's existing IAM Identity Center instance.
+
+provider awscc {
+  region = awscc.Region.ap_northeast_1
+}
+
+let assigned_group = awscc.identitystore.Group {
+  # Replace this placeholder with your Identity Store ID.
+  identity_store_id = 'd-1234567890'
+  display_name      = 'ExampleDevelopers'
+  description       = 'Developers for the example workload'
+}
+
+let read_only = awscc.sso.PermissionSet {
+  # Replace this placeholder with your organization's IAM Identity Center instance ARN.
+  instance_arn     = 'arn:aws:sso:::instance/ssoins-1234567890abcdef'
+  name             = 'ExampleReadOnly'
+  description      = 'Read-only access for the example workload'
+  session_duration = 'PT1H'
+
+  inline_policy = {
+    version = aws.iam.PolicyDocument.Version.2012_10_17
+    statement {
+      effect   = aws.iam.PolicyDocument.Statement.Effect.allow
+      action   = 's3:ListAllMyBuckets'
+      resource = '*'
+    }
+  }
+}
+
+awscc.sso.Assignment {
+  instance_arn       = read_only.instance_arn
+  permission_set_arn = read_only.permission_set_arn
+  principal_id       = assigned_group.group_id
+  principal_type     = aws.sso.Assignment.PrincipalType.group
+  # Replace this placeholder with your AWS account ID.
+  target_id          = '123456789012'
+  target_type        = aws.sso.Assignment.TargetType.aws_account
+}

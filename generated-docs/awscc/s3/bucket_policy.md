@@ -16,6 +16,52 @@ Applies an Amazon S3 bucket policy to an Amazon S3 bucket. If you are using an i
   +   [CreateBucket](https://docs.aws.amazon.com/AmazonS3/latest/API/API_CreateBucket.html) 
   +   [DeleteBucket](https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteBucket.html)
 
+## Example
+
+```crn
+let example_bucket = awscc.s3.Bucket {
+  bucket_name = 'carina-example-policy-bucket'
+
+  tags = {
+    Environment = 'example'
+  }
+}
+
+let bucket_reader = awscc.iam.Role {
+  assume_role_policy_document = {
+    version = aws.iam.PolicyDocument.Version.2012_10_17
+    statement {
+      effect = aws.iam.PolicyDocument.Statement.Effect.allow
+
+      principal = {
+        service = 'lambda.amazonaws.com'
+      }
+
+      action = 'sts:AssumeRole'
+    }
+  }
+}
+
+awscc.s3.BucketPolicy {
+  bucket = example_bucket.bucket_name
+
+  policy_document = {
+    version = aws.iam.PolicyDocument.Version.2012_10_17
+    statement {
+      sid    = 'AllowReaderRoleToListBucket'
+      effect = aws.iam.PolicyDocument.Statement.Effect.allow
+
+      principal = {
+        aws = bucket_reader.arn
+      }
+
+      action   = 's3:ListBucket'
+      resource = example_bucket.arn
+    }
+  }
+}
+```
+
 ## Argument Reference
 
 ### `bucket`

@@ -9,6 +9,20 @@ Creates a new origin access control in CloudFront. After you create an origin ac
  This makes it possible to block public access to the origin, allowing viewers (users) to access the origin's content only through CloudFront.
  For more information about using a CloudFront origin access control, see [Restricting access to an origin](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-restricting-access-to-origin.html) in the *Amazon CloudFront Developer Guide*.
 
+## Example
+
+```crn
+awscc.cloudfront.OriginAccessControl {
+  origin_access_control_config = {
+    name                              = 'carina-example-s3-origin'
+    description                       = 'Sign requests to the example S3 origin'
+    origin_access_control_origin_type = aws.cloudfront.OriginAccessControl.OriginAccessControlConfig.OriginAccessControlOriginType.s3
+    signing_behavior                  = aws.cloudfront.OriginAccessControl.OriginAccessControlConfig.SigningBehavior.always
+    signing_protocol                  = aws.cloudfront.OriginAccessControl.OriginAccessControlConfig.SigningProtocol.sigv4
+  }
+}
+```
+
 ## Argument Reference
 
 ### `origin_access_control_config`

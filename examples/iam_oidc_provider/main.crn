@@ -1,0 +1,16 @@
+# IAM OpenID Connect Provider Example
+#
+# Registers the GitHub Actions OpenID Connect provider with IAM.
+
+provider awscc {
+  region = awscc.Region.ap_northeast_1
+}
+
+awscc.iam.OidcProvider {
+  url            = 'https://token.actions.githubusercontent.com'
+  client_id_list = ['sts.amazonaws.com']
+
+  tags = {
+    Environment = 'example'
+  }
+}

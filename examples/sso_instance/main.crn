@@ -1,0 +1,19 @@
+# IAM Identity Center Instance Example
+#
+# Creates an IAM Identity Center instance for the current account.
+
+provider awscc {
+  region = awscc.Region.ap_northeast_1
+}
+
+awscc.sso.Instance {
+  # Creates an account instance. Apply from a standalone or member account
+  # that has no IAM Identity Center instance. AWS rejects this in the
+  # organization's management account and where organization policy disallows
+  # account instances.
+  name = 'carina-example-identity-center'
+
+  tags = {
+    Environment = 'example'
+  }
+}

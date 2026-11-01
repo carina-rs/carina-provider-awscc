@@ -1,0 +1,16 @@
+# SNS Topic Example
+#
+# Creates a standard topic for application alerts.
+
+provider awscc {
+  region = awscc.Region.ap_northeast_1
+}
+
+awscc.sns.Topic {
+  topic_name   = 'carina-example-application-alerts'
+  display_name = 'Carina application alerts'
+
+  tags = {
+    Environment = 'example'
+  }
+}

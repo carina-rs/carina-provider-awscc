@@ -1,0 +1,20 @@
+# Route 53 Hosted Zone Example
+#
+# Creates a public hosted zone for example-carina.com.
+
+provider awscc {
+  region = awscc.Region.ap_northeast_1
+}
+
+awscc.route53.HostedZone {
+  name = 'example-carina.com.'
+
+  hosted_zone_config = {
+    comment = 'Public hosted zone for example-carina.com.'
+  }
+
+  hosted_zone_tag {
+    key   = 'Environment'
+    value = 'example'
+  }
+}
