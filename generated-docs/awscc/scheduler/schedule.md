@@ -287,8 +287,8 @@ Shorthand formats: `task_definition` or `PropagateTags.task_definition`
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `assign_public_ip` | [Enum (AssignPublicIp)](#targetecs_parametersnetwork_configurationawsvpc_configurationassign_public_ip-assignpublicip) | No |  |
-| `security_groups` | `List<String>` (items: 1..=5) | No | Specifies the security groups associated with the task. These security groups must all be in the same VPC. You can specify as many as five security groups. If you do not specify a security group, the default security group for the VPC is used. |
-| `subnets` | `List<String>` (items: 1..=16) | Yes | Specifies the subnets associated with the task. These subnets must all be in the same VPC. You can specify as many as 16 subnets. |
+| `security_groups` | `List<String(len: 1..=1000)>` (items: 1..=5) | No | Specifies the security groups associated with the task. These security groups must all be in the same VPC. You can specify as many as five security groups. If you do not specify a security group, the default security group for the VPC is used. |
+| `subnets` | `List<String(len: 1..=1000)>` (items: 1..=16) | Yes | Specifies the subnets associated with the task. These subnets must all be in the same VPC. You can specify as many as 16 subnets. |
 
 ### target.ecs_parameters.placement_constraints
 

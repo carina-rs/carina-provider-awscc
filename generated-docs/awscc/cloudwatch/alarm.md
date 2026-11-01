@@ -256,8 +256,8 @@ Shorthand formats: `breaching` or `TreatMissingData.breaching`
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `enabled` | Bool | Yes | Whether the alarm's tags are included in its action notifications and state-change events. |
-| `excluded_tag_keys` | `List<String>` (items: 1..=50) | No | The tag keys to leave out. Cannot be specified together with IncludedTagKeys. |
-| `included_tag_keys` | `List<String>` (items: 1..=50) | No | The only tag keys to include. Cannot be specified together with ExcludedTagKeys. |
+| `excluded_tag_keys` | `List<String(len: 1..=128)>` (items: 1..=50) | No | The tag keys to leave out. Cannot be specified together with IncludedTagKeys. |
+| `included_tag_keys` | `List<String(len: 1..=128)>` (items: 1..=50) | No | The only tag keys to include. Cannot be specified together with ExcludedTagKeys. |
 
 ### dimension
 

@@ -108,7 +108,7 @@ Collection of Rules.
 
 ### `token_domains`
 
-- **Type:** String
+- **Type:** `List<String(pattern, len: 1..=253)>`
 - **Required:** No
 
 ### `visibility_config`
@@ -438,17 +438,6 @@ Shorthand formats: `match` or `FallbackBehavior.match`
 
 Shorthand formats: `match` or `FallbackBehavior.match`
 
-### statement.rate_based_statement.evaluation_window_sec (EvaluationWindowSec)
-
-| Value | DSL Identifier |
-|-------|----------------|
-| `60` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.EvaluationWindowSec.60` |
-| `120` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.EvaluationWindowSec.120` |
-| `300` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.EvaluationWindowSec.300` |
-| `600` | `aws.wafv2.WebAcl.Rule.Statement.RateBasedStatement.EvaluationWindowSec.600` |
-
-Shorthand formats: `60` or `EvaluationWindowSec.60`
-
 ### statement.size_constraint_statement.comparison_operator (ComparisonOperator)
 
 | Value | DSL Identifier |
@@ -513,14 +502,14 @@ Used by: `default_action.allow`, `rules.action.allow`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `attributes` | List\<[Struct(ApplicationAttribute)](#application_configattributes)\> | Yes |  |
+| `attributes` | List\<[Struct(ApplicationAttribute)](#application_configattributes)\> (items: 1..=10) | Yes |  |
 
 ### application_config.attributes
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `name` | String | Yes |  |
-| `values` | String | Yes |  |
+| `name` | String(pattern, len: 1..=64) | Yes |  |
+| `values` | `List<String(pattern, len: 1..=64)>` (items: 1..=10) | Yes |  |
 
 ### association_config
 
@@ -572,8 +561,8 @@ Used by: `block_action.custom_response.response_headers`, `custom_request_handli
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `name` | String | Yes |  |
-| `value` | String | Yes |  |
+| `name` | String(len: 1..=64) | Yes |  |
+| `value` | String(len: 1..=255) | Yes |  |
 
 ### custom_request_handling
 
@@ -587,14 +576,14 @@ Used by: `allow_action.custom_request_handling`, `rule_action.captcha.custom_req
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `content` | String | Yes |  |
+| `content` | String(len: 1..=10240) | Yes |  |
 | `content_type` | [Enum (ResponseContentType)](#custom_response_bodiescontent_type-responsecontenttype) | Yes |  |
 
 ### data_protection_config
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `data_protections` | List\<[Struct(DataProtect)](#data_protection_configdata_protections)\> | Yes |  |
+| `data_protections` | List\<[Struct(DataProtect)](#data_protection_configdata_protections)\> (items: 1..) | Yes |  |
 
 ### data_protection_config.data_protections
 
@@ -609,7 +598,7 @@ Used by: `allow_action.custom_request_handling`, `rule_action.captcha.custom_req
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `field_keys` | `List<String>` | No | List of field keys to protect |
+| `field_keys` | `List<String(len: 1..=64)>` | No | List of field keys to protect |
 | `field_type` | [Enum (FieldType)](#data_protection_configdata_protectionsfieldfield_type-fieldtype) | Yes | Field type to protect |
 
 ### default_action
@@ -629,7 +618,7 @@ Used by: `statement.managed_rule_group_statement.excluded_rules`, `statement.rul
 
 ### field_identifier
 
-Used by: `statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_acfp_rule_set.request_inspection.email_field`, `statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_acfp_rule_set.request_inspection.password_field`, `statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_acfp_rule_set.request_inspection.username_field`, `statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_atp_rule_set.request_inspection.password_field`, `statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_atp_rule_set.request_inspection.username_field`, `statement.managed_rule_group_statement.managed_rule_group_configs.password_field`, `statement.managed_rule_group_statement.managed_rule_group_configs.username_field`
+Used by: `statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_acfp_rule_set.request_inspection.address_fields`, `statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_acfp_rule_set.request_inspection.email_field`, `statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_acfp_rule_set.request_inspection.password_field`, `statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_acfp_rule_set.request_inspection.phone_number_fields`, `statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_acfp_rule_set.request_inspection.username_field`, `statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_atp_rule_set.request_inspection.password_field`, `statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_atp_rule_set.request_inspection.username_field`, `statement.managed_rule_group_statement.managed_rule_group_configs.password_field`, `statement.managed_rule_group_statement.managed_rule_group_configs.username_field`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -675,8 +664,8 @@ Used by: `statement.byte_match_statement.field_to_match`, `statement.regex_match
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `all` | Empty struct (`{}`) | No | Inspect all parts of the web request cookies. |
-| `excluded_cookies` | `List<String>` (items: 1..=199) | No |  |
-| `included_cookies` | `List<String>` (items: 1..=199) | No |  |
+| `excluded_cookies` | `List<String(pattern, len: 1..=60)>` (items: 1..=199) | No |  |
+| `included_cookies` | `List<String(pattern, len: 1..=60)>` (items: 1..=199) | No |  |
 
 ### field_to_match.header_order
 
@@ -697,8 +686,8 @@ Used by: `statement.byte_match_statement.field_to_match`, `statement.regex_match
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `all` | Empty struct (`{}`) | No | Inspect all parts of the web request headers. |
-| `excluded_headers` | `List<String>` (items: 1..=199) | No |  |
-| `included_headers` | `List<String>` (items: 1..=199) | No |  |
+| `excluded_headers` | `List<String(pattern, len: 1..=64)>` (items: 1..=199) | No |  |
+| `included_headers` | `List<String(pattern, len: 1..=64)>` (items: 1..=199) | No |  |
 
 ### field_to_match.ja3_fingerprint
 
@@ -784,24 +773,24 @@ Used by: `statement.managed_rule_group_statement.managed_rule_group_configs.aws_
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `failure_strings` | `List<String>` (items: 1..=5) | Yes |  |
-| `success_strings` | `List<String>` (items: 1..=5) | Yes |  |
+| `failure_strings` | `List<String(pattern, len: 1..=100)>` (items: 1..=5) | Yes |  |
+| `success_strings` | `List<String(pattern, len: 1..=100)>` (items: 1..=5) | Yes |  |
 
 ### response_inspection.header
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `failure_values` | `List<String>` (items: 1..=3) | Yes |  |
+| `failure_values` | `List<String(pattern, len: 1..=100)>` (items: 1..=3) | Yes |  |
 | `name` | String(pattern, len: 1..=200) | Yes |  |
-| `success_values` | `List<String>` (items: 1..=3) | Yes |  |
+| `success_values` | `List<String(pattern, len: 1..=100)>` (items: 1..=3) | Yes |  |
 
 ### response_inspection.json
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `failure_values` | `List<String>` (items: 1..=5) | Yes |  |
+| `failure_values` | `List<String(pattern, len: 1..=100)>` (items: 1..=5) | Yes |  |
 | `identifier` | String(pattern, len: 1..=512) | Yes |  |
-| `success_values` | `List<String>` (items: 1..=5) | Yes |  |
+| `success_values` | `List<String(pattern, len: 1..=100)>` (items: 1..=5) | Yes |  |
 
 ### response_inspection.status_code
 
@@ -909,7 +898,7 @@ Used by: `rules.statement`, `rules.statement.and_statement.statements`, `rules.s
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `asn_list` | `List<Int>` | No |  |
+| `asn_list` | `List<Int(0..=4294967295)>` | No |  |
 | `forwarded_ip_config` | [Struct(ForwardedIPConfiguration)](#forwarded_ip_configuration) | No |  |
 
 ### statement.byte_match_statement
@@ -926,7 +915,7 @@ Used by: `rules.statement`, `rules.statement.and_statement.statements`, `rules.s
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `country_codes` | `List<String>` | No |  |
+| `country_codes` | `List<String(len: 1..=2)>` | No |  |
 | `forwarded_ip_config` | [Struct(ForwardedIPConfiguration)](#forwarded_ip_configuration) | No |  |
 
 ### statement.ip_set_reference_statement
@@ -990,11 +979,11 @@ Used by: `rules.statement`, `rules.statement.and_statement.statements`, `rules.s
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `address_fields` | `List<String>` | No |  |
+| `address_fields` | List\<[Struct(FieldIdentifier)](#field_identifier)\> | No |  |
 | `email_field` | [Struct(FieldIdentifier)](#field_identifier) | No |  |
 | `password_field` | [Struct(FieldIdentifier)](#field_identifier) | No |  |
 | `payload_type` | [Enum (PayloadType)](#statementmanaged_rule_group_statementmanaged_rule_group_configsaws_managed_rules_acfp_rule_setrequest_inspectionpayload_type-payloadtype) | Yes |  |
-| `phone_number_fields` | `List<String>` | No |  |
+| `phone_number_fields` | List\<[Struct(FieldIdentifier)](#field_identifier)\> | No |  |
 | `username_field` | [Struct(FieldIdentifier)](#field_identifier) | No |  |
 
 ### statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_anti_d_do_s_rule_set
@@ -1022,7 +1011,7 @@ Used by: `rules.statement`, `rules.statement.and_statement.statements`, `rules.s
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `regex_string` | String | No |  |
+| `regex_string` | String(len: 1..=512) | No |  |
 
 ### statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_atp_rule_set
 
@@ -1066,7 +1055,7 @@ Used by: `rules.statement`, `rules.statement.and_statement.statements`, `rules.s
 |-------|------|----------|-------------|
 | `aggregate_key_type` | [Enum (AggregateKeyType)](#statementrate_based_statementaggregate_key_type-aggregatekeytype) | Yes |  |
 | `custom_keys` | List\<[Struct(RateBasedStatementCustomKey)](#statementrate_based_statementcustom_keys)\> (items: ..=5) | No | Specifies the aggregate keys to use in a rate-base rule. |
-| `evaluation_window_sec` | [Enum (EvaluationWindowSec)](#statementrate_based_statementevaluation_window_sec-evaluationwindowsec) | No |  |
+| `evaluation_window_sec` | IntEnum([60, 120, 300, 600]) | No |  |
 | `forwarded_ip_config` | [Struct(ForwardedIPConfiguration)](#forwarded_ip_configuration) | No |  |
 | `limit` | Int(10..=2000000000) | Yes |  |
 | `scope_down_statement` | [Struct(Statement)](#statement) | No |  |

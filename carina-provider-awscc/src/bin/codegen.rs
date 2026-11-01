@@ -189,6 +189,34 @@ struct AttributeTypeOverrideDefault {
     markdown: &'static str,
 }
 
+mod override_type_display {
+    /// Raw type text for a code span. Keep the field private so every value
+    /// passes validation before the Markdown renderer adds delimiters.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct OverrideTypeDisplay(&'static str);
+
+    impl OverrideTypeDisplay {
+        pub const fn new(text: &'static str) -> Self {
+            let bytes = text.as_bytes();
+            let mut index = 0;
+            while index < bytes.len() {
+                assert!(
+                    bytes[index] != b'`',
+                    "override type display contains a backtick"
+                );
+                index += 1;
+            }
+            Self(text)
+        }
+
+        pub const fn as_str(self) -> &'static str {
+            self.0
+        }
+    }
+}
+
+use override_type_display::OverrideTypeDisplay;
+
 #[derive(Debug, Clone, PartialEq)]
 enum TypeOverride {
     /// Override to a specific string type (e.g., "super::super::iam::role::arn()")
@@ -198,7 +226,7 @@ enum TypeOverride {
     /// inference cannot express the provider API type.
     AttributeType {
         expression: &'static str,
-        display: &'static str,
+        display: OverrideTypeDisplay,
         block_name: Option<&'static str>,
         default: Option<AttributeTypeOverrideDefault>,
     },
@@ -588,7 +616,7 @@ struct CfnSchema {
     #[serde(default)]
     write_only_properties: Vec<String>,
     primary_identifier: Option<Vec<String>>,
-    definitions: Option<BTreeMap<String, CfnDefinition>>,
+    definitions: Option<BTreeMap<String, CfnProperty>>,
     tagging: Option<CfnTagging>,
     /// Top-level oneOf variants (mutually exclusive required field groups)
     #[serde(default, rename = "oneOf")]
@@ -833,27 +861,23 @@ fn is_dsl_tags_property(schema: &CfnSchema, provider_name: &str) -> bool {
 
 /// Whether a definition uses one of Carina's canonical tag-map shapes.
 ///
-/// The `Tag` prefix remains a namespace guard because cached schemas also use
-/// the exact same Key/Value string-object shape for non-tag ELB attributes.
-/// The shape check prevents unrelated `Tag*` objects from silently losing
-/// fields when converted to Carina's map representation. CloudFormation uses
-/// either a Key/Value object or a single-pattern string map for these refs.
+/// The final resolved definition's `Tag` prefix remains a namespace guard
+/// because cached schemas also use the exact same Key/Value string-object
+/// shape for non-tag ELB attributes. The shape check prevents unrelated
+/// `Tag*` objects from silently losing fields when converted to Carina's map
+/// representation. CloudFormation uses either a Key/Value object or a
+/// single-pattern string map for these refs.
 fn is_tag_map_ref(schema: &CfnSchema, ref_path: &str) -> bool {
-    let Some(def_name) = ref_def_name(ref_path) else {
+    let Some(resolved) = resolve_ref(schema, ref_path) else {
         return false;
     };
-    let Some(definition) = schema
-        .definitions
-        .as_ref()
-        .and_then(|definitions| definitions.get(def_name))
-    else {
-        return false;
-    };
+    let definition = resolved.property;
     let is_direct_string = |property: &CfnProperty| {
-        matches!(
-            property.prop_type.as_ref(),
-            Some(TypeValue::Single(property_type)) if property_type == "string"
-        )
+        property
+            .prop_type
+            .as_ref()
+            .and_then(TypeValue::effective_type)
+            == Some("string")
     };
     let is_key_value_object = definition.properties.as_ref().is_some_and(|properties| {
         properties.len() == 2
@@ -866,8 +890,12 @@ fn is_tag_map_ref(schema: &CfnSchema, ref_path: &str) -> bool {
             .as_ref()
             .is_some_and(|patterns| patterns.len() == 1 && patterns.values().all(is_direct_string));
 
-    def_name.starts_with("Tag")
-        && definition.def_type.as_deref() == Some("object")
+    resolved.name.starts_with("Tag")
+        && definition
+            .prop_type
+            .as_ref()
+            .and_then(TypeValue::effective_type)
+            == Some("object")
         && (is_key_value_object || is_single_pattern_string_map)
 }
 
@@ -880,10 +908,22 @@ enum TypeValue {
 }
 
 impl TypeValue {
-    fn as_str(&self) -> Option<&str> {
+    fn contains(&self, expected: &str) -> bool {
         match self {
-            TypeValue::Single(s) => Some(s),
-            TypeValue::Multiple(v) => v.first().map(|s| s.as_str()),
+            Self::Single(value) => value == expected,
+            Self::Multiple(values) => values.iter().any(|value| value == expected),
+        }
+    }
+
+    /// Ignore nullability when choosing the type to generate. For other
+    /// unions, retain the first non-null member as the compatibility type.
+    fn effective_type(&self) -> Option<&str> {
+        match self {
+            TypeValue::Single(value) => (value != "null").then_some(value.as_str()),
+            TypeValue::Multiple(values) => values
+                .iter()
+                .find(|value| value.as_str() != "null")
+                .map(String::as_str),
         }
     }
 }
@@ -1154,7 +1194,7 @@ enum BareObjectClassification {
     OmittedResource(&'static ClassifiedProperty),
     TypedOverride {
         expression: &'static str,
-        display: &'static str,
+        display: OverrideTypeDisplay,
     },
 }
 
@@ -1211,11 +1251,9 @@ fn unique_bare_object_classification(
 }
 
 fn property_declares_object(prop: &CfnProperty) -> bool {
-    match &prop.prop_type {
-        Some(TypeValue::Single(value)) => value == "object",
-        Some(TypeValue::Multiple(values)) => values.iter().any(|value| value == "object"),
-        None => false,
-    }
+    prop.prop_type
+        .as_ref()
+        .is_some_and(|types| types.contains("object"))
 }
 
 fn is_direct_bare_object(prop: &CfnProperty) -> bool {
@@ -1229,24 +1267,10 @@ fn is_direct_bare_object(prop: &CfnProperty) -> bool {
             .is_none_or(BTreeMap::is_empty)
 }
 
-fn is_bare_object_definition(definition: &CfnDefinition) -> bool {
-    definition.def_type.as_deref() == Some("object")
-        && definition.one_of.is_empty()
-        && definition.items.is_none()
-        && definition.enum_values.is_none()
-        && definition
-            .properties
-            .as_ref()
-            .is_none_or(BTreeMap::is_empty)
-        && definition
-            .pattern_properties
-            .as_ref()
-            .is_none_or(BTreeMap::is_empty)
-}
-
 fn property_is_bare_object(prop: &CfnProperty, schema: &CfnSchema) -> bool {
     if let Some(ref_path) = &prop.ref_path {
-        return resolve_ref(schema, ref_path).is_some_and(is_bare_object_definition);
+        return resolve_ref(schema, ref_path)
+            .is_some_and(|resolved| is_direct_bare_object(resolved.property));
     }
     is_direct_bare_object(prop)
 }
@@ -1298,7 +1322,7 @@ fn classify_bare_object(
     {
         matches.push(BareObjectClassification::TypedOverride {
             expression,
-            display,
+            display: *display,
         });
     }
 
@@ -1342,11 +1366,9 @@ fn bare_object_attribute_type(
 }
 
 fn is_object_string_union(prop: &CfnProperty) -> bool {
-    let Some(TypeValue::Multiple(types)) = &prop.prop_type else {
-        return false;
-    };
-
-    types.iter().any(|value| value == "object") && types.iter().any(|value| value == "string")
+    prop.prop_type
+        .as_ref()
+        .is_some_and(|types| types.contains("object") && types.contains("string"))
 }
 
 fn iam_policy_document_property(
@@ -1363,8 +1385,8 @@ fn is_iam_policy_document_property(cfn_type: &str, property_path: CfnPropertyPat
     iam_policy_document_property(cfn_type, property_path).is_some()
 }
 
-/// Classify CloudFormation's free-form JSON union before `TypeValue::as_str()`
-/// reduces it to its first member. Unknown unions must fail closed so a newly
+/// Classify CloudFormation's free-form JSON union before `TypeValue::effective_type()`
+/// reduces it to its first non-null member. Unknown unions must fail closed so a newly
 /// cached resource cannot silently become `Map<String, String>`.
 fn object_string_union_is_iam_policy_document(
     prop: &CfnProperty,
@@ -1424,6 +1446,9 @@ struct CfnProperty {
     ref_path: Option<String>,
     #[serde(default)]
     insertion_order: Option<bool>,
+    /// Whether array items must be unique.
+    #[serde(default)]
+    unique_items: Option<bool>,
     /// Inline object properties (for nested objects)
     properties: Option<BTreeMap<String, CfnProperty>>,
     /// JSON object-map value schemas keyed by key-pattern.
@@ -1603,7 +1628,12 @@ fn emit_exclusive_groups_slice(groups: &[Vec<String>]) -> String {
 }
 
 fn is_key_value_tag_array(property: &CfnProperty, schema: &CfnSchema) -> bool {
-    if property.prop_type.as_ref().and_then(TypeValue::as_str) != Some("array") {
+    if property
+        .prop_type
+        .as_ref()
+        .and_then(TypeValue::effective_type)
+        != Some("array")
+    {
         return false;
     }
     let Some(items) = property.items.as_deref() else {
@@ -1613,9 +1643,8 @@ fn is_key_value_tag_array(property: &CfnProperty, schema: &CfnSchema) -> bool {
         items
             .ref_path
             .as_deref()
-            .and_then(|path| path.strip_prefix("#/definitions/"))
-            .and_then(|name| schema.definitions.as_ref()?.get(name))
-            .and_then(|definition| definition.properties.as_ref())
+            .and_then(|ref_path| resolve_ref(schema, ref_path))
+            .and_then(|resolved| resolved.property.properties.as_ref())
     });
     let Some(properties) = properties else {
         return false;
@@ -1628,7 +1657,11 @@ fn is_key_value_tag_array(property: &CfnProperty, schema: &CfnSchema) -> bool {
 }
 
 fn is_string_tag_map(property: &CfnProperty, schema: &CfnSchema) -> bool {
-    if property.prop_type.as_ref().and_then(TypeValue::as_str) != Some("object")
+    if property
+        .prop_type
+        .as_ref()
+        .and_then(TypeValue::effective_type)
+        != Some("object")
         || property.additional_properties != Some(false)
     {
         return false;
@@ -1642,50 +1675,6 @@ fn is_string_tag_map(property: &CfnProperty, schema: &CfnSchema) -> bool {
                     .values()
                     .all(|value| is_string_property(schema, value))
         })
-}
-
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[allow(dead_code)]
-struct CfnDefinition {
-    #[serde(rename = "type")]
-    def_type: Option<String>,
-    properties: Option<BTreeMap<String, CfnProperty>>,
-    /// JSON object-map value schemas keyed by key-pattern.
-    #[serde(default)]
-    pattern_properties: Option<BTreeMap<String, CfnProperty>>,
-    #[serde(default)]
-    required: Vec<String>,
-    /// oneOf variants (union types)
-    #[serde(default, rename = "oneOf")]
-    one_of: Vec<CfnProperty>,
-    /// Array item schema (for array-typed definitions)
-    items: Option<Box<CfnProperty>>,
-    /// Enum values (for enum-only definitions)
-    #[serde(rename = "enum")]
-    enum_values: Option<Vec<EnumValue>>,
-    /// Regex pattern constraint (for string-typed definitions)
-    #[serde(default)]
-    pattern: Option<String>,
-    /// Minimum string length constraint (for string-typed definitions)
-    #[serde(default, rename = "minLength")]
-    min_length: Option<u64>,
-    /// Maximum string length constraint (for string-typed definitions)
-    #[serde(default, rename = "maxLength")]
-    max_length: Option<u64>,
-    /// Minimum value constraint (for integer/number-typed definitions).
-    /// CloudFormation factors scalar fields like `RulePriority`/`RateLimit`
-    /// into shared `$ref` definitions that carry their own range; this lets
-    /// a scalar `$ref` reproduce the same ranged int/float a direct property
-    /// would (awscc#291).
-    #[serde(default)]
-    minimum: Option<i64>,
-    /// Maximum value constraint (for integer/number-typed definitions).
-    #[serde(default)]
-    maximum: Option<i64>,
-    /// Format constraint (e.g., "int64", "double") for scalar definitions.
-    #[serde(default)]
-    format: Option<String>,
 }
 
 /// Compute module name from CloudFormation type name
@@ -1764,7 +1753,10 @@ fn generate_arn_helper_module(type_name: &str) -> Result<String> {
 
 fn is_string_property(schema: &CfnSchema, property: &CfnProperty) -> bool {
     if matches!(
-        property.prop_type.as_ref().and_then(TypeValue::as_str),
+        property
+            .prop_type
+            .as_ref()
+            .and_then(TypeValue::effective_type),
         Some("string")
     ) {
         return true;
@@ -1774,7 +1766,14 @@ fn is_string_property(schema: &CfnSchema, property: &CfnProperty) -> bool {
         .ref_path
         .as_deref()
         .and_then(|ref_path| resolve_ref(schema, ref_path))
-        .is_some_and(|definition| definition.def_type.as_deref() == Some("string"))
+        .is_some_and(|resolved| {
+            resolved
+                .property
+                .prop_type
+                .as_ref()
+                .and_then(TypeValue::effective_type)
+                == Some("string")
+        })
 }
 
 fn declared_replacement_class(
@@ -2230,34 +2229,55 @@ fn property_is_fully_read_only(
         return false;
     }
 
-    if let Some(ref_path) = &property.ref_path {
-        if !visiting_defs.insert(ref_path.clone()) {
-            return false;
+    match property_shape(property, schema) {
+        PropertyShape::Reference { resolved, .. } => {
+            let Some(resolved) = resolved else {
+                return false;
+            };
+            if !visiting_defs.insert(resolved.name.to_string()) {
+                return false;
+            }
+            let fully_read_only = property_is_fully_read_only(
+                schema,
+                resolved.property,
+                property_path,
+                visiting_defs,
+            );
+            visiting_defs.remove(resolved.name);
+            return fully_read_only;
         }
-        let fully_read_only = match resolve_ref_classified(schema, ref_path) {
-            Some(ResolvedDef::Struct { properties, .. }) => {
-                struct_fields_are_fully_read_only(schema, properties, property_path, visiting_defs)
-            }
-            Some(ResolvedDef::OneOf { variants }) => {
-                let merged = variants
-                    .iter()
-                    .filter_map(|variant| variant.properties.as_ref())
-                    .flat_map(|properties| properties.iter())
-                    .map(|(name, property)| (name.clone(), property.clone()))
-                    .collect::<BTreeMap<_, _>>();
-                struct_fields_are_fully_read_only(schema, &merged, property_path, visiting_defs)
-            }
-            Some(ResolvedDef::Array { items }) => {
-                let item_path = extend_property_path(property_path, "*");
-                property_is_fully_read_only(schema, items, &item_path, visiting_defs)
-            }
-            _ => false,
-        };
-        visiting_defs.remove(ref_path);
-        return fully_read_only;
+        PropertyShape::Array {
+            variant: array_variant,
+            ..
+        } => {
+            return property_is_fully_read_only(
+                schema,
+                array_variant,
+                property_path,
+                visiting_defs,
+            );
+        }
+        PropertyShape::Direct(properties) => {
+            return struct_fields_are_fully_read_only(
+                schema,
+                properties,
+                property_path,
+                visiting_defs,
+            );
+        }
+        PropertyShape::Merged(properties) => {
+            return struct_fields_are_fully_read_only(
+                schema,
+                &properties,
+                property_path,
+                visiting_defs,
+            );
+        }
+        PropertyShape::Unresolved => return false,
+        PropertyShape::Inline => {}
     }
 
-    match property.prop_type.as_ref().and_then(TypeValue::as_str) {
+    match inline_property_type(property) {
         Some("object") => property.properties.as_ref().is_some_and(|properties| {
             struct_fields_are_fully_read_only(schema, properties, property_path, visiting_defs)
         }),
@@ -2519,33 +2539,15 @@ fn documented_top_level_properties(
 }
 
 fn is_struct_property(prop: &CfnProperty, schema: &CfnSchema) -> bool {
-    if prop
-        .properties
-        .as_ref()
-        .is_some_and(|properties| !properties.is_empty())
-    {
-        return true;
-    }
-    prop.ref_path.as_ref().is_some_and(|ref_path| {
-        matches!(
-            resolve_ref_classified(schema, ref_path),
-            Some(ResolvedDef::Struct { .. } | ResolvedDef::OneOf { .. })
-        )
-    })
+    property_generates_struct(prop, schema)
 }
 
 fn is_list_of_struct_property(prop: &CfnProperty, schema: &CfnSchema) -> bool {
-    if prop.prop_type.as_ref().and_then(|t| t.as_str()) == Some("array") {
-        return prop
+    resolved_array_property(prop, schema, &mut HashSet::new()).is_some_and(|property| {
+        property
             .items
-            .as_ref()
-            .is_some_and(|items| is_struct_property(items, schema));
-    }
-    prop.ref_path.as_ref().is_some_and(|ref_path| {
-        matches!(
-            resolve_ref_classified(schema, ref_path),
-            Some(ResolvedDef::Array { items }) if is_struct_property(items, schema)
-        )
+            .as_deref()
+            .is_some_and(|items| is_struct_property(items, schema))
     })
 }
 
@@ -2556,23 +2558,7 @@ fn uses_core_schema_types_path(s: &str) -> bool {
         || s.contains("types::email()")
 }
 
-/// Display string for List element types based on items property type and property name.
-/// The `prop_name` is used for name-based type inference (e.g., SubnetIds -> `List<SubnetId>`).
-fn list_element_type_display(items: &CfnProperty, prop_name: &str, resource_type: &str) -> String {
-    match items.prop_type.as_ref().and_then(|t| t.as_str()) {
-        Some("string") => {
-            let element_type = infer_string_type_display(prop_name, resource_type);
-            format!("`List<{}>`", element_type)
-        }
-        Some("integer") => "`List<Int>`".to_string(),
-        Some("number") => "`List<Float>`".to_string(),
-        Some("boolean") => "`List<Bool>`".to_string(),
-        _ => "`List<String>`".to_string(),
-    }
-}
-
 /// Infer a display type name for a string property based on its name.
-/// Used by both scalar `type_display_string()` and `list_element_type_display()`.
 /// Handles both singular (e.g., "SubnetId") and plural (e.g., "SubnetIds") property names.
 fn infer_string_type_display(prop_name: &str, resource_type: &str) -> String {
     // Check resource-specific overrides first (StringType only for display)
@@ -2705,21 +2691,78 @@ fn type_display_string(prop_name: &str, prop: &CfnProperty, schema: &CfnSchema) 
     )
 }
 
-fn object_map_type_display(
+/// Keep type text and list limits separate from Markdown formatting so a
+/// nested collection never embeds an already-rendered inline-code span.
+enum TypeDisplay {
+    Plain(String),
+    Code(String),
+    EmptyStruct,
+    List {
+        item: Box<TypeDisplay>,
+        min_items: Option<i64>,
+        max_items: Option<i64>,
+    },
+}
+
+impl TypeDisplay {
+    fn item_limits(min: Option<i64>, max: Option<i64>) -> String {
+        if min.is_some() || max.is_some() {
+            format!(" (items: {})", range_display_string(min, max))
+        } else {
+            String::new()
+        }
+    }
+
+    fn type_text(&self) -> String {
+        match self {
+            Self::Plain(text) | Self::Code(text) => text.clone(),
+            Self::EmptyStruct => "Empty struct ({})".to_string(),
+            Self::List {
+                item,
+                min_items,
+                max_items,
+            } => format!(
+                "List<{}>{}",
+                item.type_text(),
+                Self::item_limits(*min_items, *max_items),
+            ),
+        }
+    }
+
+    fn markdown(&self) -> String {
+        match self {
+            Self::Plain(text) => text.clone(),
+            Self::Code(text) => format!("`{text}`"),
+            Self::EmptyStruct => "Empty struct (`{}`)".to_string(),
+            Self::List {
+                item,
+                min_items,
+                max_items,
+            } => format!(
+                "`List<{}>`{}",
+                item.type_text(),
+                Self::item_limits(*min_items, *max_items),
+            ),
+        }
+    }
+}
+
+fn object_map_type_text(
     prop_name: &str,
     schema: &CfnSchema,
     property_path: CfnPropertyPath<'_>,
     value: &CfnProperty,
 ) -> String {
     match object_map_value_or_panic(schema, property_path, value) {
-        ObjectMapValueKind::DirectString => "`Map<String, String>`".to_string(),
+        ObjectMapValueKind::DirectString => "Map<String, String>".to_string(),
         ObjectMapValueKind::Struct => {
             let struct_name = value
                 .ref_path
                 .as_deref()
-                .and_then(ref_def_name)
+                .and_then(|ref_path| resolve_ref(schema, ref_path))
+                .map(|resolved| resolved.name)
                 .unwrap_or(prop_name);
-            format!("`Map<String, Struct({struct_name})>`")
+            format!("Map<String, Struct({struct_name})>")
         }
     }
 }
@@ -2730,43 +2773,78 @@ fn type_display_string_at(
     schema: &CfnSchema,
     cfn_property_path: CfnPropertyPath<'_>,
 ) -> String {
+    type_display_at_resolved(prop_name, prop, schema, cfn_property_path, None).markdown()
+}
+
+fn type_display_at_resolved(
+    prop_name: &str,
+    prop: &CfnProperty,
+    schema: &CfnSchema,
+    cfn_property_path: CfnPropertyPath<'_>,
+    definition_name: Option<&str>,
+) -> TypeDisplay {
     if let Some(TypeOverride::AttributeType { display, .. }) =
         resource_type_override(&schema.type_name, cfn_property_path)
     {
-        (*display).to_string()
-    } else if object_string_union_is_iam_policy_document(prop, &schema.type_name, cfn_property_path)
-    {
-        "PolicyDocument".to_string()
-    } else if prop_name == "Tags" {
-        "`Map<String, String>`".to_string()
-    } else if property_is_bare_object(prop, schema) {
-        match classify_bare_object_or_panic(&schema.type_name, cfn_property_path) {
-            BareObjectClassification::IamPolicyDocument(_) => "PolicyDocument".to_string(),
-            BareObjectClassification::EmptyObject(_) => "Empty struct (`{}`)".to_string(),
-            BareObjectClassification::StringMap(_) => "`Map<String, String>`".to_string(),
-            BareObjectClassification::TypedOverride { display, .. } => display.to_string(),
+        return TypeDisplay::Code(display.as_str().to_string());
+    }
+    if object_string_union_is_iam_policy_document(prop, &schema.type_name, cfn_property_path) {
+        return TypeDisplay::Plain("PolicyDocument".to_string());
+    }
+    if prop_name == "Tags" {
+        return TypeDisplay::Code("Map<String, String>".to_string());
+    }
+    if property_is_bare_object(prop, schema) {
+        return match classify_bare_object_or_panic(&schema.type_name, cfn_property_path) {
+            BareObjectClassification::IamPolicyDocument(_) => {
+                TypeDisplay::Plain("PolicyDocument".to_string())
+            }
+            BareObjectClassification::EmptyObject(_) => TypeDisplay::EmptyStruct,
+            BareObjectClassification::StringMap(_) => {
+                TypeDisplay::Code("Map<String, String>".to_string())
+            }
+            BareObjectClassification::TypedOverride { display, .. } => {
+                TypeDisplay::Code(display.as_str().to_string())
+            }
             BareObjectClassification::FreeFormJson(entry)
             | BareObjectClassification::OmittedResource(entry) => panic!(
                 "omitted property {}.{} reached Markdown type generation: {}",
                 entry.cfn_type, entry.property_path, entry.reason
             ),
+        };
+    }
+    match property_shape(prop, schema) {
+        PropertyShape::Reference { path, resolved } => {
+            return if is_tag_map_ref(schema, path) {
+                TypeDisplay::Code("Map<String, String>".to_string())
+            } else if let Some(resolved) = resolved {
+                type_display_at_resolved(
+                    prop_name,
+                    resolved.property,
+                    schema,
+                    cfn_property_path,
+                    Some(resolved.name),
+                )
+            } else {
+                TypeDisplay::Plain(infer_string_type_display(prop_name, &schema.type_name))
+            };
         }
-    } else if !prop.one_of.is_empty() {
-        if let Some(array_variant) = prop
-            .one_of
-            .iter()
-            .find(|variant| property_resolves_to_array(variant, schema))
-        {
-            return type_display_string_at(prop_name, array_variant, schema, cfn_property_path);
+        PropertyShape::Array {
+            variant: array_variant,
+            ..
+        } => {
+            return type_display_at_resolved(
+                prop_name,
+                array_variant,
+                schema,
+                cfn_property_path,
+                None,
+            );
         }
-
-        let has_mergeable_object_variant = prop.one_of.iter().any(|variant| {
-            variant
-                .properties
-                .as_ref()
-                .is_some_and(|props| !props.is_empty())
-        });
-        if !has_mergeable_object_variant {
+        PropertyShape::Direct(_) | PropertyShape::Merged(_) => {
+            return TypeDisplay::Plain(format!("Struct({})", definition_name.unwrap_or(prop_name)));
+        }
+        PropertyShape::Unresolved => {
             let variant_types: Vec<Vec<String>> =
                 prop.one_of.iter().map(property_type_values).collect();
             panic!(
@@ -2774,248 +2852,187 @@ fn type_display_string_at(
                 schema.type_name, prop_name, variant_types
             );
         }
+        PropertyShape::Inline => {}
+    }
+    if inline_property_type(prop) == Some("array") {
+        let item = prop.items.as_deref().map_or_else(
+            || TypeDisplay::Plain("String".to_string()),
+            |items| type_display_at_resolved(prop_name, items, schema, cfn_property_path, None),
+        );
+        return TypeDisplay::List {
+            item: Box::new(item),
+            min_items: prop.min_items,
+            max_items: prop.max_items,
+        };
+    }
+    if inline_property_type(prop) == Some("object") {
+        if let Some(value) = direct_object_map_value(prop) {
+            return TypeDisplay::Code(object_map_type_text(
+                prop_name,
+                schema,
+                cfn_property_path,
+                value,
+            ));
+        }
+        panic!(
+            "unsupported object property {}.{}; expected a struct, direct-string map, tag map, typed map of struct, or classified bare object; see CODEGEN.md#classifying-bare-objects",
+            schema.type_name, cfn_property_path
+        );
+    }
+    TypeDisplay::Plain(scalar_type_display_string_at(
+        prop_name,
+        prop,
+        schema,
+        cfn_property_path,
+    ))
+}
 
-        "String".to_string()
-    } else if let Some(ref_path) = &prop.ref_path {
-        if is_tag_map_ref(schema, ref_path) {
-            "`Map<String, String>`".to_string()
-        } else {
-            // Scalar refs (awscc#291: WAFv2 `Priority`/`Limit`) recurse for
-            // their Int/Float/Bool display with the definition's range. A
-            // struct-shaped ref gets a plain label here; the typed Markdown
-            // path is solely responsible for turning it into a link.
-            match resolve_ref_classified(schema, ref_path) {
-                Some(ResolvedDef::Struct { .. } | ResolvedDef::OneOf { .. }) => {
-                    let def_name = ref_def_name(ref_path).unwrap_or(prop_name);
-                    format!("Struct({def_name})")
+fn scalar_type_display_string_at(
+    prop_name: &str,
+    prop: &CfnProperty,
+    schema: &CfnSchema,
+    cfn_property_path: CfnPropertyPath<'_>,
+) -> String {
+    match inline_property_type(prop) {
+        Some("string") => {
+            if is_iam_policy_document_property(&schema.type_name, cfn_property_path) {
+                "PolicyDocument".to_string()
+            } else {
+                let base = infer_string_type_display(prop_name, &schema.type_name);
+                if base != "String" {
+                    return base;
                 }
-                Some(ResolvedDef::ObjectMap { value }) => {
-                    object_map_type_display(prop_name, schema, cfn_property_path, value)
+                let effective_min = prop.min_length.filter(|&m| m > 0);
+                let has_length = effective_min.is_some() || prop.max_length.is_some();
+                // Check for numeric string pattern
+                if let Some(ref pattern) = prop.pattern
+                    && is_numeric_string_pattern(pattern)
+                {
+                    return if has_length {
+                        let range = string_length_display(effective_min, prop.max_length);
+                        format!("NumericString(len: {})", range)
+                    } else {
+                        "NumericString".to_string()
+                    };
                 }
-                Some(scalar @ ResolvedDef::Scalar { .. }) => {
-                    let scalar_prop = scalar
-                        .scalar_as_property()
-                        .expect("Scalar variant always rebuilds a scalar property");
-                    type_display_string_at(prop_name, &scalar_prop, schema, cfn_property_path)
+                // Check for pattern + length combination
+                if prop.pattern.is_some() && has_length {
+                    let range = string_length_display(effective_min, prop.max_length);
+                    return format!("String(pattern, len: {})", range);
                 }
-                Some(
-                    ResolvedDef::Enum { .. }
-                    | ResolvedDef::Array { .. }
-                    | ResolvedDef::StringPattern { .. }
-                    | ResolvedDef::Opaque,
-                )
-                | None => {
-                    // These shapes have no dedicated non-list scalar display
-                    // here; apply the name-based heuristic. Listed explicitly
-                    // (no `_`) so a new shape forces a decision at this site.
-                    infer_string_type_display(prop_name, &schema.type_name)
+                // Format is descriptive while length is validated; show
+                // both when the schema declares both constraints.
+                if let Some(ref fmt) = prop.format {
+                    if has_length {
+                        let range = string_length_display(effective_min, prop.max_length);
+                        return format!("String({}, len: {})", fmt, range);
+                    }
+                    return format!("String({})", fmt);
+                }
+                // Append length constraint if present and type is plain String
+                if has_length && prop.enum_values.is_none() {
+                    let range = string_length_display(effective_min, prop.max_length);
+                    format!("String(len: {})", range)
+                } else {
+                    base
                 }
             }
         }
-    } else {
-        match prop.prop_type.as_ref().and_then(|t| t.as_str()) {
-            Some("string") => {
-                if is_iam_policy_document_property(&schema.type_name, cfn_property_path) {
-                    "PolicyDocument".to_string()
-                } else {
-                    let base = infer_string_type_display(prop_name, &schema.type_name);
-                    if base != "String" {
-                        return base;
-                    }
-                    let effective_min = prop.min_length.filter(|&m| m > 0);
-                    let has_length = effective_min.is_some() || prop.max_length.is_some();
-                    // Check for numeric string pattern
-                    if let Some(ref pattern) = prop.pattern
-                        && is_numeric_string_pattern(pattern)
-                    {
-                        return if has_length {
-                            let range = string_length_display(effective_min, prop.max_length);
-                            format!("NumericString(len: {})", range)
-                        } else {
-                            "NumericString".to_string()
-                        };
-                    }
-                    // Check for pattern + length combination
-                    if prop.pattern.is_some() && has_length {
-                        let range = string_length_display(effective_min, prop.max_length);
-                        return format!("String(pattern, len: {})", range);
-                    }
-                    // Check for string format constraint
-                    if let Some(ref fmt) = prop.format {
-                        return format!("String({})", fmt);
-                    }
-                    // Append length constraint if present and type is plain String
-                    if has_length && prop.enum_values.is_none() {
-                        let range = string_length_display(effective_min, prop.max_length);
-                        format!("String(len: {})", range)
-                    } else {
-                        base
-                    }
-                }
+        Some("boolean") => "Bool".to_string(),
+        Some("integer") => {
+            // Check resource-scoped overrides first
+            let res_override = resource_type_override(&schema.type_name, cfn_property_path);
+            if let Some(TypeOverride::IntEnum(values)) = res_override {
+                let observed_values = prop
+                    .enum_values
+                    .as_ref()
+                    .and_then(|enum_values| {
+                        enum_values
+                            .iter()
+                            .map(|value| match value {
+                                EnumValue::Int(value) => Some(*value),
+                                _ => None,
+                            })
+                            .collect::<Option<Vec<_>>>()
+                    })
+                    .filter(|values| !values.is_empty());
+                let _ = int_enum_type(
+                    &schema.type_name,
+                    prop_name,
+                    observed_values.as_deref().unwrap_or(values),
+                );
+                let values_str = values
+                    .iter()
+                    .map(|v| v.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                return format!("IntEnum([{}])", values_str);
             }
-            Some("boolean") => "Bool".to_string(),
-            Some("integer") => {
-                // Check resource-scoped overrides first
-                let res_override = resource_type_override(&schema.type_name, cfn_property_path);
-                if let Some(TypeOverride::IntEnum(values)) = res_override {
-                    let observed_values = prop
-                        .enum_values
-                        .as_ref()
-                        .and_then(|enum_values| {
-                            enum_values
-                                .iter()
-                                .map(|value| match value {
-                                    EnumValue::Int(value) => Some(*value),
-                                    _ => None,
-                                })
-                                .collect::<Option<Vec<_>>>()
-                        })
-                        .filter(|values| !values.is_empty());
-                    let _ = int_enum_type(
-                        &schema.type_name,
-                        prop_name,
-                        observed_values.as_deref().unwrap_or(values),
-                    );
-                    let values_str = values
+            if let Some(TypeOverride::IntRange(min, max)) = res_override {
+                return format!("Int({})", range_display_string(Some(*min), Some(*max)));
+            }
+            // Check for integer enum values from schema
+            if let Some(enum_values) = &prop.enum_values {
+                let all_ints = enum_values.iter().all(|v| matches!(v, EnumValue::Int(_)));
+                if all_ints && !enum_values.is_empty() {
+                    let values_str = enum_values
                         .iter()
-                        .map(|v| v.to_string())
+                        .map(|v| v.to_string_value())
                         .collect::<Vec<_>>()
                         .join(", ");
                     return format!("IntEnum([{}])", values_str);
                 }
-                if let Some(TypeOverride::IntRange(min, max)) = res_override {
-                    return format!("Int({})", range_display_string(Some(*min), Some(*max)));
-                }
-                // Check for integer enum values from schema
-                if let Some(enum_values) = &prop.enum_values {
-                    let all_ints = enum_values.iter().all(|v| matches!(v, EnumValue::Int(_)));
-                    if all_ints && !enum_values.is_empty() {
-                        let values_str = enum_values
-                            .iter()
-                            .map(|v| v.to_string_value())
-                            .collect::<Vec<_>>()
-                            .join(", ");
-                        return format!("IntEnum([{}])", values_str);
-                    }
-                }
-                let range: Option<(Option<i64>, Option<i64>)> =
-                    if prop.minimum.is_some() || prop.maximum.is_some() {
-                        Some((prop.minimum, prop.maximum))
-                    } else {
-                        known_int_range_overrides()
-                            .get(prop_name)
-                            .map(|&(min, max)| (Some(min), Some(max)))
-                    };
-                if let Some((min, max)) = range {
-                    let range_str = range_display_string(min, max);
-                    if let Some(ref fmt) = prop.format {
-                        format!("Int({}, {})", range_str, fmt)
-                    } else {
-                        format!("Int({})", range_str)
-                    }
-                } else if let Some(ref fmt) = prop.format {
-                    format!("Int({})", fmt)
-                } else {
-                    "Int".to_string()
-                }
             }
-            Some("number") => {
-                // Check resource-scoped overrides first
-                let res_override = resource_type_override(&schema.type_name, cfn_property_path);
-                if let Some(TypeOverride::IntRange(min, max)) = res_override {
-                    return format!("Float({})", range_display_string(Some(*min), Some(*max)));
-                }
-                let range: Option<(Option<i64>, Option<i64>)> =
-                    if prop.minimum.is_some() || prop.maximum.is_some() {
-                        Some((prop.minimum, prop.maximum))
-                    } else {
-                        known_int_range_overrides()
-                            .get(prop_name)
-                            .map(|&(min, max)| (Some(min), Some(max)))
-                    };
-                if let Some((min, max)) = range {
-                    let range_str = range_display_string(min, max);
-                    if let Some(ref fmt) = prop.format {
-                        format!("Float({}, {})", range_str, fmt)
-                    } else {
-                        format!("Float({})", range_str)
-                    }
-                } else if let Some(ref fmt) = prop.format {
-                    format!("Float({})", fmt)
+            let range: Option<(Option<i64>, Option<i64>)> =
+                if prop.minimum.is_some() || prop.maximum.is_some() {
+                    Some((prop.minimum, prop.maximum))
                 } else {
-                    "Float".to_string()
-                }
-            }
-            Some("array") => {
-                let base_display = if let Some(items) = &prop.items {
-                    if let Some(ref_path) = &items.ref_path {
-                        if !is_tag_map_ref(schema, ref_path) {
-                            // Keep this renderer fragment-free. Typed enum and
-                            // struct links are emitted only by MarkdownType;
-                            // scalar items (awscc#291) still mirror the
-                            // schema-code array branch here.
-                            let item_def = resolve_ref_classified(schema, ref_path);
-                            if let Some(ResolvedDef::Struct { .. } | ResolvedDef::OneOf { .. }) =
-                                item_def
-                                && let Some(def_name) = ref_def_name(ref_path)
-                            {
-                                format!("`List<{def_name}>`")
-                            } else if let Some(scalar_prop) =
-                                item_def.as_ref().and_then(ResolvedDef::scalar_as_property)
-                            {
-                                // List items that $ref a scalar def (awscc#291):
-                                // render List<Int>/Float/Bool, mirroring the
-                                // schema-code array branch.
-                                list_element_type_display(
-                                    &scalar_prop,
-                                    prop_name,
-                                    &schema.type_name,
-                                )
-                            } else {
-                                "`List<String>`".to_string()
-                            }
-                        } else {
-                            "`List<Map<String, String>>`".to_string()
-                        }
-                    } else {
-                        list_element_type_display(items, prop_name, &schema.type_name)
-                    }
-                } else {
-                    "`List<String>`".to_string()
+                    known_int_range_overrides()
+                        .get(prop_name)
+                        .map(|&(min, max)| (Some(min), Some(max)))
                 };
-                // Append item count constraints if present
-                if prop.min_items.is_some() || prop.max_items.is_some() {
-                    let constraint = range_display_string(prop.min_items, prop.max_items);
-                    format!("{} (items: {})", base_display, constraint)
+            if let Some((min, max)) = range {
+                let range_str = range_display_string(min, max);
+                if let Some(ref fmt) = prop.format {
+                    format!("Int({}, {})", range_str, fmt)
                 } else {
-                    base_display
+                    format!("Int({})", range_str)
                 }
+            } else if let Some(ref fmt) = prop.format {
+                format!("Int({})", fmt)
+            } else {
+                "Int".to_string()
             }
-            Some("object") => {
-                if let Some(props) = &prop.properties
-                    && !props.is_empty()
-                {
-                    format!("Struct({prop_name})")
-                } else if let Some(value) = direct_object_map_value(prop) {
-                    object_map_type_display(prop_name, schema, cfn_property_path, value)
-                } else {
-                    panic!(
-                        "unsupported object property {}.{}; expected a struct, direct-string map, tag map, typed map of struct, or classified bare object; see CODEGEN.md#classifying-bare-objects",
-                        schema.type_name, cfn_property_path
-                    );
-                }
-            }
-            _ => "String".to_string(),
         }
+        Some("number") => {
+            // Check resource-scoped overrides first
+            let res_override = resource_type_override(&schema.type_name, cfn_property_path);
+            if let Some(TypeOverride::IntRange(min, max)) = res_override {
+                return format!("Float({})", range_display_string(Some(*min), Some(*max)));
+            }
+            let range: Option<(Option<i64>, Option<i64>)> =
+                if prop.minimum.is_some() || prop.maximum.is_some() {
+                    Some((prop.minimum, prop.maximum))
+                } else {
+                    known_int_range_overrides()
+                        .get(prop_name)
+                        .map(|&(min, max)| (Some(min), Some(max)))
+                };
+            if let Some((min, max)) = range {
+                let range_str = range_display_string(min, max);
+                if let Some(ref fmt) = prop.format {
+                    format!("Float({}, {})", range_str, fmt)
+                } else {
+                    format!("Float({})", range_str)
+                }
+            } else if let Some(ref fmt) = prop.format {
+                format!("Float({})", fmt)
+            } else {
+                "Float".to_string()
+            }
+        }
+        _ => "String".to_string(),
     }
-}
-
-fn markdown_property_is_array(prop: &CfnProperty, schema: &CfnSchema) -> bool {
-    property_resolves_to_array(prop, schema)
-        || prop
-            .one_of
-            .iter()
-            .any(|variant| markdown_property_is_array(variant, schema))
 }
 
 struct MarkdownStructDef {
@@ -3034,92 +3051,42 @@ fn markdown_struct_def(
     schema: &CfnSchema,
     property_path: &[String],
 ) -> Option<MarkdownStructDef> {
-    // Preserve the pre-PageBuilder precedence: a direct non-array oneOf is a
-    // String display, not a struct target. Array variants are selected by the
-    // callers before classification.
-    if !prop.one_of.is_empty() {
-        return None;
-    }
-
-    if let Some(ref_path) = &prop.ref_path
-        && !is_tag_map_ref(schema, ref_path)
-        && let Some(def_name) = ref_def_name(ref_path)
-    {
-        match resolve_ref_classified(schema, ref_path) {
-            Some(ResolvedDef::Struct {
-                properties,
-                required,
-            }) => {
-                return Some(MarkdownStructDef {
-                    key: MarkdownStructKey::Definition(def_name.to_string()),
-                    name: def_name.to_string(),
-                    properties: properties.clone(),
-                    required: required.to_vec(),
-                });
+    let key = MarkdownStructKey::Inline(property_path.to_vec());
+    let name = prop_name.to_string();
+    match property_shape(prop, schema) {
+        PropertyShape::Reference { path, resolved } => {
+            if is_tag_map_ref(schema, path) {
+                return None;
             }
-            Some(ResolvedDef::OneOf { variants }) => {
-                let properties = variants
-                    .iter()
-                    .filter_map(|variant| variant.properties.as_ref())
-                    .flat_map(|properties| properties.iter())
-                    .map(|(name, property)| (name.clone(), property.clone()))
-                    .collect::<BTreeMap<_, _>>();
-                if !properties.is_empty() {
-                    return Some(MarkdownStructDef {
-                        key: MarkdownStructKey::Definition(def_name.to_string()),
-                        name: def_name.to_string(),
-                        properties,
-                        required: Vec::new(),
-                    });
-                }
-            }
-            Some(
-                ResolvedDef::ObjectMap { .. }
-                | ResolvedDef::Enum { .. }
-                | ResolvedDef::Array { .. }
-                | ResolvedDef::StringPattern { .. }
-                | ResolvedDef::Scalar { .. }
-                | ResolvedDef::Opaque,
-            )
-            | None => {}
+            let resolved = resolved?;
+            let mut struct_def =
+                markdown_struct_def(prop_name, resolved.property, schema, property_path)?;
+            struct_def.key = MarkdownStructKey::Definition(resolved.name.to_string());
+            struct_def.name = resolved.name.to_string();
+            Some(struct_def)
         }
-    }
-
-    if prop.prop_type.as_ref().and_then(TypeValue::as_str) == Some("object")
-        && let Some(properties) = &prop.properties
-        && !properties.is_empty()
-    {
-        return Some(MarkdownStructDef {
-            key: MarkdownStructKey::Inline(property_path.to_vec()),
-            name: prop_name.to_string(),
+        PropertyShape::Direct(properties) => Some(MarkdownStructDef {
+            key,
+            name,
             properties: properties.clone(),
             required: prop.required.clone(),
-        });
+        }),
+        PropertyShape::Merged(properties) => Some(MarkdownStructDef {
+            key,
+            name,
+            properties,
+            required: Vec::new(),
+        }),
+        PropertyShape::Inline | PropertyShape::Array { .. } | PropertyShape::Unresolved => None,
     }
-
-    None
 }
 
-fn markdown_array_items<'a>(
+fn markdown_array<'a>(
     prop: &'a CfnProperty,
     schema: &'a CfnSchema,
-) -> Option<&'a CfnProperty> {
-    if prop.prop_type.as_ref().and_then(TypeValue::as_str) == Some("array") {
-        return prop.items.as_deref();
-    }
-    prop.ref_path
-        .as_deref()
-        .and_then(|ref_path| resolve_ref_classified(schema, ref_path))
-        .and_then(|resolved| match resolved {
-            ResolvedDef::Array { items } => Some(items),
-            ResolvedDef::Struct { .. }
-            | ResolvedDef::ObjectMap { .. }
-            | ResolvedDef::OneOf { .. }
-            | ResolvedDef::Enum { .. }
-            | ResolvedDef::StringPattern { .. }
-            | ResolvedDef::Scalar { .. }
-            | ResolvedDef::Opaque => None,
-        })
+) -> Option<(&'a CfnProperty, &'a CfnProperty)> {
+    let property = resolved_array_property(prop, schema, &mut HashSet::new())?;
+    property.items.as_deref().map(|items| (property, items))
 }
 
 fn markdown_list_type(item: MarkdownLinkedType, prop: &CfnProperty) -> MarkdownLinkedType {
@@ -3137,6 +3104,22 @@ fn markdown_list_type(item: MarkdownLinkedType, prop: &CfnProperty) -> MarkdownL
     }
 }
 
+fn markdown_enum_type(
+    prop: &CfnProperty,
+    schema: &CfnSchema,
+    key: &MarkdownEnumKey,
+) -> MarkdownLinkedType {
+    if let Some(array) = resolved_array_property(prop, schema, &mut HashSet::new()) {
+        let item = array.items.as_deref().map_or_else(
+            || MarkdownLinkedType::Enum(key.clone()),
+            |items| markdown_enum_type(items, schema, key),
+        );
+        markdown_list_type(item, array)
+    } else {
+        MarkdownLinkedType::Enum(key.clone())
+    }
+}
+
 fn markdown_link_type(
     prop_name: &str,
     prop: &CfnProperty,
@@ -3146,22 +3129,28 @@ fn markdown_link_type(
     cfn_parent: Option<&str>,
 ) -> Option<MarkdownLinkedType> {
     if let Some(key) = enum_target {
-        let enum_type = MarkdownLinkedType::Enum(key.clone());
-        return Some(if markdown_property_is_array(prop, schema) {
-            markdown_list_type(enum_type, prop)
-        } else {
-            enum_type
-        });
+        return Some(markdown_enum_type(prop, schema, key));
     }
 
-    if !prop.one_of.is_empty() {
-        return prop
-            .one_of
-            .iter()
-            .find(|variant| markdown_property_is_array(variant, schema))
-            .and_then(|variant| {
-                markdown_link_type(prop_name, variant, schema, None, property_path, cfn_parent)
-            });
+    match property_shape(prop, schema) {
+        PropertyShape::Array {
+            variant: array_variant,
+            ..
+        } => {
+            return markdown_link_type(
+                prop_name,
+                array_variant,
+                schema,
+                None,
+                property_path,
+                cfn_parent,
+            );
+        }
+        PropertyShape::Reference { .. }
+        | PropertyShape::Inline
+        | PropertyShape::Direct(_)
+        | PropertyShape::Merged(_)
+        | PropertyShape::Unresolved => {}
     }
 
     if let Some(value) = property_object_map_value(prop, schema) {
@@ -3183,10 +3172,10 @@ fn markdown_link_type(
         });
     }
 
-    if let Some(items) = markdown_array_items(prop, schema) {
+    if let Some((array, items)) = markdown_array(prop, schema) {
         let item_path = extend_property_path(property_path, "*");
         let item_type = markdown_link_type(prop_name, items, schema, None, &item_path, cfn_parent)?;
-        return Some(markdown_list_type(item_type, prop));
+        return Some(markdown_list_type(item_type, array));
     }
 
     None
@@ -3831,36 +3820,38 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str, example: &DocExample) 
                 };
                 let nested_key = cfn_property_path.to_string();
                 let nested_override = resource_type_override(type_name, cfn_property_path);
-                let field_type_display =
-                    if let Some(TypeOverride::AttributeType { display, .. }) = nested_override {
-                        MarkdownType::Plain((*display).to_string())
-                    } else if matches!(nested_override, Some(TypeOverride::IntegerFromNumber)) {
-                        MarkdownType::Plain(integer_from_number_display(
-                            field_prop,
-                            type_name,
-                            &nested_key,
-                        ))
-                    } else if let Some(enum_target) = enum_targets.struct_fields.get(&source_key) {
-                        markdown_type(
-                            field_name,
-                            field_prop,
-                            schema,
-                            Some(enum_target),
-                            &field_path,
-                            Some(&def_info.def_name),
-                        )
-                    } else if overrides.contains_key(field_name.as_str()) {
-                        MarkdownType::Plain("Enum".to_string())
-                    } else {
-                        markdown_type(
-                            field_name,
-                            field_prop,
-                            schema,
-                            None,
-                            &field_path,
-                            Some(&def_info.def_name),
-                        )
-                    };
+                let field_type_display = if let Some(TypeOverride::AttributeType {
+                    display, ..
+                }) = nested_override
+                {
+                    MarkdownType::Plain(TypeDisplay::Code(display.as_str().to_string()).markdown())
+                } else if matches!(nested_override, Some(TypeOverride::IntegerFromNumber)) {
+                    MarkdownType::Plain(integer_from_number_display(
+                        field_prop,
+                        type_name,
+                        &nested_key,
+                    ))
+                } else if let Some(enum_target) = enum_targets.struct_fields.get(&source_key) {
+                    markdown_type(
+                        field_name,
+                        field_prop,
+                        schema,
+                        Some(enum_target),
+                        &field_path,
+                        Some(&def_info.def_name),
+                    )
+                } else if overrides.contains_key(field_name.as_str()) {
+                    MarkdownType::Plain("Enum".to_string())
+                } else {
+                    markdown_type(
+                        field_name,
+                        field_prop,
+                        schema,
+                        None,
+                        &field_path,
+                        Some(&def_info.def_name),
+                    )
+                };
                 let mut desc = collapse_whitespace(
                     &field_prop
                         .description
@@ -3962,12 +3953,11 @@ fn collect_struct_defs(
     cfn_parent: Option<&str>,
     struct_defs: &mut BTreeMap<MarkdownStructKey, StructDefInfo>,
 ) {
-    if !prop.one_of.is_empty() {
-        if let Some(array_variant) = prop
-            .one_of
-            .iter()
-            .find(|variant| markdown_property_is_array(variant, schema))
-        {
+    match property_shape(prop, schema) {
+        PropertyShape::Array {
+            variant: array_variant,
+            ..
+        } => {
             collect_struct_defs(
                 array_variant,
                 prop_name,
@@ -3977,8 +3967,13 @@ fn collect_struct_defs(
                 cfn_parent,
                 struct_defs,
             );
+            return;
         }
-        return;
+        PropertyShape::Reference { .. }
+        | PropertyShape::Inline
+        | PropertyShape::Direct(_)
+        | PropertyShape::Merged(_)
+        | PropertyShape::Unresolved => {}
     }
 
     if let Some(struct_def) = markdown_struct_def(prop_name, prop, schema, property_path) {
@@ -4051,17 +4046,15 @@ fn collect_struct_defs(
         return;
     }
 
-    let Some(items) = markdown_array_items(prop, schema) else {
+    let Some((_, items)) = markdown_array(prop, schema) else {
         return;
     };
-    let array_def_name = prop.ref_path.as_deref().and_then(|ref_path| {
-        matches!(
-            resolve_ref_classified(schema, ref_path),
-            Some(ResolvedDef::Array { .. })
-        )
-        .then(|| ref_def_name(ref_path))
-        .flatten()
-    });
+    let array_def_name = prop
+        .ref_path
+        .as_deref()
+        .and_then(|ref_path| resolve_ref(schema, ref_path))
+        .filter(|resolved| property_resolves_to_array(resolved.property, schema))
+        .map(|resolved| resolved.name);
     let should_visit = array_def_name.is_none_or(|name| {
         IN_PROGRESS_DEFS.with(|defs| defs.borrow_mut().insert(name.to_string()))
     });
@@ -4236,24 +4229,12 @@ fn generate_top_level_attribute_type(
             values_str,
             dsl_aliases_code
         );
-        let is_array = prop
-            .prop_type
-            .as_ref()
-            .and_then(TypeValue::as_str)
-            .is_some_and(|prop_type| prop_type == "array");
-        let is_ref_array = prop
-            .ref_path
-            .as_ref()
-            .and_then(|ref_path| resolve_ref_classified(schema, ref_path))
-            .is_some_and(|definition| matches!(definition, ResolvedDef::Array { .. }));
-        if is_array || is_ref_array {
-            let list_ctor = list_constructor(
-                prop.insertion_order,
-                override_forces_unordered(&schema.type_name, CfnPropertyPath::new(None, prop_name)),
-            );
-            return format!("{}({})", list_ctor, enum_type);
-        }
-        return enum_type;
+        return enum_property_type(
+            prop,
+            schema,
+            &enum_type,
+            override_forces_unordered(&schema.type_name, CfnPropertyPath::new(None, prop_name)),
+        );
     }
 
     cfn_type_to_carina_type_with_enum(prop, prop_name, schema, namespace, enums).0
@@ -5296,171 +5277,169 @@ fn deduplicate_enum_values(values: Vec<String>) -> Option<Vec<String>> {
     }
 }
 
-/// Resolve a `$ref` path to the raw `CfnDefinition`.
-/// e.g., "#/definitions/Ingress" -> Some(&CfnDefinition)
-///
-/// Prefer [`resolve_ref_classified`] in consumers: the raw `CfnDefinition`
-/// exposes the open `def_type: Option<String>` discriminant, and
-/// hand-dispatching on it is exactly what let a scalar `$ref` be silently
-/// typed as `String` (awscc#291). This raw resolver exists only as the
-/// building block `resolve_ref_classified` is built on; new code that needs
-/// to act on a `$ref`'s shape should go through the classifier so the
-/// compiler forces every shape (including `Scalar`) to be handled.
-fn resolve_ref<'a>(schema: &'a CfnSchema, ref_path: &str) -> Option<&'a CfnDefinition> {
-    let def_name = ref_path.strip_prefix("#/definitions/")?;
-    schema.definitions.as_ref()?.get(def_name)
-}
-
 /// Extract the definition name from a $ref path
 /// e.g., "#/definitions/Ingress" -> Some("Ingress")
 fn ref_def_name(ref_path: &str) -> Option<&str> {
     ref_path.strip_prefix("#/definitions/")
 }
 
-/// The scalar kinds a `$ref` definition can carry.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ScalarKind {
-    Integer,
-    Number,
-    Boolean,
+/// The final definition reached by a local `$ref` chain.
+///
+/// Definitions use the exact same representation as inline properties, so
+/// every keyword supported by `CfnProperty` automatically survives `$ref`
+/// resolution. `name` is the final target's name and is used only for stable
+/// struct identity and recursion handling; shape generation always consumes
+/// `property` through the normal inline path.
+#[derive(Clone, Copy)]
+struct ResolvedRef<'a> {
+    name: &'a str,
+    property: &'a CfnProperty,
 }
 
-impl ScalarKind {
-    /// The CloudFormation `"type"` string this kind came from. Used to
-    /// reconstruct an inline `CfnProperty` whose typing goes through the same
-    /// path a direct property would.
-    fn cfn_type(self) -> &'static str {
-        match self {
-            ScalarKind::Integer => "integer",
-            ScalarKind::Number => "number",
-            ScalarKind::Boolean => "boolean",
+/// Resolve a local definition `$ref`, following definitions that are aliases
+/// to other definitions. A malformed path, missing definition, external ref,
+/// or alias cycle is unresolved rather than recursively looping.
+fn resolve_ref<'a>(schema: &'a CfnSchema, ref_path: &str) -> Option<ResolvedRef<'a>> {
+    let definitions = schema.definitions.as_ref()?;
+    let mut name = ref_def_name(ref_path)?;
+    let mut visited = HashSet::new();
+
+    loop {
+        if !visited.insert(name) {
+            return None;
         }
+        let (definition_name, property) = definitions.get_key_value(name)?;
+        let Some(next_ref) = property.ref_path.as_deref() else {
+            return Some(ResolvedRef {
+                name: definition_name,
+                property,
+            });
+        };
+        name = ref_def_name(next_ref)?;
     }
 }
 
-/// A `$ref` definition (`CfnDefinition`) classified into the one shape it
-/// actually represents.
-///
-/// `CfnDefinition` is a flat serde DTO whose `def_type` is an open
-/// `Option<String>` — nothing in the type system forces a consumer that
-/// dispatches on it to handle every shape, so a missed arm silently falls
-/// back to `String` (this is exactly how awscc#291 happened: scalar `$ref`s
-/// were never matched and became `String`). `classify_def` is the **single
-/// source of truth** for that dispatch: it runs the canonical precedence
-/// once, and every consumer `match`es the result exhaustively, so the
-/// compiler refuses to let a new consumer (or a new shape) drop a case.
-///
-/// Borrows from the `CfnDefinition` so no cloning happens at classification
-/// time; callers clone only the slices they keep.
-enum ResolvedDef<'a> {
-    /// Object with inline properties.
-    Struct {
-        properties: &'a BTreeMap<String, CfnProperty>,
-        required: &'a [String],
-    },
-    /// Object map whose `patternProperties` declares one value schema.
-    ObjectMap { value: &'a CfnProperty },
-    /// `oneOf` union of variants.
-    OneOf { variants: &'a [CfnProperty] },
-    /// Enum-only def (a fixed list of values, no properties). Takes
-    /// precedence over `Scalar` so an integer-typed enum (e.g. WAFv2
-    /// `EvaluationWindowSec`) is treated as an enum, matching the canonical
-    /// codegen precedence.
-    Enum { values: &'a [EnumValue] },
-    /// Array def carrying an item schema.
-    Array { items: &'a CfnProperty },
-    /// String def constrained by a regex pattern (with optional length).
-    StringPattern {
-        pattern: &'a str,
-        min_length: Option<u64>,
-        max_length: Option<u64>,
-    },
-    /// Scalar (`integer` / `number` / `boolean`) def, carrying its own range
-    /// and format so a `$ref` to it reproduces the ranged int/float/bool a
-    /// direct property would (awscc#291).
-    Scalar {
-        kind: ScalarKind,
-        minimum: Option<i64>,
-        maximum: Option<i64>,
-        format: Option<&'a str>,
-    },
-    /// None of the known shapes — the def has no inline properties, oneOf,
-    /// enum, array items, string pattern, or scalar type. Consumers fall back
-    /// to name-based string heuristics for these (e.g. an opaque object whose
-    /// fields are not modelled). Made an explicit variant — rather than a
-    /// catch-all `_` — so adding a new shape forces every consumer to decide
-    /// where it belongs instead of silently landing here.
-    Opaque,
+fn has_direct_struct_properties(property: &CfnProperty) -> bool {
+    property
+        .properties
+        .as_ref()
+        .is_some_and(|properties| !properties.is_empty())
 }
 
-/// Classify a resolved `$ref` definition into the single shape it represents.
-///
-/// The precedence below is the canonical order the schema-code `$ref` branch
-/// has always used, extended with the object-map shape: properties → object
-/// map → oneOf → enum → array → string-pattern → scalar → opaque. It is the
-/// one place that order lives; every `ResolvedDef`
-/// consumer inherits it by matching the result. Preserving this order keeps
-/// generated output byte-identical (e.g. an integer-typed enum classifies as
-/// `Enum`, not `Scalar`, because the enum arm comes first).
-fn classify_def(def: &CfnDefinition) -> ResolvedDef<'_> {
-    if let Some(props) = &def.properties
-        && !props.is_empty()
-    {
-        return ResolvedDef::Struct {
-            properties: props,
-            required: &def.required,
+/// Inline object properties are authoritative even when a schema omits the
+/// redundant `type: object` marker. This preserves the old definition
+/// precedence while keeping definitions and inline properties on one path.
+fn inline_property_type(property: &CfnProperty) -> Option<&str> {
+    if has_direct_struct_properties(property) {
+        Some("object")
+    } else {
+        property
+            .prop_type
+            .as_ref()
+            .and_then(TypeValue::effective_type)
+    }
+}
+
+enum PropertyShape<'a> {
+    Reference {
+        path: &'a str,
+        resolved: Option<ResolvedRef<'a>>,
+    },
+    Inline,
+    Direct(&'a BTreeMap<String, CfnProperty>),
+    Array {
+        /// Keep the winning variant's reference context for generation.
+        variant: &'a CfnProperty,
+        /// Reuse the concrete array without resolving nested unions again.
+        resolved: &'a CfnProperty,
+    },
+    /// Union of object fields; variant-local required lists do not apply.
+    Merged(BTreeMap<String, CfnProperty>),
+    Unresolved,
+}
+
+fn property_shape<'a>(property: &'a CfnProperty, schema: &'a CfnSchema) -> PropertyShape<'a> {
+    property_shape_with_visited(property, schema, &mut HashSet::new())
+}
+
+/// The sole shape precedence rule: a reference owns the shape before any
+/// sibling keywords. Inline properties then use direct fields, the first
+/// oneOf variant resolving to an array, or merged optional object fields.
+fn property_shape_with_visited<'a>(
+    property: &'a CfnProperty,
+    schema: &'a CfnSchema,
+    visiting_defs: &mut HashSet<&'a str>,
+) -> PropertyShape<'a> {
+    if let Some(path) = property.ref_path.as_deref() {
+        return PropertyShape::Reference {
+            path,
+            resolved: resolve_ref(schema, path),
         };
     }
-    if def.def_type.as_deref() == Some("object")
-        && let Some(patterns) = &def.pattern_properties
-        && patterns.len() == 1
+    if let Some(properties) = property
+        .properties
+        .as_ref()
+        .filter(|props| !props.is_empty())
     {
-        return ResolvedDef::ObjectMap {
-            value: patterns
-                .values()
-                .next()
-                .expect("one patternProperties entry"),
-        };
+        return PropertyShape::Direct(properties);
     }
-    if !def.one_of.is_empty() {
-        return ResolvedDef::OneOf {
-            variants: &def.one_of,
-        };
+    if property.one_of.is_empty() {
+        return PropertyShape::Inline;
     }
-    if let Some(values) = &def.enum_values
-        && !values.is_empty()
-    {
-        return ResolvedDef::Enum { values };
+    if let Some(shape) = property.one_of.iter().find_map(|variant| {
+        resolved_array_property(variant, schema, visiting_defs)
+            .map(|resolved| PropertyShape::Array { variant, resolved })
+    }) {
+        return shape;
     }
-    if def.def_type.as_deref() == Some("array")
-        && let Some(items) = &def.items
-    {
-        return ResolvedDef::Array { items };
+    let mut merged = BTreeMap::new();
+    for variant in &property.one_of {
+        merged.extend(resolved_object_properties(variant, schema, visiting_defs));
     }
-    if def.def_type.as_deref() == Some("string")
-        && let Some(pattern) = &def.pattern
-    {
-        return ResolvedDef::StringPattern {
-            pattern,
-            min_length: def.min_length,
-            max_length: def.max_length,
-        };
+    if merged.is_empty() {
+        PropertyShape::Unresolved
+    } else {
+        PropertyShape::Merged(merged)
     }
-    let scalar_kind = match def.def_type.as_deref() {
-        Some("integer") => Some(ScalarKind::Integer),
-        Some("number") => Some(ScalarKind::Number),
-        Some("boolean") => Some(ScalarKind::Boolean),
-        _ => None,
-    };
-    if let Some(kind) = scalar_kind {
-        return ResolvedDef::Scalar {
-            kind,
-            minimum: def.minimum,
-            maximum: def.maximum,
-            format: def.format.as_deref(),
-        };
+}
+
+/// Follow object variants with the same precedence and cycle guard as array
+/// variants. A variant's required list does not apply to the merged object.
+fn resolved_object_properties<'a>(
+    property: &'a CfnProperty,
+    schema: &'a CfnSchema,
+    visiting_defs: &mut HashSet<&'a str>,
+) -> BTreeMap<String, CfnProperty> {
+    match property_shape_with_visited(property, schema, visiting_defs) {
+        PropertyShape::Reference {
+            resolved: Some(resolved),
+            ..
+        } => {
+            if !visiting_defs.insert(resolved.name) {
+                return BTreeMap::new();
+            }
+            let properties = resolved_object_properties(resolved.property, schema, visiting_defs);
+            visiting_defs.remove(resolved.name);
+            properties
+        }
+        PropertyShape::Direct(properties) => properties.clone(),
+        PropertyShape::Merged(properties) => properties,
+        PropertyShape::Reference { resolved: None, .. }
+        | PropertyShape::Inline
+        | PropertyShape::Array { .. }
+        | PropertyShape::Unresolved => BTreeMap::new(),
     }
-    ResolvedDef::Opaque
+}
+
+/// Whether the inline generator will represent this property as a struct.
+fn property_generates_struct(property: &CfnProperty, schema: &CfnSchema) -> bool {
+    match property_shape(property, schema) {
+        PropertyShape::Reference { resolved, .. } => {
+            resolved.is_some_and(|resolved| property_generates_struct(resolved.property, schema))
+        }
+        PropertyShape::Direct(_) | PropertyShape::Merged(_) => true,
+        PropertyShape::Inline | PropertyShape::Array { .. } | PropertyShape::Unresolved => false,
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -5470,10 +5449,12 @@ enum ObjectMapValueKind {
 }
 
 fn is_direct_string_property(property: &CfnProperty) -> bool {
-    matches!(
-        property.prop_type.as_ref(),
-        Some(TypeValue::Single(property_type)) if property_type == "string"
-    ) && property.ref_path.is_none()
+    property
+        .prop_type
+        .as_ref()
+        .and_then(TypeValue::effective_type)
+        == Some("string")
+        && property.ref_path.is_none()
         && property.one_of.is_empty()
         && property.any_of.is_empty()
 }
@@ -5485,15 +5466,10 @@ fn classify_object_map_value(
     if is_direct_string_property(value) {
         return Some(ObjectMapValueKind::DirectString);
     }
-    if value
-        .properties
-        .as_ref()
-        .is_some_and(|properties| !properties.is_empty())
+    if has_direct_struct_properties(value)
         || value.ref_path.as_deref().is_some_and(|ref_path| {
-            matches!(
-                resolve_ref_classified(schema, ref_path),
-                Some(ResolvedDef::Struct { .. })
-            )
+            resolve_ref(schema, ref_path)
+                .is_some_and(|resolved| property_generates_struct(resolved.property, schema))
         })
     {
         return Some(ObjectMapValueKind::Struct);
@@ -5528,57 +5504,14 @@ fn property_object_map_value<'a>(
     prop: &'a CfnProperty,
     schema: &'a CfnSchema,
 ) -> Option<&'a CfnProperty> {
-    if let Some(value) = direct_object_map_value(prop) {
-        return Some(value);
-    }
-    prop.ref_path
-        .as_deref()
-        .and_then(|ref_path| resolve_ref_classified(schema, ref_path))
-        .and_then(|resolved| match resolved {
-            ResolvedDef::ObjectMap { value } => Some(value),
-            _ => None,
-        })
-}
-
-/// Resolve a `$ref` path and classify the target in one step.
-///
-/// The primary entry point for `$ref` consumers: returns `None` only when the
-/// path does not resolve to a known definition. A resolved-but-unrecognized
-/// def yields `ResolvedDef::Opaque`, never a silent `None`.
-fn resolve_ref_classified<'a>(schema: &'a CfnSchema, ref_path: &str) -> Option<ResolvedDef<'a>> {
-    resolve_ref(schema, ref_path).map(classify_def)
-}
-
-impl ResolvedDef<'_> {
-    /// If this is a `Scalar`, reconstruct an equivalent inline `CfnProperty`
-    /// so callers can recurse through the normal property-typing logic instead
-    /// of treating the def as a struct.
-    ///
-    /// CloudFormation factors recurring scalar fields into shared definitions
-    /// — e.g. WAFv2 WebACL's `Rule.Priority` and `RateBasedStatement.Limit`
-    /// are `$ref`s to the `RulePriority` / `RateLimit` integer defs. Without
-    /// this, the `$ref` branches fall through to the String fallback and
-    /// mistype the field, so the resource is rejected at apply (awscc#291).
-    /// Returns `None` for every non-scalar shape.
-    fn scalar_as_property(&self) -> Option<CfnProperty> {
-        match self {
-            ResolvedDef::Scalar {
-                kind,
-                minimum,
-                maximum,
-                format,
-            } => Some(CfnProperty {
-                prop_type: Some(TypeValue::Single(kind.cfn_type().to_string())),
-                minimum: *minimum,
-                maximum: *maximum,
-                format: format.map(str::to_string),
-                // A scalar def with enum values classifies as `Enum`, not
-                // `Scalar`, so the reconstructed property never needs to carry
-                // enum values — they are handled by the enum branch upstream.
-                ..Default::default()
-            }),
-            _ => None,
+    match property_shape(prop, schema) {
+        PropertyShape::Reference { resolved, .. } => {
+            property_object_map_value(resolved?.property, schema)
         }
+        PropertyShape::Inline if inline_property_type(prop) == Some("object") => {
+            direct_object_map_value(prop)
+        }
+        _ => None,
     }
 }
 
@@ -5672,9 +5605,6 @@ fn generate_struct_type(
             // If enum detected in struct field and it's in the enums map, use shared string enum type.
             // Try composite key "DefName.FieldName" first (for definition-scoped enums),
             // then fall back to plain "FieldName" (for top-level property enums).
-            // Check if the original field type was a List (array)
-            let is_list_field =
-                field_type.contains("::list(") || field_type.contains("::unordered_list(");
             let field_type = if let Some(expression) =
                 nested_override.and_then(TypeOverride::attribute_type_expression)
             {
@@ -5725,14 +5655,7 @@ fn generate_struct_type(
                         dsl_aliases_code
                     )
                 };
-                // Wrap in List if the original field type was a List
-                if is_list_field {
-                    let list_ctor =
-                        list_constructor(field_prop.insertion_order, field_force_unordered);
-                    format!("{}({})", list_ctor, enum_type)
-                } else {
-                    enum_type
-                }
+                enum_property_type(field_prop, schema, &enum_type, field_force_unordered)
             // Other nested override variants are caught by the trailing guard
             // so new variants cannot silently do nothing for struct fields.
             } else if let Some(other) = nested_override {
@@ -6099,7 +6022,7 @@ fn integer_from_number_bounds(
     property_name: &str,
 ) -> (Option<i64>, Option<i64>) {
     assert_eq!(
-        prop.prop_type.as_ref().and_then(TypeValue::as_str),
+        prop.prop_type.as_ref().and_then(TypeValue::effective_type),
         Some("number"),
         "IntegerFromNumber override for {type_name}.{property_name} requires a CFN number property"
     );
@@ -6440,7 +6363,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             ("AWS::Budgets::Budget", "BudgetData.CostFilters"),
             TypeOverride::AttributeType {
                 expression: "AttributeType::map(AttributeType::list(AttributeType::string()))",
-                display: "`Map<String, List<String>>`",
+                display: const { OverrideTypeDisplay::new("Map<String, List<String>>") },
                 block_name: None,
                 default: None,
             },
@@ -6449,7 +6372,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             ("AWS::Budgets::Budget", "BudgetData.PlannedBudgetLimits"),
             TypeOverride::AttributeType {
                 expression: "AttributeType::map(AttributeType::ref_(\"Spend\".to_string()))",
-                display: "`Map<String, Spend>`",
+                display: const { OverrideTypeDisplay::new("Map<String, Spend>") },
                 block_name: None,
                 default: None,
             },
@@ -6463,7 +6386,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             ("AWS::SNS::Subscription", "RedrivePolicy"),
             TypeOverride::AttributeType {
                 expression: "crate::schemas::awscc_types::sns_subscription_redrive_policy()",
-                display: "`Struct(SubscriptionRedrivePolicy)`",
+                display: const { OverrideTypeDisplay::new("Struct(SubscriptionRedrivePolicy)") },
                 block_name: None,
                 default: None,
             },
@@ -6472,7 +6395,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             ("AWS::SNS::Subscription", "DeliveryPolicy"),
             TypeOverride::AttributeType {
                 expression: "crate::schemas::awscc_types::sns_subscription_delivery_policy()",
-                display: "`Struct(SubscriptionDeliveryPolicy)`",
+                display: const { OverrideTypeDisplay::new("Struct(SubscriptionDeliveryPolicy)") },
                 block_name: None,
                 default: None,
             },
@@ -6481,7 +6404,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             ("AWS::SNS::Subscription", "ReplayPolicy"),
             TypeOverride::AttributeType {
                 expression: "crate::schemas::awscc_types::sns_subscription_replay_policy()",
-                display: "`Struct(SubscriptionReplayPolicy)`",
+                display: const { OverrideTypeDisplay::new("Struct(SubscriptionReplayPolicy)") },
                 block_name: None,
                 default: None,
             },
@@ -6490,7 +6413,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             ("AWS::SNS::Topic", "ArchivePolicy"),
             TypeOverride::AttributeType {
                 expression: "crate::schemas::awscc_types::sns_topic_archive_policy()",
-                display: "`Struct(TopicArchivePolicy)`",
+                display: const { OverrideTypeDisplay::new("Struct(TopicArchivePolicy)") },
                 block_name: None,
                 default: None,
             },
@@ -6499,7 +6422,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             ("AWS::Logs::LogGroup", "FieldIndexPolicies"),
             TypeOverride::AttributeType {
                 expression: "crate::schemas::awscc_types::logs_field_index_policies()",
-                display: "`List<Struct(FieldIndexPolicy)>`",
+                display: const { OverrideTypeDisplay::new("List<Struct(FieldIndexPolicy)>") },
                 block_name: Some("field_index_policy"),
                 default: Some(AttributeTypeOverrideDefault {
                     value_expression: "Value::Concrete(ConcreteValue::List(vec![]))",
@@ -6511,7 +6434,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             ("AWS::Logs::LogGroup", "DataProtectionPolicy"),
             TypeOverride::AttributeType {
                 expression: "crate::schemas::awscc_types::logs_data_protection_policy()",
-                display: "`Struct(LogGroupDataProtectionPolicy)`",
+                display: const { OverrideTypeDisplay::new("Struct(LogGroupDataProtectionPolicy)") },
                 block_name: None,
                 default: None,
             },
@@ -7365,8 +7288,43 @@ fn list_constructor(insertion_order: Option<bool>, force_unordered: bool) -> &'s
     }
 }
 
+/// All list emission, including enum overlays, consumes the concrete array
+/// selected by property_shape and retains its ordering and item bounds.
+fn array_attribute_type(element_type: &str, array: &CfnProperty, force_unordered: bool) -> String {
+    let list_ctor = list_constructor(array.insertion_order, force_unordered);
+    if array.min_items.is_some() || array.max_items.is_some() {
+        let length = emit_length_option(
+            array.min_items.and_then(|value| u64::try_from(value).ok()),
+            array.max_items.and_then(|value| u64::try_from(value).ok()),
+        );
+        refined_list_type(element_type, list_ctor == "AttributeType::list", &length)
+    } else {
+        format!("{list_ctor}({element_type})")
+    }
+}
+
+/// Substitute the enum leaf while retaining every resolved list layer and
+/// its own bounds/order, for top-level attributes and nested struct fields.
+fn enum_property_type(
+    prop: &CfnProperty,
+    schema: &CfnSchema,
+    enum_type: &str,
+    force_unordered: bool,
+) -> String {
+    if let Some(array) = resolved_array_property(prop, schema, &mut HashSet::new()) {
+        let item_type = array.items.as_deref().map_or_else(
+            || enum_type.to_string(),
+            |items| enum_property_type(items, schema, enum_type, force_unordered),
+        );
+        array_attribute_type(&item_type, array, force_unordered)
+    } else {
+        enum_type.to_string()
+    }
+}
+
 /// Returns (type_string, Option<EnumInfo>)
-/// EnumInfo is Some if this property is an enum that should use AttributeType::Custom
+/// EnumInfo is the typed marker for a string-enum leaf (possibly inside lists).
+/// The provisional type uses a string leaf until the caller substitutes the enum.
 fn cfn_type_to_carina_type_with_enum(
     prop: &CfnProperty,
     prop_name: &str,
@@ -7404,14 +7362,31 @@ fn property_type_values(prop: &CfnProperty) -> Vec<String> {
 }
 
 fn property_resolves_to_array(prop: &CfnProperty, schema: &CfnSchema) -> bool {
-    if property_type_values(prop).iter().any(|ty| ty == "array") {
-        return true;
-    }
+    resolved_array_property(prop, schema, &mut HashSet::new()).is_some()
+}
 
-    prop.ref_path
-        .as_deref()
-        .and_then(|ref_path| resolve_ref_classified(schema, ref_path))
-        .is_some_and(|resolved| matches!(resolved, ResolvedDef::Array { .. }))
+/// Resolve aliases and oneOf arrays through the same shape classifier used
+/// for inline properties. Track definition visits because oneOf branches
+/// can refer back to their containing definition.
+fn resolved_array_property<'a>(
+    prop: &'a CfnProperty,
+    schema: &'a CfnSchema,
+    visiting_defs: &mut HashSet<&'a str>,
+) -> Option<&'a CfnProperty> {
+    match property_shape_with_visited(prop, schema, visiting_defs) {
+        PropertyShape::Reference { resolved, .. } => {
+            let resolved = resolved?;
+            if !visiting_defs.insert(resolved.name) {
+                return None;
+            }
+            let array = resolved_array_property(resolved.property, schema, visiting_defs);
+            visiting_defs.remove(resolved.name);
+            array
+        }
+        PropertyShape::Inline => (inline_property_type(prop) == Some("array")).then_some(prop),
+        PropertyShape::Array { resolved, .. } => Some(resolved),
+        PropertyShape::Direct(_) | PropertyShape::Merged(_) | PropertyShape::Unresolved => None,
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -7465,6 +7440,43 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
     enums: &BTreeMap<String, EnumInfo>,
     paths: CfnTypeGenerationPaths<'_>,
 ) -> (String, Option<EnumInfo>) {
+    cfn_type_to_carina_type_with_enum_resolved(
+        prop,
+        prop_name,
+        schema,
+        namespace,
+        enums,
+        paths,
+        RefGenerationState {
+            definition_name: None,
+            context: RefContext::Normal,
+        },
+    )
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RefContext {
+    Normal,
+    ListItem,
+}
+
+#[derive(Clone, Copy)]
+struct RefGenerationState<'a> {
+    definition_name: Option<&'a str>,
+    context: RefContext,
+}
+
+fn cfn_type_to_carina_type_with_enum_resolved(
+    prop: &CfnProperty,
+    prop_name: &str,
+    schema: &CfnSchema,
+    namespace: &str,
+    enums: &BTreeMap<String, EnumInfo>,
+    paths: CfnTypeGenerationPaths<'_>,
+    ref_state: RefGenerationState<'_>,
+) -> (String, Option<EnumInfo>) {
+    let definition_name = ref_state.definition_name;
+    let ref_context = ref_state.context;
     let struct_path = paths.structural;
     let property_path = paths.provider;
     let cfn_parent = paths.cfn_parent;
@@ -7492,37 +7504,99 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
             serde_json::Value::String(s) => s.clone(),
             other => other.to_string(),
         };
-        let type_name = prop_name.to_pascal_case();
+        let type_name = definition_name.unwrap_or(prop_name).to_pascal_case();
         let enum_info = EnumInfo {
             type_name,
             values: vec![value_str],
         };
-        return ("/* enum */".to_string(), Some(enum_info));
+        return ("AttributeType::string()".to_string(), Some(enum_info));
     }
 
-    if !prop.one_of.is_empty() {
-        if let Some(array_variant) = prop
-            .one_of
-            .iter()
-            .find(|variant| property_resolves_to_array(variant, schema))
-        {
-            return cfn_type_to_carina_type_with_enum_with_paths(
+    match property_shape(prop, schema) {
+        PropertyShape::Reference { path, resolved } => {
+            if is_tag_map_ref(schema, path) {
+                return ("carina_aws_types::tags_type()".to_string(), None);
+            }
+
+            let Some(resolved) = resolved else {
+                if let Some(inferred) = infer_string_type(prop_name, &schema.type_name) {
+                    return (inferred, None);
+                }
+                return ("AttributeType::string()".to_string(), None);
+            };
+            let def_name = resolved.name;
+
+            if IN_PROGRESS_DEFS.with(|definitions| definitions.borrow().contains(def_name)) {
+                mark_back_reference(def_name);
+                return (
+                    format!("AttributeType::ref_({}.to_string())", rust_lit(def_name)),
+                    None,
+                );
+            }
+
+            let definition_already_emitted =
+                EMITTED_DEFS.with(|definitions| definitions.borrow().contains_key(def_name));
+            IN_PROGRESS_DEFS.with(|definitions| {
+                definitions.borrow_mut().insert(def_name.to_string());
+            });
+            let (body, enum_info) = cfn_type_to_carina_type_with_enum_resolved(
+                resolved.property,
+                prop_name,
+                schema,
+                namespace,
+                enums,
+                paths,
+                RefGenerationState {
+                    definition_name: Some(def_name),
+                    context: ref_context,
+                },
+            );
+            IN_PROGRESS_DEFS.with(|definitions| {
+                definitions.borrow_mut().remove(def_name);
+            });
+
+            if property_generates_struct(resolved.property, schema) {
+                match ref_context {
+                    RefContext::Normal => {
+                        if definition_already_emitted {
+                            return (
+                                format!("AttributeType::ref_({}.to_string())", rust_lit(def_name)),
+                                None,
+                            );
+                        }
+                        EMITTED_DEFS.with(|definitions| {
+                            definitions
+                                .borrow_mut()
+                                .insert(def_name.to_string(), body.clone());
+                        });
+                    }
+                    RefContext::ListItem if was_back_referenced(def_name) => {
+                        EMITTED_DEFS.with(|definitions| {
+                            definitions
+                                .borrow_mut()
+                                .insert(def_name.to_string(), body.clone());
+                        });
+                    }
+                    RefContext::ListItem => {}
+                }
+            }
+            return (body, enum_info);
+        }
+        PropertyShape::Array {
+            variant: array_variant,
+            ..
+        } => {
+            return cfn_type_to_carina_type_with_enum_resolved(
                 array_variant,
                 prop_name,
                 schema,
                 namespace,
                 enums,
                 paths,
+                ref_state,
             );
         }
-
-        let has_mergeable_object_variant = prop.one_of.iter().any(|variant| {
-            variant
-                .properties
-                .as_ref()
-                .is_some_and(|props| !props.is_empty())
-        });
-        if !has_mergeable_object_variant {
+        PropertyShape::Unresolved => {
             let variant_types: Vec<Vec<String>> =
                 prop.one_of.iter().map(property_type_values).collect();
             panic!(
@@ -7530,199 +7604,23 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
                 schema.type_name, prop_name, variant_types
             );
         }
-    }
-
-    // Handle $ref
-    if let Some(ref_path) = &prop.ref_path {
-        if is_tag_map_ref(schema, ref_path) {
-            return ("carina_aws_types::tags_type()".to_string(), None);
-        }
-
-        if let Some(def_name) = ref_def_name(ref_path)
-            && IN_PROGRESS_DEFS.with(|s| s.borrow().contains(def_name))
-        {
-            mark_back_reference(def_name);
-            return (
-                format!("AttributeType::ref_({}.to_string())", rust_lit(def_name)),
-                None,
+        PropertyShape::Merged(properties) => {
+            let mut inline_property = prop.clone();
+            inline_property.prop_type = Some(TypeValue::Single("object".to_string()));
+            inline_property.properties = Some(properties);
+            inline_property.required.clear();
+            inline_property.one_of.clear();
+            return cfn_type_to_carina_type_with_enum_resolved(
+                &inline_property,
+                prop_name,
+                schema,
+                namespace,
+                enums,
+                paths,
+                ref_state,
             );
         }
-
-        let definition_already_emitted = ref_def_name(ref_path)
-            .is_some_and(|def_name| EMITTED_DEFS.with(|s| s.borrow().contains_key(def_name)));
-
-        if let Some(resolved) = resolve_ref_classified(schema, ref_path) {
-            match resolved {
-                ResolvedDef::Struct {
-                    properties,
-                    required,
-                } => {
-                    let def_name = ref_def_name(ref_path).unwrap_or(prop_name);
-                    IN_PROGRESS_DEFS.with(|s| {
-                        s.borrow_mut().insert(def_name.to_string());
-                    });
-                    let body = generate_struct_type(
-                        def_name,
-                        properties,
-                        required,
-                        schema,
-                        namespace,
-                        enums,
-                        StructGenerationPaths {
-                            structural: struct_path,
-                            provider: property_path,
-                        },
-                    );
-                    IN_PROGRESS_DEFS.with(|s| {
-                        s.borrow_mut().remove(def_name);
-                    });
-                    if definition_already_emitted {
-                        return (
-                            format!("AttributeType::ref_({}.to_string())", rust_lit(def_name)),
-                            None,
-                        );
-                    }
-                    EMITTED_DEFS.with(|s| {
-                        s.borrow_mut().insert(def_name.to_string(), body.clone());
-                    });
-                    return (body, None);
-                }
-                ResolvedDef::ObjectMap { value } => {
-                    return generate_object_map_type(
-                        value, prop_name, schema, namespace, enums, paths,
-                    );
-                }
-                ResolvedDef::OneOf { variants } => {
-                    let mut merged_props = BTreeMap::new();
-                    for variant in variants {
-                        if let Some(props) = &variant.properties {
-                            for (k, v) in props {
-                                if is_deprecated_property(v) {
-                                    let field_path = extend_property_path(property_path, k);
-                                    record_skipped_deprecated_write_only_path(schema, &field_path);
-                                    continue;
-                                }
-                                merged_props.insert(k.clone(), v.clone());
-                            }
-                        }
-                    }
-                    if !merged_props.is_empty() {
-                        let def_name = ref_def_name(ref_path).unwrap_or(prop_name);
-                        IN_PROGRESS_DEFS.with(|s| {
-                            s.borrow_mut().insert(def_name.to_string());
-                        });
-                        let body = generate_struct_type(
-                            def_name,
-                            &merged_props,
-                            &[],
-                            schema,
-                            namespace,
-                            enums,
-                            StructGenerationPaths {
-                                structural: struct_path,
-                                provider: property_path,
-                            },
-                        );
-                        IN_PROGRESS_DEFS.with(|s| {
-                            s.borrow_mut().remove(def_name);
-                        });
-                        if definition_already_emitted {
-                            return (
-                                format!("AttributeType::ref_({}.to_string())", rust_lit(def_name)),
-                                None,
-                            );
-                        }
-                        EMITTED_DEFS.with(|s| {
-                            s.borrow_mut().insert(def_name.to_string(), body.clone());
-                        });
-                        return (body, None);
-                    }
-                }
-                ResolvedDef::Enum { values } => {
-                    let def_name = ref_def_name(ref_path).unwrap_or(prop_name);
-                    let type_name = def_name.to_pascal_case();
-                    let string_values: Vec<String> =
-                        values.iter().map(|v| v.to_string_value()).collect();
-                    let deduped =
-                        deduplicate_enum_values(string_values.clone()).unwrap_or(string_values);
-                    let enum_info = EnumInfo {
-                        type_name,
-                        values: deduped,
-                    };
-                    return ("/* enum */".to_string(), Some(enum_info));
-                }
-                ResolvedDef::Array { items } => {
-                    let item_path = extend_property_path(property_path, "*");
-                    let (item_type, item_enum) = cfn_type_to_carina_type_with_enum_with_paths(
-                        items,
-                        prop_name,
-                        schema,
-                        namespace,
-                        enums,
-                        CfnTypeGenerationPaths {
-                            provider: &item_path,
-                            ..paths
-                        },
-                    );
-                    let effective_item_type = if item_enum.is_some() {
-                        "AttributeType::string()".to_string()
-                    } else {
-                        item_type
-                    };
-                    let list_ctor = list_constructor(
-                        prop.insertion_order,
-                        override_forces_unordered(&schema.type_name, cfn_property_path),
-                    );
-                    return (format!("{}({})", list_ctor, effective_item_type), item_enum);
-                }
-                ResolvedDef::StringPattern {
-                    pattern,
-                    min_length,
-                    max_length,
-                } => {
-                    if infer_string_type(prop_name, &schema.type_name).is_none() {
-                        if let Some(values) = extract_enum_from_alternation_pattern(pattern) {
-                            let type_name = prop_name.to_pascal_case();
-                            let enum_info = EnumInfo { type_name, values };
-                            return ("/* enum */".to_string(), Some(enum_info));
-                        }
-                        let effective_min = min_length.filter(|&m| m > 0);
-                        let pattern_expr = emit_pattern_option(Some(pattern));
-                        let length_expr = emit_length_option(effective_min, max_length);
-                        return (
-                            refined_string_type("None", &pattern_expr, &length_expr, "None"),
-                            None,
-                        );
-                    }
-                }
-                scalar @ ResolvedDef::Scalar { .. } => {
-                    if let Some(scalar_prop) = scalar.scalar_as_property() {
-                        return cfn_type_to_carina_type_with_enum_with_paths(
-                            &scalar_prop,
-                            prop_name,
-                            schema,
-                            namespace,
-                            enums,
-                            paths,
-                        );
-                    }
-                }
-                ResolvedDef::Opaque => {
-                    if resolve_ref(schema, ref_path)
-                        .is_some_and(|definition| definition.def_type.as_deref() == Some("object"))
-                    {
-                        panic!(
-                            "unsupported object definition {}.{} referenced by {ref_path}; expected a struct, direct-string map, tag map, typed map of struct, or classified bare object; see CODEGEN.md#classifying-bare-objects",
-                            schema.type_name, cfn_property_path
-                        );
-                    }
-                }
-            }
-        }
-        if let Some(inferred) = infer_string_type(prop_name, &schema.type_name) {
-            return (inferred, None);
-        }
-        return ("AttributeType::string()".to_string(), None);
+        PropertyShape::Inline | PropertyShape::Direct(_) => {}
     }
 
     // Handle explicit enum
@@ -7740,7 +7638,7 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
             return (int_enum_type(&schema.type_name, prop_name, &values), None);
         }
 
-        let type_name = prop_name.to_pascal_case();
+        let type_name = definition_name.unwrap_or(prop_name).to_pascal_case();
         let string_values: Vec<String> = enum_values.iter().map(|v| v.to_string_value()).collect();
         // Deduplicate case-insensitive duplicates (e.g., "GLACIER" and "Glacier")
         let deduped = deduplicate_enum_values(string_values.clone()).unwrap_or(string_values);
@@ -7748,8 +7646,7 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
             type_name,
             values: deduped,
         };
-        // Return placeholder - actual type will be generated using enum_info
-        return ("/* enum */".to_string(), Some(enum_info));
+        return ("AttributeType::string()".to_string(), Some(enum_info));
     }
 
     // Check known enum overrides (for properties with inconsistent description formatting)
@@ -7760,11 +7657,11 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
             type_name,
             values: values.iter().map(|s| s.to_string()).collect(),
         };
-        return ("/* enum */".to_string(), Some(enum_info));
+        return ("AttributeType::string()".to_string(), Some(enum_info));
     }
 
     // Handle type
-    match prop.prop_type.as_ref().and_then(|t| t.as_str()) {
+    match inline_property_type(prop) {
         Some("string") => {
             if let Some(TypeOverride::ToDsl(to_dsl)) =
                 resource_type_override(&schema.type_name, cfn_property_path)
@@ -7797,8 +7694,7 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
                     type_name,
                     values: enum_values,
                 };
-                // Return placeholder - actual type will be generated using enum_info
-                return ("/* enum */".to_string(), Some(enum_info));
+                return ("AttributeType::string()".to_string(), Some(enum_info));
             }
 
             // Check for string length constraints
@@ -7826,7 +7722,7 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
             {
                 let type_name = prop_name.to_pascal_case();
                 let enum_info = EnumInfo { type_name, values };
-                return ("/* enum */".to_string(), Some(enum_info));
+                return ("AttributeType::string()".to_string(), Some(enum_info));
             }
 
             // Check for regex pattern constraint
@@ -7839,11 +7735,6 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
                 );
             }
 
-            // Check for string format constraint (e.g., "uri", "date-time")
-            if prop.format.is_some() {
-                return (refined_string_type("None", "None", "None", "None"), None);
-            }
-
             // Check for string length constraints (minLength/maxLength)
             if has_length {
                 let length_expr = emit_length_option(effective_min, prop.max_length);
@@ -7852,6 +7743,13 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
                     refined_string_type("None", "None", &length_expr, to_dsl),
                     None,
                 );
+            }
+
+            // A format is informational in AttributeType, but still selects
+            // the refined-string representation when no validated length is
+            // present.
+            if prop.format.is_some() {
+                return (refined_string_type("None", "None", "None", "None"), None);
             }
 
             ("AttributeType::string()".to_string(), None)
@@ -7921,105 +7819,35 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
             }
         }
         Some("array") => {
-            let list_ctor = list_constructor(
-                prop.insertion_order,
-                override_forces_unordered(&schema.type_name, cfn_property_path),
-            );
-            let (list_type, item_enum) = if let Some(items) = &prop.items {
+            let (element_type, item_enum) = if let Some(items) = &prop.items {
                 let item_path = extend_property_path(property_path, "*");
-                // The list-of-struct inlining path bypasses the normal `$ref`
-                // branch above. Apply the same in-progress guard here so both
-                // direct self-references and multi-definition list cycles
-                // terminate with a schema Ref.
-                if let Some(ref_path) = &items.ref_path
-                    && let Some(def_name) = ref_def_name(ref_path)
-                    && IN_PROGRESS_DEFS.with(|defs| defs.borrow().contains(def_name))
-                {
-                    mark_back_reference(def_name);
-                    (
-                        format!(
-                            "{}(AttributeType::ref_({}.to_string()))",
-                            list_ctor,
-                            rust_lit(def_name)
-                        ),
-                        None,
-                    )
-                // Struct-shaped $ref items are inlined as a list-of-struct;
-                // every other item shape (scalar/enum/array/string/opaque)
-                // falls through to the normal recursion below.
-                } else if let Some(ref_path) = &items.ref_path
-                    && !is_tag_map_ref(schema, ref_path)
-                    && let Some(ResolvedDef::Struct {
-                        properties,
-                        required,
-                    }) = resolve_ref_classified(schema, ref_path)
-                {
-                    let def_name = ref_def_name(ref_path).unwrap_or(prop_name);
-                    IN_PROGRESS_DEFS.with(|defs| {
-                        defs.borrow_mut().insert(def_name.to_string());
-                    });
-                    let struct_type = generate_struct_type(
-                        def_name,
-                        properties,
-                        required,
-                        schema,
-                        namespace,
-                        enums,
-                        StructGenerationPaths {
-                            structural: struct_path,
-                            provider: &item_path,
-                        },
-                    );
-                    IN_PROGRESS_DEFS.with(|defs| {
-                        defs.borrow_mut().remove(def_name);
-                    });
-                    if was_back_referenced(def_name) {
-                        EMITTED_DEFS.with(|defs| {
-                            defs.borrow_mut()
-                                .insert(def_name.to_string(), struct_type.clone());
-                        });
-                    }
-                    (format!("{}({})", list_ctor, struct_type), None)
-                } else {
-                    let (item_type, item_enum) = cfn_type_to_carina_type_with_enum_with_paths(
-                        items,
-                        prop_name,
-                        schema,
-                        namespace,
-                        enums,
-                        CfnTypeGenerationPaths {
-                            provider: &item_path,
-                            ..paths
-                        },
-                    );
-                    // If array items have enum values, propagate the enum info so the
-                    // caller can register it. The item type uses String as a placeholder;
-                    // the actual enum type will be substituted when the enum is registered.
-                    let effective_item_type = if item_enum.is_some() {
-                        "AttributeType::string()".to_string()
-                    } else {
-                        item_type
-                    };
-                    (format!("{}({})", list_ctor, effective_item_type), item_enum)
-                }
-            } else {
-                (format!("{}(AttributeType::string())", list_ctor), None)
-            };
-            // Wrap in Custom type if minItems/maxItems constraints exist
-            if prop.min_items.is_some() || prop.max_items.is_some() {
-                let ordered = list_ctor == "AttributeType::list";
-                let inner = list_type
-                    .strip_prefix(&format!("{list_ctor}("))
-                    .and_then(|s| s.strip_suffix(')'))
-                    .unwrap_or("AttributeType::string()");
-                let length = emit_length_option(
-                    prop.min_items.and_then(|v| u64::try_from(v).ok()),
-                    prop.max_items.and_then(|v| u64::try_from(v).ok()),
+                let (item_type, item_enum) = cfn_type_to_carina_type_with_enum_resolved(
+                    items,
+                    prop_name,
+                    schema,
+                    namespace,
+                    enums,
+                    CfnTypeGenerationPaths {
+                        provider: &item_path,
+                        ..paths
+                    },
+                    RefGenerationState {
+                        definition_name: None,
+                        context: RefContext::ListItem,
+                    },
                 );
-                (refined_list_type(inner, ordered, &length), item_enum)
+                (item_type, item_enum)
             } else {
-                (list_type, item_enum)
-            }
+                ("AttributeType::string()".to_string(), None)
+            };
+            (
+                array_attribute_type(
+                    &element_type,
+                    prop,
+                    override_forces_unordered(&schema.type_name, cfn_property_path),
+                ),
+                item_enum,
+            )
         }
         Some("object") => {
             // Check known string type overrides first, mirroring the string branch
@@ -8037,7 +7865,7 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
             {
                 return (
                     generate_struct_type(
-                        prop_name,
+                        definition_name.unwrap_or(prop_name),
                         props,
                         &prop.required,
                         schema,
@@ -8460,33 +8288,6 @@ mod tests {
         );
     }
 
-    /// Build a `CfnDefinition` for classification tests, overriding only the
-    /// fields a case cares about.
-    fn def(
-        def_type: Option<&str>,
-        properties: Option<BTreeMap<String, CfnProperty>>,
-        one_of: Vec<CfnProperty>,
-        enum_values: Option<Vec<EnumValue>>,
-        items: Option<CfnProperty>,
-        pattern: Option<&str>,
-    ) -> CfnDefinition {
-        CfnDefinition {
-            def_type: def_type.map(str::to_string),
-            properties,
-            one_of,
-            enum_values,
-            items: items.map(Box::new),
-            pattern: pattern.map(str::to_string),
-            ..Default::default()
-        }
-    }
-
-    fn one_prop() -> BTreeMap<String, CfnProperty> {
-        let mut m = BTreeMap::new();
-        m.insert("Field".to_string(), CfnProperty::default());
-        m
-    }
-
     #[test]
     fn test_rust_lit_escapes_rust_string_literals() {
         assert_eq!(rust_lit("plain").to_string(), "\"plain\"");
@@ -8539,6 +8340,1122 @@ mod tests {
         );
     }
 
+    mod shape_parity {
+        use super::*;
+        use serde_json::{Value, json};
+
+        fn fixture(properties: Value, definitions: Value) -> CfnSchema {
+            // Use one identity for both emitters, with a declared replacement
+            // class that needs no name property in these partial fixtures.
+            let mut schema = empty_schema("AWS::EC2::RouteTable");
+            schema.properties = serde_json::from_value(properties).unwrap();
+            schema.definitions = Some(serde_json::from_value(definitions).unwrap());
+            schema
+        }
+
+        fn outputs(schema: &CfnSchema) -> (String, String) {
+            let code = generate_schema_code(schema, &schema.type_name).unwrap();
+            let docs = generate_test_markdown(schema, &schema.type_name).unwrap();
+            carina_docgen::check_page(&docs).unwrap();
+            (code, docs)
+        }
+
+        fn after<'a>(text: &'a str, prefix: &str) -> &'a str {
+            text.split_once(prefix)
+                .unwrap_or_else(|| panic!("missing {prefix:?} in {text}"))
+                .1
+                .lines()
+                .next()
+                .unwrap()
+        }
+
+        fn type_pair<'a>(code: &'a str, docs: &'a str, position: &str) -> (&'a str, &'a str) {
+            match position {
+                "top" => (
+                    code.split_once("(\"probe\", ").unwrap().1,
+                    after(docs.split_once("### `probe`").unwrap().1, "- **Type:** "),
+                ),
+                "item" => (
+                    code.split_once("(\"outer\", ").unwrap().1,
+                    after(docs.split_once("### `outer`").unwrap().1, "- **Type:** "),
+                ),
+                _ => (
+                    code.split_once("(\"probe\", ").unwrap().1,
+                    after(docs, "| `probe` | ").split(" | ").next().unwrap(),
+                ),
+            }
+        }
+
+        #[derive(Debug, Clone, PartialEq, Eq)]
+        enum Pattern {
+            Absent,
+            Present,
+            Text(String),
+        }
+
+        impl Pattern {
+            fn agrees_with(&self, other: &Self) -> bool {
+                match (self, other) {
+                    (Self::Absent, Self::Absent) => true,
+                    (Self::Text(left), Self::Text(right)) => left == right,
+                    (Self::Present, Self::Present | Self::Text(_))
+                    | (Self::Text(_), Self::Present) => true,
+                    _ => false,
+                }
+            }
+        }
+
+        #[derive(Debug, Clone, PartialEq, Eq)]
+        enum Shape {
+            Scalar(&'static str),
+            String {
+                length: (Option<i64>, Option<i64>),
+                pattern: Pattern,
+            },
+            Int {
+                range: (Option<i64>, Option<i64>),
+            },
+            List {
+                item: Box<Shape>,
+                bounds: (Option<i64>, Option<i64>),
+                // Markdown does not expose ordering. Check emitted ordering
+                // independently against the fixture, then compare the rest.
+                ordered: Option<bool>,
+            },
+            Map(Box<Shape>),
+            Enum(BTreeSet<String>),
+            IntEnum(BTreeSet<i64>),
+            Struct(BTreeMap<String, Shape>),
+        }
+
+        impl Shape {
+            fn summary(&self) -> String {
+                match self {
+                    Self::Scalar(name) => name.to_string(),
+                    Self::String { .. } => "string".to_string(),
+                    Self::Int { .. } => "int".to_string(),
+                    Self::List { item, .. } => format!("list<{}>", item.summary()),
+                    Self::Map(value) => format!("map<{}>", value.summary()),
+                    Self::Enum(_) | Self::IntEnum(_) => "enum".to_string(),
+                    Self::Struct(_) => "struct".to_string(),
+                }
+            }
+
+            fn without_ordering(mut self) -> Self {
+                match &mut self {
+                    Self::List { item, ordered, .. } => {
+                        *ordered = None;
+                        **item = item.clone().without_ordering();
+                    }
+                    Self::Map(value) => **value = value.clone().without_ordering(),
+                    Self::Struct(fields) => {
+                        for field in fields.values_mut() {
+                            *field = field.clone().without_ordering();
+                        }
+                    }
+                    _ => {}
+                }
+                self
+            }
+
+            fn list_ordering(&self) -> Vec<bool> {
+                match self {
+                    Self::List { item, ordered, .. } => {
+                        let mut orders = vec![ordered.expect("schema list must declare ordering")];
+                        orders.extend(item.list_ordering());
+                        orders
+                    }
+                    Self::Map(value) => value.list_ordering(),
+                    Self::Struct(fields) => fields.values().flat_map(Self::list_ordering).collect(),
+                    _ => vec![],
+                }
+            }
+
+            // Preserve pattern presence even when Markdown omits the regex.
+            // Compare the actual text whenever both sides expose it.
+            fn agrees_with(&self, other: &Self) -> bool {
+                match (self, other) {
+                    (
+                        Self::String { length, pattern },
+                        Self::String {
+                            length: other_length,
+                            pattern: other_pattern,
+                        },
+                    ) => length == other_length && pattern.agrees_with(other_pattern),
+                    (
+                        Self::List {
+                            item,
+                            bounds,
+                            ordered,
+                        },
+                        Self::List {
+                            item: other_item,
+                            bounds: other_bounds,
+                            ordered: other_ordered,
+                        },
+                    ) => {
+                        bounds == other_bounds
+                            && ordered == other_ordered
+                            && item.agrees_with(other_item)
+                    }
+                    (Self::Map(value), Self::Map(other_value)) => value.agrees_with(other_value),
+                    (Self::Struct(fields), Self::Struct(other_fields)) => {
+                        fields.len() == other_fields.len()
+                            && fields.iter().all(|(name, field)| {
+                                other_fields
+                                    .get(name)
+                                    .is_some_and(|other_field| field.agrees_with(other_field))
+                            })
+                    }
+                    _ => self == other,
+                }
+            }
+        }
+
+        // Parse only the emitted expression grammar used by these fixtures.
+        // Balanced groups keep nested list bounds and nested struct fields
+        // from being confused with their enclosing level.
+        fn group(text: &str, open: char, close: char) -> (&str, &str) {
+            assert!(text.starts_with(open), "{text}");
+            let (mut depth, mut quoted, mut escaped) = (0, false, false);
+            for (index, ch) in text.char_indices() {
+                if quoted {
+                    if escaped {
+                        escaped = false;
+                    } else if ch == '\\' {
+                        escaped = true;
+                    } else if ch == '"' {
+                        quoted = false;
+                    }
+                } else if ch == '"' {
+                    quoted = true;
+                } else if ch == open {
+                    depth += 1;
+                } else if ch == close {
+                    depth -= 1;
+                    if depth == 0 {
+                        return (
+                            &text[open.len_utf8()..index],
+                            &text[index + close.len_utf8()..],
+                        );
+                    }
+                }
+            }
+            panic!("unclosed group in {text}");
+        }
+
+        fn arguments(text: &str) -> Vec<&str> {
+            let (mut depth, mut quoted, mut escaped, mut start) = (0, false, false, 0);
+            let mut args = vec![];
+            for (index, ch) in text.char_indices() {
+                if quoted {
+                    if escaped {
+                        escaped = false;
+                    } else if ch == '\\' {
+                        escaped = true;
+                    } else if ch == '"' {
+                        quoted = false;
+                    }
+                } else {
+                    match ch {
+                        '"' => quoted = true,
+                        '(' | '[' | '{' => depth += 1,
+                        ')' | ']' | '}' => depth -= 1,
+                        ',' if depth == 0 => {
+                            args.push(text[start..index].trim());
+                            start = index + 1;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            let last = text[start..].trim();
+            if !last.is_empty() {
+                args.push(last);
+            }
+            args
+        }
+
+        fn call_arguments<'a>(code: &'a str, prefix: &str) -> Vec<&'a str> {
+            arguments(group(code.strip_prefix(prefix).unwrap(), '(', ')').0)
+        }
+
+        fn vector_items(code: &str) -> Vec<&str> {
+            arguments(group(code.strip_prefix("vec!").unwrap(), '[', ']').0)
+        }
+
+        fn rust_string(code: &str) -> String {
+            serde_json::from_str(code.strip_suffix(".to_string()").unwrap_or(code)).unwrap()
+        }
+
+        fn optional_int(code: &str) -> Option<i64> {
+            if code == "None" {
+                None
+            } else {
+                Some(call_arguments(code, "Some")[0].parse().unwrap())
+            }
+        }
+
+        fn schema_bounds(code: &str) -> (Option<i64>, Option<i64>) {
+            if code == "None" {
+                (None, None)
+            } else {
+                let tuple = call_arguments(code, "Some")[0];
+                let bounds = arguments(group(tuple, '(', ')').0);
+                (optional_int(bounds[0]), optional_int(bounds[1]))
+            }
+        }
+
+        fn schema_shape(code: &str) -> Shape {
+            let code = code.trim_start();
+            for (prefix, ordered) in [
+                ("AttributeType::list", true),
+                ("AttributeType::unordered_list", false),
+                ("AttributeType::refined_list", true),
+            ] {
+                if code.starts_with(&format!("{prefix}(")) {
+                    let args = call_arguments(code, prefix);
+                    let refined = args.len() == 3;
+                    return Shape::List {
+                        item: Box::new(schema_shape(args[0])),
+                        bounds: if refined {
+                            schema_bounds(args[2])
+                        } else {
+                            (None, None)
+                        },
+                        ordered: Some(if refined {
+                            args[1].parse().unwrap()
+                        } else {
+                            ordered
+                        }),
+                    };
+                }
+            }
+            if code.starts_with("AttributeType::map(") {
+                return Shape::Map(Box::new(schema_shape(
+                    call_arguments(code, "AttributeType::map")[0],
+                )));
+            }
+            if code.starts_with("carina_aws_types::tags_type()") {
+                return Shape::Map(Box::new(schema_shape("AttributeType::string()")));
+            }
+            if code.starts_with("AttributeType::struct_(") {
+                let args = call_arguments(code, "AttributeType::struct_");
+                return Shape::Struct(
+                    vector_items(args[1])
+                        .into_iter()
+                        .map(|field| {
+                            let field_args =
+                                arguments(group(&field[field.find('(').unwrap()..], '(', ')').0);
+                            (rust_string(field_args[0]), schema_shape(field_args[1]))
+                        })
+                        .collect(),
+                );
+            }
+            if code.starts_with("AttributeType::enum_(") {
+                let args = call_arguments(code, "AttributeType::enum_");
+                let values = call_arguments(args[1], "Some")[0];
+                return Shape::Enum(vector_items(values).into_iter().map(rust_string).collect());
+            }
+            if code.starts_with("AttributeType::union(") {
+                let values = call_arguments(code, "AttributeType::union")[0];
+                return Shape::IntEnum(
+                    vector_items(values)
+                        .into_iter()
+                        .map(|member| {
+                            let args = call_arguments(member, "AttributeType::refined_int");
+                            let (min, max) = schema_bounds(args[1]);
+                            assert_eq!(min, max, "integer-enum members must be singleton ranges");
+                            min.unwrap()
+                        })
+                        .collect(),
+                );
+            }
+            if code.starts_with("AttributeType::refined_string(") {
+                let args = call_arguments(code, "AttributeType::refined_string");
+                return Shape::String {
+                    length: schema_bounds(args[2]),
+                    pattern: if args[1] == "None" {
+                        Pattern::Absent
+                    } else {
+                        Pattern::Text(rust_string(call_arguments(args[1], "Some")[0]))
+                    },
+                };
+            }
+            if code.starts_with("AttributeType::string()") {
+                return Shape::String {
+                    length: (None, None),
+                    pattern: Pattern::Absent,
+                };
+            }
+            if code.starts_with("AttributeType::refined_int(") {
+                return Shape::Int {
+                    range: schema_bounds(call_arguments(code, "AttributeType::refined_int")[1]),
+                };
+            }
+            if code.starts_with("AttributeType::int()") {
+                return Shape::Int {
+                    range: (None, None),
+                };
+            }
+            for (prefix, shape) in [
+                ("AttributeType::bool()", "bool"),
+                ("AttributeType::float()", "float"),
+                ("AttributeType::refined_float(", "float"),
+            ] {
+                if code.starts_with(prefix) {
+                    return Shape::Scalar(shape);
+                }
+            }
+            panic!("unrecognized generated type: {code}");
+        }
+
+        fn documented_members<'a>(page: &'a str, anchor: &str) -> BTreeMap<String, &'a str> {
+            // Use allocated ids, including suffixes for an argument and a
+            // struct section that share the same base heading (probe-1).
+            let heading_line = carina_docgen::heading_ids(page)
+                .into_iter()
+                .zip(
+                    page.lines()
+                        .enumerate()
+                        .filter(|(_, line)| line.starts_with('#')),
+                )
+                .find(|(id, _)| id == anchor)
+                .map(|(_, (line, _))| line)
+                .unwrap_or_else(|| panic!("missing documentation target #{anchor} in {page}"));
+            page.lines()
+                .skip(heading_line + 1)
+                .take_while(|line| !line.starts_with('#'))
+                .filter_map(|line| {
+                    line.strip_prefix("| `").map(|cell| {
+                        let (name, cells) = cell.split_once('`').unwrap();
+                        (name.to_string(), cells)
+                    })
+                })
+                .collect()
+        }
+
+        fn docs_shape(text: &str, page: &str) -> Shape {
+            let normalized = text
+                .replace("\\<", "<")
+                .replace("\\>", ">")
+                .replace('`', "");
+            let (shape, rest) = docs_shape_at(normalized.trim(), page);
+            assert!(rest.trim().is_empty(), "unparsed documented type: {rest}");
+            shape
+        }
+
+        fn docs_bounds(range: &str) -> (Option<i64>, Option<i64>) {
+            let (min, max) = range.split_once("..").unwrap();
+            (
+                (!min.is_empty()).then(|| min.parse().unwrap()),
+                max.strip_prefix('=').map(|max| max.parse().unwrap()),
+            )
+        }
+
+        fn docs_shape_at<'a>(text: &'a str, page: &str) -> (Shape, &'a str) {
+            if let Some(item) = text.strip_prefix("List<") {
+                let (item, rest) = docs_shape_at(item, page);
+                let mut rest = rest.strip_prefix('>').unwrap().trim_start();
+                let mut bounds = (None, None);
+                if let Some(limits) = rest.strip_prefix("(items: ") {
+                    let (range, suffix) = limits.split_once(')').unwrap();
+                    bounds = docs_bounds(range);
+                    rest = suffix;
+                }
+                return (
+                    Shape::List {
+                        item: Box::new(item),
+                        bounds,
+                        ordered: None,
+                    },
+                    rest,
+                );
+            }
+            if let Some(value) = text.strip_prefix("Map<String, ") {
+                let (value, rest) = docs_shape_at(value, page);
+                return (Shape::Map(Box::new(value)), rest.strip_prefix('>').unwrap());
+            }
+            if let Some(link) = text.strip_prefix('[') {
+                let (label, target) = link.split_once("](#").unwrap();
+                let (anchor, rest) = target.split_once(')').unwrap();
+                let members = documented_members(page, anchor);
+                return (
+                    if label.starts_with("Struct(") {
+                        Shape::Struct(
+                            members
+                                .into_iter()
+                                .map(|(name, cells)| {
+                                    let ty = cells.strip_prefix(" | ").unwrap();
+                                    (name, docs_shape(ty.split(" | ").next().unwrap(), page))
+                                })
+                                .collect(),
+                        )
+                    } else {
+                        assert!(label.starts_with("Enum"), "{label}");
+                        Shape::Enum(members.into_keys().collect())
+                    },
+                    rest,
+                );
+            }
+            if let Some(values) = text.strip_prefix("IntEnum(") {
+                let (values, rest) = group(values, '[', ']');
+                return (
+                    Shape::IntEnum(
+                        arguments(values)
+                            .into_iter()
+                            .map(|value| value.parse().unwrap())
+                            .collect(),
+                    ),
+                    rest.strip_prefix(')').unwrap(),
+                );
+            }
+            for prefix in ["NumericString", "String", "Int"] {
+                if let Some(rest) = text.strip_prefix(prefix) {
+                    let (refinements, rest) = if rest.starts_with('(') {
+                        group(rest, '(', ')')
+                    } else {
+                        ("", rest)
+                    };
+                    let mut bounds = (None, None);
+                    let mut pattern = if prefix == "NumericString" {
+                        Pattern::Present
+                    } else {
+                        Pattern::Absent
+                    };
+                    for refinement in arguments(refinements) {
+                        if let Some(range) = refinement.strip_prefix("len: ") {
+                            bounds = docs_bounds(range);
+                        } else if refinement == "pattern" {
+                            pattern = Pattern::Present;
+                        } else if let Some(text) = refinement.strip_prefix("pattern: ") {
+                            pattern = Pattern::Text(rust_string(text));
+                        } else if prefix == "Int" && refinement.contains("..") {
+                            bounds = docs_bounds(refinement);
+                        }
+                        // Other scalar annotations (e.g. int64 or uri) are
+                        // descriptive formats, not validation constraints.
+                    }
+                    return (
+                        if prefix == "Int" {
+                            Shape::Int { range: bounds }
+                        } else {
+                            Shape::String {
+                                length: bounds,
+                                pattern,
+                            }
+                        },
+                        rest,
+                    );
+                }
+            }
+            for (prefix, shape) in [("Bool", "bool"), ("Float", "float")] {
+                if let Some(rest) = text.strip_prefix(prefix) {
+                    let rest = if rest.starts_with('(') {
+                        group(rest, '(', ')').1
+                    } else {
+                        rest
+                    };
+                    return (Shape::Scalar(shape), rest);
+                }
+            }
+            panic!("unrecognized documented type: {text}");
+        }
+
+        // Read ordering directly from the JSON fixture without using the
+        // production shape classifier or deriving it from generated code.
+        fn fixture_list_ordering(property: &Value, definitions: &Value) -> Option<Vec<bool>> {
+            if let Some(path) = property.get("$ref").and_then(Value::as_str) {
+                return fixture_list_ordering(
+                    &definitions[path.strip_prefix("#/definitions/").unwrap()],
+                    definitions,
+                );
+            }
+            if let Some(items) = property.get("items") {
+                let mut orders = vec![property.get("insertionOrder") != Some(&Value::Bool(false))];
+                orders.extend(fixture_list_ordering(items, definitions).unwrap_or_default());
+                return Some(orders);
+            }
+            if let Some(fields) = property.get("properties").and_then(Value::as_object) {
+                let orders: Vec<bool> = fields
+                    .values()
+                    .flat_map(|field| fixture_list_ordering(field, definitions).unwrap_or_default())
+                    .collect();
+                return (!orders.is_empty()).then_some(orders);
+            }
+            property
+                .get("oneOf")
+                .and_then(Value::as_array)
+                .and_then(|variants| {
+                    variants
+                        .iter()
+                        .find_map(|variant| fixture_list_ordering(variant, definitions))
+                })
+        }
+
+        #[test]
+        fn test_shape_classifier_detects_semantic_drift() {
+            for leaf in [
+                json!({"type":"string","enum":["A","B"]}),
+                json!({"type":"integer","enum":[1,2]}),
+                json!({"properties":{"V":{"type":"integer"},"W":{"type":"string"}}}),
+            ] {
+                let schema = fixture(
+                    json!({"Probe":{
+                        "type":"array","minItems":2,"maxItems":5,
+                        "items":{"type":"array","minItems":1,"maxItems":3,"insertionOrder":false,"items":leaf}
+                    }}),
+                    json!({}),
+                );
+                let (code, docs) = outputs(&schema);
+                let (code_type, docs_type) = type_pair(&code, &docs, "top");
+                let actual = schema_shape(code_type);
+                assert_eq!(actual.list_ordering(), vec![true, false]);
+                assert_eq!(
+                    actual.clone().without_ordering(),
+                    docs_shape(docs_type, &docs)
+                );
+                for (before, after) in [("1..=3", "1..=4"), ("2..=5", "2..=6")] {
+                    assert_ne!(
+                        actual.clone().without_ordering(),
+                        docs_shape(&docs_type.replace(before, after), &docs),
+                        "must detect a bound change at either list level"
+                    );
+                }
+                let reordered = code_type.replace(
+                    ", false, Some((Some(1), Some(3)))",
+                    ", true, Some((Some(1), Some(3)))",
+                );
+                assert_ne!(
+                    actual.list_ordering(),
+                    schema_shape(&reordered).list_ordering()
+                );
+                let changed_docs = docs
+                    .replace("| `B` |", "| `C` |")
+                    .replace("| `v` |", "| `x` |");
+                let changed_type = docs_type.replace("IntEnum([1, 2])", "IntEnum([1, 3])");
+                assert_ne!(
+                    actual.without_ordering(),
+                    docs_shape(&changed_type, &changed_docs),
+                    "must detect enum-value and struct-field drift"
+                );
+            }
+        }
+
+        #[test]
+        fn test_shape_classifier_detects_scalar_and_field_type_drift() {
+            for (case, leaf, changes) in [
+                (
+                    "string_length",
+                    json!({"type":"string","minLength":2,"maxLength":8}),
+                    vec![
+                        ("len: 2..=8", "len: 3..=8"),
+                        ("len: 2..=8", "len: 2..=9"),
+                        ("String(len: 2..=8)", "String"),
+                    ],
+                ),
+                (
+                    "string_min_length",
+                    json!({"type":"string","minLength":2}),
+                    vec![("len: 2..", "len: 3..")],
+                ),
+                (
+                    "string_max_length",
+                    json!({"type":"string","maxLength":8}),
+                    vec![("len: ..=8", "len: ..=9")],
+                ),
+                (
+                    "integer_range",
+                    json!({"type":"integer","minimum":-2,"maximum":9}),
+                    vec![
+                        ("Int(-2..=9)", "Int(-1..=9)"),
+                        ("Int(-2..=9)", "Int(-2..=10)"),
+                        ("Int(-2..=9)", "Int"),
+                    ],
+                ),
+                (
+                    "integer_minimum",
+                    json!({"type":"integer","minimum":-2}),
+                    vec![("Int(-2..)", "Int(-1..)")],
+                ),
+                (
+                    "integer_maximum",
+                    json!({"type":"integer","maximum":9}),
+                    vec![("Int(..=9)", "Int(..=10)")],
+                ),
+                (
+                    "string_pattern",
+                    json!({"type":"string","pattern":"^[a-z]+$","maxLength":8}),
+                    vec![("String(pattern, len: ..=8)", "String(len: ..=8)")],
+                ),
+                (
+                    "numeric_string_pattern",
+                    json!({"type":"string","pattern":"[0-9]+","maxLength":8}),
+                    vec![("NumericString(len: ..=8)", "String(len: ..=8)")],
+                ),
+                (
+                    "nested_field_type",
+                    json!({"type":"boolean"}),
+                    vec![("Bool", "String")],
+                ),
+            ] {
+                // Traverse two struct links and a list before reaching the
+                // leaf. Field names and collection shape stay unchanged.
+                let schema = fixture(
+                    json!({"Probe":{"properties":{"Inner":{"properties":{
+                        "Value":{"type":"array","items":leaf,"insertionOrder":false}
+                    }}}}}),
+                    json!({}),
+                );
+                let (code, docs) = outputs(&schema);
+                let (code_type, docs_type) = type_pair(&code, &docs, "top");
+                let actual = schema_shape(code_type);
+                assert_eq!(actual.list_ordering(), vec![false], "{case}");
+                let actual = actual.without_ordering();
+                let documented = docs_shape(docs_type, &docs);
+                assert!(
+                    actual.agrees_with(&documented),
+                    "{case}: {actual:?} != {documented:?}\nschema:\n{code}\ndocs:\n{docs}"
+                );
+                for (before, after) in changes {
+                    assert!(
+                        docs.contains(before),
+                        "{case}: missing {before:?} in {docs}"
+                    );
+                    let changed_docs = docs.replace(before, after);
+                    assert!(
+                        !actual.agrees_with(&docs_shape(docs_type, &changed_docs)),
+                        "{case}: must detect {before:?} -> {after:?}"
+                    );
+                }
+            }
+
+            let code =
+                r#"AttributeType::refined_string(None, Some("^[a-z]+$".to_string()), None, None)"#;
+            let actual = schema_shape(code);
+            assert!(actual.agrees_with(&docs_shape("String(pattern)", "")));
+            assert!(actual.agrees_with(&docs_shape(r#"String(pattern: "^[a-z]+$")"#, "")));
+            assert!(!actual.agrees_with(&docs_shape(r#"String(pattern: "^[A-Z]+$")"#, "")));
+            assert!(!actual.agrees_with(&docs_shape("String", "")));
+        }
+
+        fn positions(property: &Value) -> Vec<(&'static str, Value, Value)> {
+            vec![
+                ("top", json!({"Probe": property}), json!({})),
+                (
+                    "field",
+                    json!({"Outer": {"type":"object","properties":{"Probe": property}}}),
+                    json!({}),
+                ),
+                (
+                    "item",
+                    json!({"Outer": {"type":"array","items": property}}),
+                    json!({}),
+                ),
+                (
+                    "item_field",
+                    json!({"Outer": {"type":"array","items":{"properties":{"Probe": property}}}}),
+                    json!({}),
+                ),
+                (
+                    "ref_field",
+                    json!({"Outer":{"$ref":"#/definitions/Holder"}}),
+                    json!({"Holder":{"type":"object","properties":{"Probe": property}}}),
+                ),
+            ]
+        }
+
+        #[test]
+        fn test_nested_bounded_lists_render_one_code_span() {
+            let inner =
+                json!({"type":"array","items":{"type":"integer"},"minItems":1,"maxItems":3});
+            for item in [
+                inner.clone(),
+                json!({"$ref":"#/definitions/Inner"}),
+                json!({"$ref":"#/definitions/Alias"}),
+            ] {
+                let schema = fixture(
+                    json!({"Outer":{"type":"array","items":item,"minItems":2,"maxItems":5}}),
+                    json!({"Inner":inner,"Alias":{"$ref":"#/definitions/Inner"}}),
+                );
+                let (code, docs) = outputs(&schema);
+                let (code_type, docs_type) = type_pair(&code, &docs, "item");
+                assert_eq!(schema_shape(code_type).summary(), "list<list<int>>");
+                assert!(
+                    code_type.contains("Some((Some(1), Some(3)))"),
+                    "{code_type}"
+                );
+                assert!(
+                    code_type.contains("Some((Some(2), Some(5)))"),
+                    "{code_type}"
+                );
+                assert_eq!(docs_type, "`List<List<Int> (items: 1..=3)>` (items: 2..=5)");
+                assert_eq!(docs_type.matches('`').count(), 2, "{docs_type}");
+            }
+        }
+
+        #[test]
+        fn test_nested_enum_lists_preserve_levels_and_limits() {
+            let inner = json!({"type":"array","items":{"type":"string","enum":["A","B"]},"minItems":1,"maxItems":3,"insertionOrder":false});
+            for item in [inner.clone(), json!({"$ref":"#/definitions/Inner"})] {
+                let property = json!({"type":"array","items":item,"minItems":2,"maxItems":5});
+                let schema = fixture(json!({"Probe":property}), json!({"Inner":inner}));
+                let (placeholder, enum_info) = cfn_type_to_carina_type_with_enum(
+                    &schema.properties["Probe"],
+                    "Probe",
+                    &schema,
+                    "aws.test.Probe",
+                    &BTreeMap::new(),
+                );
+                assert!(enum_info.is_some());
+                assert_eq!(schema_shape(&placeholder).summary(), "list<list<string>>");
+                for (position, properties, mut definitions) in positions(&property) {
+                    definitions["Inner"] = inner.clone();
+                    let schema = fixture(properties, definitions);
+                    let (code, docs) = outputs(&schema);
+                    let (code_type, docs_type) = type_pair(&code, &docs, position);
+                    let expected = if position == "item" {
+                        "list<list<list<enum>>>"
+                    } else {
+                        "list<list<enum>>"
+                    };
+                    assert_eq!(
+                        schema_shape(code_type).summary(),
+                        expected,
+                        "{position}: {code_type}"
+                    );
+                    assert_eq!(
+                        docs_shape(docs_type, &docs).summary(),
+                        expected,
+                        "{position}: {docs_type}"
+                    );
+                    assert!(
+                        code_type.contains("false, Some((Some(1), Some(3)))"),
+                        "{code_type}"
+                    );
+                    assert!(
+                        code_type.contains("true, Some((Some(2), Some(5)))"),
+                        "{code_type}"
+                    );
+                    assert!(
+                        docs_type.contains("\\> (items: 1..=3)\\> (items: 2..=5)"),
+                        "{docs_type}"
+                    );
+                }
+            }
+        }
+
+        #[test]
+        fn test_one_of_object_refs_merge_optional_fields() {
+            let definitions = json!({
+                "ObjDef":{"type":"object","properties":{"V":{"type":"integer"}},"required":["V"]},
+                "Alias":{"$ref":"#/definitions/ObjDef"},
+                "Union":{"oneOf":[{"$ref":"#/definitions/Alias"}]}
+            });
+            for target in ["ObjDef", "Alias", "Union"] {
+                for mixed in [false, true] {
+                    let mut variants = vec![json!({"$ref":format!("#/definitions/{target}")})];
+                    if mixed {
+                        variants
+                            .push(json!({"properties":{"W":{"type":"string"}},"required":["W"]}));
+                    }
+                    for (position, properties, mut extra_defs) in
+                        positions(&json!({"oneOf":variants}))
+                    {
+                        extra_defs
+                            .as_object_mut()
+                            .unwrap()
+                            .extend(definitions.as_object().unwrap().clone());
+                        let schema = fixture(properties, extra_defs);
+                        let (code, docs) = outputs(&schema);
+                        let (code_type, docs_type) = type_pair(&code, &docs, position);
+                        let expected = if position == "item" {
+                            "list<struct>"
+                        } else {
+                            "struct"
+                        };
+                        assert_eq!(
+                            schema_shape(code_type).summary(),
+                            expected,
+                            "{target}/{position}"
+                        );
+                        assert_eq!(
+                            docs_shape(docs_type, &docs).summary(),
+                            expected,
+                            "{target}/{position}"
+                        );
+                        assert!(
+                            code.contains("StructField::optional(\"v\", AttributeType::int())"),
+                            "{code}"
+                        );
+                        assert!(docs.contains("| `v` | Int | No |"), "{docs}");
+                        if mixed {
+                            assert!(
+                                code.contains(
+                                    "StructField::optional(\"w\", AttributeType::string())"
+                                ),
+                                "{code}"
+                            );
+                            assert!(docs.contains("| `w` | String | No |"), "{docs}");
+                        }
+                    }
+                }
+            }
+        }
+
+        #[test]
+        fn test_object_string_union_order_is_independent() {
+            for (type_name, parent) in [
+                ("AWS::EC2::VPCEndpoint", None),
+                ("AWS::IAM::Role", Some("Policy")),
+            ] {
+                let cached = cfn_schema_for_codegen_tests(type_name);
+                let expected_code = generate_schema_code(&cached, type_name).unwrap();
+                let expected_docs = generate_test_markdown(&cached, type_name).unwrap();
+                for types in [["object", "string"], ["string", "object"]] {
+                    let mut schema = cfn_schema_for_codegen_tests(type_name);
+                    let properties = if let Some(parent) = parent {
+                        schema
+                            .definitions
+                            .as_mut()
+                            .unwrap()
+                            .get_mut(parent)
+                            .unwrap()
+                            .properties
+                            .as_mut()
+                            .unwrap()
+                    } else {
+                        &mut schema.properties
+                    };
+                    let property = properties.get_mut("PolicyDocument").unwrap();
+                    property.prop_type = Some(serde_json::from_value(json!(types)).unwrap());
+                    assert!(property_declares_object(property), "{type_name}: {types:?}");
+                    assert!(is_direct_bare_object(property), "{type_name}: {types:?}");
+                    assert!(object_string_union_is_iam_policy_document(
+                        property,
+                        type_name,
+                        CfnPropertyPath::new(parent, "PolicyDocument")
+                    ));
+                    assert_eq!(
+                        generate_schema_code(&schema, type_name).unwrap(),
+                        expected_code
+                    );
+                    assert_eq!(
+                        generate_test_markdown(&schema, type_name).unwrap(),
+                        expected_docs
+                    );
+                }
+            }
+        }
+
+        #[test]
+        fn test_schema_and_docs_shape_probe_matrix() {
+            // 27 leaves × 7 wrappers × 5 positions = 945 cases:
+            // 795 supported shapes and 150 deliberately unresolved oneOfs.
+            let leaves = [
+                ("str_len", json!({"type":"string","maxLength":5})),
+                ("str_enum", json!({"type":"string","enum":["A","B"]})),
+                ("int_enum", json!({"type":"integer","enum":[1,2]})),
+                ("int", json!({"type":"integer","minimum":1,"maximum":9})),
+                ("str_or_int", json!({"type":["string","integer"]})),
+                ("int_or_str", json!({"type":["integer","string"]})),
+                ("null_str", json!({"type":["null","string"],"maxLength":5})),
+                ("null_bool", json!({"type":["null","boolean"]})),
+                (
+                    "arr_str",
+                    json!({"type":"array","items":{"type":"string"},"minItems":1}),
+                ),
+                (
+                    "arr_enum",
+                    json!({"type":"array","items":{"type":"string","enum":["A","B"]},"maxItems":2,"insertionOrder":false}),
+                ),
+                (
+                    "null_arr",
+                    json!({"type":["null","array"],"items":{"type":"integer"},"minItems":1}),
+                ),
+                (
+                    "arr_null",
+                    json!({"type":["array","null"],"items":{"type":"integer"},"minItems":1}),
+                ),
+                (
+                    "null_arr_enum",
+                    json!({"type":["null","array"],"items":{"type":"string","enum":["A","B"]}}),
+                ),
+                (
+                    "obj",
+                    json!({"type":"object","properties":{"V":{"type":"integer"}}}),
+                ),
+                (
+                    "null_obj",
+                    json!({"type":["null","object"],"properties":{"V":{"type":"integer"}}}),
+                ),
+                (
+                    "obj_untyped",
+                    json!({"properties":{"V":{"type":"integer"}}}),
+                ),
+                (
+                    "arr_obj",
+                    json!({"type":"array","items":{"properties":{"V":{"type":"integer"}}}}),
+                ),
+                (
+                    "null_arr_obj",
+                    json!({"type":["null","array"],"items":{"properties":{"V":{"type":"integer"}}}}),
+                ),
+                (
+                    "oneof_arr",
+                    json!({"oneOf":[{"type":"array","items":{"type":"integer"}}]}),
+                ),
+                (
+                    "oneof_arr_enum",
+                    json!({"oneOf":[{"type":"array","items":{"type":"string","enum":["A","B"]}}]}),
+                ),
+                (
+                    "oneof_objs",
+                    json!({"oneOf":[{"properties":{"V":{"type":"integer"}}},{"properties":{"W":{"type":"string"}}}]}),
+                ),
+                (
+                    "oneof_obj_arr",
+                    json!({"oneOf":[{"properties":{"V":{"type":"integer"}}},{"type":"array","items":{"type":"boolean"}}]}),
+                ),
+                (
+                    "arr_of_arr",
+                    json!({"type":"array","items":{"type":"array","items":{"type":"integer"}}}),
+                ),
+                (
+                    "map_str",
+                    json!({"type":"object","patternProperties":{".*":{"type":"string"}}}),
+                ),
+                ("const", json!({"const":"X"})),
+                (
+                    "bounded_arr",
+                    json!({"type":"array","items":{"type":"array","items":{"type":"integer"},"minItems":1,"maxItems":3,"insertionOrder":false},"minItems":2,"maxItems":5}),
+                ),
+                (
+                    "nested_enum",
+                    json!({"type":"array","items":{"type":"array","items":{"type":"string","enum":["A","B"]},"maxItems":3},"minItems":2,"insertionOrder":false}),
+                ),
+            ];
+            assert_eq!(leaves.len(), 27);
+            let mut cases = 0;
+            let mut rejected_cases = 0;
+            for (leaf_name, leaf) in leaves {
+                let leaf_schema = fixture(json!({"Probe":leaf}), json!({}));
+                let property = &leaf_schema.properties["Probe"];
+                let supports_one_of = property_generates_struct(property, &leaf_schema)
+                    || property_resolves_to_array(property, &leaf_schema);
+                let wrappers = [
+                    ("inline", leaf.clone(), json!({})),
+                    (
+                        "ref",
+                        json!({"$ref":"#/definitions/Def"}),
+                        json!({"Def":leaf}),
+                    ),
+                    (
+                        "alias",
+                        json!({"$ref":"#/definitions/Alias"}),
+                        json!({"Def":leaf,"Alias":{"$ref":"#/definitions/Def"}}),
+                    ),
+                    (
+                        "sibling",
+                        json!({"$ref":"#/definitions/Def","oneOf":[{"type":"array","items":{"type":"boolean"}}]}),
+                        json!({"Def":leaf}),
+                    ),
+                    ("oneof", json!({"oneOf":[leaf]}), json!({})),
+                    (
+                        "ref_oneof",
+                        json!({"$ref":"#/definitions/Def"}),
+                        json!({"Def":{"oneOf":[leaf]}}),
+                    ),
+                    (
+                        "oneof_ref",
+                        json!({"oneOf":[{"$ref":"#/definitions/Def"}]}),
+                        json!({"Def":leaf}),
+                    ),
+                ];
+                for (wrapper_index, (wrapper_name, property, definitions)) in
+                    wrappers.into_iter().enumerate()
+                {
+                    for (position, properties, extra_defs) in positions(&property) {
+                        let case = format!("{leaf_name}/{wrapper_name}/{position}");
+                        let mut definitions = definitions.clone();
+                        definitions
+                            .as_object_mut()
+                            .unwrap()
+                            .extend(extra_defs.as_object().unwrap().clone());
+                        let schema = fixture(properties, definitions.clone());
+                        if wrapper_index >= 4 && !supports_one_of {
+                            for (emitter, result) in [
+                                (
+                                    "schema",
+                                    std::panic::catch_unwind(|| {
+                                        reset_recursion_guard();
+                                        generate_schema_code(&schema, &schema.type_name)
+                                    }),
+                                ),
+                                (
+                                    "docs",
+                                    std::panic::catch_unwind(|| {
+                                        reset_recursion_guard();
+                                        generate_test_markdown(&schema, &schema.type_name)
+                                    }),
+                                ),
+                            ] {
+                                let panic = result.expect_err(&format!(
+                                    "{case}: {emitter} must reject unresolved oneOf"
+                                ));
+                                let message = panic
+                                    .downcast_ref::<String>()
+                                    .map(String::as_str)
+                                    .or_else(|| panic.downcast_ref::<&str>().copied())
+                                    .expect("oneOf panic must contain a diagnostic");
+                                assert!(
+                                    message.contains("unresolved oneOf"),
+                                    "{case}/{emitter}: {message}"
+                                );
+                            }
+                            rejected_cases += 1;
+                        } else {
+                            let (code, docs) = outputs(&schema);
+                            let (code_type, docs_type) = type_pair(&code, &docs, position);
+                            let code_shape = schema_shape(code_type);
+                            let mut expected_ordering =
+                                fixture_list_ordering(&property, &definitions).unwrap_or_default();
+                            if position == "item" {
+                                expected_ordering.insert(0, true);
+                            }
+                            assert_eq!(
+                                code_shape.list_ordering(),
+                                expected_ordering,
+                                "{case}: list ordering"
+                            );
+                            let code_shape = code_shape.without_ordering();
+                            let docs_shape = docs_shape(docs_type, &docs);
+                            assert!(
+                                code_shape.agrees_with(&docs_shape),
+                                "{case}: schema/docs semantic shape\n\
+                                 schema shape: {code_shape:?}\ndocs shape: {docs_shape:?}\n\
+                                 schema:\n{code}\ndocs:\n{docs}"
+                            );
+                            assert!(
+                                docs_type.matches('`').count() <= 2,
+                                "{case}: nested code spans in {docs_type}"
+                            );
+                            cases += 1;
+                        }
+                    }
+                }
+            }
+            assert_eq!(
+                cases, 795,
+                "keep the supported probe matrix coverage explicit"
+            );
+            assert_eq!(
+                rejected_cases, 150,
+                "keep fail-closed oneOf coverage explicit"
+            );
+        }
+    }
+
     fn empty_schema(type_name: &str) -> CfnSchema {
         CfnSchema {
             type_name: type_name.to_string(),
@@ -8557,6 +9474,28 @@ mod tests {
         }
     }
 
+    /// Build a definition fixture while specifying only the shape relevant to
+    /// the test. Definitions and inline properties intentionally share the
+    /// same representation.
+    fn def(
+        prop_type: Option<&str>,
+        properties: Option<BTreeMap<String, CfnProperty>>,
+        one_of: Vec<CfnProperty>,
+        enum_values: Option<Vec<EnumValue>>,
+        items: Option<CfnProperty>,
+        pattern: Option<&str>,
+    ) -> CfnProperty {
+        CfnProperty {
+            prop_type: prop_type.map(|value| TypeValue::Single(value.to_string())),
+            properties,
+            one_of,
+            enum_values,
+            items: items.map(Box::new),
+            pattern: pattern.map(str::to_string),
+            ..Default::default()
+        }
+    }
+
     #[test]
     fn test_is_tag_map_ref_requires_canonical_tag_name_and_shape() {
         let string_property = || CfnProperty {
@@ -8569,8 +9508,8 @@ mod tests {
                 ("Value".to_string(), string_property()),
             ])
         };
-        let object_definition = |properties| CfnDefinition {
-            def_type: Some("object".to_string()),
+        let object_definition = |properties| CfnProperty {
+            prop_type: Some(TypeValue::Single("object".to_string())),
             properties: Some(properties),
             ..Default::default()
         };
@@ -8599,6 +9538,71 @@ mod tests {
         assert!(
             !is_tag_map_ref(&schema, "#/definitions/AttributePair"),
             "non-Tag Key/Value definitions include ELB attributes and must retain their struct shape"
+        );
+    }
+
+    #[test]
+    fn test_is_tag_map_ref_uses_final_alias_target_name_and_shape() {
+        let string_property = || CfnProperty {
+            prop_type: Some(TypeValue::Single("string".to_string())),
+            ..Default::default()
+        };
+        let key_value_object = || CfnProperty {
+            prop_type: Some(TypeValue::Single("object".to_string())),
+            properties: Some(BTreeMap::from([
+                ("Key".to_string(), string_property()),
+                ("Value".to_string(), string_property()),
+            ])),
+            ..Default::default()
+        };
+        let alias = |target: &str| CfnProperty {
+            ref_path: Some(format!("#/definitions/{target}")),
+            ..Default::default()
+        };
+
+        let mut schema = empty_schema("AWS::Test::Resource");
+        schema.definitions = Some(BTreeMap::from([
+            ("LabelsAlias".to_string(), alias("Labels")),
+            ("Labels".to_string(), alias("TagSet")),
+            ("TagSet".to_string(), key_value_object()),
+            ("TagAlias".to_string(), alias("AttributePairAlias")),
+            ("AttributePairAlias".to_string(), alias("AttributePair")),
+            ("AttributePair".to_string(), key_value_object()),
+        ]));
+
+        let labels = alias("LabelsAlias");
+        assert!(
+            is_tag_map_ref(&schema, labels.ref_path.as_deref().unwrap()),
+            "a non-Tag alias chain must use its final TagSet identity"
+        );
+        assert_eq!(
+            cfn_type_to_carina_type_with_enum(
+                &labels,
+                "Labels",
+                &schema,
+                "aws.test.Resource",
+                &BTreeMap::new(),
+            )
+            .0,
+            "carina_aws_types::tags_type()"
+        );
+
+        let misleading_tag_alias = alias("TagAlias");
+        assert!(
+            !is_tag_map_ref(&schema, misleading_tag_alias.ref_path.as_deref().unwrap()),
+            "a Tag-prefixed first hop must not override its final non-Tag identity"
+        );
+        let generated = cfn_type_to_carina_type_with_enum(
+            &misleading_tag_alias,
+            "Pair",
+            &schema,
+            "aws.test.Resource",
+            &BTreeMap::new(),
+        )
+        .0;
+        assert!(
+            generated.starts_with("AttributeType::struct_(\"AttributePair\".to_string()"),
+            "the final non-Tag definition must retain its struct shape: {generated}"
         );
     }
 
@@ -8925,8 +9929,8 @@ mod tests {
         );
         schema.definitions = Some(BTreeMap::from([(
             definition_name.to_string(),
-            CfnDefinition {
-                def_type: Some("object".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
                 properties: Some(fields),
                 ..Default::default()
             },
@@ -9094,16 +10098,16 @@ mod tests {
         schema.definitions = Some(BTreeMap::from([
             (
                 "UnusedMarker".to_string(),
-                CfnDefinition {
-                    def_type: Some("object".to_string()),
+                CfnProperty {
+                    prop_type: Some(TypeValue::Single("object".to_string())),
                     properties: Some(BTreeMap::new()),
                     ..Default::default()
                 },
             ),
             (
                 "UnusedMarkers".to_string(),
-                CfnDefinition {
-                    def_type: Some("array".to_string()),
+                CfnProperty {
+                    prop_type: Some(TypeValue::Single("array".to_string())),
                     items: Some(Box::new(CfnProperty {
                         prop_type: Some(TypeValue::Single("object".to_string())),
                         properties: Some(BTreeMap::new()),
@@ -9129,8 +10133,8 @@ mod tests {
         );
         schema.definitions = Some(BTreeMap::from([(
             "MarkerList".to_string(),
-            CfnDefinition {
-                def_type: Some("array".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("array".to_string())),
                 items: Some(Box::new(CfnProperty {
                     prop_type: Some(TypeValue::Single("object".to_string())),
                     properties: Some(BTreeMap::new()),
@@ -9239,31 +10243,64 @@ mod tests {
             return;
         }
 
-        if let Some(ref_path) = &prop.ref_path
-            && let Some(resolved) = resolve_ref_classified(schema, ref_path)
-        {
-            match resolved {
-                ResolvedDef::ObjectMap { value } => {
+        match property_shape(prop, schema) {
+            PropertyShape::Reference { resolved, .. } => {
+                let Some(resolved) = resolved else {
+                    return;
+                };
+                if let Some(value) = direct_object_map_value(resolved.property) {
                     object_map_value_or_panic(schema, property_path, value);
                     return;
                 }
-                ResolvedDef::Opaque
-                    if resolve_ref(schema, ref_path).is_some_and(|definition| {
-                        definition.def_type.as_deref() == Some("object")
-                    }) =>
+                if let Some(array) =
+                    resolved_array_property(resolved.property, schema, &mut HashSet::new())
+                    && let Some(items) = &array.items
                 {
-                    panic!(
-                        "unsupported cached object definition {}.{} referenced by {ref_path}; expected a struct, direct-string map, tag map, typed map of struct, or classified bare object",
-                        schema.type_name, property_path
+                    if active_array_definitions.insert(resolved.name.to_string()) {
+                        assert_property_classified(
+                            schema,
+                            prop_name,
+                            items,
+                            parent_struct,
+                            used_rows,
+                            active_array_definitions,
+                        );
+                        active_array_definitions.remove(resolved.name);
+                    }
+                    return;
+                }
+                // Every other resolved ref owns its shape; reachable struct and
+                // oneOf children are walked from the definitions pass.
+                return;
+            }
+            PropertyShape::Array {
+                variant: array_variant,
+                ..
+            } => {
+                assert_property_classified(
+                    schema,
+                    prop_name,
+                    array_variant,
+                    parent_struct,
+                    used_rows,
+                    active_array_definitions,
+                );
+                return;
+            }
+            PropertyShape::Merged(properties) => {
+                for (field_name, field_prop) in &properties {
+                    assert_property_classified(
+                        schema,
+                        field_name,
+                        field_prop,
+                        Some(prop_name),
+                        used_rows,
+                        active_array_definitions,
                     );
                 }
-                // Array-definition items must keep the referencing property
-                // path, so they are handled by the dedicated branch below.
-                ResolvedDef::Array { .. } => {}
-                // Every other resolved ref owns its shape; reachable struct
-                // and oneOf children are walked from the definitions pass.
-                _ => return,
+                return;
             }
+            PropertyShape::Inline | PropertyShape::Direct(_) | PropertyShape::Unresolved => {}
         }
 
         if property_declares_object(prop) {
@@ -9293,65 +10330,6 @@ mod tests {
                     "unsupported cached object property {}.{}; expected a struct, direct-string map, tag map, typed map of struct, or classified bare object",
                     schema.type_name, property_path
                 );
-            }
-        }
-
-        // Array definitions are emitted through the property that references
-        // them, so their item shape uses that property's canonical path.
-        if let Some(ref_path) = &prop.ref_path
-            && let Some(definition_name) = ref_def_name(ref_path)
-            && let Some(definition) = schema
-                .definitions
-                .as_ref()
-                .and_then(|definitions| definitions.get(definition_name))
-            && definition.def_type.as_deref() == Some("array")
-            && let Some(items) = &definition.items
-        {
-            if active_array_definitions.insert(definition_name.to_string()) {
-                assert_property_classified(
-                    schema,
-                    prop_name,
-                    items,
-                    parent_struct,
-                    used_rows,
-                    active_array_definitions,
-                );
-                active_array_definitions.remove(definition_name);
-            }
-            return;
-        }
-
-        if !prop.one_of.is_empty() {
-            // Match codegen's compatibility-union behavior: when one variant
-            // is an array, only that representable source shape is walked.
-            if let Some(array_variant) = prop
-                .one_of
-                .iter()
-                .find(|variant| property_resolves_to_array(variant, schema))
-            {
-                assert_property_classified(
-                    schema,
-                    prop_name,
-                    array_variant,
-                    parent_struct,
-                    used_rows,
-                    active_array_definitions,
-                );
-                return;
-            }
-            for variant in &prop.one_of {
-                if let Some(properties) = &variant.properties {
-                    for (field_name, field_prop) in properties {
-                        assert_property_classified(
-                            schema,
-                            field_name,
-                            field_prop,
-                            Some(prop_name),
-                            used_rows,
-                            active_array_definitions,
-                        );
-                    }
-                }
             }
         }
 
@@ -9399,21 +10377,7 @@ mod tests {
             else {
                 continue;
             };
-            for property in definition
-                .properties
-                .iter()
-                .flat_map(|properties| properties.values())
-                .chain(
-                    definition
-                        .pattern_properties
-                        .iter()
-                        .flat_map(|properties| properties.values()),
-                )
-                .chain(definition.items.iter().map(Box::as_ref))
-                .chain(definition.one_of.iter())
-            {
-                collect_property_refs(property, &mut reachable);
-            }
+            collect_property_refs(definition, &mut reachable);
         }
         reachable
     }
@@ -9438,36 +10402,28 @@ mod tests {
                 if !reachable_definitions.contains(definition_name) {
                     continue;
                 }
-                if is_bare_object_definition(definition) {
+                if is_direct_bare_object(definition) {
                     // The referencing property already classified this shape
                     // using the path codegen uses to emit it.
                     continue;
                 }
-                if let Some(properties) = &definition.properties {
-                    for (field_name, field_prop) in properties {
-                        assert_property_classified(
-                            schema,
-                            field_name,
-                            field_prop,
-                            Some(definition_name),
-                            &mut used_rows,
-                            &mut active_array_definitions,
-                        );
-                    }
-                }
-                for variant in &definition.one_of {
-                    if let Some(properties) = &variant.properties {
-                        for (field_name, field_prop) in properties {
-                            assert_property_classified(
-                                schema,
-                                field_name,
-                                field_prop,
-                                Some(definition_name),
-                                &mut used_rows,
-                                &mut active_array_definitions,
-                            );
-                        }
-                    }
+                let properties = match property_shape(definition, schema) {
+                    PropertyShape::Direct(properties) => properties.clone(),
+                    PropertyShape::Merged(properties) => properties,
+                    PropertyShape::Reference { .. }
+                    | PropertyShape::Inline
+                    | PropertyShape::Array { .. }
+                    | PropertyShape::Unresolved => continue,
+                };
+                for (field_name, field_prop) in &properties {
+                    assert_property_classified(
+                        schema,
+                        field_name,
+                        field_prop,
+                        Some(definition_name),
+                        &mut used_rows,
+                        &mut active_array_definitions,
+                    );
                 }
                 // Array-definition items are walked from each referencing
                 // property above so their classification path matches codegen.
@@ -9610,7 +10566,10 @@ mod tests {
                 .get(property_name)
                 .expect("Alarm integer property");
             assert_eq!(
-                property.prop_type.as_ref().and_then(TypeValue::as_str),
+                property
+                    .prop_type
+                    .as_ref()
+                    .and_then(TypeValue::effective_type),
                 Some("integer"),
                 "{property_name} must use the CloudWatch API's integer shape"
             );
@@ -9628,8 +10587,12 @@ mod tests {
             .properties
             .iter()
             .filter_map(|(name, property)| {
-                (property.prop_type.as_ref().and_then(TypeValue::as_str) == Some("number"))
-                    .then_some(name.as_str())
+                (property
+                    .prop_type
+                    .as_ref()
+                    .and_then(TypeValue::effective_type)
+                    == Some("number"))
+                .then_some(name.as_str())
             })
             .collect();
         assert_eq!(number_properties, vec!["Threshold"]);
@@ -9767,8 +10730,8 @@ mod tests {
         schema.definitions = Some(BTreeMap::from([
             (
                 "CycleA".to_string(),
-                CfnDefinition {
-                    def_type: Some("object".to_string()),
+                CfnProperty {
+                    prop_type: Some(TypeValue::Single("object".to_string())),
                     properties: Some(BTreeMap::from([(
                         "Children".to_string(),
                         list_of("CycleB"),
@@ -9778,8 +10741,8 @@ mod tests {
             ),
             (
                 "CycleB".to_string(),
-                CfnDefinition {
-                    def_type: Some("object".to_string()),
+                CfnProperty {
+                    prop_type: Some(TypeValue::Single("object".to_string())),
                     properties: Some(BTreeMap::from([("Parents".to_string(), list_of("CycleA"))])),
                     ..Default::default()
                 },
@@ -9841,7 +10804,10 @@ mod tests {
                 .and_then(|properties| properties.get(provider_name))
                 .expect("overridden field in cached Scheduler schema");
             assert_eq!(
-                field_prop.prop_type.as_ref().and_then(TypeValue::as_str),
+                field_prop
+                    .prop_type
+                    .as_ref()
+                    .and_then(TypeValue::effective_type),
                 Some("number"),
                 "{provider_path} must remain a CFN number while this override exists"
             );
@@ -9960,145 +10926,6 @@ mod tests {
     }
 
     #[test]
-    fn test_classify_def_precedence_matches_canonical_order() {
-        // classify_def is the single source of truth for $ref shape dispatch
-        // (awscc#293). These cases pin the canonical precedence
-        // properties > oneOf > enum > array > string-pattern > scalar > opaque
-        // so generated output stays byte-identical and a future reorder is
-        // caught.
-
-        // Struct wins even if other shape-fields are also present.
-        assert!(matches!(
-            classify_def(&def(
-                Some("object"),
-                Some(one_prop()),
-                vec![CfnProperty::default()],
-                Some(vec![EnumValue::Str("x".into())]),
-                None,
-                None,
-            )),
-            ResolvedDef::Struct { .. }
-        ));
-
-        // oneOf wins over enum/array/etc when there are no inline properties.
-        assert!(matches!(
-            classify_def(&def(
-                Some("object"),
-                None,
-                vec![CfnProperty::default()],
-                Some(vec![EnumValue::Str("x".into())]),
-                None,
-                None,
-            )),
-            ResolvedDef::OneOf { .. }
-        ));
-
-        // An integer-typed enum classifies as Enum, NOT Scalar — this is the
-        // precedence that keeps WAFv2 `EvaluationWindowSec` an enum.
-        assert!(matches!(
-            classify_def(&def(
-                Some("integer"),
-                None,
-                vec![],
-                Some(vec![EnumValue::Int(60), EnumValue::Int(120)]),
-                None,
-                None,
-            )),
-            ResolvedDef::Enum { .. }
-        ));
-
-        // Array (type=array + items) beats a stray string-pattern/scalar.
-        assert!(matches!(
-            classify_def(&def(
-                Some("array"),
-                None,
-                vec![],
-                None,
-                Some(CfnProperty::default()),
-                None,
-            )),
-            ResolvedDef::Array { .. }
-        ));
-
-        // String + pattern -> StringPattern.
-        assert!(matches!(
-            classify_def(&def(Some("string"), None, vec![], None, None, Some("^a$"))),
-            ResolvedDef::StringPattern { .. }
-        ));
-
-        // Bare scalar (no enum) -> Scalar with the right kind.
-        assert!(matches!(
-            classify_def(&def(Some("integer"), None, vec![], None, None, None)),
-            ResolvedDef::Scalar {
-                kind: ScalarKind::Integer,
-                ..
-            }
-        ));
-        assert!(matches!(
-            classify_def(&def(Some("number"), None, vec![], None, None, None)),
-            ResolvedDef::Scalar {
-                kind: ScalarKind::Number,
-                ..
-            }
-        ));
-        assert!(matches!(
-            classify_def(&def(Some("boolean"), None, vec![], None, None, None)),
-            ResolvedDef::Scalar {
-                kind: ScalarKind::Boolean,
-                ..
-            }
-        ));
-
-        // Empty properties is NOT a struct — falls through to Opaque.
-        assert!(matches!(
-            classify_def(&def(
-                Some("object"),
-                Some(BTreeMap::new()),
-                vec![],
-                None,
-                None,
-                None,
-            )),
-            ResolvedDef::Opaque
-        ));
-
-        // A typeless def with none of the shape markers -> Opaque (the
-        // explicit fallback that replaced the silent String drop).
-        assert!(matches!(
-            classify_def(&def(None, None, vec![], None, None, None)),
-            ResolvedDef::Opaque
-        ));
-
-        // String type with no pattern is not StringPattern -> Opaque.
-        assert!(matches!(
-            classify_def(&def(Some("string"), None, vec![], None, None, None)),
-            ResolvedDef::Opaque
-        ));
-    }
-
-    #[test]
-    fn test_classify_def_scalar_carries_range_and_format() {
-        let mut d = def(Some("integer"), None, vec![], None, None, None);
-        d.minimum = Some(10);
-        d.maximum = Some(2_000_000_000);
-        d.format = Some("int64".to_string());
-        match classify_def(&d) {
-            ResolvedDef::Scalar {
-                kind,
-                minimum,
-                maximum,
-                format,
-            } => {
-                assert_eq!(kind, ScalarKind::Integer);
-                assert_eq!(minimum, Some(10));
-                assert_eq!(maximum, Some(2_000_000_000));
-                assert_eq!(format, Some("int64"));
-            }
-            _ => panic!("expected Scalar"),
-        }
-    }
-
-    #[test]
     fn test_pattern_properties_object_ref_generates_typed_struct_map_and_docs() {
         let mut schema = empty_schema("AWS::WAFv2::WebACL");
         schema.properties.insert(
@@ -10111,8 +10938,8 @@ mod tests {
         schema.definitions = Some(BTreeMap::from([
             (
                 "CustomResponseBodies".to_string(),
-                CfnDefinition {
-                    def_type: Some("object".to_string()),
+                CfnProperty {
+                    prop_type: Some(TypeValue::Single("object".to_string())),
                     pattern_properties: Some(BTreeMap::from([(
                         "^[a-z]+$".to_string(),
                         CfnProperty {
@@ -10125,8 +10952,8 @@ mod tests {
             ),
             (
                 "CustomResponseBody".to_string(),
-                CfnDefinition {
-                    def_type: Some("object".to_string()),
+                CfnProperty {
+                    prop_type: Some(TypeValue::Single("object".to_string())),
                     properties: Some(BTreeMap::from([
                         (
                             "Content".to_string(),
@@ -10187,8 +11014,8 @@ mod tests {
         let mut schema = empty_schema("AWS::Test::UnsupportedObjectMap");
         schema.definitions = Some(BTreeMap::from([(
             "UnsupportedMap".to_string(),
-            CfnDefinition {
-                def_type: Some("object".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
                 pattern_properties: Some(BTreeMap::from([(
                     ".*".to_string(),
                     CfnProperty {
@@ -10227,8 +11054,8 @@ mod tests {
         schema.definitions = Some(BTreeMap::from([
             (
                 "Container".to_string(),
-                CfnDefinition {
-                    def_type: Some("object".to_string()),
+                CfnProperty {
+                    prop_type: Some(TypeValue::Single("object".to_string())),
                     properties: Some(BTreeMap::from([(
                         "NestedMap".to_string(),
                         CfnProperty {
@@ -10241,8 +11068,8 @@ mod tests {
             ),
             (
                 "UnsupportedMap".to_string(),
-                CfnDefinition {
-                    def_type: Some("object".to_string()),
+                CfnProperty {
+                    prop_type: Some(TypeValue::Single("object".to_string())),
                     pattern_properties: Some(BTreeMap::from([(
                         ".*".to_string(),
                         CfnProperty {
@@ -10311,6 +11138,41 @@ mod tests {
             collect_message.contains(expected_path),
             "struct collection diagnostic must use the canonical CFN path: {collect_message}"
         );
+    }
+
+    #[test]
+    #[should_panic(expected = "override type display contains a backtick")]
+    fn test_override_type_display_rejects_markdown_delimiters() {
+        OverrideTypeDisplay::new("`Struct(FuturePolicy)`");
+    }
+
+    #[test]
+    fn test_resource_override_displays_render_single_code_spans() {
+        let mut by_resource = BTreeMap::<_, Vec<_>>::new();
+        for (&(cfn_type, property), override_type) in resource_type_overrides().iter() {
+            if let TypeOverride::AttributeType { display, .. } = override_type {
+                by_resource
+                    .entry(cfn_type)
+                    .or_default()
+                    .push((property, display));
+            }
+        }
+        for (cfn_type, displays) in by_resource {
+            let schema = cfn_schema_for_codegen_tests(cfn_type);
+            let docs = generate_test_markdown(&schema, cfn_type).unwrap();
+            for (property, display) in displays {
+                let text = display.as_str();
+                assert!(!text.contains('`'), "{cfn_type}.{property}: {text}");
+                assert!(
+                    docs.contains(&format!("`{text}`")),
+                    "{cfn_type}.{property}: missing type display"
+                );
+                assert!(
+                    !docs.contains(&format!("``{text}``")),
+                    "{cfn_type}.{property}: doubled code delimiters"
+                );
+            }
+        }
     }
 
     #[test]
@@ -10653,8 +11515,8 @@ mod tests {
 
     #[test]
     fn test_nested_read_only_path_through_ref_array_items_is_provider_populated() {
-        let item_definition = CfnDefinition {
-            def_type: Some("object".to_string()),
+        let item_definition = CfnProperty {
+            prop_type: Some(TypeValue::Single("object".to_string())),
             properties: Some(BTreeMap::from([
                 (
                     "Owned".to_string(),
@@ -10699,8 +11561,8 @@ mod tests {
             ("Item".to_string(), item_definition),
             (
                 "ItemList".to_string(),
-                CfnDefinition {
-                    def_type: Some("array".to_string()),
+                CfnProperty {
+                    prop_type: Some(TypeValue::Single("array".to_string())),
                     items: Some(Box::new(item_ref)),
                     ..Default::default()
                 },
@@ -10747,8 +11609,8 @@ mod tests {
         ]);
         schema.definitions = Some(BTreeMap::from([(
             "Shared".to_string(),
-            CfnDefinition {
-                def_type: Some("object".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
                 properties: Some(BTreeMap::from([
                     (
                         "Owned".to_string(),
@@ -10830,8 +11692,8 @@ mod tests {
         );
         schema.definitions = Some(BTreeMap::from([(
             "RedirectConfig".to_string(),
-            CfnDefinition {
-                def_type: Some("object".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
                 properties: Some(BTreeMap::from([(
                     "Protocol".to_string(),
                     CfnProperty {
@@ -12329,187 +13191,6 @@ mod tests {
     }
 
     #[test]
-    fn test_list_element_type_display() {
-        // String items
-        let prop = CfnProperty {
-            prop_type: Some(TypeValue::Single("string".to_string())),
-            description: None,
-            enum_values: None,
-            items: None,
-            ref_path: None,
-            insertion_order: None,
-            properties: None,
-            required: vec![],
-            minimum: None,
-            maximum: None,
-            additional_properties: None,
-            const_value: None,
-            default_value: None,
-            pattern: None,
-            min_items: None,
-            max_items: None,
-            min_length: None,
-            max_length: None,
-            format: None,
-            ..Default::default()
-        };
-        assert_eq!(
-            list_element_type_display(&prop, "GenericProp", ""),
-            "`List<String>`"
-        );
-
-        // Integer items
-        let prop = CfnProperty {
-            prop_type: Some(TypeValue::Single("integer".to_string())),
-            description: None,
-            enum_values: None,
-            items: None,
-            ref_path: None,
-            insertion_order: None,
-            properties: None,
-            required: vec![],
-            minimum: None,
-            maximum: None,
-            additional_properties: None,
-            const_value: None,
-            default_value: None,
-            pattern: None,
-            min_items: None,
-            max_items: None,
-            min_length: None,
-            max_length: None,
-            format: None,
-            ..Default::default()
-        };
-        assert_eq!(
-            list_element_type_display(&prop, "GenericProp", ""),
-            "`List<Int>`"
-        );
-
-        // Boolean items
-        let prop = CfnProperty {
-            prop_type: Some(TypeValue::Single("boolean".to_string())),
-            description: None,
-            enum_values: None,
-            items: None,
-            ref_path: None,
-            insertion_order: None,
-            properties: None,
-            required: vec![],
-            minimum: None,
-            maximum: None,
-            additional_properties: None,
-            const_value: None,
-            default_value: None,
-            pattern: None,
-            min_items: None,
-            max_items: None,
-            min_length: None,
-            max_length: None,
-            format: None,
-            ..Default::default()
-        };
-        assert_eq!(
-            list_element_type_display(&prop, "GenericProp", ""),
-            "`List<Bool>`"
-        );
-
-        // No type (fallback)
-        let prop = CfnProperty {
-            prop_type: None,
-            description: None,
-            enum_values: None,
-            items: None,
-            ref_path: None,
-            insertion_order: None,
-            properties: None,
-            required: vec![],
-            minimum: None,
-            maximum: None,
-            additional_properties: None,
-            const_value: None,
-            default_value: None,
-            pattern: None,
-            min_items: None,
-            max_items: None,
-            min_length: None,
-            max_length: None,
-            format: None,
-            ..Default::default()
-        };
-        assert_eq!(
-            list_element_type_display(&prop, "GenericProp", ""),
-            "`List<String>`"
-        );
-    }
-
-    #[test]
-    fn test_list_element_type_display_with_name_inference() {
-        let prop = CfnProperty {
-            prop_type: Some(TypeValue::Single("string".to_string())),
-            description: None,
-            enum_values: None,
-            items: None,
-            ref_path: None,
-            insertion_order: None,
-            properties: None,
-            required: vec![],
-            minimum: None,
-            maximum: None,
-            additional_properties: None,
-            const_value: None,
-            default_value: None,
-            pattern: None,
-            min_items: None,
-            max_items: None,
-            min_length: None,
-            max_length: None,
-            format: None,
-            ..Default::default()
-        };
-        assert_eq!(
-            list_element_type_display(&prop, "SubnetIds", ""),
-            "`List<SubnetId>`"
-        );
-        assert_eq!(
-            list_element_type_display(&prop, "SecurityGroupIds", ""),
-            "`List<SecurityGroupId>`"
-        );
-        assert_eq!(
-            list_element_type_display(&prop, "RouteTableIds", ""),
-            "`List<RouteTableId>`"
-        );
-        assert_eq!(
-            list_element_type_display(&prop, "NetworkInterfaceIds", ""),
-            "`List<NetworkInterfaceId>`"
-        );
-        assert_eq!(
-            list_element_type_display(&prop, "VpcEndpointIds", ""),
-            "`List<VpcEndpointId>`"
-        );
-        assert_eq!(
-            list_element_type_display(&prop, "RoleArns", ""),
-            "`List<Arn>`"
-        );
-        assert_eq!(
-            list_element_type_display(&prop, "CidrBlocks", ""),
-            "`List<Ipv4Cidr>`"
-        );
-        assert_eq!(
-            list_element_type_display(&prop, "Ipv6CidrBlocks", ""),
-            "`List<Ipv6Cidr>`"
-        );
-        assert_eq!(
-            list_element_type_display(&prop, "Names", ""),
-            "`List<String>`"
-        );
-        assert_eq!(
-            list_element_type_display(&prop, "SubnetId", ""),
-            "`List<SubnetId>`"
-        );
-    }
-
-    #[test]
     fn test_type_display_string_array_tag_ref() {
         // Array with Tag $ref should display List<Map(String)>
         let prop = CfnProperty {
@@ -12566,8 +13247,8 @@ mod tests {
             primary_identifier: None,
             definitions: Some(BTreeMap::from([(
                 "Tag".to_string(),
-                CfnDefinition {
-                    def_type: Some("object".to_string()),
+                CfnProperty {
+                    prop_type: Some(TypeValue::Single("object".to_string())),
                     properties: Some(BTreeMap::from([
                         (
                             "Key".to_string(),
@@ -12672,8 +13353,8 @@ mod tests {
         let mut definitions = BTreeMap::new();
         definitions.insert(
             "RateLimit".to_string(),
-            CfnDefinition {
-                def_type: Some("integer".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("integer".to_string())),
                 minimum: Some(10),
                 maximum: Some(2_000_000_000),
                 ..Default::default()
@@ -12716,8 +13397,8 @@ mod tests {
         let mut definitions = BTreeMap::new();
         definitions.insert(
             "Weight".to_string(),
-            CfnDefinition {
-                def_type: Some("integer".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("integer".to_string())),
                 ..Default::default()
             },
         );
@@ -12792,52 +13473,6 @@ mod tests {
             type_display_string("SomeList", &prop, &schema),
             "`List<String>`"
         );
-    }
-
-    #[test]
-    fn test_list_element_type_display_always_includes_element_type() {
-        // Regression guard: list_element_type_display must always return "List<...>"
-        // with element type info, never bare "List".
-        let test_cases: Vec<Option<TypeValue>> = vec![
-            Some(TypeValue::Single("string".to_string())),
-            Some(TypeValue::Single("integer".to_string())),
-            Some(TypeValue::Single("number".to_string())),
-            Some(TypeValue::Single("boolean".to_string())),
-            Some(TypeValue::Single("object".to_string())),
-            Some(TypeValue::Single("unknown".to_string())),
-            None,
-        ];
-        for type_val in test_cases {
-            let prop = CfnProperty {
-                prop_type: type_val.clone(),
-                description: None,
-                enum_values: None,
-                items: None,
-                ref_path: None,
-                insertion_order: None,
-                properties: None,
-                required: vec![],
-                minimum: None,
-                maximum: None,
-                additional_properties: None,
-                const_value: None,
-                default_value: None,
-                pattern: None,
-                min_items: None,
-                max_items: None,
-                min_length: None,
-                max_length: None,
-                format: None,
-                ..Default::default()
-            };
-            let result = list_element_type_display(&prop, "GenericProp", "");
-            assert!(
-                result.contains('<') && result.contains('>'),
-                "list_element_type_display should include element type for {:?}, got: {}",
-                type_val,
-                result
-            );
-        }
     }
 
     #[test]
@@ -14518,6 +15153,522 @@ mod tests {
     }
 
     #[test]
+    fn test_one_of_direct_properties_win_across_consumers() {
+        let property: CfnProperty = serde_json::from_value(serde_json::json!({
+            "properties": { "Value": { "type": "string" } },
+            "required": ["Value"],
+            "oneOf": [
+                { "type": "array", "items": { "type": "object" } },
+                { "properties": { "Ignored": { "type": "object" } } }
+            ]
+        }))
+        .unwrap();
+        let mut schema = empty_schema("AWS::Test::DirectOneOf");
+        schema.properties.insert("Choice".to_string(), property);
+        let property = &schema.properties["Choice"];
+
+        assert!(property_generates_struct(property, &schema));
+        assert!(!property_resolves_to_array(property, &schema));
+        // Both ignored variants contain unclassified bare objects. The
+        // walker must follow only the direct fields that codegen emits.
+        assert!(assert_schema_bare_objects_classified(&schema).is_empty());
+        let generated = generate_synthetic_schema_code(&schema).unwrap();
+        assert!(
+            generated.contains(r#"StructField::required("value", AttributeType::string())"#),
+            "{generated}"
+        );
+        assert!(!generated.contains(r#""ignored""#), "{generated}");
+        let md = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        assert!(md.contains("[Struct(Choice)](#choice-1)"), "{md}");
+        assert!(md.contains("| `value` | String | Yes |"), "{md}");
+        assert!(!md.contains("`ignored`"), "{md}");
+
+        schema.read_only_properties = vec!["/properties/Choice/Value".to_string()];
+        assert!(is_property_read_only(
+            &schema,
+            &schema.properties["Choice"],
+            &["Choice".to_string()],
+        ));
+    }
+
+    #[test]
+    fn test_one_of_first_array_wins_over_objects_and_later_arrays() {
+        let property: CfnProperty = serde_json::from_value(serde_json::json!({
+            "oneOf": [
+                { "properties": { "Ignored": { "type": "object" } } },
+                { "type": "array", "items": { "type": "integer" } },
+                { "type": "array", "items": { "type": "boolean" } }
+            ]
+        }))
+        .unwrap();
+        let mut schema = empty_schema("AWS::Test::ArrayOneOf");
+        schema.properties.insert("Choice".to_string(), property);
+
+        assert!(!property_generates_struct(
+            &schema.properties["Choice"],
+            &schema
+        ));
+        assert!(assert_schema_bare_objects_classified(&schema).is_empty());
+        let generated = generate_synthetic_schema_code(&schema).unwrap();
+        assert!(
+            generated.contains(
+                r#"AttributeSchema::optional("choice", AttributeType::list(AttributeType::int()))"#
+            ),
+            "{generated}"
+        );
+        let md = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        assert!(md.contains("- **Type:** `List<Int>`\n"), "{md}");
+        assert!(!md.contains("## Struct Definitions"), "{md}");
+
+        schema.read_only_properties = vec!["/properties/Choice/*".to_string()];
+        assert!(is_property_read_only(
+            &schema,
+            &schema.properties["Choice"],
+            &["Choice".to_string()],
+        ));
+    }
+
+    fn assert_one_of_array_ref_matches_inline(definition: CfnProperty) {
+        let mut schema = empty_schema("AWS::Test::ArrayRefOneOf");
+        schema.definitions = Some(BTreeMap::from([
+            ("Values".to_string(), definition.clone()),
+            (
+                "Alias".to_string(),
+                CfnProperty {
+                    ref_path: Some("#/definitions/Values".to_string()),
+                    ..Default::default()
+                },
+            ),
+        ]));
+        let referenced = CfnProperty {
+            ref_path: Some("#/definitions/Alias".to_string()),
+            ..Default::default()
+        };
+        assert!(property_resolves_to_array(&definition, &schema));
+        assert!(property_resolves_to_array(&referenced, &schema));
+        let property = CfnProperty {
+            one_of: vec![
+                serde_json::from_value(serde_json::json!({
+                    "properties": { "Fallback": { "type": "string" } }
+                }))
+                .unwrap(),
+                referenced,
+            ],
+            ..Default::default()
+        };
+        let (generated_type, enum_info) = cfn_type_to_carina_type_with_enum(
+            &property,
+            "Choice",
+            &schema,
+            "aws.test.ArrayRefOneOf",
+            &BTreeMap::new(),
+        );
+        assert!(enum_info.is_none());
+        let (inline_type, inline_enum) = cfn_type_to_carina_type_with_enum(
+            &definition,
+            "Choice",
+            &schema,
+            "aws.test.ArrayRefOneOf",
+            &BTreeMap::new(),
+        );
+        assert!(inline_enum.is_none());
+        assert_eq!(generated_type, inline_type);
+        assert_eq!(
+            generated_type,
+            "AttributeType::refined_list(AttributeType::int(), false, Some((Some(1), Some(3))))"
+        );
+        assert_eq!(
+            type_display_string("Choice", &property, &schema),
+            "`List<Int>` (items: 1..=3)"
+        );
+        assert!(!property_generates_struct(&property, &schema));
+
+        let enum_key = MarkdownEnumKey {
+            namespace: "aws.test.ArrayRefOneOf".to_string(),
+            type_name: "Choice".to_string(),
+        };
+        let linked = markdown_link_type(
+            "Choice",
+            &property,
+            &schema,
+            Some(&enum_key),
+            &["Choice".to_string()],
+            None,
+        );
+        assert!(matches!(
+            linked,
+            Some(MarkdownLinkedType::List { item, suffix })
+                if matches!(item.as_ref(), MarkdownLinkedType::Enum(key) if key == &enum_key)
+                    && suffix.as_deref() == Some(" (items: 1..=3)")
+        ));
+
+        schema.properties.insert("Choice".to_string(), property);
+        assert!(assert_schema_bare_objects_classified(&schema).is_empty());
+        let generated = generate_synthetic_schema_code(&schema).unwrap();
+        assert!(generated.contains(&generated_type), "{generated}");
+        let md = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        assert!(md.contains("`List<Int>` (items: 1..=3)"), "{md}");
+        assert!(!md.contains("## Struct Definitions"), "{md}");
+    }
+
+    #[test]
+    fn test_one_of_ref_to_nullable_array_definition() {
+        for types in [["array", "null"], ["null", "array"]] {
+            let definition = serde_json::from_value(serde_json::json!({
+                "type": types,
+                "items": { "type": "integer" },
+                "minItems": 1,
+                "maxItems": 3,
+                "insertionOrder": false
+            }))
+            .unwrap();
+            assert_one_of_array_ref_matches_inline(definition);
+        }
+    }
+
+    #[test]
+    fn test_ref_enum_list_alias_agrees_in_schema_and_markdown() {
+        for definitions in [
+            serde_json::json!({
+                "Values": {
+                    "type": "array",
+                    "items": { "type": "string", "enum": ["A", "B"] },
+                    "minItems": 1
+                },
+                "Alias": { "$ref": "#/definitions/Values" }
+            }),
+            serde_json::json!({
+                "Alias": { "oneOf": [{
+                    "type": "array",
+                    "items": { "type": "string", "enum": ["A", "B"] },
+                    "minItems": 1
+                }] }
+            }),
+        ] {
+            let mut schema = empty_schema("AWS::Test::EnumAlias");
+            schema.definitions = Some(serde_json::from_value(definitions).unwrap());
+            schema.properties.insert(
+                "Choice".to_string(),
+                serde_json::from_value(serde_json::json!({ "$ref": "#/definitions/Alias" }))
+                    .unwrap(),
+            );
+
+            let generated = generate_synthetic_schema_code(&schema).unwrap();
+            let choice = generated
+                .lines()
+                .find(|line| line.contains(r#""choice", "#))
+                .unwrap();
+            assert!(
+                choice.contains("AttributeType::refined_list(AttributeType::enum_("),
+                "{choice}"
+            );
+            assert!(choice.contains("true, Some((Some(1), None))"), "{choice}");
+            assert!(
+                choice.contains(r#""A".to_string(), "B".to_string()"#),
+                "{choice}"
+            );
+            let md = generate_test_markdown(&schema, &schema.type_name).unwrap();
+            assert!(
+                md.contains("- **Type:** List\\<[Enum (Choice)](#choice-choice)\\> (items: 1..)"),
+                "{md}"
+            );
+            carina_docgen::check_page(&md).unwrap();
+        }
+    }
+
+    #[test]
+    fn test_null_first_array_struct_items_agree_in_schema_and_markdown() {
+        let array = serde_json::json!({
+            "type": ["null", "array"],
+            "items": { "properties": { "V": { "type": "integer" } } }
+        });
+        for property in [array.clone(), serde_json::json!({ "oneOf": [array] })] {
+            for referenced in [false, true] {
+                let mut schema = empty_schema("AWS::Test::NullFirst");
+                let mut property: CfnProperty = serde_json::from_value(property.clone()).unwrap();
+                if referenced {
+                    schema.definitions = Some(BTreeMap::from([("Values".to_string(), property)]));
+                    property = CfnProperty {
+                        ref_path: Some("#/definitions/Values".to_string()),
+                        ..Default::default()
+                    };
+                }
+                schema.properties.insert("Choice".to_string(), property);
+
+                let generated = generate_synthetic_schema_code(&schema).unwrap();
+                assert!(
+                    generated.contains(r#"AttributeType::list(AttributeType::struct_("Choice""#),
+                    "{generated}"
+                );
+                assert!(
+                    generated.contains(r#"StructField::optional("v", AttributeType::int())"#),
+                    "{generated}"
+                );
+                let md = generate_test_markdown(&schema, &schema.type_name).unwrap();
+                assert!(
+                    md.contains("- **Type:** List\\<[Struct(Choice)](#choice-1)\\>"),
+                    "{md}"
+                );
+                assert!(md.contains("| `v` | Int | No |"), "{md}");
+                carina_docgen::check_page(&md).unwrap();
+
+                schema.read_only_properties = vec!["/properties/Choice/*/V".to_string()];
+                assert!(is_property_read_only(
+                    &schema,
+                    &schema.properties["Choice"],
+                    &["Choice".to_string()]
+                ));
+                let generated = generate_synthetic_schema_code(&schema).unwrap();
+                assert!(
+                    generated.contains(
+                        r#"AttributeSchema::provider_populated("choice", AttributeType::list("#
+                    ),
+                    "{generated}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_array_detection_uses_first_non_null_declared_type() {
+        for types in [
+            serde_json::json!(["string", "array"]),
+            serde_json::json!(["null", "string", "array"]),
+        ] {
+            let property: CfnProperty = serde_json::from_value(serde_json::json!({
+                "type": types,
+                "items": { "properties": { "V": { "type": "integer" } } }
+            }))
+            .unwrap();
+            let mut schema = empty_schema("AWS::Test::FirstType");
+            schema.properties.insert("Choice".to_string(), property);
+            assert!(!property_resolves_to_array(
+                &schema.properties["Choice"],
+                &schema
+            ));
+            let generated = generate_synthetic_schema_code(&schema).unwrap();
+            assert!(
+                generated
+                    .contains(r#"AttributeSchema::optional("choice", AttributeType::string())"#),
+                "{generated}"
+            );
+            let md = generate_test_markdown(&schema, &schema.type_name).unwrap();
+            assert!(md.contains("- **Type:** String\n"), "{md}");
+            assert!(!md.contains("Struct Definitions"), "{md}");
+        }
+    }
+
+    #[test]
+    fn test_one_of_sibling_ref_owns_shape_across_consumers() {
+        for is_array in [false, true] {
+            let mut definition = serde_json::json!({
+                "properties": { "V": { "type": "integer" } },
+                "required": ["V"]
+            });
+            if is_array {
+                definition = serde_json::json!({ "type": "array", "items": definition });
+            }
+            let mut schema = empty_schema("AWS::Test::SiblingRef");
+            schema.definitions = Some(
+                serde_json::from_value(serde_json::json!({
+                    "Values": definition,
+                    "Alias": {
+                        "$ref": "#/definitions/Values",
+                        "oneOf": [{ "type": "object" }]
+                    }
+                }))
+                .unwrap(),
+            );
+            schema.properties.insert(
+                "Choice".to_string(),
+                serde_json::from_value(serde_json::json!({
+                    "$ref": "#/definitions/Alias",
+                    "oneOf": [{
+                        "type": "array",
+                        "items": { "properties": { "Ignored": { "type": "object" } } }
+                    }]
+                }))
+                .unwrap(),
+            );
+
+            let property = &schema.properties["Choice"];
+            assert_eq!(property_generates_struct(property, &schema), !is_array);
+            assert_eq!(property_resolves_to_array(property, &schema), is_array);
+            assert!(assert_schema_bare_objects_classified(&schema).is_empty());
+            let generated = generate_synthetic_schema_code(&schema).unwrap();
+            let choice_type = if is_array {
+                r#"AttributeType::list(AttributeType::struct_("Choice""#
+            } else {
+                r#"AttributeSchema::optional("choice", AttributeType::struct_("Values""#
+            };
+            assert!(generated.contains(choice_type), "{generated}");
+            assert!(
+                generated.contains(r#"StructField::required("v", AttributeType::int())"#),
+                "{generated}"
+            );
+            assert!(!generated.contains(r#""ignored""#), "{generated}");
+            let md = generate_test_markdown(&schema, &schema.type_name).unwrap();
+            let display = if is_array {
+                "List\\<[Struct(Choice)](#choice-1)\\>"
+            } else {
+                "[Struct(Values)](#choice-1)"
+            };
+            assert!(md.contains(display), "{md}");
+            assert!(md.contains("| `v` | Int | Yes |"), "{md}");
+            assert!(!md.contains("`ignored`"), "{md}");
+            carina_docgen::check_page(&md).unwrap();
+
+            schema.read_only_properties = vec![if is_array {
+                "/properties/Choice/*/V".to_string()
+            } else {
+                "/properties/Choice/V".to_string()
+            }];
+            assert!(is_property_read_only(
+                &schema,
+                &schema.properties["Choice"],
+                &["Choice".to_string()]
+            ));
+        }
+    }
+
+    #[test]
+    fn test_ref_force_unordered_enum_list_retains_resolved_bounds() {
+        let mut schema = empty_schema("AWS::CloudFront::Distribution");
+        schema.definitions = Some(
+            serde_json::from_value(serde_json::json!({
+                "Methods": { "oneOf": [{
+                    "type": ["null", "array"],
+                    "enum": ["GET", "HEAD"],
+                    "items": { "type": "string" },
+                    "minItems": 1
+                }] },
+                "DefaultCacheBehavior": { "properties": {
+                    "AllowedMethods": { "$ref": "#/definitions/Methods" }
+                } }
+            }))
+            .unwrap(),
+        );
+        schema.properties.insert(
+            "Choice".to_string(),
+            serde_json::from_value(serde_json::json!({
+                "$ref": "#/definitions/DefaultCacheBehavior"
+            }))
+            .unwrap(),
+        );
+        let generated = generate_synthetic_schema_code(&schema).unwrap();
+        let field = generated
+            .lines()
+            .find(|line| line.contains(r#""allowed_methods", "#))
+            .unwrap();
+        assert!(
+            field.contains("AttributeType::refined_list(AttributeType::enum_("),
+            "{field}"
+        );
+        assert!(field.contains("false, Some((Some(1), None))"), "{field}");
+        let md = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        let field = md
+            .lines()
+            .find(|line| line.starts_with("| `allowed_methods` |"))
+            .unwrap();
+        assert!(field.contains("List\\<[Enum ("), "{field}");
+        assert!(field.contains(" (items: 1..)"), "{field}");
+        carina_docgen::check_page(&md).unwrap();
+    }
+
+    #[test]
+    fn test_one_of_ref_to_one_of_array_definition() {
+        let mut definition: CfnProperty = serde_json::from_value(serde_json::json!({
+            "oneOf": [
+                { "properties": { "Ignored": { "type": "object" } } },
+                {
+                    "type": "array",
+                    "items": { "type": "integer" },
+                    "minItems": 1,
+                    "maxItems": 3,
+                    "insertionOrder": false
+                }
+            ]
+        }))
+        .unwrap();
+        assert_one_of_array_ref_matches_inline(definition.clone());
+
+        // Deeply nested unions must retain the final array's constraints
+        // in both generated schema code and Markdown.
+        for _ in 0..32 {
+            definition = CfnProperty {
+                one_of: vec![definition],
+                ..Default::default()
+            };
+        }
+        assert_one_of_array_ref_matches_inline(definition);
+    }
+
+    #[test]
+    fn test_one_of_array_resolution_stops_at_ref_cycles() {
+        let mut schema = empty_schema("AWS::Test::OneOfCycle");
+        schema.definitions = Some(
+            serde_json::from_value(serde_json::json!({
+                "CycleA": { "oneOf": [{ "$ref": "#/definitions/CycleB" }] },
+                "CycleB": { "oneOf": [{ "$ref": "#/definitions/CycleA" }] }
+            }))
+            .unwrap(),
+        );
+        let property = CfnProperty {
+            ref_path: Some("#/definitions/CycleA".to_string()),
+            ..Default::default()
+        };
+        assert!(!property_resolves_to_array(&property, &schema));
+        assert!(matches!(
+            property_shape(
+                resolve_ref(&schema, "#/definitions/CycleA")
+                    .unwrap()
+                    .property,
+                &schema
+            ),
+            PropertyShape::Unresolved
+        ));
+    }
+
+    #[test]
+    fn test_markdown_collects_struct_items_of_ref_to_one_of_array_definition() {
+        let mut schema = empty_schema("AWS::Test::OneOfArrayRef");
+        schema.definitions = Some(
+            serde_json::from_value(serde_json::json!({
+                "Entries": {
+                    "oneOf": [
+                        { "properties": { "Ignored": { "type": "object" } } },
+                        {
+                            "type": "array",
+                            "items": { "properties": { "Value": { "type": "integer" } } }
+                        }
+                    ]
+                }
+            }))
+            .unwrap(),
+        );
+        schema.properties.insert(
+            "Choices".to_string(),
+            CfnProperty {
+                ref_path: Some("#/definitions/Entries".to_string()),
+                ..Default::default()
+            },
+        );
+
+        assert!(assert_schema_bare_objects_classified(&schema).is_empty());
+        let generated = generate_synthetic_schema_code(&schema).unwrap();
+        assert!(
+            generated.contains(r#"AttributeType::list(AttributeType::struct_("Choices""#),
+            "{generated}"
+        );
+        let md = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        assert!(md.contains("[Struct(Choices)](#choices-1)"), "{md}");
+        assert!(md.contains("### choices\n\n| Field |"), "{md}");
+        assert!(md.contains("| `value` | Int | No |"), "{md}");
+        assert!(!md.contains("`ignored`"), "{md}");
+        carina_docgen::check_page(&md).unwrap();
+    }
+
+    #[test]
     fn test_property_oneof_array_ref_maps_to_list_of_struct() {
         let mut key_schema_props = BTreeMap::new();
         key_schema_props.insert(
@@ -14542,8 +15693,8 @@ mod tests {
         let mut definitions = BTreeMap::new();
         definitions.insert(
             "KeySchema".to_string(),
-            CfnDefinition {
-                def_type: Some("object".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
                 properties: Some(key_schema_props),
                 required: vec!["AttributeName".to_string(), "KeyType".to_string()],
                 ..Default::default()
@@ -15027,8 +16178,8 @@ mod tests {
         let mut definitions = BTreeMap::new();
         definitions.insert(
             "BlockSettings".to_string(),
-            CfnDefinition {
-                def_type: None,
+            CfnProperty {
+                prop_type: None,
                 properties: Some(def_props),
                 required: vec![],
                 one_of: vec![],
@@ -15041,6 +16192,7 @@ mod tests {
                 maximum: None,
                 pattern_properties: None,
                 format: None,
+                ..Default::default()
             },
         );
 
@@ -15203,8 +16355,8 @@ mod tests {
         let mut definitions = BTreeMap::new();
         definitions.insert(
             "HttpMethod".to_string(),
-            CfnDefinition {
-                def_type: Some("string".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("string".to_string())),
                 properties: None,
                 required: vec![],
                 one_of: vec![],
@@ -15220,6 +16372,7 @@ mod tests {
                 maximum: None,
                 pattern_properties: None,
                 format: None,
+                ..Default::default()
             },
         );
         let prop = CfnProperty {
@@ -15229,7 +16382,7 @@ mod tests {
         let schema = CfnSchema {
             type_name: "AWS::S3::Bucket".to_string(),
             description: None,
-            properties: BTreeMap::new(),
+            properties: BTreeMap::from([("HttpMethod".to_string(), prop.clone())]),
             required: vec![],
             read_only_properties: vec![],
             create_only_properties: vec![],
@@ -15256,6 +16409,14 @@ mod tests {
         let info = enum_info.unwrap();
         assert_eq!(info.values, vec!["GET", "POST"]);
         assert_eq!(info.type_name, "HttpMethod");
+
+        let generated = generate_synthetic_schema_code(&schema).unwrap();
+        assert!(
+            generated.contains("AttributeType::enum_(")
+                && generated.contains("\"GET\".to_string()")
+                && generated.contains("\"POST\".to_string()"),
+            "a string enum definition must remain an enum in schema code: {generated}"
+        );
     }
 
     #[test]
@@ -15265,8 +16426,8 @@ mod tests {
         let mut definitions = BTreeMap::new();
         definitions.insert(
             "BlockedEncryptionTypeList".to_string(),
-            CfnDefinition {
-                def_type: Some("array".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("array".to_string())),
                 properties: None,
                 required: vec![],
                 one_of: vec![],
@@ -15286,6 +16447,7 @@ mod tests {
                 maximum: None,
                 pattern_properties: None,
                 format: None,
+                ..Default::default()
             },
         );
         let prop = CfnProperty {
@@ -15341,8 +16503,8 @@ mod tests {
         let mut definitions = BTreeMap::new();
         definitions.insert(
             "RateLimit".to_string(),
-            CfnDefinition {
-                def_type: Some("integer".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("integer".to_string())),
                 minimum: Some(10),
                 maximum: Some(2_000_000_000),
                 ..Default::default()
@@ -15388,8 +16550,8 @@ mod tests {
         let mut definitions = BTreeMap::new();
         definitions.insert(
             "Weight".to_string(),
-            CfnDefinition {
-                def_type: Some("number".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("number".to_string())),
                 ..Default::default()
             },
         );
@@ -15433,8 +16595,8 @@ mod tests {
         let mut definitions = BTreeMap::new();
         definitions.insert(
             "Toggle".to_string(),
-            CfnDefinition {
-                def_type: Some("boolean".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("boolean".to_string())),
                 ..Default::default()
             },
         );
@@ -15486,8 +16648,8 @@ mod tests {
         let mut definitions = BTreeMap::new();
         definitions.insert(
             "Rule".to_string(),
-            CfnDefinition {
-                def_type: Some("object".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
                 properties: Some(def_props),
                 required: vec!["Priority".to_string()],
                 ..Default::default()
@@ -15495,8 +16657,8 @@ mod tests {
         );
         definitions.insert(
             "RulePriority".to_string(),
-            CfnDefinition {
-                def_type: Some("integer".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("integer".to_string())),
                 minimum: Some(0),
                 ..Default::default()
             },
@@ -15545,8 +16707,8 @@ mod tests {
         let mut definitions = BTreeMap::new();
         definitions.insert(
             "Weight".to_string(),
-            CfnDefinition {
-                def_type: Some("integer".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("integer".to_string())),
                 ..Default::default()
             },
         );
@@ -15689,8 +16851,8 @@ mod tests {
         let mut definitions = BTreeMap::new();
         definitions.insert(
             "ObjectLockConfiguration".to_string(),
-            CfnDefinition {
-                def_type: Some("object".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
                 properties: Some(def_props),
                 required: vec![],
                 enum_values: None,
@@ -15703,6 +16865,7 @@ mod tests {
                 maximum: None,
                 pattern_properties: None,
                 format: None,
+                ..Default::default()
             },
         );
 
@@ -15757,8 +16920,8 @@ mod tests {
         let mut definitions = BTreeMap::new();
         definitions.insert(
             "DefaultRetention".to_string(),
-            CfnDefinition {
-                def_type: Some("object".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
                 properties: Some(def_props),
                 required: vec![],
                 enum_values: None,
@@ -15771,12 +16934,13 @@ mod tests {
                 maximum: None,
                 pattern_properties: None,
                 format: None,
+                ..Default::default()
             },
         );
         definitions.insert(
             "RetentionMode".to_string(),
-            CfnDefinition {
-                def_type: Some("string".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("string".to_string())),
                 properties: None,
                 required: vec![],
                 enum_values: Some(vec![
@@ -15792,6 +16956,7 @@ mod tests {
                 maximum: None,
                 pattern_properties: None,
                 format: None,
+                ..Default::default()
             },
         );
 
@@ -15861,8 +17026,8 @@ mod tests {
         let mut definitions = BTreeMap::new();
         definitions.insert(
             "Ingress".to_string(),
-            CfnDefinition {
-                def_type: Some("object".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
                 properties: Some(ingress_props),
                 required: vec![],
                 enum_values: None,
@@ -15875,12 +17040,13 @@ mod tests {
                 maximum: None,
                 pattern_properties: None,
                 format: None,
+                ..Default::default()
             },
         );
         definitions.insert(
             "Egress".to_string(),
-            CfnDefinition {
-                def_type: Some("object".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
                 properties: Some(egress_props),
                 required: vec![],
                 enum_values: None,
@@ -15893,12 +17059,13 @@ mod tests {
                 maximum: None,
                 pattern_properties: None,
                 format: None,
+                ..Default::default()
             },
         );
         definitions.insert(
             "IpProtocol".to_string(),
-            CfnDefinition {
-                def_type: Some("string".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("string".to_string())),
                 properties: None,
                 required: vec![],
                 enum_values: Some(vec![
@@ -15914,6 +17081,7 @@ mod tests {
                 maximum: None,
                 pattern_properties: None,
                 format: None,
+                ..Default::default()
             },
         );
 
@@ -16550,7 +17718,7 @@ mod tests {
         );
         schema.definitions = Some(BTreeMap::from([(
             "Choice".to_string(),
-            CfnDefinition {
+            CfnProperty {
                 one_of: vec![
                     CfnProperty {
                         properties: Some(BTreeMap::from([(
@@ -16591,7 +17759,7 @@ mod tests {
     }
 
     #[test]
-    fn test_markdown_direct_non_array_one_of_keeps_string_precedence() {
+    fn test_direct_non_array_one_of_schema_and_markdown_use_struct() {
         let mut schema = empty_schema("AWS::Test::DirectOneOf");
         schema.properties.insert(
             "Choice".to_string(),
@@ -16610,16 +17778,123 @@ mod tests {
             },
         );
 
+        let generated = generate_synthetic_schema_code(&schema).unwrap();
         let md = generate_test_markdown(&schema, "AWS::Test::DirectOneOf").unwrap();
 
-        assert!(md.contains("### `choice`\n\n- **Type:** String\n"), "{md}");
-        assert!(!md.contains("## Struct Definitions"), "{md}");
+        let schema_uses_choice_struct = generated.contains(
+            r#"AttributeSchema::optional("choice", AttributeType::struct_("Choice".to_string(), vec![StructField::optional("alpha", AttributeType::string())"#,
+        );
+        assert!(schema_uses_choice_struct, "{generated}");
+        assert!(
+            md.contains("### `choice`\n\n- **Type:** [Struct(Choice)](#choice-1)\n"),
+            "schema code and Markdown must expose the same Choice struct:\n{md}"
+        );
+        assert!(md.contains("## Struct Definitions"), "{md}");
+        assert!(md.contains("### choice\n\n| Field |"), "{md}");
+        assert!(md.contains("| `alpha` | String |"), "{md}");
+    }
+
+    #[test]
+    fn test_direct_non_array_one_of_two_object_variants_merge_optional_fields() {
+        let mut schema = empty_schema("AWS::Test::DirectOneOf");
+        schema.properties.insert(
+            "Choice".to_string(),
+            CfnProperty {
+                one_of: vec![
+                    CfnProperty {
+                        properties: Some(BTreeMap::from([(
+                            "Alpha".to_string(),
+                            CfnProperty {
+                                prop_type: Some(TypeValue::Single("string".to_string())),
+                                ..Default::default()
+                            },
+                        )])),
+                        required: vec!["Alpha".to_string()],
+                        ..Default::default()
+                    },
+                    CfnProperty {
+                        properties: Some(BTreeMap::from([(
+                            "Retries".to_string(),
+                            CfnProperty {
+                                prop_type: Some(TypeValue::Single("integer".to_string())),
+                                ..Default::default()
+                            },
+                        )])),
+                        required: vec!["Retries".to_string()],
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            },
+        );
+
+        let generated = generate_synthetic_schema_code(&schema).unwrap();
+        let md = generate_test_markdown(&schema, "AWS::Test::DirectOneOf").unwrap();
+
+        for optional_field in [
+            r#"StructField::optional("alpha", AttributeType::string())"#,
+            r#"StructField::optional("retries", AttributeType::int())"#,
+        ] {
+            assert!(
+                generated.contains(optional_field),
+                "the merged direct oneOf must contain {optional_field}: {generated}"
+            );
+        }
+        assert!(
+            !generated.contains(r#"StructField::required("alpha""#)
+                && !generated.contains(r#"StructField::required("retries""#),
+            "variant-local required lists must not make merged fields required: {generated}"
+        );
+        assert!(md.contains("| `alpha` | String | No |"), "{md}");
+        assert!(md.contains("| `retries` | Int | No |"), "{md}");
+    }
+
+    #[test]
+    fn test_markdown_enum_target_direct_properties_take_precedence_over_array_one_of() {
+        let schema = empty_schema("AWS::Test::EnumTarget");
+        let property = CfnProperty {
+            properties: Some(BTreeMap::from([(
+                "Value".to_string(),
+                CfnProperty {
+                    prop_type: Some(TypeValue::Single("string".to_string())),
+                    ..Default::default()
+                },
+            )])),
+            one_of: vec![CfnProperty {
+                prop_type: Some(TypeValue::Single("array".to_string())),
+                items: Some(Box::new(CfnProperty {
+                    prop_type: Some(TypeValue::Single("string".to_string())),
+                    ..Default::default()
+                })),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let enum_key = MarkdownEnumKey {
+            namespace: "aws.test.EnumTarget".to_string(),
+            type_name: "Choice".to_string(),
+        };
+
+        let linked = markdown_link_type(
+            "Choice",
+            &property,
+            &schema,
+            Some(&enum_key),
+            &["Choice".to_string()],
+            None,
+        )
+        .expect("an enum target must produce a linked Markdown type");
+
+        assert!(
+            matches!(linked, MarkdownLinkedType::Enum(key) if key == enum_key),
+            "direct struct properties must prevent the oneOf array variant from wrapping the enum in List"
+        );
     }
 
     #[test]
     fn test_markdown_plain_values_never_contain_fragment_links() {
-        let struct_definition = CfnDefinition {
-            def_type: Some("object".to_string()),
+        let struct_definition = CfnProperty {
+            prop_type: Some(TypeValue::Single("object".to_string())),
             properties: Some(BTreeMap::from([(
                 "Value".to_string(),
                 CfnProperty {
@@ -16681,8 +17956,8 @@ mod tests {
 
     #[test]
     fn test_truly_identical_nested_enum_identity_is_emitted_once() {
-        let protocol = CfnDefinition {
-            def_type: Some("string".to_string()),
+        let protocol = CfnProperty {
+            prop_type: Some(TypeValue::Single("string".to_string())),
             properties: None,
             required: vec![],
             enum_values: Some(vec![
@@ -16698,13 +17973,14 @@ mod tests {
             maximum: None,
             pattern_properties: None,
             format: None,
+            ..Default::default()
         };
         let shared_protocol = || CfnProperty {
             ref_path: Some("#/definitions/Protocol".to_string()),
             ..Default::default()
         };
-        let rule = CfnDefinition {
-            def_type: Some("object".to_string()),
+        let rule = CfnProperty {
+            prop_type: Some(TypeValue::Single("object".to_string())),
             properties: Some(BTreeMap::from([
                 ("DestinationProtocol".to_string(), shared_protocol()),
                 ("SourceProtocol".to_string(), shared_protocol()),
@@ -16720,6 +17996,7 @@ mod tests {
             maximum: None,
             pattern_properties: None,
             format: None,
+            ..Default::default()
         };
         let schema = CfnSchema {
             type_name: "AWS::Test::Resource".to_string(),
@@ -16798,8 +18075,8 @@ mod tests {
         let mut definitions = BTreeMap::new();
         definitions.insert(
             "ConfigA".to_string(),
-            CfnDefinition {
-                def_type: Some("object".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
                 properties: Some(config_a_props),
                 required: vec![],
                 enum_values: None,
@@ -16812,12 +18089,13 @@ mod tests {
                 maximum: None,
                 pattern_properties: None,
                 format: None,
+                ..Default::default()
             },
         );
         definitions.insert(
             "ConfigB".to_string(),
-            CfnDefinition {
-                def_type: Some("object".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
                 properties: Some(config_b_props),
                 required: vec![],
                 enum_values: None,
@@ -16830,6 +18108,7 @@ mod tests {
                 maximum: None,
                 pattern_properties: None,
                 format: None,
+                ..Default::default()
             },
         );
 
@@ -16912,8 +18191,8 @@ mod tests {
         let mut definitions = BTreeMap::new();
         definitions.insert(
             "MyConfig".to_string(),
-            CfnDefinition {
-                def_type: Some("object".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
                 properties: Some(config_props),
                 required: vec![],
                 enum_values: None,
@@ -16926,6 +18205,7 @@ mod tests {
                 maximum: None,
                 pattern_properties: None,
                 format: None,
+                ..Default::default()
             },
         );
 
@@ -17775,8 +19055,8 @@ mod tests {
         let mut definitions = BTreeMap::new();
         definitions.insert(
             "DnsOptionsSpecification".to_string(),
-            CfnDefinition {
-                def_type: Some("object".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
                 properties: Some(dns_props),
                 required: vec![],
                 one_of: vec![],
@@ -17789,6 +19069,7 @@ mod tests {
                 maximum: None,
                 pattern_properties: None,
                 format: None,
+                ..Default::default()
             },
         );
 
@@ -17948,6 +19229,351 @@ mod tests {
     }
 
     #[test]
+    fn test_ref_to_length_only_string_definition_preserves_length() {
+        let prop = CfnProperty {
+            ref_path: Some("#/definitions/LengthOnlyString".to_string()),
+            ..Default::default()
+        };
+        let mut schema = empty_schema("AWS::Test::Resource");
+        schema.definitions = Some(BTreeMap::from([(
+            "LengthOnlyString".to_string(),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("string".to_string())),
+                min_length: Some(1),
+                max_length: Some(2048),
+                ..Default::default()
+            },
+        )]));
+
+        let (type_str, enum_info) = cfn_type_to_carina_type_with_enum(
+            &prop,
+            "Payload",
+            &schema,
+            "aws.test.Resource",
+            &BTreeMap::new(),
+        );
+
+        assert!(enum_info.is_none());
+        assert_eq!(
+            type_str,
+            "AttributeType::refined_string(None, None, Some((Some(1), Some(2048))), None)"
+        );
+        assert_eq!(
+            type_display_string("Payload", &prop, &schema),
+            "String(len: 1..=2048)"
+        );
+
+        let list_prop = CfnProperty {
+            prop_type: Some(TypeValue::Single("array".to_string())),
+            items: Some(Box::new(prop)),
+            ..Default::default()
+        };
+        assert_eq!(
+            type_display_string("Payloads", &list_prop, &schema),
+            "`List<String(len: 1..=2048)>`"
+        );
+    }
+
+    #[test]
+    fn test_sso_managed_policies_ref_string_items_preserve_length_in_schema_code() {
+        let schema = cfn_schema_for_codegen_tests("AWS::SSO::PermissionSet");
+        let generated = generate_schema_code(&schema, "AWS::SSO::PermissionSet").unwrap();
+
+        assert!(
+            generated.contains(concat!(
+                "AttributeSchema::optional(\"managed_policies\", ",
+                "AttributeType::refined_list(",
+                "AttributeType::refined_string(None, None, ",
+                "Some((Some(20), Some(2048))), None), false, ",
+                "Some((None, Some(20)))))"
+            )),
+            "ManagedPolicies must retain its referenced item lengths in schema code: {generated}"
+        );
+    }
+
+    #[test]
+    fn test_ref_array_definition_matches_inline_constraints_and_order() {
+        let inline: CfnProperty = serde_json::from_value(serde_json::json!({
+            "type": "array",
+            "items": { "type": "string", "minLength": 2, "maxLength": 4 },
+            "minItems": 1,
+            "maxItems": 3,
+            "uniqueItems": true,
+            "insertionOrder": false
+        }))
+        .unwrap();
+        let mut schema = empty_schema("AWS::Test::Resource");
+        schema.definitions = Some(BTreeMap::from([(
+            "ConstrainedValues".to_string(),
+            inline.clone(),
+        )]));
+        let referenced = CfnProperty {
+            ref_path: Some("#/definitions/ConstrainedValues".to_string()),
+            ..Default::default()
+        };
+
+        let (inline_type, inline_enum) = cfn_type_to_carina_type_with_enum(
+            &inline,
+            "Values",
+            &schema,
+            "aws.test.Resource",
+            &BTreeMap::new(),
+        );
+        let (referenced_type, referenced_enum) = cfn_type_to_carina_type_with_enum(
+            &referenced,
+            "Values",
+            &schema,
+            "aws.test.Resource",
+            &BTreeMap::new(),
+        );
+
+        assert!(inline_enum.is_none() && referenced_enum.is_none());
+        assert_eq!(referenced_type, inline_type);
+        assert_eq!(
+            referenced_type,
+            concat!(
+                "AttributeType::refined_list(",
+                "AttributeType::refined_string(None, None, ",
+                "Some((Some(2), Some(4))), None), false, ",
+                "Some((Some(1), Some(3))))"
+            )
+        );
+        let resolved = resolve_ref(&schema, "#/definitions/ConstrainedValues").unwrap();
+        assert_eq!(resolved.property.unique_items, Some(true));
+        assert_eq!(
+            type_display_string("Values", &referenced, &schema),
+            "`List<String(len: 2..=4)>` (items: 1..=3)"
+        );
+    }
+
+    #[test]
+    fn test_ref_alias_chain_to_object_generates_struct_and_cycles_stop() {
+        let field_identifier = CfnProperty {
+            prop_type: Some(TypeValue::Single("object".to_string())),
+            properties: Some(BTreeMap::from([(
+                "Identifier".to_string(),
+                CfnProperty {
+                    prop_type: Some(TypeValue::Single("string".to_string())),
+                    pattern: Some(".*\\S.*".to_string()),
+                    min_length: Some(1),
+                    max_length: Some(512),
+                    ..Default::default()
+                },
+            )])),
+            required: vec!["Identifier".to_string()],
+            ..Default::default()
+        };
+        let alias = |target: &str| CfnProperty {
+            ref_path: Some(format!("#/definitions/{target}")),
+            ..Default::default()
+        };
+        let mut schema = empty_schema("AWS::Test::Resource");
+        schema.definitions = Some(BTreeMap::from([
+            ("FieldIdentifier".to_string(), field_identifier),
+            ("AddressField".to_string(), alias("PhoneNumberField")),
+            ("PhoneNumberField".to_string(), alias("FieldIdentifier")),
+            ("CycleA".to_string(), alias("CycleB")),
+            ("CycleB".to_string(), alias("CycleA")),
+        ]));
+        schema
+            .properties
+            .insert("Cycle".to_string(), alias("CycleA"));
+        let fields = CfnProperty {
+            prop_type: Some(TypeValue::Single("array".to_string())),
+            items: Some(Box::new(alias("AddressField"))),
+            ..Default::default()
+        };
+
+        let (generated, enum_info) = cfn_type_to_carina_type_with_enum(
+            &fields,
+            "AddressFields",
+            &schema,
+            "aws.test.Resource",
+            &BTreeMap::new(),
+        );
+        assert!(enum_info.is_none());
+        assert!(
+            generated.starts_with(
+                "AttributeType::list(AttributeType::struct_(\"FieldIdentifier\".to_string()"
+            ),
+            "an alias chain must use the final object definition: {generated}"
+        );
+        assert!(
+            generated.contains(
+                "AttributeType::refined_string(None, Some(\".*\\\\S.*\".to_string()), Some((Some(1), Some(512))), None)"
+            ),
+            "the aliased object's field constraints must survive: {generated}"
+        );
+        assert_eq!(
+            type_display_string("AddressFields", &fields, &schema),
+            "`List<Struct(FieldIdentifier)>`"
+        );
+        assert!(resolve_ref(&schema, "#/definitions/CycleA").is_none());
+
+        let generated = generate_synthetic_schema_code(&schema)
+            .expect("cyclic aliases must terminate during schema-code generation");
+        assert!(
+            generated.contains("AttributeSchema::optional(\"cycle\", AttributeType::string())"),
+            "an unresolved cyclic alias must use the schema-code String fallback: {generated}"
+        );
+
+        let markdown = generate_test_markdown(&schema, "AWS::Test::Resource")
+            .expect("cyclic aliases must terminate during Markdown generation");
+        assert!(
+            markdown.contains("### `cycle`\n\n- **Type:** String\n"),
+            "an unresolved cyclic alias must use the Markdown String fallback: {markdown}"
+        );
+    }
+
+    #[test]
+    fn test_ref_integer_enum_generates_numeric_union() {
+        let mut schema = empty_schema("AWS::Test::Resource");
+        schema.definitions = Some(BTreeMap::from([(
+            "EvaluationWindowSec".to_string(),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("integer".to_string())),
+                enum_values: Some(vec![
+                    EnumValue::Int(60),
+                    EnumValue::Int(120),
+                    EnumValue::Int(300),
+                    EnumValue::Int(600),
+                ]),
+                ..Default::default()
+            },
+        )]));
+        let property = CfnProperty {
+            ref_path: Some("#/definitions/EvaluationWindowSec".to_string()),
+            ..Default::default()
+        };
+
+        let (generated, enum_info) = cfn_type_to_carina_type_with_enum(
+            &property,
+            "EvaluationWindowSec",
+            &schema,
+            "aws.test.Resource",
+            &BTreeMap::new(),
+        );
+        assert!(enum_info.is_none());
+        assert_eq!(
+            generated,
+            concat!(
+                "AttributeType::union(vec![",
+                "AttributeType::refined_int(None, Some((Some(60), Some(60)))), ",
+                "AttributeType::refined_int(None, Some((Some(120), Some(120)))), ",
+                "AttributeType::refined_int(None, Some((Some(300), Some(300)))), ",
+                "AttributeType::refined_int(None, Some((Some(600), Some(600))))])"
+            )
+        );
+        assert_eq!(
+            type_display_string("EvaluationWindowSec", &property, &schema),
+            "IntEnum([60, 120, 300, 600])"
+        );
+    }
+
+    #[test]
+    fn test_inline_string_format_and_length_preserves_length() {
+        let property = CfnProperty {
+            prop_type: Some(TypeValue::Single("string".to_string())),
+            format: Some("uri".to_string()),
+            min_length: Some(5),
+            max_length: Some(200),
+            ..Default::default()
+        };
+        let schema = empty_schema("AWS::Test::Resource");
+        let (generated, enum_info) = cfn_type_to_carina_type_with_enum(
+            &property,
+            "FormattedValue",
+            &schema,
+            "aws.test.Resource",
+            &BTreeMap::new(),
+        );
+
+        assert!(enum_info.is_none());
+        assert_eq!(
+            generated,
+            "AttributeType::refined_string(None, None, Some((Some(5), Some(200))), None)"
+        );
+        assert_eq!(
+            type_display_string("FormattedValue", &property, &schema),
+            "String(uri, len: 5..=200)"
+        );
+    }
+
+    #[test]
+    fn test_list_element_docs_share_inline_and_ref_scalar_renderer() {
+        let mut schema = empty_schema("AWS::Test::Resource");
+        schema.definitions = Some(BTreeMap::from([(
+            "BoundedInteger".to_string(),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("integer".to_string())),
+                minimum: Some(1),
+                maximum: Some(5),
+                ..Default::default()
+            },
+        )]));
+        let inline_strings = CfnProperty {
+            prop_type: Some(TypeValue::Single("array".to_string())),
+            items: Some(Box::new(CfnProperty {
+                prop_type: Some(TypeValue::Single("string".to_string())),
+                pattern: Some("^[a-z]+$".to_string()),
+                min_length: Some(2),
+                max_length: Some(8),
+                ..Default::default()
+            })),
+            ..Default::default()
+        };
+        let referenced_ints = CfnProperty {
+            prop_type: Some(TypeValue::Single("array".to_string())),
+            items: Some(Box::new(CfnProperty {
+                ref_path: Some("#/definitions/BoundedInteger".to_string()),
+                ..Default::default()
+            })),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            type_display_string("Values", &inline_strings, &schema),
+            "`List<String(pattern, len: 2..=8)>`"
+        );
+        assert_eq!(
+            type_display_string("Values", &referenced_ints, &schema),
+            "`List<Int(1..=5)>`"
+        );
+    }
+
+    #[test]
+    fn test_wafv2_ref_definition_regressions_in_schema_code() {
+        let schema = cfn_schema_for_codegen_tests("AWS::WAFv2::WebACL");
+        let generated = generate_schema_code(&schema, "AWS::WAFv2::WebACL").unwrap();
+
+        for expected in [
+            "StructField::required(\"attributes\", AttributeType::refined_list(AttributeType::struct_(\"ApplicationAttribute\".to_string()",
+            "StructField::required(\"values\", AttributeType::refined_list(AttributeType::refined_string(None, Some(\"^[\\\\w\\\\-]+$\".to_string()), Some((Some(1), Some(64))), None), true, Some((Some(1), Some(10))))",
+            "StructField::required(\"data_protections\", AttributeType::refined_list(AttributeType::struct_(\"DataProtect\".to_string()",
+            "StructField::optional(\"address_fields\", AttributeType::list(AttributeType::struct_(\"FieldIdentifier\".to_string()",
+            "StructField::optional(\"phone_number_fields\", AttributeType::list(AttributeType::struct_(\"FieldIdentifier\".to_string()",
+            "StructField::optional(\"evaluation_window_sec\", AttributeType::union(vec![AttributeType::refined_int(None, Some((Some(60), Some(60))))",
+        ] {
+            assert!(
+                generated.contains(expected),
+                "missing WAFv2 referenced-definition output {expected:?}"
+            );
+        }
+        assert!(
+            generated.contains(
+                "AttributeType::refined_list(AttributeType::struct_(\"DataProtect\".to_string()"
+            ) && generated.contains("Some((Some(1), None))"),
+            "DataProtections must retain minItems: {generated}"
+        );
+        assert!(
+            !generated.contains(
+                "evaluation_window_sec\", AttributeType::enum_(carina_core::schema::enum_identity"
+            ),
+            "EvaluationWindowSec must not serialize through a string enum: {generated}"
+        );
+    }
+
+    #[test]
     fn test_is_email_property_matches_expected_names() {
         // Exact match (case-insensitive)
         assert!(is_email_property("Email"));
@@ -18047,8 +19673,8 @@ mod tests {
         let mut definitions = BTreeMap::new();
         definitions.insert(
             "iso8601UTC".to_string(),
-            CfnDefinition {
-                def_type: Some("string".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("string".to_string())),
                 pattern: Some(
                     r"^(\d{4})-(0[0-9]|1[0-2])-([0-2]\d|3[01])T([01]\d|2[0-4]):([0-5]\d):([0-6]\d)((\.\d{3})?)Z$".to_string(),
                 ),
@@ -18118,8 +19744,8 @@ mod tests {
         let mut definitions = BTreeMap::new();
         definitions.insert(
             "iso8601UTC".to_string(),
-            CfnDefinition {
-                def_type: Some("string".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("string".to_string())),
                 pattern: Some(
                     r"^(\d{4})-(0[0-9]|1[0-2])-([0-2]\d|3[01])T([01]\d|2[0-4]):([0-5]\d):([0-6]\d)((\.\d{3})?)Z$".to_string(),
                 ),
@@ -18128,8 +19754,8 @@ mod tests {
         );
         definitions.insert(
             "Rule".to_string(),
-            CfnDefinition {
-                def_type: Some("object".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
                 properties: Some(rule_props),
                 required: vec!["Status".to_string()],
                 ..Default::default()
@@ -18194,8 +19820,8 @@ mod tests {
         let mut definitions = BTreeMap::new();
         definitions.insert(
             "iso8601UTC".to_string(),
-            CfnDefinition {
-                def_type: Some("string".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("string".to_string())),
                 pattern: Some(r"^(\d{4})-(0[0-9]|1[0-2])$".to_string()),
                 ..Default::default()
             },
@@ -18329,7 +19955,7 @@ mod tests {
         );
         definitions.insert(
             "HostedZoneTag".to_string(),
-            CfnDefinition {
+            CfnProperty {
                 properties: Some(tag_props),
                 required: vec!["Key".to_string(), "Value".to_string()],
                 ..Default::default()
@@ -18516,8 +20142,8 @@ mod tests {
         let mut definitions = BTreeMap::new();
         definitions.insert(
             "CorsRule".to_string(),
-            CfnDefinition {
-                def_type: Some("object".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
                 properties: Some(def_props),
                 required: vec![],
                 one_of: vec![],
@@ -18530,6 +20156,7 @@ mod tests {
                 maximum: None,
                 pattern_properties: None,
                 format: None,
+                ..Default::default()
             },
         );
 
@@ -20007,8 +21634,8 @@ mod tests {
         );
         schema.definitions = Some(BTreeMap::from([(
             "Item".to_string(),
-            CfnDefinition {
-                def_type: Some("object".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
                 properties: Some(BTreeMap::from([
                     (
                         "Secret".to_string(),
@@ -20097,8 +21724,8 @@ mod tests {
         ]);
         schema.definitions = Some(BTreeMap::from([(
             "Shared".to_string(),
-            CfnDefinition {
-                def_type: Some("object".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
                 properties: Some(BTreeMap::from([
                     (
                         "Secret".to_string(),
@@ -20823,8 +22450,8 @@ mod tests {
         let mut definitions = BTreeMap::new();
         definitions.insert(
             "DistributionConfig".to_string(),
-            CfnDefinition {
-                def_type: Some("object".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
                 properties: Some(config_props),
                 ..Default::default()
             },
@@ -20949,8 +22576,8 @@ mod tests {
         let mut definitions = BTreeMap::new();
         definitions.insert(
             "DefaultCacheBehavior".to_string(),
-            CfnDefinition {
-                def_type: Some("object".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
                 properties: Some(behavior_props),
                 ..Default::default()
             },
