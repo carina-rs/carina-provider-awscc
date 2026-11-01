@@ -15,13 +15,7 @@ use carina_core::schema::{
 pub fn all_schemas() -> Vec<ValidatedResourceSchema> {
     generated::configs()
         .iter()
-        .map(|config| {
-            config
-                .schema
-                .clone()
-                .validate()
-                .unwrap_or_else(|error| panic!("{error}"))
-        })
+        .map(|config| config.schema.clone())
         .collect()
 }
 
@@ -56,17 +50,19 @@ mod tests {
     use carina_core::resource::{
         ConcreteValue, Current, ResolvedResource, Resource, ResourceId, State, Value,
     };
-    use carina_core::schema::{AttributeType, RawShape, ResourceSchema, Shape, ShapeWalkBudget};
-    use carina_core::schema::{SchemaKind, SchemaRegistry};
+    use carina_core::schema::{
+        CompiledAttributeType, CompiledResourceSchema, RawShape, Shape, ShapeWalkBudget,
+    };
+    use carina_core::schema::{SchemaKind, SchemaRegistry, ValidatedResourceSchema};
     use indexmap::IndexMap;
 
     fn nested_field_type<'a>(
-        schema: &'a ResourceSchema,
-        parent: &'a AttributeType,
+        schema: &'a CompiledResourceSchema,
+        parent: &'a CompiledAttributeType,
         dsl_name: &str,
         provider_name: &str,
         required: bool,
-    ) -> &'a AttributeType {
+    ) -> &'a CompiledAttributeType {
         let fields = schema
             .struct_fields_with_budget(parent, &mut ShapeWalkBudget::new(256))
             .unwrap_or_else(|| panic!("expected struct containing {dsl_name}"));
@@ -86,16 +82,19 @@ mod tests {
     }
 
     fn list_element<'a>(
-        schema: &'a ResourceSchema,
-        attr_type: &'a AttributeType,
-    ) -> &'a AttributeType {
+        schema: &'a CompiledResourceSchema,
+        attr_type: &'a CompiledAttributeType,
+    ) -> &'a CompiledAttributeType {
         let Shape::List { element_type, .. } = schema.shape_of(attr_type) else {
             panic!("expected list type");
         };
         element_type
     }
 
-    fn assert_all_nested_fields_are_described(schema: &ResourceSchema, attr_type: &AttributeType) {
+    fn assert_all_nested_fields_are_described(
+        schema: &CompiledResourceSchema,
+        attr_type: &CompiledAttributeType,
+    ) {
         match schema.shape_of(attr_type) {
             Shape::Struct { .. } => {
                 for field in schema
@@ -122,7 +121,7 @@ mod tests {
     #[test]
     fn generated_policy_document_shapes_preserve_aws_keys_and_constraints() {
         let subscription = super::generated::sns::subscription::sns_subscription_config();
-        let subscription_schema = &subscription.schema;
+        let subscription_schema = subscription.schema.as_schema();
         assert!(
             !subscription_schema
                 .attributes()
@@ -263,24 +262,26 @@ mod tests {
         assert!(
             !topic
                 .schema
+                .as_schema()
                 .attributes()
                 .contains_key("data_protection_policy")
         );
         let archive = topic
             .schema
+            .as_schema()
             .attributes()
             .get("archive_policy")
             .expect("archive_policy must be generated")
             .attr_type();
         let retention = nested_field_type(
-            &topic.schema,
+            topic.schema.as_schema(),
             archive,
             "message_retention_period",
             "MessageRetentionPeriod",
             true,
         );
         assert!(matches!(
-            topic.schema.shape_of(retention),
+            topic.schema.as_schema().shape_of(retention),
             Shape::Int {
                 range: Some((Some(1), Some(365))),
                 ..
@@ -290,6 +291,7 @@ mod tests {
         let logs = super::generated::logs::log_group::logs_log_group_config();
         let field_policies_attribute = logs
             .schema
+            .as_schema()
             .attributes()
             .get("field_index_policies")
             .expect("field_index_policies must be generated");
@@ -298,13 +300,13 @@ mod tests {
             Some(Value::Concrete(ConcreteValue::List(items))) if items.is_empty()
         ));
         let field_policies = field_policies_attribute.attr_type();
-        let Shape::List { ordered, .. } = logs.schema.shape_of(field_policies) else {
+        let Shape::List { ordered, .. } = logs.schema.as_schema().shape_of(field_policies) else {
             panic!("field_index_policies must be a list");
         };
         assert!(!ordered);
         nested_field_type(
-            &logs.schema,
-            list_element(&logs.schema, field_policies),
+            logs.schema.as_schema(),
+            list_element(logs.schema.as_schema(), field_policies),
             "fields",
             "Fields",
             true,
@@ -312,6 +314,7 @@ mod tests {
 
         let data_policy = logs
             .schema
+            .as_schema()
             .attributes()
             .get("data_protection_policy")
             .expect("data_protection_policy must be generated")
@@ -323,25 +326,54 @@ mod tests {
             ("configuration", "Configuration", false),
             ("statement", "Statement", true),
         ] {
-            nested_field_type(&logs.schema, data_policy, dsl_name, provider_name, required);
+            nested_field_type(
+                logs.schema.as_schema(),
+                data_policy,
+                dsl_name,
+                provider_name,
+                required,
+            );
         }
-        let statements =
-            nested_field_type(&logs.schema, data_policy, "statement", "Statement", true);
-        let statement = list_element(&logs.schema, statements);
-        let operation = nested_field_type(&logs.schema, statement, "operation", "Operation", true);
-        let audit = nested_field_type(&logs.schema, operation, "audit", "Audit", false);
+        let statements = nested_field_type(
+            logs.schema.as_schema(),
+            data_policy,
+            "statement",
+            "Statement",
+            true,
+        );
+        let statement = list_element(logs.schema.as_schema(), statements);
+        let operation = nested_field_type(
+            logs.schema.as_schema(),
+            statement,
+            "operation",
+            "Operation",
+            true,
+        );
+        let audit = nested_field_type(logs.schema.as_schema(), operation, "audit", "Audit", false);
         nested_field_type(
-            &logs.schema,
+            logs.schema.as_schema(),
             audit,
             "findings_destination",
             "FindingsDestination",
             true,
         );
-        let deidentify =
-            nested_field_type(&logs.schema, operation, "deidentify", "Deidentify", false);
-        let mask = nested_field_type(&logs.schema, deidentify, "mask_config", "MaskConfig", true);
+        let deidentify = nested_field_type(
+            logs.schema.as_schema(),
+            operation,
+            "deidentify",
+            "Deidentify",
+            false,
+        );
+        let mask = nested_field_type(
+            logs.schema.as_schema(),
+            deidentify,
+            "mask_config",
+            "MaskConfig",
+            true,
+        );
         assert!(
             logs.schema
+                .as_schema()
                 .struct_fields_with_budget(mask, &mut ShapeWalkBudget::new(256))
                 .expect("mask_config must be an empty struct")
                 .is_empty()
@@ -351,9 +383,9 @@ mod tests {
             (subscription_schema, redrive),
             (subscription_schema, delivery),
             (subscription_schema, replay),
-            (&topic.schema, archive),
-            (&logs.schema, field_policies),
-            (&logs.schema, data_policy),
+            (topic.schema.as_schema(), archive),
+            (logs.schema.as_schema(), field_policies),
+            (logs.schema.as_schema(), data_policy),
         ] {
             assert_all_nested_fields_are_described(schema, attr_type);
         }
@@ -399,8 +431,8 @@ mod tests {
         assert_tag_change_plans_update(super::generated::ec2::ipam::ec2_ipam_config().schema);
     }
 
-    fn assert_tag_change_plans_update(schema: ResourceSchema) {
-        let resource_type = schema.resource_type().to_string();
+    fn assert_tag_change_plans_update(schema: ValidatedResourceSchema) {
+        let resource_type = schema.as_schema().resource_type().to_string();
         let resource_id =
             ResourceId::with_provider_identity("awscc", resource_type.clone(), "test", None);
         let resource = Resource::with_provider("awscc", resource_type, "test", None)
@@ -409,12 +441,7 @@ mod tests {
         let managed = vec![ResolvedResource::new(resource)];
 
         let mut schemas = SchemaRegistry::new();
-        schemas.insert(
-            "awscc",
-            schema
-                .validate()
-                .expect("tag-change fixture schema must be valid"),
-        );
+        schemas.insert("awscc", schema);
         assert!(
             schemas
                 .get(
@@ -483,11 +510,17 @@ mod tests {
         use carina_core::value::canonicalize_resources_with_schemas;
 
         let config = super::generated::budgets::budget::budgets_budget_config();
-        let budget = config.schema.attributes().get("budget").unwrap();
+        let budget = config
+            .schema
+            .as_schema()
+            .attributes()
+            .get("budget")
+            .unwrap();
         assert!(!budget.parts().create_only);
         assert_eq!(budget.identity_mode(), IdentityMode::None);
         let fields = config
             .schema
+            .as_schema()
             .struct_fields_with_budget(budget.attr_type(), &mut ShapeWalkBudget::new(256))
             .unwrap();
         let name = fields
@@ -497,10 +530,7 @@ mod tests {
         assert!(name.parts().create_only);
         assert_eq!(name.parts().identity_mode, IdentityMode::Required);
 
-        let schema = config
-            .schema
-            .validate()
-            .expect("Budget schema must be valid");
+        let schema = config.schema;
         assert_eq!(schema.identity_paths().len(), 1);
         assert_eq!(
             schema.identity_paths()[0].segments(),
@@ -579,14 +609,16 @@ mod tests {
         let config = super::generated::s3::bucket::s3_bucket_config();
         let lifecycle = config
             .schema
+            .as_schema()
             .attributes()
             .get("lifecycle_configuration")
             .expect("s3 bucket should expose lifecycle_configuration");
-        let Shape::Struct { .. } = config.schema.shape_of(lifecycle.attr_type()) else {
+        let Shape::Struct { .. } = config.schema.as_schema().shape_of(lifecycle.attr_type()) else {
             panic!("lifecycle_configuration should be a struct");
         };
         let fields = config
             .schema
+            .as_schema()
             .struct_fields_with_budget(lifecycle.attr_type(), &mut ShapeWalkBudget::new(256))
             .expect("lifecycle_configuration should expose fields");
         let rules = fields
@@ -596,15 +628,16 @@ mod tests {
         let Shape::List {
             element_type: inner,
             ..
-        } = config.schema.shape_of(rules.field_type())
+        } = config.schema.as_schema().shape_of(rules.field_type())
         else {
             panic!("rules should be a list");
         };
-        let Shape::Struct { .. } = config.schema.shape_of(inner) else {
+        let Shape::Struct { .. } = config.schema.as_schema().shape_of(inner) else {
             panic!("rules should contain lifecycle rule structs");
         };
         let fields = config
             .schema
+            .as_schema()
             .struct_fields_with_budget(inner, &mut ShapeWalkBudget::new(256))
             .expect("rules should expose fields");
 
@@ -633,6 +666,7 @@ mod tests {
         let config = super::generated::cloudfront::distribution::cloudfront_distribution_config();
         let domain_name = config
             .schema
+            .as_schema()
             .attributes()
             .get("domain_name")
             .expect("CloudFront distribution should expose domain_name");
@@ -660,9 +694,6 @@ mod tests {
         ];
 
         for (schema, attribute_name, invalid, expected_identity, expected_error) in cases {
-            let schema = schema
-                .validate()
-                .expect("generated integer-enum schema must pass admission");
             let attribute = schema
                 .effective_attribute(attribute_name)
                 .unwrap_or_else(|| panic!("missing generated attribute {attribute_name}"));
@@ -766,8 +797,8 @@ mod tests {
     }
 
     fn collect_string_enum_identities(
-        schema: &ResourceSchema,
-        ty: &AttributeType,
+        schema: &CompiledResourceSchema,
+        ty: &CompiledAttributeType,
         defining_site: &str,
         current_named_def: Option<&str>,
         collector: &mut StringEnumIdentityCollector,
@@ -780,7 +811,7 @@ mod tests {
             return;
         }
 
-        let ptr = ty as *const AttributeType as usize;
+        let ptr = ty as *const CompiledAttributeType as usize;
         if !collector.stack.insert(ptr) {
             return;
         }

@@ -138,7 +138,7 @@ pub fn ec2_security_group_ingress_config() -> AwsccSchemaConfig {
         exclusive_groups: &[],
         tags: None,
         await_on_read_back: vec![],
-        schema,
+        schema: schema.validate().expect("generated schema must pass admission"),
     }
 }
 

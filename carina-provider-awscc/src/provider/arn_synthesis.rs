@@ -194,6 +194,7 @@ mod tests {
             .expect("cloudfront.Distribution schema must be registered");
         let arn = config
             .schema
+            .as_schema()
             .attributes()
             .get("arn")
             .expect("cloudfront.Distribution must expose an `arn` attribute");

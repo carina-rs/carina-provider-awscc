@@ -157,14 +157,10 @@ async fn stored_budget(cloudcontrol: &CloudControlService) -> (String, serde_jso
 #[test]
 fn budget_schema_admits_recursive_expressions_and_float_amounts() {
     let config = budgets_budget_config();
-    config
-        .schema
-        .clone()
-        .validate()
-        .expect("Budgets Budget schema must admit recursive refs");
 
     let budget = config
         .schema
+        .as_schema()
         .attributes()
         .get("budget")
         .expect("Budget.budget should exist");
@@ -189,6 +185,7 @@ fn budget_schema_admits_recursive_expressions_and_float_amounts() {
 
     let expression = config
         .schema
+        .as_schema()
         .defs()
         .get("Expression")
         .expect("recursive Expression definition should be emitted");

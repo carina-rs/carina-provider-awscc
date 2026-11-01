@@ -7,7 +7,7 @@
 use carina_aws_types::find_matching_enum_value;
 #[cfg(test)]
 use carina_core::resource::{ConcreteValue, Value};
-use carina_core::schema::ResourceSchema;
+use carina_core::schema::ValidatedResourceSchema;
 #[cfg(test)]
 use carina_core::utils::validate_enum_namespace;
 
@@ -29,13 +29,18 @@ pub struct AwsccSchemaConfig {
     /// DSL attributes whose absence keeps a post-mutation read pending.
     pub await_on_read_back: Vec<ReadBackAttribute>,
     /// The resource schema with attribute definitions
-    pub schema: ResourceSchema,
+    pub schema: ValidatedResourceSchema,
 }
 
 impl AwsccSchemaConfig {
     pub fn validate_read_back_declarations(&self) -> Result<(), String> {
         for attribute in &self.await_on_read_back {
-            if !self.schema.attributes().contains_key(attribute.name()) {
+            if !self
+                .schema
+                .as_schema()
+                .attributes()
+                .contains_key(attribute.name())
+            {
                 return Err(format!(
                     "{} declares unknown read-back attribute {}",
                     self.resource_type_name,
@@ -173,6 +178,7 @@ mod tests {
             assert!(
                 config
                     .schema
+                    .as_schema()
                     .operation_config()
                     .is_none_or(|config| config.read_back.is_none())
             );

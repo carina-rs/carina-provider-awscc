@@ -99,7 +99,7 @@ pub(crate) fn build_update_patches(
 
     for op in &patch.ops {
         let key = op.key();
-        let attr_schema = match config.schema.attributes().get(key) {
+        let attr_schema = match config.schema.as_schema().attributes().get(key) {
             Some(s) => s,
             // Unknown keys (not in the schema) are silently dropped:
             // CloudControl will reject anything we don't have an AWS
@@ -164,7 +164,7 @@ pub(crate) fn build_update_patches(
                     attr_schema.attr_type(),
                     resource_type,
                     key,
-                    config.schema.defs(),
+                    config.schema.as_schema().defs(),
                 ) {
                     plan.ops.push(json!({
                         "op": "add",
@@ -210,6 +210,7 @@ pub(crate) fn build_update_patches(
             }
             let Some(provider_name) = config
                 .schema
+                .as_schema()
                 .attributes()
                 .get(*attribute)
                 .and_then(|schema| schema.provider_name())
@@ -598,10 +599,7 @@ mod tests {
         let mut schemas = SchemaRegistry::new();
         schemas.insert(
             "awscc",
-            crate::schemas::generated::cloudfront::function::cloudfront_function_config()
-                .schema
-                .validate()
-                .expect("CloudFront Function test schema must pass admission"),
+            crate::schemas::generated::cloudfront::function::cloudfront_function_config().schema,
         );
         let factories: Vec<Box<dyn carina_core::provider::ProviderFactory>> =
             vec![Box::new(crate::OwnerOnlyAwsccFactory)];
@@ -620,7 +618,7 @@ mod tests {
             &["function_code".to_string()],
             &desired,
             &from,
-            &config.schema,
+            config.schema.as_schema(),
         )
         .expect("CloudFront Function patch must not ignore a write-only value");
 
@@ -720,7 +718,9 @@ mod tests {
                         .create_only()
                         .with_provider_name("CreateOnly")
                         .build(),
-                ),
+                )
+                .validate()
+                .expect("test schema must pass admission"),
         };
         let patch = UpdatePatch {
             ops: vec![
@@ -746,9 +746,13 @@ mod tests {
             exclusive_groups: &[],
             tags: None,
             await_on_read_back: vec![],
-            schema: ResourceSchema::new("test.Resource").attribute(
-                AttributeSchema::optional("unmapped_attribute", AttributeType::string()).build(),
-            ),
+            schema: ResourceSchema::new("test.Resource")
+                .attribute(
+                    AttributeSchema::optional("unmapped_attribute", AttributeType::string())
+                        .build(),
+                )
+                .validate()
+                .expect("test schema must pass admission"),
         };
         let patch = UpdatePatch {
             ops: vec![replace(
@@ -930,6 +934,7 @@ mod tests {
             .expect("cloudfront.ResponseHeadersPolicy schema should exist");
         let attr = config
             .schema
+            .as_schema()
             .attributes()
             .get("response_headers_policy_config")
             .expect("response_headers_policy_config should exist");
@@ -997,11 +1002,14 @@ mod tests {
                 provider_name: "ResourceTags",
                 wire: crate::schemas::config::TagsWire::KeyValueList,
             }),
-            schema: ResourceSchema::new("test.Resource").attribute(
-                AttributeSchema::optional("tags", carina_aws_types::tags_type())
-                    .with_provider_name("ResourceTags")
-                    .build(),
-            ),
+            schema: ResourceSchema::new("test.Resource")
+                .attribute(
+                    AttributeSchema::optional("tags", carina_aws_types::tags_type())
+                        .with_provider_name("ResourceTags")
+                        .build(),
+                )
+                .validate()
+                .expect("test schema must pass admission"),
         };
         let mut tags = IndexMap::new();
         tags.insert(

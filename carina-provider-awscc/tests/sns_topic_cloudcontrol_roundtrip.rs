@@ -155,20 +155,28 @@ async fn seed_archive_policy_readback(
 #[test]
 fn topic_schema_types_archive_policy_and_omits_unsupported_documents() {
     let config = sns_topic_config();
-    config
-        .schema
-        .clone()
-        .validate()
-        .expect("SNS Topic schema must pass admission");
 
-    assert!(!config.schema.attributes().contains_key("subscription"));
     assert!(
         !config
             .schema
+            .as_schema()
+            .attributes()
+            .contains_key("subscription")
+    );
+    assert!(
+        !config
+            .schema
+            .as_schema()
             .attributes()
             .contains_key("data_protection_policy")
     );
-    assert!(config.schema.attributes().contains_key("archive_policy"));
+    assert!(
+        config
+            .schema
+            .as_schema()
+            .attributes()
+            .contains_key("archive_policy")
+    );
 }
 
 #[tokio::test(start_paused = true)]
@@ -246,7 +254,7 @@ async fn sns_topic_create_then_read_omits_inline_subscriptions_and_preserves_tag
         &current,
         &saved,
         None,
-        Some(&config.schema),
+        Some(config.schema.as_schema()),
         comparison.context(),
     );
     assert!(
@@ -299,7 +307,7 @@ async fn sns_topic_empty_archive_policy_readback_is_absent_and_no_change() {
         &current,
         &saved,
         None,
-        Some(&config.schema),
+        Some(config.schema.as_schema()),
         comparison.context(),
     );
     assert!(

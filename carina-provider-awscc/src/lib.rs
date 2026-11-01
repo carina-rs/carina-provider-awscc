@@ -19,8 +19,8 @@ mod resend_guard;
 
 // Re-export main types
 pub use provider::{
-    AwsccProvider, CcCreateToken, CcDeleteToken, CcRequestPhase, CcUpdateToken, ClientToken,
-    InFlightCreate, RequestToken,
+    AwsccProvider, CcCreateOperation, CcCreateToken, CcDeleteToken, CcRequestPhase, CcUpdateToken,
+    ClientToken, InFlightCreate, RequestToken,
 };
 pub use sdk_config::BoundedSdkConfig;
 
@@ -860,7 +860,7 @@ mod tests {
     /// actually reached the emitted `AttributeType`.
     #[test]
     fn cloudfront_distribution_methods_are_unordered_lists() {
-        use carina_core::schema::{AttributeType, RawShape};
+        use carina_core::schema::{CompiledAttributeType, RawShape};
 
         let factory = AwsccProviderFactory;
         let schema = factory
@@ -878,9 +878,9 @@ mod tests {
         // second visit; `shape(defs)` would auto-resolve and infinite-loop
         // on a self-referential `Ref("X") -> Struct { ..Ref("X").. }`.
         fn collect(
-            at: &AttributeType,
+            at: &CompiledAttributeType,
             field: Option<&str>,
-            defs: &std::collections::BTreeMap<String, AttributeType>,
+            defs: &std::collections::BTreeMap<String, CompiledAttributeType>,
             seen: &mut std::collections::HashSet<String>,
             out: &mut Vec<(String, bool)>,
         ) {

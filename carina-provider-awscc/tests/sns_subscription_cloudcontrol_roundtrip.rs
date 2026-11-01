@@ -168,16 +168,23 @@ async fn seed_measured_policy_readback(cloudcontrol: &CloudControlService) {
 #[test]
 fn subscription_schema_types_documented_policies_and_omits_only_filter_policy() {
     let config = sns_subscription_config();
-    config
-        .schema
-        .clone()
-        .validate()
-        .expect("SNS Subscription schema must pass admission");
 
     for attribute in ["delivery_policy", "redrive_policy", "replay_policy"] {
-        assert!(config.schema.attributes().contains_key(attribute));
+        assert!(
+            config
+                .schema
+                .as_schema()
+                .attributes()
+                .contains_key(attribute)
+        );
     }
-    assert!(!config.schema.attributes().contains_key("filter_policy"));
+    assert!(
+        !config
+            .schema
+            .as_schema()
+            .attributes()
+            .contains_key("filter_policy")
+    );
 }
 
 #[tokio::test(start_paused = true)]
@@ -293,7 +300,7 @@ async fn sns_subscription_typed_policies_round_trip_and_server_default_has_no_di
         &unnormalized_current,
         &saved,
         None,
-        Some(&config.schema),
+        Some(config.schema.as_schema()),
         comparison.context(),
     );
     assert!(
@@ -306,7 +313,7 @@ async fn sns_subscription_typed_policies_round_trip_and_server_default_has_no_di
         &unnormalized_current,
         &saved,
         None,
-        Some(&config.schema),
+        Some(config.schema.as_schema()),
         comparison.context(),
     );
     assert!(
@@ -319,7 +326,7 @@ async fn sns_subscription_typed_policies_round_trip_and_server_default_has_no_di
         &unnormalized_current,
         &saved,
         None,
-        Some(&config.schema),
+        Some(config.schema.as_schema()),
         comparison.context(),
     );
     assert!(
@@ -339,7 +346,7 @@ async fn sns_subscription_typed_policies_round_trip_and_server_default_has_no_di
         current,
         &saved,
         None,
-        Some(&config.schema),
+        Some(config.schema.as_schema()),
         comparison.context(),
     );
     assert!(
@@ -352,7 +359,7 @@ async fn sns_subscription_typed_policies_round_trip_and_server_default_has_no_di
         current,
         &saved,
         None,
-        Some(&config.schema),
+        Some(config.schema.as_schema()),
         comparison.context(),
     );
     assert!(

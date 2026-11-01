@@ -102,7 +102,7 @@ pub fn cloudfront_function_config() -> AwsccSchemaConfig {
         exclusive_groups: &[],
         tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
         await_on_read_back: vec![],
-        schema,
+        schema: schema.validate().expect("generated schema must pass admission"),
     }
 }
 

@@ -18,7 +18,10 @@ use carina_core::provider::{
     UpdatePatch,
 };
 use carina_core::resource::{ConcreteValue, Resource, ResourceId, State, Value};
-use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, Shape};
+use carina_core::schema::{
+    CompiledAttributeSchema, CompiledAttributeType, CompiledResourceSchema, Shape,
+};
+use carina_plugin_sdk::PhasedToken;
 use carina_provider_protocol::{
     CompletedOperation, DEFAULT_OPERATION_BUDGET, DEFAULT_READ_BACK_BUDGET, DriveError,
     DriveOutcome, OperationKind, OperationStep, PendingPhase, PollFinality, PollRequest,
@@ -34,7 +37,7 @@ use super::read_back::{
 use super::tags::wire_tags_are_empty;
 use super::update::{UpdatePatchPlan, build_update_patches};
 use super::{
-    AwsccProvider, CcCreateToken, CcDeleteToken, CcRequestPhase, CcUpdateToken,
+    AwsccProvider, CcCreateOperation, CcCreateToken, CcDeleteToken, CcRequestPhase, CcUpdateToken,
     InFlightCreateRequest, NotIssuedCreate, NotIssuedRequest, UnconfirmedCreate, get_schema_config,
 };
 use crate::provider::cloudcontrol::{
@@ -134,11 +137,6 @@ pub trait CcIssuedCreate {
     ) -> Self::Verdict;
     fn discarded(self, error: ProviderError) -> Self::Verdict;
     fn preserve(self, token: CcCreateToken, error: ProviderError) -> Self::Verdict;
-    fn pending_read_back(
-        self,
-        continuation: ReadBackContinuation,
-        poll_after_secs: u32,
-    ) -> Result<Self::Step, Self::Verdict>;
     fn pending(
         self,
         token: CcCreateToken,
@@ -153,11 +151,11 @@ pub trait CcCreateAttempt {
     type Issued: CcIssuedCreate<Step = Self::Step, Verdict = Self::Verdict>;
 
     fn untracked(self, failure: NotAppliedCreate) -> Self::Verdict;
-    fn preserve(self, token: CcCreateToken, error: ProviderError) -> Self::Verdict;
+    fn preserve(self, token: CcCreateOperation, error: ProviderError) -> Self::Verdict;
     fn issued(self, identifier: AppliedIdentifier, sent: Sent) -> Self::Issued;
     fn pending(
         self,
-        token: CcCreateToken,
+        token: CcCreateOperation,
         sent: Sent,
         poll_after_secs: u32,
     ) -> Result<Self::Step, Self::Verdict>;
@@ -170,17 +168,35 @@ pub trait CcPollAttempt {
     type Issued: CcIssuedCreate<Step = Self::Step, Verdict = Self::Verdict>;
 
     fn untracked(self, failure: NotAppliedCreate) -> Self::Verdict;
-    fn preserve(self, token: CcCreateToken, failure: InFlightCreate) -> Self::Verdict;
+    fn preserve(self, token: CcCreateOperation, failure: InFlightCreate) -> Self::Verdict;
     fn issued(self, identifier: AppliedIdentifier) -> Self::Issued;
     fn pending(
         self,
-        token: CcCreateToken,
+        token: CcCreateOperation,
         poll_after_secs: u32,
     ) -> Result<Self::Step, Self::Verdict>;
 }
 
+/// A decoded create poll. Only an identifier-bearing handle can carry read-back.
 #[doc(hidden)]
 pub enum CcCreatePoll<U, I> {
+    Unissued(U, CcCreateOperation),
+    Issued(I, CcCreateToken),
+}
+
+impl<U: CcPollAttempt> CcCreatePoll<U, U::Issued> {
+    fn preserve(self, error: ProviderError) -> U::Verdict {
+        match self {
+            Self::Unissued(attempt, operation) => {
+                attempt.preserve(operation, InFlightCreate::new(error))
+            }
+            Self::Issued(issued, token) => issued.preserve(token, error),
+        }
+    }
+}
+
+#[doc(hidden)]
+enum CcOperationPoll<U, I> {
     Unissued(U),
     Issued(I),
 }
@@ -202,11 +218,6 @@ pub trait CcResumedCreate {
         attributes: HashMap<String, Value>,
         reason: ProviderError,
         missing_attributes: NonEmptyAttributeNames,
-    ) -> Result<Self::Step, Self::Verdict>;
-    fn pending_read_back(
-        self,
-        continuation: ReadBackContinuation,
-        poll_after_secs: u32,
     ) -> Result<Self::Step, Self::Verdict>;
     fn failed(
         self,
@@ -231,18 +242,34 @@ pub trait CcResumeAttempt {
     type Resent: CcCreateAttempt<Step = Self::Step, Verdict = Self::Verdict>;
 
     fn untracked(self, failure: NotAppliedCreate) -> Self::Verdict;
-    fn preserve(self, token: CcCreateToken, error: ProviderError) -> Self::Verdict;
+    fn preserve(self, token: CcCreateOperation, error: ProviderError) -> Self::Verdict;
     fn issued(self, identifier: AppliedIdentifier) -> Self::Resumed;
     fn pending(
         self,
-        token: CcCreateToken,
+        token: CcCreateOperation,
         poll_after_secs: u32,
     ) -> Result<Self::Step, Self::Verdict>;
     fn resend(self) -> Self::Resent;
 }
 
+/// A decoded saved create. Read-back always retains its issued identifier.
 #[doc(hidden)]
 pub enum CcCreateResume<U, I> {
+    Unissued(U, CcCreateOperation),
+    Issued(I, CcCreateToken),
+}
+
+impl<U: CcResumeAttempt> CcCreateResume<U, U::Resumed> {
+    fn preserve(self, error: ProviderError) -> U::Verdict {
+        match self {
+            Self::Unissued(attempt, operation) => attempt.preserve(operation, error),
+            Self::Issued(resumed, token) => resumed.preserve(token, error),
+        }
+    }
+}
+
+#[doc(hidden)]
+enum CcOperationResume<U, I> {
     Unissued(U),
     Issued(I),
 }
@@ -279,6 +306,17 @@ impl CcCreateToken {
     }
 }
 
+impl CcCreateOperation {
+    fn into_pending_token(self) -> PendingToken {
+        CcCreateToken::from(self).into_pending_token()
+    }
+
+    fn into_pending_token_with_cadence(self, poll_after_secs: u32) -> PendingToken {
+        self.with_poll_after_secs(poll_after_secs)
+            .into_pending_token()
+    }
+}
+
 fn decode_create_token(token: &PendingToken) -> ProviderResult<CcCreateToken> {
     serde_json::from_str(token.expose_for_provider_call()).map_err(|error| {
         ProviderError::internal_caused_by(
@@ -304,7 +342,7 @@ impl CcCreateAttempt for CreateAttempt {
         self.untracked(failure.into_error())
     }
 
-    fn preserve(self, token: CcCreateToken, error: ProviderError) -> Self::Verdict {
+    fn preserve(self, token: CcCreateOperation, error: ProviderError) -> Self::Verdict {
         let poll_after_secs = token.poll_after_secs();
         self.pending(
             token.into_pending_token(),
@@ -320,7 +358,7 @@ impl CcCreateAttempt for CreateAttempt {
 
     fn pending(
         self,
-        token: CcCreateToken,
+        token: CcCreateOperation,
         sent: Sent,
         poll_after_secs: u32,
     ) -> Result<Self::Step, Self::Verdict> {
@@ -341,7 +379,7 @@ impl CcPollAttempt for PollAttempt {
         self.untracked(failure.into_error())
     }
 
-    fn preserve(self, token: CcCreateToken, failure: InFlightCreate) -> Self::Verdict {
+    fn preserve(self, token: CcCreateOperation, failure: InFlightCreate) -> Self::Verdict {
         let error = failure.into_error();
         let poll_after_secs = token.poll_after_secs();
         self.pending(token.into_pending_token(), poll_after_secs)
@@ -354,7 +392,7 @@ impl CcPollAttempt for PollAttempt {
 
     fn pending(
         self,
-        token: CcCreateToken,
+        token: CcCreateOperation,
         poll_after_secs: u32,
     ) -> Result<Self::Step, Self::Verdict> {
         Ok(CoreCreateStep::Pending(self.pending(
@@ -425,26 +463,18 @@ impl CcIssuedCreate for IssuedCreate {
         }
     }
 
-    fn pending_read_back(
-        self,
-        continuation: ReadBackContinuation,
-        poll_after_secs: u32,
-    ) -> Result<Self::Step, Self::Verdict> {
-        Ok(CoreCreateStep::Pending(self.pending_read_back(
-            CcCreateToken::ReadBack(continuation).into_pending_token(),
-            poll_after_secs,
-        )))
-    }
-
     fn pending(
         self,
         token: CcCreateToken,
         poll_after_secs: u32,
     ) -> Result<Self::Step, Self::Verdict> {
-        Ok(CoreCreateStep::Pending(self.pending(
-            token.into_pending_token_with_cadence(poll_after_secs),
-            poll_after_secs,
-        )))
+        let phase = token.phase();
+        let token = token.into_pending_token_with_cadence(poll_after_secs);
+        let pending = match phase {
+            PendingPhase::Operation => self.pending(token, poll_after_secs),
+            PendingPhase::ReadBack => self.pending_read_back(token, poll_after_secs),
+        };
+        Ok(CoreCreateStep::Pending(pending))
     }
 }
 
@@ -458,7 +488,7 @@ impl CcResumeAttempt for ResumeAttempt {
         self.untracked(failure.into_error())
     }
 
-    fn preserve(self, token: CcCreateToken, error: ProviderError) -> Self::Verdict {
+    fn preserve(self, token: CcCreateOperation, error: ProviderError) -> Self::Verdict {
         self.repend(token.into_pending_token()).preserve(error)
     }
 
@@ -468,7 +498,7 @@ impl CcResumeAttempt for ResumeAttempt {
 
     fn pending(
         self,
-        token: CcCreateToken,
+        token: CcCreateOperation,
         poll_after_secs: u32,
     ) -> Result<Self::Step, Self::Verdict> {
         Ok(CoreResumeStep::Pending(Box::new(self.repend(
@@ -519,16 +549,6 @@ impl CcResumedCreate for ResumedCreate {
         ))
     }
 
-    fn pending_read_back(
-        self,
-        continuation: ReadBackContinuation,
-        _poll_after_secs: u32,
-    ) -> Result<Self::Step, Self::Verdict> {
-        Ok(CoreResumeStep::Pending(Box::new(self.repend(
-            CcCreateToken::ReadBack(continuation).into_pending_token(),
-        ))))
-    }
-
     fn failed(
         self,
         identifier: AppliedIdentifier,
@@ -566,7 +586,7 @@ impl CcCreateAttempt for ResentCreateAttempt {
         self.untracked(failure.into_error())
     }
 
-    fn preserve(self, token: CcCreateToken, error: ProviderError) -> Self::Verdict {
+    fn preserve(self, token: CcCreateOperation, error: ProviderError) -> Self::Verdict {
         let poll_after_secs = token.poll_after_secs();
         self.pending(
             token.into_pending_token(),
@@ -582,7 +602,7 @@ impl CcCreateAttempt for ResentCreateAttempt {
 
     fn pending(
         self,
-        token: CcCreateToken,
+        token: CcCreateOperation,
         sent: Sent,
         poll_after_secs: u32,
     ) -> Result<Self::Step, Self::Verdict> {
@@ -603,7 +623,7 @@ impl CcPollAttempt for ResentPollAttempt {
         self.untracked(failure.into_error())
     }
 
-    fn preserve(self, token: CcCreateToken, failure: InFlightCreate) -> Self::Verdict {
+    fn preserve(self, token: CcCreateOperation, failure: InFlightCreate) -> Self::Verdict {
         let error = failure.into_error();
         let poll_after_secs = token.poll_after_secs();
         self.pending(token.into_pending_token(), poll_after_secs)
@@ -616,7 +636,7 @@ impl CcPollAttempt for ResentPollAttempt {
 
     fn pending(
         self,
-        token: CcCreateToken,
+        token: CcCreateOperation,
         poll_after_secs: u32,
     ) -> Result<Self::Step, Self::Verdict> {
         Ok(CoreResumeStep::ResentPending(self.pending(
@@ -687,26 +707,18 @@ impl CcIssuedCreate for ResentIssuedCreate {
         }
     }
 
-    fn pending_read_back(
-        self,
-        continuation: ReadBackContinuation,
-        poll_after_secs: u32,
-    ) -> Result<Self::Step, Self::Verdict> {
-        Ok(CoreResumeStep::ResentPending(self.pending_read_back(
-            CcCreateToken::ReadBack(continuation).into_pending_token(),
-            poll_after_secs,
-        )))
-    }
-
     fn pending(
         self,
         token: CcCreateToken,
         poll_after_secs: u32,
     ) -> Result<Self::Step, Self::Verdict> {
-        Ok(CoreResumeStep::ResentPending(self.pending(
-            token.into_pending_token_with_cadence(poll_after_secs),
-            poll_after_secs,
-        )))
+        let phase = token.phase();
+        let token = token.into_pending_token_with_cadence(poll_after_secs);
+        let pending = match phase {
+            PendingPhase::Operation => self.pending(token, poll_after_secs),
+            PendingPhase::ReadBack => self.pending_read_back(token, poll_after_secs),
+        };
+        Ok(CoreResumeStep::ResentPending(pending))
     }
 }
 
@@ -832,9 +844,9 @@ impl AwsccProvider {
 
         let mut attributes = map_aws_props_to_attributes(
             &props,
-            config.schema.attributes(),
+            config.schema.as_schema().attributes(),
             &id.resource_type,
-            config.schema.defs(),
+            config.schema.as_schema().defs(),
         );
 
         // Match the #2544 optional-collection canonicalization contract: absent or
@@ -890,7 +902,8 @@ impl AwsccProvider {
         if let Some(config) = self.operation_config_overrides.get(resource_type) {
             return Some(config);
         }
-        get_schema_config(resource_type).and_then(|config| config.schema.operation_config())
+        get_schema_config(resource_type)
+            .and_then(|config| config.schema.as_schema().operation_config())
     }
 
     fn create_desired_state(
@@ -899,7 +912,7 @@ impl AwsccProvider {
         config: &AwsccSchemaConfig,
     ) -> ProviderResult<serde_json::Value> {
         let mut desired_state = serde_json::Map::new();
-        for (dsl_name, attr_schema) in config.schema.attributes() {
+        for (dsl_name, attr_schema) in config.schema.as_schema().attributes() {
             if dsl_name == "tags" {
                 continue;
             }
@@ -911,7 +924,7 @@ impl AwsccProvider {
                     attr_schema.attr_type(),
                     &resource.id.resource_type,
                     dsl_name,
-                    config.schema.defs(),
+                    config.schema.as_schema().defs(),
                 );
                 if let Some(v) = aws_value {
                     desired_state.insert(aws_name.to_string(), v);
@@ -972,7 +985,7 @@ impl AwsccProvider {
             .send_not_issued_create(
                 config.aws_type_name,
                 desired_state,
-                config.schema.operation_config(),
+                config.schema.as_schema().operation_config(),
                 token,
             )
             .await
@@ -1007,7 +1020,7 @@ impl AwsccProvider {
         match identifier {
             Some(identifier) => attempt
                 .issued(identifier, Sent::AllRequestAttributes)
-                .pending(pending.token, pending.poll_after_secs),
+                .pending(pending.token.into(), pending.poll_after_secs),
             None => attempt.pending(
                 pending.token,
                 Sent::AllRequestAttributes,
@@ -1031,7 +1044,7 @@ impl AwsccProvider {
             .send_not_issued_create(
                 config.aws_type_name,
                 desired_state,
-                config.schema.operation_config(),
+                config.schema.as_schema().operation_config(),
                 token,
             )
             .await
@@ -1064,7 +1077,7 @@ impl AwsccProvider {
                 self.send_unconfirmed_create(
                     config.aws_type_name,
                     desired_state,
-                    config.schema.operation_config(),
+                    config.schema.as_schema().operation_config(),
                     &token,
                 )
                 .await
@@ -1087,12 +1100,11 @@ impl AwsccProvider {
     pub async fn poll_create_step<U: CcPollAttempt>(
         &self,
         resource: &Resource<impl Sized>,
-        token: CcCreateToken,
         poll: CcCreatePoll<U, U::Issued>,
         poll_request: PollRequest,
     ) -> Result<U::Step, U::Verdict> {
         if let Err(error) = self.ensure_initialized(&resource.id) {
-            return Err(Self::preserve_polled(poll, token, error));
+            return Err(poll.preserve(error));
         }
         let Some(config) = get_schema_config(&resource.id.resource_type) else {
             let error = ProviderError::internal(format!(
@@ -1100,40 +1112,36 @@ impl AwsccProvider {
                 resource.id.resource_type
             ))
             .for_resource(resource.id.clone());
-            return Err(Self::preserve_polled(poll, token, error));
+            return Err(poll.preserve(error));
         };
 
-        match token {
-            CcCreateToken::ReadBack(continuation) => {
-                let issued = match poll {
-                    CcCreatePoll::Issued(issued) => issued,
-                    CcCreatePoll::Unissued(attempt) => {
-                        return Err(attempt.preserve(
-                            CcCreateToken::ReadBack(continuation),
-                            InFlightCreate::new(
-                                ProviderError::internal("read-back requires an issued identifier")
-                                    .for_resource(resource.id.clone()),
-                            ),
-                        ));
-                    }
-                };
+        let (token, poll) = match poll {
+            CcCreatePoll::Issued(issued, CcCreateToken::ReadBack(continuation)) => {
                 if let Err(error) = continuation.validate(&resource.id, issued.identifier()) {
                     return Err(issued.preserve(CcCreateToken::ReadBack(continuation), error));
                 }
                 let identifier = continuation.identifier().clone();
                 let read_back = self.read_resource(&resource.id, &identifier).await;
-                self.finish_create_success(
-                    resource,
-                    config,
-                    issued,
-                    identifier,
-                    read_back,
-                    poll_request,
-                )
-                .await
+                return self
+                    .finish_create_success(
+                        resource,
+                        config,
+                        issued,
+                        identifier,
+                        read_back,
+                        poll_request,
+                    )
+                    .await;
             }
-
-            CcCreateToken::NotIssued(token) => {
+            CcCreatePoll::Unissued(attempt, operation) => {
+                (operation, CcOperationPoll::Unissued(attempt))
+            }
+            CcCreatePoll::Issued(issued, CcCreateToken::Operation(operation)) => {
+                (operation, CcOperationPoll::Issued(issued))
+            }
+        };
+        match token {
+            CcCreateOperation::NotIssued(token) => {
                 let desired_state = match self.create_desired_state(resource, config) {
                     Ok(desired_state) => desired_state,
                     Err(error) => {
@@ -1150,7 +1158,7 @@ impl AwsccProvider {
                     .send_not_issued_create(
                         config.aws_type_name,
                         desired_state,
-                        config.schema.operation_config(),
+                        config.schema.as_schema().operation_config(),
                         token,
                     )
                     .await
@@ -1175,13 +1183,13 @@ impl AwsccProvider {
                 };
                 self.continue_polled_pending(&resource.id, poll, pending)
             }
-            CcCreateToken::Unconfirmed(token) => {
+            CcCreateOperation::Unconfirmed(token) => {
                 let pending = match self.create_desired_state(resource, config) {
                     Ok(desired_state) => {
                         self.send_unconfirmed_create(
                             config.aws_type_name,
                             desired_state,
-                            config.schema.operation_config(),
+                            config.schema.as_schema().operation_config(),
                             &token,
                         )
                         .await
@@ -1194,10 +1202,10 @@ impl AwsccProvider {
                         let failure =
                             failure.map_error(|error| error.for_resource(resource.id.clone()));
                         return match poll {
-                            CcCreatePoll::Unissued(attempt) => {
+                            CcOperationPoll::Unissued(attempt) => {
                                 Err(attempt.preserve(token.into(), failure))
                             }
-                            CcCreatePoll::Issued(issued) => {
+                            CcOperationPoll::Issued(issued) => {
                                 Err(issued.preserve(token.into(), failure.into_error()))
                             }
                         };
@@ -1205,7 +1213,7 @@ impl AwsccProvider {
                 };
                 self.continue_polled_pending(&resource.id, poll, pending)
             }
-            CcCreateToken::InFlight(token) => {
+            CcCreateOperation::InFlight(token) => {
                 let status = self.cc_create_request_status(token).await;
                 self.finish_polled_status(resource, config, poll, status, poll_request)
                     .await
@@ -1216,36 +1224,38 @@ impl AwsccProvider {
     async fn finish_polled_not_applied<U: CcPollAttempt>(
         &self,
         id: &ResourceId,
-        poll: CcCreatePoll<U, U::Issued>,
+        poll: CcOperationPoll<U, U::Issued>,
         failure: NotAppliedCreate,
     ) -> Result<U::Step, U::Verdict> {
         match poll {
-            CcCreatePoll::Unissued(attempt) => Err(attempt.untracked(failure)),
-            CcCreatePoll::Issued(issued) => {
+            CcOperationPoll::Unissued(attempt) => Err(attempt.untracked(failure)),
+            CcOperationPoll::Issued(issued) => {
                 Err(self.failed_issued(id, issued, failure.into_error()).await)
             }
         }
     }
 
     fn preserve_polled<U: CcPollAttempt>(
-        poll: CcCreatePoll<U, U::Issued>,
-        token: CcCreateToken,
+        poll: CcOperationPoll<U, U::Issued>,
+        token: CcCreateOperation,
         error: ProviderError,
     ) -> U::Verdict {
         match poll {
-            CcCreatePoll::Unissued(attempt) => attempt.preserve(token, InFlightCreate::new(error)),
-            CcCreatePoll::Issued(issued) => issued.preserve(token, error),
+            CcOperationPoll::Unissued(attempt) => {
+                attempt.preserve(token, InFlightCreate::new(error))
+            }
+            CcOperationPoll::Issued(issued) => issued.preserve(token.into(), error),
         }
     }
 
     fn continue_polled_pending<U: CcPollAttempt>(
         &self,
         id: &ResourceId,
-        poll: CcCreatePoll<U, U::Issued>,
+        poll: CcOperationPoll<U, U::Issued>,
         pending: CcCreatePending,
     ) -> Result<U::Step, U::Verdict> {
         match poll {
-            CcCreatePoll::Unissued(attempt) => {
+            CcOperationPoll::Unissued(attempt) => {
                 let identifier = pending
                     .token
                     .identifier()
@@ -1254,14 +1264,14 @@ impl AwsccProvider {
                 match identifier {
                     Some(identifier) => attempt
                         .issued(identifier)
-                        .pending(pending.token, pending.poll_after_secs),
+                        .pending(pending.token.into(), pending.poll_after_secs),
                     None => attempt.pending(pending.token, pending.poll_after_secs),
                 }
             }
-            CcCreatePoll::Issued(issued) => {
+            CcOperationPoll::Issued(issued) => {
                 let identifier = issued.identifier().as_str().to_string();
                 issued.pending(
-                    pending.token.with_identifier(Some(identifier)),
+                    pending.token.with_identifier(Some(identifier)).into(),
                     pending.poll_after_secs,
                 )
             }
@@ -1272,7 +1282,7 @@ impl AwsccProvider {
         &self,
         resource: &Resource<impl Sized>,
         config: &AwsccSchemaConfig,
-        poll: CcCreatePoll<U, U::Issued>,
+        poll: CcOperationPoll<U, U::Issued>,
         status: CcCreateStatus,
         poll_request: PollRequest,
     ) -> Result<U::Step, U::Verdict> {
@@ -1293,12 +1303,12 @@ impl AwsccProvider {
                 error,
                 poll_after_secs,
             } => {
-                let token = CcCreateToken::from(token).with_poll_after_secs(poll_after_secs);
+                let token = CcCreateOperation::from(token).with_poll_after_secs(poll_after_secs);
                 Err(match poll {
-                    CcCreatePoll::Unissued(attempt) => {
+                    CcOperationPoll::Unissued(attempt) => {
                         attempt.preserve(token, InFlightCreate::new(error))
                     }
-                    CcCreatePoll::Issued(issued) => issued.preserve(token, error),
+                    CcOperationPoll::Issued(issued) => issued.preserve(token.into(), error),
                 })
             }
             CcCreateStatus::RequestTokenNotFound { token, error } => {
@@ -1342,14 +1352,14 @@ impl AwsccProvider {
         &self,
         resource: &Resource<impl Sized>,
         config: &AwsccSchemaConfig,
-        poll: CcCreatePoll<U, U::Issued>,
+        poll: CcOperationPoll<U, U::Issued>,
         token: InFlightCreateRequest,
         token_error: ProviderError,
         poll_request: PollRequest,
     ) -> Result<U::Step, U::Verdict> {
         let issued = match poll {
-            CcCreatePoll::Issued(issued) => issued,
-            CcCreatePoll::Unissued(attempt) => {
+            CcOperationPoll::Issued(issued) => issued,
+            CcOperationPoll::Unissued(attempt) => {
                 let Some(identifier) = token.identifier().and_then(|identifier| {
                     applied_identifier(&resource.id, "create", identifier.to_string()).ok()
                 }) else {
@@ -1385,7 +1395,7 @@ impl AwsccProvider {
         &self,
         resource: &Resource<impl Sized>,
         config: &AwsccSchemaConfig,
-        poll: CcCreatePoll<U, U::Issued>,
+        poll: CcOperationPoll<U, U::Issued>,
         token: InFlightCreateRequest,
         status_identifier: Option<String>,
         poll_request: PollRequest,
@@ -1393,7 +1403,7 @@ impl AwsccProvider {
         let status_identifier = status_identifier
             .and_then(|identifier| applied_identifier(&resource.id, "create", identifier).ok());
         let (issued, read_identifier) = match poll {
-            CcCreatePoll::Unissued(attempt) => {
+            CcOperationPoll::Unissued(attempt) => {
                 let Some(identifier) = status_identifier.or_else(|| {
                     token.identifier().and_then(|identifier| {
                         applied_identifier(&resource.id, "create", identifier.to_string()).ok()
@@ -1407,7 +1417,7 @@ impl AwsccProvider {
                 };
                 (attempt.issued(identifier.clone()), identifier)
             }
-            CcCreatePoll::Issued(issued) => {
+            CcOperationPoll::Issued(issued) => {
                 let identifier = status_identifier.unwrap_or_else(|| issued.identifier().clone());
                 (issued, identifier)
             }
@@ -1428,7 +1438,7 @@ impl AwsccProvider {
         &self,
         resource: &Resource<impl Sized>,
         config: &AwsccSchemaConfig,
-        poll: CcCreatePoll<U, U::Issued>,
+        poll: CcOperationPoll<U, U::Issued>,
         failure: CreateTerminalFailure,
     ) -> Result<U::Step, U::Verdict> {
         let CreateTerminalFailure {
@@ -1447,13 +1457,13 @@ impl AwsccProvider {
         let status_identifier = status_identifier
             .and_then(|identifier| applied_identifier(&resource.id, "create", identifier).ok());
         match poll {
-            CcCreatePoll::Issued(issued) => {
+            CcOperationPoll::Issued(issued) => {
                 let identifier = status_identifier.unwrap_or_else(|| issued.identifier().clone());
                 Err(self
                     .failed_issued_as(&resource.id, identifier, issued, error)
                     .await)
             }
-            CcCreatePoll::Unissued(attempt) => {
+            CcOperationPoll::Unissued(attempt) => {
                 if let Some(identifier) = status_identifier {
                     let issued = attempt.issued(identifier.clone());
                     Err(self
@@ -1503,7 +1513,7 @@ impl AwsccProvider {
             }
             PollFinality::Continue => match completion {
                 CreateCompletion::ReadBackPending { continuation, .. } => {
-                    issued.pending_read_back(continuation, POLL_AFTER_SECS)
+                    issued.pending(CcCreateToken::ReadBack(continuation), POLL_AFTER_SECS)
                 }
                 terminal @ (CreateCompletion::Success { .. }
                 | CreateCompletion::Partial { .. }
@@ -1675,17 +1685,23 @@ impl AwsccProvider {
                     Err(error) => return OperationStep::Verdict(pending.preserve(error)),
                 };
                 let poll = match pending.into_poll() {
-                    Poll::Unissued(attempt) => CcCreatePoll::Unissued(attempt),
-                    Poll::Issued(issued) => CcCreatePoll::Issued(issued),
+                    Poll::Unissued(attempt) => match token.into_operation() {
+                        Ok(operation) => CcCreatePoll::Unissued(attempt, operation),
+                        Err(_) => {
+                            return OperationStep::Verdict(
+                                attempt.untracked(
+                                    ProviderError::invalid_input(
+                                        "read-back requires an issued identifier",
+                                    )
+                                    .for_resource(resource.id.clone()),
+                                ),
+                            );
+                        }
+                    },
+                    Poll::Issued(issued) => CcCreatePoll::Issued(issued, token),
                 };
                 native_create_step(
-                    Box::pin(self.poll_create_step(
-                        resource,
-                        token,
-                        poll,
-                        PollRequest { finality },
-                    ))
-                    .await,
+                    Box::pin(self.poll_create_step(resource, poll, PollRequest { finality })).await,
                 )
             },
             sleep,
@@ -1712,12 +1728,11 @@ impl AwsccProvider {
     pub async fn resume_create_step<U: CcResumeAttempt>(
         &self,
         resource: &Resource<impl Sized>,
-        token: CcCreateToken,
         resume: CcCreateResume<U, U::Resumed>,
         poll_request: PollRequest,
     ) -> Result<U::Step, U::Verdict> {
         if let Err(error) = self.ensure_initialized(&resource.id) {
-            return Err(Self::preserve_resume(resume, token, error));
+            return Err(resume.preserve(error));
         }
         let Some(config) = get_schema_config(&resource.id.resource_type) else {
             let error = ProviderError::internal(format!(
@@ -1725,60 +1740,58 @@ impl AwsccProvider {
                 resource.id.resource_type
             ))
             .for_resource(resource.id.clone());
-            return Err(Self::preserve_resume(resume, token, error));
+            return Err(resume.preserve(error));
         };
 
-        match token {
-            CcCreateToken::ReadBack(continuation) => {
-                let resumed = match resume {
-                    CcCreateResume::Issued(resumed) => resumed,
-                    CcCreateResume::Unissued(attempt) => {
-                        return Err(attempt.preserve(
-                            CcCreateToken::ReadBack(continuation),
-                            ProviderError::internal("read-back requires an issued identifier")
-                                .for_resource(resource.id.clone()),
-                        ));
-                    }
-                };
+        let (token, resume) = match resume {
+            CcCreateResume::Issued(resumed, CcCreateToken::ReadBack(continuation)) => {
                 if let Err(error) = continuation.validate(&resource.id, resumed.identifier()) {
                     return Err(resumed.preserve(CcCreateToken::ReadBack(continuation), error));
                 }
                 let identifier = continuation.identifier().clone();
                 let read_back = self.read_resource(&resource.id, &identifier).await;
-                self.finish_resumed_read(
-                    resource,
-                    config,
-                    resumed,
-                    identifier,
-                    read_back,
-                    poll_request,
-                )
-                .await
+                return self
+                    .finish_resumed_read(
+                        resource,
+                        config,
+                        resumed,
+                        identifier,
+                        read_back,
+                        poll_request,
+                    )
+                    .await;
             }
-
-            CcCreateToken::NotIssued(token) => match resume {
-                CcCreateResume::Unissued(attempt) => {
+            CcCreateResume::Unissued(attempt, operation) => {
+                (operation, CcOperationResume::Unissued(attempt))
+            }
+            CcCreateResume::Issued(resumed, CcCreateToken::Operation(operation)) => {
+                (operation, CcOperationResume::Issued(resumed))
+            }
+        };
+        match token {
+            CcCreateOperation::NotIssued(token) => match resume {
+                CcOperationResume::Unissued(attempt) => {
                     self.resend_not_issued_create_step(resource, config, token, attempt)
                         .await
                 }
-                CcCreateResume::Issued(resumed) => {
+                CcOperationResume::Issued(resumed) => {
                     let token = CcCreateToken::from(token);
                     let poll_after_secs = token.poll_after_secs();
                     resumed.pending(token, poll_after_secs)
                 }
             },
-            CcCreateToken::Unconfirmed(token) => match resume {
-                CcCreateResume::Unissued(attempt) => {
+            CcCreateOperation::Unconfirmed(token) => match resume {
+                CcOperationResume::Unissued(attempt) => {
                     self.resend_unconfirmed_create_step(resource, config, token, attempt)
                         .await
                 }
-                CcCreateResume::Issued(resumed) => {
+                CcOperationResume::Issued(resumed) => {
                     let token = CcCreateToken::from(token);
                     let poll_after_secs = token.poll_after_secs();
                     resumed.pending(token, poll_after_secs)
                 }
             },
-            CcCreateToken::InFlight(token) => {
+            CcCreateOperation::InFlight(token) => {
                 // The persisted identifier does not prove completion. Always
                 // ask CloudControl about its accepted request before any read.
                 let status = self.cc_create_request_status(token).await;
@@ -1789,36 +1802,36 @@ impl AwsccProvider {
     }
 
     fn preserve_resume<U: CcResumeAttempt>(
-        resume: CcCreateResume<U, U::Resumed>,
-        token: CcCreateToken,
+        resume: CcOperationResume<U, U::Resumed>,
+        token: CcCreateOperation,
         error: ProviderError,
     ) -> U::Verdict {
         match resume {
-            CcCreateResume::Unissued(attempt) => attempt.preserve(token, error),
-            CcCreateResume::Issued(resumed) => resumed.preserve(token, error),
+            CcOperationResume::Unissued(attempt) => attempt.preserve(token, error),
+            CcOperationResume::Issued(resumed) => resumed.preserve(token.into(), error),
         }
     }
 
     fn continue_resumed_pending<U: CcResumeAttempt>(
         &self,
         id: &ResourceId,
-        resume: CcCreateResume<U, U::Resumed>,
+        resume: CcOperationResume<U, U::Resumed>,
         pending: CcCreatePending,
     ) -> Result<U::Step, U::Verdict> {
         match resume {
-            CcCreateResume::Unissued(attempt) => {
+            CcOperationResume::Unissued(attempt) => {
                 let identifier = token_identifier(id, &pending.token);
                 match identifier {
                     Some(identifier) => attempt
                         .issued(identifier)
-                        .pending(pending.token, pending.poll_after_secs),
+                        .pending(pending.token.into(), pending.poll_after_secs),
                     None => attempt.pending(pending.token, pending.poll_after_secs),
                 }
             }
-            CcCreateResume::Issued(resumed) => {
+            CcOperationResume::Issued(resumed) => {
                 let identifier = resumed.identifier().as_str().to_string();
                 resumed.pending(
-                    pending.token.with_identifier(Some(identifier)),
+                    pending.token.with_identifier(Some(identifier)).into(),
                     pending.poll_after_secs,
                 )
             }
@@ -1829,7 +1842,7 @@ impl AwsccProvider {
         &self,
         resource: &Resource<impl Sized>,
         config: &AwsccSchemaConfig,
-        resume: CcCreateResume<U, U::Resumed>,
+        resume: CcOperationResume<U, U::Resumed>,
         status: CcCreateStatus,
         poll_request: PollRequest,
     ) -> Result<U::Step, U::Verdict> {
@@ -1850,7 +1863,7 @@ impl AwsccProvider {
                 error,
                 poll_after_secs,
             } => {
-                let token = CcCreateToken::from(token).with_poll_after_secs(poll_after_secs);
+                let token = CcCreateOperation::from(token).with_poll_after_secs(poll_after_secs);
                 Err(Self::preserve_resume(resume, token, error))
             }
             CcCreateStatus::RequestTokenNotFound { token, error } => {
@@ -1894,14 +1907,14 @@ impl AwsccProvider {
         &self,
         resource: &Resource<impl Sized>,
         config: &AwsccSchemaConfig,
-        resume: CcCreateResume<U, U::Resumed>,
+        resume: CcOperationResume<U, U::Resumed>,
         token: InFlightCreateRequest,
         token_error: ProviderError,
         poll_request: PollRequest,
     ) -> Result<U::Step, U::Verdict> {
         let resumed = match resume {
-            CcCreateResume::Issued(resumed) => resumed,
-            CcCreateResume::Unissued(attempt) => {
+            CcOperationResume::Issued(resumed) => resumed,
+            CcOperationResume::Unissued(attempt) => {
                 let Some(identifier) = token.identifier().and_then(|identifier| {
                     applied_identifier(&resource.id, "create", identifier.to_string()).ok()
                 }) else {
@@ -1937,7 +1950,7 @@ impl AwsccProvider {
         &self,
         resource: &Resource<impl Sized>,
         config: &AwsccSchemaConfig,
-        resume: CcCreateResume<U, U::Resumed>,
+        resume: CcOperationResume<U, U::Resumed>,
         token: InFlightCreateRequest,
         status_identifier: Option<String>,
         poll_request: PollRequest,
@@ -1945,7 +1958,7 @@ impl AwsccProvider {
         let status_identifier = status_identifier
             .and_then(|identifier| applied_identifier(&resource.id, "create", identifier).ok());
         let (resumed, read_identifier) = match resume {
-            CcCreateResume::Unissued(attempt) => {
+            CcOperationResume::Unissued(attempt) => {
                 let Some(identifier) = status_identifier.or_else(|| {
                     token.identifier().and_then(|identifier| {
                         applied_identifier(&resource.id, "create", identifier.to_string()).ok()
@@ -1959,7 +1972,7 @@ impl AwsccProvider {
                 };
                 (attempt.issued(identifier.clone()), identifier)
             }
-            CcCreateResume::Issued(resumed) => {
+            CcOperationResume::Issued(resumed) => {
                 let identifier = status_identifier.unwrap_or_else(|| resumed.identifier().clone());
                 (resumed, identifier)
             }
@@ -1980,7 +1993,7 @@ impl AwsccProvider {
         &self,
         resource: &Resource<impl Sized>,
         config: &AwsccSchemaConfig,
-        resume: CcCreateResume<U, U::Resumed>,
+        resume: CcOperationResume<U, U::Resumed>,
         failure: CreateTerminalFailure,
     ) -> Result<U::Step, U::Verdict> {
         let CreateTerminalFailure {
@@ -1999,13 +2012,13 @@ impl AwsccProvider {
         let status_identifier = status_identifier
             .and_then(|identifier| applied_identifier(&resource.id, "create", identifier).ok());
         match resume {
-            CcCreateResume::Issued(resumed) => {
+            CcOperationResume::Issued(resumed) => {
                 let identifier = status_identifier.unwrap_or_else(|| resumed.identifier().clone());
                 Err(self
                     .failed_resumed_as(&resource.id, identifier, resumed, error)
                     .await)
             }
-            CcCreateResume::Unissued(attempt) => {
+            CcOperationResume::Unissued(attempt) => {
                 if let Some(identifier) = status_identifier {
                     let resumed = attempt.issued(identifier.clone());
                     Err(self
@@ -2048,7 +2061,7 @@ impl AwsccProvider {
             ),
             PollFinality::Continue => match completion {
                 CreateCompletion::ReadBackPending { continuation, .. } => {
-                    resumed.pending_read_back(continuation, POLL_AFTER_SECS)
+                    resumed.pending(CcCreateToken::ReadBack(continuation), POLL_AFTER_SECS)
                 }
                 terminal @ (CreateCompletion::Success { .. }
                 | CreateCompletion::Partial { .. }
@@ -2121,13 +2134,24 @@ impl AwsccProvider {
                     Err(error) => return OperationStep::Verdict(resume.preserve(error)),
                 };
                 let resume = match resume {
-                    Resume::Unissued(attempt) => CcCreateResume::Unissued(attempt),
-                    Resume::Issued(resumed) => CcCreateResume::Issued(resumed),
+                    Resume::Unissued(attempt) => match token.into_operation() {
+                        Ok(operation) => CcCreateResume::Unissued(attempt, operation),
+                        Err(_) => {
+                            return OperationStep::Verdict(
+                                attempt.untracked(
+                                    ProviderError::invalid_input(
+                                        "read-back requires an issued identifier",
+                                    )
+                                    .for_resource(resource.id.clone()),
+                                ),
+                            );
+                        }
+                    },
+                    Resume::Issued(resumed) => CcCreateResume::Issued(resumed, token),
                 };
                 native_resume_step(
                     Box::pin(self.resume_create_step(
                         resource,
-                        token,
                         resume,
                         PollRequest {
                             finality: PollFinality::Continue,
@@ -2141,27 +2165,44 @@ impl AwsccProvider {
                 match pending {
                     NativeResumePending::Resume { resume, token } => {
                         let resume = match *resume {
-                            Resume::Unissued(attempt) => CcCreateResume::Unissued(attempt),
-                            Resume::Issued(resumed) => CcCreateResume::Issued(resumed),
+                            Resume::Unissued(attempt) => match token.into_operation() {
+                                Ok(operation) => CcCreateResume::Unissued(attempt, operation),
+                                Err(_) => {
+                                    return OperationStep::Verdict(
+                                        attempt.untracked(
+                                            ProviderError::invalid_input(
+                                                "read-back requires an issued identifier",
+                                            )
+                                            .for_resource(resource.id.clone()),
+                                        ),
+                                    );
+                                }
+                            },
+                            Resume::Issued(resumed) => CcCreateResume::Issued(resumed, token),
                         };
                         native_resume_step(
-                            Box::pin(self.resume_create_step(
-                                resource,
-                                token,
-                                resume,
-                                poll_request,
-                            ))
-                            .await,
+                            Box::pin(self.resume_create_step(resource, resume, poll_request)).await,
                         )
                     }
                     NativeResumePending::Resent { pending, token } => {
                         let poll = match pending.into_poll() {
-                            ResentPoll::Unissued(attempt) => CcCreatePoll::Unissued(attempt),
-                            ResentPoll::Issued(issued) => CcCreatePoll::Issued(issued),
+                            ResentPoll::Unissued(attempt) => match token.into_operation() {
+                                Ok(operation) => CcCreatePoll::Unissued(attempt, operation),
+                                Err(_) => {
+                                    return OperationStep::Verdict(
+                                        attempt.untracked(
+                                            ProviderError::invalid_input(
+                                                "read-back requires an issued identifier",
+                                            )
+                                            .for_resource(resource.id.clone()),
+                                        ),
+                                    );
+                                }
+                            },
+                            ResentPoll::Issued(issued) => CcCreatePoll::Issued(issued, token),
                         };
                         native_resume_step(
-                            Box::pin(self.poll_create_step(resource, token, poll, poll_request))
-                                .await,
+                            Box::pin(self.poll_create_step(resource, poll, poll_request)).await,
                         )
                     }
                 }
@@ -2205,7 +2246,7 @@ impl AwsccProvider {
                 config.aws_type_name,
                 identifier.as_str(),
                 patch_plan.ops.clone(),
-                config.schema.operation_config(),
+                config.schema.as_schema().operation_config(),
             )
             .await
             .map_err(|error| error.for_resource(id.clone()))?;
@@ -2263,7 +2304,7 @@ impl AwsccProvider {
                         config.aws_type_name,
                         identifier.as_str(),
                         patch_plan.ops.clone(),
-                        config.schema.operation_config(),
+                        config.schema.as_schema().operation_config(),
                         token,
                     )
                     .await
@@ -2464,7 +2505,7 @@ impl AwsccProvider {
                     config.aws_type_name,
                     identifier.as_str(),
                     patch_ops,
-                    config.schema.operation_config(),
+                    config.schema.as_schema().operation_config(),
                 )
                 .await
                 .map_err(|error| detach_igw_error(id, error))?;
@@ -2488,7 +2529,7 @@ impl AwsccProvider {
         self.cc_delete_step(
             config.aws_type_name,
             identifier.as_str(),
-            config.schema.operation_config(),
+            config.schema.as_schema().operation_config(),
         )
         .await
         .map(wrap_delete_phase)
@@ -2522,7 +2563,7 @@ impl AwsccProvider {
                         config.aws_type_name,
                         identifier.as_str(),
                         internet_gateway_detach_patch(),
-                        config.schema.operation_config(),
+                        config.schema.as_schema().operation_config(),
                         phase,
                     )
                     .await
@@ -2534,7 +2575,7 @@ impl AwsccProvider {
                 .cc_poll_delete_step(
                     config.aws_type_name,
                     identifier.as_str(),
-                    config.schema.operation_config(),
+                    config.schema.as_schema().operation_config(),
                     phase,
                 )
                 .await
@@ -2558,7 +2599,7 @@ impl AwsccProvider {
                 .cc_delete_step(
                     config.aws_type_name,
                     identifier.as_str(),
-                    config.schema.operation_config(),
+                    config.schema.as_schema().operation_config(),
                 )
                 .await
                 .map(wrap_delete_phase)
@@ -2569,7 +2610,7 @@ impl AwsccProvider {
                 config.aws_type_name,
                 identifier.as_str(),
                 patch_ops,
-                config.schema.operation_config(),
+                config.schema.as_schema().operation_config(),
                 token.into(),
             )
             .await
@@ -2600,7 +2641,7 @@ impl AwsccProvider {
                 .cc_delete_step(
                     config.aws_type_name,
                     identifier.as_str(),
-                    config.schema.operation_config(),
+                    config.schema.as_schema().operation_config(),
                 )
                 .await
                 .map(wrap_delete_phase)
@@ -2677,7 +2718,7 @@ fn applied_identifier(
     })
 }
 
-fn token_identifier(id: &ResourceId, token: &CcCreateToken) -> Option<AppliedIdentifier> {
+fn token_identifier(id: &ResourceId, token: &CcCreateOperation) -> Option<AppliedIdentifier> {
     token
         .identifier()
         .and_then(|identifier| applied_identifier(id, "create", identifier.to_string()).ok())
@@ -2686,6 +2727,7 @@ fn token_identifier(id: &ResourceId, token: &CcCreateToken) -> Option<AppliedIde
 fn create_max_attempts(config: &AwsccSchemaConfig) -> u32 {
     config
         .schema
+        .as_schema()
         .operation_config()
         .and_then(|operation| operation.create_max_retries)
         .unwrap_or(super::CREATE_RETRY_MAX_ATTEMPTS)
@@ -2737,6 +2779,7 @@ fn missing_schema_attributes(
 ) -> Vec<String> {
     config
         .schema
+        .as_schema()
         .attributes()
         .keys()
         .filter(|name| !attributes.contains_key(*name))
@@ -2769,7 +2812,13 @@ fn classify_read_back(
             (attributes, missing, reason, Transience::Transient)
         }
         Ok(ReadOutcome::NotFound { .. }) => {
-            let missing = config.schema.attributes().keys().cloned().collect();
+            let missing = config
+                .schema
+                .as_schema()
+                .attributes()
+                .keys()
+                .cloned()
+                .collect();
             let reason = match kind {
                 ReadBackKind::Create => "read-back returned not_found",
                 ReadBackKind::Update => "post-update read-back did not find the updated resource",
@@ -2795,7 +2844,13 @@ fn classify_read_back(
                     (attributes, missing)
                 }
                 None => {
-                    let missing = config.schema.attributes().keys().cloned().collect();
+                    let missing = config
+                        .schema
+                        .as_schema()
+                        .attributes()
+                        .keys()
+                        .cloned()
+                        .collect();
                     (fallback, missing)
                 }
             };
@@ -3106,13 +3161,13 @@ fn unsent_attributes_reason(attributes: &[String]) -> String {
 /// path in [`AwsccProvider::read_resource`].
 fn map_aws_props_to_attributes(
     props: &serde_json::Value,
-    schema_attributes: &BTreeMap<String, AttributeSchema>,
+    schema_attributes: &BTreeMap<String, CompiledAttributeSchema>,
     resource_type: &str,
-    defs: &std::collections::BTreeMap<String, AttributeType>,
+    defs: &std::collections::BTreeMap<String, CompiledAttributeType>,
 ) -> HashMap<String, Value> {
     let mut attributes = HashMap::new();
     let schema_view = defs.iter().fold(
-        ResourceSchema::new(resource_type),
+        CompiledResourceSchema::new(resource_type),
         |schema, (name, attr_type)| schema.with_def(name.clone(), attr_type.clone()),
     );
 
@@ -3168,7 +3223,7 @@ mod tests {
         UpdateOutcomeKind,
     };
     use carina_core::resource::DeferredValue;
-    use carina_core::schema::{AttributeType, SchemaRegistry};
+    use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, SchemaRegistry};
     use serde_json::json;
     use std::future::Future;
     use std::pin::Pin;
@@ -3211,6 +3266,7 @@ mod tests {
         get_schema_config(resource_type)
             .unwrap()
             .schema
+            .as_schema()
             .attributes()
             .keys()
             .cloned()
@@ -3252,9 +3308,7 @@ mod tests {
                                 )
                             })
                             .schema
-                            .clone()
-                            .validate()
-                            .expect("test schema must pass admission");
+                            .clone();
                     schemas.insert("awscc", schema);
                     let factories: Vec<Box<dyn carina_core::provider::ProviderFactory>> =
                         vec![Box::new(crate::OwnerOnlyAwsccFactory)];
@@ -3406,6 +3460,7 @@ mod tests {
         let expected: Vec<_> = get_schema_config("s3.Bucket")
             .unwrap()
             .schema
+            .as_schema()
             .attributes()
             .keys()
             .cloned()
@@ -3702,7 +3757,7 @@ mod tests {
             failure.into_error()
         }
 
-        fn preserve(self, _token: CcCreateToken, error: ProviderError) -> Self::Verdict {
+        fn preserve(self, _token: CcCreateOperation, error: ProviderError) -> Self::Verdict {
             error
         }
 
@@ -3712,7 +3767,7 @@ mod tests {
 
         fn pending(
             self,
-            _token: CcCreateToken,
+            _token: CcCreateOperation,
             _sent: Sent,
             _poll_after_secs: u32,
         ) -> Result<Self::Step, Self::Verdict> {
@@ -3761,14 +3816,6 @@ mod tests {
 
         fn preserve(self, _token: CcCreateToken, error: ProviderError) -> Self::Verdict {
             error
-        }
-
-        fn pending_read_back(
-            self,
-            _continuation: ReadBackContinuation,
-            _poll_after_secs: u32,
-        ) -> Result<Self::Step, Self::Verdict> {
-            Ok(())
         }
 
         fn pending(
@@ -4004,9 +4051,11 @@ mod tests {
             provider_with_partial_create_service(PartialCreateCloudControlService::new(true)).await;
         let resource = partial_create_bucket_resource();
         let mut config = crate::schemas::generated::s3::bucket::s3_bucket_config();
-        config.schema = config
-            .schema
-            .attribute(AttributeSchema::required("future_output", AttributeType::string()).build());
+        config.schema = ResourceSchema::new("s3.Bucket")
+            .attribute(AttributeSchema::required("bucket_name", AttributeType::string()).build())
+            .attribute(AttributeSchema::required("future_output", AttributeType::string()).build())
+            .validate()
+            .expect("test schema must pass admission");
         let identifier = test_identifier("partial-bucket");
         let read = ReadOutcome::found(AppliedState::from_identifier(
             resource.id.clone(),
@@ -4895,7 +4944,7 @@ mod tests {
         let config = get_schema_config("route53.HostedZone")
             .expect("route53.HostedZone schema should exist");
         assert!(config.tags.is_none());
-        assert!(!config.schema.attributes().contains_key("tags"));
+        assert!(!config.schema.as_schema().attributes().contains_key("tags"));
 
         for (read_properties, label) in [
             (r#"{}"#, "missing"),
@@ -5434,7 +5483,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn review_synthesis_permanent_error_finishes_partial_immediately() {
+    async fn synthesis_permanent_error_finishes_partial_immediately() {
         let cloudcontrol = IamRoleCreateCloudControlService::new(true);
         let provider =
             provider_with_iam_role_create_service(cloudcontrol, CallerIdentityService::failing())
@@ -5462,7 +5511,7 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn review_synthesis_transient_error_waits_with_declared_missing_then_completes() {
+    async fn synthesis_transient_error_waits_with_declared_missing_then_completes() {
         let cloudcontrol = IamRoleCreateCloudControlService::new(true);
         let provider = provider_with_iam_role_create_service(
             cloudcontrol.clone(),
@@ -5510,8 +5559,7 @@ mod tests {
         let step = provider
             .poll_create_step(
                 &resource,
-                token,
-                CcCreatePoll::<PollAttempt, IssuedCreate>::Issued(issued),
+                CcCreatePoll::<PollAttempt, IssuedCreate>::Issued(issued, token),
                 PollRequest {
                     finality: PollFinality::Continue,
                 },
@@ -5529,7 +5577,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn review_read_error_retains_typed_source_through_final_completion() {
+    async fn read_error_retains_typed_source_through_final_completion() {
         let provider =
             provider_with_partial_create_service(PartialCreateCloudControlService::new(true)).await;
         let resource = partial_create_bucket_resource();
@@ -5694,8 +5742,8 @@ mod tests {
 
     fn make_schema_attrs(
         entries: Vec<(&str, &str, AttributeType, bool)>,
-    ) -> BTreeMap<String, AttributeSchema> {
-        let mut map = BTreeMap::new();
+    ) -> carina_core::schema::ValidatedResourceSchema {
+        let mut schema = ResourceSchema::new("test.Resource");
         for (dsl_name, provider_name, attr_type, required) in entries {
             let s = if required {
                 AttributeSchema::required(dsl_name, attr_type)
@@ -5706,9 +5754,9 @@ mod tests {
                     .with_provider_name(provider_name.to_string())
                     .build()
             };
-            map.insert(dsl_name.to_string(), s);
+            schema = schema.attribute(s);
         }
-        map
+        schema.validate().expect("test schema must pass admission")
     }
 
     /// Real `GetResource` shape measured in us-east-1 on 2026-10-27 with
@@ -5725,9 +5773,9 @@ mod tests {
 
         let attributes = map_aws_props_to_attributes(
             &props,
-            config.schema.attributes(),
+            config.schema.as_schema().attributes(),
             "cloudfront.ResponseHeadersPolicy",
-            config.schema.defs(),
+            config.schema.as_schema().defs(),
         );
 
         assert_eq!(
@@ -5843,7 +5891,7 @@ mod tests {
             &current,
             &saved_attrs,
             None,
-            Some(&config.schema),
+            Some(config.schema.as_schema()),
             comparison.context(),
         );
         assert!(
@@ -5877,9 +5925,9 @@ mod tests {
 
         let attributes = map_aws_props_to_attributes(
             &props,
-            config.schema.attributes(),
+            config.schema.as_schema().attributes(),
             "cloudfront.Function",
-            config.schema.defs(),
+            config.schema.as_schema().defs(),
         );
         assert!(
             !attributes.contains_key("auto_publish"),
@@ -5923,14 +5971,7 @@ mod tests {
         )]))
         .expect("AutoPublish should encode as persisted provider state");
         let mut registry = SchemaRegistry::new();
-        registry.insert(
-            "awscc",
-            config
-                .schema
-                .clone()
-                .validate()
-                .expect("cloudfront.Function schema must be valid"),
-        );
+        registry.insert("awscc", config.schema.clone());
         let saved_attrs = RawSavedAttrs::from_persisted(
             HashMap::from([(desired.id.clone(), persisted)]),
             HashMap::new(),
@@ -5954,6 +5995,7 @@ mod tests {
         assert!(
             config
                 .schema
+                .as_schema()
                 .attributes()
                 .get("auto_publish")
                 .expect("AutoPublish schema should exist")
@@ -5973,7 +6015,7 @@ mod tests {
             &current,
             &saved_attrs,
             None,
-            Some(&config.schema),
+            Some(config.schema.as_schema()),
             comparison.context(),
         );
         assert!(
@@ -6026,7 +6068,7 @@ mod tests {
             &current,
             &saved_attrs,
             None,
-            Some(&config.schema),
+            Some(config.schema.as_schema()),
             comparison.context(),
         );
         assert!(
@@ -6057,7 +6099,7 @@ mod tests {
 
         let result = map_aws_props_to_attributes(
             &props,
-            &attrs,
+            attrs.as_schema().attributes(),
             "iam.Role",
             &std::collections::BTreeMap::new(),
         );
@@ -6082,7 +6124,7 @@ mod tests {
 
         let result = map_aws_props_to_attributes(
             &props,
-            &attrs,
+            attrs.as_schema().attributes(),
             "some.Resource",
             &std::collections::BTreeMap::new(),
         );
@@ -6110,7 +6152,7 @@ mod tests {
 
         let result = map_aws_props_to_attributes(
             &props,
-            &attrs,
+            attrs.as_schema().attributes(),
             "some.Resource",
             &std::collections::BTreeMap::new(),
         );
@@ -6135,7 +6177,7 @@ mod tests {
 
         let result = map_aws_props_to_attributes(
             &props,
-            &attrs,
+            attrs.as_schema().attributes(),
             "some.Resource",
             &std::collections::BTreeMap::new(),
         );
@@ -6161,7 +6203,7 @@ mod tests {
 
         let result = map_aws_props_to_attributes(
             &props,
-            &attrs,
+            attrs.as_schema().attributes(),
             "iam.Role",
             &std::collections::BTreeMap::new(),
         );
@@ -6189,7 +6231,7 @@ mod tests {
 
         let result = map_aws_props_to_attributes(
             &props,
-            &attrs,
+            attrs.as_schema().attributes(),
             "some.Resource",
             &std::collections::BTreeMap::new(),
         );

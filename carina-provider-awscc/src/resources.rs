@@ -56,7 +56,7 @@ mod tests {
     #[test]
     fn generated_tags_metadata_matches_dsl_tags_attribute() {
         for config in configs() {
-            let tags_attribute = config.schema.attributes().get("tags");
+            let tags_attribute = config.schema.as_schema().attributes().get("tags");
             assert_eq!(
                 config.tags.is_some(),
                 tags_attribute.is_some(),
@@ -82,6 +82,7 @@ mod tests {
 
         assert_eq!(
             ipam.schema
+                .as_schema()
                 .operation_config()
                 .unwrap()
                 .budget(OperationKind::Delete),
@@ -90,6 +91,7 @@ mod tests {
         assert_eq!(
             ipam_pool
                 .schema
+                .as_schema()
                 .operation_config()
                 .unwrap()
                 .budget(OperationKind::Delete),
@@ -100,9 +102,19 @@ mod tests {
     #[test]
     fn test_schema_config_provider_name() {
         let vpc_config = get_config("ec2.Vpc").unwrap();
-        let cidr_attr = vpc_config.schema.attributes().get("cidr_block").unwrap();
+        let cidr_attr = vpc_config
+            .schema
+            .as_schema()
+            .attributes()
+            .get("cidr_block")
+            .unwrap();
         assert_eq!(cidr_attr.provider_name(), Some("CidrBlock"));
-        let vpc_id_attr = vpc_config.schema.attributes().get("vpc_id").unwrap();
+        let vpc_id_attr = vpc_config
+            .schema
+            .as_schema()
+            .attributes()
+            .get("vpc_id")
+            .unwrap();
         assert_eq!(vpc_id_attr.provider_name(), Some("VpcId"));
     }
 
@@ -111,7 +123,9 @@ mod tests {
     /// convert `= [{...}]` syntax into block syntax.
     #[test]
     fn all_list_struct_attributes_have_block_name() {
-        use carina_core::schema::{AttributeSchema, AttributeType, RawShape, StructField};
+        use carina_core::schema::{
+            CompiledAttributeSchema, CompiledAttributeType, CompiledStructField, RawShape,
+        };
 
         /// Collect missing block_names from an AttributeType, recursing into Structs.
         /// Uses `raw_shape()` (Ref-preserving) plus an explicit `seen` set to
@@ -119,10 +133,10 @@ mod tests {
         /// would auto-resolve Ref and infinite-loop into a stack overflow on a
         /// self-referential def.
         fn check_type(
-            attr_type: &AttributeType,
+            attr_type: &CompiledAttributeType,
             path: &str,
             missing: &mut Vec<String>,
-            defs: &std::collections::BTreeMap<String, AttributeType>,
+            defs: &std::collections::BTreeMap<String, CompiledAttributeType>,
             seen: &mut std::collections::HashSet<String>,
         ) {
             match attr_type.raw_shape() {
@@ -155,10 +169,10 @@ mod tests {
         /// `is_list_of_struct` peels a single Ref hop on the inner so a
         /// `List<Ref(Foo)>` whose `Foo` is a Struct still triggers the check.
         fn check_field(
-            field: &StructField,
+            field: &CompiledStructField,
             parent_path: &str,
             missing: &mut Vec<String>,
-            defs: &std::collections::BTreeMap<String, AttributeType>,
+            defs: &std::collections::BTreeMap<String, CompiledAttributeType>,
             seen: &mut std::collections::HashSet<String>,
         ) {
             let field_path = format!("{}.{}", parent_path, field.name());
@@ -171,10 +185,10 @@ mod tests {
 
         /// Check a top-level AttributeSchema: if it is List<Struct>, it must have block_name.
         fn check_attr(
-            attr: &AttributeSchema,
+            attr: &CompiledAttributeSchema,
             resource_type: &str,
             missing: &mut Vec<String>,
-            defs: &std::collections::BTreeMap<String, AttributeType>,
+            defs: &std::collections::BTreeMap<String, CompiledAttributeType>,
         ) {
             let path = format!("{}.{}", resource_type, attr.name());
             if is_list_of_struct(attr.attr_type(), defs) && attr.block_name().is_none() {
@@ -190,8 +204,8 @@ mod tests {
         /// pre-carina#3349 walker that matched `inner.as_ref()` directly
         /// against `AttributeType::Struct`.
         fn is_list_of_struct(
-            at: &AttributeType,
-            defs: &std::collections::BTreeMap<String, AttributeType>,
+            at: &CompiledAttributeType,
+            defs: &std::collections::BTreeMap<String, CompiledAttributeType>,
         ) -> bool {
             let peeled = match at.raw_shape() {
                 RawShape::Ref(name) => match defs.get(name) {
@@ -221,9 +235,14 @@ mod tests {
 
         let mut missing = Vec::new();
         for config in configs() {
-            let resource_type = config.schema.resource_type();
-            for attr in config.schema.attributes().values() {
-                check_attr(attr, resource_type, &mut missing, config.schema.defs());
+            let resource_type = config.schema.as_schema().resource_type();
+            for attr in config.schema.as_schema().attributes().values() {
+                check_attr(
+                    attr,
+                    resource_type,
+                    &mut missing,
+                    config.schema.as_schema().defs(),
+                );
             }
         }
 
@@ -260,21 +279,14 @@ mod tests {
             });
 
         let config = get_config("ec2.VpcGatewayAttachment").unwrap();
-        let [group] = config.schema.field_groups() else {
+        let [group] = config.schema.as_schema().field_groups() else {
             panic!("gateway alternatives must have exactly one field group")
         };
         assert_eq!(group.kind(), FieldGroupKind::ExactlyOne);
         assert_eq!(group.fields(), ["internet_gateway_id", "vpn_gateway_id"]);
 
         let mut registry = SchemaRegistry::new();
-        registry.insert(
-            "awscc",
-            config
-                .schema
-                .clone()
-                .validate()
-                .expect("gateway attachment schema must pass admission"),
-        );
+        registry.insert("awscc", config.schema.clone());
         registry
             .get("awscc", "ec2.VpcGatewayAttachment", SchemaKind::Resource)
             .expect("gateway attachment schema must be registered")

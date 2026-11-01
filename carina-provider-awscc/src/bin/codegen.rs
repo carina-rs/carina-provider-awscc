@@ -4817,7 +4817,7 @@ pub fn {}() -> AwsccSchemaConfig {{
         exclusive_groups: {},
         tags: {},
         await_on_read_back: {},
-        schema,
+        schema: schema.validate().expect("generated schema must pass admission"),
     }}
 }}
 "#,
@@ -6065,7 +6065,7 @@ struct StringConstraints<'a> {
 
 /// The single CFN-to-emitted-pattern seam, shared by Rust and Markdown.
 /// Never strip unsupported regex syntax: preserve its constraint explicitly
-/// and compile the result with this crate's regex dependency before emission.
+/// and compile the result with Carina's schema-pattern dialect before emission.
 fn string_constraints<'a>(
     prop: &'a CfnProperty,
     cfn_type: &str,
@@ -6103,7 +6103,7 @@ fn string_constraints<'a>(
         });
     }
     if let Some(pattern) = constraints.pattern {
-        Regex::new(pattern).unwrap_or_else(|error| {
+        carina_core::schema::CompiledPattern::try_new(pattern).unwrap_or_else(|error| {
             panic!("Invalid string pattern for {cfn_type}.{property_path}: {error}")
         });
     }
@@ -8495,7 +8495,8 @@ mod tests {
     fn emitted_string_accepts(code: &str, value: &str) -> bool {
         let patterns = emitted_patterns(code);
         assert_eq!(patterns.len(), 1, "constraint disappeared: {code}");
-        let pattern = Regex::new(&patterns[0]).expect("emitted pattern must compile");
+        let pattern = carina_core::schema::CompiledPattern::try_new(&patterns[0])
+            .expect("emitted pattern must compile");
         let bounds = Regex::new(r"Some\(\((None|Some\(\d+\)), (None|Some\(\d+\))\)\)").unwrap();
         let length = value.chars().count() as u64;
         let within_length = bounds.captures(code).is_none_or(|captures| {
@@ -8580,6 +8581,28 @@ mod tests {
             );
             assert!(message.contains("regex parse error"), "{message}");
         }
+    }
+
+    #[test]
+    fn test_codegen_regex_patterns_use_schema_dialect() {
+        let schema = empty_schema("AWS::Test::Resource");
+        for source in [r"(?u)^x$", r"(?i)^\w+$"] {
+            let prop = def(Some("string"), None, vec![], None, None, Some(source));
+            let panic =
+                std::panic::catch_unwind(|| pattern_type_code(&schema, None, "UserValue", &prop))
+                    .expect_err("codegen must reject patterns outside the schema dialect");
+            let message = panic.downcast_ref::<String>().unwrap();
+            assert!(
+                message.contains("AWS::Test::Resource.UserValue"),
+                "{message}"
+            );
+        }
+
+        let prop = def(Some("string"), None, vec![], None, None, Some(r"^\w+\d$"));
+        let code = pattern_type_code(&schema, None, "UserValue", &prop);
+        assert!(emitted_string_accepts(&code, "user1"));
+        assert!(!emitted_string_accepts(&code, "café1"));
+        assert!(!emitted_string_accepts(&code, "user١"));
     }
 
     #[test]
@@ -15658,7 +15681,7 @@ mod tests {
     }
 
     #[test]
-    fn review_regression_known_service_arn_requires_a_catalog_row() {
+    fn known_service_arn_requires_a_catalog_row() {
         let type_name = "AWS::EC2::NewCataloglessResource";
         let schema = CfnSchema {
             type_name: type_name.to_string(),
@@ -15697,7 +15720,7 @@ mod tests {
     }
 
     #[test]
-    fn review_regression_catalog_int_enum_rejects_mismatched_values() {
+    fn catalog_int_enum_rejects_mismatched_values() {
         let mismatch = std::panic::catch_unwind(|| {
             int_enum_type("AWS::EC2::FlowLog", "MaxAggregationInterval", &[60, 61])
         });
@@ -15708,7 +15731,7 @@ mod tests {
     }
 
     #[test]
-    fn review_regression_declarative_constraints_emit_no_dead_helpers() {
+    fn declarative_constraints_emit_no_dead_helpers() {
         let schema = CfnSchema {
             type_name: "AWS::Test::Resource".to_string(),
             description: None,

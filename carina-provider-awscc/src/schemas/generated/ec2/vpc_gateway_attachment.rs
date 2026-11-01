@@ -65,7 +65,7 @@ pub fn ec2_vpc_gateway_attachment_config() -> AwsccSchemaConfig {
         exclusive_groups: &[],
         tags: None,
         await_on_read_back: vec![],
-        schema,
+        schema: schema.validate().expect("generated schema must pass admission"),
     }
 }
 

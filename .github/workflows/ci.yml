@@ -17,8 +17,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo check
@@ -28,8 +26,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-wasip2
@@ -44,8 +40,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-wasip2
@@ -67,8 +61,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -133,8 +125,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
@@ -157,8 +147,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
@@ -197,8 +185,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-wasip2

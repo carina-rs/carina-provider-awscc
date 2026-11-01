@@ -27,13 +27,14 @@ use carina_core::provider::{
 };
 use carina_core::resource::{ConcreteValue, Directives, Resource, ResourceId, State, Value};
 use carina_core::schema::SchemaRegistry;
+use carina_plugin_sdk::PhasedToken;
 use carina_provider_awscc::provider::{
     AwsccProviderConfig, CcCreateAttempt, CcCreatePoll, CcCreateResume, CcIssuedCreate,
     CcPollAttempt, CcResumeAttempt, CcResumedCreate, NotAppliedCreate,
 };
 use carina_provider_awscc::{
-    AwsccNormalizer, AwsccProvider, BoundedSdkConfig, CcCreateToken, CcDeleteToken, CcRequestPhase,
-    CcUpdateToken, InFlightCreate, RequestToken,
+    AwsccNormalizer, AwsccProvider, BoundedSdkConfig, CcCreateOperation, CcCreateToken,
+    CcDeleteToken, CcRequestPhase, CcUpdateToken, InFlightCreate, RequestToken,
 };
 use carina_provider_protocol::{OperationStep, PendingPhase, PollFinality, PollRequest};
 use indexmap::IndexMap;
@@ -474,9 +475,9 @@ impl CcCreateAttempt for TestCreateAttempt {
         TestCreateVerdict::Untracked(Box::new(failure.into_error()))
     }
 
-    fn preserve(self, token: CcCreateToken, error: ProviderError) -> Self::Verdict {
+    fn preserve(self, token: CcCreateOperation, error: ProviderError) -> Self::Verdict {
         TestCreateVerdict::InFlight {
-            token,
+            token: token.into(),
             identifier: None,
             error: Box::new(error),
         }
@@ -488,13 +489,13 @@ impl CcCreateAttempt for TestCreateAttempt {
 
     fn pending(
         self,
-        token: CcCreateToken,
+        token: CcCreateOperation,
         _sent: Sent,
         poll_after_secs: u32,
     ) -> Result<Self::Step, Self::Verdict> {
         let token = token.with_poll_after_secs(poll_after_secs);
         Ok(TestCreateStep::Pending {
-            token,
+            token: token.into(),
             poll_after_secs,
             issued: None,
         })
@@ -510,10 +511,10 @@ impl CcPollAttempt for TestCreateAttempt {
         TestCreateVerdict::Untracked(Box::new(failure.into_error()))
     }
 
-    fn preserve(self, token: CcCreateToken, failure: InFlightCreate) -> Self::Verdict {
+    fn preserve(self, token: CcCreateOperation, failure: InFlightCreate) -> Self::Verdict {
         let error = failure.into_error();
         TestCreateVerdict::InFlight {
-            token,
+            token: token.into(),
             identifier: None,
             error: Box::new(error),
         }
@@ -525,12 +526,12 @@ impl CcPollAttempt for TestCreateAttempt {
 
     fn pending(
         self,
-        token: CcCreateToken,
+        token: CcCreateOperation,
         poll_after_secs: u32,
     ) -> Result<Self::Step, Self::Verdict> {
         let token = token.with_poll_after_secs(poll_after_secs);
         Ok(TestCreateStep::Pending {
-            token,
+            token: token.into(),
             poll_after_secs,
             issued: None,
         })
@@ -596,18 +597,6 @@ impl CcIssuedCreate for TestIssuedCreate {
         }
     }
 
-    fn pending_read_back(
-        self,
-        continuation: carina_provider_awscc::provider::read_back::ReadBackContinuation,
-        poll_after_secs: u32,
-    ) -> Result<Self::Step, Self::Verdict> {
-        Ok(TestCreateStep::Pending {
-            token: CcCreateToken::ReadBack(continuation),
-            poll_after_secs,
-            issued: Some(self.identifier),
-        })
-    }
-
     fn pending(
         self,
         token: CcCreateToken,
@@ -632,9 +621,9 @@ impl CcResumeAttempt for TestCreateAttempt {
         TestCreateVerdict::Untracked(Box::new(failure.into_error()))
     }
 
-    fn preserve(self, token: CcCreateToken, error: ProviderError) -> Self::Verdict {
+    fn preserve(self, token: CcCreateOperation, error: ProviderError) -> Self::Verdict {
         TestCreateVerdict::InFlight {
-            token,
+            token: token.into(),
             identifier: None,
             error: Box::new(error),
         }
@@ -646,12 +635,12 @@ impl CcResumeAttempt for TestCreateAttempt {
 
     fn pending(
         self,
-        token: CcCreateToken,
+        token: CcCreateOperation,
         poll_after_secs: u32,
     ) -> Result<Self::Step, Self::Verdict> {
         let token = token.with_poll_after_secs(poll_after_secs);
         Ok(TestCreateStep::Pending {
-            token,
+            token: token.into(),
             poll_after_secs,
             issued: None,
         })
@@ -716,18 +705,6 @@ impl CcResumedCreate for TestIssuedCreate {
             identifier: Some(self.identifier),
             error: Box::new(error),
         }
-    }
-
-    fn pending_read_back(
-        self,
-        continuation: carina_provider_awscc::provider::read_back::ReadBackContinuation,
-        poll_after_secs: u32,
-    ) -> Result<Self::Step, Self::Verdict> {
-        Ok(TestCreateStep::Pending {
-            token: CcCreateToken::ReadBack(continuation),
-            poll_after_secs,
-            issued: Some(self.identifier),
-        })
     }
 
     fn pending(
@@ -1063,22 +1040,14 @@ fn expect_create_pending(step: TestCreateStep) -> (CcCreateToken, u32) {
 }
 
 fn test_create_poll(token: &CcCreateToken) -> CcCreatePoll<TestCreateAttempt, TestIssuedCreate> {
-    match token {
-        CcCreateToken::InFlight(create) if create.identifier().is_some() => {
-            CcCreatePoll::Issued(TestIssuedCreate {
-                identifier: common::applied_identifier(
-                    create
-                        .identifier()
-                        .expect("guard requires an in-flight identifier"),
-                ),
-            })
-        }
-        CcCreateToken::ReadBack(continuation) => CcCreatePoll::Issued(TestIssuedCreate {
-            identifier: continuation.identifier().clone(),
-        }),
-        CcCreateToken::NotIssued(_)
-        | CcCreateToken::Unconfirmed(_)
-        | CcCreateToken::InFlight(_) => CcCreatePoll::Unissued(TestCreateAttempt),
+    match token.identifier() {
+        Some(identifier) => CcCreatePoll::Issued(
+            TestIssuedCreate {
+                identifier: common::applied_identifier(identifier),
+            },
+            token.clone(),
+        ),
+        None => CcCreatePoll::Unissued(TestCreateAttempt, token.clone().into_operation().unwrap()),
     }
 }
 
@@ -1103,7 +1072,6 @@ async fn poll_test_create(
     provider
         .poll_create_step(
             resource,
-            token,
             poll,
             carina_provider_protocol::PollRequest {
                 finality: carina_provider_protocol::PollFinality::Continue,
@@ -1308,6 +1276,7 @@ async fn read_back_final_attempt_returns_partial_with_exact_missing_attributes()
             carina_provider_awscc::schemas::generated::get_config_by_type("ec2.Vpc")
                 .unwrap()
                 .schema
+                .as_schema()
                 .attributes()
                 .keys()
                 .cloned()
@@ -1324,6 +1293,7 @@ async fn read_back_final_attempt_returns_partial_with_exact_missing_attributes()
             carina_provider_awscc::schemas::generated::get_config_by_type("ec2.Vpc")
                 .unwrap()
                 .schema
+                .as_schema()
                 .attributes()
                 .keys()
                 .cloned()
@@ -1355,11 +1325,11 @@ async fn read_back_final_attempt_returns_partial_with_exact_missing_attributes()
                     let step = provider
                         .poll_create_step(
                             &resource,
-                            token,
                             CcCreatePoll::<TestCreateAttempt, TestIssuedCreate>::Issued(
                                 TestIssuedCreate {
                                     identifier: identifier.clone(),
                                 },
+                                token,
                             ),
                             final_poll,
                         )
@@ -1386,11 +1356,11 @@ async fn read_back_final_attempt_returns_partial_with_exact_missing_attributes()
                     let step = provider
                         .resume_create_step(
                             &resource,
-                            token,
                             CcCreateResume::<TestCreateAttempt, TestIssuedCreate>::Issued(
                                 TestIssuedCreate {
                                     identifier: identifier.clone(),
                                 },
+                                token,
                             ),
                             final_poll,
                         )
@@ -1457,10 +1427,12 @@ async fn read_back_complete_final_read_succeeds_without_waiting_for_undeclared_o
     let step = provider
         .poll_create_step(
             &resource,
-            token,
-            CcCreatePoll::<TestCreateAttempt, TestIssuedCreate>::Issued(TestIssuedCreate {
-                identifier: vpc_identifier(),
-            }),
+            CcCreatePoll::<TestCreateAttempt, TestIssuedCreate>::Issued(
+                TestIssuedCreate {
+                    identifier: vpc_identifier(),
+                },
+                token,
+            ),
             PollRequest {
                 finality: PollFinality::FinalAttempt,
             },
@@ -1494,11 +1466,11 @@ async fn read_back_finality_applies_when_operation_first_reaches_success() {
                 let step = provider
                     .poll_create_step(
                         &vpc_resource(),
-                        in_flight_create_token(Some(VPC_ID)),
                         CcCreatePoll::<TestCreateAttempt, TestIssuedCreate>::Issued(
                             TestIssuedCreate {
                                 identifier: vpc_identifier(),
                             },
+                            in_flight_create_token(Some(VPC_ID)),
                         ),
                         final_poll,
                     )
@@ -1510,11 +1482,11 @@ async fn read_back_finality_applies_when_operation_first_reaches_success() {
                 let step = provider
                     .resume_create_step(
                         &vpc_resource(),
-                        in_flight_create_token(Some(VPC_ID)),
                         CcCreateResume::<TestCreateAttempt, TestIssuedCreate>::Issued(
                             TestIssuedCreate {
                                 identifier: vpc_identifier(),
                             },
+                            in_flight_create_token(Some(VPC_ID)),
                         ),
                         final_poll,
                     )
@@ -1558,10 +1530,12 @@ async fn read_back_rejects_mismatched_resource_and_identifier_before_reading() {
         let failure = provider
             .poll_create_step(
                 &vpc_resource(),
-                token,
-                CcCreatePoll::<TestCreateAttempt, TestIssuedCreate>::Issued(TestIssuedCreate {
-                    identifier: vpc_identifier(),
-                }),
+                CcCreatePoll::<TestCreateAttempt, TestIssuedCreate>::Issued(
+                    TestIssuedCreate {
+                        identifier: vpc_identifier(),
+                    },
+                    token,
+                ),
                 PollRequest {
                     finality: PollFinality::Continue,
                 },
@@ -1663,6 +1637,7 @@ async fn native_resume_read_back_uses_schema_budget_without_reissuing_create() {
     let expected: Vec<_> = carina_provider_awscc::schemas::generated::get_config_by_type("ec2.Vpc")
         .unwrap()
         .schema
+        .as_schema()
         .attributes()
         .keys()
         .cloned()
@@ -1787,8 +1762,7 @@ async fn accepted_create_without_request_token_becomes_unconfirmed_and_resends_s
         let resent = provider
             .poll_create_step(
                 resource.as_resource(),
-                token,
-                CcCreatePoll::Unissued(TestCreateAttempt),
+                CcCreatePoll::Unissued(TestCreateAttempt, (token).into_operation().unwrap()),
                 carina_provider_protocol::PollRequest {
                     finality: carina_provider_protocol::PollFinality::Continue,
                 },
@@ -1798,7 +1772,7 @@ async fn accepted_create_without_request_token_becomes_unconfirmed_and_resends_s
         let (resent_token, resent_poll_after_secs) = expect_create_pending(resent);
         assert!(matches!(
             resent_token,
-            CcCreateToken::InFlight(ref create)
+            CcCreateToken::Operation(CcCreateOperation::InFlight(ref create))
                 if create.request() == &RequestToken::from("create-after-missing-token")
                     && create.attempt() == 0
                     && create.identifier().is_none()
@@ -1835,8 +1809,7 @@ async fn unconfirmed_create_without_request_token_uses_resend_backoff() {
     let resent = provider
         .poll_create_step(
             resource.as_resource(),
-            token,
-            CcCreatePoll::Unissued(TestCreateAttempt),
+            CcCreatePoll::Unissued(TestCreateAttempt, (token).into_operation().unwrap()),
             carina_provider_protocol::PollRequest {
                 finality: carina_provider_protocol::PollFinality::Continue,
             },
@@ -1919,8 +1892,7 @@ async fn unconfirmed_create_rejection_from_poll_preserves_in_flight_token() {
     let failure = provider
         .poll_create_step(
             resource.as_resource(),
-            token.clone(),
-            CcCreatePoll::Unissued(poll),
+            CcCreatePoll::Unissued(poll, (token.clone()).into_operation().unwrap()),
             carina_provider_protocol::PollRequest {
                 finality: carina_provider_protocol::PollFinality::Continue,
             },
@@ -1960,8 +1932,7 @@ async fn unissued_poll_unconfirmed_rejection_is_in_flight_with_same_token() {
     let failure = provider
         .poll_create_step(
             resource.as_resource(),
-            token.clone(),
-            CcCreatePoll::Unissued(TestCreateAttempt),
+            CcCreatePoll::Unissued(TestCreateAttempt, (token.clone()).into_operation().unwrap()),
             carina_provider_protocol::PollRequest {
                 finality: carina_provider_protocol::PollFinality::Continue,
             },
@@ -2083,10 +2054,12 @@ async fn issued_poll_unconfirmed_client_token_conflict_retries_with_same_token()
     let step = provider
         .poll_create_step::<TestCreateAttempt>(
             resource.as_resource(),
-            token,
-            CcCreatePoll::Issued(TestIssuedCreate {
-                identifier: issued_identifier.clone(),
-            }),
+            CcCreatePoll::Issued(
+                TestIssuedCreate {
+                    identifier: issued_identifier.clone(),
+                },
+                token,
+            ),
             PollRequest {
                 finality: PollFinality::Continue,
             },
@@ -2131,10 +2104,12 @@ async fn issued_poll_unconfirmed_non_retryable_rejection_preserves_create() {
     let failure = provider
         .poll_create_step::<TestCreateAttempt>(
             resource.as_resource(),
-            token.clone(),
-            CcCreatePoll::Issued(TestIssuedCreate {
-                identifier: issued_identifier.clone(),
-            }),
+            CcCreatePoll::Issued(
+                TestIssuedCreate {
+                    identifier: issued_identifier.clone(),
+                },
+                token.clone(),
+            ),
             PollRequest {
                 finality: PollFinality::Continue,
             },
@@ -2232,7 +2207,6 @@ async fn resume_unknown_resource_type_preserves_unissued_and_issued_witnesses() 
                 "attempt": 0,
                 "client_token": TEST_CLIENT_TOKEN,
             })),
-            CcCreateResume::Unissued(TestCreateAttempt),
             None,
         ),
         (
@@ -2243,18 +2217,25 @@ async fn resume_unknown_resource_type_preserves_unissued_and_issued_witnesses() 
                 "attempt": 0,
                 "identifier": issued_identifier.as_str(),
             })),
-            CcCreateResume::Issued(TestIssuedCreate {
-                identifier: issued_identifier.clone(),
-            }),
             Some(issued_identifier.clone()),
         ),
     ];
 
-    for (label, token, resume, expected_identifier) in cases {
+    for (label, token, expected_identifier) in cases {
+        let resume = match &expected_identifier {
+            Some(identifier) => CcCreateResume::Issued(
+                TestIssuedCreate {
+                    identifier: identifier.clone(),
+                },
+                token.clone(),
+            ),
+            None => {
+                CcCreateResume::Unissued(TestCreateAttempt, token.clone().into_operation().unwrap())
+            }
+        };
         let failure = match provider
             .resume_create_step(
                 &resource,
-                token.clone(),
                 resume,
                 carina_provider_protocol::PollRequest {
                     finality: carina_provider_protocol::PollFinality::Continue,
@@ -2319,7 +2300,7 @@ async fn progress_identifier_transitions_pending_create_to_issued() {
         .await
         .expect("in-progress status with an identifier remains pending");
     let TestCreateStep::Pending {
-        token: CcCreateToken::InFlight(create),
+        token: CcCreateToken::Operation(CcCreateOperation::InFlight(create)),
         issued: Some(issued_identifier),
         ..
     } = next
@@ -2374,7 +2355,7 @@ async fn accepted_in_progress_create_over_budget_preserves_token_and_identifier(
         .expect("persisted CloudControl token should decode");
     assert!(matches!(
         token,
-        CcCreateToken::InFlight(create)
+        CcCreateToken::Operation(CcCreateOperation::InFlight(create))
             if create.request() == &RequestToken::from("create-budget")
                 && create.attempt() == 0
                 && create.identifier() == Some(VPC_ID)
@@ -2437,10 +2418,12 @@ async fn resume_in_flight_polls_status_before_any_read() {
     let step = provider
         .resume_create_step(
             resource.as_resource(),
-            token.clone(),
-            CcCreateResume::<TestCreateAttempt, TestIssuedCreate>::Issued(TestIssuedCreate {
-                identifier: vpc_identifier(),
-            }),
+            CcCreateResume::<TestCreateAttempt, TestIssuedCreate>::Issued(
+                TestIssuedCreate {
+                    identifier: vpc_identifier(),
+                },
+                token.clone(),
+            ),
             carina_provider_protocol::PollRequest {
                 finality: carina_provider_protocol::PollFinality::Continue,
             },
@@ -2483,10 +2466,12 @@ async fn resume_success_then_found_completes_after_status_poll() {
     let step = provider
         .resume_create_step(
             resource.as_resource(),
-            in_flight_create_token(Some(VPC_ID)),
-            CcCreateResume::<TestCreateAttempt, TestIssuedCreate>::Issued(TestIssuedCreate {
-                identifier: vpc_identifier(),
-            }),
+            CcCreateResume::<TestCreateAttempt, TestIssuedCreate>::Issued(
+                TestIssuedCreate {
+                    identifier: vpc_identifier(),
+                },
+                in_flight_create_token(Some(VPC_ID)),
+            ),
             carina_provider_protocol::PollRequest {
                 finality: carina_provider_protocol::PollFinality::Continue,
             },
@@ -2524,10 +2509,12 @@ async fn resume_success_then_not_found_enters_read_back() {
     let step = provider
         .resume_create_step(
             resource.as_resource(),
-            in_flight_create_token(Some(VPC_ID)),
-            CcCreateResume::<TestCreateAttempt, TestIssuedCreate>::Issued(TestIssuedCreate {
-                identifier: vpc_identifier(),
-            }),
+            CcCreateResume::<TestCreateAttempt, TestIssuedCreate>::Issued(
+                TestIssuedCreate {
+                    identifier: vpc_identifier(),
+                },
+                in_flight_create_token(Some(VPC_ID)),
+            ),
             PollRequest {
                 finality: PollFinality::Continue,
             },
@@ -2565,10 +2552,12 @@ async fn resume_failed_with_identifier_returns_created_failure_with_observation(
     let failure = provider
         .resume_create_step(
             resource.as_resource(),
-            in_flight_create_token(Some(VPC_ID)),
-            CcCreateResume::<TestCreateAttempt, TestIssuedCreate>::Issued(TestIssuedCreate {
-                identifier: vpc_identifier(),
-            }),
+            CcCreateResume::<TestCreateAttempt, TestIssuedCreate>::Issued(
+                TestIssuedCreate {
+                    identifier: vpc_identifier(),
+                },
+                in_flight_create_token(Some(VPC_ID)),
+            ),
             carina_provider_protocol::PollRequest {
                 finality: carina_provider_protocol::PollFinality::Continue,
             },
@@ -2616,10 +2605,12 @@ async fn resume_expired_token_with_identifier_and_not_found_is_discarded() {
     let failure = provider
         .resume_create_step(
             resource.as_resource(),
-            token,
-            CcCreateResume::<TestCreateAttempt, TestIssuedCreate>::Issued(TestIssuedCreate {
-                identifier: vpc_identifier(),
-            }),
+            CcCreateResume::<TestCreateAttempt, TestIssuedCreate>::Issued(
+                TestIssuedCreate {
+                    identifier: vpc_identifier(),
+                },
+                token,
+            ),
             carina_provider_protocol::PollRequest {
                 finality: carina_provider_protocol::PollFinality::Continue,
             },
@@ -2721,8 +2712,10 @@ async fn resume_status_sdk_error_without_identifier_stays_in_flight_with_backoff
     let failure = provider
         .resume_create_step(
             resource.as_resource(),
-            token.clone(),
-            CcCreateResume::<TestCreateAttempt, TestIssuedCreate>::Unissued(TestCreateAttempt),
+            CcCreateResume::<TestCreateAttempt, TestIssuedCreate>::Unissued(
+                TestCreateAttempt,
+                (token.clone()).into_operation().unwrap(),
+            ),
             carina_provider_protocol::PollRequest {
                 finality: carina_provider_protocol::PollFinality::Continue,
             },
@@ -2757,12 +2750,16 @@ async fn resume_not_issued_uses_resend_attempt() {
     let step = provider
         .resume_create_step(
             resource.as_resource(),
-            create_token(json!({
-                "phase": "not_issued",
-                "attempt": 1,
-                "client_token": TEST_CLIENT_TOKEN,
-            })),
-            CcCreateResume::<TestCreateAttempt, TestIssuedCreate>::Unissued(TestCreateAttempt),
+            CcCreateResume::<TestCreateAttempt, TestIssuedCreate>::Unissued(
+                TestCreateAttempt,
+                (create_token(json!({
+                    "phase": "not_issued",
+                    "attempt": 1,
+                    "client_token": TEST_CLIENT_TOKEN,
+                })))
+                .into_operation()
+                .unwrap(),
+            ),
             carina_provider_protocol::PollRequest {
                 finality: carina_provider_protocol::PollFinality::Continue,
             },
@@ -2771,7 +2768,7 @@ async fn resume_not_issued_uses_resend_attempt() {
         .expect("NotIssued resume must resend the desired state");
 
     let TestCreateStep::Pending {
-        token: CcCreateToken::InFlight(create),
+        token: CcCreateToken::Operation(CcCreateOperation::InFlight(create)),
         issued: Some(issued),
         ..
     } = step
@@ -2808,10 +2805,12 @@ async fn resume_cancel_complete_with_identifier_reads_back_created_failure() {
     let failure = provider
         .resume_create_step(
             resource.as_resource(),
-            in_flight_create_token(Some(VPC_ID)),
-            CcCreateResume::<TestCreateAttempt, TestIssuedCreate>::Issued(TestIssuedCreate {
-                identifier: vpc_identifier(),
-            }),
+            CcCreateResume::<TestCreateAttempt, TestIssuedCreate>::Issued(
+                TestIssuedCreate {
+                    identifier: vpc_identifier(),
+                },
+                in_flight_create_token(Some(VPC_ID)),
+            ),
             carina_provider_protocol::PollRequest {
                 finality: carina_provider_protocol::PollFinality::Continue,
             },
@@ -2868,7 +2867,7 @@ async fn pending_statuses_keep_the_same_create_token_and_success_reads_back() {
     assert_eq!(delay, 1);
     assert!(matches!(
         &token,
-        CcCreateToken::InFlight(create)
+        CcCreateToken::Operation(CcCreateOperation::InFlight(create))
             if create.request() == &RequestToken::from("create-0")
                 && create.attempt() == 0
                 && create.identifier() == Some(VPC_ID)
@@ -2924,7 +2923,7 @@ async fn create_throttling_retries_with_the_same_client_token() {
     );
     assert!(matches!(
         &token,
-        CcCreateToken::NotIssued(create) if create.attempt() == 1
+        CcCreateToken::Operation(CcCreateOperation::NotIssued(create)) if create.attempt() == 1
     ));
     assert_eq!(delay, 10);
     assert_eq!(service.calls("CreateResource"), 3);
@@ -2936,7 +2935,7 @@ async fn create_throttling_retries_with_the_same_client_token() {
     );
     assert!(matches!(
         token,
-        CcCreateToken::InFlight(create)
+        CcCreateToken::Operation(CcCreateOperation::InFlight(create))
             if create.request() == &RequestToken::from("create-1")
                 && create.attempt() == 1
                 && create.identifier() == Some(VPC_ID)
@@ -2981,7 +2980,7 @@ async fn not_issued_client_token_conflict_retries_with_the_same_client_token() {
     );
     assert!(matches!(
         &token,
-        CcCreateToken::NotIssued(create) if create.attempt() == 1
+        CcCreateToken::Operation(CcCreateOperation::NotIssued(create)) if create.attempt() == 1
     ));
     assert_eq!(delay, 10);
 
@@ -2992,7 +2991,7 @@ async fn not_issued_client_token_conflict_retries_with_the_same_client_token() {
     );
     assert!(matches!(
         token,
-        CcCreateToken::InFlight(create)
+        CcCreateToken::Operation(CcCreateOperation::InFlight(create))
             if create.request() == &RequestToken::from("create-after-conflict")
                 && create.attempt() == 1
                 && create.identifier() == Some(VPC_ID)
@@ -3027,14 +3026,16 @@ async fn resume_not_issued_reuses_original_create_client_token() {
     );
     assert!(matches!(
         &token,
-        CcCreateToken::NotIssued(create) if create.attempt() == 1
+        CcCreateToken::Operation(CcCreateOperation::NotIssued(create)) if create.attempt() == 1
     ));
 
     let step = provider
         .resume_create_step(
             resource.as_resource(),
-            token,
-            CcCreateResume::<TestCreateAttempt, TestIssuedCreate>::Unissued(TestCreateAttempt),
+            CcCreateResume::<TestCreateAttempt, TestIssuedCreate>::Unissued(
+                TestCreateAttempt,
+                (token).into_operation().unwrap(),
+            ),
             carina_provider_protocol::PollRequest {
                 finality: carina_provider_protocol::PollFinality::Continue,
             },
@@ -3094,7 +3095,7 @@ async fn retryable_failed_status_reissues_with_incremented_attempt_and_backoff()
     );
     assert!(matches!(
         &token,
-        CcCreateToken::NotIssued(create) if create.attempt() == 1
+        CcCreateToken::Operation(CcCreateOperation::NotIssued(create)) if create.attempt() == 1
     ));
     assert_eq!(delay, 10);
     assert_eq!(service.calls("GetResourceRequestStatus"), 1);
@@ -3107,7 +3108,7 @@ async fn retryable_failed_status_reissues_with_incremented_attempt_and_backoff()
     );
     assert!(matches!(
         token,
-        CcCreateToken::InFlight(create)
+        CcCreateToken::Operation(CcCreateOperation::InFlight(create))
             if create.request() == &RequestToken::from("create-1")
                 && create.attempt() == 1
                 && create.identifier() == Some(VPC_ID)
@@ -3287,7 +3288,7 @@ async fn unconfirmed_resends_do_not_consume_failed_status_retry_budget() {
     assert_eq!(delay, 1);
     assert!(matches!(
         &token,
-        CcCreateToken::InFlight(create)
+        CcCreateToken::Operation(CcCreateOperation::InFlight(create))
             if create.request() == &RequestToken::from("accepted-after-resends")
                 && create.attempt() == 0
                 && create.identifier().is_none()
@@ -3300,7 +3301,7 @@ async fn unconfirmed_resends_do_not_consume_failed_status_retry_budget() {
     );
     assert!(matches!(
         token,
-        CcCreateToken::NotIssued(create) if create.attempt() == 1
+        CcCreateToken::Operation(CcCreateOperation::NotIssued(create)) if create.attempt() == 1
     ));
     assert_eq!(delay, 10);
     assert_eq!(service.calls("CreateResource"), 43);
@@ -3363,7 +3364,7 @@ async fn failed_status_retry_follows_message_not_handler_error_code() {
     );
     assert!(matches!(
         token,
-        CcCreateToken::NotIssued(create) if create.attempt() == 1
+        CcCreateToken::Operation(CcCreateOperation::NotIssued(create)) if create.attempt() == 1
     ));
     assert_eq!(delay, 10);
     assert_eq!(service.calls("CreateResource"), 0);
@@ -3992,7 +3993,7 @@ async fn retry_attempts_exhausted_preserves_the_last_sdk_error_source() {
         );
         assert!(matches!(
             &next,
-            CcCreateToken::NotIssued(create) if create.attempt() == attempt + 1
+            CcCreateToken::Operation(CcCreateOperation::NotIssued(create)) if create.attempt() == attempt + 1
         ));
         assert_eq!(delay, expected_delay);
         token = next;
@@ -5011,7 +5012,7 @@ async fn unattached_internet_gateway_goes_straight_to_delete() {
     assert_eq!(service.calls("DeleteResource"), 1);
 }
 
-fn review_read_token(resource_type: &str, identifier: &str) -> CcCreateToken {
+fn read_back_continuation_token(resource_type: &str, identifier: &str) -> CcCreateToken {
     read_back_token(
         resource_type,
         identifier,
@@ -5023,7 +5024,7 @@ fn review_read_token(resource_type: &str, identifier: &str) -> CcCreateToken {
     )
 }
 
-async fn review_poll_create(
+async fn poll_read_back_create(
     provider: &AwsccProvider,
     resource: &Resource,
     token: CcCreateToken,
@@ -5031,13 +5032,13 @@ async fn review_poll_create(
 ) -> TestCreateStep {
     let poll = test_create_poll(&token);
     provider
-        .poll_create_step(resource, token, poll, PollRequest { finality })
+        .poll_create_step(resource, poll, PollRequest { finality })
         .await
         .unwrap()
 }
 
 #[tokio::test]
-async fn review_permanent_read_errors_finish_partial_on_initial_read_and_poll() {
+async fn permanent_read_errors_finish_partial_on_initial_read_and_poll() {
     let bad_properties = Reply::Json(json!({"ResourceDescription":{"Properties":"{broken json"}}));
     for reply in [
         Reply::Error {
@@ -5063,12 +5064,12 @@ async fn review_permanent_read_errors_finish_partial_on_initial_read_and_poll() 
             .await;
             let resource = vpc_resource();
             let token = if already_pending {
-                review_read_token("ec2.Vpc", VPC_ID)
+                read_back_continuation_token("ec2.Vpc", VPC_ID)
             } else {
                 in_flight_create_token(Some(VPC_ID))
             };
             let step =
-                review_poll_create(&provider, &resource, token, PollFinality::Continue).await;
+                poll_read_back_create(&provider, &resource, token, PollFinality::Continue).await;
             let TestCreateStep::Partial {
                 identifier, reason, ..
             } = step
@@ -5093,7 +5094,8 @@ async fn review_permanent_read_errors_finish_partial_on_initial_read_and_poll() 
             .await;
             let (id, from, patch) = vpc_update();
             let token = if already_pending {
-                let CcCreateToken::ReadBack(continuation) = review_read_token("ec2.Vpc", VPC_ID)
+                let CcCreateToken::ReadBack(continuation) =
+                    read_back_continuation_token("ec2.Vpc", VPC_ID)
                 else {
                     panic!("read token")
                 };
@@ -5133,7 +5135,7 @@ async fn review_permanent_read_errors_finish_partial_on_initial_read_and_poll() 
 }
 
 #[tokio::test]
-async fn review_transient_read_errors_wait_then_complete() {
+async fn transient_read_errors_wait_then_complete() {
     for (reply, dispatch) in [
         (throttled(), false),
         (service_internal_error(), false),
@@ -5153,16 +5155,16 @@ async fn review_transient_read_errors_wait_then_complete() {
         )
         .await;
         let resource = vpc_resource();
-        let first = review_poll_create(
+        let first = poll_read_back_create(
             &provider,
             &resource,
-            review_read_token("ec2.Vpc", VPC_ID),
+            read_back_continuation_token("ec2.Vpc", VPC_ID),
             PollFinality::Continue,
         )
         .await;
         let (token, _) = expect_create_pending(first);
         assert!(matches!(
-            review_poll_create(&provider, &resource, token, PollFinality::Continue).await,
+            poll_read_back_create(&provider, &resource, token, PollFinality::Continue).await,
             TestCreateStep::Succeeded { .. }
         ));
         assert_eq!(service.calls("GetResource"), 4);
@@ -5180,7 +5182,8 @@ async fn review_transient_read_errors_wait_then_complete() {
         )
         .await;
         let (id, from, patch) = vpc_update();
-        let CcCreateToken::ReadBack(continuation) = review_read_token("ec2.Vpc", VPC_ID) else {
+        let CcCreateToken::ReadBack(continuation) = read_back_continuation_token("ec2.Vpc", VPC_ID)
+        else {
             panic!("read token")
         };
         let OperationStep::Pending {
@@ -5225,13 +5228,13 @@ async fn review_transient_read_errors_wait_then_complete() {
 }
 
 #[tokio::test]
-async fn review_final_partial_retains_create_request_attributes_after_poll() {
+async fn final_partial_retains_create_request_attributes_after_poll() {
     let (provider, _) = provider_with_script([("GetResource", vec![not_found()])]).await;
     let resource = vpc_resource();
-    let first = review_poll_create(
+    let first = poll_read_back_create(
         &provider,
         &resource,
-        review_read_token("ec2.Vpc", VPC_ID),
+        read_back_continuation_token("ec2.Vpc", VPC_ID),
         PollFinality::Continue,
     )
     .await;
@@ -5240,7 +5243,7 @@ async fn review_final_partial_retains_create_request_attributes_after_poll() {
         attributes,
         missing_attributes,
         ..
-    } = review_poll_create(&provider, &resource, token, PollFinality::FinalAttempt).await
+    } = poll_read_back_create(&provider, &resource, token, PollFinality::FinalAttempt).await
     else {
         panic!("final partial")
     };
@@ -5248,6 +5251,7 @@ async fn review_final_partial_retains_create_request_attributes_after_poll() {
     let mut expected = carina_provider_awscc::schemas::generated::get_config_by_type("ec2.Vpc")
         .unwrap()
         .schema
+        .as_schema()
         .attributes()
         .keys()
         .cloned()
@@ -5257,13 +5261,14 @@ async fn review_final_partial_retains_create_request_attributes_after_poll() {
 }
 
 #[tokio::test]
-async fn review_final_partial_retains_post_update_attributes_after_poll() {
+async fn final_partial_retains_post_update_attributes_after_poll() {
     let (provider, _) = provider_with_script([("GetResource", vec![not_found()])]).await;
     let (id, from, mut patch) = vpc_update();
     patch.ops.push(PatchOp::Remove {
         key: "cidr_block".into(),
     });
-    let CcCreateToken::ReadBack(continuation) = review_read_token("ec2.Vpc", VPC_ID) else {
+    let CcCreateToken::ReadBack(continuation) = read_back_continuation_token("ec2.Vpc", VPC_ID)
+    else {
         panic!("read token")
     };
     let OperationStep::Pending { pending, .. } = provider
@@ -5317,7 +5322,7 @@ async fn review_final_partial_retains_post_update_attributes_after_poll() {
 }
 
 #[tokio::test]
-async fn review_saved_identifier_only_token_resumes_and_rederives_missing() {
+async fn saved_identifier_only_token_resumes_and_rederives_missing() {
     let token: CcCreateToken = serde_json::from_value(
         json!({"phase":"read_back", "identifier":"review-role", "resource_type":"iam.Role"}),
     )
@@ -5335,10 +5340,12 @@ async fn review_saved_identifier_only_token_resumes_and_rederives_missing() {
     let step = provider
         .resume_create_step(
             &resource,
-            token,
-            CcCreateResume::<TestCreateAttempt, TestIssuedCreate>::Issued(TestIssuedCreate {
-                identifier: common::applied_identifier("review-role"),
-            }),
+            CcCreateResume::<TestCreateAttempt, TestIssuedCreate>::Issued(
+                TestIssuedCreate {
+                    identifier: common::applied_identifier("review-role"),
+                },
+                token,
+            ),
             PollRequest {
                 finality: PollFinality::FinalAttempt,
             },
@@ -5378,7 +5385,7 @@ async fn review_saved_identifier_only_token_resumes_and_rederives_missing() {
     assert_eq!(service.actions(), ["GetResource", "GetResource"]);
 }
 
-async fn review_update_missing_role_attribute() -> UpdateOutcome {
+async fn update_missing_role_attribute() -> UpdateOutcome {
     let role = "review-role";
     let (provider, service) = provider_with_script([
         (
@@ -5479,8 +5486,8 @@ async fn review_update_missing_role_attribute() -> UpdateOutcome {
 }
 
 #[tokio::test]
-async fn review_update_retains_handler_failure_across_polls() {
-    let outcome = review_update_missing_role_attribute().await;
+async fn update_retains_handler_failure_across_polls() {
+    let outcome = update_missing_role_attribute().await;
     let UpdateOutcomeKind::PartialSuccess { diagnostic, .. } = outcome.kind() else {
         panic!("partial")
     };
@@ -5492,11 +5499,99 @@ async fn review_update_retains_handler_failure_across_polls() {
 }
 
 #[tokio::test]
-async fn review_update_checks_patch_confirmation_when_declared_attribute_missing_at_deadline() {
-    let outcome = review_update_missing_role_attribute().await;
+async fn update_checks_patch_confirmation_when_declared_attribute_missing_at_deadline() {
+    let outcome = update_missing_role_attribute().await;
     let UpdateOutcomeKind::PartialSuccess { diagnostic, .. } = outcome.kind() else {
         panic!("partial")
     };
     assert_eq!(diagnostic.missing_attributes(), ["arn", "description"]);
     assert!(diagnostic.reason().contains("description"));
+}
+
+#[test]
+fn native_read_back_poll_transient_error_preserves_continuation() {
+    let resource = vpc_resource();
+    let token = read_back_token("ec2.Vpc", VPC_ID, &["vpc_id"]);
+    let pending = pending_create_for_token(&resource, &token);
+    let sent = pending.sent().clone();
+    let Poll::Issued(issued) = pending.into_poll() else {
+        panic!("read-back must have an issued identifier")
+    };
+    let failure = CcIssuedCreate::preserve(
+        issued,
+        token.clone(),
+        ProviderError::timeout("temporary polling failure"),
+    );
+    let CreateFailureKind::InFlight { pending, error } = failure.into_kind() else {
+        panic!("a transient read-back poll failure must keep the continuation")
+    };
+    let pending = pending.into_fresh().unwrap();
+    assert_eq!(pending.phase(), PendingPhase::ReadBack);
+    assert_eq!(pending.identifier(), Some(&vpc_identifier()));
+    assert_eq!(pending.sent(), &sent);
+    assert_eq!(pending.poll_after_secs(), 5);
+    assert_eq!(
+        pending.token().expose_for_provider_call(),
+        serde_json::to_string(&token).unwrap()
+    );
+    assert_eq!(error.variant_name(), "timeout");
+    assert_eq!(error.to_string(), "temporary polling failure");
+}
+
+#[test]
+fn phased_tokens_keep_existing_json_and_derive_pending_phase() {
+    fn check<T>(encoded: JsonValue, phase: PendingPhase)
+    where
+        T: PhasedToken
+            + serde::Serialize
+            + serde::de::DeserializeOwned
+            + Clone
+            + PartialEq
+            + std::fmt::Debug,
+    {
+        let token: T = serde_json::from_value(encoded.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&token).unwrap(), encoded);
+        assert_eq!(token.phase(), phase);
+        assert_eq!(
+            token.operation().is_some(),
+            phase == PendingPhase::Operation
+        );
+        match token.clone().into_operation() {
+            Ok(operation) => assert_eq!(T::from_operation(operation), token),
+            Err(read_back) => {
+                assert_eq!(phase, PendingPhase::ReadBack);
+                assert_eq!(read_back, token);
+            }
+        }
+        let pending = carina_plugin_sdk::Pending::new(token, 17);
+        assert_eq!(pending.phase(), phase);
+        assert_eq!(pending.poll_after_secs, 17);
+        assert_eq!(serde_json::to_value(pending.token).unwrap(), encoded);
+    }
+    for encoded in [
+        json!({"phase":"not_issued", "attempt":2, "client_token":TEST_CLIENT_TOKEN, "poll_after_secs":7}),
+        json!({"phase":"unconfirmed", "attempt":2, "resends":3, "client_token":TEST_CLIENT_TOKEN, "poll_after_secs":11}),
+        json!({"phase":"in_flight", "request":"accepted-create", "attempt":2, "poll_after_secs":13}),
+        json!({"phase":"in_flight", "request":"accepted-create", "attempt":2, "identifier":VPC_ID, "poll_after_secs":13}),
+    ] {
+        check::<CcCreateToken>(encoded, PendingPhase::Operation);
+    }
+    check::<CcCreateToken>(
+        json!({"phase":"read_back", "identifier":VPC_ID, "resource_type":"ec2.Vpc"}),
+        PendingPhase::ReadBack,
+    );
+    for continuation in [
+        json!({"phase":"not_issued", "attempt":2, "client_token":TEST_CLIENT_TOKEN}),
+        json!({"phase":"unconfirmed", "attempt":2, "resends":3, "client_token":TEST_CLIENT_TOKEN}),
+        json!({"phase":"in_flight", "request":"accepted-update", "attempt":2}),
+    ] {
+        check::<CcUpdateToken>(
+            json!({"phase":"operation", "continuation":continuation}),
+            PendingPhase::Operation,
+        );
+    }
+    check::<CcUpdateToken>(
+        json!({"phase":"read_back", "continuation":{"identifier":VPC_ID, "resource_type":"ec2.Vpc"}}),
+        PendingPhase::ReadBack,
+    );
 }

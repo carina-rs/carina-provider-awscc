@@ -56,7 +56,7 @@ pub fn cloudfront_origin_access_control_config() -> AwsccSchemaConfig {
         exclusive_groups: &[],
         tags: None,
         await_on_read_back: vec![],
-        schema,
+        schema: schema.validate().expect("generated schema must pass admission"),
     }
 }
 
