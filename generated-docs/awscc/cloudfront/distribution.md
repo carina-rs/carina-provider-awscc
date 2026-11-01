@@ -7,6 +7,63 @@ CloudFormation Type: `AWS::CloudFront::Distribution`
 
 A distribution tells CloudFront where you want content to be delivered from, and the details about how to track and manage content delivery.
 
+## Example
+
+```crn
+awscc.cloudfront.Distribution {
+  distribution_config = {
+    comment                = 'Example distribution'
+    enabled                = true
+    http_version           = aws.cloudfront.Distribution.DistributionConfig.HttpVersion.http2
+    price_class            = aws.cloudfront.Distribution.DistributionConfig.PriceClass.price_class_100
+
+    default_cache_behavior = {
+      target_origin_id       = 'example-origin'
+      viewer_protocol_policy = aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.ViewerProtocolPolicy.redirect_to_https
+      allowed_methods        = [
+        aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.AllowedMethods.get,
+        aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.AllowedMethods.head,
+      ]
+      cached_methods         = [
+        aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.CachedMethods.get,
+        aws.cloudfront.Distribution.DistributionConfig.DefaultCacheBehavior.CachedMethods.head,
+      ]
+
+      # AWS managed CachingOptimized cache policy.
+      cache_policy_id        = '658327ea-f89d-4fab-a63d-7e88639e58f6'
+    }
+
+    origin {
+      id          = 'example-origin'
+      domain_name = 'example.com'
+
+      custom_origin_config = {
+        http_port              = 80
+        https_port             = 443
+        origin_protocol_policy = aws.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginProtocolPolicy.https_only
+        origin_ssl_protocols   = [
+          aws.cloudfront.Distribution.DistributionConfig.Origin.CustomOriginConfig.OriginSslProtocols.tlsv1_2,
+        ]
+      }
+    }
+
+    restrictions           = {
+      geo_restriction = {
+        restriction_type = aws.cloudfront.Distribution.DistributionConfig.Restrictions.GeoRestriction.RestrictionType.none
+      }
+    }
+
+    viewer_certificate     = {
+      cloud_front_default_certificate = true
+    }
+  }
+
+  tags = {
+    Environment = 'example'
+  }
+}
+```
+
 ## Argument Reference
 
 ### `distribution_config`

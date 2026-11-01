@@ -9,6 +9,22 @@ You can use AWS::Organizations::Account to manage accounts in organization.
 
 This resource is protected from destruction by default because deleting it closes the AWS account. To opt out, set `directives { prevent_destroy = false }`.
 
+## Example
+
+```crn
+awscc.organizations.Account {
+  account_name = 'carina-example-workloads'
+  # Replace this placeholder with a real email address you control. Apply from
+  # the organization's management account; this creates a real member account.
+  email        = 'workloads@example.com'
+  role_name    = 'OrganizationAccountAccessRole'
+
+  tags = {
+    Environment = 'example'
+  }
+}
+```
+
 ## Argument Reference
 
 ### `account_name`

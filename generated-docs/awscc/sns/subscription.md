@@ -7,6 +7,28 @@ CloudFormation Type: `AWS::SNS::Subscription`
 
 Resource Type definition for AWS::SNS::Subscription
 
+## Example
+
+```crn
+let alerts = awscc.sns.Topic {
+  topic_name   = 'carina-example-subscription-alerts'
+  display_name = 'Carina example alerts'
+
+  tags = {
+    Environment = 'example'
+  }
+}
+
+awscc.sns.Subscription {
+  topic_arn = alerts.topic_arn
+  protocol  = 'email'
+  # Replace this placeholder with an email address you control. SNS sends a
+  # confirmation email; the subscription delivers nothing until the recipient
+  # confirms it.
+  endpoint  = 'alerts@example.com'
+}
+```
+
 ## Argument Reference
 
 ### `delivery_policy`

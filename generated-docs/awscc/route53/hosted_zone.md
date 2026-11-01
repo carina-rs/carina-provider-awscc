@@ -22,6 +22,23 @@ Creates a new public or private hosted zone. You create records in a public host
   
  For more information, see [Access Management](https://docs.aws.amazon.com/general/latest/gr/aws-arns-and-namespaces.html) in the *General Reference*.
 
+## Example
+
+```crn
+awscc.route53.HostedZone {
+  name = 'example-carina.com.'
+
+  hosted_zone_config = {
+    comment = 'Public hosted zone for example-carina.com.'
+  }
+
+  hosted_zone_tag {
+    key   = 'Environment'
+    value = 'example'
+  }
+}
+```
+
 ## Argument Reference
 
 ### `hosted_zone_config`

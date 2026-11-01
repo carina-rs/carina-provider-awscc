@@ -1,0 +1,19 @@
+# EventBridge Scheduler Schedule Group Example
+#
+# Creates a tagged group for organizing related schedules.
+# Schedules in a custom group cannot be read back by Cloud Control by name, so
+# do not place Carina-managed schedules in this group.
+
+provider awscc {
+  region = awscc.Region.ap_northeast_1
+}
+
+awscc.scheduler.ScheduleGroup {
+  # Cloud Control cannot read back schedules in a custom group by name; keep
+  # Carina-managed schedules in the default group.
+  name = 'carina-example-schedules'
+
+  tags = {
+    Environment = 'example'
+  }
+}

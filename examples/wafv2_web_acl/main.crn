@@ -1,0 +1,27 @@
+# WAFv2 Web ACL Example
+#
+# Creates a regional web ACL that allows requests by default.
+
+provider awscc {
+  region = awscc.Region.ap_northeast_1
+}
+
+awscc.wafv2.WebAcl {
+  name        = 'carina-example-web-acl'
+  description = 'Regional protection for the example workload'
+  scope       = aws.wafv2.WebAcl.Scope.regional
+
+  default_action = {
+    allow = {}
+  }
+
+  visibility_config = {
+    cloud_watch_metrics_enabled = true
+    metric_name                 = 'carina-example-web-acl'
+    sampled_requests_enabled    = true
+  }
+
+  tags = {
+    Environment = 'example'
+  }
+}
