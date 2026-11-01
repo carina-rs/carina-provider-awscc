@@ -52,6 +52,7 @@ http = "1"
 tokio = { version = "1", features = ["full"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+fancy-regex = "=0.16.2"
 carina-aws-types = { workspace = true, features = ["test-utils"] }
 carina-core = { workspace = true, features = ["test-utils"] }
 carina-plugin-host = { workspace = true }
