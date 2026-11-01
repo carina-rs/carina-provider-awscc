@@ -644,7 +644,9 @@ mod tests {
             .rootless_type("region")
             .expect("region provider config type");
         let region = region_type
-            .canonicalize_state(Value::Concrete(ConcreteValue::String("us-west-2".into())));
+            .canonicalize_state(Value::Concrete(ConcreteValue::String("us-west-2".into())))
+            .into_present()
+            .expect("non-empty test value must remain present");
         assert!(matches!(
             &region,
             Value::Concrete(ConcreteValue::CanonicalEnum(value))

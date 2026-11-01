@@ -1043,8 +1043,14 @@ mod tests {
         let enum_schema = test_rootless_type(inner.clone());
         let attr_type = AttributeType::list(inner);
         let value = Value::Concrete(ConcreteValue::List(vec![
-            enum_schema.canonicalize_state(Value::Concrete(ConcreteValue::String("GET".into()))),
-            enum_schema.canonicalize_state(Value::Concrete(ConcreteValue::String("PUT".into()))),
+            enum_schema
+                .canonicalize_state(Value::Concrete(ConcreteValue::String("GET".into())))
+                .into_present()
+                .expect("non-empty test value must remain present"),
+            enum_schema
+                .canonicalize_state(Value::Concrete(ConcreteValue::String("PUT".into())))
+                .into_present()
+                .expect("non-empty test value must remain present"),
         ]));
         let result = dsl_value_to_aws_with_defs(
             &value,
@@ -1200,7 +1206,10 @@ mod tests {
         let mut map = IndexMap::new();
         map.insert(
             "item_one".to_string(),
-            enum_schema.canonicalize_state(Value::Concrete(ConcreteValue::String("Active".into()))),
+            enum_schema
+                .canonicalize_state(Value::Concrete(ConcreteValue::String("Active".into())))
+                .into_present()
+                .expect("non-empty test value must remain present"),
         );
         let dsl_value = Value::Concrete(ConcreteValue::Map(map));
 
@@ -1519,7 +1528,10 @@ mod tests {
             .into_iter()
             .collect(),
         ));
-        let value = test_rootless_type(attr_type.clone()).canonicalize_state(raw_value);
+        let value = test_rootless_type(attr_type.clone())
+            .canonicalize_state(raw_value)
+            .into_present()
+            .expect("non-empty test value must remain present");
 
         let result = dsl_value_to_aws_with_defs(
             &value,
@@ -2074,8 +2086,10 @@ mod tests {
             None,
         );
         let schema = test_rootless_type(attr_type);
-        let value =
-            schema.canonicalize_state(Value::Concrete(ConcreteValue::String("Allow".into())));
+        let value = schema
+            .canonicalize_state(Value::Concrete(ConcreteValue::String("Allow".into())))
+            .into_present()
+            .expect("non-empty test value must remain present");
 
         assert!(matches!(
             value,
@@ -2360,9 +2374,12 @@ mod tests {
         );
 
         // The provider boundary carries the host-resolved API spelling.
-        let canonical_value = ownership_type.canonicalize_state(Value::Concrete(
-            ConcreteValue::String("BucketOwnerEnforced".into()),
-        ));
+        let canonical_value = ownership_type
+            .canonicalize_state(Value::Concrete(ConcreteValue::String(
+                "BucketOwnerEnforced".into(),
+            )))
+            .into_present()
+            .expect("non-empty test value must remain present");
         assert_canonical_enum(
             &canonical_value,
             "aws.s3.Bucket.OwnershipControls.OwnershipControlsRule.ObjectOwnership",

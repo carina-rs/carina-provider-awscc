@@ -190,6 +190,16 @@ impl CcCreateAttempt for GuestCreateAttempt {
         self.0.untracked(failure.into_error().to_wire())
     }
 
+    fn preserve(self, token: CcCreateToken, error: CoreProviderError) -> Self::Verdict {
+        let poll_after_secs = token.poll_after_secs();
+        self.0.preserve(
+            token,
+            CoreSent::AllRequestAttributes,
+            poll_after_secs,
+            error.to_wire(),
+        )
+    }
+
     fn issued(self, identifier: CoreAppliedIdentifier, sent: CoreSent) -> Self::Issued {
         GuestIssuedCreate(self.0.issued(identifier, sent))
     }
@@ -481,6 +491,18 @@ impl CcCreateAttempt for GuestResentCreateAttempt {
 
     fn untracked(self, failure: NotAppliedCreate) -> Self::Verdict {
         self.0.untracked(failure.into_error().to_wire()).into()
+    }
+
+    fn preserve(self, token: CcCreateToken, error: CoreProviderError) -> Self::Verdict {
+        let poll_after_secs = token.poll_after_secs();
+        self.0
+            .preserve(
+                token,
+                CoreSent::AllRequestAttributes,
+                poll_after_secs,
+                error.to_wire(),
+            )
+            .into()
     }
 
     fn issued(self, identifier: CoreAppliedIdentifier, sent: CoreSent) -> Self::Issued {

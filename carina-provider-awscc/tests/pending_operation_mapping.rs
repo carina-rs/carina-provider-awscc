@@ -473,6 +473,14 @@ impl CcCreateAttempt for TestCreateAttempt {
         TestCreateVerdict::Untracked(Box::new(failure.into_error()))
     }
 
+    fn preserve(self, token: CcCreateToken, error: ProviderError) -> Self::Verdict {
+        TestCreateVerdict::InFlight {
+            token,
+            identifier: None,
+            error: Box::new(error),
+        }
+    }
+
     fn issued(self, identifier: AppliedIdentifier, _sent: Sent) -> Self::Issued {
         TestIssuedCreate { identifier }
     }

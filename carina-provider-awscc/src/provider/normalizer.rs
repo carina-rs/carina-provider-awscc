@@ -80,6 +80,8 @@ where
         // Route provider state through the validated attribute cursor so
         // cyclic CFN attributes (`AttributeType::Ref`) resolve against this
         // resource's definition map and retain their effective ancestry.
+        // CanonicalState::Absent removes empty declared structs (#4167);
+        // ordinary empty maps and attributes outside the schema remain present.
         let schema = config
             .schema
             .clone()
@@ -88,10 +90,12 @@ where
         let mut new_attrs = HashMap::with_capacity(state.attributes.len());
         for (key, value) in std::mem::take(&mut state.attributes) {
             let canon = match schema.effective_attribute(key.as_str()) {
-                Some(attribute) => attribute.canonicalize_state(value),
-                None => value,
+                Some(attribute) => attribute.canonicalize_state(value).into_present(),
+                None => Some(value),
             };
-            new_attrs.insert(key, canon);
+            if let Some(canon) = canon {
+                new_attrs.insert(key, canon);
+            }
         }
         state.attributes = new_attrs;
     }
@@ -669,6 +673,29 @@ mod tests {
             ]))),
             "resource should be canonicalized to StringList"
         );
+    }
+
+    #[test]
+    fn canonicalize_state_removes_absent_structs_and_preserves_empty_maps_and_unknown_attributes() {
+        let empty = Value::Concrete(ConcreteValue::Map(IndexMap::new()));
+        let (id, state) = make_state(
+            "awscc",
+            "s3.Bucket",
+            "test",
+            vec![
+                ("versioning_configuration", empty.clone()),
+                ("tags", empty.clone()),
+                ("unknown_attribute", empty.clone()),
+            ],
+        );
+        let mut states = HashMap::from([(id.clone(), state)]);
+
+        canonicalize_string_or_list_states_impl(&mut states);
+
+        let attributes = &states[&id].attributes;
+        assert!(!attributes.contains_key("versioning_configuration"));
+        assert_eq!(attributes.get("tags"), Some(&empty));
+        assert_eq!(attributes.get("unknown_attribute"), Some(&empty));
     }
 
     #[test]

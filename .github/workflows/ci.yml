@@ -57,8 +57,10 @@ jobs:
           rev=$(sed -n '/^name = "carina-core"$/,/^source/ { s/^source = ".*#\([0-9a-f]*\)"$/\1/p; }' Cargo.lock)
           test -n "$rev"
           cargo install --locked --git https://github.com/carina-rs/carina --rev "$rev" --bin carina carina-cli
-      - name: Validate examples
-        run: ./scripts/validate-examples.sh
+      - name: Validate examples and verify missing credentials fail fast
+        run: |
+          CARINA_REQUIRE_WASM_ACCEPTANCE=1 bash acceptance-tests/shell-tests/no_credentials_fails_fast.sh
+          ./scripts/validate-examples.sh
 
   clippy:
     name: Clippy

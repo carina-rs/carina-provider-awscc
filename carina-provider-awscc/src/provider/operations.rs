@@ -33,8 +33,8 @@ use super::{
 };
 use crate::provider::arn_synthesis::SynthesisStatus;
 use crate::provider::cloudcontrol::{
-    CcCreatePending, CcCreateStatus, InFlightCreate, NotAppliedCreate, TerminallyFailedCreate,
-    WaitOutcome,
+    CcCreatePending, CcCreateSend, CcCreateStatus, InFlightCreate, NotAppliedCreate,
+    TerminallyFailedCreate, WaitOutcome,
 };
 use crate::provider::special_cases::internet_gateway_detach_patch;
 use crate::schemas::config::AwsccSchemaConfig;
@@ -129,6 +129,7 @@ pub trait CcCreateAttempt {
     type Issued: CcIssuedCreate<Step = Self::Step, Verdict = Self::Verdict>;
 
     fn untracked(self, failure: NotAppliedCreate) -> Self::Verdict;
+    fn preserve(self, token: CcCreateToken, error: ProviderError) -> Self::Verdict;
     fn issued(self, identifier: AppliedIdentifier, sent: Sent) -> Self::Issued;
     fn pending(
         self,
@@ -262,6 +263,16 @@ impl CcCreateAttempt for CreateAttempt {
 
     fn untracked(self, failure: NotAppliedCreate) -> Self::Verdict {
         self.untracked(failure.into_error())
+    }
+
+    fn preserve(self, token: CcCreateToken, error: ProviderError) -> Self::Verdict {
+        let poll_after_secs = token.poll_after_secs();
+        self.pending(
+            token.into_pending_token(),
+            Sent::AllRequestAttributes,
+            poll_after_secs,
+        )
+        .preserve(error)
     }
 
     fn issued(self, identifier: AppliedIdentifier, sent: Sent) -> Self::Issued {
@@ -463,6 +474,16 @@ impl CcCreateAttempt for ResentCreateAttempt {
 
     fn untracked(self, failure: NotAppliedCreate) -> Self::Verdict {
         self.untracked(failure.into_error())
+    }
+
+    fn preserve(self, token: CcCreateToken, error: ProviderError) -> Self::Verdict {
+        let poll_after_secs = token.poll_after_secs();
+        self.pending(
+            token.into_pending_token(),
+            Sent::AllRequestAttributes,
+            poll_after_secs,
+        )
+        .preserve(error)
     }
 
     fn issued(self, identifier: AppliedIdentifier, sent: Sent) -> Self::Issued {
@@ -752,7 +773,13 @@ impl AwsccProvider {
             )
             .await
         {
-            Ok(pending) => pending,
+            Ok(CcCreateSend::Pending(pending)) => pending,
+            Ok(CcCreateSend::Preserve { token, error }) => {
+                return Err(attempt.preserve(
+                    token.into(),
+                    error.into_error().for_resource(resource.id.clone()),
+                ));
+            }
             Err(failure) => {
                 return Err(attempt.untracked(
                     failure.map_error(|error| error.for_resource(resource.id.clone())),
@@ -805,7 +832,13 @@ impl AwsccProvider {
             )
             .await
         {
-            Ok(pending) => pending,
+            Ok(CcCreateSend::Pending(pending)) => pending,
+            Ok(CcCreateSend::Preserve { token, error }) => {
+                return Err(attempt.preserve(
+                    token.into(),
+                    error.into_error().for_resource(resource.id.clone()),
+                ));
+            }
             Err(failure) => {
                 return Err(attempt.untracked(
                     failure.map_error(|error| error.for_resource(resource.id.clone())),
@@ -888,7 +921,14 @@ impl AwsccProvider {
                     )
                     .await
                 {
-                    Ok(pending) => pending,
+                    Ok(CcCreateSend::Pending(pending)) => pending,
+                    Ok(CcCreateSend::Preserve { token, error }) => {
+                        return Err(Self::preserve_polled(
+                            poll,
+                            token.into(),
+                            error.into_error().for_resource(resource.id.clone()),
+                        ));
+                    }
                     Err(failure) => {
                         return self
                             .finish_polled_not_applied(
@@ -2852,6 +2892,10 @@ mod tests {
 
         fn untracked(self, failure: NotAppliedCreate) -> Self::Verdict {
             failure.into_error()
+        }
+
+        fn preserve(self, _token: CcCreateToken, error: ProviderError) -> Self::Verdict {
+            error
         }
 
         fn issued(self, identifier: AppliedIdentifier, _sent: Sent) -> Self::Issued {
