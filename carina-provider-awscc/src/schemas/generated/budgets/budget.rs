@@ -193,7 +193,7 @@ pub fn budgets_budget_config() -> AwsccSchemaConfig {
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "Id", dsl_name: "id" }],
         exclusive_groups: &[],
         tags: None,
-        schema,
+        schema: schema.validate().expect("generated schema must pass admission"),
     }
 }
 

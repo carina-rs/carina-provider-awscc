@@ -64,7 +64,7 @@ pub fn ec2_vpc_gateway_attachment_config() -> AwsccSchemaConfig {
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "AttachmentType", dsl_name: "attachment_type" }, crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "VpcId", dsl_name: "vpc_id" }],
         exclusive_groups: &[],
         tags: None,
-        schema,
+        schema: schema.validate().expect("generated schema must pass admission"),
     }
 }
 

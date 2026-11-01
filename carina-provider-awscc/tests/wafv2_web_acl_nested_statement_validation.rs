@@ -59,12 +59,7 @@ impl ProviderFactory for Wafv2SchemaFactory {
     }
 
     fn schemas(&self) -> Vec<carina_core::schema::ValidatedResourceSchema> {
-        vec![
-            wafv2_web_acl_config()
-                .schema
-                .validate()
-                .expect("WebACL schema must be valid"),
-        ]
+        vec![wafv2_web_acl_config().schema]
     }
 
     fn schema_witness(&self) -> ValidatedProviderSchemaWitness {

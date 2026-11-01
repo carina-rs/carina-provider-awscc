@@ -794,7 +794,7 @@ pub fn s3_bucket_config() -> AwsccSchemaConfig {
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "BucketName", dsl_name: "bucket_name" }],
         exclusive_groups: &[],
         tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
-        schema,
+        schema: schema.validate().expect("generated schema must pass admission"),
     }
 }
 

@@ -4,24 +4,24 @@
 //! site, so a future codegen regression that reverts either one is caught
 //! locally.
 
-use carina_core::schema::{AttributeType, RawShape, StructField};
+use carina_core::schema::{CompiledAttributeType, CompiledStructField, RawShape};
 use carina_provider_awscc::schemas::generated::elasticloadbalancingv2::listener::elasticloadbalancingv2_listener_config;
 
-fn find_field<'a>(t: &'a AttributeType, field: &str) -> Option<&'a StructField> {
+fn find_field<'a>(t: &'a CompiledAttributeType, field: &str) -> Option<&'a CompiledStructField> {
     match t.raw_shape() {
         RawShape::Struct { fields, .. } => fields.iter().find(|f| f.name() == field),
         _ => None,
     }
 }
 
-fn peel_list_element(t: &AttributeType) -> &AttributeType {
+fn peel_list_element(t: &CompiledAttributeType) -> &CompiledAttributeType {
     match t.raw_shape() {
         RawShape::List { element_type, .. } => element_type,
         other => panic!("expected List shape, got {:?}", other),
     }
 }
 
-fn assert_redirect_type(field: &StructField, expected_identity: &str, where_: &str) {
+fn assert_redirect_type(field: &CompiledStructField, expected_identity: &str, where_: &str) {
     let RawShape::String { identity, .. } = field.field_type().raw_shape() else {
         panic!(
             "{where_}: redirect field should be a refined string, got {:?}",
@@ -35,7 +35,7 @@ fn assert_redirect_type(field: &StructField, expected_identity: &str, where_: &s
     );
 }
 
-fn assert_redirect_fields(t: &AttributeType, where_: &str) {
+fn assert_redirect_fields(t: &CompiledAttributeType, where_: &str) {
     for (field_name, expected_identity) in [
         ("protocol", "RedirectProtocol"),
         ("host", "RedirectHost"),
@@ -54,6 +54,7 @@ fn redirect_config_uses_redirect_types_in_def_map() {
     let config = elasticloadbalancingv2_listener_config();
     let redirect_config = config
         .schema
+        .as_schema()
         .defs()
         .get("RedirectConfig")
         .expect("RedirectConfig def is registered");
@@ -65,6 +66,7 @@ fn redirect_config_uses_redirect_types_inline() {
     let config = elasticloadbalancingv2_listener_config();
     let default_actions = config
         .schema
+        .as_schema()
         .attributes()
         .get("default_actions")
         .expect("Listener has a default_actions attribute");

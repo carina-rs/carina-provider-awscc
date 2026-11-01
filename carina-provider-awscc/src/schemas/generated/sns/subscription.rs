@@ -116,7 +116,7 @@ pub fn sns_subscription_config() -> AwsccSchemaConfig {
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "Arn", dsl_name: "arn" }],
         exclusive_groups: &[],
         tags: None,
-        schema,
+        schema: schema.validate().expect("generated schema must pass admission"),
     }
 }
 

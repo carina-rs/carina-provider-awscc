@@ -2,7 +2,7 @@
 //! identity used by the AWS provider's Route53 alias-target sink.
 
 use carina_core::resource::{ConcreteValue, Value};
-use carina_core::schema::{AttributeType, TypeInSchema};
+use carina_core::schema::{AttributeType, TypeInSchema, ValidatedConfigSchema};
 use carina_provider_awscc::schemas::generated::elasticloadbalancingv2::load_balancer::elasticloadbalancingv2_load_balancer_config;
 use carina_provider_awscc::schemas::generated::route53::hosted_zone::route53_hosted_zone_config;
 
@@ -12,7 +12,13 @@ fn hosted_zone_id_producers_are_assignable_to_alias_target_union_and_string() {
         carina_aws_types::cloudfront_hosted_zone_id(),
         carina_aws_types::route53_hosted_zone_id(),
     ]);
-    let plain_string = AttributeType::string();
+    let sinks = ValidatedConfigSchema::validate(std::collections::BTreeMap::from([
+        ("alias_target".to_string(), alias_target_hosted_zone_id),
+        ("plain_string".to_string(), AttributeType::string()),
+    ]))
+    .expect("test sinks must pass admission");
+    let alias_target_hosted_zone_id = &sinks.parts()["alias_target"];
+    let plain_string = &sinks.parts()["plain_string"];
 
     for (label, config, attribute_name) in [
         (
@@ -24,6 +30,7 @@ fn hosted_zone_id_producers_are_assignable_to_alias_target_union_and_string() {
     ] {
         let source = config
             .schema
+            .as_schema()
             .attributes()
             .get(attribute_name)
             .unwrap_or_else(|| panic!("{label} must exist"))
@@ -32,15 +39,17 @@ fn hosted_zone_id_producers_are_assignable_to_alias_target_union_and_string() {
         assert!(
             config
                 .schema
+                .as_schema()
                 .type_in_schema(source)
-                .is_assignable_to(TypeInSchema::schemaless(&alias_target_hosted_zone_id)),
+                .is_assignable_to(TypeInSchema::schemaless(alias_target_hosted_zone_id)),
             "{label} must be assignable to the AWS Route53 alias-target union"
         );
         assert!(
             config
                 .schema
+                .as_schema()
                 .type_in_schema(source)
-                .is_assignable_to(TypeInSchema::schemaless(&plain_string)),
+                .is_assignable_to(TypeInSchema::schemaless(plain_string)),
             "{label} must remain assignable to plain String sinks"
         );
     }
@@ -56,10 +65,7 @@ fn hosted_zone_id_producers_validate_route53_values() {
         ),
         ("HostedZone.id", route53_hosted_zone_config(), "id"),
     ] {
-        let schema = config
-            .schema
-            .validate()
-            .unwrap_or_else(|error| panic!("{label} schema must be valid: {error}"));
+        let schema = config.schema;
         let producer_type = schema
             .effective_attribute(attribute_name)
             .unwrap_or_else(|| panic!("{label} must exist"));

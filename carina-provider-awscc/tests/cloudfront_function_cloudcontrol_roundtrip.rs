@@ -23,7 +23,7 @@ use std::sync::Arc;
 
 use carina_core::provider::{CreateOutcomeKind, Provider, ReadRequest};
 use carina_core::resource::{ConcreteValue, Resource, Value};
-use carina_core::schema::{AttributeType, RawShape, StructField, TypeError};
+use carina_core::schema::{CompiledAttributeType, CompiledStructField, RawShape, TypeError};
 use carina_provider_awscc::AwsccProvider;
 use carina_provider_awscc::provider::AwsccProviderConfig;
 use carina_provider_awscc::schemas::generated::cloudfront::distribution::cloudfront_distribution_config;
@@ -59,7 +59,10 @@ fn map(entries: impl IntoIterator<Item = (&'static str, Value)>) -> Value {
     ))
 }
 
-fn find_field<'a>(attribute_type: &'a AttributeType, field_name: &str) -> &'a StructField {
+fn find_field<'a>(
+    attribute_type: &'a CompiledAttributeType,
+    field_name: &str,
+) -> &'a CompiledStructField {
     let RawShape::Struct { fields, .. } = attribute_type.raw_shape() else {
         panic!(
             "expected {field_name} parent to be a struct, got {:?}",
@@ -72,7 +75,7 @@ fn find_field<'a>(attribute_type: &'a AttributeType, field_name: &str) -> &'a St
         .unwrap_or_else(|| panic!("expected struct field {field_name}"))
 }
 
-fn list_element(attribute_type: &AttributeType) -> &AttributeType {
+fn list_element(attribute_type: &CompiledAttributeType) -> &CompiledAttributeType {
     let RawShape::List { element_type, .. } = attribute_type.raw_shape() else {
         panic!("expected a list, got {:?}", attribute_type.raw_shape());
     };
@@ -140,6 +143,7 @@ fn function_arn_is_assignable_to_distribution_function_association() {
     let function = cloudfront_function_config();
     let function_arn = function
         .schema
+        .as_schema()
         .attributes()
         .get("function_arn")
         .expect("Function.function_arn should exist")
@@ -147,6 +151,7 @@ fn function_arn_is_assignable_to_distribution_function_association() {
     let distribution = cloudfront_distribution_config();
     let distribution_config = distribution
         .schema
+        .as_schema()
         .attributes()
         .get("distribution_config")
         .expect("Distribution.distribution_config should exist")
@@ -166,8 +171,14 @@ fn function_arn_is_assignable_to_distribution_function_association() {
         assert!(
             function
                 .schema
+                .as_schema()
                 .type_in_schema(function_arn)
-                .is_assignable_to(distribution.schema.type_in_schema(association_arn)),
+                .is_assignable_to(
+                    distribution
+                        .schema
+                        .as_schema()
+                        .type_in_schema(association_arn)
+                ),
             "Function.function_arn must be reference-compatible with Distribution.{path}.function_associations[].function_arn"
         );
     }
@@ -176,10 +187,7 @@ fn function_arn_is_assignable_to_distribution_function_association() {
 #[test]
 fn function_metadata_is_provider_populated_and_rejects_assignment() {
     let config = cloudfront_function_config();
-    let schema = config
-        .schema
-        .validate()
-        .expect("CloudFront function schema must pass admission");
+    let schema = config.schema;
     let function_metadata = schema
         .effective_attribute("function_metadata")
         .expect("Function.function_metadata should exist");
@@ -266,6 +274,7 @@ async fn cloudfront_function_create_then_read_preserves_config_and_runtime_alias
     let config = cloudfront_function_config();
     let function_config_type = config
         .schema
+        .as_schema()
         .attributes()
         .get("function_config")
         .expect("Function.function_config should exist")

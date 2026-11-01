@@ -37,7 +37,7 @@ pub fn s3_bucket_policy_config() -> AwsccSchemaConfig {
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "Bucket", dsl_name: "bucket" }],
         exclusive_groups: &[],
         tags: None,
-        schema,
+        schema: schema.validate().expect("generated schema must pass admission"),
     }
 }
 

@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use carina_core::provider::{AppliedState, CreateOutcomeKind, Provider, ReadRequest};
 use carina_core::resource::{ConcreteValue, Resource, Value};
-use carina_core::schema::{AttributeType, RawShape, StructField};
+use carina_core::schema::{CompiledAttributeType, CompiledStructField, RawShape};
 use carina_provider_awscc::AwsccProvider;
 use carina_provider_awscc::provider::AwsccProviderConfig;
 use carina_provider_awscc::schemas::generated::scheduler::schedule::scheduler_schedule_config;
@@ -47,7 +47,10 @@ fn map(entries: impl IntoIterator<Item = (&'static str, Value)>) -> Value {
     ))
 }
 
-fn find_field<'a>(attribute_type: &'a AttributeType, field_name: &str) -> &'a StructField {
+fn find_field<'a>(
+    attribute_type: &'a CompiledAttributeType,
+    field_name: &str,
+) -> &'a CompiledStructField {
     let RawShape::Struct { fields, .. } = attribute_type.raw_shape() else {
         panic!(
             "expected {field_name} parent to be a struct, got {:?}",
@@ -151,6 +154,7 @@ fn maximum_window_in_minutes_uses_the_integer_dsl_shape() {
     let schedule = scheduler_schedule_config();
     let flexible_time_window = &schedule
         .schema
+        .as_schema()
         .attributes()
         .get("flexible_time_window")
         .expect("Schedule.flexible_time_window should exist")
@@ -168,12 +172,17 @@ fn maximum_window_in_minutes_uses_the_integer_dsl_shape() {
 fn schedule_group_exposes_tags_but_schedule_does_not() {
     let group_config = scheduler_schedule_group_config();
     assert!(
-        group_config.schema.attributes().contains_key("tags"),
+        group_config
+            .schema
+            .as_schema()
+            .attributes()
+            .contains_key("tags"),
         "ScheduleGroup must expose Tags"
     );
     assert!(
         !scheduler_schedule_config()
             .schema
+            .as_schema()
             .attributes()
             .contains_key("tags"),
         "Schedule must not expose Tags"

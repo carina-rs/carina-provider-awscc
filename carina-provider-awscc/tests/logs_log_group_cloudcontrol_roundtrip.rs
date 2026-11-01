@@ -270,7 +270,7 @@ async fn logs_policy_documents_round_trip_as_native_json_without_a_diff() {
         &current_states[&id],
         &saved,
         None,
-        Some(&config.schema),
+        Some(config.schema.as_schema()),
         comparison.context(),
     );
     assert!(
@@ -331,7 +331,7 @@ async fn omitted_field_index_policies_and_read_back_empty_list_have_no_diff() {
         &current_states[&id],
         &saved,
         None,
-        Some(&config.schema),
+        Some(config.schema.as_schema()),
         comparison.context(),
     );
     assert!(
@@ -346,7 +346,7 @@ async fn omitted_field_index_policies_and_read_back_empty_list_have_no_diff() {
         &current_states[&id],
         &saved,
         None,
-        Some(&config.schema),
+        Some(config.schema.as_schema()),
         comparison.context(),
     );
     assert!(
@@ -363,7 +363,7 @@ async fn omitted_field_index_policies_and_read_back_empty_list_have_no_diff() {
         &current_states[&id],
         &saved,
         None,
-        Some(&config.schema),
+        Some(config.schema.as_schema()),
         comparison.context(),
     );
     assert!(

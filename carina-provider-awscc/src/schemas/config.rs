@@ -7,7 +7,7 @@
 use carina_aws_types::find_matching_enum_value;
 #[cfg(test)]
 use carina_core::resource::{ConcreteValue, Value};
-use carina_core::schema::ResourceSchema;
+use carina_core::schema::ValidatedResourceSchema;
 #[cfg(test)]
 use carina_core::utils::validate_enum_namespace;
 
@@ -27,7 +27,7 @@ pub struct AwsccSchemaConfig {
     /// CloudControl tag property metadata, when the resource exposes tags.
     pub tags: Option<TagsProperty>,
     /// The resource schema with attribute definitions
-    pub schema: ResourceSchema,
+    pub schema: ValidatedResourceSchema,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

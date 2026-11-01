@@ -29,10 +29,7 @@ fn arn_identity_is_provider_scoped() {
 #[test]
 fn nested_metadata_table_arn_is_provider_populated_and_rejects_assignment() {
     let config = s3_bucket_config();
-    let schema = config
-        .schema
-        .validate()
-        .expect("S3 bucket schema must pass admission");
+    let schema = config.schema;
     let metadata_table_configuration = schema
         .effective_attribute("metadata_table_configuration")
         .expect("S3 bucket metadata_table_configuration must exist");

@@ -68,5 +68,4 @@ winterbaume-cloudcontrol = "1"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 tokio = { version = "1", default-features = false, features = ["rt", "macros", "time", "sync"] }
-wit-bindgen = { version = "0.54", default-features = false, features = ["macros"] }
 wasi = "0.14"

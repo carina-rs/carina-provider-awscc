@@ -177,7 +177,7 @@ pub fn kms_key_config() -> AwsccSchemaConfig {
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "KeyId", dsl_name: "key_id" }],
         exclusive_groups: &[],
         tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
-        schema,
+        schema: schema.validate().expect("generated schema must pass admission"),
     }
 }
 

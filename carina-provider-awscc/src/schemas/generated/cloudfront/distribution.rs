@@ -522,7 +522,7 @@ pub fn cloudfront_distribution_config() -> AwsccSchemaConfig {
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "Id", dsl_name: "id" }],
         exclusive_groups: &[],
         tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
-        schema,
+        schema: schema.validate().expect("generated schema must pass admission"),
     }
 }
 

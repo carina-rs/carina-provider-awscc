@@ -62,14 +62,8 @@ impl ProviderFactory for SchedulerSchemaFactory {
 
     fn schemas(&self) -> Vec<carina_core::schema::ValidatedResourceSchema> {
         vec![
-            scheduler_schedule_config()
-                .schema
-                .validate()
-                .expect("Schedule schema must be valid"),
-            scheduler_schedule_group_config()
-                .schema
-                .validate()
-                .expect("ScheduleGroup schema must be valid"),
+            scheduler_schedule_config().schema,
+            scheduler_schedule_group_config().schema,
         ]
     }
 

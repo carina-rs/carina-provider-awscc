@@ -18,7 +18,9 @@ use carina_core::provider::{
     UpdatePatch,
 };
 use carina_core::resource::{ConcreteValue, Resource, ResourceId, State, Value};
-use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, Shape};
+use carina_core::schema::{
+    CompiledAttributeSchema, CompiledAttributeType, CompiledResourceSchema, Shape,
+};
 #[cfg(test)]
 use carina_provider_protocol::PendingPhase;
 use carina_provider_protocol::{
@@ -663,9 +665,9 @@ impl AwsccProvider {
 
         let mut attributes = map_aws_props_to_attributes(
             &props,
-            config.schema.attributes(),
+            config.schema.as_schema().attributes(),
             &id.resource_type,
-            config.schema.defs(),
+            config.schema.as_schema().defs(),
         );
 
         // Match the #2544 optional-collection canonicalization contract: absent or
@@ -707,7 +709,7 @@ impl AwsccProvider {
 
     fn operation_budget(&self, resource_type: &str, kind: OperationKind) -> Duration {
         get_schema_config(resource_type)
-            .and_then(|config| config.schema.operation_config())
+            .and_then(|config| config.schema.as_schema().operation_config())
             .map_or(DEFAULT_OPERATION_BUDGET, |config| config.budget(kind))
     }
 
@@ -717,7 +719,7 @@ impl AwsccProvider {
         config: &AwsccSchemaConfig,
     ) -> ProviderResult<serde_json::Value> {
         let mut desired_state = serde_json::Map::new();
-        for (dsl_name, attr_schema) in config.schema.attributes() {
+        for (dsl_name, attr_schema) in config.schema.as_schema().attributes() {
             if dsl_name == "tags" {
                 continue;
             }
@@ -729,7 +731,7 @@ impl AwsccProvider {
                     attr_schema.attr_type(),
                     &resource.id.resource_type,
                     dsl_name,
-                    config.schema.defs(),
+                    config.schema.as_schema().defs(),
                 );
                 if let Some(v) = aws_value {
                     desired_state.insert(aws_name.to_string(), v);
@@ -785,7 +787,7 @@ impl AwsccProvider {
             .send_not_issued_create(
                 config.aws_type_name,
                 desired_state,
-                config.schema.operation_config(),
+                config.schema.as_schema().operation_config(),
                 token,
             )
             .await
@@ -844,7 +846,7 @@ impl AwsccProvider {
             .send_not_issued_create(
                 config.aws_type_name,
                 desired_state,
-                config.schema.operation_config(),
+                config.schema.as_schema().operation_config(),
                 token,
             )
             .await
@@ -877,7 +879,7 @@ impl AwsccProvider {
                 self.send_unconfirmed_create(
                     config.aws_type_name,
                     desired_state,
-                    config.schema.operation_config(),
+                    config.schema.as_schema().operation_config(),
                     &token,
                 )
                 .await
@@ -933,7 +935,7 @@ impl AwsccProvider {
                     .send_not_issued_create(
                         config.aws_type_name,
                         desired_state,
-                        config.schema.operation_config(),
+                        config.schema.as_schema().operation_config(),
                         token,
                     )
                     .await
@@ -964,7 +966,7 @@ impl AwsccProvider {
                         self.send_unconfirmed_create(
                             config.aws_type_name,
                             desired_state,
-                            config.schema.operation_config(),
+                            config.schema.as_schema().operation_config(),
                             &token,
                         )
                         .await
@@ -1305,6 +1307,7 @@ impl AwsccProvider {
                 let missing_attributes = nonempty_missing_attributes(
                     config
                         .schema
+                        .as_schema()
                         .attributes()
                         .keys()
                         .filter(|name| resource.get_attr(name.as_str()).is_some())
@@ -1898,7 +1901,7 @@ impl AwsccProvider {
                 config.aws_type_name,
                 identifier.as_str(),
                 patch_plan.ops.clone(),
-                config.schema.operation_config(),
+                config.schema.as_schema().operation_config(),
             )
             .await
             .map_err(|error| error.for_resource(id.clone()))?;
@@ -1927,7 +1930,7 @@ impl AwsccProvider {
                 config.aws_type_name,
                 identifier.as_str(),
                 patch_plan.ops.clone(),
-                config.schema.operation_config(),
+                config.schema.as_schema().operation_config(),
                 token,
             )
             .await
@@ -2018,7 +2021,7 @@ impl AwsccProvider {
                     config.aws_type_name,
                     identifier.as_str(),
                     patch_ops,
-                    config.schema.operation_config(),
+                    config.schema.as_schema().operation_config(),
                 )
                 .await
                 .map_err(|error| detach_igw_error(id, error))?;
@@ -2042,7 +2045,7 @@ impl AwsccProvider {
         self.cc_delete_step(
             config.aws_type_name,
             identifier.as_str(),
-            config.schema.operation_config(),
+            config.schema.as_schema().operation_config(),
         )
         .await
         .map(wrap_delete_phase)
@@ -2076,7 +2079,7 @@ impl AwsccProvider {
                         config.aws_type_name,
                         identifier.as_str(),
                         internet_gateway_detach_patch(),
-                        config.schema.operation_config(),
+                        config.schema.as_schema().operation_config(),
                         phase,
                     )
                     .await
@@ -2088,7 +2091,7 @@ impl AwsccProvider {
                 .cc_poll_delete_step(
                     config.aws_type_name,
                     identifier.as_str(),
-                    config.schema.operation_config(),
+                    config.schema.as_schema().operation_config(),
                     phase,
                 )
                 .await
@@ -2112,7 +2115,7 @@ impl AwsccProvider {
                 .cc_delete_step(
                     config.aws_type_name,
                     identifier.as_str(),
-                    config.schema.operation_config(),
+                    config.schema.as_schema().operation_config(),
                 )
                 .await
                 .map(wrap_delete_phase)
@@ -2123,7 +2126,7 @@ impl AwsccProvider {
                 config.aws_type_name,
                 identifier.as_str(),
                 patch_ops,
-                config.schema.operation_config(),
+                config.schema.as_schema().operation_config(),
                 token.into(),
             )
             .await
@@ -2154,7 +2157,7 @@ impl AwsccProvider {
                 .cc_delete_step(
                     config.aws_type_name,
                     identifier.as_str(),
-                    config.schema.operation_config(),
+                    config.schema.as_schema().operation_config(),
                 )
                 .await
                 .map(wrap_delete_phase)
@@ -2238,6 +2241,7 @@ fn token_identifier(id: &ResourceId, token: &CcCreateToken) -> Option<AppliedIde
 fn create_max_attempts(config: &AwsccSchemaConfig) -> u32 {
     config
         .schema
+        .as_schema()
         .operation_config()
         .and_then(|operation| operation.create_max_retries)
         .unwrap_or(super::CREATE_RETRY_MAX_ATTEMPTS)
@@ -2490,13 +2494,13 @@ fn unsent_attributes_reason(attributes: &[String]) -> String {
 /// path in [`AwsccProvider::read_resource`].
 fn map_aws_props_to_attributes(
     props: &serde_json::Value,
-    schema_attributes: &BTreeMap<String, AttributeSchema>,
+    schema_attributes: &BTreeMap<String, CompiledAttributeSchema>,
     resource_type: &str,
-    defs: &std::collections::BTreeMap<String, AttributeType>,
+    defs: &std::collections::BTreeMap<String, CompiledAttributeType>,
 ) -> HashMap<String, Value> {
     let mut attributes = HashMap::new();
     let schema_view = defs.iter().fold(
-        ResourceSchema::new(resource_type),
+        CompiledResourceSchema::new(resource_type),
         |schema, (name, attr_type)| schema.with_def(name.clone(), attr_type.clone()),
     );
 
@@ -2581,7 +2585,7 @@ mod tests {
         UpdateOutcomeKind,
     };
     use carina_core::resource::DeferredValue;
-    use carina_core::schema::{AttributeType, SchemaRegistry};
+    use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, SchemaRegistry};
     use serde_json::json;
     use std::future::Future;
     use std::pin::Pin;
@@ -2629,9 +2633,7 @@ mod tests {
                                 )
                             })
                             .schema
-                            .clone()
-                            .validate()
-                            .expect("test schema must pass admission");
+                            .clone();
                     schemas.insert("awscc", schema);
                     let factories: Vec<Box<dyn carina_core::provider::ProviderFactory>> =
                         vec![Box::new(crate::OwnerOnlyAwsccFactory)];
@@ -4084,7 +4086,7 @@ mod tests {
         let config = get_schema_config("route53.HostedZone")
             .expect("route53.HostedZone schema should exist");
         assert!(config.tags.is_none());
-        assert!(!config.schema.attributes().contains_key("tags"));
+        assert!(!config.schema.as_schema().attributes().contains_key("tags"));
 
         for (read_properties, label) in [
             (r#"{}"#, "missing"),
@@ -4752,8 +4754,8 @@ mod tests {
 
     fn make_schema_attrs(
         entries: Vec<(&str, &str, AttributeType, bool)>,
-    ) -> BTreeMap<String, AttributeSchema> {
-        let mut map = BTreeMap::new();
+    ) -> carina_core::schema::ValidatedResourceSchema {
+        let mut schema = ResourceSchema::new("test.Resource");
         for (dsl_name, provider_name, attr_type, required) in entries {
             let s = if required {
                 AttributeSchema::required(dsl_name, attr_type)
@@ -4764,9 +4766,9 @@ mod tests {
                     .with_provider_name(provider_name.to_string())
                     .build()
             };
-            map.insert(dsl_name.to_string(), s);
+            schema = schema.attribute(s);
         }
-        map
+        schema.validate().expect("test schema must pass admission")
     }
 
     /// Real `GetResource` shape measured in us-east-1 on 2026-10-27 with
@@ -4783,9 +4785,9 @@ mod tests {
 
         let attributes = map_aws_props_to_attributes(
             &props,
-            config.schema.attributes(),
+            config.schema.as_schema().attributes(),
             "cloudfront.ResponseHeadersPolicy",
-            config.schema.defs(),
+            config.schema.as_schema().defs(),
         );
 
         assert_eq!(
@@ -4901,7 +4903,7 @@ mod tests {
             &current,
             &saved_attrs,
             None,
-            Some(&config.schema),
+            Some(config.schema.as_schema()),
             comparison.context(),
         );
         assert!(
@@ -4935,9 +4937,9 @@ mod tests {
 
         let attributes = map_aws_props_to_attributes(
             &props,
-            config.schema.attributes(),
+            config.schema.as_schema().attributes(),
             "cloudfront.Function",
-            config.schema.defs(),
+            config.schema.as_schema().defs(),
         );
         assert!(
             !attributes.contains_key("auto_publish"),
@@ -4981,14 +4983,7 @@ mod tests {
         )]))
         .expect("AutoPublish should encode as persisted provider state");
         let mut registry = SchemaRegistry::new();
-        registry.insert(
-            "awscc",
-            config
-                .schema
-                .clone()
-                .validate()
-                .expect("cloudfront.Function schema must be valid"),
-        );
+        registry.insert("awscc", config.schema.clone());
         let saved_attrs = RawSavedAttrs::from_persisted(
             HashMap::from([(desired.id.clone(), persisted)]),
             HashMap::new(),
@@ -5012,6 +5007,7 @@ mod tests {
         assert!(
             config
                 .schema
+                .as_schema()
                 .attributes()
                 .get("auto_publish")
                 .expect("AutoPublish schema should exist")
@@ -5031,7 +5027,7 @@ mod tests {
             &current,
             &saved_attrs,
             None,
-            Some(&config.schema),
+            Some(config.schema.as_schema()),
             comparison.context(),
         );
         assert!(
@@ -5084,7 +5080,7 @@ mod tests {
             &current,
             &saved_attrs,
             None,
-            Some(&config.schema),
+            Some(config.schema.as_schema()),
             comparison.context(),
         );
         assert!(
@@ -5115,7 +5111,7 @@ mod tests {
 
         let result = map_aws_props_to_attributes(
             &props,
-            &attrs,
+            attrs.as_schema().attributes(),
             "iam.Role",
             &std::collections::BTreeMap::new(),
         );
@@ -5140,7 +5136,7 @@ mod tests {
 
         let result = map_aws_props_to_attributes(
             &props,
-            &attrs,
+            attrs.as_schema().attributes(),
             "some.Resource",
             &std::collections::BTreeMap::new(),
         );
@@ -5168,7 +5164,7 @@ mod tests {
 
         let result = map_aws_props_to_attributes(
             &props,
-            &attrs,
+            attrs.as_schema().attributes(),
             "some.Resource",
             &std::collections::BTreeMap::new(),
         );
@@ -5193,7 +5189,7 @@ mod tests {
 
         let result = map_aws_props_to_attributes(
             &props,
-            &attrs,
+            attrs.as_schema().attributes(),
             "some.Resource",
             &std::collections::BTreeMap::new(),
         );
@@ -5219,7 +5215,7 @@ mod tests {
 
         let result = map_aws_props_to_attributes(
             &props,
-            &attrs,
+            attrs.as_schema().attributes(),
             "iam.Role",
             &std::collections::BTreeMap::new(),
         );
@@ -5247,7 +5243,7 @@ mod tests {
 
         let result = map_aws_props_to_attributes(
             &props,
-            &attrs,
+            attrs.as_schema().attributes(),
             "some.Resource",
             &std::collections::BTreeMap::new(),
         );

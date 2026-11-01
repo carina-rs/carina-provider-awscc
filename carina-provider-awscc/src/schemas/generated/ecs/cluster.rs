@@ -143,7 +143,7 @@ pub fn ecs_cluster_config() -> AwsccSchemaConfig {
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "ClusterName", dsl_name: "cluster_name" }],
         exclusive_groups: &[],
         tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
-        schema,
+        schema: schema.validate().expect("generated schema must pass admission"),
     }
 }
 
