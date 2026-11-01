@@ -15,5 +15,5 @@ carina-plugin-host = { git = "https://github.com/carina-rs/carina", rev = "bb1c4
 carina-plugin-sdk = { git = "https://github.com/carina-rs/carina", rev = "bb1c40c4" }
 carina-provider-protocol = { git = "https://github.com/carina-rs/carina", rev = "bb1c40c4" }
 carina-provider-resolver = { git = "https://github.com/carina-rs/carina", rev = "bb1c40c4" }
-carina-aws-types = { git = "https://github.com/carina-rs/carina-provider-aws", rev = "d182b35" }
-carina-docgen = { git = "https://github.com/carina-rs/carina-provider-aws", rev = "d182b35" }
+carina-aws-types = { git = "https://github.com/carina-rs/carina-provider-aws", rev = "9cd3f6ab" }
+carina-docgen = { git = "https://github.com/carina-rs/carina-provider-aws", rev = "9cd3f6ab" }

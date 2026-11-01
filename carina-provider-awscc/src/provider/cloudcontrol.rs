@@ -22,7 +22,7 @@ use carina_plugin_sdk::PhasedToken;
 use carina_provider_protocol::{OperationStep, PendingPhase};
 use serde::{Deserialize, Serialize};
 
-use super::read_back::{ReadBackContinuation, ReadFailure};
+use super::read_back::{ReadBackContinuation, ReadFailure, UpdateReadBackContinuation};
 
 use super::{
     AwsccProvider, CREATE_RETRY_INITIAL_DELAY_SECS, CREATE_RETRY_MAX_ATTEMPTS,
@@ -437,12 +437,21 @@ mod client_token {
 
     /// A host continuation, including the identifier-only read-back phase.
     /// The untagged operation arm retains the persisted mutation token JSON.
-    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
     #[serde(tag = "phase", rename_all = "snake_case", from = "CreateTokenWire")]
     pub enum CcCreateToken {
         ReadBack(ReadBackContinuation),
         #[serde(untagged)]
         Operation(CcCreateOperation),
+    }
+
+    impl std::fmt::Debug for CcCreateToken {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            match self {
+                Self::Operation(operation) => std::fmt::Debug::fmt(operation, f),
+                Self::ReadBack(read_back) => f.debug_tuple("ReadBack").field(read_back).finish(),
+            }
+        }
     }
 
     // Decode the original tagged representation directly so malformed operation
@@ -822,11 +831,49 @@ pub use client_token::{
 use client_token::{NotIssuedPhase, TerminallyFailedRequest, UnconfirmedPhase};
 
 /// Continuation state for a CloudControl update operation.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "phase", content = "continuation", rename_all = "snake_case")]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    tag = "phase",
+    content = "continuation",
+    rename_all = "snake_case",
+    from = "UpdateTokenWire"
+)]
 pub enum CcUpdateToken {
+    ReadBack(UpdateReadBackContinuation),
+    #[serde(untagged)]
     Operation(CcRequestPhase),
-    ReadBack(super::read_back::UpdateReadBackContinuation),
+}
+
+// Keep the released operation tags flat and the read-back continuation envelope.
+#[derive(Deserialize)]
+#[serde(tag = "phase", rename_all = "snake_case")]
+enum UpdateTokenWire {
+    NotIssued(NotIssuedRequest),
+    Unconfirmed(UnconfirmedRequest),
+    InFlight(InFlightRequest),
+    ReadBack {
+        continuation: UpdateReadBackContinuation,
+    },
+}
+
+impl From<UpdateTokenWire> for CcUpdateToken {
+    fn from(wire: UpdateTokenWire) -> Self {
+        match wire {
+            UpdateTokenWire::NotIssued(request) => Self::Operation(request.into()),
+            UpdateTokenWire::Unconfirmed(request) => Self::Operation(request.into()),
+            UpdateTokenWire::InFlight(request) => Self::Operation(request.into()),
+            UpdateTokenWire::ReadBack { continuation } => Self::ReadBack(continuation),
+        }
+    }
+}
+
+impl std::fmt::Debug for CcUpdateToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Operation(operation) => std::fmt::Debug::fmt(operation, f),
+            Self::ReadBack(read_back) => f.debug_tuple("ReadBack").field(read_back).finish(),
+        }
+    }
 }
 
 impl PhasedToken for CcUpdateToken {

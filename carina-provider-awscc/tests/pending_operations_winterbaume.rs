@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use carina_core::provider::{CreateOutcomeKind, DeleteRequest, Provider, ProviderDirectiveSchema};
 use carina_core::resource::{ConcreteValue, Directives, Resource, Value};
@@ -192,6 +193,28 @@ fn continuation_tokens_round_trip() {
 }
 
 #[test]
+fn additional_continuation_variants_round_trip() {
+    assert_create_token_round_trip(
+        r#"{"phase":"in_flight","request":"create-request","attempt":3,"poll_after_secs":5}"#,
+    );
+    assert_create_token_round_trip(
+        r#"{"phase":"read_back","identifier":"repository","resource_type":"ecr.Repository"}"#,
+    );
+    assert_token_json_round_trip::<CcUpdateToken>(
+        r#"{"phase":"read_back","continuation":{"identifier":"repository","resource_type":"ecr.Repository"}}"#,
+    );
+    assert_token_json_round_trip::<CcUpdateToken>(
+        r#"{"phase":"read_back","continuation":{"identifier":"repository","resource_type":"ecr.Repository","handler_failure":"handler failed"}}"#,
+    );
+    assert_token_json_round_trip::<CcDeleteToken>(
+        r#"{"phase":"detach_igw","request":{"phase":"not_issued","attempt":7,"client_token":"00000000-0000-4000-8000-000000000006"}}"#,
+    );
+    assert_token_json_round_trip::<CcDeleteToken>(
+        r#"{"phase":"delete","request":{"phase":"unconfirmed","attempt":9,"resends":8,"client_token":"00000000-0000-4000-8000-000000000008"}}"#,
+    );
+}
+
+#[test]
 fn create_continuation_debug_omits_client_token() {
     let token = serde_json::from_value::<CcCreateToken>(serde_json::json!({
         "phase": "not_issued",
@@ -298,29 +321,36 @@ async fn create_dispatch_and_delete_steps_make_one_issue_and_one_status_call_eac
     assert_eq!(cloudcontrol.calls("GetResourceRequestStatus"), 2);
 }
 
-#[tokio::test(start_paused = true)]
+#[tokio::test]
 async fn native_provider_drives_create_and_delete_to_completion() {
-    let (provider, cloudcontrol) = provider().await;
-    let resource = repository_resource();
-    let id = resource.id.clone();
-    let request = common::create_request(resource).await;
-    let accepted = carina_core::executor::AcceptedRequest::from_create_request(&request);
+    // Exercise production sleeps with a stateful mock. A missing read response
+    // must fail this whole test before the default 120-second read-back budget.
+    tokio::time::timeout(Duration::from_secs(10), async {
+        let (provider, cloudcontrol) = provider().await;
+        let resource = repository_resource();
+        let id = resource.id.clone();
+        let request = common::create_request(resource).await;
+        let accepted = carina_core::executor::AcceptedRequest::from_create_request(&request);
 
-    let created = carina_core::executor::complete_create_for_writeback(
-        common::dispatch_create(&provider, &id, request)
+        let created = carina_core::executor::complete_create_for_writeback(
+            common::dispatch_create(&provider, &id, request)
+                .await
+                .expect("native create should drive pending steps"),
+            accepted,
+        )
+        .0;
+        assert_eq!(created.identifier.as_deref(), Some(REPOSITORY_NAME));
+        assert_eq!(cloudcontrol.calls("CreateResource"), 1);
+        assert_eq!(cloudcontrol.calls("GetResourceRequestStatus"), 1);
+        assert_eq!(cloudcontrol.calls("GetResource"), 1);
+
+        let stored_identifier = common::applied_identifier(cloudcontrol.stored_identifier().await);
+        Provider::delete(&provider, &id, &stored_identifier, delete_request())
             .await
-            .expect("native create should drive pending steps"),
-        accepted,
-    )
-    .0;
-    assert_eq!(created.identifier.as_deref(), Some(REPOSITORY_NAME));
-    assert_eq!(cloudcontrol.calls("CreateResource"), 1);
-    assert_eq!(cloudcontrol.calls("GetResourceRequestStatus"), 1);
-
-    let stored_identifier = common::applied_identifier(cloudcontrol.stored_identifier().await);
-    Provider::delete(&provider, &id, &stored_identifier, delete_request())
-        .await
-        .expect("native delete should drive pending steps");
-    assert_eq!(cloudcontrol.calls("DeleteResource"), 1);
-    assert_eq!(cloudcontrol.calls("GetResourceRequestStatus"), 2);
+            .expect("native delete should drive pending steps");
+        assert_eq!(cloudcontrol.calls("DeleteResource"), 1);
+        assert_eq!(cloudcontrol.calls("GetResourceRequestStatus"), 2);
+    })
+    .await
+    .expect("native lifecycle must finish without exhausting the read-back budget");
 }

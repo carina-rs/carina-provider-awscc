@@ -4309,7 +4309,6 @@ async fn update_one_post_send_timeout_then_uncapped_throttling_stays_pending() {
             .expect("first outcome-unknown update should remain pending"),
     );
     let encoded = serde_json::to_value(&token).expect("serialize update continuation");
-    let encoded = &encoded["continuation"];
     assert_eq!(encoded["phase"], "unconfirmed");
     assert_eq!(encoded["attempt"], 0);
     assert_eq!(encoded["resends"], 1);
@@ -4336,7 +4335,6 @@ async fn update_one_post_send_timeout_then_uncapped_throttling_stays_pending() {
                 }),
         );
         let encoded = serde_json::to_value(&next).expect("serialize update continuation");
-        let encoded = &encoded["continuation"];
         assert_eq!(encoded["phase"], "unconfirmed");
         assert_eq!(encoded["attempt"], 0);
         assert_eq!(encoded["resends"], expected_resends);
@@ -4375,7 +4373,6 @@ async fn update_repeated_post_send_timeouts_past_max_attempts_stay_pending() {
             .expect("first post-send timeout must remain pending"),
     );
     let encoded = serde_json::to_value(&token).expect("serialize update continuation");
-    let encoded = &encoded["continuation"];
     assert_eq!(encoded["phase"], "unconfirmed");
     assert_eq!(encoded["attempt"], 0);
     assert_eq!(encoded["resends"], 1);
@@ -4402,7 +4399,6 @@ async fn update_repeated_post_send_timeouts_past_max_attempts_stay_pending() {
                 }),
         );
         let encoded = serde_json::to_value(&next).expect("serialize update continuation");
-        let encoded = &encoded["continuation"];
         assert_eq!(encoded["phase"], "unconfirmed");
         assert_eq!(encoded["attempt"], 0);
         assert_eq!(encoded["resends"], expected_resends);
@@ -4435,7 +4431,6 @@ async fn update_5xx_service_internal_error_is_maybe_sent_and_uncapped() {
             .expect("a 5xx service error may follow an accepted update"),
     );
     let encoded = serde_json::to_value(&token).expect("serialize update continuation");
-    let encoded = &encoded["continuation"];
     assert_eq!(encoded["phase"], "unconfirmed");
     assert_eq!(encoded["attempt"], 0);
     assert_eq!(encoded["resends"], 1);
@@ -4460,7 +4455,6 @@ async fn update_5xx_service_internal_error_is_maybe_sent_and_uncapped() {
                 }),
         );
         let encoded = serde_json::to_value(&next).expect("serialize update continuation");
-        let encoded = &encoded["continuation"];
         assert_eq!(encoded["phase"], "unconfirmed");
         assert_eq!(encoded["attempt"], 0);
         assert_eq!(encoded["resends"], expected_resends);
@@ -5580,15 +5574,12 @@ fn phased_tokens_keep_existing_json_and_derive_pending_phase() {
         json!({"phase":"read_back", "identifier":VPC_ID, "resource_type":"ec2.Vpc"}),
         PendingPhase::ReadBack,
     );
-    for continuation in [
+    for encoded in [
         json!({"phase":"not_issued", "attempt":2, "client_token":TEST_CLIENT_TOKEN}),
         json!({"phase":"unconfirmed", "attempt":2, "resends":3, "client_token":TEST_CLIENT_TOKEN}),
         json!({"phase":"in_flight", "request":"accepted-update", "attempt":2}),
     ] {
-        check::<CcUpdateToken>(
-            json!({"phase":"operation", "continuation":continuation}),
-            PendingPhase::Operation,
-        );
+        check::<CcUpdateToken>(encoded, PendingPhase::Operation);
     }
     check::<CcUpdateToken>(
         json!({"phase":"read_back", "continuation":{"identifier":VPC_ID, "resource_type":"ec2.Vpc"}}),
