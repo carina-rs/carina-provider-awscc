@@ -28,6 +28,14 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
     }
     schema = schema.attribute(build_arn_attribute());
     #[inline(never)]
+    fn build_data_protection_policy_attribute() -> AttributeSchema {
+        AttributeSchema::optional("data_protection_policy", crate::schemas::awscc_types::logs_data_protection_policy())
+                .with_description("Creates a data protection policy and assigns it to the log group. A data protection policy can help safeguard sensitive data that's ingested by the log group by auditing and masking the sensitive log data. When a user who does not have permission to view masked data views a log event that includes masked data, the sensitive data is replaced by asterisks.")
+                .with_provider_name("DataProtectionPolicy")
+            .build()
+    }
+    schema = schema.attribute(build_data_protection_policy_attribute());
+    #[inline(never)]
     fn build_deletion_protection_enabled_attribute() -> AttributeSchema {
         AttributeSchema::optional("deletion_protection_enabled", AttributeType::bool())
                 .with_description("Indicates whether deletion protection is enabled for this log group. When enabled, deletion protection blocks all deletion operations until it is explicitly disabled.")
@@ -36,6 +44,16 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
             .build()
     }
     schema = schema.attribute(build_deletion_protection_enabled_attribute());
+    #[inline(never)]
+    fn build_field_index_policies_attribute() -> AttributeSchema {
+        AttributeSchema::optional("field_index_policies", crate::schemas::awscc_types::logs_field_index_policies())
+                .with_description("Creates or updates a *field index policy* for the specified log group. Only log groups in the Standard log class support field index policies. For more information about log classes, see [Log classes](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/CloudWatch_Logs_Log_Classes.html). You can use field index policies to create *field indexes* on fields found in log events in the log group. Creating field indexes lowers the costs for CWL Insights queries that reference those field indexes, because these queries attempt to skip the processing of log events that are known to not match the indexed field. Good fields to index are fields that you often need to query for and fields that have high cardinality of values Common examples of indexes include request ID, session ID, userID, and instance IDs. For more information, see [Create field indexes to improve query performance and reduce costs](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/CloudWatchLogs-Field-Indexing.html). Currently, this array supports only one field index policy object.")
+                .with_provider_name("FieldIndexPolicies")
+                .with_default(Value::Concrete(ConcreteValue::List(vec![])))
+                .with_block_name("field_index_policy")
+            .build()
+    }
+    schema = schema.attribute(build_field_index_policies_attribute());
     #[inline(never)]
     fn build_kms_key_id_attribute() -> AttributeSchema {
         AttributeSchema::optional("kms_key_id", super::super::kms::key::arn())

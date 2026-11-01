@@ -646,7 +646,7 @@ mod tests {
         let region = region_type
             .canonicalize_state(Value::Concrete(ConcreteValue::String("us-west-2".into())))
             .into_present()
-            .expect("non-empty test value must remain present");
+            .expect("region enum fixture must remain present");
         assert!(matches!(
             &region,
             Value::Concrete(ConcreteValue::CanonicalEnum(value))

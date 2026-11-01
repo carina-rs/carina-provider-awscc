@@ -1,0 +1,19 @@
+# SNS FIFO Topic archive policy - attribute removal test (step 2)
+#
+# Tests: remove ArchivePolicy before destroy. AWS refuses to delete a topic
+# while the archive policy still protects retained messages.
+
+provider awscc {
+  region = aws.Region.ap_northeast_1
+}
+
+awscc.sns.Topic {
+  topic_name                  = 'carina-acc-test-sns-archive.fifo'
+  fifo_topic                  = true
+  content_based_deduplication = true
+
+  tags = {
+    Environment = 'acceptance-test'
+    Project     = 'carina'
+  }
+}

@@ -1046,11 +1046,11 @@ mod tests {
             enum_schema
                 .canonicalize_state(Value::Concrete(ConcreteValue::String("GET".into())))
                 .into_present()
-                .expect("non-empty test value must remain present"),
+                .expect("GET enum fixture must remain present"),
             enum_schema
                 .canonicalize_state(Value::Concrete(ConcreteValue::String("PUT".into())))
                 .into_present()
-                .expect("non-empty test value must remain present"),
+                .expect("PUT enum fixture must remain present"),
         ]));
         let result = dsl_value_to_aws_with_defs(
             &value,
@@ -1209,7 +1209,7 @@ mod tests {
             enum_schema
                 .canonicalize_state(Value::Concrete(ConcreteValue::String("Active".into())))
                 .into_present()
-                .expect("non-empty test value must remain present"),
+                .expect("Active enum fixture must remain present"),
         );
         let dsl_value = Value::Concrete(ConcreteValue::Map(map));
 
@@ -1531,7 +1531,7 @@ mod tests {
         let value = test_rootless_type(attr_type.clone())
             .canonicalize_state(raw_value)
             .into_present()
-            .expect("non-empty test value must remain present");
+            .expect("non-empty IAM policy fixture must remain present");
 
         let result = dsl_value_to_aws_with_defs(
             &value,
@@ -2089,7 +2089,7 @@ mod tests {
         let value = schema
             .canonicalize_state(Value::Concrete(ConcreteValue::String("Allow".into())))
             .into_present()
-            .expect("non-empty test value must remain present");
+            .expect("Allow enum fixture must remain present");
 
         assert!(matches!(
             value,
@@ -2379,7 +2379,7 @@ mod tests {
                 "BucketOwnerEnforced".into(),
             )))
             .into_present()
-            .expect("non-empty test value must remain present");
+            .expect("object ownership enum fixture must remain present");
         assert_canonical_enum(
             &canonical_value,
             "aws.s3.Bucket.OwnershipControls.OwnershipControlsRule.ObjectOwnership",
