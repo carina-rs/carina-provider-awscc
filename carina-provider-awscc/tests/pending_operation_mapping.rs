@@ -27,15 +27,16 @@ use carina_core::provider::{
 };
 use carina_core::resource::{ConcreteValue, Directives, Resource, ResourceId, State, Value};
 use carina_core::schema::SchemaRegistry;
+use carina_plugin_sdk::PhasedToken;
 use carina_provider_awscc::provider::{
     AwsccProviderConfig, CcCreateAttempt, CcCreatePoll, CcCreateResume, CcIssuedCreate,
     CcPollAttempt, CcResumeAttempt, CcResumedCreate, NotAppliedCreate,
 };
 use carina_provider_awscc::{
-    AwsccNormalizer, AwsccProvider, BoundedSdkConfig, CcCreateToken, CcDeleteToken, CcRequestPhase,
-    CcUpdateToken, InFlightCreate, RequestToken,
+    AwsccNormalizer, AwsccProvider, BoundedSdkConfig, CcCreateOperation, CcCreateToken,
+    CcDeleteToken, CcRequestPhase, CcUpdateToken, InFlightCreate, RequestToken,
 };
-use carina_provider_protocol::{OperationStep, PendingPhase};
+use carina_provider_protocol::{OperationStep, PendingPhase, PollFinality, PollRequest};
 use indexmap::IndexMap;
 use serde_json::{Value as JsonValue, json};
 use winterbaume_core::{MockAws, MockRequest, MockResponse, MockService, json_error_response};
@@ -433,7 +434,9 @@ enum TestCreateStep {
     },
     Partial {
         identifier: AppliedIdentifier,
+        attributes: HashMap<String, Value>,
         reason: String,
+        missing_attributes: Vec<String>,
     },
     Completed {
         identifier: AppliedIdentifier,
@@ -472,9 +475,9 @@ impl CcCreateAttempt for TestCreateAttempt {
         TestCreateVerdict::Untracked(Box::new(failure.into_error()))
     }
 
-    fn preserve(self, token: CcCreateToken, error: ProviderError) -> Self::Verdict {
+    fn preserve(self, token: CcCreateOperation, error: ProviderError) -> Self::Verdict {
         TestCreateVerdict::InFlight {
-            token,
+            token: token.into(),
             identifier: None,
             error: Box::new(error),
         }
@@ -486,13 +489,13 @@ impl CcCreateAttempt for TestCreateAttempt {
 
     fn pending(
         self,
-        token: CcCreateToken,
+        token: CcCreateOperation,
         _sent: Sent,
         poll_after_secs: u32,
     ) -> Result<Self::Step, Self::Verdict> {
         let token = token.with_poll_after_secs(poll_after_secs);
         Ok(TestCreateStep::Pending {
-            token,
+            token: token.into(),
             poll_after_secs,
             issued: None,
         })
@@ -508,10 +511,10 @@ impl CcPollAttempt for TestCreateAttempt {
         TestCreateVerdict::Untracked(Box::new(failure.into_error()))
     }
 
-    fn preserve(self, token: CcCreateToken, failure: InFlightCreate) -> Self::Verdict {
+    fn preserve(self, token: CcCreateOperation, failure: InFlightCreate) -> Self::Verdict {
         let error = failure.into_error();
         TestCreateVerdict::InFlight {
-            token,
+            token: token.into(),
             identifier: None,
             error: Box::new(error),
         }
@@ -523,12 +526,12 @@ impl CcPollAttempt for TestCreateAttempt {
 
     fn pending(
         self,
-        token: CcCreateToken,
+        token: CcCreateOperation,
         poll_after_secs: u32,
     ) -> Result<Self::Step, Self::Verdict> {
         let token = token.with_poll_after_secs(poll_after_secs);
         Ok(TestCreateStep::Pending {
-            token,
+            token: token.into(),
             poll_after_secs,
             issued: None,
         })
@@ -557,11 +560,16 @@ impl CcIssuedCreate for TestIssuedCreate {
     fn partial(
         self,
         identifier: AppliedIdentifier,
-        _attributes: HashMap<String, Value>,
-        reason: String,
-        _missing_attributes: Vec<String>,
+        attributes: HashMap<String, Value>,
+        reason: ProviderError,
+        missing_attributes: carina_provider_awscc::provider::read_back::NonEmptyAttributeNames,
     ) -> Result<Self::Step, Self::Verdict> {
-        Ok(TestCreateStep::Partial { identifier, reason })
+        Ok(TestCreateStep::Partial {
+            identifier,
+            attributes,
+            reason: reason.to_string(),
+            missing_attributes: missing_attributes.into(),
+        })
     }
 
     fn failed(
@@ -613,9 +621,9 @@ impl CcResumeAttempt for TestCreateAttempt {
         TestCreateVerdict::Untracked(Box::new(failure.into_error()))
     }
 
-    fn preserve(self, token: CcCreateToken, error: ProviderError) -> Self::Verdict {
+    fn preserve(self, token: CcCreateOperation, error: ProviderError) -> Self::Verdict {
         TestCreateVerdict::InFlight {
-            token,
+            token: token.into(),
             identifier: None,
             error: Box::new(error),
         }
@@ -627,12 +635,12 @@ impl CcResumeAttempt for TestCreateAttempt {
 
     fn pending(
         self,
-        token: CcCreateToken,
+        token: CcCreateOperation,
         poll_after_secs: u32,
     ) -> Result<Self::Step, Self::Verdict> {
         let token = token.with_poll_after_secs(poll_after_secs);
         Ok(TestCreateStep::Pending {
-            token,
+            token: token.into(),
             poll_after_secs,
             issued: None,
         })
@@ -657,6 +665,21 @@ impl CcResumedCreate for TestIssuedCreate {
         state: AppliedState,
     ) -> Result<Self::Step, Self::Verdict> {
         Ok(TestCreateStep::Completed { identifier, state })
+    }
+
+    fn partial(
+        self,
+        identifier: AppliedIdentifier,
+        attributes: HashMap<String, Value>,
+        reason: ProviderError,
+        missing_attributes: carina_provider_awscc::provider::read_back::NonEmptyAttributeNames,
+    ) -> Result<Self::Step, Self::Verdict> {
+        Ok(TestCreateStep::Partial {
+            identifier,
+            attributes,
+            reason: reason.to_string(),
+            missing_attributes: missing_attributes.into(),
+        })
     }
 
     fn failed(
@@ -851,12 +874,17 @@ fn pending_create_for_token(
     );
     let attempt = CreateAttempt::for_test(resource.id.clone());
     match token.identifier() {
-        Some(identifier) => attempt
-            .issued(
+        Some(identifier) => {
+            let issued = attempt.issued(
                 common::applied_identifier(identifier),
                 Sent::AllRequestAttributes,
-            )
-            .pending(pending_token, 5),
+            );
+            if token.phase() == PendingPhase::ReadBack {
+                issued.pending_read_back(pending_token, 5)
+            } else {
+                issued.pending(pending_token, 5)
+            }
+        }
         None => attempt.pending(pending_token, Sent::AllRequestAttributes, 5),
     }
 }
@@ -999,7 +1027,9 @@ fn expect_create_pending(step: TestCreateStep) -> (CcCreateToken, u32) {
             );
             (token, poll_after_secs)
         }
-        TestCreateStep::Partial { identifier, reason } => {
+        TestCreateStep::Partial {
+            identifier, reason, ..
+        } => {
             panic!("expected pending create, got partial {identifier:?}: {reason}")
         }
         TestCreateStep::Completed { identifier, state } => {
@@ -1010,19 +1040,14 @@ fn expect_create_pending(step: TestCreateStep) -> (CcCreateToken, u32) {
 }
 
 fn test_create_poll(token: &CcCreateToken) -> CcCreatePoll<TestCreateAttempt, TestIssuedCreate> {
-    match token {
-        CcCreateToken::InFlight(create) if create.identifier().is_some() => {
-            CcCreatePoll::Issued(TestIssuedCreate {
-                identifier: common::applied_identifier(
-                    create
-                        .identifier()
-                        .expect("guard requires an in-flight identifier"),
-                ),
-            })
-        }
-        CcCreateToken::NotIssued(_)
-        | CcCreateToken::Unconfirmed(_)
-        | CcCreateToken::InFlight(_) => CcCreatePoll::Unissued(TestCreateAttempt),
+    match token.identifier() {
+        Some(identifier) => CcCreatePoll::Issued(
+            TestIssuedCreate {
+                identifier: common::applied_identifier(identifier),
+            },
+            token.clone(),
+        ),
+        None => CcCreatePoll::Unissued(TestCreateAttempt, token.clone().into_operation().unwrap()),
     }
 }
 
@@ -1044,7 +1069,616 @@ async fn poll_test_create(
     token: CcCreateToken,
 ) -> Result<TestCreateStep, TestCreateVerdict> {
     let poll = test_create_poll(&token);
-    provider.poll_create_step(resource, token, poll).await
+    provider
+        .poll_create_step(
+            resource,
+            poll,
+            carina_provider_protocol::PollRequest {
+                finality: carina_provider_protocol::PollFinality::Continue,
+            },
+        )
+        .await
+}
+
+#[tokio::test]
+async fn create_read_back_success_then_get_not_found_then_complete() {
+    assert_create_read_back_recovers(not_found()).await;
+}
+
+#[tokio::test]
+async fn create_read_back_error_then_complete() {
+    assert_create_read_back_recovers(throttled()).await;
+}
+
+async fn assert_create_read_back_recovers(first_read: Reply) {
+    let (provider, service) = provider_with_script([
+        (
+            "CreateResource",
+            vec![mutation_reply("create-read-back", VPC_ID)],
+        ),
+        (
+            "GetResourceRequestStatus",
+            vec![status_reply("SUCCESS", Some(VPC_ID), None)],
+        ),
+        (
+            "GetResource",
+            vec![first_read; 3]
+                .into_iter()
+                .chain([get_resource_reply(VPC_TYPE, VPC_ID, vpc_properties())])
+                .collect(),
+        ),
+    ])
+    .await;
+    let resource = common::normalize_resource(vpc_resource()).await;
+    let (operation, _) = expect_create_pending(
+        provider
+            .create_step(resource.as_resource(), TestCreateAttempt)
+            .await
+            .unwrap(),
+    );
+    let (read_back, _) = expect_create_pending(
+        poll_test_create(&provider, resource.as_resource(), operation)
+            .await
+            .unwrap(),
+    );
+    assert_eq!(read_back.identifier(), Some(VPC_ID));
+    assert_eq!(
+        serde_json::to_value(&read_back).unwrap()["phase"],
+        "read_back"
+    );
+    let mut next = read_back;
+    for attempt in 0..3 {
+        match poll_test_create(&provider, resource.as_resource(), next)
+            .await
+            .unwrap()
+        {
+            TestCreateStep::Succeeded { .. } => break,
+            TestCreateStep::Pending { token, .. } if attempt < 2 => next = token,
+            other => panic!("read-back should recover: {other:?}"),
+        }
+    }
+    assert_eq!(service.calls("CreateResource"), 1);
+    assert_eq!(service.calls("GetResourceRequestStatus"), 1);
+    assert_eq!(service.calls("GetResource"), 4);
+}
+
+#[tokio::test]
+async fn update_read_back_after_terminal_status_then_not_found_then_complete() {
+    let (provider, service) = provider_with_script([
+        (
+            "UpdateResource",
+            vec![mutation_reply("update-read-back", VPC_ID)],
+        ),
+        (
+            "GetResourceRequestStatus",
+            vec![status_reply("SUCCESS", Some(VPC_ID), None)],
+        ),
+        (
+            "GetResource",
+            vec![
+                not_found(),
+                get_resource_reply(VPC_TYPE, VPC_ID, vpc_properties()),
+            ],
+        ),
+    ])
+    .await;
+    let (id, from, patch) = vpc_update();
+    let (operation, _) = expect_update_pending(
+        provider
+            .update_step(&id, &vpc_identifier(), &from, &patch)
+            .await
+            .unwrap(),
+    );
+    let read_back = match provider
+        .poll_update_step(
+            &id,
+            &vpc_identifier(),
+            &from,
+            &patch,
+            operation,
+            carina_provider_protocol::PollRequest {
+                finality: carina_provider_protocol::PollFinality::Continue,
+            },
+        )
+        .await
+        .unwrap()
+    {
+        OperationStep::Pending {
+            pending,
+            phase: PendingPhase::ReadBack,
+            ..
+        } => pending,
+        other => panic!("expected read-back pending, got {other:?}"),
+    };
+    assert!(matches!(
+        provider
+            .poll_update_step(
+                &id,
+                &vpc_identifier(),
+                &from,
+                &patch,
+                read_back,
+                carina_provider_protocol::PollRequest {
+                    finality: carina_provider_protocol::PollFinality::Continue
+                }
+            )
+            .await
+            .unwrap(),
+        OperationStep::Done(_)
+    ));
+    assert_eq!(service.calls("UpdateResource"), 1);
+    assert_eq!(service.calls("GetResourceRequestStatus"), 1);
+    assert_eq!(service.calls("GetResource"), 2);
+}
+
+fn read_back_token(resource_type: &str, identifier: &str, _missing: &[&str]) -> CcCreateToken {
+    create_token(json!({
+        "phase": "read_back", "identifier": identifier, "resource_type": resource_type,
+    }))
+}
+
+#[tokio::test]
+async fn create_read_back_declared_synthesized_attribute_then_complete() {
+    let role = "read-back-role";
+    let arn = "arn:aws:iam::123456789012:role/read-back-role";
+    let resource = Resource::with_provider("awscc", "iam.Role", "pending", None)
+        .with_attribute("role_name", string(role));
+    let (provider, service) = provider_with_script([
+        ("CreateResource", vec![mutation_reply("create-role", role)]),
+        (
+            "GetResourceRequestStatus",
+            vec![status_reply("SUCCESS", Some(role), None)],
+        ),
+        (
+            "GetResource",
+            vec![
+                get_resource_reply("AWS::IAM::Role", role, json!({})),
+                get_resource_reply("AWS::IAM::Role", role, json!({"RoleName":role, "Arn":arn})),
+            ],
+        ),
+    ])
+    .await;
+    let (operation, _) = expect_create_pending(
+        provider
+            .create_step(&resource, TestCreateAttempt)
+            .await
+            .unwrap(),
+    );
+    let (pending, _) = expect_create_pending(
+        poll_test_create(&provider, &resource, operation)
+            .await
+            .unwrap(),
+    );
+    let CcCreateToken::ReadBack(continuation) = &pending else {
+        panic!("expected read-back")
+    };
+    assert_eq!(continuation.identifier().as_str(), role);
+    let TestCreateStep::Succeeded { attributes, .. } =
+        poll_test_create(&provider, &resource, pending)
+            .await
+            .unwrap()
+    else {
+        panic!("expected success")
+    };
+    assert_eq!(attributes.get("arn"), Some(&string(arn)));
+    assert_eq!(service.calls("CreateResource"), 1);
+    assert_eq!(service.calls("GetResourceRequestStatus"), 1);
+    assert_eq!(service.calls("GetResource"), 2);
+}
+
+#[tokio::test]
+async fn read_back_final_attempt_returns_partial_with_exact_missing_attributes() {
+    for (resource, identifier, first_read, expected_missing) in [
+        (
+            vpc_resource(),
+            VPC_ID,
+            not_found(),
+            carina_provider_awscc::schemas::generated::get_config_by_type("ec2.Vpc")
+                .unwrap()
+                .schema
+                .as_schema()
+                .attributes()
+                .keys()
+                .cloned()
+                .collect::<Vec<_>>(),
+        ),
+        (
+            vpc_resource(),
+            VPC_ID,
+            Reply::Error {
+                status: 400,
+                code: "AccessDeniedException",
+                message: "injected read failure",
+            },
+            carina_provider_awscc::schemas::generated::get_config_by_type("ec2.Vpc")
+                .unwrap()
+                .schema
+                .as_schema()
+                .attributes()
+                .keys()
+                .cloned()
+                .collect::<Vec<_>>(),
+        ),
+        (
+            Resource::with_provider("awscc", "iam.Role", "pending", None),
+            "read-back-role",
+            get_resource_reply("AWS::IAM::Role", "read-back-role", json!({})),
+            vec!["arn".into()],
+        ),
+    ] {
+        for boundary in ["create", "resume", "update"] {
+            let (provider, service) =
+                provider_with_script([("GetResource", vec![first_read.clone()])]).await;
+            let token = read_back_token(resource.id.resource_type.as_str(), identifier, &["arn"]);
+            // VPC has no arn declaration; its previous missing list must still be a schema name.
+            let token = if resource.id.resource_type.as_str() == "ec2.Vpc" {
+                read_back_token("ec2.Vpc", identifier, &["vpc_id"])
+            } else {
+                token
+            };
+            let final_poll = PollRequest {
+                finality: PollFinality::FinalAttempt,
+            };
+            let identifier = common::applied_identifier(identifier);
+            let missing = match boundary {
+                "create" => {
+                    let step = provider
+                        .poll_create_step(
+                            &resource,
+                            CcCreatePoll::<TestCreateAttempt, TestIssuedCreate>::Issued(
+                                TestIssuedCreate {
+                                    identifier: identifier.clone(),
+                                },
+                                token,
+                            ),
+                            final_poll,
+                        )
+                        .await
+                        .unwrap();
+                    let TestCreateStep::Partial {
+                        identifier: actual,
+                        attributes,
+                        missing_attributes,
+                        ..
+                    } = step
+                    else {
+                        panic!("expected partial create")
+                    };
+                    assert_eq!(actual, identifier);
+                    if resource.id.resource_type.as_str() == "ec2.Vpc" {
+                        assert_eq!(attributes, resource.resolved_attributes());
+                    } else {
+                        assert!(!attributes.contains_key("arn"));
+                    }
+                    missing_attributes
+                }
+                "resume" => {
+                    let step = provider
+                        .resume_create_step(
+                            &resource,
+                            CcCreateResume::<TestCreateAttempt, TestIssuedCreate>::Issued(
+                                TestIssuedCreate {
+                                    identifier: identifier.clone(),
+                                },
+                                token,
+                            ),
+                            final_poll,
+                        )
+                        .await
+                        .unwrap();
+                    let TestCreateStep::Partial {
+                        identifier: actual,
+                        missing_attributes,
+                        ..
+                    } = step
+                    else {
+                        panic!("expected partial resume")
+                    };
+                    assert_eq!(actual, identifier);
+                    missing_attributes
+                }
+                _ => {
+                    let CcCreateToken::ReadBack(continuation) = token else {
+                        unreachable!()
+                    };
+                    let from = State::existing(resource.id.clone(), HashMap::new())
+                        .with_identifier(identifier.as_str());
+                    let step = provider
+                        .poll_update_step(
+                            &resource.id,
+                            &identifier,
+                            &from,
+                            &UpdatePatch { ops: vec![] },
+                            CcUpdateToken::ReadBack(continuation.into()),
+                            final_poll,
+                        )
+                        .await
+                        .unwrap();
+                    let OperationStep::Done(outcome) = step else {
+                        panic!("final update must be terminal")
+                    };
+                    let UpdateOutcomeKind::PartialSuccess { state, diagnostic } = outcome.kind()
+                    else {
+                        panic!("expected partial update")
+                    };
+                    assert_eq!(state.identifier(), &identifier);
+                    diagnostic.missing_attributes().to_vec()
+                }
+            };
+            assert_eq!(missing, expected_missing, "{boundary}");
+            assert_eq!(service.actions(), ["GetResource"]);
+        }
+    }
+}
+
+#[tokio::test]
+async fn read_back_complete_final_read_succeeds_without_waiting_for_undeclared_outputs() {
+    let (provider, service) = provider_with_script([(
+        "GetResource",
+        vec![get_resource_reply(
+            VPC_TYPE,
+            VPC_ID,
+            json!({"VpcId":VPC_ID}),
+        )],
+    )])
+    .await;
+    let resource = vpc_resource();
+    let token = read_back_token("ec2.Vpc", VPC_ID, &["vpc_id"]);
+    let step = provider
+        .poll_create_step(
+            &resource,
+            CcCreatePoll::<TestCreateAttempt, TestIssuedCreate>::Issued(
+                TestIssuedCreate {
+                    identifier: vpc_identifier(),
+                },
+                token,
+            ),
+            PollRequest {
+                finality: PollFinality::FinalAttempt,
+            },
+        )
+        .await
+        .unwrap();
+    assert!(matches!(step, TestCreateStep::Succeeded { .. }));
+    assert_eq!(service.actions(), ["GetResource"]);
+}
+
+#[tokio::test]
+async fn read_back_finality_applies_when_operation_first_reaches_success() {
+    for boundary in ["create", "resume", "update"] {
+        let (provider, service) = provider_with_script([
+            (
+                "UpdateResource",
+                vec![mutation_reply("update-final", VPC_ID)],
+            ),
+            (
+                "GetResourceRequestStatus",
+                vec![status_reply("SUCCESS", Some(VPC_ID), None)],
+            ),
+            ("GetResource", vec![not_found()]),
+        ])
+        .await;
+        let final_poll = PollRequest {
+            finality: PollFinality::FinalAttempt,
+        };
+        match boundary {
+            "create" => {
+                let step = provider
+                    .poll_create_step(
+                        &vpc_resource(),
+                        CcCreatePoll::<TestCreateAttempt, TestIssuedCreate>::Issued(
+                            TestIssuedCreate {
+                                identifier: vpc_identifier(),
+                            },
+                            in_flight_create_token(Some(VPC_ID)),
+                        ),
+                        final_poll,
+                    )
+                    .await
+                    .unwrap();
+                assert!(matches!(step, TestCreateStep::Partial { .. }));
+            }
+            "resume" => {
+                let step = provider
+                    .resume_create_step(
+                        &vpc_resource(),
+                        CcCreateResume::<TestCreateAttempt, TestIssuedCreate>::Issued(
+                            TestIssuedCreate {
+                                identifier: vpc_identifier(),
+                            },
+                            in_flight_create_token(Some(VPC_ID)),
+                        ),
+                        final_poll,
+                    )
+                    .await
+                    .unwrap();
+                assert!(matches!(step, TestCreateStep::Partial { .. }));
+            }
+            _ => {
+                let (id, from, patch) = vpc_update();
+                let (token, _) = expect_update_pending(
+                    provider
+                        .update_step(&id, &vpc_identifier(), &from, &patch)
+                        .await
+                        .unwrap(),
+                );
+                let step = provider
+                    .poll_update_step(&id, &vpc_identifier(), &from, &patch, token, final_poll)
+                    .await
+                    .unwrap();
+                let OperationStep::Done(outcome) = step else {
+                    panic!("final update must be terminal")
+                };
+                assert!(matches!(
+                    outcome.kind(),
+                    UpdateOutcomeKind::PartialSuccess { .. }
+                ));
+            }
+        }
+        assert_eq!(service.calls("GetResourceRequestStatus"), 1);
+        assert_eq!(service.calls("GetResource"), 1);
+    }
+}
+
+#[tokio::test]
+async fn read_back_rejects_mismatched_resource_and_identifier_before_reading() {
+    let (provider, service) = provider_with_script([]).await;
+    for (resource_type, identifier) in [("s3.Bucket", VPC_ID), ("ec2.Vpc", "vpc-other")] {
+        let token = create_token(
+            json!({"phase":"read_back", "identifier":identifier, "resource_type":resource_type}),
+        );
+        let failure = provider
+            .poll_create_step(
+                &vpc_resource(),
+                CcCreatePoll::<TestCreateAttempt, TestIssuedCreate>::Issued(
+                    TestIssuedCreate {
+                        identifier: vpc_identifier(),
+                    },
+                    token,
+                ),
+                PollRequest {
+                    finality: PollFinality::Continue,
+                },
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            failure,
+            TestCreateVerdict::InFlight {
+                identifier: Some(_),
+                ..
+            }
+        ));
+    }
+    assert!(service.actions().is_empty());
+}
+
+#[tokio::test]
+async fn resume_read_back_in_fresh_provider_reads_by_identifier() {
+    let (provider, service) = provider_with_script([
+        (
+            "CreateResource",
+            vec![mutation_reply("create-fresh-resume", VPC_ID)],
+        ),
+        (
+            "GetResourceRequestStatus",
+            vec![status_reply("SUCCESS", Some(VPC_ID), None)],
+        ),
+        (
+            "GetResource",
+            vec![
+                not_found(),
+                get_resource_reply(VPC_TYPE, VPC_ID, vpc_properties()),
+            ],
+        ),
+    ])
+    .await;
+    let resource = common::normalize_resource(vpc_resource()).await;
+    let (operation, _) = expect_create_pending(
+        provider
+            .create_step(resource.as_resource(), TestCreateAttempt)
+            .await
+            .unwrap(),
+    );
+    let (pending, _) = expect_create_pending(
+        poll_test_create(&provider, resource.as_resource(), operation)
+            .await
+            .unwrap(),
+    );
+    let encoded = serde_json::to_string(&pending).unwrap();
+    drop(provider);
+    let mock = MockAws::builder()
+        .with_service(Arc::clone(&service))
+        .build();
+    let fresh = AwsccProvider::from_sdk_config(
+        BoundedSdkConfig::for_test(mock.sdk_config("us-fresh-resume-1").await),
+        &AwsccProviderConfig::default(),
+    )
+    .await;
+    let token: CcCreateToken = serde_json::from_str(&encoded).unwrap();
+    let request = resume_request_for_token(vpc_resource(), &token).await;
+    let outcome = carina_core::provider::Provider::resume_create(&fresh, request)
+        .await
+        .unwrap();
+    assert!(matches!(
+        outcome.kind(),
+        carina_core::provider::ResumeOutcomeKind::Resumed(_)
+    ));
+    assert_eq!(service.calls("CreateResource"), 1);
+    assert_eq!(service.calls("GetResourceRequestStatus"), 1);
+    assert_eq!(service.calls("GetResource"), 2);
+    for body in service.bodies("GetResource") {
+        assert_eq!(
+            serde_json::from_str::<JsonValue>(&body).unwrap()["Identifier"],
+            VPC_ID
+        );
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn native_resume_read_back_uses_schema_budget_without_reissuing_create() {
+    let (provider, service) = provider_with_script([("GetResource", vec![not_found()])]).await;
+    let provider = provider.with_operation_config_for_test(
+        "ec2.Vpc",
+        carina_core::schema::OperationConfig {
+            read_back: carina_provider_protocol::types::ReadBackBudget::from_secs(1),
+            ..Default::default()
+        },
+    );
+    let token = read_back_token("ec2.Vpc", VPC_ID, &["vpc_id"]);
+    let request = resume_request_for_token(vpc_resource(), &token).await;
+    let outcome = carina_core::provider::Provider::resume_create(&provider, request)
+        .await
+        .unwrap();
+    let carina_core::provider::ResumeOutcomeKind::PartialSuccess(partial) = outcome.kind() else {
+        panic!("final resume must be partial")
+    };
+    assert_eq!(partial.identifier().as_str(), VPC_ID);
+    let expected: Vec<_> = carina_provider_awscc::schemas::generated::get_config_by_type("ec2.Vpc")
+        .unwrap()
+        .schema
+        .as_schema()
+        .attributes()
+        .keys()
+        .cloned()
+        .collect();
+    assert_eq!(partial.diagnostic().missing_attributes(), expected);
+    assert_eq!(service.actions(), ["GetResource", "GetResource"]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn native_update_read_back_uses_schema_budget_and_retains_host_deadline() {
+    let (provider, service) = provider_with_script([
+        (
+            "UpdateResource",
+            vec![mutation_reply("native-update", VPC_ID)],
+        ),
+        (
+            "GetResourceRequestStatus",
+            vec![status_reply("SUCCESS", Some(VPC_ID), None)],
+        ),
+        ("GetResource", vec![not_found()]),
+    ])
+    .await;
+    let provider = provider.with_operation_config_for_test(
+        "ec2.Vpc",
+        carina_core::schema::OperationConfig {
+            read_back: carina_provider_protocol::types::ReadBackBudget::from_secs(1),
+            ..Default::default()
+        },
+    );
+    let (id, from, patch) = vpc_update();
+    let outcome = provider
+        .update_resource(id, &vpc_identifier(), &from, &patch)
+        .await
+        .unwrap();
+    assert_eq!(
+        outcome.read_back_end(),
+        carina_provider_protocol::ReadBackEnd::HostDeadline
+    );
+    assert_eq!(service.calls("UpdateResource"), 1);
+    assert_eq!(service.calls("GetResourceRequestStatus"), 1);
+    assert_eq!(service.calls("GetResource"), 2);
 }
 
 fn expect_delete_pending(
@@ -1128,15 +1762,17 @@ async fn accepted_create_without_request_token_becomes_unconfirmed_and_resends_s
         let resent = provider
             .poll_create_step(
                 resource.as_resource(),
-                token,
-                CcCreatePoll::Unissued(TestCreateAttempt),
+                CcCreatePoll::Unissued(TestCreateAttempt, (token).into_operation().unwrap()),
+                carina_provider_protocol::PollRequest {
+                    finality: carina_provider_protocol::PollFinality::Continue,
+                },
             )
             .await
             .unwrap_or_else(|error| panic!("same-token resend must recover tracking: {error:?}"));
         let (resent_token, resent_poll_after_secs) = expect_create_pending(resent);
         assert!(matches!(
             resent_token,
-            CcCreateToken::InFlight(ref create)
+            CcCreateToken::Operation(CcCreateOperation::InFlight(ref create))
                 if create.request() == &RequestToken::from("create-after-missing-token")
                     && create.attempt() == 0
                     && create.identifier().is_none()
@@ -1173,8 +1809,10 @@ async fn unconfirmed_create_without_request_token_uses_resend_backoff() {
     let resent = provider
         .poll_create_step(
             resource.as_resource(),
-            token,
-            CcCreatePoll::Unissued(TestCreateAttempt),
+            CcCreatePoll::Unissued(TestCreateAttempt, (token).into_operation().unwrap()),
+            carina_provider_protocol::PollRequest {
+                finality: carina_provider_protocol::PollFinality::Continue,
+            },
         )
         .await
         .expect("an unconfirmed missing-token reply must stay tracked");
@@ -1254,8 +1892,10 @@ async fn unconfirmed_create_rejection_from_poll_preserves_in_flight_token() {
     let failure = provider
         .poll_create_step(
             resource.as_resource(),
-            token.clone(),
-            CcCreatePoll::Unissued(poll),
+            CcCreatePoll::Unissued(poll, (token.clone()).into_operation().unwrap()),
+            carina_provider_protocol::PollRequest {
+                finality: carina_provider_protocol::PollFinality::Continue,
+            },
         )
         .await
         .expect_err("a rejected resend cannot disprove the earlier create send");
@@ -1292,8 +1932,10 @@ async fn unissued_poll_unconfirmed_rejection_is_in_flight_with_same_token() {
     let failure = provider
         .poll_create_step(
             resource.as_resource(),
-            token.clone(),
-            CcCreatePoll::Unissued(TestCreateAttempt),
+            CcCreatePoll::Unissued(TestCreateAttempt, (token.clone()).into_operation().unwrap()),
+            carina_provider_protocol::PollRequest {
+                finality: carina_provider_protocol::PollFinality::Continue,
+            },
         )
         .await
         .expect_err("a rejected unconfirmed resend must remain in flight");
@@ -1412,10 +2054,15 @@ async fn issued_poll_unconfirmed_client_token_conflict_retries_with_same_token()
     let step = provider
         .poll_create_step::<TestCreateAttempt>(
             resource.as_resource(),
-            token,
-            CcCreatePoll::Issued(TestIssuedCreate {
-                identifier: issued_identifier.clone(),
-            }),
+            CcCreatePoll::Issued(
+                TestIssuedCreate {
+                    identifier: issued_identifier.clone(),
+                },
+                token,
+            ),
+            PollRequest {
+                finality: PollFinality::Continue,
+            },
         )
         .await
         .expect("ClientTokenConflictException must retry an unconfirmed create");
@@ -1457,10 +2104,15 @@ async fn issued_poll_unconfirmed_non_retryable_rejection_preserves_create() {
     let failure = provider
         .poll_create_step::<TestCreateAttempt>(
             resource.as_resource(),
-            token.clone(),
-            CcCreatePoll::Issued(TestIssuedCreate {
-                identifier: issued_identifier.clone(),
-            }),
+            CcCreatePoll::Issued(
+                TestIssuedCreate {
+                    identifier: issued_identifier.clone(),
+                },
+                token.clone(),
+            ),
+            PollRequest {
+                finality: PollFinality::Continue,
+            },
         )
         .await
         .expect_err("a permanent rejection cannot disprove an earlier create send");
@@ -1555,7 +2207,6 @@ async fn resume_unknown_resource_type_preserves_unissued_and_issued_witnesses() 
                 "attempt": 0,
                 "client_token": TEST_CLIENT_TOKEN,
             })),
-            CcCreateResume::Unissued(TestCreateAttempt),
             None,
         ),
         (
@@ -1566,16 +2217,30 @@ async fn resume_unknown_resource_type_preserves_unissued_and_issued_witnesses() 
                 "attempt": 0,
                 "identifier": issued_identifier.as_str(),
             })),
-            CcCreateResume::Issued(TestIssuedCreate {
-                identifier: issued_identifier.clone(),
-            }),
             Some(issued_identifier.clone()),
         ),
     ];
 
-    for (label, token, resume, expected_identifier) in cases {
+    for (label, token, expected_identifier) in cases {
+        let resume = match &expected_identifier {
+            Some(identifier) => CcCreateResume::Issued(
+                TestIssuedCreate {
+                    identifier: identifier.clone(),
+                },
+                token.clone(),
+            ),
+            None => {
+                CcCreateResume::Unissued(TestCreateAttempt, token.clone().into_operation().unwrap())
+            }
+        };
         let failure = match provider
-            .resume_create_step(&resource, token.clone(), resume)
+            .resume_create_step(
+                &resource,
+                resume,
+                carina_provider_protocol::PollRequest {
+                    finality: carina_provider_protocol::PollFinality::Continue,
+                },
+            )
             .await
         {
             Err(failure) => failure,
@@ -1635,7 +2300,7 @@ async fn progress_identifier_transitions_pending_create_to_issued() {
         .await
         .expect("in-progress status with an identifier remains pending");
     let TestCreateStep::Pending {
-        token: CcCreateToken::InFlight(create),
+        token: CcCreateToken::Operation(CcCreateOperation::InFlight(create)),
         issued: Some(issued_identifier),
         ..
     } = next
@@ -1663,36 +2328,21 @@ async fn accepted_in_progress_create_over_budget_preserves_token_and_identifier(
         ),
     ])
     .await;
+    let provider = provider.with_operation_config_for_test(
+        "ec2.Vpc",
+        carina_core::schema::OperationConfig {
+            create_timeout_secs: Some(0),
+            ..Default::default()
+        },
+    );
     let resource = vpc_resource();
     let id = resource.id.clone();
     let request = common::create_request(resource).await;
 
-    let create =
-        tokio::spawn(async move { common::dispatch_create(&provider, &id, request).await });
-    for _ in 0..32 {
-        if service.calls("CreateResource") == 1 {
-            break;
-        }
-        tokio::task::yield_now().await;
-    }
-    assert_eq!(service.calls("CreateResource"), 1);
-    for _ in 0..1024 {
-        if create.is_finished() {
-            break;
-        }
-        tokio::time::advance(std::time::Duration::from_secs(60)).await;
-        for _ in 0..8 {
-            tokio::task::yield_now().await;
-        }
-    }
-    assert!(
-        create.is_finished(),
-        "budgeted create should have timed out; actions: {:?}",
-        service.actions()
-    );
-    let failure = create
+    // The protocol driver owns a std::time deadline. A zero schema budget
+    // reaches its final operation poll without pretending Tokio time advances it.
+    let failure = common::dispatch_create(&provider, &id, request)
         .await
-        .expect("create task should not panic")
         .expect_err("an accepted request that exceeds the budget remains in flight");
     let CreateFailureKind::InFlight { pending, error } = failure.into_kind() else {
         panic!("budget exhaustion must preserve the accepted create");
@@ -1705,14 +2355,14 @@ async fn accepted_in_progress_create_over_budget_preserves_token_and_identifier(
         .expect("persisted CloudControl token should decode");
     assert!(matches!(
         token,
-        CcCreateToken::InFlight(create)
+        CcCreateToken::Operation(CcCreateOperation::InFlight(create))
             if create.request() == &RequestToken::from("create-budget")
                 && create.attempt() == 0
                 && create.identifier() == Some(VPC_ID)
     ));
     assert_eq!(error.variant_name(), "timeout");
     assert_eq!(service.calls("CreateResource"), 1);
-    assert_eq!(service.calls("GetResourceRequestStatus"), 15);
+    assert_eq!(service.calls("GetResourceRequestStatus"), 1);
     assert_eq!(service.calls("GetResource"), 0);
 }
 
@@ -1768,10 +2418,15 @@ async fn resume_in_flight_polls_status_before_any_read() {
     let step = provider
         .resume_create_step(
             resource.as_resource(),
-            token.clone(),
-            CcCreateResume::<TestCreateAttempt, TestIssuedCreate>::Issued(TestIssuedCreate {
-                identifier: vpc_identifier(),
-            }),
+            CcCreateResume::<TestCreateAttempt, TestIssuedCreate>::Issued(
+                TestIssuedCreate {
+                    identifier: vpc_identifier(),
+                },
+                token.clone(),
+            ),
+            carina_provider_protocol::PollRequest {
+                finality: carina_provider_protocol::PollFinality::Continue,
+            },
         )
         .await
         .expect("in-progress resume must remain pending");
@@ -1811,10 +2466,15 @@ async fn resume_success_then_found_completes_after_status_poll() {
     let step = provider
         .resume_create_step(
             resource.as_resource(),
-            in_flight_create_token(Some(VPC_ID)),
-            CcCreateResume::<TestCreateAttempt, TestIssuedCreate>::Issued(TestIssuedCreate {
-                identifier: vpc_identifier(),
-            }),
+            CcCreateResume::<TestCreateAttempt, TestIssuedCreate>::Issued(
+                TestIssuedCreate {
+                    identifier: vpc_identifier(),
+                },
+                in_flight_create_token(Some(VPC_ID)),
+            ),
+            carina_provider_protocol::PollRequest {
+                finality: carina_provider_protocol::PollFinality::Continue,
+            },
         )
         .await
         .expect("terminal success with a found resource completes resume");
@@ -1835,7 +2495,7 @@ async fn resume_success_then_found_completes_after_status_poll() {
 }
 
 #[tokio::test]
-async fn resume_success_then_not_found_is_created_failure_not_completion() {
+async fn resume_success_then_not_found_enters_read_back() {
     let (provider, service) = provider_with_script([
         (
             "GetResourceRequestStatus",
@@ -1846,30 +2506,24 @@ async fn resume_success_then_not_found_is_created_failure_not_completion() {
     .await;
     let resource = common::normalize_resource(vpc_resource()).await;
 
-    let failure = provider
+    let step = provider
         .resume_create_step(
             resource.as_resource(),
-            in_flight_create_token(Some(VPC_ID)),
-            CcCreateResume::<TestCreateAttempt, TestIssuedCreate>::Issued(TestIssuedCreate {
-                identifier: vpc_identifier(),
-            }),
+            CcCreateResume::<TestCreateAttempt, TestIssuedCreate>::Issued(
+                TestIssuedCreate {
+                    identifier: vpc_identifier(),
+                },
+                in_flight_create_token(Some(VPC_ID)),
+            ),
+            PollRequest {
+                finality: PollFinality::Continue,
+            },
         )
         .await
-        .expect_err("terminal success plus NotFound must not be reported completed");
-
-    let TestCreateVerdict::Created {
-        identifier,
-        observation,
-        ..
-    } = failure
-    else {
-        panic!("terminal success plus NotFound must preserve the identifier");
-    };
-    assert_eq!(identifier.as_str(), VPC_ID);
-    assert!(matches!(
-        observation.as_ref(),
-        Observation::Read(ReadOutcome::NotFound { .. })
-    ));
+        .expect("successful mutation with a missing read must remain pending");
+    let (token, _) = expect_create_pending(step);
+    assert_eq!(token.identifier(), Some(VPC_ID));
+    assert_eq!(token.phase(), PendingPhase::ReadBack);
     assert_eq!(
         service.actions(),
         ["GetResourceRequestStatus", "GetResource"]
@@ -1898,10 +2552,15 @@ async fn resume_failed_with_identifier_returns_created_failure_with_observation(
     let failure = provider
         .resume_create_step(
             resource.as_resource(),
-            in_flight_create_token(Some(VPC_ID)),
-            CcCreateResume::<TestCreateAttempt, TestIssuedCreate>::Issued(TestIssuedCreate {
-                identifier: vpc_identifier(),
-            }),
+            CcCreateResume::<TestCreateAttempt, TestIssuedCreate>::Issued(
+                TestIssuedCreate {
+                    identifier: vpc_identifier(),
+                },
+                in_flight_create_token(Some(VPC_ID)),
+            ),
+            carina_provider_protocol::PollRequest {
+                finality: carina_provider_protocol::PollFinality::Continue,
+            },
         )
         .await
         .expect_err("FAILED with an identifier must never become success");
@@ -1946,10 +2605,15 @@ async fn resume_expired_token_with_identifier_and_not_found_is_discarded() {
     let failure = provider
         .resume_create_step(
             resource.as_resource(),
-            token,
-            CcCreateResume::<TestCreateAttempt, TestIssuedCreate>::Issued(TestIssuedCreate {
-                identifier: vpc_identifier(),
-            }),
+            CcCreateResume::<TestCreateAttempt, TestIssuedCreate>::Issued(
+                TestIssuedCreate {
+                    identifier: vpc_identifier(),
+                },
+                token,
+            ),
+            carina_provider_protocol::PollRequest {
+                finality: carina_provider_protocol::PollFinality::Continue,
+            },
         )
         .await
         .expect_err("an expired token plus NotFound proves there is no create to keep");
@@ -2048,8 +2712,13 @@ async fn resume_status_sdk_error_without_identifier_stays_in_flight_with_backoff
     let failure = provider
         .resume_create_step(
             resource.as_resource(),
-            token.clone(),
-            CcCreateResume::<TestCreateAttempt, TestIssuedCreate>::Unissued(TestCreateAttempt),
+            CcCreateResume::<TestCreateAttempt, TestIssuedCreate>::Unissued(
+                TestCreateAttempt,
+                (token.clone()).into_operation().unwrap(),
+            ),
+            carina_provider_protocol::PollRequest {
+                finality: carina_provider_protocol::PollFinality::Continue,
+            },
         )
         .await
         .expect_err("status SDK errors must report an in-flight verdict");
@@ -2081,18 +2750,25 @@ async fn resume_not_issued_uses_resend_attempt() {
     let step = provider
         .resume_create_step(
             resource.as_resource(),
-            create_token(json!({
-                "phase": "not_issued",
-                "attempt": 1,
-                "client_token": TEST_CLIENT_TOKEN,
-            })),
-            CcCreateResume::<TestCreateAttempt, TestIssuedCreate>::Unissued(TestCreateAttempt),
+            CcCreateResume::<TestCreateAttempt, TestIssuedCreate>::Unissued(
+                TestCreateAttempt,
+                (create_token(json!({
+                    "phase": "not_issued",
+                    "attempt": 1,
+                    "client_token": TEST_CLIENT_TOKEN,
+                })))
+                .into_operation()
+                .unwrap(),
+            ),
+            carina_provider_protocol::PollRequest {
+                finality: carina_provider_protocol::PollFinality::Continue,
+            },
         )
         .await
         .expect("NotIssued resume must resend the desired state");
 
     let TestCreateStep::Pending {
-        token: CcCreateToken::InFlight(create),
+        token: CcCreateToken::Operation(CcCreateOperation::InFlight(create)),
         issued: Some(issued),
         ..
     } = step
@@ -2129,10 +2805,15 @@ async fn resume_cancel_complete_with_identifier_reads_back_created_failure() {
     let failure = provider
         .resume_create_step(
             resource.as_resource(),
-            in_flight_create_token(Some(VPC_ID)),
-            CcCreateResume::<TestCreateAttempt, TestIssuedCreate>::Issued(TestIssuedCreate {
-                identifier: vpc_identifier(),
-            }),
+            CcCreateResume::<TestCreateAttempt, TestIssuedCreate>::Issued(
+                TestIssuedCreate {
+                    identifier: vpc_identifier(),
+                },
+                in_flight_create_token(Some(VPC_ID)),
+            ),
+            carina_provider_protocol::PollRequest {
+                finality: carina_provider_protocol::PollFinality::Continue,
+            },
         )
         .await
         .expect_err("a canceled create with an identifier may have created a resource");
@@ -2186,7 +2867,7 @@ async fn pending_statuses_keep_the_same_create_token_and_success_reads_back() {
     assert_eq!(delay, 1);
     assert!(matches!(
         &token,
-        CcCreateToken::InFlight(create)
+        CcCreateToken::Operation(CcCreateOperation::InFlight(create))
             if create.request() == &RequestToken::from("create-0")
                 && create.attempt() == 0
                 && create.identifier() == Some(VPC_ID)
@@ -2242,7 +2923,7 @@ async fn create_throttling_retries_with_the_same_client_token() {
     );
     assert!(matches!(
         &token,
-        CcCreateToken::NotIssued(create) if create.attempt() == 1
+        CcCreateToken::Operation(CcCreateOperation::NotIssued(create)) if create.attempt() == 1
     ));
     assert_eq!(delay, 10);
     assert_eq!(service.calls("CreateResource"), 3);
@@ -2254,7 +2935,7 @@ async fn create_throttling_retries_with_the_same_client_token() {
     );
     assert!(matches!(
         token,
-        CcCreateToken::InFlight(create)
+        CcCreateToken::Operation(CcCreateOperation::InFlight(create))
             if create.request() == &RequestToken::from("create-1")
                 && create.attempt() == 1
                 && create.identifier() == Some(VPC_ID)
@@ -2299,7 +2980,7 @@ async fn not_issued_client_token_conflict_retries_with_the_same_client_token() {
     );
     assert!(matches!(
         &token,
-        CcCreateToken::NotIssued(create) if create.attempt() == 1
+        CcCreateToken::Operation(CcCreateOperation::NotIssued(create)) if create.attempt() == 1
     ));
     assert_eq!(delay, 10);
 
@@ -2310,7 +2991,7 @@ async fn not_issued_client_token_conflict_retries_with_the_same_client_token() {
     );
     assert!(matches!(
         token,
-        CcCreateToken::InFlight(create)
+        CcCreateToken::Operation(CcCreateOperation::InFlight(create))
             if create.request() == &RequestToken::from("create-after-conflict")
                 && create.attempt() == 1
                 && create.identifier() == Some(VPC_ID)
@@ -2345,14 +3026,19 @@ async fn resume_not_issued_reuses_original_create_client_token() {
     );
     assert!(matches!(
         &token,
-        CcCreateToken::NotIssued(create) if create.attempt() == 1
+        CcCreateToken::Operation(CcCreateOperation::NotIssued(create)) if create.attempt() == 1
     ));
 
     let step = provider
         .resume_create_step(
             resource.as_resource(),
-            token,
-            CcCreateResume::<TestCreateAttempt, TestIssuedCreate>::Unissued(TestCreateAttempt),
+            CcCreateResume::<TestCreateAttempt, TestIssuedCreate>::Unissued(
+                TestCreateAttempt,
+                (token).into_operation().unwrap(),
+            ),
+            carina_provider_protocol::PollRequest {
+                finality: carina_provider_protocol::PollFinality::Continue,
+            },
         )
         .await
         .expect("NotIssued resume must resend the desired state");
@@ -2409,7 +3095,7 @@ async fn retryable_failed_status_reissues_with_incremented_attempt_and_backoff()
     );
     assert!(matches!(
         &token,
-        CcCreateToken::NotIssued(create) if create.attempt() == 1
+        CcCreateToken::Operation(CcCreateOperation::NotIssued(create)) if create.attempt() == 1
     ));
     assert_eq!(delay, 10);
     assert_eq!(service.calls("GetResourceRequestStatus"), 1);
@@ -2422,7 +3108,7 @@ async fn retryable_failed_status_reissues_with_incremented_attempt_and_backoff()
     );
     assert!(matches!(
         token,
-        CcCreateToken::InFlight(create)
+        CcCreateToken::Operation(CcCreateOperation::InFlight(create))
             if create.request() == &RequestToken::from("create-1")
                 && create.attempt() == 1
                 && create.identifier() == Some(VPC_ID)
@@ -2602,7 +3288,7 @@ async fn unconfirmed_resends_do_not_consume_failed_status_retry_budget() {
     assert_eq!(delay, 1);
     assert!(matches!(
         &token,
-        CcCreateToken::InFlight(create)
+        CcCreateToken::Operation(CcCreateOperation::InFlight(create))
             if create.request() == &RequestToken::from("accepted-after-resends")
                 && create.attempt() == 0
                 && create.identifier().is_none()
@@ -2615,7 +3301,7 @@ async fn unconfirmed_resends_do_not_consume_failed_status_retry_budget() {
     );
     assert!(matches!(
         token,
-        CcCreateToken::NotIssued(create) if create.attempt() == 1
+        CcCreateToken::Operation(CcCreateOperation::NotIssued(create)) if create.attempt() == 1
     ));
     assert_eq!(delay, 10);
     assert_eq!(service.calls("CreateResource"), 43);
@@ -2678,7 +3364,7 @@ async fn failed_status_retry_follows_message_not_handler_error_code() {
     );
     assert!(matches!(
         token,
-        CcCreateToken::NotIssued(create) if create.attempt() == 1
+        CcCreateToken::Operation(CcCreateOperation::NotIssued(create)) if create.attempt() == 1
     ));
     assert_eq!(delay, 10);
     assert_eq!(service.calls("CreateResource"), 0);
@@ -3307,7 +3993,7 @@ async fn retry_attempts_exhausted_preserves_the_last_sdk_error_source() {
         );
         assert!(matches!(
             &next,
-            CcCreateToken::NotIssued(create) if create.attempt() == attempt + 1
+            CcCreateToken::Operation(CcCreateOperation::NotIssued(create)) if create.attempt() == attempt + 1
         ));
         assert_eq!(delay, expected_delay);
         token = next;
@@ -3401,12 +4087,21 @@ async fn update_success_reads_back_after_one_status_call() {
     };
     assert!(matches!(
         &token,
-        CcUpdateToken::InFlight(request)
+        CcUpdateToken::Operation(CcRequestPhase::InFlight(request))
             if request.request() == &RequestToken::from("update-0")
                 && request.attempt() == 0
     ));
     match provider
-        .poll_update_step(&id, &vpc_identifier(), &from, &patch, token)
+        .poll_update_step(
+            &id,
+            &vpc_identifier(),
+            &from,
+            &patch,
+            token,
+            carina_provider_protocol::PollRequest {
+                finality: carina_provider_protocol::PollFinality::Continue,
+            },
+        )
         .await
         .expect("poll update")
     {
@@ -3451,20 +4146,29 @@ async fn update_not_issued_resends_the_original_patch() {
     };
     assert!(matches!(
         &token,
-        CcUpdateToken::NotIssued(request) if request.attempt() == 1
+        CcUpdateToken::Operation(CcRequestPhase::NotIssued(request)) if request.attempt() == 1
     ));
     assert_eq!(delay, 10);
     assert_eq!(service.calls("UpdateResource"), 3);
 
     let (token, delay) = expect_update_pending(
         provider
-            .poll_update_step(&id, &vpc_identifier(), &from, &patch, token)
+            .poll_update_step(
+                &id,
+                &vpc_identifier(),
+                &from,
+                &patch,
+                token,
+                carina_provider_protocol::PollRequest {
+                    finality: carina_provider_protocol::PollFinality::Continue,
+                },
+            )
             .await
             .expect("re-send update"),
     );
     assert!(matches!(
         token,
-        CcUpdateToken::InFlight(request)
+        CcUpdateToken::Operation(CcRequestPhase::InFlight(request))
             if request.request() == &RequestToken::from("update-1")
                 && request.attempt() == 1
     ));
@@ -3501,19 +4205,28 @@ async fn update_post_send_timeout_resends_with_same_client_token() {
     );
     assert!(matches!(
         &token,
-        CcRequestPhase::Unconfirmed(request) if request.attempt() == 0
+        CcUpdateToken::Operation(CcRequestPhase::Unconfirmed(request)) if request.attempt() == 0
     ));
     assert_eq!(delay, 10);
 
     let (token, delay) = expect_update_pending(
         provider
-            .poll_update_step(&id, &vpc_identifier(), &from, &patch, token)
+            .poll_update_step(
+                &id,
+                &vpc_identifier(),
+                &from,
+                &patch,
+                token,
+                carina_provider_protocol::PollRequest {
+                    finality: carina_provider_protocol::PollFinality::Continue,
+                },
+            )
             .await
             .expect("resending with the same token should recover the request"),
     );
     assert!(matches!(
         token,
-        CcRequestPhase::InFlight(request)
+        CcUpdateToken::Operation(CcRequestPhase::InFlight(request))
             if request.request() == &RequestToken::from("update-timeout")
                 && request.attempt() == 0
     ));
@@ -3550,7 +4263,16 @@ async fn unconfirmed_update_rejection_reports_unknown_earlier_outcome() {
     assert_eq!(delay, 10);
 
     let error = provider
-        .poll_update_step(&id, &vpc_identifier(), &from, &patch, token)
+        .poll_update_step(
+            &id,
+            &vpc_identifier(),
+            &from,
+            &patch,
+            token,
+            carina_provider_protocol::PollRequest {
+                finality: carina_provider_protocol::PollFinality::Continue,
+            },
+        )
         .await
         .expect_err("a permanent rejection must stop the update resend loop");
     assert_eq!(error.variant_name(), "api_error");
@@ -3595,7 +4317,16 @@ async fn update_one_post_send_timeout_then_uncapped_throttling_stays_pending() {
     for expected_resends in 2..=14 {
         let (next, delay) = expect_update_pending(
             provider
-                .poll_update_step(&id, &vpc_identifier(), &from, &patch, token)
+                .poll_update_step(
+                    &id,
+                    &vpc_identifier(),
+                    &from,
+                    &patch,
+                    token,
+                    carina_provider_protocol::PollRequest {
+                        finality: carina_provider_protocol::PollFinality::Continue,
+                    },
+                )
                 .await
                 .unwrap_or_else(|error| {
                     panic!(
@@ -3650,7 +4381,16 @@ async fn update_repeated_post_send_timeouts_past_max_attempts_stay_pending() {
     for expected_resends in 2..=14 {
         let (next, delay) = expect_update_pending(
             provider
-                .poll_update_step(&id, &vpc_identifier(), &from, &patch, token)
+                .poll_update_step(
+                    &id,
+                    &vpc_identifier(),
+                    &from,
+                    &patch,
+                    token,
+                    carina_provider_protocol::PollRequest {
+                        finality: carina_provider_protocol::PollFinality::Continue,
+                    },
+                )
                 .await
                 .unwrap_or_else(|error| {
                     panic!(
@@ -3699,7 +4439,16 @@ async fn update_5xx_service_internal_error_is_maybe_sent_and_uncapped() {
     for expected_resends in 2..=13 {
         let (next, delay) = expect_update_pending(
             provider
-                .poll_update_step(&id, &vpc_identifier(), &from, &patch, token)
+                .poll_update_step(
+                    &id,
+                    &vpc_identifier(),
+                    &from,
+                    &patch,
+                    token,
+                    carina_provider_protocol::PollRequest {
+                        finality: carina_provider_protocol::PollFinality::Continue,
+                    },
+                )
                 .await
                 .unwrap_or_else(|error| {
                     panic!("maybe-sent update resend {expected_resends} was capped: {error}")
@@ -3739,7 +4488,16 @@ async fn update_throttling_reuses_client_token_until_retry_cap() {
     for expected_attempt in 2..=12 {
         let (next, _) = expect_update_pending(
             provider
-                .poll_update_step(&id, &vpc_identifier(), &from, &patch, token)
+                .poll_update_step(
+                    &id,
+                    &vpc_identifier(),
+                    &from,
+                    &patch,
+                    token,
+                    carina_provider_protocol::PollRequest {
+                        finality: carina_provider_protocol::PollFinality::Continue,
+                    },
+                )
                 .await
                 .unwrap_or_else(|error| {
                     panic!("throttled update attempt {expected_attempt} failed early: {error}")
@@ -3749,7 +4507,16 @@ async fn update_throttling_reuses_client_token_until_retry_cap() {
     }
 
     let error = provider
-        .poll_update_step(&id, &vpc_identifier(), &from, &patch, token)
+        .poll_update_step(
+            &id,
+            &vpc_identifier(),
+            &from,
+            &patch,
+            token,
+            carina_provider_protocol::PollRequest {
+                finality: carina_provider_protocol::PollFinality::Continue,
+            },
+        )
         .await
         .expect_err("retryable service rejection should still honor the retry cap");
     assert_cloudcontrol_api_error(
@@ -4237,4 +5004,585 @@ async fn unattached_internet_gateway_goes_straight_to_delete() {
     assert_eq!(delay, 1);
     assert_eq!(service.calls("UpdateResource"), 0);
     assert_eq!(service.calls("DeleteResource"), 1);
+}
+
+fn read_back_continuation_token(resource_type: &str, identifier: &str) -> CcCreateToken {
+    read_back_token(
+        resource_type,
+        identifier,
+        if resource_type == "iam.Role" {
+            &["arn"]
+        } else {
+            &["vpc_id"]
+        },
+    )
+}
+
+async fn poll_read_back_create(
+    provider: &AwsccProvider,
+    resource: &Resource,
+    token: CcCreateToken,
+    finality: PollFinality,
+) -> TestCreateStep {
+    let poll = test_create_poll(&token);
+    provider
+        .poll_create_step(resource, poll, PollRequest { finality })
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn permanent_read_errors_finish_partial_on_initial_read_and_poll() {
+    let bad_properties = Reply::Json(json!({"ResourceDescription":{"Properties":"{broken json"}}));
+    for reply in [
+        Reply::Error {
+            status: 403,
+            code: "AccessDeniedException",
+            message: "read denied",
+        },
+        Reply::Error {
+            status: 400,
+            code: "ValidationException",
+            message: "invalid identifier",
+        },
+        bad_properties,
+    ] {
+        for already_pending in [false, true] {
+            let (provider, service) = provider_with_script([
+                (
+                    "GetResourceRequestStatus",
+                    vec![status_reply("SUCCESS", Some(VPC_ID), None)],
+                ),
+                ("GetResource", vec![reply.clone()]),
+            ])
+            .await;
+            let resource = vpc_resource();
+            let token = if already_pending {
+                read_back_continuation_token("ec2.Vpc", VPC_ID)
+            } else {
+                in_flight_create_token(Some(VPC_ID))
+            };
+            let step =
+                poll_read_back_create(&provider, &resource, token, PollFinality::Continue).await;
+            let TestCreateStep::Partial {
+                identifier, reason, ..
+            } = step
+            else {
+                panic!("permanent read error must finish immediately: {step:?}")
+            };
+            assert_eq!(identifier, vpc_identifier());
+            assert!(!reason.is_empty());
+            assert_eq!(service.calls("GetResource"), 1);
+
+            let (provider, service) = provider_with_script([
+                (
+                    "UpdateResource",
+                    vec![mutation_reply("update-review", VPC_ID)],
+                ),
+                (
+                    "GetResourceRequestStatus",
+                    vec![status_reply("SUCCESS", Some(VPC_ID), None)],
+                ),
+                ("GetResource", vec![reply.clone()]),
+            ])
+            .await;
+            let (id, from, patch) = vpc_update();
+            let token = if already_pending {
+                let CcCreateToken::ReadBack(continuation) =
+                    read_back_continuation_token("ec2.Vpc", VPC_ID)
+                else {
+                    panic!("read token")
+                };
+                CcUpdateToken::ReadBack(continuation.into())
+            } else {
+                expect_update_pending(
+                    provider
+                        .update_step(&id, &vpc_identifier(), &from, &patch)
+                        .await
+                        .unwrap(),
+                )
+                .0
+            };
+            let step = provider
+                .poll_update_step(
+                    &id,
+                    &vpc_identifier(),
+                    &from,
+                    &patch,
+                    token,
+                    PollRequest {
+                        finality: PollFinality::Continue,
+                    },
+                )
+                .await
+                .unwrap();
+            let OperationStep::Done(outcome) = step else {
+                panic!("permanent update read error must finish immediately: {step:?}")
+            };
+            assert!(matches!(
+                outcome.kind(),
+                UpdateOutcomeKind::PartialSuccess { .. }
+            ));
+            assert_eq!(service.calls("GetResource"), 1);
+        }
+    }
+}
+
+#[tokio::test]
+async fn transient_read_errors_wait_then_complete() {
+    for (reply, dispatch) in [
+        (throttled(), false),
+        (service_internal_error(), false),
+        (get_resource_reply(VPC_TYPE, VPC_ID, vpc_properties()), true),
+    ] {
+        let reads = vec![reply.clone(); 3]
+            .into_iter()
+            .chain([get_resource_reply(VPC_TYPE, VPC_ID, vpc_properties())])
+            .collect();
+        let (provider, service) = provider_with_post_send_failures(
+            [("GetResource", reads)],
+            if dispatch {
+                vec![("GetResource", vec![true, false])]
+            } else {
+                vec![]
+            },
+        )
+        .await;
+        let resource = vpc_resource();
+        let first = poll_read_back_create(
+            &provider,
+            &resource,
+            read_back_continuation_token("ec2.Vpc", VPC_ID),
+            PollFinality::Continue,
+        )
+        .await;
+        let (token, _) = expect_create_pending(first);
+        assert!(matches!(
+            poll_read_back_create(&provider, &resource, token, PollFinality::Continue).await,
+            TestCreateStep::Succeeded { .. }
+        ));
+        assert_eq!(service.calls("GetResource"), 4);
+        let reads = vec![reply; 3]
+            .into_iter()
+            .chain([get_resource_reply(VPC_TYPE, VPC_ID, vpc_properties())])
+            .collect();
+        let (provider, service) = provider_with_post_send_failures(
+            [("GetResource", reads)],
+            if dispatch {
+                vec![("GetResource", vec![true, false])]
+            } else {
+                vec![]
+            },
+        )
+        .await;
+        let (id, from, patch) = vpc_update();
+        let CcCreateToken::ReadBack(continuation) = read_back_continuation_token("ec2.Vpc", VPC_ID)
+        else {
+            panic!("read token")
+        };
+        let OperationStep::Pending {
+            pending,
+            phase: PendingPhase::ReadBack,
+            ..
+        } = provider
+            .poll_update_step(
+                &id,
+                &vpc_identifier(),
+                &from,
+                &patch,
+                CcUpdateToken::ReadBack(continuation.into()),
+                PollRequest {
+                    finality: PollFinality::Continue,
+                },
+            )
+            .await
+            .unwrap()
+        else {
+            panic!("transient update read must wait")
+        };
+        let OperationStep::Done(outcome) = provider
+            .poll_update_step(
+                &id,
+                &vpc_identifier(),
+                &from,
+                &patch,
+                pending,
+                PollRequest {
+                    finality: PollFinality::Continue,
+                },
+            )
+            .await
+            .unwrap()
+        else {
+            panic!("transient update read must recover")
+        };
+        assert!(matches!(outcome.kind(), UpdateOutcomeKind::Success { .. }));
+        assert_eq!(service.calls("GetResource"), 4);
+    }
+}
+
+#[tokio::test]
+async fn final_partial_retains_create_request_attributes_after_poll() {
+    let (provider, _) = provider_with_script([("GetResource", vec![not_found()])]).await;
+    let resource = vpc_resource();
+    let first = poll_read_back_create(
+        &provider,
+        &resource,
+        read_back_continuation_token("ec2.Vpc", VPC_ID),
+        PollFinality::Continue,
+    )
+    .await;
+    let (token, _) = expect_create_pending(first);
+    let TestCreateStep::Partial {
+        attributes,
+        missing_attributes,
+        ..
+    } = poll_read_back_create(&provider, &resource, token, PollFinality::FinalAttempt).await
+    else {
+        panic!("final partial")
+    };
+    assert_eq!(attributes, resource.resolved_attributes());
+    let mut expected = carina_provider_awscc::schemas::generated::get_config_by_type("ec2.Vpc")
+        .unwrap()
+        .schema
+        .as_schema()
+        .attributes()
+        .keys()
+        .cloned()
+        .collect::<Vec<_>>();
+    expected.sort();
+    assert_eq!(missing_attributes, expected);
+}
+
+#[tokio::test]
+async fn final_partial_retains_post_update_attributes_after_poll() {
+    let (provider, _) = provider_with_script([("GetResource", vec![not_found()])]).await;
+    let (id, from, mut patch) = vpc_update();
+    patch.ops.push(PatchOp::Remove {
+        key: "cidr_block".into(),
+    });
+    let CcCreateToken::ReadBack(continuation) = read_back_continuation_token("ec2.Vpc", VPC_ID)
+    else {
+        panic!("read token")
+    };
+    let OperationStep::Pending { pending, .. } = provider
+        .poll_update_step(
+            &id,
+            &vpc_identifier(),
+            &from,
+            &patch,
+            CcUpdateToken::ReadBack(continuation.into()),
+            PollRequest {
+                finality: PollFinality::Continue,
+            },
+        )
+        .await
+        .unwrap()
+    else {
+        panic!("pending")
+    };
+    let OperationStep::Done(outcome) = provider
+        .poll_update_step(
+            &id,
+            &vpc_identifier(),
+            &from,
+            &patch,
+            pending,
+            PollRequest {
+                finality: PollFinality::FinalAttempt,
+            },
+        )
+        .await
+        .unwrap()
+    else {
+        panic!("done")
+    };
+    let UpdateOutcomeKind::PartialSuccess { state, diagnostic } = outcome.kind() else {
+        panic!("partial")
+    };
+    assert_eq!(
+        state.attributes(),
+        &HashMap::from([("enable_dns_support".into(), bool_(true))])
+    );
+    assert!(
+        diagnostic
+            .missing_attributes()
+            .contains(&"enable_dns_support".into())
+    );
+    assert!(diagnostic.missing_attributes().iter().all(|name| {
+        name.bytes()
+            .all(|ch| ch.is_ascii_lowercase() || ch == b'_' || ch.is_ascii_digit())
+    }));
+}
+
+#[tokio::test]
+async fn saved_identifier_only_token_resumes_and_rederives_missing() {
+    let token: CcCreateToken = serde_json::from_value(
+        json!({"phase":"read_back", "identifier":"review-role", "resource_type":"iam.Role"}),
+    )
+    .expect("identifier-only saved tokens must resume");
+    let (provider, service) = provider_with_script([(
+        "GetResource",
+        vec![get_resource_reply(
+            "AWS::IAM::Role",
+            "review-role",
+            json!({"RoleId":"AROAREVIEW000000000001"}),
+        )],
+    )])
+    .await;
+    let resource = Resource::with_provider("awscc", "iam.Role", "review", None);
+    let step = provider
+        .resume_create_step(
+            &resource,
+            CcCreateResume::<TestCreateAttempt, TestIssuedCreate>::Issued(
+                TestIssuedCreate {
+                    identifier: common::applied_identifier("review-role"),
+                },
+                token,
+            ),
+            PollRequest {
+                finality: PollFinality::FinalAttempt,
+            },
+        )
+        .await
+        .unwrap();
+    let TestCreateStep::Partial {
+        missing_attributes, ..
+    } = step
+    else {
+        panic!("re-derived arn declaration")
+    };
+    assert_eq!(missing_attributes, ["arn"]);
+    assert_eq!(service.actions(), ["GetResource"]);
+    let token: CcUpdateToken = serde_json::from_value(json!({"phase":"read_back", "continuation":{"identifier":"review-role", "resource_type":"iam.Role"}})).expect("identifier-only update token must resume");
+    let from = State::existing(resource.id.clone(), HashMap::new()).with_identifier("review-role");
+    let OperationStep::Done(outcome) = provider
+        .poll_update_step(
+            &resource.id,
+            &common::applied_identifier("review-role"),
+            &from,
+            &UpdatePatch { ops: vec![] },
+            token,
+            PollRequest {
+                finality: PollFinality::FinalAttempt,
+            },
+        )
+        .await
+        .unwrap()
+    else {
+        panic!("final update must finish")
+    };
+    let UpdateOutcomeKind::PartialSuccess { diagnostic, .. } = outcome.kind() else {
+        panic!("re-derived update arn declaration")
+    };
+    assert_eq!(diagnostic.missing_attributes(), ["arn"]);
+    assert_eq!(service.actions(), ["GetResource", "GetResource"]);
+}
+
+async fn update_missing_role_attribute() -> UpdateOutcome {
+    let role = "review-role";
+    let (provider, service) = provider_with_script([
+        (
+            "UpdateResource",
+            vec![mutation_reply("review-update", role)],
+        ),
+        (
+            "GetResourceRequestStatus",
+            vec![status_reply(
+                "FAILED",
+                Some(role),
+                Some("handler rejected description"),
+            )],
+        ),
+        (
+            "GetResource",
+            vec![get_resource_reply(
+                "AWS::IAM::Role",
+                role,
+                json!({"RoleId":"AROAREVIEW000000000001"}),
+            )],
+        ),
+    ])
+    .await;
+    let id = ResourceId::with_provider_identity("awscc", "iam.Role", "review", None);
+    let identifier = common::applied_identifier(role);
+    let from = State::existing(id.clone(), HashMap::new()).with_identifier(role);
+    let patch = UpdatePatch {
+        ops: vec![PatchOp::Add {
+            key: "description".into(),
+            value: string("new"),
+        }],
+    };
+    let (operation, _) = expect_update_pending(
+        provider
+            .update_step(&id, &identifier, &from, &patch)
+            .await
+            .unwrap(),
+    );
+    let OperationStep::Pending {
+        pending,
+        phase: PendingPhase::ReadBack,
+        ..
+    } = provider
+        .poll_update_step(
+            &id,
+            &identifier,
+            &from,
+            &patch,
+            operation,
+            PollRequest {
+                finality: PollFinality::Continue,
+            },
+        )
+        .await
+        .unwrap()
+    else {
+        panic!("declared arn missing must wait")
+    };
+    let pending = serde_json::from_value(serde_json::to_value(&pending).unwrap()).unwrap();
+    let OperationStep::Pending { pending, .. } = provider
+        .poll_update_step(
+            &id,
+            &identifier,
+            &from,
+            &patch,
+            pending,
+            PollRequest {
+                finality: PollFinality::Continue,
+            },
+        )
+        .await
+        .unwrap()
+    else {
+        panic!("still pending")
+    };
+    let pending = serde_json::from_value(serde_json::to_value(&pending).unwrap()).unwrap();
+    let OperationStep::Done(outcome) = provider
+        .poll_update_step(
+            &id,
+            &identifier,
+            &from,
+            &patch,
+            pending,
+            PollRequest {
+                finality: PollFinality::FinalAttempt,
+            },
+        )
+        .await
+        .unwrap()
+    else {
+        panic!("final partial")
+    };
+    assert_eq!(service.calls("UpdateResource"), 1);
+    assert_eq!(service.calls("GetResourceRequestStatus"), 1);
+    assert_eq!(service.calls("GetResource"), 3);
+    outcome
+}
+
+#[tokio::test]
+async fn update_retains_handler_failure_across_polls() {
+    let outcome = update_missing_role_attribute().await;
+    let UpdateOutcomeKind::PartialSuccess { diagnostic, .. } = outcome.kind() else {
+        panic!("partial")
+    };
+    assert!(
+        diagnostic.reason().contains("handler rejected description"),
+        "{}",
+        diagnostic.reason()
+    );
+}
+
+#[tokio::test]
+async fn update_checks_patch_confirmation_when_declared_attribute_missing_at_deadline() {
+    let outcome = update_missing_role_attribute().await;
+    let UpdateOutcomeKind::PartialSuccess { diagnostic, .. } = outcome.kind() else {
+        panic!("partial")
+    };
+    assert_eq!(diagnostic.missing_attributes(), ["arn", "description"]);
+    assert!(diagnostic.reason().contains("description"));
+}
+
+#[test]
+fn native_read_back_poll_transient_error_preserves_continuation() {
+    let resource = vpc_resource();
+    let token = read_back_token("ec2.Vpc", VPC_ID, &["vpc_id"]);
+    let pending = pending_create_for_token(&resource, &token);
+    let sent = pending.sent().clone();
+    let Poll::Issued(issued) = pending.into_poll() else {
+        panic!("read-back must have an issued identifier")
+    };
+    let failure = CcIssuedCreate::preserve(
+        issued,
+        token.clone(),
+        ProviderError::timeout("temporary polling failure"),
+    );
+    let CreateFailureKind::InFlight { pending, error } = failure.into_kind() else {
+        panic!("a transient read-back poll failure must keep the continuation")
+    };
+    let pending = pending.into_fresh().unwrap();
+    assert_eq!(pending.phase(), PendingPhase::ReadBack);
+    assert_eq!(pending.identifier(), Some(&vpc_identifier()));
+    assert_eq!(pending.sent(), &sent);
+    assert_eq!(pending.poll_after_secs(), 5);
+    assert_eq!(
+        pending.token().expose_for_provider_call(),
+        serde_json::to_string(&token).unwrap()
+    );
+    assert_eq!(error.variant_name(), "timeout");
+    assert_eq!(error.to_string(), "temporary polling failure");
+}
+
+#[test]
+fn phased_tokens_keep_existing_json_and_derive_pending_phase() {
+    fn check<T>(encoded: JsonValue, phase: PendingPhase)
+    where
+        T: PhasedToken
+            + serde::Serialize
+            + serde::de::DeserializeOwned
+            + Clone
+            + PartialEq
+            + std::fmt::Debug,
+    {
+        let token: T = serde_json::from_value(encoded.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&token).unwrap(), encoded);
+        assert_eq!(token.phase(), phase);
+        assert_eq!(
+            token.operation().is_some(),
+            phase == PendingPhase::Operation
+        );
+        match token.clone().into_operation() {
+            Ok(operation) => assert_eq!(T::from_operation(operation), token),
+            Err(read_back) => {
+                assert_eq!(phase, PendingPhase::ReadBack);
+                assert_eq!(read_back, token);
+            }
+        }
+        let pending = carina_plugin_sdk::Pending::new(token, 17);
+        assert_eq!(pending.phase(), phase);
+        assert_eq!(pending.poll_after_secs, 17);
+        assert_eq!(serde_json::to_value(pending.token).unwrap(), encoded);
+    }
+    for encoded in [
+        json!({"phase":"not_issued", "attempt":2, "client_token":TEST_CLIENT_TOKEN, "poll_after_secs":7}),
+        json!({"phase":"unconfirmed", "attempt":2, "resends":3, "client_token":TEST_CLIENT_TOKEN, "poll_after_secs":11}),
+        json!({"phase":"in_flight", "request":"accepted-create", "attempt":2, "poll_after_secs":13}),
+        json!({"phase":"in_flight", "request":"accepted-create", "attempt":2, "identifier":VPC_ID, "poll_after_secs":13}),
+    ] {
+        check::<CcCreateToken>(encoded, PendingPhase::Operation);
+    }
+    check::<CcCreateToken>(
+        json!({"phase":"read_back", "identifier":VPC_ID, "resource_type":"ec2.Vpc"}),
+        PendingPhase::ReadBack,
+    );
+    for encoded in [
+        json!({"phase":"not_issued", "attempt":2, "client_token":TEST_CLIENT_TOKEN}),
+        json!({"phase":"unconfirmed", "attempt":2, "resends":3, "client_token":TEST_CLIENT_TOKEN}),
+        json!({"phase":"in_flight", "request":"accepted-update", "attempt":2}),
+    ] {
+        check::<CcUpdateToken>(encoded, PendingPhase::Operation);
+    }
+    check::<CcUpdateToken>(
+        json!({"phase":"read_back", "continuation":{"identifier":VPC_ID, "resource_type":"ec2.Vpc"}}),
+        PendingPhase::ReadBack,
+    );
 }

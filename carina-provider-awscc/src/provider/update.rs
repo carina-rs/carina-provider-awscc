@@ -706,6 +706,7 @@ mod tests {
             primary_identifier: &[],
             exclusive_groups: &[],
             tags: None,
+            await_on_read_back: vec![],
             schema: ResourceSchema::new("test.Resource")
                 .attribute(
                     AttributeSchema::provider_populated("read_only", AttributeType::string())
@@ -744,6 +745,7 @@ mod tests {
             primary_identifier: &[],
             exclusive_groups: &[],
             tags: None,
+            await_on_read_back: vec![],
             schema: ResourceSchema::new("test.Resource")
                 .attribute(
                     AttributeSchema::optional("unmapped_attribute", AttributeType::string())
@@ -995,6 +997,7 @@ mod tests {
             resource_type_name: "test.Resource",
             primary_identifier: &[],
             exclusive_groups: &[],
+            await_on_read_back: vec![],
             tags: Some(crate::schemas::config::TagsProperty {
                 provider_name: "ResourceTags",
                 wire: crate::schemas::config::TagsWire::KeyValueList,

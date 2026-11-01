@@ -47,6 +47,7 @@ pub fn ec2_route_table_config() -> AwsccSchemaConfig {
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "RouteTableId", dsl_name: "route_table_id" }],
         exclusive_groups: &[],
         tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
+        await_on_read_back: vec![],
         schema: schema.validate().expect("generated schema must pass admission"),
     }
 }

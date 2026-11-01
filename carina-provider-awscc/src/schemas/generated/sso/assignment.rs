@@ -78,6 +78,7 @@ pub fn sso_assignment_config() -> AwsccSchemaConfig {
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "InstanceArn", dsl_name: "instance_arn" }, crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "TargetId", dsl_name: "target_id" }, crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "TargetType", dsl_name: "target_type" }, crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "PermissionSetArn", dsl_name: "permission_set_arn" }, crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "PrincipalType", dsl_name: "principal_type" }, crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "PrincipalId", dsl_name: "principal_id" }],
         exclusive_groups: &[],
         tags: None,
+        await_on_read_back: vec![],
         schema: schema.validate().expect("generated schema must pass admission"),
     }
 }

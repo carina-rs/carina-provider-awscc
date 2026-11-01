@@ -11,16 +11,10 @@
 
 use std::collections::HashMap;
 
-use carina_core::provider::ProviderResult;
+use super::read_back::ReadFailure;
 use carina_core::resource::{ConcreteValue, Value};
 
 use super::AwsccProvider;
-
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) enum SynthesisStatus {
-    Complete,
-    Missing { attributes: Vec<String> },
-}
 
 /// Build the ARN for `AWS::CloudFront::Distribution`.
 ///
@@ -81,9 +75,7 @@ pub(crate) fn pending_cloudfront_distribution_arn(
 
 /// If `attributes` is missing the `arn` slot for an `iam.Role` read-back
 /// but `role_name` is present, return the synthesized ARN value to insert.
-/// The caller separately treats an absent role name as a missing synthesized
-/// attribute so create can return `PartialSuccess` instead of publishing an
-/// incomplete success state.
+/// The read-back declaration controls completeness when synthesis needs more data.
 pub(crate) fn pending_iam_role_arn(
     resource_type: &str,
     attributes: &HashMap<String, Value>,
@@ -101,20 +93,6 @@ pub(crate) fn pending_iam_role_arn(
     Some(Value::Concrete(ConcreteValue::String(
         iam_role_arn(partition, account_id, path, role_name).into(),
     )))
-}
-
-pub(crate) fn missing_synthesized_attributes(
-    resource_type: &str,
-    attributes: &HashMap<String, Value>,
-) -> Vec<String> {
-    if resource_type == "iam.Role"
-        && !attributes.contains_key("arn")
-        && string_attr(attributes, "role_name").is_none()
-    {
-        vec!["arn".to_string()]
-    } else {
-        Vec::new()
-    }
 }
 
 fn string_attr<'a>(attributes: &'a HashMap<String, Value>, name: &str) -> Option<&'a str> {
@@ -149,15 +127,9 @@ impl AwsccProvider {
         &self,
         resource_type: &str,
         attributes: &mut HashMap<String, Value>,
-    ) -> ProviderResult<SynthesisStatus> {
-        let missing = missing_synthesized_attributes(resource_type, attributes);
-        if !missing.is_empty() {
-            return Ok(SynthesisStatus::Missing {
-                attributes: missing,
-            });
-        }
+    ) -> Result<(), ReadFailure> {
         if !needs_synthesis(resource_type, attributes) {
-            return Ok(SynthesisStatus::Complete);
+            return Ok(());
         }
         let account_id = self.account_id().await?;
         let partition = partition_for_region(
@@ -175,7 +147,7 @@ impl AwsccProvider {
         {
             attributes.insert("arn".to_string(), value);
         }
-        Ok(SynthesisStatus::Complete)
+        Ok(())
     }
 }
 
@@ -350,15 +322,6 @@ mod tests {
             }
             other => panic!("expected concrete string ARN, got {other:?}"),
         }
-    }
-
-    #[test]
-    fn missing_synthesized_attributes_reports_iam_role_arn_without_role_name() {
-        let attrs = attrs_with_role(Some("/"), None);
-        assert_eq!(
-            missing_synthesized_attributes("iam.Role", &attrs),
-            vec!["arn".to_string()]
-        );
     }
 
     /// `needs_synthesis` is the gate `synthesize_read_attributes` checks

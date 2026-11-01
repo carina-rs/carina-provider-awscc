@@ -33,6 +33,12 @@ awscc.iam.Role {
 }
 ```
 
+## Read-back
+
+After create and update, read-back waits for `arn` to appear.
+
+The read-back budget is 120 seconds.
+
 ## Argument Reference
 
 ### `assume_role_policy_document`

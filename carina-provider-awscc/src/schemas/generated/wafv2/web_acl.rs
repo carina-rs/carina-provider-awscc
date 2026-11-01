@@ -1053,6 +1053,7 @@ pub fn wafv2_web_acl_config() -> AwsccSchemaConfig {
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "Name", dsl_name: "name" }, crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "Id", dsl_name: "id" }, crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "Scope", dsl_name: "scope" }],
         exclusive_groups: &[],
         tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
+        await_on_read_back: vec![],
         schema: schema.validate().expect("generated schema must pass admission"),
     }
 }

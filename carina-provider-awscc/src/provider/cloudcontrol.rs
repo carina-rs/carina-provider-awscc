@@ -18,8 +18,11 @@ use aws_smithy_types::error::metadata::ProvideErrorMetadata;
 use aws_smithy_types::retry::ProvideErrorKind;
 use carina_aws_types::{FinalAttempt, SendClassification, Transience};
 use carina_core::provider::{ProviderError, ProviderResult};
+use carina_plugin_sdk::PhasedToken;
 use carina_provider_protocol::{OperationStep, PendingPhase};
 use serde::{Deserialize, Serialize};
+
+use super::read_back::{ReadBackContinuation, ReadFailure, UpdateReadBackContinuation};
 
 use super::{
     AwsccProvider, CREATE_RETRY_INITIAL_DELAY_SECS, CREATE_RETRY_MAX_ATTEMPTS,
@@ -63,7 +66,7 @@ impl From<String> for RequestToken {
 }
 
 mod client_token {
-    use super::{OperationStatus, ProviderError, RequestToken};
+    use super::{OperationStatus, PhasedToken, ProviderError, ReadBackContinuation, RequestToken};
     use serde::{Deserialize, Serialize};
 
     /// Opaque idempotency token for one logical CloudControl request.
@@ -420,24 +423,82 @@ mod client_token {
         }
     }
 
-    /// Continuation state for a CloudControl create operation.
-    ///
-    /// CloudControl can disclose the physical identifier before the request is
-    /// terminal. Keep it beside the request token so every later poll or resume
-    /// can preserve both pieces of evidence. The client token is generated once
-    /// per logical create and retained across every resend for idempotency.
+    /// Mutation continuations that can be carried before an identifier is known.
     #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
     #[serde(tag = "phase", rename_all = "snake_case")]
-    pub enum CcCreateToken {
+    pub enum CcCreateOperation {
         /// No create send could have been accepted by CloudControl.
         NotIssued(NotIssuedCreate),
-        /// A create send may have been accepted; only the same request and token may be resent.
+        /// A create send may have been accepted; resend only the same client token.
         Unconfirmed(UnconfirmedCreate),
         /// CloudControl accepted the create and returned a request token.
         InFlight(InFlightCreateRequest),
     }
 
+    /// A host continuation, including the identifier-only read-back phase.
+    /// The untagged operation arm retains the persisted mutation token JSON.
+    #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+    #[serde(tag = "phase", rename_all = "snake_case", from = "CreateTokenWire")]
+    pub enum CcCreateToken {
+        ReadBack(ReadBackContinuation),
+        #[serde(untagged)]
+        Operation(CcCreateOperation),
+    }
+
     impl std::fmt::Debug for CcCreateToken {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            match self {
+                Self::Operation(operation) => std::fmt::Debug::fmt(operation, f),
+                Self::ReadBack(read_back) => f.debug_tuple("ReadBack").field(read_back).finish(),
+            }
+        }
+    }
+
+    // Decode the original tagged representation directly so malformed operation
+    // payloads retain their specific validation error instead of an untagged error.
+    #[derive(Deserialize)]
+    #[serde(tag = "phase", rename_all = "snake_case")]
+    enum CreateTokenWire {
+        NotIssued(NotIssuedCreate),
+        Unconfirmed(UnconfirmedCreate),
+        InFlight(InFlightCreateRequest),
+        ReadBack(ReadBackContinuation),
+    }
+
+    impl From<CreateTokenWire> for CcCreateToken {
+        fn from(wire: CreateTokenWire) -> Self {
+            match wire {
+                CreateTokenWire::NotIssued(create) => create.into(),
+                CreateTokenWire::Unconfirmed(create) => create.into(),
+                CreateTokenWire::InFlight(create) => create.into(),
+                CreateTokenWire::ReadBack(read_back) => Self::ReadBack(read_back),
+            }
+        }
+    }
+
+    impl PhasedToken for CcCreateToken {
+        type Operation = CcCreateOperation;
+
+        fn from_operation(operation: CcCreateOperation) -> Self {
+            Self::Operation(operation)
+        }
+
+        fn into_operation(self) -> Result<CcCreateOperation, Self> {
+            match self {
+                Self::Operation(operation) => Ok(operation),
+                Self::ReadBack(_) => Err(self),
+            }
+        }
+
+        fn operation(&self) -> Option<&CcCreateOperation> {
+            match self {
+                Self::Operation(operation) => Some(operation),
+                Self::ReadBack(_) => None,
+            }
+        }
+    }
+
+    impl std::fmt::Debug for CcCreateOperation {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             match self {
                 Self::NotIssued(create) => f
@@ -462,7 +523,7 @@ mod client_token {
         }
     }
 
-    impl CcCreateToken {
+    impl CcCreateOperation {
         pub fn identifier(&self) -> Option<&str> {
             match self {
                 Self::NotIssued(_) | Self::Unconfirmed(_) => None,
@@ -478,8 +539,6 @@ mod client_token {
             }
         }
 
-        /// Poll cadence attached to this exact continuation. Protocol-v13
-        /// in-flight verdicts must re-emit it together with the token.
         pub fn poll_after_secs(&self) -> u32 {
             match self {
                 Self::NotIssued(create) => create.poll_after_secs,
@@ -506,21 +565,79 @@ mod client_token {
         }
     }
 
-    impl From<NotIssuedCreate> for CcCreateToken {
+    impl CcCreateToken {
+        pub fn identifier(&self) -> Option<&str> {
+            match self {
+                Self::Operation(operation) => operation.identifier(),
+                Self::ReadBack(read_back) => Some(read_back.identifier().as_str()),
+            }
+        }
+
+        pub fn attempt(&self) -> u32 {
+            match self {
+                Self::Operation(operation) => operation.attempt(),
+                Self::ReadBack(_) => 0,
+            }
+        }
+
+        /// Cadence re-emitted together with an error-bearing continuation.
+        pub fn poll_after_secs(&self) -> u32 {
+            match self {
+                Self::Operation(operation) => operation.poll_after_secs(),
+                Self::ReadBack(_) => super::POLL_AFTER_SECS,
+            }
+        }
+
+        #[doc(hidden)]
+        pub fn with_poll_after_secs(self, poll_after_secs: u32) -> Self {
+            match self {
+                Self::Operation(operation) => {
+                    Self::Operation(operation.with_poll_after_secs(poll_after_secs))
+                }
+                read_back @ Self::ReadBack(_) => read_back,
+            }
+        }
+    }
+
+    impl From<CcCreateOperation> for CcCreateToken {
+        fn from(operation: CcCreateOperation) -> Self {
+            Self::Operation(operation)
+        }
+    }
+
+    impl From<NotIssuedCreate> for CcCreateOperation {
         fn from(create: NotIssuedCreate) -> Self {
             Self::NotIssued(create)
         }
     }
 
-    impl From<UnconfirmedCreate> for CcCreateToken {
+    impl From<NotIssuedCreate> for CcCreateToken {
+        fn from(create: NotIssuedCreate) -> Self {
+            Self::Operation(create.into())
+        }
+    }
+
+    impl From<UnconfirmedCreate> for CcCreateOperation {
         fn from(create: UnconfirmedCreate) -> Self {
             Self::Unconfirmed(create)
         }
     }
 
-    impl From<InFlightCreateRequest> for CcCreateToken {
+    impl From<UnconfirmedCreate> for CcCreateToken {
+        fn from(create: UnconfirmedCreate) -> Self {
+            Self::Operation(create.into())
+        }
+    }
+
+    impl From<InFlightCreateRequest> for CcCreateOperation {
         fn from(create: InFlightCreateRequest) -> Self {
             Self::InFlight(create)
+        }
+    }
+
+    impl From<InFlightCreateRequest> for CcCreateToken {
+        fn from(create: InFlightCreateRequest) -> Self {
+            Self::Operation(create.into())
         }
     }
 
@@ -668,7 +785,7 @@ mod client_token {
         fn create_continuation_retains_poll_cadence_across_phases_and_serde() {
             let not_issued =
                 match CcCreateToken::from(NotIssuedCreate::start()).with_poll_after_secs(37) {
-                    CcCreateToken::NotIssued(token) => token,
+                    CcCreateToken::Operation(CcCreateOperation::NotIssued(token)) => token,
                     _ => unreachable!(),
                 };
             let unconfirmed = not_issued.into_unconfirmed(1);
@@ -707,13 +824,79 @@ mod client_token {
 
 pub(crate) use client_token::TerminallyFailedCreate;
 pub use client_token::{
-    CcCreateToken, CcRequestPhase, ClientToken, InFlightCreateRequest, InFlightRequest,
-    NotAppliedCreate, NotIssuedCreate, NotIssuedRequest, UnconfirmedCreate, UnconfirmedRequest,
+    CcCreateOperation, CcCreateToken, CcRequestPhase, ClientToken, InFlightCreateRequest,
+    InFlightRequest, NotAppliedCreate, NotIssuedCreate, NotIssuedRequest, UnconfirmedCreate,
+    UnconfirmedRequest,
 };
 use client_token::{NotIssuedPhase, TerminallyFailedRequest, UnconfirmedPhase};
 
 /// Continuation state for a CloudControl update operation.
-pub type CcUpdateToken = CcRequestPhase;
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    tag = "phase",
+    content = "continuation",
+    rename_all = "snake_case",
+    from = "UpdateTokenWire"
+)]
+pub enum CcUpdateToken {
+    ReadBack(UpdateReadBackContinuation),
+    #[serde(untagged)]
+    Operation(CcRequestPhase),
+}
+
+// Keep the released operation tags flat and the read-back continuation envelope.
+#[derive(Deserialize)]
+#[serde(tag = "phase", rename_all = "snake_case")]
+enum UpdateTokenWire {
+    NotIssued(NotIssuedRequest),
+    Unconfirmed(UnconfirmedRequest),
+    InFlight(InFlightRequest),
+    ReadBack {
+        continuation: UpdateReadBackContinuation,
+    },
+}
+
+impl From<UpdateTokenWire> for CcUpdateToken {
+    fn from(wire: UpdateTokenWire) -> Self {
+        match wire {
+            UpdateTokenWire::NotIssued(request) => Self::Operation(request.into()),
+            UpdateTokenWire::Unconfirmed(request) => Self::Operation(request.into()),
+            UpdateTokenWire::InFlight(request) => Self::Operation(request.into()),
+            UpdateTokenWire::ReadBack { continuation } => Self::ReadBack(continuation),
+        }
+    }
+}
+
+impl std::fmt::Debug for CcUpdateToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Operation(operation) => std::fmt::Debug::fmt(operation, f),
+            Self::ReadBack(read_back) => f.debug_tuple("ReadBack").field(read_back).finish(),
+        }
+    }
+}
+
+impl PhasedToken for CcUpdateToken {
+    type Operation = CcRequestPhase;
+
+    fn from_operation(operation: CcRequestPhase) -> Self {
+        Self::Operation(operation)
+    }
+
+    fn into_operation(self) -> Result<CcRequestPhase, Self> {
+        match self {
+            Self::Operation(operation) => Ok(operation),
+            Self::ReadBack(_) => Err(self),
+        }
+    }
+
+    fn operation(&self) -> Option<&CcRequestPhase> {
+        match self {
+            Self::Operation(operation) => Some(operation),
+            Self::ReadBack(_) => None,
+        }
+    }
+}
 
 /// Continuation state for a CloudControl delete operation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -751,7 +934,7 @@ pub(crate) enum CcCreateSend {
 
 #[derive(Debug)]
 pub(crate) struct CcCreatePending {
-    pub(crate) token: CcCreateToken,
+    pub(crate) token: CcCreateOperation,
     pub(crate) poll_after_secs: u32,
 }
 
@@ -895,7 +1078,7 @@ impl AwsccProvider {
         &self,
         type_name: &str,
         identifier: &str,
-    ) -> ProviderResult<Option<serde_json::Value>> {
+    ) -> Result<Option<serde_json::Value>, ReadFailure> {
         let result = self
             .cloudcontrol_client
             .get_resource()
@@ -919,14 +1102,88 @@ impl AwsccProvider {
                 if Self::is_not_found_error(&e) {
                     Ok(None)
                 } else {
-                    Err(api_error_with_meta_and_subject(
-                        "Failed to get resource",
-                        "cloudcontrol.GetResource",
-                        CloudControlResourceSubject::identified(type_name, identifier),
-                        e,
+                    let transience = Self::read_error_transience(&e);
+                    Err(ReadFailure::new(
+                        api_error_with_meta_and_subject(
+                            "Failed to get resource",
+                            "cloudcontrol.GetResource",
+                            CloudControlResourceSubject::identified(type_name, identifier),
+                            e,
+                        ),
+                        transience,
                     ))
                 }
             }
+        }
+    }
+
+    /// Read retry policy is independent of mutation resend safety. Keep the
+    /// guard's typed pre-send classification and the SDK's service metadata.
+    pub(crate) fn read_error_transience<E>(error: &SdkError<E, HttpResponse>) -> Transience
+    where
+        E: std::error::Error + ProvideErrorKind + ProvideErrorMetadata + 'static,
+    {
+        match SendClassification::of(error) {
+            SendClassification::NotSent(transience)
+            | SendClassification::MaybeSent {
+                final_attempt: FinalAttempt::NotSent(transience),
+            } => return transience,
+            SendClassification::Rejected
+            | SendClassification::MaybeSent {
+                final_attempt: FinalAttempt::Sent,
+            } => {}
+        }
+        match error {
+            SdkError::ConstructionFailure(_) => Transience::Permanent,
+            SdkError::TimeoutError(_) => Transience::Transient,
+            SdkError::DispatchFailure(context) => {
+                use aws_smithy_types::retry::ErrorKind;
+                match context.as_connector_error() {
+                    Some(connector)
+                        if connector.is_timeout()
+                            || connector.is_io()
+                            || matches!(
+                                connector.as_other(),
+                                Some(
+                                    ErrorKind::TransientError
+                                        | ErrorKind::ThrottlingError
+                                        | ErrorKind::ServerError
+                                )
+                            ) =>
+                    {
+                        Transience::Transient
+                    }
+                    Some(_) | None => Transience::Permanent,
+                }
+            }
+            SdkError::ServiceError(service) => {
+                use aws_runtime::retries::classifiers::{THROTTLING_ERRORS, TRANSIENT_ERRORS};
+                use aws_smithy_types::retry::ErrorKind;
+                let transient_code =
+                    ProvideErrorMetadata::code(service.err()).is_some_and(|code| {
+                        THROTTLING_ERRORS.contains(&code) || TRANSIENT_ERRORS.contains(&code)
+                    });
+                if error
+                    .raw_response()
+                    .is_some_and(|response| response.status().is_server_error())
+                    || service.raw().status().as_u16() == 429
+                    || transient_code
+                    || matches!(
+                        service.err().retryable_error_kind(),
+                        Some(
+                            ErrorKind::ThrottlingError
+                                | ErrorKind::ServerError
+                                | ErrorKind::TransientError
+                        )
+                    )
+                {
+                    Transience::Transient
+                } else {
+                    Transience::Permanent
+                }
+            }
+            SdkError::ResponseError(_) => Transience::Permanent,
+            _ => Transience::Permanent,
         }
     }
 
@@ -1255,7 +1512,7 @@ impl AwsccProvider {
         identifier: &str,
         patch_ops: Vec<serde_json::Value>,
         operation_config: Option<&carina_core::schema::OperationConfig>,
-        token: CcUpdateToken,
+        token: CcRequestPhase,
     ) -> ProviderResult<CcUpdateWaitStep> {
         let retry_policy = Self::request_retry_policy(
             operation_config,
@@ -2020,6 +2277,35 @@ impl AwsccProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn read_error_classifier_distinguishes_transient_from_permanent_transport() {
+        use aws_sdk_cloudcontrol::operation::get_resource::GetResourceError;
+        use aws_smithy_runtime_api::client::result::ConnectorError;
+        let error =
+            |connector| SdkError::<GetResourceError, HttpResponse>::dispatch_failure(connector);
+        for (connector, expected) in [
+            (
+                ConnectorError::io(std::io::Error::other("network interrupted").into()),
+                Transience::Transient,
+            ),
+            (
+                ConnectorError::timeout(std::io::Error::other("transport timed out").into()),
+                Transience::Transient,
+            ),
+            (
+                ConnectorError::user(
+                    std::io::Error::other("invalid connector configuration").into(),
+                ),
+                Transience::Permanent,
+            ),
+        ] {
+            assert_eq!(
+                AwsccProvider::read_error_transience(&error(connector)),
+                expected
+            );
+        }
+    }
 
     mod pre_transmit_retry {
         use super::*;

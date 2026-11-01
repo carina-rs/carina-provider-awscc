@@ -31,9 +31,9 @@ use carina_core::schema::{
 };
 
 use carina_provider_awscc::provider::{
-    AwsccProvider, AwsccProviderConfig, CcCreateAttempt, CcCreatePoll, CcCreateResume,
-    CcCreateToken, CcDeleteToken, CcIssuedCreate, CcPollAttempt, CcResumeAttempt, CcResumedCreate,
-    CcUpdateToken, InFlightCreate, NotAppliedCreate,
+    AwsccProvider, AwsccProviderConfig, CcCreateAttempt, CcCreateOperation, CcCreatePoll,
+    CcCreateResume, CcCreateToken, CcDeleteToken, CcIssuedCreate, CcPollAttempt, CcResumeAttempt,
+    CcResumedCreate, CcUpdateToken, InFlightCreate, NotAppliedCreate,
 };
 use carina_provider_awscc::schemas;
 use carina_provider_awscc::{AwsccNormalizer, AwsccProviderFactory};
@@ -190,7 +190,7 @@ impl CcCreateAttempt for GuestCreateAttempt {
         self.0.untracked(failure.into_error().to_wire())
     }
 
-    fn preserve(self, token: CcCreateToken, error: CoreProviderError) -> Self::Verdict {
+    fn preserve(self, token: CcCreateOperation, error: CoreProviderError) -> Self::Verdict {
         let poll_after_secs = token.poll_after_secs();
         self.0.preserve(
             token,
@@ -206,7 +206,7 @@ impl CcCreateAttempt for GuestCreateAttempt {
 
     fn pending(
         self,
-        token: CcCreateToken,
+        token: CcCreateOperation,
         sent: CoreSent,
         poll_after_secs: u32,
     ) -> Result<Self::Step, Self::Verdict> {
@@ -224,7 +224,7 @@ impl CcPollAttempt for GuestPollAttempt {
         self.0.untracked(failure.into_error().to_wire())
     }
 
-    fn preserve(self, token: CcCreateToken, failure: InFlightCreate) -> Self::Verdict {
+    fn preserve(self, token: CcCreateOperation, failure: InFlightCreate) -> Self::Verdict {
         let error = failure.into_error();
         let poll_after_secs = token.poll_after_secs();
         self.0.preserve(token, poll_after_secs, error.to_wire())
@@ -236,7 +236,7 @@ impl CcPollAttempt for GuestPollAttempt {
 
     fn pending(
         self,
-        token: CcCreateToken,
+        token: CcCreateOperation,
         poll_after_secs: u32,
     ) -> Result<Self::Step, Self::Verdict> {
         let token = token.with_poll_after_secs(poll_after_secs);
@@ -270,8 +270,8 @@ impl CcIssuedCreate for GuestIssuedCreate {
         self,
         identifier: CoreAppliedIdentifier,
         attributes: HashMap<String, CoreValue>,
-        reason: String,
-        missing_attributes: Vec<String>,
+        reason: CoreProviderError,
+        missing_attributes: carina_provider_awscc::provider::read_back::NonEmptyAttributeNames,
     ) -> Result<Self::Step, Self::Verdict> {
         let finishing = self.0.canonicalize(identifier);
         finish_encoded(
@@ -281,8 +281,8 @@ impl CcIssuedCreate for GuestIssuedCreate {
                 finishing.partial(
                     attributes,
                     proto::PartialReadDiagnostic {
-                        reason,
-                        missing_attributes,
+                        reason: reason.to_string(),
+                        missing_attributes: missing_attributes.into(),
                     },
                 )
             },
@@ -346,8 +346,8 @@ impl CcIssuedCreate for GuestPolledIssuedCreate {
         self,
         identifier: CoreAppliedIdentifier,
         attributes: HashMap<String, CoreValue>,
-        reason: String,
-        missing_attributes: Vec<String>,
+        reason: CoreProviderError,
+        missing_attributes: carina_provider_awscc::provider::read_back::NonEmptyAttributeNames,
     ) -> Result<Self::Step, Self::Verdict> {
         let finishing = self.0.canonicalize(identifier);
         finish_encoded(
@@ -357,8 +357,8 @@ impl CcIssuedCreate for GuestPolledIssuedCreate {
                 finishing.partial(
                     attributes,
                     proto::PartialReadDiagnostic {
-                        reason,
-                        missing_attributes,
+                        reason: reason.to_string(),
+                        missing_attributes: missing_attributes.into(),
                     },
                 )
             },
@@ -409,7 +409,7 @@ impl CcResumeAttempt for GuestResumeAttempt {
         self.0.untracked(failure.into_error().to_wire())
     }
 
-    fn preserve(self, token: CcCreateToken, error: CoreProviderError) -> Self::Verdict {
+    fn preserve(self, token: CcCreateOperation, error: CoreProviderError) -> Self::Verdict {
         let poll_after_secs = token.poll_after_secs();
         self.0.preserve(token, poll_after_secs, error.to_wire())
     }
@@ -420,7 +420,7 @@ impl CcResumeAttempt for GuestResumeAttempt {
 
     fn pending(
         self,
-        token: CcCreateToken,
+        token: CcCreateOperation,
         poll_after_secs: u32,
     ) -> Result<Self::Step, Self::Verdict> {
         let token = token.with_poll_after_secs(poll_after_secs);
@@ -450,6 +450,30 @@ impl CcResumedCreate for GuestResumedCreate {
             finishing,
             resumed_state_to_proto(&state),
             |finishing, state| finishing.completed(FoundRead::from_applied_state(state)),
+            |finishing, observation, error| finishing.failed(observation, error),
+        )
+    }
+
+    fn partial(
+        self,
+        identifier: CoreAppliedIdentifier,
+        attributes: HashMap<String, CoreValue>,
+        reason: CoreProviderError,
+        missing_attributes: carina_provider_awscc::provider::read_back::NonEmptyAttributeNames,
+    ) -> Result<Self::Step, Self::Verdict> {
+        let finishing = self.0.canonicalize(identifier);
+        finish_encoded(
+            finishing,
+            partial_create_attributes_to_proto(&attributes),
+            |finishing, attributes| {
+                finishing.partial(
+                    attributes,
+                    proto::PartialReadDiagnostic {
+                        reason: reason.to_string(),
+                        missing_attributes: missing_attributes.into(),
+                    },
+                )
+            },
             |finishing, observation, error| finishing.failed(observation, error),
         )
     }
@@ -493,7 +517,7 @@ impl CcCreateAttempt for GuestResentCreateAttempt {
         self.0.untracked(failure.into_error().to_wire()).into()
     }
 
-    fn preserve(self, token: CcCreateToken, error: CoreProviderError) -> Self::Verdict {
+    fn preserve(self, token: CcCreateOperation, error: CoreProviderError) -> Self::Verdict {
         let poll_after_secs = token.poll_after_secs();
         self.0
             .preserve(
@@ -511,7 +535,7 @@ impl CcCreateAttempt for GuestResentCreateAttempt {
 
     fn pending(
         self,
-        token: CcCreateToken,
+        token: CcCreateOperation,
         sent: CoreSent,
         poll_after_secs: u32,
     ) -> Result<Self::Step, Self::Verdict> {
@@ -546,8 +570,8 @@ impl CcIssuedCreate for GuestResentIssuedCreate {
         self,
         identifier: CoreAppliedIdentifier,
         attributes: HashMap<String, CoreValue>,
-        reason: String,
-        missing_attributes: Vec<String>,
+        reason: CoreProviderError,
+        missing_attributes: carina_provider_awscc::provider::read_back::NonEmptyAttributeNames,
     ) -> Result<Self::Step, Self::Verdict> {
         let finishing = self.0.canonicalize(identifier);
         finish_encoded(
@@ -558,8 +582,8 @@ impl CcIssuedCreate for GuestResentIssuedCreate {
                     .partial(
                         attributes,
                         proto::PartialReadDiagnostic {
-                            reason,
-                            missing_attributes,
+                            reason: reason.to_string(),
+                            missing_attributes: missing_attributes.into(),
                         },
                     )
                     .into()
@@ -883,7 +907,7 @@ impl CarinaProvider for AwsccProcessProvider {
         _id: &proto::ResourceId,
         request: proto::CreateRequest,
         poll: SdkPoll<Self::CreateToken>,
-        _poll_request: PollRequest,
+        poll_request: PollRequest,
     ) -> Result<SdkCreateStep<Self::CreateToken>, SdkPollVerdict<Self::CreateToken>> {
         let normalized_resource = match self.normalize_create_resource(&request.resource) {
             Ok(resource) => resource,
@@ -901,18 +925,18 @@ impl CarinaProvider for AwsccProcessProvider {
                 };
             }
         };
-        let (token, poll) = match poll {
+        let poll = match poll {
             SdkPoll::Unissued(attempt, token) => {
-                (token, CcCreatePoll::Unissued(GuestPollAttempt(attempt)))
+                CcCreatePoll::Unissued(GuestPollAttempt(attempt), token)
             }
             SdkPoll::Issued(issued, token) => {
-                (token, CcCreatePoll::Issued(GuestPolledIssuedCreate(issued)))
+                CcCreatePoll::Issued(GuestPolledIssuedCreate(issued), token)
             }
         };
         self.runtime.block_on(self.provider().poll_create_step(
             normalized_resource.as_resource(),
-            token,
             poll,
+            poll_request,
         ))
     }
 
@@ -921,7 +945,7 @@ impl CarinaProvider for AwsccProcessProvider {
         _id: &proto::ResourceId,
         request: proto::CreateRequest,
         resume: SdkResume<Self::CreateToken>,
-        _poll_request: PollRequest,
+        poll_request: PollRequest,
     ) -> Result<SdkResumeStep<Self::CreateToken>, SdkResumeVerdict<Self::CreateToken>> {
         let normalized_resource = match self.normalize_create_resource(&request.resource) {
             Ok(resource) => resource,
@@ -939,18 +963,18 @@ impl CarinaProvider for AwsccProcessProvider {
                 };
             }
         };
-        let (token, resume) = match resume {
+        let resume = match resume {
             SdkResume::Unissued(attempt, token) => {
-                (token, CcCreateResume::Unissued(GuestResumeAttempt(attempt)))
+                CcCreateResume::Unissued(GuestResumeAttempt(attempt), token)
             }
             SdkResume::Issued(resumed, token) => {
-                (token, CcCreateResume::Issued(GuestResumedCreate(resumed)))
+                CcCreateResume::Issued(GuestResumedCreate(resumed), token)
             }
         };
         self.runtime.block_on(self.provider().resume_create_step(
             normalized_resource.as_resource(),
-            token,
             resume,
+            poll_request,
         ))
     }
 
@@ -992,12 +1016,11 @@ impl CarinaProvider for AwsccProcessProvider {
             Ok(OperationStep::Pending {
                 pending: token,
                 poll_after_secs,
-                phase,
-            }) => Ok(SdkUpdateOutcome::Pending(Pending {
+                ..
+            }) => Ok(SdkUpdateOutcome::Pending(Pending::new(
                 token,
                 poll_after_secs,
-                phase,
-            })),
+            ))),
         }
     }
 
@@ -1007,7 +1030,7 @@ impl CarinaProvider for AwsccProcessProvider {
         identifier: &proto::AppliedIdentifier,
         request: proto::UpdateRequest,
         pending: Pending<Self::UpdateToken>,
-        _poll_request: PollRequest,
+        poll_request: PollRequest,
     ) -> Result<SdkUpdateOutcome<Self::UpdateToken>, proto::ProviderError> {
         let core_id = protocol_convert::protocol_to_resource_id(id);
         let state_after_patch = request.state_after_patch();
@@ -1031,6 +1054,7 @@ impl CarinaProvider for AwsccProcessProvider {
             &core_from,
             &core_patch,
             pending.token,
+            poll_request,
         ));
         match result {
             Ok(OperationStep::Done(outcome)) => {
@@ -1042,12 +1066,11 @@ impl CarinaProvider for AwsccProcessProvider {
             Ok(OperationStep::Pending {
                 pending: token,
                 poll_after_secs,
-                phase,
-            }) => Ok(SdkUpdateOutcome::Pending(Pending {
+                ..
+            }) => Ok(SdkUpdateOutcome::Pending(Pending::new(
                 token,
                 poll_after_secs,
-                phase,
-            })),
+            ))),
         }
     }
 
