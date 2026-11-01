@@ -837,10 +837,11 @@ fn is_tag_map_ref(schema: &CfnSchema, ref_path: &str) -> bool {
     };
     let definition = resolved.property;
     let is_direct_string = |property: &CfnProperty| {
-        matches!(
-            property.prop_type.as_ref(),
-            Some(TypeValue::Single(property_type)) if property_type == "string"
-        )
+        property
+            .prop_type
+            .as_ref()
+            .and_then(TypeValue::effective_type)
+            == Some("string")
     };
     let is_key_value_object = definition.properties.as_ref().is_some_and(|properties| {
         properties.len() == 2
@@ -854,7 +855,11 @@ fn is_tag_map_ref(schema: &CfnSchema, ref_path: &str) -> bool {
             .is_some_and(|patterns| patterns.len() == 1 && patterns.values().all(is_direct_string));
 
     resolved.name.starts_with("Tag")
-        && definition.prop_type.as_ref().and_then(TypeValue::as_str) == Some("object")
+        && definition
+            .prop_type
+            .as_ref()
+            .and_then(TypeValue::effective_type)
+            == Some("object")
         && (is_key_value_object || is_single_pattern_string_map)
 }
 
@@ -867,10 +872,15 @@ enum TypeValue {
 }
 
 impl TypeValue {
-    fn as_str(&self) -> Option<&str> {
+    /// Ignore nullability when choosing the type to generate. For other
+    /// unions, retain the first non-null member as the compatibility type.
+    fn effective_type(&self) -> Option<&str> {
         match self {
-            TypeValue::Single(s) => Some(s),
-            TypeValue::Multiple(v) => v.first().map(|s| s.as_str()),
+            TypeValue::Single(value) => (value != "null").then_some(value.as_str()),
+            TypeValue::Multiple(values) => values
+                .iter()
+                .find(|value| value.as_str() != "null")
+                .map(String::as_str),
         }
     }
 }
@@ -1223,11 +1233,7 @@ fn unique_bare_object_classification(
 }
 
 fn property_declares_object(prop: &CfnProperty) -> bool {
-    match &prop.prop_type {
-        Some(TypeValue::Single(value)) => value == "object",
-        Some(TypeValue::Multiple(values)) => values.iter().any(|value| value == "object"),
-        None => false,
-    }
+    prop.prop_type.as_ref().and_then(TypeValue::effective_type) == Some("object")
 }
 
 fn is_direct_bare_object(prop: &CfnProperty) -> bool {
@@ -1360,8 +1366,8 @@ fn is_iam_policy_document_property(cfn_type: &str, property_path: CfnPropertyPat
     iam_policy_document_property(cfn_type, property_path).is_some()
 }
 
-/// Classify CloudFormation's free-form JSON union before `TypeValue::as_str()`
-/// reduces it to its first member. Unknown unions must fail closed so a newly
+/// Classify CloudFormation's free-form JSON union before `TypeValue::effective_type()`
+/// reduces it to its first non-null member. Unknown unions must fail closed so a newly
 /// cached resource cannot silently become `Map<String, String>`.
 fn object_string_union_is_iam_policy_document(
     prop: &CfnProperty,
@@ -1600,7 +1606,12 @@ fn emit_exclusive_groups_slice(groups: &[Vec<String>]) -> String {
 }
 
 fn is_key_value_tag_array(property: &CfnProperty, schema: &CfnSchema) -> bool {
-    if property.prop_type.as_ref().and_then(TypeValue::as_str) != Some("array") {
+    if property
+        .prop_type
+        .as_ref()
+        .and_then(TypeValue::effective_type)
+        != Some("array")
+    {
         return false;
     }
     let Some(items) = property.items.as_deref() else {
@@ -1624,7 +1635,11 @@ fn is_key_value_tag_array(property: &CfnProperty, schema: &CfnSchema) -> bool {
 }
 
 fn is_string_tag_map(property: &CfnProperty, schema: &CfnSchema) -> bool {
-    if property.prop_type.as_ref().and_then(TypeValue::as_str) != Some("object")
+    if property
+        .prop_type
+        .as_ref()
+        .and_then(TypeValue::effective_type)
+        != Some("object")
         || property.additional_properties != Some(false)
     {
         return false;
@@ -1716,7 +1731,10 @@ fn generate_arn_helper_module(type_name: &str) -> Result<String> {
 
 fn is_string_property(schema: &CfnSchema, property: &CfnProperty) -> bool {
     if matches!(
-        property.prop_type.as_ref().and_then(TypeValue::as_str),
+        property
+            .prop_type
+            .as_ref()
+            .and_then(TypeValue::effective_type),
         Some("string")
     ) {
         return true;
@@ -1731,7 +1749,7 @@ fn is_string_property(schema: &CfnSchema, property: &CfnProperty) -> bool {
                 .property
                 .prop_type
                 .as_ref()
-                .and_then(TypeValue::as_str)
+                .and_then(TypeValue::effective_type)
                 == Some("string")
         })
 }
@@ -2189,21 +2207,24 @@ fn property_is_fully_read_only(
         return false;
     }
 
-    if let Some(ref_path) = &property.ref_path {
-        let Some(resolved) = resolve_ref(schema, ref_path) else {
-            return false;
-        };
-        if !visiting_defs.insert(resolved.name.to_string()) {
-            return false;
+    match property_shape(property, schema) {
+        PropertyShape::Reference { resolved, .. } => {
+            let Some(resolved) = resolved else {
+                return false;
+            };
+            if !visiting_defs.insert(resolved.name.to_string()) {
+                return false;
+            }
+            let fully_read_only = property_is_fully_read_only(
+                schema,
+                resolved.property,
+                property_path,
+                visiting_defs,
+            );
+            visiting_defs.remove(resolved.name);
+            return fully_read_only;
         }
-        let fully_read_only =
-            property_is_fully_read_only(schema, resolved.property, property_path, visiting_defs);
-        visiting_defs.remove(resolved.name);
-        return fully_read_only;
-    }
-
-    match one_of_shape(property, schema) {
-        OneOfShape::Array {
+        PropertyShape::Array {
             variant: array_variant,
             ..
         } => {
@@ -2214,7 +2235,7 @@ fn property_is_fully_read_only(
                 visiting_defs,
             );
         }
-        OneOfShape::Direct(properties) => {
+        PropertyShape::Direct(properties) => {
             return struct_fields_are_fully_read_only(
                 schema,
                 properties,
@@ -2222,7 +2243,7 @@ fn property_is_fully_read_only(
                 visiting_defs,
             );
         }
-        OneOfShape::Merged(properties) => {
+        PropertyShape::Merged(properties) => {
             return struct_fields_are_fully_read_only(
                 schema,
                 &properties,
@@ -2230,11 +2251,11 @@ fn property_is_fully_read_only(
                 visiting_defs,
             );
         }
-        OneOfShape::Unresolved => return false,
-        OneOfShape::NotOneOf => {}
+        PropertyShape::Unresolved => return false,
+        PropertyShape::Inline => {}
     }
 
-    match property.prop_type.as_ref().and_then(TypeValue::as_str) {
+    match inline_property_type(property) {
         Some("object") => property.properties.as_ref().is_some_and(|properties| {
             struct_fields_are_fully_read_only(schema, properties, property_path, visiting_defs)
         }),
@@ -2496,24 +2517,16 @@ fn documented_top_level_properties(
 }
 
 fn is_struct_property(prop: &CfnProperty, schema: &CfnSchema) -> bool {
-    if let Some(ref_path) = prop.ref_path.as_deref() {
-        return resolve_ref(schema, ref_path)
-            .is_some_and(|resolved| property_generates_struct(resolved.property, schema));
-    }
     property_generates_struct(prop, schema)
 }
 
 fn is_list_of_struct_property(prop: &CfnProperty, schema: &CfnSchema) -> bool {
-    let property = prop
-        .ref_path
-        .as_deref()
-        .and_then(|ref_path| resolve_ref(schema, ref_path))
-        .map_or(prop, |resolved| resolved.property);
-    property.prop_type.as_ref().and_then(TypeValue::as_str) == Some("array")
-        && property
+    resolved_array_property(prop, schema, &mut HashSet::new()).is_some_and(|property| {
+        property
             .items
             .as_deref()
             .is_some_and(|items| is_struct_property(items, schema))
+    })
 }
 
 fn uses_core_schema_types_path(s: &str) -> bool {
@@ -2716,17 +2729,32 @@ fn type_display_string_at_resolved(
             ),
         };
     }
-    match one_of_shape(prop, schema) {
-        OneOfShape::Array {
+    match property_shape(prop, schema) {
+        PropertyShape::Reference { path, resolved } => {
+            return if is_tag_map_ref(schema, path) {
+                "`Map<String, String>`".to_string()
+            } else if let Some(resolved) = resolved {
+                type_display_string_at_resolved(
+                    prop_name,
+                    resolved.property,
+                    schema,
+                    cfn_property_path,
+                    Some(resolved.name),
+                )
+            } else {
+                infer_string_type_display(prop_name, &schema.type_name)
+            };
+        }
+        PropertyShape::Array {
             variant: array_variant,
             ..
         } => {
             return type_display_string_at(prop_name, array_variant, schema, cfn_property_path);
         }
-        OneOfShape::Merged(_) => {
+        PropertyShape::Merged(_) => {
             return format!("Struct({})", definition_name.unwrap_or(prop_name));
         }
-        OneOfShape::Unresolved => {
+        PropertyShape::Unresolved => {
             let variant_types: Vec<Vec<String>> =
                 prop.one_of.iter().map(property_type_values).collect();
             panic!(
@@ -2734,200 +2762,184 @@ fn type_display_string_at_resolved(
                 schema.type_name, prop_name, variant_types
             );
         }
-        OneOfShape::NotOneOf | OneOfShape::Direct(_) => {}
+        PropertyShape::Inline | PropertyShape::Direct(_) => {}
     }
-    if let Some(ref_path) = &prop.ref_path {
-        if is_tag_map_ref(schema, ref_path) {
-            "`Map<String, String>`".to_string()
-        } else if let Some(resolved) = resolve_ref(schema, ref_path) {
-            type_display_string_at_resolved(
-                prop_name,
-                resolved.property,
-                schema,
-                cfn_property_path,
-                Some(resolved.name),
-            )
-        } else {
-            infer_string_type_display(prop_name, &schema.type_name)
-        }
-    } else {
-        match inline_property_type(prop) {
-            Some("string") => {
-                if is_iam_policy_document_property(&schema.type_name, cfn_property_path) {
-                    "PolicyDocument".to_string()
-                } else {
-                    let base = infer_string_type_display(prop_name, &schema.type_name);
-                    if base != "String" {
-                        return base;
-                    }
-                    let effective_min = prop.min_length.filter(|&m| m > 0);
-                    let has_length = effective_min.is_some() || prop.max_length.is_some();
-                    // Check for numeric string pattern
-                    if let Some(ref pattern) = prop.pattern
-                        && is_numeric_string_pattern(pattern)
-                    {
-                        return if has_length {
-                            let range = string_length_display(effective_min, prop.max_length);
-                            format!("NumericString(len: {})", range)
-                        } else {
-                            "NumericString".to_string()
-                        };
-                    }
-                    // Check for pattern + length combination
-                    if prop.pattern.is_some() && has_length {
+    match inline_property_type(prop) {
+        Some("string") => {
+            if is_iam_policy_document_property(&schema.type_name, cfn_property_path) {
+                "PolicyDocument".to_string()
+            } else {
+                let base = infer_string_type_display(prop_name, &schema.type_name);
+                if base != "String" {
+                    return base;
+                }
+                let effective_min = prop.min_length.filter(|&m| m > 0);
+                let has_length = effective_min.is_some() || prop.max_length.is_some();
+                // Check for numeric string pattern
+                if let Some(ref pattern) = prop.pattern
+                    && is_numeric_string_pattern(pattern)
+                {
+                    return if has_length {
                         let range = string_length_display(effective_min, prop.max_length);
-                        return format!("String(pattern, len: {})", range);
-                    }
-                    // Format is descriptive while length is validated; show
-                    // both when the schema declares both constraints.
-                    if let Some(ref fmt) = prop.format {
-                        if has_length {
-                            let range = string_length_display(effective_min, prop.max_length);
-                            return format!("String({}, len: {})", fmt, range);
-                        }
-                        return format!("String({})", fmt);
-                    }
-                    // Append length constraint if present and type is plain String
-                    if has_length && prop.enum_values.is_none() {
-                        let range = string_length_display(effective_min, prop.max_length);
-                        format!("String(len: {})", range)
+                        format!("NumericString(len: {})", range)
                     } else {
-                        base
+                        "NumericString".to_string()
+                    };
+                }
+                // Check for pattern + length combination
+                if prop.pattern.is_some() && has_length {
+                    let range = string_length_display(effective_min, prop.max_length);
+                    return format!("String(pattern, len: {})", range);
+                }
+                // Format is descriptive while length is validated; show
+                // both when the schema declares both constraints.
+                if let Some(ref fmt) = prop.format {
+                    if has_length {
+                        let range = string_length_display(effective_min, prop.max_length);
+                        return format!("String({}, len: {})", fmt, range);
                     }
+                    return format!("String({})", fmt);
+                }
+                // Append length constraint if present and type is plain String
+                if has_length && prop.enum_values.is_none() {
+                    let range = string_length_display(effective_min, prop.max_length);
+                    format!("String(len: {})", range)
+                } else {
+                    base
                 }
             }
-            Some("boolean") => "Bool".to_string(),
-            Some("integer") => {
-                // Check resource-scoped overrides first
-                let res_override = resource_type_override(&schema.type_name, cfn_property_path);
-                if let Some(TypeOverride::IntEnum(values)) = res_override {
-                    let observed_values = prop
-                        .enum_values
-                        .as_ref()
-                        .and_then(|enum_values| {
-                            enum_values
-                                .iter()
-                                .map(|value| match value {
-                                    EnumValue::Int(value) => Some(*value),
-                                    _ => None,
-                                })
-                                .collect::<Option<Vec<_>>>()
-                        })
-                        .filter(|values| !values.is_empty());
-                    let _ = int_enum_type(
-                        &schema.type_name,
-                        prop_name,
-                        observed_values.as_deref().unwrap_or(values),
-                    );
-                    let values_str = values
+        }
+        Some("boolean") => "Bool".to_string(),
+        Some("integer") => {
+            // Check resource-scoped overrides first
+            let res_override = resource_type_override(&schema.type_name, cfn_property_path);
+            if let Some(TypeOverride::IntEnum(values)) = res_override {
+                let observed_values = prop
+                    .enum_values
+                    .as_ref()
+                    .and_then(|enum_values| {
+                        enum_values
+                            .iter()
+                            .map(|value| match value {
+                                EnumValue::Int(value) => Some(*value),
+                                _ => None,
+                            })
+                            .collect::<Option<Vec<_>>>()
+                    })
+                    .filter(|values| !values.is_empty());
+                let _ = int_enum_type(
+                    &schema.type_name,
+                    prop_name,
+                    observed_values.as_deref().unwrap_or(values),
+                );
+                let values_str = values
+                    .iter()
+                    .map(|v| v.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                return format!("IntEnum([{}])", values_str);
+            }
+            if let Some(TypeOverride::IntRange(min, max)) = res_override {
+                return format!("Int({})", range_display_string(Some(*min), Some(*max)));
+            }
+            // Check for integer enum values from schema
+            if let Some(enum_values) = &prop.enum_values {
+                let all_ints = enum_values.iter().all(|v| matches!(v, EnumValue::Int(_)));
+                if all_ints && !enum_values.is_empty() {
+                    let values_str = enum_values
                         .iter()
-                        .map(|v| v.to_string())
+                        .map(|v| v.to_string_value())
                         .collect::<Vec<_>>()
                         .join(", ");
                     return format!("IntEnum([{}])", values_str);
                 }
-                if let Some(TypeOverride::IntRange(min, max)) = res_override {
-                    return format!("Int({})", range_display_string(Some(*min), Some(*max)));
-                }
-                // Check for integer enum values from schema
-                if let Some(enum_values) = &prop.enum_values {
-                    let all_ints = enum_values.iter().all(|v| matches!(v, EnumValue::Int(_)));
-                    if all_ints && !enum_values.is_empty() {
-                        let values_str = enum_values
-                            .iter()
-                            .map(|v| v.to_string_value())
-                            .collect::<Vec<_>>()
-                            .join(", ");
-                        return format!("IntEnum([{}])", values_str);
-                    }
-                }
-                let range: Option<(Option<i64>, Option<i64>)> =
-                    if prop.minimum.is_some() || prop.maximum.is_some() {
-                        Some((prop.minimum, prop.maximum))
-                    } else {
-                        known_int_range_overrides()
-                            .get(prop_name)
-                            .map(|&(min, max)| (Some(min), Some(max)))
-                    };
-                if let Some((min, max)) = range {
-                    let range_str = range_display_string(min, max);
-                    if let Some(ref fmt) = prop.format {
-                        format!("Int({}, {})", range_str, fmt)
-                    } else {
-                        format!("Int({})", range_str)
-                    }
-                } else if let Some(ref fmt) = prop.format {
-                    format!("Int({})", fmt)
-                } else {
-                    "Int".to_string()
-                }
             }
-            Some("number") => {
-                // Check resource-scoped overrides first
-                let res_override = resource_type_override(&schema.type_name, cfn_property_path);
-                if let Some(TypeOverride::IntRange(min, max)) = res_override {
-                    return format!("Float({})", range_display_string(Some(*min), Some(*max)));
-                }
-                let range: Option<(Option<i64>, Option<i64>)> =
-                    if prop.minimum.is_some() || prop.maximum.is_some() {
-                        Some((prop.minimum, prop.maximum))
-                    } else {
-                        known_int_range_overrides()
-                            .get(prop_name)
-                            .map(|&(min, max)| (Some(min), Some(max)))
-                    };
-                if let Some((min, max)) = range {
-                    let range_str = range_display_string(min, max);
-                    if let Some(ref fmt) = prop.format {
-                        format!("Float({}, {})", range_str, fmt)
-                    } else {
-                        format!("Float({})", range_str)
-                    }
-                } else if let Some(ref fmt) = prop.format {
-                    format!("Float({})", fmt)
+            let range: Option<(Option<i64>, Option<i64>)> =
+                if prop.minimum.is_some() || prop.maximum.is_some() {
+                    Some((prop.minimum, prop.maximum))
                 } else {
-                    "Float".to_string()
-                }
-            }
-            Some("array") => {
-                let base_display = if let Some(items) = &prop.items {
-                    // Render every element shape through the same type path.
-                    // Scalar constraints, definition refs, aliases, and tag
-                    // maps therefore cannot drift between list-item cases.
-                    let element_type =
-                        type_display_string_at(prop_name, items, schema, cfn_property_path);
-                    let element_type = element_type
-                        .strip_prefix('`')
-                        .and_then(|value| value.strip_suffix('`'))
-                        .unwrap_or(&element_type);
-                    format!("`List<{element_type}>`")
-                } else {
-                    "`List<String>`".to_string()
+                    known_int_range_overrides()
+                        .get(prop_name)
+                        .map(|&(min, max)| (Some(min), Some(max)))
                 };
-                // Append item count constraints if present
-                if prop.min_items.is_some() || prop.max_items.is_some() {
-                    let constraint = range_display_string(prop.min_items, prop.max_items);
-                    format!("{} (items: {})", base_display, constraint)
+            if let Some((min, max)) = range {
+                let range_str = range_display_string(min, max);
+                if let Some(ref fmt) = prop.format {
+                    format!("Int({}, {})", range_str, fmt)
                 } else {
-                    base_display
+                    format!("Int({})", range_str)
                 }
+            } else if let Some(ref fmt) = prop.format {
+                format!("Int({})", fmt)
+            } else {
+                "Int".to_string()
             }
-            Some("object") => {
-                if let Some(props) = &prop.properties
-                    && !props.is_empty()
-                {
-                    format!("Struct({})", definition_name.unwrap_or(prop_name))
-                } else if let Some(value) = direct_object_map_value(prop) {
-                    object_map_type_display(prop_name, schema, cfn_property_path, value)
-                } else {
-                    panic!(
-                        "unsupported object property {}.{}; expected a struct, direct-string map, tag map, typed map of struct, or classified bare object; see CODEGEN.md#classifying-bare-objects",
-                        schema.type_name, cfn_property_path
-                    );
-                }
-            }
-            _ => "String".to_string(),
         }
+        Some("number") => {
+            // Check resource-scoped overrides first
+            let res_override = resource_type_override(&schema.type_name, cfn_property_path);
+            if let Some(TypeOverride::IntRange(min, max)) = res_override {
+                return format!("Float({})", range_display_string(Some(*min), Some(*max)));
+            }
+            let range: Option<(Option<i64>, Option<i64>)> =
+                if prop.minimum.is_some() || prop.maximum.is_some() {
+                    Some((prop.minimum, prop.maximum))
+                } else {
+                    known_int_range_overrides()
+                        .get(prop_name)
+                        .map(|&(min, max)| (Some(min), Some(max)))
+                };
+            if let Some((min, max)) = range {
+                let range_str = range_display_string(min, max);
+                if let Some(ref fmt) = prop.format {
+                    format!("Float({}, {})", range_str, fmt)
+                } else {
+                    format!("Float({})", range_str)
+                }
+            } else if let Some(ref fmt) = prop.format {
+                format!("Float({})", fmt)
+            } else {
+                "Float".to_string()
+            }
+        }
+        Some("array") => {
+            let base_display = if let Some(items) = &prop.items {
+                // Render every element shape through the same type path.
+                // Scalar constraints, definition refs, aliases, and tag
+                // maps therefore cannot drift between list-item cases.
+                let element_type =
+                    type_display_string_at(prop_name, items, schema, cfn_property_path);
+                let element_type = element_type
+                    .strip_prefix('`')
+                    .and_then(|value| value.strip_suffix('`'))
+                    .unwrap_or(&element_type);
+                format!("`List<{element_type}>`")
+            } else {
+                "`List<String>`".to_string()
+            };
+            // Append item count constraints if present
+            if prop.min_items.is_some() || prop.max_items.is_some() {
+                let constraint = range_display_string(prop.min_items, prop.max_items);
+                format!("{} (items: {})", base_display, constraint)
+            } else {
+                base_display
+            }
+        }
+        Some("object") => {
+            if let Some(props) = &prop.properties
+                && !props.is_empty()
+            {
+                format!("Struct({})", definition_name.unwrap_or(prop_name))
+            } else if let Some(value) = direct_object_map_value(prop) {
+                object_map_type_display(prop_name, schema, cfn_property_path, value)
+            } else {
+                panic!(
+                    "unsupported object property {}.{}; expected a struct, direct-string map, tag map, typed map of struct, or classified bare object; see CODEGEN.md#classifying-bare-objects",
+                    schema.type_name, cfn_property_path
+                );
+            }
+        }
+        _ => "String".to_string(),
     }
 }
 
@@ -2947,38 +2959,33 @@ fn markdown_struct_def(
     schema: &CfnSchema,
     property_path: &[String],
 ) -> Option<MarkdownStructDef> {
-    let (property, key, name) = if let Some(ref_path) = prop.ref_path.as_deref() {
-        if is_tag_map_ref(schema, ref_path) {
-            return None;
+    let key = MarkdownStructKey::Inline(property_path.to_vec());
+    let name = prop_name.to_string();
+    match property_shape(prop, schema) {
+        PropertyShape::Reference { path, resolved } => {
+            if is_tag_map_ref(schema, path) {
+                return None;
+            }
+            let resolved = resolved?;
+            let mut struct_def =
+                markdown_struct_def(prop_name, resolved.property, schema, property_path)?;
+            struct_def.key = MarkdownStructKey::Definition(resolved.name.to_string());
+            struct_def.name = resolved.name.to_string();
+            Some(struct_def)
         }
-        let resolved = resolve_ref(schema, ref_path)?;
-        (
-            resolved.property,
-            MarkdownStructKey::Definition(resolved.name.to_string()),
-            resolved.name.to_string(),
-        )
-    } else {
-        (
-            prop,
-            MarkdownStructKey::Inline(property_path.to_vec()),
-            prop_name.to_string(),
-        )
-    };
-
-    match one_of_shape(property, schema) {
-        OneOfShape::Direct(properties) => Some(MarkdownStructDef {
+        PropertyShape::Direct(properties) => Some(MarkdownStructDef {
             key,
             name,
             properties: properties.clone(),
-            required: property.required.clone(),
+            required: prop.required.clone(),
         }),
-        OneOfShape::Merged(properties) => Some(MarkdownStructDef {
+        PropertyShape::Merged(properties) => Some(MarkdownStructDef {
             key,
             name,
             properties,
             required: Vec::new(),
         }),
-        OneOfShape::NotOneOf | OneOfShape::Array { .. } | OneOfShape::Unresolved => None,
+        PropertyShape::Inline | PropertyShape::Array { .. } | PropertyShape::Unresolved => None,
     }
 }
 
@@ -3013,26 +3020,19 @@ fn markdown_link_type(
     property_path: &[String],
     cfn_parent: Option<&str>,
 ) -> Option<MarkdownLinkedType> {
-    let shape = one_of_shape(prop, schema);
     if let Some(key) = enum_target {
         let enum_type = MarkdownLinkedType::Enum(key.clone());
-        let array_property = match shape {
-            OneOfShape::Array { variant, .. } => Some(variant),
-            OneOfShape::NotOneOf => property_resolves_to_array(prop, schema).then_some(prop),
-            OneOfShape::Direct(_) | OneOfShape::Merged(_) | OneOfShape::Unresolved => None,
-        };
-        return Some(if let Some(array_property) = array_property {
-            let array = markdown_array(array_property, schema)
-                .map(|(array, _)| array)
-                .unwrap_or(array_property);
-            markdown_list_type(enum_type, array)
-        } else {
-            enum_type
-        });
+        return Some(
+            if let Some(array) = resolved_array_property(prop, schema, &mut HashSet::new()) {
+                markdown_list_type(enum_type, array)
+            } else {
+                enum_type
+            },
+        );
     }
 
-    match shape {
-        OneOfShape::Array {
+    match property_shape(prop, schema) {
+        PropertyShape::Array {
             variant: array_variant,
             ..
         } => {
@@ -3045,10 +3045,11 @@ fn markdown_link_type(
                 cfn_parent,
             );
         }
-        OneOfShape::NotOneOf
-        | OneOfShape::Direct(_)
-        | OneOfShape::Merged(_)
-        | OneOfShape::Unresolved => {}
+        PropertyShape::Reference { .. }
+        | PropertyShape::Inline
+        | PropertyShape::Direct(_)
+        | PropertyShape::Merged(_)
+        | PropertyShape::Unresolved => {}
     }
 
     if let Some(value) = property_object_map_value(prop, schema) {
@@ -3842,8 +3843,8 @@ fn collect_struct_defs(
     cfn_parent: Option<&str>,
     struct_defs: &mut BTreeMap<MarkdownStructKey, StructDefInfo>,
 ) {
-    match one_of_shape(prop, schema) {
-        OneOfShape::Array {
+    match property_shape(prop, schema) {
+        PropertyShape::Array {
             variant: array_variant,
             ..
         } => {
@@ -3858,10 +3859,11 @@ fn collect_struct_defs(
             );
             return;
         }
-        OneOfShape::NotOneOf
-        | OneOfShape::Direct(_)
-        | OneOfShape::Merged(_)
-        | OneOfShape::Unresolved => {}
+        PropertyShape::Reference { .. }
+        | PropertyShape::Inline
+        | PropertyShape::Direct(_)
+        | PropertyShape::Merged(_)
+        | PropertyShape::Unresolved => {}
     }
 
     if let Some(struct_def) = markdown_struct_def(prop_name, prop, schema, property_path) {
@@ -4111,34 +4113,12 @@ fn generate_top_level_attribute_type(
             values_str,
             dsl_aliases_code
         );
-        let is_array = prop
-            .prop_type
-            .as_ref()
-            .and_then(TypeValue::as_str)
-            .is_some_and(|prop_type| prop_type == "array");
-        let resolved_array = prop
-            .ref_path
-            .as_ref()
-            .and_then(|ref_path| resolve_ref(schema, ref_path))
-            .map(|resolved| resolved.property)
-            .filter(|property| {
-                property.prop_type.as_ref().and_then(TypeValue::as_str) == Some("array")
-            });
-        if is_array || resolved_array.is_some() {
-            let array = resolved_array.unwrap_or(prop);
-            let list_ctor = list_constructor(
-                array.insertion_order,
+        if let Some(array) = resolved_array_property(prop, schema, &mut HashSet::new()) {
+            return array_attribute_type(
+                &enum_type,
+                array,
                 override_forces_unordered(&schema.type_name, CfnPropertyPath::new(None, prop_name)),
             );
-            if array.min_items.is_some() || array.max_items.is_some() {
-                let ordered = list_ctor == "AttributeType::list";
-                let length = emit_length_option(
-                    array.min_items.and_then(|value| u64::try_from(value).ok()),
-                    array.max_items.and_then(|value| u64::try_from(value).ok()),
-                );
-                return refined_list_type(&enum_type, ordered, &length);
-            }
-            return format!("{}({})", list_ctor, enum_type);
         }
         return enum_type;
     }
@@ -5218,12 +5198,19 @@ fn inline_property_type(property: &CfnProperty) -> Option<&str> {
     if has_direct_struct_properties(property) {
         Some("object")
     } else {
-        property.prop_type.as_ref().and_then(TypeValue::as_str)
+        property
+            .prop_type
+            .as_ref()
+            .and_then(TypeValue::effective_type)
     }
 }
 
-enum OneOfShape<'a> {
-    NotOneOf,
+enum PropertyShape<'a> {
+    Reference {
+        path: &'a str,
+        resolved: Option<ResolvedRef<'a>>,
+    },
+    Inline,
     Direct(&'a BTreeMap<String, CfnProperty>),
     Array {
         /// Keep the winning variant's reference context for generation.
@@ -5236,30 +5223,37 @@ enum OneOfShape<'a> {
     Unresolved,
 }
 
-fn one_of_shape<'a>(property: &'a CfnProperty, schema: &'a CfnSchema) -> OneOfShape<'a> {
-    one_of_shape_with_visited(property, schema, &mut HashSet::new())
+fn property_shape<'a>(property: &'a CfnProperty, schema: &'a CfnSchema) -> PropertyShape<'a> {
+    property_shape_with_visited(property, schema, &mut HashSet::new())
 }
 
-/// The sole precedence rule for compatibility unions: direct fields, then
-/// the first variant resolving to an array, then merged optional fields.
-fn one_of_shape_with_visited<'a>(
+/// The sole shape precedence rule: a reference owns the shape before any
+/// sibling keywords. Inline properties then use direct fields, the first
+/// oneOf variant resolving to an array, or merged optional object fields.
+fn property_shape_with_visited<'a>(
     property: &'a CfnProperty,
     schema: &'a CfnSchema,
     visiting_defs: &mut HashSet<&'a str>,
-) -> OneOfShape<'a> {
+) -> PropertyShape<'a> {
+    if let Some(path) = property.ref_path.as_deref() {
+        return PropertyShape::Reference {
+            path,
+            resolved: resolve_ref(schema, path),
+        };
+    }
     if let Some(properties) = property
         .properties
         .as_ref()
         .filter(|props| !props.is_empty())
     {
-        return OneOfShape::Direct(properties);
+        return PropertyShape::Direct(properties);
     }
     if property.one_of.is_empty() {
-        return OneOfShape::NotOneOf;
+        return PropertyShape::Inline;
     }
     if let Some(shape) = property.one_of.iter().find_map(|variant| {
         resolved_array_property(variant, schema, visiting_defs)
-            .map(|resolved| OneOfShape::Array { variant, resolved })
+            .map(|resolved| PropertyShape::Array { variant, resolved })
     }) {
         return shape;
     }
@@ -5271,17 +5265,20 @@ fn one_of_shape_with_visited<'a>(
         .map(|(name, property)| (name.clone(), property.clone()))
         .collect();
     if merged.is_empty() {
-        OneOfShape::Unresolved
+        PropertyShape::Unresolved
     } else {
-        OneOfShape::Merged(merged)
+        PropertyShape::Merged(merged)
     }
 }
 
 /// Whether the inline generator will represent this property as a struct.
 fn property_generates_struct(property: &CfnProperty, schema: &CfnSchema) -> bool {
-    match one_of_shape(property, schema) {
-        OneOfShape::Direct(_) | OneOfShape::Merged(_) => true,
-        OneOfShape::NotOneOf | OneOfShape::Array { .. } | OneOfShape::Unresolved => false,
+    match property_shape(property, schema) {
+        PropertyShape::Reference { resolved, .. } => {
+            resolved.is_some_and(|resolved| property_generates_struct(resolved.property, schema))
+        }
+        PropertyShape::Direct(_) | PropertyShape::Merged(_) => true,
+        PropertyShape::Inline | PropertyShape::Array { .. } | PropertyShape::Unresolved => false,
     }
 }
 
@@ -5292,10 +5289,12 @@ enum ObjectMapValueKind {
 }
 
 fn is_direct_string_property(property: &CfnProperty) -> bool {
-    matches!(
-        property.prop_type.as_ref(),
-        Some(TypeValue::Single(property_type)) if property_type == "string"
-    ) && property.ref_path.is_none()
+    property
+        .prop_type
+        .as_ref()
+        .and_then(TypeValue::effective_type)
+        == Some("string")
+        && property.ref_path.is_none()
         && property.one_of.is_empty()
         && property.any_of.is_empty()
 }
@@ -5345,13 +5344,15 @@ fn property_object_map_value<'a>(
     prop: &'a CfnProperty,
     schema: &'a CfnSchema,
 ) -> Option<&'a CfnProperty> {
-    if let Some(value) = direct_object_map_value(prop) {
-        return Some(value);
+    match property_shape(prop, schema) {
+        PropertyShape::Reference { resolved, .. } => {
+            property_object_map_value(resolved?.property, schema)
+        }
+        PropertyShape::Inline if inline_property_type(prop) == Some("object") => {
+            direct_object_map_value(prop)
+        }
+        _ => None,
     }
-    prop.ref_path
-        .as_deref()
-        .and_then(|ref_path| resolve_ref(schema, ref_path))
-        .and_then(|resolved| direct_object_map_value(resolved.property))
 }
 
 struct StructGenerationPaths<'a> {
@@ -5497,11 +5498,10 @@ fn generate_struct_type(
                 if let Some(list_type) = replace_list_element_type(&field_type, &enum_type) {
                     list_type
                 } else if field_force_unordered
-                    && field_prop.prop_type.as_ref().and_then(TypeValue::as_str) == Some("array")
+                    && let Some(array) =
+                        resolved_array_property(field_prop, schema, &mut HashSet::new())
                 {
-                    let list_ctor =
-                        list_constructor(field_prop.insertion_order, field_force_unordered);
-                    format!("{}({})", list_ctor, enum_type)
+                    array_attribute_type(&enum_type, array, field_force_unordered)
                 } else {
                     enum_type
                 }
@@ -5884,7 +5884,7 @@ fn integer_from_number_bounds(
     property_name: &str,
 ) -> (Option<i64>, Option<i64>) {
     assert_eq!(
-        prop.prop_type.as_ref().and_then(TypeValue::as_str),
+        prop.prop_type.as_ref().and_then(TypeValue::effective_type),
         Some("number"),
         "IntegerFromNumber override for {type_name}.{property_name} requires a CFN number property"
     );
@@ -7084,6 +7084,21 @@ fn list_constructor(insertion_order: Option<bool>, force_unordered: bool) -> &'s
     }
 }
 
+/// All list emission, including enum overlays, consumes the concrete array
+/// selected by property_shape and retains its ordering and item bounds.
+fn array_attribute_type(element_type: &str, array: &CfnProperty, force_unordered: bool) -> String {
+    let list_ctor = list_constructor(array.insertion_order, force_unordered);
+    if array.min_items.is_some() || array.max_items.is_some() {
+        let length = emit_length_option(
+            array.min_items.and_then(|value| u64::try_from(value).ok()),
+            array.max_items.and_then(|value| u64::try_from(value).ok()),
+        );
+        refined_list_type(element_type, list_ctor == "AttributeType::list", &length)
+    } else {
+        format!("{list_ctor}({element_type})")
+    }
+}
+
 /// Returns (type_string, Option<EnumInfo>)
 /// EnumInfo is Some if this property is an enum that should use AttributeType::Custom
 fn cfn_type_to_carina_type_with_enum(
@@ -7134,23 +7149,19 @@ fn resolved_array_property<'a>(
     schema: &'a CfnSchema,
     visiting_defs: &mut HashSet<&'a str>,
 ) -> Option<&'a CfnProperty> {
-    if let Some(ref_path) = &prop.ref_path {
-        let resolved = resolve_ref(schema, ref_path)?;
-        if !visiting_defs.insert(resolved.name) {
-            return None;
+    match property_shape_with_visited(prop, schema, visiting_defs) {
+        PropertyShape::Reference { resolved, .. } => {
+            let resolved = resolved?;
+            if !visiting_defs.insert(resolved.name) {
+                return None;
+            }
+            let array = resolved_array_property(resolved.property, schema, visiting_defs);
+            visiting_defs.remove(resolved.name);
+            array
         }
-        let array = resolved_array_property(resolved.property, schema, visiting_defs);
-        visiting_defs.remove(resolved.name);
-        return array;
-    }
-
-    match one_of_shape_with_visited(prop, schema, visiting_defs) {
-        OneOfShape::NotOneOf => property_type_values(prop)
-            .iter()
-            .any(|ty| ty == "array")
-            .then_some(prop),
-        OneOfShape::Array { resolved, .. } => Some(resolved),
-        OneOfShape::Direct(_) | OneOfShape::Merged(_) | OneOfShape::Unresolved => None,
+        PropertyShape::Inline => (inline_property_type(prop) == Some("array")).then_some(prop),
+        PropertyShape::Array { resolved, .. } => Some(resolved),
+        PropertyShape::Direct(_) | PropertyShape::Merged(_) | PropertyShape::Unresolved => None,
     }
 }
 
@@ -7277,8 +7288,77 @@ fn cfn_type_to_carina_type_with_enum_resolved(
         return ("/* enum */".to_string(), Some(enum_info));
     }
 
-    match one_of_shape(prop, schema) {
-        OneOfShape::Array {
+    match property_shape(prop, schema) {
+        PropertyShape::Reference { path, resolved } => {
+            if is_tag_map_ref(schema, path) {
+                return ("carina_aws_types::tags_type()".to_string(), None);
+            }
+
+            let Some(resolved) = resolved else {
+                if let Some(inferred) = infer_string_type(prop_name, &schema.type_name) {
+                    return (inferred, None);
+                }
+                return ("AttributeType::string()".to_string(), None);
+            };
+            let def_name = resolved.name;
+
+            if IN_PROGRESS_DEFS.with(|definitions| definitions.borrow().contains(def_name)) {
+                mark_back_reference(def_name);
+                return (
+                    format!("AttributeType::ref_({}.to_string())", rust_lit(def_name)),
+                    None,
+                );
+            }
+
+            let definition_already_emitted =
+                EMITTED_DEFS.with(|definitions| definitions.borrow().contains_key(def_name));
+            IN_PROGRESS_DEFS.with(|definitions| {
+                definitions.borrow_mut().insert(def_name.to_string());
+            });
+            let (body, enum_info) = cfn_type_to_carina_type_with_enum_resolved(
+                resolved.property,
+                prop_name,
+                schema,
+                namespace,
+                enums,
+                paths,
+                RefGenerationState {
+                    definition_name: Some(def_name),
+                    context: ref_context,
+                },
+            );
+            IN_PROGRESS_DEFS.with(|definitions| {
+                definitions.borrow_mut().remove(def_name);
+            });
+
+            if property_generates_struct(resolved.property, schema) {
+                match ref_context {
+                    RefContext::Normal => {
+                        if definition_already_emitted {
+                            return (
+                                format!("AttributeType::ref_({}.to_string())", rust_lit(def_name)),
+                                None,
+                            );
+                        }
+                        EMITTED_DEFS.with(|definitions| {
+                            definitions
+                                .borrow_mut()
+                                .insert(def_name.to_string(), body.clone());
+                        });
+                    }
+                    RefContext::ListItem if was_back_referenced(def_name) => {
+                        EMITTED_DEFS.with(|definitions| {
+                            definitions
+                                .borrow_mut()
+                                .insert(def_name.to_string(), body.clone());
+                        });
+                    }
+                    RefContext::ListItem => {}
+                }
+            }
+            return (body, enum_info);
+        }
+        PropertyShape::Array {
             variant: array_variant,
             ..
         } => {
@@ -7292,7 +7372,7 @@ fn cfn_type_to_carina_type_with_enum_resolved(
                 ref_state,
             );
         }
-        OneOfShape::Unresolved => {
+        PropertyShape::Unresolved => {
             let variant_types: Vec<Vec<String>> =
                 prop.one_of.iter().map(property_type_values).collect();
             panic!(
@@ -7300,7 +7380,7 @@ fn cfn_type_to_carina_type_with_enum_resolved(
                 schema.type_name, prop_name, variant_types
             );
         }
-        OneOfShape::Merged(properties) => {
+        PropertyShape::Merged(properties) => {
             let mut inline_property = prop.clone();
             inline_property.prop_type = Some(TypeValue::Single("object".to_string()));
             inline_property.properties = Some(properties);
@@ -7316,80 +7396,7 @@ fn cfn_type_to_carina_type_with_enum_resolved(
                 ref_state,
             );
         }
-        OneOfShape::NotOneOf | OneOfShape::Direct(_) => {}
-    }
-
-    // Resolve every definition to the same property model used by inline
-    // schemas, then recurse through this function. The surrounding metadata
-    // only preserves named-struct identity and recursive schema refs.
-    if let Some(ref_path) = &prop.ref_path {
-        if is_tag_map_ref(schema, ref_path) {
-            return ("carina_aws_types::tags_type()".to_string(), None);
-        }
-
-        let Some(resolved) = resolve_ref(schema, ref_path) else {
-            if let Some(inferred) = infer_string_type(prop_name, &schema.type_name) {
-                return (inferred, None);
-            }
-            return ("AttributeType::string()".to_string(), None);
-        };
-        let def_name = resolved.name;
-
-        if IN_PROGRESS_DEFS.with(|definitions| definitions.borrow().contains(def_name)) {
-            mark_back_reference(def_name);
-            return (
-                format!("AttributeType::ref_({}.to_string())", rust_lit(def_name)),
-                None,
-            );
-        }
-
-        let definition_already_emitted =
-            EMITTED_DEFS.with(|definitions| definitions.borrow().contains_key(def_name));
-        IN_PROGRESS_DEFS.with(|definitions| {
-            definitions.borrow_mut().insert(def_name.to_string());
-        });
-        let (body, enum_info) = cfn_type_to_carina_type_with_enum_resolved(
-            resolved.property,
-            prop_name,
-            schema,
-            namespace,
-            enums,
-            paths,
-            RefGenerationState {
-                definition_name: Some(def_name),
-                context: ref_context,
-            },
-        );
-        IN_PROGRESS_DEFS.with(|definitions| {
-            definitions.borrow_mut().remove(def_name);
-        });
-
-        if property_generates_struct(resolved.property, schema) {
-            match ref_context {
-                RefContext::Normal => {
-                    if definition_already_emitted {
-                        return (
-                            format!("AttributeType::ref_({}.to_string())", rust_lit(def_name)),
-                            None,
-                        );
-                    }
-                    EMITTED_DEFS.with(|definitions| {
-                        definitions
-                            .borrow_mut()
-                            .insert(def_name.to_string(), body.clone());
-                    });
-                }
-                RefContext::ListItem if was_back_referenced(def_name) => {
-                    EMITTED_DEFS.with(|definitions| {
-                        definitions
-                            .borrow_mut()
-                            .insert(def_name.to_string(), body.clone());
-                    });
-                }
-                RefContext::ListItem => {}
-            }
-        }
-        return (body, enum_info);
+        PropertyShape::Inline | PropertyShape::Direct(_) => {}
     }
 
     // Handle explicit enum
@@ -7590,11 +7597,7 @@ fn cfn_type_to_carina_type_with_enum_resolved(
             }
         }
         Some("array") => {
-            let list_ctor = list_constructor(
-                prop.insertion_order,
-                override_forces_unordered(&schema.type_name, cfn_property_path),
-            );
-            let (list_type, item_enum) = if let Some(items) = &prop.items {
+            let (element_type, item_enum) = if let Some(items) = &prop.items {
                 let item_path = extend_property_path(property_path, "*");
                 let (item_type, item_enum) = cfn_type_to_carina_type_with_enum_resolved(
                     items,
@@ -7619,25 +7622,18 @@ fn cfn_type_to_carina_type_with_enum_resolved(
                 } else {
                     item_type
                 };
-                (format!("{}({})", list_ctor, effective_item_type), item_enum)
+                (effective_item_type, item_enum)
             } else {
-                (format!("{}(AttributeType::string())", list_ctor), None)
+                ("AttributeType::string()".to_string(), None)
             };
-            // Wrap in Custom type if minItems/maxItems constraints exist
-            if prop.min_items.is_some() || prop.max_items.is_some() {
-                let ordered = list_ctor == "AttributeType::list";
-                let inner = list_type
-                    .strip_prefix(&format!("{list_ctor}("))
-                    .and_then(|s| s.strip_suffix(')'))
-                    .unwrap_or("AttributeType::string()");
-                let length = emit_length_option(
-                    prop.min_items.and_then(|v| u64::try_from(v).ok()),
-                    prop.max_items.and_then(|v| u64::try_from(v).ok()),
-                );
-                (refined_list_type(inner, ordered, &length), item_enum)
-            } else {
-                (list_type, item_enum)
-            }
+            (
+                array_attribute_type(
+                    &element_type,
+                    prop,
+                    override_forces_unordered(&schema.type_name, cfn_property_path),
+                ),
+                item_enum,
+            )
         }
         Some("object") => {
             // Check known string type overrides first, mirroring the string branch
@@ -8884,37 +8880,37 @@ mod tests {
             return;
         }
 
-        if let Some(ref_path) = &prop.ref_path
-            && let Some(resolved) = resolve_ref(schema, ref_path)
-        {
-            if let Some(value) = direct_object_map_value(resolved.property) {
-                object_map_value_or_panic(schema, property_path, value);
-                return;
-            }
-            if let Some(array) =
-                resolved_array_property(resolved.property, schema, &mut HashSet::new())
-                && let Some(items) = &array.items
-            {
-                if active_array_definitions.insert(resolved.name.to_string()) {
-                    assert_property_classified(
-                        schema,
-                        prop_name,
-                        items,
-                        parent_struct,
-                        used_rows,
-                        active_array_definitions,
-                    );
-                    active_array_definitions.remove(resolved.name);
+        match property_shape(prop, schema) {
+            PropertyShape::Reference { resolved, .. } => {
+                let Some(resolved) = resolved else {
+                    return;
+                };
+                if let Some(value) = direct_object_map_value(resolved.property) {
+                    object_map_value_or_panic(schema, property_path, value);
+                    return;
                 }
+                if let Some(array) =
+                    resolved_array_property(resolved.property, schema, &mut HashSet::new())
+                    && let Some(items) = &array.items
+                {
+                    if active_array_definitions.insert(resolved.name.to_string()) {
+                        assert_property_classified(
+                            schema,
+                            prop_name,
+                            items,
+                            parent_struct,
+                            used_rows,
+                            active_array_definitions,
+                        );
+                        active_array_definitions.remove(resolved.name);
+                    }
+                    return;
+                }
+                // Every other resolved ref owns its shape; reachable struct and
+                // oneOf children are walked from the definitions pass.
                 return;
             }
-            // Every other resolved ref owns its shape; reachable struct and
-            // oneOf children are walked from the definitions pass.
-            return;
-        }
-
-        match one_of_shape(prop, schema) {
-            OneOfShape::Array {
+            PropertyShape::Array {
                 variant: array_variant,
                 ..
             } => {
@@ -8928,7 +8924,7 @@ mod tests {
                 );
                 return;
             }
-            OneOfShape::Merged(properties) => {
+            PropertyShape::Merged(properties) => {
                 for (field_name, field_prop) in &properties {
                     assert_property_classified(
                         schema,
@@ -8941,7 +8937,7 @@ mod tests {
                 }
                 return;
             }
-            OneOfShape::NotOneOf | OneOfShape::Direct(_) | OneOfShape::Unresolved => {}
+            PropertyShape::Inline | PropertyShape::Direct(_) | PropertyShape::Unresolved => {}
         }
 
         if property_declares_object(prop) {
@@ -9019,21 +9015,6 @@ mod tests {
                 continue;
             };
             collect_property_refs(definition, &mut reachable);
-            for property in definition
-                .properties
-                .iter()
-                .flat_map(|properties| properties.values())
-                .chain(
-                    definition
-                        .pattern_properties
-                        .iter()
-                        .flat_map(|properties| properties.values()),
-                )
-                .chain(definition.items.iter().map(Box::as_ref))
-                .chain(definition.one_of.iter())
-            {
-                collect_property_refs(property, &mut reachable);
-            }
         }
         reachable
     }
@@ -9063,12 +9044,13 @@ mod tests {
                     // using the path codegen uses to emit it.
                     continue;
                 }
-                let properties = match one_of_shape(definition, schema) {
-                    OneOfShape::Direct(properties) => properties.clone(),
-                    OneOfShape::Merged(properties) => properties,
-                    OneOfShape::NotOneOf | OneOfShape::Array { .. } | OneOfShape::Unresolved => {
-                        continue;
-                    }
+                let properties = match property_shape(definition, schema) {
+                    PropertyShape::Direct(properties) => properties.clone(),
+                    PropertyShape::Merged(properties) => properties,
+                    PropertyShape::Reference { .. }
+                    | PropertyShape::Inline
+                    | PropertyShape::Array { .. }
+                    | PropertyShape::Unresolved => continue,
                 };
                 for (field_name, field_prop) in &properties {
                     assert_property_classified(
@@ -9221,7 +9203,10 @@ mod tests {
                 .get(property_name)
                 .expect("Alarm integer property");
             assert_eq!(
-                property.prop_type.as_ref().and_then(TypeValue::as_str),
+                property
+                    .prop_type
+                    .as_ref()
+                    .and_then(TypeValue::effective_type),
                 Some("integer"),
                 "{property_name} must use the CloudWatch API's integer shape"
             );
@@ -9239,8 +9224,12 @@ mod tests {
             .properties
             .iter()
             .filter_map(|(name, property)| {
-                (property.prop_type.as_ref().and_then(TypeValue::as_str) == Some("number"))
-                    .then_some(name.as_str())
+                (property
+                    .prop_type
+                    .as_ref()
+                    .and_then(TypeValue::effective_type)
+                    == Some("number"))
+                .then_some(name.as_str())
             })
             .collect();
         assert_eq!(number_properties, vec!["Threshold"]);
@@ -9452,7 +9441,10 @@ mod tests {
                 .and_then(|properties| properties.get(provider_name))
                 .expect("overridden field in cached Scheduler schema");
             assert_eq!(
-                field_prop.prop_type.as_ref().and_then(TypeValue::as_str),
+                field_prop
+                    .prop_type
+                    .as_ref()
+                    .and_then(TypeValue::effective_type),
                 Some("number"),
                 "{provider_path} must remain a CFN number while this override exists"
             );
@@ -13923,29 +13915,266 @@ mod tests {
 
     #[test]
     fn test_one_of_ref_to_nullable_array_definition() {
-        let definition = serde_json::from_value(serde_json::json!({
-            "type": ["array", "null"],
-            "items": { "type": "integer" },
-            "minItems": 1,
-            "maxItems": 3,
-            "insertionOrder": false
-        }))
-        .unwrap();
-        assert_one_of_array_ref_matches_inline(definition);
+        for types in [["array", "null"], ["null", "array"]] {
+            let definition = serde_json::from_value(serde_json::json!({
+                "type": types,
+                "items": { "type": "integer" },
+                "minItems": 1,
+                "maxItems": 3,
+                "insertionOrder": false
+            }))
+            .unwrap();
+            assert_one_of_array_ref_matches_inline(definition);
+        }
+    }
 
-        // Detection must inspect every declared type, even when array is
-        // not the first entry returned by TypeValue::as_str.
-        let mut schema = empty_schema("AWS::Test::NullableArray");
-        let definition = serde_json::from_value(serde_json::json!({
-            "type": ["null", "array"], "items": { "type": "string" }
-        }))
-        .unwrap();
-        schema.definitions = Some(BTreeMap::from([("Values".to_string(), definition)]));
-        let referenced = CfnProperty {
-            ref_path: Some("#/definitions/Values".to_string()),
-            ..Default::default()
-        };
-        assert!(property_resolves_to_array(&referenced, &schema));
+    #[test]
+    fn test_ref_enum_list_alias_agrees_in_schema_and_markdown() {
+        for definitions in [
+            serde_json::json!({
+                "Values": {
+                    "type": "array",
+                    "items": { "type": "string", "enum": ["A", "B"] },
+                    "minItems": 1
+                },
+                "Alias": { "$ref": "#/definitions/Values" }
+            }),
+            serde_json::json!({
+                "Alias": { "oneOf": [{
+                    "type": "array",
+                    "items": { "type": "string", "enum": ["A", "B"] },
+                    "minItems": 1
+                }] }
+            }),
+        ] {
+            let mut schema = empty_schema("AWS::Test::EnumAlias");
+            schema.definitions = Some(serde_json::from_value(definitions).unwrap());
+            schema.properties.insert(
+                "Choice".to_string(),
+                serde_json::from_value(serde_json::json!({ "$ref": "#/definitions/Alias" }))
+                    .unwrap(),
+            );
+
+            let generated = generate_synthetic_schema_code(&schema).unwrap();
+            let choice = generated
+                .lines()
+                .find(|line| line.contains(r#""choice", "#))
+                .unwrap();
+            assert!(
+                choice.contains("AttributeType::refined_list(AttributeType::enum_("),
+                "{choice}"
+            );
+            assert!(choice.contains("true, Some((Some(1), None))"), "{choice}");
+            assert!(
+                choice.contains(r#""A".to_string(), "B".to_string()"#),
+                "{choice}"
+            );
+            let md = generate_test_markdown(&schema, &schema.type_name).unwrap();
+            assert!(
+                md.contains("- **Type:** List\\<[Enum (Choice)](#choice-choice)\\> (items: 1..)"),
+                "{md}"
+            );
+            carina_docgen::check_page(&md).unwrap();
+        }
+    }
+
+    #[test]
+    fn test_null_first_array_struct_items_agree_in_schema_and_markdown() {
+        let array = serde_json::json!({
+            "type": ["null", "array"],
+            "items": { "properties": { "V": { "type": "integer" } } }
+        });
+        for property in [array.clone(), serde_json::json!({ "oneOf": [array] })] {
+            for referenced in [false, true] {
+                let mut schema = empty_schema("AWS::Test::NullFirst");
+                let mut property: CfnProperty = serde_json::from_value(property.clone()).unwrap();
+                if referenced {
+                    schema.definitions = Some(BTreeMap::from([("Values".to_string(), property)]));
+                    property = CfnProperty {
+                        ref_path: Some("#/definitions/Values".to_string()),
+                        ..Default::default()
+                    };
+                }
+                schema.properties.insert("Choice".to_string(), property);
+
+                let generated = generate_synthetic_schema_code(&schema).unwrap();
+                assert!(
+                    generated.contains(r#"AttributeType::list(AttributeType::struct_("Choice""#),
+                    "{generated}"
+                );
+                assert!(
+                    generated.contains(r#"StructField::optional("v", AttributeType::int())"#),
+                    "{generated}"
+                );
+                let md = generate_test_markdown(&schema, &schema.type_name).unwrap();
+                assert!(
+                    md.contains("- **Type:** List\\<[Struct(Choice)](#choice-1)\\>"),
+                    "{md}"
+                );
+                assert!(md.contains("| `v` | Int | No |"), "{md}");
+                carina_docgen::check_page(&md).unwrap();
+
+                schema.read_only_properties = vec!["/properties/Choice/*/V".to_string()];
+                assert!(is_property_read_only(
+                    &schema,
+                    &schema.properties["Choice"],
+                    &["Choice".to_string()]
+                ));
+                let generated = generate_synthetic_schema_code(&schema).unwrap();
+                assert!(
+                    generated.contains(
+                        r#"AttributeSchema::provider_populated("choice", AttributeType::list("#
+                    ),
+                    "{generated}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_array_detection_uses_first_non_null_declared_type() {
+        for types in [
+            serde_json::json!(["string", "array"]),
+            serde_json::json!(["null", "string", "array"]),
+        ] {
+            let property: CfnProperty = serde_json::from_value(serde_json::json!({
+                "type": types,
+                "items": { "properties": { "V": { "type": "integer" } } }
+            }))
+            .unwrap();
+            let mut schema = empty_schema("AWS::Test::FirstType");
+            schema.properties.insert("Choice".to_string(), property);
+            assert!(!property_resolves_to_array(
+                &schema.properties["Choice"],
+                &schema
+            ));
+            let generated = generate_synthetic_schema_code(&schema).unwrap();
+            assert!(
+                generated
+                    .contains(r#"AttributeSchema::optional("choice", AttributeType::string())"#),
+                "{generated}"
+            );
+            let md = generate_test_markdown(&schema, &schema.type_name).unwrap();
+            assert!(md.contains("- **Type:** String\n"), "{md}");
+            assert!(!md.contains("Struct Definitions"), "{md}");
+        }
+    }
+
+    #[test]
+    fn test_one_of_sibling_ref_owns_shape_across_consumers() {
+        for is_array in [false, true] {
+            let mut definition = serde_json::json!({
+                "properties": { "V": { "type": "integer" } },
+                "required": ["V"]
+            });
+            if is_array {
+                definition = serde_json::json!({ "type": "array", "items": definition });
+            }
+            let mut schema = empty_schema("AWS::Test::SiblingRef");
+            schema.definitions = Some(
+                serde_json::from_value(serde_json::json!({
+                    "Values": definition,
+                    "Alias": {
+                        "$ref": "#/definitions/Values",
+                        "oneOf": [{ "type": "object" }]
+                    }
+                }))
+                .unwrap(),
+            );
+            schema.properties.insert(
+                "Choice".to_string(),
+                serde_json::from_value(serde_json::json!({
+                    "$ref": "#/definitions/Alias",
+                    "oneOf": [{
+                        "type": "array",
+                        "items": { "properties": { "Ignored": { "type": "object" } } }
+                    }]
+                }))
+                .unwrap(),
+            );
+
+            let property = &schema.properties["Choice"];
+            assert_eq!(property_generates_struct(property, &schema), !is_array);
+            assert_eq!(property_resolves_to_array(property, &schema), is_array);
+            assert!(assert_schema_bare_objects_classified(&schema).is_empty());
+            let generated = generate_synthetic_schema_code(&schema).unwrap();
+            let choice_type = if is_array {
+                r#"AttributeType::list(AttributeType::struct_("Choice""#
+            } else {
+                r#"AttributeSchema::optional("choice", AttributeType::struct_("Values""#
+            };
+            assert!(generated.contains(choice_type), "{generated}");
+            assert!(
+                generated.contains(r#"StructField::required("v", AttributeType::int())"#),
+                "{generated}"
+            );
+            assert!(!generated.contains(r#""ignored""#), "{generated}");
+            let md = generate_test_markdown(&schema, &schema.type_name).unwrap();
+            let display = if is_array {
+                "List\\<[Struct(Choice)](#choice-1)\\>"
+            } else {
+                "[Struct(Values)](#choice-1)"
+            };
+            assert!(md.contains(display), "{md}");
+            assert!(md.contains("| `v` | Int | Yes |"), "{md}");
+            assert!(!md.contains("`ignored`"), "{md}");
+            carina_docgen::check_page(&md).unwrap();
+
+            schema.read_only_properties = vec![if is_array {
+                "/properties/Choice/*/V".to_string()
+            } else {
+                "/properties/Choice/V".to_string()
+            }];
+            assert!(is_property_read_only(
+                &schema,
+                &schema.properties["Choice"],
+                &["Choice".to_string()]
+            ));
+        }
+    }
+
+    #[test]
+    fn test_ref_force_unordered_enum_list_retains_resolved_bounds() {
+        let mut schema = empty_schema("AWS::CloudFront::Distribution");
+        schema.definitions = Some(
+            serde_json::from_value(serde_json::json!({
+                "Methods": { "oneOf": [{
+                    "type": ["null", "array"],
+                    "enum": ["GET", "HEAD"],
+                    "items": { "type": "string" },
+                    "minItems": 1
+                }] },
+                "DefaultCacheBehavior": { "properties": {
+                    "AllowedMethods": { "$ref": "#/definitions/Methods" }
+                } }
+            }))
+            .unwrap(),
+        );
+        schema.properties.insert(
+            "Choice".to_string(),
+            serde_json::from_value(serde_json::json!({
+                "$ref": "#/definitions/DefaultCacheBehavior"
+            }))
+            .unwrap(),
+        );
+        let generated = generate_synthetic_schema_code(&schema).unwrap();
+        let field = generated
+            .lines()
+            .find(|line| line.contains(r#""allowed_methods", "#))
+            .unwrap();
+        assert!(
+            field.contains("AttributeType::refined_list(AttributeType::enum_("),
+            "{field}"
+        );
+        assert!(field.contains("false, Some((Some(1), None))"), "{field}");
+        let md = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        let field = md
+            .lines()
+            .find(|line| line.starts_with("| `allowed_methods` |"))
+            .unwrap();
+        assert!(field.contains("List\\<[Enum ("), "{field}");
+        assert!(field.contains(" (items: 1..)"), "{field}");
+        carina_docgen::check_page(&md).unwrap();
     }
 
     #[test]
@@ -13966,7 +14195,7 @@ mod tests {
         assert_one_of_array_ref_matches_inline(definition.clone());
 
         // Deeply nested unions must retain the final array's constraints
-        // without repeatedly resolving the same subtree at every level.
+        // in both generated schema code and Markdown.
         for _ in 0..32 {
             definition = CfnProperty {
                 one_of: vec![definition],
@@ -13992,13 +14221,13 @@ mod tests {
         };
         assert!(!property_resolves_to_array(&property, &schema));
         assert!(matches!(
-            one_of_shape(
+            property_shape(
                 resolve_ref(&schema, "#/definitions/CycleA")
                     .unwrap()
                     .property,
                 &schema
             ),
-            OneOfShape::Unresolved
+            PropertyShape::Unresolved
         ));
     }
 
