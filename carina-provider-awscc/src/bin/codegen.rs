@@ -14,7 +14,7 @@
 
 use anyhow::{Context, Result};
 use carina_aws_types::dsl_enum_value;
-use carina_core::parser::{ProviderContext, parse_file};
+use carina_docgen::example::{self, DocExample, ExampleKind};
 use carina_docgen::{Heading, PageBuilder, TableCell};
 use carina_provider_awscc::schemas::catalog::AwsccType;
 use clap::{Parser, ValueEnum};
@@ -24,8 +24,7 @@ use serde::Deserialize;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::io::{self, Read};
-use std::ops::Range;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::LazyLock;
 
 // carina#3340: in-progress recursion guard for cyclic CFN $ref
@@ -1725,365 +1724,6 @@ fn full_resource_name_from_type(type_name: &str) -> Result<String> {
     Ok(format!("{}_{}", service, resource))
 }
 
-#[derive(Debug)]
-struct DocExample {
-    checked_type_name: String,
-    rendered: String,
-}
-
-impl DocExample {
-    fn checked(rendered: String, path: &Path, type_name: &str) -> Result<Self> {
-        let dsl_resource = dsl_resource_name_from_type(type_name)?;
-        require_documented_resource(&rendered, path, &dsl_resource)?;
-        Ok(Self {
-            checked_type_name: type_name.to_string(),
-            rendered,
-        })
-    }
-
-    fn ensure_type(&self, type_name: &str) -> Result<()> {
-        if self.checked_type_name != type_name {
-            anyhow::bail!(
-                "Documentation example checked for {} cannot render {type_name}",
-                self.checked_type_name
-            );
-        }
-        Ok(())
-    }
-
-    fn as_str(&self) -> &str {
-        &self.rendered
-    }
-}
-
-fn load_markdown_example(examples_dir: &Path, type_name: &str) -> Result<DocExample> {
-    let path = examples_dir
-        .join(full_resource_name_from_type(type_name)?)
-        .join("main.crn");
-    let source = match std::fs::read_to_string(&path) {
-        Ok(source) => source,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            anyhow::bail!("Example file not found: {}", path.display())
-        }
-        Err(error) => {
-            return Err(error).with_context(|| format!("Failed to read {}", path.display()));
-        }
-    };
-    let example = preprocess_markdown_example(&source)?;
-    check_markdown_example(&source, example, &path, type_name)
-}
-
-fn check_markdown_example(
-    source: &str,
-    rendered: String,
-    path: &Path,
-    type_name: &str,
-) -> Result<DocExample> {
-    let dsl_resource = dsl_resource_name_from_type(type_name)?;
-    require_documented_resource(source, path, &dsl_resource)?;
-    DocExample::checked(rendered, path, type_name)
-}
-
-fn require_documented_resource(source: &str, path: &Path, dsl_resource: &str) -> Result<()> {
-    let expected_resource = format!("awscc.{dsl_resource}");
-    let parsed = parse_file(source, path, &ProviderContext::default()).with_context(|| {
-        format!(
-            "Example file {} must parse and declare resource {expected_resource}",
-            path.display()
-        )
-    })?;
-    if !parsed.resources.iter().any(|resource| {
-        resource.id.provider == "awscc" && resource.id.resource_type == dsl_resource
-    }) {
-        anyhow::bail!(
-            "Example file {} must declare resource {expected_resource}",
-            path.display()
-        );
-    }
-    Ok(())
-}
-
-fn preprocess_markdown_example(source: &str) -> Result<String> {
-    let heredocs = carina_core::heredoc::preprocess_heredocs(source)
-        .context("Failed to preprocess heredocs in documentation example")?
-        .heredocs;
-    let mut heredoc_ranges = Vec::with_capacity(heredocs.len());
-    let mut search_from = 0;
-    for heredoc in heredocs {
-        let relative_start = source[search_from..].find(&heredoc).ok_or_else(|| {
-            anyhow::anyhow!("carina-core returned a heredoc absent from its source")
-        })?;
-        let start = search_from + relative_start;
-        let end = start + heredoc.len();
-        heredoc_ranges.push(start..end);
-        search_from = end;
-    }
-
-    // Keep byte offsets stable while making heredoc syntax and bodies invisible
-    // to the structural scan below. Newlines remain visible so line removal can
-    // still use the original source positions.
-    let mut masked = source.as_bytes().to_vec();
-    for range in heredoc_ranges {
-        for byte in &mut masked[range] {
-            if *byte != b'\n' {
-                *byte = b' ';
-            }
-        }
-    }
-
-    let removals = markdown_example_removals(&masked)?;
-    let mut filtered = String::with_capacity(source.len());
-    let mut kept_from = 0;
-    for removal in removals {
-        filtered.push_str(&source[kept_from..removal.start]);
-        kept_from = removal.end;
-    }
-    filtered.push_str(&source[kept_from..]);
-
-    let filtered: Vec<&str> = filtered.split_inclusive('\n').collect();
-    let first_content = filtered
-        .iter()
-        .position(|line| !line.strip_suffix('\n').unwrap_or(line).is_empty())
-        .unwrap_or(filtered.len());
-    Ok(filtered[first_content..].concat())
-}
-
-fn markdown_example_removals(masked: &[u8]) -> Result<Vec<Range<usize>>> {
-    let mut removals = Vec::new();
-    let mut cursor = 0;
-    let mut line_start = 0;
-    let mut brace_depth = 0usize;
-
-    while cursor < masked.len() {
-        match masked[cursor] {
-            b'\n' => {
-                cursor += 1;
-                line_start = cursor;
-            }
-            b' ' | b'\t' | b'\r' => cursor += 1,
-            b'#' if brace_depth == 0 && line_prefix_is_whitespace(masked, line_start, cursor) => {
-                let end = line_removal_end(masked, cursor);
-                removals.push(line_start..end);
-                cursor = end;
-                line_start = cursor;
-            }
-            b'/' if masked.get(cursor + 1) == Some(&b'/')
-                && brace_depth == 0
-                && line_prefix_is_whitespace(masked, line_start, cursor) =>
-            {
-                let end = line_removal_end(masked, cursor);
-                removals.push(line_start..end);
-                cursor = end;
-                line_start = cursor;
-            }
-            b'#' => cursor = skip_line_comment(masked, cursor),
-            b'/' if masked.get(cursor + 1) == Some(&b'/') => {
-                cursor = skip_line_comment(masked, cursor)
-            }
-            b'/' if masked.get(cursor + 1) == Some(&b'*') => {
-                let end = skip_block_comment(masked, cursor);
-                update_line_start(masked, cursor, end, &mut line_start);
-                cursor = end;
-            }
-            b'\'' => {
-                let end = skip_single_quoted_string(masked, cursor);
-                update_line_start(masked, cursor, end, &mut line_start);
-                cursor = end;
-            }
-            b'"' => {
-                let end = skip_double_quoted_string(masked, cursor);
-                update_line_start(masked, cursor, end, &mut line_start);
-                cursor = end;
-            }
-            b'{' => {
-                brace_depth += 1;
-                cursor += 1;
-            }
-            b'}' => {
-                brace_depth = brace_depth.saturating_sub(1);
-                cursor += 1;
-            }
-            byte if byte.is_ascii_alphabetic() || byte == b'_' => {
-                let token_start = cursor;
-                cursor += 1;
-                while masked
-                    .get(cursor)
-                    .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')
-                {
-                    cursor += 1;
-                }
-                let is_provider = &masked[token_start..cursor] == b"provider"
-                    && brace_depth == 0
-                    && line_prefix_is_whitespace(masked, line_start, token_start)
-                    && masked
-                        .get(cursor)
-                        .is_some_and(|byte| byte.is_ascii_whitespace());
-                if !is_provider {
-                    continue;
-                }
-
-                let block_end = find_provider_block_end(masked, cursor).ok_or_else(|| {
-                    anyhow::anyhow!("parsed provider block has no balanced closing brace")
-                })?;
-                let removal_end = provider_removal_end(masked, block_end);
-                removals.push(line_start..removal_end);
-                update_line_start(masked, cursor, removal_end, &mut line_start);
-                cursor = removal_end;
-            }
-            _ => cursor += 1,
-        }
-    }
-
-    Ok(removals)
-}
-
-fn line_prefix_is_whitespace(source: &[u8], start: usize, end: usize) -> bool {
-    source[start..end]
-        .iter()
-        .all(|byte| matches!(byte, b' ' | b'\t' | b'\r'))
-}
-
-fn line_removal_end(source: &[u8], start: usize) -> usize {
-    source[start..]
-        .iter()
-        .position(|byte| *byte == b'\n')
-        .map_or(source.len(), |relative| start + relative + 1)
-}
-
-fn provider_removal_end(source: &[u8], block_end: usize) -> usize {
-    let line_end = source[block_end..]
-        .iter()
-        .position(|byte| *byte == b'\n')
-        .map_or(source.len(), |relative| block_end + relative);
-    if line_prefix_is_whitespace(source, block_end, line_end) {
-        (line_end + usize::from(line_end < source.len())).min(source.len())
-    } else {
-        block_end
-    }
-}
-
-fn find_provider_block_end(source: &[u8], mut cursor: usize) -> Option<usize> {
-    let mut depth = 0usize;
-    let mut found_opening = false;
-    while cursor < source.len() {
-        match source[cursor] {
-            b'#' => cursor = skip_line_comment(source, cursor),
-            b'/' if source.get(cursor + 1) == Some(&b'/') => {
-                cursor = skip_line_comment(source, cursor)
-            }
-            b'/' if source.get(cursor + 1) == Some(&b'*') => {
-                cursor = skip_block_comment(source, cursor)
-            }
-            b'\'' => cursor = skip_single_quoted_string(source, cursor),
-            b'"' => cursor = skip_double_quoted_string(source, cursor),
-            b'{' => {
-                found_opening = true;
-                depth += 1;
-                cursor += 1;
-            }
-            b'}' if found_opening => {
-                depth -= 1;
-                cursor += 1;
-                if depth == 0 {
-                    return Some(cursor);
-                }
-            }
-            _ => cursor += 1,
-        }
-    }
-    None
-}
-
-fn skip_line_comment(source: &[u8], start: usize) -> usize {
-    source[start..]
-        .iter()
-        .position(|byte| *byte == b'\n')
-        .map_or(source.len(), |relative| start + relative)
-}
-
-fn skip_block_comment(source: &[u8], start: usize) -> usize {
-    let mut cursor = start + 2;
-    let mut depth = 1usize;
-    while cursor < source.len() {
-        if source.get(cursor..cursor + 2) == Some(b"/*") {
-            depth += 1;
-            cursor += 2;
-        } else if source.get(cursor..cursor + 2) == Some(b"*/") {
-            depth -= 1;
-            cursor += 2;
-            if depth == 0 {
-                return cursor;
-            }
-        } else {
-            cursor += 1;
-        }
-    }
-    source.len()
-}
-
-fn skip_single_quoted_string(source: &[u8], start: usize) -> usize {
-    let mut cursor = start + 1;
-    while cursor < source.len() {
-        match source[cursor] {
-            b'\\' => cursor = (cursor + 2).min(source.len()),
-            b'\'' => return cursor + 1,
-            _ => cursor += 1,
-        }
-    }
-    source.len()
-}
-
-fn skip_double_quoted_string(source: &[u8], start: usize) -> usize {
-    let mut cursor = start + 1;
-    while cursor < source.len() {
-        match source[cursor] {
-            b'\\' => cursor = (cursor + 2).min(source.len()),
-            b'"' => return cursor + 1,
-            b'$' if source.get(cursor + 1) == Some(&b'{') => {
-                cursor = skip_interpolation(source, cursor + 2)
-            }
-            _ => cursor += 1,
-        }
-    }
-    source.len()
-}
-
-fn skip_interpolation(source: &[u8], mut cursor: usize) -> usize {
-    let mut depth = 1usize;
-    while cursor < source.len() {
-        match source[cursor] {
-            b'#' => cursor = skip_line_comment(source, cursor),
-            b'/' if source.get(cursor + 1) == Some(&b'/') => {
-                cursor = skip_line_comment(source, cursor)
-            }
-            b'/' if source.get(cursor + 1) == Some(&b'*') => {
-                cursor = skip_block_comment(source, cursor)
-            }
-            b'\'' => cursor = skip_single_quoted_string(source, cursor),
-            b'"' => cursor = skip_double_quoted_string(source, cursor),
-            b'{' => {
-                depth += 1;
-                cursor += 1;
-            }
-            b'}' => {
-                depth -= 1;
-                cursor += 1;
-                if depth == 0 {
-                    return cursor;
-                }
-            }
-            _ => cursor += 1,
-        }
-    }
-    source.len()
-}
-
-fn update_line_start(source: &[u8], start: usize, end: usize, line_start: &mut usize) {
-    if let Some(relative) = source[start..end].iter().rposition(|byte| *byte == b'\n') {
-        *line_start = start + relative + 1;
-    }
-}
-
 /// Compute DSL resource name (service.resource) from CloudFormation type name
 /// e.g., "AWS::EC2::SecurityGroupEgress" -> "ec2.SecurityGroupEgress"
 /// and "AWS::EC2::VPC" -> "ec2.Vpc" (acronyms normalised via snake -> pascal).
@@ -2332,7 +1972,15 @@ fn main() -> Result<()> {
     // Generate output based on format
     let output = match output_mode {
         OutputMode::Markdown { examples_dir } => {
-            let example = load_markdown_example(&examples_dir, &args.type_name)?;
+            let example_directory = full_resource_name_from_type(&args.type_name)?;
+            let dsl_name = dsl_resource_name_from_type(&args.type_name)?;
+            let example = example::load(
+                &examples_dir,
+                &example_directory,
+                "awscc",
+                &dsl_name,
+                ExampleKind::Resource,
+            )?;
             generate_markdown(&schema, &args.type_name, &example)?
         }
         OutputMode::Rust => generate_schema_code(&schema, &args.type_name)?,
@@ -3818,11 +3466,11 @@ fn claim_unique_markdown_heading(
 }
 
 fn generate_markdown(schema: &CfnSchema, type_name: &str, example: &DocExample) -> Result<String> {
-    example.ensure_type(type_name)?;
     reset_recursion_guard();
     derive_mutually_exclusive_property_groups(schema)?;
 
     let dsl_resource = dsl_resource_name_from_type(type_name)?;
+    let example = example.text_for("awscc", &dsl_resource, ExampleKind::Resource)?;
     let namespace = format!("aws.{}", dsl_resource);
 
     // Build create-only properties set
@@ -4289,11 +3937,7 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str, example: &DocExample) 
         .with_context(|| format!("generated invalid Markdown for awscc.{dsl_resource}"))
 }
 
-fn write_markdown_example(
-    page: &mut PageBuilder<MarkdownTarget>,
-    example: &DocExample,
-) -> Result<()> {
-    let example = example.as_str();
+fn write_markdown_example(page: &mut PageBuilder<MarkdownTarget>, example: &str) -> Result<()> {
     page.heading(Heading::plain(2, "Example"))?;
     page.push_str("```crn\n");
     page.push_str(example);
@@ -8446,17 +8090,19 @@ fn collapse_whitespace(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
 
     const EXTRACT_ENUM_SNAPSHOT_PRE_365: &str = "tests/fixtures/extract_enum_snapshot_pre_365.json";
 
     fn markdown_example(type_name: &str) -> DocExample {
-        let dsl_resource = dsl_resource_name_from_type(type_name).unwrap();
-        let source = format!("awscc.{dsl_resource} {{}}\n");
-        check_markdown_example(
+        let dsl_name = dsl_resource_name_from_type(type_name).unwrap();
+        let source = format!("awscc.{dsl_name} {{}}\n");
+        example::check(
             &source,
-            source.clone(),
             Path::new("test-markdown-example.crn"),
-            type_name,
+            "awscc",
+            &dsl_name,
+            ExampleKind::Resource,
         )
         .unwrap()
     }
@@ -16494,8 +16140,9 @@ mod tests {
     }
 
     #[test]
-    fn test_markdown_example_is_preprocessed_and_validated_inside_codegen() {
+    fn test_shared_markdown_example_is_rendered_inside_codegen() {
         let type_name = "AWS::EC2::TransitGatewayAttachment";
+        let dsl_name = dsl_resource_name_from_type(type_name).unwrap();
         let source = concat!(
             "\n",
             "# leading comment\n",
@@ -16506,15 +16153,18 @@ mod tests {
             "awscc.ec2.TransitGatewayAttachment {}\n",
             "# trailing comment\n",
         );
-        let rendered = preprocess_markdown_example(source).unwrap();
-        assert_eq!(rendered, "awscc.ec2.TransitGatewayAttachment {}\n");
-        let example = check_markdown_example(
+        let example = example::check(
             source,
-            rendered,
             Path::new("test-markdown-example.crn"),
-            type_name,
+            "awscc",
+            &dsl_name,
+            ExampleKind::Resource,
         )
         .unwrap();
+        let rendered = example
+            .text_for("awscc", &dsl_name, ExampleKind::Resource)
+            .unwrap();
+        assert_eq!(rendered, "awscc.ec2.TransitGatewayAttachment {}\n");
 
         let schema = cfn_schema_for_codegen_tests(type_name);
         let md = generate_markdown(&schema, type_name, &example).unwrap();
@@ -16522,92 +16172,8 @@ mod tests {
         let example_position = md.find("## Example\n\n```crn\n").expect("example heading");
         let arguments_position = md.find("## Argument Reference").expect("argument heading");
         assert!(example_position < arguments_position, "{md}");
-        assert!(
-            md.contains(&format!("```crn\n{}```\n\n", example.as_str())),
-            "{md}"
-        );
+        assert!(md.contains(&format!("```crn\n{rendered}```\n\n")), "{md}");
         carina_docgen::check_page(&md).expect("the page checked by codegen should be valid");
-    }
-
-    #[test]
-    fn test_markdown_example_one_line_provider_keeps_resource() {
-        let examples_dir = tempfile::tempdir().unwrap();
-        let type_name = "AWS::EC2::TransitGatewayAttachment";
-        write_markdown_example_fixture(
-            examples_dir.path(),
-            type_name,
-            concat!(
-                "provider awscc { region = awscc.Region.ap_northeast_1 }\n",
-                "awscc.ec2.TransitGatewayAttachment {}\n",
-            ),
-        );
-
-        let example = load_markdown_example(examples_dir.path(), type_name).unwrap();
-
-        assert_eq!(example.as_str(), "awscc.ec2.TransitGatewayAttachment {}\n");
-    }
-
-    #[test]
-    fn test_markdown_example_indented_provider_closing_brace_keeps_resource() {
-        let examples_dir = tempfile::tempdir().unwrap();
-        let type_name = "AWS::EC2::TransitGatewayAttachment";
-        write_markdown_example_fixture(
-            examples_dir.path(),
-            type_name,
-            concat!(
-                "provider awscc {\n",
-                "  region = awscc.Region.ap_northeast_1\n",
-                "  }\n",
-                "awscc.ec2.TransitGatewayAttachment {}\n",
-            ),
-        );
-
-        let example = load_markdown_example(examples_dir.path(), type_name).unwrap();
-
-        assert_eq!(example.as_str(), "awscc.ec2.TransitGatewayAttachment {}\n");
-    }
-
-    #[test]
-    fn test_markdown_example_preserves_hash_line_in_heredoc_body() {
-        let examples_dir = tempfile::tempdir().unwrap();
-        let type_name = "AWS::EC2::TransitGatewayAttachment";
-        let source = concat!(
-            "# reader-facing comment\n",
-            "awscc.ec2.TransitGatewayAttachment {\n",
-            "  description = <<EOT\n",
-            "# not a comment\n",
-            "EOT\n",
-            "}\n",
-        );
-        write_markdown_example_fixture(examples_dir.path(), type_name, source);
-
-        let example = load_markdown_example(examples_dir.path(), type_name).unwrap();
-
-        assert_eq!(
-            example.as_str(),
-            concat!(
-                "awscc.ec2.TransitGatewayAttachment {\n",
-                "  description = <<EOT\n",
-                "# not a comment\n",
-                "EOT\n",
-                "}\n",
-            )
-        );
-    }
-
-    #[test]
-    fn test_checked_markdown_example_rejects_rendered_text_without_resource() {
-        let type_name = "AWS::EC2::TransitGatewayAttachment";
-        let source = "awscc.ec2.TransitGatewayAttachment {}\n";
-        let path = Path::new("test-markdown-example.crn");
-
-        let error = check_markdown_example(source, String::new(), path, type_name).unwrap_err();
-
-        assert_eq!(
-            error.to_string(),
-            "Example file test-markdown-example.crn must declare resource \
-             awscc.ec2.TransitGatewayAttachment"
-        );
     }
 
     #[test]
@@ -16620,8 +16186,8 @@ mod tests {
 
         assert_eq!(
             error.to_string(),
-            "Documentation example checked for AWS::EC2::VPC cannot render \
-             AWS::EC2::TransitGatewayAttachment"
+            "Documentation example checked for resource awscc.ec2.Vpc cannot render resource \
+             awscc.ec2.TransitGatewayAttachment"
         );
     }
 
@@ -16695,16 +16261,21 @@ mod tests {
     }
 
     #[test]
-    fn test_load_markdown_example_rejects_missing_example() {
+    fn test_markdown_page_rejects_missing_example_at_awscc_directory() {
         let examples_dir = tempfile::tempdir().unwrap();
-        let expected_path = examples_dir
-            .path()
-            .join("ec2_transit_gateway_attachment")
-            .join("main.crn");
+        let type_name = "AWS::EC2::TransitGatewayAttachment";
+        let directory = full_resource_name_from_type(type_name).unwrap();
+        let dsl_name = dsl_resource_name_from_type(type_name).unwrap();
+        let expected_path = examples_dir.path().join(&directory).join("main.crn");
 
-        let error =
-            load_markdown_example(examples_dir.path(), "AWS::EC2::TransitGatewayAttachment")
-                .unwrap_err();
+        let error = example::load(
+            examples_dir.path(),
+            &directory,
+            "awscc",
+            &dsl_name,
+            ExampleKind::Resource,
+        )
+        .unwrap_err();
 
         assert_eq!(
             error.to_string(),
@@ -16713,35 +16284,11 @@ mod tests {
     }
 
     #[test]
-    fn test_load_markdown_example_rejects_empty_preprocessed_example() {
+    fn test_markdown_page_rejects_example_for_wrong_awscc_type() {
         let examples_dir = tempfile::tempdir().unwrap();
         let type_name = "AWS::EC2::TransitGatewayAttachment";
-        let path = write_markdown_example_fixture(
-            examples_dir.path(),
-            type_name,
-            concat!(
-                "# Reader-facing title that preprocessing removes\n",
-                "provider awscc {\n",
-                "  region = awscc.Region.ap_northeast_1\n",
-                "}\n",
-            ),
-        );
-
-        let error = load_markdown_example(examples_dir.path(), type_name).unwrap_err();
-
-        assert_eq!(
-            error.to_string(),
-            format!(
-                "Example file {} must declare resource awscc.ec2.TransitGatewayAttachment",
-                path.display()
-            )
-        );
-    }
-
-    #[test]
-    fn test_load_markdown_example_rejects_example_without_documented_resource() {
-        let examples_dir = tempfile::tempdir().unwrap();
-        let type_name = "AWS::EC2::TransitGatewayAttachment";
+        let directory = full_resource_name_from_type(type_name).unwrap();
+        let dsl_name = dsl_resource_name_from_type(type_name).unwrap();
         let path = write_markdown_example_fixture(
             examples_dir.path(),
             type_name,
@@ -16752,98 +16299,22 @@ mod tests {
             ),
         );
 
-        let error = load_markdown_example(examples_dir.path(), type_name).unwrap_err();
+        let error = example::load(
+            examples_dir.path(),
+            &directory,
+            "awscc",
+            &dsl_name,
+            ExampleKind::Resource,
+        )
+        .unwrap_err();
 
         assert_eq!(
             error.to_string(),
             format!(
-                "Example file {} must declare resource awscc.ec2.TransitGatewayAttachment",
+                "Example {} does not declare expected resource \
+                 awscc.ec2.TransitGatewayAttachment",
                 path.display()
             )
-        );
-    }
-
-    #[test]
-    fn test_load_markdown_example_rejects_documented_resource_under_wrong_provider() {
-        let examples_dir = tempfile::tempdir().unwrap();
-        let type_name = "AWS::EC2::TransitGatewayAttachment";
-        let path = write_markdown_example_fixture(
-            examples_dir.path(),
-            type_name,
-            "aws.ec2.TransitGatewayAttachment {}\n",
-        );
-
-        let error = load_markdown_example(examples_dir.path(), type_name).unwrap_err();
-
-        assert_eq!(
-            error.to_string(),
-            format!(
-                "Example file {} must declare resource awscc.ec2.TransitGatewayAttachment",
-                path.display()
-            )
-        );
-    }
-
-    #[test]
-    fn test_load_markdown_example_reports_parse_error_at_raw_source_line() {
-        let examples_dir = tempfile::tempdir().unwrap();
-        let type_name = "AWS::EC2::TransitGatewayAttachment";
-        let path = write_markdown_example_fixture(
-            examples_dir.path(),
-            type_name,
-            concat!(
-                "# Header line 1\n",
-                "# Header line 2\n",
-                "# Header line 3\n",
-                "# Header line 4\n",
-                "provider awscc {\n",
-                "  region = awscc.Region.ap_northeast_1\n",
-                "}\n",
-                "@\n",
-            ),
-        );
-
-        let error = load_markdown_example(examples_dir.path(), type_name).unwrap_err();
-
-        assert_eq!(
-            error.to_string(),
-            format!(
-                "Example file {} must parse and declare resource awscc.ec2.TransitGatewayAttachment",
-                path.display()
-            )
-        );
-        let chain: Vec<String> = error.chain().map(ToString::to_string).collect();
-        assert!(
-            chain.len() > 1,
-            "parse error source must be preserved: {chain:?}"
-        );
-        assert!(
-            chain.iter().skip(1).any(|message| message.contains("8:1")),
-            "parse error must report the raw source line: {chain:?}"
-        );
-    }
-
-    #[test]
-    fn test_load_markdown_example_accepts_documented_resource() {
-        let examples_dir = tempfile::tempdir().unwrap();
-        let type_name = "AWS::EC2::TransitGatewayAttachment";
-        write_markdown_example_fixture(
-            examples_dir.path(),
-            type_name,
-            concat!(
-                "provider awscc {\n",
-                "  region = awscc.Region.ap_northeast_1\n",
-                "}\n",
-                "\n",
-                "let attachment = awscc.ec2.TransitGatewayAttachment {}\n",
-            ),
-        );
-
-        assert_eq!(
-            load_markdown_example(examples_dir.path(), type_name)
-                .unwrap()
-                .as_str(),
-            "let attachment = awscc.ec2.TransitGatewayAttachment {}\n"
         );
     }
 
