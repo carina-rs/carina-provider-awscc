@@ -6,6 +6,11 @@
 
 set -e
 
+# Every suite using these helpers registers its cleanup account from AWS_PROFILE.
+# Clear inherited static keys once for all commands, including child test scripts
+# and cleanup, so the host's default chain selects that same profile.
+unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_SECURITY_TOKEN
+
 HELPERS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Derive SCRIPT_DIR from the caller's location (two levels up from shared/)
 # Each test script is at <suite>/tests/<script>.sh, so SCRIPT_DIR is <suite>/

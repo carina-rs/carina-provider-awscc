@@ -13,8 +13,9 @@
 # The presence of this run.sh makes run-tests.sh skip the directory.
 #
 # AWS authentication:
-#   Set AWS_PROFILE to one of the carina-test-00X profiles. The first run
-#   in a session needs `aws sso login --sso-session carina`.
+#   The Carina host resolves and refreshes the selected AWS_PROFILE credentials.
+#   It never starts an interactive login. If an SSO session has expired, run
+#   `aws sso login --profile <profile>`.
 
 set -e
 
@@ -23,24 +24,17 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
 source "$SCRIPT_DIR/../shared/_helpers.sh"
 
-# ── with_account_creds: resolve credentials for $AWS_PROFILE into env vars ──
+# Run with the selected profile, letting the host resolve and refresh credentials.
 with_account_creds() {
     local account="${AWS_PROFILE:-}"
     if [ -z "$account" ]; then
         echo "ERROR: AWS_PROFILE is not set; cannot resolve credentials" >&2
         return 1
     fi
-    local creds
-    if ! creds=$(aws configure export-credentials --profile "$account" --format env-no-export 2>&1); then
-        echo "ERROR: aws configure export-credentials failed for $account: $creds" >&2
-        return 1
-    fi
     (
-        set -a
-        eval "$creds"
-        set +a
-        unset AWS_PROFILE
-        "$@"
+        # Inherited static keys must not override the selected account profile.
+        unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_SECURITY_TOKEN
+        AWS_PROFILE="$account" "$@"
     )
 }
 

@@ -11,7 +11,6 @@
 
 mod common;
 
-use aws_config::{BehaviorVersion, Region};
 use carina_core::provider::{CreateOutcomeKind, Provider, ReadRequest};
 use carina_core::resource::{ConcreteValue, Resource, Value};
 use carina_provider_awscc::AwsccProvider;
@@ -74,15 +73,10 @@ async fn winterbaume_provider() -> AwsccProvider {
     let mock = MockAws::builder()
         .with_service(CloudControlService::new())
         .build();
-    let config = aws_config::defaults(BehaviorVersion::latest())
-        .http_client(mock.http_client())
-        .credentials_provider(mock.credentials_provider())
-        .region(Region::new("us-east-1"))
-        .load()
-        .await;
+    let config = mock.sdk_config("us-east-1").await;
 
     AwsccProvider::from_sdk_config(
-        carina_provider_awscc::BoundedSdkConfig::new(config),
+        carina_provider_awscc::BoundedSdkConfig::for_test(config),
         &AwsccProviderConfig::default(),
     )
     .await

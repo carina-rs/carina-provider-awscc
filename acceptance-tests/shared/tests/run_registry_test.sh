@@ -22,6 +22,15 @@ set -euo pipefail
 
 command_name="${1:-}"
 printf '%s\n' "$*" >> "$STUB_COMMAND_LOG"
+case "$command_name" in
+    plan|apply|destroy)
+        if [ -n "${AWS_ACCESS_KEY_ID:-}${AWS_SECRET_ACCESS_KEY:-}${AWS_SESSION_TOKEN:-}${AWS_SECURITY_TOKEN:-}" ]; then
+            echo "static keys overrode the selected AWS_PROFILE" >&2
+            exit 64
+        fi
+        printf '%s\n' "${AWS_PROFILE:-missing}" >> "$STUB_CREDS_LOG"
+        ;;
+esac
 
 if [ -n "${STUB_RUNNER_CALL_LOG:-}" ]; then
     case "$command_name" in
@@ -69,7 +78,7 @@ if [ "$command_name" = "destroy" ]; then
         echo "stub destroy failure" >&2
         exit 23
     fi
-    printf '%s\n' "${STUB_ACCOUNT:-missing}" >> "$STUB_DESTROY_LOG"
+    printf '%s\n' "${AWS_PROFILE:-missing}" >> "$STUB_DESTROY_LOG"
     printf '%s\n' '{"schema_version":1,"state":"absent"}' > "$entry/.stub-state.json"
     exit 0
 fi
@@ -118,20 +127,12 @@ cat > "$STUB_BIN_DIR/aws" <<'STUB'
 #!/bin/bash
 set -euo pipefail
 
-if [ "${1:-}" = "configure" ] && [ "${2:-}" = "export-credentials" ] && \
-   [ "${3:-}" = "--profile" ] && [ -n "${4:-}" ] && \
-   [ "${5:-}" = "--format" ] && [ "${6:-}" = "env-no-export" ]; then
-    printf '%s\n' "$4" >> "$STUB_CREDS_LOG"
-    printf '%s\n' \
-        'AWS_ACCESS_KEY_ID=stub-access-key' \
-        'AWS_SECRET_ACCESS_KEY=stub-secret-key' \
-        'AWS_SESSION_TOKEN=stub-session-token' \
-        "STUB_ACCOUNT=$4"
+if [ "${1:-}" = "sts" ] && [ "${2:-}" = "get-caller-identity" ]; then
     exit 0
 fi
 
 echo "unexpected aws stub invocation: $*" >&2
-exit 0
+exit 64
 STUB
 
 cat > "$STUB_BIN_DIR/cargo" <<'STUB'
@@ -148,11 +149,14 @@ export _TEST_AWSCC_WASM="$TEST_TMP/carina-provider-awscc.wasm"
 : > "$_TEST_AWSCC_WASM"
 
 # The cleanup implementation calls this hook. Keeping it in the test avoids
-# loading AWS credentials or invoking the AWS CLI.
+# invoking the AWS CLI.
 with_account_creds() {
     local account="$1"
     shift
-    STUB_ACCOUNT="$account" "$@"
+    (
+        unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_SECURITY_TOKEN
+        AWS_PROFILE="$account" "$@"
+    )
 }
 
 source "$SHARED_DIR/_run_registry.sh"
@@ -658,7 +662,7 @@ fi
 [ "$(cat "$STUB_DESTROY_LOG")" = $'carina-test-009\ncarina-test-009' ] || \
     fail "unfiltered runner cleanup used the wrong account: $(cat "$STUB_DESTROY_LOG")"
 [ "$(cat "$STUB_CREDS_LOG")" = $'carina-test-009\ncarina-test-009' ] || \
-    fail "unfiltered runner cleanup did not use stub credentials: $(cat "$STUB_CREDS_LOG")"
+    fail "unfiltered runner cleanup used the wrong AWS_PROFILE: $(cat "$STUB_CREDS_LOG")"
 pass "run-tests.sh cleanup without filters works under /bin/bash"
 
 next_test
@@ -677,7 +681,7 @@ fi
 [ "$(cat "$STUB_DESTROY_LOG")" = "carina-test-009" ] || \
     fail "filtered runner cleanup used the wrong account: $(cat "$STUB_DESTROY_LOG")"
 [ "$(cat "$STUB_CREDS_LOG")" = "carina-test-009" ] || \
-    fail "filtered runner cleanup did not use stub credentials: $(cat "$STUB_CREDS_LOG")"
+    fail "filtered runner cleanup used the wrong AWS_PROFILE: $(cat "$STUB_CREDS_LOG")"
 pass "run-tests.sh cleanup forwards a filter under /bin/bash"
 
 next_test
@@ -700,7 +704,7 @@ fi
 [ "$(cat "$STUB_DESTROY_LOG")" = "carina-test-006" ] || \
     fail "run-tests.sh destroy used an unselected account: $(cat "$STUB_DESTROY_LOG")"
 [ "$(cat "$STUB_CREDS_LOG")" = "carina-test-006" ] || \
-    fail "run-tests.sh destroy loaded credentials for an unselected account"
+    fail "run-tests.sh destroy used an unselected AWS_PROFILE"
 pass "run-tests.sh destroy is limited to its selected account"
 
 next_test
@@ -870,7 +874,9 @@ export STUB_RUNNER_CALL_LOG="$runner_call_log"
 export STUB_RUNNER_REGISTRY_ROOT
 STUB_RUNNER_REGISTRY_ROOT=$(carina_registry_runs_root)
 if ! runner_output=$(
-    AWS_PROFILE="account-g" /bin/bash "$TAG_DELETION_RUNNER" \
+    AWS_ACCESS_KEY_ID=stale-access-key AWS_SECRET_ACCESS_KEY=stale-secret \
+        AWS_SESSION_TOKEN=stale-token AWS_SECURITY_TOKEN=stale-security-token \
+        AWS_PROFILE="account-g" /bin/bash "$TAG_DELETION_RUNNER" \
         "s3_bucket_all_tags" 2>&1
 ); then
     fail "AWSCC multi-step runner failed: $runner_output"
@@ -893,7 +899,9 @@ export STUB_RUNNER_CALL_LOG="$runner_call_log"
 export STUB_RUNNER_REGISTRY_ROOT
 STUB_RUNNER_REGISTRY_ROOT=$(carina_registry_runs_root)
 if runner_output=$(
-    AWS_PROFILE="account-h" STUB_PLAN_FAIL=1 STUB_DESTROY_FAIL=1 \
+    AWS_ACCESS_KEY_ID=stale-access-key AWS_SECRET_ACCESS_KEY=stale-secret \
+        AWS_SESSION_TOKEN=stale-token AWS_SECURITY_TOKEN=stale-security-token \
+        AWS_PROFILE="account-h" STUB_PLAN_FAIL=1 STUB_DESTROY_FAIL=1 \
         /bin/bash "$TAG_DELETION_RUNNER" "s3_bucket_all_tags" 2>&1
 ); then
     fail "AWSCC multi-step runner ignored an early plan and cleanup destroy failure"

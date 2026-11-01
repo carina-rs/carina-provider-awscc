@@ -7,7 +7,6 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use aws_config::{BehaviorVersion, Region};
 use aws_smithy_types::retry::RetryConfig;
 use carina_provider_awscc::provider::AwsccProviderConfig;
 use carina_provider_awscc::{AwsccProvider, BoundedSdkConfig};
@@ -53,14 +52,13 @@ impl MockService for AlwaysUnavailableSts {
 async fn provider_boundary_limits_sts_call_to_three_attempts() {
     let sts = Arc::new(AlwaysUnavailableSts::default());
     let mock = MockAws::builder().with_service(Arc::clone(&sts)).build();
-    let input = aws_config::defaults(BehaviorVersion::latest())
-        .http_client(mock.http_client())
-        .credentials_provider(mock.credentials_provider())
-        .region(Region::new(REGION))
+    let input = mock
+        .sdk_config(REGION)
+        .await
+        .into_builder()
         .retry_config(RetryConfig::standard().with_max_attempts(10))
-        .load()
-        .await;
-    let config = BoundedSdkConfig::new(input);
+        .build();
+    let config = BoundedSdkConfig::for_test(input);
     let provider = AwsccProvider::from_sdk_config(
         config,
         &AwsccProviderConfig {
