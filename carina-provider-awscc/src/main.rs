@@ -30,6 +30,7 @@ use carina_core::schema::{
     ReferenceForms, SchemaKind, SchemaRegistry, ValidatedConfigSchema, ValidatedResourceSchema,
 };
 
+use carina_provider_awscc::provider::read_back::ReadBackContinuation;
 use carina_provider_awscc::provider::{
     AwsccProvider, AwsccProviderConfig, CcCreateAttempt, CcCreatePoll, CcCreateResume,
     CcCreateToken, CcDeleteToken, CcIssuedCreate, CcPollAttempt, CcResumeAttempt, CcResumedCreate,
@@ -270,8 +271,8 @@ impl CcIssuedCreate for GuestIssuedCreate {
         self,
         identifier: CoreAppliedIdentifier,
         attributes: HashMap<String, CoreValue>,
-        reason: String,
-        missing_attributes: Vec<String>,
+        reason: CoreProviderError,
+        missing_attributes: carina_provider_awscc::provider::read_back::NonEmptyAttributeNames,
     ) -> Result<Self::Step, Self::Verdict> {
         let finishing = self.0.canonicalize(identifier);
         finish_encoded(
@@ -281,8 +282,8 @@ impl CcIssuedCreate for GuestIssuedCreate {
                 finishing.partial(
                     attributes,
                     proto::PartialReadDiagnostic {
-                        reason,
-                        missing_attributes,
+                        reason: reason.to_string(),
+                        missing_attributes: missing_attributes.into(),
                     },
                 )
             },
@@ -306,8 +307,28 @@ impl CcIssuedCreate for GuestIssuedCreate {
     }
 
     fn preserve(self, token: CcCreateToken, error: CoreProviderError) -> Self::Verdict {
+        // SDK preserve builds operation progress. Reject invalid read-back
+        // capabilities with their identifier instead of regressing the phase.
+        if token.phase() == carina_provider_protocol::PendingPhase::ReadBack {
+            let identifier = self.identifier().clone();
+            return self.failed(
+                identifier,
+                CoreObservation::ReadFailed(CoreProviderError::from_wire(error.to_wire())),
+                error,
+            );
+        }
         let poll_after_secs = token.poll_after_secs();
         self.0.preserve(token, poll_after_secs, error.to_wire())
+    }
+
+    fn pending_read_back(
+        self,
+        continuation: ReadBackContinuation,
+        poll_after_secs: u32,
+    ) -> Result<Self::Step, Self::Verdict> {
+        Ok(self
+            .0
+            .pending_read_back(CcCreateToken::ReadBack(continuation), poll_after_secs))
     }
 
     fn pending(
@@ -346,8 +367,8 @@ impl CcIssuedCreate for GuestPolledIssuedCreate {
         self,
         identifier: CoreAppliedIdentifier,
         attributes: HashMap<String, CoreValue>,
-        reason: String,
-        missing_attributes: Vec<String>,
+        reason: CoreProviderError,
+        missing_attributes: carina_provider_awscc::provider::read_back::NonEmptyAttributeNames,
     ) -> Result<Self::Step, Self::Verdict> {
         let finishing = self.0.canonicalize(identifier);
         finish_encoded(
@@ -357,8 +378,8 @@ impl CcIssuedCreate for GuestPolledIssuedCreate {
                 finishing.partial(
                     attributes,
                     proto::PartialReadDiagnostic {
-                        reason,
-                        missing_attributes,
+                        reason: reason.to_string(),
+                        missing_attributes: missing_attributes.into(),
                     },
                 )
             },
@@ -383,10 +404,30 @@ impl CcIssuedCreate for GuestPolledIssuedCreate {
     }
 
     fn preserve(self, token: CcCreateToken, error: CoreProviderError) -> Self::Verdict {
+        // SDK preserve builds operation progress. Reject invalid read-back
+        // capabilities with their identifier instead of regressing the phase.
+        if token.phase() == carina_provider_protocol::PendingPhase::ReadBack {
+            let identifier = self.identifier().clone();
+            return self.failed(
+                identifier,
+                CoreObservation::ReadFailed(CoreProviderError::from_wire(error.to_wire())),
+                error,
+            );
+        }
         let poll_after_secs = token.poll_after_secs();
         self.0
             .preserve(token, poll_after_secs, error.to_wire())
             .into()
+    }
+
+    fn pending_read_back(
+        self,
+        continuation: ReadBackContinuation,
+        poll_after_secs: u32,
+    ) -> Result<Self::Step, Self::Verdict> {
+        Ok(self
+            .0
+            .pending_read_back(CcCreateToken::ReadBack(continuation), poll_after_secs))
     }
 
     fn pending(
@@ -454,6 +495,40 @@ impl CcResumedCreate for GuestResumedCreate {
         )
     }
 
+    fn partial(
+        self,
+        identifier: CoreAppliedIdentifier,
+        attributes: HashMap<String, CoreValue>,
+        reason: CoreProviderError,
+        missing_attributes: carina_provider_awscc::provider::read_back::NonEmptyAttributeNames,
+    ) -> Result<Self::Step, Self::Verdict> {
+        let finishing = self.0.canonicalize(identifier);
+        finish_encoded(
+            finishing,
+            partial_create_attributes_to_proto(&attributes),
+            |finishing, attributes| {
+                finishing.partial(
+                    attributes,
+                    proto::PartialReadDiagnostic {
+                        reason: reason.to_string(),
+                        missing_attributes: missing_attributes.into(),
+                    },
+                )
+            },
+            |finishing, observation, error| finishing.failed(observation, error),
+        )
+    }
+
+    fn pending_read_back(
+        self,
+        continuation: ReadBackContinuation,
+        poll_after_secs: u32,
+    ) -> Result<Self::Step, Self::Verdict> {
+        Ok(self
+            .0
+            .pending_read_back(CcCreateToken::ReadBack(continuation), poll_after_secs))
+    }
+
     fn failed(
         self,
         identifier: CoreAppliedIdentifier,
@@ -470,6 +545,14 @@ impl CcResumedCreate for GuestResumedCreate {
     }
 
     fn preserve(self, token: CcCreateToken, error: CoreProviderError) -> Self::Verdict {
+        if token.phase() == carina_provider_protocol::PendingPhase::ReadBack {
+            let identifier = self.identifier().clone();
+            return self.failed(
+                identifier,
+                CoreObservation::ReadFailed(CoreProviderError::from_wire(error.to_wire())),
+                error,
+            );
+        }
         let poll_after_secs = token.poll_after_secs();
         self.0.preserve(token, poll_after_secs, error.to_wire())
     }
@@ -546,8 +629,8 @@ impl CcIssuedCreate for GuestResentIssuedCreate {
         self,
         identifier: CoreAppliedIdentifier,
         attributes: HashMap<String, CoreValue>,
-        reason: String,
-        missing_attributes: Vec<String>,
+        reason: CoreProviderError,
+        missing_attributes: carina_provider_awscc::provider::read_back::NonEmptyAttributeNames,
     ) -> Result<Self::Step, Self::Verdict> {
         let finishing = self.0.canonicalize(identifier);
         finish_encoded(
@@ -558,8 +641,8 @@ impl CcIssuedCreate for GuestResentIssuedCreate {
                     .partial(
                         attributes,
                         proto::PartialReadDiagnostic {
-                            reason,
-                            missing_attributes,
+                            reason: reason.to_string(),
+                            missing_attributes: missing_attributes.into(),
                         },
                     )
                     .into()
@@ -585,10 +668,31 @@ impl CcIssuedCreate for GuestResentIssuedCreate {
     }
 
     fn preserve(self, token: CcCreateToken, error: CoreProviderError) -> Self::Verdict {
+        // SDK preserve builds operation progress. Reject invalid read-back
+        // capabilities with their identifier instead of regressing the phase.
+        if token.phase() == carina_provider_protocol::PendingPhase::ReadBack {
+            let identifier = self.identifier().clone();
+            return self.failed(
+                identifier,
+                CoreObservation::ReadFailed(CoreProviderError::from_wire(error.to_wire())),
+                error,
+            );
+        }
         let poll_after_secs = token.poll_after_secs();
         self.0
             .preserve(token, poll_after_secs, error.to_wire())
             .into()
+    }
+
+    fn pending_read_back(
+        self,
+        continuation: ReadBackContinuation,
+        poll_after_secs: u32,
+    ) -> Result<Self::Step, Self::Verdict> {
+        Ok(self
+            .0
+            .pending_read_back(CcCreateToken::ReadBack(continuation), poll_after_secs)
+            .into())
     }
 
     fn pending(
@@ -883,7 +987,7 @@ impl CarinaProvider for AwsccProcessProvider {
         _id: &proto::ResourceId,
         request: proto::CreateRequest,
         poll: SdkPoll<Self::CreateToken>,
-        _poll_request: PollRequest,
+        poll_request: PollRequest,
     ) -> Result<SdkCreateStep<Self::CreateToken>, SdkPollVerdict<Self::CreateToken>> {
         let normalized_resource = match self.normalize_create_resource(&request.resource) {
             Ok(resource) => resource,
@@ -896,6 +1000,11 @@ impl CarinaProvider for AwsccProcessProvider {
                     }
                     SdkPoll::Issued(issued, token) => {
                         let poll_after_secs = token.poll_after_secs();
+                        if token.phase() == carina_provider_protocol::PendingPhase::ReadBack {
+                            return Err(issued
+                                .failed(proto::Observation::ReadFailed(error.clone()), error)
+                                .into());
+                        }
                         Err(issued.preserve(token, poll_after_secs, error).into())
                     }
                 };
@@ -913,6 +1022,7 @@ impl CarinaProvider for AwsccProcessProvider {
             normalized_resource.as_resource(),
             token,
             poll,
+            poll_request,
         ))
     }
 
@@ -921,7 +1031,7 @@ impl CarinaProvider for AwsccProcessProvider {
         _id: &proto::ResourceId,
         request: proto::CreateRequest,
         resume: SdkResume<Self::CreateToken>,
-        _poll_request: PollRequest,
+        poll_request: PollRequest,
     ) -> Result<SdkResumeStep<Self::CreateToken>, SdkResumeVerdict<Self::CreateToken>> {
         let normalized_resource = match self.normalize_create_resource(&request.resource) {
             Ok(resource) => resource,
@@ -934,6 +1044,10 @@ impl CarinaProvider for AwsccProcessProvider {
                     }
                     SdkResume::Issued(resumed, token) => {
                         let poll_after_secs = token.poll_after_secs();
+                        if token.phase() == carina_provider_protocol::PendingPhase::ReadBack {
+                            return Err(resumed
+                                .failed(proto::Observation::ReadFailed(error.clone()), error));
+                        }
                         Err(resumed.preserve(token, poll_after_secs, error))
                     }
                 };
@@ -951,6 +1065,7 @@ impl CarinaProvider for AwsccProcessProvider {
             normalized_resource.as_resource(),
             token,
             resume,
+            poll_request,
         ))
     }
 
@@ -1007,7 +1122,7 @@ impl CarinaProvider for AwsccProcessProvider {
         identifier: &proto::AppliedIdentifier,
         request: proto::UpdateRequest,
         pending: Pending<Self::UpdateToken>,
-        _poll_request: PollRequest,
+        poll_request: PollRequest,
     ) -> Result<SdkUpdateOutcome<Self::UpdateToken>, proto::ProviderError> {
         let core_id = protocol_convert::protocol_to_resource_id(id);
         let state_after_patch = request.state_after_patch();
@@ -1031,6 +1146,7 @@ impl CarinaProvider for AwsccProcessProvider {
             &core_from,
             &core_patch,
             pending.token,
+            poll_request,
         ));
         match result {
             Ok(OperationStep::Done(outcome)) => {

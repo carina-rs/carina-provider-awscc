@@ -454,7 +454,11 @@ impl Provider for AwsccProvider {
     ) -> BoxFuture<'_, ProviderResult<ReadOutcome>> {
         let id = id.clone();
         let identifier = identifier.clone();
-        Box::pin(async move { self.read_resource(&id, &identifier).await })
+        Box::pin(async move {
+            self.read_resource(&id, &identifier)
+                .await
+                .map_err(Into::into)
+        })
     }
 
     fn read_data_source(

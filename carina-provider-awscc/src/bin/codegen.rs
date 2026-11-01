@@ -3414,6 +3414,7 @@ fn claim_unique_markdown_heading(
 }
 
 fn generate_markdown(schema: &CfnSchema, type_name: &str, example: &DocExample) -> Result<String> {
+    checked_read_back_declarations(schema, type_name)?;
     reset_recursion_guard();
     validate_identity_properties(schema)?;
     reset_recursion_guard();
@@ -3592,6 +3593,28 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str, example: &DocExample) 
     }
 
     write_markdown_example(&mut page, example)?;
+
+    if let Some(config) = resource_type_overrides().by_type.get(type_name)
+        && (!config.await_on_read_back.is_empty() || config.read_back_budget_secs.is_some())
+    {
+        page.heading(Heading::plain(2, "Read-back"))?;
+        if !config.await_on_read_back.is_empty() {
+            let attributes = config
+                .await_on_read_back
+                .iter()
+                .map(|name| format!("`{name}`"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            page.push_str(&format!(
+                "After create and update, read-back waits for {attributes} to appear.\n\n"
+            ));
+        }
+        let seconds = config.read_back_budget_secs.map_or(
+            carina_provider_protocol::DEFAULT_READ_BACK_BUDGET.as_secs(),
+            std::num::NonZeroU64::get,
+        );
+        page.push_str(&format!("The read-back budget is {seconds} seconds.\n\n"));
+    }
 
     // Argument Reference (writable attributes)
     page.heading(Heading::plain(2, "Argument Reference"))?;
@@ -4220,7 +4243,39 @@ fn generate_top_level_attribute_type(
     cfn_type_to_carina_type_with_enum(prop, prop_name, schema, namespace, enums).0
 }
 
+/// Admit declarations against the exact top-level DSL names emitted for this resource.
+fn checked_read_back_declarations(
+    schema: &CfnSchema,
+    type_name: &str,
+) -> Result<Vec<&'static str>> {
+    let declarations = resource_type_overrides()
+        .by_type
+        .get(type_name)
+        .map_or(&[][..], |config| config.await_on_read_back);
+    let attributes = documented_top_level_properties(schema)
+        .map(|(name, _)| name.to_snake_case())
+        .chain(
+            synthetic_attributes()
+                .iter()
+                .filter(|attribute| attribute.cfn_type == type_name)
+                .map(|attribute| attribute.attr_name.to_string()),
+        )
+        .collect::<HashSet<_>>();
+    for attribute in declarations {
+        if !carina_provider_awscc::schemas::config::ReadBackAttribute::is_dsl_root(attribute)
+            || !attributes.contains(*attribute)
+        {
+            anyhow::bail!(
+                "{} declares unknown read-back attribute {attribute}",
+                dsl_resource_name_from_type(type_name)?
+            );
+        }
+    }
+    Ok(declarations.to_vec())
+}
+
 fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
+    let read_back_declarations = checked_read_back_declarations(schema, type_name)?;
     // carina#3340: clear per-resource codegen state at function entry
     // (cyclic-$ref guard + emitted-pattern accumulators) so prior
     // resources don't leak entries into this resource's pre-scan or
@@ -4687,8 +4742,12 @@ pub fn {}() -> AwsccSchemaConfig {{
         emit_option_field(&mut body, "create_timeout_secs", cfg.create_timeout_secs);
         emit_option_field(&mut body, "create_max_retries", cfg.create_max_retries);
         emit_option_field(&mut body, "update_timeout_secs", cfg.update_timeout_secs);
-        // Host-driven read-back remains a separate change (awscc#540).
-        body.push_str("            read_back: None,\n");
+        match cfg.read_back_budget_secs {
+            Some(seconds) => body.push_str(&format!(
+                "            read_back: Some(carina_provider_protocol::types::ReadBackBudget::new(std::num::NonZeroU64::new({seconds}).expect(\"nonzero read-back budget\"))),\n"
+            )),
+            None => body.push_str("            read_back: None,\n"),
+        }
         body.push_str("    });\n");
     }
 
@@ -4739,6 +4798,17 @@ pub fn {}() -> AwsccSchemaConfig {{
     }
 
     // Close the schema (ResourceSchema) and the AwsccSchemaConfig struct.
+    let await_on_read_back = format!(
+        "vec![{}]",
+        read_back_declarations
+            .iter()
+            .map(|name| format!(
+                "const {{ crate::schemas::config::ReadBackAttribute::new({}) }}",
+                rust_lit(name)
+            ))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
     body.push_str(&format!(
         r#"    AwsccSchemaConfig {{
         aws_type_name: "{}",
@@ -4746,11 +4816,17 @@ pub fn {}() -> AwsccSchemaConfig {{
         primary_identifier: {},
         exclusive_groups: {},
         tags: {},
+        await_on_read_back: {},
         schema,
     }}
 }}
 "#,
-        type_name, dsl_resource, primary_identifier, exclusive_groups_expr, tags_expr
+        type_name,
+        dsl_resource,
+        primary_identifier,
+        exclusive_groups_expr,
+        tags_expr,
+        await_on_read_back
     ));
 
     // Generate enum_valid_values() function that exposes VALID_* constants
@@ -4837,15 +4913,7 @@ pub fn {}() -> AwsccSchemaConfig {{
     if body.contains("legacy_validator(") {
         schema_imports.push("legacy_validator");
     }
-    const OPERATION_CONFIG_TYPES: &[&str] = &[
-        "AWS::EC2::TransitGateway",
-        "AWS::EC2::TransitGatewayAttachment",
-        "AWS::EC2::IPAM",
-        "AWS::EC2::IPAMPool",
-        "AWS::EC2::NatGateway",
-        "AWS::EC2::VPCGatewayAttachment",
-    ];
-    if OPERATION_CONFIG_TYPES.contains(&type_name) {
+    if operation_config_for_type(type_name).is_some() {
         schema_imports.push("OperationConfig");
     }
     let schema_imports_str = schema_imports.join(", ");
@@ -4890,11 +4958,16 @@ struct CodegenOperationConfig {
     create_timeout_secs: Option<u64>,
     create_max_retries: Option<u32>,
     update_timeout_secs: Option<u64>,
+    read_back_budget_secs: Option<std::num::NonZeroU64>,
 }
 
 /// Returns operational config overrides for resource types with slow CloudControl operations.
 fn operation_config_for_type(type_name: &str) -> Option<CodegenOperationConfig> {
-    match type_name {
+    let read_back_budget_secs = resource_type_overrides()
+        .by_type
+        .get(type_name)
+        .and_then(|config| config.read_back_budget_secs);
+    let config = match type_name {
         "AWS::EC2::TransitGateway" | "AWS::EC2::TransitGatewayAttachment" => {
             Some(CodegenOperationConfig {
                 delete_timeout_secs: Some(1800),
@@ -4915,7 +4988,13 @@ fn operation_config_for_type(type_name: &str) -> Option<CodegenOperationConfig> 
             ..Default::default()
         }),
         _ => None,
-    }
+    };
+    config
+        .or_else(|| read_back_budget_secs.map(|_| CodegenOperationConfig::default()))
+        .map(|mut config| {
+            config.read_back_budget_secs = read_back_budget_secs;
+            config
+        })
 }
 
 /// Emit a single `Option<T>` field for generated OperationConfig code.
@@ -6486,6 +6565,9 @@ fn mutually_exclusive_property_groups()
 struct ResourceOverridesForType {
     top_level: HashMap<&'static str, TypeOverride>,
     nested: HashMap<&'static str, HashMap<&'static str, TypeOverride>>,
+    /// DSL names, checked against every generated resource schema by tests.
+    await_on_read_back: &'static [&'static str],
+    read_back_budget_secs: Option<std::num::NonZeroU64>,
 }
 
 #[derive(Default)]
@@ -6577,6 +6659,12 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         // Deleting this Cloud Control resource closes the AWS member account;
         // require an explicit lifecycle opt-out before destruction (aws#572).
         m.default_prevent_destroy("AWS::Organizations::Account");
+
+        // IAM Role reads wait for the ARN, including when synthesis needs more data.
+        m.by_type
+            .entry("AWS::IAM::Role")
+            .or_default()
+            .await_on_read_back = &["arn"];
 
         // === StringType overrides ===
 

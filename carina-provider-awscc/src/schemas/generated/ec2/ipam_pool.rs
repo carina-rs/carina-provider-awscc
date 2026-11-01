@@ -262,6 +262,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "IpamPoolId", dsl_name: "ipam_pool_id" }],
         exclusive_groups: &[],
         tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
+        await_on_read_back: vec![],
         schema,
     }
 }

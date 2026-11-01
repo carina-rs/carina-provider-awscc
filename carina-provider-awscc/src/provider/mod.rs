@@ -22,6 +22,7 @@ pub(crate) mod conversion;
 mod error_helpers;
 mod normalizer;
 mod operations;
+pub mod read_back;
 mod s3;
 mod special_cases;
 mod tags;
@@ -29,7 +30,7 @@ pub(crate) mod update;
 
 use aws_sdk_cloudcontrol::Client as CloudControlClient;
 use aws_sdk_sts::Client as StsClient;
-use carina_core::provider::{ProviderError, ProviderResult};
+use carina_core::provider::ProviderError;
 use tokio::sync::OnceCell;
 
 use crate::schemas::config::AwsccSchemaConfig;
@@ -99,6 +100,9 @@ pub struct AwsccProvider {
     /// `cloudfront.Distribution.arn`) needs it, then cached for the
     /// lifetime of the provider instance.
     account_id: OnceCell<String>,
+    #[cfg(any(test, feature = "test-utils"))]
+    operation_config_overrides:
+        std::collections::HashMap<String, carina_core::schema::OperationConfig>,
 }
 
 impl AwsccProvider {
@@ -144,13 +148,27 @@ impl AwsccProvider {
             sts_client: sts,
             init_error,
             account_id: OnceCell::new(),
+            #[cfg(any(test, feature = "test-utils"))]
+            operation_config_overrides: Default::default(),
         }
+    }
+
+    #[cfg(any(test, feature = "test-utils"))]
+    #[doc(hidden)]
+    pub fn with_operation_config_for_test(
+        mut self,
+        resource_type: &str,
+        config: carina_core::schema::OperationConfig,
+    ) -> Self {
+        self.operation_config_overrides
+            .insert(resource_type.to_string(), config);
+        self
     }
 
     /// Return the caller's AWS account id, fetching it via
     /// `sts:GetCallerIdentity` on first call and caching the result on
     /// the provider for subsequent reads.
-    pub(crate) async fn account_id(&self) -> ProviderResult<&str> {
+    pub(crate) async fn account_id(&self) -> Result<&str, read_back::ReadFailure> {
         self.account_id
             .get_or_try_init(|| async {
                 let identity = self
@@ -159,14 +177,20 @@ impl AwsccProvider {
                     .send()
                     .await
                     .map_err(|e| {
-                        api_error_with_meta(
-                            "Failed to call sts:GetCallerIdentity",
-                            "sts.GetCallerIdentity",
-                            e,
+                        let transience = Self::read_error_transience(&e);
+                        read_back::ReadFailure::new(
+                            api_error_with_meta(
+                                "Failed to call sts:GetCallerIdentity",
+                                "sts.GetCallerIdentity",
+                                e,
+                            ),
+                            transience,
                         )
                     })?;
                 identity.account().map(|s| s.to_string()).ok_or_else(|| {
-                    ProviderError::api_error("sts:GetCallerIdentity returned no account id")
+                    read_back::ReadFailure::from(ProviderError::api_error(
+                        "sts:GetCallerIdentity returned no account id",
+                    ))
                 })
             })
             .await

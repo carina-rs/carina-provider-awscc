@@ -325,6 +325,7 @@ pub fn dynamodb_table_config() -> AwsccSchemaConfig {
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "TableName", dsl_name: "table_name" }],
         exclusive_groups: &[],
         tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
+        await_on_read_back: vec![],
         schema,
     }
 }

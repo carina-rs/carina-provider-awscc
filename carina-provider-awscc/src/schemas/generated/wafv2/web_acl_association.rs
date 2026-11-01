@@ -36,6 +36,7 @@ pub fn wafv2_web_acl_association_config() -> AwsccSchemaConfig {
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "ResourceArn", dsl_name: "resource_arn" }, crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "WebACLArn", dsl_name: "web_acl_arn" }],
         exclusive_groups: &[],
         tags: None,
+        await_on_read_back: vec![],
         schema,
     }
 }

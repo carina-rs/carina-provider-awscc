@@ -207,6 +207,7 @@ pub fn ec2_subnet_config() -> AwsccSchemaConfig {
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "SubnetId", dsl_name: "subnet_id" }],
         exclusive_groups: &[],
         tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::KeyValueList }),
+        await_on_read_back: vec![],
         schema,
     }
 }

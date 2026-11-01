@@ -257,6 +257,7 @@ pub fn scheduler_schedule_config() -> AwsccSchemaConfig {
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "Name", dsl_name: "name" }],
         exclusive_groups: &[],
         tags: None,
+        await_on_read_back: vec![],
         schema,
     }
 }

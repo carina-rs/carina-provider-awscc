@@ -21,6 +21,8 @@ use carina_core::provider::{ProviderError, ProviderResult};
 use carina_provider_protocol::{OperationStep, PendingPhase};
 use serde::{Deserialize, Serialize};
 
+use super::read_back::{ReadBackContinuation, ReadFailure};
+
 use super::{
     AwsccProvider, CREATE_RETRY_INITIAL_DELAY_SECS, CREATE_RETRY_MAX_ATTEMPTS,
     CREATE_RETRY_MAX_DELAY_SECS, DELETE_RETRY_INITIAL_DELAY_SECS, DELETE_RETRY_MAX_ATTEMPTS,
@@ -63,7 +65,7 @@ impl From<String> for RequestToken {
 }
 
 mod client_token {
-    use super::{OperationStatus, ProviderError, RequestToken};
+    use super::{OperationStatus, PendingPhase, ProviderError, ReadBackContinuation, RequestToken};
     use serde::{Deserialize, Serialize};
 
     /// Opaque idempotency token for one logical CloudControl request.
@@ -435,11 +437,14 @@ mod client_token {
         Unconfirmed(UnconfirmedCreate),
         /// CloudControl accepted the create and returned a request token.
         InFlight(InFlightCreateRequest),
+        /// The mutation is settled; subsequent polls only read by identifier.
+        ReadBack(ReadBackContinuation),
     }
 
     impl std::fmt::Debug for CcCreateToken {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             match self {
+                Self::ReadBack(read_back) => f.debug_tuple("ReadBack").field(read_back).finish(),
                 Self::NotIssued(create) => f
                     .debug_struct("NotIssued")
                     .field("attempt", &create.attempt)
@@ -463,10 +468,20 @@ mod client_token {
     }
 
     impl CcCreateToken {
+        pub fn phase(&self) -> PendingPhase {
+            match self {
+                Self::ReadBack(_) => PendingPhase::ReadBack,
+                Self::NotIssued(_) | Self::Unconfirmed(_) | Self::InFlight(_) => {
+                    PendingPhase::Operation
+                }
+            }
+        }
+
         pub fn identifier(&self) -> Option<&str> {
             match self {
                 Self::NotIssued(_) | Self::Unconfirmed(_) => None,
                 Self::InFlight(create) => create.identifier(),
+                Self::ReadBack(read_back) => Some(read_back.identifier().as_str()),
             }
         }
 
@@ -475,6 +490,7 @@ mod client_token {
                 Self::NotIssued(create) => create.attempt(),
                 Self::Unconfirmed(create) => create.attempt(),
                 Self::InFlight(create) => create.attempt(),
+                Self::ReadBack(_) => 0,
             }
         }
 
@@ -485,6 +501,7 @@ mod client_token {
                 Self::NotIssued(create) => create.poll_after_secs,
                 Self::Unconfirmed(create) => create.poll_after_secs,
                 Self::InFlight(create) => create.poll_after_secs,
+                Self::ReadBack(_) => super::POLL_AFTER_SECS,
             }
         }
 
@@ -494,6 +511,7 @@ mod client_token {
                 Self::NotIssued(create) => create.poll_after_secs = poll_after_secs,
                 Self::Unconfirmed(create) => create.poll_after_secs = poll_after_secs,
                 Self::InFlight(create) => create.poll_after_secs = poll_after_secs,
+                Self::ReadBack(_) => {}
             }
             self
         }
@@ -501,7 +519,7 @@ mod client_token {
         pub(crate) fn with_identifier(self, identifier: Option<String>) -> Self {
             match self {
                 Self::InFlight(create) => Self::InFlight(create.with_identifier(identifier)),
-                token @ (Self::NotIssued(_) | Self::Unconfirmed(_)) => token,
+                token @ (Self::NotIssued(_) | Self::Unconfirmed(_) | Self::ReadBack(_)) => token,
             }
         }
     }
@@ -713,7 +731,12 @@ pub use client_token::{
 use client_token::{NotIssuedPhase, TerminallyFailedRequest, UnconfirmedPhase};
 
 /// Continuation state for a CloudControl update operation.
-pub type CcUpdateToken = CcRequestPhase;
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "phase", content = "continuation", rename_all = "snake_case")]
+pub enum CcUpdateToken {
+    Operation(CcRequestPhase),
+    ReadBack(super::read_back::UpdateReadBackContinuation),
+}
 
 /// Continuation state for a CloudControl delete operation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -895,7 +918,7 @@ impl AwsccProvider {
         &self,
         type_name: &str,
         identifier: &str,
-    ) -> ProviderResult<Option<serde_json::Value>> {
+    ) -> Result<Option<serde_json::Value>, ReadFailure> {
         let result = self
             .cloudcontrol_client
             .get_resource()
@@ -919,14 +942,88 @@ impl AwsccProvider {
                 if Self::is_not_found_error(&e) {
                     Ok(None)
                 } else {
-                    Err(api_error_with_meta_and_subject(
-                        "Failed to get resource",
-                        "cloudcontrol.GetResource",
-                        CloudControlResourceSubject::identified(type_name, identifier),
-                        e,
+                    let transience = Self::read_error_transience(&e);
+                    Err(ReadFailure::new(
+                        api_error_with_meta_and_subject(
+                            "Failed to get resource",
+                            "cloudcontrol.GetResource",
+                            CloudControlResourceSubject::identified(type_name, identifier),
+                            e,
+                        ),
+                        transience,
                     ))
                 }
             }
+        }
+    }
+
+    /// Read retry policy is independent of mutation resend safety. Keep the
+    /// guard's typed pre-send classification and the SDK's service metadata.
+    pub(crate) fn read_error_transience<E>(error: &SdkError<E, HttpResponse>) -> Transience
+    where
+        E: std::error::Error + ProvideErrorKind + ProvideErrorMetadata + 'static,
+    {
+        match SendClassification::of(error) {
+            SendClassification::NotSent(transience)
+            | SendClassification::MaybeSent {
+                final_attempt: FinalAttempt::NotSent(transience),
+            } => return transience,
+            SendClassification::Rejected
+            | SendClassification::MaybeSent {
+                final_attempt: FinalAttempt::Sent,
+            } => {}
+        }
+        match error {
+            SdkError::ConstructionFailure(_) => Transience::Permanent,
+            SdkError::TimeoutError(_) => Transience::Transient,
+            SdkError::DispatchFailure(context) => {
+                use aws_smithy_types::retry::ErrorKind;
+                match context.as_connector_error() {
+                    Some(connector)
+                        if connector.is_timeout()
+                            || connector.is_io()
+                            || matches!(
+                                connector.as_other(),
+                                Some(
+                                    ErrorKind::TransientError
+                                        | ErrorKind::ThrottlingError
+                                        | ErrorKind::ServerError
+                                )
+                            ) =>
+                    {
+                        Transience::Transient
+                    }
+                    Some(_) | None => Transience::Permanent,
+                }
+            }
+            SdkError::ServiceError(service) => {
+                use aws_runtime::retries::classifiers::{THROTTLING_ERRORS, TRANSIENT_ERRORS};
+                use aws_smithy_types::retry::ErrorKind;
+                let transient_code =
+                    ProvideErrorMetadata::code(service.err()).is_some_and(|code| {
+                        THROTTLING_ERRORS.contains(&code) || TRANSIENT_ERRORS.contains(&code)
+                    });
+                if error
+                    .raw_response()
+                    .is_some_and(|response| response.status().is_server_error())
+                    || service.raw().status().as_u16() == 429
+                    || transient_code
+                    || matches!(
+                        service.err().retryable_error_kind(),
+                        Some(
+                            ErrorKind::ThrottlingError
+                                | ErrorKind::ServerError
+                                | ErrorKind::TransientError
+                        )
+                    )
+                {
+                    Transience::Transient
+                } else {
+                    Transience::Permanent
+                }
+            }
+            SdkError::ResponseError(_) => Transience::Permanent,
+            _ => Transience::Permanent,
         }
     }
 
@@ -1255,7 +1352,7 @@ impl AwsccProvider {
         identifier: &str,
         patch_ops: Vec<serde_json::Value>,
         operation_config: Option<&carina_core::schema::OperationConfig>,
-        token: CcUpdateToken,
+        token: CcRequestPhase,
     ) -> ProviderResult<CcUpdateWaitStep> {
         let retry_policy = Self::request_retry_policy(
             operation_config,
@@ -2020,6 +2117,35 @@ impl AwsccProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn review_read_error_classifier_distinguishes_transient_from_permanent_transport() {
+        use aws_sdk_cloudcontrol::operation::get_resource::GetResourceError;
+        use aws_smithy_runtime_api::client::result::ConnectorError;
+        let error =
+            |connector| SdkError::<GetResourceError, HttpResponse>::dispatch_failure(connector);
+        for (connector, expected) in [
+            (
+                ConnectorError::io(std::io::Error::other("network interrupted").into()),
+                Transience::Transient,
+            ),
+            (
+                ConnectorError::timeout(std::io::Error::other("transport timed out").into()),
+                Transience::Transient,
+            ),
+            (
+                ConnectorError::user(
+                    std::io::Error::other("invalid connector configuration").into(),
+                ),
+                Transience::Permanent,
+            ),
+        ] {
+            assert_eq!(
+                AwsccProvider::read_error_transience(&error(connector)),
+                expected
+            );
+        }
+    }
 
     mod pre_transmit_retry {
         use super::*;

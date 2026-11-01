@@ -19,28 +19,31 @@ use carina_core::provider::{
 };
 use carina_core::resource::{ConcreteValue, Resource, ResourceId, State, Value};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, Shape};
-#[cfg(test)]
-use carina_provider_protocol::PendingPhase;
 use carina_provider_protocol::{
-    DEFAULT_OPERATION_BUDGET, DEFAULT_READ_BACK_BUDGET, DriveError, DriveOutcome, OperationKind,
-    OperationStep, drive_pending,
+    CompletedOperation, DEFAULT_OPERATION_BUDGET, DEFAULT_READ_BACK_BUDGET, DriveError,
+    DriveOutcome, OperationKind, OperationStep, PendingPhase, PollFinality, PollRequest,
+    drive_pending, drive_pending_infallible,
 };
 use indexmap::IndexMap;
 
 use super::conversion::{aws_value_to_dsl_with_defs, dsl_value_to_aws_with_defs};
+use super::read_back::{
+    NonEmptyAttributeNames, ReadBackCompletion, ReadBackContinuation, ReadBackRequirements,
+    ReadFailure, failed_read, finish_final_read_back, validate_declarations,
+};
 use super::tags::wire_tags_are_empty;
 use super::update::{UpdatePatchPlan, build_update_patches};
 use super::{
     AwsccProvider, CcCreateToken, CcDeleteToken, CcRequestPhase, CcUpdateToken,
     InFlightCreateRequest, NotIssuedCreate, NotIssuedRequest, UnconfirmedCreate, get_schema_config,
 };
-use crate::provider::arn_synthesis::SynthesisStatus;
 use crate::provider::cloudcontrol::{
     CcCreatePending, CcCreateSend, CcCreateStatus, InFlightCreate, NotAppliedCreate,
     TerminallyFailedCreate, WaitOutcome,
 };
 use crate::provider::special_cases::internet_gateway_detach_patch;
 use crate::schemas::config::AwsccSchemaConfig;
+use carina_aws_types::Transience;
 
 pub type CcUpdateStep = OperationStep<UpdateOutcome, ProviderError, CcUpdateToken>;
 pub type CcDeleteStep = OperationStep<(), ProviderError, CcDeleteToken>;
@@ -58,30 +61,29 @@ async fn drive_operation<T, Token, Initial, Poll, PollFuture, Sleep, SleepFuture
     id: &ResourceId,
     kind: OperationKind,
     budget: Duration,
+    read_back_budget: Duration,
     initial: Initial,
     mut poll: Poll,
     sleep: Sleep,
-) -> ProviderResult<T>
+) -> ProviderResult<CompletedOperation<T>>
 where
     Token: Clone,
     Initial: Future<Output = ProviderResult<OperationStep<T, ProviderError, Token>>>,
-    Poll: FnMut(Token) -> PollFuture,
+    Poll: FnMut(Token, PollRequest) -> PollFuture,
     PollFuture: Future<Output = ProviderResult<OperationStep<T, ProviderError, Token>>>,
     Sleep: FnMut(Duration) -> SleepFuture,
     SleepFuture: Future<Output = ()>,
 {
-    // Existing continuations stay in the operation phase, so the required
-    // read-back budget uses the protocol default and never becomes active.
     match drive_pending(
         budget,
-        DEFAULT_READ_BACK_BUDGET,
+        read_back_budget,
         initial,
-        |token, _finality| poll(token),
+        |token, finality| poll(token, PollRequest { finality }),
         sleep,
     )
     .await
     {
-        Ok(DriveOutcome::Done(value)) => Ok(value.into_output()),
+        Ok(DriveOutcome::Done(value)) => Ok(value),
         Ok(DriveOutcome::Verdict(error)) => Err(error),
         Ok(DriveOutcome::OverBudget {
             last_pending: _last_pending,
@@ -121,8 +123,8 @@ pub trait CcIssuedCreate {
         self,
         identifier: AppliedIdentifier,
         attributes: HashMap<String, Value>,
-        reason: String,
-        missing_attributes: Vec<String>,
+        reason: ProviderError,
+        missing_attributes: NonEmptyAttributeNames,
     ) -> Result<Self::Step, Self::Verdict>;
     fn failed(
         self,
@@ -132,6 +134,11 @@ pub trait CcIssuedCreate {
     ) -> Self::Verdict;
     fn discarded(self, error: ProviderError) -> Self::Verdict;
     fn preserve(self, token: CcCreateToken, error: ProviderError) -> Self::Verdict;
+    fn pending_read_back(
+        self,
+        continuation: ReadBackContinuation,
+        poll_after_secs: u32,
+    ) -> Result<Self::Step, Self::Verdict>;
     fn pending(
         self,
         token: CcCreateToken,
@@ -188,6 +195,18 @@ pub trait CcResumedCreate {
         self,
         identifier: AppliedIdentifier,
         state: AppliedState,
+    ) -> Result<Self::Step, Self::Verdict>;
+    fn partial(
+        self,
+        identifier: AppliedIdentifier,
+        attributes: HashMap<String, Value>,
+        reason: ProviderError,
+        missing_attributes: NonEmptyAttributeNames,
+    ) -> Result<Self::Step, Self::Verdict>;
+    fn pending_read_back(
+        self,
+        continuation: ReadBackContinuation,
+        poll_after_secs: u32,
     ) -> Result<Self::Step, Self::Verdict>;
     fn failed(
         self,
@@ -269,8 +288,11 @@ fn decode_create_token(token: &PendingToken) -> ProviderResult<CcCreateToken> {
     })
 }
 
-fn diagnostic(reason: String, missing_attributes: Vec<String>) -> Option<PartialReadDiagnostic> {
-    PartialReadDiagnostic::new(reason, missing_attributes)
+fn diagnostic(
+    reason: &ProviderError,
+    missing_attributes: NonEmptyAttributeNames,
+) -> ProviderResult<PartialReadDiagnostic> {
+    missing_attributes.diagnostic(reason)
 }
 
 impl CcCreateAttempt for CreateAttempt {
@@ -364,14 +386,19 @@ impl CcIssuedCreate for IssuedCreate {
         self,
         identifier: AppliedIdentifier,
         attributes: HashMap<String, Value>,
-        reason: String,
-        missing_attributes: Vec<String>,
+        reason: ProviderError,
+        missing_attributes: NonEmptyAttributeNames,
     ) -> Result<Self::Step, Self::Verdict> {
         let finishing = self.canonicalize(identifier);
-        Ok(match diagnostic(reason, missing_attributes) {
-            Some(diagnostic) => CoreCreateStep::Done(finishing.partial(attributes, diagnostic)),
-            None => CoreCreateStep::Done(finishing.succeeded(attributes)),
-        })
+        match diagnostic(&reason, missing_attributes) {
+            Ok(diagnostic) => Ok(CoreCreateStep::Done(
+                finishing.partial(attributes, diagnostic),
+            )),
+            Err(error) => {
+                let (observation, error) = failed_read(error);
+                Err(finishing.failed(observation, error))
+            }
+        }
     }
 
     fn failed(
@@ -389,8 +416,24 @@ impl CcIssuedCreate for IssuedCreate {
 
     fn preserve(self, token: CcCreateToken, error: ProviderError) -> Self::Verdict {
         let poll_after_secs = token.poll_after_secs();
-        self.pending(token.into_pending_token(), poll_after_secs)
-            .preserve(error)
+        if token.phase() == PendingPhase::ReadBack {
+            self.pending_read_back(token.into_pending_token(), poll_after_secs)
+                .preserve(error)
+        } else {
+            self.pending(token.into_pending_token(), poll_after_secs)
+                .preserve(error)
+        }
+    }
+
+    fn pending_read_back(
+        self,
+        continuation: ReadBackContinuation,
+        poll_after_secs: u32,
+    ) -> Result<Self::Step, Self::Verdict> {
+        Ok(CoreCreateStep::Pending(self.pending_read_back(
+            CcCreateToken::ReadBack(continuation).into_pending_token(),
+            poll_after_secs,
+        )))
     }
 
     fn pending(
@@ -454,6 +497,36 @@ impl CcResumedCreate for ResumedCreate {
         Ok(CoreResumeStep::Done(
             self.canonicalize(identifier).completed(state),
         ))
+    }
+
+    fn partial(
+        self,
+        identifier: AppliedIdentifier,
+        attributes: HashMap<String, Value>,
+        reason: ProviderError,
+        missing_attributes: NonEmptyAttributeNames,
+    ) -> Result<Self::Step, Self::Verdict> {
+        let diagnostic = match diagnostic(&reason, missing_attributes) {
+            Ok(diagnostic) => diagnostic,
+            Err(error) => {
+                let (observation, error) = failed_read(error);
+                return Err(self.canonicalize(identifier).failed(observation, error));
+            }
+        };
+        Ok(CoreResumeStep::Done(
+            self.canonicalize(identifier)
+                .partial(attributes, diagnostic),
+        ))
+    }
+
+    fn pending_read_back(
+        self,
+        continuation: ReadBackContinuation,
+        _poll_after_secs: u32,
+    ) -> Result<Self::Step, Self::Verdict> {
+        Ok(CoreResumeStep::Pending(Box::new(self.repend(
+            CcCreateToken::ReadBack(continuation).into_pending_token(),
+        ))))
     }
 
     fn failed(
@@ -575,14 +648,19 @@ impl CcIssuedCreate for ResentIssuedCreate {
         self,
         identifier: AppliedIdentifier,
         attributes: HashMap<String, Value>,
-        reason: String,
-        missing_attributes: Vec<String>,
+        reason: ProviderError,
+        missing_attributes: NonEmptyAttributeNames,
     ) -> Result<Self::Step, Self::Verdict> {
         let finishing = self.canonicalize(identifier);
-        Ok(match diagnostic(reason, missing_attributes) {
-            Some(diagnostic) => CoreResumeStep::Done(finishing.partial(attributes, diagnostic)),
-            None => CoreResumeStep::Done(finishing.succeeded(attributes)),
-        })
+        match diagnostic(&reason, missing_attributes) {
+            Ok(diagnostic) => Ok(CoreResumeStep::Done(
+                finishing.partial(attributes, diagnostic),
+            )),
+            Err(error) => {
+                let (observation, error) = failed_read(error);
+                Err(finishing.failed(observation, error))
+            }
+        }
     }
 
     fn failed(
@@ -600,8 +678,24 @@ impl CcIssuedCreate for ResentIssuedCreate {
 
     fn preserve(self, token: CcCreateToken, error: ProviderError) -> Self::Verdict {
         let poll_after_secs = token.poll_after_secs();
-        self.pending(token.into_pending_token(), poll_after_secs)
-            .preserve(error)
+        if token.phase() == PendingPhase::ReadBack {
+            self.pending_read_back(token.into_pending_token(), poll_after_secs)
+                .preserve(error)
+        } else {
+            self.pending(token.into_pending_token(), poll_after_secs)
+                .preserve(error)
+        }
+    }
+
+    fn pending_read_back(
+        self,
+        continuation: ReadBackContinuation,
+        poll_after_secs: u32,
+    ) -> Result<Self::Step, Self::Verdict> {
+        Ok(CoreResumeStep::ResentPending(self.pending_read_back(
+            CcCreateToken::ReadBack(continuation).into_pending_token(),
+            poll_after_secs,
+        )))
     }
 
     fn pending(
@@ -617,7 +711,7 @@ impl CcIssuedCreate for ResentIssuedCreate {
 }
 
 #[derive(Debug)]
-enum CreateCompletion {
+pub(super) enum CreateCompletion {
     Success {
         identifier: AppliedIdentifier,
         attributes: HashMap<String, Value>,
@@ -625,9 +719,84 @@ enum CreateCompletion {
     Partial {
         identifier: AppliedIdentifier,
         attributes: HashMap<String, Value>,
-        reason: String,
-        missing_attributes: Vec<String>,
+        reason: ProviderError,
+        missing_attributes: NonEmptyAttributeNames,
     },
+    ReadBackPending {
+        continuation: ReadBackContinuation,
+        attributes: HashMap<String, Value>,
+        reason: ProviderError,
+        missing_attributes: NonEmptyAttributeNames,
+    },
+    Failed {
+        identifier: AppliedIdentifier,
+        error: ProviderError,
+    },
+}
+
+fn native_create_step(
+    step: Result<CoreCreateStep, CreateFailure>,
+) -> OperationStep<CreateOutcome, CreateFailure, PendingCreate> {
+    match step {
+        Ok(CoreCreateStep::Done(done)) => OperationStep::Done(done),
+        Ok(CoreCreateStep::Pending(pending)) => OperationStep::Pending {
+            poll_after_secs: pending.poll_after_secs(),
+            phase: pending.phase(),
+            pending,
+        },
+        Err(error) => OperationStep::Verdict(error),
+    }
+}
+
+#[derive(Debug)]
+enum NativeResumePending {
+    Resume {
+        resume: Box<Resume>,
+        token: CcCreateToken,
+    },
+    Resent {
+        pending: Box<ResentPendingCreate>,
+        token: CcCreateToken,
+    },
+}
+
+impl NativeResumePending {
+    fn preserve(self, error: ProviderError) -> ResumeFailure {
+        match self {
+            Self::Resume { resume, .. } => resume.preserve(error),
+            Self::Resent { pending, .. } => pending.preserve(error),
+        }
+    }
+}
+
+fn native_resume_step(
+    step: Result<CoreResumeStep, ResumeFailure>,
+) -> OperationStep<ResumeOutcome, ResumeFailure, NativeResumePending> {
+    let pending = match step {
+        Ok(CoreResumeStep::Done(done)) => return OperationStep::Done(done),
+        Err(error) => return OperationStep::Verdict(error),
+        Ok(CoreResumeStep::Pending(resume)) => match decode_create_token(resume.token()) {
+            Ok(token) => NativeResumePending::Resume { resume, token },
+            Err(error) => return OperationStep::Verdict(resume.preserve(error)),
+        },
+        Ok(CoreResumeStep::ResentPending(pending)) => match decode_create_token(pending.token()) {
+            Ok(token) => NativeResumePending::Resent {
+                pending: Box::new(pending),
+                token,
+            },
+            Err(error) => return OperationStep::Verdict(pending.preserve(error)),
+        },
+    };
+    let token = match &pending {
+        NativeResumePending::Resume { token, .. } | NativeResumePending::Resent { token, .. } => {
+            token
+        }
+    };
+    OperationStep::Pending {
+        poll_after_secs: token.poll_after_secs(),
+        phase: token.phase(),
+        pending,
+    }
 }
 
 impl AwsccProvider {
@@ -645,7 +814,7 @@ impl AwsccProvider {
         &self,
         id: &ResourceId,
         identifier: &AppliedIdentifier,
-    ) -> ProviderResult<ReadOutcome> {
+    ) -> Result<ReadOutcome, ReadFailure> {
         self.ensure_initialized(id)?;
 
         let config = get_schema_config(&id.resource_type).ok_or_else(|| {
@@ -685,9 +854,12 @@ impl AwsccProvider {
 
         // Synthesize attributes the Cloud Control read does not return
         // (e.g. cloudfront.Distribution.arn). Reads STS once, then caches.
-        let _ = self
+        if let Err(error) = self
             .synthesize_read_attributes(&id.resource_type, &mut attributes)
-            .await?;
+            .await
+        {
+            return Err(error.with_attributes(attributes));
+        }
 
         Ok(ReadOutcome::found(AppliedState::from_identifier(
             id.clone(),
@@ -706,9 +878,19 @@ impl AwsccProvider {
     }
 
     fn operation_budget(&self, resource_type: &str, kind: OperationKind) -> Duration {
-        get_schema_config(resource_type)
-            .and_then(|config| config.schema.operation_config())
+        self.operation_config(resource_type)
             .map_or(DEFAULT_OPERATION_BUDGET, |config| config.budget(kind))
+    }
+
+    fn operation_config(
+        &self,
+        resource_type: &str,
+    ) -> Option<&carina_core::schema::OperationConfig> {
+        #[cfg(any(test, feature = "test-utils"))]
+        if let Some(config) = self.operation_config_overrides.get(resource_type) {
+            return Some(config);
+        }
+        get_schema_config(resource_type).and_then(|config| config.schema.operation_config())
     }
 
     fn create_desired_state(
@@ -754,6 +936,11 @@ impl AwsccProvider {
         }
         self.set_default_values(&resource.id.resource_type, &mut desired_state);
         Ok(serde_json::Value::Object(desired_state))
+    }
+
+    fn read_back_budget(&self, resource_type: &str) -> Duration {
+        self.operation_config(resource_type)
+            .map_or(DEFAULT_READ_BACK_BUDGET, |config| config.read_back_budget())
     }
 
     /// Perform the initial, non-blocking CloudControl create step.
@@ -902,6 +1089,7 @@ impl AwsccProvider {
         resource: &Resource<impl Sized>,
         token: CcCreateToken,
         poll: CcCreatePoll<U, U::Issued>,
+        poll_request: PollRequest,
     ) -> Result<U::Step, U::Verdict> {
         if let Err(error) = self.ensure_initialized(&resource.id) {
             return Err(Self::preserve_polled(poll, token, error));
@@ -916,6 +1104,35 @@ impl AwsccProvider {
         };
 
         match token {
+            CcCreateToken::ReadBack(continuation) => {
+                let issued = match poll {
+                    CcCreatePoll::Issued(issued) => issued,
+                    CcCreatePoll::Unissued(attempt) => {
+                        return Err(attempt.preserve(
+                            CcCreateToken::ReadBack(continuation),
+                            InFlightCreate::new(
+                                ProviderError::internal("read-back requires an issued identifier")
+                                    .for_resource(resource.id.clone()),
+                            ),
+                        ));
+                    }
+                };
+                if let Err(error) = continuation.validate(&resource.id, issued.identifier()) {
+                    return Err(issued.preserve(CcCreateToken::ReadBack(continuation), error));
+                }
+                let identifier = continuation.identifier().clone();
+                let read_back = self.read_resource(&resource.id, &identifier).await;
+                self.finish_create_success(
+                    resource,
+                    config,
+                    issued,
+                    identifier,
+                    read_back,
+                    poll_request,
+                )
+                .await
+            }
+
             CcCreateToken::NotIssued(token) => {
                 let desired_state = match self.create_desired_state(resource, config) {
                     Ok(desired_state) => desired_state,
@@ -990,7 +1207,7 @@ impl AwsccProvider {
             }
             CcCreateToken::InFlight(token) => {
                 let status = self.cc_create_request_status(token).await;
-                self.finish_polled_status(resource, config, poll, status)
+                self.finish_polled_status(resource, config, poll, status, poll_request)
                     .await
             }
         }
@@ -1057,6 +1274,7 @@ impl AwsccProvider {
         config: &AwsccSchemaConfig,
         poll: CcCreatePoll<U, U::Issued>,
         status: CcCreateStatus,
+        poll_request: PollRequest,
     ) -> Result<U::Step, U::Verdict> {
         match status {
             CcCreateStatus::Pending {
@@ -1084,12 +1302,19 @@ impl AwsccProvider {
                 })
             }
             CcCreateStatus::RequestTokenNotFound { token, error } => {
-                self.recover_expired_poll(resource, config, poll, token, error)
+                self.recover_expired_poll(resource, config, poll, token, error, poll_request)
                     .await
             }
             CcCreateStatus::Success { token, identifier } => {
-                self.complete_polled_success(resource, config, poll, token, identifier)
-                    .await
+                self.complete_polled_success(
+                    resource,
+                    config,
+                    poll,
+                    token,
+                    identifier,
+                    poll_request,
+                )
+                .await
             }
             CcCreateStatus::Failed {
                 failure,
@@ -1120,6 +1345,7 @@ impl AwsccProvider {
         poll: CcCreatePoll<U, U::Issued>,
         token: InFlightCreateRequest,
         token_error: ProviderError,
+        poll_request: PollRequest,
     ) -> Result<U::Step, U::Verdict> {
         let issued = match poll {
             CcCreatePoll::Issued(issued) => issued,
@@ -1135,8 +1361,15 @@ impl AwsccProvider {
         let identifier = issued.identifier().clone();
         match self.read_resource(&resource.id, &identifier).await {
             Ok(found @ ReadOutcome::Found { .. }) => {
-                self.finish_create_success(resource, config, issued, identifier, Ok(found))
-                    .await
+                self.finish_create_success(
+                    resource,
+                    config,
+                    issued,
+                    identifier,
+                    Ok(found),
+                    poll_request,
+                )
+                .await
             }
             // Cloud Control only forgets request tokens after the operation has
             // finished. A successful absence read is therefore terminal; the
@@ -1155,6 +1388,7 @@ impl AwsccProvider {
         poll: CcCreatePoll<U, U::Issued>,
         token: InFlightCreateRequest,
         status_identifier: Option<String>,
+        poll_request: PollRequest,
     ) -> Result<U::Step, U::Verdict> {
         let status_identifier = status_identifier
             .and_then(|identifier| applied_identifier(&resource.id, "create", identifier).ok());
@@ -1179,8 +1413,15 @@ impl AwsccProvider {
             }
         };
         let read_back = self.read_resource(&resource.id, &read_identifier).await;
-        self.finish_create_success(resource, config, issued, read_identifier, read_back)
-            .await
+        self.finish_create_success(
+            resource,
+            config,
+            issued,
+            read_identifier,
+            read_back,
+            poll_request,
+        )
+        .await
     }
 
     async fn finish_polled_failure<U: CcPollAttempt>(
@@ -1241,22 +1482,58 @@ impl AwsccProvider {
         config: &AwsccSchemaConfig,
         issued: I,
         wait_identifier: AppliedIdentifier,
-        read_back: ProviderResult<ReadOutcome>,
+        read_back: Result<ReadOutcome, ReadFailure>,
+        poll_request: PollRequest,
     ) -> Result<I::Step, I::Verdict> {
         let completion = self
             .create_completion_from_read(resource, config, wait_identifier, read_back)
             .await;
+        self.finish_issued_completion(issued, completion, poll_request)
+    }
+
+    fn finish_issued_completion<I: CcIssuedCreate>(
+        &self,
+        issued: I,
+        completion: CreateCompletion,
+        poll_request: PollRequest,
+    ) -> Result<I::Step, I::Verdict> {
+        match poll_request.finality {
+            PollFinality::FinalAttempt => {
+                self.finish_issued_terminal(issued, finish_final_read_back(completion))
+            }
+            PollFinality::Continue => match completion {
+                CreateCompletion::ReadBackPending { continuation, .. } => {
+                    issued.pending_read_back(continuation, POLL_AFTER_SECS)
+                }
+                terminal @ (CreateCompletion::Success { .. }
+                | CreateCompletion::Partial { .. }
+                | CreateCompletion::Failed { .. }) => {
+                    self.finish_issued_terminal(issued, finish_final_read_back(terminal))
+                }
+            },
+        }
+    }
+
+    fn finish_issued_terminal<I: CcIssuedCreate>(
+        &self,
+        issued: I,
+        completion: ReadBackCompletion,
+    ) -> Result<I::Step, I::Verdict> {
         match completion {
-            CreateCompletion::Success {
+            ReadBackCompletion::Success {
                 identifier,
                 attributes,
             } => issued.succeeded(identifier, attributes),
-            CreateCompletion::Partial {
+            ReadBackCompletion::Partial {
                 identifier,
                 attributes,
                 reason,
                 missing_attributes,
             } => issued.partial(identifier, attributes, reason, missing_attributes),
+            ReadBackCompletion::Failed { identifier, error } => {
+                let (observation, error) = failed_read(error);
+                Err(issued.failed(identifier, observation, error))
+            }
         }
     }
 
@@ -1279,7 +1556,7 @@ impl AwsccProvider {
     ) -> I::Verdict {
         let observation = match self.read_resource(id, &identifier).await {
             Ok(outcome) => Observation::Read(outcome),
-            Err(read_error) => Observation::ReadFailed(read_error),
+            Err(read_error) => Observation::ReadFailed(read_error.into_error()),
         };
         issued.failed(identifier, observation, error)
     }
@@ -1289,95 +1566,53 @@ impl AwsccProvider {
         resource: &Resource<impl Sized>,
         config: &AwsccSchemaConfig,
         wait_identifier: AppliedIdentifier,
-        read_back: ProviderResult<ReadOutcome>,
+        read_back: Result<ReadOutcome, ReadFailure>,
     ) -> CreateCompletion {
-        let read_state = match read_back {
-            Ok(ReadOutcome::Found { state }) => state,
-            Ok(ReadOutcome::NotFound { .. }) => {
-                return CreateCompletion::Partial {
-                    identifier: wait_identifier,
-                    attributes: resource.resolved_attributes(),
-                    reason: "read-back returned not_found".to_string(),
-                    missing_attributes: vec!["state".to_string()],
-                };
-            }
-            Err(read_error) => {
-                let missing_attributes = nonempty_missing_attributes(
-                    config
-                        .schema
-                        .attributes()
-                        .keys()
-                        .filter(|name| resource.get_attr(name.as_str()).is_some())
-                        .cloned()
-                        .collect(),
-                );
-                return CreateCompletion::Partial {
-                    identifier: wait_identifier,
-                    attributes: HashMap::new(),
-                    reason: format!("read error: {read_error}"),
-                    missing_attributes,
-                };
-            }
+        let attributes = match classify_read_back(
+            &resource.id,
+            config,
+            wait_identifier.clone(),
+            resource.resolved_attributes(),
+            read_back,
+            ReadBackKind::Create,
+        ) {
+            ReadBackObservation::Found(attributes) => attributes,
+            ReadBackObservation::Incomplete(completion) => return completion,
         };
-
-        let mut attributes = read_state.attributes().clone();
-        let canonical_identifier =
-            match canonicalize_identifier_from_read(config, &resource.id, &attributes) {
-                Ok(Some(identifier)) => identifier,
-                Ok(None) => {
-                    let missing_attributes =
-                        missing_primary_identifier_attributes(config, &attributes);
-                    return CreateCompletion::Partial {
-                        identifier: wait_identifier,
-                        attributes,
-                        reason: format!(
-                            "read-back missing primaryIdentifier attributes: {}",
-                            missing_attributes.join(", ")
-                        ),
-                        missing_attributes: nonempty_missing_attributes(missing_attributes),
-                    };
-                }
-                Err(error) => {
-                    return CreateCompletion::Partial {
-                        identifier: wait_identifier,
-                        attributes,
-                        reason: format!("failed to canonicalize read-back identifier: {error}"),
-                        missing_attributes: vec!["state".to_string()],
-                    };
-                }
-            };
-
-        let synthesis = self
-            .synthesize_read_attributes(&resource.id.resource_type, &mut attributes)
-            .await;
-        let synthesis = match synthesis {
-            Ok(synthesis) => synthesis,
-            Err(error) => {
-                return CreateCompletion::Partial {
-                    identifier: wait_identifier,
+        match canonicalize_identifier_from_read(config, &resource.id, &attributes) {
+            Ok(Some(identifier)) => CreateCompletion::Success {
+                identifier,
+                attributes,
+            },
+            Ok(None) => {
+                let missing = missing_primary_identifier_attributes(config, &attributes);
+                let reason = ProviderError::api_error(format!(
+                    "read-back missing primaryIdentifier attributes: {}",
+                    missing.join(", ")
+                ));
+                incomplete_read_back(
+                    &resource.id,
+                    wait_identifier,
                     attributes,
-                    reason: format!("failed to synthesize read-back attributes: {error}"),
-                    missing_attributes: vec!["state".to_string()],
-                };
+                    reason,
+                    missing,
+                    Transience::Permanent,
+                )
             }
-        };
-
-        match synthesis {
-            SynthesisStatus::Complete => CreateCompletion::Success {
-                identifier: canonical_identifier,
-                attributes,
-            },
-            SynthesisStatus::Missing {
-                attributes: missing_attributes,
-            } => CreateCompletion::Partial {
-                identifier: canonical_identifier,
-                attributes,
-                reason: format!(
-                    "read-back missing synthesized attributes: {}",
-                    missing_attributes.join(", ")
-                ),
-                missing_attributes: nonempty_missing_attributes(missing_attributes),
-            },
+            Err(error) => {
+                let missing = missing_schema_attributes(config, &attributes);
+                incomplete_read_back(
+                    &resource.id,
+                    wait_identifier,
+                    attributes,
+                    ProviderError::api_error_caused_by(
+                        "failed to canonicalize read-back identifier",
+                        error,
+                    ),
+                    missing,
+                    Transience::Permanent,
+                )
+            }
         }
     }
 
@@ -1386,37 +1621,90 @@ impl AwsccProvider {
         resource: &Resource<impl Sized>,
         attempt: CreateAttempt,
     ) -> Result<CreateOutcome, CreateFailure> {
-        let budget =
-            self.operation_budget(resource.id.resource_type.as_str(), OperationKind::Create);
-        let started = tokio::time::Instant::now();
-        let mut step = self.create_step(resource, attempt).await?;
-        loop {
-            let pending = match step {
-                CoreCreateStep::Done(outcome) => return Ok(outcome),
-                CoreCreateStep::Pending(pending) => pending,
-            };
-            if started.elapsed() >= budget {
-                return Err(pending.preserve(
-                    ProviderError::timeout(format!(
-                        "create of {} did not finish within {budget:?}",
-                        resource.id.resource_type
+        self.drive_native_create_with_budgets(
+            resource,
+            attempt,
+            self.operation_budget(resource.id.resource_type.as_str(), OperationKind::Create),
+            self.read_back_budget(resource.id.resource_type.as_str()),
+            tokio::time::sleep,
+        )
+        .await
+    }
+
+    #[cfg(any(test, feature = "test-utils"))]
+    #[doc(hidden)]
+    pub async fn create_with_poll_sleep_for_test<Sleep, SleepFuture>(
+        &self,
+        resource: &Resource<impl Sized>,
+        attempt: CreateAttempt,
+        sleep: Sleep,
+    ) -> Result<CreateOutcome, CreateFailure>
+    where
+        Sleep: FnMut(Duration) -> SleepFuture,
+        SleepFuture: Future<Output = ()>,
+    {
+        self.drive_native_create_with_budgets(
+            resource,
+            attempt,
+            self.operation_budget(resource.id.resource_type.as_str(), OperationKind::Create),
+            self.read_back_budget(resource.id.resource_type.as_str()),
+            sleep,
+        )
+        .await
+    }
+
+    async fn drive_native_create_with_budgets<Sleep, SleepFuture>(
+        &self,
+        resource: &Resource<impl Sized>,
+        attempt: CreateAttempt,
+        budget: Duration,
+        read_back_budget: Duration,
+        sleep: Sleep,
+    ) -> Result<CreateOutcome, CreateFailure>
+    where
+        Sleep: FnMut(Duration) -> SleepFuture,
+        SleepFuture: Future<Output = ()>,
+    {
+        let outcome = drive_pending_infallible(
+            budget,
+            read_back_budget,
+            async { native_create_step(Box::pin(self.create_step(resource, attempt)).await) },
+            |pending: PendingCreate, finality| async move {
+                let token = match decode_create_token(pending.token()) {
+                    Ok(token) => token,
+                    Err(error) => return OperationStep::Verdict(pending.preserve(error)),
+                };
+                let poll = match pending.into_poll() {
+                    Poll::Unissued(attempt) => CcCreatePoll::Unissued(attempt),
+                    Poll::Issued(issued) => CcCreatePoll::Issued(issued),
+                };
+                native_create_step(
+                    Box::pin(self.poll_create_step(
+                        resource,
+                        token,
+                        poll,
+                        PollRequest { finality },
                     ))
+                    .await,
+                )
+            },
+            sleep,
+        )
+        .await;
+        match outcome {
+            DriveOutcome::Done(done) => Ok(CreateOutcome::from_host_completion(done)),
+            DriveOutcome::Verdict(error) => Err(error),
+            DriveOutcome::OverBudget { last_pending } => Err(last_pending.preserve(
+                ProviderError::timeout(format!(
+                    "create of {} did not finish within {budget:?}",
+                    resource.id.resource_type
+                ))
+                .for_resource(resource.id.clone()),
+            )),
+            DriveOutcome::ProtocolViolation { last_pending } => Err(last_pending.preserve(
+                ProviderError::internal("Cloud Control create returned an invalid pending phase")
                     .for_resource(resource.id.clone()),
-                ));
-            }
-            let remaining = budget.saturating_sub(started.elapsed());
-            let delay = Duration::from_secs(u64::from(pending.poll_after_secs().clamp(1, 300)))
-                .min(remaining);
-            tokio::time::sleep(delay).await;
-            let token = match decode_create_token(pending.token()) {
-                Ok(token) => token,
-                Err(error) => return Err(pending.preserve(error)),
-            };
-            let poll = match pending.into_poll() {
-                Poll::Unissued(attempt) => CcCreatePoll::Unissued(attempt),
-                Poll::Issued(issued) => CcCreatePoll::Issued(issued),
-            };
-            step = self.poll_create_step(resource, token, poll).await?;
+            )),
         }
     }
 
@@ -1426,6 +1714,7 @@ impl AwsccProvider {
         resource: &Resource<impl Sized>,
         token: CcCreateToken,
         resume: CcCreateResume<U, U::Resumed>,
+        poll_request: PollRequest,
     ) -> Result<U::Step, U::Verdict> {
         if let Err(error) = self.ensure_initialized(&resource.id) {
             return Err(Self::preserve_resume(resume, token, error));
@@ -1440,6 +1729,33 @@ impl AwsccProvider {
         };
 
         match token {
+            CcCreateToken::ReadBack(continuation) => {
+                let resumed = match resume {
+                    CcCreateResume::Issued(resumed) => resumed,
+                    CcCreateResume::Unissued(attempt) => {
+                        return Err(attempt.preserve(
+                            CcCreateToken::ReadBack(continuation),
+                            ProviderError::internal("read-back requires an issued identifier")
+                                .for_resource(resource.id.clone()),
+                        ));
+                    }
+                };
+                if let Err(error) = continuation.validate(&resource.id, resumed.identifier()) {
+                    return Err(resumed.preserve(CcCreateToken::ReadBack(continuation), error));
+                }
+                let identifier = continuation.identifier().clone();
+                let read_back = self.read_resource(&resource.id, &identifier).await;
+                self.finish_resumed_read(
+                    resource,
+                    config,
+                    resumed,
+                    identifier,
+                    read_back,
+                    poll_request,
+                )
+                .await
+            }
+
             CcCreateToken::NotIssued(token) => match resume {
                 CcCreateResume::Unissued(attempt) => {
                     self.resend_not_issued_create_step(resource, config, token, attempt)
@@ -1466,7 +1782,7 @@ impl AwsccProvider {
                 // The persisted identifier does not prove completion. Always
                 // ask CloudControl about its accepted request before any read.
                 let status = self.cc_create_request_status(token).await;
-                self.finish_resumed_status(resource, config, resume, status)
+                self.finish_resumed_status(resource, config, resume, status, poll_request)
                     .await
             }
         }
@@ -1515,6 +1831,7 @@ impl AwsccProvider {
         config: &AwsccSchemaConfig,
         resume: CcCreateResume<U, U::Resumed>,
         status: CcCreateStatus,
+        poll_request: PollRequest,
     ) -> Result<U::Step, U::Verdict> {
         match status {
             CcCreateStatus::Pending {
@@ -1537,12 +1854,19 @@ impl AwsccProvider {
                 Err(Self::preserve_resume(resume, token, error))
             }
             CcCreateStatus::RequestTokenNotFound { token, error } => {
-                self.recover_expired_resume(resource, config, resume, token, error)
+                self.recover_expired_resume(resource, config, resume, token, error, poll_request)
                     .await
             }
             CcCreateStatus::Success { token, identifier } => {
-                self.complete_resumed_success(resource, config, resume, token, identifier)
-                    .await
+                self.complete_resumed_success(
+                    resource,
+                    config,
+                    resume,
+                    token,
+                    identifier,
+                    poll_request,
+                )
+                .await
             }
             CcCreateStatus::Failed {
                 failure,
@@ -1573,6 +1897,7 @@ impl AwsccProvider {
         resume: CcCreateResume<U, U::Resumed>,
         token: InFlightCreateRequest,
         token_error: ProviderError,
+        poll_request: PollRequest,
     ) -> Result<U::Step, U::Verdict> {
         let resumed = match resume {
             CcCreateResume::Issued(resumed) => resumed,
@@ -1588,8 +1913,15 @@ impl AwsccProvider {
         let identifier = resumed.identifier().clone();
         match self.read_resource(&resource.id, &identifier).await {
             Ok(found @ ReadOutcome::Found { .. }) => {
-                self.finish_resumed_read(resource, config, resumed, identifier, Ok(found))
-                    .await
+                self.finish_resumed_read(
+                    resource,
+                    config,
+                    resumed,
+                    identifier,
+                    Ok(found),
+                    poll_request,
+                )
+                .await
             }
             // Cloud Control only forgets request tokens after the operation has
             // finished. A successful absence read is therefore terminal; the
@@ -1608,6 +1940,7 @@ impl AwsccProvider {
         resume: CcCreateResume<U, U::Resumed>,
         token: InFlightCreateRequest,
         status_identifier: Option<String>,
+        poll_request: PollRequest,
     ) -> Result<U::Step, U::Verdict> {
         let status_identifier = status_identifier
             .and_then(|identifier| applied_identifier(&resource.id, "create", identifier).ok());
@@ -1632,8 +1965,15 @@ impl AwsccProvider {
             }
         };
         let read_back = self.read_resource(&resource.id, &read_identifier).await;
-        self.finish_resumed_read(resource, config, resumed, read_identifier, read_back)
-            .await
+        self.finish_resumed_read(
+            resource,
+            config,
+            resumed,
+            read_identifier,
+            read_back,
+            poll_request,
+        )
+        .await
     }
 
     async fn finish_resumed_failure<U: CcResumeAttempt>(
@@ -1694,90 +2034,58 @@ impl AwsccProvider {
         config: &AwsccSchemaConfig,
         resumed: R,
         wait_identifier: AppliedIdentifier,
-        read_back: ProviderResult<ReadOutcome>,
+        read_back: Result<ReadOutcome, ReadFailure>,
+        poll_request: PollRequest,
     ) -> Result<R::Step, R::Verdict> {
-        let read_state = match read_back {
-            Ok(ReadOutcome::Found { state }) => state,
-            Ok(not_found @ ReadOutcome::NotFound { .. }) => {
-                return Err(resumed.failed(
-                    wait_identifier,
-                    Observation::Read(not_found),
-                    ProviderError::api_error(
-                        "Cloud Control reported create success, but read-back returned not_found",
-                    )
-                    .for_resource(resource.id.clone()),
-                ));
-            }
-            Err(read_error) => {
-                let message = format!(
-                    "Cloud Control reported create success, but read-back failed: {read_error}"
-                );
-                return Err(resumed.failed(
-                    wait_identifier,
-                    Observation::ReadFailed(read_error),
-                    ProviderError::api_error(message).for_resource(resource.id.clone()),
-                ));
-            }
-        };
-        let observed = AppliedState::from_identifier(
-            resource.id.clone(),
-            read_state.identifier().clone(),
-            read_state.attributes().clone(),
-        );
-        // A resumed completion is an observation. The host combines it with
-        // the accepted request's persisted `sent` values when writing state.
-        let mut attributes = read_state.attributes().clone();
-        let canonical_identifier =
-            match canonicalize_identifier_from_read(config, &resource.id, &attributes) {
-                Ok(Some(identifier)) => identifier,
-                Ok(None) => {
-                    let missing = missing_primary_identifier_attributes(config, &attributes);
-                    return Err(resumed.failed(
-                        wait_identifier,
-                        Observation::Read(ReadOutcome::found(observed)),
-                        ProviderError::api_error(format!(
-                            "post-create read-back is missing primaryIdentifier attributes: {}",
-                            missing.join(", ")
-                        ))
-                        .for_resource(resource.id.clone()),
-                    ));
+        let completion = self
+            .create_completion_from_read(resource, config, wait_identifier, read_back)
+            .await;
+        match poll_request.finality {
+            PollFinality::FinalAttempt => self.finish_resumed_terminal(
+                &resource.id,
+                resumed,
+                finish_final_read_back(completion),
+            ),
+            PollFinality::Continue => match completion {
+                CreateCompletion::ReadBackPending { continuation, .. } => {
+                    resumed.pending_read_back(continuation, POLL_AFTER_SECS)
                 }
-                Err(error) => {
-                    return Err(resumed.failed(
-                        wait_identifier,
-                        Observation::Read(ReadOutcome::found(observed)),
-                        error,
-                    ));
-                }
-            };
-        match self
-            .synthesize_read_attributes(&resource.id.resource_type, &mut attributes)
-            .await
-        {
-            Ok(SynthesisStatus::Complete) => {
-                let state = AppliedState::from_identifier(
-                    resource.id.clone(),
-                    canonical_identifier.clone(),
-                    attributes,
-                );
-                resumed.completed(canonical_identifier, state)
+                terminal @ (CreateCompletion::Success { .. }
+                | CreateCompletion::Partial { .. }
+                | CreateCompletion::Failed { .. }) => self.finish_resumed_terminal(
+                    &resource.id,
+                    resumed,
+                    finish_final_read_back(terminal),
+                ),
+            },
+        }
+    }
+
+    fn finish_resumed_terminal<R: CcResumedCreate>(
+        &self,
+        id: &ResourceId,
+        resumed: R,
+        completion: ReadBackCompletion,
+    ) -> Result<R::Step, R::Verdict> {
+        match completion {
+            ReadBackCompletion::Success {
+                identifier,
+                attributes,
+            } => {
+                let state =
+                    AppliedState::from_identifier(id.clone(), identifier.clone(), attributes);
+                resumed.completed(identifier, state)
             }
-            Ok(SynthesisStatus::Missing {
-                attributes: missing,
-            }) => Err(resumed.failed(
-                wait_identifier,
-                Observation::Read(ReadOutcome::found(observed)),
-                ProviderError::api_error(format!(
-                    "post-create read-back is missing synthesized attributes: {}",
-                    missing.join(", ")
-                ))
-                .for_resource(resource.id.clone()),
-            )),
-            Err(error) => Err(resumed.failed(
-                wait_identifier,
-                Observation::Read(ReadOutcome::found(observed)),
-                error,
-            )),
+            ReadBackCompletion::Partial {
+                identifier,
+                attributes,
+                reason,
+                missing_attributes,
+            } => resumed.partial(identifier, attributes, reason, missing_attributes),
+            ReadBackCompletion::Failed { identifier, error } => {
+                let (observation, error) = failed_read(error);
+                Err(resumed.failed(identifier, observation, error))
+            }
         }
     }
 
@@ -1790,7 +2098,7 @@ impl AwsccProvider {
     ) -> R::Verdict {
         let observation = match self.read_resource(id, &identifier).await {
             Ok(outcome) => Observation::Read(outcome),
-            Err(read_error) => Observation::ReadFailed(read_error),
+            Err(read_error) => Observation::ReadFailed(read_error.into_error()),
         };
         resumed.failed(identifier, observation, error)
     }
@@ -1801,81 +2109,80 @@ impl AwsccProvider {
     ) -> Result<ResumeOutcome, ResumeFailure> {
         let budget =
             self.operation_budget(request.id().resource_type.as_str(), OperationKind::Create);
-        let started = tokio::time::Instant::now();
+        let read_back_budget = self.read_back_budget(request.id().resource_type.as_str());
         let (resume, create_request) = request.into_parts();
-        let resource = create_request.resource().as_resource().clone();
-        let token = match decode_create_token(resume.token()) {
-            Ok(token) => token,
-            Err(error) => return Err(resume.preserve(error)),
-        };
-        let resume = match resume {
-            Resume::Unissued(attempt) => CcCreateResume::Unissued(attempt),
-            Resume::Issued(resumed) => CcCreateResume::Issued(resumed),
-        };
-        let mut step = self.resume_create_step(&resource, token, resume).await?;
-        loop {
-            enum Next {
-                Resume {
-                    resume: Resume,
-                    token: CcCreateToken,
-                },
-                Resent {
-                    pending: ResentPendingCreate,
-                    token: CcCreateToken,
-                },
-            }
-            let next = match step {
-                CoreResumeStep::Done(outcome) => return Ok(outcome),
-                CoreResumeStep::Pending(resume) => {
-                    let resume = *resume;
-                    let token = match decode_create_token(resume.token()) {
-                        Ok(token) => token,
-                        Err(error) => return Err(resume.preserve(error)),
-                    };
-                    Next::Resume { resume, token }
+        let resource = create_request.resource().as_resource();
+        let outcome = drive_pending_infallible(
+            budget,
+            read_back_budget,
+            async {
+                let token = match decode_create_token(resume.token()) {
+                    Ok(token) => token,
+                    Err(error) => return OperationStep::Verdict(resume.preserve(error)),
+                };
+                let resume = match resume {
+                    Resume::Unissued(attempt) => CcCreateResume::Unissued(attempt),
+                    Resume::Issued(resumed) => CcCreateResume::Issued(resumed),
+                };
+                native_resume_step(
+                    Box::pin(self.resume_create_step(
+                        resource,
+                        token,
+                        resume,
+                        PollRequest {
+                            finality: PollFinality::Continue,
+                        },
+                    ))
+                    .await,
+                )
+            },
+            |pending: NativeResumePending, finality| async move {
+                let poll_request = PollRequest { finality };
+                match pending {
+                    NativeResumePending::Resume { resume, token } => {
+                        let resume = match *resume {
+                            Resume::Unissued(attempt) => CcCreateResume::Unissued(attempt),
+                            Resume::Issued(resumed) => CcCreateResume::Issued(resumed),
+                        };
+                        native_resume_step(
+                            Box::pin(self.resume_create_step(
+                                resource,
+                                token,
+                                resume,
+                                poll_request,
+                            ))
+                            .await,
+                        )
+                    }
+                    NativeResumePending::Resent { pending, token } => {
+                        let poll = match pending.into_poll() {
+                            ResentPoll::Unissued(attempt) => CcCreatePoll::Unissued(attempt),
+                            ResentPoll::Issued(issued) => CcCreatePoll::Issued(issued),
+                        };
+                        native_resume_step(
+                            Box::pin(self.poll_create_step(resource, token, poll, poll_request))
+                                .await,
+                        )
+                    }
                 }
-                CoreResumeStep::ResentPending(pending) => {
-                    let token = match decode_create_token(pending.token()) {
-                        Ok(token) => token,
-                        Err(error) => return Err(pending.preserve(error)),
-                    };
-                    Next::Resent { pending, token }
-                }
-            };
-            if started.elapsed() >= budget {
-                let error = ProviderError::timeout(format!(
+            },
+            tokio::time::sleep,
+        )
+        .await;
+        match outcome {
+            DriveOutcome::Done(done) => Ok(ResumeOutcome::from_host_completion(done)),
+            DriveOutcome::Verdict(error) => Err(error),
+            DriveOutcome::OverBudget { last_pending } => Err(last_pending.preserve(
+                ProviderError::timeout(format!(
                     "create of {} did not finish within {budget:?}",
                     resource.id.resource_type
                 ))
-                .for_resource(resource.id.clone());
-                return Err(match next {
-                    Next::Resume { resume, .. } => resume.preserve(error),
-                    Next::Resent { pending, .. } => pending.preserve(error),
-                });
-            }
-            let remaining = budget.saturating_sub(started.elapsed());
-            let poll_after_secs = match &next {
-                Next::Resume { token, .. } | Next::Resent { token, .. } => token.poll_after_secs(),
-            };
-            let delay =
-                Duration::from_secs(u64::from(poll_after_secs.clamp(1, 300))).min(remaining);
-            tokio::time::sleep(delay).await;
-            step = match next {
-                Next::Resume { resume, token } => {
-                    let resume = match resume {
-                        Resume::Unissued(attempt) => CcCreateResume::Unissued(attempt),
-                        Resume::Issued(resumed) => CcCreateResume::Issued(resumed),
-                    };
-                    self.resume_create_step(&resource, token, resume).await?
-                }
-                Next::Resent { pending, token } => {
-                    let poll = match pending.into_poll() {
-                        ResentPoll::Unissued(attempt) => CcCreatePoll::Unissued(attempt),
-                        ResentPoll::Issued(issued) => CcCreatePoll::Issued(issued),
-                    };
-                    self.poll_create_step(&resource, token, poll).await?
-                }
-            };
+                .for_resource(resource.id.clone()),
+            )),
+            DriveOutcome::ProtocolViolation { last_pending } => Err(last_pending.preserve(
+                ProviderError::internal("Cloud Control resume returned an invalid pending phase")
+                    .for_resource(resource.id.clone()),
+            )),
         }
     }
 
@@ -1902,12 +2209,21 @@ impl AwsccProvider {
             )
             .await
             .map_err(|error| error.for_resource(id.clone()))?;
-        let desired = post_update_attributes(from, patch);
-        self.finish_update_step(id, identifier, desired, patch_plan, step)
-            .await
+        self.finish_update_step(
+            id,
+            config,
+            identifier,
+            post_update_attributes(from, patch),
+            patch_plan,
+            step,
+            PollRequest {
+                finality: PollFinality::Continue,
+            },
+        )
+        .await
     }
 
-    /// Perform one CloudControl status or re-issue step for update.
+    /// Perform one CloudControl status or read-back step for update.
     pub async fn poll_update_step(
         &self,
         id: &ResourceId,
@@ -1915,6 +2231,7 @@ impl AwsccProvider {
         from: &State,
         patch: &UpdatePatch,
         token: CcUpdateToken,
+        poll_request: PollRequest,
     ) -> ProviderResult<CcUpdateStep> {
         self.ensure_initialized(id)?;
         let config = get_schema_config(&id.resource_type).ok_or_else(|| {
@@ -1922,28 +2239,59 @@ impl AwsccProvider {
                 .for_resource(id.clone())
         })?;
         let patch_plan = build_update_patches(config, &id.resource_type, patch);
-        let step = self
-            .cc_poll_update_step(
-                config.aws_type_name,
-                identifier.as_str(),
-                patch_plan.ops.clone(),
-                config.schema.operation_config(),
-                token,
-            )
-            .await
-            .map_err(|error| error.for_resource(id.clone()))?;
-        let desired = post_update_attributes(from, patch);
-        self.finish_update_step(id, identifier, desired, patch_plan, step)
-            .await
+        let fallback = post_update_attributes(from, patch);
+        match token {
+            CcUpdateToken::ReadBack(continuation) => {
+                continuation.read_back.validate(id, identifier)?;
+                let read_back = self
+                    .read_resource(id, continuation.read_back.identifier())
+                    .await;
+                Ok(self.finish_update_read_back(
+                    id,
+                    config,
+                    identifier,
+                    fallback,
+                    read_back,
+                    &patch_plan,
+                    continuation.handler_failure.as_deref(),
+                    poll_request,
+                ))
+            }
+            CcUpdateToken::Operation(token) => {
+                let step = self
+                    .cc_poll_update_step(
+                        config.aws_type_name,
+                        identifier.as_str(),
+                        patch_plan.ops.clone(),
+                        config.schema.operation_config(),
+                        token,
+                    )
+                    .await
+                    .map_err(|error| error.for_resource(id.clone()))?;
+                self.finish_update_step(
+                    id,
+                    config,
+                    identifier,
+                    fallback,
+                    patch_plan,
+                    step,
+                    poll_request,
+                )
+                .await
+            }
+        }
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn finish_update_step(
         &self,
         id: &ResourceId,
+        config: &AwsccSchemaConfig,
         identifier: &AppliedIdentifier,
-        desired: HashMap<String, Value>,
+        fallback: HashMap<String, Value>,
         patch_plan: UpdatePatchPlan,
-        step: OperationStep<WaitOutcome, ProviderError, CcUpdateToken>,
+        step: OperationStep<WaitOutcome, ProviderError, CcRequestPhase>,
+        poll_request: PollRequest,
     ) -> ProviderResult<CcUpdateStep> {
         let outcome = match step {
             OperationStep::Pending {
@@ -1952,7 +2300,7 @@ impl AwsccProvider {
                 phase,
             } => {
                 return Ok(OperationStep::Pending {
-                    pending,
+                    pending: CcUpdateToken::Operation(pending),
                     poll_after_secs,
                     phase,
                 });
@@ -1965,15 +2313,109 @@ impl AwsccProvider {
             WaitOutcome::PartialOrFailed { status_message, .. } => Some(status_message),
         };
         let read_back = self.read_resource(id, identifier).await;
-        let outcome = update_outcome_from_read_back(
+        Ok(self.finish_update_read_back(
             id,
+            config,
             identifier,
+            fallback,
             read_back,
-            desired,
             &patch_plan,
             handler_failure.as_deref(),
-        );
-        Ok(OperationStep::Done(outcome))
+            poll_request,
+        ))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn finish_update_read_back(
+        &self,
+        id: &ResourceId,
+        config: &AwsccSchemaConfig,
+        identifier: &AppliedIdentifier,
+        fallback: HashMap<String, Value>,
+        read_back: Result<ReadOutcome, ReadFailure>,
+        patch_plan: &UpdatePatchPlan,
+        handler_failure: Option<&str>,
+        poll_request: PollRequest,
+    ) -> CcUpdateStep {
+        let observed = matches!(&read_back, Ok(ReadOutcome::Found { .. }))
+            || read_back
+                .as_ref()
+                .err()
+                .is_some_and(|error| error.attributes.is_some());
+        let completion = match classify_read_back(
+            id,
+            config,
+            identifier.clone(),
+            fallback,
+            read_back,
+            ReadBackKind::Update,
+        ) {
+            ReadBackObservation::Found(attributes) => {
+                return OperationStep::Done(update_outcome_from_read_back(
+                    id,
+                    identifier,
+                    attributes,
+                    patch_plan,
+                    handler_failure,
+                ));
+            }
+            ReadBackObservation::Incomplete(completion) => completion,
+        };
+        // Confirmation is checked even while a declared attribute is missing.
+        let completion = add_update_confirmation(completion, patch_plan, handler_failure, observed);
+        match poll_request.finality {
+            PollFinality::FinalAttempt => {
+                self.finish_update_terminal(id, finish_final_read_back(completion))
+            }
+            PollFinality::Continue => match completion {
+                CreateCompletion::ReadBackPending { continuation, .. } => OperationStep::Pending {
+                    pending: CcUpdateToken::ReadBack(
+                        super::read_back::UpdateReadBackContinuation {
+                            read_back: continuation,
+                            handler_failure: handler_failure.map(str::to_owned),
+                        },
+                    ),
+                    poll_after_secs: POLL_AFTER_SECS,
+                    phase: PendingPhase::ReadBack,
+                },
+                terminal @ (CreateCompletion::Success { .. }
+                | CreateCompletion::Partial { .. }
+                | CreateCompletion::Failed { .. }) => {
+                    self.finish_update_terminal(id, finish_final_read_back(terminal))
+                }
+            },
+        }
+    }
+
+    fn finish_update_terminal(
+        &self,
+        id: &ResourceId,
+        completion: ReadBackCompletion,
+    ) -> CcUpdateStep {
+        match completion {
+            ReadBackCompletion::Success {
+                identifier,
+                attributes,
+            } => OperationStep::Done(UpdateOutcome::success(AppliedState::from_identifier(
+                id.clone(),
+                identifier,
+                attributes,
+            ))),
+            ReadBackCompletion::Partial {
+                identifier,
+                attributes,
+                reason,
+                missing_attributes,
+            } => OperationStep::Done(UpdateOutcome::partial_success(
+                AppliedState::from_identifier(id.clone(), identifier, attributes),
+                reason.to_string(),
+                missing_attributes.into(),
+            )),
+            ReadBackCompletion::Failed {
+                identifier: _,
+                error,
+            } => OperationStep::Verdict(error),
+        }
     }
 
     /// Drive update steps to a settled result for native callers.
@@ -1989,11 +2431,15 @@ impl AwsccProvider {
             &id,
             OperationKind::Update,
             budget,
+            self.read_back_budget(id.resource_type.as_str()),
             self.update_step(&id, identifier, from, patch),
-            |token| self.poll_update_step(&id, identifier, from, patch, token),
+            |token, poll_request| {
+                self.poll_update_step(&id, identifier, from, patch, token, poll_request)
+            },
             tokio::time::sleep,
         )
         .await
+        .map(UpdateOutcome::from_host_completion)
     }
 
     /// Perform the initial, non-blocking CloudControl delete step.
@@ -2137,7 +2583,7 @@ impl AwsccProvider {
         id: &ResourceId,
         config: &AwsccSchemaConfig,
         identifier: &AppliedIdentifier,
-        step: OperationStep<WaitOutcome, ProviderError, CcUpdateToken>,
+        step: OperationStep<WaitOutcome, ProviderError, CcRequestPhase>,
     ) -> ProviderResult<CcDeleteStep> {
         match step {
             OperationStep::Pending {
@@ -2183,11 +2629,13 @@ impl AwsccProvider {
             id,
             OperationKind::Delete,
             budget,
+            self.read_back_budget(id.resource_type.as_str()),
             self.delete_step(id, identifier, &request),
-            |token| self.poll_delete_step(id, identifier, &request, token),
+            |token, _poll_request| self.poll_delete_step(id, identifier, &request, token),
             tokio::time::sleep,
         )
         .await
+        .map(CompletedOperation::into_output)
     }
 }
 
@@ -2272,17 +2720,233 @@ fn cloudcontrol_create_failure(
     error
 }
 
-fn read_back_reason(handler_failure: Option<&str>, detail: impl Into<String>) -> String {
-    let detail = detail.into();
-    match handler_failure {
-        Some(status_message) => format!("handler failed: {status_message}; {detail}"),
-        None => detail,
+#[derive(Clone, Copy)]
+enum ReadBackKind {
+    Create,
+    Update,
+}
+
+enum ReadBackObservation {
+    Found(HashMap<String, Value>),
+    Incomplete(CreateCompletion),
+}
+
+fn missing_schema_attributes(
+    config: &AwsccSchemaConfig,
+    attributes: &HashMap<String, Value>,
+) -> Vec<String> {
+    config
+        .schema
+        .attributes()
+        .keys()
+        .filter(|name| !attributes.contains_key(*name))
+        .cloned()
+        .collect()
+}
+
+fn classify_read_back(
+    id: &ResourceId,
+    config: &AwsccSchemaConfig,
+    identifier: AppliedIdentifier,
+    fallback: HashMap<String, Value>,
+    read: Result<ReadOutcome, ReadFailure>,
+    kind: ReadBackKind,
+) -> ReadBackObservation {
+    if let Err(error) = validate_declarations(id, config) {
+        return ReadBackObservation::Incomplete(CreateCompletion::Failed { identifier, error });
+    }
+    let (attributes, missing, reason, transience) = match read {
+        Ok(ReadOutcome::Found { state }) => {
+            let attributes = state.attributes().clone();
+            let missing = ReadBackRequirements::declared(config).missing(&attributes);
+            if missing.is_empty() {
+                return ReadBackObservation::Found(attributes);
+            }
+            let reason = ProviderError::api_error(format!(
+                "read-back missing declared attributes: {}",
+                missing.join(", ")
+            ));
+            (attributes, missing, reason, Transience::Transient)
+        }
+        Ok(ReadOutcome::NotFound { .. }) => {
+            let missing = config.schema.attributes().keys().cloned().collect();
+            let reason = match kind {
+                ReadBackKind::Create => "read-back returned not_found",
+                ReadBackKind::Update => "post-update read-back did not find the updated resource",
+            };
+            (
+                fallback,
+                missing,
+                ProviderError::not_found(reason),
+                Transience::Transient,
+            )
+        }
+        Err(error) => {
+            let (error, transience, observed) = error.into_parts();
+            let (attributes, missing) = match observed {
+                Some(attributes) => {
+                    let declared_missing =
+                        ReadBackRequirements::declared(config).missing(&attributes);
+                    let missing = if declared_missing.is_empty() {
+                        missing_schema_attributes(config, &attributes)
+                    } else {
+                        declared_missing
+                    };
+                    (attributes, missing)
+                }
+                None => {
+                    let missing = config.schema.attributes().keys().cloned().collect();
+                    (fallback, missing)
+                }
+            };
+            (
+                attributes,
+                missing,
+                ProviderError::api_error_caused_by("read error", error),
+                transience,
+            )
+        }
+    };
+    ReadBackObservation::Incomplete(incomplete_read_back(
+        id, identifier, attributes, reason, missing, transience,
+    ))
+}
+
+fn incomplete_read_back(
+    id: &ResourceId,
+    identifier: AppliedIdentifier,
+    attributes: HashMap<String, Value>,
+    reason: ProviderError,
+    missing: Vec<String>,
+    transience: Transience,
+) -> CreateCompletion {
+    let missing_attributes = match NonEmptyAttributeNames::try_from(missing) {
+        Ok(missing) => missing,
+        Err(error) => {
+            return CreateCompletion::Failed {
+                identifier,
+                error: ProviderError::internal_caused_by(
+                    "invalid read-back missing attributes",
+                    std::io::Error::other(error),
+                )
+                .for_resource(id.clone()),
+            };
+        }
+    };
+    match transience {
+        Transience::Transient => CreateCompletion::ReadBackPending {
+            continuation: ReadBackContinuation::new(id, identifier),
+            attributes,
+            reason,
+            missing_attributes,
+        },
+        Transience::Permanent => CreateCompletion::Partial {
+            identifier,
+            attributes,
+            reason,
+            missing_attributes,
+        },
     }
 }
 
-fn nonempty_missing_attributes(mut attributes: Vec<String>) -> Vec<String> {
-    if attributes.is_empty() {
-        attributes.push("state".to_string());
+fn add_update_confirmation(
+    completion: CreateCompletion,
+    patch_plan: &UpdatePatchPlan,
+    handler_failure: Option<&str>,
+    observed: bool,
+) -> CreateCompletion {
+    let update = |attributes: &HashMap<String, Value>,
+                  reason: ProviderError,
+                  missing: NonEmptyAttributeNames| {
+        let missing_sent = patch_plan
+            .requires_confirmation
+            .iter()
+            .filter(|name| {
+                observed
+                    && !patch_plan.unsent.contains(name)
+                    && !attributes.contains_key(name.as_str())
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        let context =
+            update_confirmation_failure_reason(&missing_sent, &patch_plan.unsent, handler_failure);
+        let reason = if context.is_empty() {
+            reason
+        } else {
+            ProviderError::api_error_caused_by(
+                "post-update read-back incomplete",
+                UpdateReadBackCause {
+                    context,
+                    source: reason,
+                },
+            )
+        };
+        missing
+            .extend(
+                missing_sent
+                    .into_iter()
+                    .chain(patch_plan.unsent.iter().cloned()),
+            )
+            .map(|missing| (reason, missing))
+    };
+    match completion {
+        CreateCompletion::ReadBackPending {
+            continuation,
+            attributes,
+            reason,
+            missing_attributes,
+        } => match update(&attributes, reason, missing_attributes) {
+            Ok((reason, missing_attributes)) => CreateCompletion::ReadBackPending {
+                continuation,
+                attributes,
+                reason,
+                missing_attributes,
+            },
+            Err(error) => CreateCompletion::Failed {
+                identifier: continuation.identifier().clone(),
+                error,
+            },
+        },
+        CreateCompletion::Partial {
+            identifier,
+            attributes,
+            reason,
+            missing_attributes,
+        } => match update(&attributes, reason, missing_attributes) {
+            Ok((reason, missing_attributes)) => CreateCompletion::Partial {
+                identifier,
+                attributes,
+                reason,
+                missing_attributes,
+            },
+            Err(error) => CreateCompletion::Failed { identifier, error },
+        },
+        terminal @ (CreateCompletion::Success { .. } | CreateCompletion::Failed { .. }) => terminal,
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("{context}")]
+struct UpdateReadBackCause {
+    context: String,
+    #[source]
+    source: ProviderError,
+}
+
+fn post_update_attributes(from: &State, patch: &UpdatePatch) -> HashMap<String, Value> {
+    use carina_core::provider::PatchOp;
+    let mut attributes = from.attributes.clone();
+    for op in &patch.ops {
+        match op {
+            PatchOp::Add { key, value }
+            | PatchOp::Replace { key, value }
+            | PatchOp::Reassert { key, value } => {
+                attributes.insert(key.clone(), value.clone());
+            }
+            PatchOp::Remove { key } => {
+                attributes.remove(key);
+            }
+        }
     }
     attributes
 }
@@ -2327,7 +2991,7 @@ fn missing_primary_identifier_attributes(
                 .and_then(primary_identifier_segment)
                 .is_none()
         })
-        .map(|attr| attr.provider_name.to_string())
+        .map(|attr| attr.dsl_name.to_string())
         .collect()
 }
 
@@ -2354,36 +3018,10 @@ fn primary_identifier_segment(value: &Value) -> Option<String> {
 fn update_outcome_from_read_back(
     id: &ResourceId,
     identifier: &AppliedIdentifier,
-    read_back: ProviderResult<ReadOutcome>,
-    desired: HashMap<String, Value>,
+    attributes: HashMap<String, Value>,
     patch_plan: &UpdatePatchPlan,
     handler_failure: Option<&str>,
 ) -> UpdateOutcome {
-    let attributes = match read_back {
-        Ok(ReadOutcome::Found { state }) => state.attributes().clone(),
-        Ok(ReadOutcome::NotFound { .. }) => {
-            return update_partial_without_read_back(
-                id,
-                identifier,
-                desired,
-                patch_plan,
-                read_back_reason(
-                    handler_failure,
-                    "post-update read-back did not find the updated resource",
-                ),
-            );
-        }
-        Err(read_error) => {
-            return update_partial_without_read_back(
-                id,
-                identifier,
-                desired,
-                patch_plan,
-                read_back_reason(handler_failure, format!("read error: {read_error}")),
-            );
-        }
-    };
-
     // Cloud Control can report UPDATE SUCCESS while silently discarding a property:
     // AWS::S3::Bucket ObjectLockEnabled add-on-update returned OperationStatus SUCCESS
     // with no error while GetResource afterwards showed the property absent. Measured
@@ -2415,28 +3053,6 @@ fn update_outcome_from_read_back(
         handler_failure,
     );
     UpdateOutcome::partial_success(state, reason, unconfirmed_attributes)
-}
-
-fn update_partial_without_read_back(
-    id: &ResourceId,
-    identifier: &AppliedIdentifier,
-    mut desired: HashMap<String, Value>,
-    patch_plan: &UpdatePatchPlan,
-    mut reason: String,
-) -> UpdateOutcome {
-    let missing_attributes = nonempty_missing_attributes(patch_plan.touched.clone());
-    for attr in &missing_attributes {
-        desired.remove(attr);
-    }
-    if !patch_plan.unsent.is_empty() {
-        reason.push_str("; ");
-        reason.push_str(&unsent_attributes_reason(&patch_plan.unsent));
-    }
-    UpdateOutcome::partial_success(
-        AppliedState::from_identifier(id.clone(), identifier.clone(), desired),
-        reason,
-        missing_attributes,
-    )
 }
 
 fn update_confirmation_failure_reason(
@@ -2543,35 +3159,6 @@ fn map_aws_props_to_attributes(
     attributes
 }
 
-/// Reconstruct the post-update desired-state attribute map: take the
-/// current provider-side `from` state and apply each patch op on top.
-///
-/// Used by `update_resource` to preserve accepted state only when no read-back
-/// is available. The map is the same logical shape as the old
-/// `to: Resource.attributes`, but built without exposing a full `Resource` to
-/// the update path.
-fn post_update_attributes(
-    from: &State,
-    patch: &UpdatePatch,
-) -> std::collections::HashMap<String, Value> {
-    use carina_core::provider::PatchOp;
-
-    let mut attributes = from.attributes.clone();
-    for op in &patch.ops {
-        match op {
-            PatchOp::Add { key, value }
-            | PatchOp::Replace { key, value }
-            | PatchOp::Reassert { key, value } => {
-                attributes.insert(key.clone(), value.clone());
-            }
-            PatchOp::Remove { key } => {
-                attributes.remove(key);
-            }
-        }
-    }
-    attributes
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2587,12 +3174,48 @@ mod tests {
     use std::pin::Pin;
     use std::sync::Arc;
     use std::sync::Mutex;
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use winterbaume_core::{MockAws, MockRequest, MockResponse, MockService};
 
     const WEB_ACL_ASSOCIATION_RESOURCE_ARN: &str = "arn:aws:elasticloadbalancing:ap-northeast-1:123456789012:loadbalancer/app/publish-api/abc123";
     const WEB_ACL_ASSOCIATION_WEB_ACL_ARN: &str =
         "arn:aws:wafv2:ap-northeast-1:123456789012:regional/webacl/publish-api/def456";
+
+    // A zero read budget exercises the real native driver and its final poll
+    // without spending 120 wall-clock seconds on deliberately permanent misses.
+    impl AwsccProvider {
+        async fn update_with_final_read_back(
+            &self,
+            id: ResourceId,
+            identifier: &AppliedIdentifier,
+            from: &State,
+            patch: &UpdatePatch,
+        ) -> ProviderResult<UpdateOutcome> {
+            drive_operation(
+                &id,
+                OperationKind::Update,
+                DEFAULT_OPERATION_BUDGET,
+                Duration::ZERO,
+                self.update_step(&id, identifier, from, patch),
+                |token, request| {
+                    self.poll_update_step(&id, identifier, from, patch, token, request)
+                },
+                |_| std::future::ready(()),
+            )
+            .await
+            .map(UpdateOutcome::from_host_completion)
+        }
+    }
+
+    fn schema_attribute_names(resource_type: &str) -> Vec<String> {
+        get_schema_config(resource_type)
+            .unwrap()
+            .schema
+            .attributes()
+            .keys()
+            .cloned()
+            .collect()
+    }
 
     fn test_string(value: &str) -> Value {
         Value::Concrete(ConcreteValue::String(value.to_string().into()))
@@ -2602,7 +3225,7 @@ mod tests {
         AppliedIdentifier::new(value).expect("test provider identifier must be non-empty")
     }
 
-    async fn dispatch_test_create(
+    async fn create_with_final_read_back(
         provider: &AwsccProvider,
         resource: Resource,
     ) -> Result<CreateOutcome, CreateFailure> {
@@ -2651,9 +3274,15 @@ mod tests {
             .expect("test preparation thread should spawn")
             .join()
             .expect("test preparation thread should not panic");
-        let (create, _cancellation) =
-            carina_core::executor::dispatch_create(provider, &id, request);
-        create.await
+        provider
+            .drive_native_create_with_budgets(
+                request.resource().as_resource(),
+                CreateAttempt::for_test(id),
+                DEFAULT_OPERATION_BUDGET,
+                Duration::ZERO,
+                |_| std::future::ready(()),
+            )
+            .await
     }
 
     #[tokio::test]
@@ -2663,12 +3292,13 @@ mod tests {
             &id,
             OperationKind::Create,
             Duration::ZERO,
+            DEFAULT_READ_BACK_BUDGET,
             std::future::ready(Ok::<_, ProviderError>(OperationStep::Pending {
                 pending: (),
                 poll_after_secs: 5,
                 phase: PendingPhase::Operation,
             })),
-            |pending| {
+            |pending, _poll_request| {
                 std::future::ready(Ok(OperationStep::Pending {
                     pending,
                     poll_after_secs: 5,
@@ -2696,12 +3326,13 @@ mod tests {
             &id,
             OperationKind::Update,
             Duration::ZERO,
+            DEFAULT_READ_BACK_BUDGET,
             std::future::ready(Ok::<_, ProviderError>(OperationStep::Pending {
                 pending: (),
                 poll_after_secs: 5,
                 phase: PendingPhase::Operation,
             })),
-            |_| {
+            |_, _poll_request| {
                 polls += 1;
                 std::future::ready(Ok(OperationStep::Done(())))
             },
@@ -2714,18 +3345,119 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn native_read_back_uses_schema_budget() {
+        let id = ResourceId::with_provider_identity("awscc", "ec2.Vpc", "budget", None);
+        let config = carina_core::schema::OperationConfig {
+            read_back: carina_provider_protocol::types::ReadBackBudget::from_secs(1),
+            ..Default::default()
+        };
+        let mut sleeps = Vec::new();
+        drive_operation(
+            &id,
+            OperationKind::Create,
+            Duration::from_secs(300),
+            config.read_back_budget(),
+            std::future::ready(Ok::<_, ProviderError>(OperationStep::Pending {
+                pending: (),
+                poll_after_secs: 5,
+                phase: PendingPhase::ReadBack,
+            })),
+            |_, request| {
+                assert_eq!(request.finality, PollFinality::FinalAttempt);
+                std::future::ready(Ok(OperationStep::Done(())))
+            },
+            |delay| {
+                sleeps.push(delay);
+                std::future::ready(())
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(sleeps.len(), 1);
+        assert!(sleeps[0] > Duration::ZERO && sleeps[0] <= Duration::from_secs(1));
+    }
+
+    #[tokio::test]
+    async fn native_final_partial_retains_host_deadline() {
+        let provider = provider_with_partial_create_service(
+            PartialCreateCloudControlService::with_not_found(true),
+        )
+        .await;
+        let resource = partial_create_bucket_resource();
+        let outcome = provider
+            .drive_native_create_with_budgets(
+                &resource,
+                CreateAttempt::for_test(resource.id.clone()),
+                DEFAULT_OPERATION_BUDGET,
+                Duration::ZERO,
+                |_| std::future::ready(()),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            outcome.read_back_end(),
+            carina_provider_protocol::ReadBackEnd::HostDeadline
+        );
+        let CreateOutcomeKind::PartialSuccess { state, diagnostic } = outcome.into_kind() else {
+            panic!("expected partial create")
+        };
+        assert_eq!(state.identifier().as_str(), "partial-bucket");
+        assert_eq!(state.attributes(), &resource.resolved_attributes());
+        let expected: Vec<_> = get_schema_config("s3.Bucket")
+            .unwrap()
+            .schema
+            .attributes()
+            .keys()
+            .cloned()
+            .collect();
+        assert_eq!(diagnostic.missing_attributes(), expected);
+
+        let completed = drive_operation(
+            &resource.id,
+            OperationKind::Update,
+            DEFAULT_OPERATION_BUDGET,
+            Duration::ZERO,
+            std::future::ready(Ok::<_, ProviderError>(OperationStep::Pending {
+                pending: (),
+                poll_after_secs: 5,
+                phase: PendingPhase::ReadBack,
+            })),
+            |_, request| {
+                assert_eq!(request.finality, PollFinality::FinalAttempt);
+                std::future::ready(Ok(OperationStep::Done(UpdateOutcome::partial_success(
+                    AppliedState::from_identifier(
+                        resource.id.clone(),
+                        test_identifier("partial-bucket"),
+                        HashMap::new(),
+                    ),
+                    "read failed".into(),
+                    vec!["bucket_name".into()],
+                ))))
+            },
+            |_| std::future::ready(()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            UpdateOutcome::from_host_completion(completed).read_back_end(),
+            carina_provider_protocol::ReadBackEnd::HostDeadline
+        );
+    }
+
+    #[tokio::test]
     async fn native_driver_maps_phase_regression_to_internal_error() {
         let id = ResourceId::with_provider_identity("awscc", "ec2.Vpc", "phase", None);
         let error = drive_operation::<(), _, _, _, _, _, _>(
             &id,
             OperationKind::Update,
             Duration::from_secs(300),
+            DEFAULT_READ_BACK_BUDGET,
             std::future::ready(Ok::<_, ProviderError>(OperationStep::Pending {
                 pending: (),
                 poll_after_secs: 0,
                 phase: PendingPhase::ReadBack,
             })),
-            |_| {
+            |_, _poll_request| {
                 std::future::ready(Ok(OperationStep::Pending {
                     pending: (),
                     poll_after_secs: 0,
@@ -3008,8 +3740,8 @@ mod tests {
             self,
             _identifier: AppliedIdentifier,
             _attributes: HashMap<String, Value>,
-            _reason: String,
-            _missing_attributes: Vec<String>,
+            _reason: ProviderError,
+            _missing_attributes: NonEmptyAttributeNames,
         ) -> Result<Self::Step, Self::Verdict> {
             Ok(())
         }
@@ -3029,6 +3761,14 @@ mod tests {
 
         fn preserve(self, _token: CcCreateToken, error: ProviderError) -> Self::Verdict {
             error
+        }
+
+        fn pending_read_back(
+            self,
+            _continuation: ReadBackContinuation,
+            _poll_after_secs: u32,
+        ) -> Result<Self::Step, Self::Verdict> {
+            Ok(())
         }
 
         fn pending(
@@ -3167,7 +3907,10 @@ mod tests {
             .await
             .expect_err("initialization error must still short-circuit provider reads");
 
-        assert_eq!(error.detail().context(), "provider initialization failed");
+        assert_eq!(
+            error.into_error().detail().context(),
+            "provider initialization failed"
+        );
         assert!(!service.saw_get_resource.load(Ordering::SeqCst));
     }
 
@@ -3223,7 +3966,7 @@ mod tests {
             attributes.get("bucket_name"),
             Some(&test_string("partial-bucket"))
         );
-        assert!(reason.contains("empty canonical identifier"));
+        assert!(reason.to_string().contains("empty canonical identifier"));
     }
 
     #[tokio::test]
@@ -3253,6 +3996,52 @@ mod tests {
             !attributes.contains_key("object_lock_enabled"),
             "an attribute omitted by the create read-back must not be fabricated from desired config"
         );
+    }
+
+    #[tokio::test]
+    async fn read_back_does_not_wait_for_undeclared_required_attributes() {
+        let provider =
+            provider_with_partial_create_service(PartialCreateCloudControlService::new(true)).await;
+        let resource = partial_create_bucket_resource();
+        let mut config = crate::schemas::generated::s3::bucket::s3_bucket_config();
+        config.schema = config
+            .schema
+            .attribute(AttributeSchema::required("future_output", AttributeType::string()).build());
+        let identifier = test_identifier("partial-bucket");
+        let read = ReadOutcome::found(AppliedState::from_identifier(
+            resource.id.clone(),
+            identifier.clone(),
+            HashMap::from([("bucket_name".into(), test_string("partial-bucket"))]),
+        ));
+        assert!(matches!(
+            provider
+                .create_completion_from_read(&resource, &config, identifier, Ok(read))
+                .await,
+            CreateCompletion::Success { .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn read_back_missing_undeclared_primary_identifier_uses_dsl_name_without_waiting() {
+        let provider =
+            provider_with_partial_create_service(PartialCreateCloudControlService::new(true)).await;
+        let resource = partial_create_bucket_resource();
+        let config = crate::schemas::generated::s3::bucket::s3_bucket_config();
+        let identifier = test_identifier("partial-bucket");
+        let read = ReadOutcome::found(AppliedState::from_identifier(
+            resource.id.clone(),
+            identifier.clone(),
+            HashMap::new(),
+        ));
+        let CreateCompletion::Partial {
+            missing_attributes, ..
+        } = provider
+            .create_completion_from_read(&resource, &config, identifier, Ok(read))
+            .await
+        else {
+            panic!("undeclared identity must not start read-back waiting")
+        };
+        assert_eq!(missing_attributes.as_slice(), ["bucket_name"]);
     }
 
     #[derive(Clone, Copy, Debug)]
@@ -3366,6 +4155,7 @@ mod tests {
     #[derive(Debug)]
     struct CallerIdentityService {
         succeeds: bool,
+        transient_failures: AtomicUsize,
         saw_get_caller_identity: AtomicBool,
     }
 
@@ -3381,6 +4171,15 @@ mod tests {
         fn with_result(succeeds: bool) -> Arc<Self> {
             Arc::new(Self {
                 succeeds,
+                transient_failures: AtomicUsize::new(0),
+                saw_get_caller_identity: AtomicBool::new(false),
+            })
+        }
+
+        fn transient() -> Arc<Self> {
+            Arc::new(Self {
+                succeeds: true,
+                transient_failures: AtomicUsize::new(3),
                 saw_get_caller_identity: AtomicBool::new(false),
             })
         }
@@ -3404,6 +4203,18 @@ mod tests {
         ) -> Pin<Box<dyn Future<Output = MockResponse> + Send + '_>> {
             Box::pin(async move {
                 self.saw_get_caller_identity.store(true, Ordering::SeqCst);
+                if self
+                    .transient_failures
+                    .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |remaining| {
+                        remaining.checked_sub(1)
+                    })
+                    .is_ok()
+                {
+                    return MockResponse::xml(
+                        503,
+                        r#"<ErrorResponse xmlns="https://sts.amazonaws.com/doc/2011-06-15/"><Error><Type>Receiver</Type><Code>ServiceUnavailable</Code><Message>synthesis temporarily unavailable</Message></Error><RequestId>transient-sts</RequestId></ErrorResponse>"#,
+                    );
+                }
                 if !self.succeeds {
                     return MockResponse::xml(
                         403,
@@ -3674,7 +4485,7 @@ mod tests {
         let patch = object_lock_enabled_patch();
 
         let outcome = provider
-            .update_resource(
+            .update_with_final_read_back(
                 from.id.clone(),
                 &test_identifier("partial-bucket"),
                 &from,
@@ -3719,7 +4530,7 @@ mod tests {
             let patch = create_only_bucket_name_patch();
 
             let outcome = provider
-                .update_resource(
+                .update_with_final_read_back(
                     from.id.clone(),
                     &test_identifier("partial-bucket"),
                     &from,
@@ -3770,7 +4581,7 @@ mod tests {
         let patch = object_lock_enabled_patch();
 
         let outcome = provider
-            .update_resource(
+            .update_with_final_read_back(
                 from.id.clone(),
                 &test_identifier("partial-bucket"),
                 &from,
@@ -3803,7 +4614,7 @@ mod tests {
         let patch = replace_object_lock_enabled_patch();
 
         let outcome = provider
-            .update_resource(
+            .update_with_final_read_back(
                 from.id.clone(),
                 &test_identifier("partial-bucket"),
                 &from,
@@ -3830,7 +4641,7 @@ mod tests {
         let patch = access_control_patch();
 
         let outcome = provider
-            .update_resource(
+            .update_with_final_read_back(
                 from.id.clone(),
                 &test_identifier("partial-bucket"),
                 &from,
@@ -3860,7 +4671,7 @@ mod tests {
         let patch = partial_update_bucket_patch();
 
         let outcome = provider
-            .update_resource(
+            .update_with_final_read_back(
                 from.id.clone(),
                 &test_identifier("partial-bucket"),
                 &from,
@@ -3896,7 +4707,7 @@ mod tests {
             .insert("access_control".to_string(), redacted.clone());
 
         let outcome = provider
-            .update_resource(
+            .update_with_final_read_back(
                 from.id.clone(),
                 &test_identifier("partial-bucket"),
                 &from,
@@ -3945,7 +4756,7 @@ mod tests {
         };
 
         let outcome = provider
-            .update_resource(
+            .update_with_final_read_back(
                 from.id.clone(),
                 &test_identifier("partial-bucket"),
                 &from,
@@ -3972,7 +4783,7 @@ mod tests {
         let patch = object_lock_enabled_patch();
 
         let outcome = provider
-            .update_resource(
+            .update_with_final_read_back(
                 from.id.clone(),
                 &test_identifier("partial-bucket"),
                 &from,
@@ -4003,7 +4814,7 @@ mod tests {
         let patch = partial_update_bucket_patch();
 
         let outcome = provider
-            .update_resource(
+            .update_with_final_read_back(
                 from.id.clone(),
                 &test_identifier("partial-bucket"),
                 &from,
@@ -4029,7 +4840,7 @@ mod tests {
         let patch = empty_tags_patch();
 
         let outcome = provider
-            .update_resource(
+            .update_with_final_read_back(
                 from.id.clone(),
                 &test_identifier("partial-bucket"),
                 &from,
@@ -4120,10 +4931,12 @@ mod tests {
 
     fn assert_structured_partial_read_error(reason: &str, status_message: &str) {
         assert!(
-            reason.starts_with(&format!(
-                "handler failed: {status_message}; read error: Failed to get resource"
-            )),
+            reason.contains("read error: Failed to get resource"),
             "unexpected partial-success reason: {reason}"
+        );
+        assert!(
+            reason.contains(status_message),
+            "handler failure was discarded: {reason}"
         );
         for expected in [
             "operation: cloudcontrol.GetResource",
@@ -4146,7 +4959,7 @@ mod tests {
         let patch = partial_update_bucket_patch();
 
         let outcome = provider
-            .update_resource(
+            .update_with_final_read_back(
                 from.id.clone(),
                 &test_identifier("partial-bucket"),
                 &from,
@@ -4164,18 +4977,13 @@ mod tests {
             "provider must retry read with the identifier from failed progress"
         );
         assert_eq!(state.identifier().as_str(), "partial-bucket");
-        assert_eq!(
-            state.attributes().get("bucket_name"),
-            Some(&Value::Concrete(ConcreteValue::String(
-                "partial-bucket".to_string().into()
-            )))
-        );
-        assert!(
-            !state.attributes().contains_key("tags"),
-            "missing authored attributes must be absent so the partial-read marker can materialize them as Unknown"
-        );
+        assert_eq!(state.attributes(), &post_update_attributes(&from, &patch));
+
         assert_structured_partial_read_error(diagnostic.reason(), "post-update read denied");
-        assert_eq!(diagnostic.missing_attributes(), &["tags".to_string()]);
+        assert_eq!(
+            diagnostic.missing_attributes(),
+            schema_attribute_names("s3.Bucket")
+        );
     }
 
     #[tokio::test]
@@ -4187,7 +4995,7 @@ mod tests {
         let patch = partial_update_bucket_patch();
 
         let outcome = provider
-            .update_resource(from.id.clone(), &identifier, &from, &patch)
+            .update_with_final_read_back(from.id.clone(), &identifier, &from, &patch)
             .await
             .expect("update should return a partial outcome instead of losing its identifier");
 
@@ -4197,14 +5005,12 @@ mod tests {
         assert!(service.saw_update_resource.load(Ordering::SeqCst));
         assert!(service.saw_get_resource.load(Ordering::SeqCst));
         assert_eq!(state.identifier(), &identifier);
+        assert_eq!(state.attributes(), &post_update_attributes(&from, &patch));
+
         assert_eq!(
-            state.attributes().get("bucket_name"),
-            Some(&Value::Concrete(ConcreteValue::String(
-                "partial-bucket".to_string().into()
-            )))
+            diagnostic.missing_attributes(),
+            schema_attribute_names("s3.Bucket")
         );
-        assert!(!state.attributes().contains_key("tags"));
-        assert_eq!(diagnostic.missing_attributes(), &["tags".to_string()]);
         assert_eq!(
             diagnostic.reason(),
             "post-update read-back did not find the updated resource"
@@ -4220,7 +5026,7 @@ mod tests {
         let patch = partial_update_bucket_patch();
 
         let outcome = provider
-            .update_resource(from.id.clone(), &identifier, &from, &patch)
+            .update_with_final_read_back(from.id.clone(), &identifier, &from, &patch)
             .await
             .expect("update should return a partial outcome instead of losing its identifier");
 
@@ -4230,15 +5036,21 @@ mod tests {
         assert!(service.saw_update_resource.load(Ordering::SeqCst));
         assert!(service.saw_get_resource.load(Ordering::SeqCst));
         assert_eq!(state.identifier(), &identifier);
+        assert_eq!(state.attributes(), &post_update_attributes(&from, &patch));
+
         assert_eq!(
-            state.attributes().get("bucket_name"),
-            Some(&test_string("partial-bucket"))
+            diagnostic.missing_attributes(),
+            schema_attribute_names("s3.Bucket")
         );
-        assert!(!state.attributes().contains_key("tags"));
-        assert_eq!(diagnostic.missing_attributes(), &["tags".to_string()]);
-        assert_eq!(
-            diagnostic.reason(),
-            "handler failed: post-update read denied; post-update read-back did not find the updated resource"
+        assert!(
+            diagnostic
+                .reason()
+                .contains("handler failed: post-update read denied")
+        );
+        assert!(
+            diagnostic
+                .reason()
+                .contains("post-update read-back did not find the updated resource")
         );
     }
 
@@ -4251,7 +5063,7 @@ mod tests {
         let patch = partial_update_bucket_patch();
 
         let outcome = provider
-            .update_resource(from.id.clone(), &identifier, &from, &patch)
+            .update_with_final_read_back(from.id.clone(), &identifier, &from, &patch)
             .await
             .expect("update should return a partial outcome instead of losing its identifier");
 
@@ -4261,12 +5073,12 @@ mod tests {
         assert!(service.saw_update_resource.load(Ordering::SeqCst));
         assert!(service.saw_get_resource.load(Ordering::SeqCst));
         assert_eq!(state.identifier(), &identifier);
+        assert_eq!(state.attributes(), &post_update_attributes(&from, &patch));
+
         assert_eq!(
-            state.attributes().get("bucket_name"),
-            Some(&test_string("partial-bucket"))
+            diagnostic.missing_attributes(),
+            schema_attribute_names("s3.Bucket")
         );
-        assert!(!state.attributes().contains_key("tags"));
-        assert_eq!(diagnostic.missing_attributes(), &["tags".to_string()]);
         assert!(
             diagnostic
                 .reason()
@@ -4275,7 +5087,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn update_resource_read_error_strips_write_only_and_reports_all_touched_attributes() {
+    async fn update_resource_read_error_retains_request_attributes_and_schema_missing_names() {
         let service = PartialUpdateCloudControlService::new(false, false);
         let provider = provider_with_partial_update_service(service).await;
         let from = partial_update_bucket_state();
@@ -4290,7 +5102,7 @@ mod tests {
         });
 
         let outcome = provider
-            .update_resource(
+            .update_with_final_read_back(
                 from.id.clone(),
                 &test_identifier("partial-bucket"),
                 &from,
@@ -4302,16 +5114,10 @@ mod tests {
         let UpdateOutcomeKind::PartialSuccess { state, diagnostic } = outcome.kind() else {
             panic!("expected partial success when the post-update read fails");
         };
-        assert!(
-            !state.attributes().contains_key("access_control"),
-            "write-only desired values must not be fabricated after a failed read-back"
-        );
+        assert_eq!(state.attributes(), &post_update_attributes(&from, &patch));
         assert_eq!(
             diagnostic.missing_attributes(),
-            &[
-                "access_control".to_string(),
-                "website_configuration".to_string(),
-            ]
+            schema_attribute_names("s3.Bucket")
         );
     }
 
@@ -4323,7 +5129,7 @@ mod tests {
         let patch = access_control_patch();
 
         let outcome = provider
-            .update_resource(
+            .update_with_final_read_back(
                 from.id.clone(),
                 &test_identifier("partial-bucket"),
                 &from,
@@ -4335,10 +5141,10 @@ mod tests {
         let UpdateOutcomeKind::PartialSuccess { state, diagnostic } = outcome.kind() else {
             panic!("a failed handler and failed read must not degrade to success");
         };
-        assert!(!state.attributes().contains_key("access_control"));
+        assert_eq!(state.attributes(), &post_update_attributes(&from, &patch));
         assert_eq!(
             diagnostic.missing_attributes(),
-            &["access_control".to_string()]
+            schema_attribute_names("s3.Bucket")
         );
         assert_structured_partial_read_error(diagnostic.reason(), "post-update read denied");
     }
@@ -4351,7 +5157,7 @@ mod tests {
         let patch = create_only_bucket_name_patch();
 
         let outcome = provider
-            .update_resource(
+            .update_with_final_read_back(
                 from.id.clone(),
                 &test_identifier("partial-bucket"),
                 &from,
@@ -4363,18 +5169,10 @@ mod tests {
         let UpdateOutcomeKind::PartialSuccess { state, diagnostic } = outcome.kind() else {
             panic!("expected partial success when the post-update read fails");
         };
-        assert!(
-            !state.attributes().contains_key("bucket_name"),
-            "an unsent create-only desired value must not be fabricated into state"
-        );
+        assert_eq!(state.attributes(), &post_update_attributes(&from, &patch));
         assert_eq!(
             diagnostic.missing_attributes(),
-            &["bucket_name".to_string(), "tags".to_string()]
-        );
-        assert!(
-            diagnostic
-                .reason()
-                .contains("handler failed: post-update read denied")
+            schema_attribute_names("s3.Bucket")
         );
         assert_structured_partial_read_error(diagnostic.reason(), "post-update read denied");
         assert!(
@@ -4391,7 +5189,7 @@ mod tests {
         let patch = partial_update_bucket_patch();
 
         let outcome = provider
-            .update_resource(
+            .update_with_final_read_back(
                 from.id.clone(),
                 &test_identifier("partial-bucket"),
                 &from,
@@ -4471,7 +5269,7 @@ mod tests {
         let service = PartialCreateCloudControlService::with_not_found(true);
         let provider = provider_with_partial_create_service(service.clone()).await;
 
-        let outcome = dispatch_test_create(&provider, partial_create_bucket_resource())
+        let outcome = create_with_final_read_back(&provider, partial_create_bucket_resource())
             .await
             .expect("create should return a partial outcome instead of losing its identifier");
 
@@ -4481,11 +5279,14 @@ mod tests {
         assert!(service.saw_get_resource.load(Ordering::SeqCst));
         assert_eq!(state.identifier().as_str(), "partial-bucket");
         assert_eq!(
-            state.attributes().get("bucket_name"),
-            Some(&test_string("partial-bucket"))
+            state.attributes(),
+            &partial_create_bucket_resource().resolved_attributes()
         );
         assert_eq!(diagnostic.reason(), "read-back returned not_found");
-        assert_eq!(diagnostic.missing_attributes(), &["state".to_string()]);
+        assert_eq!(
+            diagnostic.missing_attributes(),
+            schema_attribute_names("s3.Bucket")
+        );
     }
 
     #[tokio::test(start_paused = true)]
@@ -4493,7 +5294,7 @@ mod tests {
         let service = PartialCreateCloudControlService::new(false);
         let provider = provider_with_partial_create_service(service.clone()).await;
 
-        let failure = dispatch_test_create(&provider, partial_create_bucket_resource())
+        let failure = create_with_final_read_back(&provider, partial_create_bucket_resource())
             .await
             .expect_err("a terminal CloudControl failure must remain a failure");
 
@@ -4517,7 +5318,7 @@ mod tests {
         let service = PartialCreateCloudControlService::with_wait_result(true, false);
         let provider = provider_with_partial_create_service(service.clone()).await;
 
-        let outcome = dispatch_test_create(&provider, partial_create_bucket_resource())
+        let outcome = create_with_final_read_back(&provider, partial_create_bucket_resource())
             .await
             .expect("create should return a partial outcome instead of losing its identifier");
 
@@ -4538,7 +5339,7 @@ mod tests {
         let service = PartialCreateCloudControlService::new(true);
         let provider = provider_with_partial_create_service(service.clone()).await;
 
-        let failure = dispatch_test_create(&provider, partial_create_bucket_resource())
+        let failure = create_with_final_read_back(&provider, partial_create_bucket_resource())
             .await
             .expect_err("read-back must not turn a terminal CloudControl failure into success");
 
@@ -4567,7 +5368,7 @@ mod tests {
         let provider =
             provider_with_iam_role_create_service(cloudcontrol.clone(), sts.clone()).await;
 
-        let outcome = dispatch_test_create(&provider, iam_role_resource(true))
+        let outcome = create_with_final_read_back(&provider, iam_role_resource(true))
             .await
             .expect("IAM role create should report a partial read-back");
 
@@ -4585,55 +5386,188 @@ mod tests {
             "the read-back must not fabricate RoleName from desired config"
         );
         assert!(!state.attributes().contains_key("arn"));
-        assert_eq!(diagnostic.missing_attributes(), &["RoleName".to_string()]);
+        assert_eq!(diagnostic.missing_attributes(), &["arn".to_string()]);
         assert_eq!(
             diagnostic.reason(),
-            "read-back missing primaryIdentifier attributes: RoleName"
+            "read-back missing declared attributes: arn"
         );
     }
 
     #[tokio::test(start_paused = true)]
     async fn create_iam_role_preserves_wait_identifier_when_synthesis_fails() {
-        let cloudcontrol = IamRoleCreateCloudControlService::new(false);
+        let cloudcontrol = IamRoleCreateCloudControlService::new(true);
         let sts = CallerIdentityService::failing();
         let provider =
             provider_with_iam_role_create_service(cloudcontrol.clone(), sts.clone()).await;
         let resource = iam_role_resource(true);
         let config = crate::schemas::generated::iam::role::iam_role_config();
         let wait_identifier = test_identifier("flow-log-role");
-        let read_back = ReadOutcome::found(AppliedState::from_identifier(
-            resource.id.clone(),
-            wait_identifier.clone(),
-            HashMap::from([
-                ("path".to_string(), test_string("/service-role/")),
-                ("role_name".to_string(), test_string("flow-log-role")),
-                ("role_id".to_string(), test_string("AROATESTROLEID")),
-            ]),
-        ));
+        let read_back = provider.read_resource(&resource.id, &wait_identifier).await;
 
         let outcome = provider
-            .create_completion_from_read(&resource, &config, wait_identifier.clone(), Ok(read_back))
+            .create_completion_from_read(&resource, &config, wait_identifier.clone(), read_back)
             .await;
 
-        let CreateCompletion::Partial {
+        let ReadBackCompletion::Partial {
             identifier,
             attributes,
             reason,
             ..
-        } = outcome
+        } = finish_final_read_back(outcome)
         else {
             panic!("synthesis failure must preserve the created resource");
         };
         assert_eq!(identifier, wait_identifier);
         assert!(!cloudcontrol.saw_create_resource.load(Ordering::SeqCst));
-        assert!(!cloudcontrol.saw_get_resource.load(Ordering::SeqCst));
+        assert!(cloudcontrol.saw_get_resource.load(Ordering::SeqCst));
         assert!(sts.saw_get_caller_identity.load(Ordering::SeqCst));
         assert_eq!(
             attributes.get("role_name"),
             Some(&test_string("flow-log-role"))
         );
-        assert!(reason.contains("Failed to call sts:GetCallerIdentity"));
-        assert!(reason.contains("synthesis denied"));
+        assert!(
+            reason
+                .to_string()
+                .contains("Failed to call sts:GetCallerIdentity")
+        );
+        assert!(reason.to_string().contains("synthesis denied"));
+    }
+
+    #[tokio::test]
+    async fn review_synthesis_permanent_error_finishes_partial_immediately() {
+        let cloudcontrol = IamRoleCreateCloudControlService::new(true);
+        let provider =
+            provider_with_iam_role_create_service(cloudcontrol, CallerIdentityService::failing())
+                .await;
+        let resource = iam_role_resource(true);
+        let config = crate::schemas::generated::iam::role::iam_role_config();
+        let identifier = test_identifier("flow-log-role");
+        let read = provider.read_resource(&resource.id, &identifier).await;
+        let completion = provider
+            .create_completion_from_read(&resource, &config, identifier, read)
+            .await;
+        let CreateCompletion::Partial {
+            attributes,
+            missing_attributes,
+            ..
+        } = completion
+        else {
+            panic!("permanent synthesis failure must finish immediately: {completion:?}")
+        };
+        assert_eq!(missing_attributes.as_slice(), ["arn"]);
+        assert_eq!(
+            attributes.get("role_name"),
+            Some(&test_string("flow-log-role"))
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn review_synthesis_transient_error_waits_with_declared_missing_then_completes() {
+        let cloudcontrol = IamRoleCreateCloudControlService::new(true);
+        let provider = provider_with_iam_role_create_service(
+            cloudcontrol.clone(),
+            CallerIdentityService::transient(),
+        )
+        .await;
+        let resource = iam_role_resource(true);
+        let config = crate::schemas::generated::iam::role::iam_role_config();
+        let identifier = test_identifier("flow-log-role");
+        let read = provider.read_resource(&resource.id, &identifier).await;
+        let completion = provider
+            .create_completion_from_read(&resource, &config, identifier.clone(), read)
+            .await;
+        let CreateCompletion::ReadBackPending {
+            attributes,
+            missing_attributes,
+            ..
+        } = &completion
+        else {
+            panic!("transient synthesis failure should wait: {completion:?}")
+        };
+        assert_eq!(
+            attributes.get("role_name"),
+            Some(&test_string("flow-log-role"))
+        );
+        assert_eq!(missing_attributes.as_slice(), ["arn"]);
+        let issued = CreateAttempt::for_test(resource.id.clone())
+            .issued(identifier, Sent::AllRequestAttributes);
+        let CoreCreateStep::Pending(pending) = provider
+            .finish_issued_completion(
+                issued,
+                completion,
+                PollRequest {
+                    finality: PollFinality::Continue,
+                },
+            )
+            .unwrap()
+        else {
+            panic!("read-back pending")
+        };
+        let token = decode_create_token(pending.token()).unwrap();
+        let Poll::Issued(issued) = pending.into_poll() else {
+            panic!("issued read-back")
+        };
+        let step = provider
+            .poll_create_step(
+                &resource,
+                token,
+                CcCreatePoll::<PollAttempt, IssuedCreate>::Issued(issued),
+                PollRequest {
+                    finality: PollFinality::Continue,
+                },
+            )
+            .await
+            .unwrap();
+        let CoreCreateStep::Done(outcome) = step else {
+            panic!("synthesis should recover")
+        };
+        let CreateOutcomeKind::Success { state } = outcome.kind() else {
+            panic!("complete ARN")
+        };
+        assert!(state.attributes().contains_key("arn"));
+        assert!(!cloudcontrol.saw_create_resource.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn review_read_error_retains_typed_source_through_final_completion() {
+        let provider =
+            provider_with_partial_create_service(PartialCreateCloudControlService::new(true)).await;
+        let resource = partial_create_bucket_resource();
+        let config = crate::schemas::generated::s3::bucket::s3_bucket_config();
+        let completion = provider
+            .create_completion_from_read(
+                &resource,
+                &config,
+                test_identifier("partial-bucket"),
+                Err(ProviderError::api_error_caused_by(
+                    "read denied",
+                    std::io::Error::other("source witness"),
+                )
+                .into()),
+            )
+            .await;
+        let super::super::read_back::ReadBackCompletion::Partial { reason, .. } =
+            finish_final_read_back(completion)
+        else {
+            panic!("final partial")
+        };
+        let mut source = reason
+            .detail()
+            .cause()
+            .map(|cause| cause as &dyn std::error::Error);
+        while let Some(error) = source {
+            if error.downcast_ref::<std::io::Error>().is_some() {
+                return;
+            }
+            source = match error.downcast_ref::<ProviderError>() {
+                Some(error) => error
+                    .detail()
+                    .cause()
+                    .map(|cause| cause as &dyn std::error::Error),
+                None => error.source(),
+            };
+        }
+        panic!("typed I/O source was discarded");
     }
 
     #[tokio::test(start_paused = true)]
@@ -4642,7 +5576,7 @@ mod tests {
         let sts = CallerIdentityService::new();
         let provider = provider_with_iam_role_create_service(cloudcontrol, sts.clone()).await;
 
-        let outcome = dispatch_test_create(&provider, iam_role_resource(false))
+        let outcome = create_with_final_read_back(&provider, iam_role_resource(false))
             .await
             .expect("IAM role create should succeed when read-back includes RoleName");
 
@@ -4671,7 +5605,7 @@ mod tests {
         let provider =
             provider_with_iam_role_create_service(cloudcontrol.clone(), sts.clone()).await;
 
-        let outcome = dispatch_test_create(&provider, iam_role_resource(true))
+        let outcome = create_with_final_read_back(&provider, iam_role_resource(true))
             .await
             .expect("IAM role create should report partial success");
 
@@ -4685,8 +5619,16 @@ mod tests {
             state.attributes().get("role_name"),
             Some(&test_string("flow-log-role"))
         );
+        assert!(
+            state
+                .attributes()
+                .contains_key("assume_role_policy_document")
+        );
         assert_eq!(diagnostic.reason(), "read-back returned not_found");
-        assert_eq!(diagnostic.missing_attributes(), &["state".to_string()]);
+        assert_eq!(
+            diagnostic.missing_attributes(),
+            schema_attribute_names("iam.Role")
+        );
         assert!(
             !sts.saw_get_caller_identity.load(Ordering::SeqCst),
             "not_found read-back must stop before ARN synthesis"
@@ -4701,7 +5643,7 @@ mod tests {
         let provider =
             provider_with_iam_role_create_service(cloudcontrol.clone(), sts.clone()).await;
 
-        let failure = dispatch_test_create(&provider, iam_role_resource(true))
+        let failure = create_with_final_read_back(&provider, iam_role_resource(true))
             .await
             .expect_err("a terminal CloudControl failure must remain a failure");
 
@@ -4727,7 +5669,7 @@ mod tests {
         let sts = CallerIdentityService::new();
         let provider = provider_with_iam_role_create_service(cloudcontrol, sts.clone()).await;
 
-        let outcome = dispatch_test_create(&provider, iam_role_resource(false))
+        let outcome = create_with_final_read_back(&provider, iam_role_resource(false))
             .await
             .expect("IAM role create should report partial success");
 
@@ -4739,10 +5681,10 @@ mod tests {
             !state.attributes().contains_key("arn"),
             "unknown ARN must not be published as a successful attribute"
         );
-        assert_eq!(diagnostic.missing_attributes(), &["RoleName".to_string()]);
+        assert_eq!(diagnostic.missing_attributes(), &["arn".to_string()]);
         assert_eq!(
             diagnostic.reason(),
-            "read-back missing primaryIdentifier attributes: RoleName"
+            "read-back missing declared attributes: arn"
         );
         assert!(
             !sts.saw_get_caller_identity.load(Ordering::SeqCst),
