@@ -1604,8 +1604,13 @@ impl AwsccProvider {
         let resend = || {
             let delay_secs = retry_policy.delay_secs(pending.resends());
             let resends = pending.resends().saturating_add(1);
+            let failure = match classification.operation_outcome() {
+                SendOutcome::NotSent => "failed before sending",
+                SendOutcome::MaybeSent => "may have reached AWS",
+                SendOutcome::Rejected => "was rejected",
+            };
             log::warn!(
-                "Outcome unknown {} {type_name} after {resends} send(s): {error:?}. Retrying with the same client token in {delay_secs}s...",
+                "Resend while {} {type_name} {failure} (resend {resends}); an earlier send may have been accepted: {error:?}. Retrying with the same client token in {delay_secs}s...",
                 retry_policy.action,
             );
             UnconfirmedDecision::Resend {

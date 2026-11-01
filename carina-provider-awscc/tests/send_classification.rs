@@ -4,7 +4,7 @@
 
 mod common;
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -18,8 +18,8 @@ use aws_smithy_runtime_api::client::http::{
 };
 use aws_smithy_runtime_api::client::orchestrator::HttpRequest;
 use aws_smithy_runtime_api::client::result::ConnectorError;
-use carina_core::provider::CreateFailureKind;
-use carina_core::resource::{ConcreteValue, Resource, Value};
+use carina_core::provider::{CreateFailureKind, PatchOp, UpdatePatch};
+use carina_core::resource::{ConcreteValue, Resource, State, Value};
 use carina_plugin_sdk::wasi_http::{SendPhase, transport_connector_error_for_test};
 use carina_provider_awscc::provider::AwsccProviderConfig;
 use carina_provider_awscc::{AwsccProvider, BoundedSdkConfig};
@@ -161,6 +161,53 @@ async fn permanent_not_sent_resend_preserves_the_earlier_maybe_sent_create() {
 #[tokio::test(start_paused = true)]
 async fn maybe_sent_then_permanent_not_sent_in_initial_sdk_call_preserves_create_promptly() {
     assert_preserved_promptly(1, [Failure::Timeout], 5).await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn maybe_sent_then_permanent_not_sent_in_not_issued_update_reports_unknown_outcome_promptly()
+{
+    // The initial update reaches transmit, then loses credentials on its second
+    // SDK attempt. Its aggregate MaybeSent outcome must take the not-issued
+    // Preserve arm rather than report that the update was never issued.
+    let (provider, calls, script) = provider(1, [Failure::Timeout]).await;
+    let id = vpc().id;
+    let identifier = common::applied_identifier("vpc-0123456789abcdef0");
+    let from = State::existing(
+        id.clone(),
+        HashMap::from([
+            (
+                "cidr_block".to_string(),
+                Value::Concrete(ConcreteValue::String("10.0.0.0/16".into())),
+            ),
+            (
+                "enable_dns_support".to_string(),
+                Value::Concrete(ConcreteValue::Bool(false)),
+            ),
+        ]),
+    )
+    .with_identifier(identifier.as_str());
+    let patch = UpdatePatch {
+        ops: vec![PatchOp::Replace {
+            key: "enable_dns_support".to_string(),
+            value: Value::Concrete(ConcreteValue::Bool(true)),
+        }],
+    };
+
+    let error = tokio::time::timeout(
+        Duration::from_secs(5),
+        provider.update_step(&id, &identifier, &from, &patch),
+    )
+    .await
+    .expect("permanent final pre-send failure must stop update resends promptly")
+    .expect_err("the earlier update send may have been accepted");
+
+    assert_eq!(
+        error.detail().context(),
+        "Failed to resend update resource; the outcome of the earlier send is unknown"
+    );
+    assert!(error.to_string().contains("test credentials unavailable"));
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert_eq!(script.lock().expect("script lock").client_tokens.len(), 1);
 }
 
 #[tokio::test(start_paused = true)]
