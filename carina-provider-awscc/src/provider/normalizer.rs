@@ -7,6 +7,7 @@ use std::collections::HashMap;
 
 use carina_core::resource::{ConcreteValue, ResourceId, State, Value};
 use carina_core::schema::RawShape;
+use carina_core::value::CanonicalState;
 
 /// Apply provider-local string state transforms.
 ///
@@ -64,6 +65,9 @@ where
 /// every downstream consumer (state writeback, plan display, the
 /// differ) see the same shape as the canonicalized desired side.
 /// See carina-rs/carina#2481, sub-issue 5.
+///
+/// State canonicalization also removes empty structs with declared fields,
+/// including nested fields, while preserving zero-field marker structs.
 pub fn canonicalize_string_or_list_states_impl<'a, I>(current_states: I)
 where
     I: IntoIterator<Item = (&'a ResourceId, &'a mut State)>,
@@ -89,9 +93,11 @@ where
         for (key, value) in std::mem::take(&mut state.attributes) {
             let canon = match schema.effective_attribute(key.as_str()) {
                 Some(attribute) => attribute.canonicalize_state(value),
-                None => value,
+                None => CanonicalState::Present(value),
             };
-            new_attrs.insert(key, canon);
+            if let CanonicalState::Present(value) = canon {
+                new_attrs.insert(key, value);
+            }
         }
         state.attributes = new_attrs;
     }
@@ -163,7 +169,7 @@ mod tests {
 
         // The string-transform pass leaves the raw API string alone; the
         // following `canonicalize_string_or_list_states_impl` pass calls
-        // `Schema::canonicalize_state_attr`, which lifts schema-known state
+        // `EffectiveAttribute::canonicalize_state`, which lifts schema-known state
         // enums to CanonicalEnum. The bug guard is that this must not become
         // a DSL-namespaced String.
         match current_states[&id].attributes.get("ip_protocol") {
@@ -583,6 +589,51 @@ mod tests {
             partial_read: None,
         };
         (id, state)
+    }
+
+    #[tokio::test]
+    async fn normalize_state_drops_empty_structs_and_preserves_empty_markers() {
+        let empty = Value::Concrete(ConcreteValue::Map(IndexMap::new()));
+        let (id, state) = make_state(
+            "awscc",
+            "s3.Bucket",
+            "empty-structs",
+            vec![
+                ("versioning_configuration", empty.clone()),
+                (
+                    "logging_configuration",
+                    Value::Concrete(ConcreteValue::Map(IndexMap::from([(
+                        "target_object_key_format".to_string(),
+                        Value::Concrete(ConcreteValue::Map(IndexMap::from([
+                            ("partitioned_prefix".to_string(), empty.clone()),
+                            ("simple_prefix".to_string(), empty.clone()),
+                        ]))),
+                    )]))),
+                ),
+            ],
+        );
+        let mut states = HashMap::from([(id.clone(), state)]);
+
+        carina_core::provider::normalize_provider_states(&crate::AwsccNormalizer, &mut states)
+            .await
+            .expect("read-state normalization should succeed");
+
+        let attributes = &states[&id].attributes;
+        assert!(!attributes.contains_key("versioning_configuration"));
+        let Some(Value::Concrete(ConcreteValue::Map(logging))) =
+            attributes.get("logging_configuration")
+        else {
+            panic!("logging configuration must retain its marker field");
+        };
+        let Some(Value::Concrete(ConcreteValue::Map(format))) =
+            logging.get("target_object_key_format")
+        else {
+            panic!("target object key format must retain its marker field");
+        };
+        assert_eq!(
+            format,
+            &IndexMap::from([("simple_prefix".to_string(), empty)])
+        );
     }
 
     #[test]

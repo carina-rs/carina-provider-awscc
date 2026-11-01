@@ -9,11 +9,14 @@
 
 mod common;
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use aws_config::{BehaviorVersion, Region};
 use carina_core::differ::{Diff, diff};
-use carina_core::provider::{CreateOutcomeKind, Provider, RawSavedAttrs, ReadRequest};
+use carina_core::provider::{
+    CreateOutcomeKind, Provider, RawSavedAttrs, ReadRequest, normalize_provider_states,
+};
 use carina_core::resource::{ConcreteValue, ResolvedResource, Resource, Value};
 use carina_provider_awscc::AwsccProvider;
 use carina_provider_awscc::provider::AwsccProviderConfig;
@@ -259,7 +262,6 @@ async fn sns_topic_create_then_read_omits_inline_subscriptions_and_preserves_tag
 }
 
 #[tokio::test(start_paused = true)]
-#[ignore = "needs the carina-core bump that includes carina-rs/carina#4167 (read-back {} for a struct with fields is absent)"]
 async fn sns_topic_empty_archive_policy_readback_is_absent_and_no_change() {
     let (provider, cloudcontrol) = winterbaume_provider().await;
     let resource = topic_resource_without_archive_policy();
@@ -278,12 +280,18 @@ async fn sns_topic_empty_archive_policy_readback_is_absent_and_no_change() {
         .await
         .expect("sns.Topic read through Provider::read should succeed");
     let read = common::found_state(read);
+    let mut current_states = HashMap::from([(id.clone(), read.into_state_for_writeback())]);
+    normalize_provider_states(&carina_provider_awscc::AwsccNormalizer, &mut current_states)
+        .await
+        .expect("SNS Topic read-state normalization should succeed");
+    let current = current_states
+        .remove(&id)
+        .expect("normalized SNS Topic state must remain present");
     assert!(
-        !read.attributes().contains_key("archive_policy"),
+        !current.attributes.contains_key("archive_policy"),
         "an empty ArchivePolicy read-back means archiving is disabled"
     );
 
-    let current = read.into_state_for_writeback();
     let desired = ResolvedResource::new(resource);
     let registry = carina_provider_awscc::schemas::schema_registry();
     let saved = RawSavedAttrs::default().lift(&registry);
