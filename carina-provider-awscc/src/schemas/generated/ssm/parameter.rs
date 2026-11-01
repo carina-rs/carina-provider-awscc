@@ -116,7 +116,7 @@ pub fn ssm_parameter_config() -> AwsccSchemaConfig {
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "Name", dsl_name: "name" }],
         exclusive_groups: &[],
         tags: Some(TagsProperty { provider_name: "Tags", wire: TagsWire::Map }),
-        schema,
+        schema: schema.validate().expect("generated schema must pass admission"),
     }
 }
 

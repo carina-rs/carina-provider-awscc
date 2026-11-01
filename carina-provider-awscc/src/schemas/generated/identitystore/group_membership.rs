@@ -58,7 +58,7 @@ pub fn identitystore_group_membership_config() -> AwsccSchemaConfig {
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "MembershipId", dsl_name: "membership_id" }, crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "IdentityStoreId", dsl_name: "identity_store_id" }],
         exclusive_groups: &[],
         tags: None,
-        schema,
+        schema: schema.validate().expect("generated schema must pass admission"),
     }
 }
 

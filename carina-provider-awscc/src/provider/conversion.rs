@@ -8,37 +8,38 @@ use indexmap::IndexMap;
 
 use carina_core::resource::{ConcreteValue, Value, ValueString};
 use carina_core::schema::{
-    AttributeType, ResourceSchema, Shape, ShapeWalkBudget, StructField, UnionMembers,
+    Compiled, CompiledAttributeType, CompiledResourceSchema, CompiledStructField, Shape,
+    ShapeWalkBudget, UnionMembers,
 };
 use serde_json::json;
 
 use carina_aws_types::canonicalize_enum_value;
 
 fn struct_fields_for<'a>(
-    schema: &'a ResourceSchema,
-    attr_type: &'a AttributeType,
-) -> Option<&'a [StructField]> {
+    schema: &'a CompiledResourceSchema,
+    attr_type: &'a CompiledAttributeType,
+) -> Option<&'a [CompiledStructField]> {
     schema.struct_fields_with_budget(attr_type, &mut ShapeWalkBudget::new(256))
 }
 
 fn union_members_for<'a>(
-    schema: &'a ResourceSchema,
-    attr_type: &'a AttributeType,
-) -> Option<UnionMembers<'a>> {
+    schema: &'a CompiledResourceSchema,
+    attr_type: &'a CompiledAttributeType,
+) -> Option<UnionMembers<'a, Compiled>> {
     schema.union_members_with_budget(attr_type, &mut ShapeWalkBudget::new(256))
 }
 
 fn resource_schema_with_defs(
     resource_type: &str,
-    defs: &std::collections::BTreeMap<String, AttributeType>,
-) -> ResourceSchema {
+    defs: &std::collections::BTreeMap<String, CompiledAttributeType>,
+) -> CompiledResourceSchema {
     defs.iter().fold(
-        ResourceSchema::new(resource_type),
+        CompiledResourceSchema::new(resource_type),
         |schema, (name, attr_type)| schema.with_def(name.clone(), attr_type.clone()),
     )
 }
 
-fn is_list_of_strings(schema: &ResourceSchema, attr_type: &AttributeType) -> bool {
+fn is_list_of_strings(schema: &CompiledResourceSchema, attr_type: &CompiledAttributeType) -> bool {
     let Shape::List { element_type, .. } = schema.shape_of(attr_type) else {
         return false;
     };
@@ -55,8 +56,8 @@ fn string_list_to_json(items: &[ValueString]) -> serde_json::Value {
 }
 
 fn string_or_list_of_strings_from_json(
-    schema: &ResourceSchema,
-    members: &UnionMembers<'_>,
+    schema: &CompiledResourceSchema,
+    members: &UnionMembers<'_, Compiled>,
     value: &serde_json::Value,
 ) -> Option<Value> {
     let has_string = members
@@ -94,8 +95,8 @@ fn string_or_list_of_strings_from_json(
 }
 
 fn json_matches_shape(
-    schema: &ResourceSchema,
-    attr_type: &AttributeType,
+    schema: &CompiledResourceSchema,
+    attr_type: &CompiledAttributeType,
     value: &serde_json::Value,
 ) -> bool {
     match schema.shape_of(attr_type) {
@@ -120,16 +121,16 @@ fn json_matches_shape(
 }
 
 /// carina#3340: schema-aware variant that takes the enclosing
-/// [`ResourceSchema::defs`] map so `AttributeType::Ref` chains can be
+/// [`CompiledResourceSchema::defs`] map so `CompiledAttributeType::Ref` chains can be
 /// resolved during the value-tree walk. Callers that hold a resource
 /// schema should prefer this entry point; the 4-arg shim above uses
 /// an empty def map and will panic if a `Ref` is reached.
 pub(crate) fn aws_value_to_dsl_with_defs(
     dsl_name: &str,
     value: &serde_json::Value,
-    attr_type: &AttributeType,
+    attr_type: &CompiledAttributeType,
     resource_type: &str,
-    defs: &std::collections::BTreeMap<String, AttributeType>,
+    defs: &std::collections::BTreeMap<String, CompiledAttributeType>,
 ) -> Option<Value> {
     // Project onto the Shape view, which resolves any top-level `Ref`
     // chain against `defs` so the subsequent dispatch sees the actual
@@ -367,10 +368,10 @@ pub(crate) fn json_to_value(value: &serde_json::Value) -> Option<Value> {
 /// for the rationale. Same `Ref` chains, same `&defs` parameter.
 pub(crate) fn dsl_value_to_aws_with_defs(
     value: &Value,
-    attr_type: &AttributeType,
+    attr_type: &CompiledAttributeType,
     resource_type: &str,
     attr_name: &str,
-    defs: &std::collections::BTreeMap<String, AttributeType>,
+    defs: &std::collections::BTreeMap<String, CompiledAttributeType>,
 ) -> Option<serde_json::Value> {
     let schema = resource_schema_with_defs(resource_type, defs);
     let shape = schema.shape_of(attr_type);
@@ -571,18 +572,22 @@ mod tests {
     use super::*;
     use carina_core::resource::NoPlaceholder;
     use carina_core::schema::{
-        DslTransform, RootlessType, StructField, ValidatedConfigSchema, legacy_validator,
+        AttributeType, DslTransform, RootlessType, StructField, ValidatedConfigSchema,
+        legacy_validator,
     };
 
-    fn test_rootless_type(attr_type: AttributeType) -> RootlessType {
-        const NAME: &str = "test_value";
+    fn test_config_type(attr_type: AttributeType) -> ValidatedConfigSchema {
         ValidatedConfigSchema::validate(std::collections::BTreeMap::from([(
-            NAME.to_string(),
+            "test_value".to_string(),
             attr_type,
         )]))
         .expect("test attribute type must pass config-schema admission")
-        .rootless_type(NAME)
-        .expect("test attribute type must be present")
+    }
+
+    fn test_rootless_type(attr_type: AttributeType) -> RootlessType {
+        test_config_type(attr_type)
+            .rootless_type("test_value")
+            .expect("test attribute type must be present")
     }
 
     fn test_enum(
@@ -636,10 +641,13 @@ mod tests {
         );
 
         // CloudControl returns the API-canonical hyphen form.
+        let schema = test_config_type(attr_type);
+        let attr_type = &schema.parts()["test_value"];
+
         let from_api = aws_value_to_dsl_with_defs(
             "viewer_protocol_policy",
             &json!("redirect-to-https"),
-            &attr_type,
+            attr_type,
             "cloudfront.Distribution",
             &std::collections::BTreeMap::new(),
         )
@@ -657,7 +665,7 @@ mod tests {
         let from_alias = aws_value_to_dsl_with_defs(
             "viewer_protocol_policy",
             &json!("redirect_to_https"),
-            &attr_type,
+            attr_type,
             "cloudfront.Distribution",
             &std::collections::BTreeMap::new(),
         )
@@ -683,6 +691,7 @@ mod tests {
             crate::schemas::generated::cloudfront::distribution::cloudfront_distribution_config();
         let attr_schema = config
             .schema
+            .as_schema()
             .attributes()
             .get("distribution_config")
             .unwrap();
@@ -700,7 +709,7 @@ mod tests {
             &aws_json,
             attr_schema.attr_type(),
             "cloudfront.Distribution",
-            config.schema.defs(),
+            config.schema.as_schema().defs(),
         )
         .expect("aws_value_to_dsl should succeed for distribution_config");
 
@@ -733,7 +742,7 @@ mod tests {
         let lifted = carina_core::utils::lift_enum_leaves_with_defs(
             &dsl,
             attr_schema.attr_type(),
-            config.schema.defs(),
+            config.schema.as_schema().defs(),
         )
         .expect("API-canonical distribution_config must lift");
         let Value::Concrete(ConcreteValue::Map(lifted_top)) = &lifted else {
@@ -771,10 +780,13 @@ mod tests {
             "Status": "Enabled",
         });
 
+        let schema = test_config_type(attr_type);
+        let attr_type = &schema.parts()["test_value"];
+
         let result = aws_value_to_dsl_with_defs(
             "versioning_configuration",
             &json_val,
-            &attr_type,
+            attr_type,
             "AWS::S3::Bucket",
             &std::collections::BTreeMap::new(),
         );
@@ -813,9 +825,12 @@ mod tests {
         );
         let dsl_value = Value::Concrete(ConcreteValue::Map(map));
 
+        let schema = test_config_type(attr_type);
+        let attr_type = &schema.parts()["test_value"];
+
         let result = dsl_value_to_aws_with_defs(
             &dsl_value,
-            &attr_type,
+            attr_type,
             "AWS::S3::Bucket",
             "versioning_configuration",
             &std::collections::BTreeMap::new(),
@@ -852,9 +867,12 @@ mod tests {
             ConcreteValue::Map(map),
         )]));
 
+        let schema = test_config_type(attr_type);
+        let attr_type = &schema.parts()["test_value"];
+
         let result = dsl_value_to_aws_with_defs(
             &dsl_value,
-            &attr_type,
+            attr_type,
             "AWS::S3::Bucket",
             "versioning_configuration",
             &std::collections::BTreeMap::new(),
@@ -882,10 +900,13 @@ mod tests {
         let aws_json = serde_json::json!({ "Status": "Enabled" });
 
         // Read path: convert AWS JSON to DSL value
+        let schema = test_config_type(attr_type);
+        let attr_type = &schema.parts()["test_value"];
+
         let dsl_value = aws_value_to_dsl_with_defs(
             "versioning_configuration",
             &aws_json,
-            &attr_type,
+            attr_type,
             "AWS::S3::Bucket",
             &std::collections::BTreeMap::new(),
         )
@@ -908,7 +929,7 @@ mod tests {
         // Write path: convert DSL value back to AWS JSON
         let written_json = dsl_value_to_aws_with_defs(
             &dsl_value,
-            &attr_type,
+            attr_type,
             "AWS::S3::Bucket",
             "versioning_configuration",
             &std::collections::BTreeMap::new(),
@@ -924,7 +945,12 @@ mod tests {
     #[test]
     fn test_vpc_endpoint_type_roundtrip_no_false_diff() {
         let config = crate::schemas::generated::ec2::vpc_endpoint::ec2_vpc_endpoint_config();
-        let attr_schema = config.schema.attributes().get("vpc_endpoint_type").unwrap();
+        let attr_schema = config
+            .schema
+            .as_schema()
+            .attributes()
+            .get("vpc_endpoint_type")
+            .unwrap();
 
         // AWS read-back side.
         let aws_json = serde_json::json!("Gateway");
@@ -972,9 +998,12 @@ mod tests {
                 .to_string()
                 .into(),
         ));
+        let schema = test_config_type(attr_type);
+        let attr_type = &schema.parts()["test_value"];
+
         let result = dsl_value_to_aws_with_defs(
             &value,
-            &attr_type,
+            attr_type,
             "logs.LogGroup",
             "log_group_class",
             &std::collections::BTreeMap::new(),
@@ -998,9 +1027,12 @@ mod tests {
         let value = Value::Concrete(ConcreteValue::String(
             "aws.Region.ap_northeast_1".to_string().into(),
         ));
+        let schema = test_config_type(attr_type);
+        let attr_type = &schema.parts()["test_value"];
+
         let result = dsl_value_to_aws_with_defs(
             &value,
-            &attr_type,
+            attr_type,
             "logs.LogGroup",
             "region",
             &std::collections::BTreeMap::new(),
@@ -1021,9 +1053,12 @@ mod tests {
         );
         let raw = "aws.Region.ap_northeast_1";
         let value = Value::Concrete(ConcreteValue::enum_identifier(raw));
+        let schema = test_config_type(attr_type);
+        let attr_type = &schema.parts()["test_value"];
+
         let _ = dsl_value_to_aws_with_defs(
             &value,
-            &attr_type,
+            attr_type,
             "logs.LogGroup",
             "region",
             &std::collections::BTreeMap::new(),
@@ -1053,9 +1088,12 @@ mod tests {
                 .into_present()
                 .expect("PUT enum fixture must remain present"),
         ]));
+        let schema = test_config_type(attr_type);
+        let attr_type = &schema.parts()["test_value"];
+
         let result = dsl_value_to_aws_with_defs(
             &value,
-            &attr_type,
+            attr_type,
             "s3.Bucket",
             "allowed_methods",
             &std::collections::BTreeMap::new(),
@@ -1077,10 +1115,13 @@ mod tests {
         );
         let attr_type = AttributeType::list(inner);
         let json_val = json!(["GET", "PUT"]);
+        let schema = test_config_type(attr_type);
+        let attr_type = &schema.parts()["test_value"];
+
         let result = aws_value_to_dsl_with_defs(
             "allowed_methods",
             &json_val,
-            &attr_type,
+            attr_type,
             "s3.Bucket",
             &std::collections::BTreeMap::new(),
         );
@@ -1108,17 +1149,20 @@ mod tests {
         let attr_type = AttributeType::list(inner);
 
         let aws_json = json!(["GET", "PUT"]);
+        let schema = test_config_type(attr_type);
+        let attr_type = &schema.parts()["test_value"];
+
         let dsl = aws_value_to_dsl_with_defs(
             "allowed_methods",
             &aws_json,
-            &attr_type,
+            attr_type,
             "s3.Bucket",
             &std::collections::BTreeMap::new(),
         )
         .expect("read should succeed");
         let written = dsl_value_to_aws_with_defs(
             &dsl,
-            &attr_type,
+            attr_type,
             "s3.Bucket",
             "allowed_methods",
             &std::collections::BTreeMap::new(),
@@ -1144,9 +1188,12 @@ mod tests {
         let value = Value::Concrete(ConcreteValue::String(
             "aws.ec2.Sg.Protocol.tcp".to_string().into(),
         ));
+        let schema = test_config_type(attr_type);
+        let attr_type = &schema.parts()["test_value"];
+
         let result = dsl_value_to_aws_with_defs(
             &value,
-            &attr_type,
+            attr_type,
             "ec2.Sg",
             "protocol",
             &std::collections::BTreeMap::new(),
@@ -1170,9 +1217,12 @@ mod tests {
         );
         let dsl_value = Value::Concrete(ConcreteValue::Map(map));
 
+        let schema = test_config_type(attr_type);
+        let attr_type = &schema.parts()["test_value"];
+
         let result = dsl_value_to_aws_with_defs(
             &dsl_value,
-            &attr_type,
+            attr_type,
             "s3.Bucket",
             "tags",
             &std::collections::BTreeMap::new(),
@@ -1214,9 +1264,12 @@ mod tests {
         );
         let dsl_value = Value::Concrete(ConcreteValue::Map(map));
 
+        let schema = test_config_type(attr_type);
+        let attr_type = &schema.parts()["test_value"];
+
         let result = dsl_value_to_aws_with_defs(
             &dsl_value,
-            &attr_type,
+            attr_type,
             "test.resource",
             "status_map",
             &std::collections::BTreeMap::new(),
@@ -1240,10 +1293,13 @@ mod tests {
             "another-key": "value2"
         });
 
+        let schema = test_config_type(attr_type);
+        let attr_type = &schema.parts()["test_value"];
+
         let result = aws_value_to_dsl_with_defs(
             "tags",
             &aws_json,
-            &attr_type,
+            attr_type,
             "s3.Bucket",
             &std::collections::BTreeMap::new(),
         );
@@ -1284,10 +1340,13 @@ mod tests {
             AttributeType::string(),
         ]);
         let json_val = json!("tcp");
+        let schema = test_config_type(attr_type);
+        let attr_type = &schema.parts()["test_value"];
+
         let result = aws_value_to_dsl_with_defs(
             "protocol",
             &json_val,
-            &attr_type,
+            attr_type,
             "ec2.Sg",
             &std::collections::BTreeMap::new(),
         );
@@ -1315,10 +1374,13 @@ mod tests {
             AttributeType::int(),
         ]);
         let json_val = json!(42);
+        let schema = test_config_type(attr_type);
+        let attr_type = &schema.parts()["test_value"];
+
         let result = aws_value_to_dsl_with_defs(
             "protocol",
             &json_val,
-            &attr_type,
+            attr_type,
             "ec2.Sg",
             &std::collections::BTreeMap::new(),
         );
@@ -1378,9 +1440,12 @@ mod tests {
             .collect(),
         ));
 
+        let schema = test_config_type(attr_type);
+        let attr_type = &schema.parts()["test_value"];
+
         let result = dsl_value_to_aws_with_defs(
             &value,
-            &attr_type,
+            attr_type,
             "iam.Role",
             "assume_role_policy_document",
             &std::collections::BTreeMap::new(),
@@ -1469,9 +1534,12 @@ mod tests {
             .collect(),
         ));
 
+        let schema = test_config_type(attr_type);
+        let attr_type = &schema.parts()["test_value"];
+
         let result = dsl_value_to_aws_with_defs(
             &value,
-            &attr_type,
+            attr_type,
             "iam.Role",
             "assume_role_policy_document",
             &std::collections::BTreeMap::new(),
@@ -1534,9 +1602,12 @@ mod tests {
             .into_present()
             .expect("non-empty IAM policy fixture must remain present");
 
+        let schema = test_config_type(attr_type);
+        let attr_type = &schema.parts()["test_value"];
+
         let result = dsl_value_to_aws_with_defs(
             &value,
-            &attr_type,
+            attr_type,
             "iam.RolePolicy",
             "policy_document",
             &std::collections::BTreeMap::new(),
@@ -1582,10 +1653,13 @@ mod tests {
             }]
         });
 
+        let schema = test_config_type(attr_type);
+        let attr_type = &schema.parts()["test_value"];
+
         let result = aws_value_to_dsl_with_defs(
             "assume_role_policy_document",
             &aws_json,
-            &attr_type,
+            attr_type,
             "iam.Role",
             &std::collections::BTreeMap::new(),
         );
@@ -1658,10 +1732,13 @@ mod tests {
             serde_json::to_string(&aws_object).expect("policy object should serialize"),
         );
 
+        let schema = test_config_type(attr_type);
+        let attr_type = &schema.parts()["test_value"];
+
         let object_result = aws_value_to_dsl_with_defs(
             "inline_policy",
             &aws_object,
-            &attr_type,
+            attr_type,
             "sso.PermissionSet",
             &std::collections::BTreeMap::new(),
         )
@@ -1669,7 +1746,7 @@ mod tests {
         let string_result = aws_value_to_dsl_with_defs(
             "inline_policy",
             &aws_string,
-            &attr_type,
+            attr_type,
             "sso.PermissionSet",
             &std::collections::BTreeMap::new(),
         )
@@ -1686,10 +1763,13 @@ mod tests {
         let invalid_policy = r#"{"Version":"2012-10-17""#;
         let aws_string = serde_json::Value::String(invalid_policy.to_string());
 
+        let schema = test_config_type(attr_type);
+        let attr_type = &schema.parts()["test_value"];
+
         let result = aws_value_to_dsl_with_defs(
             "inline_policy",
             &aws_string,
-            &attr_type,
+            attr_type,
             "sso.PermissionSet",
             &std::collections::BTreeMap::new(),
         )
@@ -1715,10 +1795,13 @@ mod tests {
             }]
         });
 
+        let schema = test_config_type(attr_type);
+        let attr_type = &schema.parts()["test_value"];
+
         let result = aws_value_to_dsl_with_defs(
             "policy_document",
             &aws_json,
-            &attr_type,
+            attr_type,
             "ec2.VpcEndpoint",
             &std::collections::BTreeMap::new(),
         )
@@ -1763,10 +1846,13 @@ mod tests {
             }]
         });
 
+        let schema = test_config_type(attr_type);
+        let attr_type = &schema.parts()["test_value"];
+
         let result = aws_value_to_dsl_with_defs(
             "policy_document",
             &aws_json,
-            &attr_type,
+            attr_type,
             "ec2.VpcEndpoint",
             &std::collections::BTreeMap::new(),
         )
@@ -1819,10 +1905,13 @@ mod tests {
                 "Action": "sts:AssumeRole"
             }]
         });
+        let schema = test_config_type(attr_type);
+        let attr_type = &schema.parts()["test_value"];
+
         let read_side = aws_value_to_dsl_with_defs(
             "assume_role_policy_document",
             &aws_json,
-            &attr_type,
+            attr_type,
             "iam.Role",
             &std::collections::BTreeMap::new(),
         )
@@ -1871,7 +1960,7 @@ mod tests {
 
         // carina-core's state canonicalization lifts persisted API values to
         // CanonicalEnum, the shape reconciled against parsed desired values.
-        let lifted = carina_core::utils::lift_enum_leaves(&read_side, &attr_type)
+        let lifted = carina_core::utils::lift_enum_leaves(&read_side, attr_type)
             .expect("API-canonical IAM policy doc must lift");
         let Value::Concrete(ConcreteValue::Map(lifted_map)) = &lifted else {
             panic!("expected lifted policy doc to be a Map, got {lifted:?}");
@@ -1911,10 +2000,13 @@ mod tests {
         ));
         let json_val = json!([{"RegionName": "ap-northeast-1"}]);
 
+        let schema = test_config_type(attr_type);
+        let attr_type = &schema.parts()["test_value"];
+
         let result = aws_value_to_dsl_with_defs(
             "operating_regions",
             &json_val,
-            &attr_type,
+            attr_type,
             "ec2.Ipam",
             &std::collections::BTreeMap::new(),
         );
@@ -1941,10 +2033,13 @@ mod tests {
         );
         let json_val = json!("ipsec.1");
 
+        let schema = test_config_type(attr_type);
+        let attr_type = &schema.parts()["test_value"];
+
         let result = aws_value_to_dsl_with_defs(
             "type",
             &json_val,
-            &attr_type,
+            attr_type,
             "ec2.VpnGateway",
             &std::collections::BTreeMap::new(),
         );
@@ -1974,9 +2069,12 @@ mod tests {
             "aws.ec2.VpnGateway.Type.ipsec.1".to_string().into(),
         ));
 
+        let schema = test_config_type(attr_type);
+        let attr_type = &schema.parts()["test_value"];
+
         let result = dsl_value_to_aws_with_defs(
             &value,
-            &attr_type,
+            attr_type,
             "ec2.VpnGateway",
             "type",
             &std::collections::BTreeMap::new(),
@@ -1998,9 +2096,12 @@ mod tests {
         );
         let value = Value::Concrete(ConcreteValue::String("ipsec.1".to_string().into()));
 
+        let schema = test_config_type(attr_type);
+        let attr_type = &schema.parts()["test_value"];
+
         let result = dsl_value_to_aws_with_defs(
             &value,
-            &attr_type,
+            attr_type,
             "ec2.VpnGateway",
             "type",
             &std::collections::BTreeMap::new(),
@@ -2022,10 +2123,13 @@ mod tests {
         );
 
         let aws_val = json!("ipsec.1");
+        let schema = test_config_type(attr_type);
+        let attr_type = &schema.parts()["test_value"];
+
         let dsl_val = aws_value_to_dsl_with_defs(
             "type",
             &aws_val,
-            &attr_type,
+            attr_type,
             "ec2.VpnGateway",
             &std::collections::BTreeMap::new(),
         );
@@ -2039,7 +2143,7 @@ mod tests {
 
         let back_to_aws = dsl_value_to_aws_with_defs(
             &dsl_val.unwrap(),
-            &attr_type,
+            attr_type,
             "ec2.VpnGateway",
             "type",
             &std::collections::BTreeMap::new(),
@@ -2104,11 +2208,13 @@ mod tests {
         let config = crate::schemas::generated::wafv2::web_acl::wafv2_web_acl_config();
         let rate_based_statement = config
             .schema
+            .as_schema()
             .defs()
             .get("RateBasedStatement")
             .expect("WAFv2 WebACL must define RateBasedStatement");
         let fields = config
             .schema
+            .as_schema()
             .struct_fields_with_budget(rate_based_statement, &mut ShapeWalkBudget::new(256))
             .expect("RateBasedStatement must be a struct");
         let evaluation_window_sec = fields
@@ -2116,7 +2222,16 @@ mod tests {
             .find(|field| field.name() == "evaluation_window_sec")
             .expect("RateBasedStatement must expose evaluation_window_sec");
         let evaluation_window_attr_type = evaluation_window_sec.field_type();
-        let evaluation_window_type = test_rootless_type(evaluation_window_attr_type.clone());
+        let evaluation_window_type = config
+            .schema
+            .effective_node_at_path(&[
+                "rules".to_string(),
+                "statement".to_string(),
+                "rate_based_statement".to_string(),
+                "evaluation_window_sec".to_string(),
+            ])
+            .expect("evaluation_window_sec path must resolve")
+            .value_type();
 
         let desired = Value::<NoPlaceholder>::Concrete(ConcreteValue::Int(60));
         evaluation_window_type
@@ -2128,7 +2243,7 @@ mod tests {
             evaluation_window_attr_type,
             config.resource_type_name,
             "evaluation_window_sec",
-            config.schema.defs(),
+            config.schema.as_schema().defs(),
         )
         .expect("a valid evaluation window must convert to CloudControl JSON");
         assert_eq!(cloud_control, json!(60));
@@ -2138,7 +2253,7 @@ mod tests {
             &cloud_control,
             evaluation_window_attr_type,
             config.resource_type_name,
-            config.schema.defs(),
+            config.schema.as_schema().defs(),
         )
         .expect("CloudControl's integer response must convert back to a DSL value");
         assert_eq!(
@@ -2196,10 +2311,13 @@ mod tests {
     fn test_aws_value_to_dsl_list_with_null_drops_null_items() {
         let json = serde_json::json!(["a", null, "b"]);
         let attr_type = AttributeType::list(AttributeType::string());
+        let schema = test_config_type(attr_type);
+        let attr_type = &schema.parts()["test_value"];
+
         let result = aws_value_to_dsl_with_defs(
             "test_attr",
             &json,
-            &attr_type,
+            attr_type,
             "test.resource",
             &std::collections::BTreeMap::new(),
         );
@@ -2230,6 +2348,7 @@ mod tests {
         let config = crate::schemas::generated::s3::bucket::s3_bucket_config();
         let attr_schema = config
             .schema
+            .as_schema()
             .attributes()
             .get("lifecycle_configuration")
             .unwrap();
@@ -2271,7 +2390,7 @@ mod tests {
             &aws_json,
             attr_schema.attr_type(),
             "s3.Bucket",
-            config.schema.defs(),
+            config.schema.as_schema().defs(),
         )
         .expect("aws_value_to_dsl should succeed for lifecycle_configuration");
 
@@ -2345,7 +2464,7 @@ mod tests {
             attr_schema.attr_type(),
             "s3.Bucket",
             "lifecycle_configuration",
-            config.schema.defs(),
+            config.schema.as_schema().defs(),
         )
         .expect("dsl_value_to_aws should succeed");
 
@@ -2366,17 +2485,23 @@ mod tests {
         let config = crate::schemas::generated::s3::bucket::s3_bucket_config();
         let ownership_controls = config
             .schema
+            .as_schema()
             .attributes()
             .get("ownership_controls")
             .expect("s3.Bucket has ownership_controls");
         // carina#3340: reuse-via-Ref may produce `AttributeType::Ref`
         // at this position; resolve through `schema.defs` so the test
         // still sees the underlying Struct.
-        let Shape::Struct { .. } = config.schema.shape_of(ownership_controls.attr_type()) else {
+        let Shape::Struct { .. } = config
+            .schema
+            .as_schema()
+            .shape_of(ownership_controls.attr_type())
+        else {
             panic!("ownership_controls is a Struct");
         };
         let fields = config
             .schema
+            .as_schema()
             .struct_fields_with_budget(
                 ownership_controls.attr_type(),
                 &mut ShapeWalkBudget::new(256),
@@ -2386,15 +2511,16 @@ mod tests {
         let Shape::List {
             element_type: inner,
             ..
-        } = config.schema.shape_of(rules.field_type())
+        } = config.schema.as_schema().shape_of(rules.field_type())
         else {
             panic!("rules is a List");
         };
-        let Shape::Struct { .. } = config.schema.shape_of(inner) else {
+        let Shape::Struct { .. } = config.schema.as_schema().shape_of(inner) else {
             panic!("rules.inner is a Struct");
         };
         let rule_fields = config
             .schema
+            .as_schema()
             .struct_fields_with_budget(inner, &mut ShapeWalkBudget::new(256))
             .expect("rules.inner exposes fields");
         let object_ownership = rule_fields
@@ -2408,11 +2534,7 @@ mod tests {
         let snake_case_value: Value = Value::Concrete(ConcreteValue::enum_identifier(
             "aws.s3.Bucket.OwnershipControls.OwnershipControlsRule.ObjectOwnership.bucket_owner_enforced",
         ));
-        let validated_schema = config
-            .schema
-            .clone()
-            .validate()
-            .expect("s3.Bucket schema must be valid");
+        let validated_schema = config.schema.clone();
         let ownership_type = validated_schema
             .effective_node_at_path(&[
                 "ownership_controls".to_string(),
@@ -2492,9 +2614,12 @@ mod tests {
             Value::Concrete(ConcreteValue::Float(2.0)),
         ]));
         let attr_type = AttributeType::list(AttributeType::float());
+        let schema = test_config_type(attr_type);
+        let attr_type = &schema.parts()["test_value"];
+
         let result = dsl_value_to_aws_with_defs(
             &value,
-            &attr_type,
+            attr_type,
             "test.resource",
             "test_attr",
             &std::collections::BTreeMap::new(),
@@ -2513,10 +2638,13 @@ mod tests {
             Some(DslTransform::StripSuffix(".".to_string())),
         );
         let json_val = serde_json::json!("carina-rs.dev.");
+        let schema = test_config_type(attr_type);
+        let attr_type = &schema.parts()["test_value"];
+
         let result = aws_value_to_dsl_with_defs(
             "name",
             &json_val,
-            &attr_type,
+            attr_type,
             "route53.HostedZone",
             &std::collections::BTreeMap::new(),
         );
@@ -2539,10 +2667,13 @@ mod tests {
             None,
         );
         let json_val = serde_json::json!("carina-rs.dev.");
+        let schema = test_config_type(attr_type);
+        let attr_type = &schema.parts()["test_value"];
+
         let result = aws_value_to_dsl_with_defs(
             "name",
             &json_val,
-            &attr_type,
+            attr_type,
             "route53.HostedZone",
             &std::collections::BTreeMap::new(),
         );

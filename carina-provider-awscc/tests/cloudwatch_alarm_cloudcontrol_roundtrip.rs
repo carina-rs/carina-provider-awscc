@@ -124,11 +124,6 @@ async fn stored_alarm(cloudcontrol: &CloudControlService) -> (String, serde_json
 #[test]
 fn alarm_numeric_fields_keep_their_dsl_shapes() {
     let config = cloudwatch_alarm_config();
-    config
-        .schema
-        .clone()
-        .validate()
-        .expect("CloudWatch Alarm schema must pass admission");
 
     for field in [
         "evaluation_periods",
@@ -138,6 +133,7 @@ fn alarm_numeric_fields_keep_their_dsl_shapes() {
     ] {
         let attribute = config
             .schema
+            .as_schema()
             .attributes()
             .get(field)
             .unwrap_or_else(|| panic!("Alarm.{field} should exist"));
@@ -149,6 +145,7 @@ fn alarm_numeric_fields_keep_their_dsl_shapes() {
 
     let threshold = config
         .schema
+        .as_schema()
         .attributes()
         .get("threshold")
         .expect("Alarm.threshold should exist");

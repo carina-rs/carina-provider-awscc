@@ -159,8 +159,6 @@ fn schema_for_test(resource_type: &str) -> carina_core::schema::ValidatedResourc
                 .unwrap_or_else(|| panic!("missing test schema for {resource_type}"))
                 .schema
                 .clone()
-                .validate()
-                .expect("test schema must pass admission")
         })
         .expect("test schema thread should spawn")
         .join()

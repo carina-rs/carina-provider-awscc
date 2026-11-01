@@ -152,7 +152,7 @@ pub fn ec2_route_config() -> AwsccSchemaConfig {
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "RouteTableId", dsl_name: "route_table_id" }, crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "CidrBlock", dsl_name: "cidr_block" }],
         exclusive_groups: &[ExclusiveGroup { attributes: &["carrier_gateway_id", "core_network_arn", "egress_only_internet_gateway_id", "gateway_id", "instance_id", "local_gateway_id", "nat_gateway_id", "network_interface_id", "transit_gateway_id", "vpc_endpoint_id", "vpc_peering_connection_id"] }],
         tags: None,
-        schema,
+        schema: schema.validate().expect("generated schema must pass admission"),
     }
 }
 

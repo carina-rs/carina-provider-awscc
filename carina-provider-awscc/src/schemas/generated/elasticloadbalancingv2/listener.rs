@@ -233,7 +233,7 @@ pub fn elasticloadbalancingv2_listener_config() -> AwsccSchemaConfig {
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "ListenerArn", dsl_name: "listener_arn" }],
         exclusive_groups: &[],
         tags: None,
-        schema,
+        schema: schema.validate().expect("generated schema must pass admission"),
     }
 }
 

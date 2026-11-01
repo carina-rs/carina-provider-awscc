@@ -46,7 +46,7 @@ pub fn iam_role_policy_config() -> AwsccSchemaConfig {
         primary_identifier: &[crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "PolicyName", dsl_name: "policy_name" }, crate::schemas::config::PrimaryIdentifierAttribute { provider_name: "RoleName", dsl_name: "role_name" }],
         exclusive_groups: &[],
         tags: None,
-        schema,
+        schema: schema.validate().expect("generated schema must pass admission"),
     }
 }
 

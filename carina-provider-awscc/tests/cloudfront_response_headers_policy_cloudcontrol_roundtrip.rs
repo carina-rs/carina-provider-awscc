@@ -29,7 +29,7 @@ use std::sync::Arc;
 
 use carina_core::provider::{CreateOutcomeKind, Provider, ReadRequest};
 use carina_core::resource::{ConcreteValue, Resource, Value};
-use carina_core::schema::{AttributeType, RawShape, StructField};
+use carina_core::schema::{CompiledAttributeType, CompiledStructField, RawShape};
 use carina_provider_awscc::AwsccProvider;
 use carina_provider_awscc::provider::AwsccProviderConfig;
 use carina_provider_awscc::schemas::generated::cloudfront::distribution::cloudfront_distribution_config;
@@ -71,7 +71,10 @@ fn map(entries: impl IntoIterator<Item = (&'static str, Value)>) -> Value {
     ))
 }
 
-fn find_field<'a>(attribute_type: &'a AttributeType, field_name: &str) -> &'a StructField {
+fn find_field<'a>(
+    attribute_type: &'a CompiledAttributeType,
+    field_name: &str,
+) -> &'a CompiledStructField {
     let RawShape::Struct { fields, .. } = attribute_type.raw_shape() else {
         panic!(
             "expected {field_name} parent to be a struct, got {:?}",
@@ -84,7 +87,7 @@ fn find_field<'a>(attribute_type: &'a AttributeType, field_name: &str) -> &'a St
         .unwrap_or_else(|| panic!("expected struct field {field_name}"))
 }
 
-fn list_element(attribute_type: &AttributeType) -> &AttributeType {
+fn list_element(attribute_type: &CompiledAttributeType) -> &CompiledAttributeType {
     let RawShape::List { element_type, .. } = attribute_type.raw_shape() else {
         panic!("expected a list, got {:?}", attribute_type.raw_shape());
     };
@@ -188,6 +191,7 @@ fn response_headers_policy_id_matches_existing_cloudfront_id_reference_pattern()
     let response_headers_policy = cloudfront_response_headers_policy_config();
     let response_headers_policy_id = response_headers_policy
         .schema
+        .as_schema()
         .attributes()
         .get("id")
         .expect("ResponseHeadersPolicy.id should exist");
@@ -196,6 +200,7 @@ fn response_headers_policy_id_matches_existing_cloudfront_id_reference_pattern()
     let origin_access_control = cloudfront_origin_access_control_config();
     let origin_access_control_id = origin_access_control
         .schema
+        .as_schema()
         .attributes()
         .get("id")
         .expect("OriginAccessControl.id should exist")
@@ -204,6 +209,7 @@ fn response_headers_policy_id_matches_existing_cloudfront_id_reference_pattern()
     let distribution = cloudfront_distribution_config();
     let distribution_config = distribution
         .schema
+        .as_schema()
         .attributes()
         .get("distribution_config")
         .expect("Distribution.distribution_config should exist")
@@ -227,8 +233,9 @@ fn response_headers_policy_id_matches_existing_cloudfront_id_reference_pattern()
         assert!(
             response_headers_policy
                 .schema
+                .as_schema()
                 .type_in_schema(response_headers_policy_id.attr_type())
-                .is_assignable_to(distribution.schema.type_in_schema(sink)),
+                .is_assignable_to(distribution.schema.as_schema().type_in_schema(sink)),
             "ResponseHeadersPolicy.id must be assignable to Distribution.{label}"
         );
     }
@@ -237,10 +244,12 @@ fn response_headers_policy_id_matches_existing_cloudfront_id_reference_pattern()
     assert!(
         origin_access_control
             .schema
+            .as_schema()
             .type_in_schema(origin_access_control_id)
             .is_assignable_to(
                 distribution
                     .schema
+                    .as_schema()
                     .type_in_schema(origin_access_control_sink)
             ),
         "the existing OriginAccessControl.id reference pattern should remain assignable"
@@ -250,10 +259,7 @@ fn response_headers_policy_id_matches_existing_cloudfront_id_reference_pattern()
 #[test]
 fn response_headers_policy_schema_validates_nested_access_control_allow_methods() {
     let config = cloudfront_response_headers_policy_config();
-    let schema = config
-        .schema
-        .validate()
-        .expect("CloudFront response headers policy schema must pass admission");
+    let schema = config.schema;
     let policy_config = schema
         .effective_attribute("response_headers_policy_config")
         .expect("ResponseHeadersPolicy.response_headers_policy_config should exist");
@@ -400,6 +406,7 @@ async fn response_headers_policy_create_then_read_preserves_nested_headers() {
     let response_headers_policy = cloudfront_response_headers_policy_config();
     let policy_config_type = response_headers_policy
         .schema
+        .as_schema()
         .attributes()
         .get("response_headers_policy_config")
         .expect("ResponseHeadersPolicy.response_headers_policy_config should exist")
