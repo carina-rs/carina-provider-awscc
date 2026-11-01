@@ -11,7 +11,7 @@ Resource Type definition for AWS::IAM::OIDCProvider
 
 ### `client_id_list`
 
-- **Type:** `List<String>`
+- **Type:** `List<String(len: 1..=255)>`
 - **Required:** No
 
 ### `tags`
@@ -21,7 +21,7 @@ Resource Type definition for AWS::IAM::OIDCProvider
 
 ### `thumbprint_list`
 
-- **Type:** `List<String>` (items: ..=5)
+- **Type:** `List<String(pattern, len: 40..=40)>` (items: ..=5)
 - **Required:** No
 
 ### `url`

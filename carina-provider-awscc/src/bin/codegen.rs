@@ -544,7 +544,7 @@ struct CfnSchema {
     #[serde(default)]
     write_only_properties: Vec<String>,
     primary_identifier: Option<Vec<String>>,
-    definitions: Option<BTreeMap<String, CfnDefinition>>,
+    definitions: Option<BTreeMap<String, CfnProperty>>,
     tagging: Option<CfnTagging>,
     /// Top-level oneOf variants (mutually exclusive required field groups)
     #[serde(default, rename = "oneOf")]
@@ -798,13 +798,10 @@ fn is_tag_map_ref(schema: &CfnSchema, ref_path: &str) -> bool {
     let Some(def_name) = ref_def_name(ref_path) else {
         return false;
     };
-    let Some(definition) = schema
-        .definitions
-        .as_ref()
-        .and_then(|definitions| definitions.get(def_name))
-    else {
+    let Some(resolved) = resolve_ref(schema, ref_path) else {
         return false;
     };
+    let definition = resolved.property;
     let is_direct_string = |property: &CfnProperty| {
         matches!(
             property.prop_type.as_ref(),
@@ -823,7 +820,7 @@ fn is_tag_map_ref(schema: &CfnSchema, ref_path: &str) -> bool {
             .is_some_and(|patterns| patterns.len() == 1 && patterns.values().all(is_direct_string));
 
     def_name.starts_with("Tag")
-        && definition.def_type.as_deref() == Some("object")
+        && definition.prop_type.as_ref().and_then(TypeValue::as_str) == Some("object")
         && (is_key_value_object || is_single_pattern_string_map)
 }
 
@@ -1210,24 +1207,10 @@ fn is_direct_bare_object(prop: &CfnProperty) -> bool {
             .is_none_or(BTreeMap::is_empty)
 }
 
-fn is_bare_object_definition(definition: &CfnDefinition) -> bool {
-    definition.def_type.as_deref() == Some("object")
-        && definition.one_of.is_empty()
-        && definition.items.is_none()
-        && definition.enum_values.is_none()
-        && definition
-            .properties
-            .as_ref()
-            .is_none_or(BTreeMap::is_empty)
-        && definition
-            .pattern_properties
-            .as_ref()
-            .is_none_or(BTreeMap::is_empty)
-}
-
 fn property_is_bare_object(prop: &CfnProperty, schema: &CfnSchema) -> bool {
     if let Some(ref_path) = &prop.ref_path {
-        return resolve_ref(schema, ref_path).is_some_and(is_bare_object_definition);
+        return resolve_ref(schema, ref_path)
+            .is_some_and(|resolved| is_direct_bare_object(resolved.property));
     }
     is_direct_bare_object(prop)
 }
@@ -1401,6 +1384,9 @@ struct CfnProperty {
     ref_path: Option<String>,
     #[serde(default)]
     insertion_order: Option<bool>,
+    /// Whether array items must be unique.
+    #[serde(default)]
+    unique_items: Option<bool>,
     /// Inline object properties (for nested objects)
     properties: Option<BTreeMap<String, CfnProperty>>,
     /// JSON object-map value schemas keyed by key-pattern.
@@ -1590,9 +1576,8 @@ fn is_key_value_tag_array(property: &CfnProperty, schema: &CfnSchema) -> bool {
         items
             .ref_path
             .as_deref()
-            .and_then(|path| path.strip_prefix("#/definitions/"))
-            .and_then(|name| schema.definitions.as_ref()?.get(name))
-            .and_then(|definition| definition.properties.as_ref())
+            .and_then(|ref_path| resolve_ref(schema, ref_path))
+            .and_then(|resolved| resolved.property.properties.as_ref())
     });
     let Some(properties) = properties else {
         return false;
@@ -1619,50 +1604,6 @@ fn is_string_tag_map(property: &CfnProperty, schema: &CfnSchema) -> bool {
                     .values()
                     .all(|value| is_string_property(schema, value))
         })
-}
-
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[allow(dead_code)]
-struct CfnDefinition {
-    #[serde(rename = "type")]
-    def_type: Option<String>,
-    properties: Option<BTreeMap<String, CfnProperty>>,
-    /// JSON object-map value schemas keyed by key-pattern.
-    #[serde(default)]
-    pattern_properties: Option<BTreeMap<String, CfnProperty>>,
-    #[serde(default)]
-    required: Vec<String>,
-    /// oneOf variants (union types)
-    #[serde(default, rename = "oneOf")]
-    one_of: Vec<CfnProperty>,
-    /// Array item schema (for array-typed definitions)
-    items: Option<Box<CfnProperty>>,
-    /// Enum values (for enum-only definitions)
-    #[serde(rename = "enum")]
-    enum_values: Option<Vec<EnumValue>>,
-    /// Regex pattern constraint (for string-typed definitions)
-    #[serde(default)]
-    pattern: Option<String>,
-    /// Minimum string length constraint (for string-typed definitions)
-    #[serde(default, rename = "minLength")]
-    min_length: Option<u64>,
-    /// Maximum string length constraint (for string-typed definitions)
-    #[serde(default, rename = "maxLength")]
-    max_length: Option<u64>,
-    /// Minimum value constraint (for integer/number-typed definitions).
-    /// CloudFormation factors scalar fields like `RulePriority`/`RateLimit`
-    /// into shared `$ref` definitions that carry their own range; this lets
-    /// a scalar `$ref` reproduce the same ranged int/float a direct property
-    /// would (awscc#291).
-    #[serde(default)]
-    minimum: Option<i64>,
-    /// Maximum value constraint (for integer/number-typed definitions).
-    #[serde(default)]
-    maximum: Option<i64>,
-    /// Format constraint (e.g., "int64", "double") for scalar definitions.
-    #[serde(default)]
-    format: Option<String>,
 }
 
 /// Compute module name from CloudFormation type name
@@ -1784,7 +1725,14 @@ fn is_string_property(schema: &CfnSchema, property: &CfnProperty) -> bool {
         .ref_path
         .as_deref()
         .and_then(|ref_path| resolve_ref(schema, ref_path))
-        .is_some_and(|definition| definition.def_type.as_deref() == Some("string"))
+        .is_some_and(|resolved| {
+            resolved
+                .property
+                .prop_type
+                .as_ref()
+                .and_then(TypeValue::as_str)
+                == Some("string")
+        })
 }
 
 fn declared_replacement_class(
@@ -2241,30 +2189,40 @@ fn property_is_fully_read_only(
     }
 
     if let Some(ref_path) = &property.ref_path {
-        if !visiting_defs.insert(ref_path.clone()) {
+        let Some(resolved) = resolve_ref(schema, ref_path) else {
+            return false;
+        };
+        if !visiting_defs.insert(resolved.name.to_string()) {
             return false;
         }
-        let fully_read_only = match resolve_ref_classified(schema, ref_path) {
-            Some(ResolvedDef::Struct { properties, .. }) => {
-                struct_fields_are_fully_read_only(schema, properties, property_path, visiting_defs)
-            }
-            Some(ResolvedDef::OneOf { variants }) => {
-                let merged = variants
-                    .iter()
-                    .filter_map(|variant| variant.properties.as_ref())
-                    .flat_map(|properties| properties.iter())
-                    .map(|(name, property)| (name.clone(), property.clone()))
-                    .collect::<BTreeMap<_, _>>();
-                struct_fields_are_fully_read_only(schema, &merged, property_path, visiting_defs)
-            }
-            Some(ResolvedDef::Array { items }) => {
-                let item_path = extend_property_path(property_path, "*");
-                property_is_fully_read_only(schema, items, &item_path, visiting_defs)
-            }
-            _ => false,
-        };
-        visiting_defs.remove(ref_path);
+        let fully_read_only =
+            property_is_fully_read_only(schema, resolved.property, property_path, visiting_defs);
+        visiting_defs.remove(resolved.name);
         return fully_read_only;
+    }
+
+    if !has_direct_struct_properties(property) && !property.one_of.is_empty() {
+        if let Some(array_variant) = property
+            .one_of
+            .iter()
+            .find(|variant| property_resolves_to_array(variant, schema))
+        {
+            return property_is_fully_read_only(
+                schema,
+                array_variant,
+                property_path,
+                visiting_defs,
+            );
+        }
+        let merged = merged_one_of_properties(property);
+        if !merged.is_empty() {
+            return struct_fields_are_fully_read_only(
+                schema,
+                &merged,
+                property_path,
+                visiting_defs,
+            );
+        }
     }
 
     match property.prop_type.as_ref().and_then(TypeValue::as_str) {
@@ -2529,34 +2487,24 @@ fn documented_top_level_properties(
 }
 
 fn is_struct_property(prop: &CfnProperty, schema: &CfnSchema) -> bool {
-    if prop
-        .properties
-        .as_ref()
-        .is_some_and(|properties| !properties.is_empty())
-    {
-        return true;
+    if let Some(ref_path) = prop.ref_path.as_deref() {
+        return resolve_ref(schema, ref_path)
+            .is_some_and(|resolved| property_generates_struct(resolved.property, schema));
     }
-    prop.ref_path.as_ref().is_some_and(|ref_path| {
-        matches!(
-            resolve_ref_classified(schema, ref_path),
-            Some(ResolvedDef::Struct { .. } | ResolvedDef::OneOf { .. })
-        )
-    })
+    property_generates_struct(prop, schema)
 }
 
 fn is_list_of_struct_property(prop: &CfnProperty, schema: &CfnSchema) -> bool {
-    if prop.prop_type.as_ref().and_then(|t| t.as_str()) == Some("array") {
-        return prop
+    let property = prop
+        .ref_path
+        .as_deref()
+        .and_then(|ref_path| resolve_ref(schema, ref_path))
+        .map_or(prop, |resolved| resolved.property);
+    property.prop_type.as_ref().and_then(TypeValue::as_str) == Some("array")
+        && property
             .items
-            .as_ref()
-            .is_some_and(|items| is_struct_property(items, schema));
-    }
-    prop.ref_path.as_ref().is_some_and(|ref_path| {
-        matches!(
-            resolve_ref_classified(schema, ref_path),
-            Some(ResolvedDef::Array { items }) if is_struct_property(items, schema)
-        )
-    })
+            .as_deref()
+            .is_some_and(|items| is_struct_property(items, schema))
 }
 
 fn uses_core_schema_types_path(s: &str) -> bool {
@@ -2566,23 +2514,7 @@ fn uses_core_schema_types_path(s: &str) -> bool {
         || s.contains("types::email()")
 }
 
-/// Display string for List element types based on items property type and property name.
-/// The `prop_name` is used for name-based type inference (e.g., SubnetIds -> `List<SubnetId>`).
-fn list_element_type_display(items: &CfnProperty, prop_name: &str, resource_type: &str) -> String {
-    match items.prop_type.as_ref().and_then(|t| t.as_str()) {
-        Some("string") => {
-            let element_type = infer_string_type_display(prop_name, resource_type);
-            format!("`List<{}>`", element_type)
-        }
-        Some("integer") => "`List<Int>`".to_string(),
-        Some("number") => "`List<Float>`".to_string(),
-        Some("boolean") => "`List<Bool>`".to_string(),
-        _ => "`List<String>`".to_string(),
-    }
-}
-
 /// Infer a display type name for a string property based on its name.
-/// Used by both scalar `type_display_string()` and `list_element_type_display()`.
 /// Handles both singular (e.g., "SubnetId") and plural (e.g., "SubnetIds") property names.
 fn infer_string_type_display(prop_name: &str, resource_type: &str) -> String {
     // Check resource-specific overrides first (StringType only for display)
@@ -2727,7 +2659,8 @@ fn object_map_type_display(
             let struct_name = value
                 .ref_path
                 .as_deref()
-                .and_then(ref_def_name)
+                .and_then(|ref_path| resolve_ref(schema, ref_path))
+                .map(|resolved| resolved.name)
                 .unwrap_or(prop_name);
             format!("`Map<String, Struct({struct_name})>`")
         }
@@ -2739,6 +2672,16 @@ fn type_display_string_at(
     prop: &CfnProperty,
     schema: &CfnSchema,
     cfn_property_path: CfnPropertyPath<'_>,
+) -> String {
+    type_display_string_at_resolved(prop_name, prop, schema, cfn_property_path, None)
+}
+
+fn type_display_string_at_resolved(
+    prop_name: &str,
+    prop: &CfnProperty,
+    schema: &CfnSchema,
+    cfn_property_path: CfnPropertyPath<'_>,
+    definition_name: Option<&str>,
 ) -> String {
     if let Some(TypeOverride::AttributeType { display, .. }) =
         resource_type_override(&schema.type_name, cfn_property_path)
@@ -2761,7 +2704,7 @@ fn type_display_string_at(
                 entry.cfn_type, entry.property_path, entry.reason
             ),
         }
-    } else if !prop.one_of.is_empty() {
+    } else if !prop.one_of.is_empty() && !has_direct_struct_properties(prop) {
         if let Some(array_variant) = prop
             .one_of
             .iter()
@@ -2770,13 +2713,7 @@ fn type_display_string_at(
             return type_display_string_at(prop_name, array_variant, schema, cfn_property_path);
         }
 
-        let has_mergeable_object_variant = prop.one_of.iter().any(|variant| {
-            variant
-                .properties
-                .as_ref()
-                .is_some_and(|props| !props.is_empty())
-        });
-        if !has_mergeable_object_variant {
+        if merged_one_of_properties(prop).is_empty() {
             let variant_types: Vec<Vec<String>> =
                 prop.one_of.iter().map(property_type_values).collect();
             panic!(
@@ -2785,42 +2722,23 @@ fn type_display_string_at(
             );
         }
 
-        "String".to_string()
+        format!("Struct({})", definition_name.unwrap_or(prop_name))
     } else if let Some(ref_path) = &prop.ref_path {
         if is_tag_map_ref(schema, ref_path) {
             "`Map<String, String>`".to_string()
+        } else if let Some(resolved) = resolve_ref(schema, ref_path) {
+            type_display_string_at_resolved(
+                prop_name,
+                resolved.property,
+                schema,
+                cfn_property_path,
+                Some(resolved.name),
+            )
         } else {
-            // Scalar refs (awscc#291: WAFv2 `Priority`/`Limit`) recurse for
-            // their Int/Float/Bool display with the definition's range. A
-            // struct-shaped ref gets a plain label here; the typed Markdown
-            // path is solely responsible for turning it into a link.
-            match resolve_ref_classified(schema, ref_path) {
-                Some(ResolvedDef::Struct { .. } | ResolvedDef::OneOf { .. }) => {
-                    let def_name = ref_def_name(ref_path).unwrap_or(prop_name);
-                    format!("Struct({def_name})")
-                }
-                Some(ResolvedDef::ObjectMap { value }) => {
-                    object_map_type_display(prop_name, schema, cfn_property_path, value)
-                }
-                Some(resolved @ (ResolvedDef::String { .. } | ResolvedDef::Scalar { .. })) => {
-                    let inline_prop = resolved
-                        .as_inline_property()
-                        .expect("String and Scalar variants always rebuild an inline property");
-                    type_display_string_at(prop_name, &inline_prop, schema, cfn_property_path)
-                }
-                Some(
-                    ResolvedDef::Enum { .. } | ResolvedDef::Array { .. } | ResolvedDef::Opaque,
-                )
-                | None => {
-                    // These shapes have no dedicated non-list scalar display
-                    // here; apply the name-based heuristic. Listed explicitly
-                    // (no `_`) so a new shape forces a decision at this site.
-                    infer_string_type_display(prop_name, &schema.type_name)
-                }
-            }
+            infer_string_type_display(prop_name, &schema.type_name)
         }
     } else {
-        match prop.prop_type.as_ref().and_then(|t| t.as_str()) {
+        match inline_property_type(prop) {
             Some("string") => {
                 if is_iam_policy_document_property(&schema.type_name, cfn_property_path) {
                     "PolicyDocument".to_string()
@@ -2847,8 +2765,13 @@ fn type_display_string_at(
                         let range = string_length_display(effective_min, prop.max_length);
                         return format!("String(pattern, len: {})", range);
                     }
-                    // Check for string format constraint
+                    // Format is descriptive while length is validated; show
+                    // both when the schema declares both constraints.
                     if let Some(ref fmt) = prop.format {
+                        if has_length {
+                            let range = string_length_display(effective_min, prop.max_length);
+                            return format!("String({}, len: {})", fmt, range);
+                        }
                         return format!("String({})", fmt);
                     }
                     // Append length constraint if present and type is plain String
@@ -2955,54 +2878,16 @@ fn type_display_string_at(
             }
             Some("array") => {
                 let base_display = if let Some(items) = &prop.items {
-                    if let Some(ref_path) = &items.ref_path {
-                        if !is_tag_map_ref(schema, ref_path) {
-                            // Keep this renderer fragment-free. Typed enum and
-                            // struct links are emitted only by MarkdownType;
-                            // scalar items (awscc#291) still mirror the
-                            // schema-code array branch here.
-                            let item_def = resolve_ref_classified(schema, ref_path);
-                            if let Some(ResolvedDef::Struct { .. } | ResolvedDef::OneOf { .. }) =
-                                item_def
-                                && let Some(def_name) = ref_def_name(ref_path)
-                            {
-                                format!("`List<{def_name}>`")
-                            } else if let Some(string @ ResolvedDef::String { .. }) =
-                                item_def.as_ref()
-                            {
-                                let inline_prop = string
-                                    .as_inline_property()
-                                    .expect("String variant always rebuilds an inline property");
-                                let element_type = type_display_string_at(
-                                    prop_name,
-                                    &inline_prop,
-                                    schema,
-                                    cfn_property_path,
-                                );
-                                format!("`List<{element_type}>`")
-                            } else if let Some(scalar @ ResolvedDef::Scalar { .. }) =
-                                item_def.as_ref()
-                            {
-                                let inline_prop = scalar
-                                    .as_inline_property()
-                                    .expect("Scalar variant always rebuilds an inline property");
-                                // List items that $ref a scalar def (awscc#291):
-                                // render List<Int>/Float/Bool, mirroring the
-                                // schema-code array branch.
-                                list_element_type_display(
-                                    &inline_prop,
-                                    prop_name,
-                                    &schema.type_name,
-                                )
-                            } else {
-                                "`List<String>`".to_string()
-                            }
-                        } else {
-                            "`List<Map<String, String>>`".to_string()
-                        }
-                    } else {
-                        list_element_type_display(items, prop_name, &schema.type_name)
-                    }
+                    // Render every element shape through the same type path.
+                    // Scalar constraints, definition refs, aliases, and tag
+                    // maps therefore cannot drift between list-item cases.
+                    let element_type =
+                        type_display_string_at(prop_name, items, schema, cfn_property_path);
+                    let element_type = element_type
+                        .strip_prefix('`')
+                        .and_then(|value| value.strip_suffix('`'))
+                        .unwrap_or(&element_type);
+                    format!("`List<{element_type}>`")
                 } else {
                     "`List<String>`".to_string()
                 };
@@ -3018,7 +2903,7 @@ fn type_display_string_at(
                 if let Some(props) = &prop.properties
                     && !props.is_empty()
                 {
-                    format!("Struct({prop_name})")
+                    format!("Struct({})", definition_name.unwrap_or(prop_name))
                 } else if let Some(value) = direct_object_map_value(prop) {
                     object_map_type_display(prop_name, schema, cfn_property_path, value)
                 } else {
@@ -3057,92 +2942,61 @@ fn markdown_struct_def(
     schema: &CfnSchema,
     property_path: &[String],
 ) -> Option<MarkdownStructDef> {
-    // Preserve the pre-PageBuilder precedence: a direct non-array oneOf is a
-    // String display, not a struct target. Array variants are selected by the
-    // callers before classification.
-    if !prop.one_of.is_empty() {
-        return None;
-    }
-
-    if let Some(ref_path) = &prop.ref_path
-        && !is_tag_map_ref(schema, ref_path)
-        && let Some(def_name) = ref_def_name(ref_path)
-    {
-        match resolve_ref_classified(schema, ref_path) {
-            Some(ResolvedDef::Struct {
-                properties,
-                required,
-            }) => {
-                return Some(MarkdownStructDef {
-                    key: MarkdownStructKey::Definition(def_name.to_string()),
-                    name: def_name.to_string(),
-                    properties: properties.clone(),
-                    required: required.to_vec(),
-                });
-            }
-            Some(ResolvedDef::OneOf { variants }) => {
-                let properties = variants
-                    .iter()
-                    .filter_map(|variant| variant.properties.as_ref())
-                    .flat_map(|properties| properties.iter())
-                    .map(|(name, property)| (name.clone(), property.clone()))
-                    .collect::<BTreeMap<_, _>>();
-                if !properties.is_empty() {
-                    return Some(MarkdownStructDef {
-                        key: MarkdownStructKey::Definition(def_name.to_string()),
-                        name: def_name.to_string(),
-                        properties,
-                        required: Vec::new(),
-                    });
-                }
-            }
-            Some(
-                ResolvedDef::ObjectMap { .. }
-                | ResolvedDef::Enum { .. }
-                | ResolvedDef::Array { .. }
-                | ResolvedDef::String { .. }
-                | ResolvedDef::Scalar { .. }
-                | ResolvedDef::Opaque,
-            )
-            | None => {}
+    let (property, key, name) = if let Some(ref_path) = prop.ref_path.as_deref() {
+        if is_tag_map_ref(schema, ref_path) {
+            return None;
         }
-    }
+        let resolved = resolve_ref(schema, ref_path)?;
+        (
+            resolved.property,
+            MarkdownStructKey::Definition(resolved.name.to_string()),
+            resolved.name.to_string(),
+        )
+    } else {
+        (
+            prop,
+            MarkdownStructKey::Inline(property_path.to_vec()),
+            prop_name.to_string(),
+        )
+    };
 
-    if prop.prop_type.as_ref().and_then(TypeValue::as_str) == Some("object")
-        && let Some(properties) = &prop.properties
-        && !properties.is_empty()
+    if let Some(properties) = property
+        .properties
+        .as_ref()
+        .filter(|properties| !properties.is_empty())
     {
         return Some(MarkdownStructDef {
-            key: MarkdownStructKey::Inline(property_path.to_vec()),
-            name: prop_name.to_string(),
+            key,
+            name,
             properties: properties.clone(),
-            required: prop.required.clone(),
+            required: property.required.clone(),
+        });
+    }
+
+    if property_generates_struct(property, schema) {
+        return Some(MarkdownStructDef {
+            key,
+            name,
+            properties: merged_one_of_properties(property),
+            required: Vec::new(),
         });
     }
 
     None
 }
 
-fn markdown_array_items<'a>(
+fn markdown_array<'a>(
     prop: &'a CfnProperty,
     schema: &'a CfnSchema,
-) -> Option<&'a CfnProperty> {
-    if prop.prop_type.as_ref().and_then(TypeValue::as_str) == Some("array") {
-        return prop.items.as_deref();
-    }
-    prop.ref_path
+) -> Option<(&'a CfnProperty, &'a CfnProperty)> {
+    let property = prop
+        .ref_path
         .as_deref()
-        .and_then(|ref_path| resolve_ref_classified(schema, ref_path))
-        .and_then(|resolved| match resolved {
-            ResolvedDef::Array { items } => Some(items),
-            ResolvedDef::Struct { .. }
-            | ResolvedDef::ObjectMap { .. }
-            | ResolvedDef::OneOf { .. }
-            | ResolvedDef::Enum { .. }
-            | ResolvedDef::String { .. }
-            | ResolvedDef::Scalar { .. }
-            | ResolvedDef::Opaque => None,
-        })
+        .and_then(|ref_path| resolve_ref(schema, ref_path))
+        .map_or(prop, |resolved| resolved.property);
+    (property.prop_type.as_ref().and_then(TypeValue::as_str) == Some("array"))
+        .then(|| property.items.as_deref().map(|items| (property, items)))
+        .flatten()
 }
 
 fn markdown_list_type(item: MarkdownLinkedType, prop: &CfnProperty) -> MarkdownLinkedType {
@@ -3171,7 +3025,10 @@ fn markdown_link_type(
     if let Some(key) = enum_target {
         let enum_type = MarkdownLinkedType::Enum(key.clone());
         return Some(if markdown_property_is_array(prop, schema) {
-            markdown_list_type(enum_type, prop)
+            let array = markdown_array(prop, schema)
+                .map(|(array, _)| array)
+                .unwrap_or(prop);
+            markdown_list_type(enum_type, array)
         } else {
             enum_type
         });
@@ -3206,10 +3063,10 @@ fn markdown_link_type(
         });
     }
 
-    if let Some(items) = markdown_array_items(prop, schema) {
+    if let Some((array, items)) = markdown_array(prop, schema) {
         let item_path = extend_property_path(property_path, "*");
         let item_type = markdown_link_type(prop_name, items, schema, None, &item_path, cfn_parent)?;
-        return Some(markdown_list_type(item_type, prop));
+        return Some(markdown_list_type(item_type, array));
     }
 
     None
@@ -4078,17 +3935,22 @@ fn collect_struct_defs(
         return;
     }
 
-    let Some(items) = markdown_array_items(prop, schema) else {
+    let Some((_, items)) = markdown_array(prop, schema) else {
         return;
     };
-    let array_def_name = prop.ref_path.as_deref().and_then(|ref_path| {
-        matches!(
-            resolve_ref_classified(schema, ref_path),
-            Some(ResolvedDef::Array { .. })
-        )
-        .then(|| ref_def_name(ref_path))
-        .flatten()
-    });
+    let array_def_name = prop
+        .ref_path
+        .as_deref()
+        .and_then(|ref_path| resolve_ref(schema, ref_path))
+        .filter(|resolved| {
+            resolved
+                .property
+                .prop_type
+                .as_ref()
+                .and_then(TypeValue::as_str)
+                == Some("array")
+        })
+        .map(|resolved| resolved.name);
     let should_visit = array_def_name.is_none_or(|name| {
         IN_PROGRESS_DEFS.with(|defs| defs.borrow_mut().insert(name.to_string()))
     });
@@ -4262,16 +4124,28 @@ fn generate_top_level_attribute_type(
             .as_ref()
             .and_then(TypeValue::as_str)
             .is_some_and(|prop_type| prop_type == "array");
-        let is_ref_array = prop
+        let resolved_array = prop
             .ref_path
             .as_ref()
-            .and_then(|ref_path| resolve_ref_classified(schema, ref_path))
-            .is_some_and(|definition| matches!(definition, ResolvedDef::Array { .. }));
-        if is_array || is_ref_array {
+            .and_then(|ref_path| resolve_ref(schema, ref_path))
+            .map(|resolved| resolved.property)
+            .filter(|property| {
+                property.prop_type.as_ref().and_then(TypeValue::as_str) == Some("array")
+            });
+        if is_array || resolved_array.is_some() {
+            let array = resolved_array.unwrap_or(prop);
             let list_ctor = list_constructor(
-                prop.insertion_order,
+                array.insertion_order,
                 override_forces_unordered(&schema.type_name, CfnPropertyPath::new(None, prop_name)),
             );
+            if array.min_items.is_some() || array.max_items.is_some() {
+                let ordered = list_ctor == "AttributeType::list";
+                let length = emit_length_option(
+                    array.min_items.and_then(|value| u64::try_from(value).ok()),
+                    array.max_items.and_then(|value| u64::try_from(value).ok()),
+                );
+                return refined_list_type(&enum_type, ordered, &length);
+            }
             return format!("{}({})", list_ctor, enum_type);
         }
         return enum_type;
@@ -5296,172 +5170,91 @@ fn deduplicate_enum_values(values: Vec<String>) -> Option<Vec<String>> {
     }
 }
 
-/// Resolve a `$ref` path to the raw `CfnDefinition`.
-/// e.g., "#/definitions/Ingress" -> Some(&CfnDefinition)
-///
-/// Prefer [`resolve_ref_classified`] in consumers: the raw `CfnDefinition`
-/// exposes the open `def_type: Option<String>` discriminant, and
-/// hand-dispatching on it is exactly what let a scalar `$ref` be silently
-/// typed as `String` (awscc#291). This raw resolver exists only as the
-/// building block `resolve_ref_classified` is built on; new code that needs
-/// to act on a `$ref`'s shape should go through the classifier so the
-/// compiler forces every shape (including `Scalar`) to be handled.
-fn resolve_ref<'a>(schema: &'a CfnSchema, ref_path: &str) -> Option<&'a CfnDefinition> {
-    let def_name = ref_path.strip_prefix("#/definitions/")?;
-    schema.definitions.as_ref()?.get(def_name)
-}
-
 /// Extract the definition name from a $ref path
 /// e.g., "#/definitions/Ingress" -> Some("Ingress")
 fn ref_def_name(ref_path: &str) -> Option<&str> {
     ref_path.strip_prefix("#/definitions/")
 }
 
-/// The scalar kinds a `$ref` definition can carry.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ScalarKind {
-    Integer,
-    Number,
-    Boolean,
+/// The final definition reached by a local `$ref` chain.
+///
+/// Definitions use the exact same representation as inline properties, so
+/// every keyword supported by `CfnProperty` automatically survives `$ref`
+/// resolution. `name` is the final target's name and is used only for stable
+/// struct identity and recursion handling; shape generation always consumes
+/// `property` through the normal inline path.
+#[derive(Clone, Copy)]
+struct ResolvedRef<'a> {
+    name: &'a str,
+    property: &'a CfnProperty,
 }
 
-impl ScalarKind {
-    /// The CloudFormation `"type"` string this kind came from. Used to
-    /// reconstruct an inline `CfnProperty` whose typing goes through the same
-    /// path a direct property would.
-    fn cfn_type(self) -> &'static str {
-        match self {
-            ScalarKind::Integer => "integer",
-            ScalarKind::Number => "number",
-            ScalarKind::Boolean => "boolean",
+/// Resolve a local definition `$ref`, following definitions that are aliases
+/// to other definitions. A malformed path, missing definition, external ref,
+/// or alias cycle is unresolved rather than recursively looping.
+fn resolve_ref<'a>(schema: &'a CfnSchema, ref_path: &str) -> Option<ResolvedRef<'a>> {
+    let definitions = schema.definitions.as_ref()?;
+    let mut name = ref_def_name(ref_path)?;
+    let mut visited = HashSet::new();
+
+    loop {
+        if !visited.insert(name) {
+            return None;
         }
+        let (definition_name, property) = definitions.get_key_value(name)?;
+        let Some(next_ref) = property.ref_path.as_deref() else {
+            return Some(ResolvedRef {
+                name: definition_name,
+                property,
+            });
+        };
+        name = ref_def_name(next_ref)?;
     }
 }
 
-/// A `$ref` definition (`CfnDefinition`) classified into the one shape it
-/// actually represents.
-///
-/// `CfnDefinition` is a flat serde DTO whose `def_type` is an open
-/// `Option<String>` — nothing in the type system forces a consumer that
-/// dispatches on it to handle every shape, so a missed arm silently falls
-/// back to `String` (this is exactly how awscc#291 happened: scalar `$ref`s
-/// were never matched and became `String`). `classify_def` is the **single
-/// source of truth** for that dispatch: it runs the canonical precedence
-/// once, and every consumer `match`es the result exhaustively, so the
-/// compiler refuses to let a new consumer (or a new shape) drop a case.
-///
-/// Borrows from the `CfnDefinition` so no cloning happens at classification
-/// time; callers clone only the slices they keep.
-enum ResolvedDef<'a> {
-    /// Object with inline properties.
-    Struct {
-        properties: &'a BTreeMap<String, CfnProperty>,
-        required: &'a [String],
-    },
-    /// Object map whose `patternProperties` declares one value schema.
-    ObjectMap { value: &'a CfnProperty },
-    /// `oneOf` union of variants.
-    OneOf { variants: &'a [CfnProperty] },
-    /// Enum-only def (a fixed list of values, no properties). Takes
-    /// precedence over `Scalar` so an integer-typed enum (e.g. WAFv2
-    /// `EvaluationWindowSec`) is treated as an enum, matching the canonical
-    /// codegen precedence.
-    Enum { values: &'a [EnumValue] },
-    /// Array def carrying an item schema.
-    Array { items: &'a CfnProperty },
-    /// String def, carrying every keyword that the inline string path honors
-    /// so a `$ref` can be reconstructed as an equivalent `CfnProperty`.
-    String {
-        pattern: Option<&'a str>,
-        min_length: Option<u64>,
-        max_length: Option<u64>,
-        format: Option<&'a str>,
-    },
-    /// Scalar (`integer` / `number` / `boolean`) def, carrying its own range
-    /// and format so a `$ref` to it reproduces the ranged int/float/bool a
-    /// direct property would (awscc#291).
-    Scalar {
-        kind: ScalarKind,
-        minimum: Option<i64>,
-        maximum: Option<i64>,
-        format: Option<&'a str>,
-    },
-    /// None of the known shapes — the def has no inline properties, oneOf,
-    /// enum, array items, string type, or scalar type. Consumers fall back
-    /// to name-based string heuristics for these (e.g. an opaque object whose
-    /// fields are not modelled). Made an explicit variant — rather than a
-    /// catch-all `_` — so adding a new shape forces every consumer to decide
-    /// where it belongs instead of silently landing here.
-    Opaque,
+fn has_direct_struct_properties(property: &CfnProperty) -> bool {
+    property
+        .properties
+        .as_ref()
+        .is_some_and(|properties| !properties.is_empty())
 }
 
-/// Classify a resolved `$ref` definition into the single shape it represents.
-///
-/// The precedence below is the canonical order the schema-code `$ref` branch
-/// has always used, extended with the object-map shape: properties → object
-/// map → oneOf → enum → array → string → scalar → opaque. It is the
-/// one place that order lives; every `ResolvedDef`
-/// consumer inherits it by matching the result. Preserving this order keeps
-/// generated output byte-identical (e.g. an integer-typed enum classifies as
-/// `Enum`, not `Scalar`, because the enum arm comes first).
-fn classify_def(def: &CfnDefinition) -> ResolvedDef<'_> {
-    if let Some(props) = &def.properties
-        && !props.is_empty()
+/// Inline object properties are authoritative even when a schema omits the
+/// redundant `type: object` marker. This preserves the old definition
+/// precedence while keeping definitions and inline properties on one path.
+fn inline_property_type(property: &CfnProperty) -> Option<&str> {
+    if has_direct_struct_properties(property) {
+        Some("object")
+    } else {
+        property.prop_type.as_ref().and_then(TypeValue::as_str)
+    }
+}
+
+fn merged_one_of_properties(property: &CfnProperty) -> BTreeMap<String, CfnProperty> {
+    property
+        .one_of
+        .iter()
+        .filter_map(|variant| variant.properties.as_ref())
+        .flat_map(|properties| properties.iter())
+        .map(|(name, property)| (name.clone(), property.clone()))
+        .collect()
+}
+
+/// Whether the inline generator will represent this property as a struct.
+/// Direct properties take precedence over compatibility-union metadata. A
+/// pure `oneOf` selects an array variant first, then merges object variants.
+fn property_generates_struct(property: &CfnProperty, schema: &CfnSchema) -> bool {
+    if has_direct_struct_properties(property) {
+        return true;
+    }
+    if property
+        .one_of
+        .iter()
+        .any(|variant| property_resolves_to_array(variant, schema))
     {
-        return ResolvedDef::Struct {
-            properties: props,
-            required: &def.required,
-        };
+        return false;
     }
-    if def.def_type.as_deref() == Some("object")
-        && let Some(patterns) = &def.pattern_properties
-        && patterns.len() == 1
-    {
-        return ResolvedDef::ObjectMap {
-            value: patterns
-                .values()
-                .next()
-                .expect("one patternProperties entry"),
-        };
-    }
-    if !def.one_of.is_empty() {
-        return ResolvedDef::OneOf {
-            variants: &def.one_of,
-        };
-    }
-    if let Some(values) = &def.enum_values
-        && !values.is_empty()
-    {
-        return ResolvedDef::Enum { values };
-    }
-    if def.def_type.as_deref() == Some("array")
-        && let Some(items) = &def.items
-    {
-        return ResolvedDef::Array { items };
-    }
-    if def.def_type.as_deref() == Some("string") {
-        return ResolvedDef::String {
-            pattern: def.pattern.as_deref(),
-            min_length: def.min_length,
-            max_length: def.max_length,
-            format: def.format.as_deref(),
-        };
-    }
-    let scalar_kind = match def.def_type.as_deref() {
-        Some("integer") => Some(ScalarKind::Integer),
-        Some("number") => Some(ScalarKind::Number),
-        Some("boolean") => Some(ScalarKind::Boolean),
-        _ => None,
-    };
-    if let Some(kind) = scalar_kind {
-        return ResolvedDef::Scalar {
-            kind,
-            minimum: def.minimum,
-            maximum: def.maximum,
-            format: def.format.as_deref(),
-        };
-    }
-    ResolvedDef::Opaque
+    !merged_one_of_properties(property).is_empty()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -5486,15 +5279,10 @@ fn classify_object_map_value(
     if is_direct_string_property(value) {
         return Some(ObjectMapValueKind::DirectString);
     }
-    if value
-        .properties
-        .as_ref()
-        .is_some_and(|properties| !properties.is_empty())
+    if has_direct_struct_properties(value)
         || value.ref_path.as_deref().is_some_and(|ref_path| {
-            matches!(
-                resolve_ref_classified(schema, ref_path),
-                Some(ResolvedDef::Struct { .. })
-            )
+            resolve_ref(schema, ref_path)
+                .is_some_and(|resolved| property_generates_struct(resolved.property, schema))
         })
     {
         return Some(ObjectMapValueKind::Struct);
@@ -5534,69 +5322,8 @@ fn property_object_map_value<'a>(
     }
     prop.ref_path
         .as_deref()
-        .and_then(|ref_path| resolve_ref_classified(schema, ref_path))
-        .and_then(|resolved| match resolved {
-            ResolvedDef::ObjectMap { value } => Some(value),
-            _ => None,
-        })
-}
-
-/// Resolve a `$ref` path and classify the target in one step.
-///
-/// The primary entry point for `$ref` consumers: returns `None` only when the
-/// path does not resolve to a known definition. A resolved-but-unrecognized
-/// def yields `ResolvedDef::Opaque`, never a silent `None`.
-fn resolve_ref_classified<'a>(schema: &'a CfnSchema, ref_path: &str) -> Option<ResolvedDef<'a>> {
-    resolve_ref(schema, ref_path).map(classify_def)
-}
-
-impl ResolvedDef<'_> {
-    /// If this is a `String` or `Scalar`, reconstruct an equivalent inline
-    /// `CfnProperty` so callers can recurse through the normal property-typing
-    /// logic instead of maintaining a second `$ref`-specific implementation.
-    ///
-    /// CloudFormation factors recurring scalar fields into shared definitions
-    /// — e.g. WAFv2 WebACL's `Rule.Priority` and `RateBasedStatement.Limit`
-    /// are `$ref`s to the `RulePriority` / `RateLimit` integer defs. Without
-    /// this, the `$ref` branches fall through to the String fallback and
-    /// mistype the field, so the resource is rejected at apply (awscc#291).
-    /// Returns `None` for every non-string/non-scalar shape.
-    fn as_inline_property(&self) -> Option<CfnProperty> {
-        match self {
-            ResolvedDef::String {
-                pattern,
-                min_length,
-                max_length,
-                format,
-            } => Some(CfnProperty {
-                prop_type: Some(TypeValue::Single("string".to_string())),
-                pattern: pattern.map(str::to_string),
-                min_length: *min_length,
-                max_length: *max_length,
-                format: format.map(str::to_string),
-                // A string def with enum values classifies as `Enum`, not
-                // `String`, so the reconstructed property never needs to
-                // carry enum values.
-                ..Default::default()
-            }),
-            ResolvedDef::Scalar {
-                kind,
-                minimum,
-                maximum,
-                format,
-            } => Some(CfnProperty {
-                prop_type: Some(TypeValue::Single(kind.cfn_type().to_string())),
-                minimum: *minimum,
-                maximum: *maximum,
-                format: format.map(str::to_string),
-                // A scalar def with enum values classifies as `Enum`, not
-                // `Scalar`, so the reconstructed property never needs to carry
-                // enum values — they are handled by the enum branch upstream.
-                ..Default::default()
-            }),
-            _ => None,
-        }
-    }
+        .and_then(|ref_path| resolve_ref(schema, ref_path))
+        .and_then(|resolved| direct_object_map_value(resolved.property))
 }
 
 struct StructGenerationPaths<'a> {
@@ -5689,9 +5416,6 @@ fn generate_struct_type(
             // If enum detected in struct field and it's in the enums map, use shared string enum type.
             // Try composite key "DefName.FieldName" first (for definition-scoped enums),
             // then fall back to plain "FieldName" (for top-level property enums).
-            // Check if the original field type was a List (array)
-            let is_list_field =
-                field_type.contains("::list(") || field_type.contains("::unordered_list(");
             let field_type = if let Some(expression) =
                 nested_override.and_then(TypeOverride::attribute_type_expression)
             {
@@ -5742,8 +5466,11 @@ fn generate_struct_type(
                         dsl_aliases_code
                     )
                 };
-                // Wrap in List if the original field type was a List
-                if is_list_field {
+                if let Some(list_type) = replace_list_element_type(&field_type, &enum_type) {
+                    list_type
+                } else if field_force_unordered
+                    && field_prop.prop_type.as_ref().and_then(TypeValue::as_str) == Some("array")
+                {
                     let list_ctor =
                         list_constructor(field_prop.insertion_order, field_force_unordered);
                     format!("{}({})", list_ctor, enum_type)
@@ -6084,6 +5811,19 @@ fn refined_float_type(identity: &str, range: &str) -> String {
 
 fn refined_list_type(element_type: &str, ordered: bool, length: &str) -> String {
     format!("AttributeType::refined_list({element_type}, {ordered}, {length})")
+}
+
+fn replace_list_element_type(list_type: &str, element_type: &str) -> Option<String> {
+    for prefix in ["AttributeType::list(", "AttributeType::unordered_list("] {
+        if list_type.starts_with(prefix) && list_type.ends_with(')') {
+            return Some(format!("{prefix}{element_type})"));
+        }
+    }
+    let prefix = "AttributeType::refined_list(";
+    list_type.strip_prefix(prefix).and_then(|rest| {
+        let (_, suffix) = rest.split_once(", ")?;
+        Some(format!("{prefix}{element_type}, {suffix}"))
+    })
 }
 
 fn emit_int_range_option(min: Option<i64>, max: Option<i64>) -> String {
@@ -7361,8 +7101,15 @@ fn property_resolves_to_array(prop: &CfnProperty, schema: &CfnSchema) -> bool {
 
     prop.ref_path
         .as_deref()
-        .and_then(|ref_path| resolve_ref_classified(schema, ref_path))
-        .is_some_and(|resolved| matches!(resolved, ResolvedDef::Array { .. }))
+        .and_then(|ref_path| resolve_ref(schema, ref_path))
+        .is_some_and(|resolved| {
+            resolved
+                .property
+                .prop_type
+                .as_ref()
+                .and_then(TypeValue::as_str)
+                == Some("array")
+        })
 }
 
 #[derive(Clone, Copy)]
@@ -7416,6 +7163,43 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
     enums: &BTreeMap<String, EnumInfo>,
     paths: CfnTypeGenerationPaths<'_>,
 ) -> (String, Option<EnumInfo>) {
+    cfn_type_to_carina_type_with_enum_resolved(
+        prop,
+        prop_name,
+        schema,
+        namespace,
+        enums,
+        paths,
+        RefGenerationState {
+            definition_name: None,
+            context: RefContext::Normal,
+        },
+    )
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RefContext {
+    Normal,
+    ListItem,
+}
+
+#[derive(Clone, Copy)]
+struct RefGenerationState<'a> {
+    definition_name: Option<&'a str>,
+    context: RefContext,
+}
+
+fn cfn_type_to_carina_type_with_enum_resolved(
+    prop: &CfnProperty,
+    prop_name: &str,
+    schema: &CfnSchema,
+    namespace: &str,
+    enums: &BTreeMap<String, EnumInfo>,
+    paths: CfnTypeGenerationPaths<'_>,
+    ref_state: RefGenerationState<'_>,
+) -> (String, Option<EnumInfo>) {
+    let definition_name = ref_state.definition_name;
+    let ref_context = ref_state.context;
     let struct_path = paths.structural;
     let property_path = paths.provider;
     let cfn_parent = paths.cfn_parent;
@@ -7443,7 +7227,7 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
             serde_json::Value::String(s) => s.clone(),
             other => other.to_string(),
         };
-        let type_name = prop_name.to_pascal_case();
+        let type_name = definition_name.unwrap_or(prop_name).to_pascal_case();
         let enum_info = EnumInfo {
             type_name,
             values: vec![value_str],
@@ -7451,29 +7235,25 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
         return ("/* enum */".to_string(), Some(enum_info));
     }
 
-    if !prop.one_of.is_empty() {
+    if !prop.one_of.is_empty() && !has_direct_struct_properties(prop) {
         if let Some(array_variant) = prop
             .one_of
             .iter()
             .find(|variant| property_resolves_to_array(variant, schema))
         {
-            return cfn_type_to_carina_type_with_enum_with_paths(
+            return cfn_type_to_carina_type_with_enum_resolved(
                 array_variant,
                 prop_name,
                 schema,
                 namespace,
                 enums,
                 paths,
+                ref_state,
             );
         }
 
-        let has_mergeable_object_variant = prop.one_of.iter().any(|variant| {
-            variant
-                .properties
-                .as_ref()
-                .is_some_and(|props| !props.is_empty())
-        });
-        if !has_mergeable_object_variant {
+        let merged = merged_one_of_properties(prop);
+        if merged.is_empty() {
             let variant_types: Vec<Vec<String>> =
                 prop.one_of.iter().map(property_type_values).collect();
             panic!(
@@ -7481,17 +7261,40 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
                 schema.type_name, prop_name, variant_types
             );
         }
+
+        let mut inline_property = prop.clone();
+        inline_property.prop_type = Some(TypeValue::Single("object".to_string()));
+        inline_property.properties = Some(merged);
+        inline_property.required.clear();
+        inline_property.one_of.clear();
+        return cfn_type_to_carina_type_with_enum_resolved(
+            &inline_property,
+            prop_name,
+            schema,
+            namespace,
+            enums,
+            paths,
+            ref_state,
+        );
     }
 
-    // Handle $ref
+    // Resolve every definition to the same property model used by inline
+    // schemas, then recurse through this function. The surrounding metadata
+    // only preserves named-struct identity and recursive schema refs.
     if let Some(ref_path) = &prop.ref_path {
         if is_tag_map_ref(schema, ref_path) {
             return ("carina_aws_types::tags_type()".to_string(), None);
         }
 
-        if let Some(def_name) = ref_def_name(ref_path)
-            && IN_PROGRESS_DEFS.with(|s| s.borrow().contains(def_name))
-        {
+        let Some(resolved) = resolve_ref(schema, ref_path) else {
+            if let Some(inferred) = infer_string_type(prop_name, &schema.type_name) {
+                return (inferred, None);
+            }
+            return ("AttributeType::string()".to_string(), None);
+        };
+        let def_name = resolved.name;
+
+        if IN_PROGRESS_DEFS.with(|definitions| definitions.borrow().contains(def_name)) {
             mark_back_reference(def_name);
             return (
                 format!("AttributeType::ref_({}.to_string())", rust_lit(def_name)),
@@ -7499,161 +7302,53 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
             );
         }
 
-        let definition_already_emitted = ref_def_name(ref_path)
-            .is_some_and(|def_name| EMITTED_DEFS.with(|s| s.borrow().contains_key(def_name)));
+        let definition_already_emitted =
+            EMITTED_DEFS.with(|definitions| definitions.borrow().contains_key(def_name));
+        IN_PROGRESS_DEFS.with(|definitions| {
+            definitions.borrow_mut().insert(def_name.to_string());
+        });
+        let (body, enum_info) = cfn_type_to_carina_type_with_enum_resolved(
+            resolved.property,
+            prop_name,
+            schema,
+            namespace,
+            enums,
+            paths,
+            RefGenerationState {
+                definition_name: Some(def_name),
+                context: ref_context,
+            },
+        );
+        IN_PROGRESS_DEFS.with(|definitions| {
+            definitions.borrow_mut().remove(def_name);
+        });
 
-        if let Some(resolved) = resolve_ref_classified(schema, ref_path) {
-            match resolved {
-                ResolvedDef::Struct {
-                    properties,
-                    required,
-                } => {
-                    let def_name = ref_def_name(ref_path).unwrap_or(prop_name);
-                    IN_PROGRESS_DEFS.with(|s| {
-                        s.borrow_mut().insert(def_name.to_string());
-                    });
-                    let body = generate_struct_type(
-                        def_name,
-                        properties,
-                        required,
-                        schema,
-                        namespace,
-                        enums,
-                        StructGenerationPaths {
-                            structural: struct_path,
-                            provider: property_path,
-                        },
-                    );
-                    IN_PROGRESS_DEFS.with(|s| {
-                        s.borrow_mut().remove(def_name);
-                    });
+        if property_generates_struct(resolved.property, schema) {
+            match ref_context {
+                RefContext::Normal => {
                     if definition_already_emitted {
                         return (
                             format!("AttributeType::ref_({}.to_string())", rust_lit(def_name)),
                             None,
                         );
                     }
-                    EMITTED_DEFS.with(|s| {
-                        s.borrow_mut().insert(def_name.to_string(), body.clone());
+                    EMITTED_DEFS.with(|definitions| {
+                        definitions
+                            .borrow_mut()
+                            .insert(def_name.to_string(), body.clone());
                     });
-                    return (body, None);
                 }
-                ResolvedDef::ObjectMap { value } => {
-                    return generate_object_map_type(
-                        value, prop_name, schema, namespace, enums, paths,
-                    );
+                RefContext::ListItem if was_back_referenced(def_name) => {
+                    EMITTED_DEFS.with(|definitions| {
+                        definitions
+                            .borrow_mut()
+                            .insert(def_name.to_string(), body.clone());
+                    });
                 }
-                ResolvedDef::OneOf { variants } => {
-                    let mut merged_props = BTreeMap::new();
-                    for variant in variants {
-                        if let Some(props) = &variant.properties {
-                            for (k, v) in props {
-                                if is_deprecated_property(v) {
-                                    let field_path = extend_property_path(property_path, k);
-                                    record_skipped_deprecated_write_only_path(schema, &field_path);
-                                    continue;
-                                }
-                                merged_props.insert(k.clone(), v.clone());
-                            }
-                        }
-                    }
-                    if !merged_props.is_empty() {
-                        let def_name = ref_def_name(ref_path).unwrap_or(prop_name);
-                        IN_PROGRESS_DEFS.with(|s| {
-                            s.borrow_mut().insert(def_name.to_string());
-                        });
-                        let body = generate_struct_type(
-                            def_name,
-                            &merged_props,
-                            &[],
-                            schema,
-                            namespace,
-                            enums,
-                            StructGenerationPaths {
-                                structural: struct_path,
-                                provider: property_path,
-                            },
-                        );
-                        IN_PROGRESS_DEFS.with(|s| {
-                            s.borrow_mut().remove(def_name);
-                        });
-                        if definition_already_emitted {
-                            return (
-                                format!("AttributeType::ref_({}.to_string())", rust_lit(def_name)),
-                                None,
-                            );
-                        }
-                        EMITTED_DEFS.with(|s| {
-                            s.borrow_mut().insert(def_name.to_string(), body.clone());
-                        });
-                        return (body, None);
-                    }
-                }
-                ResolvedDef::Enum { values } => {
-                    let def_name = ref_def_name(ref_path).unwrap_or(prop_name);
-                    let type_name = def_name.to_pascal_case();
-                    let string_values: Vec<String> =
-                        values.iter().map(|v| v.to_string_value()).collect();
-                    let deduped =
-                        deduplicate_enum_values(string_values.clone()).unwrap_or(string_values);
-                    let enum_info = EnumInfo {
-                        type_name,
-                        values: deduped,
-                    };
-                    return ("/* enum */".to_string(), Some(enum_info));
-                }
-                ResolvedDef::Array { items } => {
-                    let item_path = extend_property_path(property_path, "*");
-                    let (item_type, item_enum) = cfn_type_to_carina_type_with_enum_with_paths(
-                        items,
-                        prop_name,
-                        schema,
-                        namespace,
-                        enums,
-                        CfnTypeGenerationPaths {
-                            provider: &item_path,
-                            ..paths
-                        },
-                    );
-                    let effective_item_type = if item_enum.is_some() {
-                        "AttributeType::string()".to_string()
-                    } else {
-                        item_type
-                    };
-                    let list_ctor = list_constructor(
-                        prop.insertion_order,
-                        override_forces_unordered(&schema.type_name, cfn_property_path),
-                    );
-                    return (format!("{}({})", list_ctor, effective_item_type), item_enum);
-                }
-                resolved @ (ResolvedDef::String { .. } | ResolvedDef::Scalar { .. }) => {
-                    if let Some(inline_prop) = resolved.as_inline_property() {
-                        return cfn_type_to_carina_type_with_enum_with_paths(
-                            &inline_prop,
-                            prop_name,
-                            schema,
-                            namespace,
-                            enums,
-                            paths,
-                        );
-                    }
-                }
-                ResolvedDef::Opaque => {
-                    if resolve_ref(schema, ref_path)
-                        .is_some_and(|definition| definition.def_type.as_deref() == Some("object"))
-                    {
-                        panic!(
-                            "unsupported object definition {}.{} referenced by {ref_path}; expected a struct, direct-string map, tag map, typed map of struct, or classified bare object; see CODEGEN.md#classifying-bare-objects",
-                            schema.type_name, cfn_property_path
-                        );
-                    }
-                }
+                RefContext::ListItem => {}
             }
         }
-        if let Some(inferred) = infer_string_type(prop_name, &schema.type_name) {
-            return (inferred, None);
-        }
-        return ("AttributeType::string()".to_string(), None);
+        return (body, enum_info);
     }
 
     // Handle explicit enum
@@ -7671,7 +7366,7 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
             return (int_enum_type(&schema.type_name, prop_name, &values), None);
         }
 
-        let type_name = prop_name.to_pascal_case();
+        let type_name = definition_name.unwrap_or(prop_name).to_pascal_case();
         let string_values: Vec<String> = enum_values.iter().map(|v| v.to_string_value()).collect();
         // Deduplicate case-insensitive duplicates (e.g., "GLACIER" and "Glacier")
         let deduped = deduplicate_enum_values(string_values.clone()).unwrap_or(string_values);
@@ -7695,7 +7390,7 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
     }
 
     // Handle type
-    match prop.prop_type.as_ref().and_then(|t| t.as_str()) {
+    match inline_property_type(prop) {
         Some("string") => {
             if let Some(TypeOverride::ToDsl(to_dsl)) =
                 resource_type_override(&schema.type_name, cfn_property_path)
@@ -7770,11 +7465,6 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
                 );
             }
 
-            // Check for string format constraint (e.g., "uri", "date-time")
-            if prop.format.is_some() {
-                return (refined_string_type("None", "None", "None", "None"), None);
-            }
-
             // Check for string length constraints (minLength/maxLength)
             if has_length {
                 let length_expr = emit_length_option(effective_min, prop.max_length);
@@ -7783,6 +7473,13 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
                     refined_string_type("None", "None", &length_expr, to_dsl),
                     None,
                 );
+            }
+
+            // A format is informational in AttributeType, but still selects
+            // the refined-string representation when no validated length is
+            // present.
+            if prop.format.is_some() {
+                return (refined_string_type("None", "None", "None", "None"), None);
             }
 
             ("AttributeType::string()".to_string(), None)
@@ -7858,81 +7555,30 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
             );
             let (list_type, item_enum) = if let Some(items) = &prop.items {
                 let item_path = extend_property_path(property_path, "*");
-                // The list-of-struct inlining path bypasses the normal `$ref`
-                // branch above. Apply the same in-progress guard here so both
-                // direct self-references and multi-definition list cycles
-                // terminate with a schema Ref.
-                if let Some(ref_path) = &items.ref_path
-                    && let Some(def_name) = ref_def_name(ref_path)
-                    && IN_PROGRESS_DEFS.with(|defs| defs.borrow().contains(def_name))
-                {
-                    mark_back_reference(def_name);
-                    (
-                        format!(
-                            "{}(AttributeType::ref_({}.to_string()))",
-                            list_ctor,
-                            rust_lit(def_name)
-                        ),
-                        None,
-                    )
-                // Struct-shaped $ref items are inlined as a list-of-struct;
-                // every other item shape (scalar/enum/array/string/opaque)
-                // falls through to the normal recursion below.
-                } else if let Some(ref_path) = &items.ref_path
-                    && !is_tag_map_ref(schema, ref_path)
-                    && let Some(ResolvedDef::Struct {
-                        properties,
-                        required,
-                    }) = resolve_ref_classified(schema, ref_path)
-                {
-                    let def_name = ref_def_name(ref_path).unwrap_or(prop_name);
-                    IN_PROGRESS_DEFS.with(|defs| {
-                        defs.borrow_mut().insert(def_name.to_string());
-                    });
-                    let struct_type = generate_struct_type(
-                        def_name,
-                        properties,
-                        required,
-                        schema,
-                        namespace,
-                        enums,
-                        StructGenerationPaths {
-                            structural: struct_path,
-                            provider: &item_path,
-                        },
-                    );
-                    IN_PROGRESS_DEFS.with(|defs| {
-                        defs.borrow_mut().remove(def_name);
-                    });
-                    if was_back_referenced(def_name) {
-                        EMITTED_DEFS.with(|defs| {
-                            defs.borrow_mut()
-                                .insert(def_name.to_string(), struct_type.clone());
-                        });
-                    }
-                    (format!("{}({})", list_ctor, struct_type), None)
+                let (item_type, item_enum) = cfn_type_to_carina_type_with_enum_resolved(
+                    items,
+                    prop_name,
+                    schema,
+                    namespace,
+                    enums,
+                    CfnTypeGenerationPaths {
+                        provider: &item_path,
+                        ..paths
+                    },
+                    RefGenerationState {
+                        definition_name: None,
+                        context: RefContext::ListItem,
+                    },
+                );
+                // If array items have enum values, propagate the enum info so
+                // the caller can register it. String is a placeholder until
+                // the registered enum expression is substituted.
+                let effective_item_type = if item_enum.is_some() {
+                    "AttributeType::string()".to_string()
                 } else {
-                    let (item_type, item_enum) = cfn_type_to_carina_type_with_enum_with_paths(
-                        items,
-                        prop_name,
-                        schema,
-                        namespace,
-                        enums,
-                        CfnTypeGenerationPaths {
-                            provider: &item_path,
-                            ..paths
-                        },
-                    );
-                    // If array items have enum values, propagate the enum info so the
-                    // caller can register it. The item type uses String as a placeholder;
-                    // the actual enum type will be substituted when the enum is registered.
-                    let effective_item_type = if item_enum.is_some() {
-                        "AttributeType::string()".to_string()
-                    } else {
-                        item_type
-                    };
-                    (format!("{}({})", list_ctor, effective_item_type), item_enum)
-                }
+                    item_type
+                };
+                (format!("{}({})", list_ctor, effective_item_type), item_enum)
             } else {
                 (format!("{}(AttributeType::string())", list_ctor), None)
             };
@@ -7968,7 +7614,7 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
             {
                 return (
                     generate_struct_type(
-                        prop_name,
+                        definition_name.unwrap_or(prop_name),
                         props,
                         &prop.required,
                         schema,
@@ -8360,33 +8006,6 @@ mod tests {
         );
     }
 
-    /// Build a `CfnDefinition` for classification tests, overriding only the
-    /// fields a case cares about.
-    fn def(
-        def_type: Option<&str>,
-        properties: Option<BTreeMap<String, CfnProperty>>,
-        one_of: Vec<CfnProperty>,
-        enum_values: Option<Vec<EnumValue>>,
-        items: Option<CfnProperty>,
-        pattern: Option<&str>,
-    ) -> CfnDefinition {
-        CfnDefinition {
-            def_type: def_type.map(str::to_string),
-            properties,
-            one_of,
-            enum_values,
-            items: items.map(Box::new),
-            pattern: pattern.map(str::to_string),
-            ..Default::default()
-        }
-    }
-
-    fn one_prop() -> BTreeMap<String, CfnProperty> {
-        let mut m = BTreeMap::new();
-        m.insert("Field".to_string(), CfnProperty::default());
-        m
-    }
-
     #[test]
     fn test_rust_lit_escapes_rust_string_literals() {
         assert_eq!(rust_lit("plain").to_string(), "\"plain\"");
@@ -8457,6 +8076,28 @@ mod tests {
         }
     }
 
+    /// Build a definition fixture while specifying only the shape relevant to
+    /// the test. Definitions and inline properties intentionally share the
+    /// same representation.
+    fn def(
+        prop_type: Option<&str>,
+        properties: Option<BTreeMap<String, CfnProperty>>,
+        one_of: Vec<CfnProperty>,
+        enum_values: Option<Vec<EnumValue>>,
+        items: Option<CfnProperty>,
+        pattern: Option<&str>,
+    ) -> CfnProperty {
+        CfnProperty {
+            prop_type: prop_type.map(|value| TypeValue::Single(value.to_string())),
+            properties,
+            one_of,
+            enum_values,
+            items: items.map(Box::new),
+            pattern: pattern.map(str::to_string),
+            ..Default::default()
+        }
+    }
+
     #[test]
     fn test_is_tag_map_ref_requires_canonical_tag_name_and_shape() {
         let string_property = || CfnProperty {
@@ -8469,8 +8110,8 @@ mod tests {
                 ("Value".to_string(), string_property()),
             ])
         };
-        let object_definition = |properties| CfnDefinition {
-            def_type: Some("object".to_string()),
+        let object_definition = |properties| CfnProperty {
+            prop_type: Some(TypeValue::Single("object".to_string())),
             properties: Some(properties),
             ..Default::default()
         };
@@ -8792,8 +8433,8 @@ mod tests {
         );
         schema.definitions = Some(BTreeMap::from([(
             definition_name.to_string(),
-            CfnDefinition {
-                def_type: Some("object".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
                 properties: Some(fields),
                 ..Default::default()
             },
@@ -8961,16 +8602,16 @@ mod tests {
         schema.definitions = Some(BTreeMap::from([
             (
                 "UnusedMarker".to_string(),
-                CfnDefinition {
-                    def_type: Some("object".to_string()),
+                CfnProperty {
+                    prop_type: Some(TypeValue::Single("object".to_string())),
                     properties: Some(BTreeMap::new()),
                     ..Default::default()
                 },
             ),
             (
                 "UnusedMarkers".to_string(),
-                CfnDefinition {
-                    def_type: Some("array".to_string()),
+                CfnProperty {
+                    prop_type: Some(TypeValue::Single("array".to_string())),
                     items: Some(Box::new(CfnProperty {
                         prop_type: Some(TypeValue::Single("object".to_string())),
                         properties: Some(BTreeMap::new()),
@@ -8996,8 +8637,8 @@ mod tests {
         );
         schema.definitions = Some(BTreeMap::from([(
             "MarkerList".to_string(),
-            CfnDefinition {
-                def_type: Some("array".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("array".to_string())),
                 items: Some(Box::new(CfnProperty {
                     prop_type: Some(TypeValue::Single("object".to_string())),
                     properties: Some(BTreeMap::new()),
@@ -9107,30 +8748,36 @@ mod tests {
         }
 
         if let Some(ref_path) = &prop.ref_path
-            && let Some(resolved) = resolve_ref_classified(schema, ref_path)
+            && let Some(resolved) = resolve_ref(schema, ref_path)
         {
-            match resolved {
-                ResolvedDef::ObjectMap { value } => {
-                    object_map_value_or_panic(schema, property_path, value);
-                    return;
-                }
-                ResolvedDef::Opaque
-                    if resolve_ref(schema, ref_path).is_some_and(|definition| {
-                        definition.def_type.as_deref() == Some("object")
-                    }) =>
-                {
-                    panic!(
-                        "unsupported cached object definition {}.{} referenced by {ref_path}; expected a struct, direct-string map, tag map, typed map of struct, or classified bare object",
-                        schema.type_name, property_path
-                    );
-                }
-                // Array-definition items must keep the referencing property
-                // path, so they are handled by the dedicated branch below.
-                ResolvedDef::Array { .. } => {}
-                // Every other resolved ref owns its shape; reachable struct
-                // and oneOf children are walked from the definitions pass.
-                _ => return,
+            if let Some(value) = direct_object_map_value(resolved.property) {
+                object_map_value_or_panic(schema, property_path, value);
+                return;
             }
+            if resolved
+                .property
+                .prop_type
+                .as_ref()
+                .and_then(TypeValue::as_str)
+                == Some("array")
+                && let Some(items) = &resolved.property.items
+            {
+                if active_array_definitions.insert(resolved.name.to_string()) {
+                    assert_property_classified(
+                        schema,
+                        prop_name,
+                        items,
+                        parent_struct,
+                        used_rows,
+                        active_array_definitions,
+                    );
+                    active_array_definitions.remove(resolved.name);
+                }
+                return;
+            }
+            // Every other resolved ref owns its shape; reachable struct and
+            // oneOf children are walked from the definitions pass.
+            return;
         }
 
         if property_declares_object(prop) {
@@ -9161,31 +8808,6 @@ mod tests {
                     schema.type_name, property_path
                 );
             }
-        }
-
-        // Array definitions are emitted through the property that references
-        // them, so their item shape uses that property's canonical path.
-        if let Some(ref_path) = &prop.ref_path
-            && let Some(definition_name) = ref_def_name(ref_path)
-            && let Some(definition) = schema
-                .definitions
-                .as_ref()
-                .and_then(|definitions| definitions.get(definition_name))
-            && definition.def_type.as_deref() == Some("array")
-            && let Some(items) = &definition.items
-        {
-            if active_array_definitions.insert(definition_name.to_string()) {
-                assert_property_classified(
-                    schema,
-                    prop_name,
-                    items,
-                    parent_struct,
-                    used_rows,
-                    active_array_definitions,
-                );
-                active_array_definitions.remove(definition_name);
-            }
-            return;
         }
 
         if !prop.one_of.is_empty() {
@@ -9266,6 +8888,7 @@ mod tests {
             else {
                 continue;
             };
+            collect_property_refs(definition, &mut reachable);
             for property in definition
                 .properties
                 .iter()
@@ -9305,7 +8928,7 @@ mod tests {
                 if !reachable_definitions.contains(definition_name) {
                     continue;
                 }
-                if is_bare_object_definition(definition) {
+                if is_direct_bare_object(definition) {
                     // The referencing property already classified this shape
                     // using the path codegen uses to emit it.
                     continue;
@@ -9634,8 +9257,8 @@ mod tests {
         schema.definitions = Some(BTreeMap::from([
             (
                 "CycleA".to_string(),
-                CfnDefinition {
-                    def_type: Some("object".to_string()),
+                CfnProperty {
+                    prop_type: Some(TypeValue::Single("object".to_string())),
                     properties: Some(BTreeMap::from([(
                         "Children".to_string(),
                         list_of("CycleB"),
@@ -9645,8 +9268,8 @@ mod tests {
             ),
             (
                 "CycleB".to_string(),
-                CfnDefinition {
-                    def_type: Some("object".to_string()),
+                CfnProperty {
+                    prop_type: Some(TypeValue::Single("object".to_string())),
                     properties: Some(BTreeMap::from([("Parents".to_string(), list_of("CycleA"))])),
                     ..Default::default()
                 },
@@ -9827,147 +9450,6 @@ mod tests {
     }
 
     #[test]
-    fn test_classify_def_precedence_matches_canonical_order() {
-        // classify_def is the single source of truth for $ref shape dispatch
-        // (awscc#293). These cases pin the canonical precedence
-        // properties > oneOf > enum > array > string-pattern > scalar > opaque
-        // so generated output stays byte-identical and a future reorder is
-        // caught.
-
-        // Struct wins even if other shape-fields are also present.
-        assert!(matches!(
-            classify_def(&def(
-                Some("object"),
-                Some(one_prop()),
-                vec![CfnProperty::default()],
-                Some(vec![EnumValue::Str("x".into())]),
-                None,
-                None,
-            )),
-            ResolvedDef::Struct { .. }
-        ));
-
-        // oneOf wins over enum/array/etc when there are no inline properties.
-        assert!(matches!(
-            classify_def(&def(
-                Some("object"),
-                None,
-                vec![CfnProperty::default()],
-                Some(vec![EnumValue::Str("x".into())]),
-                None,
-                None,
-            )),
-            ResolvedDef::OneOf { .. }
-        ));
-
-        // An integer-typed enum classifies as Enum, NOT Scalar — this is the
-        // precedence that keeps WAFv2 `EvaluationWindowSec` an enum.
-        assert!(matches!(
-            classify_def(&def(
-                Some("integer"),
-                None,
-                vec![],
-                Some(vec![EnumValue::Int(60), EnumValue::Int(120)]),
-                None,
-                None,
-            )),
-            ResolvedDef::Enum { .. }
-        ));
-
-        // Array (type=array + items) beats a stray string-pattern/scalar.
-        assert!(matches!(
-            classify_def(&def(
-                Some("array"),
-                None,
-                vec![],
-                None,
-                Some(CfnProperty::default()),
-                None,
-            )),
-            ResolvedDef::Array { .. }
-        ));
-
-        // Every string definition is classified as String, whether or not it
-        // carries a pattern or another refinement keyword.
-        assert!(matches!(
-            classify_def(&def(Some("string"), None, vec![], None, None, Some("^a$"))),
-            ResolvedDef::String { .. }
-        ));
-
-        // Bare scalar (no enum) -> Scalar with the right kind.
-        assert!(matches!(
-            classify_def(&def(Some("integer"), None, vec![], None, None, None)),
-            ResolvedDef::Scalar {
-                kind: ScalarKind::Integer,
-                ..
-            }
-        ));
-        assert!(matches!(
-            classify_def(&def(Some("number"), None, vec![], None, None, None)),
-            ResolvedDef::Scalar {
-                kind: ScalarKind::Number,
-                ..
-            }
-        ));
-        assert!(matches!(
-            classify_def(&def(Some("boolean"), None, vec![], None, None, None)),
-            ResolvedDef::Scalar {
-                kind: ScalarKind::Boolean,
-                ..
-            }
-        ));
-
-        // Empty properties is NOT a struct — falls through to Opaque.
-        assert!(matches!(
-            classify_def(&def(
-                Some("object"),
-                Some(BTreeMap::new()),
-                vec![],
-                None,
-                None,
-                None,
-            )),
-            ResolvedDef::Opaque
-        ));
-
-        // A typeless def with none of the shape markers -> Opaque (the
-        // explicit fallback that replaced the silent String drop).
-        assert!(matches!(
-            classify_def(&def(None, None, vec![], None, None, None)),
-            ResolvedDef::Opaque
-        ));
-
-        // A plain string still uses the String variant so all string refs take
-        // the same inline-property path.
-        assert!(matches!(
-            classify_def(&def(Some("string"), None, vec![], None, None, None)),
-            ResolvedDef::String { .. }
-        ));
-    }
-
-    #[test]
-    fn test_classify_def_scalar_carries_range_and_format() {
-        let mut d = def(Some("integer"), None, vec![], None, None, None);
-        d.minimum = Some(10);
-        d.maximum = Some(2_000_000_000);
-        d.format = Some("int64".to_string());
-        match classify_def(&d) {
-            ResolvedDef::Scalar {
-                kind,
-                minimum,
-                maximum,
-                format,
-            } => {
-                assert_eq!(kind, ScalarKind::Integer);
-                assert_eq!(minimum, Some(10));
-                assert_eq!(maximum, Some(2_000_000_000));
-                assert_eq!(format, Some("int64"));
-            }
-            _ => panic!("expected Scalar"),
-        }
-    }
-
-    #[test]
     fn test_pattern_properties_object_ref_generates_typed_struct_map_and_docs() {
         let mut schema = empty_schema("AWS::WAFv2::WebACL");
         schema.properties.insert(
@@ -9980,8 +9462,8 @@ mod tests {
         schema.definitions = Some(BTreeMap::from([
             (
                 "CustomResponseBodies".to_string(),
-                CfnDefinition {
-                    def_type: Some("object".to_string()),
+                CfnProperty {
+                    prop_type: Some(TypeValue::Single("object".to_string())),
                     pattern_properties: Some(BTreeMap::from([(
                         "^[a-z]+$".to_string(),
                         CfnProperty {
@@ -9994,8 +9476,8 @@ mod tests {
             ),
             (
                 "CustomResponseBody".to_string(),
-                CfnDefinition {
-                    def_type: Some("object".to_string()),
+                CfnProperty {
+                    prop_type: Some(TypeValue::Single("object".to_string())),
                     properties: Some(BTreeMap::from([
                         (
                             "Content".to_string(),
@@ -10056,8 +9538,8 @@ mod tests {
         let mut schema = empty_schema("AWS::Test::UnsupportedObjectMap");
         schema.definitions = Some(BTreeMap::from([(
             "UnsupportedMap".to_string(),
-            CfnDefinition {
-                def_type: Some("object".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
                 pattern_properties: Some(BTreeMap::from([(
                     ".*".to_string(),
                     CfnProperty {
@@ -10096,8 +9578,8 @@ mod tests {
         schema.definitions = Some(BTreeMap::from([
             (
                 "Container".to_string(),
-                CfnDefinition {
-                    def_type: Some("object".to_string()),
+                CfnProperty {
+                    prop_type: Some(TypeValue::Single("object".to_string())),
                     properties: Some(BTreeMap::from([(
                         "NestedMap".to_string(),
                         CfnProperty {
@@ -10110,8 +9592,8 @@ mod tests {
             ),
             (
                 "UnsupportedMap".to_string(),
-                CfnDefinition {
-                    def_type: Some("object".to_string()),
+                CfnProperty {
+                    prop_type: Some(TypeValue::Single("object".to_string())),
                     pattern_properties: Some(BTreeMap::from([(
                         ".*".to_string(),
                         CfnProperty {
@@ -10522,8 +10004,8 @@ mod tests {
 
     #[test]
     fn test_nested_read_only_path_through_ref_array_items_is_provider_populated() {
-        let item_definition = CfnDefinition {
-            def_type: Some("object".to_string()),
+        let item_definition = CfnProperty {
+            prop_type: Some(TypeValue::Single("object".to_string())),
             properties: Some(BTreeMap::from([
                 (
                     "Owned".to_string(),
@@ -10568,8 +10050,8 @@ mod tests {
             ("Item".to_string(), item_definition),
             (
                 "ItemList".to_string(),
-                CfnDefinition {
-                    def_type: Some("array".to_string()),
+                CfnProperty {
+                    prop_type: Some(TypeValue::Single("array".to_string())),
                     items: Some(Box::new(item_ref)),
                     ..Default::default()
                 },
@@ -10616,8 +10098,8 @@ mod tests {
         ]);
         schema.definitions = Some(BTreeMap::from([(
             "Shared".to_string(),
-            CfnDefinition {
-                def_type: Some("object".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
                 properties: Some(BTreeMap::from([
                     (
                         "Owned".to_string(),
@@ -10699,8 +10181,8 @@ mod tests {
         );
         schema.definitions = Some(BTreeMap::from([(
             "RedirectConfig".to_string(),
-            CfnDefinition {
-                def_type: Some("object".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
                 properties: Some(BTreeMap::from([(
                     "Protocol".to_string(),
                     CfnProperty {
@@ -12198,187 +11680,6 @@ mod tests {
     }
 
     #[test]
-    fn test_list_element_type_display() {
-        // String items
-        let prop = CfnProperty {
-            prop_type: Some(TypeValue::Single("string".to_string())),
-            description: None,
-            enum_values: None,
-            items: None,
-            ref_path: None,
-            insertion_order: None,
-            properties: None,
-            required: vec![],
-            minimum: None,
-            maximum: None,
-            additional_properties: None,
-            const_value: None,
-            default_value: None,
-            pattern: None,
-            min_items: None,
-            max_items: None,
-            min_length: None,
-            max_length: None,
-            format: None,
-            ..Default::default()
-        };
-        assert_eq!(
-            list_element_type_display(&prop, "GenericProp", ""),
-            "`List<String>`"
-        );
-
-        // Integer items
-        let prop = CfnProperty {
-            prop_type: Some(TypeValue::Single("integer".to_string())),
-            description: None,
-            enum_values: None,
-            items: None,
-            ref_path: None,
-            insertion_order: None,
-            properties: None,
-            required: vec![],
-            minimum: None,
-            maximum: None,
-            additional_properties: None,
-            const_value: None,
-            default_value: None,
-            pattern: None,
-            min_items: None,
-            max_items: None,
-            min_length: None,
-            max_length: None,
-            format: None,
-            ..Default::default()
-        };
-        assert_eq!(
-            list_element_type_display(&prop, "GenericProp", ""),
-            "`List<Int>`"
-        );
-
-        // Boolean items
-        let prop = CfnProperty {
-            prop_type: Some(TypeValue::Single("boolean".to_string())),
-            description: None,
-            enum_values: None,
-            items: None,
-            ref_path: None,
-            insertion_order: None,
-            properties: None,
-            required: vec![],
-            minimum: None,
-            maximum: None,
-            additional_properties: None,
-            const_value: None,
-            default_value: None,
-            pattern: None,
-            min_items: None,
-            max_items: None,
-            min_length: None,
-            max_length: None,
-            format: None,
-            ..Default::default()
-        };
-        assert_eq!(
-            list_element_type_display(&prop, "GenericProp", ""),
-            "`List<Bool>`"
-        );
-
-        // No type (fallback)
-        let prop = CfnProperty {
-            prop_type: None,
-            description: None,
-            enum_values: None,
-            items: None,
-            ref_path: None,
-            insertion_order: None,
-            properties: None,
-            required: vec![],
-            minimum: None,
-            maximum: None,
-            additional_properties: None,
-            const_value: None,
-            default_value: None,
-            pattern: None,
-            min_items: None,
-            max_items: None,
-            min_length: None,
-            max_length: None,
-            format: None,
-            ..Default::default()
-        };
-        assert_eq!(
-            list_element_type_display(&prop, "GenericProp", ""),
-            "`List<String>`"
-        );
-    }
-
-    #[test]
-    fn test_list_element_type_display_with_name_inference() {
-        let prop = CfnProperty {
-            prop_type: Some(TypeValue::Single("string".to_string())),
-            description: None,
-            enum_values: None,
-            items: None,
-            ref_path: None,
-            insertion_order: None,
-            properties: None,
-            required: vec![],
-            minimum: None,
-            maximum: None,
-            additional_properties: None,
-            const_value: None,
-            default_value: None,
-            pattern: None,
-            min_items: None,
-            max_items: None,
-            min_length: None,
-            max_length: None,
-            format: None,
-            ..Default::default()
-        };
-        assert_eq!(
-            list_element_type_display(&prop, "SubnetIds", ""),
-            "`List<SubnetId>`"
-        );
-        assert_eq!(
-            list_element_type_display(&prop, "SecurityGroupIds", ""),
-            "`List<SecurityGroupId>`"
-        );
-        assert_eq!(
-            list_element_type_display(&prop, "RouteTableIds", ""),
-            "`List<RouteTableId>`"
-        );
-        assert_eq!(
-            list_element_type_display(&prop, "NetworkInterfaceIds", ""),
-            "`List<NetworkInterfaceId>`"
-        );
-        assert_eq!(
-            list_element_type_display(&prop, "VpcEndpointIds", ""),
-            "`List<VpcEndpointId>`"
-        );
-        assert_eq!(
-            list_element_type_display(&prop, "RoleArns", ""),
-            "`List<Arn>`"
-        );
-        assert_eq!(
-            list_element_type_display(&prop, "CidrBlocks", ""),
-            "`List<Ipv4Cidr>`"
-        );
-        assert_eq!(
-            list_element_type_display(&prop, "Ipv6CidrBlocks", ""),
-            "`List<Ipv6Cidr>`"
-        );
-        assert_eq!(
-            list_element_type_display(&prop, "Names", ""),
-            "`List<String>`"
-        );
-        assert_eq!(
-            list_element_type_display(&prop, "SubnetId", ""),
-            "`List<SubnetId>`"
-        );
-    }
-
-    #[test]
     fn test_type_display_string_array_tag_ref() {
         // Array with Tag $ref should display List<Map(String)>
         let prop = CfnProperty {
@@ -12435,8 +11736,8 @@ mod tests {
             primary_identifier: None,
             definitions: Some(BTreeMap::from([(
                 "Tag".to_string(),
-                CfnDefinition {
-                    def_type: Some("object".to_string()),
+                CfnProperty {
+                    prop_type: Some(TypeValue::Single("object".to_string())),
                     properties: Some(BTreeMap::from([
                         (
                             "Key".to_string(),
@@ -12541,8 +11842,8 @@ mod tests {
         let mut definitions = BTreeMap::new();
         definitions.insert(
             "RateLimit".to_string(),
-            CfnDefinition {
-                def_type: Some("integer".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("integer".to_string())),
                 minimum: Some(10),
                 maximum: Some(2_000_000_000),
                 ..Default::default()
@@ -12585,8 +11886,8 @@ mod tests {
         let mut definitions = BTreeMap::new();
         definitions.insert(
             "Weight".to_string(),
-            CfnDefinition {
-                def_type: Some("integer".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("integer".to_string())),
                 ..Default::default()
             },
         );
@@ -12661,52 +11962,6 @@ mod tests {
             type_display_string("SomeList", &prop, &schema),
             "`List<String>`"
         );
-    }
-
-    #[test]
-    fn test_list_element_type_display_always_includes_element_type() {
-        // Regression guard: list_element_type_display must always return "List<...>"
-        // with element type info, never bare "List".
-        let test_cases: Vec<Option<TypeValue>> = vec![
-            Some(TypeValue::Single("string".to_string())),
-            Some(TypeValue::Single("integer".to_string())),
-            Some(TypeValue::Single("number".to_string())),
-            Some(TypeValue::Single("boolean".to_string())),
-            Some(TypeValue::Single("object".to_string())),
-            Some(TypeValue::Single("unknown".to_string())),
-            None,
-        ];
-        for type_val in test_cases {
-            let prop = CfnProperty {
-                prop_type: type_val.clone(),
-                description: None,
-                enum_values: None,
-                items: None,
-                ref_path: None,
-                insertion_order: None,
-                properties: None,
-                required: vec![],
-                minimum: None,
-                maximum: None,
-                additional_properties: None,
-                const_value: None,
-                default_value: None,
-                pattern: None,
-                min_items: None,
-                max_items: None,
-                min_length: None,
-                max_length: None,
-                format: None,
-                ..Default::default()
-            };
-            let result = list_element_type_display(&prop, "GenericProp", "");
-            assert!(
-                result.contains('<') && result.contains('>'),
-                "list_element_type_display should include element type for {:?}, got: {}",
-                type_val,
-                result
-            );
-        }
     }
 
     #[test]
@@ -14411,8 +13666,8 @@ mod tests {
         let mut definitions = BTreeMap::new();
         definitions.insert(
             "KeySchema".to_string(),
-            CfnDefinition {
-                def_type: Some("object".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
                 properties: Some(key_schema_props),
                 required: vec!["AttributeName".to_string(), "KeyType".to_string()],
                 ..Default::default()
@@ -14896,8 +14151,8 @@ mod tests {
         let mut definitions = BTreeMap::new();
         definitions.insert(
             "BlockSettings".to_string(),
-            CfnDefinition {
-                def_type: None,
+            CfnProperty {
+                prop_type: None,
                 properties: Some(def_props),
                 required: vec![],
                 one_of: vec![],
@@ -14910,6 +14165,7 @@ mod tests {
                 maximum: None,
                 pattern_properties: None,
                 format: None,
+                ..Default::default()
             },
         );
 
@@ -15072,8 +14328,8 @@ mod tests {
         let mut definitions = BTreeMap::new();
         definitions.insert(
             "HttpMethod".to_string(),
-            CfnDefinition {
-                def_type: Some("string".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("string".to_string())),
                 properties: None,
                 required: vec![],
                 one_of: vec![],
@@ -15089,6 +14345,7 @@ mod tests {
                 maximum: None,
                 pattern_properties: None,
                 format: None,
+                ..Default::default()
             },
         );
         let prop = CfnProperty {
@@ -15098,7 +14355,7 @@ mod tests {
         let schema = CfnSchema {
             type_name: "AWS::S3::Bucket".to_string(),
             description: None,
-            properties: BTreeMap::new(),
+            properties: BTreeMap::from([("HttpMethod".to_string(), prop.clone())]),
             required: vec![],
             read_only_properties: vec![],
             create_only_properties: vec![],
@@ -15125,6 +14382,14 @@ mod tests {
         let info = enum_info.unwrap();
         assert_eq!(info.values, vec!["GET", "POST"]);
         assert_eq!(info.type_name, "HttpMethod");
+
+        let generated = generate_synthetic_schema_code(&schema).unwrap();
+        assert!(
+            generated.contains("AttributeType::enum_(")
+                && generated.contains("\"GET\".to_string()")
+                && generated.contains("\"POST\".to_string()"),
+            "a string enum definition must remain an enum in schema code: {generated}"
+        );
     }
 
     #[test]
@@ -15134,8 +14399,8 @@ mod tests {
         let mut definitions = BTreeMap::new();
         definitions.insert(
             "BlockedEncryptionTypeList".to_string(),
-            CfnDefinition {
-                def_type: Some("array".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("array".to_string())),
                 properties: None,
                 required: vec![],
                 one_of: vec![],
@@ -15155,6 +14420,7 @@ mod tests {
                 maximum: None,
                 pattern_properties: None,
                 format: None,
+                ..Default::default()
             },
         );
         let prop = CfnProperty {
@@ -15210,8 +14476,8 @@ mod tests {
         let mut definitions = BTreeMap::new();
         definitions.insert(
             "RateLimit".to_string(),
-            CfnDefinition {
-                def_type: Some("integer".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("integer".to_string())),
                 minimum: Some(10),
                 maximum: Some(2_000_000_000),
                 ..Default::default()
@@ -15257,8 +14523,8 @@ mod tests {
         let mut definitions = BTreeMap::new();
         definitions.insert(
             "Weight".to_string(),
-            CfnDefinition {
-                def_type: Some("number".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("number".to_string())),
                 ..Default::default()
             },
         );
@@ -15302,8 +14568,8 @@ mod tests {
         let mut definitions = BTreeMap::new();
         definitions.insert(
             "Toggle".to_string(),
-            CfnDefinition {
-                def_type: Some("boolean".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("boolean".to_string())),
                 ..Default::default()
             },
         );
@@ -15355,8 +14621,8 @@ mod tests {
         let mut definitions = BTreeMap::new();
         definitions.insert(
             "Rule".to_string(),
-            CfnDefinition {
-                def_type: Some("object".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
                 properties: Some(def_props),
                 required: vec!["Priority".to_string()],
                 ..Default::default()
@@ -15364,8 +14630,8 @@ mod tests {
         );
         definitions.insert(
             "RulePriority".to_string(),
-            CfnDefinition {
-                def_type: Some("integer".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("integer".to_string())),
                 minimum: Some(0),
                 ..Default::default()
             },
@@ -15414,8 +14680,8 @@ mod tests {
         let mut definitions = BTreeMap::new();
         definitions.insert(
             "Weight".to_string(),
-            CfnDefinition {
-                def_type: Some("integer".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("integer".to_string())),
                 ..Default::default()
             },
         );
@@ -15558,8 +14824,8 @@ mod tests {
         let mut definitions = BTreeMap::new();
         definitions.insert(
             "ObjectLockConfiguration".to_string(),
-            CfnDefinition {
-                def_type: Some("object".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
                 properties: Some(def_props),
                 required: vec![],
                 enum_values: None,
@@ -15572,6 +14838,7 @@ mod tests {
                 maximum: None,
                 pattern_properties: None,
                 format: None,
+                ..Default::default()
             },
         );
 
@@ -15626,8 +14893,8 @@ mod tests {
         let mut definitions = BTreeMap::new();
         definitions.insert(
             "DefaultRetention".to_string(),
-            CfnDefinition {
-                def_type: Some("object".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
                 properties: Some(def_props),
                 required: vec![],
                 enum_values: None,
@@ -15640,12 +14907,13 @@ mod tests {
                 maximum: None,
                 pattern_properties: None,
                 format: None,
+                ..Default::default()
             },
         );
         definitions.insert(
             "RetentionMode".to_string(),
-            CfnDefinition {
-                def_type: Some("string".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("string".to_string())),
                 properties: None,
                 required: vec![],
                 enum_values: Some(vec![
@@ -15661,6 +14929,7 @@ mod tests {
                 maximum: None,
                 pattern_properties: None,
                 format: None,
+                ..Default::default()
             },
         );
 
@@ -15730,8 +14999,8 @@ mod tests {
         let mut definitions = BTreeMap::new();
         definitions.insert(
             "Ingress".to_string(),
-            CfnDefinition {
-                def_type: Some("object".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
                 properties: Some(ingress_props),
                 required: vec![],
                 enum_values: None,
@@ -15744,12 +15013,13 @@ mod tests {
                 maximum: None,
                 pattern_properties: None,
                 format: None,
+                ..Default::default()
             },
         );
         definitions.insert(
             "Egress".to_string(),
-            CfnDefinition {
-                def_type: Some("object".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
                 properties: Some(egress_props),
                 required: vec![],
                 enum_values: None,
@@ -15762,12 +15032,13 @@ mod tests {
                 maximum: None,
                 pattern_properties: None,
                 format: None,
+                ..Default::default()
             },
         );
         definitions.insert(
             "IpProtocol".to_string(),
-            CfnDefinition {
-                def_type: Some("string".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("string".to_string())),
                 properties: None,
                 required: vec![],
                 enum_values: Some(vec![
@@ -15783,6 +15054,7 @@ mod tests {
                 maximum: None,
                 pattern_properties: None,
                 format: None,
+                ..Default::default()
             },
         );
 
@@ -16303,7 +15575,7 @@ mod tests {
         );
         schema.definitions = Some(BTreeMap::from([(
             "Choice".to_string(),
-            CfnDefinition {
+            CfnProperty {
                 one_of: vec![
                     CfnProperty {
                         properties: Some(BTreeMap::from([(
@@ -16371,8 +15643,8 @@ mod tests {
 
     #[test]
     fn test_markdown_plain_values_never_contain_fragment_links() {
-        let struct_definition = CfnDefinition {
-            def_type: Some("object".to_string()),
+        let struct_definition = CfnProperty {
+            prop_type: Some(TypeValue::Single("object".to_string())),
             properties: Some(BTreeMap::from([(
                 "Value".to_string(),
                 CfnProperty {
@@ -16434,8 +15706,8 @@ mod tests {
 
     #[test]
     fn test_truly_identical_nested_enum_identity_is_emitted_once() {
-        let protocol = CfnDefinition {
-            def_type: Some("string".to_string()),
+        let protocol = CfnProperty {
+            prop_type: Some(TypeValue::Single("string".to_string())),
             properties: None,
             required: vec![],
             enum_values: Some(vec![
@@ -16451,13 +15723,14 @@ mod tests {
             maximum: None,
             pattern_properties: None,
             format: None,
+            ..Default::default()
         };
         let shared_protocol = || CfnProperty {
             ref_path: Some("#/definitions/Protocol".to_string()),
             ..Default::default()
         };
-        let rule = CfnDefinition {
-            def_type: Some("object".to_string()),
+        let rule = CfnProperty {
+            prop_type: Some(TypeValue::Single("object".to_string())),
             properties: Some(BTreeMap::from([
                 ("DestinationProtocol".to_string(), shared_protocol()),
                 ("SourceProtocol".to_string(), shared_protocol()),
@@ -16473,6 +15746,7 @@ mod tests {
             maximum: None,
             pattern_properties: None,
             format: None,
+            ..Default::default()
         };
         let schema = CfnSchema {
             type_name: "AWS::Test::Resource".to_string(),
@@ -16551,8 +15825,8 @@ mod tests {
         let mut definitions = BTreeMap::new();
         definitions.insert(
             "ConfigA".to_string(),
-            CfnDefinition {
-                def_type: Some("object".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
                 properties: Some(config_a_props),
                 required: vec![],
                 enum_values: None,
@@ -16565,12 +15839,13 @@ mod tests {
                 maximum: None,
                 pattern_properties: None,
                 format: None,
+                ..Default::default()
             },
         );
         definitions.insert(
             "ConfigB".to_string(),
-            CfnDefinition {
-                def_type: Some("object".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
                 properties: Some(config_b_props),
                 required: vec![],
                 enum_values: None,
@@ -16583,6 +15858,7 @@ mod tests {
                 maximum: None,
                 pattern_properties: None,
                 format: None,
+                ..Default::default()
             },
         );
 
@@ -16665,8 +15941,8 @@ mod tests {
         let mut definitions = BTreeMap::new();
         definitions.insert(
             "MyConfig".to_string(),
-            CfnDefinition {
-                def_type: Some("object".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
                 properties: Some(config_props),
                 required: vec![],
                 enum_values: None,
@@ -16679,6 +15955,7 @@ mod tests {
                 maximum: None,
                 pattern_properties: None,
                 format: None,
+                ..Default::default()
             },
         );
 
@@ -17528,8 +16805,8 @@ mod tests {
         let mut definitions = BTreeMap::new();
         definitions.insert(
             "DnsOptionsSpecification".to_string(),
-            CfnDefinition {
-                def_type: Some("object".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
                 properties: Some(dns_props),
                 required: vec![],
                 one_of: vec![],
@@ -17542,6 +16819,7 @@ mod tests {
                 maximum: None,
                 pattern_properties: None,
                 format: None,
+                ..Default::default()
             },
         );
 
@@ -17709,8 +16987,8 @@ mod tests {
         let mut schema = empty_schema("AWS::Test::Resource");
         schema.definitions = Some(BTreeMap::from([(
             "LengthOnlyString".to_string(),
-            CfnDefinition {
-                def_type: Some("string".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("string".to_string())),
                 min_length: Some(1),
                 max_length: Some(2048),
                 ..Default::default()
@@ -17743,6 +17021,288 @@ mod tests {
         assert_eq!(
             type_display_string("Payloads", &list_prop, &schema),
             "`List<String(len: 1..=2048)>`"
+        );
+    }
+
+    #[test]
+    fn test_sso_managed_policies_ref_string_items_preserve_length_in_schema_code() {
+        let schema = cfn_schema_for_codegen_tests("AWS::SSO::PermissionSet");
+        let generated = generate_schema_code(&schema, "AWS::SSO::PermissionSet").unwrap();
+
+        assert!(
+            generated.contains(concat!(
+                "AttributeSchema::optional(\"managed_policies\", ",
+                "AttributeType::refined_list(",
+                "AttributeType::refined_string(None, None, ",
+                "Some((Some(20), Some(2048))), None), false, ",
+                "Some((None, Some(20)))))"
+            )),
+            "ManagedPolicies must retain its referenced item lengths in schema code: {generated}"
+        );
+    }
+
+    #[test]
+    fn test_ref_array_definition_matches_inline_constraints_and_order() {
+        let inline: CfnProperty = serde_json::from_value(serde_json::json!({
+            "type": "array",
+            "items": { "type": "string", "minLength": 2, "maxLength": 4 },
+            "minItems": 1,
+            "maxItems": 3,
+            "uniqueItems": true,
+            "insertionOrder": false
+        }))
+        .unwrap();
+        let mut schema = empty_schema("AWS::Test::Resource");
+        schema.definitions = Some(BTreeMap::from([(
+            "ConstrainedValues".to_string(),
+            inline.clone(),
+        )]));
+        let referenced = CfnProperty {
+            ref_path: Some("#/definitions/ConstrainedValues".to_string()),
+            ..Default::default()
+        };
+
+        let (inline_type, inline_enum) = cfn_type_to_carina_type_with_enum(
+            &inline,
+            "Values",
+            &schema,
+            "aws.test.Resource",
+            &BTreeMap::new(),
+        );
+        let (referenced_type, referenced_enum) = cfn_type_to_carina_type_with_enum(
+            &referenced,
+            "Values",
+            &schema,
+            "aws.test.Resource",
+            &BTreeMap::new(),
+        );
+
+        assert!(inline_enum.is_none() && referenced_enum.is_none());
+        assert_eq!(referenced_type, inline_type);
+        assert_eq!(
+            referenced_type,
+            concat!(
+                "AttributeType::refined_list(",
+                "AttributeType::refined_string(None, None, ",
+                "Some((Some(2), Some(4))), None), false, ",
+                "Some((Some(1), Some(3))))"
+            )
+        );
+        let resolved = resolve_ref(&schema, "#/definitions/ConstrainedValues").unwrap();
+        assert_eq!(resolved.property.unique_items, Some(true));
+        assert_eq!(
+            type_display_string("Values", &referenced, &schema),
+            "`List<String(len: 2..=4)>` (items: 1..=3)"
+        );
+    }
+
+    #[test]
+    fn test_ref_alias_chain_to_object_generates_struct_and_cycles_stop() {
+        let field_identifier = CfnProperty {
+            prop_type: Some(TypeValue::Single("object".to_string())),
+            properties: Some(BTreeMap::from([(
+                "Identifier".to_string(),
+                CfnProperty {
+                    prop_type: Some(TypeValue::Single("string".to_string())),
+                    pattern: Some(".*\\S.*".to_string()),
+                    min_length: Some(1),
+                    max_length: Some(512),
+                    ..Default::default()
+                },
+            )])),
+            required: vec!["Identifier".to_string()],
+            ..Default::default()
+        };
+        let alias = |target: &str| CfnProperty {
+            ref_path: Some(format!("#/definitions/{target}")),
+            ..Default::default()
+        };
+        let mut schema = empty_schema("AWS::Test::Resource");
+        schema.definitions = Some(BTreeMap::from([
+            ("FieldIdentifier".to_string(), field_identifier),
+            ("AddressField".to_string(), alias("PhoneNumberField")),
+            ("PhoneNumberField".to_string(), alias("FieldIdentifier")),
+            ("CycleA".to_string(), alias("CycleB")),
+            ("CycleB".to_string(), alias("CycleA")),
+        ]));
+        let fields = CfnProperty {
+            prop_type: Some(TypeValue::Single("array".to_string())),
+            items: Some(Box::new(alias("AddressField"))),
+            ..Default::default()
+        };
+
+        let (generated, enum_info) = cfn_type_to_carina_type_with_enum(
+            &fields,
+            "AddressFields",
+            &schema,
+            "aws.test.Resource",
+            &BTreeMap::new(),
+        );
+        assert!(enum_info.is_none());
+        assert!(
+            generated.starts_with(
+                "AttributeType::list(AttributeType::struct_(\"FieldIdentifier\".to_string()"
+            ),
+            "an alias chain must use the final object definition: {generated}"
+        );
+        assert!(
+            generated.contains(
+                "AttributeType::refined_string(None, Some(\".*\\\\S.*\".to_string()), Some((Some(1), Some(512))), None)"
+            ),
+            "the aliased object's field constraints must survive: {generated}"
+        );
+        assert_eq!(
+            type_display_string("AddressFields", &fields, &schema),
+            "`List<Struct(FieldIdentifier)>`"
+        );
+        assert!(resolve_ref(&schema, "#/definitions/CycleA").is_none());
+    }
+
+    #[test]
+    fn test_ref_integer_enum_generates_numeric_union() {
+        let mut schema = empty_schema("AWS::Test::Resource");
+        schema.definitions = Some(BTreeMap::from([(
+            "EvaluationWindowSec".to_string(),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("integer".to_string())),
+                enum_values: Some(vec![
+                    EnumValue::Int(60),
+                    EnumValue::Int(120),
+                    EnumValue::Int(300),
+                    EnumValue::Int(600),
+                ]),
+                ..Default::default()
+            },
+        )]));
+        let property = CfnProperty {
+            ref_path: Some("#/definitions/EvaluationWindowSec".to_string()),
+            ..Default::default()
+        };
+
+        let (generated, enum_info) = cfn_type_to_carina_type_with_enum(
+            &property,
+            "EvaluationWindowSec",
+            &schema,
+            "aws.test.Resource",
+            &BTreeMap::new(),
+        );
+        assert!(enum_info.is_none());
+        assert_eq!(
+            generated,
+            concat!(
+                "AttributeType::union(vec![",
+                "AttributeType::refined_int(None, Some((Some(60), Some(60)))), ",
+                "AttributeType::refined_int(None, Some((Some(120), Some(120)))), ",
+                "AttributeType::refined_int(None, Some((Some(300), Some(300)))), ",
+                "AttributeType::refined_int(None, Some((Some(600), Some(600))))])"
+            )
+        );
+        assert_eq!(
+            type_display_string("EvaluationWindowSec", &property, &schema),
+            "IntEnum([60, 120, 300, 600])"
+        );
+    }
+
+    #[test]
+    fn test_inline_string_format_and_length_preserves_length() {
+        let property = CfnProperty {
+            prop_type: Some(TypeValue::Single("string".to_string())),
+            format: Some("uri".to_string()),
+            min_length: Some(5),
+            max_length: Some(200),
+            ..Default::default()
+        };
+        let schema = empty_schema("AWS::Test::Resource");
+        let (generated, enum_info) = cfn_type_to_carina_type_with_enum(
+            &property,
+            "FormattedValue",
+            &schema,
+            "aws.test.Resource",
+            &BTreeMap::new(),
+        );
+
+        assert!(enum_info.is_none());
+        assert_eq!(
+            generated,
+            "AttributeType::refined_string(None, None, Some((Some(5), Some(200))), None)"
+        );
+        assert_eq!(
+            type_display_string("FormattedValue", &property, &schema),
+            "String(uri, len: 5..=200)"
+        );
+    }
+
+    #[test]
+    fn test_list_element_docs_share_inline_and_ref_scalar_renderer() {
+        let mut schema = empty_schema("AWS::Test::Resource");
+        schema.definitions = Some(BTreeMap::from([(
+            "BoundedInteger".to_string(),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("integer".to_string())),
+                minimum: Some(1),
+                maximum: Some(5),
+                ..Default::default()
+            },
+        )]));
+        let inline_strings = CfnProperty {
+            prop_type: Some(TypeValue::Single("array".to_string())),
+            items: Some(Box::new(CfnProperty {
+                prop_type: Some(TypeValue::Single("string".to_string())),
+                pattern: Some("^[a-z]+$".to_string()),
+                min_length: Some(2),
+                max_length: Some(8),
+                ..Default::default()
+            })),
+            ..Default::default()
+        };
+        let referenced_ints = CfnProperty {
+            prop_type: Some(TypeValue::Single("array".to_string())),
+            items: Some(Box::new(CfnProperty {
+                ref_path: Some("#/definitions/BoundedInteger".to_string()),
+                ..Default::default()
+            })),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            type_display_string("Values", &inline_strings, &schema),
+            "`List<String(pattern, len: 2..=8)>`"
+        );
+        assert_eq!(
+            type_display_string("Values", &referenced_ints, &schema),
+            "`List<Int(1..=5)>`"
+        );
+    }
+
+    #[test]
+    fn test_wafv2_ref_definition_regressions_in_schema_code() {
+        let schema = cfn_schema_for_codegen_tests("AWS::WAFv2::WebACL");
+        let generated = generate_schema_code(&schema, "AWS::WAFv2::WebACL").unwrap();
+
+        for expected in [
+            "StructField::required(\"attributes\", AttributeType::refined_list(AttributeType::struct_(\"ApplicationAttribute\".to_string()",
+            "StructField::required(\"values\", AttributeType::refined_list(AttributeType::refined_string(None, Some(\"^[\\\\w\\\\-]+$\".to_string()), Some((Some(1), Some(64))), None), true, Some((Some(1), Some(10))))",
+            "StructField::required(\"data_protections\", AttributeType::refined_list(AttributeType::struct_(\"DataProtect\".to_string()",
+            "StructField::optional(\"address_fields\", AttributeType::list(AttributeType::struct_(\"FieldIdentifier\".to_string()",
+            "StructField::optional(\"phone_number_fields\", AttributeType::list(AttributeType::struct_(\"FieldIdentifier\".to_string()",
+            "StructField::optional(\"evaluation_window_sec\", AttributeType::union(vec![AttributeType::refined_int(None, Some((Some(60), Some(60))))",
+        ] {
+            assert!(
+                generated.contains(expected),
+                "missing WAFv2 referenced-definition output {expected:?}"
+            );
+        }
+        assert!(
+            generated.contains(
+                "AttributeType::refined_list(AttributeType::struct_(\"DataProtect\".to_string()"
+            ) && generated.contains("Some((Some(1), None))"),
+            "DataProtections must retain minItems: {generated}"
+        );
+        assert!(
+            !generated.contains(
+                "evaluation_window_sec\", AttributeType::enum_(carina_core::schema::enum_identity"
+            ),
+            "EvaluationWindowSec must not serialize through a string enum: {generated}"
         );
     }
 
@@ -17846,8 +17406,8 @@ mod tests {
         let mut definitions = BTreeMap::new();
         definitions.insert(
             "iso8601UTC".to_string(),
-            CfnDefinition {
-                def_type: Some("string".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("string".to_string())),
                 pattern: Some(
                     r"^(\d{4})-(0[0-9]|1[0-2])-([0-2]\d|3[01])T([01]\d|2[0-4]):([0-5]\d):([0-6]\d)((\.\d{3})?)Z$".to_string(),
                 ),
@@ -17917,8 +17477,8 @@ mod tests {
         let mut definitions = BTreeMap::new();
         definitions.insert(
             "iso8601UTC".to_string(),
-            CfnDefinition {
-                def_type: Some("string".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("string".to_string())),
                 pattern: Some(
                     r"^(\d{4})-(0[0-9]|1[0-2])-([0-2]\d|3[01])T([01]\d|2[0-4]):([0-5]\d):([0-6]\d)((\.\d{3})?)Z$".to_string(),
                 ),
@@ -17927,8 +17487,8 @@ mod tests {
         );
         definitions.insert(
             "Rule".to_string(),
-            CfnDefinition {
-                def_type: Some("object".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
                 properties: Some(rule_props),
                 required: vec!["Status".to_string()],
                 ..Default::default()
@@ -17993,8 +17553,8 @@ mod tests {
         let mut definitions = BTreeMap::new();
         definitions.insert(
             "iso8601UTC".to_string(),
-            CfnDefinition {
-                def_type: Some("string".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("string".to_string())),
                 pattern: Some(r"^(\d{4})-(0[0-9]|1[0-2])$".to_string()),
                 ..Default::default()
             },
@@ -18128,7 +17688,7 @@ mod tests {
         );
         definitions.insert(
             "HostedZoneTag".to_string(),
-            CfnDefinition {
+            CfnProperty {
                 properties: Some(tag_props),
                 required: vec!["Key".to_string(), "Value".to_string()],
                 ..Default::default()
@@ -18315,8 +17875,8 @@ mod tests {
         let mut definitions = BTreeMap::new();
         definitions.insert(
             "CorsRule".to_string(),
-            CfnDefinition {
-                def_type: Some("object".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
                 properties: Some(def_props),
                 required: vec![],
                 one_of: vec![],
@@ -18329,6 +17889,7 @@ mod tests {
                 maximum: None,
                 pattern_properties: None,
                 format: None,
+                ..Default::default()
             },
         );
 
@@ -19806,8 +19367,8 @@ mod tests {
         );
         schema.definitions = Some(BTreeMap::from([(
             "Item".to_string(),
-            CfnDefinition {
-                def_type: Some("object".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
                 properties: Some(BTreeMap::from([
                     (
                         "Secret".to_string(),
@@ -19896,8 +19457,8 @@ mod tests {
         ]);
         schema.definitions = Some(BTreeMap::from([(
             "Shared".to_string(),
-            CfnDefinition {
-                def_type: Some("object".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
                 properties: Some(BTreeMap::from([
                     (
                         "Secret".to_string(),
@@ -20622,8 +20183,8 @@ mod tests {
         let mut definitions = BTreeMap::new();
         definitions.insert(
             "DistributionConfig".to_string(),
-            CfnDefinition {
-                def_type: Some("object".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
                 properties: Some(config_props),
                 ..Default::default()
             },
@@ -20748,8 +20309,8 @@ mod tests {
         let mut definitions = BTreeMap::new();
         definitions.insert(
             "DefaultCacheBehavior".to_string(),
-            CfnDefinition {
-                def_type: Some("object".to_string()),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
                 properties: Some(behavior_props),
                 ..Default::default()
             },
