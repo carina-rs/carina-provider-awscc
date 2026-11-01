@@ -10,10 +10,10 @@ version = "0.8.2"
 # Every crate in this workspace must build against the same carina and
 # carina-aws-types revisions; pin them once here so they cannot drift apart.
 [workspace.dependencies]
-carina-core = { git = "https://github.com/carina-rs/carina", rev = "c95e6825" }
-carina-plugin-host = { git = "https://github.com/carina-rs/carina", rev = "c95e6825" }
-carina-plugin-sdk = { git = "https://github.com/carina-rs/carina", rev = "c95e6825" }
-carina-provider-protocol = { git = "https://github.com/carina-rs/carina", rev = "c95e6825" }
-carina-provider-resolver = { git = "https://github.com/carina-rs/carina", rev = "c95e6825" }
-carina-aws-types = { git = "https://github.com/carina-rs/carina-provider-aws", rev = "34c1693" }
-carina-docgen = { git = "https://github.com/carina-rs/carina-provider-aws", rev = "34c1693" }
+carina-core = { git = "https://github.com/carina-rs/carina", rev = "43309a77" }
+carina-plugin-host = { git = "https://github.com/carina-rs/carina", rev = "43309a77" }
+carina-plugin-sdk = { git = "https://github.com/carina-rs/carina", rev = "43309a77" }
+carina-provider-protocol = { git = "https://github.com/carina-rs/carina", rev = "43309a77" }
+carina-provider-resolver = { git = "https://github.com/carina-rs/carina", rev = "43309a77" }
+carina-aws-types = { git = "https://github.com/carina-rs/carina-provider-aws", rev = "38b3f5c" }
+carina-docgen = { git = "https://github.com/carina-rs/carina-provider-aws", rev = "38b3f5c" }

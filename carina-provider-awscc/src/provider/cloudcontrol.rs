@@ -16,7 +16,7 @@ use aws_sdk_cloudcontrol::{
 use aws_smithy_runtime_api::client::{orchestrator::HttpResponse, result::SdkError};
 use aws_smithy_types::error::metadata::ProvideErrorMetadata;
 use aws_smithy_types::retry::ProvideErrorKind;
-use carina_aws_types::{FinalAttempt, SendClassification, SendOutcome, Transience};
+use carina_aws_types::{FinalAttempt, SendClassification, Transience};
 use carina_core::provider::{ProviderError, ProviderResult};
 use carina_provider_protocol::OperationStep;
 use serde::{Deserialize, Serialize};
@@ -1561,17 +1561,19 @@ impl AwsccProvider {
                 delay_secs,
             }
         };
-        match (
-            classification.operation_outcome(),
-            classification.final_attempt(),
-        ) {
-            (SendOutcome::NotSent, FinalAttempt::NotSent(Transience::Transient)) => retry(pending),
-            (SendOutcome::MaybeSent, FinalAttempt::NotSent(Transience::Permanent)) => {
-                NotIssuedDecision::Preserve {
-                    pending: pending.into_unconfirmed(1),
-                }
-            }
-            (SendOutcome::MaybeSent, _) => {
+        match classification {
+            SendClassification::NotSent(Transience::Transient) => retry(pending),
+            SendClassification::NotSent(Transience::Permanent) => NotIssuedDecision::Fail {
+                not_issued: pending,
+            },
+            SendClassification::MaybeSent {
+                final_attempt: FinalAttempt::NotSent(Transience::Permanent),
+            } => NotIssuedDecision::Preserve {
+                pending: pending.into_unconfirmed(1),
+            },
+            SendClassification::MaybeSent {
+                final_attempt: FinalAttempt::NotSent(Transience::Transient) | FinalAttempt::Sent,
+            } => {
                 let delay_secs = retry_policy.delay_secs(0);
                 log::warn!(
                     "Outcome unknown {} {type_name} after 1 send(s): {error:?}. Retrying with the same client token in {delay_secs}s...",
@@ -1582,8 +1584,8 @@ impl AwsccProvider {
                     delay_secs,
                 }
             }
-            (SendOutcome::Rejected, _) if Self::is_retryable_rejection(error) => retry(pending),
-            (SendOutcome::NotSent | SendOutcome::Rejected, _) => NotIssuedDecision::Fail {
+            SendClassification::Rejected if Self::is_retryable_rejection(error) => retry(pending),
+            SendClassification::Rejected => NotIssuedDecision::Fail {
                 not_issued: pending,
             },
         }
@@ -1600,17 +1602,9 @@ impl AwsccProvider {
         Phase: UnconfirmedPhase,
     {
         let classification = SendClassification::of(error);
-        if classification.final_attempt() == FinalAttempt::NotSent(Transience::Permanent) {
-            return UnconfirmedDecision::Preserve;
-        }
-        let resend = || {
+        let resend = |failure: &str| {
             let delay_secs = retry_policy.delay_secs(pending.resends());
             let resends = pending.resends().saturating_add(1);
-            let failure = match classification.operation_outcome() {
-                SendOutcome::NotSent => "failed before sending",
-                SendOutcome::MaybeSent => "may have reached AWS",
-                SendOutcome::Rejected => "was rejected",
-            };
             log::warn!(
                 "Resend while {} {type_name} {failure} (resend {resends}); an earlier send may have been accepted: {error:?}. Retrying with the same client token in {delay_secs}s...",
                 retry_policy.action,
@@ -1620,10 +1614,19 @@ impl AwsccProvider {
                 delay_secs,
             }
         };
-        match classification.operation_outcome() {
-            SendOutcome::NotSent | SendOutcome::MaybeSent => resend(),
-            SendOutcome::Rejected if Self::is_retryable_rejection(error) => resend(),
-            SendOutcome::Rejected => UnconfirmedDecision::Preserve,
+        match classification {
+            SendClassification::NotSent(Transience::Permanent)
+            | SendClassification::MaybeSent {
+                final_attempt: FinalAttempt::NotSent(Transience::Permanent),
+            } => UnconfirmedDecision::Preserve,
+            SendClassification::NotSent(Transience::Transient) => resend("failed before sending"),
+            SendClassification::MaybeSent {
+                final_attempt: FinalAttempt::NotSent(Transience::Transient) | FinalAttempt::Sent,
+            } => resend("may have reached AWS"),
+            SendClassification::Rejected if Self::is_retryable_rejection(error) => {
+                resend("was rejected")
+            }
+            SendClassification::Rejected => UnconfirmedDecision::Preserve,
         }
     }
 
@@ -1823,7 +1826,7 @@ impl AwsccProvider {
     ///
     /// Entries that CloudControl normally returns with a 5xx status (for
     /// example, `ServiceInternalErrorException`) are classified as
-    /// `SendOutcome::MaybeSent` before this proven-rejection list is consulted.
+    /// `SendClassification::MaybeSent` before this proven-rejection list is consulted.
     /// Keep them here as a defensive classification for model- or
     /// transport-dependent responses that reach this function as rejections.
     fn is_retryable_rejection<E, R>(error: &SdkError<E, R>) -> bool
