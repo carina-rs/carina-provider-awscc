@@ -8345,14 +8345,16 @@ mod tests {
         use serde_json::{Value, json};
 
         fn fixture(properties: Value, definitions: Value) -> CfnSchema {
-            let mut schema = empty_schema("AWS::Test::Probe");
+            // Use one identity for both emitters, with a declared replacement
+            // class that needs no name property in these partial fixtures.
+            let mut schema = empty_schema("AWS::EC2::RouteTable");
             schema.properties = serde_json::from_value(properties).unwrap();
             schema.definitions = Some(serde_json::from_value(definitions).unwrap());
             schema
         }
 
         fn outputs(schema: &CfnSchema) -> (String, String) {
-            let code = generate_synthetic_schema_code(schema).unwrap();
+            let code = generate_schema_code(schema, &schema.type_name).unwrap();
             let docs = generate_test_markdown(schema, &schema.type_name).unwrap();
             carina_docgen::check_page(&docs).unwrap();
             (code, docs)
@@ -8385,8 +8387,34 @@ mod tests {
         }
 
         #[derive(Debug, Clone, PartialEq, Eq)]
+        enum Pattern {
+            Absent,
+            Present,
+            Text(String),
+        }
+
+        impl Pattern {
+            fn agrees_with(&self, other: &Self) -> bool {
+                match (self, other) {
+                    (Self::Absent, Self::Absent) => true,
+                    (Self::Text(left), Self::Text(right)) => left == right,
+                    (Self::Present, Self::Present | Self::Text(_))
+                    | (Self::Text(_), Self::Present) => true,
+                    _ => false,
+                }
+            }
+        }
+
+        #[derive(Debug, Clone, PartialEq, Eq)]
         enum Shape {
             Scalar(&'static str),
+            String {
+                length: (Option<i64>, Option<i64>),
+                pattern: Pattern,
+            },
+            Int {
+                range: (Option<i64>, Option<i64>),
+            },
             List {
                 item: Box<Shape>,
                 bounds: (Option<i64>, Option<i64>),
@@ -8397,13 +8425,15 @@ mod tests {
             Map(Box<Shape>),
             Enum(BTreeSet<String>),
             IntEnum(BTreeSet<i64>),
-            Struct(BTreeSet<String>),
+            Struct(BTreeMap<String, Shape>),
         }
 
         impl Shape {
             fn summary(&self) -> String {
                 match self {
                     Self::Scalar(name) => name.to_string(),
+                    Self::String { .. } => "string".to_string(),
+                    Self::Int { .. } => "int".to_string(),
                     Self::List { item, .. } => format!("list<{}>", item.summary()),
                     Self::Map(value) => format!("map<{}>", value.summary()),
                     Self::Enum(_) | Self::IntEnum(_) => "enum".to_string(),
@@ -8418,6 +8448,11 @@ mod tests {
                         **item = item.clone().without_ordering();
                     }
                     Self::Map(value) => **value = value.clone().without_ordering(),
+                    Self::Struct(fields) => {
+                        for field in fields.values_mut() {
+                            *field = field.clone().without_ordering();
+                        }
+                    }
                     _ => {}
                 }
                 self
@@ -8431,7 +8466,48 @@ mod tests {
                         orders
                     }
                     Self::Map(value) => value.list_ordering(),
+                    Self::Struct(fields) => fields.values().flat_map(Self::list_ordering).collect(),
                     _ => vec![],
+                }
+            }
+
+            // Preserve pattern presence even when Markdown omits the regex.
+            // Compare the actual text whenever both sides expose it.
+            fn agrees_with(&self, other: &Self) -> bool {
+                match (self, other) {
+                    (
+                        Self::String { length, pattern },
+                        Self::String {
+                            length: other_length,
+                            pattern: other_pattern,
+                        },
+                    ) => length == other_length && pattern.agrees_with(other_pattern),
+                    (
+                        Self::List {
+                            item,
+                            bounds,
+                            ordered,
+                        },
+                        Self::List {
+                            item: other_item,
+                            bounds: other_bounds,
+                            ordered: other_ordered,
+                        },
+                    ) => {
+                        bounds == other_bounds
+                            && ordered == other_ordered
+                            && item.agrees_with(other_item)
+                    }
+                    (Self::Map(value), Self::Map(other_value)) => value.agrees_with(other_value),
+                    (Self::Struct(fields), Self::Struct(other_fields)) => {
+                        fields.len() == other_fields.len()
+                            && fields.iter().all(|(name, field)| {
+                                other_fields
+                                    .get(name)
+                                    .is_some_and(|other_field| field.agrees_with(other_field))
+                            })
+                    }
+                    _ => self == other,
                 }
             }
         }
@@ -8561,7 +8637,7 @@ mod tests {
                 )));
             }
             if code.starts_with("carina_aws_types::tags_type()") {
-                return Shape::Map(Box::new(Shape::Scalar("string")));
+                return Shape::Map(Box::new(schema_shape("AttributeType::string()")));
             }
             if code.starts_with("AttributeType::struct_(") {
                 let args = call_arguments(code, "AttributeType::struct_");
@@ -8571,7 +8647,7 @@ mod tests {
                         .map(|field| {
                             let field_args =
                                 arguments(group(&field[field.find('(').unwrap()..], '(', ')').0);
-                            rust_string(field_args[0])
+                            (rust_string(field_args[0]), schema_shape(field_args[1]))
                         })
                         .collect(),
                 );
@@ -8595,11 +8671,34 @@ mod tests {
                         .collect(),
                 );
             }
+            if code.starts_with("AttributeType::refined_string(") {
+                let args = call_arguments(code, "AttributeType::refined_string");
+                return Shape::String {
+                    length: schema_bounds(args[2]),
+                    pattern: if args[1] == "None" {
+                        Pattern::Absent
+                    } else {
+                        Pattern::Text(rust_string(call_arguments(args[1], "Some")[0]))
+                    },
+                };
+            }
+            if code.starts_with("AttributeType::string()") {
+                return Shape::String {
+                    length: (None, None),
+                    pattern: Pattern::Absent,
+                };
+            }
+            if code.starts_with("AttributeType::refined_int(") {
+                return Shape::Int {
+                    range: schema_bounds(call_arguments(code, "AttributeType::refined_int")[1]),
+                };
+            }
+            if code.starts_with("AttributeType::int()") {
+                return Shape::Int {
+                    range: (None, None),
+                };
+            }
             for (prefix, shape) in [
-                ("AttributeType::string()", "string"),
-                ("AttributeType::refined_string(", "string"),
-                ("AttributeType::int()", "int"),
-                ("AttributeType::refined_int(", "int"),
                 ("AttributeType::bool()", "bool"),
                 ("AttributeType::float()", "float"),
                 ("AttributeType::refined_float(", "float"),
@@ -8611,7 +8710,7 @@ mod tests {
             panic!("unrecognized generated type: {code}");
         }
 
-        fn documented_members(page: &str, anchor: &str) -> BTreeSet<String> {
+        fn documented_members<'a>(page: &'a str, anchor: &str) -> BTreeMap<String, &'a str> {
             // Use allocated ids, including suffixes for an argument and a
             // struct section that share the same base heading (probe-1).
             let heading_line = carina_docgen::heading_ids(page)
@@ -8628,8 +8727,10 @@ mod tests {
                 .skip(heading_line + 1)
                 .take_while(|line| !line.starts_with('#'))
                 .filter_map(|line| {
-                    line.strip_prefix("| `")
-                        .map(|cell| cell.split_once('`').unwrap().0.to_string())
+                    line.strip_prefix("| `").map(|cell| {
+                        let (name, cells) = cell.split_once('`').unwrap();
+                        (name.to_string(), cells)
+                    })
                 })
                 .collect()
         }
@@ -8644,6 +8745,14 @@ mod tests {
             shape
         }
 
+        fn docs_bounds(range: &str) -> (Option<i64>, Option<i64>) {
+            let (min, max) = range.split_once("..").unwrap();
+            (
+                (!min.is_empty()).then(|| min.parse().unwrap()),
+                max.strip_prefix('=').map(|max| max.parse().unwrap()),
+            )
+        }
+
         fn docs_shape_at<'a>(text: &'a str, page: &str) -> (Shape, &'a str) {
             if let Some(item) = text.strip_prefix("List<") {
                 let (item, rest) = docs_shape_at(item, page);
@@ -8651,11 +8760,7 @@ mod tests {
                 let mut bounds = (None, None);
                 if let Some(limits) = rest.strip_prefix("(items: ") {
                     let (range, suffix) = limits.split_once(')').unwrap();
-                    let (min, max) = range.split_once("..").unwrap();
-                    bounds = (
-                        (!min.is_empty()).then(|| min.parse().unwrap()),
-                        max.strip_prefix('=').map(|max| max.parse().unwrap()),
-                    );
+                    bounds = docs_bounds(range);
                     rest = suffix;
                 }
                 return (
@@ -8677,10 +8782,18 @@ mod tests {
                 let members = documented_members(page, anchor);
                 return (
                     if label.starts_with("Struct(") {
-                        Shape::Struct(members)
+                        Shape::Struct(
+                            members
+                                .into_iter()
+                                .map(|(name, cells)| {
+                                    let ty = cells.strip_prefix(" | ").unwrap();
+                                    (name, docs_shape(ty.split(" | ").next().unwrap(), page))
+                                })
+                                .collect(),
+                        )
                     } else {
                         assert!(label.starts_with("Enum"), "{label}");
-                        Shape::Enum(members)
+                        Shape::Enum(members.into_keys().collect())
                     },
                     rest,
                 );
@@ -8697,13 +8810,46 @@ mod tests {
                     rest.strip_prefix(')').unwrap(),
                 );
             }
-            for (prefix, shape) in [
-                ("NumericString", "string"),
-                ("String", "string"),
-                ("Int", "int"),
-                ("Bool", "bool"),
-                ("Float", "float"),
-            ] {
+            for prefix in ["NumericString", "String", "Int"] {
+                if let Some(rest) = text.strip_prefix(prefix) {
+                    let (refinements, rest) = if rest.starts_with('(') {
+                        group(rest, '(', ')')
+                    } else {
+                        ("", rest)
+                    };
+                    let mut bounds = (None, None);
+                    let mut pattern = if prefix == "NumericString" {
+                        Pattern::Present
+                    } else {
+                        Pattern::Absent
+                    };
+                    for refinement in arguments(refinements) {
+                        if let Some(range) = refinement.strip_prefix("len: ") {
+                            bounds = docs_bounds(range);
+                        } else if refinement == "pattern" {
+                            pattern = Pattern::Present;
+                        } else if let Some(text) = refinement.strip_prefix("pattern: ") {
+                            pattern = Pattern::Text(rust_string(text));
+                        } else if prefix == "Int" && refinement.contains("..") {
+                            bounds = docs_bounds(refinement);
+                        }
+                        // Other scalar annotations (e.g. int64 or uri) are
+                        // descriptive formats, not validation constraints.
+                    }
+                    return (
+                        if prefix == "Int" {
+                            Shape::Int { range: bounds }
+                        } else {
+                            Shape::String {
+                                length: bounds,
+                                pattern,
+                            }
+                        },
+                        rest,
+                    );
+                }
+            }
+            for (prefix, shape) in [("Bool", "bool"), ("Float", "float")] {
                 if let Some(rest) = text.strip_prefix(prefix) {
                     let rest = if rest.starts_with('(') {
                         group(rest, '(', ')').1
@@ -8729,6 +8875,13 @@ mod tests {
                 let mut orders = vec![property.get("insertionOrder") != Some(&Value::Bool(false))];
                 orders.extend(fixture_list_ordering(items, definitions).unwrap_or_default());
                 return Some(orders);
+            }
+            if let Some(fields) = property.get("properties").and_then(Value::as_object) {
+                let orders: Vec<bool> = fields
+                    .values()
+                    .flat_map(|field| fixture_list_ordering(field, definitions).unwrap_or_default())
+                    .collect();
+                return (!orders.is_empty()).then_some(orders);
             }
             property
                 .get("oneOf")
@@ -8787,6 +8940,103 @@ mod tests {
                     "must detect enum-value and struct-field drift"
                 );
             }
+        }
+
+        #[test]
+        fn test_shape_classifier_detects_scalar_and_field_type_drift() {
+            for (case, leaf, changes) in [
+                (
+                    "string_length",
+                    json!({"type":"string","minLength":2,"maxLength":8}),
+                    vec![
+                        ("len: 2..=8", "len: 3..=8"),
+                        ("len: 2..=8", "len: 2..=9"),
+                        ("String(len: 2..=8)", "String"),
+                    ],
+                ),
+                (
+                    "string_min_length",
+                    json!({"type":"string","minLength":2}),
+                    vec![("len: 2..", "len: 3..")],
+                ),
+                (
+                    "string_max_length",
+                    json!({"type":"string","maxLength":8}),
+                    vec![("len: ..=8", "len: ..=9")],
+                ),
+                (
+                    "integer_range",
+                    json!({"type":"integer","minimum":-2,"maximum":9}),
+                    vec![
+                        ("Int(-2..=9)", "Int(-1..=9)"),
+                        ("Int(-2..=9)", "Int(-2..=10)"),
+                        ("Int(-2..=9)", "Int"),
+                    ],
+                ),
+                (
+                    "integer_minimum",
+                    json!({"type":"integer","minimum":-2}),
+                    vec![("Int(-2..)", "Int(-1..)")],
+                ),
+                (
+                    "integer_maximum",
+                    json!({"type":"integer","maximum":9}),
+                    vec![("Int(..=9)", "Int(..=10)")],
+                ),
+                (
+                    "string_pattern",
+                    json!({"type":"string","pattern":"^[a-z]+$","maxLength":8}),
+                    vec![("String(pattern, len: ..=8)", "String(len: ..=8)")],
+                ),
+                (
+                    "numeric_string_pattern",
+                    json!({"type":"string","pattern":"[0-9]+","maxLength":8}),
+                    vec![("NumericString(len: ..=8)", "String(len: ..=8)")],
+                ),
+                (
+                    "nested_field_type",
+                    json!({"type":"boolean"}),
+                    vec![("Bool", "String")],
+                ),
+            ] {
+                // Traverse two struct links and a list before reaching the
+                // leaf. Field names and collection shape stay unchanged.
+                let schema = fixture(
+                    json!({"Probe":{"properties":{"Inner":{"properties":{
+                        "Value":{"type":"array","items":leaf,"insertionOrder":false}
+                    }}}}}),
+                    json!({}),
+                );
+                let (code, docs) = outputs(&schema);
+                let (code_type, docs_type) = type_pair(&code, &docs, "top");
+                let actual = schema_shape(code_type);
+                assert_eq!(actual.list_ordering(), vec![false], "{case}");
+                let actual = actual.without_ordering();
+                let documented = docs_shape(docs_type, &docs);
+                assert!(
+                    actual.agrees_with(&documented),
+                    "{case}: {actual:?} != {documented:?}\nschema:\n{code}\ndocs:\n{docs}"
+                );
+                for (before, after) in changes {
+                    assert!(
+                        docs.contains(before),
+                        "{case}: missing {before:?} in {docs}"
+                    );
+                    let changed_docs = docs.replace(before, after);
+                    assert!(
+                        !actual.agrees_with(&docs_shape(docs_type, &changed_docs)),
+                        "{case}: must detect {before:?} -> {after:?}"
+                    );
+                }
+            }
+
+            let code =
+                r#"AttributeType::refined_string(None, Some("^[a-z]+$".to_string()), None, None)"#;
+            let actual = schema_shape(code);
+            assert!(actual.agrees_with(&docs_shape("String(pattern)", "")));
+            assert!(actual.agrees_with(&docs_shape(r#"String(pattern: "^[a-z]+$")"#, "")));
+            assert!(!actual.agrees_with(&docs_shape(r#"String(pattern: "^[A-Z]+$")"#, "")));
+            assert!(!actual.agrees_with(&docs_shape("String", "")));
         }
 
         fn positions(property: &Value) -> Vec<(&'static str, Value, Value)> {
@@ -9139,7 +9389,7 @@ mod tests {
                                     "schema",
                                     std::panic::catch_unwind(|| {
                                         reset_recursion_guard();
-                                        generate_synthetic_schema_code(&schema)
+                                        generate_schema_code(&schema, &schema.type_name)
                                     }),
                                 ),
                                 (
@@ -9178,10 +9428,13 @@ mod tests {
                                 expected_ordering,
                                 "{case}: list ordering"
                             );
-                            assert_eq!(
-                                code_shape.without_ordering(),
-                                docs_shape(docs_type, &docs),
-                                "{case}: schema/docs semantic shape"
+                            let code_shape = code_shape.without_ordering();
+                            let docs_shape = docs_shape(docs_type, &docs);
+                            assert!(
+                                code_shape.agrees_with(&docs_shape),
+                                "{case}: schema/docs semantic shape\n\
+                                 schema shape: {code_shape:?}\ndocs shape: {docs_shape:?}\n\
+                                 schema:\n{code}\ndocs:\n{docs}"
                             );
                             assert!(
                                 docs_type.matches('`').count() <= 2,
