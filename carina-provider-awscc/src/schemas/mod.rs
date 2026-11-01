@@ -475,6 +475,106 @@ mod tests {
     }
 
     #[test]
+    fn generated_budget_identity_ignores_notification_changes() {
+        use carina_core::identifier::{
+            AnonymousIdentityConflictPolicy, compute_anonymous_identifiers_with_factories,
+        };
+        use carina_core::schema::{IdentityMode, IdentityPathSegment};
+        use carina_core::value::canonicalize_resources_with_schemas;
+
+        let config = super::generated::budgets::budget::budgets_budget_config();
+        let budget = config.schema.attributes().get("budget").unwrap();
+        assert!(!budget.parts().create_only);
+        assert_eq!(budget.identity_mode(), IdentityMode::None);
+        let fields = config
+            .schema
+            .struct_fields_with_budget(budget.attr_type(), &mut ShapeWalkBudget::new(256))
+            .unwrap();
+        let name = fields
+            .iter()
+            .find(|field| field.name() == "budget_name")
+            .unwrap();
+        assert!(name.parts().create_only);
+        assert_eq!(name.parts().identity_mode, IdentityMode::Required);
+
+        let schema = config
+            .schema
+            .validate()
+            .expect("Budget schema must be valid");
+        assert_eq!(schema.identity_paths().len(), 1);
+        assert_eq!(
+            schema.identity_paths()[0].segments(),
+            [
+                IdentityPathSegment::Attribute("budget".to_string()),
+                IdentityPathSegment::StructField("budget_name".to_string()),
+            ]
+        );
+        let mut registry = SchemaRegistry::new();
+        registry.insert("awscc", schema);
+
+        let identity = |budget_name: &str, threshold: f64| {
+            let string = |value: &str| Value::Concrete(ConcreteValue::String(value.into()));
+            let map = |fields: &[(&str, Value)]| {
+                Value::Concrete(ConcreteValue::Map(
+                    fields
+                        .iter()
+                        .map(|(key, value)| (key.to_string(), value.clone()))
+                        .collect(),
+                ))
+            };
+            let mut resources = vec![
+                Resource::pending_with_provider("awscc", "budgets.Budget", None)
+                    .with_attribute(
+                        "budget",
+                        map(&[
+                            ("budget_name", string(budget_name)),
+                            ("budget_type", string("COST")),
+                            ("time_unit", string("MONTHLY")),
+                        ]),
+                    )
+                    .with_attribute(
+                        "notifications_with_subscribers",
+                        Value::Concrete(ConcreteValue::List(vec![map(&[
+                            (
+                                "notification",
+                                map(&[
+                                    ("comparison_operator", string("GREATER_THAN")),
+                                    ("notification_type", string("ACTUAL")),
+                                    (
+                                        "threshold",
+                                        Value::Concrete(ConcreteValue::Float(threshold)),
+                                    ),
+                                ]),
+                            ),
+                            (
+                                "subscribers",
+                                Value::Concrete(ConcreteValue::List(vec![map(&[
+                                    ("address", string("finance@example.com")),
+                                    ("subscription_type", string("EMAIL")),
+                                ])])),
+                            ),
+                        ])])),
+                    ),
+            ];
+            let canonical = canonicalize_resources_with_schemas(&mut resources, &registry)
+                .expect("Budget inputs must canonicalize");
+            compute_anonymous_identifiers_with_factories(
+                canonical,
+                &[],
+                &[],
+                &registry,
+                AnonymousIdentityConflictPolicy::RejectAttributeDerived,
+            )
+            .expect("Budget identity must resolve");
+            resources.remove(0).id
+        };
+
+        let before = identity("monthly", 80.0);
+        assert_eq!(before, identity("monthly", 90.0));
+        assert_ne!(before, identity("annual", 80.0));
+    }
+
+    #[test]
     fn generated_s3_lifecycle_rule_omits_deprecated_transition_fields() {
         let config = super::generated::s3::bucket::s3_bucket_config();
         let lifecycle = config

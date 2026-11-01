@@ -3415,6 +3415,8 @@ fn claim_unique_markdown_heading(
 
 fn generate_markdown(schema: &CfnSchema, type_name: &str, example: &DocExample) -> Result<String> {
     reset_recursion_guard();
+    validate_identity_properties(schema)?;
+    reset_recursion_guard();
     derive_mutually_exclusive_property_groups(schema)?;
 
     let dsl_resource = dsl_resource_name_from_type(type_name)?;
@@ -3620,8 +3622,15 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str, example: &DocExample) 
         } else {
             page.push_str("- **Required:** No\n");
         }
-        if create_only.contains(prop_name) {
+        let is_identity =
+            identity_properties().contains_key(&(type_name, CfnPropertyPath::new(None, prop_name)));
+        if create_only.contains(prop_name) || is_identity {
             page.push_str("- **Create-only:** Yes\n");
+        }
+        if is_identity {
+            page.push_str(
+                "- **Identity:** Yes (anonymous identifiers hash only declared identity values)\n",
+            );
         }
         if write_only.contains(prop_name) {
             page.push_str("- **Write-only:** Yes\n");
@@ -3827,6 +3836,14 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str, example: &DocExample) 
                         desc.push(' ');
                     }
                     desc.push_str("Provider-populated; cannot be set.");
+                }
+                if identity_properties().contains_key(&(type_name, cfn_property_path)) {
+                    if !desc.is_empty() {
+                        desc.push(' ');
+                    }
+                    desc.push_str(
+                        "Create-only. Anonymous identifiers hash only declared identity values.",
+                    );
                 }
                 rows.push([
                     TableCell::code(snake_name),
@@ -4209,6 +4226,8 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
     // resources don't leak entries into this resource's pre-scan or
     // post-emit validator-fn generation.
     reset_recursion_guard();
+    let identity_paths = validate_identity_properties(schema)?;
+    reset_recursion_guard();
     let mut code = String::new();
 
     // Parse type name: AWS::EC2::VPC -> (ec2, vpc)
@@ -4473,19 +4492,24 @@ pub fn {}() -> AwsccSchemaConfig {{
         let property_path = [prop_name.clone()];
         let is_read_only = is_property_read_only(schema, prop, &property_path);
         let is_required = required.contains(prop_name) && !is_read_only;
-        let is_create_only = create_only.contains(prop_name)
-            || create_only
-                .iter()
-                .any(|p| p.starts_with(&format!("{}/", prop_name)));
+        let is_identity =
+            identity_properties().contains_key(&(type_name, CfnPropertyPath::new(None, prop_name)));
+        // Identity leaves carry their own create-only flag, allowing sibling
+        // fields to remain mutable. Preserve parent-wide replacement for the
+        // other nested create-only paths until they use field-level metadata.
+        let is_create_only = is_identity
+            || create_only.contains(prop_name)
+            || create_only.iter().any(|p| {
+                p.starts_with(&format!("{}/", prop_name))
+                    && !identity_paths.contains(&format!("/properties/{p}"))
+            });
         // Write-only: only mark the attribute itself as write-only, NOT when
-        // only nested sub-properties are write-only. Unlike create-only (where
-        // a nested create-only property forces re-creation of the parent), a
+        // only nested sub-properties are write-only. Unlike legacy create-only
+        // propagation (which forces re-creation of the parent), a
         // nested write-only property doesn't make the entire parent write-only.
         // The parent is still returned by the CloudControl API read; only the
         // specific nested sub-properties are omitted.
         let is_write_only = write_only.contains(prop_name);
-        let is_identity = identity_properties().contains(&(type_name, prop_name));
-
         let attr_type = generate_top_level_attribute_type(
             prop_name,
             prop,
@@ -4522,6 +4546,10 @@ pub fn {}() -> AwsccSchemaConfig {{
         }
 
         if is_identity {
+            assert!(
+                is_create_only,
+                "{type_name}.{prop_name}: identity must be create-only"
+            );
             attr_code.push_str("\n                .identity()");
         }
 
@@ -5656,6 +5684,9 @@ fn generate_struct_type(
             if is_write_only {
                 field_code.push_str(".write_only()");
                 record_emitted_write_only_path(&field_path);
+            }
+            if identity_properties().contains_key(&(schema.type_name.as_str(), cfn_property_path)) {
+                field_code.push_str(".create_only().identity()");
             }
             if let Some(desc) = &field_prop.description {
                 let escaped = collapse_whitespace(
@@ -7163,19 +7194,164 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
     &OVERRIDES
 }
 
-/// Properties that should be marked as `identity` in the schema.
-/// Identity attributes are included in the anonymous resource identifier hash
-/// alongside create-only attributes.
-fn identity_properties() -> &'static HashSet<(&'static str, &'static str)> {
-    static IDENTITY: LazyLock<HashSet<(&'static str, &'static str)>> = LazyLock::new(|| {
-        let mut s = HashSet::new();
-        // Route 53 RecordSet: (HostedZoneId, Name, Type) uniquely identifies a record,
-        // but Type is not create-only in CloudFormation. Without identity, two records
-        // with the same name/zone but different types (A vs AAAA) collide.
-        s.insert(("AWS::Route53::RecordSet", "Type"));
-        s
+/// The source of an identity leaf's create-only declaration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum IdentityCreateOnlyMode {
+    /// Require createOnlyProperties to keep declaring this leaf immutable.
+    // The current row needs an override; cache-backed mode is covered by tests.
+    #[allow(dead_code)]
+    FromCache,
+    /// Correct missing CFN metadata using a documented immutability contract.
+    /// Remove this override once createOnlyProperties includes the leaf.
+    Declared { reason: &'static str },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct IdentityProperty {
+    reason: &'static str,
+    create_only: IdentityCreateOnlyMode,
+}
+
+type IdentityPropertyTable = BTreeMap<(&'static str, CfnPropertyPath<'static>), IdentityProperty>;
+
+/// Create-only scalar/enum leaves that declare anonymous resource identity.
+/// When identity is declared, anonymous identifiers hash only these values;
+/// unrelated create-only values no longer contribute to the identifier.
+/// Keys preserve raw CloudFormation definition/property spelling, including
+/// nested struct fields. Each row records why that value identifies the resource.
+fn identity_properties() -> &'static IdentityPropertyTable {
+    static IDENTITY: LazyLock<IdentityPropertyTable> = LazyLock::new(|| {
+        BTreeMap::from([(
+            (
+                "AWS::Budgets::Budget",
+                CfnPropertyPath::new(Some("BudgetData"), "BudgetName"),
+            ),
+            IdentityProperty {
+                reason: "Budget names identify budgets within an account; notification settings do not.",
+                create_only: IdentityCreateOnlyMode::Declared {
+                    reason: concat!(
+                        "The cache omits BudgetName from createOnlyProperties, but CloudFormation documents ",
+                        "BudgetData.BudgetName as requiring replacement, and UpdateBudget forbids changes to ",
+                        "budgetName and calculatedSpend. ",
+                        "https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-properties-budgets-budget-budgetdata.html#cfn-budgets-budget-budgetdata-budgetname ",
+                        "https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_UpdateBudget.html",
+                    ),
+                },
+            },
+        )])
     });
     &IDENTITY
+}
+
+/// Resolve the same typed identity keys for both emitters and validate the
+/// source schema before generating any identity builders. Do not promote a
+/// parent solely because an identity leaf is create-only.
+fn validate_identity_properties(schema: &CfnSchema) -> Result<BTreeSet<String>> {
+    validate_identity_properties_from_table(schema, identity_properties())
+}
+
+fn validate_identity_properties_from_table(
+    schema: &CfnSchema,
+    table: &IdentityPropertyTable,
+) -> Result<BTreeSet<String>> {
+    let entries = table
+        .iter()
+        .filter(|((cfn_type, _), _)| *cfn_type == schema.type_name)
+        .collect::<Vec<_>>();
+    let mut identity_paths = BTreeSet::new();
+    if entries.is_empty() {
+        return Ok(identity_paths);
+    }
+
+    let mut struct_defs = BTreeMap::new();
+    for (name, property) in documented_top_level_properties(schema) {
+        collect_struct_defs(
+            property,
+            name,
+            schema,
+            &[],
+            std::slice::from_ref(name),
+            None,
+            &mut struct_defs,
+        );
+    }
+
+    for ((cfn_type, key), entry) in entries {
+        anyhow::ensure!(
+            !entry.reason.trim().is_empty(),
+            "{cfn_type}.{key}: identity needs a reason"
+        );
+        let mut matches = Vec::new();
+        if let Some(parent) = key.parent {
+            for definition in struct_defs.values().filter(|def| def.def_name == parent) {
+                if let Some(property) = definition.properties.get(key.property) {
+                    for path in &definition.property_paths {
+                        matches.push((property, extend_property_path(path, key.property)));
+                    }
+                }
+            }
+        } else if let Some(property) = schema.properties.get(key.property) {
+            matches.push((property, vec![key.property.to_string()]));
+        }
+        anyhow::ensure!(
+            !matches.is_empty(),
+            "stale identity row {cfn_type}.{key}: no reachable property in the CloudFormation schema"
+        );
+        for (property, path) in matches {
+            let pointer = format_cfn_property_path(&path);
+            let provider_populated = is_property_read_only(schema, property, &path)
+                || schema
+                    .read_only_properties
+                    .iter()
+                    .filter_map(|p| cfn_property_path(p))
+                    .any(|read_only| path.starts_with(&read_only));
+            anyhow::ensure!(
+                !provider_populated,
+                "{cfn_type}.{key} ({pointer}): identity must not be provider-populated"
+            );
+            let cached_create_only = schema
+                .create_only_properties
+                .iter()
+                .filter_map(|p| cfn_property_path(p))
+                .any(|create_only| path.starts_with(&create_only));
+            match entry.create_only {
+                IdentityCreateOnlyMode::FromCache => anyhow::ensure!(
+                    cached_create_only,
+                    "{cfn_type}.{key} ({pointer}): identity must be create-only in the cache"
+                ),
+                IdentityCreateOnlyMode::Declared { reason } => {
+                    anyhow::ensure!(
+                        !reason.trim().is_empty(),
+                        "{cfn_type}.{key} ({pointer}): a declared create-only override needs a documented reason"
+                    );
+                    anyhow::ensure!(
+                        !cached_create_only,
+                        "stale identity row {cfn_type}.{key} ({pointer}): already create-only in the cache; remove the declared create-only override and rely on the cache"
+                    );
+                }
+            }
+            let scalar_property = match property_shape(property, schema) {
+                PropertyShape::Reference {
+                    resolved: Some(resolved),
+                    ..
+                } => Some(resolved.property),
+                PropertyShape::Inline => Some(property),
+                _ => None,
+            };
+            anyhow::ensure!(
+                !path.iter().any(|segment| segment == "*")
+                    && scalar_property.is_some_and(|property| {
+                        matches!(
+                            inline_property_type(property),
+                            Some("string" | "integer" | "number" | "boolean")
+                        )
+                    }),
+                "{cfn_type}.{key} ({pointer}): identity must be a scalar/enum leaf outside a collection"
+            );
+            identity_paths.insert(pointer);
+        }
+    }
+    Ok(identity_paths)
 }
 
 /// Attributes that do **not** exist in the CloudFormation schema but that
@@ -11387,6 +11563,85 @@ mod tests {
     }
 
     #[test]
+    fn test_identity_properties_match_cache_without_stale_rows() {
+        let mut cached_types = BTreeSet::new();
+        for path in cached_schema_paths() {
+            let raw = std::fs::read_to_string(&path).expect("cached CFN schema");
+            let schema: CfnSchema = serde_json::from_str(&raw).expect("cached CFN schema parses");
+            validate_identity_properties(&schema).unwrap_or_else(|error| panic!("{error}"));
+            cached_types.insert(schema.type_name);
+        }
+        for ((cfn_type, key), entry) in identity_properties() {
+            assert!(
+                !entry.reason.trim().is_empty(),
+                "{cfn_type}.{key}: identity needs a reason"
+            );
+            assert!(
+                cached_types.contains(*cfn_type),
+                "stale identity row {cfn_type}.{key}: type is absent from cfn-schema-cache"
+            );
+        }
+    }
+
+    #[test]
+    fn test_cache_backed_identity_requires_cached_create_only_metadata() {
+        let mut schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
+        let mut table = identity_properties().clone();
+        table
+            .get_mut(&(
+                "AWS::Budgets::Budget",
+                CfnPropertyPath::new(Some("BudgetData"), "BudgetName"),
+            ))
+            .unwrap()
+            .create_only = IdentityCreateOnlyMode::FromCache;
+
+        let error = validate_identity_properties_from_table(&schema, &table).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("identity must be create-only in the cache")
+        );
+
+        schema
+            .create_only_properties
+            .push("/properties/Budget/BudgetName".to_string());
+        assert_eq!(
+            validate_identity_properties_from_table(&schema, &table).unwrap(),
+            BTreeSet::from(["/properties/Budget/BudgetName".to_string()]),
+        );
+
+        schema
+            .read_only_properties
+            .push("/properties/Budget/BudgetName".to_string());
+        let error = validate_identity_properties_from_table(&schema, &table).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("identity must not be provider-populated")
+        );
+    }
+
+    #[test]
+    fn test_declared_create_only_identity_requires_documented_reason() {
+        let schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
+        let mut table = identity_properties().clone();
+        table
+            .get_mut(&(
+                "AWS::Budgets::Budget",
+                CfnPropertyPath::new(Some("BudgetData"), "BudgetName"),
+            ))
+            .unwrap()
+            .create_only = IdentityCreateOnlyMode::Declared { reason: "" };
+
+        let error = validate_identity_properties_from_table(&schema, &table).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("override needs a documented reason")
+        );
+    }
+
+    #[test]
     fn test_empty_marker_objects_generate_empty_structs() {
         let assert_empty_field = |generated: &str, field: &str| {
             let needle = format!("StructField::optional(\"{field}\", AttributeType::struct_(");
@@ -11545,6 +11800,127 @@ mod tests {
             !generated.contains("FieldGroup::exactly_one([\"extended_statistic\", \"statistic\"]"),
             "a condition-qualified description must not become a global exactly-one constraint: {generated}"
         );
+    }
+
+    #[test]
+    fn test_budgets_budget_nested_identity_is_emitted_inline_and_with_def() {
+        let schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        let identity_field = r#"StructField::optional("budget_name", AttributeType::string()).create_only().identity()"#;
+        let (inline, definitions) = generated.split_once("fn build_schema_def_0()").unwrap();
+        assert_eq!(inline.matches(identity_field).count(), 1);
+        assert_eq!(definitions.matches(identity_field).count(), 1);
+        assert_eq!(generated.matches(".identity()").count(), 2);
+
+        let budget_builder = inline
+            .split_once("fn build_budget_attribute()")
+            .unwrap()
+            .1
+            .split_once("schema = schema.attribute(build_budget_attribute());")
+            .unwrap()
+            .0;
+        let (_, parent_builder) = budget_builder.rsplit_once("]))").unwrap();
+        assert!(
+            !parent_builder.contains(".create_only()"),
+            "Budget must stay mutable"
+        );
+        assert!(
+            !parent_builder.contains(".identity()"),
+            "identity belongs on the scalar leaf"
+        );
+
+        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        let name_row = markdown
+            .lines()
+            .find(|line| line.starts_with("| `budget_name` |"))
+            .unwrap();
+        assert!(name_row.contains("Create-only."));
+        assert!(name_row.contains("Anonymous identifiers hash only declared identity values."));
+        let budget_argument = markdown
+            .split_once("### `budget`")
+            .unwrap()
+            .1
+            .split_once("### `notifications_with_subscribers`")
+            .unwrap()
+            .0;
+        assert!(!budget_argument.contains("**Create-only:**"));
+        assert!(!budget_argument.contains("**Identity:**"));
+    }
+
+    #[test]
+    fn test_identity_generation_rejects_stale_overrides_provider_populated_and_composite_fields() {
+        for invalid in [
+            "cached-create-only",
+            "provider-populated",
+            "parent-provider-populated",
+            "object",
+            "array",
+            "missing",
+        ] {
+            let mut schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
+            let expected = match invalid {
+                "cached-create-only" => {
+                    schema
+                        .create_only_properties
+                        .push("/properties/Budget/BudgetName".to_string());
+                    "already create-only in the cache"
+                }
+                "provider-populated" | "parent-provider-populated" => {
+                    schema
+                        .read_only_properties
+                        .push(if invalid == "provider-populated" {
+                            "/properties/Budget/BudgetName".to_string()
+                        } else {
+                            "/properties/Budget".to_string()
+                        });
+                    "identity must not be provider-populated"
+                }
+                "object" | "array" => {
+                    let property = schema
+                        .definitions
+                        .as_mut()
+                        .unwrap()
+                        .get_mut("BudgetData")
+                        .unwrap()
+                        .properties
+                        .as_mut()
+                        .unwrap()
+                        .get_mut("BudgetName")
+                        .unwrap();
+                    *property = serde_json::from_value(if invalid == "object" {
+                        serde_json::json!({"type": "object", "properties": {"Name": {"type": "string"}}})
+                    } else {
+                        serde_json::json!({"type": "array", "items": {"type": "string"}})
+                    }).unwrap();
+                    "identity must be a scalar/enum leaf"
+                }
+                "missing" => {
+                    schema
+                        .definitions
+                        .as_mut()
+                        .unwrap()
+                        .get_mut("BudgetData")
+                        .unwrap()
+                        .properties
+                        .as_mut()
+                        .unwrap()
+                        .remove("BudgetName");
+                    "stale identity row"
+                }
+                _ => unreachable!(),
+            };
+            for error in [
+                generate_schema_code(&schema, &schema.type_name).unwrap_err(),
+                generate_test_markdown(&schema, &schema.type_name).unwrap_err(),
+            ] {
+                let message = error.to_string();
+                assert!(
+                    message.contains("AWS::Budgets::Budget.BudgetData.BudgetName"),
+                    "{invalid}: {message}"
+                );
+                assert!(message.contains(expected), "{invalid}: {message}");
+            }
+        }
     }
 
     #[test]

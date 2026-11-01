@@ -6,10 +6,7 @@ use carina_core::parser::{ParsedFile, ProviderContext};
 use carina_core::provider::{
     ProviderFactory, collect_schemas, provider_custom_types_from_factories,
 };
-use carina_core::resource::{
-    ConcreteValue, ModuleSource, ParserPlaceholder, Resource as GenericResource,
-    Value as GenericValue,
-};
+use carina_core::resource::{AuthoredResource as Resource, AuthoredValue as Value, ConcreteValue};
 use carina_core::schema::{
     ReferenceForms, SchemaRegistry, ValidatedConfigSchema, ValidatedProviderSchemaWitness,
 };
@@ -17,9 +14,6 @@ use carina_core::validation::{validate_resource_ref_types, validate_resources};
 use carina_provider_awscc::schemas::generated::scheduler::schedule::scheduler_schedule_config;
 use carina_provider_awscc::schemas::generated::scheduler::schedule_group::scheduler_schedule_group_config;
 use indexmap::IndexMap;
-
-type Resource = GenericResource<ModuleSource, ParserPlaceholder>;
-type Value = GenericValue<ParserPlaceholder>;
 
 struct SchedulerSchemaFactory;
 
