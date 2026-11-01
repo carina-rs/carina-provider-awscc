@@ -2884,6 +2884,7 @@ fn type_display_at_resolved(
         prop,
         schema,
         cfn_property_path,
+        definition_name,
     ))
 }
 
@@ -2892,52 +2893,17 @@ fn scalar_type_display_string_at(
     prop: &CfnProperty,
     schema: &CfnSchema,
     cfn_property_path: CfnPropertyPath<'_>,
+    definition_name: Option<&str>,
 ) -> String {
     match inline_property_type(prop) {
-        Some("string") => {
-            if is_iam_policy_document_property(&schema.type_name, cfn_property_path) {
-                "PolicyDocument".to_string()
-            } else {
-                let base = infer_string_type_display(prop_name, &schema.type_name);
-                if base != "String" {
-                    return base;
-                }
-                let effective_min = prop.min_length.filter(|&m| m > 0);
-                let has_length = effective_min.is_some() || prop.max_length.is_some();
-                // Check for numeric string pattern
-                if let Some(ref pattern) = prop.pattern
-                    && is_numeric_string_pattern(pattern)
-                {
-                    return if has_length {
-                        let range = string_length_display(effective_min, prop.max_length);
-                        format!("NumericString(len: {})", range)
-                    } else {
-                        "NumericString".to_string()
-                    };
-                }
-                // Check for pattern + length combination
-                if prop.pattern.is_some() && has_length {
-                    let range = string_length_display(effective_min, prop.max_length);
-                    return format!("String(pattern, len: {})", range);
-                }
-                // Format is descriptive while length is validated; show
-                // both when the schema declares both constraints.
-                if let Some(ref fmt) = prop.format {
-                    if has_length {
-                        let range = string_length_display(effective_min, prop.max_length);
-                        return format!("String({}, len: {})", fmt, range);
-                    }
-                    return format!("String({})", fmt);
-                }
-                // Append length constraint if present and type is plain String
-                if has_length && prop.enum_values.is_none() {
-                    let range = string_length_display(effective_min, prop.max_length);
-                    format!("String(len: {})", range)
-                } else {
-                    base
-                }
-            }
-        }
+        Some("string") => string_leaf(
+            prop,
+            prop_name,
+            &schema.type_name,
+            cfn_property_path,
+            definition_name,
+        )
+        .display(),
         Some("boolean") => "Bool".to_string(),
         Some("integer") => {
             // Check resource-scoped overrides first
@@ -3809,7 +3775,6 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str, example: &DocExample) 
             }
             let required_set: HashSet<&str> =
                 def_info.required.iter().map(|s| s.as_str()).collect();
-            let overrides = known_enum_overrides();
             let mut rows = Vec::new();
             for (field_name, field_prop) in &def_info.properties {
                 if is_deprecated_property(field_prop) {
@@ -3849,8 +3814,6 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str, example: &DocExample) 
                         &field_path,
                         Some(&def_info.def_name),
                     )
-                } else if overrides.contains_key(field_name.as_str()) {
-                    MarkdownType::Plain("Enum".to_string())
                 } else {
                     markdown_type(
                         field_name,
@@ -5949,9 +5912,373 @@ fn string_length_display(min: Option<u64>, max: Option<u64>) -> String {
     }
 }
 
-/// Emit a Rust expression for `Option<String>` pattern field. Escapes `"` and `\`
-/// so the generated source compiles; matching/validation logic itself stays in
-/// the `validate` closure.
+struct StringPatternRewrite {
+    cfn_type: &'static str,
+    property_path: CfnPropertyPath<'static>,
+    source: &'static str,
+    pattern: &'static str,
+    length: Option<(u64, u64)>,
+}
+
+#[cfg(test)]
+thread_local! {
+    static USED_STRING_PATTERN_REWRITES: RefCell<BTreeSet<(&'static str, CfnPropertyPath<'static>)>> =
+        const { RefCell::new(BTreeSet::new()) };
+}
+
+/// Exact CFN paths and sources: an upstream change must be reviewed rather
+/// than inheriting a rewrite reviewed for another regex.
+const STRING_PATTERN_REWRITES: &[StringPatternRewrite] = &[
+    StringPatternRewrite {
+        cfn_type: "AWS::Scheduler::Schedule",
+        property_path: CfnPropertyPath::new(Some("EventBridgeParameters"), "Source"),
+        source: r"^(?=[/\.\-_A-Za-z0-9]+)((?!aws\.).*)|(\$(\.[\w_-]+(\[(\d+|\*)\])*)*)$",
+        // Preserve ^A|B$ precedence and search semantics. A only requires an
+        // allowed *first* character and excludes the fixed prefix `aws.`;
+        // its .* may match zero characters. Enumerate the first mismatch
+        // against that prefix, including the shorter strings a/aw/aws.
+        // B remains an unanchored JSON-path suffix, including a bare `$`.
+        // Spell out ECMAScript's ASCII \w and \d for Rust's Unicode engine.
+        pattern: r"^(?:[/.\-_A-Zb-z0-9]|a(?:\z|[^w])|aw(?:\z|[^s])|aws(?:\z|[^.]))|(\$(\.[0-9A-Za-z_-]+(\[([0-9]+|\*)\])*)*)$",
+        length: None,
+    },
+    StringPatternRewrite {
+        cfn_type: "AWS::Logs::LogGroup",
+        property_path: CfnPropertyPath::new(None, "LogGroupName"),
+        source: r"^[.\-_/#A-Za-z0-9]{1,512}\Z",
+        // Deliberately read \Z as the intended strict end of text (\z).
+        // This is not dialect equivalence: ECMAScript reads \Z as literal Z.
+        pattern: r"^[.\-_/#A-Za-z0-9]{1,512}\z",
+        length: None,
+    },
+    StringPatternRewrite {
+        cfn_type: "AWS::SSO::PermissionSet",
+        property_path: CfnPropertyPath::new(None, "SessionDuration"),
+        source: r"^(-?)P(?=\d|T\d)(?:(\d+)Y)?(?:(\d+)M)?(?:(\d+)([DW]))?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?)?$",
+        // Choose the first present date component, or a time-only duration
+        // with a required first time component. A date may still end in a
+        // bare T, as the original look-ahead only inspects the text after P.
+        // ECMAScript's \d is ASCII, unlike Rust regex's Unicode \d.
+        pattern: concat!(
+            r"^-?P(?:",
+            r"(?:[0-9]+Y(?:[0-9]+M)?(?:[0-9]+[DW])?|[0-9]+M(?:[0-9]+[DW])?|[0-9]+[DW])",
+            r"(?:T(?:[0-9]+H)?(?:[0-9]+M)?(?:[0-9]+(?:\.[0-9]+)?S)?)?",
+            r"|T(?:[0-9]+H(?:[0-9]+M)?(?:[0-9]+(?:\.[0-9]+)?S)?|[0-9]+M(?:[0-9]+(?:\.[0-9]+)?S)?|[0-9]+(?:\.[0-9]+)?S))$",
+        ),
+        length: None,
+    },
+    StringPatternRewrite {
+        cfn_type: "AWS::ECR::Repository",
+        property_path: CfnPropertyPath::new(None, "RepositoryName"),
+        source: r"^(?=.{2,256}$)([a-z0-9]+((\.|_|__|-+)[a-z0-9]+)*(\/[a-z0-9]+((\.|_|__|-+)[a-z0-9]+)*)*)$",
+        // The remaining anchored language is ASCII and contains no newline,
+        // so the look-ahead is exactly a total string length constraint.
+        pattern: r"^([a-z0-9]+((\.|_|__|-+)[a-z0-9]+)*(\/[a-z0-9]+((\.|_|__|-+)[a-z0-9]+)*)*)$",
+        length: Some((2, 256)),
+    },
+];
+
+struct StringConstraints<'a> {
+    pattern: Option<&'a str>,
+    min_length: Option<u64>,
+    max_length: Option<u64>,
+}
+
+/// The single CFN-to-emitted-pattern seam, shared by Rust and Markdown.
+/// Never strip unsupported regex syntax: preserve its constraint explicitly
+/// and compile the result with this crate's regex dependency before emission.
+fn string_constraints<'a>(
+    prop: &'a CfnProperty,
+    cfn_type: &str,
+    property_path: CfnPropertyPath<'_>,
+) -> StringConstraints<'a> {
+    let mut constraints = StringConstraints {
+        pattern: prop.pattern.as_deref(),
+        min_length: prop.min_length,
+        max_length: prop.max_length,
+    };
+    if let Some(rewrite) = STRING_PATTERN_REWRITES
+        .iter()
+        .find(|rewrite| rewrite.cfn_type == cfn_type && rewrite.property_path == property_path)
+    {
+        assert_eq!(
+            constraints.pattern,
+            Some(rewrite.source),
+            "CloudFormation pattern changed for {cfn_type}.{property_path}; review the string pattern rewrite"
+        );
+        constraints.pattern = Some(rewrite.pattern);
+        if let Some((min, max)) = rewrite.length {
+            let min = prop.min_length.map_or(min, |n| n.max(min));
+            let max = prop.max_length.map_or(max, |n| n.min(max));
+            constraints.min_length = Some(min);
+            constraints.max_length = Some(max);
+            assert!(
+                min <= max,
+                "Invalid string length bounds for {cfn_type}.{property_path}: {min} > {max}"
+            );
+        }
+        #[cfg(test)]
+        USED_STRING_PATTERN_REWRITES.with(|used| {
+            used.borrow_mut()
+                .insert((rewrite.cfn_type, rewrite.property_path));
+        });
+    }
+    if let Some(pattern) = constraints.pattern {
+        Regex::new(pattern).unwrap_or_else(|error| {
+            panic!("Invalid string pattern for {cfn_type}.{property_path}: {error}")
+        });
+    }
+    constraints
+}
+
+enum EnumLeaf {
+    String(EnumInfo),
+    Integer(Vec<i64>),
+}
+
+impl EnumLeaf {
+    fn string(name: &str, values: Vec<String>) -> Self {
+        Self::String(EnumInfo {
+            type_name: name.to_pascal_case(),
+            values,
+        })
+    }
+
+    fn emit(self, cfn_type: &str, prop_name: &str) -> (String, Option<EnumInfo>) {
+        match self {
+            Self::String(info) => ("AttributeType::string()".to_string(), Some(info)),
+            Self::Integer(values) => (int_enum_type(cfn_type, prop_name, &values), None),
+        }
+    }
+
+    fn display(&self) -> String {
+        match self {
+            Self::String(_) => "String".to_string(),
+            Self::Integer(values) => format!(
+                "IntEnum([{}])",
+                values
+                    .iter()
+                    .map(i64::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        }
+    }
+}
+
+/// Shared const/explicit/known enum precedence for every scalar leaf.
+/// Const and explicit enums use the resolved definition name when present;
+/// known overrides keep the property name.
+fn enum_leaf(
+    prop: &CfnProperty,
+    prop_name: &str,
+    definition_name: Option<&str>,
+) -> Option<EnumLeaf> {
+    if let Some(value) = &prop.const_value {
+        let value = match value {
+            serde_json::Value::String(value) => value.clone(),
+            other => other.to_string(),
+        };
+        return Some(EnumLeaf::string(
+            definition_name.unwrap_or(prop_name),
+            vec![value],
+        ));
+    }
+    if let Some(values) = &prop.enum_values {
+        if !values.is_empty()
+            && values
+                .iter()
+                .all(|value| matches!(value, EnumValue::Int(_)))
+        {
+            return Some(EnumLeaf::Integer(
+                values
+                    .iter()
+                    .filter_map(|value| match value {
+                        EnumValue::Int(value) => Some(*value),
+                        EnumValue::Str(_) => None,
+                    })
+                    .collect(),
+            ));
+        }
+        let values: Vec<String> = values.iter().map(EnumValue::to_string_value).collect();
+        let values = deduplicate_enum_values(values.clone()).unwrap_or(values);
+        return Some(EnumLeaf::string(
+            definition_name.unwrap_or(prop_name),
+            values,
+        ));
+    }
+    known_enum_overrides().get(prop_name).map(|values| {
+        EnumLeaf::string(
+            prop_name,
+            values.iter().map(|value| value.to_string()).collect(),
+        )
+    })
+}
+
+enum StringLeaf<'a> {
+    Enum(EnumLeaf),
+    Inferred {
+        rust_type: String,
+        display_type: String,
+    },
+    Refined {
+        constraints: StringConstraints<'a>,
+        format: Option<&'a str>,
+        to_dsl: Option<&'static str>,
+    },
+}
+
+impl StringLeaf<'_> {
+    fn emit(self, cfn_type: &str, prop_name: &str) -> (String, Option<EnumInfo>) {
+        match self {
+            Self::Enum(leaf) => leaf.emit(cfn_type, prop_name),
+            Self::Inferred { rust_type, .. } => (rust_type, None),
+            Self::Refined {
+                constraints,
+                format,
+                to_dsl,
+            } => {
+                let length = emit_length_option(constraints.min_length, constraints.max_length);
+                if constraints.pattern.is_none()
+                    && length == "None"
+                    && format.is_none()
+                    && to_dsl.is_none()
+                {
+                    return ("AttributeType::string()".to_string(), None);
+                }
+                (
+                    refined_string_type(
+                        "None",
+                        &emit_pattern_option(constraints.pattern),
+                        &length,
+                        to_dsl.unwrap_or("None"),
+                    ),
+                    None,
+                )
+            }
+        }
+    }
+
+    fn display(&self) -> String {
+        match self {
+            Self::Enum(leaf) => leaf.display(),
+            Self::Inferred { display_type, .. } => display_type.clone(),
+            Self::Refined {
+                constraints,
+                format,
+                ..
+            } => string_refinement_display(
+                constraints.pattern,
+                constraints.min_length,
+                constraints.max_length,
+                *format,
+            ),
+        }
+    }
+}
+
+/// Classify a resolved string leaf once, before either Rust or Markdown
+/// rendering. Only the Refined case emits CFN pattern/length metadata and
+/// therefore reaches the translation and compilation gate.
+fn string_leaf<'a>(
+    prop: &'a CfnProperty,
+    prop_name: &str,
+    cfn_type: &str,
+    property_path: CfnPropertyPath<'_>,
+    definition_name: Option<&str>,
+) -> StringLeaf<'a> {
+    if let Some(leaf) = enum_leaf(prop, prop_name, definition_name) {
+        return StringLeaf::Enum(leaf);
+    }
+
+    // A transform takes precedence over named types and inferred enums.
+    let to_dsl = if let Some(TypeOverride::ToDsl(to_dsl)) =
+        resource_type_override(cfn_type, property_path)
+    {
+        Some(*to_dsl)
+    } else {
+        if let Some(rust_type) = infer_string_type(prop_name, cfn_type) {
+            let mut display_type = infer_string_type_display(prop_name, cfn_type);
+            if display_type == "String" {
+                // Preserve existing informational docs for inferred types
+                // with a generic label (for example account Email). Their
+                // CFN constraints are not emitted and must not be compiled.
+                display_type = string_refinement_display(
+                    prop.pattern.as_deref(),
+                    prop.min_length,
+                    prop.max_length,
+                    prop.format.as_deref(),
+                );
+            }
+            return StringLeaf::Inferred {
+                rust_type,
+                display_type,
+            };
+        }
+        if is_iam_policy_document_property(cfn_type, property_path) {
+            return StringLeaf::Inferred {
+                rust_type: "carina_aws_types::iam_policy_document()".to_string(),
+                display_type: "PolicyDocument".to_string(),
+            };
+        }
+        if let Some(values) = prop
+            .description
+            .as_deref()
+            .and_then(extract_enum_from_description)
+        {
+            return StringLeaf::Enum(EnumLeaf::string(prop_name, values));
+        }
+        if let Some(values) = prop
+            .pattern
+            .as_deref()
+            .and_then(extract_enum_from_alternation_pattern)
+        {
+            return StringLeaf::Enum(EnumLeaf::string(prop_name, values));
+        }
+        None
+    };
+    StringLeaf::Refined {
+        constraints: string_constraints(prop, cfn_type, property_path),
+        format: prop.format.as_deref(),
+        to_dsl,
+    }
+}
+
+/// Render refinement text without making type or enum inference decisions.
+fn string_refinement_display(
+    pattern: Option<&str>,
+    min_length: Option<u64>,
+    max_length: Option<u64>,
+    format: Option<&str>,
+) -> String {
+    let min = min_length.filter(|&min| min > 0);
+    let length =
+        (min.is_some() || max_length.is_some()).then(|| string_length_display(min, max_length));
+    if pattern.is_some_and(is_numeric_string_pattern) {
+        return length.map_or_else(
+            || "NumericString".to_string(),
+            |length| format!("NumericString(len: {length})"),
+        );
+    }
+    if pattern.is_some()
+        && let Some(length) = &length
+    {
+        return format!("String(pattern, len: {length})");
+    }
+    if let Some(format) = format {
+        return length.map_or_else(
+            || format!("String({format})"),
+            |length| format!("String({format}, len: {length})"),
+        );
+    }
+    length.map_or_else(
+        || "String".to_string(),
+        |length| format!("String(len: {length})"),
+    )
+}
+
+/// Format a validated pattern from `string_constraints` as a Rust literal.
+/// Escape quotes and backslashes without changing the regex itself.
 fn emit_pattern_option(pattern: Option<&str>) -> String {
     match pattern {
         Some(p) => {
@@ -6867,17 +7194,6 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
     &OVERRIDES
 }
 
-/// Return the `to_dsl` code for a Custom type, checking for ToDsl overrides.
-fn to_dsl_code_for(resource_type: &str, prop_name: &str) -> &'static str {
-    if let Some(TypeOverride::ToDsl(code)) =
-        resource_type_override(resource_type, CfnPropertyPath::new(None, prop_name))
-    {
-        code
-    } else {
-        "None"
-    }
-}
-
 /// The source of an identity leaf's create-only declaration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum IdentityCreateOnlyMode {
@@ -7676,18 +7992,12 @@ fn cfn_type_to_carina_type_with_enum_resolved(
         return ("carina_aws_types::tags_type()".to_string(), None);
     }
 
-    // Handle const values - generate single-value enum
-    if let Some(const_val) = &prop.const_value {
-        let value_str = match const_val {
-            serde_json::Value::String(s) => s.clone(),
-            other => other.to_string(),
-        };
-        let type_name = definition_name.unwrap_or(prop_name).to_pascal_case();
-        let enum_info = EnumInfo {
-            type_name,
-            values: vec![value_str],
-        };
-        return ("AttributeType::string()".to_string(), Some(enum_info));
+    // Preserve non-string const precedence over $ref/oneOf resolution;
+    // enum values and naming still use the same classifier as strings.
+    if prop.const_value.is_some() && inline_property_type(prop) != Some("string") {
+        return enum_leaf(prop, prop_name, definition_name)
+            .expect("a const property must classify as an enum")
+            .emit(&schema.type_name, prop_name);
     }
 
     match property_shape(prop, schema) {
@@ -7801,137 +8111,23 @@ fn cfn_type_to_carina_type_with_enum_resolved(
         PropertyShape::Inline | PropertyShape::Direct(_) => {}
     }
 
-    // Handle explicit enum
-    if let Some(enum_values) = &prop.enum_values {
-        // If all enum values are integers, generate IntEnum Custom type
-        let all_ints = enum_values.iter().all(|v| matches!(v, EnumValue::Int(_)));
-        if all_ints && !enum_values.is_empty() {
-            let values: Vec<i64> = enum_values
-                .iter()
-                .filter_map(|v| match v {
-                    EnumValue::Int(i) => Some(*i),
-                    _ => None,
-                })
-                .collect();
-            return (int_enum_type(&schema.type_name, prop_name, &values), None);
-        }
-
-        let type_name = definition_name.unwrap_or(prop_name).to_pascal_case();
-        let string_values: Vec<String> = enum_values.iter().map(|v| v.to_string_value()).collect();
-        // Deduplicate case-insensitive duplicates (e.g., "GLACIER" and "Glacier")
-        let deduped = deduplicate_enum_values(string_values.clone()).unwrap_or(string_values);
-        let enum_info = EnumInfo {
-            type_name,
-            values: deduped,
-        };
-        return ("AttributeType::string()".to_string(), Some(enum_info));
+    if inline_property_type(prop) == Some("string") {
+        return string_leaf(
+            prop,
+            prop_name,
+            &schema.type_name,
+            cfn_property_path,
+            definition_name,
+        )
+        .emit(&schema.type_name, prop_name);
     }
 
-    // Check known enum overrides (for properties with inconsistent description formatting)
-    let overrides = known_enum_overrides();
-    if let Some(values) = overrides.get(prop_name) {
-        let type_name = prop_name.to_pascal_case();
-        let enum_info = EnumInfo {
-            type_name,
-            values: values.iter().map(|s| s.to_string()).collect(),
-        };
-        return ("AttributeType::string()".to_string(), Some(enum_info));
+    if let Some(leaf) = enum_leaf(prop, prop_name, definition_name) {
+        return leaf.emit(&schema.type_name, prop_name);
     }
 
     // Handle type
     match inline_property_type(prop) {
-        Some("string") => {
-            if let Some(TypeOverride::ToDsl(to_dsl)) =
-                resource_type_override(&schema.type_name, cfn_property_path)
-            {
-                let length_expr =
-                    emit_length_option(prop.min_length.filter(|&m| m > 0), prop.max_length);
-                return (
-                    refined_string_type("None", "None", &length_expr, to_dsl),
-                    None,
-                );
-            }
-
-            // Check known string type overrides first (includes CIDR, IP, AZ,
-            // ARN, resource IDs, IPAM Pool IDs, and owner IDs)
-            if let Some(inferred) = infer_string_type(prop_name, &schema.type_name) {
-                return (inferred, None);
-            }
-
-            // Check if this is a policy document field (CFN sometimes types these as "string")
-            if is_iam_policy_document_property(&schema.type_name, cfn_property_path) {
-                return ("carina_aws_types::iam_policy_document()".to_string(), None);
-            }
-
-            // Try to extract enum values from description
-            if let Some(desc) = &prop.description
-                && let Some(enum_values) = extract_enum_from_description(desc)
-            {
-                let type_name = prop_name.to_pascal_case();
-                let enum_info = EnumInfo {
-                    type_name,
-                    values: enum_values,
-                };
-                return ("AttributeType::string()".to_string(), Some(enum_info));
-            }
-
-            // Check for string length constraints
-            let effective_min = prop.min_length.filter(|&m| m > 0);
-            let has_length = effective_min.is_some() || prop.max_length.is_some();
-
-            // Check for numeric string pattern (e.g., "[0-9]+")
-            if let Some(ref pattern) = prop.pattern
-                && is_numeric_string_pattern(pattern)
-            {
-                let pattern_expr = emit_pattern_option(Some(pattern));
-                let length_expr = emit_length_option(effective_min, prop.max_length);
-                return (
-                    refined_string_type("None", &pattern_expr, &length_expr, "None"),
-                    None,
-                );
-            }
-
-            // Check for alternation-only pattern (e.g., "^(a|b|c)$") and
-            // promote it to a real StringEnum so users get bare-identifier
-            // syntax, did-you-mean diagnostics, and LSP completion. See
-            // awscc#245.
-            if let Some(ref pattern) = prop.pattern
-                && let Some(values) = extract_enum_from_alternation_pattern(pattern)
-            {
-                let type_name = prop_name.to_pascal_case();
-                let enum_info = EnumInfo { type_name, values };
-                return ("AttributeType::string()".to_string(), Some(enum_info));
-            }
-
-            // Check for regex pattern constraint
-            if let Some(pattern) = &prop.pattern {
-                let pattern_expr = emit_pattern_option(Some(pattern));
-                let length_expr = emit_length_option(effective_min, prop.max_length);
-                return (
-                    refined_string_type("None", &pattern_expr, &length_expr, "None"),
-                    None,
-                );
-            }
-
-            // Check for string length constraints (minLength/maxLength)
-            if has_length {
-                let length_expr = emit_length_option(effective_min, prop.max_length);
-                let to_dsl = to_dsl_code_for(&schema.type_name, prop_name);
-                return (
-                    refined_string_type("None", "None", &length_expr, to_dsl),
-                    None,
-                );
-            }
-
-            // A format is informational in AttributeType, but still selects
-            // the refined-string representation when no validated length is
-            // present.
-            if prop.format.is_some() {
-                return (refined_string_type("None", "None", "None", "None"), None);
-            }
-
-            ("AttributeType::string()".to_string(), None)
-        }
         Some("boolean") => ("AttributeType::bool()".to_string(), None),
         Some("integer") => {
             // Check resource-scoped overrides first
@@ -8194,6 +8390,719 @@ fn collapse_whitespace(s: &str) -> String {
 mod tests {
     use super::*;
     use std::path::Path;
+
+    // Parse the emitted Rust literals, so these tests exercise the constraints
+    // that the provider will actually publish rather than a parallel rewrite.
+    fn emitted_patterns(code: &str) -> Vec<String> {
+        let pattern_field = Regex::new(
+            r#"AttributeType::refined_string\([^,]*, Some\(("(?:\\.|[^"\\])*")\.to_string\(\)\)"#,
+        )
+        .unwrap();
+        pattern_field
+            .captures_iter(code)
+            .map(|captures| serde_json::from_str(&captures[1]).unwrap())
+            .collect()
+    }
+
+    fn emitted_string_accepts(code: &str, value: &str) -> bool {
+        let patterns = emitted_patterns(code);
+        assert_eq!(patterns.len(), 1, "constraint disappeared: {code}");
+        let pattern = Regex::new(&patterns[0]).expect("emitted pattern must compile");
+        let bounds = Regex::new(r"Some\(\((None|Some\(\d+\)), (None|Some\(\d+\))\)\)").unwrap();
+        let length = value.chars().count() as u64;
+        let within_length = bounds.captures(code).is_none_or(|captures| {
+            let bound = |text: &str| {
+                text.strip_prefix("Some(")
+                    .map(|n| n.trim_end_matches(')').parse::<u64>().unwrap())
+            };
+            bound(&captures[1]).is_none_or(|min| length >= min)
+                && bound(&captures[2]).is_none_or(|max| length <= max)
+        });
+        pattern.is_match(value) && within_length
+    }
+
+    fn pattern_type_code(
+        schema: &CfnSchema,
+        parent: Option<&str>,
+        name: &str,
+        prop: &CfnProperty,
+    ) -> String {
+        cfn_type_to_carina_type_with_enum_with_paths(
+            prop,
+            name,
+            schema,
+            "aws.test.Resource",
+            &BTreeMap::new(),
+            CfnTypeGenerationPaths {
+                structural: &[],
+                provider: &[],
+                cfn_parent: parent,
+            },
+        )
+        .0
+    }
+
+    #[test]
+    fn test_codegen_regex_patterns_cached_output_compiles() {
+        USED_STRING_PATTERN_REWRITES.with(|used| used.borrow_mut().clear());
+        for path in cached_schema_paths() {
+            let schema: CfnSchema =
+                serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+            if !schema.is_cloud_control_provisionable() {
+                continue;
+            }
+            // string_constraints is the compilation gate during generation.
+            generate_schema_code(&schema, &schema.type_name).unwrap();
+        }
+        USED_STRING_PATTERN_REWRITES.with(|used| {
+            let used = used.borrow();
+            for rewrite in STRING_PATTERN_REWRITES {
+                assert!(
+                    used.contains(&(rewrite.cfn_type, rewrite.property_path)),
+                    "stale string pattern rewrite row {}.{} was not used by any cached schema",
+                    rewrite.cfn_type,
+                    rewrite.property_path
+                );
+            }
+        });
+    }
+
+    #[test]
+    fn test_codegen_regex_patterns_reject_unknown_syntax_with_path() {
+        let schema = empty_schema("AWS::Test::Resource");
+        for (parent, source) in [
+            (None, "(?=x)x"),
+            (Some("Settings"), "(?!x).*"),
+            (Some("Settings"), r"^(x)\1$"),
+            (None, "["),
+        ] {
+            let prop = def(Some("string"), None, vec![], None, None, Some(source));
+            let panic =
+                std::panic::catch_unwind(|| pattern_type_code(&schema, parent, "UserValue", &prop))
+                    .expect_err("codegen must reject an unsupported CFN pattern");
+            let message = panic
+                .downcast_ref::<String>()
+                .map(String::as_str)
+                .or_else(|| panic.downcast_ref::<&str>().copied())
+                .unwrap();
+            assert!(message.contains("AWS::Test::Resource"), "{message}");
+            assert!(
+                message.contains(&CfnPropertyPath::new(parent, "UserValue").to_string()),
+                "{message}"
+            );
+            assert!(message.contains("regex parse error"), "{message}");
+        }
+    }
+
+    #[test]
+    fn test_codegen_regex_patterns_rewrite_cases() {
+        type PatternTable<'a> = (&'a str, Option<&'a str>, &'a str, &'a [(&'a str, bool)]);
+        let tables: &[PatternTable<'_>] = &[
+            (
+                "AWS::Scheduler::Schedule",
+                Some("EventBridgeParameters"),
+                "Source",
+                &[
+                    ("", false),
+                    ("aws.events", false),
+                    ("aws.", false),
+                    ("aws.\nanything", false),
+                    ("aws", true),
+                    ("aw", true),
+                    ("a", true),
+                    ("awsx", true),
+                    ("aw!", true),
+                    ("a!", true),
+                    ("AWS.events", true),
+                    ("my source!?", true),
+                    ("a\n", true),
+                    ("aw\n", true),
+                    ("aws\n", true),
+                    ("/", true),
+                    (".", true),
+                    ("-", true),
+                    ("_", true),
+                    ("9", true),
+                    ("!source", false),
+                    ("évent", false),
+                    ("$", true),
+                    ("$.detail.items[0][*]", true),
+                    ("$.detail_0-[123][*]", true),
+                    ("$.detail[١]", false),
+                    ("$.évent", false),
+                    ("$.évent_名-", false),
+                    ("$.名", false),
+                    ("$.e\u{301}", false),
+                    ("aws.$.évent", false),
+                    ("aévent", true),
+                    ("x$.évent", true),
+                    ("!prefix$", true),
+                    ("aws.$.detail", true),
+                    ("\n$.detail", true),
+                    ("$.detail trailing", false),
+                    ("$.detail\n", false),
+                    ("$.items[]", false),
+                    ("$.items[-1]", false),
+                    ("a!$broken[", true),
+                    ("$$.detail", true),
+                ],
+            ),
+            (
+                "AWS::Logs::LogGroup",
+                None,
+                "LogGroupName",
+                &[
+                    ("", false),
+                    ("/aws/lambda/my-function_1.2#", true),
+                    ("-", true),
+                    ("has space", false),
+                    ("foo\n", false),
+                    ("foo\r\n", false),
+                    ("é", false),
+                ],
+            ),
+            (
+                "AWS::SSO::PermissionSet",
+                None,
+                "SessionDuration",
+                &[
+                    ("", false),
+                    ("P", false),
+                    ("PT", false),
+                    ("-PT", false),
+                    ("P1Y", true),
+                    ("P1M", true),
+                    ("P1D", true),
+                    ("P1W", true),
+                    ("P1YT", true),
+                    ("P1MT", true),
+                    ("P1DT", true),
+                    ("P1WT", true),
+                    ("PT1H", true),
+                    ("PT1M", true),
+                    ("PT1S", true),
+                    ("PT1.25S", true),
+                    ("-PT1H", true),
+                    ("P0D", true),
+                    ("PT0S", true),
+                    ("PT١H", false),
+                    ("PT１H", false),
+                    ("P١Y", false),
+                    ("PT1.٢S", false),
+                    ("P1DT٢M", false),
+                    ("P1Y2M3DT4H5M6.7S", true),
+                    ("P1Y2M3WT4H5M6S", true),
+                    ("P1Y2MT3H", true),
+                    ("P1YT2M", true),
+                    ("P1DT2.3S", true),
+                    ("P1W2D", false),
+                    ("P1D2W", false),
+                    ("P1", false),
+                    ("PT.5S", false),
+                    ("PT1.S", false),
+                    ("P1.5D", false),
+                    ("PT1M2H", false),
+                    ("+PT1H", false),
+                    ("--PT1H", false),
+                    ("pt1h", false),
+                    ("PT1H\n", false),
+                ],
+            ),
+            (
+                "AWS::ECR::Repository",
+                None,
+                "RepositoryName",
+                &[
+                    ("", false),
+                    ("a", false),
+                    ("ab", true),
+                    ("a/b", true),
+                    ("a.b_c__d---e/f0", true),
+                    ("A/b", false),
+                    ("/ab", false),
+                    ("ab/", false),
+                    ("a//b", false),
+                    ("a..b", false),
+                    ("a___b", false),
+                    ("a.-b", false),
+                    ("a_", false),
+                    ("ab\n", false),
+                    ("éa", false),
+                ],
+            ),
+        ];
+        for &(type_name, parent, name, cases) in tables {
+            let schema = cfn_schema_for_codegen_tests(type_name);
+            let prop = match parent {
+                Some(parent) => &schema.definitions.as_ref().unwrap()[parent]
+                    .properties
+                    .as_ref()
+                    .unwrap()[name],
+                None => &schema.properties[name],
+            };
+            let original = prop.pattern.as_deref().unwrap();
+            // fancy-regex is not an ECMAScript engine. On ASCII inputs it
+            // checks the look-around removal's branch logic, not CFN dialect
+            // equivalence. The hand-written ASCII/non-ASCII cases are the
+            // dialect check. Logs deliberately reads \Z as strict end of
+            // text (\z); ECMAScript would instead read it as a literal Z.
+            // That intended reading is checked by the Logs table, since
+            // fancy-regex gives \Z yet another meaning (trailing newlines).
+            let ascii_reference =
+                (!original.contains(r"\Z")).then(|| fancy_regex::Regex::new(original).unwrap());
+            let code = pattern_type_code(&schema, parent, name, prop);
+            for &(value, expected) in cases {
+                if let Some(reference) = &ascii_reference
+                    && value.is_ascii()
+                {
+                    assert_eq!(
+                        reference.is_match(value).unwrap(),
+                        expected,
+                        "ASCII branch reference {type_name}.{name}: {value:?}"
+                    );
+                }
+                assert_eq!(
+                    emitted_string_accepts(&code, value),
+                    expected,
+                    "emitted {type_name}.{name}: {value:?}"
+                );
+            }
+            for length in [0, 1, 2, 100, 255, 256, 257, 511, 512, 513] {
+                let value = "a".repeat(length);
+                let expected = prop.min_length.is_none_or(|min| length as u64 >= min)
+                    && prop.max_length.is_none_or(|max| length as u64 <= max)
+                    && match &ascii_reference {
+                        Some(reference) => reference.is_match(&value).unwrap(),
+                        None => (1..=512).contains(&length),
+                    };
+                assert_eq!(
+                    emitted_string_accepts(&code, &value),
+                    expected,
+                    "{type_name}.{name}, length {length}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_codegen_regex_patterns_to_dsl_uses_constraints() {
+        let schema = empty_schema("AWS::Route53::HostedZone");
+        let mut prop = CfnProperty {
+            prop_type: Some(TypeValue::Single("string".to_string())),
+            pattern: Some("^[a-z.]+$".to_string()),
+            min_length: Some(2),
+            max_length: Some(64),
+            // The transform takes precedence over description enum inference.
+            description: Some("Valid values: public | private".to_string()),
+            ..Default::default()
+        };
+        let code = pattern_type_code(&schema, None, "Name", &prop);
+        assert!(code.contains("DslTransform::StripSuffix"), "{code}");
+        assert!(emitted_string_accepts(&code, "example.com."));
+        assert!(!emitted_string_accepts(&code, "EXAMPLE.com."));
+        assert!(!emitted_string_accepts(&code, "a"));
+        assert!(!emitted_string_accepts(&code, &"a".repeat(65)));
+        assert_eq!(
+            type_display_string("Name", &prop, &schema),
+            "String(pattern, len: 2..=64)"
+        );
+
+        prop.pattern = Some("(?=x)x".to_string());
+        let panic = std::panic::catch_unwind(|| pattern_type_code(&schema, None, "Name", &prop))
+            .expect_err("transformed strings must compile emitted patterns");
+        let message = panic.downcast_ref::<String>().unwrap();
+        assert!(
+            message.contains("AWS::Route53::HostedZone.Name"),
+            "{message}"
+        );
+        assert!(message.contains("regex parse error"), "{message}");
+    }
+
+    #[test]
+    fn test_codegen_regex_patterns_ignore_unemitted_enum_patterns() {
+        for kind in ["explicit", "description", "known", "const", "alternation"] {
+            let name = if kind == "known" {
+                "ConnectivityType"
+            } else {
+                "Mode"
+            };
+            let mut schema = empty_schema("AWS::Test::Resource");
+            let mut prop = CfnProperty {
+                prop_type: Some(TypeValue::Single("string".to_string())),
+                pattern: Some("(?=x)x".to_string()),
+                min_length: Some(1),
+                max_length: Some(8),
+                ..Default::default()
+            };
+            match kind {
+                "explicit" => {
+                    prop.enum_values = Some(vec![
+                        EnumValue::Str("public".to_string()),
+                        EnumValue::Str("private".to_string()),
+                    ])
+                }
+                "description" => {
+                    prop.description = Some("Valid values: public | private".to_string())
+                }
+                "const" => prop.const_value = Some(serde_json::json!("public")),
+                "alternation" => prop.pattern = Some("^(public|private)$".to_string()),
+                "known" => {}
+                _ => unreachable!(),
+            }
+            let (code, enum_info) = cfn_type_to_carina_type_with_enum(
+                &prop,
+                name,
+                &schema,
+                "aws.test.Resource",
+                &BTreeMap::new(),
+            );
+            assert!(enum_info.is_some(), "{kind}: {code}");
+            assert!(emitted_patterns(&code).is_empty(), "{kind}: {code}");
+            assert_eq!(
+                type_display_string(name, &prop, &schema),
+                "String",
+                "{kind}"
+            );
+
+            schema.properties.insert(name.to_string(), prop);
+            generate_synthetic_schema_code(&schema).unwrap();
+            generate_test_markdown(&schema, &schema.type_name).unwrap();
+        }
+    }
+
+    #[test]
+    fn test_codegen_enum_leaf_precedence_and_naming() {
+        use serde_json::json;
+
+        for (keywords, values, definition_named) in [
+            (
+                json!({"const":true,"enum":["explicit"]}),
+                Some(vec!["true"]),
+                true,
+            ),
+            (
+                json!({"enum":["Glacier","GLACIER","DeepArchive"]}),
+                Some(vec!["GLACIER", "DeepArchive"]),
+                true,
+            ),
+            (json!({"enum":["1",1,2]}), Some(vec!["1", "2"]), true),
+            (json!({}), Some(vec!["public", "private"]), false),
+            (json!({"enum":[1,2]}), None, false),
+        ] {
+            // String leaves and the non-string fallthrough must agree on
+            // const/explicit/known precedence, deduplication and ref naming.
+            for property_type in ["string", "integer", "boolean"] {
+                let mut property: CfnProperty = serde_json::from_value(keywords.clone()).unwrap();
+                property.prop_type = Some(TypeValue::Single(property_type.to_string()));
+                let mut schema = empty_schema("AWS::Test::Resource");
+                schema.definitions =
+                    Some(BTreeMap::from([("Alias".to_string(), property.clone())]));
+                let reference = CfnProperty {
+                    ref_path: Some("#/definitions/Alias".to_string()),
+                    ..Default::default()
+                };
+                for (prop, expected_name) in [
+                    (&property, "ConnectivityType"),
+                    (
+                        &reference,
+                        if definition_named {
+                            "Alias"
+                        } else {
+                            "ConnectivityType"
+                        },
+                    ),
+                ] {
+                    reset_recursion_guard();
+                    let (code, info) = cfn_type_to_carina_type_with_enum(
+                        prop,
+                        "ConnectivityType",
+                        &schema,
+                        "aws.test.Resource",
+                        &BTreeMap::new(),
+                    );
+                    if let Some(values) = &values {
+                        assert_eq!(code, "AttributeType::string()");
+                        let info = info.expect("string-valued enums must be registered");
+                        assert_eq!(info.type_name, expected_name);
+                        assert_eq!(&info.values, values);
+                    } else {
+                        assert!(info.is_none());
+                        assert_eq!(
+                            code,
+                            "AttributeType::union(vec![AttributeType::refined_int(None, Some((Some(1), Some(1)))), AttributeType::refined_int(None, Some((Some(2), Some(2))))])"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_codegen_string_leaf_precedence_is_shared() {
+        use serde_json::json;
+
+        for (cfn_type, name, property, expected_values, expected_type, display) in [
+            (
+                "AWS::Test::Resource",
+                "ValueArn",
+                json!({"type":"string","const":"constant","enum":["explicit"],"description":"Valid values: public | private","pattern":"(?=x)x"}),
+                Some(vec!["constant"]),
+                "AttributeType::string()",
+                "String",
+            ),
+            (
+                "AWS::Test::Resource",
+                "ValueArn",
+                json!({"type":"string","enum":["explicit"],"description":"Valid values: public | private","pattern":"(?=x)x"}),
+                Some(vec!["explicit"]),
+                "AttributeType::string()",
+                "String",
+            ),
+            (
+                "AWS::Test::Resource",
+                "ConnectivityType",
+                json!({"type":"string","description":"Valid values: other | values","pattern":"(?=x)x"}),
+                Some(vec!["public", "private"]),
+                "AttributeType::string()",
+                "String",
+            ),
+            (
+                "AWS::Test::Resource",
+                "ValueArn",
+                json!({"type":"string","description":"Valid values: public | private","pattern":"(?=x)x"}),
+                None,
+                "carina_aws_types::arn()",
+                "Arn",
+            ),
+            (
+                "AWS::Test::Resource",
+                "Email",
+                json!({"type":"string","pattern":"[^\\s@]+@[^\\s@]+\\.[^\\s@]+","minLength":6,"maxLength":64}),
+                None,
+                "types::email()",
+                "String(pattern, len: 6..=64)",
+            ),
+            (
+                "AWS::Test::Resource",
+                "Mode",
+                json!({"type":"string","enum":[1,2],"pattern":"(?=x)x"}),
+                None,
+                "AttributeType::union(vec![AttributeType::refined_int(None, Some((Some(1), Some(1)))), AttributeType::refined_int(None, Some((Some(2), Some(2))))])",
+                "IntEnum([1, 2])",
+            ),
+            (
+                "AWS::Test::Resource",
+                "Mode",
+                json!({"type":"string","description":"Valid values: public | private","pattern":"(?=x)x"}),
+                Some(vec!["public", "private"]),
+                "AttributeType::string()",
+                "String",
+            ),
+            (
+                "AWS::Test::Resource",
+                "Mode",
+                json!({"type":"string","pattern":"^(public|private)$","minLength":300,"maxLength":1}),
+                Some(vec!["public", "private"]),
+                "AttributeType::string()",
+                "String",
+            ),
+            (
+                "AWS::Route53::HostedZone",
+                "Name",
+                json!({"type":"string","pattern":"^[0-9]+$","format":"uri","minLength":2,"maxLength":8,"description":"Valid values: public | private"}),
+                None,
+                r#"AttributeType::refined_string(None, Some("^[0-9]+$".to_string()), Some((Some(2), Some(8))), Some(carina_core::schema::DslTransform::StripSuffix(".".to_string())))"#,
+                "NumericString(len: 2..=8)",
+            ),
+            (
+                "AWS::Test::Resource",
+                "Mode",
+                json!({"type":"string","pattern":"^[0-9]+$","format":"uri","minLength":2,"maxLength":8}),
+                None,
+                r#"AttributeType::refined_string(None, Some("^[0-9]+$".to_string()), Some((Some(2), Some(8))), None)"#,
+                "NumericString(len: 2..=8)",
+            ),
+            (
+                "AWS::Test::Resource",
+                "Mode",
+                json!({"type":"string","pattern":"^[a-z]+$","format":"uri","minLength":2,"maxLength":8}),
+                None,
+                r#"AttributeType::refined_string(None, Some("^[a-z]+$".to_string()), Some((Some(2), Some(8))), None)"#,
+                "String(pattern, len: 2..=8)",
+            ),
+            (
+                "AWS::Test::Resource",
+                "Mode",
+                json!({"type":"string","format":"uri","minLength":2,"maxLength":8}),
+                None,
+                "AttributeType::refined_string(None, None, Some((Some(2), Some(8))), None)",
+                "String(uri, len: 2..=8)",
+            ),
+            (
+                "AWS::Test::Resource",
+                "Mode",
+                json!({"type":"string","format":"uri"}),
+                None,
+                "AttributeType::refined_string(None, None, None, None)",
+                "String(uri)",
+            ),
+            (
+                "AWS::Test::Resource",
+                "Mode",
+                json!({"type":"string"}),
+                None,
+                "AttributeType::string()",
+                "String",
+            ),
+        ] {
+            let mut schema = empty_schema(cfn_type);
+            let property: CfnProperty = serde_json::from_value(property).unwrap();
+            schema.definitions = Some(BTreeMap::from([("Alias".to_string(), property.clone())]));
+            let reference = CfnProperty {
+                ref_path: Some("#/definitions/Alias".to_string()),
+                ..Default::default()
+            };
+            for prop in [&property, &reference] {
+                reset_recursion_guard();
+                let (code, enum_info) = cfn_type_to_carina_type_with_enum(
+                    prop,
+                    name,
+                    &schema,
+                    "aws.test.Resource",
+                    &BTreeMap::new(),
+                );
+                assert_eq!(code, expected_type, "{cfn_type}.{name}: {property:?}");
+                assert_eq!(
+                    enum_info.as_ref().map(|info| info
+                        .values
+                        .iter()
+                        .map(String::as_str)
+                        .collect::<Vec<_>>()),
+                    expected_values,
+                    "{cfn_type}.{name}: {property:?}"
+                );
+                assert_eq!(
+                    type_display_string(name, prop, &schema),
+                    display,
+                    "{cfn_type}.{name}: {property:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_codegen_regex_patterns_share_inline_ref_and_one_of_path() {
+        let mut schema = empty_schema("AWS::ECR::Repository");
+        let cached = cfn_schema_for_codegen_tests(&schema.type_name);
+        let prop = cached.properties["RepositoryName"].clone();
+        schema.definitions = Some(BTreeMap::from([("Name".to_string(), prop.clone())]));
+        let reference = CfnProperty {
+            ref_path: Some("#/definitions/Name".to_string()),
+            // A reference owns the shape; these sibling constraints are not emitted.
+            prop_type: Some(TypeValue::Single("string".to_string())),
+            pattern: Some("(?=ignored)ignored".to_string()),
+            ..Default::default()
+        };
+        let union = CfnProperty {
+            one_of: vec![
+                def(
+                    Some("string"),
+                    None,
+                    vec![],
+                    None,
+                    None,
+                    Some("(?=ignored)ignored"),
+                ),
+                CfnProperty {
+                    prop_type: Some(TypeValue::Single("array".to_string())),
+                    items: Some(Box::new(reference.clone())),
+                    ..Default::default()
+                },
+            ],
+            pattern: Some("(?=ignored)ignored".to_string()),
+            ..Default::default()
+        };
+        for property in [prop, reference, union] {
+            reset_recursion_guard();
+            let code = pattern_type_code(&schema, None, "RepositoryName", &property);
+            assert!(emitted_string_accepts(&code, "ab"), "{code}");
+            assert!(!emitted_string_accepts(&code, "a"), "{code}");
+            assert!(
+                type_display_string("RepositoryName", &property, &schema)
+                    .contains("String(pattern, len: 2..=256)")
+            );
+        }
+    }
+
+    #[test]
+    fn test_codegen_regex_patterns_ecr_extracts_and_intersects_length() {
+        let schema = cfn_schema_for_codegen_tests("AWS::ECR::Repository");
+        for (min, max, expected) in [
+            (None, None, Some("Some((Some(2), Some(256)))")),
+            (Some(1), Some(512), Some("Some((Some(2), Some(256)))")),
+            (Some(4), Some(128), Some("Some((Some(4), Some(128)))")),
+            (Some(2), Some(2), Some("Some((Some(2), Some(2)))")),
+            (Some(256), Some(256), Some("Some((Some(256), Some(256)))")),
+            (Some(300), None, None),
+            (None, Some(1), None),
+        ] {
+            let mut prop = schema.properties["RepositoryName"].clone();
+            prop.min_length = min;
+            prop.max_length = max;
+            let result = std::panic::catch_unwind(|| {
+                pattern_type_code(&schema, None, "RepositoryName", &prop)
+            });
+            if let Some(expected) = expected {
+                let code = result.expect("a nonempty length intersection must generate");
+                assert!(code.contains(expected), "length constraint lost: {code}");
+                assert!(!emitted_string_accepts(&code, "a"));
+                assert!(!emitted_string_accepts(&code, &"a".repeat(257)));
+                assert!(emitted_string_accepts(
+                    &code,
+                    &"a".repeat(min.unwrap_or(2).max(2) as usize)
+                ));
+            } else {
+                let panic = result.expect_err("an empty length intersection must fail codegen");
+                let message = panic.downcast_ref::<String>().unwrap();
+                assert!(
+                    message.contains("AWS::ECR::Repository.RepositoryName"),
+                    "{message}"
+                );
+                assert!(
+                    message.contains("Invalid string length bounds"),
+                    "{message}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_codegen_regex_patterns_reject_changed_sources() {
+        for (type_name, parent, name) in [
+            (
+                "AWS::Scheduler::Schedule",
+                Some("EventBridgeParameters"),
+                "Source",
+            ),
+            ("AWS::Logs::LogGroup", None, "LogGroupName"),
+            ("AWS::SSO::PermissionSet", None, "SessionDuration"),
+            ("AWS::ECR::Repository", None, "RepositoryName"),
+        ] {
+            let schema = empty_schema(type_name);
+            // Even a compilable pattern that remains a string refinement
+            // must prompt a deliberate review of the path-specific rewrite.
+            for source in [Some("^changed[0-9]+$"), None] {
+                let prop = def(Some("string"), None, vec![], None, None, source);
+                let panic =
+                    std::panic::catch_unwind(|| pattern_type_code(&schema, parent, name, &prop))
+                        .expect_err("changed CFN source must not reuse a stale translation");
+                let message = panic.downcast_ref::<String>().unwrap();
+                assert!(message.contains(type_name), "{message}");
+                assert!(message.contains(name), "{message}");
+                assert!(message.contains("changed"), "{message}");
+            }
+        }
+    }
 
     const EXTRACT_ENUM_SNAPSHOT_PRE_365: &str = "tests/fixtures/extract_enum_snapshot_pre_365.json";
 
@@ -13064,6 +13973,40 @@ mod tests {
         let info = enum_info.unwrap();
         assert_eq!(info.type_name, "IpProtocol");
         assert_eq!(info.values, vec!["tcp", "udp", "icmp", "icmpv6", "-1"]);
+
+        let mut schema = empty_schema("AWS::Test::Resource");
+        schema.properties.insert(
+            "Config".to_string(),
+            CfnProperty {
+                prop_type: Some(TypeValue::Single("object".to_string())),
+                properties: Some(
+                    known_enum_overrides()
+                        .keys()
+                        .map(|name| {
+                            (
+                                name.to_string(),
+                                CfnProperty {
+                                    prop_type: Some(TypeValue::Single("string".to_string())),
+                                    ..Default::default()
+                                },
+                            )
+                        })
+                        .collect(),
+                ),
+                ..Default::default()
+            },
+        );
+        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        for name in known_enum_overrides().keys() {
+            assert!(
+                markdown.contains(&format!(
+                    "| `{}` | [Enum ({})](#",
+                    name.to_snake_case(),
+                    name.to_pascal_case()
+                )),
+                "known enum {name} must have a Markdown target: {markdown}"
+            );
+        }
     }
 
     #[test]
@@ -19179,7 +20122,7 @@ mod tests {
             type_str
         );
         assert!(
-            type_str.contains(r#"Some("^[.\\-_/#A-Za-z0-9]{1,512}\\Z".to_string())"#),
+            type_str.contains(r#"Some("^[.\\-_/#A-Za-z0-9]{1,512}\\z".to_string())"#),
             "Should carry pattern metadata, got: {}",
             type_str
         );
@@ -19256,7 +20199,7 @@ mod tests {
         let code = generate_schema_code(&schema, "AWS::Logs::LogGroup").unwrap();
         assert!(
             code.contains("AttributeType::refined_string(None, Some(")
-                && code.contains(r"{1,512}\\Z"),
+                && code.contains(r"{1,512}\\z"),
             "Generated code should retain the pattern as type metadata:\n{}",
             code
         );
@@ -19486,10 +20429,10 @@ mod tests {
     fn test_generate_schema_code_string_min_max_length() {
         let mut properties = BTreeMap::new();
         properties.insert(
-            "LogGroupName".to_string(),
+            "ResourceName".to_string(),
             CfnProperty {
                 prop_type: Some(TypeValue::Single("string".to_string())),
-                description: Some("The name of the log group.".to_string()),
+                description: Some("Name of the resource.".to_string()),
                 min_length: Some(1),
                 max_length: Some(512),
                 ..Default::default()
@@ -19497,7 +20440,7 @@ mod tests {
         );
 
         let schema = CfnSchema {
-            type_name: "AWS::Logs::LogGroup".to_string(),
+            type_name: "AWS::Test::Resource".to_string(),
             description: None,
             properties,
             required: vec![],
@@ -19512,7 +20455,7 @@ mod tests {
             handlers: BTreeMap::new(),
         };
 
-        let generated = generate_schema_code(&schema, "AWS::Logs::LogGroup").unwrap();
+        let generated = generate_synthetic_schema_code(&schema).unwrap();
 
         assert!(
             !generated.contains("validate_string_length_"),
