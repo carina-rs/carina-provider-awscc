@@ -8,13 +8,6 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd -P)"
 AWSCC_WASM="$PROJECT_ROOT/target/wasm32-wasip2/release/carina-provider-awscc.wasm"
 CARINA_BIN="${CARINA_BIN:-carina}"
 
-# The shell-only CI job also discovers this script. Its WASM build lives in the
-# validate-examples job, where CARINA_REQUIRE_WASM_ACCEPTANCE makes absence fatal.
-if [ ! -f "$AWSCC_WASM" ] && [ "${CARINA_REQUIRE_WASM_ACCEPTANCE:-0}" != "1" ]; then
-    echo "SKIP: build the release awscc WASM to run the missing-credentials acceptance test"
-    exit 0
-fi
-
 if [[ "$CARINA_BIN" == */* ]]; then
     CARINA_DIR="$(cd "$(dirname "$CARINA_BIN")" && pwd -P)"
     CARINA_EXE="$CARINA_DIR/$(basename "$CARINA_BIN")"
@@ -62,6 +55,7 @@ awscc.ec2.Vpc {
 EOF
 
 run_clean() {
+    # Disable the host's IMDS source so this case has no credentials on EC2 too.
     env -i \
         HOME="$TEST_HOME" \
         PATH="$CARINA_DIR:/usr/bin:/bin" \
@@ -102,7 +96,7 @@ if [ "$elapsed" -ge 30 ]; then
     echo "$output" >&2
     exit 1
 fi
-if ! grep -Eiq 'no credentials|CredentialsNotLoaded|credentials not loaded|credential provider was not enabled' <<< "$output"; then
+if ! grep -Eiq 'no credentials|credentials were not found|CredentialsNotLoaded|credentials not loaded|credential provider was not enabled' <<< "$output"; then
     echo "FAIL: carina apply did not report a credentials failure" >&2
     echo "$output" >&2
     exit 1

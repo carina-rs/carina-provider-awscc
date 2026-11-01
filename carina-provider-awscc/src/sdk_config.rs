@@ -3,6 +3,7 @@
 use std::time::Duration;
 
 use aws_config::Region;
+use aws_credential_types::provider::SharedCredentialsProvider;
 use aws_smithy_types::retry::RetryConfig;
 use aws_smithy_types::timeout::TimeoutConfig;
 
@@ -20,7 +21,7 @@ pub(crate) struct SdkClients {
 
 impl BoundedSdkConfig {
     /// Apply the provider's timeout and retry policy to an SDK configuration.
-    pub fn new(config: aws_config::SdkConfig) -> Self {
+    fn new(config: aws_config::SdkConfig) -> Self {
         Self(
             config
                 .into_builder()
@@ -28,6 +29,13 @@ impl BoundedSdkConfig {
                 .retry_config(retry_config())
                 .build(),
         )
+    }
+
+    /// Build a bounded configuration for native tests with explicit credentials.
+    #[cfg(any(test, feature = "test-utils"))]
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn for_test(config: aws_config::SdkConfig) -> Self {
+        Self::new(config)
     }
 
     /// Load a bounded SDK configuration for the region and optional assumed role.
@@ -39,9 +47,11 @@ impl BoundedSdkConfig {
         region: &str,
         assume_role: Option<&AssumeRoleConfig>,
         http_client: Option<aws_smithy_runtime_api::client::http::SharedHttpClient>,
-        credentials_provider: Option<aws_credential_types::provider::SharedCredentialsProvider>,
+        credentials_provider: Option<SharedCredentialsProvider>,
     ) -> Self {
         // Give the loader the policy too so invalid AWS retry settings cannot panic first.
+        // This is the sole SDK loader; wasm32 always installs host credentials below.
+        #[allow(clippy::disallowed_methods)]
         let loader = aws_config::defaults(aws_config::BehaviorVersion::latest())
             .region(Region::new(region.to_string()))
             .timeout_config(timeout_config())
@@ -50,10 +60,13 @@ impl BoundedSdkConfig {
             Some(http_client) => loader.http_client(http_client),
             None => loader,
         };
-        let loader = match credentials_provider {
+        #[cfg(not(target_arch = "wasm32"))]
+        let loader = match base_credentials_provider(credentials_provider) {
             Some(credentials_provider) => loader.credentials_provider(credentials_provider),
             None => loader,
         };
+        #[cfg(target_arch = "wasm32")]
+        let loader = loader.credentials_provider(base_credentials_provider(credentials_provider));
         #[cfg(target_arch = "wasm32")]
         let loader = loader.http_client(carina_plugin_sdk::wasi_http::WasiHttpClient::new());
         let base = Self::new(loader.load().await);
@@ -83,6 +96,9 @@ impl BoundedSdkConfig {
         Self::new(self.0.into_builder().credentials_provider(shared).build())
     }
 
+    // This is the sole raw SDK client construction site. The bounded config
+    // already selects host credentials on wasm32, and CloudControl gets its guard.
+    #[allow(clippy::disallowed_methods)]
     pub(crate) fn clients(&self) -> SdkClients {
         let cloudcontrol = aws_sdk_cloudcontrol::Client::from_conf(
             aws_sdk_cloudcontrol::config::Builder::from(&self.0)
@@ -95,6 +111,20 @@ impl BoundedSdkConfig {
             sts: aws_sdk_sts::Client::new(&self.0),
         }
     }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn base_credentials_provider(
+    _override_provider: Option<SharedCredentialsProvider>,
+) -> SharedCredentialsProvider {
+    SharedCredentialsProvider::new(carina_aws_types::HostCredentialsProvider::default())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn base_credentials_provider(
+    override_provider: Option<SharedCredentialsProvider>,
+) -> Option<SharedCredentialsProvider> {
+    override_provider
 }
 
 /// Sets read and per-attempt timeouts to the host's 30-second `wasi:http` per-request
@@ -146,6 +176,35 @@ mod tests {
     use aws_smithy_types::timeout::TimeoutConfig;
 
     use super::{BoundedSdkConfig, assert_bounded_policy};
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn native_base_keeps_default_credentials_chain() {
+        assert!(super::base_credentials_provider(None).is_none());
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[tokio::test]
+    async fn native_base_keeps_credentials_override() {
+        use aws_credential_types::{Credentials, provider::ProvideCredentials};
+
+        let credentials = Credentials::new(
+            "override-access-key",
+            "override-secret",
+            Some("override-token".into()),
+            None,
+            "sdk-config-test",
+        );
+        let provider = super::base_credentials_provider(Some(
+            super::SharedCredentialsProvider::new(credentials),
+        ))
+        .expect("the explicit credentials override must be retained");
+        let credentials = provider.provide_credentials().await.unwrap();
+
+        assert_eq!(credentials.access_key_id(), "override-access-key");
+        assert_eq!(credentials.secret_access_key(), "override-secret");
+        assert_eq!(credentials.session_token(), Some("override-token"));
+    }
 
     #[test]
     fn new_overrides_input_timeout_and_retry_config() {

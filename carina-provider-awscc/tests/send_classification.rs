@@ -115,7 +115,7 @@ async fn provider(
         .sleep_impl(aws_smithy_async::rt::sleep::TokioSleep::new())
         .build();
     let provider = AwsccProvider::from_sdk_config(
-        BoundedSdkConfig::new(config),
+        BoundedSdkConfig::for_test(config),
         &AwsccProviderConfig::default(),
     )
     .await;

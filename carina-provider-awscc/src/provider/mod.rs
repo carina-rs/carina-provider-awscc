@@ -75,7 +75,7 @@ const DELETE_RETRY_MAX_DELAY_SECS: u64 = 120;
 /// Carries the `allowed_account_ids` / `forbidden_account_ids` guard
 /// lists (both empty = "no check") and, when present, a parsed
 /// `assume_role` block that layers an STS `AssumeRoleProvider` on top
-/// of the ambient credential chain.
+/// of base credentials (host-supplied on wasm32, the default chain natively).
 #[derive(Debug, Default, Clone)]
 pub struct AwsccProviderConfig {
     pub allowed_account_ids: Vec<String>,
@@ -230,7 +230,7 @@ mod tests {
             .retry_config(RetryConfig::standard().with_max_attempts(10))
             .build();
         let provider = AwsccProvider::from_sdk_config(
-            BoundedSdkConfig::new(input),
+            BoundedSdkConfig::for_test(input),
             &AwsccProviderConfig::default(),
         )
         .await;

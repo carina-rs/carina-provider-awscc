@@ -21,6 +21,7 @@ path = "src/bin/codegen.rs"
 [features]
 default = ["native"]
 native = []
+test-utils = []
 
 [dependencies]
 carina-core = { workspace = true }
@@ -52,6 +53,10 @@ http = "1"
 tokio = { version = "1", features = ["full"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+# Enable the native test constructor for integration tests only.
+carina-provider-awscc = { path = ".", features = ["test-utils"] }
+aws-smithy-runtime-api = { version = "1", features = ["test-util"] }
+fancy-regex = "=0.16.2"
 carina-aws-types = { workspace = true, features = ["test-utils"] }
 carina-core = { workspace = true, features = ["test-utils"] }
 carina-plugin-host = { workspace = true }

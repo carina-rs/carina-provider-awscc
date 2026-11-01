@@ -48,19 +48,10 @@ with_account_creds() {
         return 1
     fi
 
-    local creds
-    if ! creds=$(aws configure export-credentials \
-        --profile "$profile" --format env-no-export 2>&1); then
-        echo "ERROR: aws configure export-credentials failed for $profile: $creds" >&2
-        return 1
-    fi
-
     (
-        set -a
-        eval "$creds"
-        set +a
-        unset AWS_PROFILE
-        "$@"
+        # Inherited static keys must not override the selected account profile.
+        unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_SECURITY_TOKEN
+        AWS_PROFILE="$profile" "$@"
     )
 }
 

@@ -25,7 +25,20 @@ cargo clippy -- -D warnings
 cargo fmt --check
 ```
 
-### With AWS Credentials
+### AWS Authentication
+
+WASM providers use base credentials resolved by the Carina host's standard AWS
+credential chain. Named profiles and SSO work through the host; select a profile
+with `AWS_PROFILE`. The host supplies credentials and expiry through the typed
+`aws-credentials` import and refreshes them when needed. The provider uses these
+base credentials for any provider-level `assume_role` call.
+
+Carina never starts an interactive login. When an SSO session has expired, run
+`aws sso login --profile <profile>` and retry. Service regions remain explicit
+provider configuration, defaulting to `ap-northeast-1`.
+
+Native builds keep the AWS SDK's default credential chain. For native tests that
+require AWS credentials:
 
 ```bash
 aws-vault exec <profile> -- cargo test

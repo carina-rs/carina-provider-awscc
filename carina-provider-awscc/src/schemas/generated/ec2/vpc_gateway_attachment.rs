@@ -55,6 +55,7 @@ pub fn ec2_vpc_gateway_attachment_config() -> AwsccSchemaConfig {
             create_timeout_secs: None,
             create_max_retries: None,
             update_timeout_secs: None,
+            read_back: None,
     });
     schema = schema.field_group(FieldGroup::exactly_one(["internet_gateway_id", "vpn_gateway_id"]).expect("generated exactly-one field group must be valid"));
     AwsccSchemaConfig {

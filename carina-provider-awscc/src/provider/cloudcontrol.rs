@@ -18,7 +18,7 @@ use aws_smithy_types::error::metadata::ProvideErrorMetadata;
 use aws_smithy_types::retry::ProvideErrorKind;
 use carina_aws_types::{FinalAttempt, SendClassification, Transience};
 use carina_core::provider::{ProviderError, ProviderResult};
-use carina_provider_protocol::OperationStep;
+use carina_provider_protocol::{OperationStep, PendingPhase};
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -1284,9 +1284,11 @@ impl AwsccProvider {
             OperationStep::Pending {
                 pending,
                 poll_after_secs,
+                phase,
             } => OperationStep::Pending {
                 pending,
                 poll_after_secs,
+                phase,
             },
         })
     }
@@ -1499,6 +1501,7 @@ impl AwsccProvider {
             RequestStatusStep::Pending(token) => Ok(OperationStep::Pending {
                 pending: token.into(),
                 poll_after_secs: POLL_AFTER_SECS,
+                phase: PendingPhase::Operation,
             }),
             RequestStatusStep::Done(outcome) => Ok(OperationStep::Done(outcome)),
             RequestStatusStep::RetryableFailure { failure, error } => {
@@ -1518,6 +1521,7 @@ impl AwsccProvider {
                 Ok(OperationStep::Pending {
                     pending: failure.retry_after_terminal_failure().into(),
                     poll_after_secs: delay_secs,
+                    phase: PendingPhase::Operation,
                 })
             }
         }
@@ -1650,6 +1654,7 @@ impl AwsccProvider {
             Ok(Some(request)) => Ok(OperationStep::Pending {
                 pending: token.into_in_flight(request).into(),
                 poll_after_secs: FIRST_POLL_AFTER_SECS,
+                phase: PendingPhase::Operation,
             }),
             Ok(None) => no_request().map(OperationStep::Done),
             Err(error) => {
@@ -1665,6 +1670,7 @@ impl AwsccProvider {
                     } => Ok(OperationStep::Pending {
                         pending: pending.into(),
                         poll_after_secs: delay_secs,
+                        phase: PendingPhase::Operation,
                     }),
                     NotIssuedDecision::Unconfirmed {
                         pending,
@@ -1672,6 +1678,7 @@ impl AwsccProvider {
                     } => Ok(OperationStep::Pending {
                         pending: pending.into(),
                         poll_after_secs: delay_secs,
+                        phase: PendingPhase::Operation,
                     }),
                     NotIssuedDecision::Preserve { .. } => Err(api_error_with_meta_and_subject(
                         retry_policy.unknown_outcome_context,
@@ -1706,6 +1713,7 @@ impl AwsccProvider {
             Ok(Some(request)) => Ok(OperationStep::Pending {
                 pending: token.into_in_flight(request).into(),
                 poll_after_secs: FIRST_POLL_AFTER_SECS,
+                phase: PendingPhase::Operation,
             }),
             Ok(None) => no_request().map(OperationStep::Done),
             Err(error) => {
@@ -1721,6 +1729,7 @@ impl AwsccProvider {
                     } => Ok(OperationStep::Pending {
                         pending: pending.into(),
                         poll_after_secs: delay_secs,
+                        phase: PendingPhase::Operation,
                     }),
                     UnconfirmedDecision::Preserve => Err(api_error_with_meta_and_subject(
                         retry_policy.unknown_outcome_context,
@@ -1746,9 +1755,11 @@ impl AwsccProvider {
             OperationStep::Pending {
                 pending,
                 poll_after_secs,
+                phase,
             } => Ok(OperationStep::Pending {
                 pending,
                 poll_after_secs,
+                phase,
             }),
         }
     }
@@ -2009,6 +2020,234 @@ impl AwsccProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    mod pre_transmit_retry {
+        use super::*;
+        use aws_smithy_runtime_api::client::interceptors::Intercept;
+        use aws_smithy_runtime_api::client::interceptors::context::{Input, InterceptorContext};
+        use aws_smithy_runtime_api::client::orchestrator::{
+            HttpRequest, Metadata, OrchestratorError,
+        };
+        use aws_smithy_runtime_api::client::result::ConnectorError;
+        use aws_smithy_runtime_api::client::retries::RequestAttempts;
+        use aws_smithy_runtime_api::client::runtime_components::RuntimeComponentsBuilder;
+        use aws_smithy_types::config_bag::ConfigBag;
+        use carina_aws_types::{FinalAttempt, ResendGuard, Transience};
+
+        // Exercise the guard's real annotation: an unannotated TimeoutError would
+        // still classify as MaybeSent and would not reproduce the regression.
+        fn before_transmit_error(
+            transience: Transience,
+            prior_maybe_sent: bool,
+        ) -> SdkError<CreateResourceError, HttpResponse> {
+            let guard = ResendGuard::new(crate::resend_safety::cloudcontrol_idempotency);
+            let runtime = RuntimeComponentsBuilder::for_tests().build().unwrap();
+            let mut cfg = ConfigBag::base();
+            cfg.interceptor_state()
+                .store_put(Metadata::new("CreateResource", "CloudControl"));
+
+            for attempt in 1..=if prior_maybe_sent { 2 } else { 1 } {
+                cfg.interceptor_state()
+                    .store_put::<RequestAttempts>(attempt.into());
+                let mut context = InterceptorContext::new(Input::doesnt_matter());
+                context.enter_serialization_phase();
+                let _ = context.take_input();
+                context.set_request(HttpRequest::empty());
+                context.enter_before_transmit_phase();
+                guard
+                    .read_before_attempt(&(&context).into(), &runtime, &mut cfg)
+                    .unwrap();
+
+                let failure = if prior_maybe_sent && attempt == 1 {
+                    guard
+                        .read_before_transmit(&(&context).into(), &runtime, &mut cfg)
+                        .unwrap();
+                    OrchestratorError::connector(ConnectorError::timeout(
+                        std::io::Error::other("post-send timeout").into(),
+                    ))
+                } else {
+                    match transience {
+                        Transience::Transient => OrchestratorError::timeout(
+                            std::io::Error::other("attempt timed out before transmit").into(),
+                        ),
+                        Transience::Permanent => OrchestratorError::other(std::io::Error::other(
+                            "credentials not loaded before transmit",
+                        )),
+                    }
+                };
+                context.set_output_or_error(Err(failure));
+                guard
+                    .read_after_attempt(&(&context).into(), &runtime, &mut cfg)
+                    .unwrap();
+                if prior_maybe_sent && attempt == 1 {
+                    continue;
+                }
+                guard
+                    .modify_before_completion(&mut (&mut context).into(), &runtime, &mut cfg)
+                    .unwrap();
+                let error = context.finalize().unwrap_err().map_service_error(|_| {
+                    unreachable!("pre-transmit failures do not contain service errors")
+                });
+                let expected = SendClassification::NotSent(transience);
+                assert_eq!(
+                    SendClassification::of(&error),
+                    if prior_maybe_sent {
+                        expected.with_prior_maybe_sent()
+                    } else {
+                        expected
+                    }
+                );
+                if transience == Transience::Transient {
+                    assert!(matches!(error, SdkError::TimeoutError(_)), "{error:?}");
+                }
+                return error;
+            }
+            unreachable!("the final attempt returns its error")
+        }
+
+        fn policy() -> RetryPolicy {
+            RetryPolicy {
+                max_attempts: 1,
+                ..AwsccProvider::request_retry_policy(None, "creating", "unknown create outcome")
+            }
+        }
+
+        #[test]
+        fn not_issued_create_before_transmit_timeout_retries_same_client_token() {
+            let error = before_transmit_error(Transience::Transient, false);
+            let pending = NotIssuedCreate::start();
+            let client_token = pending.client_token().clone();
+            let NotIssuedDecision::Retry {
+                pending,
+                delay_secs,
+            } = AwsccProvider::not_issued_retry_decision(
+                &error,
+                "AWS::Test::Resource",
+                pending,
+                policy(),
+            )
+            else {
+                panic!("a transient pre-transmit timeout must schedule a bounded retry");
+            };
+            assert_eq!(pending.client_token(), &client_token);
+            assert_eq!(pending.attempt(), 1);
+            assert_eq!(delay_secs, policy().delay_secs(0));
+
+            assert!(
+                matches!(
+                    AwsccProvider::not_issued_retry_decision(
+                        &error,
+                        "AWS::Test::Resource",
+                        pending,
+                        policy()
+                    ),
+                    NotIssuedDecision::Fail { .. }
+                ),
+                "pre-transmit timeouts must respect the existing retry budget"
+            );
+        }
+
+        #[test]
+        fn unconfirmed_create_before_transmit_timeout_retries_same_client_token() {
+            for prior_maybe_sent in [false, true] {
+                let error = before_transmit_error(Transience::Transient, prior_maybe_sent);
+                let pending = NotIssuedCreate::start().into_unconfirmed(2);
+                let UnconfirmedDecision::Resend {
+                    pending: retry,
+                    delay_secs,
+                } = AwsccProvider::unconfirmed_retry_decision(
+                    &error,
+                    "AWS::Test::Resource",
+                    &pending,
+                    policy(),
+                )
+                else {
+                    panic!("a transient pre-transmit timeout must resend the unconfirmed create");
+                };
+                assert_eq!(retry.client_token(), pending.client_token());
+                assert_eq!(retry.attempt(), pending.attempt());
+                assert_eq!(retry.resends(), 3);
+                assert_eq!(delay_secs, policy().delay_secs(2));
+            }
+        }
+
+        #[test]
+        fn not_issued_create_maybe_sent_then_before_transmit_timeout_keeps_client_token() {
+            let error = before_transmit_error(Transience::Transient, true);
+            assert_eq!(
+                SendClassification::of(&error),
+                SendClassification::MaybeSent {
+                    final_attempt: FinalAttempt::NotSent(Transience::Transient),
+                }
+            );
+            let pending = NotIssuedCreate::start();
+            let client_token = pending.client_token().clone();
+            let NotIssuedDecision::Unconfirmed { pending, .. } =
+                AwsccProvider::not_issued_retry_decision(
+                    &error,
+                    "AWS::Test::Resource",
+                    pending,
+                    policy(),
+                )
+            else {
+                panic!("an earlier send must remain unconfirmed after a pre-transmit timeout");
+            };
+            assert_eq!(pending.client_token(), &client_token);
+            assert_eq!(pending.attempt(), 0);
+            assert_eq!(pending.resends(), 1);
+        }
+
+        #[test]
+        fn not_issued_create_permanent_pre_transmit_failure_fails() {
+            let error = before_transmit_error(Transience::Permanent, false);
+            let pending = NotIssuedCreate::start();
+            let NotIssuedDecision::Fail { not_issued } = AwsccProvider::not_issued_retry_decision(
+                &error,
+                "AWS::Test::Resource",
+                pending.clone(),
+                policy(),
+            ) else {
+                panic!("a permanent failure before any possible send must fail");
+            };
+            assert!(not_issued == pending);
+        }
+
+        #[test]
+        fn not_issued_create_maybe_sent_then_permanent_pre_transmit_failure_preserves_client_token()
+        {
+            let error = before_transmit_error(Transience::Permanent, true);
+            let pending = NotIssuedCreate::start();
+            let client_token = pending.client_token().clone();
+            let NotIssuedDecision::Preserve { pending } = AwsccProvider::not_issued_retry_decision(
+                &error,
+                "AWS::Test::Resource",
+                pending,
+                policy(),
+            ) else {
+                panic!("an earlier possible send must be preserved after a permanent failure");
+            };
+            assert_eq!(pending.client_token(), &client_token);
+            assert_eq!(pending.attempt(), 0);
+            assert_eq!(pending.resends(), 1);
+        }
+
+        #[test]
+        fn unconfirmed_create_permanent_pre_transmit_failure_preserves() {
+            for prior_maybe_sent in [false, true] {
+                let error = before_transmit_error(Transience::Permanent, prior_maybe_sent);
+                let pending = NotIssuedCreate::start().into_unconfirmed(1);
+                assert!(matches!(
+                    AwsccProvider::unconfirmed_retry_decision(
+                        &error,
+                        "AWS::Test::Resource",
+                        &pending,
+                        policy()
+                    ),
+                    UnconfirmedDecision::Preserve
+                ));
+            }
+        }
+    }
 
     // =========================================================================
     // is_retryable_status_message tests

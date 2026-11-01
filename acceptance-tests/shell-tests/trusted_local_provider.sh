@@ -57,6 +57,11 @@ run_helpers_case() {
     (
         cd "$working_dir"
         env \
+            AWS_PROFILE="registry-account" \
+            AWS_ACCESS_KEY_ID="inherited-access-key" \
+            AWS_SECRET_ACCESS_KEY="inherited-secret-key" \
+            AWS_SESSION_TOKEN="inherited-session-token" \
+            AWS_SECURITY_TOKEN="inherited-security-token" \
             CARINA_BIN="$CARINA_STUB" \
             _TEST_AWSCC_WASM="$awscc_wasm" \
             HELPERS_FILE="$HELPERS_FILE" \
@@ -76,6 +81,16 @@ run_helpers_case() {
                     unset CARINA_ACCEPT_EGRESS
                 fi
                 source "$HELPERS_FILE"
+                # All shared-helper suites, including direct cleanup commands,
+                # must use the same profile that they register for cleanup.
+                for key in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_SECURITY_TOKEN; do
+                    if [ -n "${!key+x}" ]; then
+                        echo "FAIL: shared helpers retained $key" >&2
+                        exit 1
+                    fi
+                done
+                [ "$AWS_PROFILE" = registry-account ] || exit 1
+                [ "$(acceptance_registry_account)" = "$AWS_PROFILE" ] || exit 1
                 printenv CARINA_TRUST_LOCAL_PROVIDER
                 printenv CARINA_ACCEPT_EGRESS
             '

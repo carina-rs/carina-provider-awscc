@@ -24,7 +24,7 @@ awscc.iam.OidcProvider {
 
 ### `client_id_list`
 
-- **Type:** `List<String>`
+- **Type:** `List<String(len: 1..=255)>`
 - **Required:** No
 
 ### `tags`
@@ -34,7 +34,7 @@ awscc.iam.OidcProvider {
 
 ### `thumbprint_list`
 
-- **Type:** `List<String>` (items: ..=5)
+- **Type:** `List<String(pattern, len: 40..=40)>` (items: ..=5)
 - **Required:** No
 
 ### `url`

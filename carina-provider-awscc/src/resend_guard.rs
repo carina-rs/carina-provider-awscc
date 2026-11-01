@@ -117,7 +117,7 @@ fn bounded_config(connector: ScriptedConnector) -> BoundedSdkConfig {
         .timeout_config(TimeoutConfig::disabled())
         .retry_config(RetryConfig::standard().with_max_attempts(10))
         .build();
-    BoundedSdkConfig::new(config)
+    BoundedSdkConfig::for_test(config)
 }
 
 fn cloudcontrol_client(connector: ScriptedConnector) -> aws_sdk_cloudcontrol::Client {
@@ -473,7 +473,7 @@ fn production_cloudcontrol_client_keeps_bounded_policy_and_installs_guard() {
 #[tokio::test(start_paused = true)]
 async fn transient_not_sent_retries_with_backoff_only_within_not_issued_budget() {
     use crate::CcRequestPhase;
-    use carina_provider_protocol::OperationStep;
+    use carina_provider_protocol::{OperationStep, PendingPhase};
 
     let connector = ScriptedConnector::new((0..9).map(|_| Action::TransientNotSent));
     let provider = AwsccProvider::from_sdk_config(
@@ -504,6 +504,7 @@ async fn transient_not_sent_retries_with_backoff_only_within_not_issued_budget()
         let OperationStep::Pending {
             pending,
             poll_after_secs,
+            phase: PendingPhase::Operation,
         } = step
         else {
             panic!("transient NotSent must back off before retrying");
@@ -531,7 +532,7 @@ async fn transient_not_sent_retries_with_backoff_only_within_not_issued_budget()
 #[tokio::test(start_paused = true)]
 async fn unconfirmed_transient_not_sent_keeps_same_token_and_capped_backoff() {
     use crate::CcRequestPhase;
-    use carina_provider_protocol::OperationStep;
+    use carina_provider_protocol::{OperationStep, PendingPhase};
 
     let connector = ScriptedConnector::new((0..39).map(|_| Action::TransientNotSent));
     let provider = AwsccProvider::from_sdk_config(
@@ -557,6 +558,7 @@ async fn unconfirmed_transient_not_sent_keeps_same_token_and_capped_backoff() {
         let OperationStep::Pending {
             pending,
             poll_after_secs,
+            phase: PendingPhase::Operation,
         } = step
         else {
             panic!("an earlier send may still be accepted");

@@ -569,6 +569,7 @@ pub(crate) fn value_to_json(value: &Value) -> Option<serde_json::Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use carina_core::resource::NoPlaceholder;
     use carina_core::schema::{
         DslTransform, RootlessType, StructField, ValidatedConfigSchema, legacy_validator,
     };
@@ -2096,6 +2097,69 @@ mod tests {
             Value::Concrete(ConcreteValue::CanonicalEnum(_))
         ));
         assert_eq!(value_to_json(&value), Some(json!("Allow")));
+    }
+
+    #[test]
+    fn test_wafv2_evaluation_window_sec_integer_union_round_trip() {
+        let config = crate::schemas::generated::wafv2::web_acl::wafv2_web_acl_config();
+        let rate_based_statement = config
+            .schema
+            .defs()
+            .get("RateBasedStatement")
+            .expect("WAFv2 WebACL must define RateBasedStatement");
+        let fields = config
+            .schema
+            .struct_fields_with_budget(rate_based_statement, &mut ShapeWalkBudget::new(256))
+            .expect("RateBasedStatement must be a struct");
+        let evaluation_window_sec = fields
+            .iter()
+            .find(|field| field.name() == "evaluation_window_sec")
+            .expect("RateBasedStatement must expose evaluation_window_sec");
+        let evaluation_window_attr_type = evaluation_window_sec.field_type();
+        let evaluation_window_type = test_rootless_type(evaluation_window_attr_type.clone());
+
+        let desired = Value::<NoPlaceholder>::Concrete(ConcreteValue::Int(60));
+        evaluation_window_type
+            .validate(&desired)
+            .expect("60 must be accepted by the generated integer union");
+
+        let cloud_control = dsl_value_to_aws_with_defs(
+            &desired,
+            evaluation_window_attr_type,
+            config.resource_type_name,
+            "evaluation_window_sec",
+            config.schema.defs(),
+        )
+        .expect("a valid evaluation window must convert to CloudControl JSON");
+        assert_eq!(cloud_control, json!(60));
+
+        let read_back = aws_value_to_dsl_with_defs(
+            "evaluation_window_sec",
+            &cloud_control,
+            evaluation_window_attr_type,
+            config.resource_type_name,
+            config.schema.defs(),
+        )
+        .expect("CloudControl's integer response must convert back to a DSL value");
+        assert_eq!(
+            read_back, desired,
+            "the read-back must not create a phantom diff"
+        );
+
+        assert!(
+            evaluation_window_type
+                .validate(&Value::<NoPlaceholder>::Concrete(ConcreteValue::String(
+                    "60".into(),
+                )))
+                .is_err(),
+            "the generated integer union must reject a string spelling"
+        );
+        assert!(
+            evaluation_window_type
+                .validate(&Value::<NoPlaceholder>::Concrete(ConcreteValue::Int(61)))
+                .is_err(),
+            "the generated integer union must reject values outside its alternatives"
+        );
     }
 
     #[test]

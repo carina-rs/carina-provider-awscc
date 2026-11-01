@@ -71,6 +71,7 @@ pub fn ec2_transit_gateway_attachment_config() -> AwsccSchemaConfig {
             create_timeout_secs: None,
             create_max_retries: None,
             update_timeout_secs: None,
+            read_back: None,
     });
     schema = schema.with_declared_validators(vec![carina_provider_protocol::types::ValidatorType::TagsKeyValueCheck]);
     AwsccSchemaConfig {
