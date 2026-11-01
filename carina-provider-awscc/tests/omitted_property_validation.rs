@@ -5,17 +5,11 @@ use carina_core::parser::{ParsedFile, ProviderContext};
 use carina_core::provider::{
     ProviderFactory, collect_schemas, provider_custom_types_from_factories,
 };
-use carina_core::resource::{
-    ConcreteValue, ModuleSource, ParserPlaceholder, Resource as GenericResource,
-    Value as GenericValue,
-};
+use carina_core::resource::{AuthoredResource as Resource, AuthoredValue as Value, ConcreteValue};
 use carina_core::schema::SchemaRegistry;
 use carina_core::validation::validate_resources;
 use carina_provider_awscc::AwsccProviderFactory;
 use indexmap::IndexMap;
-
-type Resource = GenericResource<ModuleSource, ParserPlaceholder>;
-type Value = GenericValue<ParserPlaceholder>;
 
 fn string(value: &str) -> Value {
     Value::Concrete(ConcreteValue::String(value.to_string().into()))

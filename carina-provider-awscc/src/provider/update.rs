@@ -768,7 +768,8 @@ mod tests {
         let patch = UpdatePatch {
             ops: vec![replace(
                 "instance_tenancy",
-                Value::resource_ref("network", "instance_tenancy", Vec::new()),
+                Value::resource_ref("network", "instance_tenancy", Vec::new())
+                    .resolve_root_for_test(),
             )],
         };
 
@@ -785,7 +786,7 @@ mod tests {
         let patch = UpdatePatch {
             ops: vec![add(
                 "tags",
-                Value::resource_ref("tag_source", "tags", Vec::new()),
+                Value::resource_ref("tag_source", "tags", Vec::new()).resolve_root_for_test(),
             )],
         };
 
@@ -809,7 +810,7 @@ mod tests {
         );
         tags.insert(
             "unresolved".to_string(),
-            Value::resource_ref("tag_source", "value", Vec::new()),
+            Value::resource_ref("tag_source", "value", Vec::new()).resolve_root_for_test(),
         );
         let patch = UpdatePatch {
             ops: vec![replace("tags", Value::Concrete(ConcreteValue::Map(tags)))],

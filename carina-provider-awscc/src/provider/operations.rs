@@ -2760,7 +2760,7 @@ mod tests {
             ),
             (
                 "web_acl_arn",
-                Value::resource_ref("web_acl", "arn", Vec::new()),
+                Value::resource_ref("web_acl", "arn", Vec::new()).resolve_root_for_test(),
             ),
         ]);
 

@@ -5,19 +5,13 @@ use carina_core::parser::{ParsedFile, ProviderContext};
 use carina_core::provider::{
     ProviderFactory, collect_schemas, provider_custom_types_from_factories,
 };
-use carina_core::resource::{
-    ConcreteValue, ModuleSource, ParserPlaceholder, Resource as GenericResource,
-    Value as GenericValue,
-};
+use carina_core::resource::{AuthoredResource as Resource, AuthoredValue as Value, ConcreteValue};
 use carina_core::schema::{
     ReferenceForms, SchemaRegistry, ValidatedConfigSchema, ValidatedProviderSchemaWitness,
 };
 use carina_core::validation::validate_resources;
 use carina_provider_awscc::schemas::generated::wafv2::web_acl::wafv2_web_acl_config;
 use indexmap::IndexMap;
-
-type Resource = GenericResource<ModuleSource, ParserPlaceholder>;
-type Value = GenericValue<ParserPlaceholder>;
 
 struct Wafv2SchemaFactory;
 
