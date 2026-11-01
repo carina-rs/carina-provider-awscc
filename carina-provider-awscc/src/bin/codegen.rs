@@ -789,15 +789,13 @@ fn is_dsl_tags_property(schema: &CfnSchema, provider_name: &str) -> bool {
 
 /// Whether a definition uses one of Carina's canonical tag-map shapes.
 ///
-/// The `Tag` prefix remains a namespace guard because cached schemas also use
-/// the exact same Key/Value string-object shape for non-tag ELB attributes.
-/// The shape check prevents unrelated `Tag*` objects from silently losing
-/// fields when converted to Carina's map representation. CloudFormation uses
-/// either a Key/Value object or a single-pattern string map for these refs.
+/// The final resolved definition's `Tag` prefix remains a namespace guard
+/// because cached schemas also use the exact same Key/Value string-object
+/// shape for non-tag ELB attributes. The shape check prevents unrelated
+/// `Tag*` objects from silently losing fields when converted to Carina's map
+/// representation. CloudFormation uses either a Key/Value object or a
+/// single-pattern string map for these refs.
 fn is_tag_map_ref(schema: &CfnSchema, ref_path: &str) -> bool {
-    let Some(def_name) = ref_def_name(ref_path) else {
-        return false;
-    };
     let Some(resolved) = resolve_ref(schema, ref_path) else {
         return false;
     };
@@ -819,7 +817,7 @@ fn is_tag_map_ref(schema: &CfnSchema, ref_path: &str) -> bool {
             .as_ref()
             .is_some_and(|patterns| patterns.len() == 1 && patterns.values().all(is_direct_string));
 
-    def_name.starts_with("Tag")
+    resolved.name.starts_with("Tag")
         && definition.prop_type.as_ref().and_then(TypeValue::as_str) == Some("object")
         && (is_key_value_object || is_single_pattern_string_map)
 }
@@ -3034,14 +3032,23 @@ fn markdown_link_type(
         });
     }
 
-    if !prop.one_of.is_empty() {
-        return prop
+    // Match schema-code precedence: direct properties win, then an array
+    // variant. A non-array oneOf falls through to `markdown_struct_def`,
+    // which merges its object variants through the shared property path.
+    if !has_direct_struct_properties(prop)
+        && let Some(array_variant) = prop
             .one_of
             .iter()
-            .find(|variant| markdown_property_is_array(variant, schema))
-            .and_then(|variant| {
-                markdown_link_type(prop_name, variant, schema, None, property_path, cfn_parent)
-            });
+            .find(|variant| property_resolves_to_array(variant, schema))
+    {
+        return markdown_link_type(
+            prop_name,
+            array_variant,
+            schema,
+            None,
+            property_path,
+            cfn_parent,
+        );
     }
 
     if let Some(value) = property_object_map_value(prop, schema) {
@@ -3846,22 +3853,24 @@ fn collect_struct_defs(
     cfn_parent: Option<&str>,
     struct_defs: &mut BTreeMap<MarkdownStructKey, StructDefInfo>,
 ) {
-    if !prop.one_of.is_empty() {
-        if let Some(array_variant) = prop
+    // Keep target collection on the same precedence as type rendering and
+    // schema code. Non-array object variants fall through and are collected
+    // as a merged struct by `markdown_struct_def`.
+    if !has_direct_struct_properties(prop)
+        && let Some(array_variant) = prop
             .one_of
             .iter()
-            .find(|variant| markdown_property_is_array(variant, schema))
-        {
-            collect_struct_defs(
-                array_variant,
-                prop_name,
-                schema,
-                struct_path,
-                property_path,
-                cfn_parent,
-                struct_defs,
-            );
-        }
+            .find(|variant| property_resolves_to_array(variant, schema))
+    {
+        collect_struct_defs(
+            array_variant,
+            prop_name,
+            schema,
+            struct_path,
+            property_path,
+            cfn_parent,
+            struct_defs,
+        );
         return;
     }
 
@@ -8140,6 +8149,71 @@ mod tests {
         assert!(
             !is_tag_map_ref(&schema, "#/definitions/AttributePair"),
             "non-Tag Key/Value definitions include ELB attributes and must retain their struct shape"
+        );
+    }
+
+    #[test]
+    fn test_is_tag_map_ref_uses_final_alias_target_name_and_shape() {
+        let string_property = || CfnProperty {
+            prop_type: Some(TypeValue::Single("string".to_string())),
+            ..Default::default()
+        };
+        let key_value_object = || CfnProperty {
+            prop_type: Some(TypeValue::Single("object".to_string())),
+            properties: Some(BTreeMap::from([
+                ("Key".to_string(), string_property()),
+                ("Value".to_string(), string_property()),
+            ])),
+            ..Default::default()
+        };
+        let alias = |target: &str| CfnProperty {
+            ref_path: Some(format!("#/definitions/{target}")),
+            ..Default::default()
+        };
+
+        let mut schema = empty_schema("AWS::Test::Resource");
+        schema.definitions = Some(BTreeMap::from([
+            ("LabelsAlias".to_string(), alias("Labels")),
+            ("Labels".to_string(), alias("TagSet")),
+            ("TagSet".to_string(), key_value_object()),
+            ("TagAlias".to_string(), alias("AttributePairAlias")),
+            ("AttributePairAlias".to_string(), alias("AttributePair")),
+            ("AttributePair".to_string(), key_value_object()),
+        ]));
+
+        let labels = alias("LabelsAlias");
+        assert!(
+            is_tag_map_ref(&schema, labels.ref_path.as_deref().unwrap()),
+            "a non-Tag alias chain must use its final TagSet identity"
+        );
+        assert_eq!(
+            cfn_type_to_carina_type_with_enum(
+                &labels,
+                "Labels",
+                &schema,
+                "aws.test.Resource",
+                &BTreeMap::new(),
+            )
+            .0,
+            "carina_aws_types::tags_type()"
+        );
+
+        let misleading_tag_alias = alias("TagAlias");
+        assert!(
+            !is_tag_map_ref(&schema, misleading_tag_alias.ref_path.as_deref().unwrap()),
+            "a Tag-prefixed first hop must not override its final non-Tag identity"
+        );
+        let generated = cfn_type_to_carina_type_with_enum(
+            &misleading_tag_alias,
+            "Pair",
+            &schema,
+            "aws.test.Resource",
+            &BTreeMap::new(),
+        )
+        .0;
+        assert!(
+            generated.starts_with("AttributeType::struct_(\"AttributePair\".to_string()"),
+            "the final non-Tag definition must retain its struct shape: {generated}"
         );
     }
 
@@ -15616,7 +15690,7 @@ mod tests {
     }
 
     #[test]
-    fn test_markdown_direct_non_array_one_of_keeps_string_precedence() {
+    fn test_direct_non_array_one_of_schema_and_markdown_use_struct() {
         let mut schema = empty_schema("AWS::Test::DirectOneOf");
         schema.properties.insert(
             "Choice".to_string(),
@@ -15635,10 +15709,21 @@ mod tests {
             },
         );
 
+        let generated = generate_synthetic_schema_code(&schema).unwrap();
         let md = generate_markdown(&schema, "AWS::Test::DirectOneOf").unwrap();
 
-        assert!(md.contains("### `choice`\n\n- **Type:** String\n"), "{md}");
-        assert!(!md.contains("## Struct Definitions"), "{md}");
+        let schema_uses_choice_struct = generated.contains(
+            r#"AttributeSchema::optional("choice", AttributeType::struct_("Choice".to_string(), vec![StructField::optional("alpha", AttributeType::string())"#,
+        );
+        assert!(schema_uses_choice_struct, "{generated}");
+        assert!(
+            schema_uses_choice_struct
+                && md.contains("### `choice`\n\n- **Type:** [Struct(Choice)](#choice-1)\n"),
+            "schema code and Markdown must expose the same Choice struct:\n{md}"
+        );
+        assert!(md.contains("## Struct Definitions"), "{md}");
+        assert!(md.contains("### choice\n\n| Field |"), "{md}");
+        assert!(md.contains("| `alpha` | String |"), "{md}");
     }
 
     #[test]
@@ -17125,6 +17210,9 @@ mod tests {
             ("CycleA".to_string(), alias("CycleB")),
             ("CycleB".to_string(), alias("CycleA")),
         ]));
+        schema
+            .properties
+            .insert("Cycle".to_string(), alias("CycleA"));
         let fields = CfnProperty {
             prop_type: Some(TypeValue::Single("array".to_string())),
             items: Some(Box::new(alias("AddressField"))),
@@ -17156,6 +17244,20 @@ mod tests {
             "`List<Struct(FieldIdentifier)>`"
         );
         assert!(resolve_ref(&schema, "#/definitions/CycleA").is_none());
+
+        let generated = generate_synthetic_schema_code(&schema)
+            .expect("cyclic aliases must terminate during schema-code generation");
+        assert!(
+            generated.contains("AttributeSchema::optional(\"cycle\", AttributeType::string())"),
+            "an unresolved cyclic alias must use the schema-code String fallback: {generated}"
+        );
+
+        let markdown = generate_markdown(&schema, "AWS::Test::Resource")
+            .expect("cyclic aliases must terminate during Markdown generation");
+        assert!(
+            markdown.contains("### `cycle`\n\n- **Type:** String\n"),
+            "an unresolved cyclic alias must use the Markdown String fallback: {markdown}"
+        );
     }
 
     #[test]
