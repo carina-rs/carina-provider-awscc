@@ -528,7 +528,7 @@ mod client_token {
         type Unconfirmed;
 
         fn attempt(&self) -> u32;
-        fn retry_rejected(self) -> Self;
+        fn retry_not_issued(self) -> Self;
         fn into_unconfirmed(self, resends: u32) -> Self::Unconfirmed;
     }
 
@@ -544,7 +544,7 @@ mod client_token {
             self.attempt
         }
 
-        fn retry_rejected(mut self) -> Self {
+        fn retry_not_issued(mut self) -> Self {
             self.attempt += 1;
             self
         }
@@ -581,7 +581,7 @@ mod client_token {
             self.attempt
         }
 
-        fn retry_rejected(mut self) -> Self {
+        fn retry_not_issued(mut self) -> Self {
             self.attempt += 1;
             self
         }
@@ -741,6 +741,15 @@ enum RequestStatusStep {
 }
 
 #[derive(Debug)]
+pub(crate) enum CcCreateSend {
+    Pending(CcCreatePending),
+    Preserve {
+        token: UnconfirmedCreate,
+        error: InFlightCreate,
+    },
+}
+
+#[derive(Debug)]
 pub(crate) struct CcCreatePending {
     pub(crate) token: CcCreateToken,
     pub(crate) poll_after_secs: u32,
@@ -814,13 +823,16 @@ impl RetryPolicy {
 
 #[derive(Debug)]
 enum NotIssuedDecision<NotIssued, Unconfirmed> {
-    RetryRejected {
+    Retry {
         pending: NotIssued,
         delay_secs: u32,
     },
     Unconfirmed {
         pending: Unconfirmed,
         delay_secs: u32,
+    },
+    Preserve {
+        pending: Unconfirmed,
     },
     Fail {
         not_issued: NotIssued,
@@ -833,7 +845,7 @@ enum UnconfirmedDecision<Unconfirmed> {
         pending: Unconfirmed,
         delay_secs: u32,
     },
-    Fail,
+    Preserve,
 }
 
 #[derive(Debug)]
@@ -925,7 +937,7 @@ impl AwsccProvider {
         desired_state: serde_json::Value,
         operation_config: Option<&carina_core::schema::OperationConfig>,
         token: NotIssuedCreate,
-    ) -> Result<CcCreatePending, NotAppliedCreate> {
+    ) -> Result<CcCreateSend, NotAppliedCreate> {
         let retry_policy = Self::request_retry_policy(
             operation_config,
             "creating",
@@ -985,7 +997,7 @@ impl AwsccProvider {
         desired_state: serde_json::Value,
         token: NotIssuedCreate,
         retry_policy: RetryPolicy,
-    ) -> Result<CcCreatePending, NotAppliedCreate> {
+    ) -> Result<CcCreateSend, NotAppliedCreate> {
         let result = self
             .send_create_request(type_name, &desired_state, token.client_token())
             .await;
@@ -1002,18 +1014,18 @@ impl AwsccProvider {
                     .filter(|identifier| !identifier.is_empty())
                     .map(ToString::to_string);
                 match request {
-                    Some(request) => Ok(CcCreatePending {
+                    Some(request) => Ok(CcCreateSend::Pending(CcCreatePending {
                         token: token.into_in_flight(request, identifier).into(),
                         poll_after_secs: FIRST_POLL_AFTER_SECS,
-                    }),
+                    })),
                     None => {
                         log::warn!(
                             "Cloud Control accepted create {type_name} without returning a request token; resending with the same client token"
                         );
-                        Ok(CcCreatePending {
+                        Ok(CcCreateSend::Pending(CcCreatePending {
                             token: token.into_unconfirmed(1).into(),
                             poll_after_secs: FIRST_POLL_AFTER_SECS,
-                        })
+                        }))
                     }
                 }
             }
@@ -1024,19 +1036,28 @@ impl AwsccProvider {
                     token,
                     retry_policy,
                 ) {
-                    NotIssuedDecision::RetryRejected {
+                    NotIssuedDecision::Retry {
                         pending,
                         delay_secs,
-                    } => Ok(CcCreatePending {
+                    } => Ok(CcCreateSend::Pending(CcCreatePending {
                         token: pending.into(),
                         poll_after_secs: delay_secs,
-                    }),
+                    })),
                     NotIssuedDecision::Unconfirmed {
                         pending,
                         delay_secs,
-                    } => Ok(CcCreatePending {
+                    } => Ok(CcCreateSend::Pending(CcCreatePending {
                         token: pending.into(),
                         poll_after_secs: delay_secs,
+                    })),
+                    NotIssuedDecision::Preserve { pending } => Ok(CcCreateSend::Preserve {
+                        token: pending,
+                        error: InFlightCreate::new(api_error_with_meta_and_subject(
+                            retry_policy.unknown_outcome_context,
+                            "cloudcontrol.CreateResource",
+                            CloudControlResourceSubject::type_only(type_name),
+                            *error,
+                        )),
                     }),
                     NotIssuedDecision::Fail { not_issued } => {
                         Err(not_issued.into_not_applied(api_error_with_meta_and_subject(
@@ -1105,7 +1126,7 @@ impl AwsccProvider {
                         token: pending.into(),
                         poll_after_secs: delay_secs,
                     }),
-                    UnconfirmedDecision::Fail => Err(api_error_with_meta_and_subject(
+                    UnconfirmedDecision::Preserve => Err(api_error_with_meta_and_subject(
                         retry_policy.unknown_outcome_context,
                         "cloudcontrol.CreateResource",
                         CloudControlResourceSubject::type_only(type_name),
@@ -1506,16 +1527,14 @@ impl AwsccProvider {
         }
     }
 
-    /// Decides whether and how to resend one failed mutating request.
+    /// Decide whether a failed mutation should retry, preserve its continuation, or fail.
     ///
-    /// Retryable `MaybeSent` outcomes are never capped by `max_attempts`: create
-    /// continuations are persisted as an in-flight create when the host drive budget
-    /// expires, while update and delete remain bounded by that drive budget and are
-    /// reconciled on the next plan. Permanent pre-transmit failures stop retries even
-    /// when an earlier attempt may have been sent.
-    /// The `attempt` value advances only before any send may have been accepted.
-    /// Once unconfirmed, `resends` advances independently to provide capped backoff without
-    /// consuming a later terminal-status rejection budget.
+    /// Before any possible send, transient failures share the bounded rejection budget.
+    /// Once a send may have been accepted, resends use capped backoff without consuming
+    /// that budget. A permanent final pre-send failure stops resends immediately while
+    /// preserving the earlier possible send, just as drive-budget exhaustion does.
+    /// Unconfirmed resends have no attempt cap: update and delete stay bounded by the
+    /// host drive budget and are reconciled on the next plan.
     fn not_issued_retry_decision<E, Phase>(
         error: &SdkError<E, HttpResponse>,
         type_name: &str,
@@ -1528,9 +1547,36 @@ impl AwsccProvider {
     {
         let attempt = pending.attempt();
         let classification = SendClassification::of(error);
+        let retry = |pending: Phase| {
+            if attempt >= retry_policy.max_attempts {
+                return NotIssuedDecision::Fail {
+                    not_issued: pending,
+                };
+            }
+            let delay_secs = retry_policy.delay_secs(attempt);
+            log::warn!(
+                "Retryable failure {} {type_name} (attempt {}/{}): {error:?}. Retrying in {delay_secs}s...",
+                retry_policy.action,
+                attempt + 1,
+                retry_policy.max_attempts,
+            );
+            NotIssuedDecision::Retry {
+                pending: pending.retry_not_issued(),
+                delay_secs,
+            }
+        };
         match classification {
+            SendClassification::NotSent(Transience::Transient) => retry(pending),
+            SendClassification::NotSent(Transience::Permanent) => NotIssuedDecision::Fail {
+                not_issued: pending,
+            },
             SendClassification::MaybeSent {
-                final_attempt: FinalAttempt::Sent | FinalAttempt::NotSent(Transience::Transient),
+                final_attempt: FinalAttempt::NotSent(Transience::Permanent),
+            } => NotIssuedDecision::Preserve {
+                pending: pending.into_unconfirmed(1),
+            },
+            SendClassification::MaybeSent {
+                final_attempt: FinalAttempt::NotSent(Transience::Transient) | FinalAttempt::Sent,
             } => {
                 let delay_secs = retry_policy.delay_secs(0);
                 log::warn!(
@@ -1542,28 +1588,8 @@ impl AwsccProvider {
                     delay_secs,
                 }
             }
-            SendClassification::NotSent(Transience::Transient) | SendClassification::Rejected
-                if attempt < retry_policy.max_attempts
-                    && (classification == SendClassification::NotSent(Transience::Transient)
-                        || Self::is_retryable_rejection(error)) =>
-            {
-                let delay_secs = retry_policy.delay_secs(attempt);
-                log::warn!(
-                    "Retryable failure {} {type_name} (attempt {}/{}): {error:?}. Retrying in {delay_secs}s...",
-                    retry_policy.action,
-                    attempt + 1,
-                    retry_policy.max_attempts,
-                );
-                NotIssuedDecision::RetryRejected {
-                    pending: pending.retry_rejected(),
-                    delay_secs,
-                }
-            }
-            SendClassification::NotSent(_)
-            | SendClassification::MaybeSent {
-                final_attempt: FinalAttempt::NotSent(Transience::Permanent),
-            }
-            | SendClassification::Rejected => NotIssuedDecision::Fail {
+            SendClassification::Rejected if Self::is_retryable_rejection(error) => retry(pending),
+            SendClassification::Rejected => NotIssuedDecision::Fail {
                 not_issued: pending,
             },
         }
@@ -1579,40 +1605,32 @@ impl AwsccProvider {
         E: std::error::Error + ProvideErrorKind + ProvideErrorMetadata + 'static,
         Phase: UnconfirmedPhase,
     {
-        let resends = pending.resends();
-        match SendClassification::of(error) {
-            SendClassification::NotSent(Transience::Transient)
-            | SendClassification::MaybeSent {
-                final_attempt: FinalAttempt::Sent | FinalAttempt::NotSent(Transience::Transient),
-            } => {
-                let delay_secs = retry_policy.delay_secs(resends);
-                let resends = resends.saturating_add(1);
-                log::warn!(
-                    "Outcome unknown {} {type_name} after {resends} send(s): {error:?}. Retrying with the same client token in {delay_secs}s...",
-                    retry_policy.action,
-                );
-                UnconfirmedDecision::Resend {
-                    pending: pending.resend(resends),
-                    delay_secs,
-                }
+        let classification = SendClassification::of(error);
+        let resend = |failure: &str| {
+            let delay_secs = retry_policy.delay_secs(pending.resends());
+            let resends = pending.resends().saturating_add(1);
+            log::warn!(
+                "Resend while {} {type_name} {failure} (resend {resends}); an earlier send may have been accepted: {error:?}. Retrying with the same client token in {delay_secs}s...",
+                retry_policy.action,
+            );
+            UnconfirmedDecision::Resend {
+                pending: pending.resend(resends),
+                delay_secs,
             }
-            SendClassification::Rejected if Self::is_retryable_rejection(error) => {
-                let delay_secs = retry_policy.delay_secs(resends);
-                let resends = resends.saturating_add(1);
-                log::warn!(
-                    "Retryable rejection resending unconfirmed {} {type_name} (resend {resends}): {error:?}. Retrying with the same client token in {delay_secs}s...",
-                    retry_policy.action,
-                );
-                UnconfirmedDecision::Resend {
-                    pending: pending.resend(resends),
-                    delay_secs,
-                }
-            }
+        };
+        match classification {
             SendClassification::NotSent(Transience::Permanent)
             | SendClassification::MaybeSent {
                 final_attempt: FinalAttempt::NotSent(Transience::Permanent),
+            } => UnconfirmedDecision::Preserve,
+            SendClassification::NotSent(Transience::Transient) => resend("failed before sending"),
+            SendClassification::MaybeSent {
+                final_attempt: FinalAttempt::NotSent(Transience::Transient) | FinalAttempt::Sent,
+            } => resend("may have reached AWS"),
+            SendClassification::Rejected if Self::is_retryable_rejection(error) => {
+                resend("was rejected")
             }
-            | SendClassification::Rejected => UnconfirmedDecision::Fail,
+            SendClassification::Rejected => UnconfirmedDecision::Preserve,
         }
     }
 
@@ -1646,7 +1664,7 @@ impl AwsccProvider {
                     token,
                     retry_policy,
                 ) {
-                    NotIssuedDecision::RetryRejected {
+                    NotIssuedDecision::Retry {
                         pending,
                         delay_secs,
                     } => Ok(OperationStep::Pending {
@@ -1662,6 +1680,12 @@ impl AwsccProvider {
                         poll_after_secs: delay_secs,
                         phase: PendingPhase::Operation,
                     }),
+                    NotIssuedDecision::Preserve { .. } => Err(api_error_with_meta_and_subject(
+                        retry_policy.unknown_outcome_context,
+                        operation,
+                        subject,
+                        *error,
+                    )),
                     NotIssuedDecision::Fail { .. } => Err(api_error_with_meta_and_subject(
                         context, operation, subject, *error,
                     )),
@@ -1707,7 +1731,7 @@ impl AwsccProvider {
                         poll_after_secs: delay_secs,
                         phase: PendingPhase::Operation,
                     }),
-                    UnconfirmedDecision::Fail => Err(api_error_with_meta_and_subject(
+                    UnconfirmedDecision::Preserve => Err(api_error_with_meta_and_subject(
                         retry_policy.unknown_outcome_context,
                         operation,
                         subject,
@@ -1813,7 +1837,7 @@ impl AwsccProvider {
     ///
     /// Entries that CloudControl normally returns with a 5xx status (for
     /// example, `ServiceInternalErrorException`) are classified as
-    /// `SendClassification::MaybeSent { .. }` before this proven-rejection list is consulted.
+    /// `SendClassification::MaybeSent` before this proven-rejection list is consulted.
     /// Keep them here as a defensive classification for model- or
     /// transport-dependent responses that reach this function as rejections.
     fn is_retryable_rejection<E, R>(error: &SdkError<E, R>) -> bool
@@ -2093,7 +2117,7 @@ mod tests {
             let error = before_transmit_error(Transience::Transient, false);
             let pending = NotIssuedCreate::start();
             let client_token = pending.client_token().clone();
-            let NotIssuedDecision::RetryRejected {
+            let NotIssuedDecision::Retry {
                 pending,
                 delay_secs,
             } = AwsccProvider::not_issued_retry_decision(
@@ -2174,27 +2198,52 @@ mod tests {
         }
 
         #[test]
-        fn permanent_pre_transmit_failure_fails_in_both_create_phases() {
+        fn not_issued_create_permanent_pre_transmit_failure_fails() {
+            let error = before_transmit_error(Transience::Permanent, false);
+            let pending = NotIssuedCreate::start();
+            let NotIssuedDecision::Fail { not_issued } = AwsccProvider::not_issued_retry_decision(
+                &error,
+                "AWS::Test::Resource",
+                pending.clone(),
+                policy(),
+            ) else {
+                panic!("a permanent failure before any possible send must fail");
+            };
+            assert!(not_issued == pending);
+        }
+
+        #[test]
+        fn not_issued_create_maybe_sent_then_permanent_pre_transmit_failure_preserves_client_token()
+        {
+            let error = before_transmit_error(Transience::Permanent, true);
+            let pending = NotIssuedCreate::start();
+            let client_token = pending.client_token().clone();
+            let NotIssuedDecision::Preserve { pending } = AwsccProvider::not_issued_retry_decision(
+                &error,
+                "AWS::Test::Resource",
+                pending,
+                policy(),
+            ) else {
+                panic!("an earlier possible send must be preserved after a permanent failure");
+            };
+            assert_eq!(pending.client_token(), &client_token);
+            assert_eq!(pending.attempt(), 0);
+            assert_eq!(pending.resends(), 1);
+        }
+
+        #[test]
+        fn unconfirmed_create_permanent_pre_transmit_failure_preserves() {
             for prior_maybe_sent in [false, true] {
                 let error = before_transmit_error(Transience::Permanent, prior_maybe_sent);
-                let pending = NotIssuedCreate::start();
-                assert!(matches!(
-                    AwsccProvider::not_issued_retry_decision(
-                        &error,
-                        "AWS::Test::Resource",
-                        pending.clone(),
-                        policy()
-                    ),
-                    NotIssuedDecision::Fail { .. }
-                ));
+                let pending = NotIssuedCreate::start().into_unconfirmed(1);
                 assert!(matches!(
                     AwsccProvider::unconfirmed_retry_decision(
                         &error,
                         "AWS::Test::Resource",
-                        &pending.into_unconfirmed(1),
+                        &pending,
                         policy()
                     ),
-                    UnconfirmedDecision::Fail
+                    UnconfirmedDecision::Preserve
                 ));
             }
         }

@@ -35,6 +35,7 @@ const GET_RESOURCE_OK: &str = r#"{
 #[derive(Debug)]
 enum Action {
     Timeout,
+    TransientNotSent,
     Transport(SendPhase),
     LegacyOther,
     Response { status: u16, body: &'static str },
@@ -74,6 +75,11 @@ impl HttpConnector for ScriptedConnector {
             match action {
                 Action::Timeout => Err(ConnectorError::timeout(
                     std::io::Error::other("post-send timeout").into(),
+                )),
+                // Retain the transport's pre-send witness inside a typed
+                // connector timeout, which is a transient NotSent failure.
+                Action::TransientNotSent => Err(ConnectorError::timeout(
+                    transport_connector_error_for_test(SendPhase::NotSent).into_source(),
                 )),
                 Action::Transport(phase) => Err(transport_connector_error_for_test(phase)),
                 Action::LegacyOther => Err(ConnectorError::other(
@@ -236,7 +242,7 @@ async fn timeout_before_final_rejection_keeps_operation_maybe_sent() {
     assert_eq!(
         SendClassification::of(&error),
         SendClassification::MaybeSent {
-            final_attempt: FinalAttempt::Sent
+            final_attempt: FinalAttempt::Sent,
         }
     );
     assert_resend_guard(&client);
@@ -341,7 +347,7 @@ async fn readonly_get_resource_exhausts_maybe_sent_transport_retries_as_maybe_se
     assert_eq!(
         SendClassification::of(&error),
         SendClassification::MaybeSent {
-            final_attempt: FinalAttempt::Sent
+            final_attempt: FinalAttempt::Sent,
         }
     );
     assert_resend_guard(&client);
@@ -392,7 +398,7 @@ async fn create_resource_does_not_retry_after_maybe_sent_transport_error() {
     assert_eq!(
         SendClassification::of(&error),
         SendClassification::MaybeSent {
-            final_attempt: FinalAttempt::Sent
+            final_attempt: FinalAttempt::Sent,
         }
     );
     assert!(rendered.contains("dispatch failure: other"), "{rendered}");
@@ -462,4 +468,108 @@ fn production_cloudcontrol_client_keeps_bounded_policy_and_installs_guard() {
         client.config().retry_config(),
     );
     assert_resend_guard(&client);
+}
+
+#[tokio::test(start_paused = true)]
+async fn transient_not_sent_retries_with_backoff_only_within_not_issued_budget() {
+    use crate::CcRequestPhase;
+    use carina_provider_protocol::{OperationStep, PendingPhase};
+
+    let connector = ScriptedConnector::new((0..9).map(|_| Action::TransientNotSent));
+    let provider = AwsccProvider::from_sdk_config(
+        bounded_config(connector.clone()),
+        &AwsccProviderConfig::default(),
+    )
+    .await;
+    let config = carina_core::schema::OperationConfig {
+        create_max_retries: Some(2),
+        ..Default::default()
+    };
+    let mut token: CcRequestPhase = serde_json::from_value(serde_json::json!({
+        "phase":"not_issued", "attempt":0, "client_token":"same-token"
+    }))
+    .expect("not-issued continuation");
+    for attempt in 1..=2 {
+        let previous = serde_json::to_value(&token).expect("encode prior token");
+        let step = provider
+            .cc_poll_update_step(
+                "AWS::Test::Resource",
+                "physical-id",
+                vec![serde_json::json!({"op":"add", "path":"/Name", "value":"test"})],
+                Some(&config),
+                token,
+            )
+            .await
+            .expect("transient NotSent must consume the bounded not-issued retry budget");
+        let OperationStep::Pending {
+            pending,
+            poll_after_secs,
+            phase: PendingPhase::Operation,
+        } = step
+        else {
+            panic!("transient NotSent must back off before retrying");
+        };
+        let encoded = serde_json::to_value(&pending).expect("encode pending token");
+        assert_eq!(encoded["phase"], "not_issued");
+        assert_eq!(encoded["attempt"], attempt);
+        assert_eq!(encoded["client_token"], previous["client_token"]);
+        assert_eq!(poll_after_secs, 10 * 2_u32.pow(attempt - 1));
+        token = pending;
+    }
+    provider
+        .cc_poll_update_step(
+            "AWS::Test::Resource",
+            "physical-id",
+            vec![serde_json::json!({"op":"add", "path":"/Name", "value":"test"})],
+            Some(&config),
+            token,
+        )
+        .await
+        .expect_err("transient NotSent must stop when the not-issued budget is exhausted");
+    assert_eq!(connector.requests(), 9);
+}
+
+#[tokio::test(start_paused = true)]
+async fn unconfirmed_transient_not_sent_keeps_same_token_and_capped_backoff() {
+    use crate::CcRequestPhase;
+    use carina_provider_protocol::{OperationStep, PendingPhase};
+
+    let connector = ScriptedConnector::new((0..39).map(|_| Action::TransientNotSent));
+    let provider = AwsccProvider::from_sdk_config(
+        bounded_config(connector.clone()),
+        &AwsccProviderConfig::default(),
+    )
+    .await;
+    let mut token: CcRequestPhase = serde_json::from_value(serde_json::json!({
+        "phase":"unconfirmed", "attempt":0, "resends":1, "client_token":"same-token"
+    }))
+    .expect("unconfirmed continuation");
+    for resends in 2..=14 {
+        let step = provider
+            .cc_poll_update_step(
+                "AWS::Test::Resource",
+                "physical-id",
+                vec![serde_json::json!({"op":"add", "path":"/Name", "value":"test"})],
+                None,
+                token,
+            )
+            .await
+            .expect("a transient pre-send failure must keep the earlier send unconfirmed");
+        let OperationStep::Pending {
+            pending,
+            poll_after_secs,
+            phase: PendingPhase::Operation,
+        } = step
+        else {
+            panic!("an earlier send may still be accepted");
+        };
+        let encoded = serde_json::to_value(&pending).expect("encode continuation");
+        assert_eq!(encoded["phase"], "unconfirmed");
+        assert_eq!(encoded["attempt"], 0);
+        assert_eq!(encoded["resends"], resends);
+        assert_eq!(encoded["client_token"], "same-token");
+        assert_eq!(poll_after_secs, (10 * 2_u32.pow(resends - 1)).min(120));
+        token = pending;
+    }
+    assert_eq!(connector.requests(), 39);
 }
