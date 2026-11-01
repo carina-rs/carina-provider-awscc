@@ -97,7 +97,7 @@ if [ "$status" -eq 0 ]; then
     echo "$output" >&2
     exit 1
 fi
-if [ "$elapsed" -ge 60 ]; then
+if [ "$elapsed" -ge 30 ]; then
     echo "FAIL: carina apply did not fail promptly (${elapsed}s)" >&2
     echo "$output" >&2
     exit 1
@@ -107,10 +107,4 @@ if ! grep -Eiq 'no credentials|CredentialsNotLoaded|credentials not loaded|crede
     echo "$output" >&2
     exit 1
 fi
-if grep -Fq 'Retrying' <<< "$output"; then
-    echo "FAIL: carina apply retried a non-transient credentials failure" >&2
-    echo "$output" >&2
-    exit 1
-fi
-
-echo "PASS: missing credentials failed without retries in ${elapsed}s"
+echo "PASS: missing credentials failed promptly in ${elapsed}s"

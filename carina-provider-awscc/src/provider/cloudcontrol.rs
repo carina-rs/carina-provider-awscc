@@ -1529,6 +1529,8 @@ impl AwsccProvider {
     /// Once a send may have been accepted, resends use capped backoff without consuming
     /// that budget. A permanent final pre-send failure stops resends immediately while
     /// preserving the earlier possible send, just as drive-budget exhaustion does.
+    /// Unconfirmed resends have no attempt cap: update and delete stay bounded by the
+    /// host drive budget and are reconciled on the next plan.
     fn not_issued_retry_decision<E, Phase>(
         error: &SdkError<E, HttpResponse>,
         type_name: &str,
