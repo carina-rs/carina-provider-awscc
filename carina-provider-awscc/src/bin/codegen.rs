@@ -2202,12 +2202,11 @@ fn property_is_fully_read_only(
         return fully_read_only;
     }
 
-    if !has_direct_struct_properties(property) && !property.one_of.is_empty() {
-        if let Some(array_variant) = property
-            .one_of
-            .iter()
-            .find(|variant| property_resolves_to_array(variant, schema))
-        {
+    match one_of_shape(property, schema) {
+        OneOfShape::Array {
+            variant: array_variant,
+            ..
+        } => {
             return property_is_fully_read_only(
                 schema,
                 array_variant,
@@ -2215,15 +2214,24 @@ fn property_is_fully_read_only(
                 visiting_defs,
             );
         }
-        let merged = merged_one_of_properties(property);
-        if !merged.is_empty() {
+        OneOfShape::Direct(properties) => {
             return struct_fields_are_fully_read_only(
                 schema,
-                &merged,
+                properties,
                 property_path,
                 visiting_defs,
             );
         }
+        OneOfShape::Merged(properties) => {
+            return struct_fields_are_fully_read_only(
+                schema,
+                &properties,
+                property_path,
+                visiting_defs,
+            );
+        }
+        OneOfShape::Unresolved => return false,
+        OneOfShape::NotOneOf => {}
     }
 
     match property.prop_type.as_ref().and_then(TypeValue::as_str) {
@@ -2687,14 +2695,16 @@ fn type_display_string_at_resolved(
     if let Some(TypeOverride::AttributeType { display, .. }) =
         resource_type_override(&schema.type_name, cfn_property_path)
     {
-        (*display).to_string()
-    } else if object_string_union_is_iam_policy_document(prop, &schema.type_name, cfn_property_path)
-    {
-        "PolicyDocument".to_string()
-    } else if prop_name == "Tags" {
-        "`Map<String, String>`".to_string()
-    } else if property_is_bare_object(prop, schema) {
-        match classify_bare_object_or_panic(&schema.type_name, cfn_property_path) {
+        return (*display).to_string();
+    }
+    if object_string_union_is_iam_policy_document(prop, &schema.type_name, cfn_property_path) {
+        return "PolicyDocument".to_string();
+    }
+    if prop_name == "Tags" {
+        return "`Map<String, String>`".to_string();
+    }
+    if property_is_bare_object(prop, schema) {
+        return match classify_bare_object_or_panic(&schema.type_name, cfn_property_path) {
             BareObjectClassification::IamPolicyDocument(_) => "PolicyDocument".to_string(),
             BareObjectClassification::EmptyObject(_) => "Empty struct (`{}`)".to_string(),
             BareObjectClassification::StringMap(_) => "`Map<String, String>`".to_string(),
@@ -2704,17 +2714,19 @@ fn type_display_string_at_resolved(
                 "omitted property {}.{} reached Markdown type generation: {}",
                 entry.cfn_type, entry.property_path, entry.reason
             ),
-        }
-    } else if !prop.one_of.is_empty() && !has_direct_struct_properties(prop) {
-        if let Some(array_variant) = prop
-            .one_of
-            .iter()
-            .find(|variant| property_resolves_to_array(variant, schema))
-        {
+        };
+    }
+    match one_of_shape(prop, schema) {
+        OneOfShape::Array {
+            variant: array_variant,
+            ..
+        } => {
             return type_display_string_at(prop_name, array_variant, schema, cfn_property_path);
         }
-
-        if merged_one_of_properties(prop).is_empty() {
+        OneOfShape::Merged(_) => {
+            return format!("Struct({})", definition_name.unwrap_or(prop_name));
+        }
+        OneOfShape::Unresolved => {
             let variant_types: Vec<Vec<String>> =
                 prop.one_of.iter().map(property_type_values).collect();
             panic!(
@@ -2722,9 +2734,9 @@ fn type_display_string_at_resolved(
                 schema.type_name, prop_name, variant_types
             );
         }
-
-        format!("Struct({})", definition_name.unwrap_or(prop_name))
-    } else if let Some(ref_path) = &prop.ref_path {
+        OneOfShape::NotOneOf | OneOfShape::Direct(_) => {}
+    }
+    if let Some(ref_path) = &prop.ref_path {
         if is_tag_map_ref(schema, ref_path) {
             "`Map<String, String>`".to_string()
         } else if let Some(resolved) = resolve_ref(schema, ref_path) {
@@ -2953,43 +2965,29 @@ fn markdown_struct_def(
         )
     };
 
-    if let Some(properties) = property
-        .properties
-        .as_ref()
-        .filter(|properties| !properties.is_empty())
-    {
-        return Some(MarkdownStructDef {
+    match one_of_shape(property, schema) {
+        OneOfShape::Direct(properties) => Some(MarkdownStructDef {
             key,
             name,
             properties: properties.clone(),
             required: property.required.clone(),
-        });
-    }
-
-    if property_generates_struct(property, schema) {
-        return Some(MarkdownStructDef {
+        }),
+        OneOfShape::Merged(properties) => Some(MarkdownStructDef {
             key,
             name,
-            properties: merged_one_of_properties(property),
+            properties,
             required: Vec::new(),
-        });
+        }),
+        OneOfShape::NotOneOf | OneOfShape::Array { .. } | OneOfShape::Unresolved => None,
     }
-
-    None
 }
 
 fn markdown_array<'a>(
     prop: &'a CfnProperty,
     schema: &'a CfnSchema,
 ) -> Option<(&'a CfnProperty, &'a CfnProperty)> {
-    let property = prop
-        .ref_path
-        .as_deref()
-        .and_then(|ref_path| resolve_ref(schema, ref_path))
-        .map_or(prop, |resolved| resolved.property);
-    (property.prop_type.as_ref().and_then(TypeValue::as_str) == Some("array"))
-        .then(|| property.items.as_deref().map(|items| (property, items)))
-        .flatten()
+    let property = resolved_array_property(prop, schema, &mut HashSet::new())?;
+    property.items.as_deref().map(|items| (property, items))
 }
 
 fn markdown_list_type(item: MarkdownLinkedType, prop: &CfnProperty) -> MarkdownLinkedType {
@@ -3015,16 +3013,13 @@ fn markdown_link_type(
     property_path: &[String],
     cfn_parent: Option<&str>,
 ) -> Option<MarkdownLinkedType> {
+    let shape = one_of_shape(prop, schema);
     if let Some(key) = enum_target {
         let enum_type = MarkdownLinkedType::Enum(key.clone());
-        let array_property = if has_direct_struct_properties(prop) {
-            None
-        } else if property_resolves_to_array(prop, schema) {
-            Some(prop)
-        } else {
-            prop.one_of
-                .iter()
-                .find(|variant| property_resolves_to_array(variant, schema))
+        let array_property = match shape {
+            OneOfShape::Array { variant, .. } => Some(variant),
+            OneOfShape::NotOneOf => property_resolves_to_array(prop, schema).then_some(prop),
+            OneOfShape::Direct(_) | OneOfShape::Merged(_) | OneOfShape::Unresolved => None,
         };
         return Some(if let Some(array_property) = array_property {
             let array = markdown_array(array_property, schema)
@@ -3036,23 +3031,24 @@ fn markdown_link_type(
         });
     }
 
-    // Match schema-code precedence: direct properties win, then an array
-    // variant. A non-array oneOf falls through to `markdown_struct_def`,
-    // which merges its object variants through the shared property path.
-    if !has_direct_struct_properties(prop)
-        && let Some(array_variant) = prop
-            .one_of
-            .iter()
-            .find(|variant| property_resolves_to_array(variant, schema))
-    {
-        return markdown_link_type(
-            prop_name,
-            array_variant,
-            schema,
-            None,
-            property_path,
-            cfn_parent,
-        );
+    match shape {
+        OneOfShape::Array {
+            variant: array_variant,
+            ..
+        } => {
+            return markdown_link_type(
+                prop_name,
+                array_variant,
+                schema,
+                None,
+                property_path,
+                cfn_parent,
+            );
+        }
+        OneOfShape::NotOneOf
+        | OneOfShape::Direct(_)
+        | OneOfShape::Merged(_)
+        | OneOfShape::Unresolved => {}
     }
 
     if let Some(value) = property_object_map_value(prop, schema) {
@@ -3846,25 +3842,26 @@ fn collect_struct_defs(
     cfn_parent: Option<&str>,
     struct_defs: &mut BTreeMap<MarkdownStructKey, StructDefInfo>,
 ) {
-    // Keep target collection on the same precedence as type rendering and
-    // schema code. Non-array object variants fall through and are collected
-    // as a merged struct by `markdown_struct_def`.
-    if !has_direct_struct_properties(prop)
-        && let Some(array_variant) = prop
-            .one_of
-            .iter()
-            .find(|variant| property_resolves_to_array(variant, schema))
-    {
-        collect_struct_defs(
-            array_variant,
-            prop_name,
-            schema,
-            struct_path,
-            property_path,
-            cfn_parent,
-            struct_defs,
-        );
-        return;
+    match one_of_shape(prop, schema) {
+        OneOfShape::Array {
+            variant: array_variant,
+            ..
+        } => {
+            collect_struct_defs(
+                array_variant,
+                prop_name,
+                schema,
+                struct_path,
+                property_path,
+                cfn_parent,
+                struct_defs,
+            );
+            return;
+        }
+        OneOfShape::NotOneOf
+        | OneOfShape::Direct(_)
+        | OneOfShape::Merged(_)
+        | OneOfShape::Unresolved => {}
     }
 
     if let Some(struct_def) = markdown_struct_def(prop_name, prop, schema, property_path) {
@@ -3944,14 +3941,7 @@ fn collect_struct_defs(
         .ref_path
         .as_deref()
         .and_then(|ref_path| resolve_ref(schema, ref_path))
-        .filter(|resolved| {
-            resolved
-                .property
-                .prop_type
-                .as_ref()
-                .and_then(TypeValue::as_str)
-                == Some("array")
-        })
+        .filter(|resolved| property_resolves_to_array(resolved.property, schema))
         .map(|resolved| resolved.name);
     let should_visit = array_def_name.is_none_or(|name| {
         IN_PROGRESS_DEFS.with(|defs| defs.borrow_mut().insert(name.to_string()))
@@ -5232,31 +5222,67 @@ fn inline_property_type(property: &CfnProperty) -> Option<&str> {
     }
 }
 
-fn merged_one_of_properties(property: &CfnProperty) -> BTreeMap<String, CfnProperty> {
-    property
+enum OneOfShape<'a> {
+    NotOneOf,
+    Direct(&'a BTreeMap<String, CfnProperty>),
+    Array {
+        /// Keep the winning variant's reference context for generation.
+        variant: &'a CfnProperty,
+        /// Reuse the concrete array without resolving nested unions again.
+        resolved: &'a CfnProperty,
+    },
+    /// Union of object fields; variant-local required lists do not apply.
+    Merged(BTreeMap<String, CfnProperty>),
+    Unresolved,
+}
+
+fn one_of_shape<'a>(property: &'a CfnProperty, schema: &'a CfnSchema) -> OneOfShape<'a> {
+    one_of_shape_with_visited(property, schema, &mut HashSet::new())
+}
+
+/// The sole precedence rule for compatibility unions: direct fields, then
+/// the first variant resolving to an array, then merged optional fields.
+fn one_of_shape_with_visited<'a>(
+    property: &'a CfnProperty,
+    schema: &'a CfnSchema,
+    visiting_defs: &mut HashSet<&'a str>,
+) -> OneOfShape<'a> {
+    if let Some(properties) = property
+        .properties
+        .as_ref()
+        .filter(|props| !props.is_empty())
+    {
+        return OneOfShape::Direct(properties);
+    }
+    if property.one_of.is_empty() {
+        return OneOfShape::NotOneOf;
+    }
+    if let Some(shape) = property.one_of.iter().find_map(|variant| {
+        resolved_array_property(variant, schema, visiting_defs)
+            .map(|resolved| OneOfShape::Array { variant, resolved })
+    }) {
+        return shape;
+    }
+    let merged: BTreeMap<_, _> = property
         .one_of
         .iter()
         .filter_map(|variant| variant.properties.as_ref())
         .flat_map(|properties| properties.iter())
         .map(|(name, property)| (name.clone(), property.clone()))
-        .collect()
+        .collect();
+    if merged.is_empty() {
+        OneOfShape::Unresolved
+    } else {
+        OneOfShape::Merged(merged)
+    }
 }
 
 /// Whether the inline generator will represent this property as a struct.
-/// Direct properties take precedence over compatibility-union metadata. A
-/// pure `oneOf` selects an array variant first, then merges object variants.
 fn property_generates_struct(property: &CfnProperty, schema: &CfnSchema) -> bool {
-    if has_direct_struct_properties(property) {
-        return true;
+    match one_of_shape(property, schema) {
+        OneOfShape::Direct(_) | OneOfShape::Merged(_) => true,
+        OneOfShape::NotOneOf | OneOfShape::Array { .. } | OneOfShape::Unresolved => false,
     }
-    if property
-        .one_of
-        .iter()
-        .any(|variant| property_resolves_to_array(variant, schema))
-    {
-        return false;
-    }
-    !merged_one_of_properties(property).is_empty()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -7097,21 +7123,35 @@ fn property_type_values(prop: &CfnProperty) -> Vec<String> {
 }
 
 fn property_resolves_to_array(prop: &CfnProperty, schema: &CfnSchema) -> bool {
-    if property_type_values(prop).iter().any(|ty| ty == "array") {
-        return true;
+    resolved_array_property(prop, schema, &mut HashSet::new()).is_some()
+}
+
+/// Resolve aliases and oneOf arrays through the same shape classifier used
+/// for inline properties. Track definition visits because oneOf branches
+/// can refer back to their containing definition.
+fn resolved_array_property<'a>(
+    prop: &'a CfnProperty,
+    schema: &'a CfnSchema,
+    visiting_defs: &mut HashSet<&'a str>,
+) -> Option<&'a CfnProperty> {
+    if let Some(ref_path) = &prop.ref_path {
+        let resolved = resolve_ref(schema, ref_path)?;
+        if !visiting_defs.insert(resolved.name) {
+            return None;
+        }
+        let array = resolved_array_property(resolved.property, schema, visiting_defs);
+        visiting_defs.remove(resolved.name);
+        return array;
     }
 
-    prop.ref_path
-        .as_deref()
-        .and_then(|ref_path| resolve_ref(schema, ref_path))
-        .is_some_and(|resolved| {
-            resolved
-                .property
-                .prop_type
-                .as_ref()
-                .and_then(TypeValue::as_str)
-                == Some("array")
-        })
+    match one_of_shape_with_visited(prop, schema, visiting_defs) {
+        OneOfShape::NotOneOf => property_type_values(prop)
+            .iter()
+            .any(|ty| ty == "array")
+            .then_some(prop),
+        OneOfShape::Array { resolved, .. } => Some(resolved),
+        OneOfShape::Direct(_) | OneOfShape::Merged(_) | OneOfShape::Unresolved => None,
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -7237,12 +7277,11 @@ fn cfn_type_to_carina_type_with_enum_resolved(
         return ("/* enum */".to_string(), Some(enum_info));
     }
 
-    if !prop.one_of.is_empty() && !has_direct_struct_properties(prop) {
-        if let Some(array_variant) = prop
-            .one_of
-            .iter()
-            .find(|variant| property_resolves_to_array(variant, schema))
-        {
+    match one_of_shape(prop, schema) {
+        OneOfShape::Array {
+            variant: array_variant,
+            ..
+        } => {
             return cfn_type_to_carina_type_with_enum_resolved(
                 array_variant,
                 prop_name,
@@ -7253,9 +7292,7 @@ fn cfn_type_to_carina_type_with_enum_resolved(
                 ref_state,
             );
         }
-
-        let merged = merged_one_of_properties(prop);
-        if merged.is_empty() {
+        OneOfShape::Unresolved => {
             let variant_types: Vec<Vec<String>> =
                 prop.one_of.iter().map(property_type_values).collect();
             panic!(
@@ -7263,21 +7300,23 @@ fn cfn_type_to_carina_type_with_enum_resolved(
                 schema.type_name, prop_name, variant_types
             );
         }
-
-        let mut inline_property = prop.clone();
-        inline_property.prop_type = Some(TypeValue::Single("object".to_string()));
-        inline_property.properties = Some(merged);
-        inline_property.required.clear();
-        inline_property.one_of.clear();
-        return cfn_type_to_carina_type_with_enum_resolved(
-            &inline_property,
-            prop_name,
-            schema,
-            namespace,
-            enums,
-            paths,
-            ref_state,
-        );
+        OneOfShape::Merged(properties) => {
+            let mut inline_property = prop.clone();
+            inline_property.prop_type = Some(TypeValue::Single("object".to_string()));
+            inline_property.properties = Some(properties);
+            inline_property.required.clear();
+            inline_property.one_of.clear();
+            return cfn_type_to_carina_type_with_enum_resolved(
+                &inline_property,
+                prop_name,
+                schema,
+                namespace,
+                enums,
+                paths,
+                ref_state,
+            );
+        }
+        OneOfShape::NotOneOf | OneOfShape::Direct(_) => {}
     }
 
     // Resolve every definition to the same property model used by inline
@@ -8852,13 +8891,9 @@ mod tests {
                 object_map_value_or_panic(schema, property_path, value);
                 return;
             }
-            if resolved
-                .property
-                .prop_type
-                .as_ref()
-                .and_then(TypeValue::as_str)
-                == Some("array")
-                && let Some(items) = &resolved.property.items
+            if let Some(array) =
+                resolved_array_property(resolved.property, schema, &mut HashSet::new())
+                && let Some(items) = &array.items
             {
                 if active_array_definitions.insert(resolved.name.to_string()) {
                     assert_property_classified(
@@ -8876,6 +8911,37 @@ mod tests {
             // Every other resolved ref owns its shape; reachable struct and
             // oneOf children are walked from the definitions pass.
             return;
+        }
+
+        match one_of_shape(prop, schema) {
+            OneOfShape::Array {
+                variant: array_variant,
+                ..
+            } => {
+                assert_property_classified(
+                    schema,
+                    prop_name,
+                    array_variant,
+                    parent_struct,
+                    used_rows,
+                    active_array_definitions,
+                );
+                return;
+            }
+            OneOfShape::Merged(properties) => {
+                for (field_name, field_prop) in &properties {
+                    assert_property_classified(
+                        schema,
+                        field_name,
+                        field_prop,
+                        Some(prop_name),
+                        used_rows,
+                        active_array_definitions,
+                    );
+                }
+                return;
+            }
+            OneOfShape::NotOneOf | OneOfShape::Direct(_) | OneOfShape::Unresolved => {}
         }
 
         if property_declares_object(prop) {
@@ -8905,40 +8971,6 @@ mod tests {
                     "unsupported cached object property {}.{}; expected a struct, direct-string map, tag map, typed map of struct, or classified bare object",
                     schema.type_name, property_path
                 );
-            }
-        }
-
-        if !prop.one_of.is_empty() {
-            // Match codegen's compatibility-union behavior: when one variant
-            // is an array, only that representable source shape is walked.
-            if let Some(array_variant) = prop
-                .one_of
-                .iter()
-                .find(|variant| property_resolves_to_array(variant, schema))
-            {
-                assert_property_classified(
-                    schema,
-                    prop_name,
-                    array_variant,
-                    parent_struct,
-                    used_rows,
-                    active_array_definitions,
-                );
-                return;
-            }
-            for variant in &prop.one_of {
-                if let Some(properties) = &variant.properties {
-                    for (field_name, field_prop) in properties {
-                        assert_property_classified(
-                            schema,
-                            field_name,
-                            field_prop,
-                            Some(prop_name),
-                            used_rows,
-                            active_array_definitions,
-                        );
-                    }
-                }
             }
         }
 
@@ -9031,31 +9063,22 @@ mod tests {
                     // using the path codegen uses to emit it.
                     continue;
                 }
-                if let Some(properties) = &definition.properties {
-                    for (field_name, field_prop) in properties {
-                        assert_property_classified(
-                            schema,
-                            field_name,
-                            field_prop,
-                            Some(definition_name),
-                            &mut used_rows,
-                            &mut active_array_definitions,
-                        );
+                let properties = match one_of_shape(definition, schema) {
+                    OneOfShape::Direct(properties) => properties.clone(),
+                    OneOfShape::Merged(properties) => properties,
+                    OneOfShape::NotOneOf | OneOfShape::Array { .. } | OneOfShape::Unresolved => {
+                        continue;
                     }
-                }
-                for variant in &definition.one_of {
-                    if let Some(properties) = &variant.properties {
-                        for (field_name, field_prop) in properties {
-                            assert_property_classified(
-                                schema,
-                                field_name,
-                                field_prop,
-                                Some(definition_name),
-                                &mut used_rows,
-                                &mut active_array_definitions,
-                            );
-                        }
-                    }
+                };
+                for (field_name, field_prop) in &properties {
+                    assert_property_classified(
+                        schema,
+                        field_name,
+                        field_prop,
+                        Some(definition_name),
+                        &mut used_rows,
+                        &mut active_array_definitions,
+                    );
                 }
                 // Array-definition items are walked from each referencing
                 // property above so their classification path matches codegen.
@@ -13737,6 +13760,285 @@ mod tests {
         assert!(message.contains("EMPTY_OBJECT_PROPERTIES"));
         assert!(message.contains("STRING_MAP_PROPERTIES"));
         assert!(message.contains("CODEGEN.md#classifying-bare-objects"));
+    }
+
+    #[test]
+    fn test_one_of_direct_properties_win_across_consumers() {
+        let property: CfnProperty = serde_json::from_value(serde_json::json!({
+            "properties": { "Value": { "type": "string" } },
+            "required": ["Value"],
+            "oneOf": [
+                { "type": "array", "items": { "type": "object" } },
+                { "properties": { "Ignored": { "type": "object" } } }
+            ]
+        }))
+        .unwrap();
+        let mut schema = empty_schema("AWS::Test::DirectOneOf");
+        schema.properties.insert("Choice".to_string(), property);
+        let property = &schema.properties["Choice"];
+
+        assert!(property_generates_struct(property, &schema));
+        assert!(!property_resolves_to_array(property, &schema));
+        // Both ignored variants contain unclassified bare objects. The
+        // walker must follow only the direct fields that codegen emits.
+        assert!(assert_schema_bare_objects_classified(&schema).is_empty());
+        let generated = generate_synthetic_schema_code(&schema).unwrap();
+        assert!(
+            generated.contains(r#"StructField::required("value", AttributeType::string())"#),
+            "{generated}"
+        );
+        assert!(!generated.contains(r#""ignored""#), "{generated}");
+        let md = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        assert!(md.contains("[Struct(Choice)](#choice-1)"), "{md}");
+        assert!(md.contains("| `value` | String | Yes |"), "{md}");
+        assert!(!md.contains("`ignored`"), "{md}");
+
+        schema.read_only_properties = vec!["/properties/Choice/Value".to_string()];
+        assert!(is_property_read_only(
+            &schema,
+            &schema.properties["Choice"],
+            &["Choice".to_string()],
+        ));
+    }
+
+    #[test]
+    fn test_one_of_first_array_wins_over_objects_and_later_arrays() {
+        let property: CfnProperty = serde_json::from_value(serde_json::json!({
+            "oneOf": [
+                { "properties": { "Ignored": { "type": "object" } } },
+                { "type": "array", "items": { "type": "integer" } },
+                { "type": "array", "items": { "type": "boolean" } }
+            ]
+        }))
+        .unwrap();
+        let mut schema = empty_schema("AWS::Test::ArrayOneOf");
+        schema.properties.insert("Choice".to_string(), property);
+
+        assert!(!property_generates_struct(
+            &schema.properties["Choice"],
+            &schema
+        ));
+        assert!(assert_schema_bare_objects_classified(&schema).is_empty());
+        let generated = generate_synthetic_schema_code(&schema).unwrap();
+        assert!(
+            generated.contains(
+                r#"AttributeSchema::optional("choice", AttributeType::list(AttributeType::int()))"#
+            ),
+            "{generated}"
+        );
+        let md = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        assert!(md.contains("- **Type:** `List<Int>`\n"), "{md}");
+        assert!(!md.contains("## Struct Definitions"), "{md}");
+
+        schema.read_only_properties = vec!["/properties/Choice/*".to_string()];
+        assert!(is_property_read_only(
+            &schema,
+            &schema.properties["Choice"],
+            &["Choice".to_string()],
+        ));
+    }
+
+    fn assert_one_of_array_ref_matches_inline(definition: CfnProperty) {
+        let mut schema = empty_schema("AWS::Test::ArrayRefOneOf");
+        schema.definitions = Some(BTreeMap::from([
+            ("Values".to_string(), definition.clone()),
+            (
+                "Alias".to_string(),
+                CfnProperty {
+                    ref_path: Some("#/definitions/Values".to_string()),
+                    ..Default::default()
+                },
+            ),
+        ]));
+        let referenced = CfnProperty {
+            ref_path: Some("#/definitions/Alias".to_string()),
+            ..Default::default()
+        };
+        assert!(property_resolves_to_array(&definition, &schema));
+        assert!(property_resolves_to_array(&referenced, &schema));
+        let property = CfnProperty {
+            one_of: vec![
+                serde_json::from_value(serde_json::json!({
+                    "properties": { "Fallback": { "type": "string" } }
+                }))
+                .unwrap(),
+                referenced,
+            ],
+            ..Default::default()
+        };
+        let (generated_type, enum_info) = cfn_type_to_carina_type_with_enum(
+            &property,
+            "Choice",
+            &schema,
+            "aws.test.ArrayRefOneOf",
+            &BTreeMap::new(),
+        );
+        assert!(enum_info.is_none());
+        let (inline_type, inline_enum) = cfn_type_to_carina_type_with_enum(
+            &definition,
+            "Choice",
+            &schema,
+            "aws.test.ArrayRefOneOf",
+            &BTreeMap::new(),
+        );
+        assert!(inline_enum.is_none());
+        assert_eq!(generated_type, inline_type);
+        assert_eq!(
+            generated_type,
+            "AttributeType::refined_list(AttributeType::int(), false, Some((Some(1), Some(3))))"
+        );
+        assert_eq!(
+            type_display_string("Choice", &property, &schema),
+            "`List<Int>` (items: 1..=3)"
+        );
+        assert!(!property_generates_struct(&property, &schema));
+
+        let enum_key = MarkdownEnumKey {
+            namespace: "aws.test.ArrayRefOneOf".to_string(),
+            type_name: "Choice".to_string(),
+        };
+        let linked = markdown_link_type(
+            "Choice",
+            &property,
+            &schema,
+            Some(&enum_key),
+            &["Choice".to_string()],
+            None,
+        );
+        assert!(matches!(
+            linked,
+            Some(MarkdownLinkedType::List { item, suffix })
+                if matches!(item.as_ref(), MarkdownLinkedType::Enum(key) if key == &enum_key)
+                    && suffix.as_deref() == Some(" (items: 1..=3)")
+        ));
+
+        schema.properties.insert("Choice".to_string(), property);
+        assert!(assert_schema_bare_objects_classified(&schema).is_empty());
+        let generated = generate_synthetic_schema_code(&schema).unwrap();
+        assert!(generated.contains(&generated_type), "{generated}");
+        let md = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        assert!(md.contains("`List<Int>` (items: 1..=3)"), "{md}");
+        assert!(!md.contains("## Struct Definitions"), "{md}");
+    }
+
+    #[test]
+    fn test_one_of_ref_to_nullable_array_definition() {
+        let definition = serde_json::from_value(serde_json::json!({
+            "type": ["array", "null"],
+            "items": { "type": "integer" },
+            "minItems": 1,
+            "maxItems": 3,
+            "insertionOrder": false
+        }))
+        .unwrap();
+        assert_one_of_array_ref_matches_inline(definition);
+
+        // Detection must inspect every declared type, even when array is
+        // not the first entry returned by TypeValue::as_str.
+        let mut schema = empty_schema("AWS::Test::NullableArray");
+        let definition = serde_json::from_value(serde_json::json!({
+            "type": ["null", "array"], "items": { "type": "string" }
+        }))
+        .unwrap();
+        schema.definitions = Some(BTreeMap::from([("Values".to_string(), definition)]));
+        let referenced = CfnProperty {
+            ref_path: Some("#/definitions/Values".to_string()),
+            ..Default::default()
+        };
+        assert!(property_resolves_to_array(&referenced, &schema));
+    }
+
+    #[test]
+    fn test_one_of_ref_to_one_of_array_definition() {
+        let mut definition: CfnProperty = serde_json::from_value(serde_json::json!({
+            "oneOf": [
+                { "properties": { "Ignored": { "type": "object" } } },
+                {
+                    "type": "array",
+                    "items": { "type": "integer" },
+                    "minItems": 1,
+                    "maxItems": 3,
+                    "insertionOrder": false
+                }
+            ]
+        }))
+        .unwrap();
+        assert_one_of_array_ref_matches_inline(definition.clone());
+
+        // Deeply nested unions must retain the final array's constraints
+        // without repeatedly resolving the same subtree at every level.
+        for _ in 0..32 {
+            definition = CfnProperty {
+                one_of: vec![definition],
+                ..Default::default()
+            };
+        }
+        assert_one_of_array_ref_matches_inline(definition);
+    }
+
+    #[test]
+    fn test_one_of_array_resolution_stops_at_ref_cycles() {
+        let mut schema = empty_schema("AWS::Test::OneOfCycle");
+        schema.definitions = Some(
+            serde_json::from_value(serde_json::json!({
+                "CycleA": { "oneOf": [{ "$ref": "#/definitions/CycleB" }] },
+                "CycleB": { "oneOf": [{ "$ref": "#/definitions/CycleA" }] }
+            }))
+            .unwrap(),
+        );
+        let property = CfnProperty {
+            ref_path: Some("#/definitions/CycleA".to_string()),
+            ..Default::default()
+        };
+        assert!(!property_resolves_to_array(&property, &schema));
+        assert!(matches!(
+            one_of_shape(
+                resolve_ref(&schema, "#/definitions/CycleA")
+                    .unwrap()
+                    .property,
+                &schema
+            ),
+            OneOfShape::Unresolved
+        ));
+    }
+
+    #[test]
+    fn test_markdown_collects_struct_items_of_ref_to_one_of_array_definition() {
+        let mut schema = empty_schema("AWS::Test::OneOfArrayRef");
+        schema.definitions = Some(
+            serde_json::from_value(serde_json::json!({
+                "Entries": {
+                    "oneOf": [
+                        { "properties": { "Ignored": { "type": "object" } } },
+                        {
+                            "type": "array",
+                            "items": { "properties": { "Value": { "type": "integer" } } }
+                        }
+                    ]
+                }
+            }))
+            .unwrap(),
+        );
+        schema.properties.insert(
+            "Choices".to_string(),
+            CfnProperty {
+                ref_path: Some("#/definitions/Entries".to_string()),
+                ..Default::default()
+            },
+        );
+
+        assert!(assert_schema_bare_objects_classified(&schema).is_empty());
+        let generated = generate_synthetic_schema_code(&schema).unwrap();
+        assert!(
+            generated.contains(r#"AttributeType::list(AttributeType::struct_("Choices""#),
+            "{generated}"
+        );
+        let md = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        assert!(md.contains("[Struct(Choices)](#choices-1)"), "{md}");
+        assert!(md.contains("### choices\n\n| Field |"), "{md}");
+        assert!(md.contains("| `value` | Int | No |"), "{md}");
+        assert!(!md.contains("`ignored`"), "{md}");
+        carina_docgen::check_page(&md).unwrap();
     }
 
     #[test]
