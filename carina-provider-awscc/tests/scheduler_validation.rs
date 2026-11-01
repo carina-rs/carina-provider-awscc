@@ -6,12 +6,20 @@ use carina_core::parser::{ParsedFile, ProviderContext};
 use carina_core::provider::{
     ProviderFactory, collect_schemas, provider_custom_types_from_factories,
 };
-use carina_core::resource::{ConcreteValue, Resource, Value};
-use carina_core::schema::SchemaRegistry;
+use carina_core::resource::{
+    ConcreteValue, ModuleSource, ParserPlaceholder, Resource as GenericResource,
+    Value as GenericValue,
+};
+use carina_core::schema::{
+    ReferenceForms, SchemaRegistry, ValidatedConfigSchema, ValidatedProviderSchemaWitness,
+};
 use carina_core::validation::{validate_resource_ref_types, validate_resources};
 use carina_provider_awscc::schemas::generated::scheduler::schedule::scheduler_schedule_config;
 use carina_provider_awscc::schemas::generated::scheduler::schedule_group::scheduler_schedule_group_config;
 use indexmap::IndexMap;
+
+type Resource = GenericResource<ModuleSource, ParserPlaceholder>;
+type Value = GenericValue<ParserPlaceholder>;
 
 struct SchedulerSchemaFactory;
 
@@ -35,7 +43,10 @@ impl ProviderFactory for SchedulerSchemaFactory {
         Ok(())
     }
 
-    fn extract_region(&self, _attributes: &IndexMap<String, Value>) -> String {
+    fn extract_region(
+        &self,
+        _attributes: &IndexMap<String, carina_core::resource::Value>,
+    ) -> String {
         "ap-northeast-1".to_string()
     }
 
@@ -43,9 +54,10 @@ impl ProviderFactory for SchedulerSchemaFactory {
         &self,
         _binding: Option<&str>,
         _config: &carina_core::provider::ProviderReadyConfig,
+        _initialize_outcome: carina_core::provider::InitializeOutcomeMint,
     ) -> carina_core::provider::BoxFuture<
         '_,
-        carina_core::provider::ProviderResult<Box<dyn carina_core::provider::Provider>>,
+        carina_core::provider::ProviderResult<carina_core::provider::ProviderInitialization>,
     > {
         Box::pin(async {
             Err(carina_core::provider::ProviderError::internal(
@@ -65,6 +77,15 @@ impl ProviderFactory for SchedulerSchemaFactory {
                 .validate()
                 .expect("ScheduleGroup schema must be valid"),
         ]
+    }
+
+    fn schema_witness(&self) -> ValidatedProviderSchemaWitness {
+        ValidatedProviderSchemaWitness::new(
+            self.schemas(),
+            ValidatedConfigSchema::default(),
+            ReferenceForms::new(),
+        )
+        .expect("Scheduler schema-only witness must be valid")
     }
 }
 
@@ -127,10 +148,8 @@ fn schedule(group_name: Option<Value>) -> Resource {
 }
 
 fn validate_scheduler(resources: Vec<Resource>) -> Result<(), String> {
-    let parsed = ParsedFile {
-        resources,
-        ..ParsedFile::default()
-    };
+    let mut parsed = ParsedFile::default();
+    parsed.resources = resources;
     let (schemas, context) = scheduler_validation_context();
     let known_providers = HashSet::from(["awscc".to_string()]);
 

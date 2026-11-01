@@ -70,9 +70,9 @@ fn hosted_zone_id_producers_validate_route53_values() {
             "Z2P70J7HTTTPLU",
             "Z05136711ZXUHBDOA8D5O",
         ] {
-            let result = producer_type.validate(&Value::Concrete(ConcreteValue::String(
-                hosted_zone_id.to_string().into(),
-            )));
+            let value: Value =
+                Value::Concrete(ConcreteValue::String(hosted_zone_id.to_string().into()));
+            let result = producer_type.validate(&value);
             assert!(
                 result.is_ok(),
                 "{label} must accept {hosted_zone_id}: {result:?}"
@@ -80,12 +80,10 @@ fn hosted_zone_id_producers_validate_route53_values() {
         }
 
         for hosted_zone_id in ["", "/hostedzone/Z05136711ZXUHBDOA8D5O"] {
+            let value: Value =
+                Value::Concrete(ConcreteValue::String(hosted_zone_id.to_string().into()));
             assert!(
-                producer_type
-                    .validate(&Value::Concrete(ConcreteValue::String(
-                        hosted_zone_id.to_string().into()
-                    )))
-                    .is_err(),
+                producer_type.validate(&value).is_err(),
                 "{label} must reject {hosted_zone_id:?}"
             );
         }

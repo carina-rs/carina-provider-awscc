@@ -5,7 +5,7 @@
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
 use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
-use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, types};
+use carina_core::schema::{AttributeSchema, AttributeType, FieldGroup, ResourceSchema, types};
 
 const VALID_INSTANCE_TENANCY: &[&str] = &["default", "dedicated", "host"];
 
@@ -118,7 +118,7 @@ pub fn ec2_vpc_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_vpc_id_attribute());
     schema = schema
         .with_coexisting_replacement();
-    schema = schema.exclusive_required(&["cidr_block", "ipv4_ipam_pool_id"]);
+    schema = schema.field_group(FieldGroup::exactly_one(["cidr_block", "ipv4_ipam_pool_id"]).expect("generated exactly-one field group must be valid"));
     schema = schema.with_declared_validators(vec![carina_provider_protocol::types::ValidatorType::TagsKeyValueCheck]);
     AwsccSchemaConfig {
         aws_type_name: "AWS::EC2::VPC",

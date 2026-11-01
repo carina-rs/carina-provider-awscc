@@ -179,7 +179,7 @@ async fn listener_create_then_read_round_trips_full_shaped_state() {
     let id = resource.id.clone();
     let request = common::create_request(resource).await;
 
-    let created = carina_core::executor::dispatch_create(&provider, &id, request)
+    let created = common::dispatch_create(&provider, &id, request)
         .await
         .expect("elasticloadbalancingv2.Listener create_resource should succeed");
     let created = match created.into_kind() {

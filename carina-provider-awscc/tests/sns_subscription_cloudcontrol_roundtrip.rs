@@ -15,7 +15,6 @@ use aws_config::{BehaviorVersion, Region};
 use carina_core::differ::{Diff, diff};
 use carina_core::provider::{CreateOutcomeKind, Provider, RawSavedAttrs, ReadRequest};
 use carina_core::resource::{ConcreteValue, Resource, Value};
-use carina_core::schema::SchemaRegistry;
 use carina_provider_awscc::provider::AwsccProviderConfig;
 use carina_provider_awscc::schemas::generated::sns::subscription::sns_subscription_config;
 use carina_provider_awscc::{AwsccNormalizer, AwsccProvider};
@@ -194,7 +193,7 @@ async fn sns_subscription_typed_policies_round_trip_and_server_default_has_no_di
     let id = resource.id.clone();
     let request = common::create_request(resource.clone()).await;
 
-    let created = carina_core::executor::dispatch_create(&provider, &id, request)
+    let created = common::dispatch_create(&provider, &id, request)
         .await
         .expect("sns.Subscription create_resource should succeed");
     let created = match created.into_kind() {
@@ -284,7 +283,12 @@ async fn sns_subscription_typed_policies_round_trip_and_server_default_has_no_di
         common::normalized_resolved_resource(subscription_resource(Some(false))).await;
     let desired_guaranteed_true =
         common::normalized_resolved_resource(subscription_resource(Some(true))).await;
-    let saved = RawSavedAttrs::default().lift(&SchemaRegistry::new());
+    let registry = carina_provider_awscc::schemas::schema_registry();
+    let saved = RawSavedAttrs::default().lift(&registry);
+    let router = carina_provider_awscc::test_comparison_router();
+    let comparison = router
+        .comparison_for(&registry, &desired_without_guaranteed.id)
+        .expect("SNS Subscription comparison context");
     let config = sns_subscription_config();
 
     // Exercise the repository's real differ before any provider read-state
@@ -296,6 +300,7 @@ async fn sns_subscription_typed_policies_round_trip_and_server_default_has_no_di
         &saved,
         None,
         Some(&config.schema),
+        comparison.context(),
     );
     assert!(
         matches!(result, Diff::NoChange(_)),
@@ -308,6 +313,7 @@ async fn sns_subscription_typed_policies_round_trip_and_server_default_has_no_di
         &saved,
         None,
         Some(&config.schema),
+        comparison.context(),
     );
     assert!(
         matches!(result, Diff::NoChange(_)),
@@ -320,6 +326,7 @@ async fn sns_subscription_typed_policies_round_trip_and_server_default_has_no_di
         &saved,
         None,
         Some(&config.schema),
+        comparison.context(),
     );
     assert!(
         !matches!(result, Diff::NoChange(_)),
@@ -339,6 +346,7 @@ async fn sns_subscription_typed_policies_round_trip_and_server_default_has_no_di
         &saved,
         None,
         Some(&config.schema),
+        comparison.context(),
     );
     assert!(
         matches!(result, Diff::NoChange(_)),
@@ -351,6 +359,7 @@ async fn sns_subscription_typed_policies_round_trip_and_server_default_has_no_di
         &saved,
         None,
         Some(&config.schema),
+        comparison.context(),
     );
     assert!(
         !matches!(result, Diff::NoChange(_)),

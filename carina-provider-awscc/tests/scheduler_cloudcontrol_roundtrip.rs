@@ -141,7 +141,7 @@ async fn stored_resource(
 async fn create(provider: &AwsccProvider, resource: Resource) -> AppliedState {
     let id = resource.id.clone();
     let request = common::create_request(resource).await;
-    let created = carina_core::executor::dispatch_create(provider, &id, request)
+    let created = common::dispatch_create(provider, &id, request)
         .await
         .expect("Scheduler create_resource should succeed");
     match created.into_kind() {

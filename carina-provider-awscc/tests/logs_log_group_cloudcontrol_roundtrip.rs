@@ -10,7 +10,6 @@ use aws_config::{BehaviorVersion, Region};
 use carina_core::differ::{Diff, diff};
 use carina_core::provider::{CreateOutcomeKind, Provider, RawSavedAttrs, ReadRequest};
 use carina_core::resource::{ConcreteValue, Resource, Value};
-use carina_core::schema::SchemaRegistry;
 use carina_provider_awscc::provider::AwsccProviderConfig;
 use carina_provider_awscc::schemas::generated::logs::log_group::logs_log_group_config;
 use carina_provider_awscc::{AwsccNormalizer, AwsccProvider};
@@ -202,7 +201,7 @@ async fn logs_policy_documents_round_trip_as_native_json_without_a_diff() {
     let id = resource.id.clone();
     let request = common::create_request(resource.clone()).await;
 
-    let created = carina_core::executor::dispatch_create(&provider, &id, request)
+    let created = common::dispatch_create(&provider, &id, request)
         .await
         .expect("logs.LogGroup create_resource should succeed");
     let created = match created.into_kind() {
@@ -265,7 +264,12 @@ async fn logs_policy_documents_round_trip_as_native_json_without_a_diff() {
         .await
         .expect("read state normalization should succeed");
     let desired = common::normalized_resolved_resource(resource).await;
-    let saved = RawSavedAttrs::default().lift(&SchemaRegistry::new());
+    let registry = carina_provider_awscc::schemas::schema_registry();
+    let saved = RawSavedAttrs::default().lift(&registry);
+    let router = carina_provider_awscc::test_comparison_router();
+    let comparison = router
+        .comparison_for(&registry, &desired.id)
+        .expect("Logs LogGroup comparison context");
     let config = logs_log_group_config();
     let result = diff(
         &desired,
@@ -273,6 +277,7 @@ async fn logs_policy_documents_round_trip_as_native_json_without_a_diff() {
         &saved,
         None,
         Some(&config.schema),
+        comparison.context(),
     );
     assert!(
         matches!(result, Diff::NoChange(_)),
@@ -286,7 +291,7 @@ async fn omitted_field_index_policies_and_read_back_empty_list_have_no_diff() {
     let resource = no_field_indexes_resource();
     let id = resource.id.clone();
     let request = common::create_request(resource.clone()).await;
-    carina_core::executor::dispatch_create(&provider, &id, request)
+    common::dispatch_create(&provider, &id, request)
         .await
         .expect("logs.LogGroup create_resource should succeed");
 
@@ -320,7 +325,12 @@ async fn omitted_field_index_policies_and_read_back_empty_list_have_no_diff() {
     );
 
     let desired = common::normalized_resolved_resource(resource).await;
-    let saved = RawSavedAttrs::default().lift(&SchemaRegistry::new());
+    let registry = carina_provider_awscc::schemas::schema_registry();
+    let saved = RawSavedAttrs::default().lift(&registry);
+    let router = carina_provider_awscc::test_comparison_router();
+    let comparison = router
+        .comparison_for(&registry, &desired.id)
+        .expect("Logs LogGroup comparison context");
     let config = logs_log_group_config();
     let result = diff(
         &desired,
@@ -328,6 +338,7 @@ async fn omitted_field_index_policies_and_read_back_empty_list_have_no_diff() {
         &saved,
         None,
         Some(&config.schema),
+        comparison.context(),
     );
     assert!(
         matches!(result, Diff::NoChange(_)),
@@ -342,6 +353,7 @@ async fn omitted_field_index_policies_and_read_back_empty_list_have_no_diff() {
         &saved,
         None,
         Some(&config.schema),
+        comparison.context(),
     );
     assert!(
         matches!(result, Diff::NoChange(_)),
@@ -358,6 +370,7 @@ async fn omitted_field_index_policies_and_read_back_empty_list_have_no_diff() {
         &saved,
         None,
         Some(&config.schema),
+        comparison.context(),
     );
     assert!(
         !matches!(result, Diff::NoChange(_)),

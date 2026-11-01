@@ -99,7 +99,7 @@ async fn ecs_cluster_create_then_read_round_trips_structured_list_fields() {
     let id = resource.id.clone();
     let request = common::create_request(resource).await;
 
-    let created = carina_core::executor::dispatch_create(&provider, &id, request)
+    let created = common::dispatch_create(&provider, &id, request)
         .await
         .expect("ecs.Cluster create_resource should succeed");
     let created = match created.into_kind() {

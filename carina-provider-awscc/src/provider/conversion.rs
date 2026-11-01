@@ -2327,7 +2327,7 @@ mod tests {
         // Validate the snake_case form (the canonical DSL spelling per D7).
         // Parser-level enum values are still EnumIdentifier before the host
         // resolves them at the provider boundary.
-        let snake_case_value = Value::Concrete(ConcreteValue::enum_identifier(
+        let snake_case_value: Value = Value::Concrete(ConcreteValue::enum_identifier(
             "aws.s3.Bucket.OwnershipControls.OwnershipControlsRule.ObjectOwnership.bucket_owner_enforced",
         ));
         let validated_schema = config
@@ -2351,7 +2351,7 @@ mod tests {
         // strict on DSL input — the PascalCase API spelling is
         // rejected. State JSON still flows through `aws_value_to_dsl`
         // separately, so this only gates DSL-source values.
-        let pascal_value = Value::Concrete(ConcreteValue::enum_identifier(
+        let pascal_value: Value = Value::Concrete(ConcreteValue::enum_identifier(
             "aws.s3.Bucket.OwnershipControls.OwnershipControlsRule.ObjectOwnership.BucketOwnerEnforced",
         ));
         assert!(

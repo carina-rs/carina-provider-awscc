@@ -220,7 +220,7 @@ async fn iam_role_create_with_role_name_prefix_canonicalizes_identifier_from_rea
     let id = resource.id.clone();
     let request = common::create_request(resource).await;
 
-    let created = carina_core::executor::dispatch_create(&provider, &id, request)
+    let created = common::dispatch_create(&provider, &id, request)
         .await
         .expect("iam.Role create should succeed with canonical RoleName identifier");
     let created = match created.into_kind() {

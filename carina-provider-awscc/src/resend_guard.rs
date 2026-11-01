@@ -128,6 +128,7 @@ fn assert_resend_guard(client: &aws_sdk_cloudcontrol::Client) {
     );
 }
 
+#[allow(clippy::result_large_err)]
 async fn send_create(
     client: &aws_sdk_cloudcontrol::Client,
 ) -> Result<

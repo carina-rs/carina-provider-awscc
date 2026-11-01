@@ -238,9 +238,7 @@ mod tests {
         ModuleConstraintGate, ProviderPreparationContext, prepare_provider_ready_resource,
     };
     use carina_core::provider::{PatchOp, build_update_patch as build_core_update_patch};
-    use carina_core::resource::{
-        ConcreteValue, DeferredValue, Resource, State, UnknownReason, Value,
-    };
+    use carina_core::resource::{ConcreteValue, Resource, State, Value};
     use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, SchemaRegistry};
     use indexmap::IndexMap;
 
@@ -623,7 +621,8 @@ mod tests {
             &desired,
             &from,
             &config.schema,
-        );
+        )
+        .expect("CloudFront Function patch must not ignore a write-only value");
 
         assert!(matches!(
             patch.ops.as_slice(),
@@ -769,7 +768,7 @@ mod tests {
         let patch = UpdatePatch {
             ops: vec![replace(
                 "instance_tenancy",
-                Value::Deferred(DeferredValue::Unknown(UnknownReason::ForValue)),
+                Value::resource_ref("network", "instance_tenancy", Vec::new()),
             )],
         };
 
@@ -786,7 +785,7 @@ mod tests {
         let patch = UpdatePatch {
             ops: vec![add(
                 "tags",
-                Value::Deferred(DeferredValue::Unknown(UnknownReason::ForValue)),
+                Value::resource_ref("tag_source", "tags", Vec::new()),
             )],
         };
 
@@ -810,7 +809,7 @@ mod tests {
         );
         tags.insert(
             "unresolved".to_string(),
-            Value::Deferred(DeferredValue::Unknown(UnknownReason::ForValue)),
+            Value::resource_ref("tag_source", "value", Vec::new()),
         );
         let patch = UpdatePatch {
             ops: vec![replace("tags", Value::Concrete(ConcreteValue::Map(tags)))],

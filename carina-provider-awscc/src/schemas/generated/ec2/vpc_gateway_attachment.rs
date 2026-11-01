@@ -5,7 +5,9 @@
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
 use crate::schemas::config::AwsccSchemaConfig;
-use carina_core::schema::{AttributeSchema, AttributeType, OperationConfig, ResourceSchema};
+use carina_core::schema::{
+    AttributeSchema, AttributeType, FieldGroup, OperationConfig, ResourceSchema,
+};
 
 /// Returns the schema config for ec2_vpc_gateway_attachment (AWS::EC2::VPCGatewayAttachment)
 #[rustfmt::skip]
@@ -54,7 +56,7 @@ pub fn ec2_vpc_gateway_attachment_config() -> AwsccSchemaConfig {
             create_max_retries: None,
             update_timeout_secs: None,
     });
-    schema = schema.exclusive_required(&["internet_gateway_id", "vpn_gateway_id"]);
+    schema = schema.field_group(FieldGroup::exactly_one(["internet_gateway_id", "vpn_gateway_id"]).expect("generated exactly-one field group must be valid"));
     AwsccSchemaConfig {
         aws_type_name: "AWS::EC2::VPCGatewayAttachment",
         resource_type_name: "ec2.VpcGatewayAttachment",

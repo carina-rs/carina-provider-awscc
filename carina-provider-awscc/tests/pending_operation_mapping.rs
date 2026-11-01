@@ -23,10 +23,10 @@ use carina_core::binding_index::ResolvedBindings;
 use carina_core::executor::{ModuleConstraintGate, ProviderPreparationContext};
 use carina_core::provider::{
     AppliedIdentifier, AppliedState, CreateAttempt, CreateFailureKind, DeleteRequest, Observation,
-    PatchOp, PendingToken, Poll, ProviderError, ReadOutcome, ResumeCreateRequest,
-    ResumeFailureKind, Sent, UpdateOutcome, UpdatePatch,
+    PatchOp, PendingToken, Poll, ProviderDirectiveSchema, ProviderError, ReadOutcome,
+    ResumeCreateRequest, ResumeFailureKind, Sent, UpdateOutcome, UpdatePatch,
 };
-use carina_core::resource::{ConcreteValue, Resource, ResourceId, State, Value};
+use carina_core::resource::{ConcreteValue, Directives, Resource, ResourceId, State, Value};
 use carina_core::schema::SchemaRegistry;
 use carina_provider_awscc::provider::{
     AwsccProviderConfig, CcCreateAttempt, CcCreatePoll, CcCreateResume, CcIssuedCreate,
@@ -34,7 +34,7 @@ use carina_provider_awscc::provider::{
 };
 use carina_provider_awscc::{
     AwsccNormalizer, AwsccProvider, BoundedSdkConfig, CcCreateToken, CcDeleteToken, CcRequestPhase,
-    CcUpdateToken, RequestToken, UndeterminedCreate,
+    CcUpdateToken, InFlightCreate, RequestToken,
 };
 use carina_provider_protocol::OperationStep;
 use indexmap::IndexMap;
@@ -59,6 +59,10 @@ fn internet_gateway_identifier() -> carina_core::provider::AppliedIdentifier {
 
 fn transit_gateway_identifier() -> carina_core::provider::AppliedIdentifier {
     common::applied_identifier(TRANSIT_GATEWAY_ID)
+}
+
+fn delete_request() -> DeleteRequest {
+    DeleteRequest::resolve(&Directives::default(), ProviderDirectiveSchema::Unavailable)
 }
 
 #[derive(Clone)]
@@ -441,22 +445,14 @@ enum TestCreateStep {
 #[derive(Debug)]
 enum TestCreateVerdict {
     Untracked(Box<ProviderError>),
-    Undetermined {
+    InFlight {
         token: CcCreateToken,
+        identifier: Option<AppliedIdentifier>,
         error: Box<ProviderError>,
     },
     Created {
         identifier: AppliedIdentifier,
         observation: Box<Observation>,
-        error: Box<ProviderError>,
-    },
-    Preserved {
-        token: CcCreateToken,
-        identifier: AppliedIdentifier,
-        error: Box<ProviderError>,
-    },
-    ResumePreserved {
-        identifier: Option<AppliedIdentifier>,
         error: Box<ProviderError>,
     },
     Discarded(Box<ProviderError>),
@@ -487,6 +483,7 @@ impl CcCreateAttempt for TestCreateAttempt {
         _sent: Sent,
         poll_after_secs: u32,
     ) -> Result<Self::Step, Self::Verdict> {
+        let token = token.with_poll_after_secs(poll_after_secs);
         Ok(TestCreateStep::Pending {
             token,
             poll_after_secs,
@@ -504,10 +501,11 @@ impl CcPollAttempt for TestCreateAttempt {
         TestCreateVerdict::Untracked(Box::new(failure.into_error()))
     }
 
-    fn undetermined(self, token: CcCreateToken, failure: UndeterminedCreate) -> Self::Verdict {
+    fn preserve(self, token: CcCreateToken, failure: InFlightCreate) -> Self::Verdict {
         let error = failure.into_error();
-        TestCreateVerdict::Undetermined {
+        TestCreateVerdict::InFlight {
             token,
+            identifier: None,
             error: Box::new(error),
         }
     }
@@ -521,6 +519,7 @@ impl CcPollAttempt for TestCreateAttempt {
         token: CcCreateToken,
         poll_after_secs: u32,
     ) -> Result<Self::Step, Self::Verdict> {
+        let token = token.with_poll_after_secs(poll_after_secs);
         Ok(TestCreateStep::Pending {
             token,
             poll_after_secs,
@@ -576,9 +575,9 @@ impl CcIssuedCreate for TestIssuedCreate {
     }
 
     fn preserve(self, token: CcCreateToken, error: ProviderError) -> Self::Verdict {
-        TestCreateVerdict::Preserved {
+        TestCreateVerdict::InFlight {
             token,
-            identifier: self.identifier,
+            identifier: Some(self.identifier),
             error: Box::new(error),
         }
     }
@@ -588,6 +587,7 @@ impl CcIssuedCreate for TestIssuedCreate {
         token: CcCreateToken,
         poll_after_secs: u32,
     ) -> Result<Self::Step, Self::Verdict> {
+        let token = token.with_poll_after_secs(poll_after_secs);
         Ok(TestCreateStep::Pending {
             token,
             poll_after_secs,
@@ -606,8 +606,9 @@ impl CcResumeAttempt for TestCreateAttempt {
         TestCreateVerdict::Untracked(Box::new(failure.into_error()))
     }
 
-    fn preserve(self, error: ProviderError) -> Self::Verdict {
-        TestCreateVerdict::ResumePreserved {
+    fn preserve(self, token: CcCreateToken, error: ProviderError) -> Self::Verdict {
+        TestCreateVerdict::InFlight {
+            token,
             identifier: None,
             error: Box::new(error),
         }
@@ -622,6 +623,7 @@ impl CcResumeAttempt for TestCreateAttempt {
         token: CcCreateToken,
         poll_after_secs: u32,
     ) -> Result<Self::Step, Self::Verdict> {
+        let token = token.with_poll_after_secs(poll_after_secs);
         Ok(TestCreateStep::Pending {
             token,
             poll_after_secs,
@@ -667,8 +669,9 @@ impl CcResumedCreate for TestIssuedCreate {
         TestCreateVerdict::Discarded(Box::new(error))
     }
 
-    fn preserve(self, error: ProviderError) -> Self::Verdict {
-        TestCreateVerdict::ResumePreserved {
+    fn preserve(self, token: CcCreateToken, error: ProviderError) -> Self::Verdict {
+        TestCreateVerdict::InFlight {
+            token,
             identifier: Some(self.identifier),
             error: Box::new(error),
         }
@@ -679,6 +682,7 @@ impl CcResumedCreate for TestIssuedCreate {
         token: CcCreateToken,
         poll_after_secs: u32,
     ) -> Result<Self::Step, Self::Verdict> {
+        let token = token.with_poll_after_secs(poll_after_secs);
         Ok(TestCreateStep::Pending {
             token,
             poll_after_secs,
@@ -956,6 +960,7 @@ fn legacy_in_flight_tokens_ignore_dead_client_token_data() {
             "request": "create-request",
             "attempt": 4,
             "identifier": VPC_ID,
+            "poll_after_secs": 5,
         })
     );
 }
@@ -981,6 +986,11 @@ fn expect_create_pending(step: TestCreateStep) -> (CcCreateToken, u32) {
             issued,
         } => {
             let _ = issued.as_ref();
+            assert_eq!(
+                token.poll_after_secs(),
+                poll_after_secs,
+                "the continuation token must retain the exact host poll cadence"
+            );
             (token, poll_after_secs)
         }
         TestCreateStep::Partial { identifier, reason } => {
@@ -1190,7 +1200,7 @@ async fn unconfirmed_create_rejection_from_native_drive_preserves_in_flight_toke
     let id = resource.id.clone();
     let request = common::create_request(resource).await;
 
-    let failure = carina_core::executor::dispatch_create(&provider, &id, request)
+    let failure = common::dispatch_create(&provider, &id, request)
         .await
         .expect_err("a rejected resend cannot disprove the earlier create send");
     let CreateFailureKind::InFlight { pending, error } = failure.into_kind() else {
@@ -1258,7 +1268,7 @@ async fn unconfirmed_create_rejection_from_poll_preserves_in_flight_token() {
 }
 
 #[tokio::test]
-async fn unissued_poll_unconfirmed_rejection_is_undetermined_with_same_token() {
+async fn unissued_poll_unconfirmed_rejection_is_in_flight_with_same_token() {
     let (provider, service) =
         provider_with_script([("CreateResource", vec![invalid_request()])]).await;
     let resource = common::normalize_resource(vpc_resource()).await;
@@ -1276,14 +1286,15 @@ async fn unissued_poll_unconfirmed_rejection_is_undetermined_with_same_token() {
             CcCreatePoll::Unissued(TestCreateAttempt),
         )
         .await
-        .expect_err("a rejected unconfirmed resend must remain undetermined");
+        .expect_err("a rejected unconfirmed resend must remain in flight");
 
-    let TestCreateVerdict::Undetermined {
+    let TestCreateVerdict::InFlight {
         token: preserved,
+        identifier: None,
         error,
     } = failure
     else {
-        panic!("an unissued unconfirmed rejection must be undetermined");
+        panic!("an unissued unconfirmed rejection must remain in flight");
     };
     assert_eq!(preserved, token);
     assert_cloudcontrol_api_error(
@@ -1444,9 +1455,9 @@ async fn issued_poll_unconfirmed_non_retryable_rejection_preserves_create() {
         .await
         .expect_err("a permanent rejection cannot disprove an earlier create send");
 
-    let TestCreateVerdict::Preserved {
+    let TestCreateVerdict::InFlight {
         token: preserved,
-        identifier,
+        identifier: Some(identifier),
         error,
     } = failure
     else {
@@ -1553,15 +1564,24 @@ async fn resume_unknown_resource_type_preserves_unissued_and_issued_witnesses() 
     ];
 
     for (label, token, resume, expected_identifier) in cases {
-        let failure = match provider.resume_create_step(&resource, token, resume).await {
+        let failure = match provider
+            .resume_create_step(&resource, token.clone(), resume)
+            .await
+        {
             Err(failure) => failure,
             Ok(step) => {
                 panic!("{label} unknown-type resume must preserve its error, got {step:?}")
             }
         };
-        let TestCreateVerdict::ResumePreserved { identifier, error } = failure else {
+        let TestCreateVerdict::InFlight {
+            token: preserved,
+            identifier,
+            error,
+        } = failure
+        else {
             panic!("{label} unknown-type resume must use the preserving verdict");
         };
+        assert_eq!(preserved, token);
         assert_eq!(identifier, expected_identifier);
         assert_eq!(error.variant_name(), "internal");
         assert_eq!(
@@ -1637,9 +1657,8 @@ async fn accepted_in_progress_create_over_budget_preserves_token_and_identifier(
     let id = resource.id.clone();
     let request = common::create_request(resource).await;
 
-    let create = tokio::spawn(async move {
-        carina_core::executor::dispatch_create(&provider, &id, request).await
-    });
+    let create =
+        tokio::spawn(async move { common::dispatch_create(&provider, &id, request).await });
     for _ in 0..32 {
         if service.calls("CreateResource") == 1 {
             break;
@@ -1688,7 +1707,7 @@ async fn accepted_in_progress_create_over_budget_preserves_token_and_identifier(
 }
 
 #[tokio::test(start_paused = true)]
-async fn status_sdk_error_re_pends_the_issued_create() {
+async fn status_sdk_error_preserves_the_issued_create_in_flight() {
     let (provider, service) = provider_with_script([(
         "GetResourceRequestStatus",
         vec![Reply::Error {
@@ -1701,20 +1720,21 @@ async fn status_sdk_error_re_pends_the_issued_create() {
     let resource = common::normalize_resource(vpc_resource()).await;
     let token = in_flight_create_token(Some(VPC_ID));
 
-    let next = poll_test_create(&provider, resource.as_resource(), token.clone())
+    let failure = poll_test_create(&provider, resource.as_resource(), token.clone())
         .await
-        .expect("status SDK errors must keep an issued request in flight");
-    let TestCreateStep::Pending {
+        .expect_err("status SDK errors must report an in-flight verdict");
+    let TestCreateVerdict::InFlight {
         token: next_token,
-        issued: Some(identifier),
-        poll_after_secs,
-    } = next
+        identifier: Some(identifier),
+        error,
+    } = failure
     else {
-        panic!("status SDK error must produce an issued pending step");
+        panic!("status SDK error must preserve the issued create");
     };
     assert_eq!(next_token, token);
     assert_eq!(identifier.as_str(), VPC_ID);
-    assert_eq!(poll_after_secs, 5);
+    assert_eq!(next_token.poll_after_secs(), 5);
+    assert_eq!(error.detail().context(), "Failed to get operation status");
     assert_eq!(service.calls("GetResource"), 0);
     assert_eq!(service.calls("GetResourceRequestStatus"), 3);
 }
@@ -1983,7 +2003,7 @@ async fn resume_expired_token_without_identifier_preserves_pending_token() {
     let request = resume_request_for_token(vpc_resource(), &token).await;
     let failure = carina_core::executor::dispatch_resume_create(&provider, request)
         .await
-        .expect_err("an unknown request with no identifier is undetermined");
+        .expect_err("an unknown request with no identifier remains in flight");
 
     let ResumeFailureKind::InFlight { pending, error } = failure.into_kind() else {
         panic!("expired token without an identifier must remain in flight");
@@ -2002,7 +2022,7 @@ async fn resume_expired_token_without_identifier_preserves_pending_token() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn resume_status_sdk_error_without_identifier_re_pends_with_backoff() {
+async fn resume_status_sdk_error_without_identifier_stays_in_flight_with_backoff() {
     let (provider, service) = provider_with_script([(
         "GetResourceRequestStatus",
         vec![Reply::Error {
@@ -2015,25 +2035,26 @@ async fn resume_status_sdk_error_without_identifier_re_pends_with_backoff() {
     let resource = common::normalize_resource(vpc_resource()).await;
 
     let token = in_flight_create_token(None);
-    let step = provider
+    let failure = provider
         .resume_create_step(
             resource.as_resource(),
             token.clone(),
             CcCreateResume::<TestCreateAttempt, TestIssuedCreate>::Unissued(TestCreateAttempt),
         )
         .await
-        .expect("status SDK errors must keep an accepted request pending");
+        .expect_err("status SDK errors must report an in-flight verdict");
 
-    let TestCreateStep::Pending {
+    let TestCreateVerdict::InFlight {
         token: next_token,
-        poll_after_secs,
-        issued: None,
-    } = step
+        identifier: None,
+        error,
+    } = failure
     else {
-        panic!("unissued resume status error must produce an unissued pending step");
+        panic!("unissued resume status error must preserve the accepted create");
     };
     assert_eq!(next_token, token);
-    assert_eq!(poll_after_secs, 5);
+    assert_eq!(next_token.poll_after_secs(), 5);
+    assert_eq!(error.detail().context(), "Failed to get operation status");
     assert_eq!(service.calls("GetResource"), 0);
     assert_eq!(service.calls("GetResourceRequestStatus"), 3);
 }
@@ -2160,7 +2181,7 @@ async fn pending_statuses_keep_the_same_create_token_and_success_reads_back() {
                 && create.attempt() == 0
                 && create.identifier() == Some(VPC_ID)
     ));
-    let expected = token.clone();
+    let expected = token.clone().with_poll_after_secs(5);
 
     for expected_status in ["PENDING", "IN_PROGRESS"] {
         let (next, delay) = expect_create_pending(
@@ -2609,8 +2630,9 @@ async fn failed_status_retry_follows_message_not_handler_error_code() {
     let failure = poll_test_create(&provider, resource.as_resource(), token.clone())
         .await
         .expect_err("a retryable-looking code must not override a permanent message");
-    let TestCreateVerdict::Undetermined {
+    let TestCreateVerdict::InFlight {
         token: preserved,
+        identifier: None,
         error,
     } = failure
     else {
@@ -2694,7 +2716,7 @@ async fn retryable_failed_create_with_identifier_is_created_without_reissue() {
 }
 
 #[tokio::test]
-async fn cancel_complete_without_identifier_is_undetermined_without_reissue() {
+async fn cancel_complete_without_identifier_remains_in_flight_without_reissue() {
     let (provider, service) = provider_with_script([
         (
             "CreateResource",
@@ -2718,8 +2740,9 @@ async fn cancel_complete_without_identifier_is_undetermined_without_reissue() {
     let failure = poll_test_create(&provider, resource.as_resource(), token)
         .await
         .expect_err("a deliberately canceled create must not be re-issued");
-    let TestCreateVerdict::Undetermined {
+    let TestCreateVerdict::InFlight {
         token: preserved,
+        identifier: None,
         error,
     } = failure
     else {
@@ -2741,7 +2764,7 @@ async fn retryable_failed_delete_schedules_reissue_after_backoff() {
     ])
     .await;
     let id = ResourceId::with_provider_identity("awscc", "ec2.Vpc", "pending", None);
-    let request = DeleteRequest::default();
+    let request = delete_request();
     let (token, delay) = expect_delete_pending(
         provider
             .delete_step(&id, &vpc_identifier(), &request)
@@ -2776,7 +2799,7 @@ async fn delete_post_send_timeout_resends_with_same_client_token() {
     )
     .await;
     let id = ResourceId::with_provider_identity("awscc", "ec2.Vpc", "pending", None);
-    let request = DeleteRequest::default();
+    let request = delete_request();
 
     let (token, delay) = expect_delete_pending(
         provider
@@ -2827,7 +2850,7 @@ async fn unconfirmed_delete_rejection_reports_unknown_earlier_outcome() {
     )
     .await;
     let id = ResourceId::with_provider_identity("awscc", "ec2.Vpc", "pending", None);
-    let request = DeleteRequest::default();
+    let request = delete_request();
     let (token, delay) = expect_delete_pending(
         provider
             .delete_step(&id, &vpc_identifier(), &request)
@@ -2866,7 +2889,7 @@ async fn delete_one_post_send_timeout_then_uncapped_throttling_stays_pending() {
     )
     .await;
     let id = ResourceId::with_provider_identity("awscc", "ec2.Vpc", "pending", None);
-    let request = DeleteRequest::default();
+    let request = delete_request();
 
     let (mut token, delay) = expect_delete_pending(
         provider
@@ -2922,7 +2945,7 @@ async fn delete_repeated_post_send_timeouts_past_max_attempts_stay_pending() {
     )
     .await;
     let id = ResourceId::with_provider_identity("awscc", "ec2.Vpc", "pending", None);
-    let request = DeleteRequest::default();
+    let request = delete_request();
 
     let (mut token, delay) = expect_delete_pending(
         provider
@@ -2971,7 +2994,7 @@ async fn delete_repeated_post_send_timeouts_past_max_attempts_stay_pending() {
 async fn delete_throttling_reuses_client_token_until_retry_cap() {
     let (provider, service) = provider_with_script([("DeleteResource", vec![throttled()])]).await;
     let id = ResourceId::with_provider_identity("awscc", "ec2.Vpc", "pending", None);
-    let request = DeleteRequest::default();
+    let request = delete_request();
 
     let (mut token, _) = expect_delete_pending(
         provider
@@ -3031,7 +3054,7 @@ async fn terminal_failed_delete_rotates_client_token_before_reissue() {
     )
     .await;
     let id = ResourceId::with_provider_identity("awscc", "ec2.Vpc", "pending", None);
-    let request = DeleteRequest::default();
+    let request = delete_request();
 
     let (token, delay) = expect_delete_pending(
         provider
@@ -3111,7 +3134,7 @@ async fn transit_gateway_delete_uses_per_type_retry_override_past_attempt_twelve
     ])
     .await;
     let id = ResourceId::with_provider_identity("awscc", "ec2.TransitGateway", "pending", None);
-    let request = DeleteRequest::default();
+    let request = delete_request();
     let (mut token, _) = expect_delete_pending(
         provider
             .delete_step(&id, &transit_gateway_identifier(), &request)
@@ -3165,7 +3188,7 @@ async fn retryable_failed_delete_with_identifier_errors_without_reissue() {
     ])
     .await;
     let id = ResourceId::with_provider_identity("awscc", "ec2.Vpc", "pending", None);
-    let request = DeleteRequest::default();
+    let request = delete_request();
     let (token, _) = expect_delete_pending(
         provider
             .delete_step(&id, &vpc_identifier(), &request)
@@ -3183,7 +3206,7 @@ async fn retryable_failed_delete_with_identifier_errors_without_reissue() {
 }
 
 #[tokio::test]
-async fn non_retryable_failed_status_preserves_undetermined_and_created_outcomes() {
+async fn non_retryable_failed_status_preserves_in_flight_and_created_outcomes() {
     let (provider, _) = provider_with_script([
         (
             "CreateResource",
@@ -3210,8 +3233,9 @@ async fn non_retryable_failed_status_preserves_undetermined_and_created_outcomes
     let error = poll_test_create(&provider, resource.as_resource(), token)
         .await
         .expect_err("failed create without identifier must error");
-    let TestCreateVerdict::Undetermined {
+    let TestCreateVerdict::InFlight {
         token: preserved,
+        identifier: None,
         error,
     } = error
     else {
@@ -3317,8 +3341,9 @@ async fn status_retry_exhaustion_preserves_the_last_operation_failure() {
         .await
         .expect_err("final retryable status should return its real failure");
 
-    let TestCreateVerdict::Undetermined {
+    let TestCreateVerdict::InFlight {
         token: preserved,
+        identifier: None,
         error,
     } = error
     else {
@@ -3773,7 +3798,7 @@ async fn update_and_delete_non_retryable_service_errors_are_terminal() {
         .await
         .expect_err("non-retryable update rejection should be terminal");
     provider
-        .delete_step(&id, &vpc_identifier(), &DeleteRequest::default())
+        .delete_step(&id, &vpc_identifier(), &delete_request())
         .await
         .expect_err("non-retryable delete rejection should be terminal");
     assert_eq!(service.calls("UpdateResource"), 1);
@@ -3862,7 +3887,7 @@ async fn internet_gateway_delete_detaches_then_deletes() {
     ])
     .await;
     let id = ResourceId::with_provider_identity("awscc", "ec2.InternetGateway", "pending", None);
-    let request = DeleteRequest::default();
+    let request = delete_request();
 
     let (token, delay) = expect_delete_pending(
         provider
@@ -3936,7 +3961,7 @@ async fn internet_gateway_detach_not_issued_rechecks_then_resets_delete_attempt(
     ])
     .await;
     let id = ResourceId::with_provider_identity("awscc", "ec2.InternetGateway", "pending", None);
-    let request = DeleteRequest::default();
+    let request = delete_request();
 
     let (token, delay) = expect_delete_pending(
         provider
@@ -4012,7 +4037,7 @@ async fn internet_gateway_detach_not_issued_skips_resend_when_already_detached()
     ])
     .await;
     let id = ResourceId::with_provider_identity("awscc", "ec2.InternetGateway", "pending", None);
-    let request = DeleteRequest::default();
+    let request = delete_request();
 
     let (token, _) = expect_delete_pending(
         provider
@@ -4070,7 +4095,7 @@ async fn internet_gateway_unconfirmed_detach_resends_without_rechecking_attachme
     ])
     .await;
     let id = ResourceId::with_provider_identity("awscc", "ec2.InternetGateway", "pending", None);
-    let request = DeleteRequest::default();
+    let request = delete_request();
     let token: CcDeleteToken = serde_json::from_value(json!({
         "phase": "detach_igw",
         "request": {
@@ -4135,7 +4160,7 @@ async fn internet_gateway_detach_partial_failure_does_not_reissue_or_delete() {
     ])
     .await;
     let id = ResourceId::with_provider_identity("awscc", "ec2.InternetGateway", "pending", None);
-    let request = DeleteRequest::default();
+    let request = delete_request();
     let (token, _) = expect_delete_pending(
         provider
             .delete_step(&id, &internet_gateway_identifier(), &request)
@@ -4181,11 +4206,7 @@ async fn unattached_internet_gateway_goes_straight_to_delete() {
 
     let (token, delay) = expect_delete_pending(
         provider
-            .delete_step(
-                &id,
-                &internet_gateway_identifier(),
-                &DeleteRequest::default(),
-            )
+            .delete_step(&id, &internet_gateway_identifier(), &delete_request())
             .await
             .expect("issue direct IGW delete"),
     );

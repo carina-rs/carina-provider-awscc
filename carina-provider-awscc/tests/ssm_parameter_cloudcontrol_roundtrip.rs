@@ -115,7 +115,7 @@ async fn ssm_parameter_create_then_read_preserves_map_tags() {
     let id = resource.id.clone();
     let request = common::create_request(resource).await;
 
-    let created = carina_core::executor::dispatch_create(&provider, &id, request)
+    let created = common::dispatch_create(&provider, &id, request)
         .await
         .expect("ssm.Parameter create_resource should succeed");
     let created = match created.into_kind() {

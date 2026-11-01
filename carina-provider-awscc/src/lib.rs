@@ -20,31 +20,149 @@ mod resend_guard;
 // Re-export main types
 pub use provider::{
     AwsccProvider, CcCreateToken, CcDeleteToken, CcRequestPhase, CcUpdateToken, ClientToken,
-    RequestToken, UndeterminedCreate,
+    InFlightCreate, RequestToken,
 };
 pub use sdk_config::BoundedSdkConfig;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use indexmap::IndexMap;
 
 use carina_core::effect::PlanOp;
 use carina_core::provider::{
     AppliedIdentifier, BoxFuture, CanonicalProviderConfigAttributes, CreateAttempt, CreateFailure,
-    CreateOutcome, CreateRequest, DeleteRequest, Provider, ProviderError, ProviderFactory,
-    ProviderNormalizer, ProviderReadyConfig, ProviderReadyDataSource, ProviderResult, ReadOutcome,
-    ReadRequest, ResumeCreateRequest, ResumeFailure, ResumeOutcome, SavedAttrs, StateTransformMap,
+    CreateOutcome, CreateRequest, DeleteRequest, InitializeOutcome, InitializeOutcomeMint,
+    Provider, ProviderError, ProviderFactory, ProviderInitialization, ProviderNormalizer,
+    ProviderReadyConfig, ProviderReadyDataSource, ProviderResult, ReadOutcome, ReadRequest,
+    ResumeCreateRequest, ResumeFailure, ResumeOutcome, SavedAttrs, StateTransformMap,
     UpdateOutcome, UpdateRequest, ready_noop,
 };
 use carina_core::resource::{ConcreteValue, ProviderResource, ResourceId, State, Value};
-use carina_core::schema::{ValidatedConfigSchema, ValidatedResourceSchema};
+use carina_core::schema::{
+    ValidatedConfigSchema, ValidatedProviderSchemaWitness, ValidatedResourceSchema,
+};
 
 use crate::provider::AwsccProviderConfig;
+
+#[cfg(debug_assertions)]
+struct ComparisonOnlyProvider;
+
+#[cfg(debug_assertions)]
+impl Provider for ComparisonOnlyProvider {
+    fn name(&self) -> &str {
+        "awscc-comparison-only"
+    }
+
+    fn read(
+        &self,
+        _id: &ResourceId,
+        _identifier: &AppliedIdentifier,
+        _request: ReadRequest,
+    ) -> BoxFuture<'_, ProviderResult<ReadOutcome>> {
+        panic!("comparison-only provider must not dispatch read")
+    }
+
+    fn read_data_source(
+        &self,
+        _resource: &ProviderReadyDataSource,
+    ) -> BoxFuture<'_, ProviderResult<State>> {
+        panic!("comparison-only provider must not dispatch data-source read")
+    }
+
+    fn create(
+        &self,
+        _id: &ResourceId,
+        _request: CreateRequest,
+        _attempt: CreateAttempt,
+    ) -> BoxFuture<'_, Result<CreateOutcome, CreateFailure>> {
+        panic!("comparison-only provider must not dispatch create")
+    }
+
+    fn resume_create(
+        &self,
+        _request: ResumeCreateRequest,
+    ) -> BoxFuture<'_, Result<ResumeOutcome, ResumeFailure>> {
+        panic!("comparison-only provider must not dispatch resume-create")
+    }
+
+    fn update(
+        &self,
+        _id: &ResourceId,
+        _identifier: &AppliedIdentifier,
+        _request: UpdateRequest,
+    ) -> BoxFuture<'_, ProviderResult<UpdateOutcome>> {
+        panic!("comparison-only provider must not dispatch update")
+    }
+
+    fn delete(
+        &self,
+        _id: &ResourceId,
+        _identifier: &AppliedIdentifier,
+        _request: DeleteRequest,
+    ) -> BoxFuture<'_, ProviderResult<()>> {
+        panic!("comparison-only provider must not dispatch delete")
+    }
+
+    fn required_permissions(&self, _id: &ResourceId, _op: PlanOp) -> ProviderResult<Vec<String>> {
+        panic!("comparison-only provider must not dispatch permission lookup")
+    }
+}
+
+/// Build the protocol-v13 comparison router used by tests. AWSCC declares no
+/// reference forms in this change and initialization reports scope unavailable,
+/// so tests resolve the same pair through core's initialized-provider route.
+#[doc(hidden)]
+#[cfg(debug_assertions)]
+pub fn test_comparison_router() -> carina_core::provider::ProviderRouter {
+    let mut router = carina_core::provider::ProviderRouter::new();
+    router.add_provider(
+        "awscc".to_string(),
+        carina_core::provider::InitializedProvider::unavailable(Box::new(ComparisonOnlyProvider)),
+    );
+    router
+}
 
 /// Schema extension for the AWSCC provider.
 ///
 /// Handles provider-local state normalization.
 pub struct AwsccNormalizer;
+
+impl AwsccNormalizer {
+    /// Normalize a protocol-v13 desired projection whose deferred top-level
+    /// values remain owned by the host.
+    ///
+    /// AWSCC has no desired-side provider mutations: enum canonicalization is
+    /// host-owned and all provider transforms are read-state-only. The typed
+    /// deferred-name sets are still admitted here so that adding a future
+    /// desired transform cannot silently collapse Deferred into Absent.
+    #[doc(hidden)]
+    pub fn normalize_desired_with_host_deferred(
+        &self,
+        resources: &mut [ProviderResource],
+        deferred_by_resource: &[BTreeSet<String>],
+    ) -> ProviderResult<()> {
+        if resources.len() != deferred_by_resource.len() {
+            return Err(ProviderError::internal(format!(
+                "desired normalization received {} resources but {} deferred-name sets",
+                resources.len(),
+                deferred_by_resource.len()
+            )));
+        }
+
+        for (resource, deferred) in resources.iter().zip(deferred_by_resource) {
+            if let Some(name) = deferred
+                .iter()
+                .find(|name| resource.attributes.contains_key(name.as_str()))
+            {
+                return Err(ProviderError::internal(format!(
+                    "desired normalization received host-deferred attribute `{name}` as a value"
+                ))
+                .for_resource(resource.id.clone()));
+            }
+        }
+        Ok(())
+    }
+}
 
 impl ProviderNormalizer for AwsccNormalizer {
     // Desired-side enum canonicalization is owned by the host. Keeping
@@ -62,12 +180,12 @@ impl ProviderNormalizer for AwsccNormalizer {
         current_states: &'a mut StateTransformMap,
     ) -> BoxFuture<'a, ProviderResult<()>> {
         Box::pin(async move {
-            crate::provider::normalize_state_string_dsl_transforms_impl(current_states);
+            crate::provider::normalize_state_string_dsl_transforms_impl(&mut *current_states);
             // Canonicalize `Union[String, list(String)]` typed values
             // (IAM-style `string_or_list_of_strings`) so AWS's silent
             // scalar normalization no longer leaks past the provider
             // boundary. See carina-rs/carina#2481, sub-issue 5.
-            crate::provider::canonicalize_string_or_list_states_impl(current_states);
+            crate::provider::canonicalize_string_or_list_states_impl(&mut *current_states);
             Ok(())
         })
     }
@@ -121,9 +239,10 @@ impl ProviderFactory for OwnerOnlyAwsccFactory {
         &self,
         _binding: Option<&str>,
         _config: &ProviderReadyConfig,
-    ) -> BoxFuture<'_, ProviderResult<Box<dyn Provider>>> {
+        _initialize_outcome: InitializeOutcomeMint,
+    ) -> BoxFuture<'_, ProviderResult<ProviderInitialization>> {
         Box::pin(async {
-            Err::<Box<dyn Provider>, _>(ProviderError::internal(
+            Err(ProviderError::internal(
                 "schema-only test factory cannot create providers",
             ))
         })
@@ -131,6 +250,15 @@ impl ProviderFactory for OwnerOnlyAwsccFactory {
 
     fn schemas(&self) -> Vec<ValidatedResourceSchema> {
         Vec::new()
+    }
+
+    fn schema_witness(&self) -> ValidatedProviderSchemaWitness {
+        ValidatedProviderSchemaWitness::new(
+            Vec::new(),
+            ValidatedConfigSchema::default(),
+            Default::default(),
+        )
+        .expect("empty schema-only provider witness must be valid")
     }
 }
 
@@ -187,7 +315,8 @@ impl ProviderFactory for AwsccProviderFactory {
         &self,
         _binding: Option<&str>,
         config: &ProviderReadyConfig,
-    ) -> BoxFuture<'_, Result<Box<dyn Provider>, carina_core::provider::ProviderError>> {
+        _initialize_outcome: InitializeOutcomeMint,
+    ) -> BoxFuture<'_, ProviderResult<ProviderInitialization>> {
         // `_binding` is intentionally unused: the AWS Cloud Control
         // factory does not cache instances, so each call already
         // produces an independent `AwsccProvider`. The host uses the
@@ -196,7 +325,8 @@ impl ProviderFactory for AwsccProviderFactory {
         let region = self.extract_region(config.attributes());
         let cfg = extract_provider_config(config.attributes());
         Box::pin(async move {
-            Ok(Box::new(AwsccProvider::new_with_config(&region, &cfg).await) as Box<dyn Provider>)
+            let provider = AwsccProvider::new_with_config(&region, &cfg).await;
+            Ok(InitializeOutcome::unavailable().with_provider(Box::new(provider)))
         })
     }
 
@@ -210,6 +340,10 @@ impl ProviderFactory for AwsccProviderFactory {
 
     fn schemas(&self) -> Vec<ValidatedResourceSchema> {
         schemas::all_schemas()
+    }
+
+    fn schema_witness(&self) -> ValidatedProviderSchemaWitness {
+        schemas::provider_schema_witness()
     }
 
     fn identity_attributes(&self) -> Vec<&str> {
@@ -372,16 +506,14 @@ impl Provider for AwsccProvider {
     ) -> BoxFuture<'_, ProviderResult<()>> {
         let id = id.clone();
         let identifier = identifier.clone();
-        Box::pin(async move {
-            self.delete_resource(&id, &identifier, &request.directives)
-                .await
-        })
+        Box::pin(async move { self.delete_resource(&id, &identifier, request).await })
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use carina_core::resource::Resource;
 
     #[test]
     fn extract_provider_config_reads_both_lists() {
@@ -414,6 +546,27 @@ mod tests {
         let cfg = extract_provider_config(&attrs);
         assert!(cfg.allowed_account_ids.is_empty());
         assert!(cfg.forbidden_account_ids.is_empty());
+    }
+
+    #[test]
+    fn desired_normalizer_keeps_host_deferred_names_as_metadata() {
+        let resource: Resource =
+            Resource::with_provider("awscc", "s3.Bucket", "deferred-name", None);
+        let mut resources = vec![ProviderResource::from(resource)];
+        let deferred = vec![BTreeSet::from(["bucket_name".to_string()])];
+
+        AwsccNormalizer
+            .normalize_desired_with_host_deferred(&mut resources, &deferred)
+            .expect("typed deferred metadata should be accepted");
+
+        assert!(
+            !resources[0].attributes.contains_key("bucket_name"),
+            "a host-deferred attribute must never be fabricated or defaulted"
+        );
+        assert!(
+            !resources[0].attributes.contains_key("ordinary_absent"),
+            "an absent attribute must never be defaulted by AWSCC desired normalization"
+        );
     }
 
     #[test]

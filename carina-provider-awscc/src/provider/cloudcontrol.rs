@@ -105,6 +105,10 @@ mod client_token {
         ClientToken(uuid::Uuid::new_v4().to_string())
     }
 
+    fn default_create_poll_after_secs() -> u32 {
+        super::POLL_AFTER_SECS
+    }
+
     /// A non-create mutation that has not been sent.
     #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
     pub struct NotIssuedRequest {
@@ -252,6 +256,8 @@ mod client_token {
         attempt: u32,
         #[serde(default = "fresh_client_token")]
         client_token: ClientToken,
+        #[serde(default = "default_create_poll_after_secs")]
+        poll_after_secs: u32,
     }
 
     impl NotIssuedCreate {
@@ -263,6 +269,7 @@ mod client_token {
             Self {
                 attempt: 0,
                 client_token: fresh_client_token(),
+                poll_after_secs: default_create_poll_after_secs(),
             }
         }
 
@@ -275,7 +282,7 @@ mod client_token {
             request: RequestToken,
             identifier: Option<String>,
         ) -> InFlightCreateRequest {
-            InFlightCreateRequest::new(request, self.attempt, identifier)
+            InFlightCreateRequest::new(request, self.attempt, identifier, self.poll_after_secs)
         }
 
         pub(crate) fn into_not_applied(self, error: ProviderError) -> NotAppliedCreate {
@@ -289,6 +296,8 @@ mod client_token {
         attempt: u32,
         resends: u32,
         client_token: ClientToken,
+        #[serde(default = "default_create_poll_after_secs")]
+        poll_after_secs: u32,
     }
 
     impl UnconfirmedCreate {
@@ -309,7 +318,7 @@ mod client_token {
             request: RequestToken,
             identifier: Option<String>,
         ) -> InFlightCreateRequest {
-            InFlightCreateRequest::new(request, self.attempt, identifier)
+            InFlightCreateRequest::new(request, self.attempt, identifier, self.poll_after_secs)
         }
     }
 
@@ -320,6 +329,8 @@ mod client_token {
         attempt: u32,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         identifier: Option<String>,
+        #[serde(default = "default_create_poll_after_secs")]
+        poll_after_secs: u32,
     }
 
     impl InFlightCreateRequest {
@@ -335,11 +346,17 @@ mod client_token {
             self.identifier.as_deref()
         }
 
-        fn new(request: RequestToken, attempt: u32, identifier: Option<String>) -> Self {
+        fn new(
+            request: RequestToken,
+            attempt: u32,
+            identifier: Option<String>,
+            poll_after_secs: u32,
+        ) -> Self {
             Self {
                 request,
                 attempt,
                 identifier,
+                poll_after_secs,
             }
         }
 
@@ -383,6 +400,7 @@ mod client_token {
             NotIssuedCreate {
                 attempt: self.request.attempt + 1,
                 client_token: fresh_client_token(),
+                poll_after_secs: self.request.poll_after_secs,
             }
         }
     }
@@ -425,17 +443,20 @@ mod client_token {
                 Self::NotIssued(create) => f
                     .debug_struct("NotIssued")
                     .field("attempt", &create.attempt)
+                    .field("poll_after_secs", &create.poll_after_secs)
                     .finish(),
                 Self::Unconfirmed(create) => f
                     .debug_struct("Unconfirmed")
                     .field("attempt", &create.attempt)
                     .field("resends", &create.resends)
+                    .field("poll_after_secs", &create.poll_after_secs)
                     .finish(),
                 Self::InFlight(create) => f
                     .debug_struct("InFlight")
                     .field("request", &create.request)
                     .field("attempt", &create.attempt)
                     .field("identifier", &create.identifier)
+                    .field("poll_after_secs", &create.poll_after_secs)
                     .finish(),
             }
         }
@@ -455,6 +476,26 @@ mod client_token {
                 Self::Unconfirmed(create) => create.attempt(),
                 Self::InFlight(create) => create.attempt(),
             }
+        }
+
+        /// Poll cadence attached to this exact continuation. Protocol-v13
+        /// in-flight verdicts must re-emit it together with the token.
+        pub fn poll_after_secs(&self) -> u32 {
+            match self {
+                Self::NotIssued(create) => create.poll_after_secs,
+                Self::Unconfirmed(create) => create.poll_after_secs,
+                Self::InFlight(create) => create.poll_after_secs,
+            }
+        }
+
+        #[doc(hidden)]
+        pub fn with_poll_after_secs(mut self, poll_after_secs: u32) -> Self {
+            match &mut self {
+                Self::NotIssued(create) => create.poll_after_secs = poll_after_secs,
+                Self::Unconfirmed(create) => create.poll_after_secs = poll_after_secs,
+                Self::InFlight(create) => create.poll_after_secs = poll_after_secs,
+            }
+            self
         }
 
         pub(crate) fn with_identifier(self, identifier: Option<String>) -> Self {
@@ -513,6 +554,7 @@ mod client_token {
                 attempt: self.attempt,
                 resends,
                 client_token: self.client_token,
+                poll_after_secs: self.poll_after_secs,
             }
         }
     }
@@ -527,6 +569,7 @@ mod client_token {
                 attempt: self.attempt,
                 resends,
                 client_token: self.client_token.clone(),
+                poll_after_secs: self.poll_after_secs,
             }
         }
     }
@@ -575,7 +618,12 @@ mod client_token {
         }
 
         fn in_flight_create() -> InFlightCreateRequest {
-            InFlightCreateRequest::new(RequestToken::from("create"), 3, None)
+            InFlightCreateRequest::new(
+                RequestToken::from("create"),
+                3,
+                None,
+                super::super::POLL_AFTER_SECS,
+            )
         }
 
         #[test]
@@ -614,6 +662,45 @@ mod client_token {
                     status.as_str()
                 );
             }
+        }
+
+        #[test]
+        fn create_continuation_retains_poll_cadence_across_phases_and_serde() {
+            let not_issued =
+                match CcCreateToken::from(NotIssuedCreate::start()).with_poll_after_secs(37) {
+                    CcCreateToken::NotIssued(token) => token,
+                    _ => unreachable!(),
+                };
+            let unconfirmed = not_issued.into_unconfirmed(1);
+            assert_eq!(
+                CcCreateToken::from(unconfirmed.clone()).poll_after_secs(),
+                37
+            );
+
+            let accepted = unconfirmed.to_in_flight(
+                RequestToken::from("cadence-request"),
+                Some("physical-id".to_string()),
+            );
+            let continuation = CcCreateToken::from(accepted);
+            assert_eq!(continuation.poll_after_secs(), 37);
+
+            let json = serde_json::to_string(&continuation).expect("serialize continuation");
+            let decoded: CcCreateToken =
+                serde_json::from_str(&json).expect("deserialize continuation");
+            assert_eq!(decoded, continuation);
+            assert_eq!(decoded.poll_after_secs(), 37);
+        }
+
+        #[test]
+        fn pre_v13_create_continuation_defaults_to_existing_poll_cadence() {
+            let decoded: CcCreateToken = serde_json::from_value(serde_json::json!({
+                "phase": "in_flight",
+                "request": "legacy-request",
+                "attempt": 1
+            }))
+            .expect("legacy continuation should remain decodable");
+
+            assert_eq!(decoded.poll_after_secs(), super::super::POLL_AFTER_SECS);
         }
     }
 }
@@ -661,9 +748,9 @@ pub(crate) struct CcCreatePending {
 
 #[derive(Debug)]
 #[doc(hidden)]
-pub struct UndeterminedCreate(ProviderError);
+pub struct InFlightCreate(ProviderError);
 
-impl UndeterminedCreate {
+impl InFlightCreate {
     pub(crate) fn new(error: ProviderError) -> Self {
         Self(error)
     }
@@ -855,7 +942,7 @@ impl AwsccProvider {
         desired_state: serde_json::Value,
         operation_config: Option<&carina_core::schema::OperationConfig>,
         token: &UnconfirmedCreate,
-    ) -> Result<CcCreatePending, UndeterminedCreate> {
+    ) -> Result<CcCreatePending, InFlightCreate> {
         let retry_policy = Self::request_retry_policy(
             operation_config,
             "creating",
@@ -863,7 +950,7 @@ impl AwsccProvider {
         );
         self.issue_unconfirmed_create(type_name, desired_state, token, retry_policy)
             .await
-            .map_err(UndeterminedCreate::new)
+            .map_err(InFlightCreate::new)
     }
 
     // Contract checked against aws-sdk-cloudcontrol 1.103.0 on 2026-10-28 for
