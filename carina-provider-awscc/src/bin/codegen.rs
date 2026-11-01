@@ -2802,17 +2802,14 @@ fn type_display_string_at(
                 Some(ResolvedDef::ObjectMap { value }) => {
                     object_map_type_display(prop_name, schema, cfn_property_path, value)
                 }
-                Some(scalar @ ResolvedDef::Scalar { .. }) => {
-                    let scalar_prop = scalar
-                        .scalar_as_property()
-                        .expect("Scalar variant always rebuilds a scalar property");
-                    type_display_string_at(prop_name, &scalar_prop, schema, cfn_property_path)
+                Some(resolved @ (ResolvedDef::String { .. } | ResolvedDef::Scalar { .. })) => {
+                    let inline_prop = resolved
+                        .as_inline_property()
+                        .expect("String and Scalar variants always rebuild an inline property");
+                    type_display_string_at(prop_name, &inline_prop, schema, cfn_property_path)
                 }
                 Some(
-                    ResolvedDef::Enum { .. }
-                    | ResolvedDef::Array { .. }
-                    | ResolvedDef::StringPattern { .. }
-                    | ResolvedDef::Opaque,
+                    ResolvedDef::Enum { .. } | ResolvedDef::Array { .. } | ResolvedDef::Opaque,
                 )
                 | None => {
                     // These shapes have no dedicated non-list scalar display
@@ -2970,14 +2967,30 @@ fn type_display_string_at(
                                 && let Some(def_name) = ref_def_name(ref_path)
                             {
                                 format!("`List<{def_name}>`")
-                            } else if let Some(scalar_prop) =
-                                item_def.as_ref().and_then(ResolvedDef::scalar_as_property)
+                            } else if let Some(string @ ResolvedDef::String { .. }) =
+                                item_def.as_ref()
                             {
+                                let inline_prop = string
+                                    .as_inline_property()
+                                    .expect("String variant always rebuilds an inline property");
+                                let element_type = type_display_string_at(
+                                    prop_name,
+                                    &inline_prop,
+                                    schema,
+                                    cfn_property_path,
+                                );
+                                format!("`List<{element_type}>`")
+                            } else if let Some(scalar @ ResolvedDef::Scalar { .. }) =
+                                item_def.as_ref()
+                            {
+                                let inline_prop = scalar
+                                    .as_inline_property()
+                                    .expect("Scalar variant always rebuilds an inline property");
                                 // List items that $ref a scalar def (awscc#291):
                                 // render List<Int>/Float/Bool, mirroring the
                                 // schema-code array branch.
                                 list_element_type_display(
-                                    &scalar_prop,
+                                    &inline_prop,
                                     prop_name,
                                     &schema.type_name,
                                 )
@@ -3087,7 +3100,7 @@ fn markdown_struct_def(
                 ResolvedDef::ObjectMap { .. }
                 | ResolvedDef::Enum { .. }
                 | ResolvedDef::Array { .. }
-                | ResolvedDef::StringPattern { .. }
+                | ResolvedDef::String { .. }
                 | ResolvedDef::Scalar { .. }
                 | ResolvedDef::Opaque,
             )
@@ -3126,7 +3139,7 @@ fn markdown_array_items<'a>(
             | ResolvedDef::ObjectMap { .. }
             | ResolvedDef::OneOf { .. }
             | ResolvedDef::Enum { .. }
-            | ResolvedDef::StringPattern { .. }
+            | ResolvedDef::String { .. }
             | ResolvedDef::Scalar { .. }
             | ResolvedDef::Opaque => None,
         })
@@ -5356,11 +5369,13 @@ enum ResolvedDef<'a> {
     Enum { values: &'a [EnumValue] },
     /// Array def carrying an item schema.
     Array { items: &'a CfnProperty },
-    /// String def constrained by a regex pattern (with optional length).
-    StringPattern {
-        pattern: &'a str,
+    /// String def, carrying every keyword that the inline string path honors
+    /// so a `$ref` can be reconstructed as an equivalent `CfnProperty`.
+    String {
+        pattern: Option<&'a str>,
         min_length: Option<u64>,
         max_length: Option<u64>,
+        format: Option<&'a str>,
     },
     /// Scalar (`integer` / `number` / `boolean`) def, carrying its own range
     /// and format so a `$ref` to it reproduces the ranged int/float/bool a
@@ -5372,7 +5387,7 @@ enum ResolvedDef<'a> {
         format: Option<&'a str>,
     },
     /// None of the known shapes — the def has no inline properties, oneOf,
-    /// enum, array items, string pattern, or scalar type. Consumers fall back
+    /// enum, array items, string type, or scalar type. Consumers fall back
     /// to name-based string heuristics for these (e.g. an opaque object whose
     /// fields are not modelled). Made an explicit variant — rather than a
     /// catch-all `_` — so adding a new shape forces every consumer to decide
@@ -5384,7 +5399,7 @@ enum ResolvedDef<'a> {
 ///
 /// The precedence below is the canonical order the schema-code `$ref` branch
 /// has always used, extended with the object-map shape: properties → object
-/// map → oneOf → enum → array → string-pattern → scalar → opaque. It is the
+/// map → oneOf → enum → array → string → scalar → opaque. It is the
 /// one place that order lives; every `ResolvedDef`
 /// consumer inherits it by matching the result. Preserving this order keeps
 /// generated output byte-identical (e.g. an integer-typed enum classifies as
@@ -5424,13 +5439,12 @@ fn classify_def(def: &CfnDefinition) -> ResolvedDef<'_> {
     {
         return ResolvedDef::Array { items };
     }
-    if def.def_type.as_deref() == Some("string")
-        && let Some(pattern) = &def.pattern
-    {
-        return ResolvedDef::StringPattern {
-            pattern,
+    if def.def_type.as_deref() == Some("string") {
+        return ResolvedDef::String {
+            pattern: def.pattern.as_deref(),
             min_length: def.min_length,
             max_length: def.max_length,
+            format: def.format.as_deref(),
         };
     }
     let scalar_kind = match def.def_type.as_deref() {
@@ -5537,18 +5551,34 @@ fn resolve_ref_classified<'a>(schema: &'a CfnSchema, ref_path: &str) -> Option<R
 }
 
 impl ResolvedDef<'_> {
-    /// If this is a `Scalar`, reconstruct an equivalent inline `CfnProperty`
-    /// so callers can recurse through the normal property-typing logic instead
-    /// of treating the def as a struct.
+    /// If this is a `String` or `Scalar`, reconstruct an equivalent inline
+    /// `CfnProperty` so callers can recurse through the normal property-typing
+    /// logic instead of maintaining a second `$ref`-specific implementation.
     ///
     /// CloudFormation factors recurring scalar fields into shared definitions
     /// — e.g. WAFv2 WebACL's `Rule.Priority` and `RateBasedStatement.Limit`
     /// are `$ref`s to the `RulePriority` / `RateLimit` integer defs. Without
     /// this, the `$ref` branches fall through to the String fallback and
     /// mistype the field, so the resource is rejected at apply (awscc#291).
-    /// Returns `None` for every non-scalar shape.
-    fn scalar_as_property(&self) -> Option<CfnProperty> {
+    /// Returns `None` for every non-string/non-scalar shape.
+    fn as_inline_property(&self) -> Option<CfnProperty> {
         match self {
+            ResolvedDef::String {
+                pattern,
+                min_length,
+                max_length,
+                format,
+            } => Some(CfnProperty {
+                prop_type: Some(TypeValue::Single("string".to_string())),
+                pattern: pattern.map(str::to_string),
+                min_length: *min_length,
+                max_length: *max_length,
+                format: format.map(str::to_string),
+                // A string def with enum values classifies as `Enum`, not
+                // `String`, so the reconstructed property never needs to
+                // carry enum values.
+                ..Default::default()
+            }),
             ResolvedDef::Scalar {
                 kind,
                 minimum,
@@ -7596,30 +7626,10 @@ fn cfn_type_to_carina_type_with_enum_with_paths(
                     );
                     return (format!("{}({})", list_ctor, effective_item_type), item_enum);
                 }
-                ResolvedDef::StringPattern {
-                    pattern,
-                    min_length,
-                    max_length,
-                } => {
-                    if infer_string_type(prop_name, &schema.type_name).is_none() {
-                        if let Some(values) = extract_enum_from_alternation_pattern(pattern) {
-                            let type_name = prop_name.to_pascal_case();
-                            let enum_info = EnumInfo { type_name, values };
-                            return ("/* enum */".to_string(), Some(enum_info));
-                        }
-                        let effective_min = min_length.filter(|&m| m > 0);
-                        let pattern_expr = emit_pattern_option(Some(pattern));
-                        let length_expr = emit_length_option(effective_min, max_length);
-                        return (
-                            refined_string_type("None", &pattern_expr, &length_expr, "None"),
-                            None,
-                        );
-                    }
-                }
-                scalar @ ResolvedDef::Scalar { .. } => {
-                    if let Some(scalar_prop) = scalar.scalar_as_property() {
+                resolved @ (ResolvedDef::String { .. } | ResolvedDef::Scalar { .. }) => {
+                    if let Some(inline_prop) = resolved.as_inline_property() {
                         return cfn_type_to_carina_type_with_enum_with_paths(
-                            &scalar_prop,
+                            &inline_prop,
                             prop_name,
                             schema,
                             namespace,
@@ -9877,10 +9887,11 @@ mod tests {
             ResolvedDef::Array { .. }
         ));
 
-        // String + pattern -> StringPattern.
+        // Every string definition is classified as String, whether or not it
+        // carries a pattern or another refinement keyword.
         assert!(matches!(
             classify_def(&def(Some("string"), None, vec![], None, None, Some("^a$"))),
-            ResolvedDef::StringPattern { .. }
+            ResolvedDef::String { .. }
         ));
 
         // Bare scalar (no enum) -> Scalar with the right kind.
@@ -9926,10 +9937,11 @@ mod tests {
             ResolvedDef::Opaque
         ));
 
-        // String type with no pattern is not StringPattern -> Opaque.
+        // A plain string still uses the String variant so all string refs take
+        // the same inline-property path.
         assert!(matches!(
             classify_def(&def(Some("string"), None, vec![], None, None, None)),
-            ResolvedDef::Opaque
+            ResolvedDef::String { .. }
         ));
     }
 
@@ -17685,6 +17697,52 @@ mod tests {
                 "AttributeType::refined_string(None, None, Some((None, Some(256))), None)"
             ) && !generated.contains("validate_string_length_"),
             "Should retain a declarative maximum without a helper: {generated}"
+        );
+    }
+
+    #[test]
+    fn test_ref_to_length_only_string_definition_preserves_length() {
+        let prop = CfnProperty {
+            ref_path: Some("#/definitions/LengthOnlyString".to_string()),
+            ..Default::default()
+        };
+        let mut schema = empty_schema("AWS::Test::Resource");
+        schema.definitions = Some(BTreeMap::from([(
+            "LengthOnlyString".to_string(),
+            CfnDefinition {
+                def_type: Some("string".to_string()),
+                min_length: Some(1),
+                max_length: Some(2048),
+                ..Default::default()
+            },
+        )]));
+
+        let (type_str, enum_info) = cfn_type_to_carina_type_with_enum(
+            &prop,
+            "Payload",
+            &schema,
+            "aws.test.Resource",
+            &BTreeMap::new(),
+        );
+
+        assert!(enum_info.is_none());
+        assert_eq!(
+            type_str,
+            "AttributeType::refined_string(None, None, Some((Some(1), Some(2048))), None)"
+        );
+        assert_eq!(
+            type_display_string("Payload", &prop, &schema),
+            "String(len: 1..=2048)"
+        );
+
+        let list_prop = CfnProperty {
+            prop_type: Some(TypeValue::Single("array".to_string())),
+            items: Some(Box::new(prop)),
+            ..Default::default()
+        };
+        assert_eq!(
+            type_display_string("Payloads", &list_prop, &schema),
+            "`List<String(len: 1..=2048)>`"
         );
     }
 

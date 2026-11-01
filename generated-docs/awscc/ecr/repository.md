@@ -134,7 +134,7 @@ Shorthand formats: `wildcard` or `ImageTagMutabilityExclusionFilterType.wildcard
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `encryption_type` | [Enum (EncryptionType)](#encryption_configurationencryption_type-encryptiontype) | Yes | The encryption type to use. If you use the ``KMS`` encryption type, the contents of the repository will be encrypted using server-side encryption with KMSlong key stored in KMS. When you use KMS to encrypt your data, you can either use the default AWS managed KMS key for Amazon ECR, or specify your own KMS key, which you already created. If you use the ``KMS_DSSE`` encryption type, the contents of the repository will be encrypted with two layers of encryption using server-side encryption with the KMS Management Service key stored in KMS. Similar to the ``KMS`` encryption type, you can either use the default AWS managed KMS key for Amazon ECR, or specify your own KMS key, which you've already created. If you use the ``AES256`` encryption type, Amazon ECR uses server-side encryption with Amazon S3-managed encryption keys which encrypts the images in the repository using an AES256 encryption algorithm. For more information, see [Amazon ECR encryption at rest](https://docs.aws.amazon.com/AmazonECR/latest/userguide/encryption-at-rest.html) in the *Amazon Elastic Container Registry User Guide*. |
-| `kms_key` | String | No | If you use the ``KMS`` encryption type, specify the KMS key to use for encryption. The alias, key ID, or full ARN of the KMS key can be specified. The key must exist in the same Region as the repository. If no key is specified, the default AWS managed KMS key for Amazon ECR will be used. |
+| `kms_key` | String(len: 1..=2048) | No | If you use the ``KMS`` encryption type, specify the KMS key to use for encryption. The alias, key ID, or full ARN of the KMS key can be specified. The key must exist in the same Region as the repository. If no key is specified, the default AWS managed KMS key for Amazon ECR will be used. |
 
 ### image_scanning_configuration
 
@@ -147,14 +147,14 @@ Shorthand formats: `wildcard` or `ImageTagMutabilityExclusionFilterType.wildcard
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `image_tag_mutability_exclusion_filter_type` | [Enum (ImageTagMutabilityExclusionFilterType)](#image_tag_mutability_exclusion_filtersimage_tag_mutability_exclusion_filter_type-imagetagmutabilityexclusionfiltertype) | Yes |  |
-| `image_tag_mutability_exclusion_filter_value` | String | Yes |  |
+| `image_tag_mutability_exclusion_filter_value` | String(pattern, len: 1..=128) | Yes |  |
 
 ### lifecycle_policy
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `lifecycle_policy_text` | String | No | The JSON repository policy text to apply to the repository. |
-| `registry_id` | String | No | The AWS account ID associated with the registry that contains the repository. If you do? not specify a registry, the default registry is assumed. |
+| `lifecycle_policy_text` | String(len: 100..=30720) | No | The JSON repository policy text to apply to the repository. |
+| `registry_id` | String(pattern, len: 12..=12) | No | The AWS account ID associated with the registry that contains the repository. If you do? not specify a registry, the default registry is assumed. |
 
 ## Attribute Reference
 

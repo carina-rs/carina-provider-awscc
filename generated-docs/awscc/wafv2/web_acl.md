@@ -495,7 +495,7 @@ Used by: `default_action.allow`, `rules.action.allow`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `name` | String | Yes |  |
+| `name` | String(pattern, len: 1..=64) | Yes |  |
 | `values` | String | Yes |  |
 
 ### association_config
@@ -548,8 +548,8 @@ Used by: `block_action.custom_response.response_headers`, `custom_request_handli
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `name` | String | Yes |  |
-| `value` | String | Yes |  |
+| `name` | String(len: 1..=64) | Yes |  |
+| `value` | String(len: 1..=255) | Yes |  |
 
 ### custom_request_handling
 
@@ -563,7 +563,7 @@ Used by: `allow_action.custom_request_handling`, `rule_action.captcha.custom_req
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `content` | String | Yes |  |
+| `content` | String(len: 1..=10240) | Yes |  |
 | `content_type` | [Enum (ResponseContentType)](#custom_response_bodiescontent_type-responsecontenttype) | Yes |  |
 
 ### data_protection_config
@@ -585,7 +585,7 @@ Used by: `allow_action.custom_request_handling`, `rule_action.captcha.custom_req
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `field_keys` | `List<String>` | No | List of field keys to protect |
+| `field_keys` | `List<String(len: 1..=64)>` | No | List of field keys to protect |
 | `field_type` | [Enum (FieldType)](#data_protection_configdata_protectionsfieldfield_type-fieldtype) | Yes | Field type to protect |
 
 ### default_action
@@ -998,7 +998,7 @@ Used by: `rules.statement`, `rules.statement.and_statement.statements`, `rules.s
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `regex_string` | String | No |  |
+| `regex_string` | String(len: 1..=512) | No |  |
 
 ### statement.managed_rule_group_statement.managed_rule_group_configs.aws_managed_rules_atp_rule_set
 

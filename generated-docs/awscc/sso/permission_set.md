@@ -38,7 +38,7 @@ The sso instance arn that the permission set is owned.
 
 ### `managed_policies`
 
-- **Type:** `List<String>` (items: ..=20)
+- **Type:** `List<String(len: 20..=2048)>` (items: ..=20)
 - **Required:** No
 
 ### `name`
