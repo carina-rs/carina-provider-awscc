@@ -1,0 +1,58 @@
+# SNS Subscription typed policies - standard subscription and FIFO archive
+#
+# Queue ARNs are rendered by run.sh after it creates the queues with AWS CLI.
+
+provider awscc {
+  region = aws.Region.ap_northeast_1
+}
+
+let standard_topic = awscc.sns.Topic {
+  topic_name = 'carina-acc-test-sns-policies-standard'
+
+  tags = {
+    Environment = 'acceptance-test'
+    Project     = 'carina'
+  }
+}
+
+let fifo_topic = awscc.sns.Topic {
+  topic_name                  = 'carina-acc-test-sns-policies-fifo.fifo'
+  fifo_topic                  = true
+  content_based_deduplication = true
+
+  archive_policy = {
+    message_retention_period = 1
+  }
+
+  tags = {
+    Environment = 'acceptance-test'
+    Project     = 'carina'
+  }
+}
+
+awscc.sns.Subscription {
+  topic_arn            = standard_topic.topic_arn
+  protocol             = 'sqs'
+  endpoint             = '__STANDARD_QUEUE_ARN__'
+  raw_message_delivery = true
+
+  redrive_policy = {
+    dead_letter_target_arn = '__STANDARD_DLQ_ARN__'
+  }
+
+  delivery_policy = {
+    healthy_retry_policy = {
+      min_delay_target         = 1
+      max_delay_target         = 20
+      num_retries              = 3
+      num_no_delay_retries     = 0
+      num_min_delay_retries    = 1
+      num_max_delay_retries    = 2
+      backoff_function         = aws.sns.Subscription.DeliveryPolicy.HealthyRetryPolicy.BackoffFunction.linear
+    }
+
+    throttle_policy = {
+      max_receives_per_second = 10
+    }
+  }
+}

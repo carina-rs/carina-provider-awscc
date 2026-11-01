@@ -1392,7 +1392,7 @@ impl AwsccProvider {
                     .await?
             }
         };
-        Self::finish_delete_step(step)
+        Self::finish_delete_step(type_name, step)
     }
 
     async fn send_delete_request(
@@ -1691,13 +1691,13 @@ impl AwsccProvider {
         }
     }
 
-    fn finish_delete_step(step: CcWaitStep) -> ProviderResult<CcDeleteWaitStep> {
+    fn finish_delete_step(type_name: &str, step: CcWaitStep) -> ProviderResult<CcDeleteWaitStep> {
         match step {
             OperationStep::Done(WaitOutcome::Success { .. }) => Ok(OperationStep::Done(())),
             OperationStep::Done(WaitOutcome::PartialOrFailed { status_message, .. }) => {
                 Err(ProviderError::api_error_caused_by(
                     "Operation failed",
-                    CloudControlOperationFailure::new(status_message),
+                    CloudControlOperationFailure::for_delete(type_name, status_message),
                 ))
             }
             OperationStep::Verdict(error) => Ok(OperationStep::Verdict(error)),
