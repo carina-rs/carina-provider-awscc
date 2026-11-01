@@ -92,7 +92,7 @@ pub fn ecr_repository_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_lifecycle_policy_attribute());
     #[inline(never)]
     fn build_repository_name_attribute() -> AttributeSchema {
-        AttributeSchema::optional("repository_name", AttributeType::refined_string(None, Some("^(?=.{2,256}$)([a-z0-9]+((\\.|_|__|-+)[a-z0-9]+)*(\\/[a-z0-9]+((\\.|_|__|-+)[a-z0-9]+)*)*)$".to_string()), Some((Some(2), Some(256))), None))
+        AttributeSchema::optional("repository_name", AttributeType::refined_string(None, Some("^([a-z0-9]+((\\.|_|__|-+)[a-z0-9]+)*(\\/[a-z0-9]+((\\.|_|__|-+)[a-z0-9]+)*)*)$".to_string()), Some((Some(2), Some(256))), None))
                 .create_only()
                 .with_description("The name to use for the repository. The repository name may be specified on its own (such as ``nginx-web-app``) or it can be prepended with a namespace to group the repository into a category (such as ``project-a/nginx-web-app``). If you don't specify a name, CFNlong generates a unique physical ID and uses that ID for the repository name. For more information, see [Name type](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-name.html). The repository name must start with a letter and can only contain lowercase letters, numbers, hyphens, underscores, and forward slashes. If you specify a name, you cannot perform updates that require replacement of this resource. You can perform updates that require no or some interruption. If you must replace the resource, specify a new name.")
                 .with_provider_name("RepositoryName")
