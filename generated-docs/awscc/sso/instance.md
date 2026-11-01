@@ -7,6 +7,22 @@ CloudFormation Type: `AWS::SSO::Instance`
 
 Resource Type definition for Identity Center (SSO) Instance
 
+## Example
+
+```crn
+awscc.sso.Instance {
+  # Creates an account instance. Apply from a standalone or member account
+  # that has no IAM Identity Center instance. AWS rejects this in the
+  # organization's management account and where organization policy disallows
+  # account instances.
+  name = 'carina-example-identity-center'
+
+  tags = {
+    Environment = 'example'
+  }
+}
+```
+
 ## Argument Reference
 
 ### `name`

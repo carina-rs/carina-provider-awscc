@@ -26,6 +26,13 @@ let public_subnet = awscc.ec2.Subnet {
   map_public_ip_on_launch = true
 }
 
+let internet_gateway = awscc.ec2.InternetGateway {}
+
+let gateway_attachment = awscc.ec2.VpcGatewayAttachment {
+  vpc_id              = vpc.vpc_id
+  internet_gateway_id = internet_gateway.internet_gateway_id
+}
+
 let eip = awscc.ec2.Eip {
   domain = aws.ec2.Eip.Domain.vpc
 }
@@ -33,6 +40,10 @@ let eip = awscc.ec2.Eip {
 awscc.ec2.NatGateway {
   allocation_id = eip.allocation_id
   subnet_id     = public_subnet.subnet_id
+
+  directives {
+    depends_on = [gateway_attachment]
+  }
 
   tags = {
     Environment = 'example'

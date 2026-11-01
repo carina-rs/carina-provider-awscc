@@ -7,6 +7,30 @@ CloudFormation Type: `AWS::WAFv2::WebACL`
 
 Contains the Rules that identify the requests that you want to allow, block, or count. In a WebACL, you also specify a default action (ALLOW or BLOCK), and the action for each Rule that you add to a WebACL, for example, block requests from specified IP addresses or block requests from specified referrers. You also associate the WebACL with a CloudFront distribution to identify the requests that you want AWS WAF to filter. If you add more than one Rule to a WebACL, a request needs to match only one of the specifications to be allowed, blocked, or counted.
 
+## Example
+
+```crn
+awscc.wafv2.WebAcl {
+  name        = 'carina-example-web-acl'
+  description = 'Regional protection for the example workload'
+  scope       = aws.wafv2.WebAcl.Scope.regional
+
+  default_action = {
+    allow = {}
+  }
+
+  visibility_config = {
+    cloud_watch_metrics_enabled = true
+    metric_name                 = 'carina-example-web-acl'
+    sampled_requests_enabled    = true
+  }
+
+  tags = {
+    Environment = 'example'
+  }
+}
+```
+
 ## Argument Reference
 
 ### `application_config`

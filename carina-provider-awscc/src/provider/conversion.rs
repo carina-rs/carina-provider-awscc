@@ -2101,19 +2101,32 @@ mod tests {
             .iter()
             .find(|field| field.name() == "evaluation_window_sec")
             .expect("RateBasedStatement must expose evaluation_window_sec");
-        let evaluation_window_type = test_rootless_type(evaluation_window_sec.field_type().clone());
+        let evaluation_window_attr_type = evaluation_window_sec.field_type();
+        let evaluation_window_type = test_rootless_type(evaluation_window_attr_type.clone());
 
         let desired = Value::<NoPlaceholder>::Concrete(ConcreteValue::Int(60));
         evaluation_window_type
             .validate(&desired)
             .expect("60 must be accepted by the generated integer union");
 
-        let cloud_control = value_to_json(&desired)
-            .expect("a valid evaluation window must convert to CloudControl JSON");
+        let cloud_control = dsl_value_to_aws_with_defs(
+            &desired,
+            evaluation_window_attr_type,
+            config.resource_type_name,
+            "evaluation_window_sec",
+            config.schema.defs(),
+        )
+        .expect("a valid evaluation window must convert to CloudControl JSON");
         assert_eq!(cloud_control, json!(60));
 
-        let read_back = json_to_value(&cloud_control)
-            .expect("CloudControl's integer response must convert back to a DSL value");
+        let read_back = aws_value_to_dsl_with_defs(
+            "evaluation_window_sec",
+            &cloud_control,
+            evaluation_window_attr_type,
+            config.resource_type_name,
+            config.schema.defs(),
+        )
+        .expect("CloudControl's integer response must convert back to a DSL value");
         assert_eq!(
             read_back, desired,
             "the read-back must not create a phantom diff"

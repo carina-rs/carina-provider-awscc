@@ -7,6 +7,27 @@ CloudFormation Type: `AWS::IdentityStore::GroupMembership`
 
 Resource Type Definition for AWS:IdentityStore::GroupMembership
 
+## Example
+
+```crn
+let developers = awscc.identitystore.Group {
+  # Replace this placeholder with your Identity Store ID.
+  identity_store_id = 'd-1234567890'
+  display_name      = 'ExampleDevelopers'
+  description       = 'Developers for the example workload'
+}
+
+awscc.identitystore.GroupMembership {
+  identity_store_id = developers.identity_store_id
+  group_id          = developers.group_id
+
+  member_id = {
+    # Replace this placeholder with an existing user's ID.
+    user_id = '12345678-1234-1234-1234-123456789012'
+  }
+}
+```
+
 ## Argument Reference
 
 ### `group_id`

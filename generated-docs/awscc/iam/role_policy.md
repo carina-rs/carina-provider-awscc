@@ -10,6 +10,45 @@ Adds or updates an inline policy document that is embedded in the specified IAM 
  A role can also have a managed policy attached to it. To attach a managed policy to a role, use [AWS::IAM::Role](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-iam-role.html). To create a new managed policy, use [AWS::IAM::ManagedPolicy](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-iam-managedpolicy.html). For information about policies, see [Managed policies and inline policies](https://docs.aws.amazon.com/IAM/latest/UserGuide/policies-managed-vs-inline.html) in the *IAM User Guide*.
  For information about the maximum number of inline policies that you can embed with a role, see [IAM and quotas](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_iam-quotas.html) in the *IAM User Guide*.
 
+## Example
+
+```crn
+let execution_role = awscc.iam.Role {
+  role_name = 'carina-example-execution-role'
+
+  assume_role_policy_document = {
+    version = aws.iam.PolicyDocument.Version.2012_10_17
+    statement {
+      effect = aws.iam.PolicyDocument.Statement.Effect.allow
+
+      principal = {
+        service = 'lambda.amazonaws.com'
+      }
+
+      action = 'sts:AssumeRole'
+    }
+  }
+
+  tags = {
+    Environment = 'example'
+  }
+}
+
+awscc.iam.RolePolicy {
+  policy_name = 'ListBuckets'
+  role_name   = execution_role.role_name
+
+  policy_document = {
+    version = aws.iam.PolicyDocument.Version.2012_10_17
+    statement {
+      effect   = aws.iam.PolicyDocument.Statement.Effect.allow
+      action   = 's3:ListAllMyBuckets'
+      resource = '*'
+    }
+  }
+}
+```
+
 ## Argument Reference
 
 ### `policy_document`

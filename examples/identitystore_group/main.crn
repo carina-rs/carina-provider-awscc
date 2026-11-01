@@ -1,0 +1,14 @@
+# Identity Store Group Example
+#
+# Creates a group in an IAM Identity Center identity store.
+
+provider awscc {
+  region = awscc.Region.ap_northeast_1
+}
+
+awscc.identitystore.Group {
+  # Replace this placeholder with your Identity Store ID.
+  identity_store_id = 'd-1234567890'
+  display_name      = 'ExampleDevelopers'
+  description       = 'Developers for the example workload'
+}

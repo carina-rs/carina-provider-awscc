@@ -7,6 +7,17 @@ CloudFormation Type: `AWS::Organizations::Organization`
 
 Resource schema for AWS::Organizations::Organization
 
+## Example
+
+```crn
+awscc.organizations.Organization {
+  # The account must not already belong to an organization. Destroying this
+  # resource deletes the organization, which requires that it have no member
+  # accounts.
+  feature_set = aws.organizations.Organization.FeatureSet.all
+}
+```
+
 ## Argument Reference
 
 ### `feature_set`
