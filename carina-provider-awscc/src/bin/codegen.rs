@@ -24,7 +24,7 @@ use serde::Deserialize;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::io::{self, Read};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
 // carina#3340: in-progress recursion guard for cyclic CFN $ref
@@ -1743,6 +1743,20 @@ fn dsl_resource_name_from_type(type_name: &str) -> Result<String> {
     Ok(format!("{}.{}", service, resource))
 }
 
+const MARKDOWN_EXAMPLE_PROVIDER_PREFIX: &str = "awscc";
+
+fn load_markdown_example(examples_dir: &Path, type_name: &str) -> Result<DocExample> {
+    let directory = full_resource_name_from_type(type_name)?;
+    let dsl_name = dsl_resource_name_from_type(type_name)?;
+    example::load(
+        examples_dir,
+        &directory,
+        MARKDOWN_EXAMPLE_PROVIDER_PREFIX,
+        &dsl_name,
+        ExampleKind::Resource,
+    )
+}
+
 fn generate_arn_helper_module(type_name: &str) -> Result<String> {
     let dsl_resource = dsl_resource_name_from_type(type_name)?;
     let (service, resource) = resource_identity_parts(&dsl_resource)
@@ -1972,15 +1986,7 @@ fn main() -> Result<()> {
     // Generate output based on format
     let output = match output_mode {
         OutputMode::Markdown { examples_dir } => {
-            let example_directory = full_resource_name_from_type(&args.type_name)?;
-            let dsl_name = dsl_resource_name_from_type(&args.type_name)?;
-            let example = example::load(
-                &examples_dir,
-                &example_directory,
-                "awscc",
-                &dsl_name,
-                ExampleKind::Resource,
-            )?;
+            let example = load_markdown_example(&examples_dir, &args.type_name)?;
             generate_markdown(&schema, &args.type_name, &example)?
         }
         OutputMode::Rust => generate_schema_code(&schema, &args.type_name)?,
@@ -3470,7 +3476,11 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str, example: &DocExample) 
     derive_mutually_exclusive_property_groups(schema)?;
 
     let dsl_resource = dsl_resource_name_from_type(type_name)?;
-    let example = example.text_for("awscc", &dsl_resource, ExampleKind::Resource)?;
+    let example = example.text_for(
+        MARKDOWN_EXAMPLE_PROVIDER_PREFIX,
+        &dsl_resource,
+        ExampleKind::Resource,
+    )?;
     let namespace = format!("aws.{}", dsl_resource);
 
     // Build create-only properties set
@@ -8100,7 +8110,7 @@ mod tests {
         example::check(
             &source,
             Path::new("test-markdown-example.crn"),
-            "awscc",
+            MARKDOWN_EXAMPLE_PROVIDER_PREFIX,
             &dsl_name,
             ExampleKind::Resource,
         )
@@ -16156,13 +16166,17 @@ mod tests {
         let example = example::check(
             source,
             Path::new("test-markdown-example.crn"),
-            "awscc",
+            MARKDOWN_EXAMPLE_PROVIDER_PREFIX,
             &dsl_name,
             ExampleKind::Resource,
         )
         .unwrap();
         let rendered = example
-            .text_for("awscc", &dsl_name, ExampleKind::Resource)
+            .text_for(
+                MARKDOWN_EXAMPLE_PROVIDER_PREFIX,
+                &dsl_name,
+                ExampleKind::Resource,
+            )
             .unwrap();
         assert_eq!(rendered, "awscc.ec2.TransitGatewayAttachment {}\n");
 
@@ -16264,18 +16278,12 @@ mod tests {
     fn test_markdown_page_rejects_missing_example_at_awscc_directory() {
         let examples_dir = tempfile::tempdir().unwrap();
         let type_name = "AWS::EC2::TransitGatewayAttachment";
-        let directory = full_resource_name_from_type(type_name).unwrap();
-        let dsl_name = dsl_resource_name_from_type(type_name).unwrap();
-        let expected_path = examples_dir.path().join(&directory).join("main.crn");
+        let expected_path = examples_dir
+            .path()
+            .join("ec2_transit_gateway_attachment")
+            .join("main.crn");
 
-        let error = example::load(
-            examples_dir.path(),
-            &directory,
-            "awscc",
-            &dsl_name,
-            ExampleKind::Resource,
-        )
-        .unwrap_err();
+        let error = load_markdown_example(examples_dir.path(), type_name).unwrap_err();
 
         assert_eq!(
             error.to_string(),
@@ -16287,8 +16295,6 @@ mod tests {
     fn test_markdown_page_rejects_example_for_wrong_awscc_type() {
         let examples_dir = tempfile::tempdir().unwrap();
         let type_name = "AWS::EC2::TransitGatewayAttachment";
-        let directory = full_resource_name_from_type(type_name).unwrap();
-        let dsl_name = dsl_resource_name_from_type(type_name).unwrap();
         let path = write_markdown_example_fixture(
             examples_dir.path(),
             type_name,
@@ -16299,14 +16305,7 @@ mod tests {
             ),
         );
 
-        let error = example::load(
-            examples_dir.path(),
-            &directory,
-            "awscc",
-            &dsl_name,
-            ExampleKind::Resource,
-        )
-        .unwrap_err();
+        let error = load_markdown_example(examples_dir.path(), type_name).unwrap_err();
 
         assert_eq!(
             error.to_string(),
