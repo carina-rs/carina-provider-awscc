@@ -7,7 +7,7 @@ use carina_core::provider::{
     InitializeOutcomeMint, ProviderFactory, ProviderInitialization, ProviderReadyResource,
     ReadOutcome,
 };
-use carina_core::resource::{Resource, ResourceId};
+use carina_core::resource::{ResolvedResource, Resource, ResourceId};
 use carina_core::schema::{
     AttributeType, SchemaRegistry, ValidatedConfigSchema, ValidatedProviderSchemaWitness,
 };
@@ -113,6 +113,19 @@ pub async fn normalize_resource(resource: Resource) -> ProviderReadyResource {
     prepare_provider_ready_resource(resource, &preparation)
         .await
         .expect("test resource should pass checked provider preparation")
+}
+
+/// Return a planning-side resource with the provider-ready attribute values.
+///
+/// Provider preparation deliberately erases module provenance, while `diff`
+/// consumes the ordinary resolved resource type. Integration tests use this
+/// bridge only to copy the normalized/canonicalized attribute values back to
+/// their original root resource.
+#[allow(dead_code)]
+pub async fn normalized_resolved_resource(mut resource: Resource) -> ResolvedResource {
+    let ready = normalize_resource(resource.clone()).await;
+    resource.attributes = ready.as_resource().attributes.clone();
+    ResolvedResource::new(resource)
 }
 
 #[allow(dead_code)]

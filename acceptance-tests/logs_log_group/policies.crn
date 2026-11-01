@@ -1,0 +1,60 @@
+# CloudWatch Logs Log Group - typed policy documents
+#
+# Tests: data_protection_policy (custom identifier, audit marker, and masking)
+#        and field_index_policies. The acceptance runner plan-verifies after
+#        apply, including Cloud Control's omitted-vs-empty-list read behavior.
+
+provider awscc {
+  region = aws.Region.ap_northeast_1
+}
+
+let policy_log_group = awscc.logs.LogGroup {
+  log_group_name    = '/carina/acc-test-logs-policies'
+  retention_in_days = 1
+
+  data_protection_policy = {
+    name        = 'carina-acc-test-data-protection'
+    description = 'Carina acceptance test data protection policy'
+    version     = aws.logs.LogGroup.DataProtectionPolicy.Version.v2021_06_01
+
+    configuration = {
+      custom_data_identifier = [{
+        name  = 'CarinaEmployeeId'
+        regex = 'EMP-[0-9]{6}'
+      }]
+    }
+
+    statement = [
+      {
+        sid             = 'audit-email-addresses'
+        data_identifier = ['arn:aws:dataprotection::aws:data-identifier/EmailAddress']
+        operation = {
+          audit = {
+            findings_destination = {}
+          }
+        }
+      },
+      {
+        sid             = 'mask-email-addresses'
+        data_identifier = ['arn:aws:dataprotection::aws:data-identifier/EmailAddress']
+        operation = {
+          deidentify = {
+            mask_config = {}
+          }
+        }
+      },
+    ]
+  }
+
+  field_index_policies = [{
+    fields = ['requestId']
+  }]
+}
+
+# Cloud Control returns FieldIndexPolicies = [] for a log group created
+# without the property. The runner's post-apply plan verifies that the
+# read-side default is normalized away.
+let default_field_indexes = awscc.logs.LogGroup {
+  log_group_name    = '/carina/acc-test-logs-default-indexes'
+  retention_in_days = 1
+}
