@@ -89,14 +89,8 @@ pub struct AwsccProvider {
     cloudcontrol_client: CloudControlClient,
     s3_client: aws_sdk_s3::Client,
     sts_client: StsClient,
-    pub(crate) kms_client: crate::references::KmsClient,
-    pub(crate) region: String,
-    /// Set when provider initialization rejected the caller's AWS account
-    /// against `allowed_account_ids` / `forbidden_account_ids`. Every
-    /// `Provider` trait method short-circuits to this error before
-    /// touching CloudControl, so a wrong-account `apply` aborts before
-    /// any read/refresh/mutation.
-    init_error: Option<String>,
+    /// KMS is reachable only after the shared account guard has succeeded.
+    initialized: Result<InitializedState, String>,
     /// Caller's AWS account id, fetched lazily via `sts:GetCallerIdentity`
     /// the first time a synthesized attribute (e.g.
     /// `cloudfront.Distribution.arn`) needs it, then cached for the
@@ -105,6 +99,10 @@ pub struct AwsccProvider {
     #[cfg(any(test, feature = "test-utils"))]
     operation_config_overrides:
         std::collections::HashMap<String, carina_core::schema::OperationConfig>,
+}
+
+struct InitializedState {
+    kms_client: crate::references::KmsClient,
 }
 
 impl AwsccProvider {
@@ -138,26 +136,19 @@ impl AwsccProvider {
             sts,
             kms,
         } = config.clients();
-        let region = config
-            .sdk_config()
-            .region()
-            .map(|region| region.as_ref())
-            .unwrap_or("ap-northeast-1")
-            .to_string();
-        let init_error =
+        let initialized =
             if cfg.allowed_account_ids.is_empty() && cfg.forbidden_account_ids.is_empty() {
-                None
+                Ok(())
             } else {
-                Self::check_account_guard(&sts, cfg).await.err()
-            };
+                Self::check_account_guard(&sts, cfg).await
+            }
+            .map(|()| InitializedState { kms_client: kms });
 
         Self {
             cloudcontrol_client: cloudcontrol,
             s3_client: s3,
             sts_client: sts,
-            kms_client: kms,
-            region,
-            init_error,
+            initialized,
             account_id: OnceCell::new(),
             #[cfg(any(test, feature = "test-utils"))]
             operation_config_overrides: Default::default(),
@@ -236,7 +227,14 @@ impl AwsccProvider {
     /// Returns the deferred initialization error, if the account guard
     /// rejected the caller during `new_with_config`.
     pub fn init_error(&self) -> Option<&str> {
-        self.init_error.as_deref()
+        self.initialized.as_ref().err().map(String::as_str)
+    }
+
+    pub(crate) fn kms_client(&self) -> Result<&crate::references::KmsClient, &str> {
+        self.initialized
+            .as_ref()
+            .map(|state| &state.kms_client)
+            .map_err(String::as_str)
     }
 }
 

@@ -26,16 +26,6 @@ impl BoundedSdkConfig {
         &self.0
     }
 
-    /// Qualified KMS references keep the instance's effective credentials and bounds.
-    pub(crate) fn in_region(&self, region: &str) -> Self {
-        Self(
-            self.0
-                .to_builder()
-                .region(Region::new(region.to_string()))
-                .build(),
-        )
-    }
-
     /// Apply the provider's timeout and retry policy to an SDK configuration.
     fn new(config: aws_config::SdkConfig) -> Self {
         Self(
@@ -353,7 +343,7 @@ mod tests {
         )
         .await;
         let provider = crate::AwsccProvider::from_sdk_config(config, &Default::default()).await;
-        let client_config = provider.kms_client.config("eu-west-1");
+        let client_config = provider.kms_client().unwrap().config("eu-west-1");
         assert_bounded_policy(client_config.timeout_config(), client_config.retry_config());
         use aws_smithy_runtime_api::client::interceptors::Intercept;
         assert!(

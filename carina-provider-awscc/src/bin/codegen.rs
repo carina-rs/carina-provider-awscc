@@ -21,17 +21,21 @@ use carina_provider_awscc::schemas::catalog::AwsccType;
 use clap::{Parser, ValueEnum};
 use heck::{ToPascalCase, ToSnakeCase};
 use regex::Regex;
-use serde::Deserialize;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
+#[path = "codegen/cfn.rs"]
+mod cfn;
+use cfn::*;
+
 #[path = "codegen/kms_references.rs"]
 mod kms_references;
 #[path = "codegen/kms_references_cfn.rs"]
 mod kms_references_cfn;
+use kms_references_cfn::ClassifiedSchema;
 
 // carina#3340: in-progress recursion guard for cyclic CFN $ref
 // definitions (WAFv2 `WebACL.Statement` → `AndStatement` → `List<Statement>`).
@@ -692,38 +696,6 @@ impl TryFrom<&Args> for OutputMode {
     }
 }
 
-/// CloudFormation Resource Schema
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[allow(dead_code)]
-struct CfnSchema {
-    type_name: String,
-    description: Option<String>,
-    properties: BTreeMap<String, CfnProperty>,
-    #[serde(default)]
-    required: Vec<String>,
-    #[serde(default)]
-    read_only_properties: Vec<String>,
-    #[serde(default)]
-    create_only_properties: Vec<String>,
-    #[serde(default)]
-    write_only_properties: Vec<String>,
-    primary_identifier: Option<Vec<String>>,
-    definitions: Option<BTreeMap<String, CfnProperty>>,
-    tagging: Option<CfnTagging>,
-    /// Top-level oneOf variants (mutually exclusive required field groups)
-    #[serde(default, rename = "oneOf")]
-    one_of: Vec<CfnProperty>,
-    /// Top-level anyOf variants
-    #[serde(default, rename = "anyOf")]
-    any_of: Vec<CfnProperty>,
-    /// Cloud Control handlers (create/read/update/delete/list). Most
-    /// NON_PROVISIONABLE types omit this map, but the registry has known
-    /// provisionable exceptions; see [`HANDLERLESS_CLOUD_CONTROL_TYPES`].
-    #[serde(default)]
-    handlers: BTreeMap<String, serde_json::Value>,
-}
-
 #[derive(Debug)]
 struct HandlerlessPermissions {
     create: &'static [&'static str],
@@ -906,16 +878,6 @@ fn emit_permissions_slice(permissions: &[String]) -> String {
     }
 }
 
-/// CloudFormation Tagging metadata
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[allow(dead_code)]
-struct CfnTagging {
-    #[serde(default)]
-    taggable: bool,
-    tag_property: Option<String>,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum GeneratedTagsWire {
     KeyValueList,
@@ -990,60 +952,6 @@ fn is_tag_map_ref(schema: &CfnSchema, ref_path: &str) -> bool {
             .and_then(TypeValue::effective_type)
             == Some("object")
         && (is_key_value_object || is_single_pattern_string_map)
-}
-
-/// Type can be a string or an array of strings in JSON Schema
-#[derive(Debug, Clone, Deserialize)]
-#[serde(untagged)]
-enum TypeValue {
-    Single(String),
-    Multiple(Vec<String>),
-}
-
-impl TypeValue {
-    fn contains(&self, expected: &str) -> bool {
-        match self {
-            Self::Single(value) => value == expected,
-            Self::Multiple(values) => values.iter().any(|value| value == expected),
-        }
-    }
-
-    /// Ignore nullability when choosing the type to generate. For other
-    /// unions, retain the first non-null member as the compatibility type.
-    fn effective_type(&self) -> Option<&str> {
-        match self {
-            TypeValue::Single(value) => (value != "null").then_some(value.as_str()),
-            TypeValue::Multiple(values) => values
-                .iter()
-                .find(|value| value.as_str() != "null")
-                .map(String::as_str),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-struct CfnPropertyPath<'a> {
-    parent: Option<&'a str>,
-    property: &'a str,
-}
-
-impl<'a> CfnPropertyPath<'a> {
-    /// Build the one canonical classification/override key for a CFN
-    /// property. `parent` is the raw definition name (or raw inline-property
-    /// name), never the PascalCased Rust struct namespace.
-    const fn new(parent: Option<&'a str>, property: &'a str) -> Self {
-        Self { parent, property }
-    }
-}
-
-impl std::fmt::Display for CfnPropertyPath<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some(parent) = self.parent {
-            write!(f, "{parent}.{}", self.property)
-        } else {
-            f.write_str(self.property)
-        }
-    }
 }
 
 type IamPolicyDocumentProperty = (&'static str, CfnPropertyPath<'static>);
@@ -1569,89 +1477,6 @@ fn object_string_union_is_iam_policy_document(
     );
 }
 
-/// Enum value can be a string or an integer in JSON Schema
-#[derive(Debug, Clone, Deserialize)]
-#[serde(untagged)]
-enum EnumValue {
-    Str(String),
-    Int(i64),
-}
-
-impl EnumValue {
-    fn to_string_value(&self) -> String {
-        match self {
-            EnumValue::Str(s) => s.clone(),
-            EnumValue::Int(i) => i.to_string(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[allow(dead_code)]
-struct CfnProperty {
-    #[serde(rename = "type")]
-    prop_type: Option<TypeValue>,
-    description: Option<String>,
-    #[serde(rename = "enum")]
-    enum_values: Option<Vec<EnumValue>>,
-    items: Option<Box<CfnProperty>>,
-    #[serde(rename = "$ref")]
-    ref_path: Option<String>,
-    #[serde(default)]
-    insertion_order: Option<bool>,
-    /// Whether array items must be unique.
-    #[serde(default)]
-    unique_items: Option<bool>,
-    /// Inline object properties (for nested objects)
-    properties: Option<BTreeMap<String, CfnProperty>>,
-    /// JSON object-map value schemas keyed by key-pattern.
-    #[serde(default)]
-    pattern_properties: Option<BTreeMap<String, CfnProperty>>,
-    /// Required fields for inline objects
-    #[serde(default)]
-    required: Vec<String>,
-    /// Minimum value constraint (for integer/number types)
-    #[serde(default)]
-    minimum: Option<i64>,
-    /// Maximum value constraint (for integer/number types)
-    #[serde(default)]
-    maximum: Option<i64>,
-    /// Whether additional properties are allowed (for object types)
-    #[serde(default)]
-    additional_properties: Option<bool>,
-    /// Const value (single fixed value for this property)
-    #[serde(rename = "const")]
-    const_value: Option<serde_json::Value>,
-    /// Default value for this property
-    #[serde(rename = "default")]
-    default_value: Option<serde_json::Value>,
-    /// Regex pattern constraint (for string types)
-    #[serde(default)]
-    pattern: Option<String>,
-    /// Minimum number of items (for array types)
-    #[serde(default)]
-    min_items: Option<i64>,
-    /// Maximum number of items (for array types)
-    #[serde(default)]
-    max_items: Option<i64>,
-    /// Minimum length constraint (for string types)
-    #[serde(default, rename = "minLength")]
-    min_length: Option<u64>,
-    /// Maximum length constraint (for string types)
-    #[serde(default, rename = "maxLength")]
-    max_length: Option<u64>,
-    /// Format constraint (e.g., "int64", "uri", "double")
-    #[serde(default)]
-    format: Option<String>,
-    /// Property-level oneOf variants (union types)
-    #[serde(default, rename = "oneOf")]
-    one_of: Vec<CfnProperty>,
-    #[serde(default)]
-    #[serde(rename = "anyOf")]
-    any_of: Vec<CfnProperty>,
-}
-
 fn derive_tags_property(schema: &CfnSchema) -> Result<Option<GeneratedTagsProperty>> {
     let Some(tagging) = schema.tagging.as_ref().filter(|tagging| tagging.taggable) else {
         return Ok(None);
@@ -1852,25 +1677,6 @@ fn full_resource_name_from_type(type_name: &str) -> Result<String> {
     let service = parts[1].to_lowercase();
     let resource = parts[2].to_snake_case();
     Ok(format!("{}_{}", service, resource))
-}
-
-/// Compute DSL resource name (service.resource) from CloudFormation type name
-/// e.g., "AWS::EC2::SecurityGroupEgress" -> "ec2.SecurityGroupEgress"
-/// and "AWS::EC2::VPC" -> "ec2.Vpc" (acronyms normalised via snake -> pascal).
-/// The service segment is lowercase (a namespace); the resource segment is
-/// PascalCase with acronyms treated as single words, matching carina-core's
-/// `snake_to_pascal` round-trip (design D2).
-fn dsl_resource_name_from_type(type_name: &str) -> Result<String> {
-    let parts: Vec<&str> = type_name.split("::").collect();
-    if parts.len() != 3 {
-        anyhow::bail!("Invalid type name format: {}", type_name);
-    }
-    let service = parts[1].to_lowercase();
-    // Route through snake_case first so CloudFormation-style acronyms
-    // ("VPC", "IPAM", "EIP") become single Pascal tokens ("Vpc", "Ipam",
-    // "Eip") rather than shouty residue.
-    let resource = parts[2].to_snake_case().to_pascal_case();
-    Ok(format!("{}.{}", service, resource))
 }
 
 const MARKDOWN_EXAMPLE_PROVIDER_PREFIX: &str = "awscc";
@@ -2309,32 +2115,6 @@ struct MarkdownEnum {
     prop_name: String,
     heading_path: Vec<String>,
     info: EnumInfo,
-}
-
-fn decode_json_pointer_segment(segment: &str) -> String {
-    segment.replace("~1", "/").replace("~0", "~")
-}
-
-fn cfn_property_path(pointer: &str) -> Option<Vec<String>> {
-    let path = pointer.strip_prefix("/properties/")?;
-    if path.is_empty() {
-        return None;
-    }
-    Some(path.split('/').map(decode_json_pointer_segment).collect())
-}
-
-fn extend_property_path(property_path: &[String], segment: &str) -> Vec<String> {
-    let mut extended = property_path.to_vec();
-    extended.push(segment.to_string());
-    extended
-}
-
-fn is_read_only_property_path(schema: &CfnSchema, property_path: &[String]) -> bool {
-    schema
-        .read_only_properties
-        .iter()
-        .filter_map(|pointer| cfn_property_path(pointer))
-        .any(|path| path == property_path)
 }
 
 fn is_write_only_property_path(schema: &CfnSchema, property_path: &[String]) -> bool {
@@ -2840,7 +2620,8 @@ fn type_display_string(prop_name: &str, prop: &CfnProperty, schema: &CfnSchema) 
     type_display_string_at(
         prop_name,
         prop,
-        schema,
+        &ClassifiedSchema::new(schema).unwrap(),
+        &[prop_name.to_string()],
         CfnPropertyPath::new(None, prop_name),
     )
 }
@@ -2924,16 +2705,26 @@ fn object_map_type_text(
 fn type_display_string_at(
     prop_name: &str,
     prop: &CfnProperty,
-    schema: &CfnSchema,
+    schema: &ClassifiedSchema<'_>,
+    provider_path: &[String],
     cfn_property_path: CfnPropertyPath<'_>,
 ) -> String {
-    type_display_at_resolved(prop_name, prop, schema, cfn_property_path, None).markdown()
+    type_display_at_resolved(
+        prop_name,
+        prop,
+        schema,
+        provider_path,
+        cfn_property_path,
+        None,
+    )
+    .markdown()
 }
 
 fn type_display_at_resolved(
     prop_name: &str,
     prop: &CfnProperty,
-    schema: &CfnSchema,
+    schema: &ClassifiedSchema<'_>,
+    provider_path: &[String],
     cfn_property_path: CfnPropertyPath<'_>,
     definition_name: Option<&str>,
 ) -> TypeDisplay {
@@ -2976,6 +2767,7 @@ fn type_display_at_resolved(
                     prop_name,
                     resolved.property,
                     schema,
+                    provider_path,
                     cfn_property_path,
                     Some(resolved.name),
                 )
@@ -2991,6 +2783,7 @@ fn type_display_at_resolved(
                 prop_name,
                 array_variant,
                 schema,
+                provider_path,
                 cfn_property_path,
                 None,
             );
@@ -3011,7 +2804,16 @@ fn type_display_at_resolved(
     if inline_property_type(prop) == Some("array") {
         let item = prop.items.as_deref().map_or_else(
             || TypeDisplay::Plain("String".to_string()),
-            |items| type_display_at_resolved(prop_name, items, schema, cfn_property_path, None),
+            |items| {
+                type_display_at_resolved(
+                    prop_name,
+                    items,
+                    schema,
+                    &extend_property_path(provider_path, "*"),
+                    cfn_property_path,
+                    None,
+                )
+            },
         );
         return TypeDisplay::List {
             item: Box::new(item),
@@ -3037,6 +2839,7 @@ fn type_display_at_resolved(
         prop_name,
         prop,
         schema,
+        provider_path,
         cfn_property_path,
         definition_name,
     ))
@@ -3045,14 +2848,21 @@ fn type_display_at_resolved(
 fn scalar_type_display_string_at(
     prop_name: &str,
     prop: &CfnProperty,
-    schema: &CfnSchema,
+    schema: &ClassifiedSchema<'_>,
+    provider_path: &[String],
     cfn_property_path: CfnPropertyPath<'_>,
     definition_name: Option<&str>,
 ) -> String {
     match inline_property_type(prop) {
-        Some("string") => {
-            string_leaf(prop, prop_name, schema, cfn_property_path, definition_name).display()
-        }
+        Some("string") => string_leaf(
+            prop,
+            prop_name,
+            schema,
+            provider_path,
+            cfn_property_path,
+            definition_name,
+        )
+        .display(),
         Some("boolean") => "Bool".to_string(),
         Some("integer") => {
             // Check resource-scoped overrides first
@@ -3299,7 +3109,7 @@ fn markdown_link_type(
 fn markdown_type(
     prop_name: &str,
     prop: &CfnProperty,
-    schema: &CfnSchema,
+    schema: &ClassifiedSchema<'_>,
     enum_target: Option<&MarkdownEnumKey>,
     property_path: &[String],
     cfn_parent: Option<&str>,
@@ -3318,6 +3128,7 @@ fn markdown_type(
             prop_name,
             prop,
             schema,
+            property_path,
             CfnPropertyPath::new(cfn_parent, prop_name),
         ))
     })
@@ -3563,7 +3374,7 @@ fn claim_unique_markdown_heading(
 }
 
 fn generate_markdown(schema: &CfnSchema, type_name: &str, example: &DocExample) -> Result<String> {
-    let _kms_reference_sites = kms_references_cfn::GenerationGuard::new(schema)?;
+    let schema = &ClassifiedSchema::new(schema)?;
     checked_read_back_declarations(schema, type_name)?;
     resource_type_overrides().validate_sources(schema)?;
     reset_recursion_guard();
@@ -4353,7 +4164,7 @@ fn detect_exclusive_fields(schema: &CfnSchema, type_name: &str) -> Vec<Vec<Strin
 fn generate_top_level_attribute_type(
     prop_name: &str,
     prop: &CfnProperty,
-    schema: &CfnSchema,
+    schema: &ClassifiedSchema<'_>,
     namespace: &str,
     enums: &BTreeMap<String, EnumInfo>,
     has_arn_helper: bool,
@@ -4434,7 +4245,7 @@ fn checked_read_back_declarations(
 }
 
 fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
-    let _kms_reference_sites = kms_references_cfn::GenerationGuard::new(schema)?;
+    let schema = &ClassifiedSchema::new(schema)?;
     let read_back_declarations = checked_read_back_declarations(schema, type_name)?;
     resource_type_overrides().validate_sources(schema)?;
     // carina#3340: clear per-resource codegen state at function entry
@@ -5506,12 +5317,6 @@ fn deduplicate_enum_values(values: Vec<String>) -> Option<Vec<String>> {
     }
 }
 
-/// Extract the definition name from a $ref path
-/// e.g., "#/definitions/Ingress" -> Some("Ingress")
-fn ref_def_name(ref_path: &str) -> Option<&str> {
-    ref_path.strip_prefix("#/definitions/")
-}
-
 /// The final definition reached by a local `$ref` chain.
 ///
 /// Definitions use the exact same representation as inline properties, so
@@ -5754,7 +5559,7 @@ fn generate_struct_type(
     def_name: &str,
     properties: &BTreeMap<String, CfnProperty>,
     required: &[String],
-    schema: &CfnSchema,
+    schema: &ClassifiedSchema<'_>,
     namespace: &str,
     enums: &BTreeMap<String, EnumInfo>,
     paths: StructGenerationPaths<'_>,
@@ -6419,12 +6224,13 @@ impl StringLeaf<'_> {
 fn string_leaf<'a>(
     prop: &'a CfnProperty,
     prop_name: &str,
-    schema: &CfnSchema,
+    schema: &ClassifiedSchema<'_>,
+    provider_path: &[String],
     property_path: CfnPropertyPath<'_>,
     definition_name: Option<&str>,
 ) -> StringLeaf<'a> {
     let cfn_type = &schema.type_name;
-    if let Some(kind) = kms_references_cfn::reference_at_property(schema, property_path) {
+    if let Some(kind) = schema.reference_at_property(provider_path) {
         return StringLeaf::Inferred {
             rust_type: kind.constructor().to_string(),
             display_type: "aws.kms.Key.Reference".to_string(),
@@ -8164,7 +7970,7 @@ fn enum_property_type(
 fn cfn_type_to_carina_type_with_enum(
     prop: &CfnProperty,
     prop_name: &str,
-    schema: &CfnSchema,
+    schema: &ClassifiedSchema<'_>,
     namespace: &str,
     enums: &BTreeMap<String, EnumInfo>,
 ) -> (String, Option<EnumInfo>) {
@@ -8304,7 +8110,7 @@ struct CfnTypeGenerationPaths<'a> {
 fn generate_object_map_type(
     value: &CfnProperty,
     prop_name: &str,
-    schema: &CfnSchema,
+    schema: &ClassifiedSchema<'_>,
     namespace: &str,
     enums: &BTreeMap<String, EnumInfo>,
     paths: CfnTypeGenerationPaths<'_>,
@@ -8340,7 +8146,7 @@ fn generate_object_map_type(
 fn cfn_type_to_carina_type_with_enum_with_paths(
     prop: &CfnProperty,
     prop_name: &str,
-    schema: &CfnSchema,
+    schema: &ClassifiedSchema<'_>,
     namespace: &str,
     enums: &BTreeMap<String, EnumInfo>,
     paths: CfnTypeGenerationPaths<'_>,
@@ -8374,7 +8180,7 @@ struct RefGenerationState<'a> {
 fn cfn_type_to_carina_type_with_enum_resolved(
     prop: &CfnProperty,
     prop_name: &str,
-    schema: &CfnSchema,
+    schema: &ClassifiedSchema<'_>,
     namespace: &str,
     enums: &BTreeMap<String, EnumInfo>,
     paths: CfnTypeGenerationPaths<'_>,
@@ -8530,8 +8336,15 @@ fn cfn_type_to_carina_type_with_enum_resolved(
     }
 
     if inline_property_type(prop) == Some("string") {
-        return string_leaf(prop, prop_name, schema, cfn_property_path, definition_name)
-            .emit(&schema.type_name, prop_name);
+        return string_leaf(
+            prop,
+            prop_name,
+            schema,
+            property_path,
+            cfn_property_path,
+            definition_name,
+        )
+        .emit(&schema.type_name, prop_name);
     }
 
     if let Some(leaf) = enum_leaf(prop, prop_name, definition_name) {
@@ -8802,6 +8615,77 @@ fn collapse_whitespace(s: &str) -> String {
 mod tests {
     use super::*;
     use std::path::Path;
+
+    // Leaf-focused fixtures must pass the same fallible classification gate as
+    // the renderers before invoking their emission helpers.
+
+    fn cfn_type_to_carina_type_with_enum(
+        prop: &CfnProperty,
+        prop_name: &str,
+        schema: &CfnSchema,
+        namespace: &str,
+        enums: &BTreeMap<String, EnumInfo>,
+    ) -> (String, Option<EnumInfo>) {
+        let classified = ClassifiedSchema::new(schema).unwrap();
+        super::cfn_type_to_carina_type_with_enum(prop, prop_name, &classified, namespace, enums)
+    }
+
+    fn cfn_type_to_carina_type_with_enum_with_paths(
+        prop: &CfnProperty,
+        prop_name: &str,
+        schema: &CfnSchema,
+        namespace: &str,
+        enums: &BTreeMap<String, EnumInfo>,
+        paths: CfnTypeGenerationPaths<'_>,
+    ) -> (String, Option<EnumInfo>) {
+        let classified = ClassifiedSchema::new(schema).unwrap();
+        super::cfn_type_to_carina_type_with_enum_with_paths(
+            prop,
+            prop_name,
+            &classified,
+            namespace,
+            enums,
+            paths,
+        )
+    }
+
+    fn generate_top_level_attribute_type(
+        prop_name: &str,
+        prop: &CfnProperty,
+        schema: &CfnSchema,
+        namespace: &str,
+        enums: &BTreeMap<String, EnumInfo>,
+        has_arn_helper: bool,
+    ) -> String {
+        let classified = ClassifiedSchema::new(schema).unwrap();
+        super::generate_top_level_attribute_type(
+            prop_name,
+            prop,
+            &classified,
+            namespace,
+            enums,
+            has_arn_helper,
+        )
+    }
+
+    fn markdown_type(
+        prop_name: &str,
+        prop: &CfnProperty,
+        schema: &CfnSchema,
+        enum_target: Option<&MarkdownEnumKey>,
+        property_path: &[String],
+        cfn_parent: Option<&str>,
+    ) -> MarkdownType {
+        let classified = ClassifiedSchema::new(schema).unwrap();
+        super::markdown_type(
+            prop_name,
+            prop,
+            &classified,
+            enum_target,
+            property_path,
+            cfn_parent,
+        )
+    }
 
     // Parse the emitted Rust literals, so these tests exercise the constraints
     // that the provider will actually publish rather than a parallel rewrite.

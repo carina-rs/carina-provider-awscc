@@ -3926,7 +3926,7 @@ mod tests {
     async fn read_resource_still_enforces_initialization_error_for_pending_identity() {
         let service = PartialCreateCloudControlService::new(true);
         let mut provider = provider_with_partial_create_service(service.clone()).await;
-        provider.init_error = Some("provider initialization failed".to_string());
+        provider.initialized = Err("provider initialization failed".to_string());
         let id = ResourceId::pending_with_provider("awscc", "s3.Bucket", None);
         let identifier = test_identifier("partial-bucket");
 
@@ -3946,7 +3946,7 @@ mod tests {
     async fn read_data_source_reports_unsupported_type_without_managed_read() {
         let service = PartialCreateCloudControlService::new(true);
         let mut provider = provider_with_partial_create_service(service.clone()).await;
-        provider.init_error = Some("provider initialization failed".to_string());
+        provider.initialized = Err("provider initialization failed".to_string());
         let id = ResourceId::pending_with_provider("awscc", "s3.Bucket", None);
 
         let error = provider

@@ -2,42 +2,52 @@
 
 use super::kms_references::{self, Classification, PathSegment, ReferenceKind, property_path};
 use super::{
-    CfnProperty, CfnPropertyPath, CfnSchema, cfn_property_path, dsl_resource_name_from_type,
-    extend_property_path, ref_def_name,
+    CfnProperty, CfnSchema, dsl_resource_name_from_type, extend_property_path,
+    is_read_only_property_path, ref_def_name,
 };
 use anyhow::{Result, bail};
 use heck::ToSnakeCase;
-use std::cell::RefCell;
 use std::collections::{BTreeMap, HashSet};
 
-type ReferenceSites = BTreeMap<String, ReferenceKind>;
-type ActiveSites = Option<(String, ReferenceSites)>;
-
-thread_local! {
-    static ACTIVE_SITES: RefCell<ActiveSites> = const { RefCell::new(None) };
+/// Renderers require a schema whose input strings have all been classified.
+/// Raw CFN pointers map to the full DSL paths produced by `property_path`;
+/// definition names and inline parent names never identify reference sites.
+pub(super) struct ClassifiedSchema<'a> {
+    schema: &'a CfnSchema,
+    sites: BTreeMap<String, ReferenceKind>,
+    property_paths: BTreeMap<Vec<String>, String>,
 }
 
-/// Validate once before either renderer, then restore the previous generation's
-/// context on every return path. Like codegen's other recursion state, this is
-/// thread-local so concurrent generation tests cannot share decisions.
-pub(super) struct GenerationGuard {
-    previous: ActiveSites,
-}
+impl<'a> ClassifiedSchema<'a> {
+    pub(super) fn new(schema: &'a CfnSchema) -> Result<Self> {
+        let (sites, property_paths) = reference_sites(schema)?;
+        Ok(Self {
+            schema,
+            sites,
+            property_paths,
+        })
+    }
 
-impl GenerationGuard {
-    pub(super) fn new(schema: &CfnSchema) -> Result<Self> {
-        let sites = reference_sites(schema)?;
-        let previous =
-            ACTIVE_SITES.with(|active| active.replace(Some((schema.type_name.clone(), sites))));
-        Ok(Self { previous })
+    pub(super) fn reference_at_property(&self, property_path: &[String]) -> Option<ReferenceKind> {
+        self.property_paths
+            .get(property_path)
+            .and_then(|path| self.sites.get(path))
+            .copied()
     }
 }
 
-impl Drop for GenerationGuard {
-    fn drop(&mut self) {
-        ACTIVE_SITES.with(|active| active.replace(self.previous.take()));
+impl std::ops::Deref for ClassifiedSchema<'_> {
+    type Target = CfnSchema;
+
+    fn deref(&self) -> &Self::Target {
+        self.schema
     }
 }
+
+type ReferenceSites = (
+    BTreeMap<String, ReferenceKind>,
+    BTreeMap<Vec<String>, String>,
+);
 
 #[derive(Clone, Default)]
 struct Evidence<'a> {
@@ -69,14 +79,14 @@ impl<'a> Evidence<'a> {
     }
 }
 
-/// Derive definition-local emission sites from the full-path classification table.
-/// Shared structs must agree at every use, because codegen reuses their definitions.
+/// Classify each use at its resource-relative path before either renderer runs.
 fn reference_sites(schema: &CfnSchema) -> Result<ReferenceSites> {
     struct Walker<'a> {
         schema: &'a CfnSchema,
         resource: String,
         ancestors: HashSet<&'a str>,
         sites: BTreeMap<String, Option<ReferenceKind>>,
+        property_paths: BTreeMap<Vec<String>, String>,
     }
 
     impl<'a> Walker<'a> {
@@ -86,24 +96,16 @@ fn reference_sites(schema: &CfnSchema) -> Result<ReferenceSites> {
             name: &str,
             path: &str,
             provider_path: &[String],
-            parent: Option<&str>,
             evidence: Evidence<'a>,
         ) -> Result<()> {
-            if self
-                .schema
-                .read_only_properties
-                .iter()
-                .filter_map(|p| cfn_property_path(p))
-                .any(|read_only| provider_path.starts_with(&read_only))
-            {
-                return Ok(());
-            }
             let evidence = evidence.with(prop);
             if let Some(reference) = prop.ref_path.as_deref() {
                 let definition = ref_def_name(reference)
                     .and_then(|name| self.schema.definitions.as_ref()?.get_key_value(name));
                 let Some((definition_name, target)) = definition else {
-                    if evidence.is_candidate(name) {
+                    if !is_read_only_property_path(self.schema, provider_path)
+                        && evidence.is_candidate(name)
+                    {
                         bail!(
                             "{}.{path}: cannot classify KMS input with unresolved $ref {reference}",
                             self.resource
@@ -112,58 +114,40 @@ fn reference_sites(schema: &CfnSchema) -> Result<ReferenceSites> {
                     return Ok(());
                 };
                 if self.ancestors.insert(definition_name) {
-                    // Keep the original property/parent for scalar aliases; object
-                    // children below acquire the referenced definition's own name.
-                    self.walk_resolved(
-                        target,
-                        name,
-                        path,
-                        provider_path,
-                        parent,
-                        evidence,
-                        Some(definition_name),
-                    )?;
+                    self.walk(target, name, path, provider_path, evidence)?;
                     self.ancestors.remove(definition_name.as_str());
                 }
                 return Ok(());
-            }
-            self.walk_resolved(prop, name, path, provider_path, parent, evidence, None)
-        }
-
-        #[allow(clippy::too_many_arguments)]
-        fn walk_resolved(
-            &mut self,
-            prop: &'a CfnProperty,
-            name: &str,
-            path: &str,
-            provider_path: &[String],
-            parent: Option<&str>,
-            evidence: Evidence<'a>,
-            definition_name: Option<&str>,
-        ) -> Result<()> {
-            let evidence = evidence.with(prop);
-            if prop.ref_path.is_some() {
-                return self.walk(prop, name, path, provider_path, parent, evidence);
             }
             if prop
                 .prop_type
                 .as_ref()
                 .is_some_and(|ty| ty.contains("string"))
             {
-                let classification = kms_references::classify_string(
-                    &self.resource,
-                    path,
-                    name,
-                    Some(&evidence.patterns.join(" ")),
-                    Some(&evidence.descriptions.join(" ")),
-                )?;
+                let classification = if is_read_only_property_path(self.schema, provider_path) {
+                    None
+                } else {
+                    kms_references::classify_string(
+                        &self.resource,
+                        path,
+                        name,
+                        Some(&evidence.patterns.join(" ")),
+                        Some(&evidence.descriptions.join(" ")),
+                    )?
+                };
                 if let Some(classification) = classification {
+                    self.property_paths
+                        .insert(provider_path.to_vec(), path.to_string());
                     let kind = match classification {
                         Classification::Reference(kind) => {
-                            let entry = kms_references::entry(&self.resource, path).unwrap();
-                            if evidence.patterns
-                                != entry.cfn_pattern.into_iter().collect::<Vec<_>>()
-                            {
+                            let entry =
+                                kms_references::entry(&self.resource, path).ok_or_else(|| {
+                                    anyhow::anyhow!(
+                                        "missing KMS classification for {}.{path}",
+                                        self.resource
+                                    )
+                                })?;
+                            if evidence.patterns.as_slice() != entry.cfn_pattern.as_slice() {
                                 bail!(
                                     "{}.{path}: KMS pattern changed from {:?} to {:?}; classify its constraint before generation",
                                     self.resource,
@@ -175,7 +159,7 @@ fn reference_sites(schema: &CfnSchema) -> Result<ReferenceSites> {
                         }
                         Classification::NotReference(_) => None,
                     };
-                    let site = CfnPropertyPath::new(parent, name).to_string();
+                    let site = path.to_string();
                     if let Some(previous) = self.sites.insert(site.clone(), kind)
                         && previous != kind
                     {
@@ -193,7 +177,6 @@ fn reference_sites(schema: &CfnSchema) -> Result<ReferenceSites> {
                         child_name,
                         &property_path(path, PathSegment::Field(&child_name.to_snake_case())),
                         &extend_property_path(provider_path, child_name),
-                        Some(definition_name.unwrap_or(name)),
                         Evidence::default(),
                     )?;
                 }
@@ -204,7 +187,6 @@ fn reference_sites(schema: &CfnSchema) -> Result<ReferenceSites> {
                     name,
                     &property_path(path, PathSegment::ListElement),
                     &extend_property_path(provider_path, "*"),
-                    parent,
                     evidence.clone(),
                 )?;
             }
@@ -215,13 +197,12 @@ fn reference_sites(schema: &CfnSchema) -> Result<ReferenceSites> {
                         name,
                         &property_path(path, PathSegment::MapValue),
                         &extend_property_path(provider_path, "*"),
-                        parent,
                         evidence.clone(),
                     )?;
                 }
             }
             for variant in prop.one_of.iter().chain(&prop.any_of) {
-                self.walk(variant, name, path, provider_path, parent, evidence.clone())?;
+                self.walk(variant, name, path, provider_path, evidence.clone())?;
             }
             Ok(())
         }
@@ -232,6 +213,7 @@ fn reference_sites(schema: &CfnSchema) -> Result<ReferenceSites> {
         resource: dsl_resource_name_from_type(&schema.type_name)?,
         ancestors: HashSet::new(),
         sites: BTreeMap::new(),
+        property_paths: BTreeMap::new(),
     };
     for (name, prop) in &schema.properties {
         walker.walk(
@@ -239,33 +221,15 @@ fn reference_sites(schema: &CfnSchema) -> Result<ReferenceSites> {
             name,
             &name.to_snake_case(),
             std::slice::from_ref(name),
-            None,
             Evidence::default(),
         )?;
     }
-    Ok(walker
-        .sites
-        .into_iter()
-        .filter_map(|(site, kind)| kind.map(|kind| (site, kind)))
-        .collect())
-}
-
-pub(super) fn reference_at_property(
-    schema: &CfnSchema,
-    site: CfnPropertyPath<'_>,
-) -> Option<ReferenceKind> {
-    let active = ACTIVE_SITES.with(|active| {
-        active
-            .borrow()
-            .as_ref()
-            .filter(|(resource, _)| resource == &schema.type_name)
-            .map(|(_, sites)| sites.get(&site.to_string()).copied())
-    });
-    active.unwrap_or_else(|| {
-        // Direct leaf-generation unit tests do not install a renderer context.
-        reference_sites(schema)
-            .unwrap_or_else(|error| panic!("{error}"))
-            .get(&site.to_string())
-            .copied()
-    })
+    Ok((
+        walker
+            .sites
+            .into_iter()
+            .filter_map(|(site, kind)| kind.map(|kind| (site, kind)))
+            .collect(),
+        walker.property_paths,
+    ))
 }

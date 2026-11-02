@@ -16,8 +16,6 @@ pub enum Classification {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReferenceKind {
     Key,
-    #[allow(dead_code)] // Available for a CFN key-ARN-only pattern.
-    KeyArn,
     KeyOrAliasArn,
 }
 
@@ -25,7 +23,6 @@ impl ReferenceKind {
     pub fn constructor(self) -> &'static str {
         match self {
             Self::Key => "carina_aws_types::kms_key_reference()",
-            Self::KeyArn => "carina_aws_types::kms_key_arn_reference()",
             Self::KeyOrAliasArn => "carina_aws_types::kms_key_or_alias_arn_reference()",
         }
     }
@@ -35,7 +32,6 @@ impl ReferenceKind {
     pub fn expected_pattern(self) -> &'static str {
         match self {
             Self::Key => carina_aws_types::KMS_KEY_REFERENCE_PATTERN,
-            Self::KeyArn => carina_aws_types::KMS_KEY_ARN_PATTERN,
             Self::KeyOrAliasArn => carina_aws_types::KMS_KEY_OR_ALIAS_ARN_PATTERN,
         }
     }

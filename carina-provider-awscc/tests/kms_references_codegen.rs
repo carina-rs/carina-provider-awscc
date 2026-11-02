@@ -215,3 +215,26 @@ fn read_only_strings_and_non_string_kms_properties_keep_their_types() {
         );
     }
 }
+
+#[test]
+fn read_only_parent_does_not_hide_emitted_child_kms_input() {
+    let mut schema = vpc_schema();
+    schema["properties"]["Settings"] = json!({"type": "object", "properties": {
+        "KmsFoo": {"type": "string"}
+    }});
+    schema["readOnlyProperties"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!("/properties/Settings"));
+    for format in ["rust", "markdown"] {
+        let output = generate(&schema, format);
+        assert!(
+            !output.status.success(),
+            "writable child escaped classification in {format}"
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stderr)
+                .contains("unclassified KMS string ec2.Vpc.settings.kms_foo")
+        );
+    }
+}
