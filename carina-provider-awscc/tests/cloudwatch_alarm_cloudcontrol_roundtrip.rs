@@ -33,6 +33,10 @@ fn string(value: &str) -> Value {
     Value::Concrete(ConcreteValue::String(value.to_string().into()))
 }
 
+fn enum_identifier(value: &str) -> Value {
+    Value::Concrete(ConcreteValue::enum_identifier(value))
+}
+
 fn int(value: i64) -> Value {
     Value::Concrete(ConcreteValue::Int(value))
 }
@@ -58,13 +62,16 @@ fn alarm_resource() -> Resource {
     Resource::with_provider("awscc", "cloudwatch.Alarm", "api_errors", None)
         .with_attribute("alarm_name", string(ALARM_NAME))
         .with_attribute("alarm_description", string("Registry API errors"))
-        .with_attribute("comparison_operator", string("GreaterThanThreshold"))
+        .with_attribute(
+            "comparison_operator",
+            enum_identifier("greater_than_threshold"),
+        )
         .with_attribute("evaluation_periods", int(2))
         .with_attribute("datapoints_to_alarm", int(1))
         .with_attribute("metric_name", string("Errors"))
         .with_attribute("namespace", string("Carina/Registry"))
         .with_attribute("period", int(60))
-        .with_attribute("statistic", string("Sum"))
+        .with_attribute("statistic", enum_identifier("sum"))
         .with_attribute("threshold", float(0.5))
         .with_attribute(
             "dimensions",
@@ -137,10 +144,14 @@ fn alarm_numeric_fields_keep_their_dsl_shapes() {
             .attributes()
             .get(field)
             .unwrap_or_else(|| panic!("Alarm.{field} should exist"));
-        assert!(
-            matches!(attribute.attr_type().raw_shape(), RawShape::Int { .. }),
-            "Alarm.{field} must use Int"
-        );
+        let is_int = match attribute.attr_type().raw_shape() {
+            RawShape::Int { .. } => true,
+            RawShape::Union(members) if field == "evaluation_interval" => members
+                .iter()
+                .all(|member| matches!(member.raw_shape(), RawShape::Int { .. })),
+            _ => false,
+        };
+        assert!(is_int, "Alarm.{field} must use Int refinements");
     }
 
     let threshold = config
@@ -174,6 +185,8 @@ async fn cloudwatch_alarm_create_then_read_preserves_structures_and_numeric_shap
     let (stored_identifier, desired_state) = stored_alarm(&cloudcontrol).await;
     assert_eq!(created.identifier().as_str(), ALARM_NAME);
     assert_eq!(desired_state["AlarmName"], ALARM_NAME);
+    assert_eq!(desired_state["ComparisonOperator"], "GreaterThanThreshold");
+    assert_eq!(desired_state["Statistic"], "Sum");
     assert_eq!(desired_state["EvaluationPeriods"], 2);
     assert_eq!(desired_state["DatapointsToAlarm"], 1);
     assert_eq!(desired_state["Period"], 60);
@@ -200,6 +213,11 @@ async fn cloudwatch_alarm_create_then_read_preserves_structures_and_numeric_shap
         .expect("cloudwatch.Alarm read through Provider::read should succeed");
     let read = common::found_state(read);
 
+    assert_eq!(
+        read.attributes().get("comparison_operator"),
+        Some(&string("GreaterThanThreshold"))
+    );
+    assert_eq!(read.attributes().get("statistic"), Some(&string("Sum")));
     assert_eq!(read.attributes().get("evaluation_periods"), Some(&int(2)));
     assert_eq!(read.attributes().get("datapoints_to_alarm"), Some(&int(1)));
     assert_eq!(read.attributes().get("period"), Some(&int(60)));

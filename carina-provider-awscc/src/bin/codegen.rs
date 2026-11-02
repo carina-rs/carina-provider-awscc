@@ -7517,6 +7517,338 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             ]),
         );
 
+        // CloudWatch API constraints missing from the cached CFN schema.
+        // Keep every override at its raw top-level or definition-qualified CFN path.
+        // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_PutMetricAlarm.html
+        m.insert(
+            ("AWS::CloudWatch::Alarm", "ComparisonOperator"),
+            TypeOverride::Enum(vec![
+                "GreaterThanOrEqualToThreshold",
+                "GreaterThanThreshold",
+                "LessThanThreshold",
+                "LessThanOrEqualToThreshold",
+                "LessThanLowerOrGreaterThanUpperThreshold",
+                "LessThanLowerThreshold",
+                "GreaterThanUpperThreshold",
+            ]),
+        );
+        // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_PutMetricAlarm.html
+        m.insert(
+            ("AWS::CloudWatch::Alarm", "Statistic"),
+            TypeOverride::Enum(vec!["SampleCount", "Average", "Sum", "Minimum", "Maximum"]),
+        );
+        // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_PutMetricAlarm.html
+        m.insert(
+            ("AWS::CloudWatch::Alarm", "EvaluateLowSampleCountPercentile"),
+            TypeOverride::Enum(vec!["evaluate", "ignore"]),
+        );
+        // The API and the cached MetricStat.Unit description list these same 27 units.
+        // DSL enum spelling uses dsl_enum_value (Bytes/Second -> bytes_second);
+        // the generated alias table retains the exact AWS strings in both directions.
+        // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_PutMetricAlarm.html
+        // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_MetricStat.html
+        let cloudwatch_units = vec![
+            "Seconds",
+            "Microseconds",
+            "Milliseconds",
+            "Bytes",
+            "Kilobytes",
+            "Megabytes",
+            "Gigabytes",
+            "Terabytes",
+            "Bits",
+            "Kilobits",
+            "Megabits",
+            "Gigabits",
+            "Terabits",
+            "Percent",
+            "Count",
+            "Bytes/Second",
+            "Kilobytes/Second",
+            "Megabytes/Second",
+            "Gigabytes/Second",
+            "Terabytes/Second",
+            "Bits/Second",
+            "Kilobits/Second",
+            "Megabits/Second",
+            "Gigabits/Second",
+            "Terabits/Second",
+            "Count/Second",
+            "None",
+        ];
+        for path in ["Unit", "MetricStat.Unit"] {
+            m.insert(
+                ("AWS::CloudWatch::Alarm", path),
+                TypeOverride::Enum(cloudwatch_units.clone()),
+            );
+        }
+        // Ranges may use percentages or absolute metric values, with either bound omitted.
+        // At least one bound is required; percentile values stay between 0 and 100.
+        // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_PutMetricAlarm.html
+        // https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/Statistics-definitions.html
+        m.insert(
+            ("AWS::CloudWatch::Alarm", "ExtendedStatistic"),
+            TypeOverride::AttributeType {
+                expression: r#"AttributeType::refined_string(None, Some("^(?:(?:p|tm|tc|ts|wm)(?:100(?:\\.0+)?|[0-9]{1,2}(?:\\.[0-9]+)?)|IQM|PR\\((?:-?[0-9]+(?:\\.[0-9]+)?:(?:-?[0-9]+(?:\\.[0-9]+)?)?|:-?[0-9]+(?:\\.[0-9]+)?)\\)|(?:TC|TM|TS|WM)\\((?:(?:(?:100(?:\\.0+)?|[0-9]{1,2}(?:\\.[0-9]+)?)%|-?[0-9]+(?:\\.[0-9]+)?):(?:(?:(?:100(?:\\.0+)?|[0-9]{1,2}(?:\\.[0-9]+)?)%|-?[0-9]+(?:\\.[0-9]+)?))?|:(?:(?:100(?:\\.0+)?|[0-9]{1,2}(?:\\.[0-9]+)?)%|-?[0-9]+(?:\\.[0-9]+)?))\\))$".to_string()), None, None)"#,
+                display: const { OverrideTypeDisplay::new(r"String (pattern: ^(?:(?:p|tm|tc|ts|wm)(?:100(?:\.0+)?|[0-9]{1,2}(?:\.[0-9]+)?)|IQM|PR\((?:-?[0-9]+(?:\.[0-9]+)?:(?:-?[0-9]+(?:\.[0-9]+)?)?|:-?[0-9]+(?:\.[0-9]+)?)\)|(?:TC|TM|TS|WM)\((?:(?:(?:100(?:\.0+)?|[0-9]{1,2}(?:\.[0-9]+)?)%|-?[0-9]+(?:\.[0-9]+)?):(?:(?:(?:100(?:\.0+)?|[0-9]{1,2}(?:\.[0-9]+)?)%|-?[0-9]+(?:\.[0-9]+)?))?|:(?:(?:100(?:\.0+)?|[0-9]{1,2}(?:\.[0-9]+)?)%|-?[0-9]+(?:\.[0-9]+)?))\))$)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_MetricStat.html
+        // https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/Statistics-definitions.html
+        m.insert(
+            ("AWS::CloudWatch::Alarm", "MetricStat.Stat"),
+            TypeOverride::AttributeType {
+                expression: r#"AttributeType::refined_string(None, Some("^(?:SampleCount|Average|Sum|Minimum|Maximum|(?:p|tm|tc|ts|wm)(?:100(?:\\.0+)?|[0-9]{1,2}(?:\\.[0-9]+)?)|IQM|PR\\((?:-?[0-9]+(?:\\.[0-9]+)?:(?:-?[0-9]+(?:\\.[0-9]+)?)?|:-?[0-9]+(?:\\.[0-9]+)?)\\)|(?:TC|TM|TS|WM)\\((?:(?:(?:100(?:\\.0+)?|[0-9]{1,2}(?:\\.[0-9]+)?)%|-?[0-9]+(?:\\.[0-9]+)?):(?:(?:(?:100(?:\\.0+)?|[0-9]{1,2}(?:\\.[0-9]+)?)%|-?[0-9]+(?:\\.[0-9]+)?))?|:(?:(?:100(?:\\.0+)?|[0-9]{1,2}(?:\\.[0-9]+)?)%|-?[0-9]+(?:\\.[0-9]+)?))\\))$".to_string()), None, None)"#,
+                display: const { OverrideTypeDisplay::new(r"String (pattern: ^(?:SampleCount|Average|Sum|Minimum|Maximum|(?:p|tm|tc|ts|wm)(?:100(?:\.0+)?|[0-9]{1,2}(?:\.[0-9]+)?)|IQM|PR\((?:-?[0-9]+(?:\.[0-9]+)?:(?:-?[0-9]+(?:\.[0-9]+)?)?|:-?[0-9]+(?:\.[0-9]+)?)\)|(?:TC|TM|TS|WM)\((?:(?:(?:100(?:\.0+)?|[0-9]{1,2}(?:\.[0-9]+)?)%|-?[0-9]+(?:\.[0-9]+)?):(?:(?:(?:100(?:\.0+)?|[0-9]{1,2}(?:\.[0-9]+)?)%|-?[0-9]+(?:\.[0-9]+)?))?|:(?:(?:100(?:\.0+)?|[0-9]{1,2}(?:\.[0-9]+)?)%|-?[0-9]+(?:\.[0-9]+)?))\))$)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // carina-core f6a02e19 only carries ranges on anonymous Int refinements.
+        // refined_int_with_validator requires a named TypeIdentity, so the unbounded
+        // Period sets/modulus rules cannot be expressed per attribute. Keep the API
+        // lower bounds without introducing a shared named type or a core change.
+        // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_PutMetricAlarm.html
+        m.insert(
+            ("AWS::CloudWatch::Alarm", "Period"),
+            TypeOverride::AttributeType {
+                expression: r#"AttributeType::refined_int(None, Some((Some(10), None)))"#,
+                display: const { OverrideTypeDisplay::new(r"Int(10..)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // As for Period above, only the documented lower bound is representable.
+        // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_MetricDataQuery.html
+        m.insert(
+            ("AWS::CloudWatch::Alarm", "MetricDataQuery.Period"),
+            TypeOverride::AttributeType {
+                expression: r#"AttributeType::refined_int(None, Some((Some(1), None)))"#,
+                display: const { OverrideTypeDisplay::new(r"Int(1..)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // As for Period above, only the documented lower bound is representable.
+        // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_MetricStat.html
+        m.insert(
+            ("AWS::CloudWatch::Alarm", "MetricStat.Period"),
+            TypeOverride::AttributeType {
+                expression: r#"AttributeType::refined_int(None, Some((Some(1), None)))"#,
+                display: const { OverrideTypeDisplay::new(r"Int(1..)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // Unlike the unbounded Period rules, 10..=3600 makes this set finite.
+        // The existing IntEnum emitter builds anonymous singleton Int refinements.
+        // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_PutMetricAlarm.html
+        m.insert(
+            ("AWS::CloudWatch::Alarm", "EvaluationInterval"),
+            TypeOverride::IntEnum(
+                [10, 20, 30]
+                    .into_iter()
+                    .chain((60..=3600).step_by(60))
+                    .collect(),
+            ),
+        );
+        // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_PutMetricAlarm.html
+        m.insert(
+            ("AWS::CloudWatch::Alarm", "EvaluationPeriods"),
+            TypeOverride::AttributeType {
+                expression: r#"AttributeType::refined_int(None, Some((Some(1), None)))"#,
+                display: const { OverrideTypeDisplay::new(r"Int(1..)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_PutMetricAlarm.html
+        m.insert(
+            ("AWS::CloudWatch::Alarm", "DatapointsToAlarm"),
+            TypeOverride::AttributeType {
+                expression: r#"AttributeType::refined_int(None, Some((Some(1), None)))"#,
+                display: const { OverrideTypeDisplay::new(r"Int(1..)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_AlarmPromQLCriteria.html
+        m.insert(
+            (
+                "AWS::CloudWatch::Alarm",
+                "AlarmPromQLCriteria.PendingPeriod",
+            ),
+            TypeOverride::AttributeType {
+                expression: "AttributeType::refined_int(None, Some((Some(0), Some(86400))))",
+                display: const { OverrideTypeDisplay::new("Int(0..=86400)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_AlarmPromQLCriteria.html
+        m.insert(
+            (
+                "AWS::CloudWatch::Alarm",
+                "AlarmPromQLCriteria.RecoveryPeriod",
+            ),
+            TypeOverride::AttributeType {
+                expression: "AttributeType::refined_int(None, Some((Some(0), Some(86400))))",
+                display: const { OverrideTypeDisplay::new("Int(0..=86400)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_AlarmPromQLCriteria.html
+        m.insert(
+            ("AWS::CloudWatch::Alarm", "AlarmPromQLCriteria.Query"),
+            TypeOverride::AttributeType {
+                expression: r#"AttributeType::refined_string(None, None, Some((Some(1), Some(10000))), None)"#,
+                display: const { OverrideTypeDisplay::new(r"String (length: 1..=10000)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_PutMetricAlarm.html
+        m.insert(
+            ("AWS::CloudWatch::Alarm", "AlarmName"),
+            TypeOverride::AttributeType {
+                expression: r#"AttributeType::refined_string(None, Some("^[^\\x00-\\x1F\\x7F]+$".to_string()), Some((Some(1), Some(255))), None)"#,
+                display: const { OverrideTypeDisplay::new(r"String (length: 1..=255, pattern: ^[^\x00-\x1F\x7F]+$)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_PutMetricAlarm.html
+        m.insert(
+            ("AWS::CloudWatch::Alarm", "MetricName"),
+            TypeOverride::AttributeType {
+                expression: r#"AttributeType::refined_string(None, None, Some((Some(1), Some(255))), None)"#,
+                display: const { OverrideTypeDisplay::new(r"String (length: 1..=255)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_Metric.html
+        m.insert(
+            ("AWS::CloudWatch::Alarm", "Metric.MetricName"),
+            TypeOverride::AttributeType {
+                expression: r#"AttributeType::refined_string(None, None, Some((Some(1), Some(255))), None)"#,
+                display: const { OverrideTypeDisplay::new(r"String (length: 1..=255)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_PutMetricAlarm.html
+        m.insert(
+            ("AWS::CloudWatch::Alarm", "Namespace"),
+            TypeOverride::AttributeType {
+                expression: r#"AttributeType::refined_string(None, Some("^[^:].*$".to_string()), Some((Some(1), Some(255))), None)"#,
+                display: const { OverrideTypeDisplay::new(r"String (length: 1..=255, pattern: ^[^:].*$)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_Metric.html
+        m.insert(
+            ("AWS::CloudWatch::Alarm", "Metric.Namespace"),
+            TypeOverride::AttributeType {
+                expression: r#"AttributeType::refined_string(None, Some("^[^:].*$".to_string()), Some((Some(1), Some(255))), None)"#,
+                display: const { OverrideTypeDisplay::new(r"String (length: 1..=255, pattern: ^[^:].*$)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // The shared Dimension definition covers Dimensions and Metric.Dimensions.
+        // Only printable ASCII is allowed, with at least one non-space character.
+        // A name can start with a space, but cannot start with a colon.
+        // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_Dimension.html
+        m.insert(
+            ("AWS::CloudWatch::Alarm", "Dimension.Name"),
+            TypeOverride::AttributeType {
+                expression: r#"AttributeType::refined_string(None, Some("^(?:[!-9;-~][ -~]*| [ -~]*[!-~][ -~]*)$".to_string()), Some((Some(1), Some(255))), None)"#,
+                display: const { OverrideTypeDisplay::new(r"String (length: 1..=255, pattern: ^(?:[!-9;-~][ -~]*| [ -~]*[!-~][ -~]*)$)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_Dimension.html
+        m.insert(
+            ("AWS::CloudWatch::Alarm", "Dimension.Value"),
+            TypeOverride::AttributeType {
+                expression: r#"AttributeType::refined_string(None, Some("^[ -~]*[!-~][ -~]*$".to_string()), Some((Some(1), Some(1024))), None)"#,
+                display: const { OverrideTypeDisplay::new(r"String (length: 1..=1024, pattern: ^[ -~]*[!-~][ -~]*$)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_PutMetricAlarm.html
+        m.insert(
+            ("AWS::CloudWatch::Alarm", "ThresholdMetricId"),
+            TypeOverride::AttributeType {
+                expression: r#"AttributeType::refined_string(None, None, Some((Some(1), Some(255))), None)"#,
+                display: const { OverrideTypeDisplay::new(r"String (length: 1..=255)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_PutMetricAlarm.html
+        m.insert(
+            ("AWS::CloudWatch::Alarm", "AlarmDescription"),
+            TypeOverride::AttributeType {
+                expression: r#"AttributeType::refined_string(None, None, Some((Some(0), Some(1024))), None)"#,
+                display: const { OverrideTypeDisplay::new(r"String (length: 0..=1024)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_MetricDataQuery.html
+        m.insert(
+            ("AWS::CloudWatch::Alarm", "MetricDataQuery.Id"),
+            TypeOverride::AttributeType {
+                expression: r#"AttributeType::refined_string(None, Some("^[a-z][a-zA-Z0-9_]*$".to_string()), Some((Some(1), Some(255))), None)"#,
+                display: const { OverrideTypeDisplay::new(r"String (length: 1..=255, pattern: ^[a-z][a-zA-Z0-9_]*$)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_MetricDataQuery.html
+        m.insert(
+            ("AWS::CloudWatch::Alarm", "MetricDataQuery.Expression"),
+            TypeOverride::AttributeType {
+                expression: r#"AttributeType::refined_string(None, None, Some((Some(1), Some(2048))), None)"#,
+                display: const { OverrideTypeDisplay::new(r"String (length: 1..=2048)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // The existing CFN item type is String for all three action arrays.
+        // Retain CFN insertion order and duplicate handling while adding API bounds.
+        // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_PutMetricAlarm.html
+        for path in ["AlarmActions", "OKActions", "InsufficientDataActions"] {
+            m.insert(
+                ("AWS::CloudWatch::Alarm", path),
+                TypeOverride::ArrayItemType {
+                    expression: "AttributeType::refined_string(None, None, Some((Some(1), Some(1024))), None)",
+                    display: const { OverrideTypeDisplay::new("List<String (length: 1..=1024)>") },
+                    block_name: None,
+                    default: None,
+                }.with_array_bounds(None, Some(5)),
+            );
+        }
+        // Accept IANA-name syntax or an optional UTC-prefixed offset in five-minute steps.
+        // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_WallClockWindow.html
+        m.insert(
+            ("AWS::CloudWatch::Alarm", "WallClockWindow.Timezone"),
+            TypeOverride::AttributeType {
+                expression: r#"AttributeType::refined_string(None, Some("^(?:[A-Za-z0-9_+-]+(?:/[A-Za-z0-9_+-]+)*|(?:UTC)?[+-][0-9]{2}:[0-5][05])$".to_string()), Some((Some(1), Some(50))), None)"#,
+                display: const { OverrideTypeDisplay::new(r"String (length: 1..=50, pattern: ^(?:[A-Za-z0-9_+-]+(?:/[A-Za-z0-9_+-]+)*|(?:UTC)?[+-][0-9]{2}:[0-5][05])$)") },
+                block_name: None,
+                default: None,
+            },
+        );
+
         // Cloud Control create/get in both directions with carina-test-008 in
         // ap-northeast-1 on 2026-10-31 returned these policy values as native
         // JSON objects/arrays, never JSON strings. Keep each override at its
@@ -12990,13 +13322,15 @@ mod tests {
                 Some("integer"),
                 "{property_name} must use the CloudWatch API's integer shape"
             );
-            let dsl_name = property_name.to_snake_case();
             assert!(
-                generated.contains(&format!(
-                    "AttributeSchema::optional({}, AttributeType::int())",
-                    rust_lit(&dsl_name)
-                )),
-                "{property_name} must generate an Int attribute: {generated}"
+                generated_cloudwatch_field(&generated, property_name).starts_with(
+                    if property_name == "EvaluationInterval" {
+                        "AttributeType::union("
+                    } else {
+                        "AttributeType::refined_int("
+                    }
+                ),
+                "{property_name} must generate a constrained Int attribute: {generated}"
             );
         }
 
@@ -13051,6 +13385,413 @@ mod tests {
             !generated.contains("FieldGroup::exactly_one([\"extended_statistic\", \"statistic\"]"),
             "a condition-qualified description must not become a global exactly-one constraint: {generated}"
         );
+    }
+
+    fn generated_cloudwatch_field<'a>(generated: &'a str, path: &str) -> &'a str {
+        if path.contains('.') {
+            return generated_budgets_field(generated, path);
+        }
+        generated
+            .split_once(&format!(
+                "AttributeSchema::optional({}, ",
+                rust_lit(&path.to_snake_case())
+            ))
+            .unwrap_or_else(|| panic!("missing Alarm attribute {path}"))
+            .1
+            .split_once(")\n")
+            .unwrap()
+            .0
+    }
+
+    const CLOUDWATCH_UNITS: &[&str] = &[
+        "Seconds",
+        "Microseconds",
+        "Milliseconds",
+        "Bytes",
+        "Kilobytes",
+        "Megabytes",
+        "Gigabytes",
+        "Terabytes",
+        "Bits",
+        "Kilobits",
+        "Megabits",
+        "Gigabits",
+        "Terabits",
+        "Percent",
+        "Count",
+        "Bytes/Second",
+        "Kilobytes/Second",
+        "Megabytes/Second",
+        "Gigabytes/Second",
+        "Terabytes/Second",
+        "Bits/Second",
+        "Kilobits/Second",
+        "Megabits/Second",
+        "Gigabits/Second",
+        "Terabits/Second",
+        "Count/Second",
+        "None",
+    ];
+
+    #[test]
+    fn test_cloudwatch_alarm_api_enums_and_unit_description_agree() {
+        let schema = cfn_schema_for_codegen_tests("AWS::CloudWatch::Alarm");
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        let cases: &[(&str, &[&str])] = &[
+            (
+                "ComparisonOperator",
+                &[
+                    "GreaterThanOrEqualToThreshold",
+                    "GreaterThanThreshold",
+                    "LessThanThreshold",
+                    "LessThanOrEqualToThreshold",
+                    "LessThanLowerOrGreaterThanUpperThreshold",
+                    "LessThanLowerThreshold",
+                    "GreaterThanUpperThreshold",
+                ],
+            ),
+            (
+                "Statistic",
+                &["SampleCount", "Average", "Sum", "Minimum", "Maximum"],
+            ),
+            ("EvaluateLowSampleCountPercentile", &["evaluate", "ignore"]),
+            ("Unit", CLOUDWATCH_UNITS),
+            ("MetricStat.Unit", CLOUDWATCH_UNITS),
+        ];
+        for (path, values) in cases {
+            assert_eq!(
+                resource_type_overrides().get(&("AWS::CloudWatch::Alarm", *path)),
+                Some(&TypeOverride::Enum(values.to_vec())),
+                "{path} must have its own full CFN path override"
+            );
+            let field = generated_cloudwatch_field(&generated, path);
+            assert!(
+                field.starts_with("AttributeType::enum_("),
+                "{path}: {field}"
+            );
+            let spellings = values
+                .iter()
+                .map(|wire| (*wire, dsl_enum_value(wire)))
+                .collect::<Vec<_>>();
+            let pairs = spellings
+                .iter()
+                .map(|(wire, dsl)| (*wire, dsl.as_str()))
+                .collect::<Vec<_>>();
+            assert_budgets_enum_values(field, path, &pairs);
+        }
+        assert_eq!(dsl_enum_value("Bytes/Second"), "bytes_second");
+        assert_eq!(dsl_enum_value("Count/Second"), "count_second");
+        let description = schema.definitions.as_ref().unwrap()["MetricStat"]
+            .properties
+            .as_ref()
+            .unwrap()["Unit"]
+            .description
+            .as_ref()
+            .unwrap();
+        let described = description
+            .split_once("Valid values are: ")
+            .unwrap()
+            .1
+            .trim_end_matches('.')
+            .split(", ")
+            .map(|value| value.trim_start_matches("or "))
+            .collect::<Vec<_>>();
+        assert_eq!(described, CLOUDWATCH_UNITS, "cached CFN unit list drifted");
+        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        for value in [
+            "greater_than_threshold",
+            "sample_count",
+            "bytes_second",
+            "count_second",
+        ] {
+            assert!(markdown.contains(&format!(".{value}`")), "{value}");
+        }
+    }
+
+    #[test]
+    fn test_cloudwatch_alarm_api_numeric_constraints_and_period_limitations() {
+        let schema = cfn_schema_for_codegen_tests("AWS::CloudWatch::Alarm");
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        for (path, min, max) in [
+            ("Period", 10, None),
+            ("MetricDataQuery.Period", 1, None),
+            ("MetricStat.Period", 1, None),
+            ("EvaluationPeriods", 1, None),
+            ("DatapointsToAlarm", 1, None),
+            ("AlarmPromQLCriteria.PendingPeriod", 0, Some(86400)),
+            ("AlarmPromQLCriteria.RecoveryPeriod", 0, Some(86400)),
+        ] {
+            let expected = refined_int_type("None", &emit_int_range_option(Some(min), max));
+            assert!(
+                generated_cloudwatch_field(&generated, path).starts_with(&expected),
+                "{path}"
+            );
+            assert!(
+                resource_type_overrides()
+                    .get(&("AWS::CloudWatch::Alarm", path))
+                    .is_some(),
+                "{path} must be per-attribute"
+            );
+            assert!(markdown.contains(&format!("Int({})", range_display_string(Some(min), max))));
+        }
+        // A bounded set is expressible using the existing anonymous Int union.
+        let values = [10, 20, 30]
+            .into_iter()
+            .chain((60..=3600).step_by(60))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            resource_type_overrides().get(&("AWS::CloudWatch::Alarm", "EvaluationInterval")),
+            Some(&TypeOverride::IntEnum(values.clone()))
+        );
+        assert_eq!(
+            generated_cloudwatch_field(&generated, "EvaluationInterval"),
+            int_enum_type(&schema.type_name, "EvaluationInterval", &values)
+        );
+    }
+
+    #[test]
+    fn test_cloudwatch_alarm_api_string_bounds_emit_inline_and_in_definitions() {
+        let schema = cfn_schema_for_codegen_tests("AWS::CloudWatch::Alarm");
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        let (inline, definitions) = generated.split_once("fn build_schema_def_0()").unwrap();
+        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        for (path, min, max) in [
+            ("AlarmName", 1, 255),
+            ("AlarmDescription", 0, 1024),
+            ("MetricName", 1, 255),
+            ("Namespace", 1, 255),
+            ("ThresholdMetricId", 1, 255),
+            ("Metric.MetricName", 1, 255),
+            ("Metric.Namespace", 1, 255),
+            ("Dimension.Name", 1, 255),
+            ("Dimension.Value", 1, 1024),
+            ("MetricDataQuery.Id", 1, 255),
+            ("MetricDataQuery.Expression", 1, 2048),
+            ("AlarmPromQLCriteria.Query", 1, 10000),
+            ("WallClockWindow.Timezone", 1, 50),
+        ] {
+            let length = format!("Some((Some({min}), Some({max})))");
+            // List-only MetricDataQuery is emitted inline, without a standalone def.
+            for code in if path.contains('.') && !path.starts_with("MetricDataQuery.") {
+                vec![inline, definitions]
+            } else {
+                vec![inline]
+            } {
+                let field = generated_cloudwatch_field(code, path);
+                assert!(
+                    field.starts_with("AttributeType::refined_string(None,"),
+                    "{path}: {field}"
+                );
+                assert!(field.contains(&length), "{path}: {field}");
+            }
+            assert!(
+                markdown.contains(&format!("length: {min}..={max}")),
+                "{path}"
+            );
+            assert!(
+                resource_type_overrides()
+                    .get(&("AWS::CloudWatch::Alarm", path))
+                    .is_some(),
+                "{path} must have a full-path override"
+            );
+        }
+        assert!(
+            generated_cloudwatch_field(&generated, "MetricDataQuery.AccountId")
+                .starts_with("carina_aws_types::aws_account_id()")
+        );
+        assert!(
+            generated_cloudwatch_field(&generated, "MetricDataQuery.Label")
+                .starts_with("AttributeType::string()")
+        );
+        assert!(
+            generated_cloudwatch_field(&generated, "MetricDataQuery.ReturnData")
+                .starts_with("AttributeType::bool()")
+        );
+    }
+
+    fn cloudwatch_generated_pattern(generated: &str, path: &str) -> regex::Regex {
+        let field = generated_cloudwatch_field(generated, path);
+        let literal = field
+            .strip_prefix("AttributeType::refined_string(None, Some(")
+            .unwrap_or_else(|| panic!("{path} must have a pattern: {field}"))
+            .split_once(".to_string())")
+            .unwrap()
+            .0;
+        // Decode the emitted Rust string literal, including doubled backslashes,
+        // before compiling. This catches escaping errors in override expressions.
+        let pattern: String = serde_json::from_str(literal).unwrap();
+        regex::Regex::new(&pattern).unwrap()
+    }
+
+    #[test]
+    fn test_cloudwatch_alarm_statistic_patterns_cover_documented_grammar() {
+        let schema = cfn_schema_for_codegen_tests("AWS::CloudWatch::Alarm");
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        for path in ["ExtendedStatistic", "MetricStat.Stat"] {
+            let pattern = cloudwatch_generated_pattern(&generated, path);
+            for value in [
+                "p0.0",
+                "p90",
+                "p99.99",
+                "p100",
+                "p100.0",
+                "tm90",
+                "tm99.9",
+                "tc90",
+                "ts90",
+                "wm98",
+                "wm99.9",
+                "IQM",
+                "PR(:300)",
+                "PR(100:2000)",
+                "PR(10:)",
+                "PR(-1.5:0)",
+                "TC(0.005:0.030)",
+                "TC(80:500)",
+                "TC(:0.5)",
+                "TM(2%:98%)",
+                "TM(5%:95%)",
+                "TM(:95%)",
+                "TM(150:1000)",
+                "TS(80%:)",
+                "WM(10%:90%)",
+                "WM(0%:100%)",
+            ] {
+                assert!(pattern.is_match(value), "{path} must accept {value}");
+            }
+            for value in [
+                "",
+                "garbage",
+                "p",
+                "p-1",
+                "p100.1",
+                "p101",
+                "p99.",
+                "TM90",
+                "tm(10:20)",
+                "PR(:)",
+                "TM(:)",
+                "TM(101%:)",
+                "WM(-1%:90%)",
+                "PR(a:b)",
+                "TC(10%,90%)",
+                "p90\n",
+                "prefixp90",
+                "p90suffix",
+            ] {
+                assert!(!pattern.is_match(value), "{path} must reject {value:?}");
+            }
+            for value in ["SampleCount", "Average", "Sum", "Minimum", "Maximum"] {
+                assert_eq!(
+                    pattern.is_match(value),
+                    path == "MetricStat.Stat",
+                    "{path}: {value}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_cloudwatch_alarm_name_namespace_dimension_id_and_timezone_patterns() {
+        let schema = cfn_schema_for_codegen_tests("AWS::CloudWatch::Alarm");
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        let cases: &[(&str, &[&str], &[&str])] = &[
+            (
+                "AlarmName",
+                &["a", "日本語のアラーム"],
+                &["a\nb", "a\tb", "a\u{0}", "a\u{7f}"],
+            ),
+            ("Namespace", &["AWS/EC2", "a:b"], &[":AWS", ""]),
+            ("Metric.Namespace", &["AWS/EC2", "a:b"], &[":AWS", ""]),
+            (
+                "Dimension.Name",
+                &["InstanceId", " x", "x:y"],
+                &[":x", " ", "x\n", "日本語"],
+            ),
+            (
+                "Dimension.Value",
+                &["i-123", " x "],
+                &[" ", "\t", "x\u{7f}", "日本語"],
+            ),
+            (
+                "MetricDataQuery.Id",
+                &["m1", "a_A0"],
+                &["A1", "1a", "a-b", "a\n"],
+            ),
+            (
+                "WallClockWindow.Timezone",
+                &[
+                    "UTC",
+                    "America/New_York",
+                    "Etc/GMT+5",
+                    "Etc/GMT-5",
+                    "+05:30",
+                    "-03:05",
+                    "UTC+05:30",
+                    "UTC-00:00",
+                ],
+                &[
+                    "",
+                    "America//New_York",
+                    "/UTC",
+                    "UTC/",
+                    "Europe/Paris!",
+                    "+05:31",
+                    "+05:60",
+                    "+5:30",
+                    "UTC+05:17",
+                    "UTC\n",
+                ],
+            ),
+        ];
+        for (path, accepted, rejected) in cases {
+            let pattern = cloudwatch_generated_pattern(&generated, path);
+            for value in *accepted {
+                assert!(pattern.is_match(value), "{path}: {value:?}");
+            }
+            for value in *rejected {
+                assert!(!pattern.is_match(value), "{path}: {value:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn test_cloudwatch_alarm_action_arrays_keep_string_items_and_cfn_collection_semantics() {
+        let schema = cfn_schema_for_codegen_tests("AWS::CloudWatch::Alarm");
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        for path in ["AlarmActions", "OKActions", "InsufficientDataActions"] {
+            let expected = concat!(
+                "AttributeType::refined_list(AttributeType::refined_string(None, None, ",
+                "Some((Some(1), Some(1024))), None), true, Some((None, Some(5))), ",
+                "carina_core::schema::ListElements::AllowDuplicates)"
+            );
+            assert_eq!(
+                generated_cloudwatch_field(&generated, path),
+                expected,
+                "{path}"
+            );
+            assert!(matches!(
+                resource_type_overrides().get(&("AWS::CloudWatch::Alarm", path)),
+                Some(TypeOverride::Array {
+                    max_items: Some(5),
+                    ..
+                })
+            ));
+            let heading = format!("### `{}`", path.to_snake_case());
+            let section = markdown
+                .split_once(&heading)
+                .unwrap()
+                .1
+                .split("\n### ")
+                .next()
+                .unwrap();
+            assert!(
+                section.contains("length: 1..=1024") && section.contains("items: ..=5"),
+                "{section}"
+            );
+        }
     }
 
     #[test]
@@ -14235,12 +14976,17 @@ mod tests {
             for (property, display) in displays {
                 let text = display.as_str();
                 assert!(!text.contains('`'), "{cfn_type}.{property}: {text}");
+                // Nested types are table cells: regex alternation pipes must
+                // be escaped there while remaining inside one code span.
+                let table_text = text.replace('|', r"\|");
                 assert!(
                     docs.split('`').skip(1).step_by(2).any(|span| {
-                        span == text
-                            || span.strip_prefix(text).is_some_and(|suffix| {
-                                suffix.starts_with(" (items: ") && suffix.ends_with(')')
-                            })
+                        [text, table_text.as_str()].into_iter().any(|expected| {
+                            span == expected
+                                || span.strip_prefix(expected).is_some_and(|suffix| {
+                                    suffix.starts_with(" (items: ") && suffix.ends_with(')')
+                                })
+                        })
                     }),
                     "{cfn_type}.{property}: missing type display"
                 );

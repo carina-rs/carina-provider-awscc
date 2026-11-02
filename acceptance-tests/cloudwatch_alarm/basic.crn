@@ -11,12 +11,12 @@ awscc.cloudwatch.Alarm {
   alarm_name        = 'carina-acc-test-cloudwatch-alarm'
   alarm_description = 'Carina acceptance-test metric alarm'
 
-  comparison_operator = 'GreaterThanThreshold'
+  comparison_operator = greater_than_threshold
   evaluation_periods  = 1
   metric_name         = 'Errors'
   namespace           = 'CarinaAcceptance'
   period              = 60
-  statistic           = 'Sum'
+  statistic           = sum
   threshold           = 0.5
 
   tags = {
