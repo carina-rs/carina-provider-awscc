@@ -241,10 +241,13 @@ async fn schedule_group_and_default_group_schedule_round_trip() {
     let read_group = common::found_state(read_group);
     assert_eq!(
         read_group.attributes().get("tags"),
-        Some(&map([
-            ("Project", string("carina-registry")),
-            ("Purpose", string("publish-api")),
-        ]))
+        Some(
+            &map([
+                ("Project", string("carina-registry")),
+                ("Purpose", string("publish-api")),
+            ])
+            .to_snapshot()
+        )
     );
 
     let schedule_identifier = common::applied_identifier(stored_schedule_identifier);
@@ -254,18 +257,24 @@ async fn schedule_group_and_default_group_schedule_round_trip() {
     let read_schedule = common::found_state(read_schedule);
     assert_eq!(
         read_schedule.attributes().get("group_name"),
-        Some(&string(DEFAULT_GROUP_NAME))
+        Some(&string(DEFAULT_GROUP_NAME).to_snapshot())
     );
     assert_eq!(
         read_schedule.attributes().get("schedule_expression"),
-        Some(&string("rate(6 hours)"))
+        Some(&string("rate(6 hours)").to_snapshot())
     );
     let Some(Value::Concrete(ConcreteValue::Map(target))) =
         read_schedule.attributes().get("target")
     else {
         panic!("Schedule.target must round-trip as a map")
     };
-    assert_eq!(target.get("arn"), Some(&string(TARGET_ARN)));
-    assert_eq!(target.get("role_arn"), Some(&string(ROLE_ARN)));
-    assert_eq!(target.get("input"), Some(&string(TARGET_INPUT)));
+    assert_eq!(target.get("arn"), Some(&string(TARGET_ARN).to_snapshot()));
+    assert_eq!(
+        target.get("role_arn"),
+        Some(&string(ROLE_ARN).to_snapshot())
+    );
+    assert_eq!(
+        target.get("input"),
+        Some(&string(TARGET_INPUT).to_snapshot())
+    );
 }

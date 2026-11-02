@@ -262,7 +262,7 @@ async fn cloudfront_function_create_then_read_preserves_config_and_runtime_alias
     };
     assert_eq!(
         function_config.get("comment"),
-        Some(&string("Rewrite the registry root request"))
+        Some(&string("Rewrite the registry root request").to_snapshot())
     );
     let runtime = function_config
         .get("runtime")

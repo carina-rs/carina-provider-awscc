@@ -151,14 +151,17 @@ async fn ssm_parameter_create_then_read_preserves_map_tags() {
     assert_eq!(read.identifier(), &stored_identifier);
     assert_eq!(
         read.attributes().get("value"),
-        Some(&string(PARAMETER_VALUE))
+        Some(&string(PARAMETER_VALUE).to_snapshot())
     );
     assert_eq!(
         read.attributes().get("tags"),
-        Some(&map([
-            ("Environment", string("dev")),
-            ("Project", string("carina-registry")),
-        ])),
+        Some(
+            &map([
+                ("Environment", string("dev")),
+                ("Project", string("carina-registry")),
+            ])
+            .to_snapshot()
+        ),
         "object-map CloudControl Tags must read back as the DSL map"
     );
 }

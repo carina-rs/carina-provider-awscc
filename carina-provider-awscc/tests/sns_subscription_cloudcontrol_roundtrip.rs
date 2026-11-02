@@ -251,11 +251,17 @@ async fn sns_subscription_typed_policies_round_trip_and_server_default_has_no_di
         .expect("sns.Subscription read through Provider::read should succeed");
     let read = common::found_state(read);
 
-    assert_eq!(read.attributes().get("topic_arn"), Some(&string(TOPIC_ARN)));
-    assert_eq!(read.attributes().get("protocol"), Some(&string("sqs")));
+    assert_eq!(
+        read.attributes().get("topic_arn"),
+        Some(&string(TOPIC_ARN).to_snapshot())
+    );
+    assert_eq!(
+        read.attributes().get("protocol"),
+        Some(&string("sqs").to_snapshot())
+    );
     assert_eq!(
         read.attributes().get("endpoint"),
-        Some(&string(ENDPOINT_ARN))
+        Some(&string(ENDPOINT_ARN).to_snapshot())
     );
     assert!(!read.attributes().contains_key("filter_policy"));
     assert!(read.attributes().contains_key("redrive_policy"));
@@ -269,12 +275,12 @@ async fn sns_subscription_typed_policies_round_trip_and_server_default_has_no_di
     };
     assert_eq!(
         delivery_read.get("guaranteed"),
-        Some(&bool_value(false)),
+        Some(&bool_value(false).to_snapshot()),
         "measured Cloud Control read-back adds guaranteed=false"
     );
     assert_eq!(
         read.attributes().get("raw_message_delivery"),
-        Some(&bool_value(true))
+        Some(&bool_value(true).to_snapshot())
     );
 
     let unnormalized_current = read.into_state_for_writeback();

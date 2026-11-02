@@ -39,7 +39,7 @@ fn validate(resource: Resource) -> Result<(), String> {
     let context = ProviderContext {
         custom_types: provider_custom_types_from_factories(factories),
         resource_types: ProviderContext::resource_types_from_schema_registry(&schemas),
-        ..ProviderContext::default()
+        ..ProviderContext::new(carina_core::EnvironmentSnapshot::empty())
     };
     let mut parsed = ParsedFile::default();
     parsed.resources = vec![resource];

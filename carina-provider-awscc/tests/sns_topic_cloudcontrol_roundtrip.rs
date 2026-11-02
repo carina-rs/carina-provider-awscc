@@ -229,14 +229,17 @@ async fn sns_topic_create_then_read_omits_inline_subscriptions_and_preserves_tag
     assert!(!read.attributes().contains_key("subscription"));
     assert_eq!(
         read.attributes().get("archive_policy"),
-        Some(&map([("message_retention_period", int(1))]))
+        Some(&map([("message_retention_period", int(1))]).to_snapshot())
     );
     assert_eq!(
         read.attributes().get("tags"),
-        Some(&map([
-            ("Environment", string("test")),
-            ("Project", string("carina-registry")),
-        ]))
+        Some(
+            &map([
+                ("Environment", string("test")),
+                ("Project", string("carina-registry")),
+            ])
+            .to_snapshot()
+        )
     );
 
     let current = read.into_state_for_writeback();

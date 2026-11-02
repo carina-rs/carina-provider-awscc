@@ -312,7 +312,7 @@ async fn omitted_field_index_policies_and_read_back_empty_list_have_no_diff() {
     let read = common::found_state(read);
     assert_eq!(
         read.attributes().get("field_index_policies"),
-        Some(&list([])),
+        Some(&list([]).to_snapshot()),
         "measured Cloud Control read-back supplies an empty list"
     );
 
@@ -322,7 +322,7 @@ async fn omitted_field_index_policies_and_read_back_empty_list_have_no_diff() {
         .expect("read state normalization should succeed");
     assert_eq!(
         current_states[&id].attributes.get("field_index_policies"),
-        Some(&list([])),
+        Some(&list([]).to_snapshot()),
         "read normalization must preserve an explicit server value"
     );
 

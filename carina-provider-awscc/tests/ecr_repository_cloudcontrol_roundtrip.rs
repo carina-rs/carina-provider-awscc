@@ -165,10 +165,12 @@ async fn winterbaume_provider() -> (AwsccProvider, Arc<CloudControlService>) {
     )
 }
 
-fn attributes(entries: impl IntoIterator<Item = (&'static str, Value)>) -> HashMap<String, Value> {
+fn attributes(
+    entries: impl IntoIterator<Item = (&'static str, Value)>,
+) -> HashMap<String, carina_core::resource::SnapshotValue> {
     entries
         .into_iter()
-        .map(|(key, value)| (key.to_string(), value))
+        .map(|(key, value)| (key.to_string(), value.to_snapshot()))
         .collect()
 }
 

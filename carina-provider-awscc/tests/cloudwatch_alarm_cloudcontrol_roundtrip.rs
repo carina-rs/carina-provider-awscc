@@ -200,29 +200,50 @@ async fn cloudwatch_alarm_create_then_read_preserves_structures_and_numeric_shap
         .expect("cloudwatch.Alarm read through Provider::read should succeed");
     let read = common::found_state(read);
 
-    assert_eq!(read.attributes().get("evaluation_periods"), Some(&int(2)));
-    assert_eq!(read.attributes().get("datapoints_to_alarm"), Some(&int(1)));
-    assert_eq!(read.attributes().get("period"), Some(&int(60)));
-    assert_eq!(read.attributes().get("threshold"), Some(&float(0.5)));
+    assert_eq!(
+        read.attributes().get("evaluation_periods"),
+        Some(&int(2).to_snapshot())
+    );
+    assert_eq!(
+        read.attributes().get("datapoints_to_alarm"),
+        Some(&int(1).to_snapshot())
+    );
+    assert_eq!(
+        read.attributes().get("period"),
+        Some(&int(60).to_snapshot())
+    );
+    assert_eq!(
+        read.attributes().get("threshold"),
+        Some(&float(0.5).to_snapshot())
+    );
     assert_eq!(
         read.attributes().get("dimensions"),
-        Some(&list([map([
-            ("name", string("Service")),
-            ("value", string("registry-api")),
-        ])]))
+        Some(
+            &list([map([
+                ("name", string("Service")),
+                ("value", string("registry-api")),
+            ])])
+            .to_snapshot()
+        )
     );
     assert_eq!(
         read.attributes().get("evaluation_window"),
-        Some(&map([(
-            "wall_clock_window",
-            map([("timezone", string("Asia/Tokyo"))]),
-        )]))
+        Some(
+            &map([(
+                "wall_clock_window",
+                map([("timezone", string("Asia/Tokyo"))]),
+            )])
+            .to_snapshot()
+        )
     );
     assert_eq!(
         read.attributes().get("tags"),
-        Some(&map([
-            ("Environment", string("test")),
-            ("Project", string("carina-registry")),
-        ]))
+        Some(
+            &map([
+                ("Environment", string("test")),
+                ("Project", string("carina-registry")),
+            ])
+            .to_snapshot()
+        )
     );
 }

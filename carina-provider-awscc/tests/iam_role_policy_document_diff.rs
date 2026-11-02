@@ -67,24 +67,29 @@ fn iam_role_policy_document_diff_ignores_unordered_value_list_reordering() {
         .comparison_for(&registry, &id)
         .expect("IAM Role comparison context");
 
-    assert!(
-        resource_attribute_values_equal(
-            &original,
-            &reordered,
-            Some(&schema),
-            "assume_role_policy_document",
-            &comparison.context().observation(),
-        ),
-        "IAM action and principal AWS lists must compare without regard to order"
-    );
-    assert!(
-        !resource_attribute_values_equal(
-            &original,
-            &changed,
-            Some(&schema),
-            "assume_role_policy_document",
-            &comparison.context().observation(),
-        ),
-        "a changed principal ARN must remain a real policy difference"
-    );
+    comparison
+        .context()
+        .with_observation(|context| {
+            assert!(
+                resource_attribute_values_equal(
+                    &original,
+                    &reordered,
+                    Some(&schema),
+                    "assume_role_policy_document",
+                    context,
+                ),
+                "IAM action and principal AWS lists must compare without regard to order"
+            );
+            assert!(
+                !resource_attribute_values_equal(
+                    &original,
+                    &changed,
+                    Some(&schema),
+                    "assume_role_policy_document",
+                    context,
+                ),
+                "a changed principal ARN must remain a real policy difference"
+            );
+        })
+        .expect("policy observation comparison should succeed");
 }

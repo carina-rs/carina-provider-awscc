@@ -1,7 +1,7 @@
 mod common;
 
 use carina_core::provider::{Provider, ReadRequest};
-use carina_core::resource::{ConcreteValue, ResourceId, Value};
+use carina_core::resource::{ConcreteValue, ResourceId, SnapshotValue, Value};
 use carina_provider_awscc::AwsccProvider;
 use carina_provider_awscc::provider::AwsccProviderConfig;
 use serde_json::json;
@@ -102,7 +102,7 @@ async fn provider_with_mock(policy_document: serde_json::Value) -> AwsccProvider
 
 async fn read_vpc_endpoint(
     policy_document: serde_json::Value,
-) -> indexmap::IndexMap<String, Value> {
+) -> indexmap::IndexMap<String, SnapshotValue> {
     let provider = provider_with_mock(policy_document).await;
     let id = ResourceId::with_provider_identity("awscc", "ec2.VpcEndpoint", "gateway", None);
     let identifier = common::applied_identifier(VPC_ENDPOINT_ID);
@@ -118,8 +118,8 @@ async fn read_vpc_endpoint(
 }
 
 fn first_policy_statement(
-    attributes: &std::collections::HashMap<String, Value>,
-) -> &indexmap::IndexMap<String, Value> {
+    attributes: &std::collections::HashMap<String, SnapshotValue>,
+) -> &indexmap::IndexMap<String, SnapshotValue> {
     let Some(Value::Concrete(ConcreteValue::Map(policy_document))) =
         attributes.get("policy_document")
     else {
