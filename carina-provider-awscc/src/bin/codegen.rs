@@ -3830,22 +3830,12 @@ fn render_markdown(
         // thing for `Struct.Field` keys (awscc#246); without this branch a
         // top-level Enum override (e.g. `TargetGroup.Protocol`) was
         // recorded in the schema (`generate_schema_code`) but never
-        // mirrored into the markdown — `cfn_type_to_carina_type_with_enum`
-        // does not consult `resource_type_overrides` itself.
+        // mirrored into the markdown.
         if let Some(values) =
             resource_type_override(type_name, CfnPropertyPath::new(None, prop_name))
                 .and_then(TypeOverride::enum_values)
         {
             property_enums.insert(prop_name.clone(), enum_info_for_override(prop_name, values));
-            collect_struct_defs(
-                prop,
-                prop_name,
-                schema,
-                &[],
-                std::slice::from_ref(prop_name),
-                None,
-                &mut struct_defs,
-            );
             continue;
         }
         let (_, enum_info) =
@@ -4317,15 +4307,16 @@ fn collect_struct_defs(
     cfn_parent: Option<&str>,
     struct_defs: &mut BTreeMap<MarkdownStructKey, StructDefInfo>,
 ) {
-    // An item expression owns the complete item grammar. Its discarded CFN
-    // children must not create documentation targets or consume other overrides.
+    // Enum overlays and item expressions replace the source children. Match
+    // Rust emission: discarded structs must not create documentation targets.
     if resource_type_override(
         &schema.type_name,
         CfnPropertyPath::new(cfn_parent, prop_name),
     )
-    .and_then(TypeOverride::array_item_type_expression)
-    .is_some()
-    {
+    .is_some_and(|override_type| {
+        override_type.enum_values().is_some()
+            || override_type.array_item_type_expression().is_some()
+    }) {
         return;
     }
     match property_shape(prop, schema) {
@@ -7123,6 +7114,10 @@ impl ResourceTypeOverrides {
 }
 
 fn resource_type_overrides() -> &'static ResourceTypeOverrides {
+    #[cfg(test)]
+    if let Some(overrides) = tests::TEST_RESOURCE_TYPE_OVERRIDES.with(|value| value.get()) {
+        return overrides;
+    }
     static OVERRIDES: LazyLock<ResourceTypeOverrides> = LazyLock::new(|| {
         let mut m = ResourceTypeOverrides::default();
 
@@ -8938,15 +8933,31 @@ fn cfn_type_to_carina_type_with_enum_resolved(
     let property_path = paths.provider;
     let cfn_parent = paths.cfn_parent;
     let cfn_property_path = CfnPropertyPath::new(cfn_parent, prop_name);
-    // A collection's items keep the provider property's name for inference,
-    // but are not the property addressed by its override key.
+    // Decide overlays before walking source children: enum overlays retain
+    // collection wrappers but discard struct bodies. Traversing those bodies
+    // would falsely consume their overrides and publish unused definitions.
+    // Collection items keep the provider name for inference, but are not the
+    // property addressed by its override key.
     if ref_context == RefContext::Normal
-        && let Some(item_type) = checked_resource_type_override(schema, cfn_property_path, prop)
-            .and_then(|override_type| {
-                emit_array_item_override(schema, cfn_property_path, prop, override_type)
-            })
+        && let Some(override_type) = checked_resource_type_override(schema, cfn_property_path, prop)
     {
-        return (item_type, None);
+        if let Some(item_type) =
+            emit_array_item_override(schema, cfn_property_path, prop, override_type)
+        {
+            return (item_type, None);
+        }
+        if let Some(values) = override_type.enum_values() {
+            return (
+                emit_enum_property_type(
+                    schema,
+                    cfn_property_path,
+                    prop,
+                    "AttributeType::string()",
+                    override_forces_unordered(&schema.type_name, cfn_property_path),
+                ),
+                Some(enum_info_for_override(prop_name, values)),
+            );
+        }
     }
     if object_string_union_is_iam_policy_document(prop, &schema.type_name, cfn_property_path) {
         return ("carina_aws_types::iam_policy_document()".to_string(), None);
@@ -9389,6 +9400,29 @@ fn collapse_whitespace(s: &str) -> String {
 mod tests {
     use super::*;
     use std::path::Path;
+
+    thread_local! {
+        pub(super) static TEST_RESOURCE_TYPE_OVERRIDES:
+            std::cell::Cell<Option<&'static ResourceTypeOverrides>> = const {
+                std::cell::Cell::new(None)
+            };
+    }
+
+    fn with_resource_type_overrides(
+        overrides: &'static ResourceTypeOverrides,
+        action: impl FnOnce(),
+    ) {
+        struct RestoreOverrides(Option<&'static ResourceTypeOverrides>);
+        impl Drop for RestoreOverrides {
+            fn drop(&mut self) {
+                TEST_RESOURCE_TYPE_OVERRIDES.with(|value| value.set(self.0));
+            }
+        }
+        let _restore = RestoreOverrides(
+            TEST_RESOURCE_TYPE_OVERRIDES.with(|value| value.replace(Some(overrides))),
+        );
+        action();
+    }
 
     fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
         super::render_schema_code(&EmissionContext::new(schema)?, type_name)
@@ -22467,6 +22501,105 @@ mod tests {
             // still emit: their identical leaf names cannot consume TagValues.Values.
             assert_override_generation_rejected(&schema, "Array", "TagValues.Values");
         }
+    }
+
+    fn with_enum_shadowed_array_override(action: impl FnOnce(CfnSchema)) {
+        const CFN_TYPE: &str = "AWS::Test::EnumShadowedArrayOverride";
+        static OVERRIDES: LazyLock<ResourceTypeOverrides> = LazyLock::new(|| {
+            let mut overrides = ResourceTypeOverrides::default();
+            for (nested, override_type) in [
+                ("Container.Metrics", TypeOverride::Enum(vec!["A", "B"])),
+                (
+                    "Container.UnorderedMetrics",
+                    TypeOverride::EnumUnordered(vec!["A", "B"]),
+                ),
+                (
+                    "Container.BoundedMetrics",
+                    TypeOverride::Enum(vec!["A", "B"]).with_array_bounds(Some(1), Some(3)),
+                ),
+            ] {
+                overrides.insert((CFN_TYPE, nested), override_type);
+            }
+            overrides.insert(
+                (CFN_TYPE, "TagValues.Values"),
+                TypeOverride::Enum(vec!["X", "Y"]).with_array_bounds(Some(1), None),
+            );
+            overrides
+        });
+        let metrics = serde_json::json!({
+            "type": "array",
+            "items": {"$ref": "#/definitions/TagValues"}
+        });
+        let fields = serde_json::json!({
+            "Metrics": metrics,
+            "UnorderedMetrics": metrics,
+            "BoundedMetrics": metrics
+        });
+        let schema = serde_json::from_value(serde_json::json!({
+            "typeName": CFN_TYPE,
+            "properties": {"Config": {"$ref": "#/definitions/Container"}},
+            "definitions": {
+                "Container": {"type": "object", "properties": fields},
+                "TagValues": {
+                    "type": "object",
+                    "properties": {
+                        "Values": {"type": "array", "items": {"type": "string"}}
+                    }
+                }
+            }
+        }))
+        .unwrap();
+        with_resource_type_overrides(&OVERRIDES, || action(schema));
+    }
+
+    #[test]
+    fn test_enum_overlays_reject_shadowed_array_override() {
+        with_enum_shadowed_array_override(|schema| {
+            reset_recursion_guard();
+            let generated = generate_top_level_attribute_type(
+                "Config",
+                &schema.properties["Config"],
+                &schema,
+                "aws.test.EnumShadowedArrayOverride",
+                &BTreeMap::new(),
+                false,
+            );
+            assert!(!generated.contains("TagValues"), "{generated}");
+            EMITTED_ARRAY_OVERRIDES.with(|emitted| {
+                assert_eq!(
+                    *emitted.borrow(),
+                    BTreeSet::from([(Some("Container".to_string()), "BoundedMetrics".to_string())]),
+                    "only the emitted enum array may consume an override"
+                );
+            });
+            for error in [
+                generation_failure(|| generate_synthetic_schema_code(&schema)),
+                generation_failure(|| generate_test_markdown(&schema, &schema.type_name)),
+            ] {
+                assert!(error.contains("not consumed"), "{error}");
+                assert!(error.contains("TagValues.Values"), "{error}");
+            }
+        });
+    }
+
+    #[test]
+    fn test_enum_overlays_document_only_surviving_struct_paths() {
+        with_enum_shadowed_array_override(|mut schema| {
+            schema.properties.insert(
+                "Visible".to_string(),
+                serde_json::from_value(serde_json::json!({"$ref": "#/definitions/TagValues"}))
+                    .unwrap(),
+            );
+            let generated = generate_synthetic_schema_code(&schema).unwrap();
+            assert!(generated.contains("TagValues"), "{generated}");
+            let docs = generate_test_markdown(&schema, &schema.type_name).unwrap();
+            assert!(docs.contains("### visible\n"), "{docs}");
+            assert!(docs.contains("### visible.values (Values)\n"), "{docs}");
+            for discarded in ["metrics", "unordered_metrics", "bounded_metrics"] {
+                assert!(!docs.contains(&format!("{discarded}.values")), "{docs}");
+            }
+            assert!(!docs.contains("Used by:"), "{docs}");
+        });
     }
 
     #[test]
