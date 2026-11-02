@@ -6582,18 +6582,15 @@ fn refined_float_type(identity: &str, range: &str) -> String {
     format!("AttributeType::refined_float({identity}, {range})")
 }
 
-fn list_elements_expression(elements: ListElements) -> String {
-    format!("carina_core::schema::ListElements::{elements:?}")
-}
-
 fn refined_list_type(
     element_type: &str,
     ordered: bool,
     length: &str,
     elements: ListElements,
 ) -> String {
-    let elements = list_elements_expression(elements);
-    format!("AttributeType::refined_list({element_type}, {ordered}, {length}, {elements})")
+    format!(
+        "AttributeType::refined_list({element_type}, {ordered}, {length}, carina_core::schema::ListElements::{elements:?})"
+    )
 }
 
 fn emit_int_range_option(min: Option<i64>, max: Option<i64>) -> String {
@@ -10146,7 +10143,7 @@ mod tests {
                     if refined {
                         assert_eq!(
                             args[3],
-                            list_elements_expression(ListElements::AllowDuplicates)
+                            "carina_core::schema::ListElements::AllowDuplicates"
                         );
                     }
                     return Shape::List {
@@ -17065,10 +17062,7 @@ mod tests {
         assert_eq!(generated_type, inline_type);
         assert_eq!(
             generated_type,
-            format!(
-                "AttributeType::refined_list(AttributeType::int(), false, Some((Some(1), Some(3))), {})",
-                list_elements_expression(ListElements::AllowDuplicates)
-            )
+            "AttributeType::refined_list(AttributeType::int(), false, Some((Some(1), Some(3))), carina_core::schema::ListElements::AllowDuplicates)"
         );
         assert_eq!(
             type_display_string("Choice", &property, &schema),
@@ -20095,13 +20089,6 @@ mod tests {
     fn test_generate_schema_code_emits_default_bool_value() {
         let mut properties = BTreeMap::new();
         properties.insert(
-            "FieldIndexPolicies".to_string(),
-            cfn_schema_for_codegen_tests("AWS::Logs::LogGroup")
-                .properties
-                .remove("FieldIndexPolicies")
-                .unwrap(),
-        );
-        properties.insert(
             "DeletionProtectionEnabled".to_string(),
             CfnProperty {
                 prop_type: Some(TypeValue::Single("boolean".to_string())),
@@ -20112,7 +20099,7 @@ mod tests {
         );
 
         let schema = CfnSchema {
-            type_name: "AWS::Logs::LogGroup".to_string(),
+            type_name: "AWS::Test::Resource".to_string(),
             description: None,
             properties,
             required: vec![],
@@ -21087,15 +21074,12 @@ mod tests {
         let generated = generate_schema_code(&schema, "AWS::SSO::PermissionSet").unwrap();
 
         assert!(
-            generated.contains(&format!(
-                concat!(
-                    "AttributeSchema::optional(\"managed_policies\", ",
-                    "AttributeType::refined_list(",
-                    "AttributeType::refined_string(None, None, ",
-                    "Some((Some(20), Some(2048))), None), false, ",
-                    "Some((None, Some(20))), {}))"
-                ),
-                list_elements_expression(ListElements::AllowDuplicates)
+            generated.contains(concat!(
+                "AttributeSchema::optional(\"managed_policies\", ",
+                "AttributeType::refined_list(",
+                "AttributeType::refined_string(None, None, ",
+                "Some((Some(20), Some(2048))), None), false, ",
+                "Some((None, Some(20))), carina_core::schema::ListElements::AllowDuplicates))"
             )),
             "ManagedPolicies must retain its referenced item lengths in schema code: {generated}"
         );
@@ -21494,9 +21478,8 @@ mod tests {
                     assert!(enum_info.is_none());
                     let expected = if unique_items == Some(true) {
                         format!(
-                            "AttributeType::refined_list({expected_item}, {}, None, {})",
+                            "AttributeType::refined_list({expected_item}, {}, None, carina_core::schema::ListElements::Unique)",
                             insertion_order != Some(false),
-                            list_elements_expression(ListElements::Unique),
                         )
                     } else {
                         let constructor = if insertion_order == Some(false) {
@@ -21519,9 +21502,9 @@ mod tests {
         array.min_items = Some(1);
         array.max_items = Some(3);
         for (unique_items, elements) in [
-            (Some(true), ListElements::Unique),
-            (Some(false), ListElements::AllowDuplicates),
-            (None, ListElements::AllowDuplicates),
+            (Some(true), "Unique"),
+            (Some(false), "AllowDuplicates"),
+            (None, "AllowDuplicates"),
         ] {
             schema
                 .properties
@@ -21531,8 +21514,7 @@ mod tests {
             let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
             assert!(
                 generated.contains(&format!(
-                    "AttributeType::refined_list(crate::schemas::awscc_types::logs_field_index_policy(), false, Some((Some(1), Some(3))), {})",
-                    list_elements_expression(elements)
+                    "AttributeType::refined_list(crate::schemas::awscc_types::logs_field_index_policy(), false, Some((Some(1), Some(3))), carina_core::schema::ListElements::{elements})"
                 )),
                 "the array override must retain CFN constraints: {generated}"
             );
@@ -21562,14 +21544,10 @@ mod tests {
             &BTreeMap::new(),
         );
         assert!(enum_info.is_some());
-        let elements = list_elements_expression(ListElements::Unique);
-        let expected = format!(
-            concat!(
-                "AttributeType::refined_list(AttributeType::refined_list(",
-                "AttributeType::string(), true, None, {0}), ",
-                "false, Some((Some(1), None)), {0})"
-            ),
-            elements
+        let expected = concat!(
+            "AttributeType::refined_list(AttributeType::refined_list(",
+            "AttributeType::string(), true, None, carina_core::schema::ListElements::Unique), ",
+            "false, Some((Some(1), None)), carina_core::schema::ListElements::Unique)"
         );
         assert_eq!(provisional, expected);
         assert_eq!(
@@ -21618,14 +21596,11 @@ mod tests {
         assert_eq!(referenced_type, inline_type);
         assert_eq!(
             referenced_type,
-            format!(
-                concat!(
-                    "AttributeType::refined_list(",
-                    "AttributeType::refined_string(None, None, ",
-                    "Some((Some(2), Some(4))), None), false, ",
-                    "Some((Some(1), Some(3))), {})"
-                ),
-                list_elements_expression(ListElements::Unique)
+            concat!(
+                "AttributeType::refined_list(",
+                "AttributeType::refined_string(None, None, ",
+                "Some((Some(2), Some(4))), None), false, ",
+                "Some((Some(1), Some(3))), carina_core::schema::ListElements::Unique)"
             )
         );
         let resolved = resolve_ref(&schema, "#/definitions/ConstrainedValues").unwrap();
@@ -21835,14 +21810,10 @@ mod tests {
     fn test_wafv2_ref_definition_regressions_in_schema_code() {
         let schema = cfn_schema_for_codegen_tests("AWS::WAFv2::WebACL");
         let generated = generate_schema_code(&schema, "AWS::WAFv2::WebACL").unwrap();
-        let expected_values = format!(
-            "StructField::required(\"values\", AttributeType::refined_list(AttributeType::refined_string(None, Some(\"^[\\\\w\\\\-]+$\".to_string()), Some((Some(1), Some(64))), None), true, Some((Some(1), Some(10))), {})",
-            list_elements_expression(ListElements::AllowDuplicates)
-        );
 
         for expected in [
             "StructField::required(\"attributes\", AttributeType::refined_list(AttributeType::struct_(\"ApplicationAttribute\".to_string()",
-            expected_values.as_str(),
+            "StructField::required(\"values\", AttributeType::refined_list(AttributeType::refined_string(None, Some(\"^[\\\\w\\\\-]+$\".to_string()), Some((Some(1), Some(64))), None), true, Some((Some(1), Some(10))), carina_core::schema::ListElements::AllowDuplicates)",
             "StructField::required(\"data_protections\", AttributeType::refined_list(AttributeType::struct_(\"DataProtect\".to_string()",
             "StructField::optional(\"address_fields\", AttributeType::list(AttributeType::struct_(\"FieldIdentifier\".to_string()",
             "StructField::optional(\"phone_number_fields\", AttributeType::list(AttributeType::struct_(\"FieldIdentifier\".to_string()",
