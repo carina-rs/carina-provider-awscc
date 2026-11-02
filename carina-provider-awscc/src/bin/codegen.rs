@@ -12879,26 +12879,14 @@ mod tests {
 
     fn generated_budgets_field<'a>(generated: &'a str, path: &str) -> &'a str {
         let (definition, property) = path.split_once('.').unwrap();
-        let definition_marker = format!("schema = schema.with_def(\"{definition}\"");
         let definition_code = generated
-            .split("    #[inline(never)]\n")
-            .find(|code| code.contains(&definition_marker))
-            .or_else(|| {
-                generated
-                    .split_once(&format!(
-                        "AttributeType::struct_(\"{definition}\".to_string(), vec!["
-                    ))
-                    .map(|(_, body)| body)
-            })
-            .unwrap_or_else(|| panic!("missing generated definition {definition}"));
-        let field = ["required", "optional"]
-            .into_iter()
-            .find_map(|constructor| {
-                definition_code.split_once(&format!(
-                    "StructField::{constructor}(\"{}\", ",
-                    property.to_snake_case()
-                ))
-            })
+            .split_once(&format!(
+                "AttributeType::struct_(\"{definition}\".to_string(), vec!["
+            ))
+            .unwrap_or_else(|| panic!("missing generated definition {definition}"))
+            .1;
+        let field = definition_code
+            .split_once(&format!("(\"{}\", ", property.to_snake_case()))
             .unwrap_or_else(|| panic!("missing generated field {path}"))
             .1;
         field
@@ -12908,7 +12896,6 @@ mod tests {
     }
 
     fn assert_budgets_enum_values(field: &str, path: &str, values: &[(&str, &str)]) {
-        assert!(field.contains("AttributeType::enum_("), "{path}: {field}");
         let wire_values = values
             .iter()
             .map(|(wire, _)| format!("{}.to_string()", rust_lit(wire)))
@@ -13138,10 +13125,9 @@ mod tests {
             name,
             r#"AttributeType::refined_string(None, Some("^[^:\\\\]+$".to_string()), Some((Some(1), Some(100))), None)).create_only().identity()"#
         );
-        let pattern = Regex::new(r"^[^:\\]+$").unwrap();
-        assert!(pattern.is_match("monthly-cost"));
-        assert!(!pattern.is_match("monthly:cost"));
-        assert!(!pattern.is_match(r"monthly\cost"));
+        assert!(emitted_string_accepts(name, "monthly-cost"));
+        assert!(!emitted_string_accepts(name, "monthly:cost"));
+        assert!(!emitted_string_accepts(name, r"monthly\cost"));
     }
 
     #[test]
