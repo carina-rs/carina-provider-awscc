@@ -89,6 +89,8 @@ pub struct AwsccProvider {
     cloudcontrol_client: CloudControlClient,
     s3_client: aws_sdk_s3::Client,
     sts_client: StsClient,
+    pub(crate) kms_client: crate::references::KmsClient,
+    pub(crate) region: String,
     /// Set when provider initialization rejected the caller's AWS account
     /// against `allowed_account_ids` / `forbidden_account_ids`. Every
     /// `Provider` trait method short-circuits to this error before
@@ -134,7 +136,14 @@ impl AwsccProvider {
             cloudcontrol,
             s3,
             sts,
+            kms,
         } = config.clients();
+        let region = config
+            .sdk_config()
+            .region()
+            .map(|region| region.as_ref())
+            .unwrap_or("ap-northeast-1")
+            .to_string();
         let init_error =
             if cfg.allowed_account_ids.is_empty() && cfg.forbidden_account_ids.is_empty() {
                 None
@@ -146,6 +155,8 @@ impl AwsccProvider {
             cloudcontrol_client: cloudcontrol,
             s3_client: s3,
             sts_client: sts,
+            kms_client: kms,
+            region,
             init_error,
             account_id: OnceCell::new(),
             #[cfg(any(test, feature = "test-utils"))]

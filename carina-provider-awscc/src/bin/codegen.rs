@@ -28,6 +28,11 @@ use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
+#[path = "codegen/kms_references.rs"]
+mod kms_references;
+#[path = "codegen/kms_references_cfn.rs"]
+mod kms_references_cfn;
+
 // carina#3340: in-progress recursion guard for cyclic CFN $ref
 // definitions (WAFv2 `WebACL.Statement` → `AndStatement` → `List<Statement>`).
 // When `generate_struct_type` is asked to expand a definition whose name
@@ -3045,14 +3050,9 @@ fn scalar_type_display_string_at(
     definition_name: Option<&str>,
 ) -> String {
     match inline_property_type(prop) {
-        Some("string") => string_leaf(
-            prop,
-            prop_name,
-            &schema.type_name,
-            cfn_property_path,
-            definition_name,
-        )
-        .display(),
+        Some("string") => {
+            string_leaf(prop, prop_name, schema, cfn_property_path, definition_name).display()
+        }
         Some("boolean") => "Bool".to_string(),
         Some("integer") => {
             // Check resource-scoped overrides first
@@ -3563,6 +3563,7 @@ fn claim_unique_markdown_heading(
 }
 
 fn generate_markdown(schema: &CfnSchema, type_name: &str, example: &DocExample) -> Result<String> {
+    let _kms_reference_sites = kms_references_cfn::GenerationGuard::new(schema)?;
     checked_read_back_declarations(schema, type_name)?;
     resource_type_overrides().validate_sources(schema)?;
     reset_recursion_guard();
@@ -4433,6 +4434,7 @@ fn checked_read_back_declarations(
 }
 
 fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
+    let _kms_reference_sites = kms_references_cfn::GenerationGuard::new(schema)?;
     let read_back_declarations = checked_read_back_declarations(schema, type_name)?;
     resource_type_overrides().validate_sources(schema)?;
     // carina#3340: clear per-resource codegen state at function entry
@@ -6417,10 +6419,17 @@ impl StringLeaf<'_> {
 fn string_leaf<'a>(
     prop: &'a CfnProperty,
     prop_name: &str,
-    cfn_type: &str,
+    schema: &CfnSchema,
     property_path: CfnPropertyPath<'_>,
     definition_name: Option<&str>,
 ) -> StringLeaf<'a> {
+    let cfn_type = &schema.type_name;
+    if let Some(kind) = kms_references_cfn::reference_at_property(schema, property_path) {
+        return StringLeaf::Inferred {
+            rust_type: kind.constructor().to_string(),
+            display_type: "aws.kms.Key.Reference".to_string(),
+        };
+    }
     if let Some(leaf) = enum_leaf(prop, prop_name, definition_name) {
         return StringLeaf::Enum(leaf);
     }
@@ -6675,10 +6684,6 @@ fn known_string_type_overrides() -> &'static HashMap<&'static str, &'static str>
         m.insert("PeerRoleArn", "super::super::iam::role::arn()");
         m.insert("PermissionsBoundary", "super::super::iam::policy::arn()");
         m.insert("ManagedPolicyArns", "super::super::iam::policy::arn()");
-        m.insert("KmsKeyId", "super::super::kms::key::arn()");
-        m.insert("KMSMasterKeyID", "carina_aws_types::kms_key_id()");
-        m.insert("ReplicaKmsKeyID", "carina_aws_types::kms_key_id()");
-        m.insert("KmsKeyArn", "super::super::kms::key::arn()");
         m.insert("IpamId", "carina_aws_types::ipam_id()");
         m.insert("Locale", "carina_aws_types::aws_region()");
         m.insert("BucketAccountId", "carina_aws_types::aws_account_id()");
@@ -8525,14 +8530,8 @@ fn cfn_type_to_carina_type_with_enum_resolved(
     }
 
     if inline_property_type(prop) == Some("string") {
-        return string_leaf(
-            prop,
-            prop_name,
-            &schema.type_name,
-            cfn_property_path,
-            definition_name,
-        )
-        .emit(&schema.type_name, prop_name);
+        return string_leaf(prop, prop_name, schema, cfn_property_path, definition_name)
+            .emit(&schema.type_name, prop_name);
     }
 
     if let Some(leaf) = enum_leaf(prop, prop_name, definition_name) {
@@ -15968,22 +15967,12 @@ mod tests {
             overrides.get("DeliverLogsPermissionArn"),
             Some(&"super::super::iam::role::arn()")
         );
-        assert_eq!(
-            overrides.get("KmsKeyId"),
-            Some(&"super::super::kms::key::arn()")
-        );
-        assert_eq!(
-            overrides.get("KmsKeyArn"),
-            Some(&"super::super::kms::key::arn()")
-        );
-        assert_eq!(
-            overrides.get("KMSMasterKeyID"),
-            Some(&"carina_aws_types::kms_key_id()")
-        );
-        assert_eq!(
-            overrides.get("ReplicaKmsKeyID"),
-            Some(&"carina_aws_types::kms_key_id()")
-        );
+        for name in ["KmsKeyId", "KmsKeyArn", "KMSMasterKeyID", "ReplicaKmsKeyID"] {
+            assert!(
+                !overrides.contains_key(name),
+                "KMS inputs must use the full-path classifier"
+            );
+        }
         assert_eq!(
             overrides.get("PermissionsBoundary"),
             Some(&"super::super::iam::policy::arn()")
@@ -15998,8 +15987,8 @@ mod tests {
             Some(&"super::super::iam::role::arn()")
         );
         assert_eq!(
-            overrides.get("KmsKeyArn"),
-            Some(&"super::super::kms::key::arn()")
+            overrides.get("PeerRoleArn"),
+            Some(&"super::super::iam::role::arn()")
         );
         assert_eq!(
             override_type_to_display_name("super::super::iam::oidc_provider::arn()"),
@@ -20595,8 +20584,7 @@ mod tests {
     }
 
     #[test]
-    fn test_string_with_pattern_but_known_type_skips_pattern() {
-        // KmsKeyId has a pattern but is already recognized as a KMS ARN type
+    fn test_kms_pattern_uses_classified_reference_constructor() {
         let prop = CfnProperty {
             prop_type: Some(TypeValue::Single("string".to_string())),
             description: Some("The ARN of the KMS key.".to_string()),
@@ -20606,7 +20594,7 @@ mod tests {
         let schema = CfnSchema {
             type_name: "AWS::Logs::LogGroup".to_string(),
             description: None,
-            properties: BTreeMap::new(),
+            properties: BTreeMap::from([("KmsKeyId".to_string(), prop.clone())]),
             required: vec![],
             read_only_properties: vec![],
             create_only_properties: vec![],
@@ -20625,11 +20613,9 @@ mod tests {
             "aws.logs.LogGroup",
             &BTreeMap::new(),
         );
-        // KmsKeyId should be resolved to a specific ARN type, not pattern-validated
-        assert!(
-            !type_str.contains("validate_string_pattern_"),
-            "Known type (KmsKeyId) should not get pattern validation, got: {}",
-            type_str
+        assert_eq!(
+            type_str,
+            "carina_aws_types::kms_key_or_alias_arn_reference()"
         );
     }
 

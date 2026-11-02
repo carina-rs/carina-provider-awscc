@@ -11,15 +11,31 @@ use crate::provider::assume_role::AssumeRoleConfig;
 use crate::resend_safety::cloudcontrol_idempotency;
 
 /// An AWS SDK configuration with the provider's timeout and retry policy applied.
+#[derive(Clone)]
 pub struct BoundedSdkConfig(aws_config::SdkConfig);
 
 pub(crate) struct SdkClients {
     pub(crate) cloudcontrol: aws_sdk_cloudcontrol::Client,
     pub(crate) s3: aws_sdk_s3::Client,
     pub(crate) sts: aws_sdk_sts::Client,
+    pub(crate) kms: crate::references::KmsClient,
 }
 
 impl BoundedSdkConfig {
+    pub(crate) fn sdk_config(&self) -> &aws_config::SdkConfig {
+        &self.0
+    }
+
+    /// Qualified KMS references keep the instance's effective credentials and bounds.
+    pub(crate) fn in_region(&self, region: &str) -> Self {
+        Self(
+            self.0
+                .to_builder()
+                .region(Region::new(region.to_string()))
+                .build(),
+        )
+    }
+
     /// Apply the provider's timeout and retry policy to an SDK configuration.
     fn new(config: aws_config::SdkConfig) -> Self {
         Self(
@@ -96,8 +112,8 @@ impl BoundedSdkConfig {
         Self::new(self.0.into_builder().credentials_provider(shared).build())
     }
 
-    // This is the sole raw SDK client construction site. The bounded config
-    // already selects host credentials on wasm32, and CloudControl gets its guard.
+    // Service clients share the bounded config, including host credentials on wasm32.
+    // CloudControl gets its guard here; the KMS wrapper guards regional clients.
     #[allow(clippy::disallowed_methods)]
     pub(crate) fn clients(&self) -> SdkClients {
         let cloudcontrol = aws_sdk_cloudcontrol::Client::from_conf(
@@ -109,6 +125,7 @@ impl BoundedSdkConfig {
             cloudcontrol,
             s3: aws_sdk_s3::Client::new(&self.0),
             sts: aws_sdk_sts::Client::new(&self.0),
+            kms: crate::references::KmsClient::from_bounded_config(self),
         }
     }
 }
@@ -229,5 +246,205 @@ mod tests {
         )
         .await;
         assert_bounded_policy(bounded.0.timeout_config(), bounded.0.retry_config());
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[tokio::test]
+    async fn kms_routes_use_assumed_credentials_and_instance_or_arn_region() {
+        use carina_aws_types::AwsType;
+        use carina_provider_protocol::types::{
+            ReferenceError, ReferenceOutcome, ReferenceRequest, TypeIdentity,
+        };
+        use std::sync::{Arc, Mutex};
+        use winterbaume_core::{MockAws, MockRequest, MockResponse, MockService};
+
+        const INSTANCE_KEY: &str =
+            "arn:aws:kms:us-east-1:222222222222:key/11111111-1111-1111-1111-111111111111";
+        const REMOTE_KEY: &str =
+            "arn:aws:kms:eu-west-1:999999999999:key/22222222-2222-2222-2222-222222222222";
+        #[derive(Default)]
+        struct Calls {
+            sts: usize,
+            kms: Vec<(String, String)>,
+        }
+        struct ScopedKms(Arc<Mutex<Calls>>);
+        impl MockService for ScopedKms {
+            fn service_name(&self) -> &str {
+                "kms-scope-test"
+            }
+            fn url_patterns(&self) -> Vec<&str> {
+                vec![r"^https://(kms|sts)\."]
+            }
+            fn handle(
+                &self,
+                request: MockRequest,
+            ) -> std::pin::Pin<Box<dyn std::future::Future<Output = MockResponse> + Send + '_>>
+            {
+                let response = if request.uri.contains("sts.") {
+                    self.0.lock().unwrap().sts += 1;
+                    MockResponse::xml(
+                        200,
+                        "<AssumeRoleResponse xmlns=\"https://sts.amazonaws.com/doc/2011-06-15/\"><AssumeRoleResult><Credentials><AccessKeyId>ASSUMEDKMSKEY</AccessKeyId><SecretAccessKey>fake-assumed-secret</SecretAccessKey><SessionToken>fake-assumed-token</SessionToken><Expiration>2099-01-01T00:00:00Z</Expiration></Credentials><AssumedRoleUser><AssumedRoleId>ROLE:session</AssumedRoleId><Arn>arn:aws:sts::222222222222:assumed-role/test/session</Arn></AssumedRoleUser></AssumeRoleResult><ResponseMetadata><RequestId>sts-test</RequestId></ResponseMetadata></AssumeRoleResponse>",
+                    )
+                } else {
+                    assert_eq!(
+                        request.headers.get("x-amz-target").unwrap(),
+                        "TrentService.DescribeKey"
+                    );
+                    assert!(
+                        request
+                            .headers
+                            .get("authorization")
+                            .unwrap()
+                            .to_str()
+                            .unwrap()
+                            .contains("Credential=ASSUMEDKMSKEY/")
+                    );
+                    assert_eq!(
+                        request.headers.get("x-amz-security-token").unwrap(),
+                        "fake-assumed-token"
+                    );
+                    let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+                    let raw = body["KeyId"].as_str().unwrap();
+                    self.0
+                        .lock()
+                        .unwrap()
+                        .kms
+                        .push((request.uri.clone(), raw.to_string()));
+                    if raw == "alias/denied" {
+                        MockResponse::json(
+                            400,
+                            r#"{"__type":"AccessDeniedException","message":"kms:DescribeKey denied"}"#,
+                        )
+                    } else {
+                        let arn = if raw == "alias/aws/ecr" {
+                            assert_eq!(request.uri, "https://kms.us-east-1.amazonaws.com/");
+                            INSTANCE_KEY
+                        } else {
+                            assert_eq!(raw, "arn:aws:kms:eu-west-1:999999999999:alias/customer");
+                            assert_eq!(request.uri, "https://kms.eu-west-1.amazonaws.com/");
+                            REMOTE_KEY
+                        };
+                        MockResponse::json(
+                            200,
+                            format!(r#"{{"KeyMetadata":{{"KeyId":"test","Arn":"{arn}"}}}}"#),
+                        )
+                    }
+                };
+                Box::pin(async move { response })
+            }
+        }
+
+        let calls = Arc::new(Mutex::new(Calls::default()));
+        let mock = MockAws::builder()
+            .with_service(ScopedKms(calls.clone()))
+            .build();
+        let role = crate::provider::assume_role::AssumeRoleConfig {
+            role_arn: "arn:aws:iam::222222222222:role/test".into(),
+            session_name: Some("kms-test".into()),
+            external_id: None,
+            duration: None,
+        };
+        let config = BoundedSdkConfig::load_with_overrides(
+            "us-east-1",
+            Some(&role),
+            Some(mock.http_client()),
+            Some(mock.credentials_provider()),
+        )
+        .await;
+        let provider = crate::AwsccProvider::from_sdk_config(config, &Default::default()).await;
+        let client_config = provider.kms_client.config("eu-west-1");
+        assert_bounded_policy(client_config.timeout_config(), client_config.retry_config());
+        use aws_smithy_runtime_api::client::interceptors::Intercept;
+        assert!(
+            client_config
+                .interceptors()
+                .any(|interceptor| interceptor.name() == "carina.ResendGuard")
+        );
+
+        let request = |value: &str| ReferenceRequest {
+            ty: TypeIdentity {
+                provider: "aws".into(),
+                segments: vec!["kms".into(), "Key".into()],
+                kind: "Reference".into(),
+            },
+            value: value.into(),
+        };
+        let results = provider
+            .resolve_references(vec![
+                request("alias/aws/ecr"),
+                request("alias/aws/ecr"),
+                request(INSTANCE_KEY),
+                request("arn:aws:kms:eu-west-1:999999999999:alias/customer"),
+                request("alias/denied"),
+            ])
+            .await;
+        assert_eq!(results.len(), 5);
+        for result in &results[..3] {
+            assert!(matches!(result, Ok(ReferenceOutcome::Resolved(arn)) if arn == INSTANCE_KEY));
+        }
+        assert!(matches!(&results[3], Ok(ReferenceOutcome::Resolved(arn)) if arn == REMOTE_KEY));
+        let Err(ReferenceError::AccessDenied(error)) = &results[4] else {
+            panic!("expected typed access denial");
+        };
+        assert_eq!(error.provider_name.as_deref(), Some("awscc"));
+        assert_eq!(error.code.as_deref(), Some("AccessDeniedException"));
+        assert_eq!(error.status, Some(400));
+        let rendered = format!("{error:?}");
+        for secret in ["ASSUMEDKMSKEY", "fake-assumed-secret", "fake-assumed-token"] {
+            assert!(
+                !rendered.contains(secret),
+                "reference errors must not include credentials"
+            );
+        }
+        assert_eq!(
+            calls.lock().unwrap().kms.len(),
+            4,
+            "the shared resolver preserves batch positions and short-circuits key ARNs"
+        );
+
+        let native = carina_core::provider::Provider::resolve_references(
+            &provider,
+            &[
+                carina_core::references::ReferenceRequest {
+                    ty: AwsType::KmsKeyReference.identity(),
+                    value: "alias/aws/ecr".into(),
+                },
+                carina_core::references::ReferenceRequest {
+                    ty: AwsType::KmsKeyReference.identity(),
+                    value: REMOTE_KEY.into(),
+                },
+                carina_core::references::ReferenceRequest {
+                    ty: AwsType::KmsKeyArn.identity(),
+                    value: "alias/unsupported".into(),
+                },
+            ],
+        )
+        .await
+        .unwrap();
+        let canonical = |value: &str| match carina_core::references::ReferenceOutcome::from_guest(
+            ReferenceOutcome::Resolved(value.into()),
+        )
+        .unwrap()
+        {
+            carina_core::references::ReferenceOutcome::Resolved(value) => value,
+            carina_core::references::ReferenceOutcome::NotFound(_) => unreachable!(),
+        };
+        assert!(
+            matches!(&native[0], Ok(carina_core::references::ReferenceOutcome::Resolved(arn)) if arn == &canonical(INSTANCE_KEY))
+        );
+        assert!(
+            matches!(&native[1], Ok(carina_core::references::ReferenceOutcome::Resolved(arn)) if arn == &canonical(REMOTE_KEY))
+        );
+        assert!(matches!(
+            &native[2],
+            Err(carina_core::references::ReferenceError::InvalidReference(_))
+        ));
+        let calls = calls.lock().unwrap();
+        assert_eq!(calls.kms.len(), 5);
+        assert_eq!(
+            calls.sts, 1,
+            "all regional clients must reuse the effective assumed-role session"
+        );
     }
 }

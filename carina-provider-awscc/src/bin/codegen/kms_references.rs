@@ -1,0 +1,195 @@
+//! Single classification table for KMS-looking input strings.
+//!
+//! Keys are DSL resource names and complete paths from the resource root.
+//! `$ref` names never replace the use site's path. The final-registry coverage
+//! test imports this same module, including its path and candidate rules.
+
+use anyhow::{Result, bail};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Classification {
+    Reference(ReferenceKind),
+    #[allow(dead_code)] // The current cache has no non-reference candidates.
+    NotReference(NotReference),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReferenceKind {
+    Key,
+    #[allow(dead_code)] // Available for a CFN key-ARN-only pattern.
+    KeyArn,
+    KeyOrAliasArn,
+}
+
+impl ReferenceKind {
+    pub fn constructor(self) -> &'static str {
+        match self {
+            Self::Key => "carina_aws_types::kms_key_reference()",
+            Self::KeyArn => "carina_aws_types::kms_key_arn_reference()",
+            Self::KeyOrAliasArn => "carina_aws_types::kms_key_or_alias_arn_reference()",
+        }
+    }
+
+    #[cfg(test)]
+    #[allow(dead_code)] // Used by the library's final-registry test via this shared module.
+    pub fn expected_pattern(self) -> &'static str {
+        match self {
+            Self::Key => carina_aws_types::KMS_KEY_REFERENCE_PATTERN,
+            Self::KeyArn => carina_aws_types::KMS_KEY_ARN_PATTERN,
+            Self::KeyOrAliasArn => carina_aws_types::KMS_KEY_OR_ALIAS_ARN_PATTERN,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)] // Decisions for future candidates must carry an explicit reason.
+pub enum NotReference {
+    Absent,
+    Other(&'static str),
+}
+
+pub enum PathSegment<'a> {
+    Field(&'a str),
+    ListElement,
+    MapValue,
+}
+
+pub fn property_path(parent: &str, segment: PathSegment<'_>) -> String {
+    match segment {
+        PathSegment::Field(name) if parent.is_empty() => name.to_string(),
+        PathSegment::Field(name) => format!("{parent}.{name}"),
+        PathSegment::ListElement => format!("{parent}[]"),
+        PathSegment::MapValue => format!("{parent}{{}}"),
+    }
+}
+
+pub struct Entry {
+    pub resource: &'static str,
+    pub path: &'static str,
+    pub classification: Classification,
+    /// Pin the source constraint: a changed CFN pattern needs a fresh decision.
+    pub cfn_pattern: Option<&'static str>,
+}
+
+pub const CLASSIFICATIONS: &[Entry] = &[
+    Entry {
+        resource: "ecr.Repository",
+        path: "encryption_configuration.kms_key",
+        classification: Classification::Reference(ReferenceKind::Key),
+        // No pattern; description accepts alias, key ID, or full ARN. Length 1..2048.
+        cfn_pattern: None,
+    },
+    Entry {
+        resource: "dynamodb.Table",
+        path: "sse_specification.kms_master_key_id",
+        classification: Classification::Reference(ReferenceKind::Key),
+        // No pattern; description accepts key ID, ARN, alias name, or alias ARN.
+        cfn_pattern: None,
+    },
+    Entry {
+        resource: "ecs.Cluster",
+        path: "configuration.execute_command_configuration.kms_key_id",
+        classification: Classification::Reference(ReferenceKind::Key),
+        // No pattern; description specifies a KMS key ID for execute-command traffic.
+        cfn_pattern: None,
+    },
+    Entry {
+        resource: "ecs.Cluster",
+        path: "configuration.managed_storage_configuration.kms_key_id",
+        classification: Classification::Reference(ReferenceKind::Key),
+        // No pattern; description specifies a single-Region KMS key ID for managed storage.
+        cfn_pattern: None,
+    },
+    Entry {
+        resource: "ecs.Cluster",
+        path: "configuration.managed_storage_configuration.fargate_ephemeral_storage_kms_key_id",
+        classification: Classification::Reference(ReferenceKind::Key),
+        // No pattern; description specifies a single-Region KMS key ID for ephemeral storage.
+        cfn_pattern: None,
+    },
+    Entry {
+        resource: "logs.LogGroup",
+        path: "kms_key_id",
+        classification: Classification::Reference(ReferenceKind::KeyOrAliasArn),
+        // CFN accepts (key|alias) ARNs, unlike the AWS provider's key-only Smithy input.
+        // Use the portable ARN reference grammar instead of CFN's legacy `\Z` spelling.
+        cfn_pattern: Some(r"^arn:[a-z0-9-]+:kms:[a-z0-9-]+:\d{12}:(key|alias)/.+\Z"),
+    },
+    Entry {
+        resource: "s3.Bucket",
+        path: "bucket_encryption.server_side_encryption_configuration[].server_side_encryption_by_default.kms_master_key_id",
+        classification: Classification::Reference(ReferenceKind::Key),
+        // No pattern; description accepts key ID, key alias, or key ARN.
+        cfn_pattern: None,
+    },
+    Entry {
+        resource: "s3.Bucket",
+        path: "replication_configuration.rules[].destination.encryption_configuration.replica_kms_key_id",
+        classification: Classification::Reference(ReferenceKind::Key),
+        // No restrictive pattern; description calls this an ID (Key ARN or Alias ARN).
+        cfn_pattern: None,
+    },
+    Entry {
+        resource: "s3.Bucket",
+        path: "metadata_configuration.inventory_table_configuration.encryption_configuration.kms_key_arn",
+        classification: Classification::Reference(ReferenceKind::Key),
+        // No restrictive pattern; description requires a customer-managed key ARN in the bucket Region.
+        cfn_pattern: None,
+    },
+    Entry {
+        resource: "s3.Bucket",
+        path: "metadata_configuration.journal_table_configuration.encryption_configuration.kms_key_arn",
+        classification: Classification::Reference(ReferenceKind::Key),
+        // Same shared definition as inventory encryption: no restrictive pattern; KMS key ARN description.
+        cfn_pattern: None,
+    },
+    Entry {
+        resource: "sns.Topic",
+        path: "kms_master_key_id",
+        classification: Classification::Reference(ReferenceKind::Key),
+        // No pattern; description specifies the AWS managed or custom CMK's ID.
+        cfn_pattern: None,
+    },
+    Entry {
+        resource: "scheduler.Schedule",
+        path: "kms_key_arn",
+        classification: Classification::Reference(ReferenceKind::KeyOrAliasArn),
+        // CFN explicitly accepts (key|alias)/ ARNs only, length 1..2048.
+        cfn_pattern: Some(r"^arn:aws[a-z-]*:kms:[a-z0-9\-]+:\d{12}:(key|alias)\/[0-9a-zA-Z-_]*$"),
+    },
+];
+
+pub fn entry(resource: &str, path: &str) -> Option<&'static Entry> {
+    CLASSIFICATIONS
+        .iter()
+        .find(|entry| entry.resource == resource && entry.path == path)
+}
+
+pub fn is_candidate(name: &str, pattern: Option<&str>, description: Option<&str>) -> bool {
+    let name = name.to_ascii_lowercase();
+    let evidence = format!(
+        "{} {}",
+        pattern.unwrap_or_default(),
+        description.unwrap_or_default()
+    )
+    .to_ascii_lowercase();
+    name.contains("kms")
+        || name.contains("cmk")
+        || evidence.contains(":kms:")
+        || ((evidence.contains("kms") || evidence.contains("key management service"))
+            && (evidence.contains("arn") || evidence.contains("amazon resource name")))
+}
+
+pub fn classify_string(
+    resource: &str,
+    path: &str,
+    name: &str,
+    pattern: Option<&str>,
+    description: Option<&str>,
+) -> Result<Option<Classification>> {
+    let decision = entry(resource, path).map(|entry| entry.classification);
+    if is_candidate(name, pattern, description) && decision.is_none() {
+        bail!("unclassified KMS string {resource}.{path}");
+    }
+    Ok(decision)
+}
