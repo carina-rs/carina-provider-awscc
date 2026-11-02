@@ -67,7 +67,7 @@ impl ReadBackRequirements {
         Self(config.await_on_read_back.to_vec())
     }
 
-    pub(crate) fn missing(&self, attributes: &HashMap<String, Value>) -> Vec<String> {
+    pub(crate) fn missing<A>(&self, attributes: &HashMap<String, A>) -> Vec<String> {
         self.0
             .iter()
             .filter(|attribute| !attributes.contains_key(attribute.name()))
@@ -253,14 +253,14 @@ pub(crate) fn failed_read(error: ProviderError) -> (Observation, ProviderError) 
 
 /// Terminal-only output: the final host attempt cannot construct another pending step.
 #[derive(Debug)]
-pub(super) enum ReadBackCompletion {
+pub(super) enum ReadBackCompletion<A = Value> {
     Success {
         identifier: AppliedIdentifier,
-        attributes: HashMap<String, Value>,
+        attributes: HashMap<String, A>,
     },
     Partial {
         identifier: AppliedIdentifier,
-        attributes: HashMap<String, Value>,
+        attributes: HashMap<String, A>,
         reason: ProviderError,
         missing_attributes: NonEmptyAttributeNames,
     },
@@ -270,7 +270,7 @@ pub(super) enum ReadBackCompletion {
     },
 }
 
-pub(super) fn finish_final_read_back(completion: CreateCompletion) -> ReadBackCompletion {
+pub(super) fn finish_final_read_back<A>(completion: CreateCompletion<A>) -> ReadBackCompletion<A> {
     match completion {
         CreateCompletion::Success {
             identifier,

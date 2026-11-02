@@ -5,9 +5,10 @@
 
 use std::collections::HashMap;
 
-use carina_core::resource::{ConcreteValue, ResourceId, State, Value};
+use carina_core::resource::{
+    CanonicalComparisonAttributes, ConcreteValue, ResourceId, SnapshotState, Value,
+};
 use carina_core::schema::RawShape;
-use carina_core::value::CanonicalState;
 
 /// Apply provider-local string state transforms.
 ///
@@ -16,7 +17,7 @@ use carina_core::value::CanonicalState;
 /// Route53 hosted-zone trailing-dot stripping.
 pub fn normalize_state_string_dsl_transforms_impl<'a, I>(current_states: I)
 where
-    I: IntoIterator<Item = (&'a ResourceId, &'a mut State)>,
+    I: IntoIterator<Item = (&'a ResourceId, &'a mut SnapshotState)>,
 {
     for (resource_id, state) in current_states {
         if !state.exists || resource_id.provider != "awscc" {
@@ -70,7 +71,7 @@ where
 /// including nested fields, while preserving zero-field marker structs.
 pub fn canonicalize_string_or_list_states_impl<'a, I>(current_states: I)
 where
-    I: IntoIterator<Item = (&'a ResourceId, &'a mut State)>,
+    I: IntoIterator<Item = (&'a ResourceId, &'a mut SnapshotState)>,
 {
     for (resource_id, state) in current_states {
         if !state.exists || resource_id.provider != "awscc" {
@@ -81,21 +82,14 @@ where
             Some(c) => c,
             None => continue,
         };
-        // Route provider state through the validated attribute cursor so
-        // cyclic CFN attributes (`AttributeType::Ref`) resolve against this
-        // resource's definition map and retain their effective ancestry.
-        let schema = &config.schema;
-        let mut new_attrs = HashMap::with_capacity(state.attributes.len());
-        for (key, value) in std::mem::take(&mut state.attributes) {
-            let canon = match schema.effective_attribute(key.as_str()) {
-                Some(attribute) => attribute.canonicalize_state(value),
-                None => CanonicalState::Present(value),
-            };
-            if let CanonicalState::Present(value) = canon {
-                new_attrs.insert(key, value);
-            }
-        }
-        state.attributes = new_attrs;
+        // Canonicalize snapshot structure directly, preserving opaque secret hashes
+        // and resolving cyclic CFN types against this resource's definition map.
+        state.attributes = CanonicalComparisonAttributes::canonicalize(
+            std::mem::take(&mut state.attributes),
+            config.schema.as_schema(),
+        )
+        .into_iter()
+        .collect();
     }
 }
 
@@ -105,7 +99,7 @@ mod tests {
     use carina_core::provider::{
         LiftedSavedAttrs, PersistedAttributes, ProviderNormalizer, RawSavedAttrs,
     };
-    use carina_core::resource::Resource;
+    use carina_core::resource::{Resource, SnapshotState as State};
     use carina_core::schema::{SchemaRegistry, ShapeWalkBudget};
     use indexmap::IndexMap;
 
@@ -115,8 +109,13 @@ mod tests {
         let persisted = saved_attrs
             .into_iter()
             .map(|(id, attributes)| {
-                let attributes = PersistedAttributes::from_typed_persisted_wire_values(attributes)
-                    .expect("test saved attributes should encode as persisted values");
+                let attributes = PersistedAttributes::from_typed_persisted_wire_values(
+                    attributes
+                        .into_iter()
+                        .map(|(key, value)| (key, value.to_snapshot()))
+                        .collect(),
+                )
+                .expect("test saved attributes should encode as persisted values");
                 (id, attributes)
             })
             .collect();
@@ -594,7 +593,7 @@ mod tests {
         );
         let mut attributes = HashMap::new();
         for (k, v) in attrs {
-            attributes.insert(k.to_string(), v);
+            attributes.insert(k.to_string(), v.to_snapshot());
         }
         let state = State {
             id: id.clone(),
@@ -648,7 +647,7 @@ mod tests {
         };
         assert_eq!(
             format,
-            &IndexMap::from([("simple_prefix".to_string(), empty)])
+            &IndexMap::from([("simple_prefix".to_string(), empty.to_snapshot())])
         );
     }
 

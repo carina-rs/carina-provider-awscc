@@ -1658,6 +1658,84 @@ mod tests {
     }
 
     #[test]
+    fn update_encoding_matches_main_post_patch_merge_for_omitted_arn() {
+        let id = CoreResourceId::with_provider_identity("awscc", "s3.Bucket", "example", None);
+        let digest = concat!(
+            "$argon2id$v=19$m=19456,t=2,p=1$MDEyMzQ1Njc4OWFiY2RlZg$",
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        )
+        .to_string();
+        let secret = proto::PersistedValue::RedactedSecret(digest);
+        let arn = persisted_str("arn:aws:s3:::example");
+        let tags = persisted_map(&[("env", persisted_str("prod"))]);
+        let request = proto::UpdateRequest {
+            from: proto::PersistedState {
+                id: protocol_convert::resource_id_to_protocol(&id),
+                identifier: Some("example".into()),
+                attributes: BTreeMap::from([
+                    ("arn".into(), arn.clone()),
+                    ("notification_configuration".into(), secret.clone()),
+                    (
+                        "tags".into(),
+                        persisted_map(&[("env", persisted_str("dev"))]),
+                    ),
+                ]),
+                exists: true,
+            },
+            patch: proto::UpdatePatch {
+                ops: vec![proto::PatchOp::Replace {
+                    key: "tags".into(),
+                    value: proto_map(&[("env", proto_str("prod"))]),
+                }],
+            },
+        };
+        let state = CoreAppliedState::from_identifier(
+            id.clone(),
+            CoreAppliedIdentifier::new("example").unwrap(),
+            protocol_convert::protocol_to_core_value_map(&BTreeMap::from([
+                ("bucket_name".into(), proto_str("example")),
+                ("tags".into(), proto_map(&[("env", proto_str("prod"))])),
+            ]))
+            .unwrap(),
+        );
+        let outcomes = [
+            carina_core::provider::UpdateOutcome::success(state.clone()),
+            carina_core::provider::UpdateOutcome::partial_success(
+                state,
+                "arn omitted".into(),
+                vec!["arn".into()],
+            ),
+        ];
+        for outcome in outcomes {
+            let encoded =
+                update_outcome_to_proto(&outcome, request.state_after_patch(), &id).unwrap();
+            let is_partial = matches!(
+                outcome.kind(),
+                carina_core::provider::UpdateOutcomeKind::PartialSuccess { .. }
+            );
+            assert_eq!(
+                matches!(encoded, proto::UpdateOutcome::PartialSuccess { .. }),
+                is_partial
+            );
+            let state = match encoded {
+                proto::UpdateOutcome::Success { state }
+                | proto::UpdateOutcome::PartialSuccess { state, .. } => state,
+            };
+            // af3d9ff fills absent roots from post-patch state for both outcomes.
+            // The retained secret remains in the persisted value domain.
+            assert_eq!(
+                state.attributes,
+                BTreeMap::from([
+                    ("arn".into(), arn.clone()),
+                    ("bucket_name".into(), persisted_str("example")),
+                    ("notification_configuration".into(), secret.clone()),
+                    ("tags".into(), tags.clone()),
+                ])
+            );
+        }
+    }
+
+    #[test]
     fn schemas_include_tags_validator_for_tagged_resources() {
         let provider = AwsccProcessProvider::new();
         let schemas = provider.schemas();

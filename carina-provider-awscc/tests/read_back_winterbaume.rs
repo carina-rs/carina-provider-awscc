@@ -473,12 +473,22 @@ async fn exhausted_read_back_is_retried_by_next_apply() {
         .into_state();
     assert!(fresh.partial_read.is_none());
     let mut bindings = ResolvedBindings::default();
-    bindings.set("role", fresh.attributes.clone(), BindingValueSource::Local);
+    let arn = fresh
+        .attributes
+        .get("arn")
+        .expect("refreshed role has an ARN")
+        .to_value_at("role.arn")
+        .expect("refreshed ARN is available");
+    bindings.set(
+        "role",
+        HashMap::from([("arn".into(), arn)]),
+        BindingValueSource::Local,
+    );
     let next = execute(
         &provider,
         vec![dependent("missing", "arn")],
         bindings,
-        HashMap::from([(id, Current::from_state(fresh))]),
+        HashMap::from([(id, Current::from_snapshot(fresh))]),
         &Observer::default(),
     )
     .await;

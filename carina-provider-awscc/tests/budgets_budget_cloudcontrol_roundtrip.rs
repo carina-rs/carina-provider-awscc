@@ -292,39 +292,45 @@ async fn budgets_budget_create_then_read_preserves_recursive_expression_and_noti
     let Some(Value::Concrete(ConcreteValue::Map(limit))) = budget.get("budget_limit") else {
         panic!("budget_limit must round-trip as a map");
     };
-    assert_eq!(limit.get("amount"), Some(&float(5.25)));
-    assert_eq!(limit.get("unit"), Some(&string("USD")));
+    assert_eq!(limit.get("amount"), Some(&float(5.25).to_snapshot()));
+    assert_eq!(limit.get("unit"), Some(&string("USD").to_snapshot()));
     assert_eq!(
         budget.get("filter_expression"),
-        Some(&filter_expression(string))
+        Some(&filter_expression(string).to_snapshot())
     );
 
     assert_eq!(
         read.attributes().get("notifications_with_subscribers"),
-        Some(&list([map([
-            (
-                "notification",
-                map([
-                    ("comparison_operator", string("GREATER_THAN")),
-                    ("notification_type", string("ACTUAL")),
-                    ("threshold", float(80.5)),
-                    ("threshold_type", string("PERCENTAGE")),
-                ]),
-            ),
-            (
-                "subscribers",
-                list([map([
-                    ("address", string("budget@example.com")),
-                    ("subscription_type", string("EMAIL")),
-                ])]),
-            ),
-        ])]))
+        Some(
+            &list([map([
+                (
+                    "notification",
+                    map([
+                        ("comparison_operator", string("GREATER_THAN")),
+                        ("notification_type", string("ACTUAL")),
+                        ("threshold", float(80.5)),
+                        ("threshold_type", string("PERCENTAGE")),
+                    ]),
+                ),
+                (
+                    "subscribers",
+                    list([map([
+                        ("address", string("budget@example.com")),
+                        ("subscription_type", string("EMAIL")),
+                    ])]),
+                ),
+            ])])
+            .to_snapshot()
+        )
     );
     assert_eq!(
         read.attributes().get("resource_tags"),
-        Some(&list([map([
-            ("key", string("Project")),
-            ("value", string("carina-registry")),
-        ])]))
+        Some(
+            &list([map([
+                ("key", string("Project")),
+                ("value", string("carina-registry")),
+            ])])
+            .to_snapshot()
+        )
     );
 }

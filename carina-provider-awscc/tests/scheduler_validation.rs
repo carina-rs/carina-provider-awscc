@@ -94,7 +94,7 @@ fn scheduler_validation_context() -> (SchemaRegistry, ProviderContext) {
     let context = ProviderContext {
         custom_types: provider_custom_types_from_factories(factories),
         resource_types: ProviderContext::resource_types_from_schema_registry(&schemas),
-        ..ProviderContext::default()
+        ..ProviderContext::new(carina_core::EnvironmentSnapshot::empty())
     };
     (schemas, context)
 }

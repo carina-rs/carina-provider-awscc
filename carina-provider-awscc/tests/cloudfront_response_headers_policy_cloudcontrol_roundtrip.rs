@@ -364,8 +364,14 @@ async fn response_headers_policy_create_then_read_preserves_nested_headers() {
     else {
         panic!("response_headers_policy_config must round-trip as a map");
     };
-    assert_eq!(policy_config.get("name"), Some(&string(POLICY_NAME)));
-    assert_eq!(policy_config.get("comment"), Some(&string(POLICY_COMMENT)));
+    assert_eq!(
+        policy_config.get("name"),
+        Some(&string(POLICY_NAME).to_snapshot())
+    );
+    assert_eq!(
+        policy_config.get("comment"),
+        Some(&string(POLICY_COMMENT).to_snapshot())
+    );
 
     let Some(Value::Concrete(ConcreteValue::Map(cors_config))) = policy_config.get("cors_config")
     else {
@@ -373,16 +379,22 @@ async fn response_headers_policy_create_then_read_preserves_nested_headers() {
     };
     assert_eq!(
         cors_config.get("access_control_allow_credentials"),
-        Some(&bool_(false))
+        Some(&bool_(false).to_snapshot())
     );
-    assert_eq!(cors_config.get("origin_override"), Some(&bool_(true)));
+    assert_eq!(
+        cors_config.get("origin_override"),
+        Some(&bool_(true).to_snapshot())
+    );
 
     let Some(Value::Concrete(ConcreteValue::Map(allow_headers))) =
         cors_config.get("access_control_allow_headers")
     else {
         panic!("access_control_allow_headers must round-trip as a map");
     };
-    assert_eq!(allow_headers.get("items"), Some(&list([string("*")])));
+    assert_eq!(
+        allow_headers.get("items"),
+        Some(&list([string("*")]).to_snapshot())
+    );
 
     let Some(Value::Concrete(ConcreteValue::Map(allow_origins))) =
         cors_config.get("access_control_allow_origins")
@@ -391,7 +403,7 @@ async fn response_headers_policy_create_then_read_preserves_nested_headers() {
     };
     assert_eq!(
         allow_origins.get("items"),
-        Some(&list([string("https://example.com")]))
+        Some(&list([string("https://example.com")]).to_snapshot())
     );
 
     let Some(Value::Concrete(ConcreteValue::Map(allow_methods))) =
@@ -448,14 +460,20 @@ async fn response_headers_policy_create_then_read_preserves_nested_headers() {
     };
     assert_eq!(
         content_security_policy.get("content_security_policy"),
-        Some(&string(CONTENT_SECURITY_POLICY))
+        Some(&string(CONTENT_SECURITY_POLICY).to_snapshot())
     );
-    assert_eq!(content_security_policy.get("override"), Some(&bool_(true)));
+    assert_eq!(
+        content_security_policy.get("override"),
+        Some(&bool_(true).to_snapshot())
+    );
 
     let Some(Value::Concrete(ConcreteValue::Map(content_type_options))) =
         security_headers.get("content_type_options")
     else {
         panic!("content_type_options must round-trip as a map");
     };
-    assert_eq!(content_type_options.get("override"), Some(&bool_(true)));
+    assert_eq!(
+        content_type_options.get("override"),
+        Some(&bool_(true).to_snapshot())
+    );
 }

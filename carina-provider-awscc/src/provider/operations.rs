@@ -18,7 +18,8 @@ use carina_core::provider::{
     UpdatePatch,
 };
 use carina_core::resource::{
-    AbsoluteBindingAddress, ConcreteValue, NoPlaceholder, Resource, ResourceId, State, Value,
+    AbsoluteBindingAddress, ConcreteValue, NoPlaceholder, Resource, ResourceId, SnapshotValue,
+    State, StateValueLeaf, Value,
 };
 use carina_core::schema::{
     CompiledAttributeSchema, CompiledAttributeType, CompiledResourceSchema, Shape,
@@ -725,20 +726,20 @@ impl CcIssuedCreate for ResentIssuedCreate {
 }
 
 #[derive(Debug)]
-pub(super) enum CreateCompletion {
+pub(super) enum CreateCompletion<A = Value> {
     Success {
         identifier: AppliedIdentifier,
-        attributes: HashMap<String, Value>,
+        attributes: HashMap<String, A>,
     },
     Partial {
         identifier: AppliedIdentifier,
-        attributes: HashMap<String, Value>,
+        attributes: HashMap<String, A>,
         reason: ProviderError,
         missing_attributes: NonEmptyAttributeNames,
     },
     ReadBackPending {
         continuation: ReadBackContinuation,
-        attributes: HashMap<String, Value>,
+        attributes: HashMap<String, A>,
         reason: ProviderError,
         missing_attributes: NonEmptyAttributeNames,
     },
@@ -1587,6 +1588,7 @@ impl AwsccProvider {
             resource.resolved_attributes(),
             read_back,
             ReadBackKind::Create,
+            |attributes| create_read_back_values(&resource.id, attributes),
         ) {
             ReadBackObservation::Found(attributes) => attributes,
             ReadBackObservation::Incomplete(completion) => return completion,
@@ -2234,7 +2236,7 @@ impl AwsccProvider {
         &self,
         id: &ResourceId,
         identifier: &AppliedIdentifier,
-        from: &State,
+        from: &State<impl StateValueLeaf>,
         patch: &UpdatePatch,
     ) -> ProviderResult<CcUpdateStep> {
         self.ensure_initialized(id)?;
@@ -2271,7 +2273,7 @@ impl AwsccProvider {
         &self,
         id: &ResourceId,
         identifier: &AppliedIdentifier,
-        from: &State,
+        from: &State<impl StateValueLeaf>,
         patch: &UpdatePatch,
         token: CcUpdateToken,
         poll_request: PollRequest,
@@ -2331,7 +2333,7 @@ impl AwsccProvider {
         id: &ResourceId,
         config: &AwsccSchemaConfig,
         identifier: &AppliedIdentifier,
-        fallback: HashMap<String, Value>,
+        fallback: HashMap<String, SnapshotValue>,
         patch_plan: UpdatePatchPlan,
         step: OperationStep<WaitOutcome, ProviderError, CcRequestPhase>,
         poll_request: PollRequest,
@@ -2374,7 +2376,7 @@ impl AwsccProvider {
         id: &ResourceId,
         config: &AwsccSchemaConfig,
         identifier: &AppliedIdentifier,
-        fallback: HashMap<String, Value>,
+        fallback: HashMap<String, SnapshotValue>,
         read_back: Result<ReadOutcome, ReadFailure>,
         patch_plan: &UpdatePatchPlan,
         handler_failure: Option<&str>,
@@ -2392,6 +2394,7 @@ impl AwsccProvider {
             fallback,
             read_back,
             ReadBackKind::Update,
+            Ok,
         ) {
             ReadBackObservation::Found(attributes) => {
                 return OperationStep::Done(update_outcome_from_read_back(
@@ -2433,13 +2436,13 @@ impl AwsccProvider {
     fn finish_update_terminal(
         &self,
         id: &ResourceId,
-        completion: ReadBackCompletion,
+        completion: ReadBackCompletion<SnapshotValue>,
     ) -> CcUpdateStep {
         match completion {
             ReadBackCompletion::Success {
                 identifier,
                 attributes,
-            } => OperationStep::Done(UpdateOutcome::success(AppliedState::from_identifier(
+            } => OperationStep::Done(UpdateOutcome::success(AppliedState::from_snapshot_parts(
                 id.clone(),
                 identifier,
                 attributes,
@@ -2450,7 +2453,7 @@ impl AwsccProvider {
                 reason,
                 missing_attributes,
             } => OperationStep::Done(UpdateOutcome::partial_success(
-                AppliedState::from_identifier(id.clone(), identifier, attributes),
+                AppliedState::from_snapshot_parts(id.clone(), identifier, attributes),
                 reason.to_string(),
                 missing_attributes.into(),
             )),
@@ -2466,7 +2469,7 @@ impl AwsccProvider {
         &self,
         id: ResourceId,
         identifier: &AppliedIdentifier,
-        from: &State,
+        from: &State<impl StateValueLeaf>,
         patch: &UpdatePatch,
     ) -> ProviderResult<UpdateOutcome> {
         let budget = self.operation_budget(id.resource_type.as_str(), OperationKind::Update);
@@ -2770,14 +2773,14 @@ enum ReadBackKind {
     Update,
 }
 
-enum ReadBackObservation {
-    Found(HashMap<String, Value>),
-    Incomplete(CreateCompletion),
+enum ReadBackObservation<A> {
+    Found(HashMap<String, A>),
+    Incomplete(CreateCompletion<A>),
 }
 
-fn missing_schema_attributes(
+fn missing_schema_attributes<A>(
     config: &AwsccSchemaConfig,
-    attributes: &HashMap<String, Value>,
+    attributes: &HashMap<String, A>,
 ) -> Vec<String> {
     config
         .schema
@@ -2789,20 +2792,29 @@ fn missing_schema_attributes(
         .collect()
 }
 
-fn classify_read_back(
+fn classify_read_back<A>(
     id: &ResourceId,
     config: &AwsccSchemaConfig,
     identifier: AppliedIdentifier,
-    fallback: HashMap<String, Value>,
+    fallback: HashMap<String, A>,
     read: Result<ReadOutcome, ReadFailure>,
     kind: ReadBackKind,
-) -> ReadBackObservation {
+    observed_attributes: impl Fn(HashMap<String, SnapshotValue>) -> ProviderResult<HashMap<String, A>>,
+) -> ReadBackObservation<A> {
     if let Err(error) = validate_declarations(id, config) {
         return ReadBackObservation::Incomplete(CreateCompletion::Failed { identifier, error });
     }
     let (attributes, missing, reason, transience) = match read {
         Ok(ReadOutcome::Found { state }) => {
-            let attributes = state.attributes().clone();
+            let attributes = match observed_attributes(state.into_parts().2) {
+                Ok(attributes) => attributes,
+                Err(error) => {
+                    return ReadBackObservation::Incomplete(CreateCompletion::Failed {
+                        identifier,
+                        error,
+                    });
+                }
+            };
             let missing = ReadBackRequirements::declared(config).missing(&attributes);
             if missing.is_empty() {
                 return ReadBackObservation::Found(attributes);
@@ -2836,6 +2848,20 @@ fn classify_read_back(
             let (error, transience, observed) = error.into_parts();
             let (attributes, missing) = match observed {
                 Some(attributes) => {
+                    let attributes = match observed_attributes(
+                        attributes
+                            .into_iter()
+                            .map(|(key, value)| (key, value.to_snapshot()))
+                            .collect(),
+                    ) {
+                        Ok(attributes) => attributes,
+                        Err(error) => {
+                            return ReadBackObservation::Incomplete(CreateCompletion::Failed {
+                                identifier,
+                                error,
+                            });
+                        }
+                    };
                     let declared_missing =
                         ReadBackRequirements::declared(config).missing(&attributes);
                     let missing = if declared_missing.is_empty() {
@@ -2869,14 +2895,14 @@ fn classify_read_back(
     ))
 }
 
-fn incomplete_read_back(
+fn incomplete_read_back<A>(
     id: &ResourceId,
     identifier: AppliedIdentifier,
-    attributes: HashMap<String, Value>,
+    attributes: HashMap<String, A>,
     reason: ProviderError,
     missing: Vec<String>,
     transience: Transience,
-) -> CreateCompletion {
+) -> CreateCompletion<A> {
     let missing_attributes = match NonEmptyAttributeNames::try_from(missing) {
         Ok(missing) => missing,
         Err(error) => {
@@ -2907,12 +2933,12 @@ fn incomplete_read_back(
 }
 
 fn add_update_confirmation(
-    completion: CreateCompletion,
+    completion: CreateCompletion<SnapshotValue>,
     patch_plan: &UpdatePatchPlan,
     handler_failure: Option<&str>,
     observed: bool,
-) -> CreateCompletion {
-    let update = |attributes: &HashMap<String, Value>,
+) -> CreateCompletion<SnapshotValue> {
+    let update = |attributes: &HashMap<String, SnapshotValue>,
                   reason: ProviderError,
                   missing: NonEmptyAttributeNames| {
         let missing_sent = patch_plan
@@ -2990,15 +3016,18 @@ struct UpdateReadBackCause {
     source: ProviderError,
 }
 
-fn post_update_attributes(from: &State, patch: &UpdatePatch) -> HashMap<String, Value> {
+fn post_update_attributes(
+    from: &State<impl StateValueLeaf>,
+    patch: &UpdatePatch,
+) -> HashMap<String, SnapshotValue> {
     use carina_core::provider::PatchOp;
-    let mut attributes = from.attributes.clone();
+    let mut attributes = from.to_snapshot().attributes;
     for op in &patch.ops {
         match op {
             PatchOp::Add { key, value }
             | PatchOp::Replace { key, value }
             | PatchOp::Reassert { key, value } => {
-                attributes.insert(key.clone(), value.clone());
+                attributes.insert(key.clone(), value.to_snapshot());
             }
             PatchOp::Remove { key } => {
                 attributes.remove(key);
@@ -3006,6 +3035,29 @@ fn post_update_attributes(from: &State, patch: &UpdatePatch) -> HashMap<String, 
         }
     }
     attributes
+}
+
+/// Create handles consume live read-back attributes; historical update state never
+/// passes through this conversion. Preserve the selected attribute's typed cause.
+fn create_read_back_values(
+    id: &ResourceId,
+    attributes: HashMap<String, SnapshotValue>,
+) -> ProviderResult<HashMap<String, Value>> {
+    attributes
+        .into_iter()
+        .map(|(key, value)| {
+            value
+                .to_value_at(format!("{id}.{key}"))
+                .map(|value| (key, value))
+                .map_err(|error| {
+                    ProviderError::invalid_input_caused_by(
+                        "create read-back attribute is unavailable",
+                        error,
+                    )
+                    .for_resource(id.clone())
+                })
+        })
+        .collect()
 }
 
 fn canonicalize_identifier_from_read(
@@ -3075,7 +3127,7 @@ fn primary_identifier_segment(value: &Value) -> Option<String> {
 fn update_outcome_from_read_back(
     id: &ResourceId,
     identifier: &AppliedIdentifier,
-    attributes: HashMap<String, Value>,
+    attributes: HashMap<String, SnapshotValue>,
     patch_plan: &UpdatePatchPlan,
     handler_failure: Option<&str>,
 ) -> UpdateOutcome {
@@ -3098,7 +3150,7 @@ fn update_outcome_from_read_back(
         .cloned()
         .collect::<Vec<_>>();
 
-    let state = AppliedState::from_identifier(id.clone(), identifier.clone(), attributes);
+    let state = AppliedState::from_snapshot_parts(id.clone(), identifier.clone(), attributes);
 
     if unconfirmed_attributes.is_empty() {
         return UpdateOutcome::success(state);
@@ -3219,6 +3271,7 @@ fn map_aws_props_to_attributes(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use carina_core::protocol_convert;
     use carina_core::provider::{
         AppliedIdentifier, CreateFailureKind, CreateObservation, CreateOutcome, CreateOutcomeKind,
         Observation, PatchOp, PersistedAttributes, RawSavedAttrs, ReadOutcome, UnobservedReason,
@@ -3226,6 +3279,7 @@ mod tests {
     };
     use carina_core::resource::DeferredValue;
     use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, SchemaRegistry};
+    use carina_provider_protocol::types as proto;
     use serde_json::json;
     use std::future::Future;
     use std::pin::Pin;
@@ -3245,7 +3299,7 @@ mod tests {
             &self,
             id: ResourceId,
             identifier: &AppliedIdentifier,
-            from: &State,
+            from: &State<impl StateValueLeaf>,
             patch: &UpdatePatch,
         ) -> ProviderResult<UpdateOutcome> {
             drive_operation(
@@ -3437,7 +3491,10 @@ mod tests {
             panic!("expected partial create")
         };
         assert_eq!(state.identifier().as_str(), "partial-bucket");
-        assert_eq!(state.attributes(), &resource.resolved_attributes());
+        assert_eq!(
+            state.attributes(),
+            &resource.to_snapshot().resolved_attributes()
+        );
         let expected: Vec<_> = get_schema_config("s3.Bucket")
             .unwrap()
             .schema
@@ -4456,6 +4513,233 @@ mod tests {
         }
     }
 
+    fn persisted_secret_snapshot() -> SnapshotValue {
+        let digest = concat!(
+            "$argon2id$v=19$m=19456,t=2,p=1$MDEyMzQ1Njc4OWFiY2RlZg$",
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        );
+        SnapshotValue::redacted(
+            carina_core::resource::RedactedSecretHash::from_encoded_digest(digest)
+                .expect("valid persisted secret digest"),
+        )
+    }
+
+    // The process and WASM adapter in af3d9ff merges post-patch persisted state
+    // only after the provider has classified the read-back and its omissions.
+    fn persisted_update_attributes(
+        outcome: &UpdateOutcome,
+        from: &State<impl StateValueLeaf>,
+        patch: &UpdatePatch,
+    ) -> BTreeMap<String, proto::PersistedValue> {
+        let request = proto::UpdateRequest {
+            from: protocol_convert::try_state_to_persisted_protocol(&from.to_snapshot()).unwrap(),
+            patch: protocol_convert::try_update_patch_to_protocol(patch).unwrap(),
+        };
+        match protocol_convert::try_update_outcome_to_protocol(outcome, request.state_after_patch())
+            .unwrap()
+        {
+            proto::UpdateOutcome::Success { state }
+            | proto::UpdateOutcome::PartialSuccess { state, .. } => state.attributes,
+        }
+    }
+
+    /// carina#4227: tags-only updates must never materialize unrelated historical
+    /// secrets, including when the final read omits those inputs and old outputs.
+    #[tokio::test]
+    async fn update_preserves_untouched_secret_snapshot_in_persisted_state() {
+        for read_succeeds in [true, false] {
+            let service = PartialUpdateCloudControlService::new(true, read_succeeds);
+            let provider = provider_with_partial_update_service(service.clone()).await;
+            let mut from = partial_update_bucket_state().to_snapshot();
+            let secret = persisted_secret_snapshot();
+            assert!(secret.to_value_at("notification_configuration").is_err());
+            from.attributes
+                .insert("notification_configuration".into(), secret.clone());
+            from.attributes.insert(
+                "access_control".into(),
+                test_string("Private").to_snapshot(),
+            );
+            from.attributes.insert(
+                "arn".into(),
+                test_string("arn:aws:s3:::stale-output").to_snapshot(),
+            );
+            let patch = partial_update_bucket_patch();
+
+            let outcome = provider
+                .update_with_final_read_back(
+                    from.id.clone(),
+                    &test_identifier("partial-bucket"),
+                    &from,
+                    &patch,
+                )
+                .await
+                .expect("an unrelated persisted secret must not prevent update");
+            let state = match outcome.kind() {
+                UpdateOutcomeKind::Success { state } => {
+                    assert!(read_succeeds);
+                    state
+                }
+                UpdateOutcomeKind::PartialSuccess { state, .. } => {
+                    assert!(!read_succeeds);
+                    state
+                }
+            };
+            if read_succeeds {
+                assert!(
+                    !state
+                        .attributes()
+                        .contains_key("notification_configuration")
+                );
+                assert!(!state.attributes().contains_key("access_control"));
+                assert!(!state.attributes().contains_key("arn"));
+            } else {
+                // af3d9ff keeps the complete post-patch fallback when no read
+                // was available, including historical outputs and secrets.
+                let mut expected = from.attributes.clone();
+                expected.insert(
+                    "tags".into(),
+                    Value::Concrete(ConcreteValue::Map(IndexMap::from([(
+                        "env".into(),
+                        test_string("prod"),
+                    )])))
+                    .to_snapshot(),
+                );
+                assert_eq!(state.attributes(), &expected);
+            }
+            let persisted = persisted_update_attributes(&outcome, &from, &patch);
+            let historical =
+                protocol_convert::try_core_to_protocol_persisted_value_map(&from.attributes)
+                    .unwrap();
+            for key in ["notification_configuration", "access_control", "arn"] {
+                assert_eq!(persisted.get(key), historical.get(key));
+            }
+            let request: serde_json::Value = serde_json::from_str(
+                service
+                    .update_request_body
+                    .lock()
+                    .unwrap()
+                    .as_deref()
+                    .unwrap(),
+            )
+            .unwrap();
+            let sent_patch: serde_json::Value =
+                serde_json::from_str(request["PatchDocument"].as_str().unwrap()).unwrap();
+            assert_eq!(
+                sent_patch,
+                json!([{"op": "add", "path": "/Tags", "value": [{"Key": "env", "Value": "prod"}]}])
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn update_read_back_matches_main_for_secret_bearing_objects() {
+        for (returns_metadata, read_properties) in [
+            (false, r#"{"Tags":[{"Key":"env","Value":"prod"}]}"#),
+            (
+                true,
+                r#"{"Tags":[{"Key":"env","Value":"prod"}],"MetadataTableConfiguration":{"S3TablesDestination":{"TableBucketArn":"arn:aws:s3tables:us-east-1:123456789012:bucket/metadata","TableName":"observed"}}}"#,
+            ),
+        ] {
+            let service =
+                PartialUpdateCloudControlService::with_read_properties(true, read_properties);
+            let provider = provider_with_partial_update_service(service).await;
+            let mut from = partial_update_bucket_state().to_snapshot();
+            let historical = SnapshotValue::Concrete(ConcreteValue::Map(IndexMap::from([(
+                "s3_tables_destination".into(),
+                SnapshotValue::Concrete(ConcreteValue::Map(IndexMap::from([
+                    ("table_name".into(), persisted_secret_snapshot()),
+                    (
+                        "table_bucket_arn".into(),
+                        test_string("arn:aws:s3tables:us-east-1:123456789012:bucket/metadata")
+                            .to_snapshot(),
+                    ),
+                    (
+                        "table_arn".into(),
+                        test_string(
+                            "arn:aws:s3tables:us-east-1:123456789012:bucket/metadata/table/stale",
+                        )
+                        .to_snapshot(),
+                    ),
+                    (
+                        "table_namespace".into(),
+                        test_string("aws_s3_metadata").to_snapshot(),
+                    ),
+                ]))),
+            )])));
+            assert!(historical.contains_secret_hash());
+            from.attributes
+                .insert("metadata_table_configuration".into(), historical.clone());
+            let identifier = test_identifier("partial-bucket");
+            let patch = partial_update_bucket_patch();
+            let ReadOutcome::Found { state: observed } =
+                provider.read_resource(&from.id, &identifier).await.unwrap()
+            else {
+                panic!("expected a successful read-back")
+            };
+            assert_eq!(
+                observed
+                    .attributes()
+                    .contains_key("metadata_table_configuration"),
+                returns_metadata
+            );
+            let outcome = provider
+                .update_with_final_read_back(from.id.clone(), &identifier, &from, &patch)
+                .await
+                .unwrap();
+            let UpdateOutcomeKind::Success { state } = outcome.kind() else {
+                panic!("tags-only update must succeed")
+            };
+            // af3d9ff's native outcome contains only the read-back. Retaining a
+            // whole secret-bearing object here resurrects its nested outputs.
+            assert_eq!(state.attributes(), observed.attributes());
+            assert!(
+                state
+                    .attributes()
+                    .get("metadata_table_configuration")
+                    .and_then(|value| value.get("s3_tables_destination"))
+                    .and_then(|value| value.get("table_arn"))
+                    .is_none()
+            );
+
+            let persisted = persisted_update_attributes(&outcome, &from, &patch);
+            let key = "metadata_table_configuration";
+            if let Some(observed) = observed.attributes().get(key) {
+                // The boundary merge is shallow: a returned root replaces the
+                // entire historical object, including its omitted table_arn.
+                let expected = protocol_convert::try_core_to_protocol_persisted_value_map(
+                    &HashMap::from([(key.into(), observed.clone())]),
+                )
+                .unwrap();
+                assert_eq!(persisted.get(key), expected.get(key));
+            } else {
+                // An entirely absent root is retained at the boundary, exactly
+                // like arn; af3d9ff does not prune its historical children.
+                let expected = protocol_convert::try_core_to_protocol_persisted_value_map(
+                    &HashMap::from([(key.into(), historical)]),
+                )
+                .unwrap();
+                assert_eq!(persisted.get(key), expected.get(key));
+            }
+        }
+    }
+
+    #[test]
+    fn consumed_create_read_back_attribute_retains_typed_secret_error() {
+        let id = partial_update_bucket_state().id;
+        let error = create_read_back_values(
+            &id,
+            HashMap::from([("bucket_name".into(), persisted_secret_snapshot())]),
+        )
+        .expect_err("a consumed attribute must report an unavailable secret");
+        let cause = error
+            .detail()
+            .cause()
+            .unwrap()
+            .downcast_ref::<carina_core::resource::UnavailableSecretError>()
+            .expect("retain the typed conversion cause");
+        assert_eq!(cause.path(), format!("{id}.bucket_name"));
+    }
+
     fn create_only_bucket_name_patch() -> UpdatePatch {
         let mut patch = partial_update_bucket_patch();
         patch.ops.insert(
@@ -4718,19 +5002,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn update_read_back_omits_unpatched_redacted_secret_without_sending_digest() {
+    async fn update_read_back_preserves_unpatched_redacted_secret_without_sending_digest() {
         let service = PartialUpdateCloudControlService::new(true, true);
         let provider = provider_with_partial_update_service(service.clone()).await;
-        let mut from = partial_update_bucket_state();
+        let mut from = partial_update_bucket_state().to_snapshot();
         let secret = Value::Deferred(DeferredValue::Secret(Box::new(Value::Concrete(
             ConcreteValue::String("stored-write-only-secret".into()),
         ))));
         let redacted = carina_core::value::redact_secrets_in_value(&secret)
             .expect("redact saved-state placeholder");
-        let Value::Deferred(DeferredValue::RedactedSecret { hash }) = &redacted else {
-            panic!("expected a redacted secret")
-        };
-        let digest = hash.encoded_digest();
+        let digest = redacted
+            .secret_hash()
+            .expect("expected a redacted secret")
+            .encoded_digest();
         from.attributes
             .insert("access_control".to_string(), redacted.clone());
 
@@ -4747,9 +5031,12 @@ mod tests {
         let UpdateOutcomeKind::Success { state } = outcome.kind() else {
             panic!("expected success when an unpatched secret is absent from read-back");
         };
-        assert!(
-            !state.attributes().contains_key("access_control"),
-            "an unpatched secret omitted by the read-back must remain absent"
+        assert!(!state.attributes().contains_key("access_control"));
+        let persisted =
+            persisted_update_attributes(&outcome, &from, &partial_update_bucket_patch());
+        assert_eq!(
+            persisted.get("access_control"),
+            Some(&proto::PersistedValue::RedactedSecret(digest.clone()))
         );
 
         let request_body = service
@@ -5308,7 +5595,9 @@ mod tests {
         assert_eq!(state.identifier().as_str(), "partial-bucket");
         assert_eq!(
             state.attributes(),
-            &partial_create_bucket_resource().resolved_attributes()
+            &partial_create_bucket_resource()
+                .to_snapshot()
+                .resolved_attributes()
         );
         assert_eq!(diagnostic.reason(), "read-back returned not_found");
         assert_eq!(
@@ -5644,7 +5933,7 @@ mod tests {
         assert_eq!(state.identifier().as_str(), "flow-log-role");
         assert_eq!(
             state.attributes().get("role_name"),
-            Some(&test_string("flow-log-role"))
+            Some(&test_string("flow-log-role").to_snapshot())
         );
         assert!(
             state
@@ -5874,7 +6163,7 @@ mod tests {
                 |context| {
                     carina_core::differ::diff(
                         &desired,
-                        &current,
+                        &current.to_snapshot(),
                         &saved_attrs,
                         None,
                         comparison,
@@ -5953,8 +6242,9 @@ mod tests {
                 .with_attribute("auto_publish", Value::Concrete(ConcreteValue::Bool(true)))
                 .into_resolved_dependency_phase_for_test(),
         );
-        let mut current =
-            State::existing(desired.id.clone(), attributes).with_identifier(function_arn);
+        let mut current = State::existing(desired.id.clone(), attributes)
+            .with_identifier(function_arn)
+            .to_snapshot();
 
         let persisted = PersistedAttributes::from_typed_persisted_wire_values(HashMap::from([(
             "auto_publish".to_string(),
@@ -6009,7 +6299,7 @@ mod tests {
                 |context| {
                     carina_core::differ::diff(
                         &desired,
-                        &current,
+                        &current.to_snapshot(),
                         &saved_attrs,
                         None,
                         comparison,
@@ -6072,7 +6362,7 @@ mod tests {
                 |context| {
                     carina_core::differ::diff(
                         &desired,
-                        &current,
+                        &current.to_snapshot(),
                         &saved_attrs,
                         None,
                         comparison,

@@ -172,7 +172,7 @@ async fn maybe_sent_then_permanent_not_sent_in_not_issued_update_reports_unknown
     let (provider, calls, script) = provider(1, [Failure::Timeout]).await;
     let id = vpc().id;
     let identifier = common::applied_identifier("vpc-0123456789abcdef0");
-    let from = State::existing(
+    let from: State = State::existing(
         id.clone(),
         HashMap::from([
             (
