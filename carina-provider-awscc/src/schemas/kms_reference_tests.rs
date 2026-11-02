@@ -13,7 +13,6 @@ use std::collections::BTreeSet;
 
 #[derive(Default)]
 struct Coverage {
-    paths: BTreeSet<(String, String)>,
     references: BTreeSet<(String, String)>,
     ancestors: BTreeSet<usize>,
 }
@@ -30,7 +29,6 @@ impl Coverage {
         read_only: bool,
     ) {
         let key = (schema.resource_type().to_string(), path.to_string());
-        self.paths.insert(key.clone());
         let pointer = ty as *const CompiledAttributeType as usize;
         if !self.ancestors.insert(pointer) {
             return;
@@ -64,9 +62,6 @@ impl Coverage {
                         schema.resource_type()
                     );
                     self.references.insert(key.clone());
-                }
-                Some(Classification::NotReference(NotReference::Absent)) => {
-                    panic!("absent KMS path exists: {}.{path}", schema.resource_type())
                 }
                 Some(Classification::NotReference(NotReference::Other(reason))) => {
                     assert!(!reason.is_empty());
@@ -166,12 +161,6 @@ fn final_registry_classifies_every_kms_input_and_preserves_reference_patterns() 
             unique.insert(key.clone()),
             "duplicate KMS classification: {key:?}"
         );
-        if entry.classification == Classification::NotReference(NotReference::Absent) {
-            assert!(
-                !coverage.paths.contains(&key),
-                "absent KMS path exists: {key:?}"
-            );
-        }
     }
     let expected = CLASSIFICATIONS
         .iter()

@@ -152,6 +152,41 @@ fn unvisited_table_entries_fail_after_generation() {
 }
 
 #[test]
+fn shared_kms_definition_requires_a_decision_at_each_use_site() {
+    let mut schema: Value =
+        serde_json::from_str(include_str!("../../cfn-schema-cache/AWS__SNS__Topic.json")).unwrap();
+    schema["definitions"]["KmsKeyString"] = json!({"type": "string"});
+    for name in ["KmsMasterKeyId", "EncryptionKey"] {
+        schema["properties"][name] = json!({"$ref": "#/definitions/KmsKeyString"});
+    }
+    for read_only in [false, true] {
+        if read_only {
+            schema["readOnlyProperties"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!("/properties/EncryptionKey"));
+        }
+        for format in ["rust", "markdown"] {
+            let output = generate(&schema, format);
+            let error = String::from_utf8_lossy(&output.stderr);
+            assert!(
+                !output.status.success(),
+                "shared KMS definition passed {format} (read_only={read_only})"
+            );
+            let expected = if read_only {
+                "unaccounted KMS node sns.Topic#/definitions/KmsKeyString"
+            } else {
+                "unclassified KMS string sns.Topic.encryption_key"
+            };
+            assert!(
+                error.contains(expected) && error.contains("sns.Topic.encryption_key"),
+                "{format}: {error}"
+            );
+        }
+    }
+}
+
+#[test]
 fn non_reference_string_maps_ignore_scalar_constraints_like_main() {
     for value in [
         json!({"type": "string", "pattern": "^(?!aws:).*$", "minLength": 1, "maxLength": 256}),

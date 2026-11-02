@@ -59,9 +59,7 @@ impl ReferenceKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)] // Decisions for future candidates must carry an explicit reason.
 pub enum NotReference {
-    Absent,
     Other(&'static str),
 }
 

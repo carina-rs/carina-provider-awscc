@@ -85,7 +85,8 @@ pub(super) struct EmissionContext<'a> {
     source: Cow<'a, Value>,
     resource: String,
     visited: RefCell<BTreeSet<String>>,
-    classified_sources: RefCell<BTreeSet<String>>,
+    /// Each source node is covered separately at every emitted DSL path.
+    classified_sources: RefCell<BTreeMap<String, BTreeSet<String>>>,
     /// Collection suffixes come from actual emitter decisions, never lookahead.
     paths: RefCell<BTreeMap<Vec<String>, String>>,
     sites: RefCell<BTreeMap<Vec<String>, EmittedSite>>,
@@ -134,7 +135,7 @@ impl<'a> EmissionContext<'a> {
             source: Cow::Borrowed(source),
             resource: dsl_resource_name_from_type(&schema.type_name)?,
             visited: RefCell::new(BTreeSet::new()),
-            classified_sources: RefCell::new(BTreeSet::new()),
+            classified_sources: RefCell::new(BTreeMap::new()),
             paths: RefCell::new(BTreeMap::new()),
             sites: RefCell::new(BTreeMap::new()),
             enum_discovery: false,
@@ -194,7 +195,7 @@ impl<'a> EmissionContext<'a> {
                     .expect("recorded source pointer");
                 if name == "*" {
                     // Collections retain same-site scalar constraints on their value.
-                    inherited.add(value);
+                    inherited.add_source(&parent, value);
                     if self.dsl_path(path).ends_with("{}") {
                         if let Some(patterns) =
                             value.get("patternProperties").and_then(Value::as_object)
@@ -221,7 +222,7 @@ impl<'a> EmissionContext<'a> {
             };
             for pointer in &site.sources {
                 site.evidence
-                    .add(self.source.pointer(pointer).expect("source node"));
+                    .add_source(pointer, self.source.pointer(pointer).expect("source node"));
             }
             #[cfg(test)]
             if site.sources.is_empty() {
@@ -310,19 +311,24 @@ impl<'a> EmissionContext<'a> {
         record_sources: bool,
     ) -> Result<Option<ReferenceKind>> {
         let evidence = &site.evidence;
+        let names = format!("{name} {}", evidence.definition_names.join(" "));
         let decision = kms_references::classify_string(
             &self.resource,
             path,
-            name,
+            &names,
             Some(&evidence.patterns.join(" ")),
             Some(&evidence.descriptions.join(" ")),
         )?;
         if decision.is_some() {
             self.visited.borrow_mut().insert(path.to_string());
             if record_sources {
-                self.classified_sources
-                    .borrow_mut()
-                    .extend(site.sources.iter().cloned());
+                let mut classified = self.classified_sources.borrow_mut();
+                for pointer in &site.sources {
+                    classified
+                        .entry(pointer.clone())
+                        .or_default()
+                        .insert(path.to_string());
+                }
             }
         }
         let Some(Classification::Reference(kind)) = decision else {
@@ -383,18 +389,32 @@ impl<'a> EmissionContext<'a> {
     pub(super) fn finish(&self) -> Result<()> {
         let candidates = kms_nodes(&self.source);
         let classified = self.classified_sources.borrow();
+        let sites = self.sites.borrow();
         let exceptions: Vec<_> = UNEMITTED_KMS_NODES
             .iter()
             .filter(|entry| entry.resource == self.resource)
             .collect();
         for pointer in &candidates {
-            if !classified.contains(pointer)
-                && !exceptions.iter().any(|entry| entry.pointer == pointer)
-            {
+            if exceptions.iter().any(|entry| entry.pointer == pointer) {
+                continue;
+            }
+            let Some(classified_paths) = classified.get(pointer) else {
                 bail!(
                     "unaccounted KMS node {}#{pointer}; classify its emitted source or add an explicit UNEMITTED_KMS_NODES entry with a reason",
                     self.resource
                 );
+            };
+            for (path, site) in sites.iter() {
+                if site.sources.contains(pointer) {
+                    let path = self.dsl_path(path);
+                    if !classified_paths.contains(&path) {
+                        bail!(
+                            "unaccounted KMS node {}#{pointer} at emitted use site {}.{path}; classify this use site separately",
+                            self.resource,
+                            self.resource
+                        );
+                    }
+                }
             }
         }
         let mut unique = BTreeSet::new();
@@ -406,7 +426,7 @@ impl<'a> EmissionContext<'a> {
                     entry.pointer
                 );
             }
-            if !candidates.contains(entry.pointer) || classified.contains(entry.pointer) {
+            if !candidates.contains(entry.pointer) || classified.contains_key(entry.pointer) {
                 bail!(
                     "unused UNEMITTED_KMS_NODES entry {}#{}; remove or revisit the stale entry",
                     self.resource,
@@ -439,6 +459,7 @@ impl std::ops::Deref for EmissionContext<'_> {
 
 #[derive(Clone, Default)]
 struct Evidence {
+    definition_names: Vec<String>,
     patterns: Vec<String>,
     lengths: Vec<(Option<u64>, Option<u64>)>,
     descriptions: Vec<String>,
@@ -446,6 +467,18 @@ struct Evidence {
 }
 
 impl Evidence {
+    fn add_source(&mut self, pointer: &str, value: &Value) {
+        if let Some(name) = pointer.strip_prefix("/definitions/")
+            && !name.contains('/')
+        {
+            let name = name.replace("~1", "/").replace("~0", "~");
+            if !self.definition_names.contains(&name) {
+                self.definition_names.push(name);
+            }
+        }
+        self.add(value);
+    }
+
     fn add(&mut self, value: &Value) {
         self.has_enum_or_const |= value.get("enum").is_some() || value.get("const").is_some();
         if let Some(pattern) = value.get("pattern").and_then(Value::as_str)
@@ -578,6 +611,32 @@ mod tests {
         let error = context.finish().unwrap_err().to_string();
         assert!(
             error.contains("/properties/KmsMasterKeyId/anyOf/0/properties/KmsHidden"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_shared_definition_requires_every_emitted_use_site_to_be_classified() {
+        let source = json!({"typeName": "AWS::SNS::Topic", "properties": {
+            "KmsMasterKeyId": {"$ref": "#/definitions/KmsKeyString"},
+            "EncryptionKey": {"$ref": "#/definitions/KmsKeyString"}
+        }, "definitions": {"KmsKeyString": {"type": "string"}}});
+        let schema: CfnSchema = serde_json::from_value(source.clone()).unwrap();
+        let context = EmissionContext::from_source(&schema, &source).unwrap();
+        let path = ["KmsMasterKeyId".into()];
+        context
+            .property_at(&path, &schema.properties["KmsMasterKeyId"])
+            .classify()
+            .unwrap();
+        context.finish().unwrap();
+
+        // Source selection alone cannot borrow another use site's decision.
+        let path = ["EncryptionKey".into()];
+        context.property_at(&path, &schema.properties["EncryptionKey"]);
+        let error = context.finish().unwrap_err().to_string();
+        assert!(
+            error.contains("unaccounted KMS node sns.Topic#/definitions/KmsKeyString")
+                && error.contains("sns.Topic.encryption_key"),
             "{error}"
         );
     }
