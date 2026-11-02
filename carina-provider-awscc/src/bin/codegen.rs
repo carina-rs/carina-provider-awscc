@@ -3490,7 +3490,11 @@ fn markdown_type(
     let property_path = classified.path();
     let cfn_property_path = CfnPropertyPath::new(cfn_parent, prop_name);
     let override_type = resource_type_override(&schema.type_name, cfn_property_path);
-    if let Some(display) = override_type_display(schema, cfn_property_path, prop, override_type) {
+    // Top-level properties retain source struct links, as on main. Nested
+    // overrides replace the field's source type and take precedence over links.
+    if cfn_parent.is_some()
+        && let Some(display) = override_type_display(schema, cfn_property_path, prop, override_type)
+    {
         return MarkdownType::Plain(TypeDisplay::Code(display).markdown());
     }
     if let Some(override_type) = override_type.filter(|value| value.requires_array_source()) {
@@ -4311,15 +4315,15 @@ fn collect_struct_defs(
     cfn_parent: Option<&str>,
     struct_defs: &mut BTreeMap<MarkdownStructKey, StructDefInfo>,
 ) {
-    // Enum overlays and item expressions replace the source children. Match
-    // Rust emission: discarded structs must not create documentation targets.
+    // Enum overlays and nested item expressions replace the source children.
+    // Top-level item overrides retain source struct documentation, as on main.
     if resource_type_override(
         &schema.type_name,
         CfnPropertyPath::new(cfn_parent, prop_name),
     )
     .is_some_and(|override_type| {
         override_type.enum_values().is_some()
-            || override_type.array_item_type_expression().is_some()
+            || (cfn_parent.is_some() && override_type.array_item_type_expression().is_some())
     }) {
         return;
     }
@@ -13487,11 +13491,13 @@ mod tests {
     }
 
     #[test]
-    fn test_array_item_overrides_discard_source_item_grammar_in_schema_and_docs() {
+    fn test_array_item_overrides_discard_source_item_grammar_in_schema_and_nested_docs() {
         for cfn_type in ["AWS::Logs::LogGroup", "AWS::Budgets::Budget"] {
             let mut schema = cfn_schema_for_codegen_tests(cfn_type);
             let expected_rust = generate_schema_code(&schema, cfn_type).unwrap();
-            let expected_docs = generate_test_markdown(&schema, cfn_type).unwrap();
+            // Top-level Markdown preserves the source grammar for linked structs.
+            let expected_docs = (cfn_type == "AWS::Budgets::Budget")
+                .then(|| generate_test_markdown(&schema, cfn_type).unwrap());
             let array = if cfn_type == "AWS::Logs::LogGroup" {
                 schema.properties.get_mut("FieldIndexPolicies").unwrap()
             } else {
@@ -13516,10 +13522,12 @@ mod tests {
                 generate_schema_code(&schema, cfn_type).unwrap(),
                 expected_rust
             );
-            assert_eq!(
-                generate_test_markdown(&schema, cfn_type).unwrap(),
-                expected_docs
-            );
+            if let Some(expected_docs) = expected_docs {
+                assert_eq!(
+                    generate_test_markdown(&schema, cfn_type).unwrap(),
+                    expected_docs
+                );
+            }
         }
     }
 
