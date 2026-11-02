@@ -168,7 +168,6 @@ async fn seed_measured_policy_readback(cloudcontrol: &CloudControlService) {
 #[test]
 fn subscription_schema_types_documented_policies_and_omits_only_filter_policy() {
     let config = sns_subscription_config();
-
     for attribute in ["delivery_policy", "redrive_policy", "replay_policy"] {
         assert!(
             config
@@ -290,45 +289,74 @@ async fn sns_subscription_typed_policies_round_trip_and_server_default_has_no_di
     let comparison = router
         .comparison_for(&registry, &desired_without_guaranteed.id)
         .expect("SNS Subscription comparison context");
-    let config = sns_subscription_config();
 
     // Exercise the repository's real differ before any provider read-state
     // normalization. This establishes whether nested fields absent from the
     // desired struct need provider-side server-default handling at all.
-    let result = diff(
-        &desired_without_guaranteed,
-        &unnormalized_current,
-        &saved,
-        None,
-        Some(config.schema.as_schema()),
-        comparison.context(),
-    );
+    let result = comparison
+        .context()
+        .with_references(
+            &carina_core::references::prepare_empty_for_tests(),
+            &desired_without_guaranteed.id,
+            |context| {
+                diff(
+                    &desired_without_guaranteed,
+                    &unnormalized_current,
+                    &saved,
+                    None,
+                    comparison,
+                    context,
+                )
+            },
+        )
+        .expect("AWSCC fixtures must not require reference resolution")
+        .expect("schema-bound diff should succeed");
     assert!(
         matches!(result, Diff::NoChange(_)),
         "(a) omitted guaranteed versus read guaranteed=false should be NoChange: {result:?}"
     );
 
-    let result = diff(
-        &desired_guaranteed_false,
-        &unnormalized_current,
-        &saved,
-        None,
-        Some(config.schema.as_schema()),
-        comparison.context(),
-    );
+    let result = comparison
+        .context()
+        .with_references(
+            &carina_core::references::prepare_empty_for_tests(),
+            &desired_guaranteed_false.id,
+            |context| {
+                diff(
+                    &desired_guaranteed_false,
+                    &unnormalized_current,
+                    &saved,
+                    None,
+                    comparison,
+                    context,
+                )
+            },
+        )
+        .expect("AWSCC fixtures must not require reference resolution")
+        .expect("schema-bound diff should succeed");
     assert!(
         matches!(result, Diff::NoChange(_)),
         "(b) explicit guaranteed=false versus read false should be NoChange: {result:?}"
     );
 
-    let result = diff(
-        &desired_guaranteed_true,
-        &unnormalized_current,
-        &saved,
-        None,
-        Some(config.schema.as_schema()),
-        comparison.context(),
-    );
+    let result = comparison
+        .context()
+        .with_references(
+            &carina_core::references::prepare_empty_for_tests(),
+            &desired_guaranteed_true.id,
+            |context| {
+                diff(
+                    &desired_guaranteed_true,
+                    &unnormalized_current,
+                    &saved,
+                    None,
+                    comparison,
+                    context,
+                )
+            },
+        )
+        .expect("AWSCC fixtures must not require reference resolution")
+        .expect("schema-bound diff should succeed");
     assert!(
         !matches!(result, Diff::NoChange(_)),
         "(c) explicit guaranteed=true versus read false must differ"
@@ -341,27 +369,47 @@ async fn sns_subscription_typed_policies_round_trip_and_server_default_has_no_di
     let current = current_states
         .get(&id)
         .expect("normalized subscription state must remain present");
-    let result = diff(
-        &desired_without_guaranteed,
-        current,
-        &saved,
-        None,
-        Some(config.schema.as_schema()),
-        comparison.context(),
-    );
+    let result = comparison
+        .context()
+        .with_references(
+            &carina_core::references::prepare_empty_for_tests(),
+            &desired_without_guaranteed.id,
+            |context| {
+                diff(
+                    &desired_without_guaranteed,
+                    current,
+                    &saved,
+                    None,
+                    comparison,
+                    context,
+                )
+            },
+        )
+        .expect("AWSCC fixtures must not require reference resolution")
+        .expect("schema-bound diff should succeed");
     assert!(
         matches!(result, Diff::NoChange(_)),
         "typed policy read-back plus guaranteed=false must not produce a diff: {result:?}"
     );
 
-    let result = diff(
-        &desired_guaranteed_true,
-        current,
-        &saved,
-        None,
-        Some(config.schema.as_schema()),
-        comparison.context(),
-    );
+    let result = comparison
+        .context()
+        .with_references(
+            &carina_core::references::prepare_empty_for_tests(),
+            &desired_guaranteed_true.id,
+            |context| {
+                diff(
+                    &desired_guaranteed_true,
+                    current,
+                    &saved,
+                    None,
+                    comparison,
+                    context,
+                )
+            },
+        )
+        .expect("AWSCC fixtures must not require reference resolution")
+        .expect("schema-bound diff should succeed");
     assert!(
         !matches!(result, Diff::NoChange(_)),
         "explicit guaranteed=true must still differ from a read of false"

@@ -10,7 +10,6 @@ use carina_core::differ::{Diff, diff};
 use carina_core::provider::{CreateOutcomeKind, Provider, RawSavedAttrs, ReadRequest};
 use carina_core::resource::{ConcreteValue, Resource, Value};
 use carina_provider_awscc::provider::AwsccProviderConfig;
-use carina_provider_awscc::schemas::generated::logs::log_group::logs_log_group_config;
 use carina_provider_awscc::{AwsccNormalizer, AwsccProvider};
 use indexmap::IndexMap;
 use winterbaume_cloudcontrol::CloudControlService;
@@ -264,15 +263,24 @@ async fn logs_policy_documents_round_trip_as_native_json_without_a_diff() {
     let comparison = router
         .comparison_for(&registry, &desired.id)
         .expect("Logs LogGroup comparison context");
-    let config = logs_log_group_config();
-    let result = diff(
-        &desired,
-        &current_states[&id],
-        &saved,
-        None,
-        Some(config.schema.as_schema()),
-        comparison.context(),
-    );
+    let result = comparison
+        .context()
+        .with_references(
+            &carina_core::references::prepare_empty_for_tests(),
+            &desired.id,
+            |context| {
+                diff(
+                    &desired,
+                    &current_states[&id],
+                    &saved,
+                    None,
+                    comparison,
+                    context,
+                )
+            },
+        )
+        .expect("AWSCC fixtures must not require reference resolution")
+        .expect("schema-bound diff should succeed");
     assert!(
         matches!(result, Diff::NoChange(_)),
         "measured native policy objects must round-trip without a diff: {result:?}"
@@ -325,15 +333,24 @@ async fn omitted_field_index_policies_and_read_back_empty_list_have_no_diff() {
     let comparison = router
         .comparison_for(&registry, &desired.id)
         .expect("Logs LogGroup comparison context");
-    let config = logs_log_group_config();
-    let result = diff(
-        &desired,
-        &current_states[&id],
-        &saved,
-        None,
-        Some(config.schema.as_schema()),
-        comparison.context(),
-    );
+    let result = comparison
+        .context()
+        .with_references(
+            &carina_core::references::prepare_empty_for_tests(),
+            &desired.id,
+            |context| {
+                diff(
+                    &desired,
+                    &current_states[&id],
+                    &saved,
+                    None,
+                    comparison,
+                    context,
+                )
+            },
+        )
+        .expect("AWSCC fixtures must not require reference resolution")
+        .expect("schema-bound diff should succeed");
     assert!(
         matches!(result, Diff::NoChange(_)),
         "omitted FieldIndexPolicies versus measured [] must have no diff: {result:?}"
@@ -341,14 +358,24 @@ async fn omitted_field_index_policies_and_read_back_empty_list_have_no_diff() {
 
     let explicit_empty =
         common::normalized_resolved_resource(explicit_field_indexes_resource(list([]))).await;
-    let result = diff(
-        &explicit_empty,
-        &current_states[&id],
-        &saved,
-        None,
-        Some(config.schema.as_schema()),
-        comparison.context(),
-    );
+    let result = comparison
+        .context()
+        .with_references(
+            &carina_core::references::prepare_empty_for_tests(),
+            &explicit_empty.id,
+            |context| {
+                diff(
+                    &explicit_empty,
+                    &current_states[&id],
+                    &saved,
+                    None,
+                    comparison,
+                    context,
+                )
+            },
+        )
+        .expect("AWSCC fixtures must not require reference resolution")
+        .expect("schema-bound diff should succeed");
     assert!(
         matches!(result, Diff::NoChange(_)),
         "explicit FieldIndexPolicies=[] versus measured [] must have no diff: {result:?}"
@@ -358,14 +385,24 @@ async fn omitted_field_index_policies_and_read_back_empty_list_have_no_diff() {
         list([map([("fields", list([string("requestId")]))])]),
     ))
     .await;
-    let result = diff(
-        &explicit_non_empty,
-        &current_states[&id],
-        &saved,
-        None,
-        Some(config.schema.as_schema()),
-        comparison.context(),
-    );
+    let result = comparison
+        .context()
+        .with_references(
+            &carina_core::references::prepare_empty_for_tests(),
+            &explicit_non_empty.id,
+            |context| {
+                diff(
+                    &explicit_non_empty,
+                    &current_states[&id],
+                    &saved,
+                    None,
+                    comparison,
+                    context,
+                )
+            },
+        )
+        .expect("AWSCC fixtures must not require reference resolution")
+        .expect("schema-bound diff should succeed");
     assert!(
         !matches!(result, Diff::NoChange(_)),
         "explicit non-empty FieldIndexPolicies must differ from measured []"

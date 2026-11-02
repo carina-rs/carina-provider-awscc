@@ -17,7 +17,9 @@ use carina_core::provider::{
     ResumeCreateRequest, ResumeFailure, ResumeOutcome, ResumedCreate, Sent, UpdateOutcome,
     UpdatePatch,
 };
-use carina_core::resource::{ConcreteValue, Resource, ResourceId, State, Value};
+use carina_core::resource::{
+    AbsoluteBindingAddress, ConcreteValue, NoPlaceholder, Resource, ResourceId, State, Value,
+};
 use carina_core::schema::{
     CompiledAttributeSchema, CompiledAttributeType, CompiledResourceSchema, Shape,
 };
@@ -908,7 +910,7 @@ impl AwsccProvider {
 
     fn create_desired_state(
         &self,
-        resource: &Resource<impl Sized>,
+        resource: &Resource<impl Sized, NoPlaceholder, AbsoluteBindingAddress, impl Sized>,
         config: &AwsccSchemaConfig,
     ) -> ProviderResult<serde_json::Value> {
         let mut desired_state = serde_json::Map::new();
@@ -959,7 +961,7 @@ impl AwsccProvider {
     /// Perform the initial, non-blocking CloudControl create step.
     pub async fn create_step<A: CcCreateAttempt>(
         &self,
-        resource: &Resource<impl Sized>,
+        resource: &Resource<impl Sized, NoPlaceholder, AbsoluteBindingAddress, impl Sized>,
         attempt: A,
     ) -> Result<A::Step, A::Verdict> {
         let token = NotIssuedCreate::start();
@@ -1031,7 +1033,7 @@ impl AwsccProvider {
 
     async fn resend_not_issued_create_step<U: CcResumeAttempt>(
         &self,
-        resource: &Resource<impl Sized>,
+        resource: &Resource<impl Sized, NoPlaceholder, AbsoluteBindingAddress, impl Sized>,
         config: &AwsccSchemaConfig,
         token: NotIssuedCreate,
         attempt: U,
@@ -1067,7 +1069,7 @@ impl AwsccProvider {
 
     async fn resend_unconfirmed_create_step<U: CcResumeAttempt>(
         &self,
-        resource: &Resource<impl Sized>,
+        resource: &Resource<impl Sized, NoPlaceholder, AbsoluteBindingAddress, impl Sized>,
         config: &AwsccSchemaConfig,
         token: UnconfirmedCreate,
         attempt: U,
@@ -1099,7 +1101,7 @@ impl AwsccProvider {
     /// Perform one CloudControl status or re-issue step for create.
     pub async fn poll_create_step<U: CcPollAttempt>(
         &self,
-        resource: &Resource<impl Sized>,
+        resource: &Resource<impl Sized, NoPlaceholder, AbsoluteBindingAddress, impl Sized>,
         poll: CcCreatePoll<U, U::Issued>,
         poll_request: PollRequest,
     ) -> Result<U::Step, U::Verdict> {
@@ -1280,7 +1282,7 @@ impl AwsccProvider {
 
     async fn finish_polled_status<U: CcPollAttempt>(
         &self,
-        resource: &Resource<impl Sized>,
+        resource: &Resource<impl Sized, NoPlaceholder, AbsoluteBindingAddress, impl Sized>,
         config: &AwsccSchemaConfig,
         poll: CcOperationPoll<U, U::Issued>,
         status: CcCreateStatus,
@@ -1350,7 +1352,7 @@ impl AwsccProvider {
 
     async fn recover_expired_poll<U: CcPollAttempt>(
         &self,
-        resource: &Resource<impl Sized>,
+        resource: &Resource<impl Sized, NoPlaceholder, AbsoluteBindingAddress, impl Sized>,
         config: &AwsccSchemaConfig,
         poll: CcOperationPoll<U, U::Issued>,
         token: InFlightCreateRequest,
@@ -1393,7 +1395,7 @@ impl AwsccProvider {
 
     async fn complete_polled_success<U: CcPollAttempt>(
         &self,
-        resource: &Resource<impl Sized>,
+        resource: &Resource<impl Sized, NoPlaceholder, AbsoluteBindingAddress, impl Sized>,
         config: &AwsccSchemaConfig,
         poll: CcOperationPoll<U, U::Issued>,
         token: InFlightCreateRequest,
@@ -1436,7 +1438,7 @@ impl AwsccProvider {
 
     async fn finish_polled_failure<U: CcPollAttempt>(
         &self,
-        resource: &Resource<impl Sized>,
+        resource: &Resource<impl Sized, NoPlaceholder, AbsoluteBindingAddress, impl Sized>,
         config: &AwsccSchemaConfig,
         poll: CcOperationPoll<U, U::Issued>,
         failure: CreateTerminalFailure,
@@ -1488,7 +1490,7 @@ impl AwsccProvider {
 
     async fn finish_create_success<I: CcIssuedCreate>(
         &self,
-        resource: &Resource<impl Sized>,
+        resource: &Resource<impl Sized, NoPlaceholder, AbsoluteBindingAddress, impl Sized>,
         config: &AwsccSchemaConfig,
         issued: I,
         wait_identifier: AppliedIdentifier,
@@ -1573,7 +1575,7 @@ impl AwsccProvider {
 
     async fn create_completion_from_read(
         &self,
-        resource: &Resource<impl Sized>,
+        resource: &Resource<impl Sized, NoPlaceholder, AbsoluteBindingAddress, impl Sized>,
         config: &AwsccSchemaConfig,
         wait_identifier: AppliedIdentifier,
         read_back: Result<ReadOutcome, ReadFailure>,
@@ -1628,7 +1630,7 @@ impl AwsccProvider {
 
     pub(crate) async fn drive_native_create(
         &self,
-        resource: &Resource<impl Sized>,
+        resource: &Resource<impl Sized, NoPlaceholder, AbsoluteBindingAddress, impl Sized>,
         attempt: CreateAttempt,
     ) -> Result<CreateOutcome, CreateFailure> {
         self.drive_native_create_with_budgets(
@@ -1645,7 +1647,7 @@ impl AwsccProvider {
     #[doc(hidden)]
     pub async fn create_with_poll_sleep_for_test<Sleep, SleepFuture>(
         &self,
-        resource: &Resource<impl Sized>,
+        resource: &Resource<impl Sized, NoPlaceholder, AbsoluteBindingAddress, impl Sized>,
         attempt: CreateAttempt,
         sleep: Sleep,
     ) -> Result<CreateOutcome, CreateFailure>
@@ -1665,7 +1667,7 @@ impl AwsccProvider {
 
     async fn drive_native_create_with_budgets<Sleep, SleepFuture>(
         &self,
-        resource: &Resource<impl Sized>,
+        resource: &Resource<impl Sized, NoPlaceholder, AbsoluteBindingAddress, impl Sized>,
         attempt: CreateAttempt,
         budget: Duration,
         read_back_budget: Duration,
@@ -1727,7 +1729,7 @@ impl AwsccProvider {
     /// Continue one create step loaded from persisted state.
     pub async fn resume_create_step<U: CcResumeAttempt>(
         &self,
-        resource: &Resource<impl Sized>,
+        resource: &Resource<impl Sized, NoPlaceholder, AbsoluteBindingAddress, impl Sized>,
         resume: CcCreateResume<U, U::Resumed>,
         poll_request: PollRequest,
     ) -> Result<U::Step, U::Verdict> {
@@ -1840,7 +1842,7 @@ impl AwsccProvider {
 
     async fn finish_resumed_status<U: CcResumeAttempt>(
         &self,
-        resource: &Resource<impl Sized>,
+        resource: &Resource<impl Sized, NoPlaceholder, AbsoluteBindingAddress, impl Sized>,
         config: &AwsccSchemaConfig,
         resume: CcOperationResume<U, U::Resumed>,
         status: CcCreateStatus,
@@ -1905,7 +1907,7 @@ impl AwsccProvider {
 
     async fn recover_expired_resume<U: CcResumeAttempt>(
         &self,
-        resource: &Resource<impl Sized>,
+        resource: &Resource<impl Sized, NoPlaceholder, AbsoluteBindingAddress, impl Sized>,
         config: &AwsccSchemaConfig,
         resume: CcOperationResume<U, U::Resumed>,
         token: InFlightCreateRequest,
@@ -1948,7 +1950,7 @@ impl AwsccProvider {
 
     async fn complete_resumed_success<U: CcResumeAttempt>(
         &self,
-        resource: &Resource<impl Sized>,
+        resource: &Resource<impl Sized, NoPlaceholder, AbsoluteBindingAddress, impl Sized>,
         config: &AwsccSchemaConfig,
         resume: CcOperationResume<U, U::Resumed>,
         token: InFlightCreateRequest,
@@ -1991,7 +1993,7 @@ impl AwsccProvider {
 
     async fn finish_resumed_failure<U: CcResumeAttempt>(
         &self,
-        resource: &Resource<impl Sized>,
+        resource: &Resource<impl Sized, NoPlaceholder, AbsoluteBindingAddress, impl Sized>,
         config: &AwsccSchemaConfig,
         resume: CcOperationResume<U, U::Resumed>,
         failure: CreateTerminalFailure,
@@ -2043,7 +2045,7 @@ impl AwsccProvider {
 
     async fn finish_resumed_read<R: CcResumedCreate>(
         &self,
-        resource: &Resource<impl Sized>,
+        resource: &Resource<impl Sized, NoPlaceholder, AbsoluteBindingAddress, impl Sized>,
         config: &AwsccSchemaConfig,
         resumed: R,
         wait_identifier: AppliedIdentifier,
@@ -3295,12 +3297,18 @@ mod tests {
                     .build()
                     .expect("test preparation runtime should build");
                 runtime.block_on(async move {
-                    let bindings = carina_core::binding_index::ResolvedBindings::default();
-                    let module_gate =
-                        carina_core::executor::ModuleConstraintGate::from_live_compositions(&[]);
-                    let mut schemas = carina_core::schema::SchemaRegistry::new();
-                    let schema =
-                        crate::schemas::generated::get_config_by_type(&resource.id.resource_type)
+                    carina_core::validation::deferred_types::with_session_for_test_async(
+                        &carina_core::parser::LoadedProviderContext::empty_for_test(),
+                        async |type_checks| {
+                            let bindings = carina_core::binding_index::ResolvedBindings::default();
+                            let module_gate =
+                                carina_core::executor::ModuleConstraintGate::from_live_compositions(
+                                    &[],
+                                );
+                            let mut schemas = carina_core::schema::SchemaRegistry::new();
+                            let schema = crate::schemas::generated::get_config_by_type(
+                                &resource.id.resource_type,
+                            )
                             .unwrap_or_else(|| {
                                 panic!(
                                     "missing dispatch-test schema for {}",
@@ -3309,20 +3317,25 @@ mod tests {
                             })
                             .schema
                             .clone();
-                    schemas.insert("awscc", schema);
-                    let factories: Vec<Box<dyn carina_core::provider::ProviderFactory>> =
-                        vec![Box::new(crate::OwnerOnlyAwsccFactory)];
-                    let preparation = carina_core::executor::ProviderPreparationContext::new(
-                        &bindings,
-                        &module_gate,
-                        &[],
-                        &crate::AwsccNormalizer,
-                        &factories,
-                        &schemas,
-                    );
-                    carina_core::executor::prepare_create_request(resource, &preparation)
-                        .await
-                        .expect("test resource should pass checked create preparation")
+                            schemas.insert("awscc", schema);
+                            let factories: Vec<Box<dyn carina_core::provider::ProviderFactory>> =
+                                vec![Box::new(crate::OwnerOnlyAwsccFactory)];
+                            let preparation =
+                                carina_core::executor::ProviderPreparationContext::new(
+                                    &bindings,
+                                    &module_gate,
+                                    &[],
+                                    &crate::AwsccNormalizer,
+                                    &factories,
+                                    &schemas,
+                                    type_checks,
+                                );
+                            carina_core::executor::prepare_create_request(resource, &preparation)
+                                .await
+                                .expect("test resource should pass checked create preparation")
+                        },
+                    )
+                    .await
                 })
             })
             .expect("test preparation thread should spawn")
@@ -4252,13 +4265,22 @@ mod tests {
         ) -> Pin<Box<dyn Future<Output = MockResponse> + Send + '_>> {
             Box::pin(async move {
                 self.saw_get_caller_identity.store(true, Ordering::SeqCst);
-                if self
-                    .transient_failures
-                    .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |remaining| {
-                        remaining.checked_sub(1)
-                    })
-                    .is_ok()
-                {
+                let mut remaining = self.transient_failures.load(Ordering::SeqCst);
+                let transient_failure = loop {
+                    let Some(next) = remaining.checked_sub(1) else {
+                        break false;
+                    };
+                    match self.transient_failures.compare_exchange_weak(
+                        remaining,
+                        next,
+                        Ordering::SeqCst,
+                        Ordering::SeqCst,
+                    ) {
+                        Ok(_) => break true,
+                        Err(current) => remaining = current,
+                    }
+                };
+                if transient_failure {
                     return MockResponse::xml(
                         503,
                         r#"<ErrorResponse xmlns="https://sts.amazonaws.com/doc/2011-06-15/"><Error><Type>Receiver</Type><Code>ServiceUnavailable</Code><Message>synthesis temporarily unavailable</Message></Error><RequestId>transient-sts</RequestId></ErrorResponse>"#,
@@ -5875,7 +5897,8 @@ mod tests {
                 "measured_read_shape",
                 None,
             )
-            .with_attribute("response_headers_policy_config", desired_policy_config),
+            .with_attribute("response_headers_policy_config", desired_policy_config)
+            .into_resolved_dependency_phase_for_test(),
         );
         let current = State::existing(desired.id.clone(), attributes)
             .with_identifier("5100bde3-b286-4270-9ae4-4e8c41e2320c");
@@ -5886,14 +5909,24 @@ mod tests {
         let comparison = router
             .comparison_for(&registry, &desired.id)
             .expect("ResponseHeadersPolicy comparison context");
-        let diff = carina_core::differ::diff(
-            &desired,
-            &current,
-            &saved_attrs,
-            None,
-            Some(config.schema.as_schema()),
-            comparison.context(),
-        );
+        let diff = comparison
+            .context()
+            .with_references(
+                &carina_core::references::prepare_empty_for_tests(),
+                &desired.id,
+                |context| {
+                    carina_core::differ::diff(
+                        &desired,
+                        &current,
+                        &saved_attrs,
+                        None,
+                        comparison,
+                        context,
+                    )
+                },
+            )
+            .expect("AWSCC fixtures must not require reference resolution")
+            .expect("schema-bound diff should succeed");
         assert!(
             matches!(diff, carina_core::differ::Diff::NoChange(_)),
             "provider-filled empty security-header objects must not produce a diff: {diff:?}"
@@ -5960,7 +5993,8 @@ mod tests {
                         ("runtime".to_string(), test_string("cloudfront-js-2.0")),
                     ]))),
                 )
-                .with_attribute("auto_publish", Value::Concrete(ConcreteValue::Bool(true))),
+                .with_attribute("auto_publish", Value::Concrete(ConcreteValue::Bool(true)))
+                .into_resolved_dependency_phase_for_test(),
         );
         let mut current =
             State::existing(desired.id.clone(), attributes).with_identifier(function_arn);
@@ -6010,14 +6044,24 @@ mod tests {
         let comparison = router
             .comparison_for(&registry, &desired.id)
             .expect("CloudFront Function comparison context");
-        let diff = carina_core::differ::diff(
-            &desired,
-            &current,
-            &saved_attrs,
-            None,
-            Some(config.schema.as_schema()),
-            comparison.context(),
-        );
+        let diff = comparison
+            .context()
+            .with_references(
+                &carina_core::references::prepare_empty_for_tests(),
+                &desired.id,
+                |context| {
+                    carina_core::differ::diff(
+                        &desired,
+                        &current,
+                        &saved_attrs,
+                        None,
+                        comparison,
+                        context,
+                    )
+                },
+            )
+            .expect("AWSCC fixtures must not require reference resolution")
+            .expect("schema-bound diff should succeed");
         assert!(
             matches!(diff, carina_core::differ::Diff::NoChange(_)),
             "omitted AutoPublish must be reconciled from persisted provenance: {diff:?}"
@@ -6026,7 +6070,6 @@ mod tests {
 
     #[test]
     fn cloudfront_function_code_change_is_an_in_place_update() {
-        let config = crate::schemas::generated::cloudfront::function::cloudfront_function_config();
         let function_config = Value::Concrete(ConcreteValue::Map(IndexMap::from([
             (
                 "comment".to_string(),
@@ -6039,7 +6082,8 @@ mod tests {
                 .with_attribute("name", test_string("carina-acc-test-fn-publish"))
                 .with_attribute("function_code", test_string("step2"))
                 .with_attribute("function_config", function_config.clone())
-                .with_attribute("auto_publish", Value::Concrete(ConcreteValue::Bool(true))),
+                .with_attribute("auto_publish", Value::Concrete(ConcreteValue::Bool(true)))
+                .into_resolved_dependency_phase_for_test(),
         );
         let current = State::existing(
             desired.id.clone(),
@@ -6063,14 +6107,24 @@ mod tests {
         let comparison = router
             .comparison_for(&registry, &desired.id)
             .expect("CloudFront Function comparison context");
-        let diff = carina_core::differ::diff(
-            &desired,
-            &current,
-            &saved_attrs,
-            None,
-            Some(config.schema.as_schema()),
-            comparison.context(),
-        );
+        let diff = comparison
+            .context()
+            .with_references(
+                &carina_core::references::prepare_empty_for_tests(),
+                &desired.id,
+                |context| {
+                    carina_core::differ::diff(
+                        &desired,
+                        &current,
+                        &saved_attrs,
+                        None,
+                        comparison,
+                        context,
+                    )
+                },
+            )
+            .expect("AWSCC fixtures must not require reference resolution")
+            .expect("schema-bound diff should succeed");
         assert!(
             matches!(
                 diff,

@@ -37,13 +37,6 @@ impl ProviderFactory for SchedulerSchemaFactory {
         Ok(())
     }
 
-    fn extract_region(
-        &self,
-        _attributes: &IndexMap<String, carina_core::resource::Value>,
-    ) -> String {
-        "ap-northeast-1".to_string()
-    }
-
     fn create_provider(
         &self,
         _binding: Option<&str>,
@@ -143,7 +136,7 @@ fn validate_scheduler(resources: Vec<Resource>) -> Result<(), String> {
 
     validate_resources(&parsed, &schemas, &known_providers, &context)?;
 
-    let bindings = BindingIndex::from_parsed(&parsed, &schemas);
+    let bindings = BindingIndex::from_parsed(&parsed, &schemas, &context);
     validate_resource_ref_types(&parsed, &schemas, &HashSet::new(), &bindings)
 }
 

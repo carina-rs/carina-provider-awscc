@@ -100,7 +100,11 @@ fn json_matches_shape(
     value: &serde_json::Value,
 ) -> bool {
     match schema.shape_of(attr_type) {
-        Shape::String { .. } | Shape::Enum { .. } => value.is_string(),
+        Shape::UnloadedSchemaType(unloaded) => panic!(
+            "AWSCC conversion requires a loaded schema type for {}",
+            unloaded.identity(),
+        ),
+        Shape::String { .. } | Shape::Enum { .. } | Shape::Reference { .. } => value.is_string(),
         Shape::Int { .. } => value.as_i64().is_some(),
         Shape::Float { .. } => value.is_number(),
         Shape::Bool => value.is_boolean(),

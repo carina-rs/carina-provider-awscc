@@ -155,7 +155,6 @@ async fn seed_archive_policy_readback(
 #[test]
 fn topic_schema_types_archive_policy_and_omits_unsupported_documents() {
     let config = sns_topic_config();
-
     assert!(
         !config
             .schema
@@ -241,22 +240,22 @@ async fn sns_topic_create_then_read_omits_inline_subscriptions_and_preserves_tag
     );
 
     let current = read.into_state_for_writeback();
-    let desired = ResolvedResource::new(resource);
+    let desired = ResolvedResource::new(resource.into_resolved_dependency_phase_for_test());
     let registry = carina_provider_awscc::schemas::schema_registry();
     let saved = RawSavedAttrs::default().lift(&registry);
     let router = carina_provider_awscc::test_comparison_router();
     let comparison = router
         .comparison_for(&registry, &desired.id)
         .expect("SNS Topic comparison context");
-    let config = sns_topic_config();
-    let result = diff(
-        &desired,
-        &current,
-        &saved,
-        None,
-        Some(config.schema.as_schema()),
-        comparison.context(),
-    );
+    let result = comparison
+        .context()
+        .with_references(
+            &carina_core::references::prepare_empty_for_tests(),
+            &desired.id,
+            |context| diff(&desired, &current, &saved, None, comparison, context),
+        )
+        .expect("AWSCC fixtures must not require reference resolution")
+        .expect("schema-bound diff should succeed");
     assert!(
         matches!(result, Diff::NoChange(_)),
         "inline Subscription read-back must not produce a diff: {result:?}"
@@ -294,22 +293,22 @@ async fn sns_topic_empty_archive_policy_readback_is_absent_and_no_change() {
         "an empty ArchivePolicy read-back means archiving is disabled"
     );
 
-    let desired = ResolvedResource::new(resource);
+    let desired = ResolvedResource::new(resource.into_resolved_dependency_phase_for_test());
     let registry = carina_provider_awscc::schemas::schema_registry();
     let saved = RawSavedAttrs::default().lift(&registry);
     let router = carina_provider_awscc::test_comparison_router();
     let comparison = router
         .comparison_for(&registry, &desired.id)
         .expect("SNS Topic comparison context");
-    let config = sns_topic_config();
-    let result = diff(
-        &desired,
-        &current,
-        &saved,
-        None,
-        Some(config.schema.as_schema()),
-        comparison.context(),
-    );
+    let result = comparison
+        .context()
+        .with_references(
+            &carina_core::references::prepare_empty_for_tests(),
+            &desired.id,
+            |context| diff(&desired, &current, &saved, None, comparison, context),
+        )
+        .expect("AWSCC fixtures must not require reference resolution")
+        .expect("schema-bound diff should succeed");
     assert!(
         matches!(result, Diff::NoChange(_)),
         "empty ArchivePolicy read-back must not produce a diff: {result:?}"

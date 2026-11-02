@@ -35,13 +35,6 @@ impl ProviderFactory for Wafv2SchemaFactory {
         Ok(())
     }
 
-    fn extract_region(
-        &self,
-        _attributes: &IndexMap<String, carina_core::resource::Value>,
-    ) -> String {
-        "ap-northeast-1".to_string()
-    }
-
     fn create_provider(
         &self,
         _binding: Option<&str>,

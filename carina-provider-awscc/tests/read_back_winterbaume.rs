@@ -25,7 +25,7 @@ use carina_core::provider::{
     UpdateRequest,
 };
 use carina_core::resource::{
-    ConcreteValue, Current, ResolvedResource, Resource, ResourceId, State, Value,
+    ConcreteValue, Current, ResolvedResourceId, Resource, ResourceId, State, Value,
 };
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, SchemaRegistry};
 use carina_core::shutdown::ShutdownToken;
@@ -278,11 +278,9 @@ fn dependent(name: &'static str, attribute: &str) -> Resource {
     resource.binding = Some(carina_core::resource::absolute_binding_address_for_test(
         name,
     ));
-    resource
-        .dependency_bindings
-        .insert(carina_core::resource::absolute_binding_address_for_test(
-            "role",
-        ));
+    resource.dependencies.value_bindings.insert(
+        carina_core::resource::absolute_binding_address_for_test("role"),
+    );
     resource.set_attr(
         "value",
         Value::resource_ref("role", attribute, vec![]).resolve_root_for_test(),
@@ -308,15 +306,53 @@ async fn execute(
     observer: &Observer,
 ) -> ExecutionResult {
     let mut plan = Plan::new();
-    for resource in resources {
-        plan.add(Effect::Create(ResolvedResource::new(resource)));
-    }
     let schemas = schemas();
+    // A refreshed role may be outside this plan while its dependents run.
+    let mut graph_resources = resources.clone();
+    let source = role();
+    if !graph_resources
+        .iter()
+        .any(|resource| resource.id == source.id)
+    {
+        graph_resources.push(source);
+    }
+    let graph =
+        carina_core::resolved_graph::ExpandedBindingIndex::for_test_resources(&graph_resources)
+            .expect("test resource bindings should form a valid graph");
+    let resource_origins = graph_resources
+        .iter()
+        .map(|resource| {
+            (
+                ResolvedResourceId::new(resource.id.clone()),
+                executor::UnresolvedResource::from_pre_resolve(resource.clone()),
+            )
+        })
+        .collect();
+    for resource in resources {
+        let resource = executor::normalized::apply_desired_normalization(
+            resource,
+            &[],
+            &AwsccNormalizer,
+            &schemas,
+        )
+        .await
+        .expect("normalize fixture values before constructing the plan");
+        let resource = graph
+            .resolve_resource(resource.as_resource().clone(), &schemas)
+            .expect("resolve fixture dependencies before constructing the plan");
+        plan.add(Effect::Create(resource));
+    }
     let factories: Vec<Box<dyn carina_core::provider::ProviderFactory>> =
         vec![Box::new(AwsccProviderFactory)];
     let input = LiveExecutionInput {
+        provider_context: carina_core::parser::ProviderContext::clone(
+            &carina_core::parser::LoadedProviderContext::empty_for_test(),
+        ),
         plan: &plan,
-        provider_check_inputs: ProviderCheckInputs::Authored,
+        provider_check_inputs: ProviderCheckInputs::PlanNormalized {
+            resource_origins: &resource_origins,
+            data_source_origins: &[],
+        },
         compositions: &[],
         bindings,
         managed_current: current,

@@ -37,13 +37,6 @@ impl ProviderFactory for OwnerOnlyAwsccFactory {
         Ok(())
     }
 
-    fn extract_region(
-        &self,
-        _attributes: &indexmap::IndexMap<String, carina_core::resource::Value>,
-    ) -> String {
-        "ap-northeast-1".to_string()
-    }
-
     fn create_provider(
         &self,
         _binding: Option<&str>,
@@ -96,23 +89,30 @@ pub fn assert_arn_identity(t: AttributeType, expected: &str) {
 
 #[allow(dead_code)]
 pub async fn normalize_resource(resource: Resource) -> ProviderReadyResource {
-    let resource_type = resource.id.resource_type.clone();
-    let bindings = ResolvedBindings::default();
-    let module_gate = ModuleConstraintGate::from_live_compositions(&[]);
-    let mut schemas = SchemaRegistry::new();
-    schemas.insert("awscc", schema_for_test(&resource_type));
-    let factories: Vec<Box<dyn ProviderFactory>> = vec![Box::new(OwnerOnlyAwsccFactory)];
-    let preparation = ProviderPreparationContext::new(
-        &bindings,
-        &module_gate,
-        &[],
-        &AwsccNormalizer,
-        &factories,
-        &schemas,
-    );
-    prepare_provider_ready_resource(resource, &preparation)
-        .await
-        .expect("test resource should pass checked provider preparation")
+    carina_core::validation::deferred_types::with_session_for_test_async(
+        &carina_core::parser::LoadedProviderContext::empty_for_test(),
+        async |type_checks| {
+            let resource_type = resource.id.resource_type.clone();
+            let bindings = ResolvedBindings::default();
+            let module_gate = ModuleConstraintGate::from_live_compositions(&[]);
+            let mut schemas = SchemaRegistry::new();
+            schemas.insert("awscc", schema_for_test(&resource_type));
+            let factories: Vec<Box<dyn ProviderFactory>> = vec![Box::new(OwnerOnlyAwsccFactory)];
+            let preparation = ProviderPreparationContext::new(
+                &bindings,
+                &module_gate,
+                &[],
+                &AwsccNormalizer,
+                &factories,
+                &schemas,
+                type_checks,
+            );
+            prepare_provider_ready_resource(resource, &preparation)
+                .await
+                .expect("test resource should pass checked provider preparation")
+        },
+    )
+    .await
 }
 
 /// Return a planning-side resource with the provider-ready attribute values.
@@ -125,28 +125,41 @@ pub async fn normalize_resource(resource: Resource) -> ProviderReadyResource {
 pub async fn normalized_resolved_resource(mut resource: Resource) -> ResolvedResource {
     let ready = normalize_resource(resource.clone()).await;
     resource.attributes = ready.as_resource().attributes.clone();
-    ResolvedResource::new(resource)
+    ResolvedResource::new(resource.into_resolved_dependency_phase_for_test())
 }
 
 #[allow(dead_code)]
 pub async fn create_request(resource: Resource) -> CreateRequest {
-    let resource_type = resource.id.resource_type.clone();
-    let bindings = ResolvedBindings::default();
-    let module_gate = ModuleConstraintGate::from_live_compositions(&[]);
-    let mut schemas = SchemaRegistry::new();
-    schemas.insert("awscc", schema_for_test(&resource_type));
-    let factories: Vec<Box<dyn ProviderFactory>> = vec![Box::new(OwnerOnlyAwsccFactory)];
-    let preparation = ProviderPreparationContext::new(
-        &bindings,
-        &module_gate,
-        &[],
-        &AwsccNormalizer,
-        &factories,
-        &schemas,
-    );
-    carina_core::executor::prepare_create_request(resource, &preparation)
+    try_create_request(resource)
         .await
         .expect("test resource should pass checked create preparation")
+}
+
+pub async fn try_create_request(
+    resource: Resource,
+) -> Result<CreateRequest, carina_core::executor::ProviderPreparationError> {
+    carina_core::validation::deferred_types::with_session_for_test_async(
+        &carina_core::parser::LoadedProviderContext::empty_for_test(),
+        async |type_checks| {
+            let resource_type = resource.id.resource_type.clone();
+            let bindings = ResolvedBindings::default();
+            let module_gate = ModuleConstraintGate::from_live_compositions(&[]);
+            let mut schemas = SchemaRegistry::new();
+            schemas.insert("awscc", schema_for_test(&resource_type));
+            let factories: Vec<Box<dyn ProviderFactory>> = vec![Box::new(OwnerOnlyAwsccFactory)];
+            let preparation = ProviderPreparationContext::new(
+                &bindings,
+                &module_gate,
+                &[],
+                &AwsccNormalizer,
+                &factories,
+                &schemas,
+                type_checks,
+            );
+            carina_core::executor::prepare_create_request(resource, &preparation).await
+        },
+    )
+    .await
 }
 
 fn schema_for_test(resource_type: &str) -> carina_core::schema::ValidatedResourceSchema {

@@ -6428,7 +6428,10 @@ fn refined_float_type(identity: &str, range: &str) -> String {
 }
 
 fn refined_list_type(element_type: &str, ordered: bool, length: &str) -> String {
-    format!("AttributeType::refined_list({element_type}, {ordered}, {length})")
+    // Preserve duplicate handling until CFN uniqueItems mapping is decided.
+    format!(
+        "AttributeType::refined_list({element_type}, {ordered}, {length}, carina_core::schema::ListElements::AllowDuplicates)"
+    )
 }
 
 fn emit_int_range_option(min: Option<i64>, max: Option<i64>) -> String {
@@ -9813,7 +9816,14 @@ mod tests {
             ] {
                 if code.starts_with(&format!("{prefix}(")) {
                     let args = call_arguments(code, prefix);
-                    let refined = args.len() == 3;
+                    let refined = prefix == "AttributeType::refined_list";
+                    assert_eq!(args.len(), if refined { 4 } else { 1 });
+                    if refined {
+                        assert_eq!(
+                            args[3],
+                            "carina_core::schema::ListElements::AllowDuplicates"
+                        );
+                    }
                     return Shape::List {
                         item: Box::new(schema_shape(args[0])),
                         bounds: if refined {
@@ -16707,7 +16717,7 @@ mod tests {
         assert_eq!(generated_type, inline_type);
         assert_eq!(
             generated_type,
-            "AttributeType::refined_list(AttributeType::int(), false, Some((Some(1), Some(3))))"
+            "AttributeType::refined_list(AttributeType::int(), false, Some((Some(1), Some(3))), carina_core::schema::ListElements::AllowDuplicates)"
         );
         assert_eq!(
             type_display_string("Choice", &property, &schema),
@@ -20717,7 +20727,7 @@ mod tests {
                 "AttributeType::refined_list(",
                 "AttributeType::refined_string(None, None, ",
                 "Some((Some(20), Some(2048))), None), false, ",
-                "Some((None, Some(20)))))"
+                "Some((None, Some(20))), carina_core::schema::ListElements::AllowDuplicates))"
             )),
             "ManagedPolicies must retain its referenced item lengths in schema code: {generated}"
         );
@@ -20767,7 +20777,7 @@ mod tests {
                 "AttributeType::refined_list(",
                 "AttributeType::refined_string(None, None, ",
                 "Some((Some(2), Some(4))), None), false, ",
-                "Some((Some(1), Some(3))))"
+                "Some((Some(1), Some(3))), carina_core::schema::ListElements::AllowDuplicates)"
             )
         );
         let resolved = resolve_ref(&schema, "#/definitions/ConstrainedValues").unwrap();
@@ -20980,7 +20990,7 @@ mod tests {
 
         for expected in [
             "StructField::required(\"attributes\", AttributeType::refined_list(AttributeType::struct_(\"ApplicationAttribute\".to_string()",
-            "StructField::required(\"values\", AttributeType::refined_list(AttributeType::refined_string(None, Some(\"^[\\\\w\\\\-]+$\".to_string()), Some((Some(1), Some(64))), None), true, Some((Some(1), Some(10))))",
+            "StructField::required(\"values\", AttributeType::refined_list(AttributeType::refined_string(None, Some(\"^[\\\\w\\\\-]+$\".to_string()), Some((Some(1), Some(64))), None), true, Some((Some(1), Some(10))), carina_core::schema::ListElements::AllowDuplicates)",
             "StructField::required(\"data_protections\", AttributeType::refined_list(AttributeType::struct_(\"DataProtect\".to_string()",
             "StructField::optional(\"address_fields\", AttributeType::list(AttributeType::struct_(\"FieldIdentifier\".to_string()",
             "StructField::optional(\"phone_number_fields\", AttributeType::list(AttributeType::struct_(\"FieldIdentifier\".to_string()",
