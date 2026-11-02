@@ -18,7 +18,6 @@ pub(crate) struct SdkClients {
     pub(crate) cloudcontrol: aws_sdk_cloudcontrol::Client,
     pub(crate) s3: aws_sdk_s3::Client,
     pub(crate) sts: aws_sdk_sts::Client,
-    pub(crate) kms: crate::references::KmsClient,
 }
 
 impl BoundedSdkConfig {
@@ -103,7 +102,7 @@ impl BoundedSdkConfig {
     }
 
     // Service clients share the bounded config, including host credentials on wasm32.
-    // CloudControl gets its guard here; the KMS wrapper guards regional clients.
+    // CloudControl gets its resend guard here. KMS requires InitializedState.
     #[allow(clippy::disallowed_methods)]
     pub(crate) fn clients(&self) -> SdkClients {
         let cloudcontrol = aws_sdk_cloudcontrol::Client::from_conf(
@@ -115,7 +114,6 @@ impl BoundedSdkConfig {
             cloudcontrol,
             s3: aws_sdk_s3::Client::new(&self.0),
             sts: aws_sdk_sts::Client::new(&self.0),
-            kms: crate::references::KmsClient::from_bounded_config(self),
         }
     }
 }

@@ -1025,7 +1025,7 @@ dependencies = [
 [[package]]
 name = "carina-aws-types"
 version = "0.4.0"
-source = "git+https://github.com/carina-rs/carina-provider-aws?rev=c9ea1c3#c9ea1c3418b439b33241998893a7854eaeb25f81"
+source = "git+https://github.com/carina-rs/carina-provider-aws?rev=a4cdf21#a4cdf2171b0438ed3d71881cea6d47f06a48a61b"
 dependencies = [
  "aws-credential-types",
  "aws-runtime",

@@ -33,6 +33,7 @@ use aws_sdk_sts::Client as StsClient;
 use carina_core::provider::ProviderError;
 use tokio::sync::OnceCell;
 
+use crate::references::InitializedState;
 use crate::schemas::config::AwsccSchemaConfig;
 use crate::sdk_config::{BoundedSdkConfig, SdkClients};
 use error_helpers::api_error_with_meta;
@@ -101,10 +102,6 @@ pub struct AwsccProvider {
         std::collections::HashMap<String, carina_core::schema::OperationConfig>,
 }
 
-struct InitializedState {
-    kms_client: crate::references::KmsClient,
-}
-
 impl AwsccProvider {
     /// Create a new AwsccProvider for the specified region with no
     /// account guard. Convenience wrapper for tests and other callers
@@ -130,19 +127,14 @@ impl AwsccProvider {
 
     /// Create a new AwsccProvider from a bounded AWS SDK configuration.
     pub async fn from_sdk_config(config: BoundedSdkConfig, cfg: &AwsccProviderConfig) -> Self {
-        let SdkClients {
-            cloudcontrol,
-            s3,
-            sts,
-            kms,
-        } = config.clients();
-        let initialized =
-            if cfg.allowed_account_ids.is_empty() && cfg.forbidden_account_ids.is_empty() {
-                Ok(())
-            } else {
-                Self::check_account_guard(&sts, cfg).await
-            }
-            .map(|()| InitializedState { kms_client: kms });
+        let (
+            SdkClients {
+                cloudcontrol,
+                s3,
+                sts,
+            },
+            initialized,
+        ) = InitializedState::initialize(config, cfg).await;
 
         Self {
             cloudcontrol_client: cloudcontrol,
@@ -199,31 +191,6 @@ impl AwsccProvider {
             .map(String::as_str)
     }
 
-    /// Look up the caller's AWS account ID via STS and validate it
-    /// against the provider's allowed/forbidden lists.
-    ///
-    /// Returns `Ok(())` if the account is allowed; otherwise an error
-    /// message naming both the offending list and the actual account ID.
-    async fn check_account_guard(sts: &StsClient, cfg: &AwsccProviderConfig) -> Result<(), String> {
-        let identity = sts.get_caller_identity().send().await.map_err(|e| {
-            format!(
-                "Failed to call sts:GetCallerIdentity to check \
-                 allowed_account_ids / forbidden_account_ids: {e}"
-            )
-        })?;
-        let account_id = identity.account().ok_or_else(|| {
-            "sts:GetCallerIdentity returned no account ID; \
-             cannot evaluate allowed_account_ids / forbidden_account_ids"
-                .to_string()
-        })?;
-
-        account_guard::validate_account_against_lists(
-            account_id,
-            &cfg.allowed_account_ids,
-            &cfg.forbidden_account_ids,
-        )
-    }
-
     /// Returns the deferred initialization error, if the account guard
     /// rejected the caller during `new_with_config`.
     pub fn init_error(&self) -> Option<&str> {
@@ -233,7 +200,7 @@ impl AwsccProvider {
     pub(crate) fn kms_client(&self) -> Result<&crate::references::KmsClient, &str> {
         self.initialized
             .as_ref()
-            .map(|state| &state.kms_client)
+            .map(InitializedState::kms_client)
             .map_err(String::as_str)
     }
 }

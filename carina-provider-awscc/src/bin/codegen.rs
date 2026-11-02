@@ -35,7 +35,8 @@ use cfn::*;
 mod kms_references;
 #[path = "codegen/kms_references_cfn.rs"]
 mod kms_references_cfn;
-use kms_references_cfn::ClassifiedSchema;
+use kms_references_cfn::ClassifiedProperty as EmissionProperty;
+use kms_references_cfn::{ClassifiedSchema, ClassifiedStringLeaf};
 
 // carina#3340: in-progress recursion guard for cyclic CFN $ref
 // definitions (WAFv2 `WebACL.Statement` → `AndStatement` → `List<Statement>`).
@@ -897,61 +898,6 @@ impl GeneratedTagsWire {
 struct GeneratedTagsProperty {
     provider_name: String,
     wire: GeneratedTagsWire,
-}
-
-/// Whether this CloudFormation property is generated as the canonical DSL
-/// `tags: Map<String, String>` attribute.
-fn is_dsl_tags_property(schema: &CfnSchema, provider_name: &str) -> bool {
-    let Some(tagging) = schema.tagging.as_ref().filter(|tagging| tagging.taggable) else {
-        return false;
-    };
-    let tag_property = tagging
-        .tag_property
-        .as_deref()
-        .unwrap_or("/properties/Tags");
-
-    tag_property.strip_prefix("/properties/") == Some(provider_name)
-        && provider_name.to_snake_case() == "tags"
-}
-
-/// Whether a definition uses one of Carina's canonical tag-map shapes.
-///
-/// The final resolved definition's `Tag` prefix remains a namespace guard
-/// because cached schemas also use the exact same Key/Value string-object
-/// shape for non-tag ELB attributes. The shape check prevents unrelated
-/// `Tag*` objects from silently losing fields when converted to Carina's map
-/// representation. CloudFormation uses either a Key/Value object or a
-/// single-pattern string map for these refs.
-fn is_tag_map_ref(schema: &CfnSchema, ref_path: &str) -> bool {
-    let Some(resolved) = resolve_ref(schema, ref_path) else {
-        return false;
-    };
-    let definition = resolved.property;
-    let is_direct_string = |property: &CfnProperty| {
-        property
-            .prop_type
-            .as_ref()
-            .and_then(TypeValue::effective_type)
-            == Some("string")
-    };
-    let is_key_value_object = definition.properties.as_ref().is_some_and(|properties| {
-        properties.len() == 2
-            && properties.get("Key").is_some_and(is_direct_string)
-            && properties.get("Value").is_some_and(is_direct_string)
-    });
-    let is_single_pattern_string_map = definition.properties.is_none()
-        && definition
-            .pattern_properties
-            .as_ref()
-            .is_some_and(|patterns| patterns.len() == 1 && patterns.values().all(is_direct_string));
-
-    resolved.name.starts_with("Tag")
-        && definition
-            .prop_type
-            .as_ref()
-            .and_then(TypeValue::effective_type)
-            == Some("object")
-        && (is_key_value_object || is_single_pattern_string_map)
 }
 
 type IamPolicyDocumentProperty = (&'static str, CfnPropertyPath<'static>);
@@ -2125,112 +2071,6 @@ fn is_write_only_property_path(schema: &CfnSchema, property_path: &[String]) -> 
         .any(|path| path == property_path)
 }
 
-fn has_nested_read_only_property_path(schema: &CfnSchema, property_path: &[String]) -> bool {
-    schema
-        .read_only_properties
-        .iter()
-        .filter_map(|pointer| cfn_property_path(pointer))
-        .any(|path| path.len() > property_path.len() && path.starts_with(property_path))
-}
-
-fn struct_fields_are_fully_read_only(
-    schema: &CfnSchema,
-    properties: &BTreeMap<String, CfnProperty>,
-    property_path: &[String],
-    visiting_defs: &mut HashSet<String>,
-) -> bool {
-    let mut fields = properties
-        .iter()
-        .filter(|(_, property)| !is_deprecated_property(property))
-        .peekable();
-    fields.peek().is_some()
-        && fields.all(|(field_name, field)| {
-            let field_path = extend_property_path(property_path, field_name);
-            property_is_fully_read_only(schema, field, &field_path, visiting_defs)
-        })
-}
-
-fn property_is_fully_read_only(
-    schema: &CfnSchema,
-    property: &CfnProperty,
-    property_path: &[String],
-    visiting_defs: &mut HashSet<String>,
-) -> bool {
-    if is_read_only_property_path(schema, property_path) {
-        return true;
-    }
-    if !has_nested_read_only_property_path(schema, property_path) {
-        return false;
-    }
-
-    match property_shape(property, schema) {
-        PropertyShape::Reference { resolved, .. } => {
-            let Some(resolved) = resolved else {
-                return false;
-            };
-            if !visiting_defs.insert(resolved.name.to_string()) {
-                return false;
-            }
-            let fully_read_only = property_is_fully_read_only(
-                schema,
-                resolved.property,
-                property_path,
-                visiting_defs,
-            );
-            visiting_defs.remove(resolved.name);
-            return fully_read_only;
-        }
-        PropertyShape::Array {
-            variant: array_variant,
-            ..
-        } => {
-            return property_is_fully_read_only(
-                schema,
-                array_variant,
-                property_path,
-                visiting_defs,
-            );
-        }
-        PropertyShape::Direct(properties) => {
-            return struct_fields_are_fully_read_only(
-                schema,
-                properties,
-                property_path,
-                visiting_defs,
-            );
-        }
-        PropertyShape::Merged(properties) => {
-            return struct_fields_are_fully_read_only(
-                schema,
-                &properties,
-                property_path,
-                visiting_defs,
-            );
-        }
-        PropertyShape::Unresolved => return false,
-        PropertyShape::Inline => {}
-    }
-
-    match inline_property_type(property) {
-        Some("object") => property.properties.as_ref().is_some_and(|properties| {
-            struct_fields_are_fully_read_only(schema, properties, property_path, visiting_defs)
-        }),
-        Some("array") => property.items.as_deref().is_some_and(|items| {
-            let item_path = extend_property_path(property_path, "*");
-            property_is_fully_read_only(schema, items, &item_path, visiting_defs)
-        }),
-        _ => false,
-    }
-}
-
-fn is_property_read_only(
-    schema: &CfnSchema,
-    property: &CfnProperty,
-    property_path: &[String],
-) -> bool {
-    property_is_fully_read_only(schema, property, property_path, &mut HashSet::new())
-}
-
 fn record_emitted_read_only_path(property_path: &[String]) {
     EMITTED_READ_ONLY_PATHS.with(|paths| paths.borrow_mut().push(property_path.to_vec()));
 }
@@ -2436,12 +2276,6 @@ fn namespace_with_struct_path(namespace: &str, struct_path: &[String]) -> String
     }
 }
 
-fn is_deprecated_property(prop: &CfnProperty) -> bool {
-    prop.description
-        .as_deref()
-        .is_some_and(|description| description.starts_with("(Deprecated.)"))
-}
-
 const SCHEDULER_GROUP_NAME_LIMITATION: &str = "Carina requires group_name to be omitted or set to \
     the literal 'default'. Cloud Control identifies schedules by Name only and reads them in the \
     default group, so a schedule in another group can be created but never read or tracked.";
@@ -2617,10 +2451,10 @@ fn override_type_to_display_name(override_type: &str) -> &str {
 /// Determine the display string for a property's type in markdown docs
 #[cfg(test)]
 fn type_display_string(prop_name: &str, prop: &CfnProperty, schema: &CfnSchema) -> String {
+    let fixture = tests::leaf_fixture_schema(schema, prop, &[prop_name.to_string()]);
     type_display_string_at(
-        prop_name,
         prop,
-        &ClassifiedSchema::new(schema).unwrap(),
+        &ClassifiedSchema::new(&fixture).unwrap(),
         &[prop_name.to_string()],
         CfnPropertyPath::new(None, prop_name),
     )
@@ -2703,17 +2537,15 @@ fn object_map_type_text(
 }
 
 fn type_display_string_at(
-    prop_name: &str,
     prop: &CfnProperty,
     schema: &ClassifiedSchema<'_>,
     provider_path: &[String],
     cfn_property_path: CfnPropertyPath<'_>,
 ) -> String {
     type_display_at_resolved(
-        prop_name,
-        prop,
-        schema,
-        provider_path,
+        schema
+            .property_at(provider_path, prop)
+            .expect("classified Markdown property"),
         cfn_property_path,
         None,
     )
@@ -2721,13 +2553,14 @@ fn type_display_string_at(
 }
 
 fn type_display_at_resolved(
-    prop_name: &str,
-    prop: &CfnProperty,
-    schema: &ClassifiedSchema<'_>,
-    provider_path: &[String],
+    classified: EmissionProperty<'_>,
     cfn_property_path: CfnPropertyPath<'_>,
     definition_name: Option<&str>,
 ) -> TypeDisplay {
+    let schema = classified.schema();
+    let prop = classified.property();
+    let prop_name = classified.name();
+    let provider_path = classified.path();
     if let Some(display) =
         resource_type_override(&schema.type_name, cfn_property_path).and_then(TypeOverride::display)
     {
@@ -2764,15 +2597,23 @@ fn type_display_at_resolved(
                 TypeDisplay::Code("Map<String, String>".to_string())
             } else if let Some(resolved) = resolved {
                 type_display_at_resolved(
-                    prop_name,
-                    resolved.property,
-                    schema,
-                    provider_path,
+                    schema
+                        .property_at(provider_path, resolved.property)
+                        .expect("classified Markdown reference"),
                     cfn_property_path,
                     Some(resolved.name),
                 )
             } else {
-                TypeDisplay::Plain(infer_string_type_display(prop_name, &schema.type_name))
+                TypeDisplay::Plain(
+                    string_leaf(
+                        schema
+                            .string_leaf_at(provider_path)
+                            .expect("classified unresolved reference"),
+                        cfn_property_path,
+                        definition_name,
+                    )
+                    .display(),
+                )
             };
         }
         PropertyShape::Array {
@@ -2780,10 +2621,9 @@ fn type_display_at_resolved(
             ..
         } => {
             return type_display_at_resolved(
-                prop_name,
-                array_variant,
-                schema,
-                provider_path,
+                schema
+                    .property_at(provider_path, array_variant)
+                    .expect("classified Markdown array variant"),
                 cfn_property_path,
                 None,
             );
@@ -2803,13 +2643,23 @@ fn type_display_at_resolved(
     }
     if inline_property_type(prop) == Some("array") {
         let item = prop.items.as_deref().map_or_else(
-            || TypeDisplay::Plain("String".to_string()),
+            || {
+                TypeDisplay::Plain(
+                    string_leaf(
+                        schema
+                            .string_leaf_at(&extend_property_path(provider_path, "*"))
+                            .expect("classified implicit array element"),
+                        cfn_property_path,
+                        None,
+                    )
+                    .display(),
+                )
+            },
             |items| {
                 type_display_at_resolved(
-                    prop_name,
-                    items,
-                    schema,
-                    &extend_property_path(provider_path, "*"),
+                    schema
+                        .property_at(&extend_property_path(provider_path, "*"), items)
+                        .expect("classified Markdown array element"),
                     cfn_property_path,
                     None,
                 )
@@ -2853,16 +2703,22 @@ fn scalar_type_display_string_at(
     cfn_property_path: CfnPropertyPath<'_>,
     definition_name: Option<&str>,
 ) -> String {
-    match inline_property_type(prop) {
-        Some("string") => string_leaf(
-            prop,
-            prop_name,
-            schema,
-            provider_path,
+    if emits_string_leaf(prop, prop_name) {
+        return string_leaf(
+            schema
+                .string_leaf_at(provider_path)
+                .expect("classified string emission"),
             cfn_property_path,
             definition_name,
         )
-        .display(),
+        .display();
+    }
+    if matches!(inline_property_type(prop), Some("string") | None)
+        && let Some(leaf @ EnumLeaf::Integer(_)) = enum_leaf(prop, prop_name, definition_name)
+    {
+        return leaf.display();
+    }
+    match inline_property_type(prop) {
         Some("boolean") => "Bool".to_string(),
         Some("integer") => {
             // Check resource-scoped overrides first
@@ -3107,13 +2963,14 @@ fn markdown_link_type(
 }
 
 fn markdown_type(
-    prop_name: &str,
-    prop: &CfnProperty,
-    schema: &ClassifiedSchema<'_>,
+    classified: EmissionProperty<'_>,
     enum_target: Option<&MarkdownEnumKey>,
-    property_path: &[String],
     cfn_parent: Option<&str>,
 ) -> MarkdownType {
+    let schema = classified.schema();
+    let prop = classified.property();
+    let prop_name = classified.name();
+    let property_path = classified.path();
     markdown_link_type(
         prop_name,
         prop,
@@ -3125,7 +2982,6 @@ fn markdown_type(
     .map(MarkdownType::Linked)
     .unwrap_or_else(|| {
         MarkdownType::Plain(type_display_string_at(
-            prop_name,
             prop,
             schema,
             property_path,
@@ -3483,10 +3339,12 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str, example: &DocExample) 
                     _ => {}
                 }
             }
+            if !has_scalar_leaf(field_prop, schema) {
+                continue;
+            }
             let field_path = extend_property_path(&def_info.first_property_path, field_name);
             let (_, enum_info) = cfn_type_to_carina_type_with_enum_with_paths(
                 field_prop,
-                field_name,
                 schema,
                 &namespace,
                 &property_enums,
@@ -3514,9 +3372,9 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str, example: &DocExample) 
                 .any(|synth| synth.cfn_type == type_name && synth.attr_name == "arn"));
     for (prop_name, prop) in documented_top_level_properties(schema) {
         let _ = generate_top_level_attribute_type(
-            prop_name,
-            prop,
-            schema,
+            schema
+                .property_at(std::slice::from_ref(prop_name), prop)
+                .expect("classified top-level property"),
             &namespace,
             &property_enums,
             has_arn_helper,
@@ -3595,11 +3453,10 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str, example: &DocExample) 
         let attr_name = prop_name.to_snake_case();
         let is_required = required.contains(prop_name);
         let type_display = markdown_type(
-            prop_name,
-            prop,
-            schema,
+            schema
+                .property_at(&property_path, prop)
+                .expect("classified Markdown attribute"),
             enum_targets.properties.get(prop_name),
-            &property_path,
             None,
         );
 
@@ -3794,20 +3651,18 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str, example: &DocExample) 
                     ))
                 } else if let Some(enum_target) = enum_targets.struct_fields.get(&source_key) {
                     markdown_type(
-                        field_name,
-                        field_prop,
-                        schema,
+                        schema
+                            .property_at(&field_path, field_prop)
+                            .expect("classified Markdown field"),
                         Some(enum_target),
-                        &field_path,
                         Some(&def_info.def_name),
                     )
                 } else {
                     markdown_type(
-                        field_name,
-                        field_prop,
-                        schema,
+                        schema
+                            .property_at(&field_path, field_prop)
+                            .expect("classified Markdown field"),
                         None,
-                        &field_path,
                         Some(&def_info.def_name),
                     )
                 };
@@ -3864,11 +3719,10 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str, example: &DocExample) 
 
             let attr_name = prop_name.to_snake_case();
             let type_display = markdown_type(
-                prop_name,
-                prop,
-                schema,
+                schema
+                    .property_at(&property_path, prop)
+                    .expect("classified Markdown attribute"),
                 enum_targets.properties.get(prop_name),
-                &property_path,
                 None,
             );
 
@@ -4162,13 +4016,14 @@ fn detect_exclusive_fields(schema: &CfnSchema, type_name: &str) -> Vec<Vec<Strin
 /// attribute. Besides returning Rust source, this walks every nested struct
 /// that survives overrides and records its emitted read-only fields.
 fn generate_top_level_attribute_type(
-    prop_name: &str,
-    prop: &CfnProperty,
-    schema: &ClassifiedSchema<'_>,
+    classified: EmissionProperty<'_>,
     namespace: &str,
     enums: &BTreeMap<String, EnumInfo>,
     has_arn_helper: bool,
 ) -> String {
+    let prop = classified.property();
+    let prop_name = classified.name();
+    let schema = classified.schema();
     let property_path = CfnPropertyPath::new(None, prop_name);
     let override_type = checked_resource_type_override(schema, property_path, prop);
     if has_arn_helper && prop_name == "Arn" {
@@ -4340,65 +4195,67 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
         }
     }
 
-    // Also scan definitions for struct field enum properties
-    // Use composite key "DefName.FieldName" to avoid conflicts when different
-    // definitions have fields with the same name but different enum values
-    // (e.g., IntelligentTieringConfiguration.Status vs VersioningConfiguration.Status)
-    if let Some(definitions) = &schema.definitions {
-        for (def_name, def) in definitions {
-            if let Some(props) = &def.properties {
-                for (field_name, field_prop) in props {
-                    if is_deprecated_property(field_prop) {
+    // Scan each reachable struct at its real use path. A definition name
+    // identifies enum metadata, never an independently emittable string site.
+    let mut struct_defs = BTreeMap::new();
+    for (name, property) in &schema.properties {
+        collect_struct_defs(
+            property,
+            name,
+            schema,
+            &[],
+            std::slice::from_ref(name),
+            None,
+            &mut struct_defs,
+        );
+    }
+    for (key, definition) in &struct_defs {
+        if !matches!(key, MarkdownStructKey::Definition(_)) {
+            continue;
+        }
+        let def_name = &definition.def_name;
+        for (field_name, field_prop) in &definition.properties {
+            if is_deprecated_property(field_prop) {
+                continue;
+            }
+            let cfn_property_path = CfnPropertyPath::new(Some(def_name), field_name);
+            if should_omit_property(&schema.type_name, cfn_property_path) {
+                continue;
+            }
+            let composite_key = cfn_property_path.to_string();
+            if let Some(nested_override) =
+                resource_type_override(&schema.type_name, cfn_property_path)
+            {
+                match nested_override {
+                    TypeOverride::Enum(values) | TypeOverride::EnumUnordered(values) => {
+                        enums.insert(composite_key, enum_info_for_override(field_name, values));
                         continue;
                     }
-                    let cfn_property_path = CfnPropertyPath::new(Some(def_name), field_name);
-                    if should_omit_property(&schema.type_name, cfn_property_path) {
-                        continue;
-                    }
-                    let composite_key = cfn_property_path.to_string();
-                    // Curated nested-field enum overlay (awscc#246). Wins over
-                    // the natural cfn_type inference so that fields the CFN
-                    // schema leaves as plain strings still register as enums
-                    // in the `enums` map (and therefore get a VALID_* constant
-                    // and an enum_valid_values() entry alongside StringEnum
-                    // emission in `generate_struct_type`).
-                    if let Some(nested_override) =
-                        resource_type_override(&schema.type_name, cfn_property_path)
+                    _ if nested_override.attribute_type_expression().is_some()
+                        || nested_override.array_item_type_expression().is_some() =>
                     {
-                        match nested_override {
-                            TypeOverride::Enum(values) | TypeOverride::EnumUnordered(values) => {
-                                enums.insert(
-                                    composite_key.clone(),
-                                    enum_info_for_override(field_name, values),
-                                );
-                                continue;
-                            }
-                            _ if nested_override.attribute_type_expression().is_some()
-                                || nested_override.array_item_type_expression().is_some() =>
-                            {
-                                continue;
-                            }
-                            _ => {}
-                        }
+                        continue;
                     }
-                    let structural_path = [def_name.clone()];
-                    let provider_path = [field_name.clone()];
-                    let (_, field_enum_info) = cfn_type_to_carina_type_with_enum_with_paths(
-                        field_prop,
-                        field_name,
-                        schema,
-                        &namespace,
-                        &enums,
-                        CfnTypeGenerationPaths {
-                            structural: &structural_path,
-                            provider: &provider_path,
-                            cfn_parent: Some(def_name),
-                        },
-                    );
-                    if let Some(info) = field_enum_info {
-                        enums.insert(composite_key, info);
-                    }
+                    _ => {}
                 }
+            }
+            if !has_scalar_leaf(field_prop, schema) {
+                continue;
+            }
+            let provider_path = extend_property_path(&definition.first_property_path, field_name);
+            let (_, enum_info) = cfn_type_to_carina_type_with_enum_with_paths(
+                field_prop,
+                schema,
+                &namespace,
+                &enums,
+                CfnTypeGenerationPaths {
+                    structural: &definition.struct_path,
+                    provider: &provider_path,
+                    cfn_parent: Some(def_name),
+                },
+            );
+            if let Some(info) = enum_info {
+                enums.insert(composite_key, info);
             }
         }
     }
@@ -4540,9 +4397,9 @@ pub fn {}() -> AwsccSchemaConfig {{
         // specific nested sub-properties are omitted.
         let is_write_only = write_only.contains(prop_name);
         let attr_type = generate_top_level_attribute_type(
-            prop_name,
-            prop,
-            schema,
+            schema
+                .property_at(std::slice::from_ref(prop_name), prop)
+                .expect("classified top-level property"),
             &namespace,
             &enums,
             has_arn_helper,
@@ -5317,165 +5174,6 @@ fn deduplicate_enum_values(values: Vec<String>) -> Option<Vec<String>> {
     }
 }
 
-/// The final definition reached by a local `$ref` chain.
-///
-/// Definitions use the exact same representation as inline properties, so
-/// every keyword supported by `CfnProperty` automatically survives `$ref`
-/// resolution. `name` is the final target's name and is used only for stable
-/// struct identity and recursion handling; shape generation always consumes
-/// `property` through the normal inline path.
-#[derive(Clone, Copy)]
-struct ResolvedRef<'a> {
-    name: &'a str,
-    property: &'a CfnProperty,
-}
-
-/// Resolve a local definition `$ref`, following definitions that are aliases
-/// to other definitions. A malformed path, missing definition, external ref,
-/// or alias cycle is unresolved rather than recursively looping.
-fn resolve_ref<'a>(schema: &'a CfnSchema, ref_path: &str) -> Option<ResolvedRef<'a>> {
-    let definitions = schema.definitions.as_ref()?;
-    let mut name = ref_def_name(ref_path)?;
-    let mut visited = HashSet::new();
-
-    loop {
-        if !visited.insert(name) {
-            return None;
-        }
-        let (definition_name, property) = definitions.get_key_value(name)?;
-        let Some(next_ref) = property.ref_path.as_deref() else {
-            return Some(ResolvedRef {
-                name: definition_name,
-                property,
-            });
-        };
-        name = ref_def_name(next_ref)?;
-    }
-}
-
-fn has_direct_struct_properties(property: &CfnProperty) -> bool {
-    property
-        .properties
-        .as_ref()
-        .is_some_and(|properties| !properties.is_empty())
-}
-
-/// Inline object properties are authoritative even when a schema omits the
-/// redundant `type: object` marker. This preserves the old definition
-/// precedence while keeping definitions and inline properties on one path.
-fn inline_property_type(property: &CfnProperty) -> Option<&str> {
-    if has_direct_struct_properties(property) {
-        Some("object")
-    } else {
-        property
-            .prop_type
-            .as_ref()
-            .and_then(TypeValue::effective_type)
-    }
-}
-
-enum PropertyShape<'a> {
-    Reference {
-        path: &'a str,
-        resolved: Option<ResolvedRef<'a>>,
-    },
-    Inline,
-    Direct(&'a BTreeMap<String, CfnProperty>),
-    Array {
-        /// Keep the winning variant's reference context for generation.
-        variant: &'a CfnProperty,
-        /// Reuse the concrete array without resolving nested unions again.
-        resolved: &'a CfnProperty,
-    },
-    /// Union of object fields; variant-local required lists do not apply.
-    Merged(BTreeMap<String, CfnProperty>),
-    Unresolved,
-}
-
-fn property_shape<'a>(property: &'a CfnProperty, schema: &'a CfnSchema) -> PropertyShape<'a> {
-    property_shape_with_visited(property, schema, &mut HashSet::new())
-}
-
-/// The sole shape precedence rule: a reference owns the shape before any
-/// sibling keywords. Inline properties then use direct fields, the first
-/// oneOf variant resolving to an array, or merged optional object fields.
-fn property_shape_with_visited<'a>(
-    property: &'a CfnProperty,
-    schema: &'a CfnSchema,
-    visiting_defs: &mut HashSet<&'a str>,
-) -> PropertyShape<'a> {
-    if let Some(path) = property.ref_path.as_deref() {
-        return PropertyShape::Reference {
-            path,
-            resolved: resolve_ref(schema, path),
-        };
-    }
-    if let Some(properties) = property
-        .properties
-        .as_ref()
-        .filter(|props| !props.is_empty())
-    {
-        return PropertyShape::Direct(properties);
-    }
-    if property.one_of.is_empty() {
-        return PropertyShape::Inline;
-    }
-    if let Some(shape) = property.one_of.iter().find_map(|variant| {
-        resolved_array_property(variant, schema, visiting_defs)
-            .map(|resolved| PropertyShape::Array { variant, resolved })
-    }) {
-        return shape;
-    }
-    let mut merged = BTreeMap::new();
-    for variant in &property.one_of {
-        merged.extend(resolved_object_properties(variant, schema, visiting_defs));
-    }
-    if merged.is_empty() {
-        PropertyShape::Unresolved
-    } else {
-        PropertyShape::Merged(merged)
-    }
-}
-
-/// Follow object variants with the same precedence and cycle guard as array
-/// variants. A variant's required list does not apply to the merged object.
-fn resolved_object_properties<'a>(
-    property: &'a CfnProperty,
-    schema: &'a CfnSchema,
-    visiting_defs: &mut HashSet<&'a str>,
-) -> BTreeMap<String, CfnProperty> {
-    match property_shape_with_visited(property, schema, visiting_defs) {
-        PropertyShape::Reference {
-            resolved: Some(resolved),
-            ..
-        } => {
-            if !visiting_defs.insert(resolved.name) {
-                return BTreeMap::new();
-            }
-            let properties = resolved_object_properties(resolved.property, schema, visiting_defs);
-            visiting_defs.remove(resolved.name);
-            properties
-        }
-        PropertyShape::Direct(properties) => properties.clone(),
-        PropertyShape::Merged(properties) => properties,
-        PropertyShape::Reference { resolved: None, .. }
-        | PropertyShape::Inline
-        | PropertyShape::Array { .. }
-        | PropertyShape::Unresolved => BTreeMap::new(),
-    }
-}
-
-/// Whether the inline generator will represent this property as a struct.
-fn property_generates_struct(property: &CfnProperty, schema: &CfnSchema) -> bool {
-    match property_shape(property, schema) {
-        PropertyShape::Reference { resolved, .. } => {
-            resolved.is_some_and(|resolved| property_generates_struct(resolved.property, schema))
-        }
-        PropertyShape::Direct(_) | PropertyShape::Merged(_) => true,
-        PropertyShape::Inline | PropertyShape::Array { .. } | PropertyShape::Unresolved => false,
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ObjectMapValueKind {
     DirectString,
@@ -5610,7 +5308,6 @@ fn generate_struct_type(
             } else {
                     cfn_type_to_carina_type_with_enum_with_paths(
                         field_prop,
-                        field_name,
                         schema,
                         namespace,
                         enums,
@@ -5767,53 +5464,6 @@ fn generate_struct_type(
     record_struct_read_only_use(def_name, paths.provider, emission_mark);
     record_struct_write_only_use(def_name, paths.provider, write_only_emission_mark);
     struct_type
-}
-
-/// Known enum overrides for properties where `extract_enum_from_description()` fails
-/// due to inconsistent description formatting in CloudFormation schemas.
-fn known_enum_overrides() -> &'static HashMap<&'static str, Vec<&'static str>> {
-    static OVERRIDES: LazyLock<HashMap<&'static str, Vec<&'static str>>> = LazyLock::new(|| {
-        let mut m = HashMap::new();
-        m.insert("IpProtocol", vec!["tcp", "udp", "icmp", "icmpv6", "-1"]);
-        m.insert("ConnectivityType", vec!["public", "private"]);
-        m.insert("AvailabilityMode", vec!["zonal", "regional"]);
-        m.insert("AddressFamily", vec!["IPv4", "IPv6"]);
-        m.insert("Domain", vec!["vpc", "standard"]);
-        // HostnameType enum values are in parent struct description, not field description
-        m.insert("HostnameType", vec!["ip-name", "resource-name"]);
-        // InternetGatewayBlockMode removed - now auto-detected via "Options here are" pattern
-        // Transit gateway enable/disable properties
-        m.insert("AutoAcceptSharedAttachments", vec!["enable", "disable"]);
-        m.insert("DefaultRouteTableAssociation", vec!["enable", "disable"]);
-        m.insert("DefaultRouteTablePropagation", vec!["enable", "disable"]);
-        m.insert("DnsSupport", vec!["enable", "disable"]);
-        m.insert("MulticastSupport", vec!["enable", "disable"]);
-        m.insert("SecurityGroupReferencingSupport", vec!["enable", "disable"]);
-        m.insert("VpnEcmpSupport", vec!["enable", "disable"]);
-        m.insert("EncryptionSupportState", vec!["disable", "enable"]);
-        // CloudFront ViewerCertificate.MinimumProtocolVersion: CFN schema declares
-        // it as a free-form string, so the description-scraping heuristic in
-        // extract_enum_from_description() picked up unrelated backticked tokens
-        // from sibling fields (`sni-only` from SslSupportMethod, `true` from
-        // CloudFrontDefaultCertificate) while filtering out the real value
-        // `TLSv1` as a "property name". Pin the canonical security-policy values
-        // here so the heuristic is short-circuited (overrides are consulted
-        // before description extraction). awscc#242.
-        m.insert(
-            "MinimumProtocolVersion",
-            vec![
-                "SSLv3",
-                "TLSv1",
-                "TLSv1_2016",
-                "TLSv1.1_2016",
-                "TLSv1.2_2018",
-                "TLSv1.2_2019",
-                "TLSv1.2_2021",
-            ],
-        );
-        m
-    });
-    &OVERRIDES
 }
 
 /// Known enum aliases for properties where an AWS canonical value should have
@@ -6222,15 +5872,15 @@ impl StringLeaf<'_> {
 /// rendering. Only the Refined case emits CFN pattern/length metadata and
 /// therefore reaches the translation and compilation gate.
 fn string_leaf<'a>(
-    prop: &'a CfnProperty,
-    prop_name: &str,
-    schema: &ClassifiedSchema<'_>,
-    provider_path: &[String],
+    classified: ClassifiedStringLeaf<'a>,
     property_path: CfnPropertyPath<'_>,
     definition_name: Option<&str>,
 ) -> StringLeaf<'a> {
-    let cfn_type = &schema.type_name;
-    if let Some(kind) = schema.reference_at_property(provider_path) {
+    let prop = classified.property();
+    let prop_name = classified.name();
+    debug_assert!(!classified.path().is_empty());
+    let cfn_type = classified.cfn_type();
+    if let Some(kind) = classified.reference() {
         return StringLeaf::Inferred {
             rust_type: kind.constructor().to_string(),
             display_type: "aws.kms.Key.Reference".to_string(),
@@ -7977,7 +7627,6 @@ fn cfn_type_to_carina_type_with_enum(
     let property_path = [prop_name.to_string()];
     cfn_type_to_carina_type_with_enum_with_paths(
         prop,
-        prop_name,
         schema,
         namespace,
         enums,
@@ -8005,30 +7654,6 @@ fn property_type_values(prop: &CfnProperty) -> Vec<String> {
 
 fn property_resolves_to_array(prop: &CfnProperty, schema: &CfnSchema) -> bool {
     resolved_array_property(prop, schema, &mut HashSet::new()).is_some()
-}
-
-/// Resolve aliases and oneOf arrays through the same shape classifier used
-/// for inline properties. Track definition visits because oneOf branches
-/// can refer back to their containing definition.
-fn resolved_array_property<'a>(
-    prop: &'a CfnProperty,
-    schema: &'a CfnSchema,
-    visiting_defs: &mut HashSet<&'a str>,
-) -> Option<&'a CfnProperty> {
-    match property_shape_with_visited(prop, schema, visiting_defs) {
-        PropertyShape::Reference { resolved, .. } => {
-            let resolved = resolved?;
-            if !visiting_defs.insert(resolved.name) {
-                return None;
-            }
-            let array = resolved_array_property(resolved.property, schema, visiting_defs);
-            visiting_defs.remove(resolved.name);
-            array
-        }
-        PropertyShape::Inline => (inline_property_type(prop) == Some("array")).then_some(prop),
-        PropertyShape::Array { resolved, .. } => Some(resolved),
-        PropertyShape::Direct(_) | PropertyShape::Merged(_) | PropertyShape::Unresolved => None,
-    }
 }
 
 /// A whole-attribute override must not discard constraints at the property,
@@ -8117,15 +7742,18 @@ fn generate_object_map_type(
 ) -> (String, Option<EnumInfo>) {
     let property_path = CfnPropertyPath::new(paths.cfn_parent, prop_name);
     match object_map_value_or_panic(schema, property_path, value) {
-        ObjectMapValueKind::DirectString => (
-            "AttributeType::map(AttributeType::string())".to_string(),
-            None,
-        ),
+        ObjectMapValueKind::DirectString => {
+            let leaf = schema
+                .string_leaf_at(&extend_property_path(paths.provider, "*"))
+                .expect("classified map value");
+            let (value_type, enum_info) =
+                string_leaf(leaf, property_path, None).emit(&schema.type_name, prop_name);
+            (format!("AttributeType::map({value_type})"), enum_info)
+        }
         ObjectMapValueKind::Struct => {
             let value_provider_path = extend_property_path(paths.provider, "*");
             let (value_type, enum_info) = cfn_type_to_carina_type_with_enum_with_paths(
                 value,
-                prop_name,
                 schema,
                 namespace,
                 enums,
@@ -8145,16 +7773,15 @@ fn generate_object_map_type(
 
 fn cfn_type_to_carina_type_with_enum_with_paths(
     prop: &CfnProperty,
-    prop_name: &str,
     schema: &ClassifiedSchema<'_>,
     namespace: &str,
     enums: &BTreeMap<String, EnumInfo>,
     paths: CfnTypeGenerationPaths<'_>,
 ) -> (String, Option<EnumInfo>) {
     cfn_type_to_carina_type_with_enum_resolved(
-        prop,
-        prop_name,
-        schema,
+        schema
+            .property_at(paths.provider, prop)
+            .expect("classified property emission"),
         namespace,
         enums,
         paths,
@@ -8178,14 +7805,19 @@ struct RefGenerationState<'a> {
 }
 
 fn cfn_type_to_carina_type_with_enum_resolved(
-    prop: &CfnProperty,
-    prop_name: &str,
-    schema: &ClassifiedSchema<'_>,
+    classified: EmissionProperty<'_>,
     namespace: &str,
     enums: &BTreeMap<String, EnumInfo>,
     paths: CfnTypeGenerationPaths<'_>,
     ref_state: RefGenerationState<'_>,
 ) -> (String, Option<EnumInfo>) {
+    let schema = classified.schema();
+    let prop = classified.property();
+    let prop_name = classified.name();
+    let paths = CfnTypeGenerationPaths {
+        provider: classified.path(),
+        ..paths
+    };
     let definition_name = ref_state.definition_name;
     let ref_context = ref_state.context;
     let struct_path = paths.structural;
@@ -8218,10 +7850,15 @@ fn cfn_type_to_carina_type_with_enum_resolved(
 
     // Preserve non-string const precedence over $ref/oneOf resolution;
     // enum values and naming still use the same classifier as strings.
-    if prop.const_value.is_some() && inline_property_type(prop) != Some("string") {
-        return enum_leaf(prop, prop_name, definition_name)
-            .expect("a const property must classify as an enum")
-            .emit(&schema.type_name, prop_name);
+    if prop.const_value.is_some() {
+        return string_leaf(
+            schema
+                .string_leaf_at(property_path)
+                .expect("classified const emission"),
+            cfn_property_path,
+            definition_name,
+        )
+        .emit(&schema.type_name, prop_name);
     }
 
     match property_shape(prop, schema) {
@@ -8231,10 +7868,14 @@ fn cfn_type_to_carina_type_with_enum_resolved(
             }
 
             let Some(resolved) = resolved else {
-                if let Some(inferred) = infer_string_type(prop_name, &schema.type_name) {
-                    return (inferred, None);
-                }
-                return ("AttributeType::string()".to_string(), None);
+                return string_leaf(
+                    schema
+                        .string_leaf_at(property_path)
+                        .expect("classified unresolved reference"),
+                    cfn_property_path,
+                    definition_name,
+                )
+                .emit(&schema.type_name, prop_name);
             };
             let def_name = resolved.name;
 
@@ -8252,9 +7893,9 @@ fn cfn_type_to_carina_type_with_enum_resolved(
                 definitions.borrow_mut().insert(def_name.to_string());
             });
             let (body, enum_info) = cfn_type_to_carina_type_with_enum_resolved(
-                resolved.property,
-                prop_name,
-                schema,
+                schema
+                    .property_at(property_path, resolved.property)
+                    .expect("classified reference target"),
                 namespace,
                 enums,
                 paths,
@@ -8299,9 +7940,9 @@ fn cfn_type_to_carina_type_with_enum_resolved(
             ..
         } => {
             return cfn_type_to_carina_type_with_enum_resolved(
-                array_variant,
-                prop_name,
-                schema,
+                schema
+                    .property_at(property_path, array_variant)
+                    .expect("classified array variant"),
                 namespace,
                 enums,
                 paths,
@@ -8323,9 +7964,9 @@ fn cfn_type_to_carina_type_with_enum_resolved(
             inline_property.required.clear();
             inline_property.one_of.clear();
             return cfn_type_to_carina_type_with_enum_resolved(
-                &inline_property,
-                prop_name,
-                schema,
+                schema
+                    .property_at(property_path, &inline_property)
+                    .expect("classified merged object"),
                 namespace,
                 enums,
                 paths,
@@ -8335,12 +7976,11 @@ fn cfn_type_to_carina_type_with_enum_resolved(
         PropertyShape::Inline | PropertyShape::Direct(_) => {}
     }
 
-    if inline_property_type(prop) == Some("string") {
+    if emits_string_leaf(prop, prop_name) {
         return string_leaf(
-            prop,
-            prop_name,
-            schema,
-            property_path,
+            schema
+                .string_leaf_at(property_path)
+                .expect("classified string emission"),
             cfn_property_path,
             definition_name,
         )
@@ -8421,9 +8061,9 @@ fn cfn_type_to_carina_type_with_enum_resolved(
             let (element_type, item_enum) = if let Some(items) = &prop.items {
                 let item_path = extend_property_path(property_path, "*");
                 let (item_type, item_enum) = cfn_type_to_carina_type_with_enum_resolved(
-                    items,
-                    prop_name,
-                    schema,
+                    schema
+                        .property_at(&item_path, items)
+                        .expect("classified array element"),
                     namespace,
                     enums,
                     CfnTypeGenerationPaths {
@@ -8437,7 +8077,18 @@ fn cfn_type_to_carina_type_with_enum_resolved(
                 );
                 (item_type, item_enum)
             } else {
-                ("AttributeType::string()".to_string(), None)
+                (
+                    string_leaf(
+                        schema
+                            .string_leaf_at(&extend_property_path(property_path, "*"))
+                            .expect("classified implicit array element"),
+                        cfn_property_path,
+                        None,
+                    )
+                    .emit(&schema.type_name, prop_name)
+                    .0,
+                    None,
+                )
             };
             (
                 array_attribute_type(
@@ -8486,14 +8137,7 @@ fn cfn_type_to_carina_type_with_enum_resolved(
                 schema.type_name, cfn_property_path
             );
         }
-        _ => {
-            // Fallback: apply name-based heuristics for properties with no explicit type
-            if let Some(inferred) = infer_string_type(prop_name, &schema.type_name) {
-                (inferred, None)
-            } else {
-                ("AttributeType::string()".to_string(), None)
-            }
-        }
+        _ => unreachable!("string fallbacks require a classified string leaf"),
     }
 }
 
@@ -8616,6 +8260,44 @@ mod tests {
     use super::*;
     use std::path::Path;
 
+    pub(super) fn leaf_fixture_schema(
+        schema: &CfnSchema,
+        property: &CfnProperty,
+        path: &[String],
+    ) -> CfnSchema {
+        fn insert(current: &mut CfnProperty, remaining: &[String], property: &CfnProperty) {
+            let Some((segment, rest)) = remaining.split_first() else {
+                *current = property.clone();
+                return;
+            };
+            if segment == "*" {
+                current.prop_type = Some(TypeValue::Single("array".into()));
+                insert(
+                    current.items.get_or_insert_with(Default::default),
+                    rest,
+                    property,
+                );
+            } else {
+                current.prop_type = Some(TypeValue::Single("object".into()));
+                insert(
+                    current
+                        .properties
+                        .get_or_insert_with(Default::default)
+                        .entry(segment.clone())
+                        .or_default(),
+                    rest,
+                    property,
+                );
+            }
+        }
+        let mut schema = schema.clone();
+        let (root, remaining) = path.split_first().expect("fixture property path");
+        let mut source = CfnProperty::default();
+        insert(&mut source, remaining, property);
+        schema.properties.insert(root.clone(), source);
+        schema
+    }
+
     // Leaf-focused fixtures must pass the same fallible classification gate as
     // the renderers before invoking their emission helpers.
 
@@ -8626,7 +8308,8 @@ mod tests {
         namespace: &str,
         enums: &BTreeMap<String, EnumInfo>,
     ) -> (String, Option<EnumInfo>) {
-        let classified = ClassifiedSchema::new(schema).unwrap();
+        let fixture = leaf_fixture_schema(schema, prop, &[prop_name.to_string()]);
+        let classified = ClassifiedSchema::new(&fixture).unwrap();
         super::cfn_type_to_carina_type_with_enum(prop, prop_name, &classified, namespace, enums)
     }
 
@@ -8638,10 +8321,19 @@ mod tests {
         enums: &BTreeMap<String, EnumInfo>,
         paths: CfnTypeGenerationPaths<'_>,
     ) -> (String, Option<EnumInfo>) {
-        let classified = ClassifiedSchema::new(schema).unwrap();
+        let default_path = [prop_name.to_string()];
+        let paths = CfnTypeGenerationPaths {
+            provider: if paths.provider.is_empty() {
+                &default_path
+            } else {
+                paths.provider
+            },
+            ..paths
+        };
+        let fixture = leaf_fixture_schema(schema, prop, paths.provider);
+        let classified = ClassifiedSchema::new(&fixture).unwrap();
         super::cfn_type_to_carina_type_with_enum_with_paths(
             prop,
-            prop_name,
             &classified,
             namespace,
             enums,
@@ -8657,11 +8349,12 @@ mod tests {
         enums: &BTreeMap<String, EnumInfo>,
         has_arn_helper: bool,
     ) -> String {
-        let classified = ClassifiedSchema::new(schema).unwrap();
+        let fixture = leaf_fixture_schema(schema, prop, &[prop_name.to_string()]);
+        let classified = ClassifiedSchema::new(&fixture).unwrap();
         super::generate_top_level_attribute_type(
-            prop_name,
-            prop,
-            &classified,
+            classified
+                .property_at(&[prop_name.to_string()], prop)
+                .unwrap(),
             namespace,
             enums,
             has_arn_helper,
@@ -8676,13 +8369,17 @@ mod tests {
         property_path: &[String],
         cfn_parent: Option<&str>,
     ) -> MarkdownType {
-        let classified = ClassifiedSchema::new(schema).unwrap();
+        let default_path = [prop_name.to_string()];
+        let property_path = if property_path.is_empty() {
+            &default_path
+        } else {
+            property_path
+        };
+        let fixture = leaf_fixture_schema(schema, prop, property_path);
+        let classified = ClassifiedSchema::new(&fixture).unwrap();
         super::markdown_type(
-            prop_name,
-            prop,
-            &classified,
+            classified.property_at(property_path, prop).unwrap(),
             enum_target,
-            property_path,
             cfn_parent,
         )
     }

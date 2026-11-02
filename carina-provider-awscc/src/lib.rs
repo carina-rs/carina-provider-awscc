@@ -408,35 +408,27 @@ impl Provider for AwsccProvider {
         >,
     > {
         Box::pin(async move {
-            use carina_core::references::{ReferenceError, ReferenceOutcome};
-            use carina_provider_protocol::types as wire;
-            let requests = requests
-                .iter()
-                .map(|request| wire::ReferenceRequest {
-                    ty: wire::TypeIdentity {
-                        provider: request.ty.provider.clone().unwrap_or_default(),
-                        segments: request.ty.segments.clone(),
-                        kind: request.ty.kind.clone(),
-                    },
-                    value: request.value.clone(),
-                })
-                .collect();
-            Ok(AwsccProvider::resolve_references(self, requests)
-                .await
-                .into_iter()
-                .map(|result| match result {
-                    Ok(outcome) => ReferenceOutcome::from_guest(outcome),
-                    Err(wire::ReferenceError::AccessDenied(error)) => Err(
-                        ReferenceError::AccessDenied(ProviderError::from_wire(*error).into()),
-                    ),
-                    Err(wire::ReferenceError::Transient(error)) => Err(ReferenceError::Transient(
-                        ProviderError::from_wire(*error).into(),
-                    )),
-                    Err(wire::ReferenceError::InvalidReference(error)) => Err(
-                        ReferenceError::InvalidReference(ProviderError::from_wire(*error).into()),
-                    ),
-                })
-                .collect())
+            let scope = self
+                .kms_client()
+                .and_then(|client| client.instance_region().map(|region| (client, region)));
+            Ok(match scope {
+                Ok((client, region)) => {
+                    carina_aws_types::kms_reference::resolve_core_reference_batch(
+                        client, "awscc", region, requests,
+                    )
+                    .await
+                }
+                Err(reason) => requests
+                    .iter()
+                    .map(|_| {
+                        Err(carina_core::references::ReferenceError::InvalidReference(
+                            ProviderError::invalid_input(reason.to_owned())
+                                .for_provider("awscc")
+                                .into(),
+                        ))
+                    })
+                    .collect(),
+            })
         })
     }
 

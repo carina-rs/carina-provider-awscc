@@ -238,3 +238,128 @@ fn read_only_parent_does_not_hide_emitted_child_kms_input() {
         );
     }
 }
+
+#[test]
+fn inferred_string_leaves_cannot_skip_classification() {
+    for property in [
+        json!({"enum": ["value"]}),
+        json!({"const": "value"}),
+        json!({"description": "A key identifier"}),
+        json!({"anyOf": [{"enum": ["value"]}]}),
+        json!({"oneOf": [{"const": "value"}]}),
+    ] {
+        let mut schema = vpc_schema();
+        schema["properties"]["KmsFoo"] = property.clone();
+        for format in ["rust", "markdown"] {
+            let output = generate(&schema, format);
+            let error = String::from_utf8_lossy(&output.stderr);
+            assert!(!output.status.success(), "{property} passed {format}");
+            assert!(
+                error.contains("unclassified KMS string ec2.Vpc.kms_foo"),
+                "{property}: {error}"
+            );
+        }
+    }
+}
+
+#[test]
+fn kms_evidence_does_not_require_an_arn_mention() {
+    for description in [
+        "The ID of the AWS KMS key",
+        "The customer master key identifier",
+        "The cMk identifier",
+    ] {
+        let mut schema = vpc_schema();
+        schema["properties"]["EncryptionKey"] =
+            json!({"type": "string", "description": description});
+        for format in ["rust", "markdown"] {
+            let output = generate(&schema, format);
+            assert!(!output.status.success(), "{description} passed {format}");
+            assert!(
+                String::from_utf8_lossy(&output.stderr)
+                    .contains("unclassified KMS string ec2.Vpc.encryption_key")
+            );
+        }
+    }
+}
+
+#[test]
+fn constraint_branches_and_ref_siblings_merge_into_the_leaf_evidence() {
+    for keyword in ["oneOf", "anyOf", "allOf"] {
+        for at_use_site in [false, true] {
+            let mut schema = vpc_schema();
+            schema["definitions"]["SharedString"] = json!({"type": "string"});
+            schema["properties"]["EncryptionKey"] = json!({"$ref": "#/definitions/SharedString"});
+            let evidence_site = if at_use_site {
+                &mut schema["properties"]["EncryptionKey"]
+            } else {
+                &mut schema["definitions"]["SharedString"]
+            };
+            evidence_site[keyword] = json!([{"description": "The ARN of the AWS KMS key"}]);
+            for format in ["rust", "markdown"] {
+                let output = generate(&schema, format);
+                assert!(
+                    !output.status.success(),
+                    "{keyword}, use={at_use_site} passed {format}"
+                );
+                assert!(
+                    String::from_utf8_lossy(&output.stderr)
+                        .contains("unclassified KMS string ec2.Vpc.encryption_key")
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn key_only_constraint_in_any_schema_branch_requires_reclassification() {
+    for keyword in ["oneOf", "anyOf", "allOf"] {
+        for typed in [false, true] {
+            let mut schema: Value = serde_json::from_str(include_str!(
+                "../../cfn-schema-cache/AWS__Scheduler__Schedule.json"
+            ))
+            .unwrap();
+            let mut branch = json!({"pattern": "^arn:aws:kms:.*:key/.*$"});
+            if typed {
+                branch["type"] = json!("string");
+            }
+            schema["properties"]["KmsKeyArn"][keyword] = json!([branch]);
+            for format in ["rust", "markdown"] {
+                let output = generate(&schema, format);
+                assert!(
+                    !output.status.success(),
+                    "{keyword}, typed={typed} passed {format}"
+                );
+                assert!(String::from_utf8_lossy(&output.stderr).contains("KMS pattern changed"));
+            }
+        }
+    }
+}
+
+#[test]
+fn read_only_scalar_collections_use_the_emitted_field_input_mode() {
+    for property in [
+        json!({"type": "array", "items": {"type": "string"}}),
+        json!({"type": "object", "patternProperties": {".*": {"type": "string"}}, "additionalProperties": false}),
+    ] {
+        let mut schema = vpc_schema();
+        schema["properties"]["KmsOutput"] = property;
+        schema["readOnlyProperties"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!("/properties/KmsOutput"));
+        for format in ["rust", "markdown"] {
+            let output = generate(&schema, format);
+            assert!(
+                output.status.success(),
+                "{format}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            if format == "rust" {
+                let code = String::from_utf8(output.stdout).unwrap();
+                assert!(code.contains("AttributeSchema::provider_populated"));
+                assert!(!code.contains("carina_aws_types::kms_key_reference()"));
+            }
+        }
+    }
+}

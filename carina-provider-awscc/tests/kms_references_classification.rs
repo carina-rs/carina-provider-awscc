@@ -71,19 +71,94 @@ fn same_named_inline_objects_keep_distinct_reference_sites() {
         ));
     let schema: CfnSchema = serde_json::from_value(schema).unwrap();
     let classified = kms_references_cfn::ClassifiedSchema::new(&schema).unwrap();
-    let reference = classified.reference_at_property(&[
+    let reference = classified.string_leaf_at(&[
         "Configuration".into(),
         "ManagedStorageConfiguration".into(),
         "KmsKeyId".into(),
     ]);
-    assert!(reference.is_some());
-    let unrelated = classified.reference_at_property(&[
+    assert!(reference.unwrap().reference().is_some());
+    let unrelated = classified.string_leaf_at(&[
         "Unrelated".into(),
         "ManagedStorageConfiguration".into(),
         "KmsKeyId".into(),
     ]);
     assert!(
-        unrelated.is_none(),
+        unrelated.unwrap().reference().is_none(),
         "the unrelated full path must not inherit the reference"
     );
+}
+
+#[test]
+fn emission_inputs_are_bound_to_the_walked_resource_and_full_path() {
+    let schema: CfnSchema = serde_json::from_value(json!({
+        "typeName": "AWS::EC2::VPC",
+        "properties": {"Settings": {"type": "object", "properties": {
+            "Label": {"enum": ["ordinary"]}
+        }}}
+    }))
+    .unwrap();
+    let classified = kms_references_cfn::ClassifiedSchema::new(&schema).unwrap();
+    let path = ["Settings".into(), "Label".into()];
+    let leaf = classified.string_leaf_at(&path).unwrap();
+    assert_eq!(leaf.cfn_type(), "AWS::EC2::VPC");
+    assert_eq!(leaf.name(), "Label");
+    assert_eq!(leaf.path(), path);
+    assert_eq!(
+        leaf.property().enum_values.as_ref().unwrap()[0].to_string_value(),
+        "ordinary"
+    );
+    assert!(leaf.reference().is_none());
+    let mut foreign = leaf.property().clone();
+    foreign.description = Some("The ID of the AWS KMS key".into());
+    assert!(classified.property_at(&path, &foreign).is_err());
+    let property = classified.property_at(&path, leaf.property()).unwrap();
+    assert_eq!(property.name(), "Label");
+    assert_eq!(property.path(), path);
+    assert!(std::ptr::eq(property.schema(), &classified));
+    assert_eq!(property.property(), leaf.property());
+    for path in [
+        vec!["Label".into()],
+        vec!["Settings".into(), "Unknown".into()],
+    ] {
+        let Err(error) = classified.string_leaf_at(&path) else {
+            panic!("an unwalked leaf cannot obtain an emission input");
+        };
+        assert!(error.to_string().contains("unclassified string leaf path"));
+    }
+}
+
+#[test]
+fn scalar_collections_keep_the_exact_field_read_only_decision() {
+    for property in [
+        json!({"type": "array", "items": {"type": "string"}}),
+        json!({"type": "object", "patternProperties": {".*": {"type": "string"}}}),
+    ] {
+        let schema: CfnSchema = serde_json::from_value(json!({
+            "typeName": "AWS::EC2::VPC", "properties": {"KmsOutput": property},
+            "readOnlyProperties": ["/properties/KmsOutput"]
+        }))
+        .unwrap();
+        let classified = kms_references_cfn::ClassifiedSchema::new(&schema).unwrap();
+        assert!(
+            classified
+                .string_leaf_at(&["KmsOutput".into(), "*".into()])
+                .unwrap()
+                .reference()
+                .is_none()
+        );
+    }
+}
+
+#[test]
+fn scalar_enum_discovery_stops_at_recursive_array_definitions() {
+    let schema: CfnSchema = serde_json::from_value(json!({
+        "typeName": "AWS::EC2::VPC",
+        "properties": {"Values": {"$ref": "#/definitions/RecursiveArray"}},
+        "definitions": {"RecursiveArray": {
+            "type": "array", "items": {"$ref": "#/definitions/RecursiveArray"}
+        }}
+    }))
+    .unwrap();
+    assert!(!cfn::has_scalar_leaf(&schema.properties["Values"], &schema));
+    assert!(kms_references_cfn::ClassifiedSchema::new(&schema).is_ok());
 }

@@ -9,7 +9,6 @@ use anyhow::{Result, bail};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Classification {
     Reference(ReferenceKind),
-    #[allow(dead_code)] // The current cache has no non-reference candidates.
     NotReference(NotReference),
 }
 
@@ -153,6 +152,102 @@ pub const CLASSIFICATIONS: &[Entry] = &[
         // CFN explicitly accepts (key|alias)/ ARNs only, length 1..2048.
         cfn_pattern: Some(r"^arn:aws[a-z-]*:kms:[a-z0-9\-]+:\d{12}:(key|alias)\/[0-9a-zA-Z-_]*$"),
     },
+    Entry {
+        resource: "dynamodb.Table",
+        path: "sse_specification.sse_type",
+        classification: Classification::NotReference(NotReference::Other(
+            "Encryption mode selector; it does not identify a KMS key.",
+        )),
+        cfn_pattern: None,
+    },
+    Entry {
+        resource: "ecr.Repository",
+        path: "encryption_configuration.encryption_type",
+        classification: Classification::NotReference(NotReference::Other(
+            "Encryption algorithm selector; it does not identify a KMS key.",
+        )),
+        cfn_pattern: None,
+    },
+    Entry {
+        resource: "kms.Key",
+        path: "description",
+        classification: Classification::NotReference(NotReference::Other(
+            "Human-readable description of the key being managed.",
+        )),
+        cfn_pattern: None,
+    },
+    Entry {
+        resource: "kms.Key",
+        path: "key_policy",
+        classification: Classification::NotReference(NotReference::Other(
+            "IAM policy document for the key being managed, not a key identifier.",
+        )),
+        cfn_pattern: None,
+    },
+    Entry {
+        resource: "kms.Key",
+        path: "key_usage",
+        classification: Classification::NotReference(NotReference::Other(
+            "Cryptographic operation selector for the key being managed.",
+        )),
+        cfn_pattern: None,
+    },
+    Entry {
+        resource: "kms.Key",
+        path: "origin",
+        classification: Classification::NotReference(NotReference::Other(
+            "Key-material source selector for the key being managed.",
+        )),
+        cfn_pattern: None,
+    },
+    Entry {
+        resource: "kms.Key",
+        path: "key_spec",
+        classification: Classification::NotReference(NotReference::Other(
+            "Cryptographic key specification, not an existing key identifier.",
+        )),
+        cfn_pattern: None,
+    },
+    Entry {
+        resource: "s3.Bucket",
+        path: "bucket_encryption.server_side_encryption_configuration[].server_side_encryption_by_default.sse_algorithm",
+        classification: Classification::NotReference(NotReference::Other(
+            "Server-side encryption algorithm selector, not a key identifier.",
+        )),
+        cfn_pattern: None,
+    },
+    Entry {
+        resource: "s3.Bucket",
+        path: "metadata_configuration.inventory_table_configuration.encryption_configuration.sse_algorithm",
+        classification: Classification::NotReference(NotReference::Other(
+            "Metadata-table encryption algorithm selector, not a key identifier.",
+        )),
+        cfn_pattern: None,
+    },
+    Entry {
+        resource: "s3.Bucket",
+        path: "metadata_configuration.journal_table_configuration.encryption_configuration.sse_algorithm",
+        classification: Classification::NotReference(NotReference::Other(
+            "Metadata-table encryption algorithm selector, not a key identifier.",
+        )),
+        cfn_pattern: None,
+    },
+    Entry {
+        resource: "s3.Bucket",
+        path: "replication_configuration.rules[].source_selection_criteria.sse_kms_encrypted_objects.status",
+        classification: Classification::NotReference(NotReference::Other(
+            "Replication enable/disable selector for KMS-encrypted objects.",
+        )),
+        cfn_pattern: None,
+    },
+    Entry {
+        resource: "kms.Key",
+        path: "tags{}",
+        classification: Classification::NotReference(NotReference::Other(
+            "User-authored tag values, not KMS key identifiers.",
+        )),
+        cfn_pattern: None,
+    },
 ];
 
 pub fn entry(resource: &str, path: &str) -> Option<&'static Entry> {
@@ -171,9 +266,9 @@ pub fn is_candidate(name: &str, pattern: Option<&str>, description: Option<&str>
     .to_ascii_lowercase();
     name.contains("kms")
         || name.contains("cmk")
-        || evidence.contains(":kms:")
-        || ((evidence.contains("kms") || evidence.contains("key management service"))
-            && (evidence.contains("arn") || evidence.contains("amazon resource name")))
+        || evidence.contains("kms")
+        || evidence.contains("customer master key")
+        || evidence.contains("cmk")
 }
 
 pub fn classify_string(
