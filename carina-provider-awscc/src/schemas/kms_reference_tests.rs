@@ -39,7 +39,8 @@ impl Coverage {
             if read_only {
                 return;
             }
-            match classify_string(schema.resource_type(), path, name, pattern, description).unwrap()
+            match classify_string(schema.resource_type(), path, name, pattern, description, [])
+                .unwrap()
             {
                 Some(Classification::Reference(kind)) => {
                     assert_eq!(

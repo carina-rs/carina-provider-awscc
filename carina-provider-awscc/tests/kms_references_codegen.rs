@@ -203,6 +203,77 @@ fn shared_scalar_description_is_checked_at_the_input_path() {
 }
 
 #[test]
+fn service_name_evidence_in_shared_strings_requires_classification() {
+    for evidence in [
+        json!({"description": "The AWS Key Management Service key identifier"}),
+        json!({"description": "The AWS kEy MaNaGeMeNt SeRvIcE key identifier"}),
+        json!({"pattern": "Key Management Service"}),
+    ] {
+        let mut schema: Value = serde_json::from_str(include_str!(
+            "../../cfn-schema-cache/AWS__ECR__Repository.json"
+        ))
+        .unwrap();
+        schema["definitions"]["EncryptionConfiguration"]["properties"]["EncryptionKey"] =
+            json!({"$ref": "#/definitions/SharedString"});
+        schema["definitions"]["SharedString"] = json!({"type": "string"});
+        schema["definitions"]["SharedString"]
+            .as_object_mut()
+            .unwrap()
+            .extend(evidence.as_object().unwrap().clone());
+        for format in ["rust", "markdown"] {
+            let output = generate(&schema, format);
+            let error = String::from_utf8_lossy(&output.stderr);
+            assert!(
+                !output.status.success(),
+                "unclassified {evidence} passed {format}"
+            );
+            assert!(
+                error.contains(
+                    "unclassified KMS string ecr.Repository.encryption_configuration.encryption_key"
+                ),
+                "{format}: {error}"
+            );
+        }
+    }
+}
+
+#[test]
+fn literal_evidence_in_shared_strings_requires_classification() {
+    for constraint in [
+        json!({"enum": ["AES256", "KMS"]}),
+        json!({"enum": ["AES256", "aws:kms"]}),
+        json!({"enum": ["AES256", "aws:kms:dsse"]}),
+        json!({"const": "aWs:kMs"}),
+    ] {
+        let mut schema: Value = serde_json::from_str(include_str!(
+            "../../cfn-schema-cache/AWS__ECR__Repository.json"
+        ))
+        .unwrap();
+        schema["definitions"]["EncryptionConfiguration"]["properties"]["EncryptionMode"] =
+            json!({"$ref": "#/definitions/EncryptionMode"});
+        schema["definitions"]["EncryptionMode"] = json!({"type": "string"});
+        schema["definitions"]["EncryptionMode"]
+            .as_object_mut()
+            .unwrap()
+            .extend(constraint.as_object().unwrap().clone());
+        for format in ["rust", "markdown"] {
+            let output = generate(&schema, format);
+            let error = String::from_utf8_lossy(&output.stderr);
+            assert!(
+                !output.status.success(),
+                "unclassified {constraint} passed {format}"
+            );
+            assert!(
+                error.contains(
+                    "unclassified KMS string ecr.Repository.encryption_configuration.encryption_mode"
+                ),
+                "{format}: {error}"
+            );
+        }
+    }
+}
+
+#[test]
 fn classification_checks_constraints_on_ref_uses() {
     let mut schema = vpc_schema();
     schema["properties"]["EncryptionKey"] = json!({

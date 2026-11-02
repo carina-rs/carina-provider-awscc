@@ -341,6 +341,7 @@ impl<'a> EmissionContext<'a> {
             &names,
             Some(&evidence.patterns.join(" ")),
             Some(&evidence.descriptions.join(" ")),
+            evidence.literals.iter().map(String::as_str),
         )?;
         if decision.is_some() {
             self.visited.borrow_mut().insert(path.to_string());
@@ -502,6 +503,7 @@ struct Evidence {
     patterns: Vec<String>,
     lengths: Vec<(Option<u64>, Option<u64>)>,
     descriptions: Vec<String>,
+    literals: Vec<String>,
     has_enum_or_const: bool,
 }
 
@@ -520,6 +522,16 @@ impl Evidence {
 
     fn add(&mut self, value: &Value) {
         self.has_enum_or_const |= value.get("enum").is_some() || value.get("const").is_some();
+        self.literals.extend(
+            value
+                .get("enum")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .chain(value.get("const"))
+                .filter_map(Value::as_str)
+                .map(str::to_string),
+        );
         if let Some(pattern) = value.get("pattern").and_then(Value::as_str)
             && !self.patterns.iter().any(|old| old == pattern)
         {
@@ -563,6 +575,13 @@ fn kms_nodes(source: &Value) -> BTreeSet<String> {
             name,
             value.get("pattern").and_then(Value::as_str),
             value.get("description").and_then(Value::as_str),
+            value
+                .get("enum")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .chain(value.get("const"))
+                .filter_map(Value::as_str),
         ) {
             found.insert(pointer.to_string());
         }
@@ -667,6 +686,44 @@ mod tests {
                 "/properties/ByDescription".into(),
                 "/properties/ByPattern".into(),
             ])
+        );
+    }
+
+    #[test]
+    fn service_name_and_literal_evidence_belong_to_nodes_and_follow_refs() {
+        for evidence in [
+            json!({"description": "The AWS Key Management Service key identifier"}),
+            json!({"pattern": "kEy MaNaGeMeNt SeRvIcE"}),
+            json!({"enum": ["AES256", "KMS"]}),
+            json!({"enum": ["AES256", "aws:kms:dsse"]}),
+            json!({"const": "aWs:kMs"}),
+        ] {
+            let source = json!({
+                "definitions": {
+                    "SharedString": evidence,
+                    "Alias": {"$ref": "#/definitions/SharedString"}
+                },
+                "properties": {"EncryptionMode": {"$ref": "#/definitions/Alias"}}
+            });
+            assert_eq!(
+                kms_nodes(&source),
+                BTreeSet::from([
+                    "/definitions/SharedString".into(),
+                    "/definitions/Alias".into(),
+                    "/properties/EncryptionMode".into(),
+                ]),
+                "{evidence}"
+            );
+        }
+        assert!(
+            kms_nodes(&json!({
+                "enum": ["AES256", 17, null, false],
+                "const": 17,
+                "default": "KMS",
+                "examples": ["KMS"],
+                "arbitrary": "KMS"
+            }))
+            .is_empty()
         );
     }
 

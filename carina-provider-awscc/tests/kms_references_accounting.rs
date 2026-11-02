@@ -78,6 +78,35 @@ fn unaccounted_raw_kms_nodes_fail_at_their_json_pointers() {
 }
 
 #[test]
+fn service_name_and_literal_evidence_require_raw_node_accounting() {
+    for evidence in [
+        json!({"description": "The AWS Key Management Service key identifier"}),
+        json!({"pattern": "kEy MaNaGeMeNt SeRvIcE"}),
+        json!({"enum": ["AES256", "KMS"]}),
+        json!({"enum": ["AES256", "aws:kms"]}),
+        json!({"enum": ["AES256", "aws:kms:dsse"]}),
+        json!({"const": "aWs:kMs"}),
+    ] {
+        let mut schema: Value =
+            serde_json::from_str(include_str!("../../cfn-schema-cache/AWS__EC2__VPC.json"))
+                .unwrap();
+        schema["x-future"] = json!({"Unused": evidence});
+        for format in ["rust", "markdown"] {
+            let output = generate(&schema, format);
+            let error = String::from_utf8_lossy(&output.stderr);
+            assert!(
+                !output.status.success(),
+                "unaccounted {evidence} passed {format}"
+            );
+            assert!(
+                error.contains("unaccounted KMS node ec2.Vpc#/x-future/Unused;"),
+                "{format}: {error}"
+            );
+        }
+    }
+}
+
+#[test]
 fn reference_projection_cannot_hide_other_anyof_branches() {
     let mut schema: Value =
         serde_json::from_str(include_str!("../../cfn-schema-cache/AWS__SNS__Topic.json")).unwrap();

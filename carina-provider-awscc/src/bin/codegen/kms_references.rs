@@ -360,7 +360,12 @@ pub fn entry(resource: &str, path: &str) -> Option<&'static Entry> {
         .find(|entry| entry.resource == resource && entry.path == path)
 }
 
-pub fn is_candidate(name: &str, pattern: Option<&str>, description: Option<&str>) -> bool {
+pub fn is_candidate<'a>(
+    name: &str,
+    pattern: Option<&str>,
+    description: Option<&str>,
+    literals: impl IntoIterator<Item = &'a str>,
+) -> bool {
     let name = name.to_ascii_lowercase();
     let evidence = format!(
         "{} {}",
@@ -371,19 +376,24 @@ pub fn is_candidate(name: &str, pattern: Option<&str>, description: Option<&str>
     name.contains("kms")
         || name.contains("cmk")
         || evidence.contains("kms")
+        || evidence.contains("key management service")
         || evidence.contains("customer master key")
         || evidence.contains("cmk")
+        || literals
+            .into_iter()
+            .any(|literal| literal.to_ascii_lowercase().contains("kms"))
 }
 
-pub fn classify_string(
+pub fn classify_string<'a>(
     resource: &str,
     path: &str,
     name: &str,
     pattern: Option<&str>,
     description: Option<&str>,
+    literals: impl IntoIterator<Item = &'a str>,
 ) -> Result<Option<Classification>> {
     let decision = entry(resource, path).map(|entry| entry.classification);
-    if is_candidate(name, pattern, description) && decision.is_none() {
+    if is_candidate(name, pattern, description, literals) && decision.is_none() {
         bail!("unclassified KMS string {resource}.{path}");
     }
     Ok(decision)
