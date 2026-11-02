@@ -7380,20 +7380,13 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 default: None,
             },
         );
-        // The API's negative lookahead rejecting /action/ and <script>...</script>
-        // is not enforced: Rust's regex crate does not support look-around.
-        // Retain the supported character pattern and the documented length bounds.
+        // The API documents 1..=100 characters and a pattern excluding ':' and '\\',
+        // /action/, and <script>...</script>. Defer enforcement until
+        // carina-rs/carina#4230 lets typed references into refined strings.
         // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_Budget.html
         m.insert(
             ("AWS::Budgets::Budget", "BudgetData.BudgetName"),
-            TypeOverride::AttributeType {
-                expression: r#"AttributeType::refined_string(None, Some("^[^:\\\\]+$".to_string()), Some((Some(1), Some(100))), None)"#,
-                display: const {
-                    OverrideTypeDisplay::new(r"String (length: 1..=100, pattern: ^[^:\\]+$)")
-                },
-                block_name: None,
-                default: None,
-            },
+            TypeOverride::StringType("AttributeType::string()"),
         );
         // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_AutoAdjustData.html
         m.insert(
@@ -7438,40 +7431,42 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             ("AWS::Budgets::Budget", "TagValues.MatchOptions"),
             TypeOverride::Enum(budgets_match_options.clone()),
         );
-        // The API bounds the filter key to 0..=1024 characters; CFN omits them.
+        // The API documents 0..=1024 characters; defer enforcement until
+        // carina-rs/carina#4230 lets typed references into refined strings.
         // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_TagValues.html
         m.insert(
             ("AWS::Budgets::Budget", "TagValues.Key"),
-            TypeOverride::AttributeType {
-                expression: "AttributeType::refined_string(None, None, Some((Some(0), Some(1024))), None)",
-                display: const { OverrideTypeDisplay::new("String (length: 0..=1024)") },
-                block_name: None,
-                default: None,
-            },
+            TypeOverride::StringType("AttributeType::string()"),
         );
         // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_CostCategoryValues.html
         m.insert(
             ("AWS::Budgets::Budget", "CostCategoryValues.MatchOptions"),
             TypeOverride::Enum(budgets_match_options),
         );
-        // The API requires at least one value and bounds each string to
-        // 0..=1024 characters. CFN omits both constraints.
+        // The API requires at least one value; CFN omits the item-count bound.
         let budgets_filter_values = TypeOverride::ArrayItemType {
-            expression: "AttributeType::refined_string(None, None, Some((Some(0), Some(1024))), None)",
-            display: const { OverrideTypeDisplay::new("List<String (length: 0..=1024)>") },
+            expression: "AttributeType::string()",
+            display: const { OverrideTypeDisplay::new("List<String>") },
             block_name: None,
             default: None,
-        }.with_array_bounds(Some(1), None);
+        }
+        .with_array_bounds(Some(1), None);
+        // The API documents 0..=1024 characters per item; defer enforcement until
+        // carina-rs/carina#4230 lets typed references into refined strings.
         // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_TagValues.html
         m.insert(
             ("AWS::Budgets::Budget", "TagValues.Values"),
             budgets_filter_values.clone(),
         );
+        // The API documents 0..=1024 characters per item; defer enforcement until
+        // carina-rs/carina#4230 lets typed references into refined strings.
         // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_CostCategoryValues.html
         m.insert(
             ("AWS::Budgets::Budget", "CostCategoryValues.Values"),
             budgets_filter_values.clone(),
         );
+        // The API documents 0..=1024 characters per item; defer enforcement until
+        // carina-rs/carina#4230 lets typed references into refined strings.
         // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_ExpressionDimensionValues.html
         m.insert(
             ("AWS::Budgets::Budget", "ExpressionDimensionValues.Values"),
@@ -13613,7 +13608,7 @@ mod tests {
     fn test_budgets_budget_nested_identity_is_emitted_inline_and_with_def() {
         let schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
         let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
-        let identity_field = r#"StructField::optional("budget_name", AttributeType::refined_string(None, Some("^[^:\\\\]+$".to_string()), Some((Some(1), Some(100))), None)).create_only().identity()"#;
+        let identity_field = r#"StructField::optional("budget_name", AttributeType::string()).create_only().identity()"#;
         let (inline, definitions) = generated.split_once("fn build_schema_def_0()").unwrap();
         assert_eq!(inline.matches(identity_field).count(), 1);
         assert_eq!(definitions.matches(identity_field).count(), 1);
@@ -13955,7 +13950,7 @@ mod tests {
         let schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
         let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
         let (inline, definitions) = generated.split_once("fn build_schema_def_0()").unwrap();
-        let item = "AttributeType::refined_string(None, None, Some((Some(0), Some(1024))), None)";
+        let item = "AttributeType::string()";
         let expected = format!(
             "AttributeType::refined_list({item}, true, Some((Some(1), None)), carina_core::schema::ListElements::AllowDuplicates))"
         );
@@ -13975,10 +13970,7 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(rows.len(), 3);
         for row in rows {
-            assert!(
-                row.contains("List<String (length: 0..=1024)>") && row.contains("items: 1.."),
-                "{row}"
-            );
+            assert!(row.contains("`List<String> (items: 1..)`"), "{row}");
         }
     }
 
@@ -14029,8 +14021,7 @@ mod tests {
         array.insertion_order = Some(false);
         let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
         let expected = concat!(
-            "AttributeType::refined_list(AttributeType::refined_string(None, None, ",
-            "Some((Some(0), Some(1024))), None), false, Some((Some(1), Some(3))), ",
+            "AttributeType::refined_list(AttributeType::string(), false, Some((Some(1), Some(3))), ",
             "carina_core::schema::ListElements::Unique))"
         );
         let (inline, definitions) = generated.split_once("fn build_schema_def_0()").unwrap();
@@ -14203,10 +14194,10 @@ mod tests {
     }
 
     #[test]
-    fn test_budgets_budget_tag_key_has_documented_string_length() {
+    fn test_budgets_budget_tag_key_uses_plain_string() {
         let schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
         let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
-        let key = "AttributeType::refined_string(None, None, Some((Some(0), Some(1024))), None)";
+        let key = "AttributeType::string()";
         assert_eq!(
             generated_budgets_field(&generated, "TagValues.Key"),
             format!("{key})")
@@ -14216,7 +14207,7 @@ mod tests {
                 .matches(&format!("StructField::optional(\"key\", {key})"))
                 .count()
                 >= 2,
-            "inline TagValues and the shared definition for recursive expressions must be refined"
+            "inline TagValues and the shared definition for recursive expressions must use plain String"
         );
         assert_eq!(
             generated_budgets_field(&generated, "CostCategoryValues.Key"),
@@ -14225,7 +14216,7 @@ mod tests {
     }
 
     #[test]
-    fn test_budgets_budget_tag_key_docs_show_documented_string_length() {
+    fn test_budgets_budget_tag_key_docs_show_plain_string() {
         let schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
         let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
         let tags = markdown
@@ -14236,8 +14227,8 @@ mod tests {
             .unwrap()
             .0;
         assert!(
-            tags.contains("| `key` | `String (length: 0..=1024)` | No |"),
-            "TagValues.Key docs must show the API length bounds: {tags}"
+            tags.contains("| `key` | String | No |"),
+            "TagValues.Key docs must show plain String: {tags}"
         );
     }
 
@@ -14318,17 +14309,11 @@ mod tests {
     }
 
     #[test]
-    fn test_budgets_budget_name_has_length_and_supported_pattern() {
+    fn test_budgets_budget_name_uses_plain_string_and_preserves_identity() {
         let schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
         let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
         let name = generated_budgets_field(&generated, "BudgetData.BudgetName");
-        assert_eq!(
-            name,
-            r#"AttributeType::refined_string(None, Some("^[^:\\\\]+$".to_string()), Some((Some(1), Some(100))), None)).create_only().identity()"#
-        );
-        assert!(emitted_string_accepts(name, "monthly-cost"));
-        assert!(!emitted_string_accepts(name, "monthly:cost"));
-        assert!(!emitted_string_accepts(name, r"monthly\cost"));
+        assert_eq!(name, "AttributeType::string()).create_only().identity()");
     }
 
     #[test]

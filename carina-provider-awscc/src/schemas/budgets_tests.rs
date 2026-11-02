@@ -1,5 +1,5 @@
 use carina_core::resource::{ConcreteValue, Value};
-use carina_core::schema::ValidatedResourceSchema;
+use carina_core::schema::{RawShape, ValidatedResourceSchema};
 use serde_json::json;
 
 use crate::provider::conversion::{aws_value_to_dsl_with_defs, dsl_value_to_aws_with_defs};
@@ -156,7 +156,7 @@ fn metrics_validate_item_enum_and_count() {
 }
 
 #[test]
-fn budget_filter_values_validate_item_length_and_count() {
+fn budget_filter_values_accept_unrefined_strings_and_validate_count() {
     let schema = budget_schema();
     for prefix in [
         "budget.filter_expression",
@@ -166,7 +166,7 @@ fn budget_filter_values_validate_item_length_and_count() {
         for filter in ["tags", "cost_categories", "dimensions"] {
             let path = format!("{prefix}.{filter}.values");
             let values = field(&schema, &path);
-            for length in [0, 1024] {
+            for length in [0, 1024, 1025] {
                 assert!(
                     values
                         .validate(&list(vec![string(&"x".repeat(length))]))
@@ -174,12 +174,6 @@ fn budget_filter_values_validate_item_length_and_count() {
                     "{path}: item length {length} must be accepted"
                 );
             }
-            assert!(
-                values
-                    .validate(&list(vec![string(&"x".repeat(1025))]))
-                    .is_err(),
-                "{path}: item length 1025 must be rejected"
-            );
             assert!(
                 values.validate(&list(vec![])).is_err(),
                 "{path}: at least one item is required"
@@ -221,24 +215,24 @@ fn budget_dimension_match_options_validate_count_in_nested_and_expression() {
 }
 
 #[test]
-fn budget_names_validate_length_and_supported_pattern() {
+fn budget_names_accept_unrefined_strings() {
     let schema = budget_schema();
     let name = field(&schema, "budget.budget_name");
-    for value in ["a".to_string(), "x".repeat(100), "monthly-cost".to_string()] {
-        name.validate(&string(&value)).unwrap();
-    }
     for value in [
+        "a".to_string(),
+        "x".repeat(100),
+        "monthly-cost".to_string(),
         "".to_string(),
         "x".repeat(101),
         "monthly:cost".to_string(),
         r"monthly\cost".to_string(),
     ] {
-        assert!(name.validate(&string(&value)).is_err(), "{value:?}");
+        name.validate(&string(&value)).unwrap();
     }
 }
 
 #[test]
-fn budget_tag_keys_validate_documented_length() {
+fn budget_tag_keys_accept_unrefined_strings() {
     let schema = budget_schema();
     for path in [
         "budget.filter_expression.tags.key",
@@ -246,16 +240,50 @@ fn budget_tag_keys_validate_documented_length() {
         "budget.filter_expression.or.tags.key",
     ] {
         let key = field(&schema, path);
-        for length in [0, 1024] {
+        for length in [0, 1024, 1025] {
             assert!(
                 key.validate(&string(&"x".repeat(length))).is_ok(),
                 "{path}: length {length} must be accepted"
             );
         }
+    }
+}
+
+#[test]
+fn identity_typed_outputs_are_assignable_to_budget_strings() {
+    let schema = budget_schema();
+    let topic = super::generated::sns::topic::sns_topic_config().schema;
+    let arn = topic.as_schema().attributes()["topic_arn"].attr_type();
+    assert!(matches!(
+        arn.raw_shape(),
+        RawShape::String {
+            identity: Some(_),
+            ..
+        }
+    ));
+
+    // Follow the same schema-aware reference check as the CloudFront ARN tests.
+    let assert_assignable = |path: &str| {
+        let sink = field(&schema, path);
+        let sink = sink.list_element().unwrap_or(sink);
         assert!(
-            key.validate(&string(&"x".repeat(1025))).is_err(),
-            "{path}: length 1025 must be rejected"
+            topic
+                .as_schema()
+                .type_in_schema(arn)
+                .is_assignable_to(schema.as_schema().type_in_schema(sink.as_type())),
+            "SNS Topic.topic_arn must be reference-compatible with Budget.{path}"
         );
+    };
+    assert_assignable("budget.budget_name");
+    for prefix in [
+        "budget.filter_expression",
+        "budget.filter_expression.not.and",
+        "budget.filter_expression.or",
+    ] {
+        assert_assignable(&format!("{prefix}.tags.key"));
+        for filter in ["tags", "cost_categories", "dimensions"] {
+            assert_assignable(&format!("{prefix}.{filter}.values"));
+        }
     }
 }
 
