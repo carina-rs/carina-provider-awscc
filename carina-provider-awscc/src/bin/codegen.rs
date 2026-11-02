@@ -7584,13 +7584,14 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         }
         // Ranges may use percentages or absolute metric values, with either bound omitted.
         // At least one bound is required; percentile values stay between 0 and 100.
+        // Trimmed/winsorized statistic boundaries allow at most ten decimal places.
         // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_PutMetricAlarm.html
         // https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/Statistics-definitions.html
         m.insert(
             ("AWS::CloudWatch::Alarm", "ExtendedStatistic"),
             TypeOverride::AttributeType {
-                expression: r#"AttributeType::refined_string(None, Some("^(?:(?:p|tm|tc|ts|wm)(?:100(?:\\.0+)?|[0-9]{1,2}(?:\\.[0-9]+)?)|IQM|PR\\((?:-?[0-9]+(?:\\.[0-9]+)?:(?:-?[0-9]+(?:\\.[0-9]+)?)?|:-?[0-9]+(?:\\.[0-9]+)?)\\)|(?:TC|TM|TS|WM)\\((?:(?:(?:100(?:\\.0+)?|[0-9]{1,2}(?:\\.[0-9]+)?)%|-?[0-9]+(?:\\.[0-9]+)?):(?:(?:(?:100(?:\\.0+)?|[0-9]{1,2}(?:\\.[0-9]+)?)%|-?[0-9]+(?:\\.[0-9]+)?))?|:(?:(?:100(?:\\.0+)?|[0-9]{1,2}(?:\\.[0-9]+)?)%|-?[0-9]+(?:\\.[0-9]+)?))\\))$".to_string()), None, None)"#,
-                display: const { OverrideTypeDisplay::new(r"String (pattern: ^(?:(?:p|tm|tc|ts|wm)(?:100(?:\.0+)?|[0-9]{1,2}(?:\.[0-9]+)?)|IQM|PR\((?:-?[0-9]+(?:\.[0-9]+)?:(?:-?[0-9]+(?:\.[0-9]+)?)?|:-?[0-9]+(?:\.[0-9]+)?)\)|(?:TC|TM|TS|WM)\((?:(?:(?:100(?:\.0+)?|[0-9]{1,2}(?:\.[0-9]+)?)%|-?[0-9]+(?:\.[0-9]+)?):(?:(?:(?:100(?:\.0+)?|[0-9]{1,2}(?:\.[0-9]+)?)%|-?[0-9]+(?:\.[0-9]+)?))?|:(?:(?:100(?:\.0+)?|[0-9]{1,2}(?:\.[0-9]+)?)%|-?[0-9]+(?:\.[0-9]+)?))\))$)") },
+                expression: r#"AttributeType::refined_string(None, Some("^(?:p(?:100(?:\\.0+)?|[0-9]{1,2}(?:\\.[0-9]+)?)|(?:tm|tc|ts|wm)(?:100(?:\\.0{1,10})?|[0-9]{1,2}(?:\\.[0-9]{1,10})?)|IQM|PR\\((?:-?[0-9]+(?:\\.[0-9]+)?:(?:-?[0-9]+(?:\\.[0-9]+)?)?|:-?[0-9]+(?:\\.[0-9]+)?)\\)|(?:TC|TM|TS|WM)\\((?:(?:(?:100(?:\\.0{1,10})?|[0-9]{1,2}(?:\\.[0-9]{1,10})?)%|-?[0-9]+(?:\\.[0-9]{1,10})?):(?:(?:(?:100(?:\\.0{1,10})?|[0-9]{1,2}(?:\\.[0-9]{1,10})?)%|-?[0-9]+(?:\\.[0-9]{1,10})?))?|:(?:(?:100(?:\\.0{1,10})?|[0-9]{1,2}(?:\\.[0-9]{1,10})?)%|-?[0-9]+(?:\\.[0-9]{1,10})?))\\))$".to_string()), None, None)"#,
+                display: const { OverrideTypeDisplay::new(r"String (pattern: ^(?:p(?:100(?:\.0+)?|[0-9]{1,2}(?:\.[0-9]+)?)|(?:tm|tc|ts|wm)(?:100(?:\.0{1,10})?|[0-9]{1,2}(?:\.[0-9]{1,10})?)|IQM|PR\((?:-?[0-9]+(?:\.[0-9]+)?:(?:-?[0-9]+(?:\.[0-9]+)?)?|:-?[0-9]+(?:\.[0-9]+)?)\)|(?:TC|TM|TS|WM)\((?:(?:(?:100(?:\.0{1,10})?|[0-9]{1,2}(?:\.[0-9]{1,10})?)%|-?[0-9]+(?:\.[0-9]{1,10})?):(?:(?:(?:100(?:\.0{1,10})?|[0-9]{1,2}(?:\.[0-9]{1,10})?)%|-?[0-9]+(?:\.[0-9]{1,10})?))?|:(?:(?:100(?:\.0{1,10})?|[0-9]{1,2}(?:\.[0-9]{1,10})?)%|-?[0-9]+(?:\.[0-9]{1,10})?))\))$)") },
                 block_name: None,
                 default: None,
             },
@@ -7600,8 +7601,8 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::CloudWatch::Alarm", "MetricStat.Stat"),
             TypeOverride::AttributeType {
-                expression: r#"AttributeType::refined_string(None, Some("^(?:SampleCount|Average|Sum|Minimum|Maximum|(?:p|tm|tc|ts|wm)(?:100(?:\\.0+)?|[0-9]{1,2}(?:\\.[0-9]+)?)|IQM|PR\\((?:-?[0-9]+(?:\\.[0-9]+)?:(?:-?[0-9]+(?:\\.[0-9]+)?)?|:-?[0-9]+(?:\\.[0-9]+)?)\\)|(?:TC|TM|TS|WM)\\((?:(?:(?:100(?:\\.0+)?|[0-9]{1,2}(?:\\.[0-9]+)?)%|-?[0-9]+(?:\\.[0-9]+)?):(?:(?:(?:100(?:\\.0+)?|[0-9]{1,2}(?:\\.[0-9]+)?)%|-?[0-9]+(?:\\.[0-9]+)?))?|:(?:(?:100(?:\\.0+)?|[0-9]{1,2}(?:\\.[0-9]+)?)%|-?[0-9]+(?:\\.[0-9]+)?))\\))$".to_string()), None, None)"#,
-                display: const { OverrideTypeDisplay::new(r"String (pattern: ^(?:SampleCount|Average|Sum|Minimum|Maximum|(?:p|tm|tc|ts|wm)(?:100(?:\.0+)?|[0-9]{1,2}(?:\.[0-9]+)?)|IQM|PR\((?:-?[0-9]+(?:\.[0-9]+)?:(?:-?[0-9]+(?:\.[0-9]+)?)?|:-?[0-9]+(?:\.[0-9]+)?)\)|(?:TC|TM|TS|WM)\((?:(?:(?:100(?:\.0+)?|[0-9]{1,2}(?:\.[0-9]+)?)%|-?[0-9]+(?:\.[0-9]+)?):(?:(?:(?:100(?:\.0+)?|[0-9]{1,2}(?:\.[0-9]+)?)%|-?[0-9]+(?:\.[0-9]+)?))?|:(?:(?:100(?:\.0+)?|[0-9]{1,2}(?:\.[0-9]+)?)%|-?[0-9]+(?:\.[0-9]+)?))\))$)") },
+                expression: r#"AttributeType::refined_string(None, Some("^(?:SampleCount|Average|Sum|Minimum|Maximum|p(?:100(?:\\.0+)?|[0-9]{1,2}(?:\\.[0-9]+)?)|(?:tm|tc|ts|wm)(?:100(?:\\.0{1,10})?|[0-9]{1,2}(?:\\.[0-9]{1,10})?)|IQM|PR\\((?:-?[0-9]+(?:\\.[0-9]+)?:(?:-?[0-9]+(?:\\.[0-9]+)?)?|:-?[0-9]+(?:\\.[0-9]+)?)\\)|(?:TC|TM|TS|WM)\\((?:(?:(?:100(?:\\.0{1,10})?|[0-9]{1,2}(?:\\.[0-9]{1,10})?)%|-?[0-9]+(?:\\.[0-9]{1,10})?):(?:(?:(?:100(?:\\.0{1,10})?|[0-9]{1,2}(?:\\.[0-9]{1,10})?)%|-?[0-9]+(?:\\.[0-9]{1,10})?))?|:(?:(?:100(?:\\.0{1,10})?|[0-9]{1,2}(?:\\.[0-9]{1,10})?)%|-?[0-9]+(?:\\.[0-9]{1,10})?))\\))$".to_string()), None, None)"#,
+                display: const { OverrideTypeDisplay::new(r"String (pattern: ^(?:SampleCount|Average|Sum|Minimum|Maximum|p(?:100(?:\.0+)?|[0-9]{1,2}(?:\.[0-9]+)?)|(?:tm|tc|ts|wm)(?:100(?:\.0{1,10})?|[0-9]{1,2}(?:\.[0-9]{1,10})?)|IQM|PR\((?:-?[0-9]+(?:\.[0-9]+)?:(?:-?[0-9]+(?:\.[0-9]+)?)?|:-?[0-9]+(?:\.[0-9]+)?)\)|(?:TC|TM|TS|WM)\((?:(?:(?:100(?:\.0{1,10})?|[0-9]{1,2}(?:\.[0-9]{1,10})?)%|-?[0-9]+(?:\.[0-9]{1,10})?):(?:(?:(?:100(?:\.0{1,10})?|[0-9]{1,2}(?:\.[0-9]{1,10})?)%|-?[0-9]+(?:\.[0-9]{1,10})?))?|:(?:(?:100(?:\.0{1,10})?|[0-9]{1,2}(?:\.[0-9]{1,10})?)%|-?[0-9]+(?:\.[0-9]{1,10})?))\))$)") },
                 block_name: None,
                 default: None,
             },
@@ -7782,13 +7783,15 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             );
         }
         // Accept IANA-name syntax, Z, or UTC/GMT-prefixed or bare offsets in five-minute steps.
+        // Numeric offsets must use the offset branch; signs followed by digits
+        // are only allowed in later IANA components, such as Etc/GMT+5.
         // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_WallClockWindow.html
         // https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/alarm-evaluation-window.html#alarm-evaluation-window-timezones
         m.insert(
             ("AWS::CloudWatch::Alarm", "WallClockWindow.Timezone"),
             TypeOverride::AttributeType {
-                expression: r#"AttributeType::refined_string(None, Some("^(?:[A-Za-z0-9_+-]+(?:/[A-Za-z0-9_+-]+)*|(?:UTC|GMT)?[+-][0-9]{2}:[0-5][05])$".to_string()), Some((Some(1), Some(50))), None)"#,
-                display: const { OverrideTypeDisplay::new(r"String (length: 1..=50, pattern: ^(?:[A-Za-z0-9_+-]+(?:/[A-Za-z0-9_+-]+)*|(?:UTC|GMT)?[+-][0-9]{2}:[0-5][05])$)") },
+                expression: r#"AttributeType::refined_string(None, Some("^(?:[A-Za-z_][A-Za-z0-9_]*(?:-[A-Za-z_][A-Za-z0-9_]*)*(?:/[A-Za-z0-9_+-]+)*|(?:UTC|GMT)?[+-][0-9]{2}:[0-5][05])$".to_string()), Some((Some(1), Some(50))), None)"#,
+                display: const { OverrideTypeDisplay::new(r"String (length: 1..=50, pattern: ^(?:[A-Za-z_][A-Za-z0-9_]*(?:-[A-Za-z_][A-Za-z0-9_]*)*(?:/[A-Za-z0-9_+-]+)*|(?:UTC|GMT)?[+-][0-9]{2}:[0-5][05])$)") },
                 block_name: None,
                 default: None,
             },
@@ -13625,6 +13628,74 @@ mod tests {
                     path == "MetricStat.Stat",
                     "{path}: {value}"
                 );
+            }
+        }
+    }
+
+    #[test]
+    fn test_cloudwatch_alarm_statistic_boundary_precision() {
+        let schema = cfn_schema_for_codegen_tests("AWS::CloudWatch::Alarm");
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        for path in ["ExtendedStatistic", "MetricStat.Stat"] {
+            let pattern = cloudwatch_generated_pattern(&generated, path);
+            for (fraction, accepted) in [
+                ("1234567890", true),
+                ("12345678901", false),
+                ("0000000000", true),
+                ("00000000000", false),
+            ] {
+                for statistic in ["tm", "tc", "ts", "wm"] {
+                    for integer in ["99", "100"] {
+                        if integer == "100" && fraction.starts_with('1') {
+                            continue;
+                        }
+                        let value = format!("{statistic}{integer}.{fraction}");
+                        assert_eq!(pattern.is_match(&value), accepted, "{path}: {value}");
+                    }
+                }
+                for statistic in ["TM", "TC", "TS", "WM"] {
+                    for (integer, suffix, lower, upper) in [
+                        ("99", "%", "0", "100"),
+                        ("-150", "", "-200", "200"),
+                        ("100", "%", "0", "100"),
+                    ] {
+                        if integer == "100" && fraction.starts_with('1') {
+                            continue;
+                        }
+                        let bound = format!("{integer}.{fraction}{suffix}");
+                        for bounds in [
+                            format!("{bound}:"),
+                            format!(":{bound}"),
+                            format!("{bound}:{upper}{suffix}"),
+                            format!("{lower}{suffix}:{bound}"),
+                        ] {
+                            let value = format!("{statistic}({bounds})");
+                            assert_eq!(pattern.is_match(&value), accepted, "{path}: {value}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_cloudwatch_alarm_timezone_offsets_do_not_match_names() {
+        let schema = cfn_schema_for_codegen_tests("AWS::CloudWatch::Alarm");
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        let pattern = cloudwatch_generated_pattern(&generated, "WallClockWindow.Timezone");
+        for name in ["EST5EDT", "GB-Eire", "GMT0", "Etc/GMT+5", "Etc/GMT-5"] {
+            assert!(pattern.is_match(name), "must accept {name}");
+        }
+        for prefix in ["", "UTC", "GMT"] {
+            for sign in ["+", "-"] {
+                for offset in ["0531", "0530", "05", "5", "05:31", "05:60"] {
+                    let value = format!("{prefix}{sign}{offset}");
+                    assert!(!pattern.is_match(&value), "must reject {value}");
+                }
+                for offset in ["05:00", "05:05", "05:30", "05:55"] {
+                    let value = format!("{prefix}{sign}{offset}");
+                    assert!(pattern.is_match(&value), "must accept {value}");
+                }
             }
         }
     }
