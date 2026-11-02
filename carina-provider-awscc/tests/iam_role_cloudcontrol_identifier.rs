@@ -227,7 +227,7 @@ async fn iam_role_create_with_role_name_prefix_canonicalizes_identifier_from_rea
     assert_eq!(created.identifier().as_str(), ROLE_NAME);
     assert_eq!(
         created.attributes().get("role_name"),
-        Some(&string(ROLE_NAME))
+        Some(&string(ROLE_NAME).to_snapshot())
     );
     assert_eq!(
         service.get_identifiers(),

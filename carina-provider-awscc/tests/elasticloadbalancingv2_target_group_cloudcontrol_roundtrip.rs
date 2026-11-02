@@ -91,15 +91,17 @@ async fn winterbaume_provider() -> AwsccProvider {
     .await
 }
 
-fn attributes(entries: impl IntoIterator<Item = (&'static str, Value)>) -> HashMap<String, Value> {
+fn attributes(
+    entries: impl IntoIterator<Item = (&'static str, Value)>,
+) -> HashMap<String, carina_core::resource::SnapshotValue> {
     entries
         .into_iter()
-        .map(|(key, value)| (key.to_string(), value))
+        .map(|(key, value)| (key.to_string(), value.to_snapshot()))
         .collect()
 }
 
 fn concrete_string_attribute<'a>(
-    attributes: &'a HashMap<String, Value>,
+    attributes: &'a HashMap<String, carina_core::resource::SnapshotValue>,
     attribute_name: &str,
 ) -> &'a str {
     match attributes.get(attribute_name) {

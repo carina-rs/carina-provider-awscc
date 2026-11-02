@@ -733,7 +733,7 @@ fn vpc_properties() -> JsonValue {
 
 fn vpc_update() -> (ResourceId, State, UpdatePatch) {
     let id = ResourceId::with_provider_identity("awscc", "ec2.Vpc", "pending", None);
-    let from = State::existing(
+    let from: State = State::existing(
         id.clone(),
         HashMap::from([
             ("cidr_block".to_string(), string("10.0.0.0/16")),
@@ -1357,7 +1357,7 @@ async fn read_back_final_attempt_returns_partial_with_exact_missing_attributes()
                     let CcCreateToken::ReadBack(continuation) = token else {
                         unreachable!()
                     };
-                    let from = State::existing(resource.id.clone(), HashMap::new())
+                    let from: State = State::existing(resource.id.clone(), HashMap::new())
                         .with_identifier(identifier.as_str());
                     let step = provider
                         .poll_update_step(
@@ -5352,7 +5352,7 @@ async fn final_partial_retains_post_update_attributes_after_poll() {
     };
     assert_eq!(
         state.attributes(),
-        &HashMap::from([("enable_dns_support".into(), bool_(true))])
+        &HashMap::from([("enable_dns_support".into(), bool_(true).to_snapshot())])
     );
     assert!(
         diagnostic
@@ -5405,7 +5405,8 @@ async fn saved_identifier_only_token_resumes_and_rederives_missing() {
     assert_eq!(missing_attributes, ["arn"]);
     assert_eq!(service.actions(), ["GetResource"]);
     let token: CcUpdateToken = serde_json::from_value(json!({"phase":"read_back", "continuation":{"identifier":"review-role", "resource_type":"iam.Role"}})).expect("identifier-only update token must resume");
-    let from = State::existing(resource.id.clone(), HashMap::new()).with_identifier("review-role");
+    let from: State =
+        State::existing(resource.id.clone(), HashMap::new()).with_identifier("review-role");
     let OperationStep::Done(outcome) = provider
         .poll_update_step(
             &resource.id,
@@ -5456,7 +5457,7 @@ async fn update_missing_role_attribute() -> UpdateOutcome {
     .await;
     let id = ResourceId::with_provider_identity("awscc", "iam.Role", "review", None);
     let identifier = common::applied_identifier(role);
-    let from = State::existing(id.clone(), HashMap::new()).with_identifier(role);
+    let from: State = State::existing(id.clone(), HashMap::new()).with_identifier(role);
     let patch = UpdatePatch {
         ops: vec![PatchOp::Add {
             key: "description".into(),
