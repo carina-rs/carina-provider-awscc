@@ -15,21 +15,21 @@ awscc.budgets.Budget {
     }
 
     budget_name  = 'carina-registry-monthly-cost'
-    budget_type  = 'COST'
-    time_unit    = 'MONTHLY'
+    budget_type  = cost
+    time_unit    = monthly
   }
 
   notifications_with_subscribers = [{
     notification = {
-      comparison_operator = 'GREATER_THAN'
-      notification_type   = 'ACTUAL'
+      comparison_operator = greater_than
+      notification_type   = actual
       threshold           = 80.0
-      threshold_type      = 'PERCENTAGE'
+      threshold_type      = percentage
     }
 
     subscribers  = [{
       address           = 'finance@example.com'
-      subscription_type = 'EMAIL'
+      subscription_type = email
     }]
   }]
 

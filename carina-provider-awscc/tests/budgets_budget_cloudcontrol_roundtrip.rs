@@ -33,6 +33,12 @@ fn string(value: &str) -> Value {
     Value::Concrete(ConcreteValue::String(value.to_string().into()))
 }
 
+fn enum_value(wire: &str) -> Value {
+    Value::Concrete(ConcreteValue::enum_identifier(
+        carina_aws_types::dsl_enum_value(wire),
+    ))
+}
+
 fn float(value: f64) -> Value {
     Value::Concrete(ConcreteValue::Float(value))
 }
@@ -50,15 +56,15 @@ fn list(items: impl IntoIterator<Item = Value>) -> Value {
     Value::Concrete(ConcreteValue::List(items.into_iter().collect()))
 }
 
-fn filter_expression() -> Value {
+fn filter_expression(enum_value: fn(&str) -> Value) -> Value {
     map([(
         "and",
         list([
             map([(
                 "dimensions",
                 map([
-                    ("key", string("REGION")),
-                    ("match_options", list([string("EQUALS")])),
+                    ("key", enum_value("REGION")),
+                    ("match_options", list([enum_value("EQUALS")])),
                     ("values", list([string("ap-northeast-1")])),
                 ]),
             )]),
@@ -68,7 +74,7 @@ fn filter_expression() -> Value {
                     "tags",
                     map([
                         ("key", string("Environment")),
-                        ("match_options", list([string("EQUALS")])),
+                        ("match_options", list([enum_value("EQUALS")])),
                         ("values", list([string("production")])),
                     ]),
                 )]),
@@ -87,9 +93,9 @@ fn budget_resource() -> Resource {
                     map([("amount", float(5.25)), ("unit", string("USD"))]),
                 ),
                 ("budget_name", string(BUDGET_NAME)),
-                ("budget_type", string("COST")),
-                ("filter_expression", filter_expression()),
-                ("time_unit", string("MONTHLY")),
+                ("budget_type", enum_value("COST")),
+                ("filter_expression", filter_expression(enum_value)),
+                ("time_unit", enum_value("MONTHLY")),
             ]),
         )
         .with_attribute(
@@ -98,17 +104,17 @@ fn budget_resource() -> Resource {
                 (
                     "notification",
                     map([
-                        ("comparison_operator", string("GREATER_THAN")),
-                        ("notification_type", string("ACTUAL")),
+                        ("comparison_operator", enum_value("GREATER_THAN")),
+                        ("notification_type", enum_value("ACTUAL")),
                         ("threshold", float(80.5)),
-                        ("threshold_type", string("PERCENTAGE")),
+                        ("threshold_type", enum_value("PERCENTAGE")),
                     ]),
                 ),
                 (
                     "subscribers",
                     list([map([
                         ("address", string("budget@example.com")),
-                        ("subscription_type", string("EMAIL")),
+                        ("subscription_type", enum_value("EMAIL")),
                     ])]),
                 ),
             ])]),
@@ -288,7 +294,10 @@ async fn budgets_budget_create_then_read_preserves_recursive_expression_and_noti
     };
     assert_eq!(limit.get("amount"), Some(&float(5.25)));
     assert_eq!(limit.get("unit"), Some(&string("USD")));
-    assert_eq!(budget.get("filter_expression"), Some(&filter_expression()));
+    assert_eq!(
+        budget.get("filter_expression"),
+        Some(&filter_expression(string))
+    );
 
     assert_eq!(
         read.attributes().get("notifications_with_subscribers"),

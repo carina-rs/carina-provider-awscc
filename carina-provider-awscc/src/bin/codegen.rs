@@ -7164,6 +7164,187 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             },
         );
 
+        // The Budgets CFN schema omits these API-documented primitive constraints.
+        // Keep AWS wire spellings here; enum emission derives the DSL aliases.
+        // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_Budget.html
+        m.insert(
+            ("AWS::Budgets::Budget", "BudgetData.BudgetType"),
+            TypeOverride::Enum(vec![
+                "USAGE",
+                "COST",
+                "RI_UTILIZATION",
+                "RI_COVERAGE",
+                "SAVINGS_PLANS_UTILIZATION",
+                "SAVINGS_PLANS_COVERAGE",
+            ]),
+        );
+        // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_Budget.html
+        m.insert(
+            ("AWS::Budgets::Budget", "BudgetData.TimeUnit"),
+            TypeOverride::Enum(vec!["DAILY", "MONTHLY", "QUARTERLY", "ANNUALLY", "CUSTOM"]),
+        );
+        // The API's one-item maximum cannot be added by the current nested
+        // overrides: Enum retains only CFN bounds, AttributeType rejects the
+        // explicit uniqueItems (even false), and ArrayItemType is top-level only.
+        // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_Budget.html
+        m.insert(
+            ("AWS::Budgets::Budget", "BudgetData.Metrics"),
+            TypeOverride::Enum(vec![
+                "BlendedCost",
+                "UnblendedCost",
+                "AmortizedCost",
+                "NetUnblendedCost",
+                "NetAmortizedCost",
+                "UsageQuantity",
+                "NormalizedUsageAmount",
+                "Hours",
+            ]),
+        );
+        // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_Notification.html
+        m.insert(
+            ("AWS::Budgets::Budget", "Notification.ComparisonOperator"),
+            TypeOverride::Enum(vec!["GREATER_THAN", "LESS_THAN", "EQUAL_TO"]),
+        );
+        // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_Notification.html
+        m.insert(
+            ("AWS::Budgets::Budget", "Notification.NotificationType"),
+            TypeOverride::Enum(vec!["ACTUAL", "FORECASTED"]),
+        );
+        // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_Notification.html
+        m.insert(
+            ("AWS::Budgets::Budget", "Notification.ThresholdType"),
+            TypeOverride::Enum(vec!["PERCENTAGE", "ABSOLUTE_VALUE"]),
+        );
+        // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_Notification.html
+        m.insert(
+            ("AWS::Budgets::Budget", "Notification.Threshold"),
+            TypeOverride::AttributeType {
+                expression: "AttributeType::refined_float(None, Some((Some(0.0), Some(15000000000000.0))))",
+                display: const { OverrideTypeDisplay::new("Float(0..=15000000000000)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_Subscriber.html
+        m.insert(
+            ("AWS::Budgets::Budget", "Subscriber.SubscriptionType"),
+            TypeOverride::Enum(vec!["SNS", "EMAIL"]),
+        );
+        // CFN models Amount as a number; the API wire pattern ([0-9]*\.)?[0-9]+
+        // permits only non-negative values. The shared Spend definition also
+        // supplies the values of the existing PlannedBudgetLimits map override.
+        // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_Spend.html
+        m.insert(
+            ("AWS::Budgets::Budget", "Spend.Amount"),
+            TypeOverride::AttributeType {
+                expression: "AttributeType::refined_float(None, Some((Some(0.0), None)))",
+                display: const { OverrideTypeDisplay::new("Float(0..)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // The API's negative lookahead rejecting /action/ and <script>...</script>
+        // is not enforced: Rust's regex crate does not support look-around.
+        // Retain the supported character pattern and the documented length bounds.
+        // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_Budget.html
+        m.insert(
+            ("AWS::Budgets::Budget", "BudgetData.BudgetName"),
+            TypeOverride::AttributeType {
+                expression: r#"AttributeType::refined_string(None, Some("^[^:\\\\]+$".to_string()), Some((Some(1), Some(100))), None)"#,
+                display: const {
+                    OverrideTypeDisplay::new(r"String (length: 1..=100, pattern: ^[^:\\]+$)")
+                },
+                block_name: None,
+                default: None,
+            },
+        );
+        // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_AutoAdjustData.html
+        m.insert(
+            ("AWS::Budgets::Budget", "AutoAdjustData.AutoAdjustType"),
+            TypeOverride::Enum(vec!["HISTORICAL", "FORECAST"]),
+        );
+        // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_HistoricalOptions.html
+        m.insert(
+            (
+                "AWS::Budgets::Budget",
+                "HistoricalOptions.BudgetAdjustmentPeriod",
+            ),
+            TypeOverride::AttributeType {
+                expression: "AttributeType::refined_int(None, Some((Some(1), Some(60))))",
+                display: const { OverrideTypeDisplay::new("Int(1..=60)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        let budgets_match_options = vec![
+            "EQUALS",
+            "ABSENT",
+            "STARTS_WITH",
+            "ENDS_WITH",
+            "CONTAINS",
+            "GREATER_THAN_OR_EQUAL",
+            "CASE_SENSITIVE",
+            "CASE_INSENSITIVE",
+        ];
+        // All recursive Expression uses resolve to these same three definitions.
+        // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_ExpressionDimensionValues.html
+        m.insert(
+            (
+                "AWS::Budgets::Budget",
+                "ExpressionDimensionValues.MatchOptions",
+            ),
+            TypeOverride::Enum(budgets_match_options.clone()),
+        );
+        // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_TagValues.html
+        m.insert(
+            ("AWS::Budgets::Budget", "TagValues.MatchOptions"),
+            TypeOverride::Enum(budgets_match_options.clone()),
+        );
+        // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_CostCategoryValues.html
+        m.insert(
+            ("AWS::Budgets::Budget", "CostCategoryValues.MatchOptions"),
+            TypeOverride::Enum(budgets_match_options),
+        );
+        // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_ExpressionDimensionValues.html
+        m.insert(
+            ("AWS::Budgets::Budget", "ExpressionDimensionValues.Key"),
+            TypeOverride::Enum(vec![
+                "AZ",
+                "INSTANCE_TYPE",
+                "LINKED_ACCOUNT",
+                "LINKED_ACCOUNT_NAME",
+                "OPERATION",
+                "PURCHASE_TYPE",
+                "REGION",
+                "SERVICE",
+                "SERVICE_CODE",
+                "USAGE_TYPE",
+                "USAGE_TYPE_GROUP",
+                "RECORD_TYPE",
+                "OPERATING_SYSTEM",
+                "TENANCY",
+                "SCOPE",
+                "PLATFORM",
+                "SUBSCRIPTION_ID",
+                "LEGAL_ENTITY_NAME",
+                "INVOICING_ENTITY",
+                "DEPLOYMENT_OPTION",
+                "DATABASE_ENGINE",
+                "CACHE_ENGINE",
+                "INSTANCE_TYPE_FAMILY",
+                "BILLING_ENTITY",
+                "RESERVATION_ID",
+                "RESOURCE_ID",
+                "RIGHTSIZING_TYPE",
+                "SAVINGS_PLANS_TYPE",
+                "SAVINGS_PLAN_ARN",
+                "PAYMENT_OPTION",
+                "RESERVATION_MODIFIED",
+                "TAG_KEY",
+                "COST_CATEGORY_NAME",
+            ]),
+        );
+
         // Cloud Control create/get in both directions with carina-test-008 in
         // ap-northeast-1 on 2026-10-31 returned these policy values as native
         // JSON objects/arrays, never JSON strings. Keep each override at its
@@ -12502,7 +12683,7 @@ mod tests {
     fn test_budgets_budget_nested_identity_is_emitted_inline_and_with_def() {
         let schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
         let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
-        let identity_field = r#"StructField::optional("budget_name", AttributeType::string()).create_only().identity()"#;
+        let identity_field = r#"StructField::optional("budget_name", AttributeType::refined_string(None, Some("^[^:\\\\]+$".to_string()), Some((Some(1), Some(100))), None)).create_only().identity()"#;
         let (inline, definitions) = generated.split_once("fn build_schema_def_0()").unwrap();
         assert_eq!(inline.matches(identity_field).count(), 1);
         assert_eq!(definitions.matches(identity_field).count(), 1);
@@ -12693,6 +12874,283 @@ mod tests {
             markdown.contains("`Map<String, List<String>>`")
                 && markdown.contains("`Map<String, Spend>`"),
             "Budget docs must expose both API map shapes: {markdown}"
+        );
+    }
+
+    fn generated_budgets_field<'a>(generated: &'a str, path: &str) -> &'a str {
+        let (definition, property) = path.split_once('.').unwrap();
+        let definition_marker = format!("schema = schema.with_def(\"{definition}\"");
+        let definition_code = generated
+            .split("    #[inline(never)]\n")
+            .find(|code| code.contains(&definition_marker))
+            .or_else(|| {
+                generated
+                    .split_once(&format!(
+                        "AttributeType::struct_(\"{definition}\".to_string(), vec!["
+                    ))
+                    .map(|(_, body)| body)
+            })
+            .unwrap_or_else(|| panic!("missing generated definition {definition}"));
+        let field = ["required", "optional"]
+            .into_iter()
+            .find_map(|constructor| {
+                definition_code.split_once(&format!(
+                    "StructField::{constructor}(\"{}\", ",
+                    property.to_snake_case()
+                ))
+            })
+            .unwrap_or_else(|| panic!("missing generated field {path}"))
+            .1;
+        field
+            .split_once(&format!(".with_provider_name(\"{property}\")"))
+            .unwrap_or_else(|| panic!("missing provider name for {path}"))
+            .0
+    }
+
+    fn assert_budgets_enum_values(field: &str, path: &str, values: &[(&str, &str)]) {
+        assert!(field.contains("AttributeType::enum_("), "{path}: {field}");
+        let wire_values = values
+            .iter()
+            .map(|(wire, _)| format!("{}.to_string()", rust_lit(wire)))
+            .collect::<Vec<_>>()
+            .join(", ");
+        assert!(
+            field.contains(&format!("Some(vec![{wire_values}])")),
+            "{path} must retain exactly the documented AWS wire values: {field}"
+        );
+        for (wire, dsl) in values {
+            assert!(
+                field.contains(&format!(
+                    "({}.to_string(), {}.to_string())",
+                    rust_lit(wire),
+                    rust_lit(dsl)
+                )),
+                "{path} must map DSL {dsl} back to AWS {wire}: {field}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_budgets_budget_documented_scalar_enums() {
+        let schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        let cases: &[(&str, &[(&str, &str)])] = &[
+            (
+                "BudgetData.BudgetType",
+                &[
+                    ("USAGE", "usage"),
+                    ("COST", "cost"),
+                    ("RI_UTILIZATION", "ri_utilization"),
+                    ("RI_COVERAGE", "ri_coverage"),
+                    ("SAVINGS_PLANS_UTILIZATION", "savings_plans_utilization"),
+                    ("SAVINGS_PLANS_COVERAGE", "savings_plans_coverage"),
+                ],
+            ),
+            (
+                "BudgetData.TimeUnit",
+                &[
+                    ("DAILY", "daily"),
+                    ("MONTHLY", "monthly"),
+                    ("QUARTERLY", "quarterly"),
+                    ("ANNUALLY", "annually"),
+                    ("CUSTOM", "custom"),
+                ],
+            ),
+            (
+                "Notification.ComparisonOperator",
+                &[
+                    ("GREATER_THAN", "greater_than"),
+                    ("LESS_THAN", "less_than"),
+                    ("EQUAL_TO", "equal_to"),
+                ],
+            ),
+            (
+                "Notification.NotificationType",
+                &[("ACTUAL", "actual"), ("FORECASTED", "forecasted")],
+            ),
+            (
+                "Notification.ThresholdType",
+                &[
+                    ("PERCENTAGE", "percentage"),
+                    ("ABSOLUTE_VALUE", "absolute_value"),
+                ],
+            ),
+            (
+                "Subscriber.SubscriptionType",
+                &[("SNS", "sns"), ("EMAIL", "email")],
+            ),
+            (
+                "AutoAdjustData.AutoAdjustType",
+                &[("HISTORICAL", "historical"), ("FORECAST", "forecast")],
+            ),
+        ];
+        for (path, values) in cases {
+            let field = generated_budgets_field(&generated, path);
+            assert!(
+                field.starts_with("AttributeType::enum_("),
+                "{path}: {field}"
+            );
+            assert_budgets_enum_values(field, path, values);
+        }
+    }
+
+    #[test]
+    fn test_budgets_budget_metrics_items_use_api_enum() {
+        let schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        let path = "BudgetData.Metrics";
+        let field = generated_budgets_field(&generated, path);
+        assert!(
+            field.starts_with("AttributeType::list(AttributeType::enum_("),
+            "{field}"
+        );
+        assert_budgets_enum_values(
+            field,
+            path,
+            &[
+                ("BlendedCost", "blended_cost"),
+                ("UnblendedCost", "unblended_cost"),
+                ("AmortizedCost", "amortized_cost"),
+                ("NetUnblendedCost", "net_unblended_cost"),
+                ("NetAmortizedCost", "net_amortized_cost"),
+                ("UsageQuantity", "usage_quantity"),
+                ("NormalizedUsageAmount", "normalized_usage_amount"),
+                ("Hours", "hours"),
+            ],
+        );
+        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        assert!(markdown.contains("`blended_cost`"), "{markdown}");
+    }
+
+    #[test]
+    fn test_budgets_budget_filter_match_options_are_item_enums() {
+        let schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        for path in [
+            "ExpressionDimensionValues.MatchOptions",
+            "TagValues.MatchOptions",
+            "CostCategoryValues.MatchOptions",
+        ] {
+            let field = generated_budgets_field(&generated, path);
+            assert!(
+                field.starts_with("AttributeType::list(AttributeType::enum_("),
+                "{path}: {field}"
+            );
+            assert_budgets_enum_values(
+                field,
+                path,
+                &[
+                    ("EQUALS", "equals"),
+                    ("ABSENT", "absent"),
+                    ("STARTS_WITH", "starts_with"),
+                    ("ENDS_WITH", "ends_with"),
+                    ("CONTAINS", "contains"),
+                    ("GREATER_THAN_OR_EQUAL", "greater_than_or_equal"),
+                    ("CASE_SENSITIVE", "case_sensitive"),
+                    ("CASE_INSENSITIVE", "case_insensitive"),
+                ],
+            );
+        }
+    }
+
+    #[test]
+    fn test_budgets_budget_filter_dimension_key_is_an_enum() {
+        let schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        let path = "ExpressionDimensionValues.Key";
+        let field = generated_budgets_field(&generated, path);
+        assert!(field.starts_with("AttributeType::enum_("), "{field}");
+        assert_budgets_enum_values(
+            field,
+            path,
+            &[
+                ("AZ", "az"),
+                ("INSTANCE_TYPE", "instance_type"),
+                ("LINKED_ACCOUNT", "linked_account"),
+                ("LINKED_ACCOUNT_NAME", "linked_account_name"),
+                ("OPERATION", "operation"),
+                ("PURCHASE_TYPE", "purchase_type"),
+                ("REGION", "region"),
+                ("SERVICE", "service"),
+                ("SERVICE_CODE", "service_code"),
+                ("USAGE_TYPE", "usage_type"),
+                ("USAGE_TYPE_GROUP", "usage_type_group"),
+                ("RECORD_TYPE", "record_type"),
+                ("OPERATING_SYSTEM", "operating_system"),
+                ("TENANCY", "tenancy"),
+                ("SCOPE", "scope"),
+                ("PLATFORM", "platform"),
+                ("SUBSCRIPTION_ID", "subscription_id"),
+                ("LEGAL_ENTITY_NAME", "legal_entity_name"),
+                ("INVOICING_ENTITY", "invoicing_entity"),
+                ("DEPLOYMENT_OPTION", "deployment_option"),
+                ("DATABASE_ENGINE", "database_engine"),
+                ("CACHE_ENGINE", "cache_engine"),
+                ("INSTANCE_TYPE_FAMILY", "instance_type_family"),
+                ("BILLING_ENTITY", "billing_entity"),
+                ("RESERVATION_ID", "reservation_id"),
+                ("RESOURCE_ID", "resource_id"),
+                ("RIGHTSIZING_TYPE", "rightsizing_type"),
+                ("SAVINGS_PLANS_TYPE", "savings_plans_type"),
+                ("SAVINGS_PLAN_ARN", "savings_plan_arn"),
+                ("PAYMENT_OPTION", "payment_option"),
+                ("RESERVATION_MODIFIED", "reservation_modified"),
+                ("TAG_KEY", "tag_key"),
+                ("COST_CATEGORY_NAME", "cost_category_name"),
+            ],
+        );
+    }
+
+    #[test]
+    fn test_budgets_budget_notification_threshold_has_float_range() {
+        let schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        assert_eq!(
+            generated_budgets_field(&generated, "Notification.Threshold"),
+            "AttributeType::refined_float(None, Some((Some(0.0), Some(15000000000000.0)))))"
+        );
+    }
+
+    #[test]
+    fn test_budgets_budget_spend_amount_is_non_negative_in_all_uses() {
+        let schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        let amount = "AttributeType::refined_float(None, Some((Some(0.0), None)))";
+        assert_eq!(
+            generated_budgets_field(&generated, "Spend.Amount"),
+            format!("{amount})")
+        );
+        assert!(
+            generated
+                .matches(&format!("StructField::required(\"amount\", {amount})"))
+                .count()
+                >= 3,
+            "inline BudgetLimit and the shared Spend definition for planned limits must be refined"
+        );
+    }
+
+    #[test]
+    fn test_budgets_budget_name_has_length_and_supported_pattern() {
+        let schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        let name = generated_budgets_field(&generated, "BudgetData.BudgetName");
+        assert_eq!(
+            name,
+            r#"AttributeType::refined_string(None, Some("^[^:\\\\]+$".to_string()), Some((Some(1), Some(100))), None)).create_only().identity()"#
+        );
+        let pattern = Regex::new(r"^[^:\\]+$").unwrap();
+        assert!(pattern.is_match("monthly-cost"));
+        assert!(!pattern.is_match("monthly:cost"));
+        assert!(!pattern.is_match(r"monthly\cost"));
+    }
+
+    #[test]
+    fn test_budgets_budget_adjustment_period_has_integer_range() {
+        let schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        assert_eq!(
+            generated_budgets_field(&generated, "HistoricalOptions.BudgetAdjustmentPeriod"),
+            "AttributeType::refined_int(None, Some((Some(1), Some(60)))))"
         );
     }
 
