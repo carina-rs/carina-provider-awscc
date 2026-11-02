@@ -36,6 +36,116 @@ fn vpc() -> Value {
 }
 
 #[test]
+fn skipped_maps_of_string_arrays_keep_mains_projection() {
+    let source = json!({"type": "object", "patternProperties": {
+        ".*": {"type": "array", "items": {"type": "string"}}
+    }});
+    let mut subscription: Value = serde_json::from_str(include_str!(
+        "../../cfn-schema-cache/AWS__SNS__Subscription.json"
+    ))
+    .unwrap();
+    subscription["properties"]["FilterPolicy"] = source.clone();
+    let mut logs: Value = serde_json::from_str(include_str!(
+        "../../cfn-schema-cache/AWS__Logs__LogGroup.json"
+    ))
+    .unwrap();
+    logs["properties"]["FieldIndexPolicies"]["items"] = source;
+    for schema in [subscription, logs] {
+        for format in ["rust", "markdown"] {
+            let output = rendered(&schema, format);
+            assert!(!output.contains("kms_key_reference()"));
+        }
+    }
+}
+
+#[test]
+fn collapsed_anyof_audits_object_branches() {
+    let mut schema = vpc();
+    schema["properties"]["Settings"] = json!({"anyOf": [
+        {"type": "string"},
+        {"type": "object", "properties": {"KmsKeyId": {"type": "string"}}}
+    ]});
+    for format in ["rust", "markdown"] {
+        let output = generate(&schema, format);
+        assert!(!output.status.success(), "hidden KmsKeyId passed {format}");
+        assert!(
+            String::from_utf8_lossy(&output.stderr)
+                .contains("unclassified KMS string ec2.Vpc.settings.kms_key_id")
+        );
+    }
+}
+
+#[test]
+fn discarded_source_shapes_are_audited_at_emission() {
+    for source in [
+        json!({"$ref": "#/definitions/Ordinary", "properties": {
+            "KmsKeyId": {"type": "string"}
+        }}),
+        json!({"oneOf": [
+            {"type": "array", "items": {"type": "string"}},
+            {"type": "object", "properties": {"KmsKeyId": {"type": "string"}}}
+        ]}),
+        json!({"type": "object", "properties": {"Label": {"type": "string"}},
+            "anyOf": [{"properties": {"KmsKeyId": {"type": "string"}}}]
+        }),
+    ] {
+        let mut schema = vpc();
+        schema["definitions"]["Ordinary"] = json!({"type": "object", "properties": {
+            "Label": {"type": "string"}
+        }});
+        schema["properties"]["Settings"] = source.clone();
+        for format in ["rust", "markdown"] {
+            let output = generate(&schema, format);
+            assert!(!output.status.success(), "{source} passed {format}");
+            assert!(
+                String::from_utf8_lossy(&output.stderr)
+                    .contains("unclassified KMS string ec2.Vpc.settings.kms_key_id")
+            );
+        }
+    }
+}
+
+#[test]
+fn skipped_unknown_keywords_are_scanned_without_type_inference() {
+    let mut schema: Value = serde_json::from_str(include_str!(
+        "../../cfn-schema-cache/AWS__SNS__Subscription.json"
+    ))
+    .unwrap();
+    schema["properties"]["FilterPolicy"] = json!({"type": "object", "x-future-shape": {
+        "arbitrary": [false, 7, {"description": "The customer master key identifier"}]
+    }});
+    for format in ["rust", "markdown"] {
+        let output = generate(&schema, format);
+        assert!(
+            !output.status.success(),
+            "unknown KMS evidence passed {format}"
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stderr)
+                .contains("unclassified KMS string sns.Subscription.filter_policy")
+        );
+    }
+}
+
+#[test]
+fn unvisited_table_entries_fail_after_generation() {
+    let mut schema: Value =
+        serde_json::from_str(include_str!("../../cfn-schema-cache/AWS__SNS__Topic.json")).unwrap();
+    schema["properties"]
+        .as_object_mut()
+        .unwrap()
+        .remove("KmsMasterKeyId");
+    for format in ["rust", "markdown"] {
+        let output = generate(&schema, format);
+        assert!(!output.status.success(), "stale entry passed {format}");
+        assert!(
+            String::from_utf8_lossy(&output.stderr)
+                .contains("unvisited KMS classification sns.Topic.kms_master_key_id")
+        );
+    }
+}
+
+#[test]
 fn non_reference_string_maps_ignore_scalar_constraints_like_main() {
     for value in [
         json!({"type": "string", "pattern": "^(?!aws:).*$", "minLength": 1, "maxLength": 256}),

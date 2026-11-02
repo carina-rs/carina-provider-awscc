@@ -243,7 +243,10 @@ fn read_only_parent_does_not_hide_emitted_child_kms_input() {
 fn inferred_string_leaves_cannot_skip_classification() {
     for property in [
         json!({"enum": ["value"]}),
+        json!({"enum": [42]}),
         json!({"const": "value"}),
+        json!({"const": 42}),
+        json!({}),
         json!({"description": "A key identifier"}),
         json!({"anyOf": [{"enum": ["value"]}]}),
         json!({"oneOf": [{"const": "value"}]}),
@@ -365,43 +368,6 @@ fn read_only_scalar_collections_use_the_emitted_field_input_mode() {
 }
 
 #[test]
-fn map_value_enum_keeps_mains_plain_string_map_at_top_level_and_in_structs() {
-    let values = json!({"type": "object", "patternProperties": {
-        ".*": {"type": "string", "enum": ["enabled", "disabled"]}
-    }, "additionalProperties": false});
-    let mut schema = vpc_schema();
-    schema["properties"]["Modes"] = values.clone();
-    schema["properties"]["Settings"] = json!({"type": "object", "properties": {
-        "Modes": values
-    }});
-    let output = generate(&schema, "rust");
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let code = String::from_utf8(output.stdout).unwrap();
-    assert_eq!(
-        code.matches("AttributeType::map(AttributeType::string())")
-            .count(),
-        2,
-        "{code}"
-    );
-    let output = generate(&schema, "markdown");
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let markdown = String::from_utf8(output.stdout).unwrap();
-    assert_eq!(
-        markdown.matches("Map<String, String>").count(),
-        3,
-        "{markdown}"
-    );
-}
-
-#[test]
 fn projected_tags_walk_the_original_cfn_value_subtree() {
     for tagged in [false, true] {
         let mut schema = vpc_schema();
@@ -484,6 +450,7 @@ fn resource_combinators_contribute_property_constraints_and_candidates() {
 fn reference_enum_and_const_constraints_require_reclassification() {
     for constraint in [
         json!({"enum": ["alias/only"]}),
+        json!({"enum": [42]}),
         json!({"enum": []}),
         json!({"const": "alias/only"}),
         json!({"const": null}),
