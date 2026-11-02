@@ -109,6 +109,8 @@ fn emission_inputs_are_bound_to_the_walked_resource_and_full_path() {
         "ordinary"
     );
     assert!(leaf.reference().is_none());
+    assert!(leaf.reference_constructor().is_none());
+    leaf.audit_projection().unwrap();
     let mut foreign = leaf.property().clone();
     foreign.description = Some("The ID of the AWS KMS key".into());
     assert!(classified.property_at(&path, &foreign).is_err());
@@ -117,6 +119,7 @@ fn emission_inputs_are_bound_to_the_walked_resource_and_full_path() {
     assert_eq!(property.path(), path);
     assert!(std::ptr::eq(property.schema(), &classified));
     assert_eq!(property.property(), leaf.property());
+    property.audit_projection().unwrap();
     for path in [
         vec!["Label".into()],
         vec!["Settings".into(), "Unknown".into()],

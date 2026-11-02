@@ -13,20 +13,30 @@ use std::collections::{BTreeMap, HashSet};
 /// Only this module can construct a string emission input. The property and
 /// decision belong to the same classified resource and complete use-site path.
 pub(super) struct ClassifiedStringLeaf<'a> {
+    schema: &'a ClassifiedSchema<'a>,
     property: &'a CfnProperty,
     reference: Option<ReferenceKind>,
+    cfn_length: Option<(Option<u64>, Option<u64>)>,
     cfn_type: &'a str,
     name: &'a str,
     path: &'a [String],
 }
 
 impl<'a> ClassifiedStringLeaf<'a> {
+    pub(super) fn audit_projection(&self) -> Result<()> {
+        self.schema.audit_projection(self.path)
+    }
+
     pub(super) fn property(&self) -> &'a CfnProperty {
         self.property
     }
 
     pub(super) fn reference(&self) -> Option<ReferenceKind> {
         self.reference
+    }
+
+    pub(super) fn reference_constructor(&self) -> Option<String> {
+        self.reference.map(|kind| kind.constructor(self.cfn_length))
     }
 
     pub(super) fn cfn_type(&self) -> &'a str {
@@ -52,6 +62,10 @@ pub(super) struct ClassifiedProperty<'a> {
 }
 
 impl<'a> ClassifiedProperty<'a> {
+    pub(super) fn audit_projection(&self) -> Result<()> {
+        self.schema.audit_projection(self.path)
+    }
+
     pub(super) fn schema(&self) -> &'a ClassifiedSchema<'a> {
         self.schema
     }
@@ -69,12 +83,15 @@ impl<'a> ClassifiedProperty<'a> {
 struct PropertySite {
     name: String,
     sources: Vec<CfnProperty>,
+    dsl_path: String,
+    provider_populated: bool,
 }
 
 struct StringSite {
     name: String,
     property: CfnProperty,
     reference: Option<ReferenceKind>,
+    cfn_length: Option<(Option<u64>, Option<u64>)>,
 }
 
 /// Renderers can obtain a leaf only at a path this schema actually walked.
@@ -87,6 +104,32 @@ pub(super) struct ClassifiedSchema<'a> {
 }
 
 impl<'a> ClassifiedSchema<'a> {
+    fn audit_projection(&self, path: &[String]) -> Result<()> {
+        let site = self
+            .properties
+            .get(path)
+            .expect("classified projection path");
+        let walker = Walker {
+            schema: self.schema,
+            overridden_properties: Vec::new(),
+            resource: dsl_resource_name_from_type(&self.schema.type_name)?,
+            ancestors: HashSet::new(),
+            strings: BTreeMap::new(),
+            properties: BTreeMap::new(),
+        };
+        for source in Evidence::at(self.schema, path).sources {
+            walker.audit(
+                source,
+                &site.name,
+                &site.dsl_path,
+                path,
+                site.provider_populated,
+                &mut HashSet::new(),
+            )?;
+        }
+        Ok(())
+    }
+
     pub(super) fn new(
         schema: &'a CfnSchema,
         overridden_properties: impl IntoIterator<Item = &'a CfnProperty>,
@@ -106,7 +149,10 @@ impl<'a> ClassifiedSchema<'a> {
                 name,
                 &name.to_snake_case(),
                 path,
-                is_property_read_only(schema, property, path),
+                WalkInput {
+                    provider_populated: is_property_read_only(schema, property, path),
+                    projected: false,
+                },
             )?;
         }
         Ok(Self {
@@ -156,8 +202,10 @@ impl<'a> ClassifiedSchema<'a> {
             )
         })?;
         Ok(ClassifiedStringLeaf {
+            schema: self,
             property: &site.property,
             reference: site.reference,
+            cfn_length: site.cfn_length,
             cfn_type: &self.schema.type_name,
             name: &site.name,
             path,
@@ -176,6 +224,7 @@ impl std::ops::Deref for ClassifiedSchema<'_> {
 #[derive(Default)]
 struct Evidence<'a> {
     patterns: Vec<&'a str>,
+    lengths: Vec<(Option<u64>, Option<u64>)>,
     descriptions: Vec<&'a str>,
     has_enum_or_const: bool,
     /// All schemas at this exact path, for auditing replacement subtrees too.
@@ -204,6 +253,10 @@ impl<'a> Evidence<'a> {
                 && !self.patterns.contains(&pattern)
             {
                 self.patterns.push(pattern);
+            }
+            let length = (property.min_length, property.max_length);
+            if length != (None, None) && !self.lengths.contains(&length) {
+                self.lengths.push(length);
             }
             if let Some(description) = property.description.as_deref()
                 && !self.descriptions.contains(&description)
@@ -279,14 +332,29 @@ struct Walker<'a> {
     properties: BTreeMap<Vec<String>, PropertySite>,
 }
 
+#[derive(Clone, Copy)]
+struct WalkInput {
+    provider_populated: bool,
+    projected: bool,
+}
+
 impl Walker<'_> {
-    fn record(&mut self, property: &CfnProperty, name: &str, path: &[String]) {
+    fn record(
+        &mut self,
+        property: &CfnProperty,
+        name: &str,
+        path: &[String],
+        dsl_path: &str,
+        provider_populated: bool,
+    ) {
         let site = self
             .properties
             .entry(path.to_vec())
             .or_insert_with(|| PropertySite {
                 name: name.to_owned(),
                 sources: Vec::new(),
+                dsl_path: dsl_path.to_owned(),
+                provider_populated,
             });
         if !site.sources.contains(property) {
             site.sources.push(property.clone());
@@ -330,6 +398,14 @@ impl Walker<'_> {
                         evidence.patterns
                     );
                 }
+                if evidence.lengths.as_slice() != entry.cfn_length.as_slice() {
+                    bail!(
+                        "{}.{path}: KMS length changed from {:?} to {:?}; classify its constraint before generation",
+                        self.resource,
+                        entry.cfn_length,
+                        evidence.lengths
+                    );
+                }
                 Some(kind)
             }
             Some(Classification::NotReference(_)) | None => None,
@@ -351,6 +427,8 @@ impl Walker<'_> {
                 name: name.to_owned(),
                 property: property.clone(),
                 reference,
+                cfn_length: kms_references::entry(&self.resource, path)
+                    .and_then(|entry| entry.cfn_length),
             },
         );
         Ok(())
@@ -457,14 +535,21 @@ impl Walker<'_> {
         name: &str,
         path: &str,
         provider_path: &[String],
-        provider_populated: bool,
+        input: WalkInput,
     ) -> Result<()> {
-        self.record(property, name, provider_path);
+        let provider_populated = input.provider_populated;
+        self.record(property, name, provider_path, path, provider_populated);
         let projected = is_dsl_tags_property(self.schema, name)
             || property
                 .ref_path
                 .as_deref()
                 .is_some_and(|reference| is_tag_map_ref(self.schema, reference));
+        let input = WalkInput {
+            projected: input.projected
+                || projected
+                || self.overridden_properties.contains(&property),
+            ..input
+        };
         if projected || self.overridden_properties.contains(&property) {
             for source in Evidence::at(self.schema, provider_path).sources {
                 self.audit(
@@ -477,17 +562,11 @@ impl Walker<'_> {
                 )?;
             }
         }
-        if projected {
-            return self.string(
-                &CfnProperty::default(),
-                name,
-                &property_path(path, PathSegment::MapValue),
-                &extend_property_path(provider_path, "*"),
-                provider_populated,
-            );
-        }
-        // Const strings precede shape resolution in both renderers.
-        if property.const_value.is_some() {
+        // Projection changes the emitted type, not the source paths that
+        // Markdown may document (notably inline Tags/*/{Key,Value}). Keep
+        // walking the original shape after its projection audit.
+        // Observe main's const precedence without changing shape resolution.
+        if property.const_value.is_some() && inline_property_type(property) != Some("string") {
             return self.string(property, name, path, provider_path, provider_populated);
         }
         match property_shape(property, self.schema) {
@@ -497,13 +576,7 @@ impl Walker<'_> {
             } => {
                 if let Some(resolved) = resolved {
                     if self.ancestors.insert(resolved.name.to_string()) {
-                        self.walk(
-                            resolved.property,
-                            name,
-                            path,
-                            provider_path,
-                            provider_populated,
-                        )?;
+                        self.walk(resolved.property, name, path, provider_path, input)?;
                         self.ancestors.remove(resolved.name);
                     }
                     return Ok(());
@@ -524,10 +597,10 @@ impl Walker<'_> {
                 return self.string(property, name, path, provider_path, provider_populated);
             }
             PropertyShape::Array { variant, .. } => {
-                return self.walk(variant, name, path, provider_path, provider_populated);
+                return self.walk(variant, name, path, provider_path, input);
             }
             PropertyShape::Direct(properties) => {
-                return self.fields(properties, path, provider_path);
+                return self.fields(properties, path, provider_path, input);
             }
             PropertyShape::Merged(properties) => {
                 let mut inline = property.clone();
@@ -535,8 +608,8 @@ impl Walker<'_> {
                 inline.properties = Some(properties.clone());
                 inline.required.clear();
                 inline.one_of.clear();
-                self.record(&inline, name, provider_path);
-                return self.fields(&properties, path, provider_path);
+                self.record(&inline, name, provider_path, path, provider_populated);
+                return self.fields(&properties, path, provider_path, input);
             }
             PropertyShape::Inline | PropertyShape::Unresolved => {}
         }
@@ -549,7 +622,7 @@ impl Walker<'_> {
                 name,
                 &property_path(path, PathSegment::ListElement),
                 &extend_property_path(provider_path, "*"),
-                provider_populated,
+                input,
             )?;
         }
         if let Some(patterns) = &property.pattern_properties {
@@ -559,7 +632,7 @@ impl Walker<'_> {
                     name,
                     &property_path(path, PathSegment::MapValue),
                     &extend_property_path(provider_path, "*"),
-                    provider_populated,
+                    input,
                 )?;
             }
         }
@@ -571,6 +644,7 @@ impl Walker<'_> {
         properties: &BTreeMap<String, CfnProperty>,
         path: &str,
         provider_path: &[String],
+        input: WalkInput,
     ) -> Result<()> {
         for (name, property) in properties {
             let field_path = extend_property_path(provider_path, name);
@@ -579,7 +653,11 @@ impl Walker<'_> {
                 name,
                 &property_path(path, PathSegment::Field(&name.to_snake_case())),
                 &field_path,
-                is_property_read_only(self.schema, property, &field_path),
+                WalkInput {
+                    provider_populated: (input.projected && input.provider_populated)
+                        || is_property_read_only(self.schema, property, &field_path),
+                    ..input
+                },
             )?;
         }
         Ok(())

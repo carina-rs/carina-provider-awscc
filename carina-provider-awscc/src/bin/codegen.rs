@@ -1260,6 +1260,69 @@ fn classify_schema(schema: &CfnSchema) -> Result<ClassifiedSchema<'_>> {
     )
 }
 
+#[derive(Clone, Copy)]
+enum ProjectionKind {
+    ArnHelper(bool),
+    Override,
+    ObjectStringPolicy,
+    BareObject,
+    TagsProperty,
+    MarkdownTags,
+    TagReference,
+}
+
+enum EmissionProjection {
+    ArnHelper,
+    Override(&'static TypeOverride),
+    PolicyDocument,
+    BareObject,
+    Tags,
+}
+
+/// Select special emitted types here, preserving each renderer's precedence.
+/// Every successful selection audits all original CFN branches at its use
+/// site. Adding another projection here cannot omit the source audit.
+fn emission_projection(
+    classified: &EmissionProperty<'_>,
+    path: CfnPropertyPath<'_>,
+    kind: ProjectionKind,
+) -> Option<EmissionProjection> {
+    let schema = classified.schema();
+    let property = classified.property();
+    let projection = match kind {
+        ProjectionKind::ArnHelper(has_helper) => {
+            (has_helper && classified.name() == "Arn").then_some(EmissionProjection::ArnHelper)
+        }
+        ProjectionKind::Override => {
+            checked_resource_type_override(schema, path, property).map(EmissionProjection::Override)
+        }
+        ProjectionKind::ObjectStringPolicy => {
+            object_string_union_is_iam_policy_document(property, &schema.type_name, path)
+                .then_some(EmissionProjection::PolicyDocument)
+        }
+        ProjectionKind::BareObject => {
+            property_is_bare_object(property, schema).then_some(EmissionProjection::BareObject)
+        }
+        ProjectionKind::TagsProperty => {
+            is_dsl_tags_property(schema, classified.name()).then_some(EmissionProjection::Tags)
+        }
+        ProjectionKind::MarkdownTags => {
+            (classified.name() == "Tags").then_some(EmissionProjection::Tags)
+        }
+        ProjectionKind::TagReference => property
+            .ref_path
+            .as_deref()
+            .is_some_and(|reference| is_tag_map_ref(schema, reference))
+            .then_some(EmissionProjection::Tags),
+    };
+    if projection.is_some() {
+        classified
+            .audit_projection()
+            .unwrap_or_else(|error| panic!("{error}"));
+    }
+    projection
+}
+
 fn checked_resource_type_override(
     schema: &CfnSchema,
     property_path: CfnPropertyPath<'_>,
@@ -2573,17 +2636,28 @@ fn type_display_at_resolved(
     let prop_name = classified.name();
     let provider_path = classified.path();
     if let Some(display) =
-        resource_type_override(&schema.type_name, cfn_property_path).and_then(TypeOverride::display)
+        emission_projection(&classified, cfn_property_path, ProjectionKind::Override).and_then(
+            |projection| match projection {
+                EmissionProjection::Override(override_type) => override_type.display(),
+                _ => unreachable!(),
+            },
+        )
     {
         return TypeDisplay::Code(display.as_str().to_string());
     }
-    if object_string_union_is_iam_policy_document(prop, &schema.type_name, cfn_property_path) {
+    if emission_projection(
+        &classified,
+        cfn_property_path,
+        ProjectionKind::ObjectStringPolicy,
+    )
+    .is_some()
+    {
         return TypeDisplay::Plain("PolicyDocument".to_string());
     }
-    if prop_name == "Tags" {
+    if emission_projection(&classified, cfn_property_path, ProjectionKind::MarkdownTags).is_some() {
         return TypeDisplay::Code("Map<String, String>".to_string());
     }
-    if property_is_bare_object(prop, schema) {
+    if emission_projection(&classified, cfn_property_path, ProjectionKind::BareObject).is_some() {
         return match classify_bare_object_or_panic(&schema.type_name, cfn_property_path) {
             BareObjectClassification::IamPolicyDocument(_) => {
                 TypeDisplay::Plain("PolicyDocument".to_string())
@@ -2603,8 +2677,14 @@ fn type_display_at_resolved(
         };
     }
     match property_shape(prop, schema) {
-        PropertyShape::Reference { path, resolved } => {
-            return if is_tag_map_ref(schema, path) {
+        PropertyShape::Reference { resolved, .. } => {
+            return if emission_projection(
+                &classified,
+                cfn_property_path,
+                ProjectionKind::TagReference,
+            )
+            .is_some()
+            {
                 TypeDisplay::Code("Map<String, String>".to_string())
             } else if let Some(resolved) = resolved {
                 type_display_at_resolved(
@@ -2615,16 +2695,14 @@ fn type_display_at_resolved(
                     Some(resolved.name),
                 )
             } else {
-                TypeDisplay::Plain(
-                    string_leaf(
-                        schema
-                            .string_leaf_at(provider_path)
-                            .expect("classified unresolved reference"),
-                        cfn_property_path,
-                        definition_name,
-                    )
-                    .display(),
-                )
+                let leaf = schema
+                    .string_leaf_at(provider_path)
+                    .expect("classified unresolved reference");
+                TypeDisplay::Plain(if leaf.reference().is_some() {
+                    string_leaf(leaf, cfn_property_path, definition_name).display()
+                } else {
+                    infer_string_type_display(prop_name, &schema.type_name)
+                })
             };
         }
         PropertyShape::Array {
@@ -2655,16 +2733,14 @@ fn type_display_at_resolved(
     if inline_property_type(prop) == Some("array") {
         let item = prop.items.as_deref().map_or_else(
             || {
-                TypeDisplay::Plain(
-                    string_leaf(
-                        schema
-                            .string_leaf_at(&extend_property_path(provider_path, "*"))
-                            .expect("classified implicit array element"),
-                        cfn_property_path,
-                        None,
-                    )
-                    .display(),
-                )
+                let leaf = schema
+                    .string_leaf_at(&extend_property_path(provider_path, "*"))
+                    .expect("classified implicit array element");
+                TypeDisplay::Plain(if leaf.reference().is_some() {
+                    string_leaf(leaf, cfn_property_path, None).display()
+                } else {
+                    "String".to_string()
+                })
             },
             |items| {
                 type_display_at_resolved(
@@ -2715,16 +2791,14 @@ fn scalar_type_display_string_at(
     definition_name: Option<&str>,
 ) -> String {
     if emits_string_leaf(prop, prop_name) {
-        return string_leaf(
-            schema
-                .string_leaf_at(provider_path)
-                .expect("classified string emission"),
-            cfn_property_path,
-            definition_name,
-        )
-        .display();
+        let leaf = schema
+            .string_leaf_at(provider_path)
+            .expect("classified string emission");
+        if inline_property_type(prop) == Some("string") || leaf.reference().is_some() {
+            return string_leaf(leaf, cfn_property_path, definition_name).display();
+        }
     }
-    if matches!(inline_property_type(prop), Some("string") | None)
+    if inline_property_type(prop) == Some("string")
         && let Some(leaf @ EnumLeaf::Integer(_)) = enum_leaf(prop, prop_name, definition_name)
     {
         return leaf.display();
@@ -3653,7 +3727,16 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str, example: &DocExample) 
                     field_name: field_name.clone(),
                 };
                 let nested_key = cfn_property_path.to_string();
-                let nested_override = resource_type_override(type_name, cfn_property_path);
+                let field = schema
+                    .property_at(&field_path, field_prop)
+                    .expect("classified Markdown field projection");
+                let nested_override =
+                    emission_projection(&field, cfn_property_path, ProjectionKind::Override).map(
+                        |projection| match projection {
+                            EmissionProjection::Override(override_type) => override_type,
+                            _ => unreachable!(),
+                        },
+                    );
                 let field_type_display = if let Some(display) =
                     nested_override.and_then(TypeOverride::display)
                 {
@@ -4040,8 +4123,18 @@ fn generate_top_level_attribute_type(
     let prop_name = classified.name();
     let schema = classified.schema();
     let property_path = CfnPropertyPath::new(None, prop_name);
-    let override_type = checked_resource_type_override(schema, property_path, prop);
-    if has_arn_helper && prop_name == "Arn" {
+    let override_type = emission_projection(&classified, property_path, ProjectionKind::Override)
+        .map(|projection| match projection {
+            EmissionProjection::Override(override_type) => override_type,
+            _ => unreachable!(),
+        });
+    if emission_projection(
+        &classified,
+        property_path,
+        ProjectionKind::ArnHelper(has_arn_helper),
+    )
+    .is_some()
+    {
         return "self::arn()".to_string();
     }
 
@@ -5311,7 +5404,13 @@ fn generate_struct_type(
             // the list wrapping below; only the item type changes.
             let cfn_property_path = CfnPropertyPath::new(Some(def_name), field_name);
             let nested_key = cfn_property_path.to_string();
-            let nested_override = checked_resource_type_override(schema, cfn_property_path, field_prop);
+            let field = schema.property_at(&field_path, field_prop)
+                .expect("classified struct field projection");
+            let nested_override = emission_projection(&field, cfn_property_path, ProjectionKind::Override)
+                .map(|projection| match projection {
+                    EmissionProjection::Override(override_type) => override_type,
+                    _ => unreachable!(),
+                });
             // A composite StringType override replaces the entire source
             // property, including any object children. Do not walk those
             // discarded children: read-only bookkeeping must describe the
@@ -5891,13 +5990,18 @@ fn string_leaf<'a>(
     property_path: CfnPropertyPath<'_>,
     definition_name: Option<&str>,
 ) -> StringLeaf<'a> {
+    // Scalar inference can also project to a named type (including policies).
+    // Audit the original source, even when that projection hides its shape.
+    classified
+        .audit_projection()
+        .unwrap_or_else(|error| panic!("{error}"));
     let prop = classified.property();
     let prop_name = classified.name();
     debug_assert!(!classified.path().is_empty());
     let cfn_type = classified.cfn_type();
-    if let Some(kind) = classified.reference() {
+    if let Some(rust_type) = classified.reference_constructor() {
         return StringLeaf::Inferred {
-            rust_type: kind.constructor().to_string(),
+            rust_type,
             display_type: "aws.kms.Key.Reference".to_string(),
         };
     }
@@ -6155,6 +6259,12 @@ fn known_string_type_overrides() -> &'static HashMap<&'static str, &'static str>
         m.insert("PeerRoleArn", "super::super::iam::role::arn()");
         m.insert("PermissionsBoundary", "super::super::iam::policy::arn()");
         m.insert("ManagedPolicyArns", "super::super::iam::policy::arn()");
+        // Writable references are selected by full-path classification before
+        // these heuristics. Preserve main's types for non-reference outputs.
+        m.insert("KmsKeyId", "super::super::kms::key::arn()");
+        m.insert("KMSMasterKeyID", "carina_aws_types::kms_key_id()");
+        m.insert("ReplicaKmsKeyID", "carina_aws_types::kms_key_id()");
+        m.insert("KmsKeyArn", "super::super::kms::key::arn()");
         m.insert("IpamId", "carina_aws_types::ipam_id()");
         m.insert("Locale", "carina_aws_types::aws_region()");
         m.insert("BucketAccountId", "carina_aws_types::aws_account_id()");
@@ -7766,9 +7876,18 @@ fn generate_object_map_type(
             let leaf = schema
                 .string_leaf_at(&extend_property_path(paths.provider, "*"))
                 .expect("classified map value");
-            let (value_type, enum_info) =
-                string_leaf(leaf, property_path, None).emit(&schema.type_name, prop_name);
-            (format!("AttributeType::map({value_type})"), enum_info)
+            if leaf.reference().is_some() {
+                let (value_type, _) =
+                    string_leaf(leaf, property_path, None).emit(&schema.type_name, prop_name);
+                (format!("AttributeType::map({value_type})"), None)
+            } else {
+                // CFN map values are observed by classification, but ordinary
+                // strings retain main's map type without scalar inference.
+                (
+                    "AttributeType::map(AttributeType::string())".to_string(),
+                    None,
+                )
+            }
         }
         ObjectMapValueKind::Struct => {
             let value_provider_path = extend_property_path(paths.provider, "*");
@@ -7844,18 +7963,29 @@ fn cfn_type_to_carina_type_with_enum_resolved(
     let property_path = paths.provider;
     let cfn_parent = paths.cfn_parent;
     let cfn_property_path = CfnPropertyPath::new(cfn_parent, prop_name);
-    if let Some(item_type) = checked_resource_type_override(schema, cfn_property_path, prop)
-        .and_then(|override_type| {
-            emit_array_item_override(schema, cfn_property_path, prop, override_type)
-        })
+    if let Some(item_type) =
+        emission_projection(&classified, cfn_property_path, ProjectionKind::Override)
+            .map(|projection| match projection {
+                EmissionProjection::Override(override_type) => override_type,
+                _ => unreachable!(),
+            })
+            .and_then(|override_type| {
+                emit_array_item_override(schema, cfn_property_path, prop, override_type)
+            })
     {
         return (item_type, None);
     }
-    if object_string_union_is_iam_policy_document(prop, &schema.type_name, cfn_property_path) {
+    if emission_projection(
+        &classified,
+        cfn_property_path,
+        ProjectionKind::ObjectStringPolicy,
+    )
+    .is_some()
+    {
         return ("carina_aws_types::iam_policy_document()".to_string(), None);
     }
 
-    if property_is_bare_object(prop, schema) {
+    if emission_projection(&classified, cfn_property_path, ProjectionKind::BareObject).is_some() {
         return (
             bare_object_attribute_type(&schema.type_name, cfn_property_path, prop_name),
             None,
@@ -7864,13 +7994,13 @@ fn cfn_type_to_carina_type_with_enum_resolved(
 
     // The declared tag property is special when its generated DSL name is
     // `tags`: it is a Map in Carina (Terraform-style).
-    if is_dsl_tags_property(schema, prop_name) {
+    if emission_projection(&classified, cfn_property_path, ProjectionKind::TagsProperty).is_some() {
         return ("carina_aws_types::tags_type()".to_string(), None);
     }
 
     // Preserve non-string const precedence over $ref/oneOf resolution;
     // enum values and naming still use the same classifier as strings.
-    if prop.const_value.is_some() {
+    if prop.const_value.is_some() && inline_property_type(prop) != Some("string") {
         return string_leaf(
             schema
                 .string_leaf_at(property_path)
@@ -7882,20 +8012,26 @@ fn cfn_type_to_carina_type_with_enum_resolved(
     }
 
     match property_shape(prop, schema) {
-        PropertyShape::Reference { path, resolved } => {
-            if is_tag_map_ref(schema, path) {
+        PropertyShape::Reference { resolved, .. } => {
+            if emission_projection(&classified, cfn_property_path, ProjectionKind::TagReference)
+                .is_some()
+            {
                 return ("carina_aws_types::tags_type()".to_string(), None);
             }
 
             let Some(resolved) = resolved else {
-                return string_leaf(
-                    schema
-                        .string_leaf_at(property_path)
-                        .expect("classified unresolved reference"),
-                    cfn_property_path,
-                    definition_name,
-                )
-                .emit(&schema.type_name, prop_name);
+                let leaf = schema
+                    .string_leaf_at(property_path)
+                    .expect("classified unresolved reference");
+                if leaf.reference().is_some() {
+                    return string_leaf(leaf, cfn_property_path, definition_name)
+                        .emit(&schema.type_name, prop_name);
+                }
+                return (
+                    infer_string_type(prop_name, &schema.type_name)
+                        .unwrap_or_else(|| "AttributeType::string()".to_string()),
+                    None,
+                );
             };
             let def_name = resolved.name;
 
@@ -7997,14 +8133,13 @@ fn cfn_type_to_carina_type_with_enum_resolved(
     }
 
     if emits_string_leaf(prop, prop_name) {
-        return string_leaf(
-            schema
-                .string_leaf_at(property_path)
-                .expect("classified string emission"),
-            cfn_property_path,
-            definition_name,
-        )
-        .emit(&schema.type_name, prop_name);
+        let leaf = schema
+            .string_leaf_at(property_path)
+            .expect("classified string emission");
+        if inline_property_type(prop) == Some("string") || leaf.reference().is_some() {
+            return string_leaf(leaf, cfn_property_path, definition_name)
+                .emit(&schema.type_name, prop_name);
+        }
     }
 
     if let Some(leaf) = enum_leaf(prop, prop_name, definition_name) {
@@ -8097,18 +8232,14 @@ fn cfn_type_to_carina_type_with_enum_resolved(
                 );
                 (item_type, item_enum)
             } else {
-                (
-                    string_leaf(
-                        schema
-                            .string_leaf_at(&extend_property_path(property_path, "*"))
-                            .expect("classified implicit array element"),
-                        cfn_property_path,
-                        None,
-                    )
-                    .emit(&schema.type_name, prop_name)
-                    .0,
-                    None,
-                )
+                let leaf = schema
+                    .string_leaf_at(&extend_property_path(property_path, "*"))
+                    .expect("classified implicit array element");
+                if leaf.reference().is_some() {
+                    string_leaf(leaf, cfn_property_path, None).emit(&schema.type_name, prop_name)
+                } else {
+                    ("AttributeType::string()".to_string(), None)
+                }
             };
             (
                 array_attribute_type(
@@ -8157,7 +8288,11 @@ fn cfn_type_to_carina_type_with_enum_resolved(
                 schema.type_name, cfn_property_path
             );
         }
-        _ => unreachable!("string fallbacks require a classified string leaf"),
+        _ => (
+            infer_string_type(prop_name, &schema.type_name)
+                .unwrap_or_else(|| "AttributeType::string()".to_string()),
+            None,
+        ),
     }
 }
 
@@ -15637,11 +15772,11 @@ mod tests {
             overrides.get("DeliverLogsPermissionArn"),
             Some(&"super::super::iam::role::arn()")
         );
-        for name in ["KmsKeyId", "KmsKeyArn", "KMSMasterKeyID", "ReplicaKmsKeyID"] {
-            assert!(
-                !overrides.contains_key(name),
-                "KMS inputs must use the full-path classifier"
-            );
+        for name in ["KmsKeyId", "KmsKeyArn"] {
+            assert_eq!(overrides.get(name), Some(&"super::super::kms::key::arn()"));
+        }
+        for name in ["KMSMasterKeyID", "ReplicaKmsKeyID"] {
+            assert_eq!(overrides.get(name), Some(&"carina_aws_types::kms_key_id()"));
         }
         assert_eq!(
             overrides.get("PermissionsBoundary"),
@@ -20298,6 +20433,7 @@ mod tests {
             prop_type: Some(TypeValue::Single("string".to_string())),
             description: Some("The ARN of the KMS key.".to_string()),
             pattern: Some(r"^arn:[a-z0-9-]+:kms:[a-z0-9-]+:\d{12}:(key|alias)/.+\Z".to_string()),
+            max_length: Some(256),
             ..Default::default()
         };
         let schema = CfnSchema {
@@ -20325,7 +20461,7 @@ mod tests {
         );
         assert_eq!(
             type_str,
-            "carina_aws_types::kms_key_or_alias_arn_reference()"
+            "carina_core::schema::AttributeType::reference(carina_aws_types::AwsType::KmsKeyReference.identity(), Some(carina_aws_types::KMS_KEY_OR_ALIAS_ARN_PATTERN.to_string()), Some((None, Some(256))))"
         );
     }
 

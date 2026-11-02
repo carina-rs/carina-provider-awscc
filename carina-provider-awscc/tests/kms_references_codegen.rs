@@ -365,7 +365,7 @@ fn read_only_scalar_collections_use_the_emitted_field_input_mode() {
 }
 
 #[test]
-fn map_value_enum_preserves_the_map_at_top_level_and_in_structs() {
+fn map_value_enum_keeps_mains_plain_string_map_at_top_level_and_in_structs() {
     let values = json!({"type": "object", "patternProperties": {
         ".*": {"type": "string", "enum": ["enabled", "disabled"]}
     }, "additionalProperties": false});
@@ -382,7 +382,7 @@ fn map_value_enum_preserves_the_map_at_top_level_and_in_structs() {
     );
     let code = String::from_utf8(output.stdout).unwrap();
     assert_eq!(
-        code.matches("AttributeType::map(AttributeType::enum_(")
+        code.matches("AttributeType::map(AttributeType::string())")
             .count(),
         2,
         "{code}"
@@ -395,8 +395,8 @@ fn map_value_enum_preserves_the_map_at_top_level_and_in_structs() {
     );
     let markdown = String::from_utf8(output.stdout).unwrap();
     assert_eq!(
-        markdown.matches("Map\\<String, [Enum (").count(),
-        2,
+        markdown.matches("Map<String, String>").count(),
+        3,
         "{markdown}"
     );
 }

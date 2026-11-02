@@ -19,11 +19,33 @@ pub enum ReferenceKind {
 }
 
 impl ReferenceKind {
-    pub fn constructor(self) -> &'static str {
-        match self {
+    pub fn default_length(self) -> Option<(Option<u64>, Option<u64>)> {
+        let default_type = match self {
+            Self::Key => carina_aws_types::kms_key_reference(),
+            Self::KeyOrAliasArn => carina_aws_types::kms_key_or_alias_arn_reference(),
+        };
+        let carina_core::schema::RawShape::Reference { length, .. } = default_type.raw_shape()
+        else {
+            unreachable!("KMS constructors must return reference leaves");
+        };
+        length
+    }
+
+    pub fn constructor(self, cfn_length: Option<(Option<u64>, Option<u64>)>) -> String {
+        let constructor = match self {
             Self::Key => "carina_aws_types::kms_key_reference()",
             Self::KeyOrAliasArn => "carina_aws_types::kms_key_or_alias_arn_reference()",
+        };
+        if cfn_length.is_none() || cfn_length == self.default_length() {
+            return constructor.to_string();
         }
+        let pattern = match self {
+            Self::Key => "carina_aws_types::KMS_KEY_REFERENCE_PATTERN",
+            Self::KeyOrAliasArn => "carina_aws_types::KMS_KEY_OR_ALIAS_ARN_PATTERN",
+        };
+        format!(
+            "carina_core::schema::AttributeType::reference(carina_aws_types::AwsType::KmsKeyReference.identity(), Some({pattern}.to_string()), {cfn_length:?})"
+        )
     }
 
     #[cfg(test)]
@@ -64,6 +86,8 @@ pub struct Entry {
     pub classification: Classification,
     /// Pin the source constraint: a changed CFN pattern needs a fresh decision.
     pub cfn_pattern: Option<&'static str>,
+    /// Pin the declared bounds, including absent and one-sided constraints.
+    pub cfn_length: Option<(Option<u64>, Option<u64>)>,
 }
 
 pub const CLASSIFICATIONS: &[Entry] = &[
@@ -73,6 +97,7 @@ pub const CLASSIFICATIONS: &[Entry] = &[
         classification: Classification::Reference(ReferenceKind::Key),
         // No pattern; description accepts alias, key ID, or full ARN. Length 1..2048.
         cfn_pattern: None,
+        cfn_length: Some((Some(1), Some(2048))),
     },
     Entry {
         resource: "dynamodb.Table",
@@ -80,6 +105,7 @@ pub const CLASSIFICATIONS: &[Entry] = &[
         classification: Classification::Reference(ReferenceKind::Key),
         // No pattern; description accepts key ID, ARN, alias name, or alias ARN.
         cfn_pattern: None,
+        cfn_length: None,
     },
     Entry {
         resource: "ecs.Cluster",
@@ -87,6 +113,7 @@ pub const CLASSIFICATIONS: &[Entry] = &[
         classification: Classification::Reference(ReferenceKind::Key),
         // No pattern; description specifies a KMS key ID for execute-command traffic.
         cfn_pattern: None,
+        cfn_length: None,
     },
     Entry {
         resource: "ecs.Cluster",
@@ -94,6 +121,7 @@ pub const CLASSIFICATIONS: &[Entry] = &[
         classification: Classification::Reference(ReferenceKind::Key),
         // No pattern; description specifies a single-Region KMS key ID for managed storage.
         cfn_pattern: None,
+        cfn_length: None,
     },
     Entry {
         resource: "ecs.Cluster",
@@ -101,6 +129,7 @@ pub const CLASSIFICATIONS: &[Entry] = &[
         classification: Classification::Reference(ReferenceKind::Key),
         // No pattern; description specifies a single-Region KMS key ID for ephemeral storage.
         cfn_pattern: None,
+        cfn_length: None,
     },
     Entry {
         resource: "logs.LogGroup",
@@ -109,6 +138,7 @@ pub const CLASSIFICATIONS: &[Entry] = &[
         // CFN accepts (key|alias) ARNs, unlike the AWS provider's key-only Smithy input.
         // Use the portable ARN reference grammar instead of CFN's legacy `\Z` spelling.
         cfn_pattern: Some(r"^arn:[a-z0-9-]+:kms:[a-z0-9-]+:\d{12}:(key|alias)/.+\Z"),
+        cfn_length: Some((None, Some(256))),
     },
     Entry {
         resource: "s3.Bucket",
@@ -116,6 +146,7 @@ pub const CLASSIFICATIONS: &[Entry] = &[
         classification: Classification::Reference(ReferenceKind::Key),
         // No pattern; description accepts key ID, key alias, or key ARN.
         cfn_pattern: None,
+        cfn_length: None,
     },
     Entry {
         resource: "s3.Bucket",
@@ -123,6 +154,7 @@ pub const CLASSIFICATIONS: &[Entry] = &[
         classification: Classification::Reference(ReferenceKind::Key),
         // No restrictive pattern; description calls this an ID (Key ARN or Alias ARN).
         cfn_pattern: None,
+        cfn_length: None,
     },
     Entry {
         resource: "s3.Bucket",
@@ -130,6 +162,7 @@ pub const CLASSIFICATIONS: &[Entry] = &[
         classification: Classification::Reference(ReferenceKind::Key),
         // No restrictive pattern; description requires a customer-managed key ARN in the bucket Region.
         cfn_pattern: None,
+        cfn_length: None,
     },
     Entry {
         resource: "s3.Bucket",
@@ -137,6 +170,7 @@ pub const CLASSIFICATIONS: &[Entry] = &[
         classification: Classification::Reference(ReferenceKind::Key),
         // Same shared definition as inventory encryption: no restrictive pattern; KMS key ARN description.
         cfn_pattern: None,
+        cfn_length: None,
     },
     Entry {
         resource: "sns.Topic",
@@ -144,6 +178,7 @@ pub const CLASSIFICATIONS: &[Entry] = &[
         classification: Classification::Reference(ReferenceKind::Key),
         // No pattern; description specifies the AWS managed or custom CMK's ID.
         cfn_pattern: None,
+        cfn_length: None,
     },
     Entry {
         resource: "scheduler.Schedule",
@@ -151,6 +186,7 @@ pub const CLASSIFICATIONS: &[Entry] = &[
         classification: Classification::Reference(ReferenceKind::KeyOrAliasArn),
         // CFN explicitly accepts (key|alias)/ ARNs only, length 1..2048.
         cfn_pattern: Some(r"^arn:aws[a-z-]*:kms:[a-z0-9\-]+:\d{12}:(key|alias)\/[0-9a-zA-Z-_]*$"),
+        cfn_length: Some((Some(1), Some(2048))),
     },
     Entry {
         resource: "dynamodb.Table",
@@ -159,6 +195,7 @@ pub const CLASSIFICATIONS: &[Entry] = &[
             "Encryption mode selector; it does not identify a KMS key.",
         )),
         cfn_pattern: None,
+        cfn_length: None,
     },
     Entry {
         resource: "ecr.Repository",
@@ -167,6 +204,7 @@ pub const CLASSIFICATIONS: &[Entry] = &[
             "Encryption algorithm selector; it does not identify a KMS key.",
         )),
         cfn_pattern: None,
+        cfn_length: None,
     },
     Entry {
         resource: "kms.Key",
@@ -175,6 +213,7 @@ pub const CLASSIFICATIONS: &[Entry] = &[
             "Human-readable description of the key being managed.",
         )),
         cfn_pattern: None,
+        cfn_length: None,
     },
     Entry {
         resource: "kms.Key",
@@ -183,6 +222,7 @@ pub const CLASSIFICATIONS: &[Entry] = &[
             "IAM policy document for the key being managed, not a key identifier.",
         )),
         cfn_pattern: None,
+        cfn_length: None,
     },
     Entry {
         resource: "kms.Key",
@@ -191,6 +231,7 @@ pub const CLASSIFICATIONS: &[Entry] = &[
             "Cryptographic operation selector for the key being managed.",
         )),
         cfn_pattern: None,
+        cfn_length: None,
     },
     Entry {
         resource: "kms.Key",
@@ -199,6 +240,7 @@ pub const CLASSIFICATIONS: &[Entry] = &[
             "Key-material source selector for the key being managed.",
         )),
         cfn_pattern: None,
+        cfn_length: None,
     },
     Entry {
         resource: "kms.Key",
@@ -207,6 +249,7 @@ pub const CLASSIFICATIONS: &[Entry] = &[
             "Cryptographic key specification, not an existing key identifier.",
         )),
         cfn_pattern: None,
+        cfn_length: None,
     },
     Entry {
         resource: "s3.Bucket",
@@ -215,6 +258,7 @@ pub const CLASSIFICATIONS: &[Entry] = &[
             "Server-side encryption algorithm selector, not a key identifier.",
         )),
         cfn_pattern: None,
+        cfn_length: None,
     },
     Entry {
         resource: "s3.Bucket",
@@ -223,6 +267,7 @@ pub const CLASSIFICATIONS: &[Entry] = &[
             "Metadata-table encryption algorithm selector, not a key identifier.",
         )),
         cfn_pattern: None,
+        cfn_length: None,
     },
     Entry {
         resource: "s3.Bucket",
@@ -231,6 +276,7 @@ pub const CLASSIFICATIONS: &[Entry] = &[
             "Metadata-table encryption algorithm selector, not a key identifier.",
         )),
         cfn_pattern: None,
+        cfn_length: None,
     },
     Entry {
         resource: "s3.Bucket",
@@ -239,6 +285,7 @@ pub const CLASSIFICATIONS: &[Entry] = &[
             "Replication enable/disable selector for KMS-encrypted objects.",
         )),
         cfn_pattern: None,
+        cfn_length: None,
     },
     Entry {
         resource: "kms.Key",
@@ -247,6 +294,7 @@ pub const CLASSIFICATIONS: &[Entry] = &[
             "Tag collection projected to a string map; its KMS description concerns tag permissions.",
         )),
         cfn_pattern: None,
+        cfn_length: None,
     },
     Entry {
         resource: "kms.Key",
@@ -255,6 +303,7 @@ pub const CLASSIFICATIONS: &[Entry] = &[
             "Source tag pair in the projected collection, not a KMS key identifier.",
         )),
         cfn_pattern: None,
+        cfn_length: None,
     },
     Entry {
         resource: "kms.Key",
@@ -263,6 +312,7 @@ pub const CLASSIFICATIONS: &[Entry] = &[
             "User-authored tag values, not KMS key identifiers.",
         )),
         cfn_pattern: None,
+        cfn_length: None,
     },
 ];
 

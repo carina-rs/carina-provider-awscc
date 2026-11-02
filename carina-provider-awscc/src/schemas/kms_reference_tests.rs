@@ -35,49 +35,61 @@ impl Coverage {
         if !self.ancestors.insert(pointer) {
             return;
         }
-        let mut check =
-            |pattern: Option<&str>, identity: Option<&carina_core::schema::TypeIdentity>| {
-                if read_only {
-                    return;
-                }
-                match classify_string(schema.resource_type(), path, name, pattern, description)
-                    .unwrap()
-                {
-                    Some(Classification::Reference(kind)) => {
-                        assert_eq!(
-                            identity,
-                            Some(&AwsType::KmsKeyReference.identity()),
-                            "{}.{path} must be a reference leaf",
-                            schema.resource_type()
-                        );
-                        assert_eq!(
-                            pattern,
-                            Some(kind.expected_pattern()),
-                            "{}.{path}: wrong KMS reference pattern",
-                            schema.resource_type()
-                        );
-                        self.references.insert(key.clone());
-                    }
-                    Some(Classification::NotReference(NotReference::Absent)) => {
-                        panic!("absent KMS path exists: {}.{path}", schema.resource_type())
-                    }
-                    Some(Classification::NotReference(NotReference::Other(reason))) => {
-                        assert!(!reason.is_empty());
-                        assert!(identity.is_none());
-                    }
-                    None => assert_ne!(
+        let mut check = |pattern: Option<&str>,
+                         identity: Option<&carina_core::schema::TypeIdentity>,
+                         length| {
+            if read_only {
+                return;
+            }
+            match classify_string(schema.resource_type(), path, name, pattern, description).unwrap()
+            {
+                Some(Classification::Reference(kind)) => {
+                    assert_eq!(
                         identity,
                         Some(&AwsType::KmsKeyReference.identity()),
-                        "unclassified KMS reference: {}.{path}",
+                        "{}.{path} must be a reference leaf",
                         schema.resource_type()
-                    ),
+                    );
+                    assert_eq!(
+                        pattern,
+                        Some(kind.expected_pattern()),
+                        "{}.{path}: wrong KMS reference pattern",
+                        schema.resource_type()
+                    );
+                    let entry = classification::entry(schema.resource_type(), path).unwrap();
+                    assert_eq!(
+                        length,
+                        entry.cfn_length.or_else(|| kind.default_length()),
+                        "{}.{path}: wrong KMS reference length",
+                        schema.resource_type()
+                    );
+                    self.references.insert(key.clone());
                 }
-            };
+                Some(Classification::NotReference(NotReference::Absent)) => {
+                    panic!("absent KMS path exists: {}.{path}", schema.resource_type())
+                }
+                Some(Classification::NotReference(NotReference::Other(reason))) => {
+                    assert!(!reason.is_empty());
+                    assert!(identity.is_none());
+                }
+                None => assert_ne!(
+                    identity,
+                    Some(&AwsType::KmsKeyReference.identity()),
+                    "unclassified KMS reference: {}.{path}",
+                    schema.resource_type()
+                ),
+            }
+        };
         match schema.shape_of(ty) {
             Shape::Reference {
-                identity, pattern, ..
-            } => check(pattern, Some(identity)),
-            Shape::String { pattern, .. } => check(pattern, None),
+                identity,
+                pattern,
+                length,
+                ..
+            } => check(pattern, Some(identity), length),
+            Shape::String {
+                pattern, length, ..
+            } => check(pattern, None, length),
             Shape::Enum { base, .. } => self.walk(schema, base, path, name, description, read_only),
             Shape::List { element_type, .. } => self.walk(
                 schema,
