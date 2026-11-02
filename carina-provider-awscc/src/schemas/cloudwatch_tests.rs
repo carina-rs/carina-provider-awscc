@@ -1,54 +1,11 @@
-use std::collections::HashSet;
-use std::path::Path;
-use std::sync::Arc;
-
-use carina_core::parser::{ProviderContext, parse_file};
-use carina_core::provider::{ProviderFactory, provider_custom_types_from_factories};
-use carina_core::resource::{ConcreteValue, Value};
-use carina_core::schema::{EffectiveType, ShapeWalkBudget, ValidatedResourceSchema};
-use carina_core::validation::validate_resources;
+use carina_core::schema::ValidatedResourceSchema;
 use serde_json::json;
 
 use crate::provider::conversion::{aws_value_to_dsl_with_defs, dsl_value_to_aws_with_defs};
+use crate::test_support::{enum_identifier, field, float, int, list, string, validate_fixtures};
 
 fn alarm_schema() -> ValidatedResourceSchema {
     super::generated::cloudwatch::alarm::cloudwatch_alarm_config().schema
-}
-
-fn field<'a>(schema: &'a ValidatedResourceSchema, path: &str) -> EffectiveType<'a> {
-    let mut segments = path.split('.');
-    let mut attr_type = schema
-        .effective_attribute(segments.next().unwrap())
-        .unwrap()
-        .value_type();
-    for segment in segments {
-        attr_type = attr_type.list_element().unwrap_or(attr_type);
-        attr_type = attr_type
-            .find_field_with_budget(segment, &mut ShapeWalkBudget::new(64))
-            .unwrap_or_else(|| panic!("missing Alarm field {path}"))
-            .value_type();
-    }
-    attr_type
-}
-
-fn string(value: &str) -> Value {
-    Value::Concrete(ConcreteValue::String(value.into()))
-}
-
-fn enum_identifier(value: &str) -> Value {
-    Value::Concrete(ConcreteValue::enum_identifier(value))
-}
-
-fn int(value: i64) -> Value {
-    Value::Concrete(ConcreteValue::Int(value))
-}
-
-fn float(value: f64) -> Value {
-    Value::Concrete(ConcreteValue::Float(value))
-}
-
-fn list(items: Vec<Value>) -> Value {
-    Value::Concrete(ConcreteValue::List(items))
 }
 
 #[test]
@@ -344,14 +301,17 @@ fn timezone_accepts_zone_names_and_offsets_in_five_minute_steps() {
     let timezone = field(&schema, "evaluation_window.wall_clock_window.timezone");
     for value in [
         "UTC",
+        "GMT",
+        "Z",
         "America/New_York",
         "Asia/Tokyo",
         "Etc/GMT+5",
         "Etc/GMT-5",
+        "GMT-08:00",
     ] {
         timezone.validate(&string(value)).unwrap();
     }
-    for prefix in ["+", "-", "UTC+", "UTC-"] {
+    for prefix in ["+", "-", "UTC+", "UTC-", "GMT+", "GMT-"] {
         for minute in 0..60 {
             let value = format!("{prefix}05:{minute:02}");
             assert_eq!(
@@ -369,6 +329,8 @@ fn timezone_accepts_zone_names_and_offsets_in_five_minute_steps() {
         "Europe/Paris!",
         "+05:60",
         "+5:30",
+        "GMT+05:60",
+        "GMT-8:00",
         "UTC\n",
     ] {
         assert!(timezone.validate(&string(value)).is_err(), "{value:?}");
@@ -376,28 +338,32 @@ fn timezone_accepts_zone_names_and_offsets_in_five_minute_steps() {
 }
 
 #[test]
-fn action_arrays_validate_item_length_count_and_allow_duplicates() {
+fn action_arrays_validate_arns_count_and_allow_duplicates() {
     let schema = alarm_schema();
+    let topic = super::generated::sns::topic::sns_topic_config().schema;
+    let source = field(&topic, "topic_arn");
+    let source = topic.as_schema().type_in_schema(source.as_type());
     for path in ["alarm_actions", "ok_actions", "insufficient_data_actions"] {
         let actions = field(&schema, path);
-        for count in [0, 1, 5] {
-            actions.validate(&list(vec![string("a"); count])).unwrap();
-        }
+        let item = actions.list_element().unwrap();
         assert!(
-            actions.validate(&list(vec![string("a"); 6])).is_err(),
-            "{path}"
+            source.is_assignable_to(schema.as_schema().type_in_schema(item.as_type())),
+            "{path} must accept aws.Arn-typed topic_arn references"
         );
-        for length in [1, 1024] {
-            actions
-                .validate(&list(vec![string(&"a".repeat(length))]))
-                .unwrap();
+        let arn = string("arn:aws:sns:ap-northeast-1:123456789012:alarm-topic");
+        for count in [0, 1, 5] {
+            actions.validate(&list(vec![arn.clone(); count])).unwrap();
         }
-        for length in [0, 1025] {
+        assert!(actions.validate(&list(vec![arn; 6])).is_err(), "{path}");
+        for value in [
+            "",
+            "not-an-arn",
+            "arn:aws:sns",
+            "arn:aws::ap-northeast-1:123456789012:topic",
+        ] {
             assert!(
-                actions
-                    .validate(&list(vec![string(&"a".repeat(length))]))
-                    .is_err(),
-                "{path}"
+                actions.validate(&list(vec![string(value)])).is_err(),
+                "{path}: {value:?}"
             );
         }
     }
@@ -426,16 +392,8 @@ fn existing_tag_key_item_bounds_remain_enforced() {
 }
 
 #[test]
-fn cloudwatch_example_acceptance_and_metric_math_enums_parse_and_validate() {
-    let factories: Arc<Vec<Box<dyn ProviderFactory>>> =
-        Arc::new(vec![Box::new(crate::AwsccProviderFactory)]);
-    let schemas = super::schema_registry();
-    let context = ProviderContext {
-        custom_types: provider_custom_types_from_factories(factories),
-        resource_types: ProviderContext::resource_types_from_schema_registry(&schemas),
-        ..ProviderContext::default()
-    };
-    for (path, source) in [
+fn cloudwatch_fixtures_validate_arn_references_in_all_action_lists_and_metric_math_enums() {
+    validate_fixtures(&[
         (
             "examples/cloudwatch_alarm/main.crn",
             include_str!("../../../examples/cloudwatch_alarm/main.crn"),
@@ -472,15 +430,5 @@ awscc.cloudwatch.Alarm {
 }
 "#,
         ),
-    ] {
-        let parsed = parse_file(source, Path::new(path), &context)
-            .unwrap_or_else(|error| panic!("{path}: {error}"));
-        validate_resources(
-            &parsed,
-            &schemas,
-            &HashSet::from(["awscc".to_string()]),
-            &context,
-        )
-        .unwrap_or_else(|error| panic!("{path}: {error}"));
-    }
+    ]);
 }

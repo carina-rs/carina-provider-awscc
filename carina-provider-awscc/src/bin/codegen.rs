@@ -7620,28 +7620,26 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 default: None,
             },
         );
-        // As for Period above, only the documented lower bound is representable.
+        // As for Period above, only the nested Period lower bounds are representable.
         // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_MetricDataQuery.html
-        m.insert(
-            ("AWS::CloudWatch::Alarm", "MetricDataQuery.Period"),
-            TypeOverride::AttributeType {
-                expression: r#"AttributeType::refined_int(None, Some((Some(1), None)))"#,
-                display: const { OverrideTypeDisplay::new(r"Int(1..)") },
-                block_name: None,
-                default: None,
-            },
-        );
-        // As for Period above, only the documented lower bound is representable.
         // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_MetricStat.html
-        m.insert(
-            ("AWS::CloudWatch::Alarm", "MetricStat.Period"),
-            TypeOverride::AttributeType {
-                expression: r#"AttributeType::refined_int(None, Some((Some(1), None)))"#,
-                display: const { OverrideTypeDisplay::new(r"Int(1..)") },
-                block_name: None,
-                default: None,
-            },
-        );
+        // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_PutMetricAlarm.html
+        for path in [
+            "MetricDataQuery.Period",
+            "MetricStat.Period",
+            "EvaluationPeriods",
+            "DatapointsToAlarm",
+        ] {
+            m.insert(
+                ("AWS::CloudWatch::Alarm", path),
+                TypeOverride::AttributeType {
+                    expression: r#"AttributeType::refined_int(None, Some((Some(1), None)))"#,
+                    display: const { OverrideTypeDisplay::new(r"Int(1..)") },
+                    block_name: None,
+                    default: None,
+                },
+            );
+        }
         // Unlike the unbounded Period rules, 10..=3600 makes this set finite.
         // The existing IntEnum emitter builds anonymous singleton Int refinements.
         // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_PutMetricAlarm.html
@@ -7654,52 +7652,21 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                     .collect(),
             ),
         );
-        // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_PutMetricAlarm.html
-        m.insert(
-            ("AWS::CloudWatch::Alarm", "EvaluationPeriods"),
-            TypeOverride::AttributeType {
-                expression: r#"AttributeType::refined_int(None, Some((Some(1), None)))"#,
-                display: const { OverrideTypeDisplay::new(r"Int(1..)") },
-                block_name: None,
-                default: None,
-            },
-        );
-        // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_PutMetricAlarm.html
-        m.insert(
-            ("AWS::CloudWatch::Alarm", "DatapointsToAlarm"),
-            TypeOverride::AttributeType {
-                expression: r#"AttributeType::refined_int(None, Some((Some(1), None)))"#,
-                display: const { OverrideTypeDisplay::new(r"Int(1..)") },
-                block_name: None,
-                default: None,
-            },
-        );
         // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_AlarmPromQLCriteria.html
-        m.insert(
-            (
-                "AWS::CloudWatch::Alarm",
-                "AlarmPromQLCriteria.PendingPeriod",
-            ),
-            TypeOverride::AttributeType {
-                expression: "AttributeType::refined_int(None, Some((Some(0), Some(86400))))",
-                display: const { OverrideTypeDisplay::new("Int(0..=86400)") },
-                block_name: None,
-                default: None,
-            },
-        );
-        // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_AlarmPromQLCriteria.html
-        m.insert(
-            (
-                "AWS::CloudWatch::Alarm",
-                "AlarmPromQLCriteria.RecoveryPeriod",
-            ),
-            TypeOverride::AttributeType {
-                expression: "AttributeType::refined_int(None, Some((Some(0), Some(86400))))",
-                display: const { OverrideTypeDisplay::new("Int(0..=86400)") },
-                block_name: None,
-                default: None,
-            },
-        );
+        for path in [
+            "AlarmPromQLCriteria.PendingPeriod",
+            "AlarmPromQLCriteria.RecoveryPeriod",
+        ] {
+            m.insert(
+                ("AWS::CloudWatch::Alarm", path),
+                TypeOverride::AttributeType {
+                    expression: "AttributeType::refined_int(None, Some((Some(0), Some(86400))))",
+                    display: const { OverrideTypeDisplay::new("Int(0..=86400)") },
+                    block_name: None,
+                    default: None,
+                },
+            );
+        }
         // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_AlarmPromQLCriteria.html
         m.insert(
             ("AWS::CloudWatch::Alarm", "AlarmPromQLCriteria.Query"),
@@ -7721,45 +7688,31 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             },
         );
         // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_PutMetricAlarm.html
-        m.insert(
-            ("AWS::CloudWatch::Alarm", "MetricName"),
-            TypeOverride::AttributeType {
-                expression: r#"AttributeType::refined_string(None, None, Some((Some(1), Some(255))), None)"#,
-                display: const { OverrideTypeDisplay::new(r"String (length: 1..=255)") },
-                block_name: None,
-                default: None,
-            },
-        );
         // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_Metric.html
-        m.insert(
-            ("AWS::CloudWatch::Alarm", "Metric.MetricName"),
-            TypeOverride::AttributeType {
-                expression: r#"AttributeType::refined_string(None, None, Some((Some(1), Some(255))), None)"#,
-                display: const { OverrideTypeDisplay::new(r"String (length: 1..=255)") },
-                block_name: None,
-                default: None,
-            },
-        );
+        for path in ["MetricName", "Metric.MetricName", "ThresholdMetricId"] {
+            m.insert(
+                ("AWS::CloudWatch::Alarm", path),
+                TypeOverride::AttributeType {
+                    expression: r#"AttributeType::refined_string(None, None, Some((Some(1), Some(255))), None)"#,
+                    display: const { OverrideTypeDisplay::new(r"String (length: 1..=255)") },
+                    block_name: None,
+                    default: None,
+                },
+            );
+        }
         // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_PutMetricAlarm.html
-        m.insert(
-            ("AWS::CloudWatch::Alarm", "Namespace"),
-            TypeOverride::AttributeType {
-                expression: r#"AttributeType::refined_string(None, Some("^[^:].*$".to_string()), Some((Some(1), Some(255))), None)"#,
-                display: const { OverrideTypeDisplay::new(r"String (length: 1..=255, pattern: ^[^:].*$)") },
-                block_name: None,
-                default: None,
-            },
-        );
         // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_Metric.html
-        m.insert(
-            ("AWS::CloudWatch::Alarm", "Metric.Namespace"),
-            TypeOverride::AttributeType {
-                expression: r#"AttributeType::refined_string(None, Some("^[^:].*$".to_string()), Some((Some(1), Some(255))), None)"#,
-                display: const { OverrideTypeDisplay::new(r"String (length: 1..=255, pattern: ^[^:].*$)") },
-                block_name: None,
-                default: None,
-            },
-        );
+        for path in ["Namespace", "Metric.Namespace"] {
+            m.insert(
+                ("AWS::CloudWatch::Alarm", path),
+                TypeOverride::AttributeType {
+                    expression: r#"AttributeType::refined_string(None, Some("^[^:].*$".to_string()), Some((Some(1), Some(255))), None)"#,
+                    display: const { OverrideTypeDisplay::new(r"String (length: 1..=255, pattern: ^[^:].*$)") },
+                    block_name: None,
+                    default: None,
+                },
+            );
+        }
         // The shared Dimension definition covers Dimensions and Metric.Dimensions.
         // Only printable ASCII is allowed, with at least one non-space character.
         // A name can start with a space, but cannot start with a colon.
@@ -7779,16 +7732,6 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             TypeOverride::AttributeType {
                 expression: r#"AttributeType::refined_string(None, Some("^[ -~]*[!-~][ -~]*$".to_string()), Some((Some(1), Some(1024))), None)"#,
                 display: const { OverrideTypeDisplay::new(r"String (length: 1..=1024, pattern: ^[ -~]*[!-~][ -~]*$)") },
-                block_name: None,
-                default: None,
-            },
-        );
-        // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_PutMetricAlarm.html
-        m.insert(
-            ("AWS::CloudWatch::Alarm", "ThresholdMetricId"),
-            TypeOverride::AttributeType {
-                expression: r#"AttributeType::refined_string(None, None, Some((Some(1), Some(255))), None)"#,
-                display: const { OverrideTypeDisplay::new(r"String (length: 1..=255)") },
                 block_name: None,
                 default: None,
             },
@@ -7823,27 +7766,29 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 default: None,
             },
         );
-        // The existing CFN item type is String for all three action arrays.
-        // Retain CFN insertion order and duplicate handling while adding API bounds.
+        // Generic ARNs accept typed resource references and every documented action service.
+        // Retain CFN insertion order and duplicate handling with at most five actions.
         // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_PutMetricAlarm.html
         for path in ["AlarmActions", "OKActions", "InsufficientDataActions"] {
             m.insert(
                 ("AWS::CloudWatch::Alarm", path),
                 TypeOverride::ArrayItemType {
-                    expression: "AttributeType::refined_string(None, None, Some((Some(1), Some(1024))), None)",
-                    display: const { OverrideTypeDisplay::new("List<String (length: 1..=1024)>") },
+                    expression: "carina_aws_types::arn()",
+                    display: const { OverrideTypeDisplay::new("List<Arn>") },
                     block_name: None,
                     default: None,
-                }.with_array_bounds(None, Some(5)),
+                }
+                .with_array_bounds(None, Some(5)),
             );
         }
-        // Accept IANA-name syntax or an optional UTC-prefixed offset in five-minute steps.
+        // Accept IANA-name syntax, Z, or UTC/GMT-prefixed or bare offsets in five-minute steps.
         // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_WallClockWindow.html
+        // https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/alarm-evaluation-window.html#alarm-evaluation-window-timezones
         m.insert(
             ("AWS::CloudWatch::Alarm", "WallClockWindow.Timezone"),
             TypeOverride::AttributeType {
-                expression: r#"AttributeType::refined_string(None, Some("^(?:[A-Za-z0-9_+-]+(?:/[A-Za-z0-9_+-]+)*|(?:UTC)?[+-][0-9]{2}:[0-5][05])$".to_string()), Some((Some(1), Some(50))), None)"#,
-                display: const { OverrideTypeDisplay::new(r"String (length: 1..=50, pattern: ^(?:[A-Za-z0-9_+-]+(?:/[A-Za-z0-9_+-]+)*|(?:UTC)?[+-][0-9]{2}:[0-5][05])$)") },
+                expression: r#"AttributeType::refined_string(None, Some("^(?:[A-Za-z0-9_+-]+(?:/[A-Za-z0-9_+-]+)*|(?:UTC|GMT)?[+-][0-9]{2}:[0-5][05])$".to_string()), Some((Some(1), Some(50))), None)"#,
+                display: const { OverrideTypeDisplay::new(r"String (length: 1..=50, pattern: ^(?:[A-Za-z0-9_+-]+(?:/[A-Za-z0-9_+-]+)*|(?:UTC|GMT)?[+-][0-9]{2}:[0-5][05])$)") },
                 block_name: None,
                 default: None,
             },
@@ -13611,17 +13556,9 @@ mod tests {
     }
 
     fn cloudwatch_generated_pattern(generated: &str, path: &str) -> regex::Regex {
-        let field = generated_cloudwatch_field(generated, path);
-        let literal = field
-            .strip_prefix("AttributeType::refined_string(None, Some(")
-            .unwrap_or_else(|| panic!("{path} must have a pattern: {field}"))
-            .split_once(".to_string())")
-            .unwrap()
-            .0;
-        // Decode the emitted Rust string literal, including doubled backslashes,
-        // before compiling. This catches escaping errors in override expressions.
-        let pattern: String = serde_json::from_str(literal).unwrap();
-        regex::Regex::new(&pattern).unwrap()
+        let patterns = emitted_patterns(generated_cloudwatch_field(generated, path));
+        assert_eq!(patterns.len(), 1, "{path} must have one pattern");
+        regex::Regex::new(&patterns[0]).unwrap()
     }
 
     #[test]
@@ -13696,6 +13633,8 @@ mod tests {
     fn test_cloudwatch_alarm_name_namespace_dimension_id_and_timezone_patterns() {
         let schema = cfn_schema_for_codegen_tests("AWS::CloudWatch::Alarm");
         let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        assert!(markdown.contains(r"(?:UTC\|GMT)?"));
         let cases: &[(&str, &[&str], &[&str])] = &[
             (
                 "AlarmName",
@@ -13723,6 +13662,8 @@ mod tests {
                 "WallClockWindow.Timezone",
                 &[
                     "UTC",
+                    "GMT",
+                    "Z",
                     "America/New_York",
                     "Etc/GMT+5",
                     "Etc/GMT-5",
@@ -13730,6 +13671,9 @@ mod tests {
                     "-03:05",
                     "UTC+05:30",
                     "UTC-00:00",
+                    "GMT-08:00",
+                    "GMT+05:30",
+                    "GMT+01:05",
                 ],
                 &[
                     "",
@@ -13741,6 +13685,9 @@ mod tests {
                     "+05:60",
                     "+5:30",
                     "UTC+05:17",
+                    "GMT+01:03",
+                    "GMT+05:60",
+                    "GMT-8:00",
                     "UTC\n",
                 ],
             ),
@@ -13757,14 +13704,13 @@ mod tests {
     }
 
     #[test]
-    fn test_cloudwatch_alarm_action_arrays_keep_string_items_and_cfn_collection_semantics() {
+    fn test_cloudwatch_alarm_action_arrays_use_arns_and_keep_cfn_collection_semantics() {
         let schema = cfn_schema_for_codegen_tests("AWS::CloudWatch::Alarm");
         let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
         let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
         for path in ["AlarmActions", "OKActions", "InsufficientDataActions"] {
             let expected = concat!(
-                "AttributeType::refined_list(AttributeType::refined_string(None, None, ",
-                "Some((Some(1), Some(1024))), None), true, Some((None, Some(5))), ",
+                "AttributeType::refined_list(carina_aws_types::arn(), true, Some((None, Some(5))), ",
                 "carina_core::schema::ListElements::AllowDuplicates)"
             );
             assert_eq!(
@@ -13788,9 +13734,10 @@ mod tests {
                 .next()
                 .unwrap();
             assert!(
-                section.contains("length: 1..=1024") && section.contains("items: ..=5"),
+                section.contains("List<Arn>") && section.contains("items: ..=5"),
                 "{section}"
             );
+            assert!(!section.contains("length: 1..=1024"), "{section}");
         }
     }
 

@@ -12,9 +12,17 @@ The ``AWS::CloudWatch::Alarm`` type specifies an alarm and associates it with th
 ## Example
 
 ```crn
+let alarm_topic = awscc.sns.Topic {
+  topic_name = 'carina-registry-publish-api-alarms'
+}
+
 awscc.cloudwatch.Alarm {
   alarm_name        = 'carina-registry-publish-api-errors'
   alarm_description = 'Registry publish API Lambda errors'
+
+  alarm_actions             = [alarm_topic.topic_arn]
+  ok_actions                = [alarm_topic.topic_arn]
+  insufficient_data_actions = [alarm_topic.topic_arn]
 
   comparison_operator = greater_than_threshold
   datapoints_to_alarm = 1
@@ -56,7 +64,7 @@ Indicates whether actions should be executed during any changes to the alarm sta
 
 ### `alarm_actions`
 
-- **Type:** `List<String (length: 1..=1024)> (items: ..=5)`
+- **Type:** `List<Arn> (items: ..=5)`
 - **Required:** No
 
 The list of actions to execute when this alarm transitions into an ALARM state from any other state. Specify each action as an Amazon Resource Name (ARN). For more information about creating alarms and the actions that you can specify, see [PutMetricAlarm](https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_PutMetricAlarm.html) in the *API Reference*.
@@ -141,7 +149,7 @@ The percentile statistic for the metric associated with the alarm. Specify a val
 
 ### `insufficient_data_actions`
 
-- **Type:** `List<String (length: 1..=1024)> (items: ..=5)`
+- **Type:** `List<Arn> (items: ..=5)`
 - **Required:** No
 
 The actions to execute when this alarm transitions to the ``INSUFFICIENT_DATA`` state from any other state. Each action is specified as an Amazon Resource Name (ARN).
@@ -169,7 +177,7 @@ The namespace of the metric associated with the alarm. This is required for an a
 
 ### `ok_actions`
 
-- **Type:** `List<String (length: 1..=1024)> (items: ..=5)`
+- **Type:** `List<Arn> (items: ..=5)`
 - **Required:** No
 
 The actions to execute when this alarm transitions to the ``OK`` state from any other state. Each action is specified as an Amazon Resource Name (ARN).
@@ -396,7 +404,7 @@ Used by: `dimensions`, `metrics.metric_stat.metric.dimensions`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `timezone` | `String (length: 1..=50, pattern: ^(?:[A-Za-z0-9_+-]+(?:/[A-Za-z0-9_+-]+)*\|(?:UTC)?[+-][0-9]{2}:[0-5][05])$)` | No | The time zone to use when the alarm aligns the evaluation window to clock boundaries. You can specify an IANA time zone name (for example, ``America/New_York``), a fixed UTC offset (for example, ``+05:30``), or an offset-prefixed identifier (for example, ``UTC+05:30``). The offset must be aligned to a multiple of 5 minutes. If you don't specify a time zone, CloudWatch uses ``UTC``. The time zone affects window alignment for all periods, including periods of one hour or shorter. |
+| `timezone` | `String (length: 1..=50, pattern: ^(?:[A-Za-z0-9_+-]+(?:/[A-Za-z0-9_+-]+)*\|(?:UTC\|GMT)?[+-][0-9]{2}:[0-5][05])$)` | No | The time zone to use when the alarm aligns the evaluation window to clock boundaries. You can specify an IANA time zone name (for example, ``America/New_York``), a fixed UTC offset (for example, ``+05:30``), or an offset-prefixed identifier (for example, ``UTC+05:30``). The offset must be aligned to a multiple of 5 minutes. If you don't specify a time zone, CloudWatch uses ``UTC``. The time zone affects window alignment for all periods, including periods of one hour or shorter. |
 
 ### metrics
 
