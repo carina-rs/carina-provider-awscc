@@ -8,6 +8,9 @@ pub mod generated;
 #[cfg(test)]
 mod kms_reference_tests;
 
+#[cfg(test)]
+mod budgets_tests;
+
 use carina_core::provider::ProviderFactory;
 use carina_core::schema::{
     SchemaRegistry, ValidatedProviderSchemaWitness, ValidatedResourceSchema,
@@ -550,6 +553,7 @@ mod tests {
 
         let identity = |budget_name: &str, threshold: f64| {
             let string = |value: &str| Value::Concrete(ConcreteValue::String(value.into()));
+            let enum_value = |value: &str| Value::Concrete(ConcreteValue::enum_identifier(value));
             let map = |fields: &[(&str, Value)]| {
                 Value::Concrete(ConcreteValue::Map(
                     fields
@@ -564,8 +568,8 @@ mod tests {
                         "budget",
                         map(&[
                             ("budget_name", string(budget_name)),
-                            ("budget_type", string("COST")),
-                            ("time_unit", string("MONTHLY")),
+                            ("budget_type", enum_value("cost")),
+                            ("time_unit", enum_value("monthly")),
                         ]),
                     )
                     .with_attribute(
@@ -574,8 +578,8 @@ mod tests {
                             (
                                 "notification",
                                 map(&[
-                                    ("comparison_operator", string("GREATER_THAN")),
-                                    ("notification_type", string("ACTUAL")),
+                                    ("comparison_operator", enum_value("greater_than")),
+                                    ("notification_type", enum_value("actual")),
                                     (
                                         "threshold",
                                         Value::Concrete(ConcreteValue::Float(threshold)),
@@ -586,7 +590,7 @@ mod tests {
                                 "subscribers",
                                 Value::Concrete(ConcreteValue::List(vec![map(&[
                                     ("address", string("finance@example.com")),
-                                    ("subscription_type", string("EMAIL")),
+                                    ("subscription_type", enum_value("email")),
                                 ])])),
                             ),
                         ])])),

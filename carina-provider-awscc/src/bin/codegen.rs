@@ -24,6 +24,7 @@ use regex::Regex;
 use serde::Deserialize;
 #[cfg(test)]
 use serde::Serialize;
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::io::{self, Read};
@@ -149,8 +150,10 @@ thread_local! {
     #[allow(clippy::missing_const_for_thread_local)]
     static EMITTED_STRUCT_WRITE_ONLY_USES: RefCell<BTreeMap<String, Vec<StructWriteOnlyUse>>> =
         RefCell::new(BTreeMap::new());
-    /// Item overrides selected by the attribute emitter, cleared after pre-scans.
-    static EMITTED_ARRAY_ITEM_OVERRIDES: RefCell<BTreeSet<String>> = const {
+    /// Full CFN keys of array overrides consumed by the final emitter. A field
+    /// in one definition must never satisfy an override for another definition
+    /// or a top-level property with the same name. Cleared after pre-scans.
+    static EMITTED_ARRAY_OVERRIDES: RefCell<BTreeSet<(Option<String>, String)>> = const {
         RefCell::new(BTreeSet::new())
     };
 }
@@ -181,7 +184,7 @@ fn reset_property_mode_emission_state() {
     EMITTED_WRITE_ONLY_PATHS.with(|s| s.borrow_mut().clear());
     SKIPPED_DEPRECATED_WRITE_ONLY_PATHS.with(|s| s.borrow_mut().clear());
     EMITTED_STRUCT_WRITE_ONLY_USES.with(|s| s.borrow_mut().clear());
-    EMITTED_ARRAY_ITEM_OVERRIDES.with(|s| s.borrow_mut().clear());
+    EMITTED_ARRAY_OVERRIDES.with(|s| s.borrow_mut().clear());
 }
 
 /// Take the defs collected during the current resource pass and
@@ -253,6 +256,14 @@ enum TypeOverride {
         block_name: Option<&'static str>,
         default: Option<AttributeTypeOverrideDefault>,
     },
+    /// Add API-documented item-count bounds to an ArrayItemType, Enum, or
+    /// EnumUnordered override. The exact CFN source must be a single array;
+    /// omitted bounds retain CFN's limits and explicit bounds may only tighten.
+    Array {
+        items: Box<TypeOverride>,
+        min_items: Option<i64>,
+        max_items: Option<i64>,
+    },
     /// Override to an enum with specific values
     Enum(Vec<&'static str>),
     /// Like [`TypeOverride::Enum`], but when the property is an array
@@ -274,6 +285,32 @@ enum TypeOverride {
 }
 
 impl TypeOverride {
+    fn with_array_bounds(self, min_items: Option<i64>, max_items: Option<i64>) -> Self {
+        Self::Array {
+            items: Box::new(self),
+            min_items,
+            max_items,
+        }
+    }
+
+    fn item_override(&self) -> &Self {
+        match self {
+            Self::Array { items, .. } => items,
+            _ => self,
+        }
+    }
+
+    fn enum_values(&self) -> Option<&[&'static str]> {
+        match self.item_override() {
+            Self::Enum(values) | Self::EnumUnordered(values) => Some(values),
+            _ => None,
+        }
+    }
+
+    fn requires_array_source(&self) -> bool {
+        matches!(self, Self::Array { .. } | Self::ArrayItemType { .. })
+    }
+
     fn attribute_type_expression(&self) -> Option<&'static str> {
         match self {
             Self::StringType(expression) | Self::AttributeType { expression, .. } => {
@@ -284,14 +321,14 @@ impl TypeOverride {
     }
 
     fn array_item_type_expression(&self) -> Option<&'static str> {
-        match self {
+        match self.item_override() {
             Self::ArrayItemType { expression, .. } => Some(expression),
             _ => None,
         }
     }
 
     fn display(&self) -> Option<OverrideTypeDisplay> {
-        match self {
+        match self.item_override() {
             Self::AttributeType { display, .. } | Self::ArrayItemType { display, .. } => {
                 Some(*display)
             }
@@ -300,14 +337,14 @@ impl TypeOverride {
     }
 
     fn default(&self) -> Option<AttributeTypeOverrideDefault> {
-        match self {
+        match self.item_override() {
             Self::AttributeType { default, .. } | Self::ArrayItemType { default, .. } => *default,
             _ => None,
         }
     }
 
     fn block_name(&self) -> Option<&'static str> {
-        match self {
+        match self.item_override() {
             Self::AttributeType { block_name, .. } | Self::ArrayItemType { block_name, .. } => {
                 *block_name
             }
@@ -319,6 +356,7 @@ impl TypeOverride {
         match self {
             Self::AttributeType { .. } => Some("resource_type_overrides AttributeType"),
             Self::ArrayItemType { .. } => Some("resource_type_overrides ArrayItemType"),
+            Self::Array { .. } => Some("resource_type_overrides Array"),
             _ => None,
         }
     }
@@ -330,19 +368,8 @@ impl TypeOverride {
         property: &CfnProperty,
     ) -> Result<()> {
         match self {
-            Self::ArrayItemType { .. } => {
-                anyhow::ensure!(
-                    path.parent.is_none(),
-                    "{}.{}: nested ArrayItemType overrides are not supported; item emission and bookkeeping must share one top-level array path",
-                    schema.type_name,
-                    path
-                );
-                anyhow::ensure!(
-                    array_item_override_source(property, schema).is_some(),
-                    "{}.{}: ArrayItemType requires a single CFN array at this exact path (directly or through $ref), not a non-array or union",
-                    schema.type_name,
-                    path
-                );
+            Self::ArrayItemType { .. } | Self::Array { .. } => {
+                self.array_source(schema, path, property)?;
             }
             Self::AttributeType { .. } => {
                 anyhow::ensure!(
@@ -355,6 +382,74 @@ impl TypeOverride {
             _ => {}
         }
         Ok(())
+    }
+
+    /// Resolve and refine the source for both schema and docs emission.
+    fn array_source<'a>(
+        &self,
+        schema: &'a CfnSchema,
+        path: CfnPropertyPath<'_>,
+        property: &'a CfnProperty,
+    ) -> Result<Cow<'a, CfnProperty>> {
+        let mut array = array_item_override_source(property, schema).with_context(|| {
+            format!(
+                "{}.{}: ArrayItemType/Array requires a single CFN array at this exact path (directly or through $ref), not a non-array or union",
+                schema.type_name, path
+            )
+        })?;
+        if let Self::Array {
+            items,
+            min_items,
+            max_items,
+        } = self
+        {
+            anyhow::ensure!(
+                matches!(
+                    items.as_ref(),
+                    Self::ArrayItemType { .. } | Self::Enum(_) | Self::EnumUnordered(_)
+                ),
+                "{}.{}: Array requires an ArrayItemType, Enum, or EnumUnordered item override",
+                schema.type_name,
+                path
+            );
+            for (name, bound, cfn_bound, tightens) in [
+                ("minItems", *min_items, array.min_items, true),
+                ("maxItems", *max_items, array.max_items, false),
+            ] {
+                if let Some(bound) = bound {
+                    anyhow::ensure!(
+                        bound >= 0,
+                        "{}.{}: Array {name} must be nonnegative",
+                        schema.type_name,
+                        path
+                    );
+                    anyhow::ensure!(
+                        cfn_bound.is_none_or(|cfn| if tightens {
+                            bound >= cfn
+                        } else {
+                            bound <= cfn
+                        }),
+                        "{}.{}: Array {name} override {bound} would loosen CFN bound {cfn_bound:?}",
+                        schema.type_name,
+                        path
+                    );
+                }
+            }
+            let min = min_items.or(array.min_items);
+            let max = max_items.or(array.max_items);
+            anyhow::ensure!(
+                min.zip(max).is_none_or(|(min, max)| min <= max),
+                "{}.{}: Array merged minItems {min:?} exceeds maxItems {max:?}",
+                schema.type_name,
+                path
+            );
+            if min != array.min_items || max != array.max_items {
+                let array = array.to_mut();
+                array.min_items = min;
+                array.max_items = max;
+            }
+        }
+        Ok(array)
     }
 }
 
@@ -1062,6 +1157,10 @@ impl<'a> CfnPropertyPath<'a> {
     const fn new(parent: Option<&'a str>, property: &'a str) -> Self {
         Self { parent, property }
     }
+
+    fn owned_key(self) -> (Option<String>, String) {
+        (self.parent.map(str::to_string), self.property.to_string())
+    }
 }
 
 impl std::fmt::Display for CfnPropertyPath<'_> {
@@ -1442,14 +1541,14 @@ fn checked_resource_type_override(
     Some(override_type)
 }
 
-fn validate_emitted_array_item_overrides(schema: &CfnSchema) -> Result<()> {
-    EMITTED_ARRAY_ITEM_OVERRIDES.with(|emitted| {
+fn validate_emitted_array_overrides(schema: &CfnSchema) -> Result<()> {
+    EMITTED_ARRAY_OVERRIDES.with(|emitted| {
         let emitted = emitted.borrow();
         for (path, override_type) in resource_type_overrides().for_resource(&schema.type_name) {
-            if override_type.array_item_type_expression().is_some() {
+            if override_type.requires_array_source() {
                 anyhow::ensure!(
-                    emitted.contains(&path.to_string()),
-                    "{}.{}: ArrayItemType was not consumed by an emitted attribute (missing, omitted, deprecated, or shadowed property)",
+                    emitted.contains(&path.owned_key()),
+                    "{}.{}: ArrayItemType/Array was not consumed by an emitted attribute (missing, omitted, deprecated, or shadowed property)",
                     schema.type_name, path
                 );
             }
@@ -2980,10 +3079,13 @@ fn type_display_at_resolved(
     let prop = classified.property();
     let prop_name = classified.name();
     let provider_path = classified.path();
-    if let Some(display) =
-        resource_type_override(&schema.type_name, cfn_property_path).and_then(TypeOverride::display)
-    {
-        return TypeDisplay::Code(display.as_str().to_string());
+    if let Some(display) = override_type_display(
+        schema,
+        cfn_property_path,
+        prop,
+        resource_type_override(&schema.type_name, cfn_property_path),
+    ) {
+        return TypeDisplay::Code(display);
     }
     if object_string_union_is_iam_policy_document(prop, &schema.type_name, cfn_property_path) {
         return TypeDisplay::Plain("PolicyDocument".to_string());
@@ -3021,8 +3123,10 @@ fn type_display_at_resolved(
                     .unwrap_or_else(|error| panic!("{error}"));
                 TypeDisplay::Code("Map<String, String>".to_string())
             } else if let Some(resolved) = resolved {
+                let array = resolved_array_property(prop, schema, &mut HashSet::new());
                 type_display_at_resolved(
-                    schema.property_at(provider_path, resolved.property),
+                    schema
+                        .property_at(provider_path, array.as_deref().unwrap_or(resolved.property)),
                     cfn_property_path,
                     Some(resolved.name),
                 )
@@ -3266,9 +3370,9 @@ fn markdown_struct_def(
 fn markdown_array<'a>(
     prop: &'a CfnProperty,
     schema: &'a CfnSchema,
-) -> Option<(&'a CfnProperty, &'a CfnProperty)> {
-    let property = resolved_array_property(prop, schema, &mut HashSet::new())?;
-    property.items.as_deref().map(|items| (property, items))
+) -> Option<Cow<'a, CfnProperty>> {
+    resolved_array_property(prop, schema, &mut HashSet::new())
+        .filter(|property| property.items.is_some())
 }
 
 fn markdown_list_type(item: MarkdownLinkedType, prop: &CfnProperty) -> MarkdownLinkedType {
@@ -3296,7 +3400,7 @@ fn markdown_enum_type(
             || MarkdownLinkedType::Enum(key.clone()),
             |items| markdown_enum_type(items, schema, key),
         );
-        markdown_list_type(item, array)
+        markdown_list_type(item, &array)
     } else if let Some(value) = property_object_map_value(prop, schema) {
         MarkdownLinkedType::Map {
             value: Box::new(markdown_enum_type(value, schema, key)),
@@ -3358,10 +3462,12 @@ fn markdown_link_type(
         });
     }
 
-    if let Some((array, items)) = markdown_array(prop, schema) {
+    if let Some(array) = markdown_array(prop, schema)
+        && let Some(items) = array.items.as_deref()
+    {
         let item_path = extend_property_path(property_path, "*");
         let item_type = markdown_link_type(prop_name, items, schema, None, &item_path, cfn_parent)?;
-        return Some(markdown_list_type(item_type, array));
+        return Some(markdown_list_type(item_type, &array));
     }
 
     None
@@ -3382,6 +3488,27 @@ fn markdown_type(
     let prop = classified.property();
     let prop_name = classified.name();
     let property_path = classified.path();
+    let cfn_property_path = CfnPropertyPath::new(cfn_parent, prop_name);
+    let override_type = resource_type_override(&schema.type_name, cfn_property_path);
+    // Top-level properties retain source struct links, as on main. Nested
+    // overrides replace the field's source type and take precedence over links.
+    if cfn_parent.is_some()
+        && let Some(display) = override_type_display(schema, cfn_property_path, prop, override_type)
+    {
+        return MarkdownType::Plain(TypeDisplay::Code(display).markdown());
+    }
+    if let Some(override_type) = override_type.filter(|value| value.requires_array_source()) {
+        let array = override_type
+            .array_source(schema, cfn_property_path, prop)
+            .unwrap_or_else(|error| panic!("{error}"));
+        if let Some(key) = enum_target {
+            let item = array.items.as_deref().map_or_else(
+                || MarkdownLinkedType::Enum(key.clone()),
+                |items| markdown_enum_type(items, schema, key),
+            );
+            return MarkdownType::Linked(markdown_list_type(item, &array));
+        }
+    }
     markdown_link_type(
         prop_name,
         prop,
@@ -3399,6 +3526,25 @@ fn markdown_type(
             CfnPropertyPath::new(cfn_parent, prop_name),
         ))
     })
+}
+
+fn override_type_display(
+    schema: &CfnSchema,
+    path: CfnPropertyPath<'_>,
+    property: &CfnProperty,
+    override_type: Option<&TypeOverride>,
+) -> Option<String> {
+    let override_type = override_type?;
+    let display = override_type.display()?.as_str();
+    let limits = if override_type.requires_array_source() {
+        let array = override_type
+            .array_source(schema, path, property)
+            .unwrap_or_else(|error| panic!("{error}"));
+        TypeDisplay::item_limits(array.min_items, array.max_items)
+    } else {
+        String::new()
+    };
+    Some(format!("{display}{limits}"))
 }
 
 fn markdown_heading_path(property_path: &[String]) -> Vec<String> {
@@ -3692,21 +3838,12 @@ fn render_markdown(
         // thing for `Struct.Field` keys (awscc#246); without this branch a
         // top-level Enum override (e.g. `TargetGroup.Protocol`) was
         // recorded in the schema (`generate_schema_code`) but never
-        // mirrored into the markdown — `cfn_type_to_carina_type_with_enum`
-        // does not consult `resource_type_overrides` itself.
-        if let Some(TypeOverride::Enum(values) | TypeOverride::EnumUnordered(values)) =
+        // mirrored into the markdown.
+        if let Some(values) =
             resource_type_override(type_name, CfnPropertyPath::new(None, prop_name))
+                .and_then(TypeOverride::enum_values)
         {
             property_enums.insert(prop_name.clone(), enum_info_for_override(prop_name, values));
-            collect_struct_defs(
-                prop,
-                prop_name,
-                schema,
-                &[],
-                std::slice::from_ref(prop_name),
-                None,
-                &mut struct_defs,
-            );
             continue;
         }
         let (_, enum_info) =
@@ -3744,18 +3881,15 @@ fn render_markdown(
             // `generate_schema_code`, so the markdown's enum tables stay in
             // sync with the generated Rust schema.
             if let Some(nested_override) = resource_type_override(type_name, cfn_property_path) {
-                match nested_override {
-                    TypeOverride::Enum(values) | TypeOverride::EnumUnordered(values) => {
-                        struct_field_enums
-                            .insert(source_key, enum_info_for_override(field_name, values));
-                        continue;
-                    }
-                    _ if nested_override.attribute_type_expression().is_some()
-                        || nested_override.array_item_type_expression().is_some() =>
-                    {
-                        continue;
-                    }
-                    _ => {}
+                if let Some(values) = nested_override.enum_values() {
+                    struct_field_enums
+                        .insert(source_key, enum_info_for_override(field_name, values));
+                    continue;
+                }
+                if nested_override.attribute_type_expression().is_some()
+                    || nested_override.array_item_type_expression().is_some()
+                {
+                    continue;
                 }
             }
             let field_path = extend_property_path(&def_info.first_property_path, field_name);
@@ -3803,7 +3937,7 @@ fn render_markdown(
     }
     validate_emitted_nested_read_only_properties(schema)?;
     validate_emitted_nested_write_only_properties(schema)?;
-    validate_emitted_array_item_overrides(schema)?;
+    validate_emitted_array_overrides(schema)?;
     reset_recursion_guard();
 
     let (markdown_enums, enum_targets) = collect_markdown_enums(
@@ -4052,9 +4186,9 @@ fn render_markdown(
                 let nested_key = cfn_property_path.to_string();
                 let nested_override = resource_type_override(type_name, cfn_property_path);
                 let field_type_display = if let Some(display) =
-                    nested_override.and_then(TypeOverride::display)
+                    override_type_display(schema, cfn_property_path, field_prop, nested_override)
                 {
-                    MarkdownType::Plain(TypeDisplay::Code(display.as_str().to_string()).markdown())
+                    MarkdownType::Plain(TypeDisplay::Code(display).markdown())
                 } else if matches!(nested_override, Some(TypeOverride::IntegerFromNumber)) {
                     MarkdownType::Plain(integer_from_number_display(
                         field_prop,
@@ -4181,6 +4315,18 @@ fn collect_struct_defs(
     cfn_parent: Option<&str>,
     struct_defs: &mut BTreeMap<MarkdownStructKey, StructDefInfo>,
 ) {
+    // Enum overlays and nested item expressions replace the source children.
+    // Top-level item overrides retain source struct documentation, as on main.
+    if resource_type_override(
+        &schema.type_name,
+        CfnPropertyPath::new(cfn_parent, prop_name),
+    )
+    .is_some_and(|override_type| {
+        override_type.enum_values().is_some()
+            || (cfn_parent.is_some() && override_type.array_item_type_expression().is_some())
+    }) {
+        return;
+    }
     match property_shape(prop, schema) {
         PropertyShape::Array {
             variant: array_variant,
@@ -4274,7 +4420,10 @@ fn collect_struct_defs(
         return;
     }
 
-    let Some((_, items)) = markdown_array(prop, schema) else {
+    let Some(array) = markdown_array(prop, schema) else {
+        return;
+    };
+    let Some(items) = array.items.as_deref() else {
         return;
     };
     let array_def_name = prop
@@ -4464,9 +4613,10 @@ fn generate_top_level_attribute_type(
             values_str,
             dsl_aliases_code
         );
-        return enum_property_type(
-            prop,
+        return emit_enum_property_type(
             schema,
+            property_path,
+            prop,
             &enum_type,
             override_forces_unordered(&schema.type_name, CfnPropertyPath::new(None, prop_name)),
         );
@@ -4588,9 +4738,7 @@ fn render_schema_code(schema: &EmissionContext<'_>, type_name: &str) -> Result<S
         // Check resource-scoped enum overrides.
         let resource_override =
             resource_type_override(type_name, CfnPropertyPath::new(None, prop_name));
-        if let Some(TypeOverride::Enum(values) | TypeOverride::EnumUnordered(values)) =
-            resource_override
-        {
+        if let Some(values) = resource_override.and_then(TypeOverride::enum_values) {
             enums.insert(
                 prop_name.clone(),
                 EnumInfo {
@@ -4627,20 +4775,17 @@ fn render_schema_code(schema: &EmissionContext<'_>, type_name: &str) -> Result<S
                     if let Some(nested_override) =
                         resource_type_override(&schema.type_name, cfn_property_path)
                     {
-                        match nested_override {
-                            TypeOverride::Enum(values) | TypeOverride::EnumUnordered(values) => {
-                                enums.insert(
-                                    composite_key.clone(),
-                                    enum_info_for_override(field_name, values),
-                                );
-                                continue;
-                            }
-                            _ if nested_override.attribute_type_expression().is_some()
-                                || nested_override.array_item_type_expression().is_some() =>
-                            {
-                                continue;
-                            }
-                            _ => {}
+                        if let Some(values) = nested_override.enum_values() {
+                            enums.insert(
+                                composite_key.clone(),
+                                enum_info_for_override(field_name, values),
+                            );
+                            continue;
+                        }
+                        if nested_override.attribute_type_expression().is_some()
+                            || nested_override.array_item_type_expression().is_some()
+                        {
+                            continue;
                         }
                     }
                     let structural_path = [def_name.clone()];
@@ -4885,18 +5030,13 @@ pub fn {}() -> AwsccSchemaConfig {{
         // Even if the singular form conflicts with an existing field name,
         // resolve_block_names distinguishes block syntax (Value::List) from
         // attribute assignment (Value::Map) so the block_name is safe to add.
-        let override_block_name =
-            resource_type_override(&schema.type_name, CfnPropertyPath::new(None, prop_name))
-                .and_then(TypeOverride::block_name);
-        let block_name = override_block_name.map(str::to_owned).or_else(|| {
-            if attr_type.contains("list(AttributeType::struct_")
-                || is_list_of_struct_property(prop, schema)
-            {
-                compute_block_name(&attr_name)
-            } else {
-                None
-            }
-        });
+        let block_name = property_block_name(
+            &attr_name,
+            &attr_type,
+            prop,
+            schema,
+            resource_type_override(&schema.type_name, CfnPropertyPath::new(None, prop_name)),
+        );
         if !is_read_only && let Some(singular) = block_name {
             attr_code.push_str(&format!(
                 "\n                .with_block_name({})",
@@ -4914,7 +5054,7 @@ pub fn {}() -> AwsccSchemaConfig {{
     validate_emitted_nested_read_only_properties(schema)?;
     validate_emitted_nested_write_only_properties(schema)?;
 
-    validate_emitted_array_item_overrides(schema)?;
+    validate_emitted_array_overrides(schema)?;
 
     // Emit synthetic attributes — values the Cloud Control read path does
     // not return because the CFN schema omits them. The provider fills
@@ -5651,7 +5791,7 @@ enum PropertyShape<'a> {
         /// Keep the winning variant's reference context for generation.
         variant: &'a CfnProperty,
         /// Reuse the concrete array without resolving nested unions again.
-        resolved: &'a CfnProperty,
+        resolved: ResolvedArray<'a>,
     },
     /// Union of object fields; variant-local required lists do not apply.
     Merged(BTreeMap<String, CfnProperty>),
@@ -5687,7 +5827,7 @@ fn property_shape_with_visited<'a>(
         return PropertyShape::Inline;
     }
     if let Some(shape) = property.one_of.iter().find_map(|variant| {
-        resolved_array_property(variant, schema, visiting_defs)
+        resolved_array_shape(variant, schema, visiting_defs)
             .map(|resolved| PropertyShape::Array { variant, resolved })
     }) {
         return shape;
@@ -5889,18 +6029,18 @@ fn generate_struct_type(
             // `EnumUnordered` is element-handled identically to `Enum`;
             // it differs only in forcing `unordered_list` below
             // (carina#3093).
-            if let Some(TypeOverride::Enum(values) | TypeOverride::EnumUnordered(values)) =
-                nested_override
+            if let Some(values) = nested_override.and_then(TypeOverride::enum_values)
             {
                 enum_info = Some(enum_info_for_override(field_name, values));
             } else if nested_override
                 .and_then(TypeOverride::attribute_type_expression)
                 .is_some()
+                || nested_override.and_then(TypeOverride::array_item_type_expression).is_some()
             {
                 enum_info = None;
             }
             let field_force_unordered =
-                matches!(nested_override, Some(TypeOverride::EnumUnordered(_)));
+                override_forces_unordered(&schema.type_name, cfn_property_path);
             // If enum detected in struct field and it's in the enums map, use shared string enum type.
             // Try composite key "DefName.FieldName" first (for definition-scoped enums),
             // then fall back to plain "FieldName" (for top-level property enums).
@@ -5910,6 +6050,8 @@ fn generate_struct_type(
                 expression.to_string()
             } else if matches!(nested_override, Some(TypeOverride::IntegerFromNumber)) {
                 integer_from_number_type(field_prop, &schema.type_name, &nested_key)
+            } else if nested_override.and_then(TypeOverride::array_item_type_expression).is_some() {
+                field_type
             } else if let Some(local_enum_info) = enum_info {
                 let composite_key = format!("{}.{}", def_name, field_name);
                 let enum_type = if let Some(enum_info) =
@@ -5954,7 +6096,7 @@ fn generate_struct_type(
                         dsl_aliases_code
                     )
                 };
-                enum_property_type(field_prop, schema, &enum_type, field_force_unordered)
+                emit_enum_property_type(schema, cfn_property_path, field_prop, &enum_type, field_force_unordered)
             // Other nested override variants are caught by the trailing guard
             // so new variants cannot silently do nothing for struct fields.
             } else if let Some(other) = nested_override {
@@ -6009,10 +6151,8 @@ fn generate_struct_type(
             // Even if the singular form conflicts with an existing field name,
             // resolve_block_names distinguishes block syntax (Value::List) from
             // attribute assignment (Value::Map) so the block_name is safe to add.
-            if (field_type.contains("list(AttributeType::struct_")
-                || is_list_of_struct_property(field_prop, schema))
-                && !is_read_only
-                && let Some(singular) = compute_block_name(&snake_name)
+            if !is_read_only
+                && let Some(singular) = property_block_name(&snake_name, &field_type, field_prop, schema, nested_override)
             {
                 field_code.push_str(&format!(".with_block_name({})", rust_lit(&singular)));
             }
@@ -6885,13 +7025,7 @@ impl ResourceTypeOverrides {
             if override_type.owner_name().is_none() {
                 continue;
             }
-            let is_item_override = override_type.array_item_type_expression().is_some();
-            anyhow::ensure!(
-                !is_item_override || path.parent.is_none(),
-                "{}.{}: nested ArrayItemType overrides are not supported; use a top-level CFN array key",
-                schema.type_name,
-                path
-            );
+            let is_item_override = override_type.requires_array_source();
             let property = cfn_override_property(schema, path);
             // Only item overrides require consumption. Check whole-attribute
             // source constraints even when a present property is not emitted.
@@ -6900,7 +7034,7 @@ impl ResourceTypeOverrides {
             }
             let property = property.with_context(|| {
                 format!(
-                    "{}.{}: ArrayItemType key has no CFN property to consume",
+                    "{}.{}: ArrayItemType/Array key has no CFN property to consume",
                     schema.type_name, path
                 )
             })?;
@@ -6908,8 +7042,8 @@ impl ResourceTypeOverrides {
             anyhow::ensure!(
                 !is_item_override
                     || (!is_deprecated_property(property)
-                        && !should_omit_top_level_property(&schema.type_name, path.property)),
-                "{}.{}: ArrayItemType is not consumed consistently by schema and documentation generation because its property is deprecated or omitted",
+                        && !should_omit_property(&schema.type_name, path)),
+                "{}.{}: ArrayItemType/Array is not consumed consistently by schema and documentation generation because its property is deprecated or omitted",
                 schema.type_name,
                 path
             );
@@ -6991,6 +7125,10 @@ impl ResourceTypeOverrides {
 }
 
 fn resource_type_overrides() -> &'static ResourceTypeOverrides {
+    #[cfg(test)]
+    if let Some(overrides) = tests::TEST_RESOURCE_TYPE_OVERRIDES.with(|value| value.get()) {
+        return overrides;
+    }
     static OVERRIDES: LazyLock<ResourceTypeOverrides> = LazyLock::new(|| {
         let mut m = ResourceTypeOverrides::default();
 
@@ -7162,6 +7300,221 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 block_name: None,
                 default: None,
             },
+        );
+
+        // The Budgets CFN schema omits these API-documented primitive constraints.
+        // Keep AWS wire spellings here; enum emission derives the DSL aliases.
+        // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_Budget.html
+        m.insert(
+            ("AWS::Budgets::Budget", "BudgetData.BudgetType"),
+            TypeOverride::Enum(vec![
+                "USAGE",
+                "COST",
+                "RI_UTILIZATION",
+                "RI_COVERAGE",
+                "SAVINGS_PLANS_UTILIZATION",
+                "SAVINGS_PLANS_COVERAGE",
+            ]),
+        );
+        // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_Budget.html
+        m.insert(
+            ("AWS::Budgets::Budget", "BudgetData.TimeUnit"),
+            TypeOverride::Enum(vec!["DAILY", "MONTHLY", "QUARTERLY", "ANNUALLY", "CUSTOM"]),
+        );
+        // The API limits Metrics to one item; CFN omits maxItems.
+        // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_Budget.html
+        m.insert(
+            ("AWS::Budgets::Budget", "BudgetData.Metrics"),
+            TypeOverride::Enum(vec![
+                "BlendedCost",
+                "UnblendedCost",
+                "AmortizedCost",
+                "NetUnblendedCost",
+                "NetAmortizedCost",
+                "UsageQuantity",
+                "NormalizedUsageAmount",
+                "Hours",
+            ])
+            .with_array_bounds(None, Some(1)),
+        );
+        // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_Notification.html
+        m.insert(
+            ("AWS::Budgets::Budget", "Notification.ComparisonOperator"),
+            TypeOverride::Enum(vec!["GREATER_THAN", "LESS_THAN", "EQUAL_TO"]),
+        );
+        // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_Notification.html
+        m.insert(
+            ("AWS::Budgets::Budget", "Notification.NotificationType"),
+            TypeOverride::Enum(vec!["ACTUAL", "FORECASTED"]),
+        );
+        // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_Notification.html
+        m.insert(
+            ("AWS::Budgets::Budget", "Notification.ThresholdType"),
+            TypeOverride::Enum(vec!["PERCENTAGE", "ABSOLUTE_VALUE"]),
+        );
+        // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_Notification.html
+        m.insert(
+            ("AWS::Budgets::Budget", "Notification.Threshold"),
+            TypeOverride::AttributeType {
+                expression: "AttributeType::refined_float(None, Some((Some(0.0), Some(15000000000000.0))))",
+                display: const { OverrideTypeDisplay::new("Float(0..=15000000000000)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_Subscriber.html
+        m.insert(
+            ("AWS::Budgets::Budget", "Subscriber.SubscriptionType"),
+            TypeOverride::Enum(vec!["SNS", "EMAIL"]),
+        );
+        // CFN models Amount as a number; the API wire pattern ([0-9]*\.)?[0-9]+
+        // permits only non-negative values. The shared Spend definition also
+        // supplies the values of the existing PlannedBudgetLimits map override.
+        // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_Spend.html
+        m.insert(
+            ("AWS::Budgets::Budget", "Spend.Amount"),
+            TypeOverride::AttributeType {
+                expression: "AttributeType::refined_float(None, Some((Some(0.0), None)))",
+                display: const { OverrideTypeDisplay::new("Float(0..)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // The API's negative lookahead rejecting /action/ and <script>...</script>
+        // is not enforced: Rust's regex crate does not support look-around.
+        // Retain the supported character pattern and the documented length bounds.
+        // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_Budget.html
+        m.insert(
+            ("AWS::Budgets::Budget", "BudgetData.BudgetName"),
+            TypeOverride::AttributeType {
+                expression: r#"AttributeType::refined_string(None, Some("^[^:\\\\]+$".to_string()), Some((Some(1), Some(100))), None)"#,
+                display: const {
+                    OverrideTypeDisplay::new(r"String (length: 1..=100, pattern: ^[^:\\]+$)")
+                },
+                block_name: None,
+                default: None,
+            },
+        );
+        // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_AutoAdjustData.html
+        m.insert(
+            ("AWS::Budgets::Budget", "AutoAdjustData.AutoAdjustType"),
+            TypeOverride::Enum(vec!["HISTORICAL", "FORECAST"]),
+        );
+        // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_HistoricalOptions.html
+        m.insert(
+            (
+                "AWS::Budgets::Budget",
+                "HistoricalOptions.BudgetAdjustmentPeriod",
+            ),
+            TypeOverride::AttributeType {
+                expression: "AttributeType::refined_int(None, Some((Some(1), Some(60))))",
+                display: const { OverrideTypeDisplay::new("Int(1..=60)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        let budgets_match_options = vec![
+            "EQUALS",
+            "ABSENT",
+            "STARTS_WITH",
+            "ENDS_WITH",
+            "CONTAINS",
+            "GREATER_THAN_OR_EQUAL",
+            "CASE_SENSITIVE",
+            "CASE_INSENSITIVE",
+        ];
+        // All recursive Expression uses resolve to these same three definitions.
+        // "You can specify only one of these values in the array."
+        // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_ExpressionDimensionValues.html
+        m.insert(
+            (
+                "AWS::Budgets::Budget",
+                "ExpressionDimensionValues.MatchOptions",
+            ),
+            TypeOverride::Enum(budgets_match_options.clone()).with_array_bounds(None, Some(1)),
+        );
+        // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_TagValues.html
+        m.insert(
+            ("AWS::Budgets::Budget", "TagValues.MatchOptions"),
+            TypeOverride::Enum(budgets_match_options.clone()),
+        );
+        // The API bounds the filter key to 0..=1024 characters; CFN omits them.
+        // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_TagValues.html
+        m.insert(
+            ("AWS::Budgets::Budget", "TagValues.Key"),
+            TypeOverride::AttributeType {
+                expression: "AttributeType::refined_string(None, None, Some((Some(0), Some(1024))), None)",
+                display: const { OverrideTypeDisplay::new("String (length: 0..=1024)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_CostCategoryValues.html
+        m.insert(
+            ("AWS::Budgets::Budget", "CostCategoryValues.MatchOptions"),
+            TypeOverride::Enum(budgets_match_options),
+        );
+        // The API requires at least one value and bounds each string to
+        // 0..=1024 characters. CFN omits both constraints.
+        let budgets_filter_values = TypeOverride::ArrayItemType {
+            expression: "AttributeType::refined_string(None, None, Some((Some(0), Some(1024))), None)",
+            display: const { OverrideTypeDisplay::new("List<String (length: 0..=1024)>") },
+            block_name: None,
+            default: None,
+        }.with_array_bounds(Some(1), None);
+        // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_TagValues.html
+        m.insert(
+            ("AWS::Budgets::Budget", "TagValues.Values"),
+            budgets_filter_values.clone(),
+        );
+        // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_CostCategoryValues.html
+        m.insert(
+            ("AWS::Budgets::Budget", "CostCategoryValues.Values"),
+            budgets_filter_values.clone(),
+        );
+        // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_ExpressionDimensionValues.html
+        m.insert(
+            ("AWS::Budgets::Budget", "ExpressionDimensionValues.Values"),
+            budgets_filter_values,
+        );
+        // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_ExpressionDimensionValues.html
+        m.insert(
+            ("AWS::Budgets::Budget", "ExpressionDimensionValues.Key"),
+            TypeOverride::Enum(vec![
+                "AZ",
+                "INSTANCE_TYPE",
+                "LINKED_ACCOUNT",
+                "LINKED_ACCOUNT_NAME",
+                "OPERATION",
+                "PURCHASE_TYPE",
+                "REGION",
+                "SERVICE",
+                "SERVICE_CODE",
+                "USAGE_TYPE",
+                "USAGE_TYPE_GROUP",
+                "RECORD_TYPE",
+                "OPERATING_SYSTEM",
+                "TENANCY",
+                "SCOPE",
+                "PLATFORM",
+                "SUBSCRIPTION_ID",
+                "LEGAL_ENTITY_NAME",
+                "INVOICING_ENTITY",
+                "DEPLOYMENT_OPTION",
+                "DATABASE_ENGINE",
+                "CACHE_ENGINE",
+                "INSTANCE_TYPE_FAMILY",
+                "BILLING_ENTITY",
+                "RESERVATION_ID",
+                "RESOURCE_ID",
+                "RIGHTSIZING_TYPE",
+                "SAVINGS_PLANS_TYPE",
+                "SAVINGS_PLAN_ARN",
+                "PAYMENT_OPTION",
+                "RESERVATION_MODIFIED",
+                "TAG_KEY",
+                "COST_CATEGORY_NAME",
+            ]),
         );
 
         // Cloud Control create/get in both directions with carina-test-008 in
@@ -8186,7 +8539,7 @@ fn is_ipam_pool_id_property(prop_name: &str) -> bool {
 /// caller used to look the override up.
 fn override_forces_unordered(type_name: &str, property_path: CfnPropertyPath<'_>) -> bool {
     matches!(
-        resource_type_override(type_name, property_path),
+        resource_type_override(type_name, property_path).map(TypeOverride::item_override),
         Some(TypeOverride::EnumUnordered(_))
     )
 }
@@ -8233,8 +8586,7 @@ fn array_attribute_type(element_type: &str, array: &CfnProperty, force_unordered
     }
 }
 
-/// Item overrides own the item grammar, while the source array owns its constraints.
-/// The caller has already checked the override against this exact CFN key.
+/// Item expressions and enum items share the same full-path array emitter.
 fn emit_array_item_override(
     schema: &CfnSchema,
     path: CfnPropertyPath<'_>,
@@ -8242,16 +8594,61 @@ fn emit_array_item_override(
     override_type: &TypeOverride,
 ) -> Option<String> {
     let expression = override_type.array_item_type_expression()?;
-    let array = array_item_override_source(property, schema).unwrap_or_else(|| {
-        panic!(
-            "{}.{}: ArrayItemType requires a single CFN array",
-            schema.type_name, path
+    Some(emit_array_override(
+        schema,
+        path,
+        property,
+        override_type,
+        expression,
+        false,
+    ))
+}
+
+fn emit_array_override(
+    schema: &CfnSchema,
+    path: CfnPropertyPath<'_>,
+    property: &CfnProperty,
+    override_type: &TypeOverride,
+    item_type: &str,
+    force_unordered: bool,
+) -> String {
+    let array = override_type
+        .array_source(schema, path, property)
+        .unwrap_or_else(|error| panic!("{error}"));
+    EMITTED_ARRAY_OVERRIDES.with(|emitted| {
+        emitted.borrow_mut().insert(path.owned_key());
+    });
+    array_attribute_type(item_type, &array, force_unordered)
+}
+
+fn emit_enum_property_type(
+    schema: &CfnSchema,
+    path: CfnPropertyPath<'_>,
+    property: &CfnProperty,
+    enum_type: &str,
+    force_unordered: bool,
+) -> String {
+    if let Some(override_type) = resource_type_override(&schema.type_name, path)
+        .filter(|value| value.requires_array_source())
+    {
+        let array = override_type
+            .array_source(schema, path, property)
+            .unwrap_or_else(|error| panic!("{error}"));
+        let item_type = array.items.as_deref().map_or_else(
+            || enum_type.to_string(),
+            |items| enum_property_type(items, schema, enum_type, force_unordered),
+        );
+        emit_array_override(
+            schema,
+            path,
+            property,
+            override_type,
+            &item_type,
+            force_unordered,
         )
-    });
-    EMITTED_ARRAY_ITEM_OVERRIDES.with(|emitted| {
-        emitted.borrow_mut().insert(path.to_string());
-    });
-    Some(array_attribute_type(expression, array, false))
+    } else {
+        enum_property_type(property, schema, enum_type, force_unordered)
+    }
 }
 
 /// Substitute the enum leaf while retaining every resolved list/map layer and
@@ -8267,7 +8664,7 @@ fn enum_property_type(
             || enum_type.to_string(),
             |items| enum_property_type(items, schema, enum_type, force_unordered),
         );
-        array_attribute_type(&item_type, array, force_unordered)
+        array_attribute_type(&item_type, &array, force_unordered)
     } else if let Some(value) = property_object_map_value(prop, schema) {
         format!(
             "AttributeType::map({})",
@@ -8320,28 +8717,115 @@ fn property_resolves_to_array(prop: &CfnProperty, schema: &CfnSchema) -> bool {
     resolved_array_property(prop, schema, &mut HashSet::new()).is_some()
 }
 
-/// Resolve aliases and oneOf arrays through the same shape classifier used
-/// for inline properties. Track definition visits because oneOf branches
-/// can refer back to their containing definition.
+/// Keep shape classification small by borrowing the array and carrying only
+/// the list metadata that can be merged across reference siblings.
+struct ResolvedArray<'a> {
+    property: &'a CfnProperty,
+    min_items: Option<i64>,
+    max_items: Option<i64>,
+    unique_items: Option<bool>,
+    insertion_order: Option<bool>,
+}
+
+impl<'a> ResolvedArray<'a> {
+    fn new(property: &'a CfnProperty) -> Self {
+        Self {
+            property,
+            min_items: property.min_items,
+            max_items: property.max_items,
+            unique_items: property.unique_items,
+            insertion_order: property.insertion_order,
+        }
+    }
+
+    /// Materialize merged metadata only when a consumer needs a full property.
+    fn into_property(self) -> Cow<'a, CfnProperty> {
+        let property = self.property;
+        if (
+            self.min_items,
+            self.max_items,
+            self.unique_items,
+            self.insertion_order,
+        ) == (
+            property.min_items,
+            property.max_items,
+            property.unique_items,
+            property.insertion_order,
+        ) {
+            Cow::Borrowed(property)
+        } else {
+            Cow::Owned(CfnProperty {
+                min_items: self.min_items,
+                max_items: self.max_items,
+                unique_items: self.unique_items,
+                insertion_order: self.insertion_order,
+                ..property.clone()
+            })
+        }
+    }
+}
+
 fn resolved_array_property<'a>(
     prop: &'a CfnProperty,
     schema: &'a CfnSchema,
     visiting_defs: &mut HashSet<&'a str>,
-) -> Option<&'a CfnProperty> {
+) -> Option<Cow<'a, CfnProperty>> {
+    resolved_array_shape(prop, schema, visiting_defs).map(ResolvedArray::into_property)
+}
+
+/// Resolve aliases and oneOf arrays through the same shape classifier used
+/// for inline properties. Track definition visits because oneOf branches
+/// can refer back to their containing definition.
+fn resolved_array_shape<'a>(
+    prop: &'a CfnProperty,
+    schema: &'a CfnSchema,
+    visiting_defs: &mut HashSet<&'a str>,
+) -> Option<ResolvedArray<'a>> {
     match property_shape_with_visited(prop, schema, visiting_defs) {
-        PropertyShape::Reference { resolved, .. } => {
-            let resolved = resolved?;
-            if !visiting_defs.insert(resolved.name) {
+        PropertyShape::Reference { path, .. } => {
+            // Walk each alias rather than jumping to resolve_ref's final target:
+            // every $ref sibling can contribute list metadata.
+            let name = ref_def_name(path)?;
+            if !visiting_defs.insert(name) {
                 return None;
             }
-            let array = resolved_array_property(resolved.property, schema, visiting_defs);
-            visiting_defs.remove(resolved.name);
-            array
+            let array = schema
+                .definitions
+                .as_ref()
+                .and_then(|definitions| definitions.get(name))
+                .and_then(|target| resolved_array_shape(target, schema, visiting_defs));
+            visiting_defs.remove(name);
+            array.map(|array| array_with_ref_siblings(array, prop))
         }
-        PropertyShape::Inline => (inline_property_type(prop) == Some("array")).then_some(prop),
+        PropertyShape::Inline => {
+            (inline_property_type(prop) == Some("array")).then_some(ResolvedArray::new(prop))
+        }
         PropertyShape::Array { resolved, .. } => Some(resolved),
         PropertyShape::Direct(_) | PropertyShape::Merged(_) | PropertyShape::Unresolved => None,
     }
+}
+
+/// Preserve list metadata through aliases for both ordinary emission and item
+/// overrides. The referenced array owns explicit ordering; siblings fill gaps.
+/// Bounds and uniqueness are conjunctive across every source layer.
+fn array_with_ref_siblings<'a>(
+    mut array: ResolvedArray<'a>,
+    sibling: &CfnProperty,
+) -> ResolvedArray<'a> {
+    array.min_items = match (array.min_items, sibling.min_items) {
+        (Some(target), Some(sibling)) => Some(target.max(sibling)),
+        (target, sibling) => target.or(sibling),
+    };
+    array.max_items = match (array.max_items, sibling.max_items) {
+        (Some(target), Some(sibling)) => Some(target.min(sibling)),
+        (target, sibling) => target.or(sibling),
+    };
+    array.unique_items = match (array.unique_items, sibling.unique_items) {
+        (Some(target), Some(sibling)) => Some(target || sibling),
+        (target, sibling) => target.or(sibling),
+    };
+    array.insertion_order = array.insertion_order.or(sibling.insertion_order);
+    array
 }
 
 /// A whole-attribute override must not discard constraints at the property,
@@ -8386,7 +8870,8 @@ fn has_constrained_array_source<'a>(
 fn array_item_override_source<'a>(
     property: &'a CfnProperty,
     schema: &'a CfnSchema,
-) -> Option<&'a CfnProperty> {
+) -> Option<Cow<'a, CfnProperty>> {
+    let source = property;
     let mut property = property;
     let mut visited = HashSet::new();
     loop {
@@ -8403,7 +8888,10 @@ fn array_item_override_source<'a>(
             return None;
         }
         let Some(reference) = property.ref_path.as_deref() else {
-            return (inline_property_type(property) == Some("array")).then_some(property);
+            if inline_property_type(property) != Some("array") {
+                return None;
+            }
+            return resolved_array_property(source, schema, &mut HashSet::new());
         };
         let name = ref_def_name(reference)?;
         if !visited.insert(name) {
@@ -8517,12 +9005,31 @@ fn cfn_type_to_carina_type_with_enum_resolved(
     let property_path = paths.provider;
     let cfn_parent = paths.cfn_parent;
     let cfn_property_path = CfnPropertyPath::new(cfn_parent, prop_name);
-    if let Some(item_type) = checked_resource_type_override(schema, cfn_property_path, prop)
-        .and_then(|override_type| {
-            emit_array_item_override(schema, cfn_property_path, prop, override_type)
-        })
+    // Decide overlays before walking source children: enum overlays retain
+    // collection wrappers but discard struct bodies. Traversing those bodies
+    // would falsely consume their overrides and publish unused definitions.
+    // Collection items keep the provider name for inference, but are not the
+    // property addressed by its override key.
+    if ref_context == RefContext::Normal
+        && let Some(override_type) = checked_resource_type_override(schema, cfn_property_path, prop)
     {
-        return (item_type, None);
+        if let Some(item_type) =
+            emit_array_item_override(schema, cfn_property_path, prop, override_type)
+        {
+            return (item_type, None);
+        }
+        if let Some(values) = override_type.enum_values() {
+            return (
+                emit_enum_property_type(
+                    schema,
+                    cfn_property_path,
+                    prop,
+                    "AttributeType::string()",
+                    override_forces_unordered(&schema.type_name, cfn_property_path),
+                ),
+                Some(enum_info_for_override(prop_name, values)),
+            );
+        }
     }
     if object_string_union_is_iam_policy_document(prop, &schema.type_name, cfn_property_path) {
         return ("carina_aws_types::iam_policy_document()".to_string(), None);
@@ -8586,8 +9093,9 @@ fn cfn_type_to_carina_type_with_enum_resolved(
             IN_PROGRESS_DEFS.with(|definitions| {
                 definitions.borrow_mut().insert(def_name.to_string());
             });
+            let array = resolved_array_property(prop, schema, &mut HashSet::new());
             let (body, enum_info) = cfn_type_to_carina_type_with_enum_resolved(
-                schema.property_at(property_path, resolved.property),
+                schema.property_at(property_path, array.as_deref().unwrap_or(resolved.property)),
                 namespace,
                 enums,
                 paths,
@@ -8868,6 +9376,33 @@ fn json_default_to_markdown(val: &serde_json::Value) -> Option<String> {
     }
 }
 
+/// Choose block syntax from override metadata or the emitted struct item shape.
+fn property_block_name(
+    name: &str,
+    attr_type: &str,
+    property: &CfnProperty,
+    schema: &CfnSchema,
+    override_type: Option<&TypeOverride>,
+) -> Option<String> {
+    override_type
+        .and_then(TypeOverride::block_name)
+        .map(str::to_owned)
+        .or_else(|| {
+            // An item override can replace CFN struct items with scalar items.
+            // Infer block syntax from the emitted grammar, not discarded children.
+            let can_infer_from_source = override_type
+                .and_then(TypeOverride::array_item_type_expression)
+                .is_none();
+            if attr_type.contains("list(AttributeType::struct_")
+                || (can_infer_from_source && is_list_of_struct_property(property, schema))
+            {
+                compute_block_name(name)
+            } else {
+                None
+            }
+        })
+}
+
 /// Compute block name from a snake_case attribute name.
 ///
 /// For plural names, returns the singular form (e.g., "tags" -> "tag").
@@ -8938,6 +9473,29 @@ fn collapse_whitespace(s: &str) -> String {
 mod tests {
     use super::*;
     use std::path::Path;
+
+    thread_local! {
+        pub(super) static TEST_RESOURCE_TYPE_OVERRIDES:
+            std::cell::Cell<Option<&'static ResourceTypeOverrides>> = const {
+                std::cell::Cell::new(None)
+            };
+    }
+
+    fn with_resource_type_overrides(
+        overrides: &'static ResourceTypeOverrides,
+        action: impl FnOnce(),
+    ) {
+        struct RestoreOverrides(Option<&'static ResourceTypeOverrides>);
+        impl Drop for RestoreOverrides {
+            fn drop(&mut self) {
+                TEST_RESOURCE_TYPE_OVERRIDES.with(|value| value.set(self.0));
+            }
+        }
+        let _restore = RestoreOverrides(
+            TEST_RESOURCE_TYPE_OVERRIDES.with(|value| value.replace(Some(overrides))),
+        );
+        action();
+    }
 
     fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
         super::render_schema_code(&EmissionContext::new(schema)?, type_name)
@@ -9872,10 +10430,7 @@ mod tests {
             .any(|(&(resource, property), override_)| {
                 resource == type_name
                     && property == property_path
-                    && matches!(
-                        override_,
-                        &TypeOverride::Enum(_) | &TypeOverride::EnumUnordered(_)
-                    )
+                    && override_.enum_values().is_some()
             })
     }
 
@@ -12502,7 +13057,7 @@ mod tests {
     fn test_budgets_budget_nested_identity_is_emitted_inline_and_with_def() {
         let schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
         let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
-        let identity_field = r#"StructField::optional("budget_name", AttributeType::string()).create_only().identity()"#;
+        let identity_field = r#"StructField::optional("budget_name", AttributeType::refined_string(None, Some("^[^:\\\\]+$".to_string()), Some((Some(1), Some(100))), None)).create_only().identity()"#;
         let (inline, definitions) = generated.split_once("fn build_schema_def_0()").unwrap();
         assert_eq!(inline.matches(identity_field).count(), 1);
         assert_eq!(definitions.matches(identity_field).count(), 1);
@@ -12693,6 +13248,540 @@ mod tests {
             markdown.contains("`Map<String, List<String>>`")
                 && markdown.contains("`Map<String, Spend>`"),
             "Budget docs must expose both API map shapes: {markdown}"
+        );
+    }
+
+    fn generated_budgets_field<'a>(generated: &'a str, path: &str) -> &'a str {
+        let (definition, property) = path.split_once('.').unwrap();
+        let definition_code = generated
+            .split_once(&format!(
+                "AttributeType::struct_(\"{definition}\".to_string(), vec!["
+            ))
+            .unwrap_or_else(|| panic!("missing generated definition {definition}"))
+            .1;
+        let field = definition_code
+            .split_once(&format!("({}, ", rust_lit(&property.to_snake_case())))
+            .unwrap_or_else(|| panic!("missing generated field {path}"))
+            .1;
+        field
+            .split_once(&format!(".with_provider_name(\"{property}\")"))
+            .unwrap_or_else(|| panic!("missing provider name for {path}"))
+            .0
+    }
+
+    fn assert_budgets_enum_values(field: &str, path: &str, values: &[(&str, &str)]) {
+        let wire_values = values
+            .iter()
+            .map(|(wire, _)| format!("{}.to_string()", rust_lit(wire)))
+            .collect::<Vec<_>>()
+            .join(", ");
+        assert!(
+            field.contains(&format!("Some(vec![{wire_values}])")),
+            "{path} must retain exactly the documented AWS wire values: {field}"
+        );
+        for (wire, dsl) in values {
+            assert!(
+                field.contains(&format!(
+                    "({}.to_string(), {}.to_string())",
+                    rust_lit(wire),
+                    rust_lit(dsl)
+                )),
+                "{path} must map DSL {dsl} back to AWS {wire}: {field}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_budgets_budget_documented_scalar_enums() {
+        let schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        let cases: &[(&str, &[(&str, &str)])] = &[
+            (
+                "BudgetData.BudgetType",
+                &[
+                    ("USAGE", "usage"),
+                    ("COST", "cost"),
+                    ("RI_UTILIZATION", "ri_utilization"),
+                    ("RI_COVERAGE", "ri_coverage"),
+                    ("SAVINGS_PLANS_UTILIZATION", "savings_plans_utilization"),
+                    ("SAVINGS_PLANS_COVERAGE", "savings_plans_coverage"),
+                ],
+            ),
+            (
+                "BudgetData.TimeUnit",
+                &[
+                    ("DAILY", "daily"),
+                    ("MONTHLY", "monthly"),
+                    ("QUARTERLY", "quarterly"),
+                    ("ANNUALLY", "annually"),
+                    ("CUSTOM", "custom"),
+                ],
+            ),
+            (
+                "Notification.ComparisonOperator",
+                &[
+                    ("GREATER_THAN", "greater_than"),
+                    ("LESS_THAN", "less_than"),
+                    ("EQUAL_TO", "equal_to"),
+                ],
+            ),
+            (
+                "Notification.NotificationType",
+                &[("ACTUAL", "actual"), ("FORECASTED", "forecasted")],
+            ),
+            (
+                "Notification.ThresholdType",
+                &[
+                    ("PERCENTAGE", "percentage"),
+                    ("ABSOLUTE_VALUE", "absolute_value"),
+                ],
+            ),
+            (
+                "Subscriber.SubscriptionType",
+                &[("SNS", "sns"), ("EMAIL", "email")],
+            ),
+            (
+                "AutoAdjustData.AutoAdjustType",
+                &[("HISTORICAL", "historical"), ("FORECAST", "forecast")],
+            ),
+        ];
+        for (path, values) in cases {
+            let field = generated_budgets_field(&generated, path);
+            assert!(
+                field.starts_with("AttributeType::enum_("),
+                "{path}: {field}"
+            );
+            assert_budgets_enum_values(field, path, values);
+        }
+    }
+
+    #[test]
+    fn test_budgets_budget_metrics_items_use_api_enum_and_count() {
+        let schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        let path = "BudgetData.Metrics";
+        let field = generated_budgets_field(&generated, path);
+        assert!(
+            field.starts_with("AttributeType::refined_list(AttributeType::enum_("),
+            "{field}"
+        );
+        assert!(
+            field.contains(
+                ", true, Some((None, Some(1))), carina_core::schema::ListElements::AllowDuplicates)"
+            ),
+            "{field}"
+        );
+        assert_budgets_enum_values(
+            field,
+            path,
+            &[
+                ("BlendedCost", "blended_cost"),
+                ("UnblendedCost", "unblended_cost"),
+                ("AmortizedCost", "amortized_cost"),
+                ("NetUnblendedCost", "net_unblended_cost"),
+                ("NetAmortizedCost", "net_amortized_cost"),
+                ("UsageQuantity", "usage_quantity"),
+                ("NormalizedUsageAmount", "normalized_usage_amount"),
+                ("Hours", "hours"),
+            ],
+        );
+        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        assert!(markdown.contains("`blended_cost`"), "{markdown}");
+        let row = markdown
+            .lines()
+            .find(|line| line.starts_with("| `metrics` |"))
+            .unwrap();
+        assert!(row.contains("items: ..=1"), "{row}");
+    }
+
+    #[test]
+    fn test_nested_array_item_overrides_emit_inline_and_with_def() {
+        let schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        let (inline, definitions) = generated.split_once("fn build_schema_def_0()").unwrap();
+        let item = "AttributeType::refined_string(None, None, Some((Some(0), Some(1024))), None)";
+        let expected = format!(
+            "AttributeType::refined_list({item}, true, Some((Some(1), None)), carina_core::schema::ListElements::AllowDuplicates))"
+        );
+        for code in [inline, definitions] {
+            for path in [
+                "TagValues.Values",
+                "CostCategoryValues.Values",
+                "ExpressionDimensionValues.Values",
+            ] {
+                assert_eq!(generated_budgets_field(code, path), expected, "{path}");
+            }
+        }
+        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        let rows = markdown
+            .lines()
+            .filter(|line| line.starts_with("| `values` |"))
+            .collect::<Vec<_>>();
+        assert_eq!(rows.len(), 3);
+        for row in rows {
+            assert!(
+                row.contains("List<String (length: 0..=1024)>") && row.contains("items: 1.."),
+                "{row}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_nested_array_item_overrides_resolve_aliases_and_preserve_cfn_constraints() {
+        let schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
+        let expected_rust = generate_schema_code(&schema, &schema.type_name).unwrap();
+        let expected_docs = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        let mut schema = schema;
+        let path = CfnPropertyPath::new(Some("TagValues"), "Values");
+        let array = cfn_override_property(&schema, path).unwrap().clone();
+        let definitions = schema.definitions.as_mut().unwrap();
+        definitions.insert("ValuesArray".to_string(), array);
+        definitions.insert(
+            "ValuesAlias".to_string(),
+            serde_json::from_value(serde_json::json!({
+                "$ref": "#/definitions/ValuesArray"
+            }))
+            .unwrap(),
+        );
+        *definitions
+            .get_mut("TagValues")
+            .unwrap()
+            .properties
+            .as_mut()
+            .unwrap()
+            .get_mut("Values")
+            .unwrap() =
+            serde_json::from_value(serde_json::json!({"$ref": "#/definitions/ValuesAlias"}))
+                .unwrap();
+        assert_eq!(
+            generate_schema_code(&schema, &schema.type_name).unwrap(),
+            expected_rust
+        );
+        assert_eq!(
+            generate_test_markdown(&schema, &schema.type_name).unwrap(),
+            expected_docs
+        );
+
+        // Bounds/uniqueness on both $ref siblings and the target are conjunctive.
+        let definitions = schema.definitions.as_mut().unwrap();
+        let alias = definitions.get_mut("ValuesAlias").unwrap();
+        alias.min_items = Some(1);
+        alias.max_items = Some(4);
+        alias.unique_items = Some(true);
+        let array = definitions.get_mut("ValuesArray").unwrap();
+        array.max_items = Some(3);
+        array.insertion_order = Some(false);
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        let expected = concat!(
+            "AttributeType::refined_list(AttributeType::refined_string(None, None, ",
+            "Some((Some(0), Some(1024))), None), false, Some((Some(1), Some(3))), ",
+            "carina_core::schema::ListElements::Unique))"
+        );
+        let (inline, definitions) = generated.split_once("fn build_schema_def_0()").unwrap();
+        for code in [inline, definitions] {
+            assert_eq!(generated_budgets_field(code, "TagValues.Values"), expected);
+        }
+        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        assert!(
+            markdown
+                .lines()
+                .any(|row| row.starts_with("| `values` |") && row.contains("items: 1..=3")),
+            "{markdown}"
+        );
+    }
+
+    #[test]
+    fn test_array_item_overrides_discard_source_item_grammar_in_schema_and_nested_docs() {
+        for cfn_type in ["AWS::Logs::LogGroup", "AWS::Budgets::Budget"] {
+            let mut schema = cfn_schema_for_codegen_tests(cfn_type);
+            let expected_rust = generate_schema_code(&schema, cfn_type).unwrap();
+            // Top-level Markdown preserves the source grammar for linked structs.
+            let expected_docs = (cfn_type == "AWS::Budgets::Budget")
+                .then(|| generate_test_markdown(&schema, cfn_type).unwrap());
+            let array = if cfn_type == "AWS::Logs::LogGroup" {
+                schema.properties.get_mut("FieldIndexPolicies").unwrap()
+            } else {
+                schema
+                    .definitions
+                    .as_mut()
+                    .unwrap()
+                    .get_mut("TagValues")
+                    .unwrap()
+                    .properties
+                    .as_mut()
+                    .unwrap()
+                    .get_mut("Values")
+                    .unwrap()
+            };
+            array.items = Some(Box::new(serde_json::from_value(serde_json::json!({
+                "type": "object", "properties": {
+                    "Discarded": {"type": "object", "patternProperties": {".*": {"type": "boolean"}}}
+                }
+            })).unwrap()));
+            assert_eq!(
+                generate_schema_code(&schema, cfn_type).unwrap(),
+                expected_rust
+            );
+            if let Some(expected_docs) = expected_docs {
+                assert_eq!(
+                    generate_test_markdown(&schema, cfn_type).unwrap(),
+                    expected_docs
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_array_enum_bounds_preserve_inner_collection_layers() {
+        let mut schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
+        let metrics = schema
+            .definitions
+            .as_mut()
+            .unwrap()
+            .get_mut("BudgetData")
+            .unwrap()
+            .properties
+            .as_mut()
+            .unwrap()
+            .get_mut("Metrics")
+            .unwrap();
+        metrics.items = Some(Box::new(
+            serde_json::from_value(serde_json::json!({
+                "type": "array", "minItems": 1, "maxItems": 3, "uniqueItems": true,
+                "items": {"type": "string"}
+            }))
+            .unwrap(),
+        ));
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        let field = generated_budgets_field(&generated, "BudgetData.Metrics");
+        assert!(
+            field.starts_with(
+                "AttributeType::refined_list(AttributeType::refined_list(AttributeType::enum_("
+            ),
+            "{field}"
+        );
+        assert!(
+            field.ends_with(concat!(
+                ", true, Some((Some(1), Some(3))), carina_core::schema::ListElements::Unique), ",
+                "true, Some((None, Some(1))), carina_core::schema::ListElements::AllowDuplicates))"
+            )),
+            "{field}"
+        );
+        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        let row = markdown
+            .lines()
+            .find(|line| line.starts_with("| `metrics` |"))
+            .unwrap();
+        assert!(
+            row.contains("List\\<List\\<")
+                && row.contains("items: 1..=3")
+                && row.contains("items: ..=1"),
+            "{row}"
+        );
+    }
+
+    #[test]
+    fn test_budgets_budget_filter_match_options_are_item_enums() {
+        let schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        for path in [
+            "ExpressionDimensionValues.MatchOptions",
+            "TagValues.MatchOptions",
+            "CostCategoryValues.MatchOptions",
+        ] {
+            let field = generated_budgets_field(&generated, path);
+            let list_type = if path == "ExpressionDimensionValues.MatchOptions" {
+                "refined_list"
+            } else {
+                "list"
+            };
+            assert!(
+                field.starts_with(&format!("AttributeType::{list_type}(AttributeType::enum_(")),
+                "{path}: {field}"
+            );
+            assert_budgets_enum_values(
+                field,
+                path,
+                &[
+                    ("EQUALS", "equals"),
+                    ("ABSENT", "absent"),
+                    ("STARTS_WITH", "starts_with"),
+                    ("ENDS_WITH", "ends_with"),
+                    ("CONTAINS", "contains"),
+                    ("GREATER_THAN_OR_EQUAL", "greater_than_or_equal"),
+                    ("CASE_SENSITIVE", "case_sensitive"),
+                    ("CASE_INSENSITIVE", "case_insensitive"),
+                ],
+            );
+        }
+    }
+
+    #[test]
+    fn test_budgets_budget_dimension_match_options_have_single_item_limit() {
+        let schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        let field = generated_budgets_field(&generated, "ExpressionDimensionValues.MatchOptions");
+        assert!(
+            field.contains(
+                ", true, Some((None, Some(1))), carina_core::schema::ListElements::AllowDuplicates)"
+            ),
+            "Dimension MatchOptions must contain at most one item: {field}"
+        );
+
+        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        for (section, has_limit) in [
+            ("dimensions", true),
+            ("tags", false),
+            ("cost_categories", false),
+        ] {
+            let section = markdown
+                .split_once(&format!("### expression.{section}\n"))
+                .unwrap()
+                .1;
+            let row = section
+                .lines()
+                .find(|line| line.starts_with("| `match_options` |"))
+                .unwrap();
+            assert_eq!(row.contains("items: ..=1"), has_limit, "{row}");
+        }
+    }
+
+    #[test]
+    fn test_budgets_budget_tag_key_has_documented_string_length() {
+        let schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        let key = "AttributeType::refined_string(None, None, Some((Some(0), Some(1024))), None)";
+        assert_eq!(
+            generated_budgets_field(&generated, "TagValues.Key"),
+            format!("{key})")
+        );
+        assert!(
+            generated
+                .matches(&format!("StructField::optional(\"key\", {key})"))
+                .count()
+                >= 2,
+            "inline TagValues and the shared definition for recursive expressions must be refined"
+        );
+        assert_eq!(
+            generated_budgets_field(&generated, "CostCategoryValues.Key"),
+            "AttributeType::string())"
+        );
+    }
+
+    #[test]
+    fn test_budgets_budget_tag_key_docs_show_documented_string_length() {
+        let schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
+        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        let tags = markdown
+            .split_once("### expression.tags\n")
+            .unwrap()
+            .1
+            .split_once("\n### ")
+            .unwrap()
+            .0;
+        assert!(
+            tags.contains("| `key` | `String (length: 0..=1024)` | No |"),
+            "TagValues.Key docs must show the API length bounds: {tags}"
+        );
+    }
+
+    #[test]
+    fn test_budgets_budget_filter_dimension_key_is_an_enum() {
+        let schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        let path = "ExpressionDimensionValues.Key";
+        let field = generated_budgets_field(&generated, path);
+        assert!(field.starts_with("AttributeType::enum_("), "{field}");
+        assert_budgets_enum_values(
+            field,
+            path,
+            &[
+                ("AZ", "az"),
+                ("INSTANCE_TYPE", "instance_type"),
+                ("LINKED_ACCOUNT", "linked_account"),
+                ("LINKED_ACCOUNT_NAME", "linked_account_name"),
+                ("OPERATION", "operation"),
+                ("PURCHASE_TYPE", "purchase_type"),
+                ("REGION", "region"),
+                ("SERVICE", "service"),
+                ("SERVICE_CODE", "service_code"),
+                ("USAGE_TYPE", "usage_type"),
+                ("USAGE_TYPE_GROUP", "usage_type_group"),
+                ("RECORD_TYPE", "record_type"),
+                ("OPERATING_SYSTEM", "operating_system"),
+                ("TENANCY", "tenancy"),
+                ("SCOPE", "scope"),
+                ("PLATFORM", "platform"),
+                ("SUBSCRIPTION_ID", "subscription_id"),
+                ("LEGAL_ENTITY_NAME", "legal_entity_name"),
+                ("INVOICING_ENTITY", "invoicing_entity"),
+                ("DEPLOYMENT_OPTION", "deployment_option"),
+                ("DATABASE_ENGINE", "database_engine"),
+                ("CACHE_ENGINE", "cache_engine"),
+                ("INSTANCE_TYPE_FAMILY", "instance_type_family"),
+                ("BILLING_ENTITY", "billing_entity"),
+                ("RESERVATION_ID", "reservation_id"),
+                ("RESOURCE_ID", "resource_id"),
+                ("RIGHTSIZING_TYPE", "rightsizing_type"),
+                ("SAVINGS_PLANS_TYPE", "savings_plans_type"),
+                ("SAVINGS_PLAN_ARN", "savings_plan_arn"),
+                ("PAYMENT_OPTION", "payment_option"),
+                ("RESERVATION_MODIFIED", "reservation_modified"),
+                ("TAG_KEY", "tag_key"),
+                ("COST_CATEGORY_NAME", "cost_category_name"),
+            ],
+        );
+    }
+
+    #[test]
+    fn test_budgets_budget_notification_threshold_has_float_range() {
+        let schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        assert_eq!(
+            generated_budgets_field(&generated, "Notification.Threshold"),
+            "AttributeType::refined_float(None, Some((Some(0.0), Some(15000000000000.0)))))"
+        );
+    }
+
+    #[test]
+    fn test_budgets_budget_spend_amount_is_non_negative_in_all_uses() {
+        let schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        let amount = "AttributeType::refined_float(None, Some((Some(0.0), None)))";
+        assert_eq!(
+            generated_budgets_field(&generated, "Spend.Amount"),
+            format!("{amount})")
+        );
+        assert!(
+            generated
+                .matches(&format!("StructField::required(\"amount\", {amount})"))
+                .count()
+                >= 3,
+            "inline BudgetLimit and the shared Spend definition for planned limits must be refined"
+        );
+    }
+
+    #[test]
+    fn test_budgets_budget_name_has_length_and_supported_pattern() {
+        let schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        let name = generated_budgets_field(&generated, "BudgetData.BudgetName");
+        assert_eq!(
+            name,
+            r#"AttributeType::refined_string(None, Some("^[^:\\\\]+$".to_string()), Some((Some(1), Some(100))), None)).create_only().identity()"#
+        );
+        assert!(emitted_string_accepts(name, "monthly-cost"));
+        assert!(!emitted_string_accepts(name, "monthly:cost"));
+        assert!(!emitted_string_accepts(name, r"monthly\cost"));
+    }
+
+    #[test]
+    fn test_budgets_budget_adjustment_period_has_integer_range() {
+        let schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        assert_eq!(
+            generated_budgets_field(&generated, "HistoricalOptions.BudgetAdjustmentPeriod"),
+            "AttributeType::refined_int(None, Some((Some(1), Some(60)))))"
         );
     }
 
@@ -13147,7 +14236,12 @@ mod tests {
                 let text = display.as_str();
                 assert!(!text.contains('`'), "{cfn_type}.{property}: {text}");
                 assert!(
-                    docs.contains(&format!("`{text}`")),
+                    docs.split('`').skip(1).step_by(2).any(|span| {
+                        span == text
+                            || span.strip_prefix(text).is_some_and(|suffix| {
+                                suffix.starts_with(" (items: ") && suffix.ends_with(')')
+                            })
+                    }),
                     "{cfn_type}.{property}: missing type display"
                 );
                 assert!(
@@ -21322,7 +22416,7 @@ mod tests {
     }
 
     #[test]
-    fn test_array_item_type_override_rejects_nested_keys() {
+    fn test_array_item_type_override_accepts_nested_keys() {
         let mut schema = empty_schema("AWS::Test::NestedItemOverride");
         schema.properties.insert("Container".to_string(), serde_json::from_value(serde_json::json!({
             "type": "object", "properties": {"Values": {"type": "array", "items": {"type": "string"}}}
@@ -21338,20 +22432,251 @@ mod tests {
             ("AWS::Test::NestedItemOverride", "Container.Values"),
             override_type.clone(),
         );
-        for error in [
-            overrides.validate_sources(&schema).unwrap_err(),
-            override_type
-                .validate_source_shape(&schema, path, cfn_override_property(&schema, path).unwrap())
-                .unwrap_err(),
+        overrides.validate_sources(&schema).unwrap();
+        override_type
+            .validate_source_shape(&schema, path, cfn_override_property(&schema, path).unwrap())
+            .unwrap();
+    }
+
+    #[test]
+    fn test_array_bounds_must_tighten_cfn_and_have_a_valid_intersection() {
+        let mut schema = empty_schema("AWS::Test::ArrayBounds");
+        schema.properties.insert(
+            "Values".to_string(),
+            serde_json::from_value(serde_json::json!({
+                "type": "array", "items": {"type": "string"},
+                "uniqueItems": true, "insertionOrder": false, "minItems": 2, "maxItems": 5
+            }))
+            .unwrap(),
+        );
+        let path = CfnPropertyPath::new(None, "Values");
+        let property = &schema.properties["Values"];
+        let expression_override = resource_type_override(
+            "AWS::Logs::LogGroup",
+            CfnPropertyPath::new(None, "FieldIndexPolicies"),
+        )
+        .unwrap();
+        for items in [
+            expression_override.clone(),
+            TypeOverride::Enum(vec!["A", "B"]),
+            TypeOverride::EnumUnordered(vec!["A", "B"]),
         ] {
-            let message = error.to_string();
-            assert!(
-                message.contains("ArrayItemType")
-                    && message.contains("Container.Values")
-                    && message.contains("nested"),
-                "{message}"
+            for (min, max, diagnostic) in [
+                (Some(1), None, "loosen CFN bound"),
+                (None, Some(6), "loosen CFN bound"),
+                (Some(6), None, "exceeds maxItems"),
+                (None, Some(1), "exceeds maxItems"),
+                (Some(4), Some(3), "exceeds maxItems"),
+                (Some(-1), None, "nonnegative"),
+                (None, Some(-1), "nonnegative"),
+            ] {
+                let override_type = items.clone().with_array_bounds(min, max);
+                let error = override_type
+                    .validate_source_shape(&schema, path, property)
+                    .unwrap_err()
+                    .to_string();
+                assert!(
+                    error.contains("AWS::Test::ArrayBounds.Values") && error.contains(diagnostic),
+                    "{error}"
+                );
+            }
+            for (min, max, expected_min, expected_max) in [
+                (None, None, 2, 5),
+                (Some(2), Some(5), 2, 5),
+                (Some(3), None, 3, 5),
+                (None, Some(4), 2, 4),
+                (Some(3), Some(3), 3, 3),
+            ] {
+                let override_type = items.clone().with_array_bounds(min, max);
+                override_type
+                    .validate_source_shape(&schema, path, property)
+                    .unwrap();
+                let emitted = emit_array_override(
+                    &schema,
+                    path,
+                    property,
+                    &override_type,
+                    "item_type()",
+                    false,
+                );
+                assert_eq!(
+                    emitted,
+                    format!(
+                        "AttributeType::refined_list(item_type(), false, Some((Some({expected_min}), Some({expected_max}))), carina_core::schema::ListElements::Unique)"
+                    )
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_array_bounds_reject_loosening_in_schema_and_docs() {
+        for (definition, property, min, max) in [
+            ("TagValues", "Values", Some(2), None),
+            ("BudgetData", "Metrics", None, Some(0)),
+        ] {
+            let mut schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
+            let source = schema
+                .definitions
+                .as_mut()
+                .unwrap()
+                .get_mut(definition)
+                .unwrap()
+                .properties
+                .as_mut()
+                .unwrap()
+                .get_mut(property)
+                .unwrap();
+            source.min_items = min;
+            source.max_items = max;
+            assert_override_generation_rejected(
+                &schema,
+                "loosen CFN bound",
+                &format!("{definition}.{property}"),
             );
         }
+    }
+
+    #[test]
+    fn test_nested_array_overrides_reject_missing_deprecated_and_unconsumed_keys() {
+        for invalid in ["missing", "deprecated", "unreachable"] {
+            let mut schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
+            let definitions = schema.definitions.as_mut().unwrap();
+            match invalid {
+                "missing" => {
+                    definitions
+                        .get_mut("TagValues")
+                        .unwrap()
+                        .properties
+                        .as_mut()
+                        .unwrap()
+                        .remove("Values");
+                }
+                "deprecated" => {
+                    definitions
+                        .get_mut("TagValues")
+                        .unwrap()
+                        .properties
+                        .as_mut()
+                        .unwrap()
+                        .get_mut("Values")
+                        .unwrap()
+                        .description = Some("(Deprecated.) Not emitted.".to_string());
+                }
+                "unreachable" => {
+                    definitions
+                        .get_mut("Expression")
+                        .unwrap()
+                        .properties
+                        .as_mut()
+                        .unwrap()
+                        .remove("Tags");
+                }
+                _ => unreachable!(),
+            }
+            // CostCategoryValues.Values and ExpressionDimensionValues.Values
+            // still emit: their identical leaf names cannot consume TagValues.Values.
+            assert_override_generation_rejected(&schema, "Array", "TagValues.Values");
+        }
+    }
+
+    fn with_enum_shadowed_array_override(action: impl FnOnce(CfnSchema)) {
+        const CFN_TYPE: &str = "AWS::Test::EnumShadowedArrayOverride";
+        static OVERRIDES: LazyLock<ResourceTypeOverrides> = LazyLock::new(|| {
+            let mut overrides = ResourceTypeOverrides::default();
+            for (nested, override_type) in [
+                ("Container.Metrics", TypeOverride::Enum(vec!["A", "B"])),
+                (
+                    "Container.UnorderedMetrics",
+                    TypeOverride::EnumUnordered(vec!["A", "B"]),
+                ),
+                (
+                    "Container.BoundedMetrics",
+                    TypeOverride::Enum(vec!["A", "B"]).with_array_bounds(Some(1), Some(3)),
+                ),
+            ] {
+                overrides.insert((CFN_TYPE, nested), override_type);
+            }
+            overrides.insert(
+                (CFN_TYPE, "TagValues.Values"),
+                TypeOverride::Enum(vec!["X", "Y"]).with_array_bounds(Some(1), None),
+            );
+            overrides
+        });
+        let metrics = serde_json::json!({
+            "type": "array",
+            "items": {"$ref": "#/definitions/TagValues"}
+        });
+        let fields = serde_json::json!({
+            "Metrics": metrics,
+            "UnorderedMetrics": metrics,
+            "BoundedMetrics": metrics
+        });
+        let schema = serde_json::from_value(serde_json::json!({
+            "typeName": CFN_TYPE,
+            "properties": {"Config": {"$ref": "#/definitions/Container"}},
+            "definitions": {
+                "Container": {"type": "object", "properties": fields},
+                "TagValues": {
+                    "type": "object",
+                    "properties": {
+                        "Values": {"type": "array", "items": {"type": "string"}}
+                    }
+                }
+            }
+        }))
+        .unwrap();
+        with_resource_type_overrides(&OVERRIDES, || action(schema));
+    }
+
+    #[test]
+    fn test_enum_overlays_reject_shadowed_array_override() {
+        with_enum_shadowed_array_override(|schema| {
+            reset_recursion_guard();
+            let generated = generate_top_level_attribute_type(
+                "Config",
+                &schema.properties["Config"],
+                &schema,
+                "aws.test.EnumShadowedArrayOverride",
+                &BTreeMap::new(),
+                false,
+            );
+            assert!(!generated.contains("TagValues"), "{generated}");
+            EMITTED_ARRAY_OVERRIDES.with(|emitted| {
+                assert_eq!(
+                    *emitted.borrow(),
+                    BTreeSet::from([(Some("Container".to_string()), "BoundedMetrics".to_string())]),
+                    "only the emitted enum array may consume an override"
+                );
+            });
+            for error in [
+                generation_failure(|| generate_synthetic_schema_code(&schema)),
+                generation_failure(|| generate_test_markdown(&schema, &schema.type_name)),
+            ] {
+                assert!(error.contains("not consumed"), "{error}");
+                assert!(error.contains("TagValues.Values"), "{error}");
+            }
+        });
+    }
+
+    #[test]
+    fn test_enum_overlays_document_only_surviving_struct_paths() {
+        with_enum_shadowed_array_override(|mut schema| {
+            schema.properties.insert(
+                "Visible".to_string(),
+                serde_json::from_value(serde_json::json!({"$ref": "#/definitions/TagValues"}))
+                    .unwrap(),
+            );
+            let generated = generate_synthetic_schema_code(&schema).unwrap();
+            assert!(generated.contains("TagValues"), "{generated}");
+            let docs = generate_test_markdown(&schema, &schema.type_name).unwrap();
+            assert!(docs.contains("### visible\n"), "{docs}");
+            assert!(docs.contains("### visible.values (Values)\n"), "{docs}");
+            for discarded in ["metrics", "unordered_metrics", "bounded_metrics"] {
+                assert!(!docs.contains(&format!("{discarded}.values")), "{docs}");
+            }
+            assert!(!docs.contains("Used by:"), "{docs}");
+        });
     }
 
     #[test]
@@ -21391,6 +22716,120 @@ mod tests {
             generate_test_markdown(&schema, &schema.type_name).unwrap(),
             expected_docs
         );
+    }
+
+    fn assert_array_item_override_alias_ordering(nested: bool) {
+        static OVERRIDES: LazyLock<ResourceTypeOverrides> = LazyLock::new(|| {
+            let mut overrides = ResourceTypeOverrides::default();
+            for (resource, path) in [
+                ("AWS::Test::TopArrayItemOrdering", "Values"),
+                ("AWS::Test::NestedArrayItemOrdering", "Container.Values"),
+            ] {
+                overrides.insert(
+                    (resource, path),
+                    TypeOverride::ArrayItemType {
+                        expression: "AttributeType::string()",
+                        display: OverrideTypeDisplay::new("List<String>"),
+                        block_name: None,
+                        default: None,
+                    },
+                );
+            }
+            overrides
+        });
+        let cfn_type = if nested {
+            "AWS::Test::NestedArrayItemOrdering"
+        } else {
+            "AWS::Test::TopArrayItemOrdering"
+        };
+        // The referenced shape wins explicit conflicts; siblings supply missing
+        // ordering. Cover both intermediate aliases as well as the exact path.
+        for (sibling, first_alias, second_alias, target, ordered) in [
+            (Some(false), None, None, None, false),
+            (None, Some(false), None, None, false),
+            (None, None, Some(false), None, false),
+            (None, None, None, Some(false), false),
+            (None, None, None, None, true),
+            (Some(true), Some(false), None, None, false),
+            (Some(false), Some(true), None, None, true),
+            (Some(true), Some(true), Some(false), None, false),
+            (Some(false), Some(false), Some(false), Some(true), true),
+            (Some(true), Some(true), Some(true), Some(false), false),
+        ] {
+            for constrained in [false, true] {
+                let mut property = serde_json::json!({"$ref": "#/definitions/FirstAlias"});
+                let mut first = serde_json::json!({"$ref": "#/definitions/SecondAlias"});
+                let mut second = serde_json::json!({"$ref": "#/definitions/ValuesArray"});
+                let mut array = serde_json::json!({
+                    "type": "array", "items": {"type": "string"}
+                });
+                for (source, order) in [
+                    (&mut property, sibling),
+                    (&mut first, first_alias),
+                    (&mut second, second_alias),
+                    (&mut array, target),
+                ] {
+                    if let Some(order) = order {
+                        source["insertionOrder"] = serde_json::json!(order);
+                    }
+                }
+                if constrained {
+                    property["minItems"] = serde_json::json!(2);
+                    first["maxItems"] = serde_json::json!(4);
+                    second["uniqueItems"] = serde_json::json!(true);
+                    array["minItems"] = serde_json::json!(1);
+                    array["maxItems"] = serde_json::json!(5);
+                    array["uniqueItems"] = serde_json::json!(false);
+                }
+                let properties = if nested {
+                    serde_json::json!({"Config": {"$ref": "#/definitions/Container"}})
+                } else {
+                    serde_json::json!({"Values": property})
+                };
+                let schema: CfnSchema = serde_json::from_value(serde_json::json!({
+                    "typeName": cfn_type,
+                    "properties": properties,
+                    "definitions": {
+                        "Container": {"type": "object", "properties": {"Values": property}},
+                        "FirstAlias": first,
+                        "SecondAlias": second,
+                        "ValuesArray": array
+                    }
+                }))
+                .unwrap();
+                let expected = if constrained {
+                    format!(
+                        "AttributeType::refined_list(AttributeType::string(), {ordered}, Some((Some(2), Some(4))), carina_core::schema::ListElements::Unique)"
+                    )
+                } else {
+                    let constructor = if ordered { "list" } else { "unordered_list" };
+                    format!("AttributeType::{constructor}(AttributeType::string())")
+                };
+                let plain = generate_synthetic_schema_code(&schema).unwrap();
+                assert!(
+                    plain.contains(&expected),
+                    "without override: {schema:?}\n{plain}"
+                );
+                with_resource_type_overrides(&OVERRIDES, || {
+                    let overridden = generate_synthetic_schema_code(&schema).unwrap();
+                    assert!(
+                        overridden.contains(&expected),
+                        "with ArrayItemType: {schema:?}\n{overridden}"
+                    );
+                    assert_eq!(overridden, plain, "{schema:?}");
+                });
+            }
+        }
+    }
+
+    #[test]
+    fn test_top_level_array_item_override_preserves_alias_ordering() {
+        assert_array_item_override_alias_ordering(false);
+    }
+
+    #[test]
+    fn test_nested_array_item_override_preserves_alias_ordering() {
+        assert_array_item_override_alias_ordering(true);
     }
 
     #[test]
@@ -21443,6 +22882,33 @@ mod tests {
                 serde_json::from_value(property).unwrap(),
             );
             assert_override_generation_rejected(&schema, "ArrayItemType", "FieldIndexPolicies");
+
+            let mut nested_schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
+            let definitions = nested_schema.definitions.as_mut().unwrap();
+            definitions.extend(
+                schema
+                    .definitions
+                    .as_ref()
+                    .unwrap()
+                    .iter()
+                    .filter(|(name, _)| name.starts_with("Override"))
+                    .map(|(name, definition)| (name.clone(), definition.clone())),
+            );
+            definitions
+                .get_mut("TagValues")
+                .unwrap()
+                .properties
+                .as_mut()
+                .unwrap()
+                .insert(
+                    "Values".to_string(),
+                    schema.properties["FieldIndexPolicies"].clone(),
+                );
+            assert_override_generation_rejected(
+                &nested_schema,
+                "ArrayItemType",
+                "TagValues.Values",
+            );
         }
     }
 
@@ -21503,7 +22969,7 @@ mod tests {
             &BTreeMap::new(),
         );
         reset_property_mode_emission_state();
-        let error = validate_emitted_array_item_overrides(&schema)
+        let error = validate_emitted_array_overrides(&schema)
             .unwrap_err()
             .to_string();
         assert!(
@@ -21524,7 +22990,7 @@ mod tests {
             generated.contains("logs_field_index_policy()"),
             "{generated}"
         );
-        validate_emitted_array_item_overrides(&schema).unwrap();
+        validate_emitted_array_overrides(&schema).unwrap();
     }
 
     #[test]
