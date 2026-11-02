@@ -133,207 +133,55 @@ fn evaluation_interval_enforces_its_complete_bounded_period_set() {
 }
 
 #[test]
-fn string_lengths_accept_endpoints_and_reject_outside_values() {
+fn plain_strings_accept_identity_typed_references_at_every_deferred_constraint() {
     let schema = alarm_schema();
-    for (path, min, max) in [
-        ("alarm_name", 1, 255),
-        ("alarm_description", 0, 1024),
-        ("metric_name", 1, 255),
-        ("namespace", 1, 255),
-        ("threshold_metric_id", 1, 255),
-        ("metrics.metric_stat.metric.metric_name", 1, 255),
-        ("metrics.metric_stat.metric.namespace", 1, 255),
-        ("dimensions.name", 1, 255),
-        ("dimensions.value", 1, 1024),
-        ("metrics.metric_stat.metric.dimensions.name", 1, 255),
-        ("metrics.metric_stat.metric.dimensions.value", 1, 1024),
-        ("metrics.id", 1, 255),
-        ("metrics.expression", 1, 2048),
-        ("evaluation_criteria.prom_ql_criteria.query", 1, 10000),
-        ("evaluation_window.wall_clock_window.timezone", 1, 50),
+    let topic = super::generated::sns::topic::sns_topic_config().schema;
+    let vpc = super::generated::ec2::vpc::ec2_vpc_config().schema;
+    // Exercise both an aws.Arn and a resource ID: anonymous string length or
+    // pattern refinements reject these references until carina-rs/carina#4230.
+    for path in [
+        "alarm_name",
+        "alarm_description",
+        "metric_name",
+        "namespace",
+        "threshold_metric_id",
+        "metrics.metric_stat.metric.metric_name",
+        "metrics.metric_stat.metric.namespace",
+        "dimensions.name",
+        "dimensions.value",
+        "metrics.metric_stat.metric.dimensions.name",
+        "metrics.metric_stat.metric.dimensions.value",
+        "metrics.id",
+        "metrics.expression",
+        "evaluation_criteria.prom_ql_criteria.query",
+        "evaluation_window.wall_clock_window.timezone",
+        "extended_statistic",
+        "metrics.metric_stat.stat",
     ] {
-        let attr_type = field(&schema, path);
-        for length in [min, max] {
-            assert!(
-                attr_type.validate(&string(&"a".repeat(length))).is_ok(),
-                "{path}: {length}"
-            );
-        }
+        let sink = field(&schema, path);
         assert!(
-            attr_type.validate(&string(&"a".repeat(max + 1))).is_err(),
-            "{path}"
+            matches!(
+                sink.as_type().raw_shape(),
+                carina_core::schema::RawShape::String {
+                    identity: None,
+                    pattern: None,
+                    length: None,
+                    validate: None,
+                    to_dsl: None,
+                }
+            ),
+            "{path} must remain plain String"
         );
-        if min > 0 {
-            assert!(attr_type.validate(&string("")).is_err(), "{path}");
-        }
-    }
-}
-
-#[test]
-fn name_namespace_dimension_and_query_id_patterns_validate() {
-    let schema = alarm_schema();
-    let cases: &[(&str, &[&str], &[&str])] = &[
-        (
-            "alarm_name",
-            &["a", "日本語のアラーム"],
-            &["a\nb", "a\tb", "a\u{0}", "a\u{7f}"],
-        ),
-        ("namespace", &["AWS/EC2", "a:b"], &[":AWS"]),
-        (
-            "metrics.metric_stat.metric.namespace",
-            &["AWS/EC2", "a:b"],
-            &[":AWS"],
-        ),
-        (
-            "dimensions.name",
-            &["InstanceId", " x", "x:y"],
-            &[":x", " ", "\t", "x\n", "日本語"],
-        ),
-        (
-            "metrics.metric_stat.metric.dimensions.name",
-            &["InstanceId", " x", "x:y"],
-            &[":x", " ", "\t", "x\n", "日本語"],
-        ),
-        (
-            "dimensions.value",
-            &["i-123", " x "],
-            &[" ", "\t", "x\u{7f}", "日本語"],
-        ),
-        (
-            "metrics.metric_stat.metric.dimensions.value",
-            &["i-123", " x "],
-            &[" ", "\t", "x\u{7f}", "日本語"],
-        ),
-        ("metrics.id", &["m1", "a_A0"], &["A1", "1a", "a-b", "a\n"]),
-    ];
-    for (path, accepted, rejected) in cases {
-        let attr_type = field(&schema, path);
-        for value in *accepted {
+        for (source_schema, source_path) in [(&topic, "topic_arn"), (&vpc, "vpc_id")] {
+            let source = field(source_schema, source_path);
             assert!(
-                attr_type.validate(&string(value)).is_ok(),
-                "{path}: {value:?}"
+                source_schema
+                    .as_schema()
+                    .type_in_schema(source.as_type())
+                    .is_assignable_to(schema.as_schema().type_in_schema(sink.as_type())),
+                "{source_path} must be assignable to {path}"
             );
         }
-        for value in *rejected {
-            assert!(
-                attr_type.validate(&string(value)).is_err(),
-                "{path}: {value:?}"
-            );
-        }
-    }
-}
-
-#[test]
-fn statistic_patterns_accept_documented_forms_and_reject_garbage() {
-    let schema = alarm_schema();
-    for path in ["extended_statistic", "metrics.metric_stat.stat"] {
-        let attr_type = field(&schema, path);
-        for value in [
-            "p0.0",
-            "p90",
-            "p99.99",
-            "p100",
-            "p100.0",
-            "tm90",
-            "tm99.9",
-            "tc90",
-            "ts90",
-            "wm98",
-            "wm99.9",
-            "IQM",
-            "PR(:300)",
-            "PR(100:2000)",
-            "PR(10:)",
-            "PR(-1.5:0)",
-            "TC(0.005:0.030)",
-            "TC(80:500)",
-            "TC(:0.5)",
-            "TM(2%:98%)",
-            "TM(5%:95%)",
-            "TM(:95%)",
-            "TM(150:1000)",
-            "TS(80%:)",
-            "WM(10%:90%)",
-            "WM(0%:100%)",
-        ] {
-            assert!(
-                attr_type.validate(&string(value)).is_ok(),
-                "{path}: {value}"
-            );
-        }
-        for value in [
-            "",
-            "garbage",
-            "p",
-            "p-1",
-            "p100.1",
-            "p101",
-            "p99.",
-            "TM90",
-            "tm(10:20)",
-            "PR(:)",
-            "TM(:)",
-            "TM(101%:)",
-            "WM(-1%:90%)",
-            "PR(a:b)",
-            "TC(10%,90%)",
-            "p90\n",
-            "prefixp90",
-            "p90suffix",
-        ] {
-            assert!(
-                attr_type.validate(&string(value)).is_err(),
-                "{path}: {value:?}"
-            );
-        }
-        for value in ["SampleCount", "Average", "Sum", "Minimum", "Maximum"] {
-            assert_eq!(
-                attr_type.validate(&string(value)).is_ok(),
-                path == "metrics.metric_stat.stat"
-            );
-        }
-    }
-}
-
-#[test]
-fn timezone_accepts_zone_names_and_offsets_in_five_minute_steps() {
-    let schema = alarm_schema();
-    let timezone = field(&schema, "evaluation_window.wall_clock_window.timezone");
-    for value in [
-        "UTC",
-        "GMT",
-        "Z",
-        "America/New_York",
-        "Asia/Tokyo",
-        "Etc/GMT+5",
-        "Etc/GMT-5",
-        "GMT-08:00",
-    ] {
-        timezone.validate(&string(value)).unwrap();
-    }
-    for prefix in ["+", "-", "UTC+", "UTC-", "GMT+", "GMT-"] {
-        for minute in 0..60 {
-            let value = format!("{prefix}05:{minute:02}");
-            assert_eq!(
-                timezone.validate(&string(&value)).is_ok(),
-                minute % 5 == 0,
-                "{value}"
-            );
-        }
-    }
-    for value in [
-        "",
-        "America//New_York",
-        "/UTC",
-        "UTC/",
-        "Europe/Paris!",
-        "+05:60",
-        "+5:30",
-        "GMT+05:60",
-        "GMT-8:00",
-        "UTC\n",
-    ] {
-        assert!(timezone.validate(&string(value)).is_err(), "{value:?}");
     }
 }
 
