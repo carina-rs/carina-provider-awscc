@@ -165,8 +165,8 @@ pub fn elasticloadbalancingv2_target_group_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_target_group_arn_attribute());
     #[inline(never)]
     fn build_target_group_attributes_attribute() -> AttributeSchema {
-        AttributeSchema::optional("target_group_attributes", AttributeType::unordered_list(AttributeType::struct_("TargetGroupAttribute".to_string(), vec![StructField::optional("key", AttributeType::string()).with_description("The value of the attribute.").with_provider_name("Key").build(),
-                    StructField::optional("value", AttributeType::string()).with_description("The name of the attribute.").with_provider_name("Value").build()])))
+        AttributeSchema::optional("target_group_attributes", AttributeType::refined_list(AttributeType::struct_("TargetGroupAttribute".to_string(), vec![StructField::optional("key", AttributeType::string()).with_description("The value of the attribute.").with_provider_name("Key").build(),
+                    StructField::optional("value", AttributeType::string()).with_description("The name of the attribute.").with_provider_name("Value").build()]), false, None, carina_core::schema::ListElements::Unique))
                 .with_description("The attributes.")
                 .with_provider_name("TargetGroupAttributes")
                 .with_block_name("target_group_attribute")
@@ -200,10 +200,10 @@ pub fn elasticloadbalancingv2_target_group_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_target_type_attribute());
     #[inline(never)]
     fn build_targets_attribute() -> AttributeSchema {
-        AttributeSchema::optional("targets", AttributeType::unordered_list(AttributeType::struct_("TargetDescription".to_string(), vec![StructField::optional("availability_zone", carina_aws_types::availability_zone()).with_description("An Availability Zone or all. This determines whether the target receives traffic from the load balancer nodes in the specified Availability Zone or from all enabled Availability Zones for the load balancer.").with_provider_name("AvailabilityZone").build(),
+        AttributeSchema::optional("targets", AttributeType::refined_list(AttributeType::struct_("TargetDescription".to_string(), vec![StructField::optional("availability_zone", carina_aws_types::availability_zone()).with_description("An Availability Zone or all. This determines whether the target receives traffic from the load balancer nodes in the specified Availability Zone or from all enabled Availability Zones for the load balancer.").with_provider_name("AvailabilityZone").build(),
                     StructField::required("id", AttributeType::string()).with_description("The ID of the target. If the target type of the target group is instance, specify an instance ID. If the target type is ip, specify an IP address. If the target type is lambda, specify the ARN of the Lambda function. If the target type is alb, specify the ARN of the Application Load Balancer target. ").with_provider_name("Id").build(),
                     StructField::optional("port", AttributeType::int()).with_description("The port on which the target is listening. If the target group protocol is GENEVE, the supported port is 6081. If the target type is alb, the targeted Application Load Balancer must have at least one listener whose port matches the target group port. Not used if the target is a Lambda function.").with_provider_name("Port").build(),
-                    StructField::optional("quic_server_id", AttributeType::string()).with_description("The Server ID used by targets when using QUIC or TCP_QUIC protocols.").with_provider_name("QuicServerId").build()])))
+                    StructField::optional("quic_server_id", AttributeType::string()).with_description("The Server ID used by targets when using QUIC or TCP_QUIC protocols.").with_provider_name("QuicServerId").build()]), false, None, carina_core::schema::ListElements::Unique))
                 .with_description("The targets.")
                 .with_provider_name("Targets")
                 .with_block_name("target")

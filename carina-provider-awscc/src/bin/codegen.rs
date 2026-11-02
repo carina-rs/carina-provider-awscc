@@ -14,6 +14,7 @@
 
 use anyhow::{Context, Result};
 use carina_aws_types::dsl_enum_value;
+use carina_core::schema::ListElements;
 use carina_docgen::example::{self, DocExample, ExampleKind};
 use carina_docgen::{Heading, PageBuilder, TableCell};
 use carina_provider_awscc::schemas::catalog::AwsccType;
@@ -139,6 +140,10 @@ thread_local! {
     #[allow(clippy::missing_const_for_thread_local)]
     static EMITTED_STRUCT_WRITE_ONLY_USES: RefCell<BTreeMap<String, Vec<StructWriteOnlyUse>>> =
         RefCell::new(BTreeMap::new());
+    /// Item overrides selected by the attribute emitter, cleared after pre-scans.
+    static EMITTED_ARRAY_ITEM_OVERRIDES: RefCell<BTreeSet<String>> = const {
+        RefCell::new(BTreeSet::new())
+    };
 }
 
 /// Reset the per-resource recursion guard state. Called at the start
@@ -167,6 +172,7 @@ fn reset_property_mode_emission_state() {
     EMITTED_WRITE_ONLY_PATHS.with(|s| s.borrow_mut().clear());
     SKIPPED_DEPRECATED_WRITE_ONLY_PATHS.with(|s| s.borrow_mut().clear());
     EMITTED_STRUCT_WRITE_ONLY_USES.with(|s| s.borrow_mut().clear());
+    EMITTED_ARRAY_ITEM_OVERRIDES.with(|s| s.borrow_mut().clear());
 }
 
 /// Take the defs collected during the current resource pass and
@@ -230,6 +236,14 @@ enum TypeOverride {
         block_name: Option<&'static str>,
         default: Option<AttributeTypeOverrideDefault>,
     },
+    /// Override an array's item type while retaining the CFN array constraints.
+    /// Display, block name, and default describe the complete attribute.
+    ArrayItemType {
+        expression: &'static str,
+        display: OverrideTypeDisplay,
+        block_name: Option<&'static str>,
+        default: Option<AttributeTypeOverrideDefault>,
+    },
     /// Override to an enum with specific values
     Enum(Vec<&'static str>),
     /// Like [`TypeOverride::Enum`], but when the property is an array
@@ -258,6 +272,80 @@ impl TypeOverride {
             }
             _ => None,
         }
+    }
+
+    fn array_item_type_expression(&self) -> Option<&'static str> {
+        match self {
+            Self::ArrayItemType { expression, .. } => Some(expression),
+            _ => None,
+        }
+    }
+
+    fn display(&self) -> Option<OverrideTypeDisplay> {
+        match self {
+            Self::AttributeType { display, .. } | Self::ArrayItemType { display, .. } => {
+                Some(*display)
+            }
+            _ => None,
+        }
+    }
+
+    fn default(&self) -> Option<AttributeTypeOverrideDefault> {
+        match self {
+            Self::AttributeType { default, .. } | Self::ArrayItemType { default, .. } => *default,
+            _ => None,
+        }
+    }
+
+    fn block_name(&self) -> Option<&'static str> {
+        match self {
+            Self::AttributeType { block_name, .. } | Self::ArrayItemType { block_name, .. } => {
+                *block_name
+            }
+            _ => None,
+        }
+    }
+
+    fn owner_name(&self) -> Option<&'static str> {
+        match self {
+            Self::AttributeType { .. } => Some("resource_type_overrides AttributeType"),
+            Self::ArrayItemType { .. } => Some("resource_type_overrides ArrayItemType"),
+            _ => None,
+        }
+    }
+
+    fn validate_source_shape(
+        &self,
+        schema: &CfnSchema,
+        path: CfnPropertyPath<'_>,
+        property: &CfnProperty,
+    ) -> Result<()> {
+        match self {
+            Self::ArrayItemType { .. } => {
+                anyhow::ensure!(
+                    path.parent.is_none(),
+                    "{}.{}: nested ArrayItemType overrides are not supported; item emission and bookkeeping must share one top-level array path",
+                    schema.type_name,
+                    path
+                );
+                anyhow::ensure!(
+                    array_item_override_source(property, schema).is_some(),
+                    "{}.{}: ArrayItemType requires a single CFN array at this exact path (directly or through $ref), not a non-array or union",
+                    schema.type_name,
+                    path
+                );
+            }
+            Self::AttributeType { .. } => {
+                anyhow::ensure!(
+                    !has_constrained_array_source(property, schema, false, &mut HashSet::new()),
+                    "{}.{}: AttributeType would discard CFN array constraints (uniqueItems, minItems, or maxItems); use ArrayItemType",
+                    schema.type_name,
+                    path
+                );
+            }
+            _ => {}
+        }
+        Ok(())
     }
 }
 
@@ -1282,10 +1370,71 @@ fn resource_type_override(
     resource_type_overrides().get_path(cfn_type, property_path)
 }
 
+fn cfn_override_property<'a>(
+    schema: &'a CfnSchema,
+    path: CfnPropertyPath<'_>,
+) -> Option<&'a CfnProperty> {
+    let Some(parent) = path.parent else {
+        return schema.properties.get(path.property);
+    };
+    let property = schema
+        .definitions
+        .as_ref()
+        .and_then(|defs| defs.get(parent))
+        .or_else(|| schema.properties.get(parent))?;
+    let property = if let Some(reference) = &property.ref_path {
+        resolve_ref(schema, reference)?.property
+    } else {
+        property
+    };
+    property.properties.as_ref()?.get(path.property)
+}
+
+fn checked_resource_type_override(
+    schema: &CfnSchema,
+    property_path: CfnPropertyPath<'_>,
+    property: &CfnProperty,
+) -> Option<&'static TypeOverride> {
+    let override_type = resource_type_override(&schema.type_name, property_path)?;
+    override_type
+        .validate_source_shape(schema, property_path, property)
+        .unwrap_or_else(|error| {
+            panic!(
+                "{}: {error}",
+                override_type
+                    .owner_name()
+                    .unwrap_or("resource_type_overrides")
+            )
+        });
+    Some(override_type)
+}
+
+fn validate_emitted_array_item_overrides(schema: &CfnSchema) -> Result<()> {
+    EMITTED_ARRAY_ITEM_OVERRIDES.with(|emitted| {
+        let emitted = emitted.borrow();
+        for (path, override_type) in resource_type_overrides().for_resource(&schema.type_name) {
+            if override_type.array_item_type_expression().is_some() {
+                anyhow::ensure!(
+                    emitted.contains(&path.to_string()),
+                    "{}.{}: ArrayItemType was not consumed by an emitted attribute (missing, omitted, deprecated, or shadowed property)",
+                    schema.type_name, path
+                );
+            }
+        }
+        Ok(())
+    })
+}
+
 fn classify_bare_object(
     cfn_type: &str,
     property_path: CfnPropertyPath<'_>,
 ) -> Option<BareObjectClassification> {
+    assert!(
+        resource_type_override(cfn_type, property_path)
+            .and_then(TypeOverride::array_item_type_expression)
+            .is_none(),
+        "{cfn_type}.{property_path}: ArrayItemType cannot classify a bare object as a whole attribute; consume it at the CFN array"
+    );
     let mut matches = Vec::new();
     for table in [
         IAM_POLICY_DOCUMENT_PROPERTIES,
@@ -2783,8 +2932,8 @@ fn type_display_at_resolved(
     cfn_property_path: CfnPropertyPath<'_>,
     definition_name: Option<&str>,
 ) -> TypeDisplay {
-    if let Some(TypeOverride::AttributeType { display, .. }) =
-        resource_type_override(&schema.type_name, cfn_property_path)
+    if let Some(display) =
+        resource_type_override(&schema.type_name, cfn_property_path).and_then(TypeOverride::display)
     {
         return TypeDisplay::Code(display.as_str().to_string());
     }
@@ -3415,6 +3564,7 @@ fn claim_unique_markdown_heading(
 
 fn generate_markdown(schema: &CfnSchema, type_name: &str, example: &DocExample) -> Result<String> {
     checked_read_back_declarations(schema, type_name)?;
+    resource_type_overrides().validate_sources(schema)?;
     reset_recursion_guard();
     validate_identity_properties(schema)?;
     reset_recursion_guard();
@@ -3513,7 +3663,11 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str, example: &DocExample) 
                             .insert(source_key, enum_info_for_override(field_name, values));
                         continue;
                     }
-                    TypeOverride::StringType(_) | TypeOverride::AttributeType { .. } => continue,
+                    _ if nested_override.attribute_type_expression().is_some()
+                        || nested_override.array_item_type_expression().is_some() =>
+                    {
+                        continue;
+                    }
                     _ => {}
                 }
             }
@@ -3565,6 +3719,7 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str, example: &DocExample) 
     }
     validate_emitted_nested_read_only_properties(schema)?;
     validate_emitted_nested_write_only_properties(schema)?;
+    validate_emitted_array_item_overrides(schema)?;
     reset_recursion_guard();
 
     let (markdown_enums, enum_targets) = collect_markdown_enums(
@@ -3659,10 +3814,8 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str, example: &DocExample) 
             page.push_str("- **Write-only:** Yes\n");
         }
         let override_default =
-            match resource_type_override(type_name, CfnPropertyPath::new(None, prop_name)) {
-                Some(TypeOverride::AttributeType { default, .. }) => *default,
-                _ => None,
-            };
+            resource_type_override(type_name, CfnPropertyPath::new(None, prop_name))
+                .and_then(TypeOverride::default);
         if let Some(default) = override_default {
             page.push_str(&format!("- **Default:** `{}`\n", default.markdown));
         } else if let Some(default_val) = &prop.default_value
@@ -3817,9 +3970,8 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str, example: &DocExample) 
                 };
                 let nested_key = cfn_property_path.to_string();
                 let nested_override = resource_type_override(type_name, cfn_property_path);
-                let field_type_display = if let Some(TypeOverride::AttributeType {
-                    display, ..
-                }) = nested_override
+                let field_type_display = if let Some(display) =
+                    nested_override.and_then(TypeOverride::display)
                 {
                     MarkdownType::Plain(TypeDisplay::Code(display.as_str().to_string()).markdown())
                 } else if matches!(nested_override, Some(TypeOverride::IntegerFromNumber)) {
@@ -4205,14 +4357,20 @@ fn generate_top_level_attribute_type(
     enums: &BTreeMap<String, EnumInfo>,
     has_arn_helper: bool,
 ) -> String {
+    let property_path = CfnPropertyPath::new(None, prop_name);
+    let override_type = checked_resource_type_override(schema, property_path, prop);
     if has_arn_helper && prop_name == "Arn" {
         return "self::arn()".to_string();
     }
 
-    if let Some(TypeOverride::AttributeType { expression, .. }) =
-        resource_type_override(&schema.type_name, CfnPropertyPath::new(None, prop_name))
-    {
+    if let Some(TypeOverride::AttributeType { expression, .. }) = override_type {
         return (*expression).to_string();
+    }
+
+    if let Some(item_type) = override_type.and_then(|override_type| {
+        emit_array_item_override(schema, property_path, prop, override_type)
+    }) {
+        return item_type;
     }
 
     if let Some(enum_info) = enums.get(prop_name) {
@@ -4276,6 +4434,7 @@ fn checked_read_back_declarations(
 
 fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
     let read_back_declarations = checked_read_back_declarations(schema, type_name)?;
+    resource_type_overrides().validate_sources(schema)?;
     // carina#3340: clear per-resource codegen state at function entry
     // (cyclic-$ref guard + emitted-pattern accumulators) so prior
     // resources don't leak entries into this resource's pre-scan or
@@ -4401,7 +4560,9 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
                                 );
                                 continue;
                             }
-                            TypeOverride::StringType(_) | TypeOverride::AttributeType { .. } => {
+                            _ if nested_override.attribute_type_expression().is_some()
+                                || nested_override.array_item_type_expression().is_some() =>
+                            {
                                 continue;
                             }
                             _ => {}
@@ -4633,13 +4794,9 @@ pub fn {}() -> AwsccSchemaConfig {{
         // a JSON-string default on a structured policy document) would cause a
         // perpetual phantom diff. Policy document fields follow the IAM Role
         // convention: omit the Carina default and let AWS apply its server default.
-        let override_default = match resource_type_override(
-            &schema.type_name,
-            CfnPropertyPath::new(None, prop_name),
-        ) {
-            Some(TypeOverride::AttributeType { default, .. }) => *default,
-            _ => None,
-        };
+        let override_default =
+            resource_type_override(&schema.type_name, CfnPropertyPath::new(None, prop_name))
+                .and_then(TypeOverride::default);
         if let Some(default) = override_default {
             attr_code.push_str(&format!(
                 "\n                .with_default({})",
@@ -4656,13 +4813,9 @@ pub fn {}() -> AwsccSchemaConfig {{
         // Even if the singular form conflicts with an existing field name,
         // resolve_block_names distinguishes block syntax (Value::List) from
         // attribute assignment (Value::Map) so the block_name is safe to add.
-        let override_block_name = match resource_type_override(
-            &schema.type_name,
-            CfnPropertyPath::new(None, prop_name),
-        ) {
-            Some(TypeOverride::AttributeType { block_name, .. }) => *block_name,
-            _ => None,
-        };
+        let override_block_name =
+            resource_type_override(&schema.type_name, CfnPropertyPath::new(None, prop_name))
+                .and_then(TypeOverride::block_name);
         let block_name = override_block_name.map(str::to_owned).or_else(|| {
             if attr_type.contains("list(AttributeType::struct_")
                 || is_list_of_struct_property(prop, schema)
@@ -4688,6 +4841,8 @@ pub fn {}() -> AwsccSchemaConfig {{
 
     validate_emitted_nested_read_only_properties(schema)?;
     validate_emitted_nested_write_only_properties(schema)?;
+
+    validate_emitted_array_item_overrides(schema)?;
 
     // Emit synthetic attributes — values the Cloud Control read path does
     // not return because the CFN schema omits them. The provider fills
@@ -5636,7 +5791,7 @@ fn generate_struct_type(
             // the list wrapping below; only the item type changes.
             let cfn_property_path = CfnPropertyPath::new(Some(def_name), field_name);
             let nested_key = cfn_property_path.to_string();
-            let nested_override = resource_type_override(&schema.type_name, cfn_property_path);
+            let nested_override = checked_resource_type_override(schema, cfn_property_path, field_prop);
             // A composite StringType override replaces the entire source
             // property, including any object children. Do not walk those
             // discarded children: read-only bookkeeping must describe the
@@ -6427,11 +6582,14 @@ fn refined_float_type(identity: &str, range: &str) -> String {
     format!("AttributeType::refined_float({identity}, {range})")
 }
 
-fn refined_list_type(element_type: &str, ordered: bool, length: &str) -> String {
-    // Preserve duplicate handling until CFN uniqueItems mapping is decided:
-    // https://github.com/carina-rs/carina-provider-awscc/issues/549
+fn refined_list_type(
+    element_type: &str,
+    ordered: bool,
+    length: &str,
+    elements: ListElements,
+) -> String {
     format!(
-        "AttributeType::refined_list({element_type}, {ordered}, {length}, carina_core::schema::ListElements::AllowDuplicates)"
+        "AttributeType::refined_list({element_type}, {ordered}, {length}, carina_core::schema::ListElements::{elements:?})"
     )
 }
 
@@ -6583,6 +6741,62 @@ struct ResourceTypeOverrides {
 }
 
 impl ResourceTypeOverrides {
+    fn for_resource(
+        &self,
+        cfn_type: &str,
+    ) -> impl Iterator<Item = (CfnPropertyPath<'_>, &TypeOverride)> {
+        self.by_type.get(cfn_type).into_iter().flat_map(|resource| {
+            resource
+                .top_level
+                .iter()
+                .map(|(property, override_type)| {
+                    (CfnPropertyPath::new(None, property), override_type)
+                })
+                .chain(resource.nested.iter().flat_map(|(parent, properties)| {
+                    properties.iter().map(move |(property, override_type)| {
+                        (CfnPropertyPath::new(Some(parent), property), override_type)
+                    })
+                }))
+        })
+    }
+
+    fn validate_sources(&self, schema: &CfnSchema) -> Result<()> {
+        for (path, override_type) in self.for_resource(&schema.type_name) {
+            if override_type.owner_name().is_none() {
+                continue;
+            }
+            let is_item_override = override_type.array_item_type_expression().is_some();
+            anyhow::ensure!(
+                !is_item_override || path.parent.is_none(),
+                "{}.{}: nested ArrayItemType overrides are not supported; use a top-level CFN array key",
+                schema.type_name,
+                path
+            );
+            let property = cfn_override_property(schema, path);
+            // Only item overrides require consumption. Check whole-attribute
+            // source constraints even when a present property is not emitted.
+            if !is_item_override && property.is_none() {
+                continue;
+            }
+            let property = property.with_context(|| {
+                format!(
+                    "{}.{}: ArrayItemType key has no CFN property to consume",
+                    schema.type_name, path
+                )
+            })?;
+            override_type.validate_source_shape(schema, path, property)?;
+            anyhow::ensure!(
+                !is_item_override
+                    || (!is_deprecated_property(property)
+                        && !should_omit_top_level_property(&schema.type_name, path.property)),
+                "{}.{}: ArrayItemType is not consumed consistently by schema and documentation generation because its property is deprecated or omitted",
+                schema.type_name,
+                path
+            );
+        }
+        Ok(())
+    }
+
     fn default_prevent_destroy(&mut self, cfn_type: &'static str) {
         assert!(
             self.default_prevent_destroy.insert(cfn_type),
@@ -6872,8 +7086,8 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         );
         m.insert(
             ("AWS::Logs::LogGroup", "FieldIndexPolicies"),
-            TypeOverride::AttributeType {
-                expression: "crate::schemas::awscc_types::logs_field_index_policies()",
+            TypeOverride::ArrayItemType {
+                expression: "crate::schemas::awscc_types::logs_field_index_policy()",
                 display: const { OverrideTypeDisplay::new("List<Struct(FieldIndexPolicy)>") },
                 block_name: Some("field_index_policy"),
                 default: Some(AttributeTypeOverrideDefault {
@@ -7875,18 +8089,49 @@ fn list_constructor(insertion_order: Option<bool>, force_unordered: bool) -> &'s
 }
 
 /// All list emission, including enum overlays, consumes the concrete array
-/// selected by property_shape and retains its ordering and item bounds.
+/// selected by property_shape and retains its ordering, item bounds, and uniqueness.
 fn array_attribute_type(element_type: &str, array: &CfnProperty, force_unordered: bool) -> String {
     let list_ctor = list_constructor(array.insertion_order, force_unordered);
-    if array.min_items.is_some() || array.max_items.is_some() {
+    let elements = if array.unique_items == Some(true) {
+        ListElements::Unique
+    } else {
+        ListElements::AllowDuplicates
+    };
+    if array.min_items.is_some() || array.max_items.is_some() || elements == ListElements::Unique {
         let length = emit_length_option(
             array.min_items.and_then(|value| u64::try_from(value).ok()),
             array.max_items.and_then(|value| u64::try_from(value).ok()),
         );
-        refined_list_type(element_type, list_ctor == "AttributeType::list", &length)
+        refined_list_type(
+            element_type,
+            list_ctor == "AttributeType::list",
+            &length,
+            elements,
+        )
     } else {
         format!("{list_ctor}({element_type})")
     }
+}
+
+/// Item overrides own the item grammar, while the source array owns its constraints.
+/// The caller has already checked the override against this exact CFN key.
+fn emit_array_item_override(
+    schema: &CfnSchema,
+    path: CfnPropertyPath<'_>,
+    property: &CfnProperty,
+    override_type: &TypeOverride,
+) -> Option<String> {
+    let expression = override_type.array_item_type_expression()?;
+    let array = array_item_override_source(property, schema).unwrap_or_else(|| {
+        panic!(
+            "{}.{}: ArrayItemType requires a single CFN array",
+            schema.type_name, path
+        )
+    });
+    EMITTED_ARRAY_ITEM_OVERRIDES.with(|emitted| {
+        emitted.borrow_mut().insert(path.to_string());
+    });
+    Some(array_attribute_type(expression, array, false))
 }
 
 /// Substitute the enum leaf while retaining every resolved list layer and
@@ -7972,6 +8217,75 @@ fn resolved_array_property<'a>(
         PropertyShape::Inline => (inline_property_type(prop) == Some("array")).then_some(prop),
         PropertyShape::Array { resolved, .. } => Some(resolved),
         PropertyShape::Direct(_) | PropertyShape::Merged(_) | PropertyShape::Unresolved => None,
+    }
+}
+
+/// A whole-attribute override must not discard constraints at the property,
+/// on an intermediate alias, or in any array arm of a union.
+fn has_constrained_array_source<'a>(
+    property: &'a CfnProperty,
+    schema: &'a CfnSchema,
+    inherited_constraints: bool,
+    visiting: &mut HashSet<&'a str>,
+) -> bool {
+    let constrained = inherited_constraints
+        || property.unique_items.is_some()
+        || property.min_items.is_some()
+        || property.max_items.is_some();
+    if constrained
+        && property
+            .prop_type
+            .as_ref()
+            .is_some_and(|kind| kind.contains("array"))
+    {
+        return true;
+    }
+    if let Some(name) = property.ref_path.as_deref().and_then(ref_def_name)
+        && let Some(target) = schema.definitions.as_ref().and_then(|defs| defs.get(name))
+        && visiting.insert(name)
+    {
+        let discarded = has_constrained_array_source(target, schema, constrained, visiting);
+        visiting.remove(name);
+        if discarded {
+            return true;
+        }
+    }
+    property
+        .one_of
+        .iter()
+        .chain(&property.any_of)
+        .any(|variant| has_constrained_array_source(variant, schema, constrained, visiting))
+}
+
+/// An item override must target an unambiguous array, including through aliases.
+/// A union's selected array arm is not the whole source property.
+fn array_item_override_source<'a>(
+    property: &'a CfnProperty,
+    schema: &'a CfnSchema,
+) -> Option<&'a CfnProperty> {
+    let mut property = property;
+    let mut visited = HashSet::new();
+    loop {
+        // Check every alias before resolving it: a $ref must not hide a union
+        // or a conflicting inline shape at the override's exact path.
+        if !property.one_of.is_empty()
+            || !property.any_of.is_empty()
+            || has_direct_struct_properties(property)
+            || property
+                .prop_type
+                .as_ref()
+                .is_some_and(|kind| !matches!(kind, TypeValue::Single(kind) if kind == "array"))
+        {
+            return None;
+        }
+        let Some(reference) = property.ref_path.as_deref() else {
+            return (inline_property_type(property) == Some("array")).then_some(property);
+        };
+        let name = ref_def_name(reference)?;
+        if !visited.insert(name) {
+            return None;
+        }
+        property = schema.definitions.as_ref()?.get(name)?;
     }
 }
 
@@ -8067,6 +8381,13 @@ fn cfn_type_to_carina_type_with_enum_resolved(
     let property_path = paths.provider;
     let cfn_parent = paths.cfn_parent;
     let cfn_property_path = CfnPropertyPath::new(cfn_parent, prop_name);
+    if let Some(item_type) = checked_resource_type_override(schema, cfn_property_path, prop)
+        .and_then(|override_type| {
+            emit_array_item_override(schema, cfn_property_path, prop, override_type)
+        })
+    {
+        return (item_type, None);
+    }
     if object_string_union_is_iam_policy_document(prop, &schema.type_name, cfn_property_path) {
         return ("carina_aws_types::iam_policy_document()".to_string(), None);
     }
@@ -11029,20 +11350,36 @@ mod tests {
             ("AWS::Logs::LogGroup", "FieldIndexPolicies"),
         ];
         for (cfn_type, property) in expected_typed {
-            assert!(
-                matches!(
-                    resource_type_override(cfn_type, CfnPropertyPath::new(None, property)),
-                    Some(TypeOverride::AttributeType { .. })
-                ),
-                "{cfn_type}.{property} must have a full-path AttributeType override"
+            let schema = cfn_schema_for_codegen_tests(cfn_type);
+            let path = CfnPropertyPath::new(None, property);
+            let source = cfn_override_property(&schema, path).expect("exact cached override key");
+            let override_type = resource_type_override(cfn_type, path);
+            let is_array = property_resolves_to_array(source, &schema);
+            assert_eq!(
+                matches!(override_type, Some(TypeOverride::AttributeType { .. })),
+                !is_array,
+                "{cfn_type}.{property} must override the complete type unless it is an array"
             );
-            assert!(
-                matches!(
-                    classify_bare_object(cfn_type, CfnPropertyPath::new(None, property)),
-                    Some(BareObjectClassification::TypedOverride { .. })
-                ),
-                "{cfn_type}.{property} must be classified exactly once as a typed override"
+            assert_eq!(
+                matches!(override_type, Some(TypeOverride::ArrayItemType { .. })),
+                is_array,
+                "{cfn_type}.{property} must preserve CFN constraints around overridden array items"
             );
+            if is_array {
+                let message = generation_failure(|| {
+                    let _ = classify_bare_object(cfn_type, path);
+                    Ok(String::new())
+                });
+                assert!(message.contains("ArrayItemType"), "{message}");
+            } else {
+                assert!(
+                    matches!(
+                        classify_bare_object(cfn_type, path),
+                        Some(BareObjectClassification::TypedOverride { .. })
+                    ),
+                    "{cfn_type}.{property} must be classified exactly once as a whole-attribute typed override"
+                );
+            }
         }
 
         let topic_data_protection = find_omitted_property(
@@ -11429,6 +11766,17 @@ mod tests {
         }
         if let Some(entry) = iam_policy_document_property(&schema.type_name, property_path) {
             used_rows.insert(*entry);
+        }
+
+        if let Some(override_type) = resource_type_override(&schema.type_name, property_path)
+            && override_type.array_item_type_expression().is_some()
+        {
+            override_type
+                .validate_source_shape(schema, property_path, prop)
+                .unwrap();
+            // The explicit item grammar owns these children, while the CFN
+            // array itself is still checked at its exact override key.
+            return;
         }
 
         if property_is_bare_object(prop, schema) {
@@ -12559,7 +12907,7 @@ mod tests {
     fn test_resource_override_displays_render_single_code_spans() {
         let mut by_resource = BTreeMap::<_, Vec<_>>::new();
         for (&(cfn_type, property), override_type) in resource_type_overrides().iter() {
-            if let TypeOverride::AttributeType { display, .. } = override_type {
+            if let Some(display) = override_type.display() {
                 by_resource
                     .entry(cfn_type)
                     .or_default()
@@ -12624,16 +12972,12 @@ mod tests {
             }
         }
         for (&(cfn_type, property_path), override_type) in resource_type_overrides().iter() {
-            if matches!(override_type, TypeOverride::AttributeType { .. }) {
+            if let Some(owner) = override_type.owner_name() {
                 let property_path = property_path.split_once('.').map_or_else(
                     || CfnPropertyPath::new(None, property_path),
                     |(parent, property)| CfnPropertyPath::new(Some(parent), property),
                 );
-                record(
-                    cfn_type,
-                    property_path,
-                    "resource_type_overrides AttributeType",
-                );
+                record(cfn_type, property_path, owner);
             }
         }
 
@@ -19755,7 +20099,7 @@ mod tests {
         );
 
         let schema = CfnSchema {
-            type_name: "AWS::Logs::LogGroup".to_string(),
+            type_name: "AWS::Test::Resource".to_string(),
             description: None,
             properties,
             required: vec![],
@@ -20293,6 +20637,13 @@ mod tests {
     fn test_pattern_constraint_is_declarative_in_schema_code() {
         let mut properties = BTreeMap::new();
         properties.insert(
+            "FieldIndexPolicies".to_string(),
+            cfn_schema_for_codegen_tests("AWS::Logs::LogGroup")
+                .properties
+                .remove("FieldIndexPolicies")
+                .unwrap(),
+        );
+        properties.insert(
             "LogGroupName".to_string(),
             CfnProperty {
                 prop_type: Some(TypeValue::Single("string".to_string())),
@@ -20735,6 +21086,477 @@ mod tests {
     }
 
     #[test]
+    fn test_cached_type_override_sources_match_all_declared_keys() {
+        for (&(cfn_type, property), override_type) in resource_type_overrides().iter() {
+            if override_type.owner_name().is_none() {
+                continue;
+            }
+            let schema = cfn_schema_for_codegen_tests(cfn_type);
+            let path = property.split_once('.').map_or_else(
+                || CfnPropertyPath::new(None, property),
+                |(parent, field)| CfnPropertyPath::new(Some(parent), field),
+            );
+            let source = cfn_override_property(&schema, path).unwrap_or_else(|| {
+                panic!("{cfn_type}.{path}: typed override must have an exact cached CFN source")
+            });
+            override_type
+                .validate_source_shape(&schema, path, source)
+                .unwrap_or_else(|error| panic!("{error}"));
+        }
+    }
+
+    #[test]
+    fn test_array_item_type_override_rejects_nested_keys() {
+        let mut schema = empty_schema("AWS::Test::NestedItemOverride");
+        schema.properties.insert("Container".to_string(), serde_json::from_value(serde_json::json!({
+            "type": "object", "properties": {"Values": {"type": "array", "items": {"type": "string"}}}
+        })).unwrap());
+        let path = CfnPropertyPath::new(Some("Container"), "Values");
+        let override_type = resource_type_override(
+            "AWS::Logs::LogGroup",
+            CfnPropertyPath::new(None, "FieldIndexPolicies"),
+        )
+        .unwrap();
+        let mut overrides = ResourceTypeOverrides::default();
+        overrides.insert(
+            ("AWS::Test::NestedItemOverride", "Container.Values"),
+            override_type.clone(),
+        );
+        for error in [
+            overrides.validate_sources(&schema).unwrap_err(),
+            override_type
+                .validate_source_shape(&schema, path, cfn_override_property(&schema, path).unwrap())
+                .unwrap_err(),
+        ] {
+            let message = error.to_string();
+            assert!(
+                message.contains("ArrayItemType")
+                    && message.contains("Container.Values")
+                    && message.contains("nested"),
+                "{message}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_array_item_type_override_resolves_array_aliases_without_changing_output() {
+        let mut schema = cfn_schema_for_codegen_tests("AWS::Logs::LogGroup");
+        let expected_rust = generate_schema_code(&schema, &schema.type_name).unwrap();
+        let expected_docs = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        let array = schema
+            .properties
+            .insert(
+                "FieldIndexPolicies".to_string(),
+                serde_json::from_value(serde_json::json!({
+                    "$ref": "#/definitions/OverrideAlias"
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+        schema
+            .properties
+            .get_mut("FieldIndexPolicies")
+            .unwrap()
+            .description = array.description.clone();
+        let definitions = schema.definitions.get_or_insert_default();
+        definitions.insert("OverrideArray".to_string(), array);
+        definitions.insert(
+            "OverrideAlias".to_string(),
+            serde_json::from_value(serde_json::json!({
+                "$ref": "#/definitions/OverrideArray"
+            }))
+            .unwrap(),
+        );
+        assert_eq!(
+            generate_schema_code(&schema, &schema.type_name).unwrap(),
+            expected_rust
+        );
+        assert_eq!(
+            generate_test_markdown(&schema, &schema.type_name).unwrap(),
+            expected_docs
+        );
+    }
+
+    #[test]
+    fn test_array_item_type_override_rejects_non_array_and_union_sources() {
+        for property in [
+            serde_json::json!({"type": "string"}),
+            serde_json::json!({"type": "object"}),
+            serde_json::json!({"type": "object", "properties": {"Value": {"type": "string"}}}),
+            serde_json::json!({"$ref": "#/definitions/OverrideTarget"}),
+            serde_json::json!({"$ref": "#/definitions/OverrideUnion"}),
+            serde_json::json!({"$ref": "#/definitions/OverrideCycle"}),
+            serde_json::json!({"$ref": "#/definitions/MissingOverrideTarget"}),
+            serde_json::json!({"$ref": "#/definitions/OverrideArray", "anyOf": [
+                {"type": "array"}, {"type": "string"}
+            ]}),
+            serde_json::json!({"oneOf": [
+                {"type": "array", "items": {"type": "string"}}, {"type": "string"}
+            ]}),
+            serde_json::json!({"type": ["array", "string"], "items": {"type": "string"}}),
+            serde_json::json!({"anyOf": [
+                {"type": "array", "items": {"type": "string"}}, {"type": "string"}
+            ]}),
+        ] {
+            let mut schema = cfn_schema_for_codegen_tests("AWS::Logs::LogGroup");
+            schema.definitions.get_or_insert_default().insert(
+                "OverrideTarget".to_string(),
+                serde_json::from_value(serde_json::json!({"type": "object"})).unwrap(),
+            );
+            let definitions = schema.definitions.as_mut().unwrap();
+            for (name, definition) in [
+                ("OverrideArray", serde_json::json!({"type": "array"})),
+                (
+                    "OverrideUnion",
+                    serde_json::json!({"$ref": "#/definitions/OverrideArray", "oneOf": [
+                        {"type": "array"}, {"type": "string"}
+                    ]}),
+                ),
+                (
+                    "OverrideCycle",
+                    serde_json::json!({"$ref": "#/definitions/OverrideCycle"}),
+                ),
+            ] {
+                definitions.insert(
+                    name.to_string(),
+                    serde_json::from_value(definition).unwrap(),
+                );
+            }
+            schema.properties.insert(
+                "FieldIndexPolicies".to_string(),
+                serde_json::from_value(property).unwrap(),
+            );
+            assert_override_generation_rejected(&schema, "ArrayItemType", "FieldIndexPolicies");
+        }
+    }
+
+    fn generation_failure(
+        action: impl FnOnce() -> Result<String> + std::panic::UnwindSafe,
+    ) -> String {
+        match std::panic::catch_unwind(action) {
+            Ok(Err(error)) => error.to_string(),
+            Err(panic) => panic
+                .downcast_ref::<String>()
+                .cloned()
+                .or_else(|| {
+                    panic
+                        .downcast_ref::<&str>()
+                        .map(|message| message.to_string())
+                })
+                .expect("codegen rejection must include a diagnostic"),
+            Ok(Ok(_)) => panic!("invalid override must fail generation"),
+        }
+    }
+
+    fn assert_override_generation_rejected(schema: &CfnSchema, variant: &str, path: &str) {
+        for message in [
+            generation_failure(|| generate_schema_code(schema, &schema.type_name)),
+            generation_failure(|| generate_test_markdown(schema, &schema.type_name)),
+        ] {
+            assert!(message.contains(variant), "{message}");
+            assert!(message.contains(&schema.type_name), "{message}");
+            assert!(message.contains(path), "{message}");
+        }
+    }
+
+    #[test]
+    fn test_array_item_type_override_rejects_missing_and_unconsumed_keys() {
+        let mut schema = cfn_schema_for_codegen_tests("AWS::Logs::LogGroup");
+        schema.properties.remove("FieldIndexPolicies");
+        assert_override_generation_rejected(&schema, "ArrayItemType", "FieldIndexPolicies");
+
+        let mut schema = cfn_schema_for_codegen_tests("AWS::Logs::LogGroup");
+        schema
+            .properties
+            .get_mut("FieldIndexPolicies")
+            .unwrap()
+            .description =
+            Some("(Deprecated.) Item override must not silently disappear.".to_string());
+        assert_override_generation_rejected(&schema, "not consumed", "FieldIndexPolicies");
+
+        let schema = cfn_schema_for_codegen_tests("AWS::Logs::LogGroup");
+        let property = &schema.properties["FieldIndexPolicies"];
+        reset_recursion_guard();
+        // A pre-scan reaches the item override, but cannot satisfy the
+        // requirement that it be consumed by the final attribute emitter.
+        let _ = cfn_type_to_carina_type_with_enum(
+            property,
+            "FieldIndexPolicies",
+            &schema,
+            "aws.logs.LogGroup",
+            &BTreeMap::new(),
+        );
+        reset_property_mode_emission_state();
+        let error = validate_emitted_array_item_overrides(&schema)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("AWS::Logs::LogGroup.FieldIndexPolicies")
+                && error.contains("ArrayItemType")
+                && error.contains("not consumed"),
+            "{error}"
+        );
+        let generated = generate_top_level_attribute_type(
+            "FieldIndexPolicies",
+            property,
+            &schema,
+            "aws.logs.LogGroup",
+            &BTreeMap::new(),
+            false,
+        );
+        assert!(
+            generated.contains("logs_field_index_policy()"),
+            "{generated}"
+        );
+        validate_emitted_array_item_overrides(&schema).unwrap();
+    }
+
+    #[test]
+    fn test_array_item_type_override_is_not_a_bare_object_classification() {
+        let path = CfnPropertyPath::new(None, "FieldIndexPolicies");
+        for message in [
+            generation_failure(|| {
+                let _ = classify_bare_object("AWS::Logs::LogGroup", path);
+                Ok(String::new())
+            }),
+            generation_failure(|| {
+                Ok(bare_object_attribute_type(
+                    "AWS::Logs::LogGroup",
+                    path,
+                    "FieldIndexPolicies",
+                ))
+            }),
+        ] {
+            assert!(message.contains("ArrayItemType"), "{message}");
+            assert!(
+                message.contains("AWS::Logs::LogGroup.FieldIndexPolicies"),
+                "{message}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_array_item_type_override_takes_precedence_over_enum_overlay() {
+        let schema = cfn_schema_for_codegen_tests("AWS::Logs::LogGroup");
+        let enums = BTreeMap::from([(
+            "FieldIndexPolicies".to_string(),
+            EnumInfo {
+                type_name: "FieldIndexPolicies".to_string(),
+                values: vec!["A".to_string(), "B".to_string()],
+            },
+        )]);
+        let generated = generate_top_level_attribute_type(
+            "FieldIndexPolicies",
+            &schema.properties["FieldIndexPolicies"],
+            &schema,
+            "aws.logs.LogGroup",
+            &enums,
+            false,
+        );
+        assert!(
+            generated.contains("logs_field_index_policy()"),
+            "{generated}"
+        );
+        assert!(!generated.contains("AttributeType::enum_("), "{generated}");
+    }
+
+    #[test]
+    fn test_full_attribute_type_override_rejects_array_constraints() {
+        for nested in [false, true] {
+            for (keyword, value) in [
+                ("uniqueItems", serde_json::json!(true)),
+                ("uniqueItems", serde_json::json!(false)),
+                ("minItems", serde_json::json!(1)),
+                ("maxItems", serde_json::json!(1)),
+            ] {
+                for referenced in [false, true] {
+                    let mut schema = cfn_schema_for_codegen_tests(if nested {
+                        "AWS::Budgets::Budget"
+                    } else {
+                        "AWS::SNS::Topic"
+                    });
+                    let mut array =
+                        serde_json::json!({"type": "array", "items": {"type": "string"}});
+                    array[keyword] = value.clone();
+                    let property = if referenced {
+                        schema.definitions.get_or_insert_default().insert(
+                            "OverrideArray".to_string(),
+                            serde_json::from_value(array).unwrap(),
+                        );
+                        serde_json::from_value(
+                            serde_json::json!({"$ref": "#/definitions/OverrideArray"}),
+                        )
+                        .unwrap()
+                    } else {
+                        serde_json::from_value(array).unwrap()
+                    };
+                    let path = if nested {
+                        schema
+                            .definitions
+                            .as_mut()
+                            .unwrap()
+                            .get_mut("BudgetData")
+                            .unwrap()
+                            .properties
+                            .as_mut()
+                            .unwrap()
+                            .insert("CostFilters".to_string(), property);
+                        "BudgetData.CostFilters"
+                    } else {
+                        schema
+                            .properties
+                            .insert("ArchivePolicy".to_string(), property);
+                        "ArchivePolicy"
+                    };
+                    assert_override_generation_rejected(&schema, "ArrayItemType", path);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_full_attribute_type_override_checks_alias_and_union_constraints() {
+        for property in [
+            serde_json::json!({"type": "array", "minItems": 1,
+                "description": "(Deprecated.) Constraints still require an item override."}),
+            serde_json::json!({"$ref": "#/definitions/ConstrainedAlias"}),
+            serde_json::json!({"$ref": "#/definitions/UnconstrainedArray", "minItems": 1}),
+            serde_json::json!({"oneOf": [
+                {"type": "array"}, {"type": "array", "maxItems": 1}
+            ]}),
+            serde_json::json!({"anyOf": [
+                {"type": "string"}, {"type": "array", "uniqueItems": true}
+            ]}),
+        ] {
+            let mut schema = cfn_schema_for_codegen_tests("AWS::SNS::Topic");
+            let definitions = schema.definitions.get_or_insert_default();
+            definitions.insert("ConstrainedAlias".to_string(), serde_json::from_value(
+                serde_json::json!({"$ref": "#/definitions/UnconstrainedArray", "uniqueItems": true})
+            ).unwrap());
+            definitions.insert(
+                "UnconstrainedArray".to_string(),
+                serde_json::from_value(
+                    serde_json::json!({"type": "array", "items": {"type": "string"}}),
+                )
+                .unwrap(),
+            );
+            schema.properties.insert(
+                "ArchivePolicy".to_string(),
+                serde_json::from_value(property).unwrap(),
+            );
+            assert_override_generation_rejected(&schema, "ArrayItemType", "ArchivePolicy");
+        }
+    }
+
+    #[test]
+    fn test_unique_items_on_unbounded_arrays_preserves_order() {
+        let schema = empty_schema("AWS::Test::Resource");
+        for (item_type, expected_item) in [
+            ("string", "AttributeType::string()"),
+            ("integer", "AttributeType::int()"),
+            ("boolean", "AttributeType::bool()"),
+        ] {
+            for insertion_order in [None, Some(true), Some(false)] {
+                for unique_items in [None, Some(false), Some(true)] {
+                    let prop = CfnProperty {
+                        prop_type: Some(TypeValue::Single("array".to_string())),
+                        items: Some(Box::new(CfnProperty {
+                            prop_type: Some(TypeValue::Single(item_type.to_string())),
+                            ..Default::default()
+                        })),
+                        insertion_order,
+                        unique_items,
+                        ..Default::default()
+                    };
+                    let (generated, enum_info) = cfn_type_to_carina_type_with_enum(
+                        &prop,
+                        "Values",
+                        &schema,
+                        "aws.test.Resource",
+                        &BTreeMap::new(),
+                    );
+                    assert!(enum_info.is_none());
+                    let expected = if unique_items == Some(true) {
+                        format!(
+                            "AttributeType::refined_list({expected_item}, {}, None, carina_core::schema::ListElements::Unique)",
+                            insertion_order != Some(false),
+                        )
+                    } else {
+                        let constructor = if insertion_order == Some(false) {
+                            "AttributeType::unordered_list"
+                        } else {
+                            "AttributeType::list"
+                        };
+                        format!("{constructor}({expected_item})")
+                    };
+                    assert_eq!(generated, expected, "{prop:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_unique_items_and_bounds_apply_to_overridden_array_items() {
+        let mut schema = cfn_schema_for_codegen_tests("AWS::Logs::LogGroup");
+        let array = schema.properties.get_mut("FieldIndexPolicies").unwrap();
+        array.min_items = Some(1);
+        array.max_items = Some(3);
+        for (unique_items, elements) in [
+            (Some(true), "Unique"),
+            (Some(false), "AllowDuplicates"),
+            (None, "AllowDuplicates"),
+        ] {
+            schema
+                .properties
+                .get_mut("FieldIndexPolicies")
+                .unwrap()
+                .unique_items = unique_items;
+            let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+            assert!(
+                generated.contains(&format!(
+                    "AttributeType::refined_list(crate::schemas::awscc_types::logs_field_index_policy(), false, Some((Some(1), Some(3))), carina_core::schema::ListElements::{elements})"
+                )),
+                "the array override must retain CFN constraints: {generated}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_nested_unique_items_survives_enum_overlay() {
+        let schema = empty_schema("AWS::Test::Resource");
+        let prop: CfnProperty = serde_json::from_value(serde_json::json!({
+            "type": "array",
+            "uniqueItems": true,
+            "insertionOrder": false,
+            "minItems": 1,
+            "items": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": { "type": "string", "enum": ["A", "B"] }
+            }
+        }))
+        .unwrap();
+        let (provisional, enum_info) = cfn_type_to_carina_type_with_enum(
+            &prop,
+            "Values",
+            &schema,
+            "aws.test.Resource",
+            &BTreeMap::new(),
+        );
+        assert!(enum_info.is_some());
+        let expected = concat!(
+            "AttributeType::refined_list(AttributeType::refined_list(",
+            "AttributeType::string(), true, None, carina_core::schema::ListElements::Unique), ",
+            "false, Some((Some(1), None)), carina_core::schema::ListElements::Unique)"
+        );
+        assert_eq!(provisional, expected);
+        assert_eq!(
+            enum_property_type(&prop, &schema, "values_enum()", false),
+            expected.replace("AttributeType::string()", "values_enum()")
+        );
+    }
+
+    #[test]
     fn test_ref_array_definition_matches_inline_constraints_and_order() {
         let inline: CfnProperty = serde_json::from_value(serde_json::json!({
             "type": "array",
@@ -20778,7 +21600,7 @@ mod tests {
                 "AttributeType::refined_list(",
                 "AttributeType::refined_string(None, None, ",
                 "Some((Some(2), Some(4))), None), false, ",
-                "Some((Some(1), Some(3))), carina_core::schema::ListElements::AllowDuplicates)"
+                "Some((Some(1), Some(3))), carina_core::schema::ListElements::Unique)"
             )
         );
         let resolved = resolve_ref(&schema, "#/definitions/ConstrainedValues").unwrap();

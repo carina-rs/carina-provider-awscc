@@ -48,7 +48,7 @@ pub fn ec2_ipam_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_default_resource_discovery_id_attribute());
     #[inline(never)]
     fn build_default_resource_discovery_organizational_unit_exclusions_attribute() -> AttributeSchema {
-        AttributeSchema::optional("default_resource_discovery_organizational_unit_exclusions", AttributeType::unordered_list(AttributeType::struct_("IpamOrganizationalUnitExclusion".to_string(), vec![StructField::required("organizations_entity_path", AttributeType::refined_string(None, None, Some((Some(1), None)), None)).with_description("An AWS Organizations entity path. Build the path for the OU(s) using AWS Organizations IDs separated by a '/'. Include all child OUs by ending the path with '/*'.").with_provider_name("OrganizationsEntityPath").build()])))
+        AttributeSchema::optional("default_resource_discovery_organizational_unit_exclusions", AttributeType::refined_list(AttributeType::struct_("IpamOrganizationalUnitExclusion".to_string(), vec![StructField::required("organizations_entity_path", AttributeType::refined_string(None, None, Some((Some(1), None)), None)).with_description("An AWS Organizations entity path. Build the path for the OU(s) using AWS Organizations IDs separated by a '/'. Include all child OUs by ending the path with '/*'.").with_provider_name("OrganizationsEntityPath").build()]), false, None, carina_core::schema::ListElements::Unique))
                 .with_description("A set of organizational unit (OU) exclusions for the default resource discovery, created with this IPAM.")
                 .with_provider_name("DefaultResourceDiscoveryOrganizationalUnitExclusions")
                 .with_block_name("default_resource_discovery_organizational_unit_exclusion")
@@ -88,7 +88,7 @@ pub fn ec2_ipam_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_metered_account_attribute());
     #[inline(never)]
     fn build_operating_regions_attribute() -> AttributeSchema {
-        AttributeSchema::optional("operating_regions", AttributeType::unordered_list(AttributeType::struct_("IpamOperatingRegion".to_string(), vec![StructField::required("region_name", carina_aws_types::aws_region()).with_description("The name of the region.").with_provider_name("RegionName").build()])))
+        AttributeSchema::optional("operating_regions", AttributeType::refined_list(AttributeType::struct_("IpamOperatingRegion".to_string(), vec![StructField::required("region_name", carina_aws_types::aws_region()).with_description("The name of the region.").with_provider_name("RegionName").build()]), false, None, carina_core::schema::ListElements::Unique))
                 .with_description("The regions IPAM is enabled for. Allows pools to be created in these regions, as well as enabling monitoring")
                 .with_provider_name("OperatingRegions")
                 .with_block_name("operating_region")

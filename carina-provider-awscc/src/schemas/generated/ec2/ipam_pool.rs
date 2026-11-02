@@ -70,7 +70,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_allocation_min_netmask_length_attribute());
     #[inline(never)]
     fn build_allocation_resource_tags_attribute() -> AttributeSchema {
-        AttributeSchema::optional("allocation_resource_tags", AttributeType::unordered_list(carina_aws_types::tags_type()))
+        AttributeSchema::optional("allocation_resource_tags", AttributeType::refined_list(carina_aws_types::tags_type(), false, None, carina_core::schema::ListElements::Unique))
                 .with_description("When specified, an allocation will not be allowed unless a resource has a matching set of tags.")
                 .with_provider_name("AllocationResourceTags")
                 .with_block_name("allocation_resource_tag")
@@ -169,7 +169,7 @@ pub fn ec2_ipam_pool_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_pool_depth_attribute());
     #[inline(never)]
     fn build_provisioned_cidrs_attribute() -> AttributeSchema {
-        AttributeSchema::optional("provisioned_cidrs", AttributeType::unordered_list(AttributeType::struct_("ProvisionedCidr".to_string(), vec![StructField::required("cidr", types::cidr()).with_provider_name("Cidr").build()])))
+        AttributeSchema::optional("provisioned_cidrs", AttributeType::refined_list(AttributeType::struct_("ProvisionedCidr".to_string(), vec![StructField::required("cidr", types::cidr()).with_provider_name("Cidr").build()]), false, None, carina_core::schema::ListElements::Unique))
                 .with_description("A list of cidrs representing the address space available for allocation in this pool.")
                 .with_provider_name("ProvisionedCidrs")
                 .with_block_name("provisioned_cidr")
