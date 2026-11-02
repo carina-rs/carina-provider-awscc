@@ -3123,8 +3123,10 @@ fn type_display_at_resolved(
                     .unwrap_or_else(|error| panic!("{error}"));
                 TypeDisplay::Code("Map<String, String>".to_string())
             } else if let Some(resolved) = resolved {
+                let array = resolved_array_property(prop, schema, &mut HashSet::new());
                 type_display_at_resolved(
-                    schema.property_at(provider_path, resolved.property),
+                    schema
+                        .property_at(provider_path, array.as_deref().unwrap_or(resolved.property)),
                     cfn_property_path,
                     Some(resolved.name),
                 )
@@ -3368,9 +3370,9 @@ fn markdown_struct_def(
 fn markdown_array<'a>(
     prop: &'a CfnProperty,
     schema: &'a CfnSchema,
-) -> Option<(&'a CfnProperty, &'a CfnProperty)> {
-    let property = resolved_array_property(prop, schema, &mut HashSet::new())?;
-    property.items.as_deref().map(|items| (property, items))
+) -> Option<Cow<'a, CfnProperty>> {
+    resolved_array_property(prop, schema, &mut HashSet::new())
+        .filter(|property| property.items.is_some())
 }
 
 fn markdown_list_type(item: MarkdownLinkedType, prop: &CfnProperty) -> MarkdownLinkedType {
@@ -3398,7 +3400,7 @@ fn markdown_enum_type(
             || MarkdownLinkedType::Enum(key.clone()),
             |items| markdown_enum_type(items, schema, key),
         );
-        markdown_list_type(item, array)
+        markdown_list_type(item, &array)
     } else if let Some(value) = property_object_map_value(prop, schema) {
         MarkdownLinkedType::Map {
             value: Box::new(markdown_enum_type(value, schema, key)),
@@ -3460,10 +3462,12 @@ fn markdown_link_type(
         });
     }
 
-    if let Some((array, items)) = markdown_array(prop, schema) {
+    if let Some(array) = markdown_array(prop, schema)
+        && let Some(items) = array.items.as_deref()
+    {
         let item_path = extend_property_path(property_path, "*");
         let item_type = markdown_link_type(prop_name, items, schema, None, &item_path, cfn_parent)?;
-        return Some(markdown_list_type(item_type, array));
+        return Some(markdown_list_type(item_type, &array));
     }
 
     None
@@ -4412,7 +4416,10 @@ fn collect_struct_defs(
         return;
     }
 
-    let Some((_, items)) = markdown_array(prop, schema) else {
+    let Some(array) = markdown_array(prop, schema) else {
+        return;
+    };
+    let Some(items) = array.items.as_deref() else {
         return;
     };
     let array_def_name = prop
@@ -5780,7 +5787,7 @@ enum PropertyShape<'a> {
         /// Keep the winning variant's reference context for generation.
         variant: &'a CfnProperty,
         /// Reuse the concrete array without resolving nested unions again.
-        resolved: &'a CfnProperty,
+        resolved: ResolvedArray<'a>,
     },
     /// Union of object fields; variant-local required lists do not apply.
     Merged(BTreeMap<String, CfnProperty>),
@@ -5816,7 +5823,7 @@ fn property_shape_with_visited<'a>(
         return PropertyShape::Inline;
     }
     if let Some(shape) = property.one_of.iter().find_map(|variant| {
-        resolved_array_property(variant, schema, visiting_defs)
+        resolved_array_shape(variant, schema, visiting_defs)
             .map(|resolved| PropertyShape::Array { variant, resolved })
     }) {
         return shape;
@@ -8653,7 +8660,7 @@ fn enum_property_type(
             || enum_type.to_string(),
             |items| enum_property_type(items, schema, enum_type, force_unordered),
         );
-        array_attribute_type(&item_type, array, force_unordered)
+        array_attribute_type(&item_type, &array, force_unordered)
     } else if let Some(value) = property_object_map_value(prop, schema) {
         format!(
             "AttributeType::map({})",
@@ -8706,28 +8713,115 @@ fn property_resolves_to_array(prop: &CfnProperty, schema: &CfnSchema) -> bool {
     resolved_array_property(prop, schema, &mut HashSet::new()).is_some()
 }
 
-/// Resolve aliases and oneOf arrays through the same shape classifier used
-/// for inline properties. Track definition visits because oneOf branches
-/// can refer back to their containing definition.
+/// Keep shape classification small by borrowing the array and carrying only
+/// the list metadata that can be merged across reference siblings.
+struct ResolvedArray<'a> {
+    property: &'a CfnProperty,
+    min_items: Option<i64>,
+    max_items: Option<i64>,
+    unique_items: Option<bool>,
+    insertion_order: Option<bool>,
+}
+
+impl<'a> ResolvedArray<'a> {
+    fn new(property: &'a CfnProperty) -> Self {
+        Self {
+            property,
+            min_items: property.min_items,
+            max_items: property.max_items,
+            unique_items: property.unique_items,
+            insertion_order: property.insertion_order,
+        }
+    }
+
+    /// Materialize merged metadata only when a consumer needs a full property.
+    fn into_property(self) -> Cow<'a, CfnProperty> {
+        let property = self.property;
+        if (
+            self.min_items,
+            self.max_items,
+            self.unique_items,
+            self.insertion_order,
+        ) == (
+            property.min_items,
+            property.max_items,
+            property.unique_items,
+            property.insertion_order,
+        ) {
+            Cow::Borrowed(property)
+        } else {
+            Cow::Owned(CfnProperty {
+                min_items: self.min_items,
+                max_items: self.max_items,
+                unique_items: self.unique_items,
+                insertion_order: self.insertion_order,
+                ..property.clone()
+            })
+        }
+    }
+}
+
 fn resolved_array_property<'a>(
     prop: &'a CfnProperty,
     schema: &'a CfnSchema,
     visiting_defs: &mut HashSet<&'a str>,
-) -> Option<&'a CfnProperty> {
+) -> Option<Cow<'a, CfnProperty>> {
+    resolved_array_shape(prop, schema, visiting_defs).map(ResolvedArray::into_property)
+}
+
+/// Resolve aliases and oneOf arrays through the same shape classifier used
+/// for inline properties. Track definition visits because oneOf branches
+/// can refer back to their containing definition.
+fn resolved_array_shape<'a>(
+    prop: &'a CfnProperty,
+    schema: &'a CfnSchema,
+    visiting_defs: &mut HashSet<&'a str>,
+) -> Option<ResolvedArray<'a>> {
     match property_shape_with_visited(prop, schema, visiting_defs) {
-        PropertyShape::Reference { resolved, .. } => {
-            let resolved = resolved?;
-            if !visiting_defs.insert(resolved.name) {
+        PropertyShape::Reference { path, .. } => {
+            // Walk each alias rather than jumping to resolve_ref's final target:
+            // every $ref sibling can contribute list metadata.
+            let name = ref_def_name(path)?;
+            if !visiting_defs.insert(name) {
                 return None;
             }
-            let array = resolved_array_property(resolved.property, schema, visiting_defs);
-            visiting_defs.remove(resolved.name);
-            array
+            let array = schema
+                .definitions
+                .as_ref()
+                .and_then(|definitions| definitions.get(name))
+                .and_then(|target| resolved_array_shape(target, schema, visiting_defs));
+            visiting_defs.remove(name);
+            array.map(|array| array_with_ref_siblings(array, prop))
         }
-        PropertyShape::Inline => (inline_property_type(prop) == Some("array")).then_some(prop),
+        PropertyShape::Inline => {
+            (inline_property_type(prop) == Some("array")).then_some(ResolvedArray::new(prop))
+        }
         PropertyShape::Array { resolved, .. } => Some(resolved),
         PropertyShape::Direct(_) | PropertyShape::Merged(_) | PropertyShape::Unresolved => None,
     }
+}
+
+/// Preserve list metadata through aliases for both ordinary emission and item
+/// overrides. The referenced array owns explicit ordering; siblings fill gaps.
+/// Bounds and uniqueness are conjunctive across every source layer.
+fn array_with_ref_siblings<'a>(
+    mut array: ResolvedArray<'a>,
+    sibling: &CfnProperty,
+) -> ResolvedArray<'a> {
+    array.min_items = match (array.min_items, sibling.min_items) {
+        (Some(target), Some(sibling)) => Some(target.max(sibling)),
+        (target, sibling) => target.or(sibling),
+    };
+    array.max_items = match (array.max_items, sibling.max_items) {
+        (Some(target), Some(sibling)) => Some(target.min(sibling)),
+        (target, sibling) => target.or(sibling),
+    };
+    array.unique_items = match (array.unique_items, sibling.unique_items) {
+        (Some(target), Some(sibling)) => Some(target || sibling),
+        (target, sibling) => target.or(sibling),
+    };
+    array.insertion_order = array.insertion_order.or(sibling.insertion_order);
+    array
 }
 
 /// A whole-attribute override must not discard constraints at the property,
@@ -8773,11 +8867,9 @@ fn array_item_override_source<'a>(
     property: &'a CfnProperty,
     schema: &'a CfnSchema,
 ) -> Option<Cow<'a, CfnProperty>> {
+    let source = property;
     let mut property = property;
     let mut visited = HashSet::new();
-    let mut min_items = None;
-    let mut max_items = None;
-    let mut unique_items = None;
     loop {
         // Check every alias before resolving it: a $ref must not hide a union
         // or a conflicting inline shape at the override's exact path.
@@ -8791,35 +8883,11 @@ fn array_item_override_source<'a>(
         {
             return None;
         }
-        // Constraints on $ref siblings and intermediate aliases are conjunctive.
-        // Retain the tightest counts and uniqueness from every source layer.
-        if let Some(min) = property.min_items {
-            min_items = Some(min_items.map_or(min, |current: i64| current.max(min)));
-        }
-        if let Some(max) = property.max_items {
-            max_items = Some(max_items.map_or(max, |current: i64| current.min(max)));
-        }
-        if let Some(unique) = property.unique_items {
-            unique_items = Some(unique_items.unwrap_or(false) || unique);
-        }
         let Some(reference) = property.ref_path.as_deref() else {
             if inline_property_type(property) != Some("array") {
                 return None;
             }
-            let mut array = Cow::Borrowed(property);
-            if (min_items, max_items, unique_items)
-                != (
-                    property.min_items,
-                    property.max_items,
-                    property.unique_items,
-                )
-            {
-                let array = array.to_mut();
-                array.min_items = min_items;
-                array.max_items = max_items;
-                array.unique_items = unique_items;
-            }
-            return Some(array);
+            return resolved_array_property(source, schema, &mut HashSet::new());
         };
         let name = ref_def_name(reference)?;
         if !visited.insert(name) {
@@ -9021,8 +9089,9 @@ fn cfn_type_to_carina_type_with_enum_resolved(
             IN_PROGRESS_DEFS.with(|definitions| {
                 definitions.borrow_mut().insert(def_name.to_string());
             });
+            let array = resolved_array_property(prop, schema, &mut HashSet::new());
             let (body, enum_info) = cfn_type_to_carina_type_with_enum_resolved(
-                schema.property_at(property_path, resolved.property),
+                schema.property_at(property_path, array.as_deref().unwrap_or(resolved.property)),
                 namespace,
                 enums,
                 paths,
@@ -22639,6 +22708,120 @@ mod tests {
             generate_test_markdown(&schema, &schema.type_name).unwrap(),
             expected_docs
         );
+    }
+
+    fn assert_array_item_override_alias_ordering(nested: bool) {
+        static OVERRIDES: LazyLock<ResourceTypeOverrides> = LazyLock::new(|| {
+            let mut overrides = ResourceTypeOverrides::default();
+            for (resource, path) in [
+                ("AWS::Test::TopArrayItemOrdering", "Values"),
+                ("AWS::Test::NestedArrayItemOrdering", "Container.Values"),
+            ] {
+                overrides.insert(
+                    (resource, path),
+                    TypeOverride::ArrayItemType {
+                        expression: "AttributeType::string()",
+                        display: OverrideTypeDisplay::new("List<String>"),
+                        block_name: None,
+                        default: None,
+                    },
+                );
+            }
+            overrides
+        });
+        let cfn_type = if nested {
+            "AWS::Test::NestedArrayItemOrdering"
+        } else {
+            "AWS::Test::TopArrayItemOrdering"
+        };
+        // The referenced shape wins explicit conflicts; siblings supply missing
+        // ordering. Cover both intermediate aliases as well as the exact path.
+        for (sibling, first_alias, second_alias, target, ordered) in [
+            (Some(false), None, None, None, false),
+            (None, Some(false), None, None, false),
+            (None, None, Some(false), None, false),
+            (None, None, None, Some(false), false),
+            (None, None, None, None, true),
+            (Some(true), Some(false), None, None, false),
+            (Some(false), Some(true), None, None, true),
+            (Some(true), Some(true), Some(false), None, false),
+            (Some(false), Some(false), Some(false), Some(true), true),
+            (Some(true), Some(true), Some(true), Some(false), false),
+        ] {
+            for constrained in [false, true] {
+                let mut property = serde_json::json!({"$ref": "#/definitions/FirstAlias"});
+                let mut first = serde_json::json!({"$ref": "#/definitions/SecondAlias"});
+                let mut second = serde_json::json!({"$ref": "#/definitions/ValuesArray"});
+                let mut array = serde_json::json!({
+                    "type": "array", "items": {"type": "string"}
+                });
+                for (source, order) in [
+                    (&mut property, sibling),
+                    (&mut first, first_alias),
+                    (&mut second, second_alias),
+                    (&mut array, target),
+                ] {
+                    if let Some(order) = order {
+                        source["insertionOrder"] = serde_json::json!(order);
+                    }
+                }
+                if constrained {
+                    property["minItems"] = serde_json::json!(2);
+                    first["maxItems"] = serde_json::json!(4);
+                    second["uniqueItems"] = serde_json::json!(true);
+                    array["minItems"] = serde_json::json!(1);
+                    array["maxItems"] = serde_json::json!(5);
+                    array["uniqueItems"] = serde_json::json!(false);
+                }
+                let properties = if nested {
+                    serde_json::json!({"Config": {"$ref": "#/definitions/Container"}})
+                } else {
+                    serde_json::json!({"Values": property})
+                };
+                let schema: CfnSchema = serde_json::from_value(serde_json::json!({
+                    "typeName": cfn_type,
+                    "properties": properties,
+                    "definitions": {
+                        "Container": {"type": "object", "properties": {"Values": property}},
+                        "FirstAlias": first,
+                        "SecondAlias": second,
+                        "ValuesArray": array
+                    }
+                }))
+                .unwrap();
+                let expected = if constrained {
+                    format!(
+                        "AttributeType::refined_list(AttributeType::string(), {ordered}, Some((Some(2), Some(4))), carina_core::schema::ListElements::Unique)"
+                    )
+                } else {
+                    let constructor = if ordered { "list" } else { "unordered_list" };
+                    format!("AttributeType::{constructor}(AttributeType::string())")
+                };
+                let plain = generate_synthetic_schema_code(&schema).unwrap();
+                assert!(
+                    plain.contains(&expected),
+                    "without override: {schema:?}\n{plain}"
+                );
+                with_resource_type_overrides(&OVERRIDES, || {
+                    let overridden = generate_synthetic_schema_code(&schema).unwrap();
+                    assert!(
+                        overridden.contains(&expected),
+                        "with ArrayItemType: {schema:?}\n{overridden}"
+                    );
+                    assert_eq!(overridden, plain, "{schema:?}");
+                });
+            }
+        }
+    }
+
+    #[test]
+    fn test_top_level_array_item_override_preserves_alias_ordering() {
+        assert_array_item_override_alias_ordering(false);
+    }
+
+    #[test]
+    fn test_nested_array_item_override_preserves_alias_ordering() {
+        assert_array_item_override_alias_ordering(true);
     }
 
     #[test]
