@@ -233,6 +233,35 @@ fn budget_filter_values_validate_item_length_and_count() {
 }
 
 #[test]
+fn budget_dimension_match_options_validate_count_in_nested_and_expression() {
+    let schema = budget_schema();
+    let expression = field(&schema, "budget.filter_expression");
+    let list = |items| Value::Concrete(ConcreteValue::List(items));
+    let map = |key: &str, value| {
+        Value::Concrete(ConcreteValue::Map(
+            [(key.to_string(), value)].into_iter().collect(),
+        ))
+    };
+    for filter in ["dimensions", "tags", "cost_categories"] {
+        for count in [0, 1, 2] {
+            let options = [enum_identifier("equals"), enum_identifier("case_sensitive")];
+            let nested = map(
+                "and",
+                list(vec![map(
+                    filter,
+                    map("match_options", list(options[..count].to_vec())),
+                )]),
+            );
+            assert_eq!(
+                expression.validate(&nested).is_ok(),
+                filter != "dimensions" || count <= 1,
+                "nested And {filter}.MatchOptions with {count} items"
+            );
+        }
+    }
+}
+
+#[test]
 fn budget_names_validate_length_and_supported_pattern() {
     let schema = budget_schema();
     let name = field(&schema, "budget.budget_name");

@@ -322,7 +322,7 @@ Used by: `budget.filter_expression`, `budget.filter_expression.and`, `budget.fil
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `key` | [Enum (Key)](#expressiondimensionskey-key) | No |  |
-| `match_options` | List\<[Enum (MatchOptions)](#expressiondimensionsmatch_options-matchoptions)\> | No |  |
+| `match_options` | List\<[Enum (MatchOptions)](#expressiondimensionsmatch_options-matchoptions)\> (items: ..=1) | No |  |
 | `values` | `List<String (length: 0..=1024)> (items: 1..)` | No |  |
 
 ### expression.tags

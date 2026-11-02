@@ -7418,13 +7418,14 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             "CASE_INSENSITIVE",
         ];
         // All recursive Expression uses resolve to these same three definitions.
+        // "You can specify only one of these values in the array."
         // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_ExpressionDimensionValues.html
         m.insert(
             (
                 "AWS::Budgets::Budget",
                 "ExpressionDimensionValues.MatchOptions",
             ),
-            TypeOverride::Enum(budgets_match_options.clone()),
+            TypeOverride::Enum(budgets_match_options.clone()).with_array_bounds(None, Some(1)),
         );
         // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_TagValues.html
         m.insert(
@@ -13478,8 +13479,13 @@ mod tests {
             "CostCategoryValues.MatchOptions",
         ] {
             let field = generated_budgets_field(&generated, path);
+            let list_type = if path == "ExpressionDimensionValues.MatchOptions" {
+                "refined_list"
+            } else {
+                "list"
+            };
             assert!(
-                field.starts_with("AttributeType::list(AttributeType::enum_("),
+                field.starts_with(&format!("AttributeType::{list_type}(AttributeType::enum_(")),
                 "{path}: {field}"
             );
             assert_budgets_enum_values(
@@ -13496,6 +13502,36 @@ mod tests {
                     ("CASE_INSENSITIVE", "case_insensitive"),
                 ],
             );
+        }
+    }
+
+    #[test]
+    fn test_budgets_budget_dimension_match_options_have_single_item_limit() {
+        let schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        let field = generated_budgets_field(&generated, "ExpressionDimensionValues.MatchOptions");
+        assert!(
+            field.contains(
+                ", true, Some((None, Some(1))), carina_core::schema::ListElements::AllowDuplicates)"
+            ),
+            "Dimension MatchOptions must contain at most one item: {field}"
+        );
+
+        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        for (section, has_limit) in [
+            ("dimensions", true),
+            ("tags", false),
+            ("cost_categories", false),
+        ] {
+            let section = markdown
+                .split_once(&format!("### expression.{section}\n"))
+                .unwrap()
+                .1;
+            let row = section
+                .lines()
+                .find(|line| line.starts_with("| `match_options` |"))
+                .unwrap();
+            assert_eq!(row.contains("items: ..=1"), has_limit, "{row}");
         }
     }
 
