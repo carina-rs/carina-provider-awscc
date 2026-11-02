@@ -248,7 +248,7 @@ Shorthand formats: `sns` or `SubscriptionType.sns`
 | `cost_filters` | `Map<String, List<String>>` | No |  |
 | `cost_types` | [Struct(CostTypes)](#budgetcost_types) | No |  |
 | `filter_expression` | [Struct(Expression)](#expression) | No |  |
-| `metrics` | List\<[Enum (Metrics)](#budgetmetrics-metrics)\> | No |  |
+| `metrics` | List\<[Enum (Metrics)](#budgetmetrics-metrics)\> (items: ..=1) | No |  |
 | `planned_budget_limits` | `Map<String, Spend>` | No |  |
 | `time_period` | [Struct(TimePeriod)](#budgettime_period) | No |  |
 | `time_unit` | [Enum (TimeUnit)](#budgettime_unit-timeunit) | Yes |  |
@@ -315,7 +315,7 @@ Used by: `budget.filter_expression`, `budget.filter_expression.and`, `budget.fil
 |-------|------|----------|-------------|
 | `key` | String | No |  |
 | `match_options` | List\<[Enum (MatchOptions)](#expressioncost_categoriesmatch_options-matchoptions)\> | No |  |
-| `values` | `List<String>` | No |  |
+| `values` | `List<String (length: 0..=1024)> (items: 1..)` | No |  |
 
 ### expression.dimensions
 
@@ -323,7 +323,7 @@ Used by: `budget.filter_expression`, `budget.filter_expression.and`, `budget.fil
 |-------|------|----------|-------------|
 | `key` | [Enum (Key)](#expressiondimensionskey-key) | No |  |
 | `match_options` | List\<[Enum (MatchOptions)](#expressiondimensionsmatch_options-matchoptions)\> | No |  |
-| `values` | `List<String>` | No |  |
+| `values` | `List<String (length: 0..=1024)> (items: 1..)` | No |  |
 
 ### expression.tags
 
@@ -331,7 +331,7 @@ Used by: `budget.filter_expression`, `budget.filter_expression.and`, `budget.fil
 |-------|------|----------|-------------|
 | `key` | `String (length: 0..=1024)` | No |  |
 | `match_options` | List\<[Enum (MatchOptions)](#expressiontagsmatch_options-matchoptions)\> | No |  |
-| `values` | `List<String>` | No |  |
+| `values` | `List<String (length: 0..=1024)> (items: 1..)` | No |  |
 
 ### notifications_with_subscribers
 

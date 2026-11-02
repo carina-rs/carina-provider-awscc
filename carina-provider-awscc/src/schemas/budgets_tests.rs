@@ -165,7 +165,7 @@ fn numeric_bounds_accept_endpoints_and_reject_outside_values() {
 }
 
 #[test]
-fn metrics_validate_item_enum() {
+fn metrics_validate_item_enum_and_count() {
     let schema = budget_schema();
     let metrics = field(&schema, "budget.metrics");
     let list = |items| Value::Concrete(ConcreteValue::List(items));
@@ -173,6 +173,15 @@ fn metrics_validate_item_enum() {
     metrics
         .validate(&list(vec![enum_identifier("blended_cost")]))
         .unwrap();
+    assert!(
+        metrics
+            .validate(&list(vec![
+                enum_identifier("blended_cost"),
+                enum_identifier("unblended_cost"),
+            ]))
+            .is_err(),
+        "Metrics must contain at most one item"
+    );
     assert!(
         metrics
             .validate(&list(vec![enum_identifier("invalid_metric")]))
@@ -183,6 +192,44 @@ fn metrics_validate_item_enum() {
             .validate(&list(vec![string("BlendedCost")]))
             .is_err()
     );
+}
+
+#[test]
+fn budget_filter_values_validate_item_length_and_count() {
+    let schema = budget_schema();
+    let list = |items| Value::Concrete(ConcreteValue::List(items));
+    for prefix in [
+        "budget.filter_expression",
+        "budget.filter_expression.not.and",
+        "budget.filter_expression.or",
+    ] {
+        for filter in ["tags", "cost_categories", "dimensions"] {
+            let path = format!("{prefix}.{filter}.values");
+            let values = field(&schema, &path);
+            for length in [0, 1024] {
+                assert!(
+                    values
+                        .validate(&list(vec![string(&"x".repeat(length))]))
+                        .is_ok(),
+                    "{path}: item length {length} must be accepted"
+                );
+            }
+            assert!(
+                values
+                    .validate(&list(vec![string(&"x".repeat(1025))]))
+                    .is_err(),
+                "{path}: item length 1025 must be rejected"
+            );
+            assert!(
+                values.validate(&list(vec![])).is_err(),
+                "{path}: at least one item is required"
+            );
+            assert!(
+                values.validate(&list(vec![string(""), string("")])).is_ok(),
+                "{path}: multiple items and duplicates must remain allowed"
+            );
+        }
+    }
 }
 
 #[test]
