@@ -438,7 +438,9 @@ mod tests {
         let resource = Resource::with_provider("awscc", resource_type, "test", None)
             .with_attribute("tags", tags_value("new-name"));
         let resources = vec![resource.clone()];
-        let managed = vec![ResolvedResource::new(resource)];
+        let managed = vec![ResolvedResource::new(
+            resource.into_resolved_dependency_phase_for_test(),
+        )];
 
         let mut schemas = SchemaRegistry::new();
         schemas.insert("awscc", schema);
@@ -483,6 +485,7 @@ mod tests {
             &saved_attrs,
             &HashMap::new(),
             &[],
+            &carina_core::references::prepare_empty_for_tests(),
         )
         .expect("tag-change planning should succeed");
 
@@ -929,8 +932,13 @@ mod tests {
                     );
                 }
             }
+            RawShape::UnloadedSchemaType(unloaded) => panic!(
+                "enum identity collection requires a loaded schema type for {}",
+                unloaded.identity(),
+            ),
             RawShape::Ref(_) => {}
-            RawShape::String { .. }
+            RawShape::Reference { .. }
+            | RawShape::String { .. }
             | RawShape::Int { .. }
             | RawShape::Float { .. }
             | RawShape::Bool

@@ -234,17 +234,13 @@ pub(crate) fn build_update_patches(
 mod tests {
     use std::collections::HashMap;
 
-    use carina_core::binding_index::ResolvedBindings;
-    use carina_core::executor::{
-        ModuleConstraintGate, ProviderPreparationContext, prepare_provider_ready_resource,
-    };
+    use carina_core::executor::prepare_provider_ready_resource;
     use carina_core::provider::{PatchOp, build_update_patch as build_core_update_patch};
     use carina_core::resource::{ConcreteValue, Resource, State, Value};
-    use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, SchemaRegistry};
+    use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema};
     use indexmap::IndexMap;
 
     use super::*;
-    use crate::AwsccNormalizer;
 
     fn get_schema_config(resource_type: &str) -> Option<&'static AwsccSchemaConfig> {
         super::super::get_schema_config(resource_type)
@@ -594,26 +590,13 @@ mod tests {
             )]),
         );
 
-        let bindings = ResolvedBindings::default();
-        let module_gate = ModuleConstraintGate::from_live_compositions(&[]);
-        let mut schemas = SchemaRegistry::new();
-        schemas.insert(
-            "awscc",
-            crate::schemas::generated::cloudfront::function::cloudfront_function_config().schema,
-        );
-        let factories: Vec<Box<dyn carina_core::provider::ProviderFactory>> =
-            vec![Box::new(crate::OwnerOnlyAwsccFactory)];
-        let preparation = ProviderPreparationContext::new(
-            &bindings,
-            &module_gate,
-            &[],
-            &AwsccNormalizer,
-            &factories,
-            &schemas,
-        );
-        let desired = prepare_provider_ready_resource(desired, &preparation)
-            .await
-            .expect("CloudFront Function should pass provider preparation");
+        let desired =
+            crate::test_support::with_preparation("cloudfront.Function", async |preparation| {
+                prepare_provider_ready_resource(desired, preparation)
+                    .await
+                    .expect("CloudFront Function should pass provider preparation")
+            })
+            .await;
         let patch = build_core_update_patch(
             &["function_code".to_string()],
             &desired,

@@ -73,7 +73,7 @@ fn iam_role_policy_document_diff_ignores_unordered_value_list_reordering() {
             &reordered,
             Some(&schema),
             "assume_role_policy_document",
-            comparison.context(),
+            &comparison.context().observation(),
         ),
         "IAM action and principal AWS lists must compare without regard to order"
     );
@@ -83,7 +83,7 @@ fn iam_role_policy_document_diff_ignores_unordered_value_list_reordering() {
             &changed,
             Some(&schema),
             "assume_role_policy_document",
-            comparison.context(),
+            &comparison.context().observation(),
         ),
         "a changed principal ARN must remain a real policy difference"
     );

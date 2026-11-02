@@ -39,11 +39,15 @@ fn resource_schema_with_defs(
     )
 }
 
+fn is_string_leaf(shape: Shape<'_, Compiled>) -> bool {
+    matches!(shape, Shape::String { .. } | Shape::Reference { .. })
+}
+
 fn is_list_of_strings(schema: &CompiledResourceSchema, attr_type: &CompiledAttributeType) -> bool {
     let Shape::List { element_type, .. } = schema.shape_of(attr_type) else {
         return false;
     };
-    matches!(schema.shape_of(element_type), Shape::String { .. })
+    is_string_leaf(schema.shape_of(element_type))
 }
 
 fn string_list_to_json(items: &[ValueString]) -> serde_json::Value {
@@ -63,13 +67,13 @@ fn string_or_list_of_strings_from_json(
     let has_string = members
         .iter()
         .flatten()
-        .any(|member| matches!(schema.shape_of(member.as_attr()), Shape::String { .. }));
+        .any(|member| is_string_leaf(schema.shape_of(member.as_attr())));
     let has_list_of_strings = members.iter().flatten().any(|member| {
         let member = member.as_attr();
         let Shape::List { element_type, .. } = schema.shape_of(member) else {
             return false;
         };
-        matches!(schema.shape_of(element_type), Shape::String { .. })
+        is_string_leaf(schema.shape_of(element_type))
     });
 
     if !has_string || !has_list_of_strings {
@@ -100,7 +104,8 @@ fn json_matches_shape(
     value: &serde_json::Value,
 ) -> bool {
     match schema.shape_of(attr_type) {
-        Shape::String { .. } | Shape::Enum { .. } => value.is_string(),
+        Shape::UnloadedSchemaType(_) => false,
+        Shape::Enum { .. } => value.is_string(),
         Shape::Int { .. } => value.as_i64().is_some(),
         Shape::Float { .. } => value.is_number(),
         Shape::Bool => value.is_boolean(),
@@ -117,6 +122,7 @@ fn json_matches_shape(
                 .flatten()
                 .any(|member| json_matches_shape(schema, member.as_attr(), value))
         }),
+        shape => is_string_leaf(shape) && value.is_string(),
     }
 }
 
@@ -390,7 +396,7 @@ pub(crate) fn dsl_value_to_aws_with_defs(
     } = shape
     {
         if let Value::Concrete(ConcreteValue::StringList(items)) = value
-            && matches!(schema.shape_of(inner), Shape::String { .. })
+            && is_string_leaf(schema.shape_of(inner))
         {
             return Some(string_list_to_json(items));
         }
@@ -575,6 +581,86 @@ mod tests {
         AttributeType, DslTransform, RootlessType, StructField, ValidatedConfigSchema,
         legacy_validator,
     };
+
+    #[test]
+    fn unloaded_schema_type_does_not_match_json_or_block_union_selection() {
+        use carina_core::parser::{TypeExpr, UnloadedSchemaType};
+        use carina_core::schema::TypeIdentity;
+
+        let unloaded =
+            UnloadedSchemaType::try_from(TypeIdentity::new(Some("unloaded"), ["Widget"], "Value"))
+                .expect("provider type should retain unloaded evidence");
+        let unloaded =
+            carina_core::validation::lift_type_expr(&TypeExpr::UnloadedSchemaType(unloaded))
+                .expect("unloaded evidence should lift without loading its scalar kind");
+        let defs = std::collections::BTreeMap::from([("Unloaded".to_string(), unloaded.clone())]);
+        let schema = resource_schema_with_defs("test.resource", &defs);
+        for value in [json!("text"), json!(42), json!(true), json!([]), json!({})] {
+            assert!(!json_matches_shape(&schema, &unloaded, &value));
+        }
+        let union = CompiledAttributeType::union(vec![
+            CompiledAttributeType::ref_("Unloaded"),
+            CompiledAttributeType::int(),
+        ]);
+        assert!(json_matches_shape(&schema, &union, &json!(42)));
+        assert_eq!(
+            aws_value_to_dsl_with_defs("value", &json!(42), &union, "test.resource", &defs),
+            Some(Value::Concrete(ConcreteValue::Int(42))),
+        );
+    }
+
+    #[test]
+    fn reference_leaves_use_string_list_conversion_in_lists_and_unions() {
+        use carina_core::schema::TypeIdentity;
+
+        let reference = CompiledAttributeType::reference(
+            TypeIdentity::new(Some("test"), ["Widget"], "Reference"),
+            None,
+            None,
+        );
+        for leaf in [CompiledAttributeType::string(), reference] {
+            let list = CompiledAttributeType::list(leaf.clone());
+            let defs = std::collections::BTreeMap::from([("Values".to_string(), list)]);
+            let list = CompiledAttributeType::ref_("Values");
+            let schema = resource_schema_with_defs("test.resource", &defs);
+            let union = CompiledAttributeType::union(vec![leaf.clone(), list.clone()]);
+            assert!(is_list_of_strings(&schema, &list));
+            assert!(json_matches_shape(&schema, &leaf, &json!("first")));
+            assert!(!json_matches_shape(&schema, &leaf, &json!(42)));
+            let values = Value::Concrete(ConcreteValue::StringList(vec![
+                "first".into(),
+                "second".into(),
+            ]));
+            for attr_type in [&list, &union] {
+                assert_eq!(
+                    dsl_value_to_aws_with_defs(&values, attr_type, "test.resource", "value", &defs),
+                    Some(json!(["first", "second"])),
+                );
+            }
+            assert_eq!(
+                aws_value_to_dsl_with_defs(
+                    "value",
+                    &json!(["first", "second"]),
+                    &union,
+                    "test.resource",
+                    &defs
+                ),
+                Some(values),
+            );
+            assert_eq!(
+                aws_value_to_dsl_with_defs(
+                    "value",
+                    &json!("first"),
+                    &union,
+                    "test.resource",
+                    &defs
+                ),
+                Some(Value::Concrete(ConcreteValue::StringList(vec![
+                    "first".into()
+                ]))),
+            );
+        }
+    }
 
     fn test_config_type(attr_type: AttributeType) -> ValidatedConfigSchema {
         ValidatedConfigSchema::validate(std::collections::BTreeMap::from([(

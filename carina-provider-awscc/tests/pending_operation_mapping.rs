@@ -18,23 +18,20 @@ use aws_smithy_runtime_api::client::{
     },
     result::ConnectorError,
 };
-use carina_core::binding_index::ResolvedBindings;
-use carina_core::executor::{ModuleConstraintGate, ProviderPreparationContext};
 use carina_core::provider::{
     AppliedIdentifier, AppliedState, CreateAttempt, CreateFailureKind, DeleteRequest, Observation,
     PatchOp, PendingToken, Poll, ProviderDirectiveSchema, ProviderError, ReadOutcome,
     ResumeCreateRequest, ResumeFailureKind, Sent, UpdateOutcome, UpdateOutcomeKind, UpdatePatch,
 };
 use carina_core::resource::{ConcreteValue, Directives, Resource, ResourceId, State, Value};
-use carina_core::schema::SchemaRegistry;
 use carina_plugin_sdk::PhasedToken;
 use carina_provider_awscc::provider::{
     AwsccProviderConfig, CcCreateAttempt, CcCreatePoll, CcCreateResume, CcIssuedCreate,
     CcPollAttempt, CcResumeAttempt, CcResumedCreate, NotAppliedCreate,
 };
 use carina_provider_awscc::{
-    AwsccNormalizer, AwsccProvider, BoundedSdkConfig, CcCreateOperation, CcCreateToken,
-    CcDeleteToken, CcRequestPhase, CcUpdateToken, InFlightCreate, RequestToken,
+    AwsccProvider, BoundedSdkConfig, CcCreateOperation, CcCreateToken, CcDeleteToken,
+    CcRequestPhase, CcUpdateToken, InFlightCreate, RequestToken,
 };
 use carina_provider_protocol::{OperationStep, PendingPhase, PollFinality, PollRequest};
 use indexmap::IndexMap;
@@ -866,7 +863,12 @@ fn create_token(value: JsonValue) -> CcCreateToken {
 }
 
 fn pending_create_for_token(
-    resource: &Resource<impl Sized>,
+    resource: &Resource<
+        impl Sized,
+        carina_core::resource::NoPlaceholder,
+        carina_core::resource::AbsoluteBindingAddress,
+        impl Sized,
+    >,
     token: &CcCreateToken,
 ) -> carina_core::provider::PendingCreate {
     let pending_token = PendingToken::new(
@@ -900,37 +902,6 @@ async fn resume_request_for_token(
     };
     assert_eq!(error.to_string(), "construct test in-flight create");
     ResumeCreateRequest::for_test(pending, common::create_request(resource).await)
-        .expect("test resume request must preserve its resource route")
-}
-
-async fn resume_request_for_unchecked_resource(
-    resource: Resource,
-    token: &CcCreateToken,
-) -> ResumeCreateRequest {
-    let pending = pending_create_for_token(&resource, token);
-    let failure = pending.preserve(ProviderError::internal("construct test in-flight create"));
-    let CreateFailureKind::InFlight { pending, error } = failure.into_kind() else {
-        panic!("preserving a pending create must produce an in-flight create");
-    };
-    assert_eq!(error.to_string(), "construct test in-flight create");
-
-    // Deliberately omit schemas from this test-only preparation context so an
-    // invalid provider payload reaches the provider's pre-send validation.
-    let bindings = ResolvedBindings::default();
-    let module_gate = ModuleConstraintGate::from_live_compositions(&[]);
-    let schemas = SchemaRegistry::new();
-    let preparation = ProviderPreparationContext::new(
-        &bindings,
-        &module_gate,
-        &[],
-        &AwsccNormalizer,
-        &[],
-        &schemas,
-    );
-    let request = carina_core::executor::prepare_create_request(resource, &preparation)
-        .await
-        .expect("unchecked test resource should reach provider validation");
-    ResumeCreateRequest::for_test(pending, request)
         .expect("test resume request must preserve its resource route")
 }
 
@@ -1065,7 +1036,12 @@ fn in_flight_create_token(identifier: Option<&str>) -> CcCreateToken {
 
 async fn poll_test_create(
     provider: &AwsccProvider,
-    resource: &Resource<impl Sized>,
+    resource: &Resource<
+        impl Sized,
+        carina_core::resource::NoPlaceholder,
+        carina_core::resource::AbsoluteBindingAddress,
+        impl Sized,
+    >,
     token: CcCreateToken,
 ) -> Result<TestCreateStep, TestCreateVerdict> {
     let poll = test_create_poll(&token);
@@ -1998,8 +1974,8 @@ async fn unconfirmed_create_rejection_from_resume_preserves_in_flight_token() {
 }
 
 #[tokio::test]
-async fn unconfirmed_create_pre_send_failure_from_resume_preserves_pending_token() {
-    let (provider, service) =
+async fn invalid_resume_tags_are_rejected_before_dispatch() {
+    let (_provider, service) =
         provider_with_script(std::iter::empty::<(&'static str, Vec<Reply>)>()).await;
     let resource = Resource::with_provider("awscc", "s3.Bucket", "invalid_resume", None)
         .with_attribute("bucket_name", string("carina-invalid-resume"))
@@ -2010,32 +1986,106 @@ async fn unconfirmed_create_pre_send_failure_from_resume_preserves_pending_token
                 bool_(true),
             )]))),
         );
-    let token = serde_json::from_value::<CcCreateToken>(json!({
-        "phase": "unconfirmed",
-        "attempt": 2,
-        "resends": 7,
-        "client_token": TEST_CLIENT_TOKEN,
-    }))
-    .expect("deserialize unconfirmed create continuation");
+    let preparation = common::try_create_request(resource.clone()).await;
+    let error = preparation.expect_err("invalid tags must fail real create preparation");
+    let carina_core::executor::ProviderPreparationError::ValueConstraint {
+        resource: rejected,
+        errors,
+    } = error
+    else {
+        panic!("invalid tags must fail schema validation: {error:?}");
+    };
+    assert_eq!(rejected.as_ref(), &resource.id);
+    let [carina_core::schema::TypeError::MapValueError { key, inner }] = errors.errors() else {
+        panic!("expected one invalid tag value: {errors}");
+    };
+    assert_eq!(key, "env");
+    assert!(matches!(
+        inner.as_ref(),
+        carina_core::schema::TypeError::TypeMismatch { expected, got }
+            if expected == "String" && got == "Bool"
+    ));
+    assert_eq!(service.calls("CreateResource"), 0);
+}
 
-    let request = resume_request_for_unchecked_resource(resource, &token).await;
-    let failure = carina_core::executor::dispatch_resume_create(&provider, request)
+#[derive(Debug)]
+struct UnavailableCredentials;
+
+impl aws_credential_types::provider::ProvideCredentials for UnavailableCredentials {
+    fn provide_credentials<'a>(
+        &'a self,
+    ) -> aws_credential_types::provider::future::ProvideCredentials<'a>
+    where
+        Self: 'a,
+    {
+        aws_credential_types::provider::future::ProvideCredentials::ready(Err(
+            aws_credential_types::provider::error::CredentialsError::not_loaded(
+                std::io::Error::other("test credentials unavailable"),
+            ),
+        ))
+    }
+}
+
+#[tokio::test]
+async fn unconfirmed_create_pre_send_failure_from_resume_preserves_pending_token() {
+    let service = Arc::new(ScriptedCloudControl::new(std::iter::empty::<(
+        &'static str,
+        Vec<Reply>,
+    )>()));
+    let mock = MockAws::builder()
+        .with_service(Arc::clone(&service))
+        .build();
+    let config = mock
+        .sdk_config("us-east-1")
         .await
-        .expect_err("a pre-send failure cannot disprove the earlier create send");
+        .into_builder()
+        .credentials_provider(
+            aws_credential_types::provider::SharedCredentialsProvider::new(UnavailableCredentials),
+        )
+        .identity_cache(aws_sdk_cloudcontrol::config::IdentityCache::no_cache())
+        .build();
+    let provider = AwsccProvider::from_sdk_config(
+        BoundedSdkConfig::for_test(config),
+        &AwsccProviderConfig::default(),
+    )
+    .await;
+    let resource = Resource::with_provider("awscc", "s3.Bucket", "resume", None)
+        .with_attribute("bucket_name", string("carina-resume"))
+        .with_attribute(
+            "tags",
+            Value::Concrete(ConcreteValue::Map(IndexMap::from([(
+                "env".to_string(),
+                string("test"),
+            )]))),
+        );
+    let token = create_token(json!({
+        "phase": "unconfirmed", "attempt": 2, "resends": 7,
+        "client_token": TEST_CLIENT_TOKEN,
+    }));
+    let request = resume_request_for_token(resource, &token).await;
+    let failure = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        carina_core::executor::dispatch_resume_create(&provider, request),
+    )
+    .await
+    .expect("permanent pre-send failure must settle promptly")
+    .expect_err("a pre-send failure cannot disprove the earlier create send");
     let ResumeFailureKind::InFlight { pending, error } = failure.into_kind() else {
         panic!("an unconfirmed pre-send failure must remain in flight");
     };
     assert_eq!(
         pending.token().expose_for_provider_call(),
-        serde_json::to_string(&token).expect("serialize expected create continuation")
+        serde_json::to_string(&token).expect("serialize expected create continuation"),
     );
     assert_eq!(pending.identifier(), None);
-    assert_eq!(error.variant_name(), "invalid_input");
+    assert_eq!(error.variant_name(), "api_error");
     assert_eq!(
         error.detail().context(),
-        "failed to encode `tags` attribute for resource s3.Bucket: expected a map with string values"
+        "Failed to resend create resource; the outcome of the earlier send is unknown"
     );
+    assert!(error.to_string().contains("test credentials unavailable"));
     assert_eq!(service.calls("CreateResource"), 0);
+    assert!(service.actions().is_empty(), "no HTTP request may be sent");
 }
 
 #[tokio::test]

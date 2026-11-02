@@ -1,13 +1,13 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, HashMap};
 
 use carina_plugin_sdk::{
     CarinaProvider, CreateAttempt as SdkCreateAttempt, CreateStep as SdkCreateStep,
-    CreateVerdict as SdkCreateVerdict, DeleteOutcome as SdkDeleteOutcome, DesiredAttribute,
-    DesiredResource, FoundRead, IssuedCreate as SdkIssuedCreate, NormalizedResource, Pending,
-    PendingDelete, Poll as SdkPoll, PollAttempt as SdkPollAttempt, PollRequest,
-    PollVerdict as SdkPollVerdict, Resume as SdkResume, ResumeAttempt as SdkResumeAttempt,
-    ResumeStep as SdkResumeStep, ResumeVerdict as SdkResumeVerdict,
-    ResumedCreate as SdkResumedCreate, UpdateOutcome as SdkUpdateOutcome,
+    CreateVerdict as SdkCreateVerdict, DeleteOutcome as SdkDeleteOutcome, FoundRead,
+    IssuedCreate as SdkIssuedCreate, Pending, PendingDelete, Poll as SdkPoll,
+    PollAttempt as SdkPollAttempt, PollRequest, PollVerdict as SdkPollVerdict, Resume as SdkResume,
+    ResumeAttempt as SdkResumeAttempt, ResumeStep as SdkResumeStep,
+    ResumeVerdict as SdkResumeVerdict, ResumedCreate as SdkResumedCreate,
+    UpdateOutcome as SdkUpdateOutcome,
 };
 use carina_provider_protocol::types as proto;
 use carina_provider_protocol::{OperationStep, PendingPhase};
@@ -23,8 +23,7 @@ use carina_core::provider::{
 };
 use carina_core::resource::{
     ConcreteValue, DataSource as CoreDataSource, Directives as CoreDirectives,
-    ProviderResource as CoreProviderResource, Resource as CoreResource,
-    ResourceId as CoreResourceId, Value as CoreValue,
+    Resource as CoreResource, ResourceId as CoreResourceId, Value as CoreValue,
 };
 use carina_core::schema::{
     ReferenceForms, SchemaKind, SchemaRegistry, ValidatedConfigSchema, ValidatedResourceSchema,
@@ -667,31 +666,6 @@ impl AwsccProcessProvider {
         schemas::schema_registry()
     }
 
-    fn normalize_core_desired(
-        &self,
-        resources: &mut [CoreProviderResource],
-        deferred_by_resource: &[BTreeSet<String>],
-    ) -> Result<(), CoreProviderError> {
-        self.normalizer
-            .normalize_desired_with_host_deferred(resources, deferred_by_resource)?;
-
-        // Deferred names never enter the mutable resource. Keep the assertion
-        // at the protocol boundary so a future desired normalizer cannot
-        // accidentally materialize a host-owned value.
-        for (resource, deferred) in resources.iter().zip(deferred_by_resource) {
-            if let Some(name) = deferred
-                .iter()
-                .find(|name| resource.attributes.contains_key(name.as_str()))
-            {
-                return Err(CoreProviderError::internal(format!(
-                    "desired normalizer materialized host-deferred attribute `{name}`"
-                ))
-                .for_resource(resource.id.clone()));
-            }
-        }
-        Ok(())
-    }
-
     fn normalize_create_resource(
         &self,
         resource: &proto::Resource,
@@ -1139,76 +1113,6 @@ impl CarinaProvider for AwsccProcessProvider {
         )
     }
 
-    fn normalize_desired(
-        &self,
-        resources: Vec<DesiredResource>,
-    ) -> Result<Vec<NormalizedResource>, proto::ProviderError> {
-        let mut core_resources = Vec::with_capacity(resources.len());
-        let mut deferred_by_resource = Vec::with_capacity(resources.len());
-        for resource in &resources {
-            let core_id = protocol_convert::protocol_to_resource_id(resource.id());
-            let mut core = CoreResource::from_id(core_id.clone());
-            let mut deferred = BTreeSet::new();
-            for (name, attribute) in resource.attributes() {
-                match attribute {
-                    DesiredAttribute::Known(value) => {
-                        let value =
-                            protocol_convert::protocol_to_core_value(value).map_err(|error| {
-                                Self::convert_error(
-                                    protocol_input_error(
-                                        "failed to decode desired resource attribute",
-                                        error,
-                                    )
-                                    .for_resource(core_id.clone()),
-                                )
-                            })?;
-                        core.set_attr(name.to_string(), value);
-                    }
-                    DesiredAttribute::Deferred => {
-                        deferred.insert(name.to_string());
-                    }
-                    DesiredAttribute::Absent => unreachable!(
-                        "DesiredResource::attributes yields only known or deferred names"
-                    ),
-                }
-            }
-            core_resources.push(CoreProviderResource::from(core));
-            deferred_by_resource.push(deferred);
-        }
-        // Deferred names stay outside the core resource. The parallel typed
-        // metadata keeps Deferred distinct from Absent without a sentinel.
-        self.normalize_core_desired(&mut core_resources, &deferred_by_resource)
-            .map_err(Self::convert_error)?;
-        let mut normalized = Vec::with_capacity(core_resources.len());
-        for (mut desired, resource) in resources.into_iter().zip(core_resources) {
-            for (name, value) in &resource.attributes {
-                let value =
-                    protocol_convert::try_core_to_protocol_value(value).map_err(|error| {
-                        Self::convert_error(
-                            protocol_output_error("failed to encode normalized attribute", error)
-                                .for_resource(resource.id.clone()),
-                        )
-                    })?;
-                match desired.attribute_mut(name) {
-                    DesiredAttribute::Known(current) => *current = value,
-                    DesiredAttribute::Absent => {
-                        return Err(Self::convert_error(
-                            CoreProviderError::internal(format!(
-                                "desired normalizer attempted to write absent attribute `{name}`"
-                            ))
-                            .for_resource(resource.id.clone()),
-                        ));
-                    }
-                    DesiredAttribute::Deferred => unreachable!(
-                        "typed normalization and the boundary assertion exclude deferred names"
-                    ),
-                }
-            }
-            normalized.push(desired.finish());
-        }
-        Ok(normalized)
-    }
-
     fn normalize_state(
         &self,
         states: HashMap<String, proto::PersistedState>,
@@ -1416,6 +1320,81 @@ mod tests {
         assert!(error.to_string().contains("ReadBack"));
     }
 
+    #[test]
+    fn desired_normalization_boundary_retains_typed_conversion_context() {
+        use carina_core::desired::NormalizationBatch;
+        use carina_provider_protocol::normalization::{
+            NormalizationError, NormalizationErrorKind, NormalizationPathSegment,
+        };
+        use std::error::Error;
+
+        for number in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let resource =
+                CoreResource::with_provider("awscc", "s3.Bucket", "invalid-desired", None)
+                    .with_attribute(
+                        "values",
+                        CoreValue::Concrete(ConcreteValue::List(vec![CoreValue::Concrete(
+                            ConcreteValue::Map(indexmap::IndexMap::from([(
+                                "weight".into(),
+                                CoreValue::Concrete(ConcreteValue::Float(number)),
+                            )])),
+                        )])),
+                    );
+            // The production host uses this batch before invoking the SDK's
+            // default normalization, so invalid known leaves never reach a guest.
+            let error = NormalizationBatch::new(std::slice::from_ref(&resource))
+                .err()
+                .expect("non-finite desired input must fail before normalization dispatch");
+            assert_eq!(
+                *error.resource_id,
+                protocol_convert::resource_id_to_protocol(&resource.id)
+            );
+            assert_eq!(error.resource_index, Some(0));
+            assert_eq!(error.attribute, "values");
+            assert_eq!(
+                error.path,
+                vec![
+                    NormalizationPathSegment::Index(0),
+                    NormalizationPathSegment::Key("weight".into())
+                ]
+            );
+            assert!(matches!(error.kind, NormalizationErrorKind::Conversion));
+            assert!(matches!(
+                error.source().and_then(
+                    |cause| cause.downcast_ref::<protocol_convert::ProtocolConvertError>()
+                ),
+                Some(protocol_convert::ProtocolConvertError::NonFiniteFloat),
+            ));
+            let error: CoreProviderError = error.into();
+            assert_eq!(error.detail().resource_id.as_deref(), Some(&resource.id));
+            assert!(error.detail().cause().unwrap().is::<NormalizationError>());
+        }
+    }
+
+    #[test]
+    fn desired_normalization_codec_rejects_malformed_containers_with_resource_context() {
+        use carina_provider_protocol::normalization::{NormalizationErrorKind, NormalizationValue};
+        let id = proto::ResourceId {
+            provider: "awscc".into(),
+            resource_type: "s3.Bucket".into(),
+            identity: "invalid-desired".into(),
+        };
+        // SDK guest dispatch decodes container JSON through this codec before
+        // calling CarinaProvider::normalize_desired's default implementation.
+        for error in [
+            NormalizationValue::from_json_list("[", &id, "values").unwrap_err(),
+            NormalizationValue::from_json_map("{", &id, "values").unwrap_err(),
+        ] {
+            assert!(matches!(error.kind, NormalizationErrorKind::Conversion));
+            assert_eq!(*error.resource_id, id);
+            assert_eq!(error.attribute, "values");
+            let error: proto::ProviderError = error.into();
+            assert_eq!(error.resource_id.as_ref(), Some(&id));
+            assert_eq!(error.operation.as_deref(), Some("normalize_desired"));
+            assert!(error.cause.is_some());
+        }
+    }
+
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     enum CallbackScalar {
         String,
@@ -1507,7 +1486,12 @@ mod tests {
                     collect_callbacks(member, bindings);
                 }
             }
-            RawShape::Bool | RawShape::Duration | RawShape::Ref(_) => {}
+            RawShape::UnloadedSchemaType(unloaded) => panic!(
+                "callback collection requires a loaded schema type for {}",
+                unloaded.identity(),
+            ),
+            RawShape::Reference { .. } | RawShape::Bool | RawShape::Duration | RawShape::Ref(_) => {
+            }
         }
     }
 

@@ -364,13 +364,13 @@ mod tests {
 
     #[test]
     fn route53_hosted_zone_name_trailing_dot_has_no_diff_without_registration() {
-        let config = crate::schemas::generated::get_config_by_type("route53.HostedZone")
-            .expect("route53.HostedZone schema should exist");
         let desired = carina_core::resource::ResolvedResource::new(
-            Resource::with_provider("awscc", "route53.HostedZone", "example", None).with_attribute(
-                "name",
-                Value::Concrete(ConcreteValue::String("example.com".to_string().into())),
-            ),
+            Resource::with_provider("awscc", "route53.HostedZone", "example", None)
+                .with_attribute(
+                    "name",
+                    Value::Concrete(ConcreteValue::String("example.com".to_string().into())),
+                )
+                .into_resolved_dependency_phase_for_test(),
         );
         let mut current_states = HashMap::from([(
             desired.id.clone(),
@@ -400,14 +400,24 @@ mod tests {
         let comparison = router
             .comparison_for(&registry, &desired.id)
             .expect("HostedZone comparison context");
-        let diff = carina_core::differ::diff(
-            &desired,
-            current,
-            &saved_attrs,
-            None,
-            Some(config.schema.as_schema()),
-            comparison.context(),
-        );
+        let diff = comparison
+            .context()
+            .with_references(
+                &carina_core::references::prepare_empty_for_tests(),
+                &desired.id,
+                |context| {
+                    carina_core::differ::diff(
+                        &desired,
+                        current,
+                        &saved_attrs,
+                        None,
+                        comparison,
+                        context,
+                    )
+                },
+            )
+            .expect("AWSCC fixtures must not require reference resolution")
+            .expect("schema-bound diff should succeed");
         assert!(
             matches!(diff, carina_core::differ::Diff::NoChange(_)),
             "expected no diff for Route53 HostedZone name with trailing dot, got {diff:?}"
@@ -570,7 +580,6 @@ mod tests {
         name: &str,
         attrs: Vec<(&str, Value)>,
     ) -> (ResourceId, State) {
-        use std::collections::BTreeSet;
         let identity = match carina_core::resource::ResourceIdentity::try_from(name.to_string()) {
             Ok(identity) => identity,
             Err(carina_core::resource::ResourceIdentityError::Empty) => {
@@ -592,7 +601,7 @@ mod tests {
             identifier: Some(name.to_string()),
             attributes,
             exists: true,
-            dependency_bindings: BTreeSet::new(),
+            dependency_bindings: Default::default(),
             partial_read: None,
         };
         (id, state)

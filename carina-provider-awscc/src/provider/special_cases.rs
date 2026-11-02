@@ -7,7 +7,9 @@
 use std::collections::HashMap;
 
 use carina_core::provider::ProviderResult;
-use carina_core::resource::{ConcreteValue, Resource, ResourceId, Value};
+use carina_core::resource::{
+    AbsoluteBindingAddress, ConcreteValue, NoPlaceholder, Resource, ResourceId, Value,
+};
 use serde_json::json;
 
 use super::AwsccProvider;
@@ -64,7 +66,7 @@ impl AwsccProvider {
     /// Handle special attributes for create
     pub(crate) fn create_special_attributes(
         &self,
-        _resource: &Resource<impl Sized>,
+        _resource: &Resource<impl Sized, NoPlaceholder, AbsoluteBindingAddress, impl Sized>,
         _desired_state: &mut serde_json::Map<String, serde_json::Value>,
     ) {
     }

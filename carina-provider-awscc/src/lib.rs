@@ -14,6 +14,9 @@ pub mod resources;
 pub mod schemas;
 mod sdk_config;
 
+#[cfg(test)]
+mod test_support;
+
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod resend_guard;
 
@@ -24,7 +27,7 @@ pub use provider::{
 };
 pub use sdk_config::BoundedSdkConfig;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use indexmap::IndexMap;
 
@@ -108,8 +111,8 @@ impl Provider for ComparisonOnlyProvider {
     }
 }
 
-/// Build the protocol-v13 comparison router used by tests. AWSCC declares no
-/// reference forms in this change and initialization reports scope unavailable,
+/// Build the comparison router used by tests. AWSCC declares no reference
+/// forms and initialization reports scope unavailable,
 /// so tests resolve the same pair through core's initialized-provider route.
 #[doc(hidden)]
 #[cfg(debug_assertions)]
@@ -126,43 +129,6 @@ pub fn test_comparison_router() -> carina_core::provider::ProviderRouter {
 ///
 /// Handles provider-local state normalization.
 pub struct AwsccNormalizer;
-
-impl AwsccNormalizer {
-    /// Normalize a protocol-v13 desired projection whose deferred top-level
-    /// values remain owned by the host.
-    ///
-    /// AWSCC has no desired-side provider mutations: enum canonicalization is
-    /// host-owned and all provider transforms are read-state-only. The typed
-    /// deferred-name sets are still admitted here so that adding a future
-    /// desired transform cannot silently collapse Deferred into Absent.
-    #[doc(hidden)]
-    pub fn normalize_desired_with_host_deferred(
-        &self,
-        resources: &mut [ProviderResource],
-        deferred_by_resource: &[BTreeSet<String>],
-    ) -> ProviderResult<()> {
-        if resources.len() != deferred_by_resource.len() {
-            return Err(ProviderError::internal(format!(
-                "desired normalization received {} resources but {} deferred-name sets",
-                resources.len(),
-                deferred_by_resource.len()
-            )));
-        }
-
-        for (resource, deferred) in resources.iter().zip(deferred_by_resource) {
-            if let Some(name) = deferred
-                .iter()
-                .find(|name| resource.attributes.contains_key(name.as_str()))
-            {
-                return Err(ProviderError::internal(format!(
-                    "desired normalization received host-deferred attribute `{name}` as a value"
-                ))
-                .for_resource(resource.id.clone()));
-            }
-        }
-        Ok(())
-    }
-}
 
 impl ProviderNormalizer for AwsccNormalizer {
     // Desired-side enum canonicalization is owned by the host. Keeping
@@ -229,10 +195,6 @@ impl ProviderFactory for OwnerOnlyAwsccFactory {
         _attributes: &CanonicalProviderConfigAttributes,
     ) -> ProviderResult<()> {
         Ok(())
-    }
-
-    fn extract_region(&self, _attributes: &IndexMap<String, Value>) -> String {
-        "ap-northeast-1".to_string()
     }
 
     fn create_provider(
@@ -307,10 +269,6 @@ impl ProviderFactory for AwsccProviderFactory {
         Ok(())
     }
 
-    fn extract_region(&self, attributes: &IndexMap<String, Value>) -> String {
-        carina_core::utils::extract_region_from_attrs(attributes, "ap-northeast-1")
-    }
-
     fn create_provider(
         &self,
         _binding: Option<&str>,
@@ -322,7 +280,8 @@ impl ProviderFactory for AwsccProviderFactory {
         // produces an independent `AwsccProvider`. The host uses the
         // binding name as a cache key in `WasmProviderFactory`; for
         // in-process factories the constructed-fresh shape is enough.
-        let region = self.extract_region(config.attributes());
+        let region =
+            carina_core::utils::extract_region_from_attrs(config.attributes(), "ap-northeast-1");
         let cfg = extract_provider_config(config.attributes());
         Box::pin(async move {
             let provider = AwsccProvider::new_with_config(&region, &cfg).await;
@@ -517,7 +476,6 @@ impl Provider for AwsccProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use carina_core::resource::Resource;
 
     #[test]
     fn extract_provider_config_reads_both_lists() {
@@ -550,27 +508,6 @@ mod tests {
         let cfg = extract_provider_config(&attrs);
         assert!(cfg.allowed_account_ids.is_empty());
         assert!(cfg.forbidden_account_ids.is_empty());
-    }
-
-    #[test]
-    fn desired_normalizer_keeps_host_deferred_names_as_metadata() {
-        let resource: Resource =
-            Resource::with_provider("awscc", "s3.Bucket", "deferred-name", None);
-        let mut resources = vec![ProviderResource::from(resource)];
-        let deferred = vec![BTreeSet::from(["bucket_name".to_string()])];
-
-        AwsccNormalizer
-            .normalize_desired_with_host_deferred(&mut resources, &deferred)
-            .expect("typed deferred metadata should be accepted");
-
-        assert!(
-            !resources[0].attributes.contains_key("bucket_name"),
-            "a host-deferred attribute must never be fabricated or defaulted"
-        );
-        assert!(
-            !resources[0].attributes.contains_key("ordinary_absent"),
-            "an absent attribute must never be defaulted by AWSCC desired normalization"
-        );
     }
 
     #[test]
@@ -658,18 +595,23 @@ mod tests {
         ));
         let attributes = IndexMap::from([("region".to_string(), region)]);
 
-        assert_eq!(factory.extract_region(&attributes), "us-west-2");
+        assert_eq!(
+            carina_core::utils::extract_region_from_attrs(&attributes, "ap-northeast-1"),
+            "us-west-2"
+        );
     }
 
     #[test]
     fn extract_region_keeps_string_literal() {
-        let factory = AwsccProviderFactory;
         let attributes = IndexMap::from([(
             "region".to_string(),
             Value::Concrete(ConcreteValue::String("aws.Region.us_west_2".into())),
         )]);
 
-        assert_eq!(factory.extract_region(&attributes), "aws.Region.us_west_2");
+        assert_eq!(
+            carina_core::utils::extract_region_from_attrs(&attributes, "ap-northeast-1"),
+            "aws.Region.us_west_2"
+        );
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -765,6 +707,7 @@ mod tests {
             &factory,
             factory.name(),
             &attrs,
+            &factory.provider_config_attribute_types(),
         )
         .expect("matching allowed_account_ids must validate");
     }
@@ -792,6 +735,7 @@ mod tests {
             &factory,
             factory.name(),
             &attrs,
+            &factory.provider_config_attribute_types(),
         )
         .expect_err("cross-account role outside allowed_account_ids must fail")
         .to_string();
@@ -811,6 +755,7 @@ mod tests {
             &factory,
             factory.name(),
             &attrs,
+            &factory.provider_config_attribute_types(),
         )
         .expect("validate_config without assume_role must be a no-op");
     }

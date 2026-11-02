@@ -15,7 +15,7 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
     #[inline(never)]
     fn build_customer_managed_policy_references_attribute() -> AttributeSchema {
         AttributeSchema::optional("customer_managed_policy_references", AttributeType::refined_list(AttributeType::struct_("CustomerManagedPolicyReference".to_string(), vec![StructField::required("name", AttributeType::refined_string(None, Some("[\\w+=,.@-]+".to_string()), Some((Some(1), Some(128))), None)).with_provider_name("Name").build(),
-                    StructField::optional("path", AttributeType::refined_string(None, Some("((/[A-Za-z0-9\\.,\\+@=_-]+)*)/".to_string()), Some((Some(1), Some(512))), None)).with_provider_name("Path").build()]), false, Some((None, Some(20)))))
+                    StructField::optional("path", AttributeType::refined_string(None, Some("((/[A-Za-z0-9\\.,\\+@=_-]+)*)/".to_string()), Some((Some(1), Some(512))), None)).with_provider_name("Path").build()]), false, Some((None, Some(20))), carina_core::schema::ListElements::AllowDuplicates))
                 .with_provider_name("CustomerManagedPolicyReferences")
                 .with_block_name("customer_managed_policy_reference")
             .build()
@@ -48,7 +48,7 @@ pub fn sso_permission_set_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_instance_arn_attribute());
     #[inline(never)]
     fn build_managed_policies_attribute() -> AttributeSchema {
-        AttributeSchema::optional("managed_policies", AttributeType::refined_list(AttributeType::refined_string(None, None, Some((Some(20), Some(2048))), None), false, Some((None, Some(20)))))
+        AttributeSchema::optional("managed_policies", AttributeType::refined_list(AttributeType::refined_string(None, None, Some((Some(20), Some(2048))), None), false, Some((None, Some(20))), carina_core::schema::ListElements::AllowDuplicates))
                 .with_provider_name("ManagedPolicies")
             .build()
     }
