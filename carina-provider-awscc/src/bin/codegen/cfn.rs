@@ -31,6 +31,9 @@ pub(super) struct CfnSchema {
     /// Top-level anyOf variants
     #[serde(default, rename = "anyOf")]
     pub(super) any_of: Vec<CfnProperty>,
+    /// Top-level allOf constraints also apply to the properties they mention.
+    #[serde(default, rename = "allOf")]
+    pub(super) all_of: Vec<CfnProperty>,
     /// Cloud Control handlers (create/read/update/delete/list). Most
     /// NON_PROVISIONABLE types omit this map, but the registry has known
     /// provisionable exceptions; see codegen's `HANDLERLESS_CLOUD_CONTROL_TYPES`.
@@ -119,7 +122,7 @@ pub(super) struct CfnProperty {
     #[serde(default)]
     pub(super) additional_properties: Option<bool>,
     /// Const value (single fixed value for this property)
-    #[serde(rename = "const")]
+    #[serde(rename = "const", default, deserialize_with = "deserialize_const")]
     pub(super) const_value: Option<serde_json::Value>,
     /// Default value for this property
     #[serde(rename = "default")]
@@ -150,6 +153,14 @@ pub(super) struct CfnProperty {
     pub(super) any_of: Vec<CfnProperty>,
     #[serde(default, rename = "allOf")]
     pub(super) all_of: Vec<CfnProperty>,
+}
+
+// A present `const: null` is a constraint, unlike an absent const keyword.
+fn deserialize_const<'de, D>(deserializer: D) -> Result<Option<serde_json::Value>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    serde_json::Value::deserialize(deserializer).map(Some)
 }
 
 pub(super) fn decode_json_pointer_segment(segment: &str) -> String {
@@ -705,7 +716,11 @@ pub(super) fn has_scalar_leaf(property: &CfnProperty, schema: &CfnSchema) -> boo
                         .items
                         .as_deref()
                         .is_some_and(|items| visit(items, schema, visiting)),
-                    Some("object") => false,
+                    Some("object") => property
+                        .pattern_properties
+                        .iter()
+                        .flat_map(|patterns| patterns.values())
+                        .any(|value| visit(value, schema, visiting)),
                     _ => true,
                 }
             }

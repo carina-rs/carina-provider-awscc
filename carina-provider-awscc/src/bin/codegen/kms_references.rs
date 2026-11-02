@@ -242,6 +242,22 @@ pub const CLASSIFICATIONS: &[Entry] = &[
     },
     Entry {
         resource: "kms.Key",
+        path: "tags",
+        classification: Classification::NotReference(NotReference::Other(
+            "Tag collection projected to a string map; its KMS description concerns tag permissions.",
+        )),
+        cfn_pattern: None,
+    },
+    Entry {
+        resource: "kms.Key",
+        path: "tags[]",
+        classification: Classification::NotReference(NotReference::Other(
+            "Source tag pair in the projected collection, not a KMS key identifier.",
+        )),
+        cfn_pattern: None,
+    },
+    Entry {
+        resource: "kms.Key",
         path: "tags{}",
         classification: Classification::NotReference(NotReference::Other(
             "User-authored tag values, not KMS key identifiers.",

@@ -87,9 +87,13 @@ pub(super) struct ClassifiedSchema<'a> {
 }
 
 impl<'a> ClassifiedSchema<'a> {
-    pub(super) fn new(schema: &'a CfnSchema) -> Result<Self> {
+    pub(super) fn new(
+        schema: &'a CfnSchema,
+        overridden_properties: impl IntoIterator<Item = &'a CfnProperty>,
+    ) -> Result<Self> {
         let mut walker = Walker {
             schema,
+            overridden_properties: overridden_properties.into_iter().collect(),
             resource: dsl_resource_name_from_type(&schema.type_name)?,
             ancestors: HashSet::new(),
             strings: BTreeMap::new(),
@@ -173,6 +177,9 @@ impl std::ops::Deref for ClassifiedSchema<'_> {
 struct Evidence<'a> {
     patterns: Vec<&'a str>,
     descriptions: Vec<&'a str>,
+    has_enum_or_const: bool,
+    /// All schemas at this exact path, for auditing replacement subtrees too.
+    sources: Vec<&'a CfnProperty>,
 }
 
 impl<'a> Evidence<'a> {
@@ -187,7 +194,12 @@ impl<'a> Evidence<'a> {
         schema: &'a CfnSchema,
         visiting: &mut HashSet<(&'a str, usize)>,
     ) {
+        if path.is_empty() && !self.sources.contains(&property) {
+            self.sources.push(property);
+        }
         if path.iter().all(|segment| segment == "*") {
+            self.has_enum_or_const |=
+                property.enum_values.is_some() || property.const_value.is_some();
             if let Some(pattern) = property.pattern.as_deref()
                 && !self.patterns.contains(&pattern)
             {
@@ -246,12 +258,21 @@ impl<'a> Evidence<'a> {
         {
             evidence.collect(property, remaining, schema, &mut HashSet::new());
         }
+        for branch in schema
+            .one_of
+            .iter()
+            .chain(&schema.any_of)
+            .chain(&schema.all_of)
+        {
+            evidence.collect(branch, path, schema, &mut HashSet::new());
+        }
         evidence
     }
 }
 
 struct Walker<'a> {
     schema: &'a CfnSchema,
+    overridden_properties: Vec<&'a CfnProperty>,
     resource: String,
     ancestors: HashSet<String>,
     strings: BTreeMap<Vec<String>, StringSite>,
@@ -272,14 +293,13 @@ impl Walker<'_> {
         }
     }
 
-    fn string(
-        &mut self,
-        property: &CfnProperty,
+    fn decision(
+        &self,
         name: &str,
         path: &str,
         provider_path: &[String],
         provider_populated: bool,
-    ) -> Result<()> {
+    ) -> Result<Option<ReferenceKind>> {
         let evidence = Evidence::at(self.schema, provider_path);
         let classification = if provider_populated {
             None
@@ -292,8 +312,14 @@ impl Walker<'_> {
                 Some(&evidence.descriptions.join(" ")),
             )?
         };
-        let reference = match classification {
+        Ok(match classification {
             Some(Classification::Reference(kind)) => {
+                if evidence.has_enum_or_const {
+                    bail!(
+                        "{}.{path}: KMS enum/const constraint is incompatible with the reference constructor; revisit the classification table entry",
+                        self.resource
+                    );
+                }
                 let entry = kms_references::entry(&self.resource, path)
                     .expect("classified reference has a table entry");
                 if evidence.patterns.as_slice() != entry.cfn_pattern.as_slice() {
@@ -307,7 +333,18 @@ impl Walker<'_> {
                 Some(kind)
             }
             Some(Classification::NotReference(_)) | None => None,
-        };
+        })
+    }
+
+    fn string(
+        &mut self,
+        property: &CfnProperty,
+        name: &str,
+        path: &str,
+        provider_path: &[String],
+        provider_populated: bool,
+    ) -> Result<()> {
+        let reference = self.decision(name, path, provider_path, provider_populated)?;
         self.strings.insert(
             provider_path.to_vec(),
             StringSite {
@@ -316,6 +353,101 @@ impl Walker<'_> {
                 reference,
             },
         );
+        Ok(())
+    }
+
+    /// An override or tag projection owns its emitted type, but not its CFN
+    /// evidence. Audit every source branch, including opaque container nodes,
+    /// without adding synthetic emission inputs or changing shape precedence.
+    fn audit(
+        &self,
+        property: &CfnProperty,
+        name: &str,
+        path: &str,
+        provider_path: &[String],
+        provider_populated: bool,
+        visiting: &mut HashSet<String>,
+    ) -> Result<()> {
+        if !matches!(
+            inline_property_type(property),
+            Some("boolean" | "integer" | "number")
+        ) {
+            self.decision(name, path, provider_path, provider_populated)?;
+        }
+        if let Some(definition) = property.ref_path.as_deref().and_then(ref_def_name)
+            && let Some(target) = self
+                .schema
+                .definitions
+                .as_ref()
+                .and_then(|defs| defs.get(definition))
+            && visiting.insert(definition.to_string())
+        {
+            self.audit(
+                target,
+                name,
+                path,
+                provider_path,
+                provider_populated,
+                visiting,
+            )?;
+            visiting.remove(definition);
+        }
+        for branch in property
+            .one_of
+            .iter()
+            .chain(&property.any_of)
+            .chain(&property.all_of)
+        {
+            self.audit(
+                branch,
+                name,
+                path,
+                provider_path,
+                provider_populated,
+                visiting,
+            )?;
+        }
+        for (name, child) in property
+            .properties
+            .iter()
+            .flat_map(|properties| properties.iter())
+        {
+            let child_path = extend_property_path(provider_path, name);
+            self.audit(
+                child,
+                name,
+                &property_path(path, PathSegment::Field(&name.to_snake_case())),
+                &child_path,
+                // These fields are hidden by the replacement type, so they
+                // inherit its input mode rather than becoming emitted fields.
+                provider_populated || is_property_read_only(self.schema, child, &child_path),
+                visiting,
+            )?;
+        }
+        if let Some(items) = property.items.as_deref() {
+            self.audit(
+                items,
+                name,
+                &property_path(path, PathSegment::ListElement),
+                &extend_property_path(provider_path, "*"),
+                provider_populated,
+                visiting,
+            )?;
+        }
+        for value in property
+            .pattern_properties
+            .iter()
+            .flat_map(|patterns| patterns.values())
+        {
+            self.audit(
+                value,
+                name,
+                &property_path(path, PathSegment::MapValue),
+                &extend_property_path(provider_path, "*"),
+                provider_populated,
+                visiting,
+            )?;
+        }
         Ok(())
     }
 
@@ -328,12 +460,24 @@ impl Walker<'_> {
         provider_populated: bool,
     ) -> Result<()> {
         self.record(property, name, provider_path);
-        if is_dsl_tags_property(self.schema, name)
+        let projected = is_dsl_tags_property(self.schema, name)
             || property
                 .ref_path
                 .as_deref()
-                .is_some_and(|reference| is_tag_map_ref(self.schema, reference))
-        {
+                .is_some_and(|reference| is_tag_map_ref(self.schema, reference));
+        if projected || self.overridden_properties.contains(&property) {
+            for source in Evidence::at(self.schema, provider_path).sources {
+                self.audit(
+                    source,
+                    name,
+                    path,
+                    provider_path,
+                    provider_populated,
+                    &mut HashSet::new(),
+                )?;
+            }
+        }
+        if projected {
             return self.string(
                 &CfnProperty::default(),
                 name,

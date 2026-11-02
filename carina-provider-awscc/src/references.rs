@@ -12,6 +12,8 @@ use std::sync::OnceLock;
 
 /// Only this module can create the witness, after the account policy succeeds.
 /// The client is lazy so its constructor can require the initialized state itself.
+/// Private fields prevent crate siblings from forging this state; `KmsClient`'s
+/// private constructor cannot accept an unchecked `BoundedSdkConfig`.
 pub(crate) struct InitializedState {
     config: BoundedSdkConfig,
     kms_client: OnceLock<KmsClient>,
@@ -276,6 +278,26 @@ mod tests {
         );
         assert!(results[2].is_ok());
         assert_eq!(calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn guarded_initialization_is_the_only_path_to_the_lazy_client() {
+        let mock = MockAws::builder().build();
+        let config = aws_config::SdkConfig::builder()
+            .region(aws_config::Region::new("us-east-1"))
+            .credentials_provider(mock.credentials_provider())
+            .http_client(mock.http_client())
+            .build();
+        let (_, initialized) = InitializedState::initialize(
+            BoundedSdkConfig::for_test(config),
+            &AwsccProviderConfig::default(),
+        )
+        .await;
+        let initialized = initialized.unwrap();
+        assert!(initialized.kms_client.get().is_none());
+        let client = initialized.kms_client();
+        assert_eq!(client.instance_region().unwrap(), "us-east-1");
+        assert!(std::ptr::eq(client, initialized.kms_client()));
     }
 
     #[tokio::test]

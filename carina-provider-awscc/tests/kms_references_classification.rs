@@ -19,7 +19,8 @@ fn direct_classification_returns_an_error_instead_of_panicking() {
         "properties": {"KmsFoo": {"type": "string"}}
     }))
     .unwrap();
-    let result = std::panic::catch_unwind(|| kms_references_cfn::ClassifiedSchema::new(&schema));
+    let result =
+        std::panic::catch_unwind(|| kms_references_cfn::ClassifiedSchema::new(&schema, []));
     assert!(
         result.is_ok(),
         "direct classification must return its error without a renderer guard"
@@ -42,7 +43,7 @@ fn read_only_unresolved_kms_reference_does_not_require_input_classification() {
         "readOnlyProperties": ["/properties/KmsOutput"]
     }))
     .unwrap();
-    assert!(kms_references_cfn::ClassifiedSchema::new(&schema).is_ok());
+    assert!(kms_references_cfn::ClassifiedSchema::new(&schema, []).is_ok());
 }
 
 #[test]
@@ -70,7 +71,7 @@ fn same_named_inline_objects_keep_distinct_reference_sites() {
             "/properties/Unrelated/ManagedStorageConfiguration/KmsKeyId"
         ));
     let schema: CfnSchema = serde_json::from_value(schema).unwrap();
-    let classified = kms_references_cfn::ClassifiedSchema::new(&schema).unwrap();
+    let classified = kms_references_cfn::ClassifiedSchema::new(&schema, []).unwrap();
     let reference = classified.string_leaf_at(&[
         "Configuration".into(),
         "ManagedStorageConfiguration".into(),
@@ -97,7 +98,7 @@ fn emission_inputs_are_bound_to_the_walked_resource_and_full_path() {
         }}}
     }))
     .unwrap();
-    let classified = kms_references_cfn::ClassifiedSchema::new(&schema).unwrap();
+    let classified = kms_references_cfn::ClassifiedSchema::new(&schema, []).unwrap();
     let path = ["Settings".into(), "Label".into()];
     let leaf = classified.string_leaf_at(&path).unwrap();
     assert_eq!(leaf.cfn_type(), "AWS::EC2::VPC");
@@ -138,7 +139,7 @@ fn scalar_collections_keep_the_exact_field_read_only_decision() {
             "readOnlyProperties": ["/properties/KmsOutput"]
         }))
         .unwrap();
-        let classified = kms_references_cfn::ClassifiedSchema::new(&schema).unwrap();
+        let classified = kms_references_cfn::ClassifiedSchema::new(&schema, []).unwrap();
         assert!(
             classified
                 .string_leaf_at(&["KmsOutput".into(), "*".into()])
@@ -160,5 +161,46 @@ fn scalar_enum_discovery_stops_at_recursive_array_definitions() {
     }))
     .unwrap();
     assert!(!cfn::has_scalar_leaf(&schema.properties["Values"], &schema));
-    assert!(kms_references_cfn::ClassifiedSchema::new(&schema).is_ok());
+    assert!(kms_references_cfn::ClassifiedSchema::new(&schema, []).is_ok());
+}
+
+#[test]
+fn provider_populated_tag_projection_has_no_writable_source_leaves() {
+    let schema: CfnSchema = serde_json::from_value(json!({
+        "typeName": "AWS::EC2::VPC",
+        "properties": {"Tags": {"type": "array", "items": {"$ref": "#/definitions/Tag"}}},
+        "definitions": {"Tag": {"type": "object", "properties": {
+            "Key": {"type": "string"},
+            "Value": {"type": "string", "description": "The AWS KMS key"}
+        }}},
+        "tagging": {"taggable": true, "tagProperty": "/properties/Tags"},
+        "readOnlyProperties": ["/properties/Tags"]
+    }))
+    .unwrap();
+    assert!(kms_references_cfn::ClassifiedSchema::new(&schema, []).is_ok());
+}
+
+#[test]
+fn replaced_properties_audit_subtrees_supplied_by_resource_branches() {
+    for keyword in ["oneOf", "anyOf", "allOf"] {
+        let mut value = json!({
+            "typeName": "AWS::EC2::VPC",
+            "properties": {"Settings": {"type": "object"}}
+        });
+        value[keyword] = json!([{"properties": {"Settings": {"properties": {
+            "Value": {"type": "string", "description": "The AWS KMS key"}
+        }}}}]);
+        let schema: CfnSchema = serde_json::from_value(value).unwrap();
+        let Err(error) =
+            kms_references_cfn::ClassifiedSchema::new(&schema, [&schema.properties["Settings"]])
+        else {
+            panic!("{keyword} hid a CFN input below a replacement type");
+        };
+        assert!(
+            error
+                .to_string()
+                .contains("unclassified KMS string ec2.Vpc.settings.value"),
+            "{error}"
+        );
+    }
 }

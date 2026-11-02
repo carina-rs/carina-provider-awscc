@@ -363,3 +363,159 @@ fn read_only_scalar_collections_use_the_emitted_field_input_mode() {
         }
     }
 }
+
+#[test]
+fn map_value_enum_preserves_the_map_at_top_level_and_in_structs() {
+    let values = json!({"type": "object", "patternProperties": {
+        ".*": {"type": "string", "enum": ["enabled", "disabled"]}
+    }, "additionalProperties": false});
+    let mut schema = vpc_schema();
+    schema["properties"]["Modes"] = values.clone();
+    schema["properties"]["Settings"] = json!({"type": "object", "properties": {
+        "Modes": values
+    }});
+    let output = generate(&schema, "rust");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let code = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(
+        code.matches("AttributeType::map(AttributeType::enum_(")
+            .count(),
+        2,
+        "{code}"
+    );
+    let output = generate(&schema, "markdown");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let markdown = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(
+        markdown.matches("Map\\<String, [Enum (").count(),
+        2,
+        "{markdown}"
+    );
+}
+
+#[test]
+fn projected_tags_walk_the_original_cfn_value_subtree() {
+    for tagged in [false, true] {
+        let mut schema = vpc_schema();
+        schema["definitions"]["Tag"]["properties"]["Value"]["description"] =
+            json!("The AWS KMS key");
+        if !tagged {
+            // Still projected by the Tag $ref, without resource tagging metadata.
+            schema.as_object_mut().unwrap().remove("tagging");
+        }
+        for format in ["rust", "markdown"] {
+            let output = generate(&schema, format);
+            assert!(!output.status.success(), "tagged={tagged} passed {format}");
+            assert!(
+                String::from_utf8_lossy(&output.stderr)
+                    .contains("unclassified KMS string ec2.Vpc.tags[].value")
+            );
+        }
+    }
+}
+
+#[test]
+fn overridden_objects_classify_their_own_evidence_and_hidden_children() {
+    for source in [
+        json!({"type": "object", "description": "The AWS KMS key"}),
+        json!({"type": "object", "anyOf": [{"properties": {
+            "Value": {"type": "string", "description": "The AWS KMS key"}
+        }}]}),
+    ] {
+        let mut schema: Value = serde_json::from_str(include_str!(
+            "../../cfn-schema-cache/AWS__SNS__Subscription.json"
+        ))
+        .unwrap();
+        schema["properties"]["DeliveryPolicy"] = source.clone();
+        for format in ["rust", "markdown"] {
+            let output = generate(&schema, format);
+            assert!(!output.status.success(), "{source} passed {format}");
+            assert!(
+                String::from_utf8_lossy(&output.stderr)
+                    .contains("unclassified KMS string sns.Subscription.delivery_policy")
+            );
+        }
+    }
+}
+
+#[test]
+fn resource_combinators_contribute_property_constraints_and_candidates() {
+    for keyword in ["oneOf", "anyOf", "allOf"] {
+        let mut schema: Value =
+            serde_json::from_str(include_str!("../../cfn-schema-cache/AWS__SNS__Topic.json"))
+                .unwrap();
+        schema[keyword] = json!([{"properties": {
+            "KmsMasterKeyId": {"pattern": "^arn:aws:kms:.*:key/.*$"}
+        }}]);
+        for format in ["rust", "markdown"] {
+            let output = generate(&schema, format);
+            assert!(!output.status.success(), "root {keyword} passed {format}");
+            assert!(String::from_utf8_lossy(&output.stderr).contains("KMS pattern changed"));
+        }
+
+        let mut schema = vpc_schema();
+        schema["properties"]["EncryptionKey"] = json!({"type": "string"});
+        schema[keyword] = json!([{"allOf": [{"properties": {
+            "EncryptionKey": {"description": "The AWS KMS key"}
+        }}]}]);
+        for format in ["rust", "markdown"] {
+            let output = generate(&schema, format);
+            assert!(
+                !output.status.success(),
+                "root {keyword} candidate passed {format}"
+            );
+            assert!(
+                String::from_utf8_lossy(&output.stderr)
+                    .contains("unclassified KMS string ec2.Vpc.encryption_key")
+            );
+        }
+    }
+}
+
+#[test]
+fn reference_enum_and_const_constraints_require_reclassification() {
+    for constraint in [
+        json!({"enum": ["alias/only"]}),
+        json!({"enum": []}),
+        json!({"const": "alias/only"}),
+        json!({"const": null}),
+    ] {
+        for location in ["direct", "$ref", "oneOf", "anyOf", "allOf", "root"] {
+            let mut schema: Value =
+                serde_json::from_str(include_str!("../../cfn-schema-cache/AWS__SNS__Topic.json"))
+                    .unwrap();
+            match location {
+                "direct" => schema["properties"]["KmsMasterKeyId"]
+                    .as_object_mut()
+                    .unwrap()
+                    .extend(constraint.as_object().unwrap().clone()),
+                "$ref" => {
+                    schema["properties"]["KmsMasterKeyId"] = json!({"$ref": "#/definitions/Key"});
+                    schema["definitions"]["Key"] = constraint.clone();
+                }
+                "root" => schema["allOf"] = json!([{"properties": {"KmsMasterKeyId": constraint}}]),
+                keyword => schema["properties"]["KmsMasterKeyId"][keyword] = json!([constraint]),
+            }
+            for format in ["rust", "markdown"] {
+                let output = generate(&schema, format);
+                assert!(
+                    !output.status.success(),
+                    "{location} constraint passed {format}"
+                );
+                let error = String::from_utf8_lossy(&output.stderr);
+                assert!(
+                    error.contains("KMS enum/const constraint") && error.contains("revisit"),
+                    "{error}"
+                );
+            }
+        }
+    }
+}
