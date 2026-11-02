@@ -7300,6 +7300,17 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             ("AWS::Budgets::Budget", "TagValues.MatchOptions"),
             TypeOverride::Enum(budgets_match_options.clone()),
         );
+        // The API bounds the filter key to 0..=1024 characters; CFN omits them.
+        // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_TagValues.html
+        m.insert(
+            ("AWS::Budgets::Budget", "TagValues.Key"),
+            TypeOverride::AttributeType {
+                expression: "AttributeType::refined_string(None, None, Some((Some(0), Some(1024))), None)",
+                display: const { OverrideTypeDisplay::new("String (length: 0..=1024)") },
+                block_name: None,
+                default: None,
+            },
+        );
         // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_CostCategoryValues.html
         m.insert(
             ("AWS::Budgets::Budget", "CostCategoryValues.MatchOptions"),
@@ -13038,6 +13049,45 @@ mod tests {
                 ],
             );
         }
+    }
+
+    #[test]
+    fn test_budgets_budget_tag_key_has_documented_string_length() {
+        let schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        let key = "AttributeType::refined_string(None, None, Some((Some(0), Some(1024))), None)";
+        assert_eq!(
+            generated_budgets_field(&generated, "TagValues.Key"),
+            format!("{key})")
+        );
+        assert!(
+            generated
+                .matches(&format!("StructField::optional(\"key\", {key})"))
+                .count()
+                >= 2,
+            "inline TagValues and the shared definition for recursive expressions must be refined"
+        );
+        assert_eq!(
+            generated_budgets_field(&generated, "CostCategoryValues.Key"),
+            "AttributeType::string())"
+        );
+    }
+
+    #[test]
+    fn test_budgets_budget_tag_key_docs_show_documented_string_length() {
+        let schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
+        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        let tags = markdown
+            .split_once("### expression.tags\n")
+            .unwrap()
+            .1
+            .split_once("\n### ")
+            .unwrap()
+            .0;
+        assert!(
+            tags.contains("| `key` | `String (length: 0..=1024)` | No |"),
+            "TagValues.Key docs must show the API length bounds: {tags}"
+        );
     }
 
     #[test]

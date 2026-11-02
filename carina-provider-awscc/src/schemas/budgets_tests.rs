@@ -203,6 +203,28 @@ fn budget_names_validate_length_and_supported_pattern() {
 }
 
 #[test]
+fn budget_tag_keys_validate_documented_length() {
+    let schema = budget_schema();
+    for path in [
+        "budget.filter_expression.tags.key",
+        "budget.filter_expression.not.and.tags.key",
+        "budget.filter_expression.or.tags.key",
+    ] {
+        let key = field(&schema, path);
+        for length in [0, 1024] {
+            assert!(
+                key.validate(&string(&"x".repeat(length))).is_ok(),
+                "{path}: length {length} must be accepted"
+            );
+        }
+        assert!(
+            key.validate(&string(&"x".repeat(1025))).is_err(),
+            "{path}: length 1025 must be rejected"
+        );
+    }
+}
+
+#[test]
 fn budgets_example_and_acceptance_fixture_validate() {
     let factories: Arc<Vec<Box<dyn ProviderFactory>>> =
         Arc::new(vec![Box::new(crate::AwsccProviderFactory)]);

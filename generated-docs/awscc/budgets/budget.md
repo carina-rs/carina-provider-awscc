@@ -329,7 +329,7 @@ Used by: `budget.filter_expression`, `budget.filter_expression.and`, `budget.fil
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `key` | String | No |  |
+| `key` | `String (length: 0..=1024)` | No |  |
 | `match_options` | List\<[Enum (MatchOptions)](#expressiontagsmatch_options-matchoptions)\> | No |  |
 | `values` | `List<String>` | No |  |
 
