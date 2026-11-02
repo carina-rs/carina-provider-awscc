@@ -243,7 +243,7 @@ Shorthand formats: `sns` or `SubscriptionType.sns`
 | `auto_adjust_data` | [Struct(AutoAdjustData)](#budgetauto_adjust_data) | No |  |
 | `billing_view_arn` | Arn | No |  |
 | `budget_limit` | [Struct(Spend)](#budgetbudget_limit) | No |  |
-| `budget_name` | `String (length: 1..=100, pattern: ^[^:\\]+$)` | No | Create-only. Anonymous identifiers hash only declared identity values. |
+| `budget_name` | String | No | Create-only. Anonymous identifiers hash only declared identity values. |
 | `budget_type` | [Enum (BudgetType)](#budgetbudget_type-budgettype) | Yes |  |
 | `cost_filters` | `Map<String, List<String>>` | No |  |
 | `cost_types` | [Struct(CostTypes)](#budgetcost_types) | No |  |
@@ -315,7 +315,7 @@ Used by: `budget.filter_expression`, `budget.filter_expression.and`, `budget.fil
 |-------|------|----------|-------------|
 | `key` | String | No |  |
 | `match_options` | List\<[Enum (MatchOptions)](#expressioncost_categoriesmatch_options-matchoptions)\> | No |  |
-| `values` | `List<String (length: 0..=1024)> (items: 1..)` | No |  |
+| `values` | `List<String> (items: 1..)` | No |  |
 
 ### expression.dimensions
 
@@ -323,15 +323,15 @@ Used by: `budget.filter_expression`, `budget.filter_expression.and`, `budget.fil
 |-------|------|----------|-------------|
 | `key` | [Enum (Key)](#expressiondimensionskey-key) | No |  |
 | `match_options` | List\<[Enum (MatchOptions)](#expressiondimensionsmatch_options-matchoptions)\> (items: ..=1) | No |  |
-| `values` | `List<String (length: 0..=1024)> (items: 1..)` | No |  |
+| `values` | `List<String> (items: 1..)` | No |  |
 
 ### expression.tags
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `key` | `String (length: 0..=1024)` | No |  |
+| `key` | String | No |  |
 | `match_options` | List\<[Enum (MatchOptions)](#expressiontagsmatch_options-matchoptions)\> | No |  |
-| `values` | `List<String (length: 0..=1024)> (items: 1..)` | No |  |
+| `values` | `List<String> (items: 1..)` | No |  |
 
 ### notifications_with_subscribers
 
