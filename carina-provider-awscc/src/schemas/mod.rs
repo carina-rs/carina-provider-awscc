@@ -5,6 +5,9 @@ pub mod catalog;
 pub mod config;
 pub mod generated;
 
+#[cfg(test)]
+mod kms_reference_tests;
+
 use carina_core::provider::ProviderFactory;
 use carina_core::schema::{
     SchemaRegistry, ValidatedProviderSchemaWitness, ValidatedResourceSchema,

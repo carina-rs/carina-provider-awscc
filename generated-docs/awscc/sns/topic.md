@@ -69,7 +69,7 @@ Set to true to create a FIFO topic.
 
 ### `kms_master_key_id`
 
-- **Type:** String
+- **Type:** aws.kms.Key.Reference
 - **Required:** No
 
 The ID of an AWS managed customer master key (CMK) for SNS or a custom CMK. For more information, see [Key terms](https://docs.aws.amazon.com/sns/latest/dg/sns-server-side-encryption.html#sse-key-terms). For more examples, see ``KeyId`` in the *API Reference*. This property applies only to [server-side-encryption](https://docs.aws.amazon.com/sns/latest/dg/sns-server-side-encryption.html).

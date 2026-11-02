@@ -74,7 +74,7 @@ pub fn scheduler_schedule_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_group_name_attribute());
     #[inline(never)]
     fn build_kms_key_arn_attribute() -> AttributeSchema {
-        AttributeSchema::optional("kms_key_arn", super::super::kms::key::arn())
+        AttributeSchema::optional("kms_key_arn", carina_core::schema::AttributeType::reference(carina_aws_types::AwsType::KmsKeyReference.identity(), Some("^arn:aws[a-z-]*:kms:[a-z0-9\\-]+:\\d{12}:(key|alias)\\/[0-9a-zA-Z-_]*$".to_string()), Some((Some(1), Some(2048)))))
                 .with_description("The ARN for a KMS Key that will be used to encrypt customer data.")
                 .with_provider_name("KmsKeyArn")
             .build()

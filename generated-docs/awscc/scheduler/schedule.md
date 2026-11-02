@@ -101,7 +101,7 @@ The name of the schedule group to associate with this schedule. If you omit this
 
 ### `kms_key_arn`
 
-- **Type:** KmsKeyArn
+- **Type:** aws.kms.Key.Reference
 - **Required:** No
 
 The ARN for a KMS Key that will be used to encrypt customer data.

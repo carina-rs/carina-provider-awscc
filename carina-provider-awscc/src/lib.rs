@@ -9,6 +9,7 @@
 //! - `schemas` - Auto-generated resource schemas
 
 pub mod provider;
+mod references;
 mod resend_safety;
 pub mod resources;
 pub mod schemas;
@@ -392,6 +393,45 @@ fn extract_string_list_attr(attributes: &IndexMap<String, Value>, key: &str) -> 
 }
 
 impl Provider for AwsccProvider {
+    fn resolve_references<'a>(
+        &'a self,
+        requests: &'a [carina_core::references::ReferenceRequest],
+    ) -> BoxFuture<
+        'a,
+        ProviderResult<
+            Vec<
+                Result<
+                    carina_core::references::ReferenceOutcome,
+                    carina_core::references::ReferenceError,
+                >,
+            >,
+        >,
+    > {
+        Box::pin(async move {
+            let scope = self
+                .kms_client()
+                .and_then(|client| client.instance_region().map(|region| (client, region)));
+            Ok(match scope {
+                Ok((client, region)) => {
+                    carina_aws_types::kms_reference::resolve_core_reference_batch(
+                        client, "awscc", region, requests,
+                    )
+                    .await
+                }
+                Err(reason) => requests
+                    .iter()
+                    .map(|_| {
+                        Err(carina_core::references::ReferenceError::InvalidReference(
+                            ProviderError::invalid_input(reason.to_owned())
+                                .for_provider("awscc")
+                                .into(),
+                        ))
+                    })
+                    .collect(),
+            })
+        })
+    }
+
     fn name(&self) -> &str {
         "awscc"
     }

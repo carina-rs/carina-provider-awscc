@@ -22,11 +22,20 @@ use clap::{Parser, ValueEnum};
 use heck::{ToPascalCase, ToSnakeCase};
 use regex::Regex;
 use serde::Deserialize;
+#[cfg(test)]
+use serde::Serialize;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
+
+#[path = "codegen/kms_references.rs"]
+mod kms_references;
+#[path = "codegen/kms_references_cfn.rs"]
+mod kms_references_cfn;
+use kms_references::PathSegment;
+use kms_references_cfn::{EmissionContext, EmissionProperty};
 
 // carina#3340: in-progress recursion guard for cyclic CFN $ref
 // definitions (WAFv2 `WebACL.Statement` → `AndStatement` → `List<Statement>`).
@@ -687,8 +696,30 @@ impl TryFrom<&Args> for OutputMode {
     }
 }
 
+// Enum and const constraints need a table decision regardless of their base type.
+fn needs_kms_classification(property: &CfnProperty, name: &str) -> bool {
+    if property.const_value.is_some() || property.enum_values.is_some() {
+        return true;
+    }
+    if known_enum_overrides().contains_key(name) {
+        return true;
+    }
+    if property
+        .prop_type
+        .as_ref()
+        .is_some_and(|types| types.contains("object") && types.contains("string"))
+    {
+        return true;
+    }
+    !matches!(
+        inline_property_type(property),
+        Some("boolean" | "integer" | "number" | "array" | "object")
+    )
+}
+
 /// CloudFormation Resource Schema
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 #[serde(rename_all = "camelCase")]
 #[allow(dead_code)]
 struct CfnSchema {
@@ -903,6 +934,7 @@ fn emit_permissions_slice(permissions: &[String]) -> String {
 
 /// CloudFormation Tagging metadata
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 #[serde(rename_all = "camelCase")]
 #[allow(dead_code)]
 struct CfnTagging {
@@ -989,6 +1021,7 @@ fn is_tag_map_ref(schema: &CfnSchema, ref_path: &str) -> bool {
 
 /// Type can be a string or an array of strings in JSON Schema
 #[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 #[serde(untagged)]
 enum TypeValue {
     Single(String),
@@ -1566,6 +1599,7 @@ fn object_string_union_is_iam_policy_document(
 
 /// Enum value can be a string or an integer in JSON Schema
 #[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 #[serde(untagged)]
 enum EnumValue {
     Str(String),
@@ -1582,6 +1616,7 @@ impl EnumValue {
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 #[serde(rename_all = "camelCase")]
 #[allow(dead_code)]
 struct CfnProperty {
@@ -2103,8 +2138,10 @@ fn main() -> Result<()> {
     };
 
     // Parse schema
+    let source: serde_json::Value =
+        serde_json::from_str(&schema_json).context("Failed to parse CloudFormation schema JSON")?;
     let schema: CfnSchema =
-        serde_json::from_str(&schema_json).context("Failed to parse CloudFormation schema")?;
+        serde_json::from_value(source.clone()).context("Failed to parse CloudFormation schema")?;
 
     if !schema.is_cloud_control_provisionable() {
         eprintln!(
@@ -2119,12 +2156,13 @@ fn main() -> Result<()> {
     }
 
     // Generate output based on format
+    let context = EmissionContext::from_source(&schema, &source)?;
     let output = match output_mode {
         OutputMode::Markdown { examples_dir } => {
             let example = load_markdown_example(&examples_dir, &args.type_name)?;
-            generate_markdown(&schema, &args.type_name, &example)?
+            render_markdown(&context, &args.type_name, &example)?
         }
-        OutputMode::Rust => generate_schema_code(&schema, &args.type_name)?,
+        OutputMode::Rust => render_schema_code(&context, &args.type_name)?,
     };
 
     // Output
@@ -2833,9 +2871,9 @@ fn override_type_to_display_name(override_type: &str) -> &str {
 #[cfg(test)]
 fn type_display_string(prop_name: &str, prop: &CfnProperty, schema: &CfnSchema) -> String {
     type_display_string_at(
-        prop_name,
         prop,
-        schema,
+        &EmissionContext::new(schema).unwrap(),
+        &[prop_name.to_string()],
         CfnPropertyPath::new(None, prop_name),
     )
 }
@@ -2917,21 +2955,31 @@ fn object_map_type_text(
 }
 
 fn type_display_string_at(
-    prop_name: &str,
     prop: &CfnProperty,
-    schema: &CfnSchema,
+    schema: &EmissionContext<'_>,
+    provider_path: &[String],
     cfn_property_path: CfnPropertyPath<'_>,
 ) -> String {
-    type_display_at_resolved(prop_name, prop, schema, cfn_property_path, None).markdown()
+    type_display_at_resolved(
+        schema.property_at(provider_path, prop),
+        cfn_property_path,
+        None,
+    )
+    .markdown()
 }
 
 fn type_display_at_resolved(
-    prop_name: &str,
-    prop: &CfnProperty,
-    schema: &CfnSchema,
+    classified: EmissionProperty<'_>,
     cfn_property_path: CfnPropertyPath<'_>,
     definition_name: Option<&str>,
 ) -> TypeDisplay {
+    if let Some(reference) = emission_reference(&classified, cfn_property_path) {
+        return TypeDisplay::Plain(reference.display());
+    }
+    let schema = classified.schema();
+    let prop = classified.property();
+    let prop_name = classified.name();
+    let provider_path = classified.path();
     if let Some(display) =
         resource_type_override(&schema.type_name, cfn_property_path).and_then(TypeOverride::display)
     {
@@ -2941,6 +2989,9 @@ fn type_display_at_resolved(
         return TypeDisplay::Plain("PolicyDocument".to_string());
     }
     if prop_name == "Tags" {
+        schema
+            .classify_tag_value(provider_path)
+            .unwrap_or_else(|error| panic!("{error}"));
         return TypeDisplay::Code("Map<String, String>".to_string());
     }
     if property_is_bare_object(prop, schema) {
@@ -2962,15 +3013,16 @@ fn type_display_at_resolved(
             ),
         };
     }
-    match property_shape(prop, schema) {
-        PropertyShape::Reference { path, resolved } => {
-            return if is_tag_map_ref(schema, path) {
+    match property_shape(classified.property(), classified.schema()) {
+        PropertyShape::Reference { resolved, .. } => {
+            return if is_tag_map_ref(schema, prop.ref_path.as_deref().expect("reference shape")) {
+                schema
+                    .classify_tag_value(provider_path)
+                    .unwrap_or_else(|error| panic!("{error}"));
                 TypeDisplay::Code("Map<String, String>".to_string())
             } else if let Some(resolved) = resolved {
                 type_display_at_resolved(
-                    prop_name,
-                    resolved.property,
-                    schema,
+                    schema.property_at(provider_path, resolved.property),
                     cfn_property_path,
                     Some(resolved.name),
                 )
@@ -2983,9 +3035,7 @@ fn type_display_at_resolved(
             ..
         } => {
             return type_display_at_resolved(
-                prop_name,
-                array_variant,
-                schema,
+                schema.property_at(provider_path, array_variant),
                 cfn_property_path,
                 None,
             );
@@ -3005,8 +3055,23 @@ fn type_display_at_resolved(
     }
     if inline_property_type(prop) == Some("array") {
         let item = prop.items.as_deref().map_or_else(
-            || TypeDisplay::Plain("String".to_string()),
-            |items| type_display_at_resolved(prop_name, items, schema, cfn_property_path, None),
+            || {
+                let default = CfnProperty::default();
+                let item_path = schema.collection_path(provider_path, PathSegment::ListElement);
+                let item = schema.property_at(&item_path, &default);
+                TypeDisplay::Plain(
+                    emission_reference(&item, cfn_property_path)
+                        .map_or_else(|| "String".to_string(), |reference| reference.display()),
+                )
+            },
+            |items| {
+                let item_path = schema.collection_path(provider_path, PathSegment::ListElement);
+                type_display_at_resolved(
+                    schema.property_at(&item_path, items),
+                    cfn_property_path,
+                    None,
+                )
+            },
         );
         return TypeDisplay::List {
             item: Box::new(item),
@@ -3032,6 +3097,7 @@ fn type_display_at_resolved(
         prop_name,
         prop,
         schema,
+        provider_path,
         cfn_property_path,
         definition_name,
     ))
@@ -3040,19 +3106,20 @@ fn type_display_at_resolved(
 fn scalar_type_display_string_at(
     prop_name: &str,
     prop: &CfnProperty,
-    schema: &CfnSchema,
+    schema: &EmissionContext<'_>,
+    provider_path: &[String],
     cfn_property_path: CfnPropertyPath<'_>,
     definition_name: Option<&str>,
 ) -> String {
-    match inline_property_type(prop) {
-        Some("string") => string_leaf(
-            prop,
-            prop_name,
-            &schema.type_name,
+    if inline_property_type(prop) == Some("string") {
+        return string_leaf(
+            schema.property_at(provider_path, prop),
             cfn_property_path,
             definition_name,
         )
-        .display(),
+        .display();
+    }
+    match inline_property_type(prop) {
         Some("boolean") => "Bool".to_string(),
         Some("integer") => {
             // Check resource-scoped overrides first
@@ -3230,6 +3297,10 @@ fn markdown_enum_type(
             |items| markdown_enum_type(items, schema, key),
         );
         markdown_list_type(item, array)
+    } else if let Some(value) = property_object_map_value(prop, schema) {
+        MarkdownLinkedType::Map {
+            value: Box::new(markdown_enum_type(value, schema, key)),
+        }
     } else {
         MarkdownLinkedType::Enum(key.clone())
     }
@@ -3297,13 +3368,20 @@ fn markdown_link_type(
 }
 
 fn markdown_type(
-    prop_name: &str,
-    prop: &CfnProperty,
-    schema: &CfnSchema,
+    classified: EmissionProperty<'_>,
     enum_target: Option<&MarkdownEnumKey>,
-    property_path: &[String],
     cfn_parent: Option<&str>,
 ) -> MarkdownType {
+    if let Some(reference) = emission_reference(
+        &classified,
+        CfnPropertyPath::new(cfn_parent, classified.name()),
+    ) {
+        return MarkdownType::Plain(reference.display());
+    }
+    let schema = classified.schema();
+    let prop = classified.property();
+    let prop_name = classified.name();
+    let property_path = classified.path();
     markdown_link_type(
         prop_name,
         prop,
@@ -3315,9 +3393,9 @@ fn markdown_type(
     .map(MarkdownType::Linked)
     .unwrap_or_else(|| {
         MarkdownType::Plain(type_display_string_at(
-            prop_name,
             prop,
             schema,
+            property_path,
             CfnPropertyPath::new(cfn_parent, prop_name),
         ))
     })
@@ -3562,7 +3640,11 @@ fn claim_unique_markdown_heading(
     unreachable!("an integer suffix always yields a fresh heading")
 }
 
-fn generate_markdown(schema: &CfnSchema, type_name: &str, example: &DocExample) -> Result<String> {
+fn render_markdown(
+    schema: &EmissionContext<'_>,
+    type_name: &str,
+    example: &DocExample,
+) -> Result<String> {
     checked_read_back_declarations(schema, type_name)?;
     resource_type_overrides().validate_sources(schema)?;
     reset_recursion_guard();
@@ -3599,7 +3681,12 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str, example: &DocExample) 
     let mut struct_field_enums: BTreeMap<MarkdownStructFieldKey, EnumInfo> = BTreeMap::new();
     let mut struct_defs: BTreeMap<MarkdownStructKey, StructDefInfo> = BTreeMap::new();
 
-    for (prop_name, prop) in documented_top_level_properties(schema) {
+    for (prop_name, prop) in &schema.properties {
+        if is_deprecated_property(prop)
+            || should_omit_top_level_property(&schema.type_name, prop_name)
+        {
+            continue;
+        }
         // Apply resource-scoped enum overlay (awscc#357) for top-level
         // properties. The nested-struct loop below already does the same
         // thing for `Struct.Field` keys (awscc#246); without this branch a
@@ -3674,7 +3761,6 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str, example: &DocExample) 
             let field_path = extend_property_path(&def_info.first_property_path, field_name);
             let (_, enum_info) = cfn_type_to_carina_type_with_enum_with_paths(
                 field_prop,
-                field_name,
                 schema,
                 &namespace,
                 &property_enums,
@@ -3702,9 +3788,7 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str, example: &DocExample) 
                 .any(|synth| synth.cfn_type == type_name && synth.attr_name == "arn"));
     for (prop_name, prop) in documented_top_level_properties(schema) {
         let _ = generate_top_level_attribute_type(
-            prop_name,
-            prop,
-            schema,
+            schema.property_at(std::slice::from_ref(prop_name), prop),
             &namespace,
             &property_enums,
             has_arn_helper,
@@ -3783,11 +3867,8 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str, example: &DocExample) 
         let attr_name = prop_name.to_snake_case();
         let is_required = required.contains(prop_name);
         let type_display = markdown_type(
-            prop_name,
-            prop,
-            schema,
+            schema.property_at(&property_path, prop),
             enum_targets.properties.get(prop_name),
-            &property_path,
             None,
         );
 
@@ -3982,20 +4063,14 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str, example: &DocExample) 
                     ))
                 } else if let Some(enum_target) = enum_targets.struct_fields.get(&source_key) {
                     markdown_type(
-                        field_name,
-                        field_prop,
-                        schema,
+                        schema.property_at(&field_path, field_prop),
                         Some(enum_target),
-                        &field_path,
                         Some(&def_info.def_name),
                     )
                 } else {
                     markdown_type(
-                        field_name,
-                        field_prop,
-                        schema,
+                        schema.property_at(&field_path, field_prop),
                         None,
-                        &field_path,
                         Some(&def_info.def_name),
                     )
                 };
@@ -4052,11 +4127,8 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str, example: &DocExample) 
 
             let attr_name = prop_name.to_snake_case();
             let type_display = markdown_type(
-                prop_name,
-                prop,
-                schema,
+                schema.property_at(&property_path, prop),
                 enum_targets.properties.get(prop_name),
-                &property_path,
                 None,
             );
 
@@ -4083,6 +4155,7 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str, example: &DocExample) 
         }
     }
 
+    schema.finish()?;
     page.finish()
         .with_context(|| format!("generated invalid Markdown for awscc.{dsl_resource}"))
 }
@@ -4350,16 +4423,17 @@ fn detect_exclusive_fields(schema: &CfnSchema, type_name: &str) -> Vec<Vec<Strin
 /// attribute. Besides returning Rust source, this walks every nested struct
 /// that survives overrides and records its emitted read-only fields.
 fn generate_top_level_attribute_type(
-    prop_name: &str,
-    prop: &CfnProperty,
-    schema: &CfnSchema,
+    classified: EmissionProperty<'_>,
     namespace: &str,
     enums: &BTreeMap<String, EnumInfo>,
     has_arn_helper: bool,
 ) -> String {
+    let prop = classified.property();
+    let prop_name = classified.name();
+    let schema = classified.schema();
     let property_path = CfnPropertyPath::new(None, prop_name);
     let override_type = checked_resource_type_override(schema, property_path, prop);
-    if has_arn_helper && prop_name == "Arn" {
+    if prop_name == "Arn" && has_arn_helper {
         return "self::arn()".to_string();
     }
 
@@ -4432,7 +4506,7 @@ fn checked_read_back_declarations(
     Ok(declarations.to_vec())
 }
 
-fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
+fn render_schema_code(schema: &EmissionContext<'_>, type_name: &str) -> Result<String> {
     let read_back_declarations = checked_read_back_declarations(schema, type_name)?;
     resource_type_overrides().validate_sources(schema)?;
     // carina#3340: clear per-resource codegen state at function entry
@@ -4531,6 +4605,7 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
     // Use composite key "DefName.FieldName" to avoid conflicts when different
     // definitions have fields with the same name but different enum values
     // (e.g., IntelligentTieringConfiguration.Status vs VersioningConfiguration.Status)
+    let enum_schema = &EmissionContext::for_enum_discovery(schema)?;
     if let Some(definitions) = &schema.definitions {
         for (def_name, def) in definitions {
             if let Some(props) = &def.properties {
@@ -4572,8 +4647,7 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
                     let provider_path = [field_name.clone()];
                     let (_, field_enum_info) = cfn_type_to_carina_type_with_enum_with_paths(
                         field_prop,
-                        field_name,
-                        schema,
+                        enum_schema,
                         &namespace,
                         &enums,
                         CfnTypeGenerationPaths {
@@ -4727,9 +4801,7 @@ pub fn {}() -> AwsccSchemaConfig {{
         // specific nested sub-properties are omitted.
         let is_write_only = write_only.contains(prop_name);
         let attr_type = generate_top_level_attribute_type(
-            prop_name,
-            prop,
-            schema,
+            schema.property_at(std::slice::from_ref(prop_name), prop),
             &namespace,
             &enums,
             has_arn_helper,
@@ -5102,6 +5174,7 @@ use carina_core::schema::{{{}}};
     code.push('\n');
     code.push_str(&body);
 
+    schema.finish()?;
     Ok(code)
 }
 
@@ -5752,7 +5825,7 @@ fn generate_struct_type(
     def_name: &str,
     properties: &BTreeMap<String, CfnProperty>,
     required: &[String],
-    schema: &CfnSchema,
+    schema: &EmissionContext<'_>,
     namespace: &str,
     enums: &BTreeMap<String, EnumInfo>,
     paths: StructGenerationPaths<'_>,
@@ -5803,7 +5876,6 @@ fn generate_struct_type(
             } else {
                     cfn_type_to_carina_type_with_enum_with_paths(
                         field_prop,
-                        field_name,
                         schema,
                         namespace,
                         enums,
@@ -6186,6 +6258,14 @@ const STRING_PATTERN_REWRITES: &[StringPatternRewrite] = &[
         length: None,
     },
     StringPatternRewrite {
+        cfn_type: "AWS::Logs::LogGroup",
+        property_path: CfnPropertyPath::new(None, "KmsKeyId"),
+        source: r"^arn:[a-z0-9-]+:kms:[a-z0-9-]+:\d{12}:(key|alias)/.+\Z",
+        // Use the same strict end-of-text interpretation as LogGroupName.
+        pattern: r"^arn:[a-z0-9-]+:kms:[a-z0-9-]+:\d{12}:(key|alias)/.+\z",
+        length: None,
+    },
+    StringPatternRewrite {
         cfn_type: "AWS::SSO::PermissionSet",
         property_path: CfnPropertyPath::new(None, "SessionDuration"),
         source: r"^(-?)P(?=\d|T\d)(?:(\d+)Y)?(?:(\d+)M)?(?:(\d+)([DW]))?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?)?$",
@@ -6411,16 +6491,54 @@ impl StringLeaf<'_> {
     }
 }
 
+/// Shared by Rust and Markdown at their type decision points.
+fn emission_reference(
+    classified: &EmissionProperty<'_>,
+    cfn_property_path: CfnPropertyPath<'_>,
+) -> Option<StringLeaf<'static>> {
+    let shape = property_shape(classified.property(), classified.schema());
+    if matches!(
+        shape,
+        PropertyShape::Direct(_) | PropertyShape::Merged(_) | PropertyShape::Array { .. }
+    ) {
+        return None;
+    }
+    if matches!(shape, PropertyShape::Reference { resolved: Some(resolved), .. }
+        if !needs_kms_classification(resolved.property, classified.name()))
+    {
+        return None;
+    }
+    if matches!(
+        inline_property_type(classified.property()),
+        Some("array" | "object")
+    ) && !needs_kms_classification(classified.property(), classified.name())
+    {
+        return None;
+    }
+    classified
+        .classify()
+        .unwrap_or_else(|error| panic!("{error}"))
+        .map(|kind| StringLeaf::Inferred {
+            rust_type: classified.schema().reference_constructor(
+                classified.path(),
+                kind,
+                cfn_property_path,
+            ),
+            display_type: "aws.kms.Key.Reference".to_string(),
+        })
+}
+
 /// Classify a resolved string leaf once, before either Rust or Markdown
-/// rendering. Only the Refined case emits CFN pattern/length metadata and
-/// therefore reaches the translation and compilation gate.
+/// rendering. The Refined case shares the CFN pattern translation and
+/// compilation gate with reference leaves.
 fn string_leaf<'a>(
-    prop: &'a CfnProperty,
-    prop_name: &str,
-    cfn_type: &str,
+    classified: EmissionProperty<'a>,
     property_path: CfnPropertyPath<'_>,
     definition_name: Option<&str>,
 ) -> StringLeaf<'a> {
+    let prop = classified.property();
+    let prop_name = classified.name();
+    let cfn_type = &classified.schema().type_name;
     if let Some(leaf) = enum_leaf(prop, prop_name, definition_name) {
         return StringLeaf::Enum(leaf);
     }
@@ -6675,6 +6793,8 @@ fn known_string_type_overrides() -> &'static HashMap<&'static str, &'static str>
         m.insert("PeerRoleArn", "super::super::iam::role::arn()");
         m.insert("PermissionsBoundary", "super::super::iam::policy::arn()");
         m.insert("ManagedPolicyArns", "super::super::iam::policy::arn()");
+        // Writable references are selected by full-path classification before
+        // these heuristics. Preserve main's types for non-reference outputs.
         m.insert("KmsKeyId", "super::super::kms::key::arn()");
         m.insert("KMSMasterKeyID", "carina_aws_types::kms_key_id()");
         m.insert("ReplicaKmsKeyID", "carina_aws_types::kms_key_id()");
@@ -8134,8 +8254,8 @@ fn emit_array_item_override(
     Some(array_attribute_type(expression, array, false))
 }
 
-/// Substitute the enum leaf while retaining every resolved list layer and
-/// its own bounds/order, for top-level attributes and nested struct fields.
+/// Substitute the enum leaf while retaining every resolved list/map layer and
+/// list bounds/order, for top-level attributes and nested struct fields.
 fn enum_property_type(
     prop: &CfnProperty,
     schema: &CfnSchema,
@@ -8148,6 +8268,11 @@ fn enum_property_type(
             |items| enum_property_type(items, schema, enum_type, force_unordered),
         );
         array_attribute_type(&item_type, array, force_unordered)
+    } else if let Some(value) = property_object_map_value(prop, schema) {
+        format!(
+            "AttributeType::map({})",
+            enum_property_type(value, schema, enum_type, force_unordered)
+        )
     } else {
         enum_type.to_string()
     }
@@ -8159,14 +8284,13 @@ fn enum_property_type(
 fn cfn_type_to_carina_type_with_enum(
     prop: &CfnProperty,
     prop_name: &str,
-    schema: &CfnSchema,
+    schema: &EmissionContext<'_>,
     namespace: &str,
     enums: &BTreeMap<String, EnumInfo>,
 ) -> (String, Option<EnumInfo>) {
     let property_path = [prop_name.to_string()];
     cfn_type_to_carina_type_with_enum_with_paths(
         prop,
-        prop_name,
         schema,
         namespace,
         enums,
@@ -8299,22 +8423,26 @@ struct CfnTypeGenerationPaths<'a> {
 fn generate_object_map_type(
     value: &CfnProperty,
     prop_name: &str,
-    schema: &CfnSchema,
+    schema: &EmissionContext<'_>,
     namespace: &str,
     enums: &BTreeMap<String, EnumInfo>,
     paths: CfnTypeGenerationPaths<'_>,
 ) -> (String, Option<EnumInfo>) {
     let property_path = CfnPropertyPath::new(paths.cfn_parent, prop_name);
     match object_map_value_or_panic(schema, property_path, value) {
-        ObjectMapValueKind::DirectString => (
-            "AttributeType::map(AttributeType::string())".to_string(),
-            None,
-        ),
+        ObjectMapValueKind::DirectString => {
+            let value_path = schema.collection_path(paths.provider, PathSegment::MapValue);
+            let value = schema.property_at(&value_path, value);
+            let value_type = emission_reference(&value, property_path).map_or_else(
+                || "AttributeType::string()".to_string(),
+                |reference| reference.emit(&schema.type_name, prop_name).0,
+            );
+            (format!("AttributeType::map({value_type})"), None)
+        }
         ObjectMapValueKind::Struct => {
-            let value_provider_path = extend_property_path(paths.provider, "*");
+            let value_provider_path = schema.collection_path(paths.provider, PathSegment::MapValue);
             let (value_type, enum_info) = cfn_type_to_carina_type_with_enum_with_paths(
                 value,
-                prop_name,
                 schema,
                 namespace,
                 enums,
@@ -8334,16 +8462,13 @@ fn generate_object_map_type(
 
 fn cfn_type_to_carina_type_with_enum_with_paths(
     prop: &CfnProperty,
-    prop_name: &str,
-    schema: &CfnSchema,
+    schema: &EmissionContext<'_>,
     namespace: &str,
     enums: &BTreeMap<String, EnumInfo>,
     paths: CfnTypeGenerationPaths<'_>,
 ) -> (String, Option<EnumInfo>) {
     cfn_type_to_carina_type_with_enum_resolved(
-        prop,
-        prop_name,
-        schema,
+        schema.property_at(paths.provider, prop),
         namespace,
         enums,
         paths,
@@ -8367,14 +8492,25 @@ struct RefGenerationState<'a> {
 }
 
 fn cfn_type_to_carina_type_with_enum_resolved(
-    prop: &CfnProperty,
-    prop_name: &str,
-    schema: &CfnSchema,
+    classified: EmissionProperty<'_>,
     namespace: &str,
     enums: &BTreeMap<String, EnumInfo>,
     paths: CfnTypeGenerationPaths<'_>,
     ref_state: RefGenerationState<'_>,
 ) -> (String, Option<EnumInfo>) {
+    if let Some(reference) = emission_reference(
+        &classified,
+        CfnPropertyPath::new(paths.cfn_parent, classified.name()),
+    ) {
+        return reference.emit(&classified.schema().type_name, classified.name());
+    }
+    let schema = classified.schema();
+    let prop = classified.property();
+    let prop_name = classified.name();
+    let paths = CfnTypeGenerationPaths {
+        provider: classified.path(),
+        ..paths
+    };
     let definition_name = ref_state.definition_name;
     let ref_context = ref_state.context;
     let struct_path = paths.structural;
@@ -8402,28 +8538,38 @@ fn cfn_type_to_carina_type_with_enum_resolved(
     // The declared tag property is special when its generated DSL name is
     // `tags`: it is a Map in Carina (Terraform-style).
     if is_dsl_tags_property(schema, prop_name) {
+        schema
+            .classify_tag_value(property_path)
+            .unwrap_or_else(|error| panic!("{error}"));
         return ("carina_aws_types::tags_type()".to_string(), None);
     }
 
     // Preserve non-string const precedence over $ref/oneOf resolution;
     // enum values and naming still use the same classifier as strings.
     if prop.const_value.is_some() && inline_property_type(prop) != Some("string") {
-        return enum_leaf(prop, prop_name, definition_name)
-            .expect("a const property must classify as an enum")
-            .emit(&schema.type_name, prop_name);
+        return string_leaf(
+            schema.property_at(property_path, prop),
+            cfn_property_path,
+            definition_name,
+        )
+        .emit(&schema.type_name, prop_name);
     }
 
-    match property_shape(prop, schema) {
-        PropertyShape::Reference { path, resolved } => {
-            if is_tag_map_ref(schema, path) {
+    match property_shape(classified.property(), classified.schema()) {
+        PropertyShape::Reference { resolved, .. } => {
+            if is_tag_map_ref(schema, prop.ref_path.as_deref().expect("reference shape")) {
+                schema
+                    .classify_tag_value(property_path)
+                    .unwrap_or_else(|error| panic!("{error}"));
                 return ("carina_aws_types::tags_type()".to_string(), None);
             }
 
             let Some(resolved) = resolved else {
-                if let Some(inferred) = infer_string_type(prop_name, &schema.type_name) {
-                    return (inferred, None);
-                }
-                return ("AttributeType::string()".to_string(), None);
+                return (
+                    infer_string_type(prop_name, &schema.type_name)
+                        .unwrap_or_else(|| "AttributeType::string()".to_string()),
+                    None,
+                );
             };
             let def_name = resolved.name;
 
@@ -8441,9 +8587,7 @@ fn cfn_type_to_carina_type_with_enum_resolved(
                 definitions.borrow_mut().insert(def_name.to_string());
             });
             let (body, enum_info) = cfn_type_to_carina_type_with_enum_resolved(
-                resolved.property,
-                prop_name,
-                schema,
+                schema.property_at(property_path, resolved.property),
                 namespace,
                 enums,
                 paths,
@@ -8488,9 +8632,7 @@ fn cfn_type_to_carina_type_with_enum_resolved(
             ..
         } => {
             return cfn_type_to_carina_type_with_enum_resolved(
-                array_variant,
-                prop_name,
-                schema,
+                schema.property_at(property_path, array_variant),
                 namespace,
                 enums,
                 paths,
@@ -8512,9 +8654,7 @@ fn cfn_type_to_carina_type_with_enum_resolved(
             inline_property.required.clear();
             inline_property.one_of.clear();
             return cfn_type_to_carina_type_with_enum_resolved(
-                &inline_property,
-                prop_name,
-                schema,
+                schema.property_at(property_path, &inline_property),
                 namespace,
                 enums,
                 paths,
@@ -8525,14 +8665,8 @@ fn cfn_type_to_carina_type_with_enum_resolved(
     }
 
     if inline_property_type(prop) == Some("string") {
-        return string_leaf(
-            prop,
-            prop_name,
-            &schema.type_name,
-            cfn_property_path,
-            definition_name,
-        )
-        .emit(&schema.type_name, prop_name);
+        return string_leaf(classified, cfn_property_path, definition_name)
+            .emit(&schema.type_name, prop_name);
     }
 
     if let Some(leaf) = enum_leaf(prop, prop_name, definition_name) {
@@ -8607,11 +8741,9 @@ fn cfn_type_to_carina_type_with_enum_resolved(
         }
         Some("array") => {
             let (element_type, item_enum) = if let Some(items) = &prop.items {
-                let item_path = extend_property_path(property_path, "*");
+                let item_path = schema.collection_path(property_path, PathSegment::ListElement);
                 let (item_type, item_enum) = cfn_type_to_carina_type_with_enum_resolved(
-                    items,
-                    prop_name,
-                    schema,
+                    schema.property_at(&item_path, items),
                     namespace,
                     enums,
                     CfnTypeGenerationPaths {
@@ -8625,7 +8757,13 @@ fn cfn_type_to_carina_type_with_enum_resolved(
                 );
                 (item_type, item_enum)
             } else {
-                ("AttributeType::string()".to_string(), None)
+                let default = CfnProperty::default();
+                let item_path = schema.collection_path(property_path, PathSegment::ListElement);
+                let item = schema.property_at(&item_path, &default);
+                emission_reference(&item, cfn_property_path).map_or_else(
+                    || ("AttributeType::string()".to_string(), None),
+                    |reference| reference.emit(&schema.type_name, prop_name),
+                )
             };
             (
                 array_attribute_type(
@@ -8674,14 +8812,11 @@ fn cfn_type_to_carina_type_with_enum_resolved(
                 schema.type_name, cfn_property_path
             );
         }
-        _ => {
-            // Fallback: apply name-based heuristics for properties with no explicit type
-            if let Some(inferred) = infer_string_type(prop_name, &schema.type_name) {
-                (inferred, None)
-            } else {
-                ("AttributeType::string()".to_string(), None)
-            }
-        }
+        _ => (
+            infer_string_type(prop_name, &schema.type_name)
+                .unwrap_or_else(|| "AttributeType::string()".to_string()),
+            None,
+        ),
     }
 }
 
@@ -8804,6 +8939,95 @@ mod tests {
     use super::*;
     use std::path::Path;
 
+    fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
+        super::render_schema_code(&EmissionContext::new(schema)?, type_name)
+    }
+
+    fn generate_markdown(
+        schema: &CfnSchema,
+        type_name: &str,
+        example: &DocExample,
+    ) -> Result<String> {
+        super::render_markdown(&EmissionContext::new(schema)?, type_name, example)
+    }
+
+    fn cfn_type_to_carina_type_with_enum(
+        prop: &CfnProperty,
+        prop_name: &str,
+        schema: &CfnSchema,
+        namespace: &str,
+        enums: &BTreeMap<String, EnumInfo>,
+    ) -> (String, Option<EnumInfo>) {
+        let classified = EmissionContext::new(schema).unwrap();
+        super::cfn_type_to_carina_type_with_enum(prop, prop_name, &classified, namespace, enums)
+    }
+
+    fn cfn_type_to_carina_type_with_enum_with_paths(
+        prop: &CfnProperty,
+        prop_name: &str,
+        schema: &CfnSchema,
+        namespace: &str,
+        enums: &BTreeMap<String, EnumInfo>,
+        paths: CfnTypeGenerationPaths<'_>,
+    ) -> (String, Option<EnumInfo>) {
+        let default_path = [prop_name.to_string()];
+        let paths = CfnTypeGenerationPaths {
+            provider: if paths.provider.is_empty() {
+                &default_path
+            } else {
+                paths.provider
+            },
+            ..paths
+        };
+        let classified = EmissionContext::new(schema).unwrap();
+        super::cfn_type_to_carina_type_with_enum_with_paths(
+            prop,
+            &classified,
+            namespace,
+            enums,
+            paths,
+        )
+    }
+
+    fn generate_top_level_attribute_type(
+        prop_name: &str,
+        prop: &CfnProperty,
+        schema: &CfnSchema,
+        namespace: &str,
+        enums: &BTreeMap<String, EnumInfo>,
+        has_arn_helper: bool,
+    ) -> String {
+        let classified = EmissionContext::new(schema).unwrap();
+        super::generate_top_level_attribute_type(
+            classified.property_at(&[prop_name.to_string()], prop),
+            namespace,
+            enums,
+            has_arn_helper,
+        )
+    }
+
+    fn markdown_type(
+        prop_name: &str,
+        prop: &CfnProperty,
+        schema: &CfnSchema,
+        enum_target: Option<&MarkdownEnumKey>,
+        property_path: &[String],
+        cfn_parent: Option<&str>,
+    ) -> MarkdownType {
+        let default_path = [prop_name.to_string()];
+        let property_path = if property_path.is_empty() {
+            &default_path
+        } else {
+            property_path
+        };
+        let classified = EmissionContext::new(schema).unwrap();
+        super::markdown_type(
+            classified.property_at(property_path, prop),
+            enum_target,
+            cfn_parent,
+        )
+    }
+
     // Parse the emitted Rust literals, so these tests exercise the constraints
     // that the provider will actually publish rather than a parallel rewrite.
     fn emitted_patterns(code: &str) -> Vec<String> {
@@ -8860,13 +9084,15 @@ mod tests {
     fn test_codegen_regex_patterns_cached_output_compiles() {
         USED_STRING_PATTERN_REWRITES.with(|used| used.borrow_mut().clear());
         for path in cached_schema_paths() {
-            let schema: CfnSchema =
+            let source: serde_json::Value =
                 serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+            let schema: CfnSchema = serde_json::from_value(source.clone()).unwrap();
             if !schema.is_cloud_control_provisionable() {
                 continue;
             }
             // string_constraints is the compilation gate during generation.
-            generate_schema_code(&schema, &schema.type_name).unwrap();
+            let context = EmissionContext::from_source(&schema, &source).unwrap();
+            super::render_schema_code(&context, &schema.type_name).unwrap();
         }
         USED_STRING_PATTERN_REWRITES.with(|used| {
             let used = used.borrow();
@@ -15968,22 +16194,12 @@ mod tests {
             overrides.get("DeliverLogsPermissionArn"),
             Some(&"super::super::iam::role::arn()")
         );
-        assert_eq!(
-            overrides.get("KmsKeyId"),
-            Some(&"super::super::kms::key::arn()")
-        );
-        assert_eq!(
-            overrides.get("KmsKeyArn"),
-            Some(&"super::super::kms::key::arn()")
-        );
-        assert_eq!(
-            overrides.get("KMSMasterKeyID"),
-            Some(&"carina_aws_types::kms_key_id()")
-        );
-        assert_eq!(
-            overrides.get("ReplicaKmsKeyID"),
-            Some(&"carina_aws_types::kms_key_id()")
-        );
+        for name in ["KmsKeyId", "KmsKeyArn"] {
+            assert_eq!(overrides.get(name), Some(&"super::super::kms::key::arn()"));
+        }
+        for name in ["KMSMasterKeyID", "ReplicaKmsKeyID"] {
+            assert_eq!(overrides.get(name), Some(&"carina_aws_types::kms_key_id()"));
+        }
         assert_eq!(
             overrides.get("PermissionsBoundary"),
             Some(&"super::super::iam::policy::arn()")
@@ -15998,8 +16214,8 @@ mod tests {
             Some(&"super::super::iam::role::arn()")
         );
         assert_eq!(
-            overrides.get("KmsKeyArn"),
-            Some(&"super::super::kms::key::arn()")
+            overrides.get("PeerRoleArn"),
+            Some(&"super::super::iam::role::arn()")
         );
         assert_eq!(
             override_type_to_display_name("super::super::iam::oidc_provider::arn()"),
@@ -18167,7 +18383,7 @@ mod tests {
             ..Default::default()
         };
         let schema = CfnSchema {
-            type_name: "AWS::S3::Bucket".to_string(),
+            type_name: "AWS::EC2::VPC".to_string(),
             description: None,
             properties: BTreeMap::from([("HttpMethod".to_string(), prop.clone())]),
             required: vec![],
@@ -18182,13 +18398,8 @@ mod tests {
             handlers: BTreeMap::new(),
         };
         let enums = BTreeMap::new();
-        let (_, enum_info) = cfn_type_to_carina_type_with_enum(
-            &prop,
-            "HttpMethod",
-            &schema,
-            "aws.s3.Bucket",
-            &enums,
-        );
+        let (_, enum_info) =
+            cfn_type_to_carina_type_with_enum(&prop, "HttpMethod", &schema, "aws.ec2.Vpc", &enums);
         assert!(
             enum_info.is_some(),
             "enum-only $ref definition should produce enum info"
@@ -18558,7 +18769,7 @@ mod tests {
             },
         );
         let schema = CfnSchema {
-            type_name: "AWS::S3::Bucket".to_string(),
+            type_name: "AWS::EC2::VPC".to_string(),
             description: None,
             properties,
             required: vec![],
@@ -18666,7 +18877,7 @@ mod tests {
         );
 
         let schema = CfnSchema {
-            type_name: "AWS::S3::Bucket".to_string(),
+            type_name: "AWS::EC2::VPC".to_string(),
             description: None,
             properties,
             required: vec![],
@@ -18681,7 +18892,7 @@ mod tests {
             handlers: BTreeMap::new(),
         };
 
-        let md = generate_test_markdown(&schema, "AWS::S3::Bucket").unwrap();
+        let md = generate_test_markdown(&schema, "AWS::EC2::VPC").unwrap();
         assert!(
             md.contains("Enum (ObjectLockEnabled)"),
             "Struct field with const_value should display as Enum in markdown, got:\n{}",
@@ -18757,7 +18968,7 @@ mod tests {
         );
 
         let schema = CfnSchema {
-            type_name: "AWS::S3::Bucket".to_string(),
+            type_name: "AWS::EC2::VPC".to_string(),
             description: None,
             properties,
             required: vec![],
@@ -18772,7 +18983,7 @@ mod tests {
             handlers: BTreeMap::new(),
         };
 
-        let md = generate_test_markdown(&schema, "AWS::S3::Bucket").unwrap();
+        let md = generate_test_markdown(&schema, "AWS::EC2::VPC").unwrap();
         assert!(
             md.contains("Enum (RetentionMode)"),
             "Struct field with $ref to enum-only definition should display as Enum, got:\n{}",
@@ -20199,7 +20410,7 @@ mod tests {
     fn test_generate_schema_code_suppresses_default_for_iam_policy_document() {
         let mut properties = BTreeMap::new();
         properties.insert(
-            "KeyPolicy".to_string(),
+            "PolicyDocument".to_string(),
             CfnProperty {
                 prop_type: Some(TypeValue::Multiple(vec![
                     "object".to_string(),
@@ -20213,7 +20424,7 @@ mod tests {
         );
 
         let schema = CfnSchema {
-            type_name: "AWS::KMS::Key".to_string(),
+            type_name: "AWS::S3::BucketPolicy".to_string(),
             description: None,
             properties,
             required: vec![],
@@ -20228,13 +20439,13 @@ mod tests {
             handlers: BTreeMap::new(),
         };
 
-        let generated = generate_schema_code(&schema, "AWS::KMS::Key").unwrap();
+        let generated = generate_schema_code(&schema, "AWS::S3::BucketPolicy").unwrap();
 
         assert!(
             generated.contains(
-                r#"AttributeSchema::optional("key_policy", carina_aws_types::iam_policy_document())"#
+                r#"AttributeSchema::optional("policy_document", carina_aws_types::iam_policy_document())"#
             ),
-            "Should resolve KeyPolicy to iam_policy_document: {generated}"
+            "Should resolve PolicyDocument to iam_policy_document: {generated}"
         );
         assert!(
             !generated.contains(".with_default("),
@@ -20595,18 +20806,18 @@ mod tests {
     }
 
     #[test]
-    fn test_string_with_pattern_but_known_type_skips_pattern() {
-        // KmsKeyId has a pattern but is already recognized as a KMS ARN type
+    fn test_kms_pattern_uses_classified_reference_constructor() {
         let prop = CfnProperty {
             prop_type: Some(TypeValue::Single("string".to_string())),
             description: Some("The ARN of the KMS key.".to_string()),
             pattern: Some(r"^arn:[a-z0-9-]+:kms:[a-z0-9-]+:\d{12}:(key|alias)/.+\Z".to_string()),
+            max_length: Some(256),
             ..Default::default()
         };
         let schema = CfnSchema {
             type_name: "AWS::Logs::LogGroup".to_string(),
             description: None,
-            properties: BTreeMap::new(),
+            properties: BTreeMap::from([("KmsKeyId".to_string(), prop.clone())]),
             required: vec![],
             read_only_properties: vec![],
             create_only_properties: vec![],
@@ -20625,11 +20836,9 @@ mod tests {
             "aws.logs.LogGroup",
             &BTreeMap::new(),
         );
-        // KmsKeyId should be resolved to a specific ARN type, not pattern-validated
-        assert!(
-            !type_str.contains("validate_string_pattern_"),
-            "Known type (KmsKeyId) should not get pattern validation, got: {}",
-            type_str
+        assert_eq!(
+            type_str,
+            r#"carina_core::schema::AttributeType::reference(carina_aws_types::AwsType::KmsKeyReference.identity(), Some("^arn:[a-z0-9-]+:kms:[a-z0-9-]+:\\d{12}:(key|alias)/.+\\z".to_string()), Some((None, Some(256))))"#
         );
     }
 
@@ -20653,6 +20862,13 @@ mod tests {
             },
         );
 
+        properties.insert(
+            "KmsKeyId".to_string(),
+            cfn_schema_for_codegen_tests("AWS::Logs::LogGroup")
+                .properties
+                .remove("KmsKeyId")
+                .unwrap(),
+        );
         let schema = CfnSchema {
             type_name: "AWS::Logs::LogGroup".to_string(),
             description: None,
@@ -22052,7 +22268,7 @@ mod tests {
         );
 
         let schema = CfnSchema {
-            type_name: "AWS::S3::Bucket".to_string(),
+            type_name: "AWS::EC2::VPC".to_string(),
             description: None,
             properties,
             required: vec![],
@@ -24257,7 +24473,7 @@ mod tests {
             },
         );
         let schema = CfnSchema {
-            type_name: "AWS::S3::Bucket".to_string(),
+            type_name: "AWS::EC2::VPC".to_string(),
             description: None,
             properties,
             required: vec![],
@@ -24332,7 +24548,7 @@ mod tests {
             },
         );
         let schema = CfnSchema {
-            type_name: "AWS::S3::Bucket".to_string(),
+            type_name: "AWS::EC2::VPC".to_string(),
             description: None,
             properties,
             required: vec![],
@@ -24464,7 +24680,7 @@ mod tests {
             },
         );
         let schema = CfnSchema {
-            type_name: "AWS::S3::Bucket".to_string(),
+            type_name: "AWS::EC2::VPC".to_string(),
             description: None,
             properties,
             required: vec![],
@@ -24478,15 +24694,15 @@ mod tests {
             any_of: vec![],
             handlers: BTreeMap::new(),
         };
-        let md = generate_test_markdown(&schema, "AWS::S3::Bucket").unwrap();
+        let md = generate_test_markdown(&schema, "AWS::EC2::VPC").unwrap();
         // DSL Identifier column must use snake_case
         assert!(
-            md.contains("`aws.s3.Bucket.ObjectOwnership.bucket_owner_enforced`"),
+            md.contains("`aws.ec2.Vpc.ObjectOwnership.bucket_owner_enforced`"),
             "DSL Identifier column must use snake_case: {md}"
         );
         // The PascalCase form must NOT appear as the DSL Identifier
         assert!(
-            !md.contains("`aws.s3.Bucket.ObjectOwnership.BucketOwnerEnforced`"),
+            !md.contains("`aws.ec2.Vpc.ObjectOwnership.BucketOwnerEnforced`"),
             "DSL Identifier column must not use the API spelling: {md}"
         );
         // Shorthand formats line must use snake_case (first value: ObjectWriter -> object_writer).

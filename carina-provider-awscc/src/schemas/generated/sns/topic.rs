@@ -70,7 +70,7 @@ pub fn sns_topic_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_fifo_topic_attribute());
     #[inline(never)]
     fn build_kms_master_key_id_attribute() -> AttributeSchema {
-        AttributeSchema::optional("kms_master_key_id", AttributeType::string())
+        AttributeSchema::optional("kms_master_key_id", carina_aws_types::kms_key_reference())
                 .with_description("The ID of an AWS managed customer master key (CMK) for SNS or a custom CMK. For more information, see [Key terms](https://docs.aws.amazon.com/sns/latest/dg/sns-server-side-encryption.html#sse-key-terms). For more examples, see ``KeyId`` in the *API Reference*. This property applies only to [server-side-encryption](https://docs.aws.amazon.com/sns/latest/dg/sns-server-side-encryption.html).")
                 .with_provider_name("KmsMasterKeyId")
             .build()

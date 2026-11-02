@@ -32,6 +32,11 @@ $ carina plan
 
 The Carina host resolves AWS credentials with the standard AWS credential chain (environment, shared config, SSO, and so on) and hands them to the provider, refreshing them when they expire. Select a profile with `AWS_PROFILE`. Carina never starts an interactive login: if an SSO session has expired, run `aws sso login` and retry.
 
+Planning KMS key references may require `kms:DescribeKey` for the effective identity,
+including any configured assumed role. The provider resolves aliases and key IDs to
+key ARNs for comparison, so equivalent values do not cause spurious changes. Authored
+configuration and saved values remain unchanged.
+
 ## Supported services
 
 Budgets, CloudFront, CloudWatch, DynamoDB, EC2, ECR, ECS, Elastic Load Balancing v2, IAM, Identity Store, KMS, CloudWatch Logs, Organizations, Route 53, S3, EventBridge Scheduler, SNS, SSM, IAM Identity Center (SSO), and WAFv2.
