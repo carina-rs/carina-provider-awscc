@@ -153,6 +153,10 @@ fn nested_unique_enum_list_rejects_duplicates_and_accepts_distinct_values() {
         };
     validate(bucket(["get", "put"])).expect("distinct enum elements must validate");
     assert_duplicate(bucket(["get", "get"]), "allowed_methods");
+    let alias = "aws.s3.Bucket.CorsConfiguration.CorsRule.AllowedMethods.get";
+    validate(bucket([alias, "put"]))
+        .unwrap_or_else(|error| panic!("{alias} must independently validate: {error}"));
+    assert_duplicate(bucket(["get", alias]), "allowed_methods");
 }
 
 #[test]
