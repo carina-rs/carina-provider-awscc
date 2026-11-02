@@ -6428,7 +6428,8 @@ fn refined_float_type(identity: &str, range: &str) -> String {
 }
 
 fn refined_list_type(element_type: &str, ordered: bool, length: &str) -> String {
-    // Preserve duplicate handling until CFN uniqueItems mapping is decided.
+    // Preserve duplicate handling until CFN uniqueItems mapping is decided:
+    // https://github.com/carina-rs/carina-provider-awscc/issues/549
     format!(
         "AttributeType::refined_list({element_type}, {ordered}, {length}, carina_core::schema::ListElements::AllowDuplicates)"
     )

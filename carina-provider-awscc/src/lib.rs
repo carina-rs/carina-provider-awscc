@@ -14,6 +14,9 @@ pub mod resources;
 pub mod schemas;
 mod sdk_config;
 
+#[cfg(test)]
+mod test_support;
+
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod resend_guard;
 

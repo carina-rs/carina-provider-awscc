@@ -87,31 +87,41 @@ pub fn assert_arn_identity(t: AttributeType, expected: &str) {
     assert_eq!(identity.map(|id| id.to_string()).as_deref(), Some(expected));
 }
 
-#[allow(dead_code)]
-pub async fn normalize_resource(resource: Resource) -> ProviderReadyResource {
+async fn with_preparation<T>(
+    resource_type: &str,
+    run: impl for<'a> AsyncFnOnce(&'a ProviderPreparationContext<'a>) -> T,
+) -> T {
     carina_core::validation::deferred_types::with_session_for_test_async(
         &carina_core::parser::LoadedProviderContext::empty_for_test(),
         async |type_checks| {
-            let resource_type = resource.id.resource_type.clone();
             let bindings = ResolvedBindings::default();
-            let module_gate = ModuleConstraintGate::from_live_compositions(&[]);
+            let gate = ModuleConstraintGate::from_live_compositions(&[]);
             let mut schemas = SchemaRegistry::new();
-            schemas.insert("awscc", schema_for_test(&resource_type));
+            schemas.insert("awscc", schema_for_test(resource_type));
             let factories: Vec<Box<dyn ProviderFactory>> = vec![Box::new(OwnerOnlyAwsccFactory)];
             let preparation = ProviderPreparationContext::new(
                 &bindings,
-                &module_gate,
+                &gate,
                 &[],
                 &AwsccNormalizer,
                 &factories,
                 &schemas,
                 type_checks,
             );
-            prepare_provider_ready_resource(resource, &preparation)
-                .await
-                .expect("test resource should pass checked provider preparation")
+            run(&preparation).await
         },
     )
+    .await
+}
+
+#[allow(dead_code)]
+pub async fn normalize_resource(resource: Resource) -> ProviderReadyResource {
+    let resource_type = resource.id.resource_type.clone();
+    with_preparation(&resource_type, async |preparation| {
+        prepare_provider_ready_resource(resource, preparation)
+            .await
+            .expect("test resource should pass checked provider preparation")
+    })
     .await
 }
 
@@ -138,27 +148,10 @@ pub async fn create_request(resource: Resource) -> CreateRequest {
 pub async fn try_create_request(
     resource: Resource,
 ) -> Result<CreateRequest, carina_core::executor::ProviderPreparationError> {
-    carina_core::validation::deferred_types::with_session_for_test_async(
-        &carina_core::parser::LoadedProviderContext::empty_for_test(),
-        async |type_checks| {
-            let resource_type = resource.id.resource_type.clone();
-            let bindings = ResolvedBindings::default();
-            let module_gate = ModuleConstraintGate::from_live_compositions(&[]);
-            let mut schemas = SchemaRegistry::new();
-            schemas.insert("awscc", schema_for_test(&resource_type));
-            let factories: Vec<Box<dyn ProviderFactory>> = vec![Box::new(OwnerOnlyAwsccFactory)];
-            let preparation = ProviderPreparationContext::new(
-                &bindings,
-                &module_gate,
-                &[],
-                &AwsccNormalizer,
-                &factories,
-                &schemas,
-                type_checks,
-            );
-            carina_core::executor::prepare_create_request(resource, &preparation).await
-        },
-    )
+    let resource_type = resource.id.resource_type.clone();
+    with_preparation(&resource_type, async |preparation| {
+        carina_core::executor::prepare_create_request(resource, preparation).await
+    })
     .await
 }
 

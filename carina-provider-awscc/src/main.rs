@@ -1320,6 +1320,81 @@ mod tests {
         assert!(error.to_string().contains("ReadBack"));
     }
 
+    #[test]
+    fn desired_normalization_boundary_retains_typed_conversion_context() {
+        use carina_core::desired::NormalizationBatch;
+        use carina_provider_protocol::normalization::{
+            NormalizationError, NormalizationErrorKind, NormalizationPathSegment,
+        };
+        use std::error::Error;
+
+        for number in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let resource =
+                CoreResource::with_provider("awscc", "s3.Bucket", "invalid-desired", None)
+                    .with_attribute(
+                        "values",
+                        CoreValue::Concrete(ConcreteValue::List(vec![CoreValue::Concrete(
+                            ConcreteValue::Map(indexmap::IndexMap::from([(
+                                "weight".into(),
+                                CoreValue::Concrete(ConcreteValue::Float(number)),
+                            )])),
+                        )])),
+                    );
+            // The production host uses this batch before invoking the SDK's
+            // default normalization, so invalid known leaves never reach a guest.
+            let error = NormalizationBatch::new(std::slice::from_ref(&resource))
+                .err()
+                .expect("non-finite desired input must fail before normalization dispatch");
+            assert_eq!(
+                *error.resource_id,
+                protocol_convert::resource_id_to_protocol(&resource.id)
+            );
+            assert_eq!(error.resource_index, Some(0));
+            assert_eq!(error.attribute, "values");
+            assert_eq!(
+                error.path,
+                vec![
+                    NormalizationPathSegment::Index(0),
+                    NormalizationPathSegment::Key("weight".into())
+                ]
+            );
+            assert!(matches!(error.kind, NormalizationErrorKind::Conversion));
+            assert!(matches!(
+                error.source().and_then(
+                    |cause| cause.downcast_ref::<protocol_convert::ProtocolConvertError>()
+                ),
+                Some(protocol_convert::ProtocolConvertError::NonFiniteFloat),
+            ));
+            let error: CoreProviderError = error.into();
+            assert_eq!(error.detail().resource_id.as_deref(), Some(&resource.id));
+            assert!(error.detail().cause().unwrap().is::<NormalizationError>());
+        }
+    }
+
+    #[test]
+    fn desired_normalization_codec_rejects_malformed_containers_with_resource_context() {
+        use carina_provider_protocol::normalization::{NormalizationErrorKind, NormalizationValue};
+        let id = proto::ResourceId {
+            provider: "awscc".into(),
+            resource_type: "s3.Bucket".into(),
+            identity: "invalid-desired".into(),
+        };
+        // SDK guest dispatch decodes container JSON through this codec before
+        // calling CarinaProvider::normalize_desired's default implementation.
+        for error in [
+            NormalizationValue::from_json_list("[", &id, "values").unwrap_err(),
+            NormalizationValue::from_json_map("{", &id, "values").unwrap_err(),
+        ] {
+            assert!(matches!(error.kind, NormalizationErrorKind::Conversion));
+            assert_eq!(*error.resource_id, id);
+            assert_eq!(error.attribute, "values");
+            let error: proto::ProviderError = error.into();
+            assert_eq!(error.resource_id.as_ref(), Some(&id));
+            assert_eq!(error.operation.as_deref(), Some("normalize_desired"));
+            assert!(error.cause.is_some());
+        }
+    }
+
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     enum CallbackScalar {
         String,

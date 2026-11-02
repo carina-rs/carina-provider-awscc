@@ -3296,47 +3296,15 @@ mod tests {
                     .enable_all()
                     .build()
                     .expect("test preparation runtime should build");
-                runtime.block_on(async move {
-                    carina_core::validation::deferred_types::with_session_for_test_async(
-                        &carina_core::parser::LoadedProviderContext::empty_for_test(),
-                        async |type_checks| {
-                            let bindings = carina_core::binding_index::ResolvedBindings::default();
-                            let module_gate =
-                                carina_core::executor::ModuleConstraintGate::from_live_compositions(
-                                    &[],
-                                );
-                            let mut schemas = carina_core::schema::SchemaRegistry::new();
-                            let schema = crate::schemas::generated::get_config_by_type(
-                                &resource.id.resource_type,
-                            )
-                            .unwrap_or_else(|| {
-                                panic!(
-                                    "missing dispatch-test schema for {}",
-                                    resource.id.resource_type
-                                )
-                            })
-                            .schema
-                            .clone();
-                            schemas.insert("awscc", schema);
-                            let factories: Vec<Box<dyn carina_core::provider::ProviderFactory>> =
-                                vec![Box::new(crate::OwnerOnlyAwsccFactory)];
-                            let preparation =
-                                carina_core::executor::ProviderPreparationContext::new(
-                                    &bindings,
-                                    &module_gate,
-                                    &[],
-                                    &crate::AwsccNormalizer,
-                                    &factories,
-                                    &schemas,
-                                    type_checks,
-                                );
-                            carina_core::executor::prepare_create_request(resource, &preparation)
-                                .await
-                                .expect("test resource should pass checked create preparation")
-                        },
-                    )
-                    .await
-                })
+                let resource_type = resource.id.resource_type.clone();
+                runtime.block_on(crate::test_support::with_preparation(
+                    &resource_type,
+                    async |preparation| {
+                        carina_core::executor::prepare_create_request(resource, preparation)
+                            .await
+                            .expect("test resource should pass checked create preparation")
+                    },
+                ))
             })
             .expect("test preparation thread should spawn")
             .join()
@@ -4265,22 +4233,11 @@ mod tests {
         ) -> Pin<Box<dyn Future<Output = MockResponse> + Send + '_>> {
             Box::pin(async move {
                 self.saw_get_caller_identity.store(true, Ordering::SeqCst);
-                let mut remaining = self.transient_failures.load(Ordering::SeqCst);
-                let transient_failure = loop {
-                    let Some(next) = remaining.checked_sub(1) else {
-                        break false;
-                    };
-                    match self.transient_failures.compare_exchange_weak(
-                        remaining,
-                        next,
-                        Ordering::SeqCst,
-                        Ordering::SeqCst,
-                    ) {
-                        Ok(_) => break true,
-                        Err(current) => remaining = current,
-                    }
-                };
-                if transient_failure {
+                if self
+                    .transient_failures
+                    .try_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
+                    .is_ok()
+                {
                     return MockResponse::xml(
                         503,
                         r#"<ErrorResponse xmlns="https://sts.amazonaws.com/doc/2011-06-15/"><Error><Type>Receiver</Type><Code>ServiceUnavailable</Code><Message>synthesis temporarily unavailable</Message></Error><RequestId>transient-sts</RequestId></ErrorResponse>"#,
