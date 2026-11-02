@@ -14,6 +14,7 @@
 
 use anyhow::{Context, Result};
 use carina_aws_types::dsl_enum_value;
+use carina_core::schema::ListElements;
 use carina_docgen::example::{self, DocExample, ExampleKind};
 use carina_docgen::{Heading, PageBuilder, TableCell};
 use carina_provider_awscc::schemas::catalog::AwsccType;
@@ -225,6 +226,14 @@ enum TypeOverride {
     /// Used when the CFN schema omits enough shape information that normal
     /// inference cannot express the provider API type.
     AttributeType {
+        expression: &'static str,
+        display: OverrideTypeDisplay,
+        block_name: Option<&'static str>,
+        default: Option<AttributeTypeOverrideDefault>,
+    },
+    /// Override an array's item type while retaining the CFN array constraints.
+    /// Display, block name, and default describe the complete attribute.
+    ArrayItemType {
         expression: &'static str,
         display: OverrideTypeDisplay,
         block_name: Option<&'static str>,
@@ -1314,11 +1323,18 @@ fn classify_bare_object(
     {
         matches.push(BareObjectClassification::OmittedResource(entry));
     }
-    if let Some(TypeOverride::AttributeType {
-        expression,
-        display,
-        ..
-    }) = resource_type_override(cfn_type, property_path)
+    if let Some(
+        TypeOverride::AttributeType {
+            expression,
+            display,
+            ..
+        }
+        | TypeOverride::ArrayItemType {
+            expression,
+            display,
+            ..
+        },
+    ) = resource_type_override(cfn_type, property_path)
     {
         matches.push(BareObjectClassification::TypedOverride {
             expression,
@@ -2783,8 +2799,9 @@ fn type_display_at_resolved(
     cfn_property_path: CfnPropertyPath<'_>,
     definition_name: Option<&str>,
 ) -> TypeDisplay {
-    if let Some(TypeOverride::AttributeType { display, .. }) =
-        resource_type_override(&schema.type_name, cfn_property_path)
+    if let Some(
+        TypeOverride::AttributeType { display, .. } | TypeOverride::ArrayItemType { display, .. },
+    ) = resource_type_override(&schema.type_name, cfn_property_path)
     {
         return TypeDisplay::Code(display.as_str().to_string());
     }
@@ -3513,7 +3530,9 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str, example: &DocExample) 
                             .insert(source_key, enum_info_for_override(field_name, values));
                         continue;
                     }
-                    TypeOverride::StringType(_) | TypeOverride::AttributeType { .. } => continue,
+                    TypeOverride::StringType(_)
+                    | TypeOverride::AttributeType { .. }
+                    | TypeOverride::ArrayItemType { .. } => continue,
                     _ => {}
                 }
             }
@@ -3660,7 +3679,10 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str, example: &DocExample) 
         }
         let override_default =
             match resource_type_override(type_name, CfnPropertyPath::new(None, prop_name)) {
-                Some(TypeOverride::AttributeType { default, .. }) => *default,
+                Some(
+                    TypeOverride::AttributeType { default, .. }
+                    | TypeOverride::ArrayItemType { default, .. },
+                ) => *default,
                 _ => None,
             };
         if let Some(default) = override_default {
@@ -3817,9 +3839,10 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str, example: &DocExample) 
                 };
                 let nested_key = cfn_property_path.to_string();
                 let nested_override = resource_type_override(type_name, cfn_property_path);
-                let field_type_display = if let Some(TypeOverride::AttributeType {
-                    display, ..
-                }) = nested_override
+                let field_type_display = if let Some(
+                    TypeOverride::AttributeType { display, .. }
+                    | TypeOverride::ArrayItemType { display, .. },
+                ) = nested_override
                 {
                     MarkdownType::Plain(TypeDisplay::Code(display.as_str().to_string()).markdown())
                 } else if matches!(nested_override, Some(TypeOverride::IntegerFromNumber)) {
@@ -4401,7 +4424,9 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
                                 );
                                 continue;
                             }
-                            TypeOverride::StringType(_) | TypeOverride::AttributeType { .. } => {
+                            TypeOverride::StringType(_)
+                            | TypeOverride::AttributeType { .. }
+                            | TypeOverride::ArrayItemType { .. } => {
                                 continue;
                             }
                             _ => {}
@@ -4637,7 +4662,10 @@ pub fn {}() -> AwsccSchemaConfig {{
             &schema.type_name,
             CfnPropertyPath::new(None, prop_name),
         ) {
-            Some(TypeOverride::AttributeType { default, .. }) => *default,
+            Some(
+                TypeOverride::AttributeType { default, .. }
+                | TypeOverride::ArrayItemType { default, .. },
+            ) => *default,
             _ => None,
         };
         if let Some(default) = override_default {
@@ -4660,7 +4688,10 @@ pub fn {}() -> AwsccSchemaConfig {{
             &schema.type_name,
             CfnPropertyPath::new(None, prop_name),
         ) {
-            Some(TypeOverride::AttributeType { block_name, .. }) => *block_name,
+            Some(
+                TypeOverride::AttributeType { block_name, .. }
+                | TypeOverride::ArrayItemType { block_name, .. },
+            ) => *block_name,
             _ => None,
         };
         let block_name = override_block_name.map(str::to_owned).or_else(|| {
@@ -6427,11 +6458,18 @@ fn refined_float_type(identity: &str, range: &str) -> String {
     format!("AttributeType::refined_float({identity}, {range})")
 }
 
-fn refined_list_type(element_type: &str, ordered: bool, length: &str) -> String {
-    // Preserve duplicate handling until CFN uniqueItems mapping is decided:
-    // https://github.com/carina-rs/carina-provider-awscc/issues/549
+fn refined_list_type(
+    element_type: &str,
+    ordered: bool,
+    length: &str,
+    elements: ListElements,
+) -> String {
+    let elements = match elements {
+        ListElements::Unique => "Unique",
+        ListElements::AllowDuplicates => "AllowDuplicates",
+    };
     format!(
-        "AttributeType::refined_list({element_type}, {ordered}, {length}, carina_core::schema::ListElements::AllowDuplicates)"
+        "AttributeType::refined_list({element_type}, {ordered}, {length}, carina_core::schema::ListElements::{elements})"
     )
 }
 
@@ -6872,8 +6910,8 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         );
         m.insert(
             ("AWS::Logs::LogGroup", "FieldIndexPolicies"),
-            TypeOverride::AttributeType {
-                expression: "crate::schemas::awscc_types::logs_field_index_policies()",
+            TypeOverride::ArrayItemType {
+                expression: "crate::schemas::awscc_types::logs_field_index_policy()",
                 display: const { OverrideTypeDisplay::new("List<Struct(FieldIndexPolicy)>") },
                 block_name: Some("field_index_policy"),
                 default: Some(AttributeTypeOverrideDefault {
@@ -7875,15 +7913,25 @@ fn list_constructor(insertion_order: Option<bool>, force_unordered: bool) -> &'s
 }
 
 /// All list emission, including enum overlays, consumes the concrete array
-/// selected by property_shape and retains its ordering and item bounds.
+/// selected by property_shape and retains its ordering, item bounds, and uniqueness.
 fn array_attribute_type(element_type: &str, array: &CfnProperty, force_unordered: bool) -> String {
     let list_ctor = list_constructor(array.insertion_order, force_unordered);
-    if array.min_items.is_some() || array.max_items.is_some() {
+    let elements = if array.unique_items == Some(true) {
+        ListElements::Unique
+    } else {
+        ListElements::AllowDuplicates
+    };
+    if array.min_items.is_some() || array.max_items.is_some() || elements == ListElements::Unique {
         let length = emit_length_option(
             array.min_items.and_then(|value| u64::try_from(value).ok()),
             array.max_items.and_then(|value| u64::try_from(value).ok()),
         );
-        refined_list_type(element_type, list_ctor == "AttributeType::list", &length)
+        refined_list_type(
+            element_type,
+            list_ctor == "AttributeType::list",
+            &length,
+            elements,
+        )
     } else {
         format!("{list_ctor}({element_type})")
     }
@@ -8285,27 +8333,32 @@ fn cfn_type_to_carina_type_with_enum_resolved(
             }
         }
         Some("array") => {
-            let (element_type, item_enum) = if let Some(items) = &prop.items {
-                let item_path = extend_property_path(property_path, "*");
-                let (item_type, item_enum) = cfn_type_to_carina_type_with_enum_resolved(
-                    items,
-                    prop_name,
-                    schema,
-                    namespace,
-                    enums,
-                    CfnTypeGenerationPaths {
-                        provider: &item_path,
-                        ..paths
-                    },
-                    RefGenerationState {
-                        definition_name: None,
-                        context: RefContext::ListItem,
-                    },
-                );
-                (item_type, item_enum)
-            } else {
-                ("AttributeType::string()".to_string(), None)
-            };
+            let (element_type, item_enum) =
+                if let Some(TypeOverride::ArrayItemType { expression, .. }) =
+                    resource_type_override(&schema.type_name, cfn_property_path)
+                {
+                    ((*expression).to_string(), None)
+                } else if let Some(items) = &prop.items {
+                    let item_path = extend_property_path(property_path, "*");
+                    let (item_type, item_enum) = cfn_type_to_carina_type_with_enum_resolved(
+                        items,
+                        prop_name,
+                        schema,
+                        namespace,
+                        enums,
+                        CfnTypeGenerationPaths {
+                            provider: &item_path,
+                            ..paths
+                        },
+                        RefGenerationState {
+                            definition_name: None,
+                            context: RefContext::ListItem,
+                        },
+                    );
+                    (item_type, item_enum)
+                } else {
+                    ("AttributeType::string()".to_string(), None)
+                };
             (
                 array_attribute_type(
                     &element_type,
@@ -11029,12 +11082,18 @@ mod tests {
             ("AWS::Logs::LogGroup", "FieldIndexPolicies"),
         ];
         for (cfn_type, property) in expected_typed {
-            assert!(
-                matches!(
-                    resource_type_override(cfn_type, CfnPropertyPath::new(None, property)),
-                    Some(TypeOverride::AttributeType { .. })
-                ),
-                "{cfn_type}.{property} must have a full-path AttributeType override"
+            let override_type =
+                resource_type_override(cfn_type, CfnPropertyPath::new(None, property));
+            let is_array = property == "FieldIndexPolicies";
+            assert_eq!(
+                matches!(override_type, Some(TypeOverride::AttributeType { .. })),
+                !is_array,
+                "{cfn_type}.{property} must override the complete type unless it is an array"
+            );
+            assert_eq!(
+                matches!(override_type, Some(TypeOverride::ArrayItemType { .. })),
+                is_array,
+                "{cfn_type}.{property} must preserve CFN constraints around overridden array items"
             );
             assert!(
                 matches!(
@@ -12559,7 +12618,9 @@ mod tests {
     fn test_resource_override_displays_render_single_code_spans() {
         let mut by_resource = BTreeMap::<_, Vec<_>>::new();
         for (&(cfn_type, property), override_type) in resource_type_overrides().iter() {
-            if let TypeOverride::AttributeType { display, .. } = override_type {
+            if let TypeOverride::AttributeType { display, .. }
+            | TypeOverride::ArrayItemType { display, .. } = override_type
+            {
                 by_resource
                     .entry(cfn_type)
                     .or_default()
@@ -12624,7 +12685,10 @@ mod tests {
             }
         }
         for (&(cfn_type, property_path), override_type) in resource_type_overrides().iter() {
-            if matches!(override_type, TypeOverride::AttributeType { .. }) {
+            if matches!(
+                override_type,
+                TypeOverride::AttributeType { .. } | TypeOverride::ArrayItemType { .. }
+            ) {
                 let property_path = property_path.split_once('.').map_or_else(
                     || CfnPropertyPath::new(None, property_path),
                     |(parent, property)| CfnPropertyPath::new(Some(parent), property),
@@ -20735,6 +20799,114 @@ mod tests {
     }
 
     #[test]
+    fn test_unique_items_on_unbounded_arrays_preserves_order() {
+        let schema = empty_schema("AWS::Test::Resource");
+        for (item_type, expected_item) in [
+            ("string", "AttributeType::string()"),
+            ("integer", "AttributeType::int()"),
+            ("boolean", "AttributeType::bool()"),
+        ] {
+            for insertion_order in [None, Some(true), Some(false)] {
+                for unique_items in [None, Some(false), Some(true)] {
+                    let prop = CfnProperty {
+                        prop_type: Some(TypeValue::Single("array".to_string())),
+                        items: Some(Box::new(CfnProperty {
+                            prop_type: Some(TypeValue::Single(item_type.to_string())),
+                            ..Default::default()
+                        })),
+                        insertion_order,
+                        unique_items,
+                        ..Default::default()
+                    };
+                    let (generated, enum_info) = cfn_type_to_carina_type_with_enum(
+                        &prop,
+                        "Values",
+                        &schema,
+                        "aws.test.Resource",
+                        &BTreeMap::new(),
+                    );
+                    assert!(enum_info.is_none());
+                    let expected = if unique_items == Some(true) {
+                        format!(
+                            "AttributeType::refined_list({expected_item}, {}, None, carina_core::schema::ListElements::Unique)",
+                            insertion_order != Some(false)
+                        )
+                    } else {
+                        let constructor = if insertion_order == Some(false) {
+                            "AttributeType::unordered_list"
+                        } else {
+                            "AttributeType::list"
+                        };
+                        format!("{constructor}({expected_item})")
+                    };
+                    assert_eq!(generated, expected, "{prop:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_unique_items_and_bounds_apply_to_overridden_array_items() {
+        let mut schema = cfn_schema_for_codegen_tests("AWS::Logs::LogGroup");
+        let array = schema.properties.get_mut("FieldIndexPolicies").unwrap();
+        array.min_items = Some(1);
+        array.max_items = Some(3);
+        for (unique_items, elements) in [
+            (Some(true), "Unique"),
+            (Some(false), "AllowDuplicates"),
+            (None, "AllowDuplicates"),
+        ] {
+            schema
+                .properties
+                .get_mut("FieldIndexPolicies")
+                .unwrap()
+                .unique_items = unique_items;
+            let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+            assert!(
+                generated.contains(&format!(
+                    "AttributeType::refined_list(crate::schemas::awscc_types::logs_field_index_policy(), false, Some((Some(1), Some(3))), carina_core::schema::ListElements::{elements})"
+                )),
+                "the array override must retain CFN constraints: {generated}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_nested_unique_items_survives_enum_overlay() {
+        let schema = empty_schema("AWS::Test::Resource");
+        let prop: CfnProperty = serde_json::from_value(serde_json::json!({
+            "type": "array",
+            "uniqueItems": true,
+            "insertionOrder": false,
+            "minItems": 1,
+            "items": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": { "type": "string", "enum": ["A", "B"] }
+            }
+        }))
+        .unwrap();
+        let (provisional, enum_info) = cfn_type_to_carina_type_with_enum(
+            &prop,
+            "Values",
+            &schema,
+            "aws.test.Resource",
+            &BTreeMap::new(),
+        );
+        assert!(enum_info.is_some());
+        let expected = concat!(
+            "AttributeType::refined_list(AttributeType::refined_list(",
+            "AttributeType::string(), true, None, carina_core::schema::ListElements::Unique), ",
+            "false, Some((Some(1), None)), carina_core::schema::ListElements::Unique)"
+        );
+        assert_eq!(provisional, expected);
+        assert_eq!(
+            enum_property_type(&prop, &schema, "values_enum()", false),
+            expected.replace("AttributeType::string()", "values_enum()")
+        );
+    }
+
+    #[test]
     fn test_ref_array_definition_matches_inline_constraints_and_order() {
         let inline: CfnProperty = serde_json::from_value(serde_json::json!({
             "type": "array",
@@ -20778,7 +20950,7 @@ mod tests {
                 "AttributeType::refined_list(",
                 "AttributeType::refined_string(None, None, ",
                 "Some((Some(2), Some(4))), None), false, ",
-                "Some((Some(1), Some(3))), carina_core::schema::ListElements::AllowDuplicates)"
+                "Some((Some(1), Some(3))), carina_core::schema::ListElements::Unique)"
             )
         );
         let resolved = resolve_ref(&schema, "#/definitions/ConstrainedValues").unwrap();

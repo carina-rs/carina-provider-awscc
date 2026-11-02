@@ -119,7 +119,7 @@ pub fn ec2_vpc_endpoint_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_resource_configuration_arn_attribute());
     #[inline(never)]
     fn build_route_table_ids_attribute() -> AttributeSchema {
-        AttributeSchema::optional("route_table_ids", AttributeType::unordered_list(carina_aws_types::route_table_id()))
+        AttributeSchema::optional("route_table_ids", AttributeType::refined_list(carina_aws_types::route_table_id(), false, None, carina_core::schema::ListElements::Unique))
                 .with_description("The IDs of the route tables. Routing is supported only for gateway endpoints.")
                 .with_provider_name("RouteTableIds")
             .build()
@@ -127,7 +127,7 @@ pub fn ec2_vpc_endpoint_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_route_table_ids_attribute());
     #[inline(never)]
     fn build_security_group_ids_attribute() -> AttributeSchema {
-        AttributeSchema::optional("security_group_ids", AttributeType::unordered_list(carina_aws_types::security_group_id()))
+        AttributeSchema::optional("security_group_ids", AttributeType::refined_list(carina_aws_types::security_group_id(), false, None, carina_core::schema::ListElements::Unique))
                 .with_description("The IDs of the security groups to associate with the endpoint network interfaces. If this parameter is not specified, we use the default security group for the VPC. Security groups are supported only for interface endpoints.")
                 .with_provider_name("SecurityGroupIds")
             .build()
@@ -162,7 +162,7 @@ pub fn ec2_vpc_endpoint_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_service_region_attribute());
     #[inline(never)]
     fn build_subnet_ids_attribute() -> AttributeSchema {
-        AttributeSchema::optional("subnet_ids", AttributeType::unordered_list(carina_aws_types::subnet_id()))
+        AttributeSchema::optional("subnet_ids", AttributeType::refined_list(carina_aws_types::subnet_id(), false, None, carina_core::schema::ListElements::Unique))
                 .with_description("The IDs of the subnets in which to create endpoint network interfaces. You must specify this property for an interface endpoint or a Gateway Load Balancer endpoint. You can't specify this property for a gateway endpoint. For a Gateway Load Balancer endpoint, you can specify only one subnet.")
                 .with_provider_name("SubnetIds")
             .build()

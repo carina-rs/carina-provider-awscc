@@ -228,9 +228,9 @@ pub fn sns_topic_archive_policy() -> AttributeType {
     )
 }
 
-/// CloudWatch Logs field index policies.
-pub fn logs_field_index_policies() -> AttributeType {
-    AttributeType::unordered_list(AttributeType::struct_(
+/// One CloudWatch Logs field index policy; codegen supplies the CFN list constraints.
+pub fn logs_field_index_policy() -> AttributeType {
+    AttributeType::struct_(
         "FieldIndexPolicy".to_string(),
         vec![
             StructField::required("fields", AttributeType::list(AttributeType::string()))
@@ -238,7 +238,7 @@ pub fn logs_field_index_policies() -> AttributeType {
                 .with_provider_name("Fields")
                 .build(),
         ],
-    ))
+    )
 }
 
 /// CloudWatch Logs data protection policy document.

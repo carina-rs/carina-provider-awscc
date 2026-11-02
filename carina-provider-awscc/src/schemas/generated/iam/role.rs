@@ -43,7 +43,7 @@ pub fn iam_role_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_description_attribute());
     #[inline(never)]
     fn build_managed_policy_arns_attribute() -> AttributeSchema {
-        AttributeSchema::optional("managed_policy_arns", AttributeType::unordered_list(super::super::iam::policy::arn()))
+        AttributeSchema::optional("managed_policy_arns", AttributeType::refined_list(super::super::iam::policy::arn(), false, None, carina_core::schema::ListElements::Unique))
                 .with_description("A list of Amazon Resource Names (ARNs) of the IAM managed policies that you want to attach to the role. For more information about ARNs, see [Amazon Resource Names (ARNs) and Service Namespaces](https://docs.aws.amazon.com/general/latest/gr/aws-arns-and-namespaces.html) in the *General Reference*.")
                 .with_provider_name("ManagedPolicyArns")
             .build()
