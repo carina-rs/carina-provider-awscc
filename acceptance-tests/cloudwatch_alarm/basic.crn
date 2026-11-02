@@ -1,22 +1,30 @@
 # CloudWatch Alarm - Basic test
 #
-# Creates a simple metric alarm with tags. No metric data is required: the
+# Creates an SNS topic and a metric alarm with tags. No metric data is required: the
 # alarm can remain INSUFFICIENT_DATA for the lifetime of the acceptance test.
 
 provider awscc {
   region = aws.Region.ap_northeast_1
 }
 
+let alarm_topic = awscc.sns.Topic {
+  topic_name = 'carina-acc-test-cloudwatch-alarm-topic'
+}
+
 awscc.cloudwatch.Alarm {
   alarm_name        = 'carina-acc-test-cloudwatch-alarm'
   alarm_description = 'Carina acceptance-test metric alarm'
 
-  comparison_operator = 'GreaterThanThreshold'
+  alarm_actions             = [alarm_topic.topic_arn]
+  ok_actions                = [alarm_topic.topic_arn]
+  insufficient_data_actions = [alarm_topic.topic_arn]
+
+  comparison_operator = greater_than_threshold
   evaluation_periods  = 1
   metric_name         = 'Errors'
   namespace           = 'CarinaAcceptance'
   period              = 60
-  statistic           = 'Sum'
+  statistic           = sum
   threshold           = 0.5
 
   tags = {
