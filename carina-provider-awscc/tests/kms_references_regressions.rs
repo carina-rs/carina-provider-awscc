@@ -339,9 +339,12 @@ fn logs_reference_keeps_cfn_maximum_and_no_synthetic_minimum() {
     };
     assert_eq!(
         pattern,
-        Some(carina_aws_types::KMS_KEY_OR_ALIAS_ARN_PATTERN)
+        Some(r"^arn:[a-z0-9-]+:kms:[a-z0-9-]+:\d{12}:(key|alias)/.+\z")
     );
     assert_eq!(length, Some((None, Some(256))));
+    let pattern = carina_core::schema::CompiledPattern::try_new(pattern.unwrap()).unwrap();
+    assert!(pattern.is_match("arn:aws:kms:us-east-1:123456789012:alias/team/scheduler"));
+    assert!(!pattern.is_match("arn:aws:kms:us-east-1:123456789012:alias/customer\n"));
 }
 
 #[test]

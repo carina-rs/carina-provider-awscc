@@ -1,7 +1,10 @@
 //! Record source pointers at emitter decisions, then account for raw KMS nodes once.
 
 use super::kms_references::{self, Classification, PathSegment, ReferenceKind, property_path};
-use super::{CfnProperty, CfnSchema, dsl_resource_name_from_type, is_property_read_only};
+use super::{
+    CfnProperty, CfnPropertyPath, CfnSchema, dsl_resource_name_from_type, emit_pattern_option,
+    is_property_read_only, string_constraints,
+};
 use anyhow::{Result, bail};
 use heck::ToSnakeCase;
 use serde_json::Value;
@@ -44,6 +47,11 @@ const UNEMITTED_KMS_NODES: &[UnemittedKmsNode] = &[
         reason: "Struct container describing encryption, not a key identifier leaf.",
     },
     UnemittedKmsNode {
+        resource: "ecr.Repository",
+        pointer: "/properties/EncryptionConfiguration",
+        reason: "Use of the encryption-configuration struct, not a key identifier leaf.",
+    },
+    UnemittedKmsNode {
         resource: "s3.Bucket",
         pointer: "/properties/BucketEncryption",
         reason: "Use of the bucket-encryption struct, not a key identifier leaf.",
@@ -52,6 +60,11 @@ const UNEMITTED_KMS_NODES: &[UnemittedKmsNode] = &[
         resource: "s3.Bucket",
         pointer: "/definitions/BucketEncryption",
         reason: "Bucket-encryption struct container.",
+    },
+    UnemittedKmsNode {
+        resource: "s3.Bucket",
+        pointer: "/definitions/BucketEncryption/properties/ServerSideEncryptionConfiguration/items",
+        reason: "List element using the encryption-rule struct, not a key identifier leaf.",
     },
     UnemittedKmsNode {
         resource: "s3.Bucket",
@@ -65,8 +78,18 @@ const UNEMITTED_KMS_NODES: &[UnemittedKmsNode] = &[
     },
     UnemittedKmsNode {
         resource: "s3.Bucket",
+        pointer: "/definitions/ServerSideEncryptionRule/properties/ServerSideEncryptionByDefault",
+        reason: "Use of the default-encryption struct, not a key identifier leaf.",
+    },
+    UnemittedKmsNode {
+        resource: "s3.Bucket",
         pointer: "/definitions/EncryptionConfiguration",
         reason: "Replication-encryption struct container.",
+    },
+    UnemittedKmsNode {
+        resource: "s3.Bucket",
+        pointer: "/definitions/ReplicationDestination/properties/EncryptionConfiguration",
+        reason: "Use of the replication-encryption struct, not a key identifier leaf.",
     },
     UnemittedKmsNode {
         resource: "s3.Bucket",
@@ -365,10 +388,26 @@ impl<'a> EmissionContext<'a> {
         Ok(Some(kind))
     }
 
-    pub(super) fn reference_constructor(&self, path: &[String], kind: ReferenceKind) -> String {
-        kind.constructor(
-            kms_references::entry(&self.resource, &self.dsl_path(path))
-                .and_then(|entry| entry.cfn_length),
+    pub(super) fn reference_constructor(
+        &self,
+        path: &[String],
+        kind: ReferenceKind,
+        cfn_property_path: CfnPropertyPath<'_>,
+    ) -> String {
+        let entry = kms_references::entry(&self.resource, &self.dsl_path(path))
+            .expect("classified reference");
+        let Some(pattern) = entry.cfn_pattern else {
+            return kind.constructor(entry.cfn_length);
+        };
+        let property = CfnProperty {
+            pattern: Some(pattern.to_string()),
+            ..Default::default()
+        };
+        let constraints = string_constraints(&property, &self.schema.type_name, cfn_property_path);
+        let pattern = emit_pattern_option(constraints.pattern);
+        format!(
+            "carina_core::schema::AttributeType::reference(carina_aws_types::AwsType::KmsKeyReference.identity(), {pattern}, {:?})",
+            entry.cfn_length
         )
     }
 
@@ -511,9 +550,15 @@ fn pointer_child(parent: &str, key: &str) -> String {
     format!("{parent}/{}", key.replace('~', "~0").replace('/', "~1"))
 }
 
-/// Pure JSON accounting: no $ref expansion, shape inference, or schema validation.
+/// Pure JSON accounting: track local $ref edges without expanding schema shapes.
 fn kms_nodes(source: &Value) -> BTreeSet<String> {
-    fn scan(value: &Value, pointer: &str, name: &str, found: &mut BTreeSet<String>) {
+    fn scan(
+        value: &Value,
+        pointer: &str,
+        name: &str,
+        found: &mut BTreeSet<String>,
+        references: &mut BTreeMap<String, Vec<String>>,
+    ) {
         if kms_references::is_candidate(
             name,
             value.get("pattern").and_then(Value::as_str),
@@ -521,22 +566,43 @@ fn kms_nodes(source: &Value) -> BTreeSet<String> {
         ) {
             found.insert(pointer.to_string());
         }
+        if let Some(target) = value
+            .get("$ref")
+            .and_then(Value::as_str)
+            .and_then(|reference| reference.strip_prefix('#'))
+        {
+            references
+                .entry(target.to_string())
+                .or_default()
+                .push(pointer.to_string());
+        }
         match value {
             Value::Object(fields) => {
                 for (key, value) in fields {
-                    scan(value, &pointer_child(pointer, key), key, found);
+                    scan(value, &pointer_child(pointer, key), key, found, references);
                 }
             }
             Value::Array(values) => {
                 for (index, value) in values.iter().enumerate() {
-                    scan(value, &format!("{pointer}/{index}"), "", found);
+                    scan(value, &format!("{pointer}/{index}"), "", found, references);
                 }
             }
             _ => {}
         }
     }
     let mut found = BTreeSet::new();
-    scan(source, "", "", &mut found);
+    let mut references = BTreeMap::new();
+    scan(source, "", "", &mut found, &mut references);
+    let mut pending: Vec<_> = found.iter().cloned().collect();
+    while let Some(target) = pending.pop() {
+        if let Some(sites) = references.get(&target) {
+            for pointer in sites {
+                if found.insert(pointer.clone()) {
+                    pending.push(pointer.clone());
+                }
+            }
+        }
+    }
     found
 }
 
@@ -569,6 +635,39 @@ mod tests {
         for unknown in [json!(null), json!(17), json!([false, {"items": true}])] {
             assert!(kms_nodes(&unknown).is_empty());
         }
+    }
+
+    #[test]
+    fn scan_accounts_for_each_ref_by_target_evidence_through_aliases_and_cycles() {
+        let source = json!({
+            "definitions": {
+                "Kms/a~b": {"$ref": "#/definitions/Alias"},
+                "Alias": {"$ref": "#/definitions/Kms~1a~0b"},
+                "Described": {"description": "A customer master key"},
+                "Patterned": {"pattern": "^arn:aws:kms:"},
+                "Plain": {"$ref": "#/definitions/Plain"}
+            },
+            "properties": {
+                "ByName": {"$ref": "#/definitions/Alias"},
+                "ByDescription": {"$ref": "#/definitions/Described"},
+                "ByPattern": {"$ref": "#/definitions/Patterned"},
+                "ByPlain": {"$ref": "#/definitions/Plain"},
+                "Missing": {"$ref": "#/definitions/Missing"},
+                "External": {"$ref": "external.json#/definitions/Described"}
+            }
+        });
+        assert_eq!(
+            kms_nodes(&source),
+            BTreeSet::from([
+                "/definitions/Kms~1a~0b".into(),
+                "/definitions/Alias".into(),
+                "/definitions/Described".into(),
+                "/definitions/Patterned".into(),
+                "/properties/ByName".into(),
+                "/properties/ByDescription".into(),
+                "/properties/ByPattern".into(),
+            ])
+        );
     }
 
     #[test]
@@ -628,7 +727,8 @@ mod tests {
             .property_at(&path, &schema.properties["KmsMasterKeyId"])
             .classify()
             .unwrap();
-        context.finish().unwrap();
+        let error = context.finish().unwrap_err().to_string();
+        assert!(error.contains("/properties/EncryptionKey"), "{error}");
 
         // Source selection alone cannot borrow another use site's decision.
         let path = ["EncryptionKey".into()];

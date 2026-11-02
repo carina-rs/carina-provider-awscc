@@ -77,7 +77,7 @@ fn classification_follows_shared_definitions_and_array_paths_before_overrides() 
 }
 
 #[test]
-fn scheduler_generates_key_or_alias_arn_reference() {
+fn scheduler_generates_cfn_patterned_reference() {
     let schema: Value = serde_json::from_str(include_str!(
         "../../cfn-schema-cache/AWS__Scheduler__Schedule.json"
     ))
@@ -88,10 +88,14 @@ fn scheduler_generates_key_or_alias_arn_reference() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
+    let pattern = serde_json::to_string(&schema["properties"]["KmsKeyArn"]["pattern"]).unwrap();
+    let expected = format!(
+        "carina_core::schema::AttributeType::reference(carina_aws_types::AwsType::KmsKeyReference.identity(), Some({pattern}.to_string()), Some((Some(1), Some(2048))))"
+    );
     assert!(
         String::from_utf8(output.stdout)
             .unwrap()
-            .contains("carina_aws_types::kms_key_or_alias_arn_reference()")
+            .contains(&expected)
     );
 }
 
@@ -120,6 +124,27 @@ fn final_scheduler_leaf_is_a_reference_accepting_alias_arns() {
         )
     );
     assert!(!pattern.is_match("alias/customer"));
+}
+
+#[test]
+fn scheduler_reference_rejects_alias_names_disallowed_by_cfn() {
+    let config =
+        carina_provider_awscc::schemas::generated::scheduler::schedule::scheduler_schedule_config();
+    let schema = config.schema.as_schema();
+    let ty = schema.attributes()["kms_key_arn"].attr_type();
+    let Shape::Reference {
+        pattern: Some(pattern),
+        ..
+    } = schema.shape_of(ty)
+    else {
+        panic!("scheduler kms_key_arn must be a patterned reference");
+    };
+    let pattern = carina_core::schema::CompiledPattern::try_new(pattern).unwrap();
+    assert!(pattern.is_match("arn:aws:kms:us-east-1:123456789012:alias/scheduler"));
+    assert!(pattern.is_match("arn:aws:kms:us-east-1:123456789012:alias/"));
+    assert!(!pattern.is_match("arn:aws:kms:us-east-1:123456789012:alias/team/scheduler"));
+    assert!(!pattern.is_match("arn:aws:kms:us-east-1:123456789012:alias/team.scheduler"));
+    assert!(!pattern.is_match("arn:aws:kms:us-east-1:١٢٣٤٥٦٧٨٩٠١٢:alias/scheduler"));
 }
 
 #[test]

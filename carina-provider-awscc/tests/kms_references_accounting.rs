@@ -95,6 +95,29 @@ fn reference_projection_cannot_hide_other_anyof_branches() {
 }
 
 #[test]
+fn collapsed_anyof_ref_cannot_borrow_another_use_sites_kms_decision() {
+    let mut schema: Value =
+        serde_json::from_str(include_str!("../../cfn-schema-cache/AWS__SNS__Topic.json")).unwrap();
+    schema["definitions"]["KmsKeyString"] = json!({"type": "string"});
+    schema["properties"]["KmsMasterKeyId"] = json!({"$ref": "#/definitions/KmsKeyString"});
+    schema["properties"]["Settings"] = json!({"anyOf": [
+        {"type": "string"},
+        {"type": "object", "properties": {
+            "EncryptionKey": {"$ref": "#/definitions/KmsKeyString"}
+        }}
+    ]});
+    for format in ["rust", "markdown"] {
+        let output = generate(&schema, format);
+        let error = String::from_utf8_lossy(&output.stderr);
+        assert!(!output.status.success(), "discarded $ref passed {format}");
+        assert!(
+            error.contains("unaccounted KMS node sns.Topic#/properties/Settings/anyOf/1/properties/EncryptionKey"),
+            "{format}: {error}"
+        );
+    }
+}
+
+#[test]
 fn reference_constraints_on_a_ref_use_cannot_bypass_classification() {
     for constraint in [
         json!({"const": "alias/only"}),

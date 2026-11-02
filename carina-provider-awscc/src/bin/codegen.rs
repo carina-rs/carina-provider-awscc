@@ -2973,7 +2973,7 @@ fn type_display_at_resolved(
     cfn_property_path: CfnPropertyPath<'_>,
     definition_name: Option<&str>,
 ) -> TypeDisplay {
-    if let Some(reference) = emission_reference(&classified) {
+    if let Some(reference) = emission_reference(&classified, cfn_property_path) {
         return TypeDisplay::Plain(reference.display());
     }
     let schema = classified.schema();
@@ -3060,7 +3060,7 @@ fn type_display_at_resolved(
                 let item_path = schema.collection_path(provider_path, PathSegment::ListElement);
                 let item = schema.property_at(&item_path, &default);
                 TypeDisplay::Plain(
-                    emission_reference(&item)
+                    emission_reference(&item, cfn_property_path)
                         .map_or_else(|| "String".to_string(), |reference| reference.display()),
                 )
             },
@@ -3372,7 +3372,10 @@ fn markdown_type(
     enum_target: Option<&MarkdownEnumKey>,
     cfn_parent: Option<&str>,
 ) -> MarkdownType {
-    if let Some(reference) = emission_reference(&classified) {
+    if let Some(reference) = emission_reference(
+        &classified,
+        CfnPropertyPath::new(cfn_parent, classified.name()),
+    ) {
         return MarkdownType::Plain(reference.display());
     }
     let schema = classified.schema();
@@ -6255,6 +6258,14 @@ const STRING_PATTERN_REWRITES: &[StringPatternRewrite] = &[
         length: None,
     },
     StringPatternRewrite {
+        cfn_type: "AWS::Logs::LogGroup",
+        property_path: CfnPropertyPath::new(None, "KmsKeyId"),
+        source: r"^arn:[a-z0-9-]+:kms:[a-z0-9-]+:\d{12}:(key|alias)/.+\Z",
+        // Use the same strict end-of-text interpretation as LogGroupName.
+        pattern: r"^arn:[a-z0-9-]+:kms:[a-z0-9-]+:\d{12}:(key|alias)/.+\z",
+        length: None,
+    },
+    StringPatternRewrite {
         cfn_type: "AWS::SSO::PermissionSet",
         property_path: CfnPropertyPath::new(None, "SessionDuration"),
         source: r"^(-?)P(?=\d|T\d)(?:(\d+)Y)?(?:(\d+)M)?(?:(\d+)([DW]))?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?)?$",
@@ -6481,7 +6492,10 @@ impl StringLeaf<'_> {
 }
 
 /// Shared by Rust and Markdown at their type decision points.
-fn emission_reference(classified: &EmissionProperty<'_>) -> Option<StringLeaf<'static>> {
+fn emission_reference(
+    classified: &EmissionProperty<'_>,
+    cfn_property_path: CfnPropertyPath<'_>,
+) -> Option<StringLeaf<'static>> {
     let shape = property_shape(classified.property(), classified.schema());
     if matches!(
         shape,
@@ -6505,16 +6519,18 @@ fn emission_reference(classified: &EmissionProperty<'_>) -> Option<StringLeaf<'s
         .classify()
         .unwrap_or_else(|error| panic!("{error}"))
         .map(|kind| StringLeaf::Inferred {
-            rust_type: classified
-                .schema()
-                .reference_constructor(classified.path(), kind),
+            rust_type: classified.schema().reference_constructor(
+                classified.path(),
+                kind,
+                cfn_property_path,
+            ),
             display_type: "aws.kms.Key.Reference".to_string(),
         })
 }
 
 /// Classify a resolved string leaf once, before either Rust or Markdown
-/// rendering. Only the Refined case emits CFN pattern/length metadata and
-/// therefore reaches the translation and compilation gate.
+/// rendering. The Refined case shares the CFN pattern translation and
+/// compilation gate with reference leaves.
 fn string_leaf<'a>(
     classified: EmissionProperty<'a>,
     property_path: CfnPropertyPath<'_>,
@@ -8417,7 +8433,7 @@ fn generate_object_map_type(
         ObjectMapValueKind::DirectString => {
             let value_path = schema.collection_path(paths.provider, PathSegment::MapValue);
             let value = schema.property_at(&value_path, value);
-            let value_type = emission_reference(&value).map_or_else(
+            let value_type = emission_reference(&value, property_path).map_or_else(
                 || "AttributeType::string()".to_string(),
                 |reference| reference.emit(&schema.type_name, prop_name).0,
             );
@@ -8482,7 +8498,10 @@ fn cfn_type_to_carina_type_with_enum_resolved(
     paths: CfnTypeGenerationPaths<'_>,
     ref_state: RefGenerationState<'_>,
 ) -> (String, Option<EnumInfo>) {
-    if let Some(reference) = emission_reference(&classified) {
+    if let Some(reference) = emission_reference(
+        &classified,
+        CfnPropertyPath::new(paths.cfn_parent, classified.name()),
+    ) {
         return reference.emit(&classified.schema().type_name, classified.name());
     }
     let schema = classified.schema();
@@ -8741,7 +8760,7 @@ fn cfn_type_to_carina_type_with_enum_resolved(
                 let default = CfnProperty::default();
                 let item_path = schema.collection_path(property_path, PathSegment::ListElement);
                 let item = schema.property_at(&item_path, &default);
-                emission_reference(&item).map_or_else(
+                emission_reference(&item, cfn_property_path).map_or_else(
                     || ("AttributeType::string()".to_string(), None),
                     |reference| reference.emit(&schema.type_name, prop_name),
                 )
@@ -20819,7 +20838,7 @@ mod tests {
         );
         assert_eq!(
             type_str,
-            "carina_core::schema::AttributeType::reference(carina_aws_types::AwsType::KmsKeyReference.identity(), Some(carina_aws_types::KMS_KEY_OR_ALIAS_ARN_PATTERN.to_string()), Some((None, Some(256))))"
+            r#"carina_core::schema::AttributeType::reference(carina_aws_types::AwsType::KmsKeyReference.identity(), Some("^arn:[a-z0-9-]+:kms:[a-z0-9-]+:\\d{12}:(key|alias)/.+\\z".to_string()), Some((None, Some(256))))"#
         );
     }
 

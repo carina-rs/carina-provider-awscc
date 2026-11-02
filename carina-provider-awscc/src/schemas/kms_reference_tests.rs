@@ -48,13 +48,17 @@ impl Coverage {
                         "{}.{path} must be a reference leaf",
                         schema.resource_type()
                     );
+                    let entry = classification::entry(schema.resource_type(), path).unwrap();
+                    let expected_pattern = entry.cfn_pattern.map_or_else(
+                        || kind.default_pattern().to_string(),
+                        |pattern| pattern.replace(r"\Z", r"\z"),
+                    );
                     assert_eq!(
                         pattern,
-                        Some(kind.expected_pattern()),
+                        Some(expected_pattern.as_str()),
                         "{}.{path}: wrong KMS reference pattern",
                         schema.resource_type()
                     );
-                    let entry = classification::entry(schema.resource_type(), path).unwrap();
                     assert_eq!(
                         length,
                         entry.cfn_length.or_else(|| kind.default_length()),
