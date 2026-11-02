@@ -243,6 +243,12 @@ fn service_name_evidence_in_shared_strings_requires_classification() {
 #[test]
 fn literal_evidence_in_shared_strings_requires_classification() {
     for constraint in [
+        json!({"enum": ["AES256", "CMK"]}),
+        json!({"const": "cMk"}),
+        json!({"enum": ["AES256", "Customer\r\nMaster\tKey"]}),
+        json!({"const": "CuStOmEr Master Key"}),
+        json!({"enum": ["AES256", "Key\u{a0}Management\u{2003}Service"]}),
+        json!({"const": "kEy\t MaNaGeMeNt\nSeRvIcE"}),
         json!({"enum": ["AES256", "KMS"]}),
         json!({"enum": ["AES256", "aws:kms"]}),
         json!({"enum": ["AES256", "aws:kms:dsse"]}),

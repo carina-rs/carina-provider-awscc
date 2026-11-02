@@ -360,31 +360,31 @@ pub fn entry(resource: &str, path: &str) -> Option<&'static Entry> {
         .find(|entry| entry.resource == resource && entry.path == path)
 }
 
+fn mentions_kms(text: &str) -> bool {
+    let text = text
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_ascii_lowercase();
+    text.contains("kms")
+        || text.contains("cmk")
+        || text.contains("customer master key")
+        || text.contains("key management service")
+}
+
 pub fn is_candidate<'a>(
     name: &str,
     pattern: Option<&str>,
     description: Option<&str>,
     literals: impl IntoIterator<Item = &'a str>,
 ) -> bool {
-    let name = name.to_ascii_lowercase();
-    let evidence = format!(
-        "{} {}",
-        pattern.unwrap_or_default(),
-        description.unwrap_or_default()
-    )
-    .split_whitespace()
-    .collect::<Vec<_>>()
-    .join(" ")
-    .to_ascii_lowercase();
-    name.contains("kms")
-        || name.contains("cmk")
-        || evidence.contains("kms")
-        || evidence.contains("key management service")
-        || evidence.contains("customer master key")
-        || evidence.contains("cmk")
-        || literals
-            .into_iter()
-            .any(|literal| literal.to_ascii_lowercase().contains("kms"))
+    mentions_kms(name)
+        || mentions_kms(&format!(
+            "{} {}",
+            pattern.unwrap_or_default(),
+            description.unwrap_or_default()
+        ))
+        || literals.into_iter().any(mentions_kms)
 }
 
 pub fn classify_string<'a>(
