@@ -21,7 +21,9 @@ use carina_provider_awscc::schemas::catalog::AwsccType;
 use clap::{Parser, ValueEnum};
 use heck::{ToPascalCase, ToSnakeCase};
 use regex::Regex;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+#[cfg(test)]
+use serde::Serialize;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::io::{self, Read};
@@ -694,13 +696,6 @@ impl TryFrom<&Args> for OutputMode {
     }
 }
 
-fn deserialize_const<'de, D>(deserializer: D) -> Result<Option<serde_json::Value>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    serde_json::Value::deserialize(deserializer).map(Some)
-}
-
 // Enum and const constraints need a table decision regardless of their base type.
 fn needs_kms_classification(property: &CfnProperty, name: &str) -> bool {
     if property.const_value.is_some() || property.enum_values.is_some() {
@@ -724,6 +719,7 @@ fn needs_kms_classification(property: &CfnProperty, name: &str) -> bool {
 
 /// CloudFormation Resource Schema
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 #[serde(rename_all = "camelCase")]
 #[allow(dead_code)]
 struct CfnSchema {
@@ -747,12 +743,9 @@ struct CfnSchema {
     /// Top-level anyOf variants
     #[serde(default, rename = "anyOf")]
     any_of: Vec<CfnProperty>,
-    /// Top-level allOf constraints also apply to the properties they mention.
-    #[serde(default, rename = "allOf")]
-    all_of: Vec<CfnProperty>,
     /// Cloud Control handlers (create/read/update/delete/list). Most
     /// NON_PROVISIONABLE types omit this map, but the registry has known
-    /// provisionable exceptions; see codegen's `HANDLERLESS_CLOUD_CONTROL_TYPES`.
+    /// provisionable exceptions; see [`HANDLERLESS_CLOUD_CONTROL_TYPES`].
     #[serde(default)]
     handlers: BTreeMap<String, serde_json::Value>,
 }
@@ -941,6 +934,7 @@ fn emit_permissions_slice(permissions: &[String]) -> String {
 
 /// CloudFormation Tagging metadata
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 #[serde(rename_all = "camelCase")]
 #[allow(dead_code)]
 struct CfnTagging {
@@ -1026,7 +1020,8 @@ fn is_tag_map_ref(schema: &CfnSchema, ref_path: &str) -> bool {
 }
 
 /// Type can be a string or an array of strings in JSON Schema
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 #[serde(untagged)]
 enum TypeValue {
     Single(String),
@@ -1428,74 +1423,6 @@ fn cfn_override_property<'a>(
     property.properties.as_ref()?.get(path.property)
 }
 
-#[derive(Clone, Copy)]
-enum ProjectionKind {
-    ArnHelper(bool),
-    Override,
-    ObjectStringPolicy,
-    BareObject,
-    TagsProperty,
-    MarkdownTags,
-    TagReference,
-}
-
-enum EmissionProjection {
-    ArnHelper,
-    Override(&'static TypeOverride),
-    PolicyDocument,
-    BareObject,
-    Tags,
-}
-
-/// Select special emitted types here, preserving each renderer's precedence.
-/// Every successful selection audits all original CFN branches at its use
-/// site. Adding another projection here cannot omit the source audit.
-fn emission_projection(
-    classified: &EmissionProperty<'_>,
-    path: CfnPropertyPath<'_>,
-    kind: ProjectionKind,
-) -> Option<EmissionProjection> {
-    let schema = classified.schema();
-    let property = classified.property();
-    let projection = match kind {
-        ProjectionKind::ArnHelper(has_helper) => {
-            (has_helper && classified.name() == "Arn").then_some(EmissionProjection::ArnHelper)
-        }
-        ProjectionKind::Override => {
-            checked_resource_type_override(schema, path, property).map(EmissionProjection::Override)
-        }
-        ProjectionKind::ObjectStringPolicy => {
-            object_string_union_is_iam_policy_document(property, &schema.type_name, path)
-                .then_some(EmissionProjection::PolicyDocument)
-        }
-        ProjectionKind::BareObject => {
-            property_is_bare_object(property, schema).then_some(EmissionProjection::BareObject)
-        }
-        ProjectionKind::TagsProperty => {
-            is_dsl_tags_property(schema, classified.name()).then_some(EmissionProjection::Tags)
-        }
-        ProjectionKind::MarkdownTags => {
-            (classified.name() == "Tags").then_some(EmissionProjection::Tags)
-        }
-        ProjectionKind::TagReference => property
-            .ref_path
-            .as_deref()
-            .is_some_and(|reference| is_tag_map_ref(schema, reference))
-            .then_some(EmissionProjection::Tags),
-    };
-    if projection.is_some() {
-        classified
-            .audit_skipped_subtree()
-            .unwrap_or_else(|error| panic!("{error}"));
-        if matches!(projection, Some(EmissionProjection::Tags)) {
-            schema
-                .audit_tag_value(classified.path())
-                .unwrap_or_else(|error| panic!("{error}"));
-        }
-    }
-    projection
-}
-
 fn checked_resource_type_override(
     schema: &CfnSchema,
     property_path: CfnPropertyPath<'_>,
@@ -1671,7 +1598,8 @@ fn object_string_union_is_iam_policy_document(
 }
 
 /// Enum value can be a string or an integer in JSON Schema
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 #[serde(untagged)]
 enum EnumValue {
     Str(String),
@@ -1687,83 +1615,64 @@ impl EnumValue {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 #[serde(rename_all = "camelCase")]
 #[allow(dead_code)]
 struct CfnProperty {
     #[serde(rename = "type")]
-    #[serde(skip_serializing_if = "Option::is_none")]
     prop_type: Option<TypeValue>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     description: Option<String>,
     #[serde(rename = "enum")]
-    #[serde(skip_serializing_if = "Option::is_none")]
     enum_values: Option<Vec<EnumValue>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     items: Option<Box<CfnProperty>>,
     #[serde(rename = "$ref")]
-    #[serde(skip_serializing_if = "Option::is_none")]
     ref_path: Option<String>,
     #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
     insertion_order: Option<bool>,
     /// Whether array items must be unique.
     #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
     unique_items: Option<bool>,
     /// Inline object properties (for nested objects)
-    #[serde(skip_serializing_if = "Option::is_none")]
     properties: Option<BTreeMap<String, CfnProperty>>,
     /// JSON object-map value schemas keyed by key-pattern.
     #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
     pattern_properties: Option<BTreeMap<String, CfnProperty>>,
     /// Required fields for inline objects
     #[serde(default)]
     required: Vec<String>,
     /// Minimum value constraint (for integer/number types)
     #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
     minimum: Option<i64>,
     /// Maximum value constraint (for integer/number types)
     #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
     maximum: Option<i64>,
     /// Whether additional properties are allowed (for object types)
     #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
     additional_properties: Option<bool>,
     /// Const value (single fixed value for this property)
-    #[serde(rename = "const", default, deserialize_with = "deserialize_const")]
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "const")]
     const_value: Option<serde_json::Value>,
     /// Default value for this property
     #[serde(rename = "default")]
-    #[serde(skip_serializing_if = "Option::is_none")]
     default_value: Option<serde_json::Value>,
     /// Regex pattern constraint (for string types)
     #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
     pattern: Option<String>,
     /// Minimum number of items (for array types)
     #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
     min_items: Option<i64>,
     /// Maximum number of items (for array types)
     #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
     max_items: Option<i64>,
     /// Minimum length constraint (for string types)
     #[serde(default, rename = "minLength")]
-    #[serde(skip_serializing_if = "Option::is_none")]
     min_length: Option<u64>,
     /// Maximum length constraint (for string types)
     #[serde(default, rename = "maxLength")]
-    #[serde(skip_serializing_if = "Option::is_none")]
     max_length: Option<u64>,
     /// Format constraint (e.g., "int64", "uri", "double")
     #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
     format: Option<String>,
     /// Property-level oneOf variants (union types)
     #[serde(default, rename = "oneOf")]
@@ -1771,11 +1680,6 @@ struct CfnProperty {
     #[serde(default)]
     #[serde(rename = "anyOf")]
     any_of: Vec<CfnProperty>,
-    #[serde(default, rename = "allOf")]
-    all_of: Vec<CfnProperty>,
-    /// Preserve unknown JSON keywords for audits of projected source schemas.
-    #[serde(flatten)]
-    extra: BTreeMap<String, serde_json::Value>,
 }
 
 fn derive_tags_property(schema: &CfnSchema) -> Result<Option<GeneratedTagsProperty>> {
@@ -2234,8 +2138,10 @@ fn main() -> Result<()> {
     };
 
     // Parse schema
+    let source: serde_json::Value =
+        serde_json::from_str(&schema_json).context("Failed to parse CloudFormation schema JSON")?;
     let schema: CfnSchema =
-        serde_json::from_str(&schema_json).context("Failed to parse CloudFormation schema")?;
+        serde_json::from_value(source.clone()).context("Failed to parse CloudFormation schema")?;
 
     if !schema.is_cloud_control_provisionable() {
         eprintln!(
@@ -2250,12 +2156,13 @@ fn main() -> Result<()> {
     }
 
     // Generate output based on format
+    let context = EmissionContext::from_source(&schema, &source)?;
     let output = match output_mode {
         OutputMode::Markdown { examples_dir } => {
             let example = load_markdown_example(&examples_dir, &args.type_name)?;
-            generate_markdown(&schema, &args.type_name, &example)?
+            render_markdown(&context, &args.type_name, &example)?
         }
-        OutputMode::Rust => generate_schema_code(&schema, &args.type_name)?,
+        OutputMode::Rust => render_schema_code(&context, &args.type_name)?,
     };
 
     // Output
@@ -3074,28 +2981,20 @@ fn type_display_at_resolved(
     let prop_name = classified.name();
     let provider_path = classified.path();
     if let Some(display) =
-        emission_projection(&classified, cfn_property_path, ProjectionKind::Override).and_then(
-            |projection| match projection {
-                EmissionProjection::Override(override_type) => override_type.display(),
-                _ => unreachable!(),
-            },
-        )
+        resource_type_override(&schema.type_name, cfn_property_path).and_then(TypeOverride::display)
     {
         return TypeDisplay::Code(display.as_str().to_string());
     }
-    if emission_projection(
-        &classified,
-        cfn_property_path,
-        ProjectionKind::ObjectStringPolicy,
-    )
-    .is_some()
-    {
+    if object_string_union_is_iam_policy_document(prop, &schema.type_name, cfn_property_path) {
         return TypeDisplay::Plain("PolicyDocument".to_string());
     }
-    if emission_projection(&classified, cfn_property_path, ProjectionKind::MarkdownTags).is_some() {
+    if prop_name == "Tags" {
+        schema
+            .classify_tag_value(provider_path)
+            .unwrap_or_else(|error| panic!("{error}"));
         return TypeDisplay::Code("Map<String, String>".to_string());
     }
-    if emission_projection(&classified, cfn_property_path, ProjectionKind::BareObject).is_some() {
+    if property_is_bare_object(prop, schema) {
         return match classify_bare_object_or_panic(&schema.type_name, cfn_property_path) {
             BareObjectClassification::IamPolicyDocument(_) => {
                 TypeDisplay::Plain("PolicyDocument".to_string())
@@ -3114,15 +3013,12 @@ fn type_display_at_resolved(
             ),
         };
     }
-    match emission_shape(&classified) {
+    match property_shape(classified.property(), classified.schema()) {
         PropertyShape::Reference { resolved, .. } => {
-            return if emission_projection(
-                &classified,
-                cfn_property_path,
-                ProjectionKind::TagReference,
-            )
-            .is_some()
-            {
+            return if is_tag_map_ref(schema, prop.ref_path.as_deref().expect("reference shape")) {
+                schema
+                    .classify_tag_value(provider_path)
+                    .unwrap_or_else(|error| panic!("{error}"));
                 TypeDisplay::Code("Map<String, String>".to_string())
             } else if let Some(resolved) = resolved {
                 type_display_at_resolved(
@@ -3131,9 +3027,6 @@ fn type_display_at_resolved(
                     Some(resolved.name),
                 )
             } else {
-                classified
-                    .audit_skipped_subtree()
-                    .unwrap_or_else(|error| panic!("{error}"));
                 TypeDisplay::Plain(infer_string_type_display(prop_name, &schema.type_name))
             };
         }
@@ -3166,8 +3059,6 @@ fn type_display_at_resolved(
                 let default = CfnProperty::default();
                 let item_path = schema.collection_path(provider_path, PathSegment::ListElement);
                 let item = schema.property_at(&item_path, &default);
-                item.audit_skipped_subtree()
-                    .unwrap_or_else(|error| panic!("{error}"));
                 TypeDisplay::Plain(
                     emission_reference(&item)
                         .map_or_else(|| "String".to_string(), |reference| reference.display()),
@@ -3227,15 +3118,6 @@ fn scalar_type_display_string_at(
             definition_name,
         )
         .display();
-    }
-    if !matches!(
-        inline_property_type(prop),
-        Some("boolean" | "integer" | "number")
-    ) {
-        schema
-            .property_at(provider_path, prop)
-            .audit_skipped_subtree()
-            .unwrap_or_else(|error| panic!("{error}"));
     }
     match inline_property_type(prop) {
         Some("boolean") => "Bool".to_string(),
@@ -3497,17 +3379,6 @@ fn markdown_type(
     let prop = classified.property();
     let prop_name = classified.name();
     let property_path = classified.path();
-    if let Some(display) = emission_projection(
-        &classified,
-        CfnPropertyPath::new(cfn_parent, prop_name),
-        ProjectionKind::Override,
-    )
-    .and_then(|projection| match projection {
-        EmissionProjection::Override(override_type) => override_type.display(),
-        _ => None,
-    }) {
-        return MarkdownType::Plain(TypeDisplay::Code(display.as_str().to_string()).markdown());
-    }
     markdown_link_type(
         prop_name,
         prop,
@@ -3766,8 +3637,11 @@ fn claim_unique_markdown_heading(
     unreachable!("an integer suffix always yields a fresh heading")
 }
 
-fn generate_markdown(schema: &CfnSchema, type_name: &str, example: &DocExample) -> Result<String> {
-    let schema = &EmissionContext::new(schema)?;
+fn render_markdown(
+    schema: &EmissionContext<'_>,
+    type_name: &str,
+    example: &DocExample,
+) -> Result<String> {
     checked_read_back_declarations(schema, type_name)?;
     resource_type_overrides().validate_sources(schema)?;
     reset_recursion_guard();
@@ -3808,10 +3682,6 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str, example: &DocExample) 
         if is_deprecated_property(prop)
             || should_omit_top_level_property(&schema.type_name, prop_name)
         {
-            schema
-                .property_at(std::slice::from_ref(prop_name), prop)
-                .audit_skipped_subtree()
-                .unwrap_or_else(|error| panic!("{error}"));
             continue;
         }
         // Apply resource-scoped enum overlay (awscc#357) for top-level
@@ -4177,14 +4047,7 @@ fn generate_markdown(schema: &CfnSchema, type_name: &str, example: &DocExample) 
                     field_name: field_name.clone(),
                 };
                 let nested_key = cfn_property_path.to_string();
-                let field = schema.property_at(&field_path, field_prop);
-                let nested_override =
-                    emission_projection(&field, cfn_property_path, ProjectionKind::Override).map(
-                        |projection| match projection {
-                            EmissionProjection::Override(override_type) => override_type,
-                            _ => unreachable!(),
-                        },
-                    );
+                let nested_override = resource_type_override(type_name, cfn_property_path);
                 let field_type_display = if let Some(display) =
                     nested_override.and_then(TypeOverride::display)
                 {
@@ -4315,14 +4178,6 @@ fn collect_struct_defs(
     cfn_parent: Option<&str>,
     struct_defs: &mut BTreeMap<MarkdownStructKey, StructDefInfo>,
 ) {
-    if let Some(override_type) = resource_type_override(
-        &schema.type_name,
-        CfnPropertyPath::new(cfn_parent, prop_name),
-    ) && (override_type.attribute_type_expression().is_some()
-        || override_type.array_item_type_expression().is_some())
-    {
-        return;
-    }
     match property_shape(prop, schema) {
         PropertyShape::Array {
             variant: array_variant,
@@ -4574,18 +4429,8 @@ fn generate_top_level_attribute_type(
     let prop_name = classified.name();
     let schema = classified.schema();
     let property_path = CfnPropertyPath::new(None, prop_name);
-    let override_type = emission_projection(&classified, property_path, ProjectionKind::Override)
-        .map(|projection| match projection {
-            EmissionProjection::Override(override_type) => override_type,
-            _ => unreachable!(),
-        });
-    if emission_projection(
-        &classified,
-        property_path,
-        ProjectionKind::ArnHelper(has_arn_helper),
-    )
-    .is_some()
-    {
+    let override_type = checked_resource_type_override(schema, property_path, prop);
+    if prop_name == "Arn" && has_arn_helper {
         return "self::arn()".to_string();
     }
 
@@ -4658,8 +4503,7 @@ fn checked_read_back_declarations(
     Ok(declarations.to_vec())
 }
 
-fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
-    let schema = &EmissionContext::new(schema)?;
+fn render_schema_code(schema: &EmissionContext<'_>, type_name: &str) -> Result<String> {
     let read_back_declarations = checked_read_back_declarations(schema, type_name)?;
     resource_type_overrides().validate_sources(schema)?;
     // carina#3340: clear per-resource codegen state at function entry
@@ -4722,10 +4566,6 @@ fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
         if is_deprecated_property(prop)
             || should_omit_top_level_property(&schema.type_name, prop_name)
         {
-            schema
-                .property_at(std::slice::from_ref(prop_name), prop)
-                .audit_skipped_subtree()
-                .unwrap_or_else(|error| panic!("{error}"));
             continue;
         }
         let (attr_type, enum_info) =
@@ -5999,8 +5839,6 @@ fn generate_struct_type(
         .filter(|(field_name, field_prop)| {
             if is_deprecated_property(field_prop) {
                 let field_path = extend_property_path(paths.provider, field_name);
-                schema.property_at(&field_path, field_prop).audit_skipped_subtree()
-                    .unwrap_or_else(|error| panic!("{error}"));
                 record_skipped_deprecated_write_only_path(schema, &field_path);
                 return false;
             }
@@ -6008,8 +5846,6 @@ fn generate_struct_type(
                 &schema.type_name,
                 CfnPropertyPath::new(Some(def_name), field_name),
             ) {
-                schema.property_at(&extend_property_path(paths.provider, field_name), field_prop)
-                    .audit_skipped_subtree().unwrap_or_else(|error| panic!("{error}"));
                 return false;
             }
             true
@@ -6025,12 +5861,7 @@ fn generate_struct_type(
             // the list wrapping below; only the item type changes.
             let cfn_property_path = CfnPropertyPath::new(Some(def_name), field_name);
             let nested_key = cfn_property_path.to_string();
-            let field = schema.property_at(&field_path, field_prop);
-            let nested_override = emission_projection(&field, cfn_property_path, ProjectionKind::Override)
-                .map(|projection| match projection {
-                    EmissionProjection::Override(override_type) => override_type,
-                    _ => unreachable!(),
-                });
+            let nested_override = checked_resource_type_override(schema, cfn_property_path, field_prop);
             // A composite StringType override replaces the entire source
             // property, including any object children. Do not walk those
             // discarded children: read-only bookkeeping must describe the
@@ -6649,53 +6480,25 @@ impl StringLeaf<'_> {
     }
 }
 
-/// Both renderers consume this shape decision. Audit only the source
-/// keywords this decision discards; the audit itself never infers a type.
-fn emission_shape<'a>(property: &'a EmissionProperty<'_>) -> PropertyShape<'a> {
-    let shape = property_shape(property.property(), property.schema());
-    let (skipped, selected): (&[&str], _) = match &shape {
-        PropertyShape::Reference { .. } => (
-            &[
-                "properties",
-                "items",
-                "patternProperties",
-                "oneOf",
-                "anyOf",
-                "allOf",
-            ][..],
-            None,
-        ),
-        PropertyShape::Array { variant, .. } => (
-            &["items", "patternProperties", "oneOf", "anyOf", "allOf"][..],
-            Some(*variant),
-        ),
-        PropertyShape::Direct(_) => (
-            &["items", "patternProperties", "oneOf", "anyOf", "allOf"][..],
-            None,
-        ),
-        PropertyShape::Merged(_) => (&["items", "patternProperties", "anyOf", "allOf"][..], None),
-        PropertyShape::Inline | PropertyShape::Unresolved => (&["anyOf", "allOf"][..], None),
-    };
-    property
-        .audit_skipped_keywords(skipped, selected)
-        .unwrap_or_else(|error| panic!("{error}"));
-    shape
-}
-
 /// Shared by Rust and Markdown at their type decision points.
 fn emission_reference(classified: &EmissionProperty<'_>) -> Option<StringLeaf<'static>> {
+    let shape = property_shape(classified.property(), classified.schema());
     if matches!(
-        property_shape(classified.property(), classified.schema()),
-        PropertyShape::Reference {
-            resolved: Some(_),
-            ..
-        } | PropertyShape::Direct(_)
-            | PropertyShape::Merged(_)
-            | PropertyShape::Array { .. }
+        shape,
+        PropertyShape::Direct(_) | PropertyShape::Merged(_) | PropertyShape::Array { .. }
     ) {
         return None;
     }
-    if !needs_kms_classification(classified.property(), classified.name()) {
+    if matches!(shape, PropertyShape::Reference { resolved: Some(resolved), .. }
+        if !needs_kms_classification(resolved.property, classified.name()))
+    {
+        return None;
+    }
+    if matches!(
+        inline_property_type(classified.property()),
+        Some("array" | "object")
+    ) && !needs_kms_classification(classified.property(), classified.name())
+    {
         return None;
     }
     classified
@@ -6717,17 +6520,9 @@ fn string_leaf<'a>(
     property_path: CfnPropertyPath<'_>,
     definition_name: Option<&str>,
 ) -> StringLeaf<'a> {
-    // Scalar inference can also project to a named type (including policies).
-    // Audit the original source, even when that projection hides its shape.
-    classified
-        .audit_skipped_subtree()
-        .unwrap_or_else(|error| panic!("{error}"));
     let prop = classified.property();
     let prop_name = classified.name();
     let cfn_type = &classified.schema().type_name;
-    if let Some(reference) = emission_reference(&classified) {
-        return reference;
-    }
     if let Some(leaf) = enum_leaf(prop, prop_name, definition_name) {
         return StringLeaf::Enum(leaf);
     }
@@ -8622,9 +8417,6 @@ fn generate_object_map_type(
         ObjectMapValueKind::DirectString => {
             let value_path = schema.collection_path(paths.provider, PathSegment::MapValue);
             let value = schema.property_at(&value_path, value);
-            value
-                .audit_skipped_subtree()
-                .unwrap_or_else(|error| panic!("{error}"));
             let value_type = emission_reference(&value).map_or_else(
                 || "AttributeType::string()".to_string(),
                 |reference| reference.emit(&schema.type_name, prop_name).0,
@@ -8706,29 +8498,18 @@ fn cfn_type_to_carina_type_with_enum_resolved(
     let property_path = paths.provider;
     let cfn_parent = paths.cfn_parent;
     let cfn_property_path = CfnPropertyPath::new(cfn_parent, prop_name);
-    if let Some(item_type) =
-        emission_projection(&classified, cfn_property_path, ProjectionKind::Override)
-            .map(|projection| match projection {
-                EmissionProjection::Override(override_type) => override_type,
-                _ => unreachable!(),
-            })
-            .and_then(|override_type| {
-                emit_array_item_override(schema, cfn_property_path, prop, override_type)
-            })
+    if let Some(item_type) = checked_resource_type_override(schema, cfn_property_path, prop)
+        .and_then(|override_type| {
+            emit_array_item_override(schema, cfn_property_path, prop, override_type)
+        })
     {
         return (item_type, None);
     }
-    if emission_projection(
-        &classified,
-        cfn_property_path,
-        ProjectionKind::ObjectStringPolicy,
-    )
-    .is_some()
-    {
+    if object_string_union_is_iam_policy_document(prop, &schema.type_name, cfn_property_path) {
         return ("carina_aws_types::iam_policy_document()".to_string(), None);
     }
 
-    if emission_projection(&classified, cfn_property_path, ProjectionKind::BareObject).is_some() {
+    if property_is_bare_object(prop, schema) {
         return (
             bare_object_attribute_type(&schema.type_name, cfn_property_path, prop_name),
             None,
@@ -8737,7 +8518,10 @@ fn cfn_type_to_carina_type_with_enum_resolved(
 
     // The declared tag property is special when its generated DSL name is
     // `tags`: it is a Map in Carina (Terraform-style).
-    if emission_projection(&classified, cfn_property_path, ProjectionKind::TagsProperty).is_some() {
+    if is_dsl_tags_property(schema, prop_name) {
+        schema
+            .classify_tag_value(property_path)
+            .unwrap_or_else(|error| panic!("{error}"));
         return ("carina_aws_types::tags_type()".to_string(), None);
     }
 
@@ -8752,18 +8536,16 @@ fn cfn_type_to_carina_type_with_enum_resolved(
         .emit(&schema.type_name, prop_name);
     }
 
-    match emission_shape(&classified) {
+    match property_shape(classified.property(), classified.schema()) {
         PropertyShape::Reference { resolved, .. } => {
-            if emission_projection(&classified, cfn_property_path, ProjectionKind::TagReference)
-                .is_some()
-            {
+            if is_tag_map_ref(schema, prop.ref_path.as_deref().expect("reference shape")) {
+                schema
+                    .classify_tag_value(property_path)
+                    .unwrap_or_else(|error| panic!("{error}"));
                 return ("carina_aws_types::tags_type()".to_string(), None);
             }
 
             let Some(resolved) = resolved else {
-                classified
-                    .audit_skipped_subtree()
-                    .unwrap_or_else(|error| panic!("{error}"));
                 return (
                     infer_string_type(prop_name, &schema.type_name)
                         .unwrap_or_else(|| "AttributeType::string()".to_string()),
@@ -8959,8 +8741,6 @@ fn cfn_type_to_carina_type_with_enum_resolved(
                 let default = CfnProperty::default();
                 let item_path = schema.collection_path(property_path, PathSegment::ListElement);
                 let item = schema.property_at(&item_path, &default);
-                item.audit_skipped_subtree()
-                    .unwrap_or_else(|error| panic!("{error}"));
                 emission_reference(&item).map_or_else(
                     || ("AttributeType::string()".to_string(), None),
                     |reference| reference.emit(&schema.type_name, prop_name),
@@ -9013,16 +8793,11 @@ fn cfn_type_to_carina_type_with_enum_resolved(
                 schema.type_name, cfn_property_path
             );
         }
-        _ => {
-            classified
-                .audit_skipped_subtree()
-                .unwrap_or_else(|error| panic!("{error}"));
-            (
-                infer_string_type(prop_name, &schema.type_name)
-                    .unwrap_or_else(|| "AttributeType::string()".to_string()),
-                None,
-            )
-        }
+        _ => (
+            infer_string_type(prop_name, &schema.type_name)
+                .unwrap_or_else(|| "AttributeType::string()".to_string()),
+            None,
+        ),
     }
 }
 
@@ -9144,6 +8919,18 @@ fn collapse_whitespace(s: &str) -> String {
 mod tests {
     use super::*;
     use std::path::Path;
+
+    fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
+        super::render_schema_code(&EmissionContext::new(schema)?, type_name)
+    }
+
+    fn generate_markdown(
+        schema: &CfnSchema,
+        type_name: &str,
+        example: &DocExample,
+    ) -> Result<String> {
+        super::render_markdown(&EmissionContext::new(schema)?, type_name, example)
+    }
 
     fn cfn_type_to_carina_type_with_enum(
         prop: &CfnProperty,
@@ -9278,13 +9065,15 @@ mod tests {
     fn test_codegen_regex_patterns_cached_output_compiles() {
         USED_STRING_PATTERN_REWRITES.with(|used| used.borrow_mut().clear());
         for path in cached_schema_paths() {
-            let schema: CfnSchema =
+            let source: serde_json::Value =
                 serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+            let schema: CfnSchema = serde_json::from_value(source.clone()).unwrap();
             if !schema.is_cloud_control_provisionable() {
                 continue;
             }
             // string_constraints is the compilation gate during generation.
-            generate_schema_code(&schema, &schema.type_name).unwrap();
+            let context = EmissionContext::from_source(&schema, &source).unwrap();
+            super::render_schema_code(&context, &schema.type_name).unwrap();
         }
         USED_STRING_PATTERN_REWRITES.with(|used| {
             let used = used.borrow();
@@ -10032,7 +9821,6 @@ mod tests {
             },
         );
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::Test::Small".to_string(),
             description: None,
             properties,
@@ -11407,7 +11195,6 @@ mod tests {
 
     fn empty_schema(type_name: &str) -> CfnSchema {
         CfnSchema {
-            all_of: vec![],
             type_name: type_name.to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -14836,7 +14623,6 @@ mod tests {
             ..Default::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::EC2::SecurityGroupIngress".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -14944,7 +14730,6 @@ mod tests {
             ..Default::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::CloudFront::Distribution".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -15067,7 +14852,6 @@ mod tests {
             ..Default::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::EC2::SecurityGroupIngress".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -15116,7 +14900,6 @@ mod tests {
             ..Default::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::EC2::SecurityGroupIngress".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -15165,7 +14948,6 @@ mod tests {
             ..Default::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::EC2::NatGateway".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -15219,7 +15001,6 @@ mod tests {
             ..Default::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::EC2::EIP".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -15268,7 +15049,6 @@ mod tests {
             ..Default::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::EC2::NatGateway".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -15321,7 +15101,6 @@ mod tests {
             ..Default::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::EC2::Subnet".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -15452,7 +15231,6 @@ mod tests {
             ..Default::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::EC2::VPC".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -15542,7 +15320,6 @@ mod tests {
             ..Default::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::EC2::VPC".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -15582,7 +15359,6 @@ mod tests {
             ..Default::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::WAFv2::WebACL".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -15629,7 +15405,6 @@ mod tests {
             ..Default::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::Example::Thing".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -15674,7 +15449,6 @@ mod tests {
             ..Default::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::EC2::VPC".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -15700,7 +15474,6 @@ mod tests {
         // Regression guard: type_display_string for array types must never return
         // bare "List" without element type information.
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::EC2::VPC".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -15920,7 +15693,6 @@ mod tests {
             ..Default::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::EC2::VPC".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -15984,7 +15756,6 @@ mod tests {
             ..Default::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::EC2::VPC".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -16030,7 +15801,6 @@ mod tests {
             ..Default::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::EC2::VPC".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -16085,7 +15855,6 @@ mod tests {
             ..Default::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::EC2::VPC".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -16148,7 +15917,6 @@ mod tests {
             ..Default::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::Logs::LogGroup".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -16218,7 +15986,6 @@ mod tests {
             ..Default::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::EC2::NatGateway".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -16267,7 +16034,6 @@ mod tests {
             ..Default::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::SomeService::Resource".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -16321,7 +16087,6 @@ mod tests {
             ..Default::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::Logs::LogGroup".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -16371,7 +16136,6 @@ mod tests {
             ..Default::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::EC2::VPC".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -16472,7 +16236,6 @@ mod tests {
     fn known_service_arn_requires_a_catalog_row() {
         let type_name = "AWS::EC2::NewCataloglessResource";
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: type_name.to_string(),
             description: None,
             properties: BTreeMap::from([(
@@ -16522,7 +16285,6 @@ mod tests {
     #[test]
     fn declarative_constraints_emit_no_dead_helpers() {
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::Test::Resource".to_string(),
             description: None,
             properties: BTreeMap::from([
@@ -16612,7 +16374,6 @@ mod tests {
             ..Default::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::EC2::VPC".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -16663,7 +16424,6 @@ mod tests {
             ..Default::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::EC2::SecurityGroupIngress".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -16718,7 +16478,6 @@ mod tests {
             ..Default::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::S3::Bucket".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -16781,7 +16540,6 @@ mod tests {
             ..Default::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::EC2::SecurityGroupIngress".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -17245,7 +17003,6 @@ mod tests {
             ..Default::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::KMS::Key".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -17321,7 +17078,6 @@ mod tests {
             ..Default::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::Test::Resource".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -17947,7 +17703,6 @@ mod tests {
             ..Default::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::DynamoDB::Table".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -17990,7 +17745,6 @@ mod tests {
             ..Default::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::Test::Resource".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -18337,7 +18091,6 @@ mod tests {
         );
 
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::EC2::IPAMPool".to_string(),
             description: None,
             properties,
@@ -18455,7 +18208,6 @@ mod tests {
         );
 
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::EC2::TestResource".to_string(),
             description: None,
             properties,
@@ -18501,7 +18253,6 @@ mod tests {
             ..Default::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::S3::Bucket".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -18548,7 +18299,6 @@ mod tests {
             ..Default::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::S3::Bucket".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -18614,7 +18364,6 @@ mod tests {
             ..Default::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::EC2::VPC".to_string(),
             description: None,
             properties: BTreeMap::from([("HttpMethod".to_string(), prop.clone())]),
@@ -18685,7 +18434,6 @@ mod tests {
             ..Default::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::S3::Bucket".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -18746,7 +18494,6 @@ mod tests {
             ..Default::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::WAFv2::WebACL".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -18792,7 +18539,6 @@ mod tests {
             ..Default::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::Example::Thing".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -18838,7 +18584,6 @@ mod tests {
             ..Default::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::Example::Thing".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -18906,7 +18651,6 @@ mod tests {
             },
         );
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::WAFv2::WebACL".to_string(),
             description: None,
             properties,
@@ -18960,7 +18704,6 @@ mod tests {
             },
         );
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::Example::Thing".to_string(),
             description: None,
             properties,
@@ -19007,7 +18750,6 @@ mod tests {
             },
         );
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::EC2::VPC".to_string(),
             description: None,
             properties,
@@ -19116,7 +18858,6 @@ mod tests {
         );
 
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::EC2::VPC".to_string(),
             description: None,
             properties,
@@ -19208,7 +18949,6 @@ mod tests {
         );
 
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::EC2::VPC".to_string(),
             description: None,
             properties,
@@ -19349,7 +19089,6 @@ mod tests {
         );
 
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::EC2::SecurityGroup".to_string(),
             description: None,
             properties,
@@ -20239,7 +19978,6 @@ mod tests {
             ..Default::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::Test::Resource".to_string(),
             description: None,
             properties: BTreeMap::from([(
@@ -20370,7 +20108,6 @@ mod tests {
         );
 
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::Test::Resource".to_string(),
             description: None,
             properties,
@@ -20461,7 +20198,6 @@ mod tests {
         );
 
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::Test::Resource".to_string(),
             description: None,
             properties,
@@ -20512,7 +20248,6 @@ mod tests {
         );
 
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::IAM::Role".to_string(),
             description: None,
             properties,
@@ -20556,7 +20291,6 @@ mod tests {
         );
 
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::Test::Resource".to_string(),
             description: None,
             properties,
@@ -20594,7 +20328,6 @@ mod tests {
         );
 
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::Test::Resource".to_string(),
             description: None,
             properties,
@@ -20672,7 +20405,6 @@ mod tests {
         );
 
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::S3::BucketPolicy".to_string(),
             description: None,
             properties,
@@ -20724,7 +20456,6 @@ mod tests {
         );
 
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::EC2::VPNGateway".to_string(),
             description: None,
             properties,
@@ -20779,7 +20510,6 @@ mod tests {
         );
 
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::Test::Resource".to_string(),
             description: None,
             properties,
@@ -20815,7 +20545,6 @@ mod tests {
             ..Default::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::EC2::VPC".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -20851,7 +20580,6 @@ mod tests {
             ..Default::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::ElasticLoadBalancingV2::Listener".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -20894,7 +20622,6 @@ mod tests {
         );
 
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::Test::Resource".to_string(),
             description: None,
             properties,
@@ -20941,7 +20668,6 @@ mod tests {
         );
 
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::Test::Resource".to_string(),
             description: None,
             properties,
@@ -21027,7 +20753,6 @@ mod tests {
             ..Default::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::Logs::LogGroup".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -21071,7 +20796,6 @@ mod tests {
             ..Default::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::Logs::LogGroup".to_string(),
             description: None,
             properties: BTreeMap::from([("KmsKeyId".to_string(), prop.clone())]),
@@ -21127,7 +20851,6 @@ mod tests {
                 .unwrap(),
         );
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::Logs::LogGroup".to_string(),
             description: None,
             properties,
@@ -21171,7 +20894,6 @@ mod tests {
             ..Default::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::EC2::VPCEndpoint".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -21221,7 +20943,6 @@ mod tests {
             ..Default::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::EC2::VPCEndpoint".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -21271,7 +20992,6 @@ mod tests {
             ..Default::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::EC2::VPCEndpoint".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -21354,7 +21074,6 @@ mod tests {
         );
 
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::EC2::VPCEndpoint".to_string(),
             description: Some("Test".to_string()),
             properties,
@@ -21391,7 +21110,6 @@ mod tests {
         );
 
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::Test::Resource".to_string(),
             description: None,
             properties,
@@ -21437,7 +21155,6 @@ mod tests {
         );
 
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::Test::Resource".to_string(),
             description: None,
             properties,
@@ -21477,7 +21194,6 @@ mod tests {
         );
 
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::Test::Resource".to_string(),
             description: None,
             properties,
@@ -22375,7 +22091,6 @@ mod tests {
         );
 
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::Organizations::Account".to_string(),
             description: None,
             properties,
@@ -22430,7 +22145,6 @@ mod tests {
         );
 
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::S3::Bucket".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -22535,7 +22249,6 @@ mod tests {
         );
 
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::EC2::VPC".to_string(),
             description: None,
             properties,
@@ -22587,7 +22300,6 @@ mod tests {
         );
 
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::Test::Resource".to_string(),
             description: None,
             properties,
@@ -22638,7 +22350,6 @@ mod tests {
         );
 
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::Test::Resource".to_string(),
             description: None,
             properties,
@@ -22714,7 +22425,6 @@ mod tests {
         );
 
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::Route53::HostedZone".to_string(),
             description: None,
             properties,
@@ -22781,7 +22491,6 @@ mod tests {
         );
 
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::Test::Resource".to_string(),
             description: None,
             properties,
@@ -22832,7 +22541,6 @@ mod tests {
         );
 
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::Test::Resource".to_string(),
             description: None,
             properties,
@@ -22924,7 +22632,6 @@ mod tests {
         );
 
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::Test::Resource".to_string(),
             description: None,
             properties,
@@ -22970,7 +22677,6 @@ mod tests {
             ..CfnProperty::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::Test::Resource".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -23007,7 +22713,6 @@ mod tests {
             ..CfnProperty::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::Test::Resource".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -23039,7 +22744,6 @@ mod tests {
             ..CfnProperty::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::Test::Resource".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -23076,7 +22780,6 @@ mod tests {
             ..CfnProperty::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::Test::Resource".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -23109,7 +22812,6 @@ mod tests {
             ..CfnProperty::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::S3::Bucket".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -23152,7 +22854,6 @@ mod tests {
             ..CfnProperty::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::S3::Bucket".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -23184,7 +22885,6 @@ mod tests {
             ..CfnProperty::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::Test::Resource".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -23219,7 +22919,6 @@ mod tests {
             ..CfnProperty::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::Test::Resource".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -23259,7 +22958,6 @@ mod tests {
             ..CfnProperty::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::S3::Bucket".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -23305,7 +23003,6 @@ mod tests {
             ..CfnProperty::default()
         };
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::Test::Resource".to_string(),
             description: None,
             properties: BTreeMap::new(),
@@ -23336,7 +23033,6 @@ mod tests {
     #[test]
     fn test_array_items_pattern_with_length_stays_declarative() {
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::Test::ArrayPattern".to_string(),
             description: None,
             properties: {
@@ -23521,7 +23217,6 @@ mod tests {
         );
 
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::EC2::FlowLog".to_string(),
             description: None,
             properties,
@@ -23559,7 +23254,6 @@ mod tests {
         );
 
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::EC2::TestResource".to_string(),
             description: None,
             properties,
@@ -23803,7 +23497,6 @@ mod tests {
 
     fn make_schema_with_props(props: BTreeMap<String, CfnProperty>) -> CfnSchema {
         CfnSchema {
-            all_of: vec![],
             type_name: "AWS::Test::Resource".to_string(),
             description: None,
             properties: props,
@@ -24103,7 +23796,6 @@ mod tests {
             },
         );
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::EC2::VPCGatewayAttachment".to_string(),
             description: Some("VPC Gateway Attachment".to_string()),
             properties: props,
@@ -24154,7 +23846,6 @@ mod tests {
         );
 
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::Test::Resource".to_string(),
             description: None,
             properties,
@@ -24213,7 +23904,6 @@ mod tests {
         );
 
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::Test::Resource".to_string(),
             description: None,
             properties,
@@ -24270,7 +23960,6 @@ mod tests {
         );
 
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::Test::Nested".to_string(),
             description: None,
             properties,
@@ -24765,7 +24454,6 @@ mod tests {
             },
         );
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::EC2::VPC".to_string(),
             description: None,
             properties,
@@ -24841,7 +24529,6 @@ mod tests {
             },
         );
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::EC2::VPC".to_string(),
             description: None,
             properties,
@@ -24898,7 +24585,6 @@ mod tests {
             },
         );
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::EC2::VPC".to_string(),
             description: None,
             properties,
@@ -24975,7 +24661,6 @@ mod tests {
             },
         );
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::EC2::VPC".to_string(),
             description: None,
             properties,
@@ -25111,7 +24796,6 @@ mod tests {
             },
         );
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::CloudFront::OriginAccessControl".to_string(),
             description: None,
             properties,
@@ -25261,7 +24945,6 @@ mod tests {
             },
         );
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::CloudFront::Distribution".to_string(),
             description: None,
             properties: top,
@@ -25388,7 +25071,6 @@ mod tests {
             },
         );
         let schema = CfnSchema {
-            all_of: vec![],
             type_name: "AWS::CloudFront::Distribution".to_string(),
             description: None,
             properties: top,

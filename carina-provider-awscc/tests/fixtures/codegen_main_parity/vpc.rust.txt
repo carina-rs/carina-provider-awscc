@@ -1,0 +1,28 @@
+    fn build_cidr_block_associations_attribute() -> AttributeSchema {
+        AttributeSchema::provider_populated("cidr_block_associations", AttributeType::unordered_list(carina_aws_types::vpc_cidr_block_association_id()))
+                .with_description(" (read-only)")
+                .with_provider_name("CidrBlockAssociations")
+            .build()
+    }
+    fn build_enum_modes_attribute() -> AttributeSchema {
+        AttributeSchema::optional("enum_modes", AttributeType::map(AttributeType::string()))
+                .with_provider_name("EnumModes")
+            .build()
+    }
+    fn build_modes_attribute() -> AttributeSchema {
+        AttributeSchema::optional("modes", AttributeType::map(AttributeType::string()))
+                .with_provider_name("Modes")
+            .build()
+    }
+    fn build_ratio_attribute() -> AttributeSchema {
+        AttributeSchema::optional("ratio", AttributeType::float())
+                .with_provider_name("Ratio")
+            .build()
+    }
+    fn build_tags_attribute() -> AttributeSchema {
+        AttributeSchema::optional("tags", carina_aws_types::tags_type())
+                .with_description("The tags for the VPC.")
+                .with_provider_name("Tags")
+                .with_block_name("tag")
+            .build()
+    }

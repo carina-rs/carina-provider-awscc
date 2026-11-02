@@ -198,14 +198,9 @@ fn classification_checks_constraints_on_ref_uses() {
 }
 
 #[test]
-fn read_only_strings_and_non_string_kms_properties_keep_their_types() {
-    let mut schema = vpc_schema();
-    schema["properties"]["KmsOutput"] = json!({"type": "string"});
-    schema["readOnlyProperties"]
-        .as_array_mut()
-        .unwrap()
-        .push(json!("/properties/KmsOutput"));
-    schema["properties"]["KmsEnabled"] = json!({"type": "boolean"});
+fn explicitly_classified_non_reference_scalars_and_key_outputs_keep_their_types() {
+    let schema: Value =
+        serde_json::from_str(include_str!("../../cfn-schema-cache/AWS__KMS__Key.json")).unwrap();
     for format in ["rust", "markdown"] {
         let output = generate(&schema, format);
         assert!(
@@ -213,6 +208,19 @@ fn read_only_strings_and_non_string_kms_properties_keep_their_types() {
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
+        let output = String::from_utf8(output.stdout).unwrap();
+        if format == "rust" {
+            assert!(
+                output.contains("AttributeSchema::optional(\"enabled\", AttributeType::bool())")
+            );
+            assert!(output.contains("AttributeSchema::provider_populated(\"arn\", self::arn())"));
+            assert!(output.contains(
+                "AttributeSchema::provider_populated(\"key_id\", AttributeType::string())"
+            ));
+        } else {
+            assert!(output.contains("### `enabled`\n\n- **Type:** Bool"));
+            assert!(output.contains("### `arn`\n\n- **Type:** Arn"));
+        }
     }
 }
 
@@ -340,17 +348,17 @@ fn key_only_constraint_in_any_schema_branch_requires_reclassification() {
 }
 
 #[test]
-fn read_only_scalar_collections_use_the_emitted_field_input_mode() {
+fn read_only_scalar_collections_keep_their_output_types() {
     for property in [
         json!({"type": "array", "items": {"type": "string"}}),
         json!({"type": "object", "patternProperties": {".*": {"type": "string"}}, "additionalProperties": false}),
     ] {
         let mut schema = vpc_schema();
-        schema["properties"]["KmsOutput"] = property;
+        schema["properties"]["Output"] = property;
         schema["readOnlyProperties"]
             .as_array_mut()
             .unwrap()
-            .push(json!("/properties/KmsOutput"));
+            .push(json!("/properties/Output"));
         for format in ["rust", "markdown"] {
             let output = generate(&schema, format);
             assert!(
@@ -382,7 +390,7 @@ fn projected_tags_walk_the_original_cfn_value_subtree() {
             assert!(!output.status.success(), "tagged={tagged} passed {format}");
             assert!(
                 String::from_utf8_lossy(&output.stderr)
-                    .contains("unclassified KMS string ec2.Vpc.tags[].value")
+                    .contains("unaccounted KMS node ec2.Vpc#/definitions/Tag/properties/Value")
             );
         }
     }
@@ -406,7 +414,7 @@ fn overridden_objects_classify_their_own_evidence_and_hidden_children() {
             assert!(!output.status.success(), "{source} passed {format}");
             assert!(
                 String::from_utf8_lossy(&output.stderr)
-                    .contains("unclassified KMS string sns.Subscription.delivery_policy")
+                    .contains("unaccounted KMS node sns.Subscription#/properties/DeliveryPolicy")
             );
         }
     }

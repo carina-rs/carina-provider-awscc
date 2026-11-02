@@ -1,0 +1,38 @@
+### `enum_modes`
+
+- **Type:** `Map<String, String>`
+- **Required:** No
+
+### `modes`
+
+- **Type:** `Map<String, String>`
+- **Required:** No
+
+### `ratio`
+
+- **Type:** Float
+- **Required:** No
+
+### `tags`
+
+- **Type:** List\<[Struct(Tags)](#tags-1)\>
+- **Required:** No
+
+The tags for the VPC.
+
+### cidr_block_associations
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `association_id` | String | No |  |
+
+### tags
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `key` | String | Yes |  |
+| `value` | String | Yes |  |
+
+### `cidr_block_associations`
+
+- **Type:** List\<[Struct(Association)](#cidr_block_associations)\>

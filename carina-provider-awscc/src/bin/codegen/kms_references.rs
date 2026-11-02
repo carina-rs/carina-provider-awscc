@@ -288,19 +288,73 @@ pub const CLASSIFICATIONS: &[Entry] = &[
         cfn_length: None,
     },
     Entry {
-        resource: "kms.Key",
-        path: "tags",
+        resource: "dynamodb.Table",
+        path: "sse_specification.sse_enabled",
         classification: Classification::NotReference(NotReference::Other(
-            "Tag collection projected to a string map; its KMS description concerns tag permissions.",
+            "Boolean enabling server-side encryption, not a key identifier.",
+        )),
+        cfn_pattern: None,
+        cfn_length: None,
+    },
+    Entry {
+        resource: "s3.Bucket",
+        path: "bucket_encryption.server_side_encryption_configuration[].bucket_key_enabled",
+        classification: Classification::NotReference(NotReference::Other(
+            "Boolean selecting S3 Bucket Keys, not a key identifier.",
         )),
         cfn_pattern: None,
         cfn_length: None,
     },
     Entry {
         resource: "kms.Key",
-        path: "tags[]",
+        path: "enabled",
         classification: Classification::NotReference(NotReference::Other(
-            "Source tag pair in the projected collection, not a KMS key identifier.",
+            "Boolean enabling the managed key.",
+        )),
+        cfn_pattern: None,
+        cfn_length: None,
+    },
+    Entry {
+        resource: "kms.Key",
+        path: "enable_key_rotation",
+        classification: Classification::NotReference(NotReference::Other(
+            "Boolean enabling rotation of the managed key.",
+        )),
+        cfn_pattern: None,
+        cfn_length: None,
+    },
+    Entry {
+        resource: "kms.Key",
+        path: "multi_region",
+        classification: Classification::NotReference(NotReference::Other(
+            "Boolean selecting a multi-Region managed key.",
+        )),
+        cfn_pattern: None,
+        cfn_length: None,
+    },
+    Entry {
+        resource: "kms.Key",
+        path: "pending_window_in_days",
+        classification: Classification::NotReference(NotReference::Other(
+            "Numeric deletion waiting period for the managed key.",
+        )),
+        cfn_pattern: None,
+        cfn_length: None,
+    },
+    Entry {
+        resource: "kms.Key",
+        path: "bypass_policy_lockout_safety_check",
+        classification: Classification::NotReference(NotReference::Other(
+            "Boolean controlling the policy lockout safety check.",
+        )),
+        cfn_pattern: None,
+        cfn_length: None,
+    },
+    Entry {
+        resource: "kms.Key",
+        path: "rotation_period_in_days",
+        classification: Classification::NotReference(NotReference::Other(
+            "Numeric rotation period for the managed key.",
         )),
         cfn_pattern: None,
         cfn_length: None,

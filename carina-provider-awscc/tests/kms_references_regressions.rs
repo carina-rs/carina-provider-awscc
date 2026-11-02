@@ -52,14 +52,20 @@ fn skipped_maps_of_string_arrays_keep_mains_projection() {
     logs["properties"]["FieldIndexPolicies"]["items"] = source;
     for schema in [subscription, logs] {
         for format in ["rust", "markdown"] {
-            let output = rendered(&schema, format);
-            assert!(!output.contains("kms_key_reference()"));
+            if schema["typeName"] == "AWS::Logs::LogGroup" && format == "markdown" {
+                let output = generate(&schema, format);
+                assert!(!output.status.success());
+                assert!(String::from_utf8_lossy(&output.stderr).contains("unsupported object map"));
+            } else {
+                let output = rendered(&schema, format);
+                assert!(!output.contains("kms_key_reference()"));
+            }
         }
     }
 }
 
 #[test]
-fn collapsed_anyof_audits_object_branches() {
+fn collapsed_anyof_leaves_unemitted_nodes_unaccounted() {
     let mut schema = vpc();
     schema["properties"]["Settings"] = json!({"anyOf": [
         {"type": "string"},
@@ -70,13 +76,13 @@ fn collapsed_anyof_audits_object_branches() {
         assert!(!output.status.success(), "hidden KmsKeyId passed {format}");
         assert!(
             String::from_utf8_lossy(&output.stderr)
-                .contains("unclassified KMS string ec2.Vpc.settings.kms_key_id")
+                .contains("unaccounted KMS node ec2.Vpc#/properties/Settings")
         );
     }
 }
 
 #[test]
-fn discarded_source_shapes_are_audited_at_emission() {
+fn discarded_source_shapes_fail_raw_accounting() {
     for source in [
         json!({"$ref": "#/definitions/Ordinary", "properties": {
             "KmsKeyId": {"type": "string"}
@@ -99,7 +105,7 @@ fn discarded_source_shapes_are_audited_at_emission() {
             assert!(!output.status.success(), "{source} passed {format}");
             assert!(
                 String::from_utf8_lossy(&output.stderr)
-                    .contains("unclassified KMS string ec2.Vpc.settings.kms_key_id")
+                    .contains("unaccounted KMS node ec2.Vpc#/properties/Settings")
             );
         }
     }
@@ -122,7 +128,7 @@ fn skipped_unknown_keywords_are_scanned_without_type_inference() {
         );
         assert!(
             String::from_utf8_lossy(&output.stderr)
-                .contains("unclassified KMS string sns.Subscription.filter_policy")
+                .contains("unaccounted KMS node sns.Subscription#/properties/FilterPolicy/x-future-shape/arbitrary/2")
         );
     }
 }
@@ -228,32 +234,28 @@ fn implicit_array_items_keep_mains_plain_string_type() {
 }
 
 #[test]
-fn read_only_kms_strings_keep_mains_inferred_output_types() {
-    let mut schema = vpc();
+fn read_only_kms_candidates_also_require_explicit_accounting() {
     for name in ["KmsKeyId", "KmsKeyArn", "KMSMasterKeyID", "ReplicaKmsKeyID"] {
+        let mut schema = vpc();
         schema["properties"][name] = json!({"type": "string"});
         schema["readOnlyProperties"]
             .as_array_mut()
             .unwrap()
             .push(json!(format!("/properties/{name}")));
+        for format in ["rust", "markdown"] {
+            let output = generate(&schema, format);
+            let error = String::from_utf8_lossy(&output.stderr);
+            assert!(!output.status.success(), "{name} passed {format}");
+            assert!(
+                error.contains(&format!("unaccounted KMS node ec2.Vpc#/properties/{name}")),
+                "{error}"
+            );
+        }
     }
-    let rust = rendered(&schema, "rust");
-    assert!(
-        rust.contains(
-            "AttributeSchema::provider_populated(\"kms_key_id\", super::super::kms::key::arn())"
-        ),
-        "{rust}"
-    );
-    assert!(rust.contains("AttributeSchema::provider_populated(\"kms_master_key_id\", carina_aws_types::kms_key_id())"), "{rust}");
-    let markdown = rendered(&schema, "markdown");
-    assert!(
-        markdown.contains("### `kms_key_arn`\n\n- **Type:** KmsKeyArn\n"),
-        "{markdown}"
-    );
 }
 
 #[test]
-fn policy_document_projections_audit_the_source_and_hidden_branches() {
+fn policy_document_projections_require_raw_source_accounting() {
     for (cache, name, path) in [
         (
             include_str!("../../cfn-schema-cache/AWS__Logs__LogGroup.json"),
@@ -279,7 +281,8 @@ fn policy_document_projections_audit_the_source_and_hidden_branches() {
                 assert!(!output.status.success(), "{path} {source} passed {format}");
                 let error = String::from_utf8_lossy(&output.stderr);
                 assert!(
-                    error.contains(&format!("unclassified KMS string {path}")),
+                    error.contains("unaccounted KMS node")
+                        && error.contains(&format!("/properties/{name}")),
                     "{error}"
                 );
             }
