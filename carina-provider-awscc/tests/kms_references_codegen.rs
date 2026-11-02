@@ -207,7 +207,10 @@ fn service_name_evidence_in_shared_strings_requires_classification() {
     for evidence in [
         json!({"description": "The AWS Key Management Service key identifier"}),
         json!({"description": "The AWS kEy MaNaGeMeNt SeRvIcE key identifier"}),
+        json!({"description": "The AWS kEy\t MaNaGeMeNt\nSeRvIcE key identifier"}),
+        json!({"description": "The Customer\r\nMaster\tKey identifier"}),
         json!({"pattern": "Key Management Service"}),
+        json!({"pattern": "Key\u{a0}Management\u{2003}Service"}),
     ] {
         let mut schema: Value = serde_json::from_str(include_str!(
             "../../cfn-schema-cache/AWS__ECR__Repository.json"

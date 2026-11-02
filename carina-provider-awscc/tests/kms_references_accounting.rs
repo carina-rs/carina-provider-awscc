@@ -107,6 +107,34 @@ fn service_name_and_literal_evidence_require_raw_node_accounting() {
 }
 
 #[test]
+fn whitespace_separated_kms_phrases_require_raw_node_accounting() {
+    for phrase in [
+        "kEy\t MaNaGeMeNt\nSeRvIcE",
+        "Customer\r\nMaster\tKey",
+        "Key\u{a0}Management\u{2003}Service",
+    ] {
+        for keyword in ["description", "pattern"] {
+            let mut schema: Value =
+                serde_json::from_str(include_str!("../../cfn-schema-cache/AWS__EC2__VPC.json"))
+                    .unwrap();
+            schema["x-future"] = json!({"Unused": {keyword: phrase}});
+            for format in ["rust", "markdown"] {
+                let output = generate(&schema, format);
+                let error = String::from_utf8_lossy(&output.stderr);
+                assert!(
+                    !output.status.success(),
+                    "unaccounted {keyword}: {phrase:?} passed {format}"
+                );
+                assert!(
+                    error.contains("unaccounted KMS node ec2.Vpc#/x-future/Unused;"),
+                    "{format}: {error}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn reference_projection_cannot_hide_other_anyof_branches() {
     let mut schema: Value =
         serde_json::from_str(include_str!("../../cfn-schema-cache/AWS__SNS__Topic.json")).unwrap();
@@ -143,6 +171,35 @@ fn collapsed_anyof_ref_cannot_borrow_another_use_sites_kms_decision() {
             error.contains("unaccounted KMS node sns.Topic#/properties/Settings/anyOf/1/properties/EncryptionKey"),
             "{format}: {error}"
         );
+    }
+}
+
+#[test]
+fn collapsed_anyof_ref_requires_accounting_for_kms_evidence_in_target_subtrees() {
+    let baseline: Value =
+        serde_json::from_str(include_str!("../../cfn-schema-cache/AWS__S3__Bucket.json")).unwrap();
+    for target in [
+        "MetadataTableEncryptionConfiguration",
+        "InventoryTableConfiguration",
+        "MetadataConfiguration",
+    ] {
+        let mut schema = baseline.clone();
+        schema["properties"]["Settings"] = json!({"anyOf": [
+            {"type": "string"},
+            {"$ref": format!("#/definitions/{target}")}
+        ]});
+        for format in ["rust", "markdown"] {
+            let output = generate(&schema, format);
+            let error = String::from_utf8_lossy(&output.stderr);
+            assert!(
+                !output.status.success(),
+                "discarded {target} passed {format}"
+            );
+            assert!(
+                error.contains("unaccounted KMS node s3.Bucket#/properties/Settings/anyOf/1;"),
+                "{target}/{format}: {error}"
+            );
+        }
     }
 }
 

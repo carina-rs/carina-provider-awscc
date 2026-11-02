@@ -372,6 +372,9 @@ pub fn is_candidate<'a>(
         pattern.unwrap_or_default(),
         description.unwrap_or_default()
     )
+    .split_whitespace()
+    .collect::<Vec<_>>()
+    .join(" ")
     .to_ascii_lowercase();
     name.contains("kms")
         || name.contains("cmk")

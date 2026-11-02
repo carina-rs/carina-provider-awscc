@@ -27,9 +27,29 @@ const UNEMITTED_KMS_NODES: &[UnemittedKmsNode] = &[
         reason: "Cloud Control read transform metadata, not an emitted attribute.",
     },
     UnemittedKmsNode {
+        resource: "dynamodb.Table",
+        pointer: "/properties/SSESpecification",
+        reason: "Use of the server-side-encryption struct; its leaves are classified separately.",
+    },
+    UnemittedKmsNode {
         resource: "ecs.Cluster",
         pointer: "/propertyTransform/~1properties~1Configuration~1ManagedStorageConfiguration~1FargateEphemeralStorageKmsKeyId",
         reason: "Cloud Control read transform metadata, not an emitted attribute.",
+    },
+    UnemittedKmsNode {
+        resource: "ecs.Cluster",
+        pointer: "/properties/Configuration",
+        reason: "Use of the cluster-configuration struct; its leaves are classified separately.",
+    },
+    UnemittedKmsNode {
+        resource: "ecs.Cluster",
+        pointer: "/definitions/ClusterConfiguration/properties/ExecuteCommandConfiguration",
+        reason: "Use of the execute-command configuration struct; its leaves are classified separately.",
+    },
+    UnemittedKmsNode {
+        resource: "ecs.Cluster",
+        pointer: "/definitions/ClusterConfiguration/properties/ManagedStorageConfiguration",
+        reason: "Use of the managed-storage configuration struct; its leaves are classified separately.",
     },
     UnemittedKmsNode {
         resource: "kms.Key",
@@ -50,6 +70,51 @@ const UNEMITTED_KMS_NODES: &[UnemittedKmsNode] = &[
         resource: "ecr.Repository",
         pointer: "/properties/EncryptionConfiguration",
         reason: "Use of the encryption-configuration struct, not a key identifier leaf.",
+    },
+    UnemittedKmsNode {
+        resource: "s3.Bucket",
+        pointer: "/properties/MetadataConfiguration",
+        reason: "Use of the metadata-configuration struct; its leaves are classified separately.",
+    },
+    UnemittedKmsNode {
+        resource: "s3.Bucket",
+        pointer: "/definitions/MetadataConfiguration/properties/InventoryTableConfiguration",
+        reason: "Use of the inventory-table configuration struct; its leaves are classified separately.",
+    },
+    UnemittedKmsNode {
+        resource: "s3.Bucket",
+        pointer: "/definitions/MetadataConfiguration/properties/JournalTableConfiguration",
+        reason: "Use of the journal-table configuration struct; its leaves are classified separately.",
+    },
+    UnemittedKmsNode {
+        resource: "s3.Bucket",
+        pointer: "/definitions/InventoryTableConfiguration/properties/EncryptionConfiguration",
+        reason: "Use of the metadata-table encryption struct; its leaves are classified separately.",
+    },
+    UnemittedKmsNode {
+        resource: "s3.Bucket",
+        pointer: "/definitions/JournalTableConfiguration/properties/EncryptionConfiguration",
+        reason: "Use of the metadata-table encryption struct; its leaves are classified separately.",
+    },
+    UnemittedKmsNode {
+        resource: "s3.Bucket",
+        pointer: "/properties/ReplicationConfiguration",
+        reason: "Use of the replication-configuration struct; its leaves are classified separately.",
+    },
+    UnemittedKmsNode {
+        resource: "s3.Bucket",
+        pointer: "/definitions/ReplicationConfiguration/properties/Rules/items",
+        reason: "List element using the replication-rule struct; its leaves are classified separately.",
+    },
+    UnemittedKmsNode {
+        resource: "s3.Bucket",
+        pointer: "/definitions/ReplicationRule/properties/Destination",
+        reason: "Use of the replication-destination struct; its leaves are classified separately.",
+    },
+    UnemittedKmsNode {
+        resource: "s3.Bucket",
+        pointer: "/definitions/ReplicationRule/properties/SourceSelectionCriteria",
+        reason: "Use of the replication-selection struct; its leaves are classified separately.",
     },
     UnemittedKmsNode {
         resource: "s3.Bucket",
@@ -612,11 +677,21 @@ fn kms_nodes(source: &Value) -> BTreeSet<String> {
     let mut found = BTreeSet::new();
     let mut references = BTreeMap::new();
     scan(source, "", "", &mut found, &mut references);
-    let mut pending: Vec<_> = found.iter().cloned().collect();
+    // Memoize subtree evidence at every source pointer, including definitions.
+    // Propagation across containment and $ref edges visits each subtree once,
+    // so shared definitions and cycles never require recursive rescanning.
+    let mut subtrees_with_evidence = found.clone();
+    let mut pending: Vec<_> = subtrees_with_evidence.iter().cloned().collect();
     while let Some(target) = pending.pop() {
+        if let Some((parent, _)) = target.rsplit_once('/')
+            && subtrees_with_evidence.insert(parent.to_string())
+        {
+            pending.push(parent.to_string());
+        }
         if let Some(sites) = references.get(&target) {
             for pointer in sites {
-                if found.insert(pointer.clone()) {
+                found.insert(pointer.clone());
+                if subtrees_with_evidence.insert(pointer.clone()) {
                     pending.push(pointer.clone());
                 }
             }
@@ -685,6 +760,44 @@ mod tests {
                 "/properties/ByName".into(),
                 "/properties/ByDescription".into(),
                 "/properties/ByPattern".into(),
+            ])
+        );
+    }
+
+    #[test]
+    fn scan_follows_subtree_evidence_through_ref_cycles_and_shared_uses() {
+        let source = json!({
+            "definitions": {
+                "First": {"type": "object", "properties": {
+                    "Nested": {"$ref": "#/definitions/Second"}
+                }},
+                "Second": {"anyOf": [
+                    {"$ref": "#/definitions/First"},
+                    {"properties": {"KmsKeyId": {"type": "string"}}}
+                ]},
+                "PlainFirst": {"properties": {
+                    "Nested": {"$ref": "#/definitions/PlainSecond"}
+                }},
+                "PlainSecond": {"$ref": "#/definitions/PlainFirst"}
+            },
+            "properties": {
+                "FirstUse": {"$ref": "#/definitions/First"},
+                "SecondUse": {"$ref": "#/definitions/Second"},
+                "SharedUse": {"$ref": "#/definitions/First"},
+                "PlainUse": {"$ref": "#/definitions/PlainFirst"},
+                "Missing": {"$ref": "#/definitions/Missing"},
+                "External": {"$ref": "external.json#/definitions/First"}
+            }
+        });
+        assert_eq!(
+            kms_nodes(&source),
+            BTreeSet::from([
+                "/definitions/First/properties/Nested".into(),
+                "/definitions/Second/anyOf/0".into(),
+                "/definitions/Second/anyOf/1/properties/KmsKeyId".into(),
+                "/properties/FirstUse".into(),
+                "/properties/SecondUse".into(),
+                "/properties/SharedUse".into(),
             ])
         );
     }
@@ -812,7 +925,7 @@ mod tests {
         assert_eq!(context.sites.borrow()[&path[..]].sources.len(), 2);
         let error = context.finish().unwrap_err().to_string();
         assert!(
-            error.contains("/definitions/Cycle/properties/KmsHidden"),
+            error.contains("unaccounted KMS node ec2.Vpc#/definitions/Cycle;"),
             "{error}"
         );
     }
