@@ -178,6 +178,50 @@ async fn readonly_s3_list_object_versions_retries_after_maybe_sent_transport_err
 }
 
 #[tokio::test(start_paused = true)]
+async fn s3_cleanup_rejects_entries_without_version_id_before_deleting() {
+    for body in [
+        r#"<ListVersionsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+            <Name>test-bucket</Name>
+            <IsTruncated>false</IsTruncated>
+            <Version><Key>valid-key</Key><VersionId>test-version</VersionId></Version>
+            <Version><Key>missing-version-id-key</Key></Version>
+        </ListVersionsResult>"#,
+        r#"<ListVersionsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+            <Name>test-bucket</Name>
+            <IsTruncated>false</IsTruncated>
+            <Version><Key>valid-key</Key><VersionId>test-version</VersionId></Version>
+            <DeleteMarker><Key>missing-version-id-key</Key></DeleteMarker>
+        </ListVersionsResult>"#,
+    ] {
+        let connector = ScriptedConnector::new([
+            Action::Response { status: 200, body },
+            Action::Response {
+                status: 200,
+                body: "<DeleteResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"/>",
+            },
+        ]);
+        let provider = AwsccProvider::from_sdk_config(
+            bounded_config(connector.clone()),
+            &AwsccProviderConfig::default(),
+        )
+        .await;
+
+        let result = provider.empty_s3_bucket("test-bucket").await;
+
+        assert_eq!(
+            connector.requests(),
+            1,
+            "cleanup must send only ListObjectVersions and no DeleteObjects"
+        );
+        let error = result.expect_err("cleanup must reject an entry without VersionId");
+        assert_eq!(
+            error.detail().context(),
+            "ListObjectVersions returned no VersionId for key \"missing-version-id-key\""
+        );
+    }
+}
+
+#[tokio::test(start_paused = true)]
 async fn idempotent_s3_delete_objects_retries_after_maybe_sent_timeout() {
     let connector = ScriptedConnector::new([
         Action::Timeout,

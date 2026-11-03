@@ -23,8 +23,8 @@ pub(crate) fn cloudcontrol_idempotency(operation: &str) -> Idempotency {
 
 /// Match the aws provider's validated policy at 156a76a, from
 /// `carina-provider-aws/src/resend_safety_generated.rs` and the decisions in
-/// `carina-codegen-aws/src/resend_safety.rs`. Cleanup lists object versions and
-/// deletes the named versions; a repeated delete leaves an absent version absent.
+/// `carina-codegen-aws/src/resend_safety.rs`. Cleanup always supplies version ids
+/// to DeleteObjects; a repeated delete leaves an absent version absent.
 pub(crate) fn s3_idempotency(operation: &str) -> Idempotency {
     match operation {
         "ListObjectVersions" => Idempotency::ReadOnly,

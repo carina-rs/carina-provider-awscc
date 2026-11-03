@@ -63,26 +63,14 @@ impl AwsccProvider {
             // Collect versions
             for version in response.versions() {
                 if let Some(key) = version.key() {
-                    let mut id = types::ObjectIdentifier::builder().key(key);
-                    if let Some(vid) = version.version_id() {
-                        id = id.version_id(vid);
-                    }
-                    objects_to_delete.push(id.build().map_err(|e| {
-                        ProviderError::internal_caused_by("Failed to build ObjectIdentifier", e)
-                    })?);
+                    objects_to_delete.push(versioned_object_identifier(key, version.version_id())?);
                 }
             }
 
             // Collect delete markers
             for marker in response.delete_markers() {
                 if let Some(key) = marker.key() {
-                    let mut id = types::ObjectIdentifier::builder().key(key);
-                    if let Some(vid) = marker.version_id() {
-                        id = id.version_id(vid);
-                    }
-                    objects_to_delete.push(id.build().map_err(|e| {
-                        ProviderError::internal_caused_by("Failed to build ObjectIdentifier", e)
-                    })?);
+                    objects_to_delete.push(versioned_object_identifier(key, marker.version_id())?);
                 }
             }
 
@@ -121,6 +109,24 @@ impl AwsccProvider {
 
         Ok(())
     }
+}
+
+/// Require an explicit version so DeleteObjects remains safe to resend.
+fn versioned_object_identifier(
+    key: &str,
+    version_id: Option<&str>,
+) -> ProviderResult<types::ObjectIdentifier> {
+    let version_id = version_id.ok_or_else(|| {
+        ProviderError::internal(format!(
+            "ListObjectVersions returned no VersionId for key {key:?}"
+        ))
+    })?;
+
+    types::ObjectIdentifier::builder()
+        .key(key)
+        .version_id(version_id)
+        .build()
+        .map_err(|e| ProviderError::internal_caused_by("Failed to build ObjectIdentifier", e))
 }
 
 /// Check if an S3 SDK error is a NoSuchBucket error.
