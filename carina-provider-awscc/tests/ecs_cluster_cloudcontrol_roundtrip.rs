@@ -53,7 +53,7 @@ fn ecs_cluster_resource() -> Resource {
         .with_attribute(
             "cluster_settings",
             list([map([
-                ("name", string("containerInsights")),
+                ("name", enum_identifier("container_insights")),
                 ("value", enum_identifier("enabled")),
             ])]),
         )

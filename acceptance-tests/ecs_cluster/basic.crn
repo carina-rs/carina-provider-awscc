@@ -10,7 +10,7 @@ awscc.ecs.Cluster {
   cluster_name = 'carina-acc-test-cluster'
 
   cluster_setting {
-    name  = 'containerInsights'
+    name  = container_insights
     value = disabled
   }
 

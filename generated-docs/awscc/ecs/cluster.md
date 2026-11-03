@@ -15,7 +15,7 @@ awscc.ecs.Cluster {
   capacity_providers = ['FARGATE', 'FARGATE_SPOT']
 
   cluster_setting {
-    name  = 'containerInsights'
+    name  = container_insights
     value = enabled
   }
 
@@ -37,7 +37,7 @@ The short name of one or more capacity providers to associate with the cluster. 
 
 ### `cluster_name`
 
-- **Type:** String
+- **Type:** `String(pattern, len: 1..=255)`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -81,6 +81,14 @@ The metadata that you apply to the cluster to help you categorize and organize t
 
 ## Enum Values
 
+### cluster_settings.name (Name)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `containerInsights` | `aws.ecs.Cluster.ClusterSettings.Name.container_insights` |
+
+Shorthand formats: `container_insights` or `Name.container_insights`
+
 ### cluster_settings.value (Value)
 
 | Value | DSL Identifier |
@@ -107,7 +115,7 @@ Shorthand formats: `none` or `Logging.none`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `name` | String | No | The name of the cluster setting. The value is ``containerInsights``. |
+| `name` | [Enum (Name)](#cluster_settingsname-name) | No | The name of the cluster setting. The value is ``containerInsights``. |
 | `value` | [Enum (Value)](#cluster_settingsvalue-value) | No | The value to set for the cluster setting. The supported values are ``enhanced``, ``enabled``, and ``disabled``. To use Container Insights with enhanced observability, set the ``containerInsights`` account setting to ``enhanced``. To use Container Insights, set the ``containerInsights`` account setting to ``enabled``. If a cluster value is specified, it will override the ``containerInsights`` value set with [PutAccountSetting](https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_PutAccountSetting.html) or [PutAccountSettingDefault](https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_PutAccountSettingDefault.html). |
 
 ### configuration
@@ -146,9 +154,9 @@ Shorthand formats: `none` or `Logging.none`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `base` | Int | No | The *base* value designates how many tasks, at a minimum, to run on the specified capacity provider for each service. Only one capacity provider in a capacity provider strategy can have a *base* defined. If no value is specified, the default value of ``0`` is used. Base value characteristics: + Only one capacity provider in a strategy can have a base defined + The default value is ``0`` if not specified + The valid range is 0 to 100,000 + Base requirements are satisfied first before weight distribution |
+| `base` | `Int(0..=100000)` | No | The *base* value designates how many tasks, at a minimum, to run on the specified capacity provider for each service. Only one capacity provider in a capacity provider strategy can have a *base* defined. If no value is specified, the default value of ``0`` is used. Base value characteristics: + Only one capacity provider in a strategy can have a base defined + The default value is ``0`` if not specified + The valid range is 0 to 100,000 + Base requirements are satisfied first before weight distribution |
 | `capacity_provider` | String | No | The short name of the capacity provider. This can be either an AWS managed capacity provider (``FARGATE`` or ``FARGATE_SPOT``) or the name of a custom capacity provider that you created. |
-| `weight` | Int | No | The *weight* value designates the relative percentage of the total number of tasks launched that should use the specified capacity provider. The ``weight`` value is taken into consideration after the ``base`` value, if defined, is satisfied. If no ``weight`` value is specified, the default value of ``0`` is used. When multiple capacity providers are specified within a capacity provider strategy, at least one of the capacity providers must have a weight value greater than zero and any capacity providers with a weight of ``0`` can't be used to place tasks. If you specify multiple capacity providers in a strategy that all have a weight of ``0``, any ``RunTask`` or ``CreateService`` actions using the capacity provider strategy will fail. Weight value characteristics: + Weight is considered after the base value is satisfied + The default value is ``0`` if not specified + The valid range is 0 to 1,000 + At least one capacity provider must have a weight greater than zero + Capacity providers with weight of ``0`` cannot place tasks Task distribution logic: 1. Base satisfaction: The minimum number of tasks specified by the base value are placed on that capacity provider 1. Weight distribution: After base requirements are met, additional tasks are distributed according to weight ratios Examples: Equal Distribution: Two capacity providers both with weight ``1`` will split tasks evenly after base requirements are met. Weighted Distribution: If capacityProviderA has weight ``1`` and capacityProviderB has weight ``4``, then for every 1 task on A, 4 tasks will run on B. |
+| `weight` | `Int(0..=1000)` | No | The *weight* value designates the relative percentage of the total number of tasks launched that should use the specified capacity provider. The ``weight`` value is taken into consideration after the ``base`` value, if defined, is satisfied. If no ``weight`` value is specified, the default value of ``0`` is used. When multiple capacity providers are specified within a capacity provider strategy, at least one of the capacity providers must have a weight value greater than zero and any capacity providers with a weight of ``0`` can't be used to place tasks. If you specify multiple capacity providers in a strategy that all have a weight of ``0``, any ``RunTask`` or ``CreateService`` actions using the capacity provider strategy will fail. Weight value characteristics: + Weight is considered after the base value is satisfied + The default value is ``0`` if not specified + The valid range is 0 to 1,000 + At least one capacity provider must have a weight greater than zero + Capacity providers with weight of ``0`` cannot place tasks Task distribution logic: 1. Base satisfaction: The minimum number of tasks specified by the base value are placed on that capacity provider 1. Weight distribution: After base requirements are met, additional tasks are distributed according to weight ratios Examples: Equal Distribution: Two capacity providers both with weight ``1`` will split tasks evenly after base requirements are met. Weighted Distribution: If capacityProviderA has weight ``1`` and capacityProviderB has weight ``4``, then for every 1 task on A, 4 tasks will run on B. |
 
 ### service_connect_defaults
 

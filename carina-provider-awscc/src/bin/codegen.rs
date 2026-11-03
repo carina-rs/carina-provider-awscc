@@ -37,6 +37,9 @@ mod kms_references;
 mod kms_references_cfn;
 use kms_references::PathSegment;
 use kms_references_cfn::{EmissionContext, EmissionProperty};
+#[path = "codegen/parsed_cfn_schema.rs"]
+mod parsed_cfn_schema;
+use parsed_cfn_schema::ParsedCfnSchema;
 
 // carina#3340: in-progress recursion guard for cyclic CFN $ref
 // definitions (WAFv2 `WebACL.Statement` → `AndStatement` → `List<Statement>`).
@@ -814,7 +817,6 @@ fn needs_kms_classification(property: &CfnProperty, name: &str) -> bool {
 
 /// CloudFormation Resource Schema
 #[derive(Debug, Deserialize)]
-#[cfg_attr(test, derive(Serialize))]
 #[serde(rename_all = "camelCase")]
 #[allow(dead_code)]
 struct CfnSchema {
@@ -1035,6 +1037,7 @@ fn emit_permissions_slice(permissions: &[String]) -> String {
 struct CfnTagging {
     #[serde(default)]
     taggable: bool,
+    #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
     tag_property: Option<String>,
 }
 
@@ -1720,58 +1723,78 @@ impl EnumValue {
 #[allow(dead_code)]
 struct CfnProperty {
     #[serde(rename = "type")]
+    #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
     prop_type: Option<TypeValue>,
+    #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
     description: Option<String>,
     #[serde(rename = "enum")]
+    #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
     enum_values: Option<Vec<EnumValue>>,
+    #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
     items: Option<Box<CfnProperty>>,
     #[serde(rename = "$ref")]
+    #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
     ref_path: Option<String>,
     #[serde(default)]
+    #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
     insertion_order: Option<bool>,
     /// Whether array items must be unique.
     #[serde(default)]
+    #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
     unique_items: Option<bool>,
     /// Inline object properties (for nested objects)
+    #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
     properties: Option<BTreeMap<String, CfnProperty>>,
     /// JSON object-map value schemas keyed by key-pattern.
     #[serde(default)]
+    #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
     pattern_properties: Option<BTreeMap<String, CfnProperty>>,
     /// Required fields for inline objects
     #[serde(default)]
     required: Vec<String>,
     /// Minimum value constraint (for integer/number types)
     #[serde(default)]
+    #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
     minimum: Option<i64>,
     /// Maximum value constraint (for integer/number types)
     #[serde(default)]
+    #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
     maximum: Option<i64>,
     /// Whether additional properties are allowed (for object types)
     #[serde(default)]
+    #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
     additional_properties: Option<bool>,
     /// Const value (single fixed value for this property)
     #[serde(rename = "const")]
+    #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
     const_value: Option<serde_json::Value>,
     /// Default value for this property
     #[serde(rename = "default")]
+    #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
     default_value: Option<serde_json::Value>,
     /// Regex pattern constraint (for string types)
     #[serde(default)]
+    #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
     pattern: Option<String>,
     /// Minimum number of items (for array types)
     #[serde(default)]
+    #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
     min_items: Option<i64>,
     /// Maximum number of items (for array types)
     #[serde(default)]
+    #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
     max_items: Option<i64>,
     /// Minimum length constraint (for string types)
     #[serde(default, rename = "minLength")]
+    #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
     min_length: Option<u64>,
     /// Maximum length constraint (for string types)
     #[serde(default, rename = "maxLength")]
+    #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
     max_length: Option<u64>,
     /// Format constraint (e.g., "int64", "uri", "double")
     #[serde(default)]
+    #[cfg_attr(test, serde(skip_serializing_if = "Option::is_none"))]
     format: Option<String>,
     /// Property-level oneOf variants (union types)
     #[serde(default, rename = "oneOf")]
@@ -2239,8 +2262,7 @@ fn main() -> Result<()> {
     // Parse schema
     let source: serde_json::Value =
         serde_json::from_str(&schema_json).context("Failed to parse CloudFormation schema JSON")?;
-    let schema: CfnSchema =
-        serde_json::from_value(source.clone()).context("Failed to parse CloudFormation schema")?;
+    let schema = ParsedCfnSchema::from_json(source)?;
 
     if !schema.is_cloud_control_provisionable() {
         eprintln!(
@@ -2255,7 +2277,7 @@ fn main() -> Result<()> {
     }
 
     // Generate output based on format
-    let context = EmissionContext::from_source(&schema, &source)?;
+    let context = EmissionContext::from_source(&schema)?;
     let output = match output_mode {
         OutputMode::Markdown { examples_dir } => {
             let example = load_markdown_example(&examples_dir, &args.type_name)?;
@@ -2968,10 +2990,10 @@ fn override_type_to_display_name(override_type: &str) -> &str {
 
 /// Determine the display string for a property's type in markdown docs
 #[cfg(test)]
-fn type_display_string(prop_name: &str, prop: &CfnProperty, schema: &CfnSchema) -> String {
+fn type_display_string(prop_name: &str, prop: &CfnProperty, schema: &ParsedCfnSchema) -> String {
     type_display_string_at(
         prop,
-        &EmissionContext::new(schema).unwrap(),
+        &EmissionContext::from_source(schema).unwrap(),
         &[prop_name.to_string()],
         CfnPropertyPath::new(None, prop_name),
     )
@@ -4779,7 +4801,7 @@ fn render_schema_code(schema: &EmissionContext<'_>, type_name: &str) -> Result<S
     // Use composite key "DefName.FieldName" to avoid conflicts when different
     // definitions have fields with the same name but different enum values
     // (e.g., IntelligentTieringConfiguration.Status vs VersioningConfiguration.Status)
-    let enum_schema = &EmissionContext::for_enum_discovery(schema)?;
+    let enum_schema = &schema.for_enum_discovery()?;
     if let Some(definitions) = &schema.definitions {
         for (def_name, def) in definitions {
             if let Some(props) = &def.properties {
@@ -7849,6 +7871,47 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             },
         );
 
+        // Valid Values: containerInsights. Enum emission derives container_insights.
+        // https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_ClusterSetting.html
+        m.insert(
+            ("AWS::ECS::Cluster", "ClusterSettings.Name"),
+            TypeOverride::Enum(vec!["containerInsights"]),
+        );
+        // Weight: minimum 0, maximum 1000.
+        // https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_CapacityProviderStrategyItem.html
+        m.insert(
+            ("AWS::ECS::Cluster", "CapacityProviderStrategyItem.Weight"),
+            TypeOverride::AttributeType {
+                expression: "AttributeType::refined_int(None, Some((Some(0), Some(1000))))",
+                display: const { OverrideTypeDisplay::new("Int(0..=1000)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // Base: minimum 0, maximum 100000.
+        // https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_CapacityProviderStrategyItem.html
+        m.insert(
+            ("AWS::ECS::Cluster", "CapacityProviderStrategyItem.Base"),
+            TypeOverride::AttributeType {
+                expression: "AttributeType::refined_int(None, Some((Some(0), Some(100000))))",
+                display: const { OverrideTypeDisplay::new("Int(0..=100000)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // ClusterName: 1..=255 ASCII letters, digits, underscores, or hyphens.
+        // Match generated refined strings with a strict end-of-input anchor.
+        // https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_CreateCluster.html
+        m.insert(
+            ("AWS::ECS::Cluster", "ClusterName"),
+            TypeOverride::AttributeType {
+                expression: r#"AttributeType::refined_string(None, Some("^[a-zA-Z0-9_-]+\\z".to_string()), Some((Some(1), Some(255))), None)"#,
+                display: const { OverrideTypeDisplay::new("String(pattern, len: 1..=255)") },
+                block_name: None,
+                default: None,
+            },
+        );
+
         // Subscribe documents these protocols for both standalone subscriptions
         // and Topic's Subscription definition (the latter stays omitted from
         // the public schema). Keep each override at its full CFN path.
@@ -9894,33 +9957,33 @@ mod tests {
         action();
     }
 
-    fn generate_schema_code(schema: &CfnSchema, type_name: &str) -> Result<String> {
-        super::render_schema_code(&EmissionContext::new(schema)?, type_name)
+    fn generate_schema_code(schema: &ParsedCfnSchema, type_name: &str) -> Result<String> {
+        super::render_schema_code(&EmissionContext::from_source(schema)?, type_name)
     }
 
     fn generate_markdown(
-        schema: &CfnSchema,
+        schema: &ParsedCfnSchema,
         type_name: &str,
         example: &DocExample,
     ) -> Result<String> {
-        super::render_markdown(&EmissionContext::new(schema)?, type_name, example)
+        super::render_markdown(&EmissionContext::from_source(schema)?, type_name, example)
     }
 
     fn cfn_type_to_carina_type_with_enum(
         prop: &CfnProperty,
         prop_name: &str,
-        schema: &CfnSchema,
+        schema: &ParsedCfnSchema,
         namespace: &str,
         enums: &BTreeMap<String, EnumInfo>,
     ) -> (String, Option<EnumInfo>) {
-        let classified = EmissionContext::new(schema).unwrap();
+        let classified = EmissionContext::from_source(schema).unwrap();
         super::cfn_type_to_carina_type_with_enum(prop, prop_name, &classified, namespace, enums)
     }
 
     fn cfn_type_to_carina_type_with_enum_with_paths(
         prop: &CfnProperty,
         prop_name: &str,
-        schema: &CfnSchema,
+        schema: &ParsedCfnSchema,
         namespace: &str,
         enums: &BTreeMap<String, EnumInfo>,
         paths: CfnTypeGenerationPaths<'_>,
@@ -9934,7 +9997,7 @@ mod tests {
             },
             ..paths
         };
-        let classified = EmissionContext::new(schema).unwrap();
+        let classified = EmissionContext::from_source(schema).unwrap();
         super::cfn_type_to_carina_type_with_enum_with_paths(
             prop,
             &classified,
@@ -9947,12 +10010,12 @@ mod tests {
     fn generate_top_level_attribute_type(
         prop_name: &str,
         prop: &CfnProperty,
-        schema: &CfnSchema,
+        schema: &ParsedCfnSchema,
         namespace: &str,
         enums: &BTreeMap<String, EnumInfo>,
         has_arn_helper: bool,
     ) -> String {
-        let classified = EmissionContext::new(schema).unwrap();
+        let classified = EmissionContext::from_source(schema).unwrap();
         super::generate_top_level_attribute_type(
             classified.property_at(&[prop_name.to_string()], prop),
             namespace,
@@ -9964,7 +10027,7 @@ mod tests {
     fn markdown_type(
         prop_name: &str,
         prop: &CfnProperty,
-        schema: &CfnSchema,
+        schema: &ParsedCfnSchema,
         enum_target: Option<&MarkdownEnumKey>,
         property_path: &[String],
         cfn_parent: Option<&str>,
@@ -9975,7 +10038,7 @@ mod tests {
         } else {
             property_path
         };
-        let classified = EmissionContext::new(schema).unwrap();
+        let classified = EmissionContext::from_source(schema).unwrap();
         super::markdown_type(
             classified.property_at(property_path, prop),
             enum_target,
@@ -10015,7 +10078,7 @@ mod tests {
     }
 
     fn pattern_type_code(
-        schema: &CfnSchema,
+        schema: &ParsedCfnSchema,
         parent: Option<&str>,
         name: &str,
         prop: &CfnProperty,
@@ -10041,12 +10104,12 @@ mod tests {
         for path in cached_schema_paths() {
             let source: serde_json::Value =
                 serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
-            let schema: CfnSchema = serde_json::from_value(source.clone()).unwrap();
+            let schema = ParsedCfnSchema::from_json(source).unwrap();
             if !schema.is_cloud_control_provisionable() {
                 continue;
             }
             // string_constraints is the compilation gate during generation.
-            let context = EmissionContext::from_source(&schema, &source).unwrap();
+            let context = EmissionContext::from_source(&schema).unwrap();
             super::render_schema_code(&context, &schema.type_name).unwrap();
         }
         USED_STRING_PATTERN_REWRITES.with(|used| {
@@ -10381,7 +10444,12 @@ mod tests {
                 "{kind}"
             );
 
-            schema.properties.insert(name.to_string(), prop);
+            schema.edit_json(|source| {
+                source["properties"]
+                    .as_object_mut()
+                    .unwrap()
+                    .insert(name.to_string(), serde_json::json!(prop));
+            });
             generate_synthetic_schema_code(&schema).unwrap();
             generate_test_markdown(&schema, &schema.type_name).unwrap();
         }
@@ -10412,8 +10480,12 @@ mod tests {
                 let mut property: CfnProperty = serde_json::from_value(keywords.clone()).unwrap();
                 property.prop_type = Some(TypeValue::Single(property_type.to_string()));
                 let mut schema = empty_schema("AWS::Test::Resource");
-                schema.definitions =
-                    Some(BTreeMap::from([("Alias".to_string(), property.clone())]));
+                schema.edit_json(|source| {
+                    source["definitions"] = serde_json::json!(BTreeMap::from([(
+                        "Alias".to_string(),
+                        property.clone()
+                    )]));
+                });
                 let reference = CfnProperty {
                     ref_path: Some("#/definitions/Alias".to_string()),
                     ..Default::default()
@@ -10574,7 +10646,10 @@ mod tests {
         ] {
             let mut schema = empty_schema(cfn_type);
             let property: CfnProperty = serde_json::from_value(property).unwrap();
-            schema.definitions = Some(BTreeMap::from([("Alias".to_string(), property.clone())]));
+            schema.edit_json(|source| {
+                source["definitions"] =
+                    serde_json::json!(BTreeMap::from([("Alias".to_string(), property.clone())]));
+            });
             let reference = CfnProperty {
                 ref_path: Some("#/definitions/Alias".to_string()),
                 ..Default::default()
@@ -10612,7 +10687,10 @@ mod tests {
         let mut schema = empty_schema("AWS::ECR::Repository");
         let cached = cfn_schema_for_codegen_tests(&schema.type_name);
         let prop = cached.properties["RepositoryName"].clone();
-        schema.definitions = Some(BTreeMap::from([("Name".to_string(), prop.clone())]));
+        schema.edit_json(|source| {
+            source["definitions"] =
+                serde_json::json!(BTreeMap::from([("Name".to_string(), prop.clone())]));
+        });
         let reference = CfnProperty {
             ref_path: Some("#/definitions/Name".to_string()),
             // A reference owns the shape; these sibling constraints are not emitted.
@@ -10736,7 +10814,7 @@ mod tests {
         .unwrap()
     }
 
-    fn generate_test_markdown(schema: &CfnSchema, type_name: &str) -> Result<String> {
+    fn generate_test_markdown(schema: &ParsedCfnSchema, type_name: &str) -> Result<String> {
         generate_markdown(schema, type_name, &markdown_example(type_name))
     }
 
@@ -10753,12 +10831,28 @@ mod tests {
         path
     }
 
-    fn cfn_schema_for_codegen_tests(type_name: &str) -> CfnSchema {
+    fn cfn_schema_for_codegen_tests(type_name: &str) -> ParsedCfnSchema {
         let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../cfn-schema-cache")
             .join(format!("{}.json", type_name.replace("::", "__")));
         let raw = std::fs::read_to_string(path).expect("cached CFN schema");
-        serde_json::from_str(&raw).expect("cached CFN schema parses")
+        let source: serde_json::Value = serde_json::from_str(&raw).expect("cached CFN schema JSON");
+        ParsedCfnSchema::from_json(source).expect("cached CFN schema parses")
+    }
+
+    #[test]
+    fn test_cached_schema_rendering_accounts_for_property_transform_kms_nodes() {
+        for type_name in ["AWS::ECS::Cluster", "AWS::DynamoDB::Table"] {
+            let cached = cfn_schema_for_codegen_tests(type_name);
+            assert!(
+                cached.source()["propertyTransform"].is_object(),
+                "{type_name}"
+            );
+            generate_schema_code(&cached, type_name)
+                .unwrap_or_else(|error| panic!("{type_name} schema: {error}"));
+            generate_test_markdown(&cached, type_name)
+                .unwrap_or_else(|error| panic!("{type_name} Markdown: {error}"));
+        }
     }
 
     fn cached_schema_paths() -> Vec<std::path::PathBuf> {
@@ -10780,7 +10874,7 @@ mod tests {
     /// Generate an intentionally partial schema fixture under a declared
     /// resource identity whose replacement class requires no name property.
     /// Use only when the assertion is independent of the emitted identity.
-    fn generate_synthetic_schema_code(schema: &CfnSchema) -> Result<String> {
+    fn generate_synthetic_schema_code(schema: &ParsedCfnSchema) -> Result<String> {
         generate_schema_code(schema, "AWS::EC2::Route")
     }
 
@@ -10794,21 +10888,11 @@ mod tests {
                 ..Default::default()
             },
         );
-        let schema = CfnSchema {
-            type_name: "AWS::Test::Small".to_string(),
-            description: None,
-            properties,
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Test::Small".to_string(),
+            "properties": properties
+        }))
+        .unwrap();
 
         let generated = generate_synthetic_schema_code(&schema).unwrap();
 
@@ -10853,7 +10937,8 @@ mod tests {
 
         for path in cached_schema_paths() {
             let raw = std::fs::read_to_string(&path).expect("cached CFN schema");
-            let schema: CfnSchema = serde_json::from_str(&raw).expect("cached CFN schema parses");
+            let schema = ParsedCfnSchema::from_json(serde_json::from_str(&raw).unwrap())
+                .expect("cached CFN schema parses");
 
             for (property_name, property) in &schema.properties {
                 if property.enum_values.is_none()
@@ -11045,16 +11130,20 @@ mod tests {
         use super::*;
         use serde_json::{Value, json};
 
-        fn fixture(properties: Value, definitions: Value) -> CfnSchema {
+        fn fixture(properties: Value, definitions: Value) -> ParsedCfnSchema {
             // Use one identity for both emitters, with a declared replacement
             // class that needs no name property in these partial fixtures.
             let mut schema = empty_schema("AWS::EC2::RouteTable");
-            schema.properties = serde_json::from_value(properties).unwrap();
-            schema.definitions = Some(serde_json::from_value(definitions).unwrap());
+            schema.edit_json(|source| {
+                source["properties"] = properties;
+            });
+            schema.edit_json(|source| {
+                source["definitions"] = definitions;
+            });
             schema
         }
 
-        fn outputs(schema: &CfnSchema) -> (String, String) {
+        fn outputs(schema: &ParsedCfnSchema) -> (String, String) {
             let code = generate_schema_code(schema, &schema.type_name).unwrap();
             let docs = generate_test_markdown(schema, &schema.type_name).unwrap();
             carina_docgen::check_page(&docs).unwrap();
@@ -11922,21 +12011,22 @@ mod tests {
                 let expected_docs = generate_test_markdown(&cached, type_name).unwrap();
                 for types in [["object", "string"], ["string", "object"]] {
                     let mut schema = cfn_schema_for_codegen_tests(type_name);
-                    let properties = if let Some(parent) = parent {
-                        schema
-                            .definitions
-                            .as_mut()
-                            .unwrap()
-                            .get_mut(parent)
-                            .unwrap()
+                    schema.edit_json(|source| {
+                        let properties = if let Some(parent) = parent {
+                            &mut source["definitions"][parent]["properties"]
+                        } else {
+                            &mut source["properties"]
+                        };
+                        properties["PolicyDocument"]["type"] = json!(types);
+                    });
+                    let property = if let Some(parent) = parent {
+                        &schema.definitions.as_ref().unwrap()[parent]
                             .properties
-                            .as_mut()
-                            .unwrap()
+                            .as_ref()
+                            .unwrap()["PolicyDocument"]
                     } else {
-                        &mut schema.properties
+                        &schema.properties["PolicyDocument"]
                     };
-                    let property = properties.get_mut("PolicyDocument").unwrap();
-                    property.prop_type = Some(serde_json::from_value(json!(types)).unwrap());
                     assert!(property_declares_object(property), "{type_name}: {types:?}");
                     assert!(is_direct_bare_object(property), "{type_name}: {types:?}");
                     assert!(object_string_union_is_iam_policy_document(
@@ -12164,22 +12254,12 @@ mod tests {
         }
     }
 
-    fn empty_schema(type_name: &str) -> CfnSchema {
-        CfnSchema {
-            type_name: type_name.to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        }
+    fn empty_schema(type_name: &str) -> ParsedCfnSchema {
+        ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": type_name.to_string(),
+            "properties": {}
+        }))
+        .unwrap()
     }
 
     /// Build a definition fixture while specifying only the shape relevant to
@@ -12226,17 +12306,19 @@ mod tests {
         tag_with_extra_properties.insert("Values".to_string(), string_property());
 
         let mut schema = empty_schema("AWS::Test::Resource");
-        schema.definitions = Some(BTreeMap::from([
-            ("Tag".to_string(), object_definition(key_value_properties())),
-            (
-                "TagWithExtraField".to_string(),
-                object_definition(tag_with_extra_properties),
-            ),
-            (
-                "AttributePair".to_string(),
-                object_definition(key_value_properties()),
-            ),
-        ]));
+        schema.edit_json(|source| {
+            source["definitions"] = serde_json::json!(BTreeMap::from([
+                ("Tag".to_string(), object_definition(key_value_properties())),
+                (
+                    "TagWithExtraField".to_string(),
+                    object_definition(tag_with_extra_properties),
+                ),
+                (
+                    "AttributePair".to_string(),
+                    object_definition(key_value_properties()),
+                ),
+            ]));
+        });
 
         assert!(is_tag_map_ref(&schema, "#/definitions/Tag"));
         assert!(
@@ -12269,14 +12351,16 @@ mod tests {
         };
 
         let mut schema = empty_schema("AWS::Test::Resource");
-        schema.definitions = Some(BTreeMap::from([
-            ("LabelsAlias".to_string(), alias("Labels")),
-            ("Labels".to_string(), alias("TagSet")),
-            ("TagSet".to_string(), key_value_object()),
-            ("TagAlias".to_string(), alias("AttributePairAlias")),
-            ("AttributePairAlias".to_string(), alias("AttributePair")),
-            ("AttributePair".to_string(), key_value_object()),
-        ]));
+        schema.edit_json(|source| {
+            source["definitions"] = serde_json::json!(BTreeMap::from([
+                ("LabelsAlias".to_string(), alias("Labels")),
+                ("Labels".to_string(), alias("TagSet")),
+                ("TagSet".to_string(), key_value_object()),
+                ("TagAlias".to_string(), alias("AttributePairAlias")),
+                ("AttributePairAlias".to_string(), alias("AttributePair")),
+                ("AttributePair".to_string(), key_value_object()),
+            ]));
+        });
 
         let labels = alias("LabelsAlias");
         assert!(
@@ -12316,7 +12400,7 @@ mod tests {
 
     #[test]
     fn test_is_tag_map_ref_accepts_only_direct_string_pattern_map() {
-        let schema: CfnSchema = serde_json::from_value(serde_json::json!({
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
             "typeName": "AWS::Test::Resource",
             "properties": {},
             "definitions": {
@@ -12381,27 +12465,34 @@ mod tests {
         assert!(missing_error.to_string().contains("top-level property"));
 
         let mut read_only_schema = empty_schema("AWS::IAM::Role");
-        read_only_schema.properties.insert(
-            "RoleName".to_string(),
-            CfnProperty {
-                prop_type: Some(TypeValue::Single("string".to_string())),
-                ..Default::default()
-            },
-        );
-        read_only_schema.read_only_properties = vec!["/properties/RoleName".to_string()];
+        read_only_schema.edit_json(|source| {
+            source["properties"].as_object_mut().unwrap().insert(
+                "RoleName".to_string(),
+                serde_json::json!(CfnProperty {
+                    prop_type: Some(TypeValue::Single("string".to_string())),
+                    ..Default::default()
+                }),
+            );
+        });
+        read_only_schema.edit_json(|source| {
+            source["readOnlyProperties"] =
+                serde_json::json!(vec!["/properties/RoleName".to_string()]);
+        });
         let read_only_error = declared_replacement_class("iam.Role", &read_only_schema)
             .expect_err("a read-only unique-name attribute must fail codegen");
         assert!(read_only_error.to_string().contains("role_name"));
         assert!(read_only_error.to_string().contains("read-only"));
 
         let mut non_string_schema = empty_schema("AWS::IAM::Role");
-        non_string_schema.properties.insert(
-            "RoleName".to_string(),
-            CfnProperty {
-                prop_type: Some(TypeValue::Single("integer".to_string())),
-                ..Default::default()
-            },
-        );
+        non_string_schema.edit_json(|source| {
+            source["properties"].as_object_mut().unwrap().insert(
+                "RoleName".to_string(),
+                serde_json::json!(CfnProperty {
+                    prop_type: Some(TypeValue::Single("integer".to_string())),
+                    ..Default::default()
+                }),
+            );
+        });
         let non_string_error = declared_replacement_class("iam.Role", &non_string_schema)
             .expect_err("a non-string unique-name attribute must fail codegen");
         assert!(non_string_error.to_string().contains("role_name"));
@@ -12411,13 +12502,15 @@ mod tests {
     #[test]
     fn test_declared_replacement_class_covers_all_classes() {
         let mut attr_schema = empty_schema("AWS::IAM::Role");
-        attr_schema.properties.insert(
-            "RoleName".to_string(),
-            CfnProperty {
-                prop_type: Some(TypeValue::Single("string".to_string())),
-                ..Default::default()
-            },
-        );
+        attr_schema.edit_json(|source| {
+            source["properties"].as_object_mut().unwrap().insert(
+                "RoleName".to_string(),
+                serde_json::json!(CfnProperty {
+                    prop_type: Some(TypeValue::Single("string".to_string())),
+                    ..Default::default()
+                }),
+            );
+        });
         let attr_class = declared_replacement_class("iam.Role", &attr_schema).unwrap();
         assert_eq!(attr_class, ReplacementClass::Attribute("role_name"));
         assert_eq!(
@@ -12642,23 +12735,27 @@ mod tests {
         top_level_name: &str,
         definition_name: &str,
         fields: BTreeMap<String, CfnProperty>,
-    ) -> CfnSchema {
+    ) -> ParsedCfnSchema {
         let mut schema = empty_schema(type_name);
-        schema.properties.insert(
-            top_level_name.to_string(),
-            CfnProperty {
-                ref_path: Some(format!("#/definitions/{definition_name}")),
-                ..Default::default()
-            },
-        );
-        schema.definitions = Some(BTreeMap::from([(
-            definition_name.to_string(),
-            CfnProperty {
-                prop_type: Some(TypeValue::Single("object".to_string())),
-                properties: Some(fields),
-                ..Default::default()
-            },
-        )]));
+        schema.edit_json(|source| {
+            source["properties"].as_object_mut().unwrap().insert(
+                top_level_name.to_string(),
+                serde_json::json!(CfnProperty {
+                    ref_path: Some(format!("#/definitions/{definition_name}")),
+                    ..Default::default()
+                }),
+            );
+        });
+        schema.edit_json(|source| {
+            source["definitions"] = serde_json::json!(BTreeMap::from([(
+                definition_name.to_string(),
+                CfnProperty {
+                    prop_type: Some(TypeValue::Single("object".to_string())),
+                    properties: Some(fields),
+                    ..Default::default()
+                },
+            )]));
+        });
         schema
     }
 
@@ -12819,17 +12916,49 @@ mod tests {
     #[test]
     fn test_unreferenced_definitions_are_not_classification_inputs() {
         let mut schema = empty_schema("AWS::Test::UnreferencedDefinitions");
-        schema.definitions = Some(BTreeMap::from([
-            (
-                "UnusedMarker".to_string(),
-                CfnProperty {
-                    prop_type: Some(TypeValue::Single("object".to_string())),
-                    properties: Some(BTreeMap::new()),
+        schema.edit_json(|source| {
+            source["definitions"] = serde_json::json!(BTreeMap::from([
+                (
+                    "UnusedMarker".to_string(),
+                    CfnProperty {
+                        prop_type: Some(TypeValue::Single("object".to_string())),
+                        properties: Some(BTreeMap::new()),
+                        ..Default::default()
+                    },
+                ),
+                (
+                    "UnusedMarkers".to_string(),
+                    CfnProperty {
+                        prop_type: Some(TypeValue::Single("array".to_string())),
+                        items: Some(Box::new(CfnProperty {
+                            prop_type: Some(TypeValue::Single("object".to_string())),
+                            properties: Some(BTreeMap::new()),
+                            ..Default::default()
+                        })),
+                        ..Default::default()
+                    },
+                ),
+            ]));
+        });
+
+        assert!(assert_schema_bare_objects_classified(&schema).is_empty());
+    }
+
+    #[test]
+    fn test_array_definition_items_are_classified_at_the_referencing_property_path() {
+        let mut schema = empty_schema("AWS::Test::ArrayReference");
+        schema.edit_json(|source| {
+            source["properties"].as_object_mut().unwrap().insert(
+                "Markers".to_string(),
+                serde_json::json!(CfnProperty {
+                    ref_path: Some("#/definitions/MarkerList".to_string()),
                     ..Default::default()
-                },
-            ),
-            (
-                "UnusedMarkers".to_string(),
+                }),
+            );
+        });
+        schema.edit_json(|source| {
+            source["definitions"] = serde_json::json!(BTreeMap::from([(
+                "MarkerList".to_string(),
                 CfnProperty {
                     prop_type: Some(TypeValue::Single("array".to_string())),
                     items: Some(Box::new(CfnProperty {
@@ -12839,34 +12968,8 @@ mod tests {
                     })),
                     ..Default::default()
                 },
-            ),
-        ]));
-
-        assert!(assert_schema_bare_objects_classified(&schema).is_empty());
-    }
-
-    #[test]
-    fn test_array_definition_items_are_classified_at_the_referencing_property_path() {
-        let mut schema = empty_schema("AWS::Test::ArrayReference");
-        schema.properties.insert(
-            "Markers".to_string(),
-            CfnProperty {
-                ref_path: Some("#/definitions/MarkerList".to_string()),
-                ..Default::default()
-            },
-        );
-        schema.definitions = Some(BTreeMap::from([(
-            "MarkerList".to_string(),
-            CfnProperty {
-                prop_type: Some(TypeValue::Single("array".to_string())),
-                items: Some(Box::new(CfnProperty {
-                    prop_type: Some(TypeValue::Single("object".to_string())),
-                    properties: Some(BTreeMap::new()),
-                    ..Default::default()
-                })),
-                ..Default::default()
-            },
-        )]));
+            )]));
+        });
 
         let used_rows = assert_schema_bare_objects_classified(&schema);
         assert!(used_rows.contains(&(
@@ -13172,7 +13275,8 @@ mod tests {
         let mut used_rows = BTreeSet::new();
         for path in cached_schema_paths() {
             let raw = std::fs::read_to_string(&path).expect("cached CFN schema");
-            let schema: CfnSchema = serde_json::from_str(&raw).expect("cached CFN schema parses");
+            let schema = ParsedCfnSchema::from_json(serde_json::from_str(&raw).unwrap())
+                .expect("cached CFN schema parses");
             used_rows.extend(assert_schema_bare_objects_classified(&schema));
         }
 
@@ -13215,9 +13319,10 @@ mod tests {
         let mut cached_types = BTreeSet::new();
         for path in cached_schema_paths() {
             let raw = std::fs::read_to_string(&path).expect("cached CFN schema");
-            let schema: CfnSchema = serde_json::from_str(&raw).expect("cached CFN schema parses");
+            let schema = ParsedCfnSchema::from_json(serde_json::from_str(&raw).unwrap())
+                .expect("cached CFN schema parses");
             validate_identity_properties(&schema).unwrap_or_else(|error| panic!("{error}"));
-            cached_types.insert(schema.type_name);
+            cached_types.insert(schema.type_name.clone());
         }
         for ((cfn_type, key), entry) in identity_properties() {
             assert!(
@@ -13250,17 +13355,35 @@ mod tests {
                 .contains("identity must be create-only in the cache")
         );
 
-        schema
-            .create_only_properties
-            .push("/properties/Budget/BudgetName".to_string());
+        schema.edit_json(|source| {
+            source
+                .as_object_mut()
+                .unwrap()
+                .entry("createOnlyProperties")
+                .or_insert_with(|| serde_json::json!([]))
+                .as_array_mut()
+                .unwrap()
+                .push(serde_json::json!(
+                    "/properties/Budget/BudgetName".to_string()
+                ));
+        });
         assert_eq!(
             validate_identity_properties_from_table(&schema, &table).unwrap(),
             BTreeSet::from(["/properties/Budget/BudgetName".to_string()]),
         );
 
-        schema
-            .read_only_properties
-            .push("/properties/Budget/BudgetName".to_string());
+        schema.edit_json(|source| {
+            source
+                .as_object_mut()
+                .unwrap()
+                .entry("readOnlyProperties")
+                .or_insert_with(|| serde_json::json!([]))
+                .as_array_mut()
+                .unwrap()
+                .push(serde_json::json!(
+                    "/properties/Budget/BudgetName".to_string()
+                ));
+        });
         let error = validate_identity_properties_from_table(&schema, &table).unwrap_err();
         assert!(
             error
@@ -13965,51 +14088,55 @@ mod tests {
             let mut schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
             let expected = match invalid {
                 "cached-create-only" => {
-                    schema
-                        .create_only_properties
-                        .push("/properties/Budget/BudgetName".to_string());
+                    schema.edit_json(|source| {
+                        source
+                            .as_object_mut()
+                            .unwrap()
+                            .entry("createOnlyProperties")
+                            .or_insert_with(|| serde_json::json!([]))
+                            .as_array_mut()
+                            .unwrap()
+                            .push(serde_json::json!(
+                                "/properties/Budget/BudgetName".to_string()
+                            ));
+                    });
                     "already create-only in the cache"
                 }
                 "provider-populated" | "parent-provider-populated" => {
-                    schema
-                        .read_only_properties
-                        .push(if invalid == "provider-populated" {
-                            "/properties/Budget/BudgetName".to_string()
-                        } else {
-                            "/properties/Budget".to_string()
-                        });
+                    schema.edit_json(|source| {
+                        source
+                            .as_object_mut()
+                            .unwrap()
+                            .entry("readOnlyProperties")
+                            .or_insert_with(|| serde_json::json!([]))
+                            .as_array_mut()
+                            .unwrap()
+                            .push(serde_json::json!(if invalid == "provider-populated" {
+                                "/properties/Budget/BudgetName".to_string()
+                            } else {
+                                "/properties/Budget".to_string()
+                            }));
+                    });
                     "identity must not be provider-populated"
                 }
                 "object" | "array" => {
-                    let property = schema
-                        .definitions
-                        .as_mut()
-                        .unwrap()
-                        .get_mut("BudgetData")
-                        .unwrap()
-                        .properties
-                        .as_mut()
-                        .unwrap()
-                        .get_mut("BudgetName")
-                        .unwrap();
-                    *property = serde_json::from_value(if invalid == "object" {
-                        serde_json::json!({"type": "object", "properties": {"Name": {"type": "string"}}})
-                    } else {
-                        serde_json::json!({"type": "array", "items": {"type": "string"}})
-                    }).unwrap();
+                    schema.edit_json(|source| {
+                        source["definitions"]["BudgetData"]["properties"]["BudgetName"] =
+                            if invalid == "object" {
+                                serde_json::json!({"type": "object", "properties": {"Name": {"type": "string"}}})
+                            } else {
+                                serde_json::json!({"type": "array", "items": {"type": "string"}})
+                            };
+                    });
                     "identity must be a scalar/enum leaf"
                 }
                 "missing" => {
-                    schema
-                        .definitions
-                        .as_mut()
-                        .unwrap()
-                        .get_mut("BudgetData")
-                        .unwrap()
-                        .properties
-                        .as_mut()
-                        .unwrap()
-                        .remove("BudgetName");
+                    schema.edit_json(|source| {
+                        source["definitions"]["BudgetData"]["properties"]
+                            .as_object_mut()
+                            .unwrap()
+                            .remove("BudgetName");
+                    });
                     "stale identity row"
                 }
                 _ => unreachable!(),
@@ -14283,27 +14410,14 @@ mod tests {
         let expected_rust = generate_schema_code(&schema, &schema.type_name).unwrap();
         let expected_docs = generate_test_markdown(&schema, &schema.type_name).unwrap();
         let mut schema = schema;
-        let path = CfnPropertyPath::new(Some("TagValues"), "Values");
-        let array = cfn_override_property(&schema, path).unwrap().clone();
-        let definitions = schema.definitions.as_mut().unwrap();
-        definitions.insert("ValuesArray".to_string(), array);
-        definitions.insert(
-            "ValuesAlias".to_string(),
-            serde_json::from_value(serde_json::json!({
-                "$ref": "#/definitions/ValuesArray"
-            }))
-            .unwrap(),
-        );
-        *definitions
-            .get_mut("TagValues")
-            .unwrap()
-            .properties
-            .as_mut()
-            .unwrap()
-            .get_mut("Values")
-            .unwrap() =
-            serde_json::from_value(serde_json::json!({"$ref": "#/definitions/ValuesAlias"}))
-                .unwrap();
+        schema.edit_json(|source| {
+            let array = source["definitions"]["TagValues"]["properties"]["Values"].clone();
+            source["definitions"]["ValuesArray"] = array;
+            source["definitions"]["ValuesAlias"] =
+                serde_json::json!({"$ref": "#/definitions/ValuesArray"});
+            source["definitions"]["TagValues"]["properties"]["Values"] =
+                serde_json::json!({"$ref": "#/definitions/ValuesAlias"});
+        });
         assert_eq!(
             generate_schema_code(&schema, &schema.type_name).unwrap(),
             expected_rust
@@ -14314,14 +14428,15 @@ mod tests {
         );
 
         // Bounds/uniqueness on both $ref siblings and the target are conjunctive.
-        let definitions = schema.definitions.as_mut().unwrap();
-        let alias = definitions.get_mut("ValuesAlias").unwrap();
-        alias.min_items = Some(1);
-        alias.max_items = Some(4);
-        alias.unique_items = Some(true);
-        let array = definitions.get_mut("ValuesArray").unwrap();
-        array.max_items = Some(3);
-        array.insertion_order = Some(false);
+        schema.edit_json(|source| {
+            let alias = &mut source["definitions"]["ValuesAlias"];
+            alias["minItems"] = serde_json::json!(1);
+            alias["maxItems"] = serde_json::json!(4);
+            alias["uniqueItems"] = serde_json::json!(true);
+            let array = &mut source["definitions"]["ValuesArray"];
+            array["maxItems"] = serde_json::json!(3);
+            array["insertionOrder"] = serde_json::json!(false);
+        });
         let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
         let expected = concat!(
             "AttributeType::refined_list(AttributeType::string(), false, Some((Some(1), Some(3))), ",
@@ -14348,26 +14463,18 @@ mod tests {
             // Top-level Markdown preserves the source grammar for linked structs.
             let expected_docs = (cfn_type == "AWS::Budgets::Budget")
                 .then(|| generate_test_markdown(&schema, cfn_type).unwrap());
-            let array = if cfn_type == "AWS::Logs::LogGroup" {
-                schema.properties.get_mut("FieldIndexPolicies").unwrap()
-            } else {
-                schema
-                    .definitions
-                    .as_mut()
-                    .unwrap()
-                    .get_mut("TagValues")
-                    .unwrap()
-                    .properties
-                    .as_mut()
-                    .unwrap()
-                    .get_mut("Values")
-                    .unwrap()
-            };
-            array.items = Some(Box::new(serde_json::from_value(serde_json::json!({
-                "type": "object", "properties": {
-                    "Discarded": {"type": "object", "patternProperties": {".*": {"type": "boolean"}}}
-                }
-            })).unwrap()));
+            schema.edit_json(|source| {
+                let array = if cfn_type == "AWS::Logs::LogGroup" {
+                    &mut source["properties"]["FieldIndexPolicies"]
+                } else {
+                    &mut source["definitions"]["TagValues"]["properties"]["Values"]
+                };
+                array["items"] = serde_json::json!({
+                    "type": "object", "properties": {
+                        "Discarded": {"type": "object", "patternProperties": {".*": {"type": "boolean"}}}
+                    }
+                });
+            });
             assert_eq!(
                 generate_schema_code(&schema, cfn_type).unwrap(),
                 expected_rust
@@ -14384,24 +14491,12 @@ mod tests {
     #[test]
     fn test_array_enum_bounds_preserve_inner_collection_layers() {
         let mut schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
-        let metrics = schema
-            .definitions
-            .as_mut()
-            .unwrap()
-            .get_mut("BudgetData")
-            .unwrap()
-            .properties
-            .as_mut()
-            .unwrap()
-            .get_mut("Metrics")
-            .unwrap();
-        metrics.items = Some(Box::new(
-            serde_json::from_value(serde_json::json!({
+        schema.edit_json(|source| {
+            source["definitions"]["BudgetData"]["properties"]["Metrics"]["items"] = serde_json::json!({
                 "type": "array", "minItems": 1, "maxItems": 3, "uniqueItems": true,
                 "items": {"type": "string"}
-            }))
-            .unwrap(),
-        ));
+            });
+        });
         let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
         let field = generated_budgets_field(&generated, "BudgetData.Metrics");
         assert!(
@@ -14640,30 +14735,38 @@ mod tests {
             ..Default::default()
         };
         let mut schema = empty_schema("AWS::Test::ListCycle");
-        schema
-            .properties
-            .insert("Roots".to_string(), list_of("CycleA"));
-        schema.definitions = Some(BTreeMap::from([
-            (
-                "CycleA".to_string(),
-                CfnProperty {
-                    prop_type: Some(TypeValue::Single("object".to_string())),
-                    properties: Some(BTreeMap::from([(
-                        "Children".to_string(),
-                        list_of("CycleB"),
-                    )])),
-                    ..Default::default()
-                },
-            ),
-            (
-                "CycleB".to_string(),
-                CfnProperty {
-                    prop_type: Some(TypeValue::Single("object".to_string())),
-                    properties: Some(BTreeMap::from([("Parents".to_string(), list_of("CycleA"))])),
-                    ..Default::default()
-                },
-            ),
-        ]));
+        schema.edit_json(|source| {
+            source["properties"]
+                .as_object_mut()
+                .unwrap()
+                .insert("Roots".to_string(), serde_json::json!(list_of("CycleA")));
+        });
+        schema.edit_json(|source| {
+            source["definitions"] = serde_json::json!(BTreeMap::from([
+                (
+                    "CycleA".to_string(),
+                    CfnProperty {
+                        prop_type: Some(TypeValue::Single("object".to_string())),
+                        properties: Some(BTreeMap::from([(
+                            "Children".to_string(),
+                            list_of("CycleB"),
+                        )])),
+                        ..Default::default()
+                    },
+                ),
+                (
+                    "CycleB".to_string(),
+                    CfnProperty {
+                        prop_type: Some(TypeValue::Single("object".to_string())),
+                        properties: Some(BTreeMap::from([(
+                            "Parents".to_string(),
+                            list_of("CycleA")
+                        )])),
+                        ..Default::default()
+                    },
+                ),
+            ]));
+        });
 
         let generated = generate_synthetic_schema_code(&schema)
             .expect("a two-definition list-only cycle must terminate");
@@ -14812,7 +14915,8 @@ mod tests {
 
         for path in cached_schema_paths() {
             let raw = std::fs::read_to_string(&path).expect("cached CFN schema");
-            let schema: CfnSchema = serde_json::from_str(&raw).expect("cached CFN schema parses");
+            let schema = ParsedCfnSchema::from_json(serde_json::from_str(&raw).unwrap())
+                .expect("cached CFN schema parses");
             let dsl_name = dsl_resource_name_from_type(&schema.type_name)
                 .expect("cached CFN type name is valid");
 
@@ -14844,53 +14948,57 @@ mod tests {
     #[test]
     fn test_pattern_properties_object_ref_generates_typed_struct_map_and_docs() {
         let mut schema = empty_schema("AWS::WAFv2::WebACL");
-        schema.properties.insert(
-            "CustomResponseBodies".to_string(),
-            CfnProperty {
-                ref_path: Some("#/definitions/CustomResponseBodies".to_string()),
-                ..Default::default()
-            },
-        );
-        schema.definitions = Some(BTreeMap::from([
-            (
+        schema.edit_json(|source| {
+            source["properties"].as_object_mut().unwrap().insert(
                 "CustomResponseBodies".to_string(),
-                CfnProperty {
-                    prop_type: Some(TypeValue::Single("object".to_string())),
-                    pattern_properties: Some(BTreeMap::from([(
-                        "^[a-z]+$".to_string(),
-                        CfnProperty {
-                            ref_path: Some("#/definitions/CustomResponseBody".to_string()),
-                            ..Default::default()
-                        },
-                    )])),
+                serde_json::json!(CfnProperty {
+                    ref_path: Some("#/definitions/CustomResponseBodies".to_string()),
                     ..Default::default()
-                },
-            ),
-            (
-                "CustomResponseBody".to_string(),
-                CfnProperty {
-                    prop_type: Some(TypeValue::Single("object".to_string())),
-                    properties: Some(BTreeMap::from([
-                        (
-                            "Content".to_string(),
+                }),
+            );
+        });
+        schema.edit_json(|source| {
+            source["definitions"] = serde_json::json!(BTreeMap::from([
+                (
+                    "CustomResponseBodies".to_string(),
+                    CfnProperty {
+                        prop_type: Some(TypeValue::Single("object".to_string())),
+                        pattern_properties: Some(BTreeMap::from([(
+                            "^[a-z]+$".to_string(),
                             CfnProperty {
-                                prop_type: Some(TypeValue::Single("string".to_string())),
+                                ref_path: Some("#/definitions/CustomResponseBody".to_string()),
                                 ..Default::default()
                             },
-                        ),
-                        (
-                            "ContentType".to_string(),
-                            CfnProperty {
-                                prop_type: Some(TypeValue::Single("string".to_string())),
-                                ..Default::default()
-                            },
-                        ),
-                    ])),
-                    required: vec!["Content".to_string(), "ContentType".to_string()],
-                    ..Default::default()
-                },
-            ),
-        ]));
+                        )])),
+                        ..Default::default()
+                    },
+                ),
+                (
+                    "CustomResponseBody".to_string(),
+                    CfnProperty {
+                        prop_type: Some(TypeValue::Single("object".to_string())),
+                        properties: Some(BTreeMap::from([
+                            (
+                                "Content".to_string(),
+                                CfnProperty {
+                                    prop_type: Some(TypeValue::Single("string".to_string())),
+                                    ..Default::default()
+                                },
+                            ),
+                            (
+                                "ContentType".to_string(),
+                                CfnProperty {
+                                    prop_type: Some(TypeValue::Single("string".to_string())),
+                                    ..Default::default()
+                                },
+                            ),
+                        ])),
+                        required: vec!["Content".to_string(), "ContentType".to_string()],
+                        ..Default::default()
+                    },
+                ),
+            ]));
+        });
 
         reset_recursion_guard();
         let property = schema
@@ -14928,20 +15036,22 @@ mod tests {
     #[should_panic(expected = "unsupported object map")]
     fn test_pattern_properties_rejects_non_string_non_struct_values() {
         let mut schema = empty_schema("AWS::Test::UnsupportedObjectMap");
-        schema.definitions = Some(BTreeMap::from([(
-            "UnsupportedMap".to_string(),
-            CfnProperty {
-                prop_type: Some(TypeValue::Single("object".to_string())),
-                pattern_properties: Some(BTreeMap::from([(
-                    ".*".to_string(),
-                    CfnProperty {
-                        prop_type: Some(TypeValue::Single("integer".to_string())),
-                        ..Default::default()
-                    },
-                )])),
-                ..Default::default()
-            },
-        )]));
+        schema.edit_json(|source| {
+            source["definitions"] = serde_json::json!(BTreeMap::from([(
+                "UnsupportedMap".to_string(),
+                CfnProperty {
+                    prop_type: Some(TypeValue::Single("object".to_string())),
+                    pattern_properties: Some(BTreeMap::from([(
+                        ".*".to_string(),
+                        CfnProperty {
+                            prop_type: Some(TypeValue::Single("integer".to_string())),
+                            ..Default::default()
+                        },
+                    )])),
+                    ..Default::default()
+                },
+            )]));
+        });
         let property = CfnProperty {
             ref_path: Some("#/definitions/UnsupportedMap".to_string()),
             ..Default::default()
@@ -14960,43 +15070,47 @@ mod tests {
     #[test]
     fn test_nested_object_map_diagnostics_use_canonical_cfn_path() {
         let mut schema = empty_schema("AWS::Test::UnsupportedNestedObjectMap");
-        schema.properties.insert(
-            "Config".to_string(),
-            CfnProperty {
-                ref_path: Some("#/definitions/Container".to_string()),
-                ..Default::default()
-            },
-        );
-        schema.definitions = Some(BTreeMap::from([
-            (
-                "Container".to_string(),
-                CfnProperty {
-                    prop_type: Some(TypeValue::Single("object".to_string())),
-                    properties: Some(BTreeMap::from([(
-                        "NestedMap".to_string(),
-                        CfnProperty {
-                            ref_path: Some("#/definitions/UnsupportedMap".to_string()),
-                            ..Default::default()
-                        },
-                    )])),
+        schema.edit_json(|source| {
+            source["properties"].as_object_mut().unwrap().insert(
+                "Config".to_string(),
+                serde_json::json!(CfnProperty {
+                    ref_path: Some("#/definitions/Container".to_string()),
                     ..Default::default()
-                },
-            ),
-            (
-                "UnsupportedMap".to_string(),
-                CfnProperty {
-                    prop_type: Some(TypeValue::Single("object".to_string())),
-                    pattern_properties: Some(BTreeMap::from([(
-                        ".*".to_string(),
-                        CfnProperty {
-                            prop_type: Some(TypeValue::Single("integer".to_string())),
-                            ..Default::default()
-                        },
-                    )])),
-                    ..Default::default()
-                },
-            ),
-        ]));
+                }),
+            );
+        });
+        schema.edit_json(|source| {
+            source["definitions"] = serde_json::json!(BTreeMap::from([
+                (
+                    "Container".to_string(),
+                    CfnProperty {
+                        prop_type: Some(TypeValue::Single("object".to_string())),
+                        properties: Some(BTreeMap::from([(
+                            "NestedMap".to_string(),
+                            CfnProperty {
+                                ref_path: Some("#/definitions/UnsupportedMap".to_string()),
+                                ..Default::default()
+                            },
+                        )])),
+                        ..Default::default()
+                    },
+                ),
+                (
+                    "UnsupportedMap".to_string(),
+                    CfnProperty {
+                        prop_type: Some(TypeValue::Single("object".to_string())),
+                        pattern_properties: Some(BTreeMap::from([(
+                            ".*".to_string(),
+                            CfnProperty {
+                                prop_type: Some(TypeValue::Single("integer".to_string())),
+                                ..Default::default()
+                            },
+                        )])),
+                        ..Default::default()
+                    },
+                ),
+            ]));
+        });
         let expected_path = "AWS::Test::UnsupportedNestedObjectMap.Container.NestedMap";
         let nested_map = schema
             .definitions
@@ -15382,34 +15496,39 @@ mod tests {
     #[test]
     fn test_nested_read_only_path_through_array_wildcard_is_provider_populated() {
         let mut schema = empty_schema("AWS::Test::ArrayReadOnly");
-        schema.properties.insert(
-            "Items".to_string(),
-            CfnProperty {
-                prop_type: Some(TypeValue::Single("array".to_string())),
-                items: Some(Box::new(CfnProperty {
-                    prop_type: Some(TypeValue::Single("object".to_string())),
-                    properties: Some(BTreeMap::from([
-                        (
-                            "Owned".to_string(),
-                            CfnProperty {
-                                prop_type: Some(TypeValue::Single("string".to_string())),
-                                ..Default::default()
-                            },
-                        ),
-                        (
-                            "Writable".to_string(),
-                            CfnProperty {
-                                prop_type: Some(TypeValue::Single("string".to_string())),
-                                ..Default::default()
-                            },
-                        ),
-                    ])),
+        schema.edit_json(|source| {
+            source["properties"].as_object_mut().unwrap().insert(
+                "Items".to_string(),
+                serde_json::json!(CfnProperty {
+                    prop_type: Some(TypeValue::Single("array".to_string())),
+                    items: Some(Box::new(CfnProperty {
+                        prop_type: Some(TypeValue::Single("object".to_string())),
+                        properties: Some(BTreeMap::from([
+                            (
+                                "Owned".to_string(),
+                                CfnProperty {
+                                    prop_type: Some(TypeValue::Single("string".to_string())),
+                                    ..Default::default()
+                                },
+                            ),
+                            (
+                                "Writable".to_string(),
+                                CfnProperty {
+                                    prop_type: Some(TypeValue::Single("string".to_string())),
+                                    ..Default::default()
+                                },
+                            ),
+                        ])),
+                        ..Default::default()
+                    })),
                     ..Default::default()
-                })),
-                ..Default::default()
-            },
-        );
-        schema.read_only_properties = vec!["/properties/Items/*/Owned".to_string()];
+                }),
+            );
+        });
+        schema.edit_json(|source| {
+            source["readOnlyProperties"] =
+                serde_json::json!(vec!["/properties/Items/*/Owned".to_string()]);
+        });
 
         let items = schema
             .properties
@@ -15462,38 +15581,44 @@ mod tests {
             ..Default::default()
         };
         let mut schema = empty_schema("AWS::Test::NestedReadOnlyRefArray");
-        schema.properties = BTreeMap::from([
-            (
-                "DirectItems".to_string(),
-                CfnProperty {
-                    prop_type: Some(TypeValue::Single("array".to_string())),
-                    items: Some(Box::new(item_ref.clone())),
-                    ..Default::default()
-                },
-            ),
-            (
-                "ReferencedItems".to_string(),
-                CfnProperty {
-                    ref_path: Some("#/definitions/ItemList".to_string()),
-                    ..Default::default()
-                },
-            ),
-        ]);
-        schema.definitions = Some(BTreeMap::from([
-            ("Item".to_string(), item_definition),
-            (
-                "ItemList".to_string(),
-                CfnProperty {
-                    prop_type: Some(TypeValue::Single("array".to_string())),
-                    items: Some(Box::new(item_ref)),
-                    ..Default::default()
-                },
-            ),
-        ]));
-        schema.read_only_properties = vec![
-            "/properties/DirectItems/*/Owned".to_string(),
-            "/properties/ReferencedItems/*/Owned".to_string(),
-        ];
+        schema.edit_json(|source| {
+            source["properties"] = serde_json::json!(BTreeMap::from([
+                (
+                    "DirectItems".to_string(),
+                    CfnProperty {
+                        prop_type: Some(TypeValue::Single("array".to_string())),
+                        items: Some(Box::new(item_ref.clone())),
+                        ..Default::default()
+                    },
+                ),
+                (
+                    "ReferencedItems".to_string(),
+                    CfnProperty {
+                        ref_path: Some("#/definitions/ItemList".to_string()),
+                        ..Default::default()
+                    },
+                ),
+            ]));
+        });
+        schema.edit_json(|source| {
+            source["definitions"] = serde_json::json!(BTreeMap::from([
+                ("Item".to_string(), item_definition),
+                (
+                    "ItemList".to_string(),
+                    CfnProperty {
+                        prop_type: Some(TypeValue::Single("array".to_string())),
+                        items: Some(Box::new(item_ref)),
+                        ..Default::default()
+                    },
+                ),
+            ]));
+        });
+        schema.edit_json(|source| {
+            source["readOnlyProperties"] = serde_json::json!(vec![
+                "/properties/DirectItems/*/Owned".to_string(),
+                "/properties/ReferencedItems/*/Owned".to_string(),
+            ]);
+        });
 
         let generated = generate_synthetic_schema_code(&schema)
             .expect("both $ref item array forms should generate");
@@ -15525,34 +15650,41 @@ mod tests {
             ref_path: Some("#/definitions/Shared".to_string()),
             ..Default::default()
         };
-        schema.properties = BTreeMap::from([
-            ("Left".to_string(), shared_ref.clone()),
-            ("Right".to_string(), shared_ref),
-        ]);
-        schema.definitions = Some(BTreeMap::from([(
-            "Shared".to_string(),
-            CfnProperty {
-                prop_type: Some(TypeValue::Single("object".to_string())),
-                properties: Some(BTreeMap::from([
-                    (
-                        "Owned".to_string(),
-                        CfnProperty {
-                            prop_type: Some(TypeValue::Single("string".to_string())),
-                            ..Default::default()
-                        },
-                    ),
-                    (
-                        "Writable".to_string(),
-                        CfnProperty {
-                            prop_type: Some(TypeValue::Single("string".to_string())),
-                            ..Default::default()
-                        },
-                    ),
-                ])),
-                ..Default::default()
-            },
-        )]));
-        schema.read_only_properties = vec!["/properties/Left/Owned".to_string()];
+        schema.edit_json(|source| {
+            source["properties"] = serde_json::json!(BTreeMap::from([
+                ("Left".to_string(), shared_ref.clone()),
+                ("Right".to_string(), shared_ref),
+            ]));
+        });
+        schema.edit_json(|source| {
+            source["definitions"] = serde_json::json!(BTreeMap::from([(
+                "Shared".to_string(),
+                CfnProperty {
+                    prop_type: Some(TypeValue::Single("object".to_string())),
+                    properties: Some(BTreeMap::from([
+                        (
+                            "Owned".to_string(),
+                            CfnProperty {
+                                prop_type: Some(TypeValue::Single("string".to_string())),
+                                ..Default::default()
+                            },
+                        ),
+                        (
+                            "Writable".to_string(),
+                            CfnProperty {
+                                prop_type: Some(TypeValue::Single("string".to_string())),
+                                ..Default::default()
+                            },
+                        ),
+                    ])),
+                    ..Default::default()
+                },
+            )]));
+        });
+        schema.edit_json(|source| {
+            source["readOnlyProperties"] =
+                serde_json::json!(vec!["/properties/Left/Owned".to_string()]);
+        });
 
         for (generator, result) in [
             ("Rust", generate_synthetic_schema_code(&schema)),
@@ -15578,22 +15710,26 @@ mod tests {
     #[test]
     fn test_unmatched_nested_read_only_pointer_is_rejected() {
         let mut schema = empty_schema("AWS::Test::UnmatchedReadOnly");
-        schema.properties.insert(
-            "Config".to_string(),
-            CfnProperty {
-                prop_type: Some(TypeValue::Single("object".to_string())),
-                properties: Some(BTreeMap::from([(
-                    "Present".to_string(),
-                    CfnProperty {
-                        prop_type: Some(TypeValue::Single("string".to_string())),
-                        ..Default::default()
-                    },
-                )])),
-                ..Default::default()
-            },
-        );
+        schema.edit_json(|source| {
+            source["properties"].as_object_mut().unwrap().insert(
+                "Config".to_string(),
+                serde_json::json!(CfnProperty {
+                    prop_type: Some(TypeValue::Single("object".to_string())),
+                    properties: Some(BTreeMap::from([(
+                        "Present".to_string(),
+                        CfnProperty {
+                            prop_type: Some(TypeValue::Single("string".to_string())),
+                            ..Default::default()
+                        },
+                    )])),
+                    ..Default::default()
+                }),
+            );
+        });
         let pointer = "/properties/Config/Missing";
-        schema.read_only_properties = vec![pointer.to_string()];
+        schema.edit_json(|source| {
+            source["readOnlyProperties"] = serde_json::json!(vec![pointer.to_string()]);
+        });
 
         let error = generate_synthetic_schema_code(&schema)
             .expect_err("an unresolved nested readOnlyProperties pointer must fail closed");
@@ -15605,36 +15741,42 @@ mod tests {
     #[test]
     fn test_nested_read_only_pointer_discarded_by_composite_string_override_is_rejected() {
         let mut schema = empty_schema("AWS::ElasticLoadBalancingV2::Listener");
-        schema.properties.insert(
-            "Config".to_string(),
-            CfnProperty {
-                ref_path: Some("#/definitions/RedirectConfig".to_string()),
-                ..Default::default()
-            },
-        );
-        schema.definitions = Some(BTreeMap::from([(
-            "RedirectConfig".to_string(),
-            CfnProperty {
-                prop_type: Some(TypeValue::Single("object".to_string())),
-                properties: Some(BTreeMap::from([(
-                    "Protocol".to_string(),
-                    CfnProperty {
-                        prop_type: Some(TypeValue::Single("object".to_string())),
-                        properties: Some(BTreeMap::from([(
-                            "Owned".to_string(),
-                            CfnProperty {
-                                prop_type: Some(TypeValue::Single("string".to_string())),
-                                ..Default::default()
-                            },
-                        )])),
-                        ..Default::default()
-                    },
-                )])),
-                ..Default::default()
-            },
-        )]));
+        schema.edit_json(|source| {
+            source["properties"].as_object_mut().unwrap().insert(
+                "Config".to_string(),
+                serde_json::json!(CfnProperty {
+                    ref_path: Some("#/definitions/RedirectConfig".to_string()),
+                    ..Default::default()
+                }),
+            );
+        });
+        schema.edit_json(|source| {
+            source["definitions"] = serde_json::json!(BTreeMap::from([(
+                "RedirectConfig".to_string(),
+                CfnProperty {
+                    prop_type: Some(TypeValue::Single("object".to_string())),
+                    properties: Some(BTreeMap::from([(
+                        "Protocol".to_string(),
+                        CfnProperty {
+                            prop_type: Some(TypeValue::Single("object".to_string())),
+                            properties: Some(BTreeMap::from([(
+                                "Owned".to_string(),
+                                CfnProperty {
+                                    prop_type: Some(TypeValue::Single("string".to_string())),
+                                    ..Default::default()
+                                },
+                            )])),
+                            ..Default::default()
+                        },
+                    )])),
+                    ..Default::default()
+                },
+            )]));
+        });
         let pointer = "/properties/Config/Protocol/Owned";
-        schema.read_only_properties = vec![pointer.to_string()];
+        schema.edit_json(|source| {
+            source["readOnlyProperties"] = serde_json::json!(vec![pointer.to_string()]);
+        });
 
         for (generator, result) in [
             ("Rust", generate_synthetic_schema_code(&schema)),
@@ -15658,39 +15800,44 @@ mod tests {
     #[test]
     fn test_required_nested_struct_with_only_read_only_fields_is_read_only_not_required() {
         let mut schema = empty_schema("AWS::Test::NestedReadOnly");
-        schema.properties.insert(
-            "Config".to_string(),
-            CfnProperty {
-                prop_type: Some(TypeValue::Single("object".to_string())),
-                properties: Some(BTreeMap::from([
-                    (
-                        "Meta".to_string(),
-                        CfnProperty {
-                            prop_type: Some(TypeValue::Single("object".to_string())),
-                            properties: Some(BTreeMap::from([(
-                                "Arn".to_string(),
-                                CfnProperty {
-                                    prop_type: Some(TypeValue::Single("string".to_string())),
-                                    ..Default::default()
-                                },
-                            )])),
-                            required: vec!["Arn".to_string()],
-                            ..Default::default()
-                        },
-                    ),
-                    (
-                        "Writable".to_string(),
-                        CfnProperty {
-                            prop_type: Some(TypeValue::Single("string".to_string())),
-                            ..Default::default()
-                        },
-                    ),
-                ])),
-                required: vec!["Meta".to_string()],
-                ..Default::default()
-            },
-        );
-        schema.read_only_properties = vec!["/properties/Config/Meta/Arn".to_string()];
+        schema.edit_json(|source| {
+            source["properties"].as_object_mut().unwrap().insert(
+                "Config".to_string(),
+                serde_json::json!(CfnProperty {
+                    prop_type: Some(TypeValue::Single("object".to_string())),
+                    properties: Some(BTreeMap::from([
+                        (
+                            "Meta".to_string(),
+                            CfnProperty {
+                                prop_type: Some(TypeValue::Single("object".to_string())),
+                                properties: Some(BTreeMap::from([(
+                                    "Arn".to_string(),
+                                    CfnProperty {
+                                        prop_type: Some(TypeValue::Single("string".to_string())),
+                                        ..Default::default()
+                                    },
+                                )])),
+                                required: vec!["Arn".to_string()],
+                                ..Default::default()
+                            },
+                        ),
+                        (
+                            "Writable".to_string(),
+                            CfnProperty {
+                                prop_type: Some(TypeValue::Single("string".to_string())),
+                                ..Default::default()
+                            },
+                        ),
+                    ])),
+                    required: vec!["Meta".to_string()],
+                    ..Default::default()
+                }),
+            );
+        });
+        schema.edit_json(|source| {
+            source["readOnlyProperties"] =
+                serde_json::json!(vec!["/properties/Config/Meta/Arn".to_string()]);
+        });
 
         let generated = generate_synthetic_schema_code(&schema)
             .expect("nested fully read-only structs should generate");
@@ -15737,11 +15884,16 @@ mod tests {
         }
 
         let mut schema = empty_schema("AWS::Test::InlineCollision");
-        schema.properties = BTreeMap::from([
-            ("Left".to_string(), parent()),
-            ("Right".to_string(), parent()),
-        ]);
-        schema.read_only_properties = vec!["/properties/Left/Config/Owned".to_string()];
+        schema.edit_json(|source| {
+            source["properties"] = serde_json::json!(BTreeMap::from([
+                ("Left".to_string(), parent()),
+                ("Right".to_string(), parent()),
+            ]));
+        });
+        schema.edit_json(|source| {
+            source["readOnlyProperties"] =
+                serde_json::json!(vec!["/properties/Left/Config/Owned".to_string()]);
+        });
 
         let error = generate_test_markdown(&schema, "AWS::Test::InlineCollision")
             .expect_err("Markdown must not reuse the first path for ambiguous inline structs");
@@ -16584,21 +16736,11 @@ mod tests {
             format: None,
             ..Default::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::EC2::SecurityGroupIngress".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::EC2::SecurityGroupIngress".to_string(),
+            "properties": {}
+        }))
+        .unwrap();
         let (_, enum_info) =
             cfn_type_to_carina_type_with_enum(&prop, "IpProtocol", &schema, "", &BTreeMap::new());
         assert!(
@@ -16610,27 +16752,29 @@ mod tests {
         assert_eq!(info.values, vec!["tcp", "udp", "icmp", "icmpv6", "-1"]);
 
         let mut schema = empty_schema("AWS::Test::Resource");
-        schema.properties.insert(
-            "Config".to_string(),
-            CfnProperty {
-                prop_type: Some(TypeValue::Single("object".to_string())),
-                properties: Some(
-                    known_enum_overrides()
-                        .keys()
-                        .map(|name| {
-                            (
-                                name.to_string(),
-                                CfnProperty {
-                                    prop_type: Some(TypeValue::Single("string".to_string())),
-                                    ..Default::default()
-                                },
-                            )
-                        })
-                        .collect(),
-                ),
-                ..Default::default()
-            },
-        );
+        schema.edit_json(|source| {
+            source["properties"].as_object_mut().unwrap().insert(
+                "Config".to_string(),
+                serde_json::json!(CfnProperty {
+                    prop_type: Some(TypeValue::Single("object".to_string())),
+                    properties: Some(
+                        known_enum_overrides()
+                            .keys()
+                            .map(|name| {
+                                (
+                                    name.to_string(),
+                                    CfnProperty {
+                                        prop_type: Some(TypeValue::Single("string".to_string())),
+                                        ..Default::default()
+                                    },
+                                )
+                            })
+                            .collect(),
+                    ),
+                    ..Default::default()
+                }),
+            );
+        });
         let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
         for name in known_enum_overrides().keys() {
             assert!(
@@ -16691,21 +16835,11 @@ mod tests {
             format: None,
             ..Default::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::CloudFront::Distribution".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::CloudFront::Distribution".to_string(),
+            "properties": {}
+        }))
+        .unwrap();
         let (_, enum_info) = cfn_type_to_carina_type_with_enum(
             &prop,
             "MinimumProtocolVersion",
@@ -16813,21 +16947,11 @@ mod tests {
             format: None,
             ..Default::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::EC2::SecurityGroupIngress".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::EC2::SecurityGroupIngress".to_string(),
+            "properties": {}
+        }))
+        .unwrap();
         let (type_str, _) =
             cfn_type_to_carina_type_with_enum(&prop, "CidrIp", &schema, "", &BTreeMap::new());
         assert_eq!(
@@ -16861,21 +16985,11 @@ mod tests {
             format: None,
             ..Default::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::EC2::SecurityGroupIngress".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::EC2::SecurityGroupIngress".to_string(),
+            "properties": {}
+        }))
+        .unwrap();
         let (type_str, _) =
             cfn_type_to_carina_type_with_enum(&prop, "CidrIpv6", &schema, "", &BTreeMap::new());
         assert_eq!(
@@ -16909,21 +17023,11 @@ mod tests {
             format: None,
             ..Default::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::EC2::NatGateway".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::EC2::NatGateway".to_string(),
+            "properties": {}
+        }))
+        .unwrap();
         let (type_str, _) = cfn_type_to_carina_type_with_enum(
             &prop,
             "PrivateIpAddress",
@@ -16962,21 +17066,11 @@ mod tests {
             format: None,
             ..Default::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::EC2::EIP".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::EC2::EIP".to_string(),
+            "properties": {}
+        }))
+        .unwrap();
         let (type_str, _) =
             cfn_type_to_carina_type_with_enum(&prop, "PublicIp", &schema, "", &BTreeMap::new());
         assert_eq!(
@@ -17010,21 +17104,11 @@ mod tests {
             format: None,
             ..Default::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::EC2::NatGateway".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::EC2::NatGateway".to_string(),
+            "properties": {}
+        }))
+        .unwrap();
         let (type_str, _) = cfn_type_to_carina_type_with_enum(
             &prop,
             "SecondaryPrivateIpAddressCount",
@@ -17062,21 +17146,11 @@ mod tests {
             format: None,
             ..Default::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::EC2::Subnet".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::EC2::Subnet".to_string(),
+            "properties": {}
+        }))
+        .unwrap();
 
         // AvailabilityZone should use carina_aws_types::availability_zone()
         let (type_str, _) = cfn_type_to_carina_type_with_enum(
@@ -17192,43 +17266,34 @@ mod tests {
             format: None,
             ..Default::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::EC2::VPC".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: Some(BTreeMap::from([(
-                "Tag".to_string(),
-                CfnProperty {
-                    prop_type: Some(TypeValue::Single("object".to_string())),
-                    properties: Some(BTreeMap::from([
-                        (
-                            "Key".to_string(),
-                            CfnProperty {
-                                prop_type: Some(TypeValue::Single("string".to_string())),
-                                ..Default::default()
-                            },
-                        ),
-                        (
-                            "Value".to_string(),
-                            CfnProperty {
-                                prop_type: Some(TypeValue::Single("string".to_string())),
-                                ..Default::default()
-                            },
-                        ),
-                    ])),
-                    ..Default::default()
-                },
-            )])),
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::EC2::VPC".to_string(),
+            "properties": {},
+            "definitions": BTreeMap::from([(
+                        "Tag".to_string(),
+                        CfnProperty {
+                            prop_type: Some(TypeValue::Single("object".to_string())),
+                            properties: Some(BTreeMap::from([
+                                (
+                                    "Key".to_string(),
+                                    CfnProperty {
+                                        prop_type: Some(TypeValue::Single("string".to_string())),
+                                        ..Default::default()
+                                    },
+                                ),
+                                (
+                                    "Value".to_string(),
+                                    CfnProperty {
+                                        prop_type: Some(TypeValue::Single("string".to_string())),
+                                        ..Default::default()
+                                    },
+                                ),
+                            ])),
+                            ..Default::default()
+                        },
+                    )])
+        }))
+        .unwrap();
         assert_eq!(
             type_display_string("ResourceTags", &prop, &schema),
             "`List<Map<String, String>>`"
@@ -17281,21 +17346,11 @@ mod tests {
             format: None,
             ..Default::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::EC2::VPC".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::EC2::VPC".to_string(),
+            "properties": {}
+        }))
+        .unwrap();
         assert_eq!(
             type_display_string("Items", &prop, &schema),
             "`List<String>`"
@@ -17320,21 +17375,12 @@ mod tests {
             ref_path: Some("#/definitions/RateLimit".to_string()),
             ..Default::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::WAFv2::WebACL".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: Some(definitions),
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::WAFv2::WebACL".to_string(),
+            "properties": {},
+            "definitions": definitions
+        }))
+        .unwrap();
         let display = type_display_string("Limit", &prop, &schema);
         assert!(
             display.starts_with("Int"),
@@ -17366,21 +17412,12 @@ mod tests {
             })),
             ..Default::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::Example::Thing".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: Some(definitions),
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Example::Thing".to_string(),
+            "properties": {},
+            "definitions": definitions
+        }))
+        .unwrap();
         let display = type_display_string("Weights", &prop, &schema);
         assert_eq!(display, "`List<Int>`", "got: {display}");
     }
@@ -17410,21 +17447,11 @@ mod tests {
             format: None,
             ..Default::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::EC2::VPC".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::EC2::VPC".to_string(),
+            "properties": {}
+        }))
+        .unwrap();
         assert_eq!(
             type_display_string("SomeList", &prop, &schema),
             "`List<String>`"
@@ -17435,21 +17462,11 @@ mod tests {
     fn test_type_display_string_array_never_bare_list() {
         // Regression guard: type_display_string for array types must never return
         // bare "List" without element type information.
-        let schema = CfnSchema {
-            type_name: "AWS::EC2::VPC".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::EC2::VPC".to_string(),
+            "properties": {}
+        }))
+        .unwrap();
         // Case 1: array with no items
         let prop = CfnProperty {
             prop_type: Some(TypeValue::Single("array".to_string())),
@@ -17654,21 +17671,11 @@ mod tests {
             format: None,
             ..Default::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::EC2::VPC".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::EC2::VPC".to_string(),
+            "properties": {}
+        }))
+        .unwrap();
         let (type_str, _) = cfn_type_to_carina_type_with_enum(
             &prop,
             "Ipv4NetmaskLength",
@@ -17717,21 +17724,11 @@ mod tests {
             format: None,
             ..Default::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::EC2::VPC".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::EC2::VPC".to_string(),
+            "properties": {}
+        }))
+        .unwrap();
         let (type_str, _) =
             cfn_type_to_carina_type_with_enum(&prop, "SomeCount", &schema, "", &BTreeMap::new());
         assert_eq!(type_str, "AttributeType::int()");
@@ -17762,21 +17759,11 @@ mod tests {
             format: None,
             ..Default::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::EC2::VPC".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::EC2::VPC".to_string(),
+            "properties": {}
+        }))
+        .unwrap();
         let (type_str, _) =
             cfn_type_to_carina_type_with_enum(&prop, "SomeCount", &schema, "", &BTreeMap::new());
         assert!(
@@ -17816,21 +17803,11 @@ mod tests {
             format: None,
             ..Default::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::EC2::VPC".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::EC2::VPC".to_string(),
+            "properties": {}
+        }))
+        .unwrap();
         let (type_str, _) =
             cfn_type_to_carina_type_with_enum(&prop, "SomeCount", &schema, "", &BTreeMap::new());
         assert!(
@@ -17878,21 +17855,11 @@ mod tests {
             format: None,
             ..Default::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::Logs::LogGroup".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Logs::LogGroup".to_string(),
+            "properties": {}
+        }))
+        .unwrap();
         let (type_str, _) = cfn_type_to_carina_type_with_enum(
             &prop,
             "RetentionInDays",
@@ -17947,21 +17914,11 @@ mod tests {
             format: None,
             ..Default::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::EC2::NatGateway".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::EC2::NatGateway".to_string(),
+            "properties": {}
+        }))
+        .unwrap();
         let result = type_display_string("SecondaryPrivateIpAddressCount", &prop, &schema);
         assert_eq!(result, "Int(1..)");
     }
@@ -17995,21 +17952,11 @@ mod tests {
             format: None,
             ..Default::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::SomeService::Resource".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::SomeService::Resource".to_string(),
+            "properties": {}
+        }))
+        .unwrap();
         let result = type_display_string("Priority", &prop, &schema);
         assert_eq!(result, "IntEnum([1, 3, 5])");
     }
@@ -18048,21 +17995,11 @@ mod tests {
             format: None,
             ..Default::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::Logs::LogGroup".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Logs::LogGroup".to_string(),
+            "properties": {}
+        }))
+        .unwrap();
         // Resource-scoped override takes precedence over schema enum values
         let result = type_display_string("RetentionInDays", &prop, &schema);
         let expected = retention_values
@@ -18097,21 +18034,11 @@ mod tests {
             format: None,
             ..Default::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::EC2::VPC".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::EC2::VPC".to_string(),
+            "properties": {}
+        }))
+        .unwrap();
         let result = type_display_string("Ipv4NetmaskLength", &prop, &schema);
         assert_eq!(result, "Int(0..=32)");
     }
@@ -18197,27 +18124,18 @@ mod tests {
     #[test]
     fn known_service_arn_requires_a_catalog_row() {
         let type_name = "AWS::EC2::NewCataloglessResource";
-        let schema = CfnSchema {
-            type_name: type_name.to_string(),
-            description: None,
-            properties: BTreeMap::from([(
-                "Arn".to_string(),
-                CfnProperty {
-                    prop_type: Some(TypeValue::Single("string".to_string())),
-                    ..Default::default()
-                },
-            )]),
-            required: vec![],
-            read_only_properties: vec!["/properties/Arn".to_string()],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": type_name.to_string(),
+            "properties": BTreeMap::from([(
+                        "Arn".to_string(),
+                        CfnProperty {
+                            prop_type: Some(TypeValue::Single("string".to_string())),
+                            ..Default::default()
+                        },
+                    )]),
+            "readOnlyProperties": vec!["/properties/Arn".to_string()]
+        }))
+        .unwrap();
         let error = generate_schema_code(&schema, type_name)
             .expect_err("a cataloged service must require an exact ARN row");
         assert!(
@@ -18246,41 +18164,31 @@ mod tests {
 
     #[test]
     fn declarative_constraints_emit_no_dead_helpers() {
-        let schema = CfnSchema {
-            type_name: "AWS::Test::Resource".to_string(),
-            description: None,
-            properties: BTreeMap::from([
-                (
-                    "Count".to_string(),
-                    CfnProperty {
-                        prop_type: Some(TypeValue::Single("integer".to_string())),
-                        minimum: Some(1),
-                        maximum: Some(10),
-                        ..Default::default()
-                    },
-                ),
-                (
-                    "Label".to_string(),
-                    CfnProperty {
-                        prop_type: Some(TypeValue::Single("string".to_string())),
-                        pattern: Some("^[a-z]+$".to_string()),
-                        min_length: Some(1),
-                        max_length: Some(10),
-                        ..Default::default()
-                    },
-                ),
-            ]),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Test::Resource".to_string(),
+            "properties": BTreeMap::from([
+                        (
+                            "Count".to_string(),
+                            CfnProperty {
+                                prop_type: Some(TypeValue::Single("integer".to_string())),
+                                minimum: Some(1),
+                                maximum: Some(10),
+                                ..Default::default()
+                            },
+                        ),
+                        (
+                            "Label".to_string(),
+                            CfnProperty {
+                                prop_type: Some(TypeValue::Single("string".to_string())),
+                                pattern: Some("^[a-z]+$".to_string()),
+                                min_length: Some(1),
+                                max_length: Some(10),
+                                ..Default::default()
+                            },
+                        ),
+                    ])
+        }))
+        .unwrap();
 
         let generated = generate_synthetic_schema_code(&schema).expect("generate fixture");
         assert!(
@@ -18335,21 +18243,11 @@ mod tests {
             format: None,
             ..Default::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::EC2::VPC".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::EC2::VPC".to_string(),
+            "properties": {}
+        }))
+        .unwrap();
         let (type_str, _) = cfn_type_to_carina_type_with_enum(
             &prop,
             "DefaultSecurityGroup",
@@ -18385,21 +18283,11 @@ mod tests {
             format: None,
             ..Default::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::EC2::SecurityGroupIngress".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::EC2::SecurityGroupIngress".to_string(),
+            "properties": {}
+        }))
+        .unwrap();
         let (type_str, _) =
             cfn_type_to_carina_type_with_enum(&prop, "FromPort", &schema, "", &BTreeMap::new());
         assert!(
@@ -18439,21 +18327,11 @@ mod tests {
             format: None,
             ..Default::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::S3::Bucket".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::S3::Bucket".to_string(),
+            "properties": {}
+        }))
+        .unwrap();
         let (type_str, _) =
             cfn_type_to_carina_type_with_enum(&prop, "Arn", &schema, "", &BTreeMap::new());
         assert_eq!(type_str, "carina_aws_types::arn()");
@@ -18501,21 +18379,11 @@ mod tests {
             format: None,
             ..Default::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::EC2::SecurityGroupIngress".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::EC2::SecurityGroupIngress".to_string(),
+            "properties": {}
+        }))
+        .unwrap();
         let (type_str, _) =
             cfn_type_to_carina_type_with_enum(&prop, "FromPort", &schema, "", &BTreeMap::new());
         assert!(
@@ -18964,21 +18832,11 @@ mod tests {
             ])),
             ..Default::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::KMS::Key".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::KMS::Key".to_string(),
+            "properties": {}
+        }))
+        .unwrap();
 
         let (carina_type, enum_info) =
             cfn_type_to_carina_type_with_enum(&prop, "KeyPolicy", &schema, "", &BTreeMap::new());
@@ -19039,21 +18897,11 @@ mod tests {
             ])),
             ..Default::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::Test::Resource".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Test::Resource".to_string(),
+            "properties": {}
+        }))
+        .unwrap();
 
         let panic = std::panic::catch_unwind(|| {
             cfn_type_to_carina_type_with_enum(&prop, "FreeFormJson", &schema, "", &BTreeMap::new())
@@ -19110,7 +18958,12 @@ mod tests {
         }))
         .unwrap();
         let mut schema = empty_schema("AWS::Test::DirectOneOf");
-        schema.properties.insert("Choice".to_string(), property);
+        schema.edit_json(|source| {
+            source["properties"]
+                .as_object_mut()
+                .unwrap()
+                .insert("Choice".to_string(), serde_json::json!(property));
+        });
         let property = &schema.properties["Choice"];
 
         assert!(property_generates_struct(property, &schema));
@@ -19129,7 +18982,10 @@ mod tests {
         assert!(md.contains("| `value` | String | Yes |"), "{md}");
         assert!(!md.contains("`ignored`"), "{md}");
 
-        schema.read_only_properties = vec!["/properties/Choice/Value".to_string()];
+        schema.edit_json(|source| {
+            source["readOnlyProperties"] =
+                serde_json::json!(vec!["/properties/Choice/Value".to_string()]);
+        });
         assert!(is_property_read_only(
             &schema,
             &schema.properties["Choice"],
@@ -19148,7 +19004,12 @@ mod tests {
         }))
         .unwrap();
         let mut schema = empty_schema("AWS::Test::ArrayOneOf");
-        schema.properties.insert("Choice".to_string(), property);
+        schema.edit_json(|source| {
+            source["properties"]
+                .as_object_mut()
+                .unwrap()
+                .insert("Choice".to_string(), serde_json::json!(property));
+        });
 
         assert!(!property_generates_struct(
             &schema.properties["Choice"],
@@ -19166,7 +19027,10 @@ mod tests {
         assert!(md.contains("- **Type:** `List<Int>`\n"), "{md}");
         assert!(!md.contains("## Struct Definitions"), "{md}");
 
-        schema.read_only_properties = vec!["/properties/Choice/*".to_string()];
+        schema.edit_json(|source| {
+            source["readOnlyProperties"] =
+                serde_json::json!(vec!["/properties/Choice/*".to_string()]);
+        });
         assert!(is_property_read_only(
             &schema,
             &schema.properties["Choice"],
@@ -19176,16 +19040,18 @@ mod tests {
 
     fn assert_one_of_array_ref_matches_inline(definition: CfnProperty) {
         let mut schema = empty_schema("AWS::Test::ArrayRefOneOf");
-        schema.definitions = Some(BTreeMap::from([
-            ("Values".to_string(), definition.clone()),
-            (
-                "Alias".to_string(),
-                CfnProperty {
-                    ref_path: Some("#/definitions/Values".to_string()),
-                    ..Default::default()
-                },
-            ),
-        ]));
+        schema.edit_json(|source| {
+            source["definitions"] = serde_json::json!(BTreeMap::from([
+                ("Values".to_string(), definition.clone()),
+                (
+                    "Alias".to_string(),
+                    CfnProperty {
+                        ref_path: Some("#/definitions/Values".to_string()),
+                        ..Default::default()
+                    },
+                ),
+            ]));
+        });
         let referenced = CfnProperty {
             ref_path: Some("#/definitions/Alias".to_string()),
             ..Default::default()
@@ -19248,7 +19114,12 @@ mod tests {
                     && suffix.as_deref() == Some(" (items: 1..=3)")
         ));
 
-        schema.properties.insert("Choice".to_string(), property);
+        schema.edit_json(|source| {
+            source["properties"]
+                .as_object_mut()
+                .unwrap()
+                .insert("Choice".to_string(), serde_json::json!(property));
+        });
         assert!(assert_schema_bare_objects_classified(&schema).is_empty());
         let generated = generate_synthetic_schema_code(&schema).unwrap();
         assert!(generated.contains(&generated_type), "{generated}");
@@ -19292,12 +19163,15 @@ mod tests {
             }),
         ] {
             let mut schema = empty_schema("AWS::Test::EnumAlias");
-            schema.definitions = Some(serde_json::from_value(definitions).unwrap());
-            schema.properties.insert(
-                "Choice".to_string(),
-                serde_json::from_value(serde_json::json!({ "$ref": "#/definitions/Alias" }))
-                    .unwrap(),
-            );
+            schema.edit_json(|source| {
+                source["definitions"] = definitions;
+            });
+            schema.edit_json(|source| {
+                source["properties"].as_object_mut().unwrap().insert(
+                    "Choice".to_string(),
+                    serde_json::json!({ "$ref": "#/definitions/Alias" }),
+                );
+            });
 
             let generated = generate_synthetic_schema_code(&schema).unwrap();
             let choice = generated
@@ -19333,13 +19207,21 @@ mod tests {
                 let mut schema = empty_schema("AWS::Test::NullFirst");
                 let mut property: CfnProperty = serde_json::from_value(property.clone()).unwrap();
                 if referenced {
-                    schema.definitions = Some(BTreeMap::from([("Values".to_string(), property)]));
+                    schema.edit_json(|source| {
+                        source["definitions"] =
+                            serde_json::json!(BTreeMap::from([("Values".to_string(), property)]));
+                    });
                     property = CfnProperty {
                         ref_path: Some("#/definitions/Values".to_string()),
                         ..Default::default()
                     };
                 }
-                schema.properties.insert("Choice".to_string(), property);
+                schema.edit_json(|source| {
+                    source["properties"]
+                        .as_object_mut()
+                        .unwrap()
+                        .insert("Choice".to_string(), serde_json::json!(property));
+                });
 
                 let generated = generate_synthetic_schema_code(&schema).unwrap();
                 assert!(
@@ -19358,7 +19240,10 @@ mod tests {
                 assert!(md.contains("| `v` | Int | No |"), "{md}");
                 carina_docgen::check_page(&md).unwrap();
 
-                schema.read_only_properties = vec!["/properties/Choice/*/V".to_string()];
+                schema.edit_json(|source| {
+                    source["readOnlyProperties"] =
+                        serde_json::json!(vec!["/properties/Choice/*/V".to_string()]);
+                });
                 assert!(is_property_read_only(
                     &schema,
                     &schema.properties["Choice"],
@@ -19387,7 +19272,12 @@ mod tests {
             }))
             .unwrap();
             let mut schema = empty_schema("AWS::Test::FirstType");
-            schema.properties.insert("Choice".to_string(), property);
+            schema.edit_json(|source| {
+                source["properties"]
+                    .as_object_mut()
+                    .unwrap()
+                    .insert("Choice".to_string(), serde_json::json!(property));
+            });
             assert!(!property_resolves_to_array(
                 &schema.properties["Choice"],
                 &schema
@@ -19415,27 +19305,27 @@ mod tests {
                 definition = serde_json::json!({ "type": "array", "items": definition });
             }
             let mut schema = empty_schema("AWS::Test::SiblingRef");
-            schema.definitions = Some(
-                serde_json::from_value(serde_json::json!({
+            schema.edit_json(|source| {
+                source["definitions"] = serde_json::json!({
                     "Values": definition,
                     "Alias": {
                         "$ref": "#/definitions/Values",
                         "oneOf": [{ "type": "object" }]
                     }
-                }))
-                .unwrap(),
-            );
-            schema.properties.insert(
-                "Choice".to_string(),
-                serde_json::from_value(serde_json::json!({
-                    "$ref": "#/definitions/Alias",
-                    "oneOf": [{
-                        "type": "array",
-                        "items": { "properties": { "Ignored": { "type": "object" } } }
-                    }]
-                }))
-                .unwrap(),
-            );
+                });
+            });
+            schema.edit_json(|source| {
+                source["properties"].as_object_mut().unwrap().insert(
+                    "Choice".to_string(),
+                    serde_json::json!({
+                        "$ref": "#/definitions/Alias",
+                        "oneOf": [{
+                            "type": "array",
+                            "items": { "properties": { "Ignored": { "type": "object" } } }
+                        }]
+                    }),
+                );
+            });
 
             let property = &schema.properties["Choice"];
             assert_eq!(property_generates_struct(property, &schema), !is_array);
@@ -19464,11 +19354,13 @@ mod tests {
             assert!(!md.contains("`ignored`"), "{md}");
             carina_docgen::check_page(&md).unwrap();
 
-            schema.read_only_properties = vec![if is_array {
-                "/properties/Choice/*/V".to_string()
-            } else {
-                "/properties/Choice/V".to_string()
-            }];
+            schema.edit_json(|source| {
+                source["readOnlyProperties"] = serde_json::json!(vec![if is_array {
+                    "/properties/Choice/*/V".to_string()
+                } else {
+                    "/properties/Choice/V".to_string()
+                }]);
+            });
             assert!(is_property_read_only(
                 &schema,
                 &schema.properties["Choice"],
@@ -19480,8 +19372,8 @@ mod tests {
     #[test]
     fn test_ref_force_unordered_enum_list_retains_resolved_bounds() {
         let mut schema = empty_schema("AWS::CloudFront::Distribution");
-        schema.definitions = Some(
-            serde_json::from_value(serde_json::json!({
+        schema.edit_json(|source| {
+            source["definitions"] = serde_json::json!({
                 "Methods": { "oneOf": [{
                     "type": ["null", "array"],
                     "enum": ["GET", "HEAD"],
@@ -19491,16 +19383,16 @@ mod tests {
                 "DefaultCacheBehavior": { "properties": {
                     "AllowedMethods": { "$ref": "#/definitions/Methods" }
                 } }
-            }))
-            .unwrap(),
-        );
-        schema.properties.insert(
-            "Choice".to_string(),
-            serde_json::from_value(serde_json::json!({
-                "$ref": "#/definitions/DefaultCacheBehavior"
-            }))
-            .unwrap(),
-        );
+            });
+        });
+        schema.edit_json(|source| {
+            source["properties"].as_object_mut().unwrap().insert(
+                "Choice".to_string(),
+                serde_json::json!({
+                    "$ref": "#/definitions/DefaultCacheBehavior"
+                }),
+            );
+        });
         let generated = generate_synthetic_schema_code(&schema).unwrap();
         let field = generated
             .lines()
@@ -19552,13 +19444,12 @@ mod tests {
     #[test]
     fn test_one_of_array_resolution_stops_at_ref_cycles() {
         let mut schema = empty_schema("AWS::Test::OneOfCycle");
-        schema.definitions = Some(
-            serde_json::from_value(serde_json::json!({
+        schema.edit_json(|source| {
+            source["definitions"] = serde_json::json!({
                 "CycleA": { "oneOf": [{ "$ref": "#/definitions/CycleB" }] },
                 "CycleB": { "oneOf": [{ "$ref": "#/definitions/CycleA" }] }
-            }))
-            .unwrap(),
-        );
+            });
+        });
         let property = CfnProperty {
             ref_path: Some("#/definitions/CycleA".to_string()),
             ..Default::default()
@@ -19578,8 +19469,8 @@ mod tests {
     #[test]
     fn test_markdown_collects_struct_items_of_ref_to_one_of_array_definition() {
         let mut schema = empty_schema("AWS::Test::OneOfArrayRef");
-        schema.definitions = Some(
-            serde_json::from_value(serde_json::json!({
+        schema.edit_json(|source| {
+            source["definitions"] = serde_json::json!({
                 "Entries": {
                     "oneOf": [
                         { "properties": { "Ignored": { "type": "object" } } },
@@ -19589,16 +19480,17 @@ mod tests {
                         }
                     ]
                 }
-            }))
-            .unwrap(),
-        );
-        schema.properties.insert(
-            "Choices".to_string(),
-            CfnProperty {
-                ref_path: Some("#/definitions/Entries".to_string()),
-                ..Default::default()
-            },
-        );
+            });
+        });
+        schema.edit_json(|source| {
+            source["properties"].as_object_mut().unwrap().insert(
+                "Choices".to_string(),
+                serde_json::json!(CfnProperty {
+                    ref_path: Some("#/definitions/Entries".to_string()),
+                    ..Default::default()
+                }),
+            );
+        });
 
         assert!(assert_schema_bare_objects_classified(&schema).is_empty());
         let generated = generate_synthetic_schema_code(&schema).unwrap();
@@ -19664,21 +19556,12 @@ mod tests {
             ],
             ..Default::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::DynamoDB::Table".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: Some(definitions),
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::DynamoDB::Table".to_string(),
+            "properties": {},
+            "definitions": definitions
+        }))
+        .unwrap();
 
         let (carina_type, enum_info) =
             cfn_type_to_carina_type_with_enum(&prop, "KeySchema", &schema, "", &BTreeMap::new());
@@ -19706,21 +19589,11 @@ mod tests {
             ],
             ..Default::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::Test::Resource".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Test::Resource".to_string(),
+            "properties": {}
+        }))
+        .unwrap();
 
         let _ = cfn_type_to_carina_type_with_enum(
             &prop,
@@ -20052,21 +19925,13 @@ mod tests {
             },
         );
 
-        let schema = CfnSchema {
-            type_name: "AWS::EC2::IPAMPool".to_string(),
-            description: None,
-            properties,
-            required: vec!["AddressFamily".to_string()],
-            read_only_properties: vec![],
-            create_only_properties: vec!["AddressFamily".to_string()],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::EC2::IPAMPool".to_string(),
+            "properties": properties,
+            "required": vec!["AddressFamily".to_string()],
+            "createOnlyProperties": vec!["AddressFamily".to_string()]
+        }))
+        .unwrap();
 
         let generated = generate_schema_code(&schema, "AWS::EC2::IPAMPool").unwrap();
 
@@ -20169,21 +20034,12 @@ mod tests {
             },
         );
 
-        let schema = CfnSchema {
-            type_name: "AWS::EC2::TestResource".to_string(),
-            description: None,
-            properties,
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: Some(definitions),
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::EC2::TestResource".to_string(),
+            "properties": properties,
+            "definitions": definitions
+        }))
+        .unwrap();
 
         let generated = generate_synthetic_schema_code(&schema).unwrap();
 
@@ -20214,21 +20070,11 @@ mod tests {
             const_value: Some(serde_json::Value::String("V_1".to_string())),
             ..Default::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::S3::Bucket".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::S3::Bucket".to_string(),
+            "properties": {}
+        }))
+        .unwrap();
         let enums = BTreeMap::new();
         let (_, enum_info) = cfn_type_to_carina_type_with_enum(
             &prop,
@@ -20260,21 +20106,11 @@ mod tests {
             })),
             ..Default::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::S3::Bucket".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::S3::Bucket".to_string(),
+            "properties": {}
+        }))
+        .unwrap();
         let enums = BTreeMap::new();
         let (type_str, enum_info) = cfn_type_to_carina_type_with_enum(
             &prop,
@@ -20325,21 +20161,12 @@ mod tests {
             ref_path: Some("#/definitions/HttpMethod".to_string()),
             ..Default::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::EC2::VPC".to_string(),
-            description: None,
-            properties: BTreeMap::from([("HttpMethod".to_string(), prop.clone())]),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: Some(definitions),
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::EC2::VPC".to_string(),
+            "properties": BTreeMap::from([("HttpMethod".to_string(), prop.clone())]),
+            "definitions": definitions
+        }))
+        .unwrap();
         let enums = BTreeMap::new();
         let (_, enum_info) =
             cfn_type_to_carina_type_with_enum(&prop, "HttpMethod", &schema, "aws.ec2.Vpc", &enums);
@@ -20395,21 +20222,12 @@ mod tests {
             ref_path: Some("#/definitions/BlockedEncryptionTypeList".to_string()),
             ..Default::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::S3::Bucket".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: Some(definitions),
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::S3::Bucket".to_string(),
+            "properties": {},
+            "definitions": definitions
+        }))
+        .unwrap();
         let enums = BTreeMap::new();
         let (type_str, enum_info) = cfn_type_to_carina_type_with_enum(
             &prop,
@@ -20455,21 +20273,12 @@ mod tests {
             ref_path: Some("#/definitions/RateLimit".to_string()),
             ..Default::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::WAFv2::WebACL".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: Some(definitions),
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::WAFv2::WebACL".to_string(),
+            "properties": {},
+            "definitions": definitions
+        }))
+        .unwrap();
         let enums = BTreeMap::new();
         let (type_str, _) =
             cfn_type_to_carina_type_with_enum(&prop, "Limit", &schema, "aws.wafv2.WebAcl", &enums);
@@ -20500,21 +20309,12 @@ mod tests {
             ref_path: Some("#/definitions/Weight".to_string()),
             ..Default::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::Example::Thing".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: Some(definitions),
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Example::Thing".to_string(),
+            "properties": {},
+            "definitions": definitions
+        }))
+        .unwrap();
         let enums = BTreeMap::new();
         let (type_str, _) = cfn_type_to_carina_type_with_enum(
             &prop,
@@ -20545,21 +20345,12 @@ mod tests {
             ref_path: Some("#/definitions/Toggle".to_string()),
             ..Default::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::Example::Thing".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: Some(definitions),
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Example::Thing".to_string(),
+            "properties": {},
+            "definitions": definitions
+        }))
+        .unwrap();
         let enums = BTreeMap::new();
         let (type_str, _) = cfn_type_to_carina_type_with_enum(
             &prop,
@@ -20612,21 +20403,12 @@ mod tests {
                 ..Default::default()
             },
         );
-        let schema = CfnSchema {
-            type_name: "AWS::WAFv2::WebACL".to_string(),
-            description: None,
-            properties,
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: Some(definitions),
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::WAFv2::WebACL".to_string(),
+            "properties": properties,
+            "definitions": definitions
+        }))
+        .unwrap();
         let generated = generate_synthetic_schema_code(&schema).unwrap();
         assert!(
             generated.contains("StructField::required(\"priority\", AttributeType::refined_int("),
@@ -20665,21 +20447,12 @@ mod tests {
                 ..Default::default()
             },
         );
-        let schema = CfnSchema {
-            type_name: "AWS::Example::Thing".to_string(),
-            description: None,
-            properties,
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: Some(definitions),
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Example::Thing".to_string(),
+            "properties": properties,
+            "definitions": definitions
+        }))
+        .unwrap();
         let generated = generate_synthetic_schema_code(&schema).unwrap();
         assert!(
             generated.contains("AttributeType::list(AttributeType::int())"),
@@ -20711,21 +20484,11 @@ mod tests {
                 ..Default::default()
             },
         );
-        let schema = CfnSchema {
-            type_name: "AWS::EC2::VPC".to_string(),
-            description: None,
-            properties,
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::EC2::VPC".to_string(),
+            "properties": properties
+        }))
+        .unwrap();
         let generated = generate_synthetic_schema_code(&schema).unwrap();
         assert!(
             generated.contains("AttributeType::list(AttributeType::enum_("),
@@ -20737,31 +20500,35 @@ mod tests {
     fn test_markdown_struct_description_escapes_table_delimiter() {
         let description = "Indicates whether to enable Ipv6 Support for Vpc Attachment. Valid Values: enable | disable";
         let mut schema = empty_schema("AWS::Test::Resource");
-        schema.properties.insert(
-            "Options".to_string(),
-            CfnProperty {
-                ref_path: Some("#/definitions/Options".to_string()),
-                ..Default::default()
-            },
-        );
-        schema.definitions = Some(BTreeMap::from([(
-            "Options".to_string(),
-            def(
-                Some("object"),
-                Some(BTreeMap::from([(
-                    "Ipv6Support".to_string(),
-                    CfnProperty {
-                        prop_type: Some(TypeValue::Single("string".to_string())),
-                        description: Some(description.to_string()),
-                        ..Default::default()
-                    },
-                )])),
-                vec![],
-                None,
-                None,
-                None,
-            ),
-        )]));
+        schema.edit_json(|source| {
+            source["properties"].as_object_mut().unwrap().insert(
+                "Options".to_string(),
+                serde_json::json!(CfnProperty {
+                    ref_path: Some("#/definitions/Options".to_string()),
+                    ..Default::default()
+                }),
+            );
+        });
+        schema.edit_json(|source| {
+            source["definitions"] = serde_json::json!(BTreeMap::from([(
+                "Options".to_string(),
+                def(
+                    Some("object"),
+                    Some(BTreeMap::from([(
+                        "Ipv6Support".to_string(),
+                        CfnProperty {
+                            prop_type: Some(TypeValue::Single("string".to_string())),
+                            description: Some(description.to_string()),
+                            ..Default::default()
+                        },
+                    )])),
+                    vec![],
+                    None,
+                    None,
+                    None,
+                ),
+            )]));
+        });
 
         let md = generate_test_markdown(&schema, &schema.type_name).unwrap();
         let expected = format!(
@@ -20819,21 +20586,12 @@ mod tests {
             },
         );
 
-        let schema = CfnSchema {
-            type_name: "AWS::EC2::VPC".to_string(),
-            description: None,
-            properties,
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: Some(definitions),
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::EC2::VPC".to_string(),
+            "properties": properties,
+            "definitions": definitions
+        }))
+        .unwrap();
 
         let md = generate_test_markdown(&schema, "AWS::EC2::VPC").unwrap();
         assert!(
@@ -20910,21 +20668,12 @@ mod tests {
             },
         );
 
-        let schema = CfnSchema {
-            type_name: "AWS::EC2::VPC".to_string(),
-            description: None,
-            properties,
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: Some(definitions),
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::EC2::VPC".to_string(),
+            "properties": properties,
+            "definitions": definitions
+        }))
+        .unwrap();
 
         let md = generate_test_markdown(&schema, "AWS::EC2::VPC").unwrap();
         assert!(
@@ -21050,21 +20799,12 @@ mod tests {
             },
         );
 
-        let schema = CfnSchema {
-            type_name: "AWS::EC2::SecurityGroup".to_string(),
-            description: None,
-            properties,
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: Some(definitions),
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::EC2::SecurityGroup".to_string(),
+            "properties": properties,
+            "definitions": definitions
+        }))
+        .unwrap();
 
         let md = generate_test_markdown(&schema, "AWS::EC2::SecurityGroup").unwrap();
         let egress_count = md
@@ -21184,21 +20924,25 @@ mod tests {
         };
 
         let mut schema = empty_schema("AWS::Test::SharedDefinition");
-        schema.properties = BTreeMap::from([
-            ("Left".to_string(), struct_ref("SharedOptions")),
-            ("Only".to_string(), struct_ref("UniqueOptions")),
-            ("Right".to_string(), struct_ref("SharedOptions")),
-        ]);
-        schema.definitions = Some(BTreeMap::from([
-            (
-                "SharedOptions".to_string(),
-                struct_definition("SharedField"),
-            ),
-            (
-                "UniqueOptions".to_string(),
-                struct_definition("UniqueField"),
-            ),
-        ]));
+        schema.edit_json(|source| {
+            source["properties"] = serde_json::json!(BTreeMap::from([
+                ("Left".to_string(), struct_ref("SharedOptions")),
+                ("Only".to_string(), struct_ref("UniqueOptions")),
+                ("Right".to_string(), struct_ref("SharedOptions")),
+            ]));
+        });
+        schema.edit_json(|source| {
+            source["definitions"] = serde_json::json!(BTreeMap::from([
+                (
+                    "SharedOptions".to_string(),
+                    struct_definition("SharedField"),
+                ),
+                (
+                    "UniqueOptions".to_string(),
+                    struct_definition("UniqueField"),
+                ),
+            ]));
+        });
 
         let md = generate_test_markdown(&schema, "AWS::Test::SharedDefinition").unwrap();
 
@@ -21226,46 +20970,50 @@ mod tests {
             ..Default::default()
         };
         let mut schema = empty_schema("AWS::Test::SharedNestedDefinition");
-        schema.properties = BTreeMap::from([
-            ("Left".to_string(), struct_ref("SharedOptions")),
-            ("Right".to_string(), struct_ref("SharedOptions")),
-        ]);
-        schema.definitions = Some(BTreeMap::from([(
-            "SharedOptions".to_string(),
-            def(
-                Some("object"),
-                Some(BTreeMap::from([
-                    (
-                        "Details".to_string(),
-                        CfnProperty {
-                            prop_type: Some(TypeValue::Single("object".to_string())),
-                            properties: Some(BTreeMap::from([(
-                                "Label".to_string(),
-                                CfnProperty {
-                                    prop_type: Some(TypeValue::Single("string".to_string())),
-                                    ..Default::default()
-                                },
-                            )])),
-                            ..Default::default()
-                        },
-                    ),
-                    (
-                        "Mode".to_string(),
-                        CfnProperty {
-                            enum_values: Some(vec![
-                                EnumValue::Str("fast".to_string()),
-                                EnumValue::Str("slow".to_string()),
-                            ]),
-                            ..Default::default()
-                        },
-                    ),
-                ])),
-                vec![],
-                None,
-                None,
-                None,
-            ),
-        )]));
+        schema.edit_json(|source| {
+            source["properties"] = serde_json::json!(BTreeMap::from([
+                ("Left".to_string(), struct_ref("SharedOptions")),
+                ("Right".to_string(), struct_ref("SharedOptions")),
+            ]));
+        });
+        schema.edit_json(|source| {
+            source["definitions"] = serde_json::json!(BTreeMap::from([(
+                "SharedOptions".to_string(),
+                def(
+                    Some("object"),
+                    Some(BTreeMap::from([
+                        (
+                            "Details".to_string(),
+                            CfnProperty {
+                                prop_type: Some(TypeValue::Single("object".to_string())),
+                                properties: Some(BTreeMap::from([(
+                                    "Label".to_string(),
+                                    CfnProperty {
+                                        prop_type: Some(TypeValue::Single("string".to_string())),
+                                        ..Default::default()
+                                    },
+                                )])),
+                                ..Default::default()
+                            },
+                        ),
+                        (
+                            "Mode".to_string(),
+                            CfnProperty {
+                                enum_values: Some(vec![
+                                    EnumValue::Str("fast".to_string()),
+                                    EnumValue::Str("slow".to_string()),
+                                ]),
+                                ..Default::default()
+                            },
+                        ),
+                    ])),
+                    vec![],
+                    None,
+                    None,
+                    None,
+                ),
+            )]));
+        });
 
         let md = generate_test_markdown(&schema, "AWS::Test::SharedNestedDefinition").unwrap();
 
@@ -21303,43 +21051,47 @@ mod tests {
             ..Default::default()
         };
         let mut schema = empty_schema("AWS::Test::NestedSharedDefinition");
-        schema.properties = BTreeMap::from([
-            ("Left".to_string(), struct_ref("Outer")),
-            ("Right".to_string(), struct_ref("Outer")),
-        ]);
-        schema.definitions = Some(BTreeMap::from([
-            (
-                "Inner".to_string(),
-                def(
-                    Some("object"),
-                    Some(BTreeMap::from([(
-                        "Value".to_string(),
-                        CfnProperty {
-                            prop_type: Some(TypeValue::Single("string".to_string())),
-                            ..Default::default()
-                        },
-                    )])),
-                    vec![],
-                    None,
-                    None,
-                    None,
+        schema.edit_json(|source| {
+            source["properties"] = serde_json::json!(BTreeMap::from([
+                ("Left".to_string(), struct_ref("Outer")),
+                ("Right".to_string(), struct_ref("Outer")),
+            ]));
+        });
+        schema.edit_json(|source| {
+            source["definitions"] = serde_json::json!(BTreeMap::from([
+                (
+                    "Inner".to_string(),
+                    def(
+                        Some("object"),
+                        Some(BTreeMap::from([(
+                            "Value".to_string(),
+                            CfnProperty {
+                                prop_type: Some(TypeValue::Single("string".to_string())),
+                                ..Default::default()
+                            },
+                        )])),
+                        vec![],
+                        None,
+                        None,
+                        None,
+                    ),
                 ),
-            ),
-            (
-                "Outer".to_string(),
-                def(
-                    Some("object"),
-                    Some(BTreeMap::from([(
-                        "InnerField".to_string(),
-                        struct_ref("Inner"),
-                    )])),
-                    vec![],
-                    None,
-                    None,
-                    None,
+                (
+                    "Outer".to_string(),
+                    def(
+                        Some("object"),
+                        Some(BTreeMap::from([(
+                            "InnerField".to_string(),
+                            struct_ref("Inner"),
+                        )])),
+                        vec![],
+                        None,
+                        None,
+                        None,
+                    ),
                 ),
-            ),
-        ]));
+            ]));
+        });
 
         let md = generate_test_markdown(&schema, "AWS::Test::NestedSharedDefinition").unwrap();
 
@@ -21598,13 +21350,15 @@ mod tests {
         }
 
         let mut schema = empty_schema("AWS::Test::InlineOptions");
-        schema.properties = BTreeMap::from([
-            ("Left".to_string(), parent("Alpha", "string", &["a", "b"])),
-            (
-                "Right".to_string(),
-                parent("Retries", "integer", &["x", "y"]),
-            ),
-        ]);
+        schema.edit_json(|source| {
+            source["properties"] = serde_json::json!(BTreeMap::from([
+                ("Left".to_string(), parent("Alpha", "string", &["a", "b"])),
+                (
+                    "Right".to_string(),
+                    parent("Retries", "integer", &["x", "y"]),
+                ),
+            ]));
+        });
 
         let md = generate_test_markdown(&schema, "AWS::Test::InlineOptions").unwrap();
 
@@ -21646,45 +21400,49 @@ mod tests {
     #[test]
     fn test_markdown_collects_one_of_struct_referenced_by_array_item() {
         let mut schema = empty_schema("AWS::Test::OneOfArray");
-        schema.properties.insert(
-            "Entries".to_string(),
-            CfnProperty {
-                prop_type: Some(TypeValue::Single("array".to_string())),
-                items: Some(Box::new(CfnProperty {
-                    ref_path: Some("#/definitions/Choice".to_string()),
+        schema.edit_json(|source| {
+            source["properties"].as_object_mut().unwrap().insert(
+                "Entries".to_string(),
+                serde_json::json!(CfnProperty {
+                    prop_type: Some(TypeValue::Single("array".to_string())),
+                    items: Some(Box::new(CfnProperty {
+                        ref_path: Some("#/definitions/Choice".to_string()),
+                        ..Default::default()
+                    })),
                     ..Default::default()
-                })),
-                ..Default::default()
-            },
-        );
-        schema.definitions = Some(BTreeMap::from([(
-            "Choice".to_string(),
-            CfnProperty {
-                one_of: vec![
-                    CfnProperty {
-                        properties: Some(BTreeMap::from([(
-                            "Alpha".to_string(),
-                            CfnProperty {
-                                prop_type: Some(TypeValue::Single("string".to_string())),
-                                ..Default::default()
-                            },
-                        )])),
-                        ..Default::default()
-                    },
-                    CfnProperty {
-                        properties: Some(BTreeMap::from([(
-                            "Retries".to_string(),
-                            CfnProperty {
-                                prop_type: Some(TypeValue::Single("integer".to_string())),
-                                ..Default::default()
-                            },
-                        )])),
-                        ..Default::default()
-                    },
-                ],
-                ..Default::default()
-            },
-        )]));
+                }),
+            );
+        });
+        schema.edit_json(|source| {
+            source["definitions"] = serde_json::json!(BTreeMap::from([(
+                "Choice".to_string(),
+                CfnProperty {
+                    one_of: vec![
+                        CfnProperty {
+                            properties: Some(BTreeMap::from([(
+                                "Alpha".to_string(),
+                                CfnProperty {
+                                    prop_type: Some(TypeValue::Single("string".to_string())),
+                                    ..Default::default()
+                                },
+                            )])),
+                            ..Default::default()
+                        },
+                        CfnProperty {
+                            properties: Some(BTreeMap::from([(
+                                "Retries".to_string(),
+                                CfnProperty {
+                                    prop_type: Some(TypeValue::Single("integer".to_string())),
+                                    ..Default::default()
+                                },
+                            )])),
+                            ..Default::default()
+                        },
+                    ],
+                    ..Default::default()
+                },
+            )]));
+        });
 
         let md = generate_test_markdown(&schema, "AWS::Test::OneOfArray")
             .expect("a linked OneOf array item must have a registered target heading");
@@ -21702,22 +21460,24 @@ mod tests {
     #[test]
     fn test_direct_non_array_one_of_schema_and_markdown_use_struct() {
         let mut schema = empty_schema("AWS::Test::DirectOneOf");
-        schema.properties.insert(
-            "Choice".to_string(),
-            CfnProperty {
-                one_of: vec![CfnProperty {
-                    properties: Some(BTreeMap::from([(
-                        "Alpha".to_string(),
-                        CfnProperty {
-                            prop_type: Some(TypeValue::Single("string".to_string())),
-                            ..Default::default()
-                        },
-                    )])),
+        schema.edit_json(|source| {
+            source["properties"].as_object_mut().unwrap().insert(
+                "Choice".to_string(),
+                serde_json::json!(CfnProperty {
+                    one_of: vec![CfnProperty {
+                        properties: Some(BTreeMap::from([(
+                            "Alpha".to_string(),
+                            CfnProperty {
+                                prop_type: Some(TypeValue::Single("string".to_string())),
+                                ..Default::default()
+                            },
+                        )])),
+                        ..Default::default()
+                    }],
                     ..Default::default()
-                }],
-                ..Default::default()
-            },
-        );
+                }),
+            );
+        });
 
         let generated = generate_synthetic_schema_code(&schema).unwrap();
         let md = generate_test_markdown(&schema, "AWS::Test::DirectOneOf").unwrap();
@@ -21738,36 +21498,38 @@ mod tests {
     #[test]
     fn test_direct_non_array_one_of_two_object_variants_merge_optional_fields() {
         let mut schema = empty_schema("AWS::Test::DirectOneOf");
-        schema.properties.insert(
-            "Choice".to_string(),
-            CfnProperty {
-                one_of: vec![
-                    CfnProperty {
-                        properties: Some(BTreeMap::from([(
-                            "Alpha".to_string(),
-                            CfnProperty {
-                                prop_type: Some(TypeValue::Single("string".to_string())),
-                                ..Default::default()
-                            },
-                        )])),
-                        required: vec!["Alpha".to_string()],
-                        ..Default::default()
-                    },
-                    CfnProperty {
-                        properties: Some(BTreeMap::from([(
-                            "Retries".to_string(),
-                            CfnProperty {
-                                prop_type: Some(TypeValue::Single("integer".to_string())),
-                                ..Default::default()
-                            },
-                        )])),
-                        required: vec!["Retries".to_string()],
-                        ..Default::default()
-                    },
-                ],
-                ..Default::default()
-            },
-        );
+        schema.edit_json(|source| {
+            source["properties"].as_object_mut().unwrap().insert(
+                "Choice".to_string(),
+                serde_json::json!(CfnProperty {
+                    one_of: vec![
+                        CfnProperty {
+                            properties: Some(BTreeMap::from([(
+                                "Alpha".to_string(),
+                                CfnProperty {
+                                    prop_type: Some(TypeValue::Single("string".to_string())),
+                                    ..Default::default()
+                                },
+                            )])),
+                            required: vec!["Alpha".to_string()],
+                            ..Default::default()
+                        },
+                        CfnProperty {
+                            properties: Some(BTreeMap::from([(
+                                "Retries".to_string(),
+                                CfnProperty {
+                                    prop_type: Some(TypeValue::Single("integer".to_string())),
+                                    ..Default::default()
+                                },
+                            )])),
+                            required: vec!["Retries".to_string()],
+                            ..Default::default()
+                        },
+                    ],
+                    ..Default::default()
+                }),
+            );
+        });
 
         let generated = generate_synthetic_schema_code(&schema).unwrap();
         let md = generate_test_markdown(&schema, "AWS::Test::DirectOneOf").unwrap();
@@ -21846,7 +21608,10 @@ mod tests {
             ..Default::default()
         };
         let mut schema = empty_schema("AWS::Test::PlainTypes");
-        schema.definitions = Some(BTreeMap::from([("Options".to_string(), struct_definition)]));
+        schema.edit_json(|source| {
+            source["definitions"] =
+                serde_json::json!(BTreeMap::from([("Options".to_string(), struct_definition)]));
+        });
         let enum_prop = CfnProperty {
             prop_type: Some(TypeValue::Single("string".to_string())),
             ..Default::default()
@@ -21939,30 +21704,21 @@ mod tests {
             format: None,
             ..Default::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::Test::Resource".to_string(),
-            description: None,
-            properties: BTreeMap::from([(
-                "Rules".to_string(),
-                CfnProperty {
-                    ref_path: Some("#/definitions/Rule".to_string()),
-                    ..Default::default()
-                },
-            )]),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: Some(BTreeMap::from([
-                ("Protocol".to_string(), protocol),
-                ("Rule".to_string(), rule),
-            ])),
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Test::Resource".to_string(),
+            "properties": BTreeMap::from([(
+                        "Rules".to_string(),
+                        CfnProperty {
+                            ref_path: Some("#/definitions/Rule".to_string()),
+                            ..Default::default()
+                        },
+                    )]),
+            "definitions": BTreeMap::from([
+                        ("Protocol".to_string(), protocol),
+                        ("Rule".to_string(), rule),
+                    ])
+        }))
+        .unwrap();
 
         let md = generate_test_markdown(&schema, "AWS::Test::Resource").unwrap();
 
@@ -22069,21 +21825,12 @@ mod tests {
             },
         );
 
-        let schema = CfnSchema {
-            type_name: "AWS::Test::Resource".to_string(),
-            description: None,
-            properties,
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: Some(definitions),
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Test::Resource".to_string(),
+            "properties": properties,
+            "definitions": definitions
+        }))
+        .unwrap();
 
         let md = generate_test_markdown(&schema, "AWS::Test::Resource").unwrap();
 
@@ -22159,21 +21906,12 @@ mod tests {
             },
         );
 
-        let schema = CfnSchema {
-            type_name: "AWS::Test::Resource".to_string(),
-            description: None,
-            properties,
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: Some(definitions),
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Test::Resource".to_string(),
+            "properties": properties,
+            "definitions": definitions
+        }))
+        .unwrap();
 
         let md = generate_test_markdown(&schema, "AWS::Test::Resource").unwrap();
 
@@ -22209,21 +21947,11 @@ mod tests {
             },
         );
 
-        let schema = CfnSchema {
-            type_name: "AWS::IAM::Role".to_string(),
-            description: None,
-            properties,
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::IAM::Role".to_string(),
+            "properties": properties
+        }))
+        .unwrap();
 
         let generated = generate_synthetic_schema_code(&schema).unwrap();
 
@@ -22252,21 +21980,11 @@ mod tests {
             },
         );
 
-        let schema = CfnSchema {
-            type_name: "AWS::Test::Resource".to_string(),
-            description: None,
-            properties,
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Test::Resource".to_string(),
+            "properties": properties
+        }))
+        .unwrap();
 
         let generated = generate_synthetic_schema_code(&schema).unwrap();
 
@@ -22289,21 +22007,11 @@ mod tests {
             },
         );
 
-        let schema = CfnSchema {
-            type_name: "AWS::Test::Resource".to_string(),
-            description: None,
-            properties,
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Test::Resource".to_string(),
+            "properties": properties
+        }))
+        .unwrap();
 
         let generated = generate_synthetic_schema_code(&schema).unwrap();
 
@@ -22366,21 +22074,11 @@ mod tests {
             },
         );
 
-        let schema = CfnSchema {
-            type_name: "AWS::S3::BucketPolicy".to_string(),
-            description: None,
-            properties,
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::S3::BucketPolicy".to_string(),
+            "properties": properties
+        }))
+        .unwrap();
 
         let generated = generate_schema_code(&schema, "AWS::S3::BucketPolicy").unwrap();
 
@@ -22417,21 +22115,13 @@ mod tests {
             },
         );
 
-        let schema = CfnSchema {
-            type_name: "AWS::EC2::VPNGateway".to_string(),
-            description: None,
-            properties,
-            required: vec!["Type".to_string()],
-            read_only_properties: vec![],
-            create_only_properties: vec!["/properties/Type".to_string()],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::EC2::VPNGateway".to_string(),
+            "properties": properties,
+            "required": vec!["Type".to_string()],
+            "createOnlyProperties": vec!["/properties/Type".to_string()]
+        }))
+        .unwrap();
 
         let md = generate_test_markdown(&schema, "AWS::EC2::VPNGateway").unwrap();
 
@@ -22471,21 +22161,11 @@ mod tests {
             },
         );
 
-        let schema = CfnSchema {
-            type_name: "AWS::Test::Resource".to_string(),
-            description: None,
-            properties,
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Test::Resource".to_string(),
+            "properties": properties
+        }))
+        .unwrap();
 
         let md = generate_test_markdown(&schema, "AWS::Test::Resource").unwrap();
 
@@ -22506,21 +22186,11 @@ mod tests {
             ref_path: Some("#/definitions/Tag".to_string()),
             ..Default::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::EC2::VPC".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::EC2::VPC".to_string(),
+            "properties": {}
+        }))
+        .unwrap();
         // Tags property should display Map<String, String>
         assert_eq!(
             type_display_string("Tags", &prop, &schema),
@@ -22541,21 +22211,11 @@ mod tests {
             )])),
             ..Default::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::ElasticLoadBalancingV2::Listener".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::ElasticLoadBalancingV2::Listener".to_string(),
+            "properties": {}
+        }))
+        .unwrap();
         // A schema-declared homogeneous map remains Map<String, String>.
         assert_eq!(
             type_display_string("AuthenticationRequestExtraParams", &prop, &schema),
@@ -22583,21 +22243,12 @@ mod tests {
             },
         );
 
-        let schema = CfnSchema {
-            type_name: "AWS::Test::Resource".to_string(),
-            description: None,
-            properties,
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec!["/properties/CidrBlock".to_string()],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Test::Resource".to_string(),
+            "properties": properties,
+            "createOnlyProperties": vec!["/properties/CidrBlock".to_string()]
+        }))
+        .unwrap();
 
         let md = generate_test_markdown(&schema, "AWS::Test::Resource").unwrap();
 
@@ -22629,21 +22280,12 @@ mod tests {
             },
         );
 
-        let schema = CfnSchema {
-            type_name: "AWS::Test::Resource".to_string(),
-            description: None,
-            properties,
-            required: vec![],
-            read_only_properties: vec!["/properties/Id".to_string()],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Test::Resource".to_string(),
+            "properties": properties,
+            "readOnlyProperties": vec!["/properties/Id".to_string()]
+        }))
+        .unwrap();
 
         let md = generate_test_markdown(&schema, "AWS::Test::Resource").unwrap();
 
@@ -22660,22 +22302,26 @@ mod tests {
     #[test]
     fn test_markdown_skips_deprecated_read_only_top_level_object() {
         let mut schema = empty_schema("AWS::Test::DeprecatedReadOnly");
-        schema.properties.insert(
-            "Info".to_string(),
-            CfnProperty {
-                prop_type: Some(TypeValue::Single("object".to_string())),
-                description: Some("(Deprecated.) Legacy provider output.".to_string()),
-                properties: Some(BTreeMap::from([(
-                    "Value".to_string(),
-                    CfnProperty {
-                        prop_type: Some(TypeValue::Single("string".to_string())),
-                        ..Default::default()
-                    },
-                )])),
-                ..Default::default()
-            },
-        );
-        schema.read_only_properties = vec!["/properties/Info".to_string()];
+        schema.edit_json(|source| {
+            source["properties"].as_object_mut().unwrap().insert(
+                "Info".to_string(),
+                serde_json::json!(CfnProperty {
+                    prop_type: Some(TypeValue::Single("object".to_string())),
+                    description: Some("(Deprecated.) Legacy provider output.".to_string()),
+                    properties: Some(BTreeMap::from([(
+                        "Value".to_string(),
+                        CfnProperty {
+                            prop_type: Some(TypeValue::Single("string".to_string())),
+                            ..Default::default()
+                        },
+                    )])),
+                    ..Default::default()
+                }),
+            );
+        });
+        schema.edit_json(|source| {
+            source["readOnlyProperties"] = serde_json::json!(vec!["/properties/Info".to_string()]);
+        });
 
         let md = generate_test_markdown(&schema, "AWS::Test::DeprecatedReadOnly")
             .expect("deprecated read-only properties must not create unresolved links");
@@ -22714,21 +22360,11 @@ mod tests {
             pattern: Some(r"^[.\-_/#A-Za-z0-9]{1,512}\Z".to_string()),
             ..Default::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::Logs::LogGroup".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Logs::LogGroup".to_string(),
+            "properties": {}
+        }))
+        .unwrap();
         let (type_str, _) = cfn_type_to_carina_type_with_enum(
             &prop,
             "LogGroupName",
@@ -22757,21 +22393,11 @@ mod tests {
             max_length: Some(256),
             ..Default::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::Logs::LogGroup".to_string(),
-            description: None,
-            properties: BTreeMap::from([("KmsKeyId".to_string(), prop.clone())]),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Logs::LogGroup".to_string(),
+            "properties": BTreeMap::from([("KmsKeyId".to_string(), prop.clone())])
+        }))
+        .unwrap();
         let (type_str, _) = cfn_type_to_carina_type_with_enum(
             &prop,
             "KmsKeyId",
@@ -22792,8 +22418,9 @@ mod tests {
             "FieldIndexPolicies".to_string(),
             cfn_schema_for_codegen_tests("AWS::Logs::LogGroup")
                 .properties
-                .remove("FieldIndexPolicies")
-                .unwrap(),
+                .get("FieldIndexPolicies")
+                .unwrap()
+                .clone(),
         );
         properties.insert(
             "LogGroupName".to_string(),
@@ -22809,24 +22436,15 @@ mod tests {
             "KmsKeyId".to_string(),
             cfn_schema_for_codegen_tests("AWS::Logs::LogGroup")
                 .properties
-                .remove("KmsKeyId")
-                .unwrap(),
+                .get("KmsKeyId")
+                .unwrap()
+                .clone(),
         );
-        let schema = CfnSchema {
-            type_name: "AWS::Logs::LogGroup".to_string(),
-            description: None,
-            properties,
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Logs::LogGroup".to_string(),
+            "properties": properties
+        }))
+        .unwrap();
 
         let code = generate_schema_code(&schema, "AWS::Logs::LogGroup").unwrap();
         assert!(
@@ -22855,21 +22473,11 @@ mod tests {
             max_items: Some(10),
             ..Default::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::EC2::VPCEndpoint".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::EC2::VPCEndpoint".to_string(),
+            "properties": {}
+        }))
+        .unwrap();
         let enums = BTreeMap::new();
         let (type_str, _) = cfn_type_to_carina_type_with_enum(
             &prop,
@@ -22904,21 +22512,11 @@ mod tests {
             max_items: None,
             ..Default::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::EC2::VPCEndpoint".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::EC2::VPCEndpoint".to_string(),
+            "properties": {}
+        }))
+        .unwrap();
         let enums = BTreeMap::new();
         let (type_str, _) = cfn_type_to_carina_type_with_enum(
             &prop,
@@ -22953,21 +22551,11 @@ mod tests {
             max_items: None,
             ..Default::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::EC2::VPCEndpoint".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::EC2::VPCEndpoint".to_string(),
+            "properties": {}
+        }))
+        .unwrap();
         let enums = BTreeMap::new();
         let (type_str, _) = cfn_type_to_carina_type_with_enum(
             &prop,
@@ -23035,21 +22623,13 @@ mod tests {
             },
         );
 
-        let schema = CfnSchema {
-            type_name: "AWS::EC2::VPCEndpoint".to_string(),
-            description: Some("Test".to_string()),
-            properties,
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: Some(definitions),
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::EC2::VPCEndpoint".to_string(),
+            "description": "Test".to_string(),
+            "properties": properties,
+            "definitions": definitions
+        }))
+        .unwrap();
 
         let generated = generate_schema_code(&schema, "AWS::EC2::VPCEndpoint").unwrap();
         assert!(generated.contains("Some((Some(1), Some(10)))"));
@@ -23071,21 +22651,11 @@ mod tests {
             },
         );
 
-        let schema = CfnSchema {
-            type_name: "AWS::Test::Resource".to_string(),
-            description: None,
-            properties,
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Test::Resource".to_string(),
+            "properties": properties
+        }))
+        .unwrap();
 
         let generated = generate_synthetic_schema_code(&schema).unwrap();
 
@@ -23116,21 +22686,11 @@ mod tests {
             },
         );
 
-        let schema = CfnSchema {
-            type_name: "AWS::Test::Resource".to_string(),
-            description: None,
-            properties,
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Test::Resource".to_string(),
+            "properties": properties
+        }))
+        .unwrap();
 
         let generated = generate_synthetic_schema_code(&schema).unwrap();
 
@@ -23155,21 +22715,11 @@ mod tests {
             },
         );
 
-        let schema = CfnSchema {
-            type_name: "AWS::Test::Resource".to_string(),
-            description: None,
-            properties,
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Test::Resource".to_string(),
+            "properties": properties
+        }))
+        .unwrap();
 
         let generated = generate_synthetic_schema_code(&schema).unwrap();
 
@@ -23188,15 +22738,17 @@ mod tests {
             ..Default::default()
         };
         let mut schema = empty_schema("AWS::Test::Resource");
-        schema.definitions = Some(BTreeMap::from([(
-            "LengthOnlyString".to_string(),
-            CfnProperty {
-                prop_type: Some(TypeValue::Single("string".to_string())),
-                min_length: Some(1),
-                max_length: Some(2048),
-                ..Default::default()
-            },
-        )]));
+        schema.edit_json(|source| {
+            source["definitions"] = serde_json::json!(BTreeMap::from([(
+                "LengthOnlyString".to_string(),
+                CfnProperty {
+                    prop_type: Some(TypeValue::Single("string".to_string())),
+                    min_length: Some(1),
+                    max_length: Some(2048),
+                    ..Default::default()
+                },
+            )]));
+        });
 
         let (type_str, enum_info) = cfn_type_to_carina_type_with_enum(
             &prop,
@@ -23267,9 +22819,9 @@ mod tests {
     #[test]
     fn test_array_item_type_override_accepts_nested_keys() {
         let mut schema = empty_schema("AWS::Test::NestedItemOverride");
-        schema.properties.insert("Container".to_string(), serde_json::from_value(serde_json::json!({
+        schema.edit_json(|source| { source["properties"].as_object_mut().unwrap().insert("Container".to_string(), serde_json::json!({
             "type": "object", "properties": {"Values": {"type": "array", "items": {"type": "string"}}}
-        })).unwrap());
+        })); });
         let path = CfnPropertyPath::new(Some("Container"), "Values");
         let override_type = resource_type_override(
             "AWS::Logs::LogGroup",
@@ -23290,14 +22842,15 @@ mod tests {
     #[test]
     fn test_array_bounds_must_tighten_cfn_and_have_a_valid_intersection() {
         let mut schema = empty_schema("AWS::Test::ArrayBounds");
-        schema.properties.insert(
-            "Values".to_string(),
-            serde_json::from_value(serde_json::json!({
-                "type": "array", "items": {"type": "string"},
-                "uniqueItems": true, "insertionOrder": false, "minItems": 2, "maxItems": 5
-            }))
-            .unwrap(),
-        );
+        schema.edit_json(|source| {
+            source["properties"].as_object_mut().unwrap().insert(
+                "Values".to_string(),
+                serde_json::json!({
+                    "type": "array", "items": {"type": "string"},
+                    "uniqueItems": true, "insertionOrder": false, "minItems": 2, "maxItems": 5
+                }),
+            );
+        });
         let path = CfnPropertyPath::new(None, "Values");
         let property = &schema.properties["Values"];
         let expression_override = resource_type_override(
@@ -23365,19 +22918,16 @@ mod tests {
             ("BudgetData", "Metrics", None, Some(0)),
         ] {
             let mut schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
-            let source = schema
-                .definitions
-                .as_mut()
-                .unwrap()
-                .get_mut(definition)
-                .unwrap()
-                .properties
-                .as_mut()
-                .unwrap()
-                .get_mut(property)
-                .unwrap();
-            source.min_items = min;
-            source.max_items = max;
+            schema.edit_json(|source| {
+                let property = &mut source["definitions"][definition]["properties"][property];
+                for (keyword, bound) in [("minItems", min), ("maxItems", max)] {
+                    if let Some(bound) = bound {
+                        property[keyword] = serde_json::json!(bound);
+                    } else {
+                        property.as_object_mut().unwrap().remove(keyword);
+                    }
+                }
+            });
             assert_override_generation_rejected(
                 &schema,
                 "loosen CFN bound",
@@ -23390,46 +22940,32 @@ mod tests {
     fn test_nested_array_overrides_reject_missing_deprecated_and_unconsumed_keys() {
         for invalid in ["missing", "deprecated", "unreachable"] {
             let mut schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
-            let definitions = schema.definitions.as_mut().unwrap();
-            match invalid {
+            schema.edit_json(|source| match invalid {
                 "missing" => {
-                    definitions
-                        .get_mut("TagValues")
-                        .unwrap()
-                        .properties
-                        .as_mut()
+                    source["definitions"]["TagValues"]["properties"]
+                        .as_object_mut()
                         .unwrap()
                         .remove("Values");
                 }
                 "deprecated" => {
-                    definitions
-                        .get_mut("TagValues")
-                        .unwrap()
-                        .properties
-                        .as_mut()
-                        .unwrap()
-                        .get_mut("Values")
-                        .unwrap()
-                        .description = Some("(Deprecated.) Not emitted.".to_string());
+                    source["definitions"]["TagValues"]["properties"]["Values"]["description"] =
+                        serde_json::json!("(Deprecated.) Not emitted.");
                 }
                 "unreachable" => {
-                    definitions
-                        .get_mut("Expression")
-                        .unwrap()
-                        .properties
-                        .as_mut()
+                    source["definitions"]["Expression"]["properties"]
+                        .as_object_mut()
                         .unwrap()
                         .remove("Tags");
                 }
                 _ => unreachable!(),
-            }
+            });
             // CostCategoryValues.Values and ExpressionDimensionValues.Values
             // still emit: their identical leaf names cannot consume TagValues.Values.
             assert_override_generation_rejected(&schema, "Array", "TagValues.Values");
         }
     }
 
-    fn with_enum_shadowed_array_override(action: impl FnOnce(CfnSchema)) {
+    fn with_enum_shadowed_array_override(action: impl FnOnce(ParsedCfnSchema)) {
         const CFN_TYPE: &str = "AWS::Test::EnumShadowedArrayOverride";
         static OVERRIDES: LazyLock<ResourceTypeOverrides> = LazyLock::new(|| {
             let mut overrides = ResourceTypeOverrides::default();
@@ -23461,7 +22997,7 @@ mod tests {
             "UnorderedMetrics": metrics,
             "BoundedMetrics": metrics
         });
-        let schema = serde_json::from_value(serde_json::json!({
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
             "typeName": CFN_TYPE,
             "properties": {"Config": {"$ref": "#/definitions/Container"}},
             "definitions": {
@@ -23511,11 +23047,10 @@ mod tests {
     #[test]
     fn test_enum_overlays_document_only_surviving_struct_paths() {
         with_enum_shadowed_array_override(|mut schema| {
-            schema.properties.insert(
-                "Visible".to_string(),
-                serde_json::from_value(serde_json::json!({"$ref": "#/definitions/TagValues"}))
-                    .unwrap(),
-            );
+            schema.edit_json(|source| {
+                source["properties"]["Visible"] =
+                    serde_json::json!({"$ref": "#/definitions/TagValues"});
+            });
             let generated = generate_synthetic_schema_code(&schema).unwrap();
             assert!(generated.contains("TagValues"), "{generated}");
             let docs = generate_test_markdown(&schema, &schema.type_name).unwrap();
@@ -23533,30 +23068,17 @@ mod tests {
         let mut schema = cfn_schema_for_codegen_tests("AWS::Logs::LogGroup");
         let expected_rust = generate_schema_code(&schema, &schema.type_name).unwrap();
         let expected_docs = generate_test_markdown(&schema, &schema.type_name).unwrap();
-        let array = schema
-            .properties
-            .insert(
-                "FieldIndexPolicies".to_string(),
-                serde_json::from_value(serde_json::json!({
-                    "$ref": "#/definitions/OverrideAlias"
-                }))
-                .unwrap(),
-            )
-            .unwrap();
-        schema
-            .properties
-            .get_mut("FieldIndexPolicies")
-            .unwrap()
-            .description = array.description.clone();
-        let definitions = schema.definitions.get_or_insert_default();
-        definitions.insert("OverrideArray".to_string(), array);
-        definitions.insert(
-            "OverrideAlias".to_string(),
-            serde_json::from_value(serde_json::json!({
-                "$ref": "#/definitions/OverrideArray"
-            }))
-            .unwrap(),
-        );
+        schema.edit_json(|source| {
+            let array = source["properties"]["FieldIndexPolicies"].clone();
+            let mut alias = serde_json::json!({"$ref": "#/definitions/OverrideAlias"});
+            if let Some(description) = array.get("description") {
+                alias["description"] = description.clone();
+            }
+            source["properties"]["FieldIndexPolicies"] = alias;
+            source["definitions"]["OverrideArray"] = array;
+            source["definitions"]["OverrideAlias"] =
+                serde_json::json!({"$ref": "#/definitions/OverrideArray"});
+        });
         assert_eq!(
             generate_schema_code(&schema, &schema.type_name).unwrap(),
             expected_rust
@@ -23635,7 +23157,7 @@ mod tests {
                 } else {
                     serde_json::json!({"Values": property})
                 };
-                let schema: CfnSchema = serde_json::from_value(serde_json::json!({
+                let schema = ParsedCfnSchema::from_json(serde_json::json!({
                     "typeName": cfn_type,
                     "properties": properties,
                     "definitions": {
@@ -23703,56 +23225,37 @@ mod tests {
             ]}),
         ] {
             let mut schema = cfn_schema_for_codegen_tests("AWS::Logs::LogGroup");
-            schema.definitions.get_or_insert_default().insert(
-                "OverrideTarget".to_string(),
-                serde_json::from_value(serde_json::json!({"type": "object"})).unwrap(),
-            );
-            let definitions = schema.definitions.as_mut().unwrap();
-            for (name, definition) in [
-                ("OverrideArray", serde_json::json!({"type": "array"})),
-                (
-                    "OverrideUnion",
-                    serde_json::json!({"$ref": "#/definitions/OverrideArray", "oneOf": [
-                        {"type": "array"}, {"type": "string"}
-                    ]}),
-                ),
-                (
-                    "OverrideCycle",
-                    serde_json::json!({"$ref": "#/definitions/OverrideCycle"}),
-                ),
-            ] {
-                definitions.insert(
-                    name.to_string(),
-                    serde_json::from_value(definition).unwrap(),
-                );
-            }
-            schema.properties.insert(
-                "FieldIndexPolicies".to_string(),
-                serde_json::from_value(property).unwrap(),
-            );
+            schema.edit_json(|source| {
+                source["definitions"]["OverrideTarget"] = serde_json::json!({"type": "object"});
+                for (name, definition) in [
+                    ("OverrideArray", serde_json::json!({"type": "array"})),
+                    (
+                        "OverrideUnion",
+                        serde_json::json!({"$ref": "#/definitions/OverrideArray", "oneOf": [
+                            {"type": "array"}, {"type": "string"}
+                        ]}),
+                    ),
+                    (
+                        "OverrideCycle",
+                        serde_json::json!({"$ref": "#/definitions/OverrideCycle"}),
+                    ),
+                ] {
+                    source["definitions"][name] = definition;
+                }
+                source["properties"]["FieldIndexPolicies"] = property;
+            });
             assert_override_generation_rejected(&schema, "ArrayItemType", "FieldIndexPolicies");
 
             let mut nested_schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
-            let definitions = nested_schema.definitions.as_mut().unwrap();
-            definitions.extend(
-                schema
-                    .definitions
-                    .as_ref()
-                    .unwrap()
-                    .iter()
-                    .filter(|(name, _)| name.starts_with("Override"))
-                    .map(|(name, definition)| (name.clone(), definition.clone())),
-            );
-            definitions
-                .get_mut("TagValues")
-                .unwrap()
-                .properties
-                .as_mut()
-                .unwrap()
-                .insert(
-                    "Values".to_string(),
-                    schema.properties["FieldIndexPolicies"].clone(),
-                );
+            nested_schema.edit_json(|source| {
+                for (name, definition) in schema.source()["definitions"].as_object().unwrap() {
+                    if name.starts_with("Override") {
+                        source["definitions"][name] = definition.clone();
+                    }
+                }
+                source["definitions"]["TagValues"]["properties"]["Values"] =
+                    schema.source()["properties"]["FieldIndexPolicies"].clone();
+            });
             assert_override_generation_rejected(
                 &nested_schema,
                 "ArrayItemType",
@@ -23779,7 +23282,7 @@ mod tests {
         }
     }
 
-    fn assert_override_generation_rejected(schema: &CfnSchema, variant: &str, path: &str) {
+    fn assert_override_generation_rejected(schema: &ParsedCfnSchema, variant: &str, path: &str) {
         for message in [
             generation_failure(|| generate_schema_code(schema, &schema.type_name)),
             generation_failure(|| generate_test_markdown(schema, &schema.type_name)),
@@ -23793,16 +23296,19 @@ mod tests {
     #[test]
     fn test_array_item_type_override_rejects_missing_and_unconsumed_keys() {
         let mut schema = cfn_schema_for_codegen_tests("AWS::Logs::LogGroup");
-        schema.properties.remove("FieldIndexPolicies");
+        schema.edit_json(|source| {
+            source["properties"]
+                .as_object_mut()
+                .unwrap()
+                .remove("FieldIndexPolicies");
+        });
         assert_override_generation_rejected(&schema, "ArrayItemType", "FieldIndexPolicies");
 
         let mut schema = cfn_schema_for_codegen_tests("AWS::Logs::LogGroup");
-        schema
-            .properties
-            .get_mut("FieldIndexPolicies")
-            .unwrap()
-            .description =
-            Some("(Deprecated.) Item override must not silently disappear.".to_string());
+        schema.edit_json(|source| {
+            source["properties"]["FieldIndexPolicies"]["description"] =
+                serde_json::json!("(Deprecated.) Item override must not silently disappear.");
+        });
         assert_override_generation_rejected(&schema, "not consumed", "FieldIndexPolicies");
 
         let schema = cfn_schema_for_codegen_tests("AWS::Logs::LogGroup");
@@ -23909,34 +23415,23 @@ mod tests {
                     let mut array =
                         serde_json::json!({"type": "array", "items": {"type": "string"}});
                     array[keyword] = value.clone();
-                    let property = if referenced {
-                        schema.definitions.get_or_insert_default().insert(
-                            "OverrideArray".to_string(),
-                            serde_json::from_value(array).unwrap(),
-                        );
-                        serde_json::from_value(
-                            serde_json::json!({"$ref": "#/definitions/OverrideArray"}),
-                        )
-                        .unwrap()
-                    } else {
-                        serde_json::from_value(array).unwrap()
-                    };
+                    schema.edit_json(|source| {
+                        let property = if referenced {
+                            source["definitions"]["OverrideArray"] = array;
+                            serde_json::json!({"$ref": "#/definitions/OverrideArray"})
+                        } else {
+                            array
+                        };
+                        if nested {
+                            source["definitions"]["BudgetData"]["properties"]["CostFilters"] =
+                                property;
+                        } else {
+                            source["properties"]["ArchivePolicy"] = property;
+                        }
+                    });
                     let path = if nested {
-                        schema
-                            .definitions
-                            .as_mut()
-                            .unwrap()
-                            .get_mut("BudgetData")
-                            .unwrap()
-                            .properties
-                            .as_mut()
-                            .unwrap()
-                            .insert("CostFilters".to_string(), property);
                         "BudgetData.CostFilters"
                     } else {
-                        schema
-                            .properties
-                            .insert("ArchivePolicy".to_string(), property);
                         "ArchivePolicy"
                     };
                     assert_override_generation_rejected(&schema, "ArrayItemType", path);
@@ -23960,21 +23455,13 @@ mod tests {
             ]}),
         ] {
             let mut schema = cfn_schema_for_codegen_tests("AWS::SNS::Topic");
-            let definitions = schema.definitions.get_or_insert_default();
-            definitions.insert("ConstrainedAlias".to_string(), serde_json::from_value(
-                serde_json::json!({"$ref": "#/definitions/UnconstrainedArray", "uniqueItems": true})
-            ).unwrap());
-            definitions.insert(
-                "UnconstrainedArray".to_string(),
-                serde_json::from_value(
-                    serde_json::json!({"type": "array", "items": {"type": "string"}}),
-                )
-                .unwrap(),
-            );
-            schema.properties.insert(
-                "ArchivePolicy".to_string(),
-                serde_json::from_value(property).unwrap(),
-            );
+            schema.edit_json(|source| {
+                source["definitions"]["ConstrainedAlias"] =
+                    serde_json::json!({"$ref": "#/definitions/UnconstrainedArray", "uniqueItems": true});
+                source["definitions"]["UnconstrainedArray"] =
+                    serde_json::json!({"type": "array", "items": {"type": "string"}});
+                source["properties"]["ArchivePolicy"] = property;
+            });
             assert_override_generation_rejected(&schema, "ArrayItemType", "ArchivePolicy");
         }
     }
@@ -24029,19 +23516,23 @@ mod tests {
     #[test]
     fn test_unique_items_and_bounds_apply_to_overridden_array_items() {
         let mut schema = cfn_schema_for_codegen_tests("AWS::Logs::LogGroup");
-        let array = schema.properties.get_mut("FieldIndexPolicies").unwrap();
-        array.min_items = Some(1);
-        array.max_items = Some(3);
+        schema.edit_json(|source| {
+            source["properties"]["FieldIndexPolicies"]["minItems"] = serde_json::json!(1);
+            source["properties"]["FieldIndexPolicies"]["maxItems"] = serde_json::json!(3);
+        });
         for (unique_items, elements) in [
             (Some(true), "Unique"),
             (Some(false), "AllowDuplicates"),
             (None, "AllowDuplicates"),
         ] {
-            schema
-                .properties
-                .get_mut("FieldIndexPolicies")
-                .unwrap()
-                .unique_items = unique_items;
+            schema.edit_json(|source| {
+                let property = &mut source["properties"]["FieldIndexPolicies"];
+                if let Some(unique_items) = unique_items {
+                    property["uniqueItems"] = serde_json::json!(unique_items);
+                } else {
+                    property.as_object_mut().unwrap().remove("uniqueItems");
+                }
+            });
             let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
             assert!(
                 generated.contains(&format!(
@@ -24099,10 +23590,12 @@ mod tests {
         }))
         .unwrap();
         let mut schema = empty_schema("AWS::Test::Resource");
-        schema.definitions = Some(BTreeMap::from([(
-            "ConstrainedValues".to_string(),
-            inline.clone(),
-        )]));
+        schema.edit_json(|source| {
+            source["definitions"] = serde_json::json!(BTreeMap::from([(
+                "ConstrainedValues".to_string(),
+                inline.clone(),
+            )]));
+        });
         let referenced = CfnProperty {
             ref_path: Some("#/definitions/ConstrainedValues".to_string()),
             ..Default::default()
@@ -24164,16 +23657,21 @@ mod tests {
             ..Default::default()
         };
         let mut schema = empty_schema("AWS::Test::Resource");
-        schema.definitions = Some(BTreeMap::from([
-            ("FieldIdentifier".to_string(), field_identifier),
-            ("AddressField".to_string(), alias("PhoneNumberField")),
-            ("PhoneNumberField".to_string(), alias("FieldIdentifier")),
-            ("CycleA".to_string(), alias("CycleB")),
-            ("CycleB".to_string(), alias("CycleA")),
-        ]));
-        schema
-            .properties
-            .insert("Cycle".to_string(), alias("CycleA"));
+        schema.edit_json(|source| {
+            source["definitions"] = serde_json::json!(BTreeMap::from([
+                ("FieldIdentifier".to_string(), field_identifier),
+                ("AddressField".to_string(), alias("PhoneNumberField")),
+                ("PhoneNumberField".to_string(), alias("FieldIdentifier")),
+                ("CycleA".to_string(), alias("CycleB")),
+                ("CycleB".to_string(), alias("CycleA")),
+            ]));
+        });
+        schema.edit_json(|source| {
+            source["properties"]
+                .as_object_mut()
+                .unwrap()
+                .insert("Cycle".to_string(), serde_json::json!(alias("CycleA")));
+        });
         let fields = CfnProperty {
             prop_type: Some(TypeValue::Single("array".to_string())),
             items: Some(Box::new(alias("AddressField"))),
@@ -24224,19 +23722,21 @@ mod tests {
     #[test]
     fn test_ref_integer_enum_generates_numeric_union() {
         let mut schema = empty_schema("AWS::Test::Resource");
-        schema.definitions = Some(BTreeMap::from([(
-            "EvaluationWindowSec".to_string(),
-            CfnProperty {
-                prop_type: Some(TypeValue::Single("integer".to_string())),
-                enum_values: Some(vec![
-                    EnumValue::Int(60),
-                    EnumValue::Int(120),
-                    EnumValue::Int(300),
-                    EnumValue::Int(600),
-                ]),
-                ..Default::default()
-            },
-        )]));
+        schema.edit_json(|source| {
+            source["definitions"] = serde_json::json!(BTreeMap::from([(
+                "EvaluationWindowSec".to_string(),
+                CfnProperty {
+                    prop_type: Some(TypeValue::Single("integer".to_string())),
+                    enum_values: Some(vec![
+                        EnumValue::Int(60),
+                        EnumValue::Int(120),
+                        EnumValue::Int(300),
+                        EnumValue::Int(600),
+                    ]),
+                    ..Default::default()
+                },
+            )]));
+        });
         let property = CfnProperty {
             ref_path: Some("#/definitions/EvaluationWindowSec".to_string()),
             ..Default::default()
@@ -24298,15 +23798,17 @@ mod tests {
     #[test]
     fn test_list_element_docs_share_inline_and_ref_scalar_renderer() {
         let mut schema = empty_schema("AWS::Test::Resource");
-        schema.definitions = Some(BTreeMap::from([(
-            "BoundedInteger".to_string(),
-            CfnProperty {
-                prop_type: Some(TypeValue::Single("integer".to_string())),
-                minimum: Some(1),
-                maximum: Some(5),
-                ..Default::default()
-            },
-        )]));
+        schema.edit_json(|source| {
+            source["definitions"] = serde_json::json!(BTreeMap::from([(
+                "BoundedInteger".to_string(),
+                CfnProperty {
+                    prop_type: Some(TypeValue::Single("integer".to_string())),
+                    minimum: Some(1),
+                    maximum: Some(5),
+                    ..Default::default()
+                },
+            )]));
+        });
         let inline_strings = CfnProperty {
             prop_type: Some(TypeValue::Single("array".to_string())),
             items: Some(Box::new(CfnProperty {
@@ -24424,21 +23926,12 @@ mod tests {
             },
         );
 
-        let schema = CfnSchema {
-            type_name: "AWS::Organizations::Account".to_string(),
-            description: None,
-            properties,
-            required: vec!["Email".to_string()],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Organizations::Account".to_string(),
+            "properties": properties,
+            "required": vec!["Email".to_string()]
+        }))
+        .unwrap();
 
         let generated = generate_schema_code(&schema, "AWS::Organizations::Account").unwrap();
 
@@ -24478,21 +23971,12 @@ mod tests {
             },
         );
 
-        let schema = CfnSchema {
-            type_name: "AWS::S3::Bucket".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: Some(definitions),
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::S3::Bucket".to_string(),
+            "properties": {},
+            "definitions": definitions
+        }))
+        .unwrap();
 
         let (type_str, _) = cfn_type_to_carina_type_with_enum(
             &prop,
@@ -24582,21 +24066,12 @@ mod tests {
             },
         );
 
-        let schema = CfnSchema {
-            type_name: "AWS::EC2::VPC".to_string(),
-            description: None,
-            properties,
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: Some(definitions),
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::EC2::VPC".to_string(),
+            "properties": properties,
+            "definitions": definitions
+        }))
+        .unwrap();
 
         let generated = generate_synthetic_schema_code(&schema).unwrap();
         assert!(
@@ -24633,21 +24108,12 @@ mod tests {
             },
         );
 
-        let schema = CfnSchema {
-            type_name: "AWS::Test::Resource".to_string(),
-            description: None,
-            properties,
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: Some(definitions),
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Test::Resource".to_string(),
+            "properties": properties,
+            "definitions": definitions
+        }))
+        .unwrap();
 
         let generated = generate_synthetic_schema_code(&schema).unwrap();
         assert!(
@@ -24683,21 +24149,11 @@ mod tests {
             },
         );
 
-        let schema = CfnSchema {
-            type_name: "AWS::Test::Resource".to_string(),
-            description: None,
-            properties,
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Test::Resource".to_string(),
+            "properties": properties
+        }))
+        .unwrap();
 
         let generated = generate_synthetic_schema_code(&schema).unwrap();
 
@@ -24758,21 +24214,12 @@ mod tests {
             },
         );
 
-        let schema = CfnSchema {
-            type_name: "AWS::Route53::HostedZone".to_string(),
-            description: None,
-            properties,
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: Some(definitions),
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Route53::HostedZone".to_string(),
+            "properties": properties,
+            "definitions": definitions
+        }))
+        .unwrap();
 
         let generated = generate_schema_code(&schema, "AWS::Route53::HostedZone").unwrap();
 
@@ -24824,21 +24271,11 @@ mod tests {
             },
         );
 
-        let schema = CfnSchema {
-            type_name: "AWS::Test::Resource".to_string(),
-            description: None,
-            properties,
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Test::Resource".to_string(),
+            "properties": properties
+        }))
+        .unwrap();
 
         let generated = generate_synthetic_schema_code(&schema).unwrap();
 
@@ -24874,21 +24311,11 @@ mod tests {
             },
         );
 
-        let schema = CfnSchema {
-            type_name: "AWS::Test::Resource".to_string(),
-            description: None,
-            properties,
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Test::Resource".to_string(),
+            "properties": properties
+        }))
+        .unwrap();
 
         let generated = generate_synthetic_schema_code(&schema).unwrap();
 
@@ -24965,21 +24392,12 @@ mod tests {
             },
         );
 
-        let schema = CfnSchema {
-            type_name: "AWS::Test::Resource".to_string(),
-            description: None,
-            properties,
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: Some(definitions),
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Test::Resource".to_string(),
+            "properties": properties,
+            "definitions": definitions
+        }))
+        .unwrap();
 
         let generated = generate_synthetic_schema_code(&schema).unwrap();
 
@@ -25010,21 +24428,11 @@ mod tests {
             format: Some("int64".to_string()),
             ..CfnProperty::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::Test::Resource".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Test::Resource".to_string(),
+            "properties": {}
+        }))
+        .unwrap();
         let (type_str, _) =
             cfn_type_to_carina_type_with_enum(&prop, "SomeValue", &schema, "", &BTreeMap::new());
         assert!(
@@ -25046,21 +24454,11 @@ mod tests {
             format: Some("int64".to_string()),
             ..CfnProperty::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::Test::Resource".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Test::Resource".to_string(),
+            "properties": {}
+        }))
+        .unwrap();
         let display = type_display_string("SomeValue", &prop, &schema);
         assert!(
             display.contains("int64"),
@@ -25077,21 +24475,11 @@ mod tests {
             format: Some("uri".to_string()),
             ..CfnProperty::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::Test::Resource".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Test::Resource".to_string(),
+            "properties": {}
+        }))
+        .unwrap();
         let (type_str, _) =
             cfn_type_to_carina_type_with_enum(&prop, "Url", &schema, "", &BTreeMap::new());
         assert!(
@@ -25113,21 +24501,11 @@ mod tests {
             format: Some("uri".to_string()),
             ..CfnProperty::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::Test::Resource".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Test::Resource".to_string(),
+            "properties": {}
+        }))
+        .unwrap();
         let display = type_display_string("Url", &prop, &schema);
         assert!(
             display.contains("uri"),
@@ -25145,21 +24523,11 @@ mod tests {
             max_length: Some(20),
             ..CfnProperty::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::S3::Bucket".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::S3::Bucket".to_string(),
+            "properties": {}
+        }))
+        .unwrap();
         let (type_str, _) = cfn_type_to_carina_type_with_enum(
             &prop,
             "ObjectSizeGreaterThan",
@@ -25187,21 +24555,11 @@ mod tests {
             max_length: Some(20),
             ..CfnProperty::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::S3::Bucket".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::S3::Bucket".to_string(),
+            "properties": {}
+        }))
+        .unwrap();
         let display = type_display_string("ObjectSizeGreaterThan", &prop, &schema);
         assert!(
             display.contains("NumericString"),
@@ -25218,21 +24576,11 @@ mod tests {
             format: Some("double".to_string()),
             ..CfnProperty::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::Test::Resource".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Test::Resource".to_string(),
+            "properties": {}
+        }))
+        .unwrap();
         let display = type_display_string("Value", &prop, &schema);
         assert!(
             display.contains("double"),
@@ -25252,21 +24600,11 @@ mod tests {
             maximum: Some(100),
             ..CfnProperty::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::Test::Resource".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Test::Resource".to_string(),
+            "properties": {}
+        }))
+        .unwrap();
         let (type_str, _) =
             cfn_type_to_carina_type_with_enum(&prop, "BoundedValue", &schema, "", &BTreeMap::new());
         // Range validation is encoded in the generated validator fn name.
@@ -25291,21 +24629,11 @@ mod tests {
             max_length: Some(20),
             ..CfnProperty::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::S3::Bucket".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::S3::Bucket".to_string(),
+            "properties": {}
+        }))
+        .unwrap();
         let (type_str, _) = cfn_type_to_carina_type_with_enum(
             &prop,
             "ObjectSizeGreaterThan",
@@ -25336,21 +24664,11 @@ mod tests {
             max_length: Some(64),
             ..CfnProperty::default()
         };
-        let schema = CfnSchema {
-            type_name: "AWS::Test::Resource".to_string(),
-            description: None,
-            properties: BTreeMap::new(),
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Test::Resource".to_string(),
+            "properties": {}
+        }))
+        .unwrap();
         let (type_str, _) =
             cfn_type_to_carina_type_with_enum(&prop, "SomeName", &schema, "", &BTreeMap::new());
         // Should mention both constraints
@@ -25366,39 +24684,22 @@ mod tests {
 
     #[test]
     fn test_array_items_pattern_with_length_stays_declarative() {
-        let schema = CfnSchema {
-            type_name: "AWS::Test::ArrayPattern".to_string(),
-            description: None,
-            properties: {
-                let mut props = BTreeMap::new();
-                props.insert(
-                    "ThumbprintList".to_string(),
-                    CfnProperty {
-                        prop_type: Some(TypeValue::Single("array".to_string())),
-                        items: Some(Box::new(CfnProperty {
-                            prop_type: Some(TypeValue::Single("string".to_string())),
-                            pattern: Some("[0-9A-Fa-f]{40}".to_string()),
-                            min_length: Some(40),
-                            max_length: Some(40),
-                            ..CfnProperty::default()
-                        })),
-                        max_items: Some(5),
-                        ..CfnProperty::default()
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Test::ArrayPattern",
+            "properties": {
+                "ThumbprintList": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "pattern": "[0-9A-Fa-f]{40}",
+                        "minLength": 40,
+                        "maxLength": 40
                     },
-                );
-                props
-            },
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+                    "maxItems": 5
+                }
+            }
+        }))
+        .unwrap();
 
         let code = generate_synthetic_schema_code(&schema).expect("codegen should succeed");
 
@@ -25550,21 +24851,12 @@ mod tests {
             },
         );
 
-        let schema = CfnSchema {
-            type_name: "AWS::EC2::FlowLog".to_string(),
-            description: None,
-            properties,
-            required: vec![],
-            read_only_properties: vec!["/properties/FlowLogId".to_string()],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::EC2::FlowLog".to_string(),
+            "properties": properties,
+            "readOnlyProperties": vec!["/properties/FlowLogId".to_string()]
+        }))
+        .unwrap();
 
         let generated = generate_schema_code(&schema, "AWS::EC2::FlowLog").unwrap();
 
@@ -25587,21 +24879,12 @@ mod tests {
             },
         );
 
-        let schema = CfnSchema {
-            type_name: "AWS::EC2::TestResource".to_string(),
-            description: None,
-            properties,
-            required: vec![],
-            read_only_properties: vec!["/properties/ResourceId".to_string()],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::EC2::TestResource".to_string(),
+            "properties": properties,
+            "readOnlyProperties": vec!["/properties/ResourceId".to_string()]
+        }))
+        .unwrap();
 
         let generated = generate_synthetic_schema_code(&schema).unwrap();
 
@@ -25624,17 +24907,12 @@ mod tests {
         assert_eq!(prop.format, Some("int64".to_string()));
     }
 
-    fn tag_schema(tags_property: &str) -> CfnSchema {
-        serde_json::from_str(&format!(
-            r#"{{
-                "typeName": "AWS::Test::Resource",
-                "properties": {{"Tags": {tags_property}}},
-                "tagging": {{
-                    "taggable": true,
-                    "tagProperty": "/properties/Tags"
-                }}
-            }}"#
-        ))
+    fn tag_schema(tags_property: &str) -> ParsedCfnSchema {
+        ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Test::Resource",
+            "properties": {"Tags": serde_json::from_str::<serde_json::Value>(tags_property).unwrap()},
+            "tagging": {"taggable": true, "tagProperty": "/properties/Tags"}
+        }))
         .unwrap()
     }
 
@@ -25698,8 +24976,9 @@ mod tests {
 
     #[test]
     fn taggable_non_dsl_tag_property_has_no_tags_metadata() {
-        let schema: CfnSchema = serde_json::from_str(
-            r#"{
+        let schema = ParsedCfnSchema::from_json(
+            serde_json::from_str(
+                r#"{
                 "typeName": "AWS::Route53::HostedZone",
                 "properties": {
                     "HostedZoneTags": {
@@ -25718,26 +24997,32 @@ mod tests {
                     "tagProperty": "/properties/HostedZoneTags"
                 }
             }"#,
+            )
+            .unwrap(),
         )
         .unwrap();
 
         assert_eq!(derive_tags_property(&schema).unwrap(), None);
     }
 
-    fn schema_with_updatable_properties(names: &[&str]) -> CfnSchema {
+    fn schema_with_updatable_properties(names: &[&str]) -> ParsedCfnSchema {
         let mut schema = empty_schema("AWS::Test::Resource");
-        schema.properties = names
-            .iter()
-            .map(|name| {
-                (
-                    (*name).to_string(),
-                    CfnProperty {
-                        prop_type: Some(TypeValue::Single("string".to_string())),
-                        ..Default::default()
-                    },
-                )
-            })
-            .collect();
+        schema.edit_json(|source| {
+            source["properties"] = serde_json::json!(
+                names
+                    .iter()
+                    .map(|name| {
+                        (
+                            (*name).to_string(),
+                            CfnProperty {
+                                prop_type: Some(TypeValue::Single("string".to_string())),
+                                ..Default::default()
+                            },
+                        )
+                    })
+                    .collect::<BTreeMap<_, _>>()
+            );
+        });
         schema
     }
 
@@ -25770,7 +25055,9 @@ mod tests {
     #[test]
     fn mutually_exclusive_group_member_must_not_be_read_only() {
         let mut schema = schema_with_updatable_properties(&["First", "Second"]);
-        schema.read_only_properties = vec!["/properties/First".to_string()];
+        schema.edit_json(|source| {
+            source["readOnlyProperties"] = serde_json::json!(vec!["/properties/First".to_string()]);
+        });
 
         let error = validate_mutually_exclusive_property_groups(&schema, &[&["First", "Second"]])
             .expect_err("a read-only group member must fail codegen");
@@ -25782,7 +25069,10 @@ mod tests {
     #[test]
     fn mutually_exclusive_group_member_must_not_be_create_only() {
         let mut schema = schema_with_updatable_properties(&["First", "Second"]);
-        schema.create_only_properties = vec!["/properties/Second".to_string()];
+        schema.edit_json(|source| {
+            source["createOnlyProperties"] =
+                serde_json::json!(vec!["/properties/Second".to_string()]);
+        });
 
         let error = validate_mutually_exclusive_property_groups(&schema, &[&["First", "Second"]])
             .expect_err("a create-only group member must fail codegen");
@@ -25793,12 +25083,9 @@ mod tests {
 
     #[test]
     fn ec2_route_mutually_exclusive_group_is_valid_and_uses_dsl_names() {
-        let schema: CfnSchema = serde_json::from_str(include_str!(
-            "../../../cfn-schema-cache/AWS__EC2__Route.json"
-        ))
-        .expect("cached Route schema should deserialize");
+        let cached = cfn_schema_for_codegen_tests("AWS::EC2::Route");
 
-        let groups = derive_mutually_exclusive_property_groups(&schema)
+        let groups = derive_mutually_exclusive_property_groups(&cached)
             .expect("the curated Route target group should be valid");
 
         assert_eq!(
@@ -25817,7 +25104,7 @@ mod tests {
                 "vpc_peering_connection_id",
             ]]
         );
-        let generated = generate_schema_code(&schema, "AWS::EC2::Route")
+        let generated = generate_schema_code(&cached, "AWS::EC2::Route")
             .expect("Route schema generation should succeed");
         assert!(
             generated.contains("use crate::schemas::config::{AwsccSchemaConfig, ExclusiveGroup};")
@@ -25829,37 +25116,29 @@ mod tests {
 
     // --- Exclusive field detection tests ---
 
-    fn make_schema_with_props(props: BTreeMap<String, CfnProperty>) -> CfnSchema {
-        CfnSchema {
-            type_name: "AWS::Test::Resource".to_string(),
-            description: None,
-            properties: props,
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        }
+    fn make_schema_with_props(props: BTreeMap<String, CfnProperty>) -> ParsedCfnSchema {
+        ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Test::Resource".to_string(),
+            "properties": props
+        }))
+        .unwrap()
     }
 
     #[test]
     fn test_detect_exclusive_from_oneof_two_variants() {
         let mut schema = make_schema_with_props(BTreeMap::new());
-        schema.one_of = vec![
-            CfnProperty {
-                required: vec!["FieldA".to_string()],
-                ..Default::default()
-            },
-            CfnProperty {
-                required: vec!["FieldB".to_string()],
-                ..Default::default()
-            },
-        ];
+        schema.edit_json(|source| {
+            source["oneOf"] = serde_json::json!(vec![
+                CfnProperty {
+                    required: vec!["FieldA".to_string()],
+                    ..Default::default()
+                },
+                CfnProperty {
+                    required: vec!["FieldB".to_string()],
+                    ..Default::default()
+                },
+            ]);
+        });
         let groups = detect_exclusive_from_oneof(&schema);
         assert_eq!(groups.len(), 1);
         let mut group = groups[0].clone();
@@ -25870,20 +25149,22 @@ mod tests {
     #[test]
     fn test_detect_exclusive_from_oneof_three_variants() {
         let mut schema = make_schema_with_props(BTreeMap::new());
-        schema.one_of = vec![
-            CfnProperty {
-                required: vec!["A".to_string()],
-                ..Default::default()
-            },
-            CfnProperty {
-                required: vec!["B".to_string()],
-                ..Default::default()
-            },
-            CfnProperty {
-                required: vec!["C".to_string()],
-                ..Default::default()
-            },
-        ];
+        schema.edit_json(|source| {
+            source["oneOf"] = serde_json::json!(vec![
+                CfnProperty {
+                    required: vec!["A".to_string()],
+                    ..Default::default()
+                },
+                CfnProperty {
+                    required: vec!["B".to_string()],
+                    ..Default::default()
+                },
+                CfnProperty {
+                    required: vec!["C".to_string()],
+                    ..Default::default()
+                },
+            ]);
+        });
         let groups = detect_exclusive_from_oneof(&schema);
         assert_eq!(groups.len(), 1);
         let mut group = groups[0].clone();
@@ -25895,16 +25176,18 @@ mod tests {
     fn test_detect_exclusive_from_oneof_multi_required_ignored() {
         // Variants with multiple required fields are not simple exclusive groups
         let mut schema = make_schema_with_props(BTreeMap::new());
-        schema.one_of = vec![
-            CfnProperty {
-                required: vec!["A".to_string(), "B".to_string()],
-                ..Default::default()
-            },
-            CfnProperty {
-                required: vec!["C".to_string()],
-                ..Default::default()
-            },
-        ];
+        schema.edit_json(|source| {
+            source["oneOf"] = serde_json::json!(vec![
+                CfnProperty {
+                    required: vec!["A".to_string(), "B".to_string()],
+                    ..Default::default()
+                },
+                CfnProperty {
+                    required: vec!["C".to_string()],
+                    ..Default::default()
+                },
+            ]);
+        });
         let groups = detect_exclusive_from_oneof(&schema);
         assert!(groups.is_empty());
     }
@@ -25919,16 +25202,18 @@ mod tests {
     #[test]
     fn test_detect_exclusive_from_anyof() {
         let mut schema = make_schema_with_props(BTreeMap::new());
-        schema.any_of = vec![
-            CfnProperty {
-                required: vec!["X".to_string()],
-                ..Default::default()
-            },
-            CfnProperty {
-                required: vec!["Y".to_string()],
-                ..Default::default()
-            },
-        ];
+        schema.edit_json(|source| {
+            source["anyOf"] = serde_json::json!(vec![
+                CfnProperty {
+                    required: vec!["X".to_string()],
+                    ..Default::default()
+                },
+                CfnProperty {
+                    required: vec!["Y".to_string()],
+                    ..Default::default()
+                },
+            ]);
+        });
         let groups = detect_exclusive_from_oneof(&schema);
         assert_eq!(groups.len(), 1);
     }
@@ -26040,16 +25325,18 @@ mod tests {
         props.insert("FieldB".to_string(), CfnProperty::default());
         let mut schema = make_schema_with_props(props);
         // Also add oneOf that detects the same group
-        schema.one_of = vec![
-            CfnProperty {
-                required: vec!["FieldA".to_string()],
-                ..Default::default()
-            },
-            CfnProperty {
-                required: vec!["FieldB".to_string()],
-                ..Default::default()
-            },
-        ];
+        schema.edit_json(|source| {
+            source["oneOf"] = serde_json::json!(vec![
+                CfnProperty {
+                    required: vec!["FieldA".to_string()],
+                    ..Default::default()
+                },
+                CfnProperty {
+                    required: vec!["FieldB".to_string()],
+                    ..Default::default()
+                },
+            ]);
+        });
         let groups = detect_exclusive_fields(&schema, "AWS::Test::Resource");
         // Should be deduplicated to 1 group
         assert_eq!(groups.len(), 1);
@@ -26129,21 +25416,13 @@ mod tests {
                 ..CfnProperty::default()
             },
         );
-        let schema = CfnSchema {
-            type_name: "AWS::EC2::VPCGatewayAttachment".to_string(),
-            description: Some("VPC Gateway Attachment".to_string()),
-            properties: props,
-            required: vec!["VpcId".to_string()],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::EC2::VPCGatewayAttachment".to_string(),
+            "description": "VPC Gateway Attachment".to_string(),
+            "properties": props,
+            "required": vec!["VpcId".to_string()]
+        }))
+        .unwrap();
         let code = generate_schema_code(&schema, "AWS::EC2::VPCGatewayAttachment").unwrap();
         assert!(
             code.contains("FieldGroup::exactly_one(["),
@@ -26179,21 +25458,12 @@ mod tests {
             },
         );
 
-        let schema = CfnSchema {
-            type_name: "AWS::Test::Resource".to_string(),
-            description: None,
-            properties,
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec!["/properties/Password".to_string()],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Test::Resource".to_string(),
+            "properties": properties,
+            "writeOnlyProperties": vec!["/properties/Password".to_string()]
+        }))
+        .unwrap();
 
         let code = generate_synthetic_schema_code(&schema).unwrap();
 
@@ -26237,21 +25507,12 @@ mod tests {
             },
         );
 
-        let schema = CfnSchema {
-            type_name: "AWS::Test::Resource".to_string(),
-            description: None,
-            properties,
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec!["/properties/Password".to_string()],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Test::Resource".to_string(),
+            "properties": properties,
+            "writeOnlyProperties": vec!["/properties/Password".to_string()]
+        }))
+        .unwrap();
 
         let md = generate_test_markdown(&schema, "AWS::Test::Resource").unwrap();
 
@@ -26293,22 +25554,12 @@ mod tests {
             },
         );
 
-        let schema = CfnSchema {
-            type_name: "AWS::Test::Nested".to_string(),
-            description: None,
-            properties,
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            // Only the nested sub-property is write-only, NOT the parent
-            write_only_properties: vec!["/properties/Config/SecretField".to_string()],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Test::Nested".to_string(),
+            "properties": properties,
+            "writeOnlyProperties": vec!["/properties/Config/SecretField".to_string()]
+        }))
+        .unwrap();
 
         let code = generate_synthetic_schema_code(&schema).unwrap();
 
@@ -26333,22 +25584,27 @@ mod tests {
     #[test]
     fn test_deprecated_nested_write_only_property_is_skipped_without_error() {
         let mut schema = empty_schema("AWS::Test::DeprecatedWriteOnly");
-        schema.properties.insert(
-            "Config".to_string(),
-            CfnProperty {
-                prop_type: Some(TypeValue::Single("object".to_string())),
-                properties: Some(BTreeMap::from([(
-                    "LegacySecret".to_string(),
-                    CfnProperty {
-                        prop_type: Some(TypeValue::Single("string".to_string())),
-                        description: Some("(Deprecated.) Legacy write input.".to_string()),
-                        ..Default::default()
-                    },
-                )])),
-                ..Default::default()
-            },
-        );
-        schema.write_only_properties = vec!["/properties/Config/LegacySecret".to_string()];
+        schema.edit_json(|source| {
+            source["properties"].as_object_mut().unwrap().insert(
+                "Config".to_string(),
+                serde_json::json!(CfnProperty {
+                    prop_type: Some(TypeValue::Single("object".to_string())),
+                    properties: Some(BTreeMap::from([(
+                        "LegacySecret".to_string(),
+                        CfnProperty {
+                            prop_type: Some(TypeValue::Single("string".to_string())),
+                            description: Some("(Deprecated.) Legacy write input.".to_string()),
+                            ..Default::default()
+                        },
+                    )])),
+                    ..Default::default()
+                }),
+            );
+        });
+        schema.edit_json(|source| {
+            source["writeOnlyProperties"] =
+                serde_json::json!(vec!["/properties/Config/LegacySecret".to_string()]);
+        });
 
         for (generator, result) in [
             ("Rust", generate_synthetic_schema_code(&schema)),
@@ -26369,34 +25625,39 @@ mod tests {
     #[test]
     fn test_nested_write_only_path_through_array_wildcard_is_provider_omitted() {
         let mut schema = empty_schema("AWS::Test::NestedWriteOnlyArray");
-        schema.properties.insert(
-            "Items".to_string(),
-            CfnProperty {
-                prop_type: Some(TypeValue::Single("array".to_string())),
-                items: Some(Box::new(CfnProperty {
-                    prop_type: Some(TypeValue::Single("object".to_string())),
-                    properties: Some(BTreeMap::from([
-                        (
-                            "Secret".to_string(),
-                            CfnProperty {
-                                prop_type: Some(TypeValue::Single("string".to_string())),
-                                ..Default::default()
-                            },
-                        ),
-                        (
-                            "Visible".to_string(),
-                            CfnProperty {
-                                prop_type: Some(TypeValue::Single("string".to_string())),
-                                ..Default::default()
-                            },
-                        ),
-                    ])),
+        schema.edit_json(|source| {
+            source["properties"].as_object_mut().unwrap().insert(
+                "Items".to_string(),
+                serde_json::json!(CfnProperty {
+                    prop_type: Some(TypeValue::Single("array".to_string())),
+                    items: Some(Box::new(CfnProperty {
+                        prop_type: Some(TypeValue::Single("object".to_string())),
+                        properties: Some(BTreeMap::from([
+                            (
+                                "Secret".to_string(),
+                                CfnProperty {
+                                    prop_type: Some(TypeValue::Single("string".to_string())),
+                                    ..Default::default()
+                                },
+                            ),
+                            (
+                                "Visible".to_string(),
+                                CfnProperty {
+                                    prop_type: Some(TypeValue::Single("string".to_string())),
+                                    ..Default::default()
+                                },
+                            ),
+                        ])),
+                        ..Default::default()
+                    })),
                     ..Default::default()
-                })),
-                ..Default::default()
-            },
-        );
-        schema.write_only_properties = vec!["/properties/Items/*/Secret".to_string()];
+                }),
+            );
+        });
+        schema.edit_json(|source| {
+            source["writeOnlyProperties"] =
+                serde_json::json!(vec!["/properties/Items/*/Secret".to_string()]);
+        });
 
         let generated = generate_synthetic_schema_code(&schema)
             .expect("a matched array wildcard write-only pointer should generate");
@@ -26417,41 +25678,48 @@ mod tests {
     #[test]
     fn test_nested_write_only_path_through_ref_array_items_is_provider_omitted() {
         let mut schema = empty_schema("AWS::Test::NestedWriteOnlyRefArray");
-        schema.properties.insert(
-            "Items".to_string(),
-            CfnProperty {
-                prop_type: Some(TypeValue::Single("array".to_string())),
-                items: Some(Box::new(CfnProperty {
-                    ref_path: Some("#/definitions/Item".to_string()),
+        schema.edit_json(|source| {
+            source["properties"].as_object_mut().unwrap().insert(
+                "Items".to_string(),
+                serde_json::json!(CfnProperty {
+                    prop_type: Some(TypeValue::Single("array".to_string())),
+                    items: Some(Box::new(CfnProperty {
+                        ref_path: Some("#/definitions/Item".to_string()),
+                        ..Default::default()
+                    })),
                     ..Default::default()
-                })),
-                ..Default::default()
-            },
-        );
-        schema.definitions = Some(BTreeMap::from([(
-            "Item".to_string(),
-            CfnProperty {
-                prop_type: Some(TypeValue::Single("object".to_string())),
-                properties: Some(BTreeMap::from([
-                    (
-                        "Secret".to_string(),
-                        CfnProperty {
-                            prop_type: Some(TypeValue::Single("string".to_string())),
-                            ..Default::default()
-                        },
-                    ),
-                    (
-                        "Visible".to_string(),
-                        CfnProperty {
-                            prop_type: Some(TypeValue::Single("string".to_string())),
-                            ..Default::default()
-                        },
-                    ),
-                ])),
-                ..Default::default()
-            },
-        )]));
-        schema.write_only_properties = vec!["/properties/Items/*/Secret".to_string()];
+                }),
+            );
+        });
+        schema.edit_json(|source| {
+            source["definitions"] = serde_json::json!(BTreeMap::from([(
+                "Item".to_string(),
+                CfnProperty {
+                    prop_type: Some(TypeValue::Single("object".to_string())),
+                    properties: Some(BTreeMap::from([
+                        (
+                            "Secret".to_string(),
+                            CfnProperty {
+                                prop_type: Some(TypeValue::Single("string".to_string())),
+                                ..Default::default()
+                            },
+                        ),
+                        (
+                            "Visible".to_string(),
+                            CfnProperty {
+                                prop_type: Some(TypeValue::Single("string".to_string())),
+                                ..Default::default()
+                            },
+                        ),
+                    ])),
+                    ..Default::default()
+                },
+            )]));
+        });
+        schema.edit_json(|source| {
+            source["writeOnlyProperties"] =
+                serde_json::json!(vec!["/properties/Items/*/Secret".to_string()]);
+        });
 
         let generated = generate_synthetic_schema_code(&schema)
             .expect("a matched write-only pointer through $ref array items should generate");
@@ -26472,22 +25740,26 @@ mod tests {
     #[test]
     fn test_non_deprecated_unmatched_nested_write_only_pointer_is_rejected() {
         let mut schema = empty_schema("AWS::Test::NestedWriteOnlyMissing");
-        schema.properties.insert(
-            "Config".to_string(),
-            CfnProperty {
-                prop_type: Some(TypeValue::Single("object".to_string())),
-                properties: Some(BTreeMap::from([(
-                    "Present".to_string(),
-                    CfnProperty {
-                        prop_type: Some(TypeValue::Single("string".to_string())),
-                        ..Default::default()
-                    },
-                )])),
-                ..Default::default()
-            },
-        );
+        schema.edit_json(|source| {
+            source["properties"].as_object_mut().unwrap().insert(
+                "Config".to_string(),
+                serde_json::json!(CfnProperty {
+                    prop_type: Some(TypeValue::Single("object".to_string())),
+                    properties: Some(BTreeMap::from([(
+                        "Present".to_string(),
+                        CfnProperty {
+                            prop_type: Some(TypeValue::Single("string".to_string())),
+                            ..Default::default()
+                        },
+                    )])),
+                    ..Default::default()
+                }),
+            );
+        });
         let pointer = "/properties/Config/Missing";
-        schema.write_only_properties = vec![pointer.to_string()];
+        schema.edit_json(|source| {
+            source["writeOnlyProperties"] = serde_json::json!(vec![pointer.to_string()]);
+        });
 
         for (generator, result) in [
             ("Rust", generate_synthetic_schema_code(&schema)),
@@ -26514,34 +25786,41 @@ mod tests {
             ref_path: Some("#/definitions/Shared".to_string()),
             ..Default::default()
         };
-        schema.properties = BTreeMap::from([
-            ("Left".to_string(), shared_ref.clone()),
-            ("Right".to_string(), shared_ref),
-        ]);
-        schema.definitions = Some(BTreeMap::from([(
-            "Shared".to_string(),
-            CfnProperty {
-                prop_type: Some(TypeValue::Single("object".to_string())),
-                properties: Some(BTreeMap::from([
-                    (
-                        "Secret".to_string(),
-                        CfnProperty {
-                            prop_type: Some(TypeValue::Single("string".to_string())),
-                            ..Default::default()
-                        },
-                    ),
-                    (
-                        "Visible".to_string(),
-                        CfnProperty {
-                            prop_type: Some(TypeValue::Single("string".to_string())),
-                            ..Default::default()
-                        },
-                    ),
-                ])),
-                ..Default::default()
-            },
-        )]));
-        schema.write_only_properties = vec!["/properties/Left/Secret".to_string()];
+        schema.edit_json(|source| {
+            source["properties"] = serde_json::json!(BTreeMap::from([
+                ("Left".to_string(), shared_ref.clone()),
+                ("Right".to_string(), shared_ref),
+            ]));
+        });
+        schema.edit_json(|source| {
+            source["definitions"] = serde_json::json!(BTreeMap::from([(
+                "Shared".to_string(),
+                CfnProperty {
+                    prop_type: Some(TypeValue::Single("object".to_string())),
+                    properties: Some(BTreeMap::from([
+                        (
+                            "Secret".to_string(),
+                            CfnProperty {
+                                prop_type: Some(TypeValue::Single("string".to_string())),
+                                ..Default::default()
+                            },
+                        ),
+                        (
+                            "Visible".to_string(),
+                            CfnProperty {
+                                prop_type: Some(TypeValue::Single("string".to_string())),
+                                ..Default::default()
+                            },
+                        ),
+                    ])),
+                    ..Default::default()
+                },
+            )]));
+        });
+        schema.edit_json(|source| {
+            source["writeOnlyProperties"] =
+                serde_json::json!(vec!["/properties/Left/Secret".to_string()]);
+        });
 
         for (generator, result) in [
             ("Rust", generate_synthetic_schema_code(&schema)),
@@ -26597,11 +25876,16 @@ mod tests {
         }
 
         let mut schema = empty_schema("AWS::Test::NestedWriteOnlyInlineCollision");
-        schema.properties = BTreeMap::from([
-            ("Left".to_string(), parent()),
-            ("Right".to_string(), parent()),
-        ]);
-        schema.write_only_properties = vec!["/properties/Left/Config/Secret".to_string()];
+        schema.edit_json(|source| {
+            source["properties"] = serde_json::json!(BTreeMap::from([
+                ("Left".to_string(), parent()),
+                ("Right".to_string(), parent()),
+            ]));
+        });
+        schema.edit_json(|source| {
+            source["writeOnlyProperties"] =
+                serde_json::json!(vec!["/properties/Left/Config/Secret".to_string()]);
+        });
 
         for (generator, result) in [
             ("Rust", generate_synthetic_schema_code(&schema)),
@@ -26627,23 +25911,29 @@ mod tests {
     #[test]
     fn test_nested_read_only_write_only_pointer_is_rejected() {
         let mut schema = empty_schema("AWS::Test::NestedReadWriteConflict");
-        schema.properties.insert(
-            "Config".to_string(),
-            CfnProperty {
-                prop_type: Some(TypeValue::Single("object".to_string())),
-                properties: Some(BTreeMap::from([(
-                    "Value".to_string(),
-                    CfnProperty {
-                        prop_type: Some(TypeValue::Single("string".to_string())),
-                        ..Default::default()
-                    },
-                )])),
-                ..Default::default()
-            },
-        );
+        schema.edit_json(|source| {
+            source["properties"].as_object_mut().unwrap().insert(
+                "Config".to_string(),
+                serde_json::json!(CfnProperty {
+                    prop_type: Some(TypeValue::Single("object".to_string())),
+                    properties: Some(BTreeMap::from([(
+                        "Value".to_string(),
+                        CfnProperty {
+                            prop_type: Some(TypeValue::Single("string".to_string())),
+                            ..Default::default()
+                        },
+                    )])),
+                    ..Default::default()
+                }),
+            );
+        });
         let pointer = "/properties/Config/Value";
-        schema.read_only_properties = vec![pointer.to_string()];
-        schema.write_only_properties = vec![pointer.to_string()];
+        schema.edit_json(|source| {
+            source["readOnlyProperties"] = serde_json::json!(vec![pointer.to_string()]);
+        });
+        schema.edit_json(|source| {
+            source["writeOnlyProperties"] = serde_json::json!(vec![pointer.to_string()]);
+        });
 
         for (generator, result) in [
             ("Rust", generate_synthetic_schema_code(&schema)),
@@ -26672,7 +25962,7 @@ mod tests {
                 "create": {}, "read": {}, "update": {}, "delete": {}, "list": {}
             }
         }"#;
-        let schema: CfnSchema = serde_json::from_str(json).unwrap();
+        let schema = ParsedCfnSchema::from_json(serde_json::from_str(json).unwrap()).unwrap();
         assert!(schema.has_cloud_control_handlers());
     }
 
@@ -26684,7 +25974,7 @@ mod tests {
             "properties": {},
             "handlers": {}
         }"#;
-        let schema: CfnSchema = serde_json::from_str(json).unwrap();
+        let schema = ParsedCfnSchema::from_json(serde_json::from_str(json).unwrap()).unwrap();
         assert!(!schema.has_cloud_control_handlers());
     }
 
@@ -26695,7 +25985,7 @@ mod tests {
             "typeName": "AWS::Test::NoHandlers",
             "properties": {}
         }"#;
-        let schema: CfnSchema = serde_json::from_str(json).unwrap();
+        let schema = ParsedCfnSchema::from_json(serde_json::from_str(json).unwrap()).unwrap();
         assert!(!schema.has_cloud_control_handlers());
     }
 
@@ -26787,21 +26077,11 @@ mod tests {
                 ..Default::default()
             },
         );
-        let schema = CfnSchema {
-            type_name: "AWS::EC2::VPC".to_string(),
-            description: None,
-            properties,
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::EC2::VPC".to_string(),
+            "properties": properties
+        }))
+        .unwrap();
         let generated = generate_synthetic_schema_code(&schema).unwrap();
 
         // The values list still carries the API spellings (canonical for round-trip
@@ -26862,21 +26142,11 @@ mod tests {
                 ..Default::default()
             },
         );
-        let schema = CfnSchema {
-            type_name: "AWS::EC2::VPC".to_string(),
-            description: None,
-            properties,
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::EC2::VPC".to_string(),
+            "properties": properties
+        }))
+        .unwrap();
         let generated = generate_synthetic_schema_code(&schema).unwrap();
         assert!(
             generated.contains("(\"DEEP_ARCHIVE\".to_string(), \"deep_archive\".to_string())"),
@@ -26918,21 +26188,11 @@ mod tests {
                 ..Default::default()
             },
         );
-        let schema = CfnSchema {
-            type_name: "AWS::EC2::VPC".to_string(),
-            description: None,
-            properties,
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::EC2::VPC".to_string(),
+            "properties": properties
+        }))
+        .unwrap();
         let generated = generate_schema_code(&schema, "AWS::EC2::VPC").unwrap();
         // After carina-rs/carina#2980 / awscc#222 the dsl_aliases table
         // is exhaustive — every value (including identity rows where
@@ -26994,21 +26254,11 @@ mod tests {
                 ..Default::default()
             },
         );
-        let schema = CfnSchema {
-            type_name: "AWS::EC2::VPC".to_string(),
-            description: None,
-            properties,
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::EC2::VPC".to_string(),
+            "properties": properties
+        }))
+        .unwrap();
         let md = generate_test_markdown(&schema, "AWS::EC2::VPC").unwrap();
         // DSL Identifier column must use snake_case
         assert!(
@@ -27129,21 +26379,11 @@ mod tests {
                 ..Default::default()
             },
         );
-        let schema = CfnSchema {
-            type_name: "AWS::CloudFront::OriginAccessControl".to_string(),
-            description: None,
-            properties,
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: None,
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::CloudFront::OriginAccessControl".to_string(),
+            "properties": properties
+        }))
+        .unwrap();
         let generated =
             generate_schema_code(&schema, "AWS::CloudFront::OriginAccessControl").unwrap();
         assert!(
@@ -27278,21 +26518,12 @@ mod tests {
                 ..Default::default()
             },
         );
-        let schema = CfnSchema {
-            type_name: "AWS::CloudFront::Distribution".to_string(),
-            description: None,
-            properties: top,
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: Some(definitions),
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::CloudFront::Distribution".to_string(),
+            "properties": top,
+            "definitions": definitions
+        }))
+        .unwrap();
         let generated = generate_schema_code(&schema, "AWS::CloudFront::Distribution").unwrap();
         // The struct field must emit as Enum, not String.
         assert!(
@@ -27404,21 +26635,12 @@ mod tests {
                 ..Default::default()
             },
         );
-        let schema = CfnSchema {
-            type_name: "AWS::CloudFront::Distribution".to_string(),
-            description: None,
-            properties: top,
-            required: vec![],
-            read_only_properties: vec![],
-            create_only_properties: vec![],
-            write_only_properties: vec![],
-            primary_identifier: None,
-            definitions: Some(definitions),
-            tagging: None,
-            one_of: vec![],
-            any_of: vec![],
-            handlers: BTreeMap::new(),
-        };
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::CloudFront::Distribution".to_string(),
+            "properties": top,
+            "definitions": definitions
+        }))
+        .unwrap();
         let generated = generate_schema_code(&schema, "AWS::CloudFront::Distribution").unwrap();
         // The list wrapping is kept and the element promoted to
         // Enum. `AllowedMethods` is an order-insensitive set, so

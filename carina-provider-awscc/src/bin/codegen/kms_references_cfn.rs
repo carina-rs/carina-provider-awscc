@@ -2,13 +2,12 @@
 
 use super::kms_references::{self, Classification, PathSegment, ReferenceKind, property_path};
 use super::{
-    CfnProperty, CfnPropertyPath, CfnSchema, dsl_resource_name_from_type, emit_pattern_option,
-    is_property_read_only, string_constraints,
+    CfnProperty, CfnPropertyPath, CfnSchema, ParsedCfnSchema, dsl_resource_name_from_type,
+    emit_pattern_option, is_property_read_only, string_constraints,
 };
 use anyhow::{Result, bail};
 use heck::ToSnakeCase;
 use serde_json::Value;
-use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -169,8 +168,8 @@ const UNEMITTED_KMS_NODES: &[UnemittedKmsNode] = &[
 ];
 
 pub(super) struct EmissionContext<'a> {
-    schema: &'a CfnSchema,
-    source: Cow<'a, Value>,
+    schema: &'a ParsedCfnSchema,
+    source: &'a Value,
     resource: String,
     visited: RefCell<BTreeSet<String>>,
     /// Each source node is covered separately at every emitted DSL path.
@@ -217,10 +216,10 @@ impl<'a> EmissionProperty<'a> {
 }
 
 impl<'a> EmissionContext<'a> {
-    pub(super) fn from_source(schema: &'a CfnSchema, source: &'a Value) -> Result<Self> {
+    pub(super) fn from_source(schema: &'a ParsedCfnSchema) -> Result<Self> {
         Ok(Self {
             schema,
-            source: Cow::Borrowed(source),
+            source: schema.source(),
             resource: dsl_resource_name_from_type(&schema.type_name)?,
             visited: RefCell::new(BTreeSet::new()),
             classified_sources: RefCell::new(BTreeMap::new()),
@@ -230,31 +229,10 @@ impl<'a> EmissionContext<'a> {
         })
     }
 
-    #[cfg(test)]
-    pub(super) fn new(schema: &'a CfnSchema) -> Result<Self> {
-        // Unit tests mutate parsed fixtures. Production always uses the original JSON.
-        let mut source = serde_json::to_value(schema)?;
-        fn omit_absent_fields(value: &mut Value) {
-            match value {
-                Value::Object(fields) => {
-                    fields.retain(|_, value| !value.is_null());
-                    fields.values_mut().for_each(omit_absent_fields);
-                }
-                Value::Array(values) => values.iter_mut().for_each(omit_absent_fields),
-                _ => {}
-            }
-        }
-        omit_absent_fields(&mut source);
-        Ok(Self {
-            source: Cow::Owned(source),
-            ..Self::from_source(schema, &Value::Null)?
-        })
-    }
-
-    pub(super) fn for_enum_discovery(schema: &'a CfnSchema) -> Result<Self> {
+    pub(super) fn for_enum_discovery(&self) -> Result<Self> {
         Ok(Self {
             enum_discovery: true,
-            ..Self::from_source(schema, &Value::Null)?
+            ..Self::from_source(self.schema)?
         })
     }
 
@@ -311,15 +289,6 @@ impl<'a> EmissionContext<'a> {
             for pointer in &site.sources {
                 site.evidence
                     .add_source(pointer, self.source.pointer(pointer).expect("source node"));
-            }
-            #[cfg(test)]
-            if site.sources.is_empty() {
-                let mut value = serde_json::to_value(property).expect("unit-test property");
-                value
-                    .as_object_mut()
-                    .unwrap()
-                    .retain(|_, value| !value.is_null());
-                site.evidence.add(&value);
             }
             self.sites.borrow_mut().insert(path.to_vec(), site);
         }
@@ -492,7 +461,7 @@ impl<'a> EmissionContext<'a> {
     }
 
     pub(super) fn finish(&self) -> Result<()> {
-        let candidates = kms_nodes(&self.source);
+        let candidates = kms_nodes(self.source);
         let classified = self.classified_sources.borrow();
         let sites = self.sites.borrow();
         let exceptions: Vec<_> = UNEMITTED_KMS_NODES
@@ -845,8 +814,8 @@ mod tests {
         let source = json!({"typeName": "AWS::SNS::Topic", "properties": {
             "KmsMasterKeyId": {"type": "string"}
         }});
-        let schema: CfnSchema = serde_json::from_value(source.clone()).unwrap();
-        let context = EmissionContext::from_source(&schema, &source).unwrap();
+        let schema = ParsedCfnSchema::from_json(source).unwrap();
+        let context = EmissionContext::from_source(&schema).unwrap();
         assert!(context.sites.borrow().is_empty());
         let path = ["KmsMasterKeyId".into()];
         let property = context.property_at(&path, &schema.properties["KmsMasterKeyId"]);
@@ -864,14 +833,48 @@ mod tests {
     }
 
     #[test]
+    fn mutated_json_fixtures_preserve_property_transform_kms_nodes() {
+        let mut schema = ParsedCfnSchema::from_json(json!({
+            "typeName": "AWS::SNS::Topic",
+            "properties": {"KmsMasterKeyId": {"type": "string"}},
+            "propertyTransform": {"/properties/KmsMasterKeyId": "original transform"}
+        }))
+        .unwrap();
+        schema.edit_json(|source| {
+            source["propertyTransform"]["/properties/KmsMasterKeyId"] =
+                json!("mutated KMS transform");
+            source["properties"]["DisplayName"] = json!({"type": "string"});
+        });
+        assert!(schema.properties.contains_key("DisplayName"));
+        assert_eq!(
+            schema.source()["propertyTransform"]["/properties/KmsMasterKeyId"],
+            "mutated KMS transform"
+        );
+
+        let context = EmissionContext::from_source(&schema).unwrap();
+        let path = ["KmsMasterKeyId".into()];
+        context
+            .property_at(&path, &schema.properties["KmsMasterKeyId"])
+            .classify()
+            .unwrap();
+        let error = context.finish().unwrap_err().to_string();
+        assert!(
+            error.contains(
+                "unaccounted KMS node sns.Topic#/propertyTransform/~1properties~1KmsMasterKeyId"
+            ),
+            "{error}"
+        );
+    }
+
+    #[test]
     fn a_leaf_decision_does_not_cover_unemitted_descendants() {
         let source = json!({"typeName": "AWS::SNS::Topic", "properties": {
             "KmsMasterKeyId": {"type": "string", "anyOf": [{"properties": {
                 "KmsHidden": {"type": "string"}
             }}]}
         }});
-        let schema: CfnSchema = serde_json::from_value(source.clone()).unwrap();
-        let context = EmissionContext::from_source(&schema, &source).unwrap();
+        let schema = ParsedCfnSchema::from_json(source).unwrap();
+        let context = EmissionContext::from_source(&schema).unwrap();
         let path = ["KmsMasterKeyId".into()];
         context
             .property_at(&path, &schema.properties["KmsMasterKeyId"])
@@ -890,8 +893,8 @@ mod tests {
             "KmsMasterKeyId": {"$ref": "#/definitions/KmsKeyString"},
             "EncryptionKey": {"$ref": "#/definitions/KmsKeyString"}
         }, "definitions": {"KmsKeyString": {"type": "string"}}});
-        let schema: CfnSchema = serde_json::from_value(source.clone()).unwrap();
-        let context = EmissionContext::from_source(&schema, &source).unwrap();
+        let schema = ParsedCfnSchema::from_json(source).unwrap();
+        let context = EmissionContext::from_source(&schema).unwrap();
         let path = ["KmsMasterKeyId".into()];
         context
             .property_at(&path, &schema.properties["KmsMasterKeyId"])
@@ -918,8 +921,8 @@ mod tests {
         }, "definitions": {"Cycle": {"$ref": "#/definitions/Cycle", "properties": {
             "KmsHidden": {"type": "string"}
         }}}});
-        let schema: CfnSchema = serde_json::from_value(source.clone()).unwrap();
-        let context = EmissionContext::from_source(&schema, &source).unwrap();
+        let schema = ParsedCfnSchema::from_json(source).unwrap();
+        let context = EmissionContext::from_source(&schema).unwrap();
         let path = ["Settings".into()];
         context.property_at(&path, &schema.properties["Settings"]);
         assert_eq!(context.sites.borrow()[&path[..]].sources.len(), 2);
