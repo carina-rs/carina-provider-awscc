@@ -7772,6 +7772,10 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 },
             );
         }
+        // Verified 2026-11-03 with PutMetricAlarm in ap-northeast-1: namespace ':Custom'
+        // rejected ("Member must satisfy regular expression pattern: [^:].*"); dimension name ':d'
+        // and dimension values containing non-ASCII 'é' rejected; leading-space value ' v' accepted.
+        // AWS applies these patterns to the whole value, so the anchors match the service.
         // Namespace (top-level and nested) length: 1..=255; cannot start with ':'.
         // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_PutMetricAlarm.html
         // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_Metric.html
@@ -7788,6 +7792,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         }
         // Shared by Dimensions and Metric.Dimensions: Name length 1..=255,
         // printable ASCII with a non-space character; cannot start with ':'.
+        // See the PutMetricAlarm verification above for the anchors.
         // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_Dimension.html
         m.insert(
             ("AWS::CloudWatch::Alarm", "Dimension.Name"),
@@ -7800,6 +7805,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         );
         // Shared by Dimensions and Metric.Dimensions: Value length 1..=1024,
         // printable ASCII with at least one non-space character.
+        // See the PutMetricAlarm verification above for the anchors.
         // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_Dimension.html
         m.insert(
             ("AWS::CloudWatch::Alarm", "Dimension.Value"),
