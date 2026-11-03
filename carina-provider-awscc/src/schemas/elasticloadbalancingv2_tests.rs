@@ -7,7 +7,8 @@ use serde_json::json;
 
 use crate::provider::conversion::{aws_value_to_dsl_with_defs, dsl_value_to_aws_with_defs};
 use crate::test_support::{
-    enum_identifier, field, float, int, list, string, validate_fixtures, with_preparation,
+    AssignmentContext, enum_identifier, field, float, int, list, string, validate_fixtures,
+    with_preparation,
 };
 
 fn listener_schema() -> ValidatedResourceSchema {
@@ -1246,6 +1247,7 @@ fn every_registered_definition_and_nested_copy_retains_the_inline_constraints() 
 
 #[test]
 fn target_group_arn_references_validate_in_forward_config_with_refinements() {
+    let assignment = AssignmentContext::new();
     let target_group = target_group_schema();
     let listener = listener_schema();
     let source = field(&target_group, "target_group_arn");
@@ -1257,7 +1259,7 @@ fn target_group_arn_references_validate_in_forward_config_with_refinements() {
         target_group
             .as_schema()
             .type_in_schema(source.as_type())
-            .is_assignable_to(listener.as_schema().type_in_schema(sink.as_type()))
+            .is_assignable_to(assignment.sink(&listener, sink.as_type()))
     );
     validate_fixtures(&[(
         "elbv2_references.crn",

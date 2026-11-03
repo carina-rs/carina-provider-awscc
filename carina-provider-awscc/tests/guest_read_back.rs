@@ -43,6 +43,9 @@ mod guest {
         fn reference_forms(&self) -> ReferenceForms {
             unreachable!("this fixture only polls read-back continuations")
         }
+        fn assignability_edges(&self) -> Vec<AssignabilityEdge> {
+            schemas::assignability_edges()
+        }
         fn provider_config_attribute_types(&self) -> ValidatedConfigSchema {
             unreachable!("this fixture only polls read-back continuations")
         }

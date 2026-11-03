@@ -21,13 +21,17 @@ mod common;
 
 use std::sync::Arc;
 
-use carina_core::provider::{CreateOutcomeKind, Provider, ReadRequest};
+use carina_core::provider::{
+    CreateOutcomeKind, Provider, ReadRequest, provider_custom_types_from_factories,
+};
 use carina_core::resource::{ConcreteValue, Resource, Value};
-use carina_core::schema::{CompiledAttributeType, CompiledStructField, RawShape, TypeError};
-use carina_provider_awscc::AwsccProvider;
+use carina_core::schema::{
+    CompiledAttributeType, CompiledStructField, RawShape, SchemaKind, TypeError,
+};
 use carina_provider_awscc::provider::AwsccProviderConfig;
 use carina_provider_awscc::schemas::generated::cloudfront::distribution::cloudfront_distribution_config;
 use carina_provider_awscc::schemas::generated::cloudfront::function::cloudfront_function_config;
+use carina_provider_awscc::{AwsccProvider, AwsccProviderFactory, schemas};
 use indexmap::IndexMap;
 use winterbaume_cloudcontrol::CloudControlService;
 use winterbaume_core::{MockAws, StatefulService};
@@ -140,6 +144,12 @@ async fn stored_function(cloudcontrol: &CloudControlService) -> (String, serde_j
 
 #[test]
 fn function_arn_is_assignable_to_distribution_function_association() {
+    let registry = schemas::schema_registry();
+    let catalog =
+        provider_custom_types_from_factories(Arc::new(vec![Box::new(AwsccProviderFactory)]));
+    let owner = registry
+        .get("awscc", "cloudfront.Distribution", SchemaKind::Resource)
+        .expect("Distribution schema must be registered");
     let function = cloudfront_function_config();
     let function_arn = function
         .schema
@@ -173,12 +183,7 @@ fn function_arn_is_assignable_to_distribution_function_association() {
                 .schema
                 .as_schema()
                 .type_in_schema(function_arn)
-                .is_assignable_to(
-                    distribution
-                        .schema
-                        .as_schema()
-                        .type_in_schema(association_arn)
-                ),
+                .is_assignable_to(owner.assignment_sink(association_arn, &catalog)),
             "Function.function_arn must be reference-compatible with Distribution.{path}.function_associations[].function_arn"
         );
     }

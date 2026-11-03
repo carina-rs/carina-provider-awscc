@@ -5,7 +5,8 @@ use serde_json::json;
 
 use crate::provider::conversion::{aws_value_to_dsl_with_defs, dsl_value_to_aws_with_defs};
 use crate::test_support::{
-    enum_identifier, field, float, int, list, string, validate_fixtures, with_preparation,
+    AssignmentContext, enum_identifier, field, float, int, list, string, validate_fixtures,
+    with_preparation,
 };
 
 fn table_schema() -> ValidatedResourceSchema {
@@ -523,6 +524,7 @@ fn local_secondary_index_count_enforces_hard_limit_and_global_quota_stays_open()
 
 #[test]
 fn refined_strings_accept_arn_and_identity_typed_references() {
+    let assignment = AssignmentContext::new();
     let schema = table_schema();
     let topic = super::generated::sns::topic::sns_topic_config().schema;
     let vpc = super::generated::ec2::vpc::ec2_vpc_config().schema;
@@ -569,7 +571,7 @@ fn refined_strings_accept_arn_and_identity_typed_references() {
                 source_schema
                     .as_schema()
                     .type_in_schema(source.as_type())
-                    .is_assignable_to(schema.as_schema().type_in_schema(sink.as_type())),
+                    .is_assignable_to(assignment.sink(&schema, sink.as_type())),
                 "{source_path} must be assignable to {path}"
             );
         }

@@ -26,7 +26,8 @@ use carina_core::resource::{
     Resource as CoreResource, ResourceId as CoreResourceId, Value as CoreValue,
 };
 use carina_core::schema::{
-    ReferenceForms, SchemaKind, SchemaRegistry, ValidatedConfigSchema, ValidatedResourceSchema,
+    AssignabilityEdge, ReferenceForms, SchemaKind, SchemaRegistry, ValidatedConfigSchema,
+    ValidatedResourceSchema,
 };
 
 use carina_provider_awscc::provider::{
@@ -757,6 +758,10 @@ impl CarinaProvider for AwsccProcessProvider {
         ReferenceForms::new()
     }
 
+    fn assignability_edges(&self) -> Vec<AssignabilityEdge> {
+        schemas::assignability_edges()
+    }
+
     fn resolve_references(
         &self,
         requests: Vec<proto::ReferenceRequest>,
@@ -1319,7 +1324,9 @@ mod tests {
         TypeIdentity as CoreTypeIdentity,
     };
     use carina_plugin_sdk::types::{TypeIdentity as WireTypeIdentity, ValidatorType};
-    use carina_plugin_sdk::{ProviderSchemaCache, dispatch_custom_type_validation};
+    use carina_plugin_sdk::{
+        ProviderSchemaCache, dispatch_custom_type_validation, provider_schema_to_json,
+    };
 
     #[test]
     fn delete_step_rejects_read_back_phase() {
@@ -1780,6 +1787,24 @@ mod tests {
                 !declared_validators(schema).contains(&ValidatorType::TagsKeyValueCheck),
                 "untagged resource should not have TagsKeyValueCheck"
             );
+        }
+    }
+
+    #[test]
+    fn native_and_sdk_schema_witnesses_declare_no_assignability_edges() {
+        let native = AwsccProviderFactory.schema_witness();
+        let provider = AwsccProcessProvider::new();
+        let cache = ProviderSchemaCache::from_provider(&provider)
+            .expect("AWSCC schemas must pass aggregate admission");
+
+        assert!(native.assignability_edges().is_empty());
+        assert_eq!(
+            native.assignability_edges(),
+            cache.witness().assignability_edges()
+        );
+        for witness in [&native, cache.witness()] {
+            let serialized = provider_schema_to_json(witness).expect("serialize AWSCC witness");
+            assert!(serialized.contains("\"assignability_edges\":[]"));
         }
     }
 

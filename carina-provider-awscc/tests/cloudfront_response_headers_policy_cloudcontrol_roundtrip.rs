@@ -27,14 +27,16 @@ mod common;
 
 use std::sync::Arc;
 
-use carina_core::provider::{CreateOutcomeKind, Provider, ReadRequest};
+use carina_core::provider::{
+    CreateOutcomeKind, Provider, ReadRequest, provider_custom_types_from_factories,
+};
 use carina_core::resource::{ConcreteValue, Resource, Value};
-use carina_core::schema::{CompiledAttributeType, CompiledStructField, RawShape};
-use carina_provider_awscc::AwsccProvider;
+use carina_core::schema::{CompiledAttributeType, CompiledStructField, RawShape, SchemaKind};
 use carina_provider_awscc::provider::AwsccProviderConfig;
 use carina_provider_awscc::schemas::generated::cloudfront::distribution::cloudfront_distribution_config;
 use carina_provider_awscc::schemas::generated::cloudfront::origin_access_control::cloudfront_origin_access_control_config;
 use carina_provider_awscc::schemas::generated::cloudfront::response_headers_policy::cloudfront_response_headers_policy_config;
+use carina_provider_awscc::{AwsccProvider, AwsccProviderFactory, schemas};
 use indexmap::IndexMap;
 use winterbaume_cloudcontrol::CloudControlService;
 use winterbaume_core::{MockAws, StatefulService};
@@ -188,6 +190,12 @@ async fn stored_policy(cloudcontrol: &CloudControlService) -> (String, serde_jso
 
 #[test]
 fn response_headers_policy_id_matches_existing_cloudfront_id_reference_pattern() {
+    let registry = schemas::schema_registry();
+    let catalog =
+        provider_custom_types_from_factories(Arc::new(vec![Box::new(AwsccProviderFactory)]));
+    let owner = registry
+        .get("awscc", "cloudfront.Distribution", SchemaKind::Resource)
+        .expect("Distribution schema must be registered");
     let response_headers_policy = cloudfront_response_headers_policy_config();
     let response_headers_policy_id = response_headers_policy
         .schema
@@ -235,7 +243,7 @@ fn response_headers_policy_id_matches_existing_cloudfront_id_reference_pattern()
                 .schema
                 .as_schema()
                 .type_in_schema(response_headers_policy_id.attr_type())
-                .is_assignable_to(distribution.schema.as_schema().type_in_schema(sink)),
+                .is_assignable_to(owner.assignment_sink(sink, &catalog)),
             "ResponseHeadersPolicy.id must be assignable to Distribution.{label}"
         );
     }
@@ -246,12 +254,7 @@ fn response_headers_policy_id_matches_existing_cloudfront_id_reference_pattern()
             .schema
             .as_schema()
             .type_in_schema(origin_access_control_id)
-            .is_assignable_to(
-                distribution
-                    .schema
-                    .as_schema()
-                    .type_in_schema(origin_access_control_sink)
-            ),
+            .is_assignable_to(owner.assignment_sink(origin_access_control_sink, &catalog)),
         "the existing OriginAccessControl.id reference pattern should remain assignable"
     );
 }

@@ -5,7 +5,8 @@ use serde_json::json;
 
 use crate::provider::conversion::{aws_value_to_dsl_with_defs, dsl_value_to_aws_with_defs};
 use crate::test_support::{
-    enum_identifier, field, float, int, list, string, validate_fixtures, with_preparation,
+    AssignmentContext, enum_identifier, field, float, int, list, string, validate_fixtures,
+    with_preparation,
 };
 
 fn cluster_schema() -> ValidatedResourceSchema {
@@ -139,6 +140,7 @@ fn cluster_name_enforces_documented_length_and_characters() {
 
 #[test]
 fn refined_cluster_name_accepts_arn_and_identity_typed_references() {
+    let assignment = AssignmentContext::new();
     let schema = cluster_schema();
     let name = field(&schema, "cluster_name");
     assert!(matches!(
@@ -166,7 +168,7 @@ fn refined_cluster_name_accepts_arn_and_identity_typed_references() {
             source_schema
                 .as_schema()
                 .type_in_schema(source.as_type())
-                .is_assignable_to(schema.as_schema().type_in_schema(name.as_type())),
+                .is_assignable_to(assignment.sink(&schema, name.as_type())),
             "{source_path} must be assignable to cluster_name"
         );
     }

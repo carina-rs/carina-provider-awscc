@@ -60,6 +60,7 @@ impl ProviderFactory for Wafv2SchemaFactory {
             self.schemas(),
             ValidatedConfigSchema::default(),
             ReferenceForms::new(),
+            carina_provider_awscc::schemas::assignability_edges(),
         )
         .expect("WebACL schema-only witness must be valid")
     }

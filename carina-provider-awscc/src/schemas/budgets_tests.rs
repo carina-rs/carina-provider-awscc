@@ -3,7 +3,9 @@ use carina_core::schema::{RawShape, ValidatedResourceSchema};
 use serde_json::json;
 
 use crate::provider::conversion::{aws_value_to_dsl_with_defs, dsl_value_to_aws_with_defs};
-use crate::test_support::{enum_identifier, field, float, int, list, string, validate_fixtures};
+use crate::test_support::{
+    AssignmentContext, enum_identifier, field, float, int, list, string, validate_fixtures,
+};
 
 fn budget_schema() -> ValidatedResourceSchema {
     super::generated::budgets::budget::budgets_budget_config().schema
@@ -277,6 +279,7 @@ fn identity_typed_outputs_are_assignable_to_every_refined_budget_string() {
     let vpc = super::generated::ec2::vpc::ec2_vpc_config().schema;
 
     // carina#4230 defers anonymous length/pattern checks until references resolve.
+    let assignment = AssignmentContext::new();
     let assert_assignable = |path: &str| {
         let sink = field(&schema, path);
         let sink = sink.list_element().unwrap_or(sink);
@@ -306,7 +309,7 @@ fn identity_typed_outputs_are_assignable_to_every_refined_budget_string() {
                 source_schema
                     .as_schema()
                     .type_in_schema(source.as_type())
-                    .is_assignable_to(schema.as_schema().type_in_schema(sink.as_type())),
+                    .is_assignable_to(assignment.sink(&schema, sink.as_type())),
                 "{source_path} must be reference-compatible with Budget.{path}"
             );
         }
