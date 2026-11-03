@@ -30,14 +30,14 @@ awscc.elasticloadbalancingv2.Listener {
 
 ### `alpn_policy`
 
-- **Type:** `List<String>`
+- **Type:** List\<[Enum (AlpnPolicy)](#alpn_policy-alpnpolicy)\> (items: ..=1)
 - **Required:** No
 
 [TLS listener] The name of the Application-Layer Protocol Negotiation (ALPN) policy.
 
 ### `certificates`
 
-- **Type:** List\<[Struct(Certificate)](#certificates-1)\>
+- **Type:** List\<[Struct(Certificate)](#certificates-1)\> (items: ..=1)
 - **Required:** No
 
 The default SSL server certificate for a secure listener. You must provide exactly one certificate if the listener protocol is HTTPS or TLS. For an HTTPS listener, update requires some interruptions. For a TLS listener, update requires no interruption. To create a certificate list for a secure listener, use [AWS::ElasticLoadBalancingV2::ListenerCertificate](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-elasticloadbalancingv2-listenercertificate.html).
@@ -73,7 +73,7 @@ The mutual authentication configuration information.
 
 ### `port`
 
-- **Type:** Int
+- **Type:** Int(1..=65535)
 - **Required:** No
 
 The port on which the load balancer is listening. You can't specify a port for a Gateway Load Balancer.
@@ -94,6 +94,38 @@ The protocol for connections from clients to the load balancer. For Application 
 
 ## Enum Values
 
+### alpn_policy (AlpnPolicy)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `HTTP1Only` | `aws.elasticloadbalancingv2.Listener.AlpnPolicy.http1_only` |
+| `HTTP2Only` | `aws.elasticloadbalancingv2.Listener.AlpnPolicy.http2_only` |
+| `HTTP2Optional` | `aws.elasticloadbalancingv2.Listener.AlpnPolicy.http2_optional` |
+| `HTTP2Preferred` | `aws.elasticloadbalancingv2.Listener.AlpnPolicy.http2_preferred` |
+| `None` | `aws.elasticloadbalancingv2.Listener.AlpnPolicy.none` |
+
+Shorthand formats: `http1_only` or `AlpnPolicy.http1_only`
+
+### default_actions.authenticate_cognito_config.on_unauthenticated_request (OnUnauthenticatedRequest)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `deny` | `aws.elasticloadbalancingv2.Listener.Action.AuthenticateCognitoConfig.OnUnauthenticatedRequest.deny` |
+| `allow` | `aws.elasticloadbalancingv2.Listener.Action.AuthenticateCognitoConfig.OnUnauthenticatedRequest.allow` |
+| `authenticate` | `aws.elasticloadbalancingv2.Listener.Action.AuthenticateCognitoConfig.OnUnauthenticatedRequest.authenticate` |
+
+Shorthand formats: `deny` or `OnUnauthenticatedRequest.deny`
+
+### default_actions.authenticate_oidc_config.on_unauthenticated_request (OnUnauthenticatedRequest)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `deny` | `aws.elasticloadbalancingv2.Listener.Action.AuthenticateOidcConfig.OnUnauthenticatedRequest.deny` |
+| `allow` | `aws.elasticloadbalancingv2.Listener.Action.AuthenticateOidcConfig.OnUnauthenticatedRequest.allow` |
+| `authenticate` | `aws.elasticloadbalancingv2.Listener.Action.AuthenticateOidcConfig.OnUnauthenticatedRequest.authenticate` |
+
+Shorthand formats: `deny` or `OnUnauthenticatedRequest.deny`
+
 ### default_actions.fixed_response_config.content_type (ContentType)
 
 | Value | DSL Identifier |
@@ -105,6 +137,16 @@ The protocol for connections from clients to the load balancer. For Application 
 | `application/json` | `aws.elasticloadbalancingv2.Listener.Action.FixedResponseConfig.ContentType.application_json` |
 
 Shorthand formats: `text_plain` or `ContentType.text_plain`
+
+### default_actions.jwt_validation_config.additional_claims.format (Format)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `single-string` | `aws.elasticloadbalancingv2.Listener.Action.JwtValidationConfig.JwtValidationActionAdditionalClaim.Format.single_string` |
+| `string-array` | `aws.elasticloadbalancingv2.Listener.Action.JwtValidationConfig.JwtValidationActionAdditionalClaim.Format.string_array` |
+| `space-separated-values` | `aws.elasticloadbalancingv2.Listener.Action.JwtValidationConfig.JwtValidationActionAdditionalClaim.Format.space_separated_values` |
+
+Shorthand formats: `single_string` or `Format.single_string`
 
 ### default_actions.redirect_config.status_code (StatusCode)
 
@@ -127,6 +169,15 @@ Shorthand formats: `http_301` or `StatusCode.http_301`
 | `jwt-validation` | `aws.elasticloadbalancingv2.Listener.Action.Type.jwt_validation` |
 
 Shorthand formats: `forward` or `Type.forward`
+
+### mutual_authentication.advertise_trust_store_ca_names (AdvertiseTrustStoreCaNames)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `on` | `aws.elasticloadbalancingv2.Listener.MutualAuthentication.AdvertiseTrustStoreCaNames.on` |
+| `off` | `aws.elasticloadbalancingv2.Listener.MutualAuthentication.AdvertiseTrustStoreCaNames.off` |
+
+Shorthand formats: `on` or `AdvertiseTrustStoreCaNames.on`
 
 ### mutual_authentication.mode (Mode)
 
@@ -170,7 +221,7 @@ Shorthand formats: `http` or `Protocol.http`
 | `fixed_response_config` | [Struct(FixedResponseConfig)](#default_actionsfixed_response_config) | No | [Application Load Balancer] Information for creating an action that returns a custom HTTP response. Specify only when ``Type`` is ``fixed-response``. |
 | `forward_config` | [Struct(ForwardConfig)](#default_actionsforward_config) | No | Information for creating an action that distributes requests among multiple target groups. Specify only when ``Type`` is ``forward``. If you specify both ``ForwardConfig`` and ``TargetGroupArn``, you can specify only one target group using ``ForwardConfig`` and it must be the same target group specified in ``TargetGroupArn``. |
 | `jwt_validation_config` | [Struct(JwtValidationConfig)](#default_actionsjwt_validation_config) | No | [HTTPS listeners] Information for validating JWT access tokens in client requests. Specify only when ``Type`` is ``jwt-validation``. |
-| `order` | Int | No | The order for the action. This value is required for rules with multiple actions. The action with the lowest value for order is performed first. |
+| `order` | Int(1..=50000) | No | The order for the action. This value is required for rules with multiple actions. The action with the lowest value for order is performed first. |
 | `redirect_config` | [Struct(RedirectConfig)](#default_actionsredirect_config) | No | [Application Load Balancer] Information for creating a redirect action. Specify only when ``Type`` is ``redirect``. |
 | `target_group_arn` | Arn | No | The Amazon Resource Name (ARN) of the target group. Specify only when ``Type`` is ``forward`` and you want to route to a single target group. To route to multiple target groups, you must use ``ForwardConfig`` instead. |
 | `type` | [Enum (Type)](#default_actionstype-type) | Yes | The type of action. |
@@ -180,10 +231,10 @@ Shorthand formats: `http` or `Protocol.http`
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `authentication_request_extra_params` | `Map<String, String>` | No | The query parameters (up to 10) to include in the redirect request to the authorization endpoint. |
-| `on_unauthenticated_request` | String | No | The behavior if the user is not authenticated. The following are possible values: + deny```` - Return an HTTP 401 Unauthorized error. + allow```` - Allow the request to be forwarded to the target. + authenticate```` - Redirect the request to the IdP authorization endpoint. This is the default value. |
+| `on_unauthenticated_request` | [Enum (OnUnauthenticatedRequest)](#default_actionsauthenticate_cognito_configon_unauthenticated_request-onunauthenticatedrequest) | No | The behavior if the user is not authenticated. The following are possible values: + deny```` - Return an HTTP 401 Unauthorized error. + allow```` - Allow the request to be forwarded to the target. + authenticate```` - Redirect the request to the IdP authorization endpoint. This is the default value. |
 | `scope` | String | No | The set of user claims to be requested from the IdP. The default is ``openid``. To verify which scope values your IdP supports and how to separate multiple values, see the documentation for your IdP. |
 | `session_cookie_name` | String | No | The name of the cookie used to maintain session information. The default is AWSELBAuthSessionCookie. |
-| `session_timeout` | String | No | The maximum duration of the authentication session, in seconds. The default is 604800 seconds (7 days). |
+| `session_timeout` | `String (pattern: ^[1-9][0-9]*\z)` | No | The maximum duration of the authentication session, in seconds. The default is 604800 seconds (7 days). |
 | `user_pool_arn` | Arn | Yes | The Amazon Resource Name (ARN) of the Amazon Cognito user pool. |
 | `user_pool_client_id` | String | Yes | The ID of the Amazon Cognito user pool client. |
 | `user_pool_domain` | String | Yes | The domain prefix or fully-qualified domain name of the Amazon Cognito user pool. |
@@ -197,10 +248,10 @@ Shorthand formats: `http` or `Protocol.http`
 | `client_id` | String | Yes | The OAuth 2.0 client identifier. |
 | `client_secret` | String | No | The OAuth 2.0 client secret. This parameter is required if you are creating a rule. If you are modifying a rule, you can omit this parameter if you set ``UseExistingClientSecret`` to true. |
 | `issuer` | String | Yes | The OIDC issuer identifier of the IdP. This must be a full URL, including the HTTPS protocol, the domain, and the path. |
-| `on_unauthenticated_request` | String | No | The behavior if the user is not authenticated. The following are possible values: + deny```` - Return an HTTP 401 Unauthorized error. + allow```` - Allow the request to be forwarded to the target. + authenticate```` - Redirect the request to the IdP authorization endpoint. This is the default value. |
+| `on_unauthenticated_request` | [Enum (OnUnauthenticatedRequest)](#default_actionsauthenticate_oidc_configon_unauthenticated_request-onunauthenticatedrequest) | No | The behavior if the user is not authenticated. The following are possible values: + deny```` - Return an HTTP 401 Unauthorized error. + allow```` - Allow the request to be forwarded to the target. + authenticate```` - Redirect the request to the IdP authorization endpoint. This is the default value. |
 | `scope` | String | No | The set of user claims to be requested from the IdP. The default is ``openid``. To verify which scope values your IdP supports and how to separate multiple values, see the documentation for your IdP. |
 | `session_cookie_name` | String | No | The name of the cookie used to maintain session information. The default is AWSELBAuthSessionCookie. |
-| `session_timeout` | String | No | The maximum duration of the authentication session, in seconds. The default is 604800 seconds (7 days). |
+| `session_timeout` | `String (pattern: ^[1-9][0-9]*\z)` | No | The maximum duration of the authentication session, in seconds. The default is 604800 seconds (7 days). |
 | `token_endpoint` | String | Yes | The token endpoint of the IdP. This must be a full URL, including the HTTPS protocol, the domain, and the path. |
 | `use_existing_client_secret` | Bool | No | Indicates whether to use the existing client secret when modifying a rule. If you are creating a rule, you can omit this parameter or set it to false. |
 | `user_info_endpoint` | String | Yes | The user info endpoint of the IdP. This must be a full URL, including the HTTPS protocol, the domain, and the path. |
@@ -218,13 +269,13 @@ Shorthand formats: `http` or `Protocol.http`
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `target_group_stickiness_config` | [Struct(TargetGroupStickinessConfig)](#default_actionsforward_configtarget_group_stickiness_config) | No | Information about the target group stickiness for a rule. |
-| `target_groups` | List\<[Struct(TargetGroupTuple)](#default_actionsforward_configtarget_groups)\> | No | Information about how traffic will be distributed between multiple target groups in a forward rule. |
+| `target_groups` | List\<[Struct(TargetGroupTuple)](#default_actionsforward_configtarget_groups)\> (items: ..=5) | No | Information about how traffic will be distributed between multiple target groups in a forward rule. |
 
 ### default_actions.forward_config.target_group_stickiness_config
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `duration_seconds` | Int | No | [Application Load Balancers] The time period, in seconds, during which requests from a client should be routed to the same target group. The range is 1-604800 seconds (7 days). You must specify this value when enabling target group stickiness. |
+| `duration_seconds` | Int(1..=604800) | No | [Application Load Balancers] The time period, in seconds, during which requests from a client should be routed to the same target group. The range is 1-604800 seconds (7 days). You must specify this value when enabling target group stickiness. |
 | `enabled` | Bool | No | Indicates whether target group stickiness is enabled. |
 
 ### default_actions.forward_config.target_groups
@@ -232,23 +283,23 @@ Shorthand formats: `http` or `Protocol.http`
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `target_group_arn` | Arn | No | The Amazon Resource Name (ARN) of the target group. |
-| `weight` | Int | No | The weight. The range is 0 to 999. |
+| `weight` | Int(0..=999) | No | The weight. The range is 0 to 999. |
 
 ### default_actions.jwt_validation_config
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `additional_claims` | List\<[Struct(JwtValidationActionAdditionalClaim)](#default_actionsjwt_validation_configadditional_claims)\> | No |  |
-| `issuer` | String | Yes |  |
+| `additional_claims` | List\<[Struct(JwtValidationActionAdditionalClaim)](#default_actionsjwt_validation_configadditional_claims)\> (items: ..=10) | No |  |
+| `issuer` | `String (length: ..=256)` | Yes |  |
 | `jwks_endpoint` | String | Yes |  |
 
 ### default_actions.jwt_validation_config.additional_claims
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `format` | String | Yes | The format of the claim value. |
+| `format` | [Enum (Format)](#default_actionsjwt_validation_configadditional_claimsformat-format) | Yes | The format of the claim value. |
 | `name` | String | Yes | The name of the claim. You can't specify ``exp``, ``iss``, ``nbf``, or ``iat`` because we validate them by default. |
-| `values` | `List<String>` | Yes | The claim value. The maximum size of the list is 10. Each value can be up to 256 characters in length. If the format is ``space-separated-values``, the values can't include spaces. |
+| `values` | `List<String (length: ..=256)> (items: ..=10)` | Yes | The claim value. The maximum size of the list is 10. Each value can be up to 256 characters in length. If the format is ``space-separated-values``, the values can't include spaces. |
 
 ### default_actions.redirect_config
 
@@ -265,14 +316,14 @@ Shorthand formats: `http` or `Protocol.http`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `key` | String | No | The name of the attribute. The following attribute is supported by Network Load Balancers, and Gateway Load Balancers. + ``tcp.idle_timeout.seconds`` - The tcp idle timeout value, in seconds. The valid range is 60-6000 seconds. The default is 350 seconds. The following attributes are only supported by Application Load Balancers. + ``routing.http.request.x_amzn_mtls_clientcert_serial_number.header_name`` - Enables you to modify the header name of the *X-Amzn-Mtls-Clientcert-Serial-Number* HTTP request header. + ``routing.http.request.x_amzn_mtls_clientcert_issuer.header_name`` - Enables you to modify the header name of the *X-Amzn-Mtls-Clientcert-Issuer* HTTP request header. + ``routing.http.request.x_amzn_mtls_clientcert_subject.header_name`` - Enables you to modify the header name of the *X-Amzn-Mtls-Clientcert-Subject* HTTP request header. + ``routing.http.request.x_amzn_mtls_clientcert_validity.header_name`` - Enables you to modify the header name of the *X-Amzn-Mtls-Clientcert-Validity* HTTP request header. + ``routing.http.request.x_amzn_mtls_clientcert_leaf.header_name`` - Enables you to modify the header name of the *X-Amzn-Mtls-Clientcert-Leaf* HTTP request header. + ``routing.http.request.x_amzn_mtls_clientcert.header_name`` - Enables you to modify the header name of the *X-Amzn-Mtls-Clientcert* HTTP request header. + ``routing.http.request.x_amzn_tls_version.header_name`` - Enables you to modify the header name of the *X-Amzn-Tls-Version* HTTP request header. + ``routing.http.request.x_amzn_tls_cipher_suite.header_name`` - Enables you to modify the header name of the *X-Amzn-Tls-Cipher-Suite* HTTP request header. + ``routing.http.response.server.enabled`` - Enables you to allow or remove the HTTP response server header. + ``routing.http.response.strict_transport_security.header_value`` - Informs browsers that the site should only be accessed using HTTPS, and that any future attempts to access it using HTTP should automatically be converted to HTTPS. + ``routing.http.response.access_control_allow_origin.header_value`` - Specifies which origins are allowed to access the server. + ``routing.http.response.access_control_allow_methods.header_value`` - Returns which HTTP methods are allowed when accessing the server from a different origin. + ``routing.http.response.access_control_allow_headers.header_value`` - Specifies which headers can be used during the request. + ``routing.http.response.access_control_allow_credentials.header_value`` - Indicates whether the browser should include credentials such as cookies or authentication when making requests. + ``routing.http.response.access_control_expose_headers.header_value`` - Returns which headers the browser can expose to the requesting client. + ``routing.http.response.access_control_max_age.header_value`` - Specifies how long the results of a preflight request can be cached, in seconds. + ``routing.http.response.content_security_policy.header_value`` - Specifies restrictions enforced by the browser to help minimize the risk of certain types of security threats. + ``routing.http.response.x_content_type_options.header_value`` - Indicates whether the MIME types advertised in the *Content-Type* headers should be followed and not be changed. + ``routing.http.response.x_frame_options.header_value`` - Indicates whether the browser is allowed to render a page in a *frame*, *iframe*, *embed* or *object*. |
+| `key` | `String (length: ..=256, pattern: ^[a-zA-Z0-9._]+\z)` | No | The name of the attribute. The following attribute is supported by Network Load Balancers, and Gateway Load Balancers. + ``tcp.idle_timeout.seconds`` - The tcp idle timeout value, in seconds. The valid range is 60-6000 seconds. The default is 350 seconds. The following attributes are only supported by Application Load Balancers. + ``routing.http.request.x_amzn_mtls_clientcert_serial_number.header_name`` - Enables you to modify the header name of the *X-Amzn-Mtls-Clientcert-Serial-Number* HTTP request header. + ``routing.http.request.x_amzn_mtls_clientcert_issuer.header_name`` - Enables you to modify the header name of the *X-Amzn-Mtls-Clientcert-Issuer* HTTP request header. + ``routing.http.request.x_amzn_mtls_clientcert_subject.header_name`` - Enables you to modify the header name of the *X-Amzn-Mtls-Clientcert-Subject* HTTP request header. + ``routing.http.request.x_amzn_mtls_clientcert_validity.header_name`` - Enables you to modify the header name of the *X-Amzn-Mtls-Clientcert-Validity* HTTP request header. + ``routing.http.request.x_amzn_mtls_clientcert_leaf.header_name`` - Enables you to modify the header name of the *X-Amzn-Mtls-Clientcert-Leaf* HTTP request header. + ``routing.http.request.x_amzn_mtls_clientcert.header_name`` - Enables you to modify the header name of the *X-Amzn-Mtls-Clientcert* HTTP request header. + ``routing.http.request.x_amzn_tls_version.header_name`` - Enables you to modify the header name of the *X-Amzn-Tls-Version* HTTP request header. + ``routing.http.request.x_amzn_tls_cipher_suite.header_name`` - Enables you to modify the header name of the *X-Amzn-Tls-Cipher-Suite* HTTP request header. + ``routing.http.response.server.enabled`` - Enables you to allow or remove the HTTP response server header. + ``routing.http.response.strict_transport_security.header_value`` - Informs browsers that the site should only be accessed using HTTPS, and that any future attempts to access it using HTTP should automatically be converted to HTTPS. + ``routing.http.response.access_control_allow_origin.header_value`` - Specifies which origins are allowed to access the server. + ``routing.http.response.access_control_allow_methods.header_value`` - Returns which HTTP methods are allowed when accessing the server from a different origin. + ``routing.http.response.access_control_allow_headers.header_value`` - Specifies which headers can be used during the request. + ``routing.http.response.access_control_allow_credentials.header_value`` - Indicates whether the browser should include credentials such as cookies or authentication when making requests. + ``routing.http.response.access_control_expose_headers.header_value`` - Returns which headers the browser can expose to the requesting client. + ``routing.http.response.access_control_max_age.header_value`` - Specifies how long the results of a preflight request can be cached, in seconds. + ``routing.http.response.content_security_policy.header_value`` - Specifies restrictions enforced by the browser to help minimize the risk of certain types of security threats. + ``routing.http.response.x_content_type_options.header_value`` - Indicates whether the MIME types advertised in the *Content-Type* headers should be followed and not be changed. + ``routing.http.response.x_frame_options.header_value`` - Indicates whether the browser is allowed to render a page in a *frame*, *iframe*, *embed* or *object*. |
 | `value` | String | No | The value of the attribute. |
 
 ### mutual_authentication
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `advertise_trust_store_ca_names` | String | No | Indicates whether trust store CA certificate names are advertised. |
+| `advertise_trust_store_ca_names` | [Enum (AdvertiseTrustStoreCaNames)](#mutual_authenticationadvertise_trust_store_ca_names-advertisetruststorecanames) | No | Indicates whether trust store CA certificate names are advertised. |
 | `ignore_client_certificate_expiry` | Bool | No | Indicates whether expired client certificates are ignored. |
 | `mode` | [Enum (Mode)](#mutual_authenticationmode-mode) | No | The client certificate handling method. Options are ``off``, ``passthrough`` or ``verify``. The default value on initial resource creation is ``off``. After mutual authentication is turned on, you must explicitly set the ``Mode`` to ``off`` to turn it off; removing the property from your template will not turn it off. |
 | `trust_store_arn` | Arn | No | The Amazon Resource Name (ARN) of the trust store. |

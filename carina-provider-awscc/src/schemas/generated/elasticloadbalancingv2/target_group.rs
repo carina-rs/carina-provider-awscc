@@ -7,9 +7,13 @@
 use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField};
 
+const VALID_HEALTH_CHECK_PROTOCOL: &[&str] = &["HTTP", "HTTPS", "TCP"];
+
 const VALID_IP_ADDRESS_TYPE: &[&str] = &["ipv4", "ipv6"];
 
-const VALID_PROTOCOL: &[&str] = &["HTTP", "HTTPS", "TCP", "TLS", "UDP", "TCP_UDP", "GENEVE"];
+const VALID_PROTOCOL: &[&str] = &[
+    "HTTP", "HTTPS", "TCP", "TLS", "UDP", "TCP_UDP", "GENEVE", "QUIC", "TCP_QUIC",
+];
 
 const VALID_PROTOCOL_VERSION: &[&str] = &["GRPC", "HTTP1", "HTTP2"];
 
@@ -30,7 +34,7 @@ pub fn elasticloadbalancingv2_target_group_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_health_check_enabled_attribute());
     #[inline(never)]
     fn build_health_check_interval_seconds_attribute() -> AttributeSchema {
-        AttributeSchema::optional("health_check_interval_seconds", AttributeType::int())
+        AttributeSchema::optional("health_check_interval_seconds", AttributeType::refined_int(None, Some((Some(5), Some(300)))))
                 .with_description("The approximate amount of time, in seconds, between health checks of an individual target.")
                 .with_provider_name("HealthCheckIntervalSeconds")
             .build()
@@ -38,7 +42,7 @@ pub fn elasticloadbalancingv2_target_group_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_health_check_interval_seconds_attribute());
     #[inline(never)]
     fn build_health_check_path_attribute() -> AttributeSchema {
-        AttributeSchema::optional("health_check_path", AttributeType::string())
+        AttributeSchema::optional("health_check_path", AttributeType::refined_string(None, None, Some((Some(1), Some(1024))), None))
                 .with_description("[HTTP/HTTPS health checks] The destination for health checks on the targets. [HTTP1 or HTTP2 protocol version] The ping path. The default is /. [GRPC protocol version] The path of a custom health check method with the format /package.service/method. The default is /AWS.ALB/healthcheck.")
                 .with_provider_name("HealthCheckPath")
             .build()
@@ -46,7 +50,7 @@ pub fn elasticloadbalancingv2_target_group_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_health_check_path_attribute());
     #[inline(never)]
     fn build_health_check_port_attribute() -> AttributeSchema {
-        AttributeSchema::optional("health_check_port", AttributeType::string())
+        AttributeSchema::optional("health_check_port", carina_aws_types::elbv2_health_check_port())
                 .with_description("The port the load balancer uses when performing health checks on targets. ")
                 .with_provider_name("HealthCheckPort")
             .build()
@@ -54,7 +58,7 @@ pub fn elasticloadbalancingv2_target_group_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_health_check_port_attribute());
     #[inline(never)]
     fn build_health_check_protocol_attribute() -> AttributeSchema {
-        AttributeSchema::optional("health_check_protocol", AttributeType::string())
+        AttributeSchema::optional("health_check_protocol", AttributeType::enum_(carina_core::schema::enum_identity("HealthCheckProtocol", Some("aws.elasticloadbalancingv2.TargetGroup")), Some(vec!["HTTP".to_string(), "HTTPS".to_string(), "TCP".to_string()]), vec![("HTTP".to_string(), "http".to_string()), ("HTTPS".to_string(), "https".to_string()), ("TCP".to_string(), "tcp".to_string())], None, None))
                 .with_description("The protocol the load balancer uses when performing health checks on targets. ")
                 .with_provider_name("HealthCheckProtocol")
             .build()
@@ -62,7 +66,7 @@ pub fn elasticloadbalancingv2_target_group_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_health_check_protocol_attribute());
     #[inline(never)]
     fn build_health_check_timeout_seconds_attribute() -> AttributeSchema {
-        AttributeSchema::optional("health_check_timeout_seconds", AttributeType::int())
+        AttributeSchema::optional("health_check_timeout_seconds", AttributeType::refined_int(None, Some((Some(2), Some(120)))))
                 .with_description("The amount of time, in seconds, during which no response from a target means a failed health check.")
                 .with_provider_name("HealthCheckTimeoutSeconds")
             .build()
@@ -70,7 +74,7 @@ pub fn elasticloadbalancingv2_target_group_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_health_check_timeout_seconds_attribute());
     #[inline(never)]
     fn build_healthy_threshold_count_attribute() -> AttributeSchema {
-        AttributeSchema::optional("healthy_threshold_count", AttributeType::int())
+        AttributeSchema::optional("healthy_threshold_count", AttributeType::refined_int(None, Some((Some(2), Some(10)))))
                 .with_description("The number of consecutive health checks successes required before considering an unhealthy target healthy. ")
                 .with_provider_name("HealthyThresholdCount")
             .build()
@@ -87,7 +91,7 @@ pub fn elasticloadbalancingv2_target_group_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_ip_address_type_attribute());
     #[inline(never)]
     fn build_load_balancer_arns_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("load_balancer_arns", AttributeType::unordered_list(carina_aws_types::arn()))
+        AttributeSchema::provider_populated("load_balancer_arns", AttributeType::refined_list(carina_aws_types::arn(), false, Some((None, Some(1))), carina_core::schema::ListElements::AllowDuplicates))
                 .with_description("The Amazon Resource Names (ARNs) of the load balancers that route traffic to this target group. (read-only)")
                 .with_provider_name("LoadBalancerArns")
             .build()
@@ -95,8 +99,8 @@ pub fn elasticloadbalancingv2_target_group_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_load_balancer_arns_attribute());
     #[inline(never)]
     fn build_matcher_attribute() -> AttributeSchema {
-        AttributeSchema::optional("matcher", AttributeType::struct_("Matcher".to_string(), vec![StructField::optional("grpc_code", AttributeType::string()).with_description("You can specify values between 0 and 99. You can specify multiple values, or a range of values. The default value is 12.").with_provider_name("GrpcCode").build(),
-                    StructField::optional("http_code", AttributeType::string()).with_description("For Application Load Balancers, you can specify values between 200 and 499, and the default value is 200. You can specify multiple values or a range of values. ").with_provider_name("HttpCode").build()]))
+        AttributeSchema::optional("matcher", AttributeType::struct_("Matcher".to_string(), vec![StructField::optional("grpc_code", carina_aws_types::elbv2_target_group_grpc_code()).with_description("You can specify values between 0 and 99. You can specify multiple values, or a range of values. The default value is 12.").with_provider_name("GrpcCode").build(),
+                    StructField::optional("http_code", carina_aws_types::elbv2_target_group_http_code()).with_description("For Application Load Balancers, you can specify values between 200 and 499, and the default value is 200. You can specify multiple values or a range of values. ").with_provider_name("HttpCode").build()]))
                 .with_description("[HTTP/HTTPS health checks] The HTTP or gRPC codes to use when checking for a successful response from a target.")
                 .with_provider_name("Matcher")
             .build()
@@ -104,7 +108,7 @@ pub fn elasticloadbalancingv2_target_group_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_matcher_attribute());
     #[inline(never)]
     fn build_name_attribute() -> AttributeSchema {
-        AttributeSchema::optional("name", AttributeType::string())
+        AttributeSchema::optional("name", AttributeType::refined_string(None, Some("^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\\z".to_string()), Some((Some(1), Some(32))), None))
                 .create_only()
                 .with_description("The name of the target group.")
                 .with_provider_name("Name")
@@ -113,7 +117,7 @@ pub fn elasticloadbalancingv2_target_group_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_name_attribute());
     #[inline(never)]
     fn build_port_attribute() -> AttributeSchema {
-        AttributeSchema::optional("port", AttributeType::int())
+        AttributeSchema::optional("port", AttributeType::refined_int(None, Some((Some(1), Some(65535)))))
                 .create_only()
                 .with_description("The port on which the targets receive traffic. This port is used unless you specify a port override when registering the target. If the target is a Lambda function, this parameter does not apply. If the protocol is GENEVE, the supported port is 6081.")
                 .with_provider_name("Port")
@@ -122,7 +126,7 @@ pub fn elasticloadbalancingv2_target_group_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_port_attribute());
     #[inline(never)]
     fn build_protocol_attribute() -> AttributeSchema {
-        AttributeSchema::optional("protocol", AttributeType::enum_(carina_core::schema::enum_identity("Protocol", Some("aws.elasticloadbalancingv2.TargetGroup")), Some(vec!["HTTP".to_string(), "HTTPS".to_string(), "TCP".to_string(), "TLS".to_string(), "UDP".to_string(), "TCP_UDP".to_string(), "GENEVE".to_string()]), vec![("HTTP".to_string(), "http".to_string()), ("HTTPS".to_string(), "https".to_string()), ("TCP".to_string(), "tcp".to_string()), ("TLS".to_string(), "tls".to_string()), ("UDP".to_string(), "udp".to_string()), ("TCP_UDP".to_string(), "tcp_udp".to_string()), ("GENEVE".to_string(), "geneve".to_string())], None, None))
+        AttributeSchema::optional("protocol", AttributeType::enum_(carina_core::schema::enum_identity("Protocol", Some("aws.elasticloadbalancingv2.TargetGroup")), Some(vec!["HTTP".to_string(), "HTTPS".to_string(), "TCP".to_string(), "TLS".to_string(), "UDP".to_string(), "TCP_UDP".to_string(), "GENEVE".to_string(), "QUIC".to_string(), "TCP_QUIC".to_string()]), vec![("HTTP".to_string(), "http".to_string()), ("HTTPS".to_string(), "https".to_string()), ("TCP".to_string(), "tcp".to_string()), ("TLS".to_string(), "tls".to_string()), ("UDP".to_string(), "udp".to_string()), ("TCP_UDP".to_string(), "tcp_udp".to_string()), ("GENEVE".to_string(), "geneve".to_string()), ("QUIC".to_string(), "quic".to_string()), ("TCP_QUIC".to_string(), "tcp_quic".to_string())], None, None))
                 .create_only()
                 .with_description("The protocol to use for routing traffic to the targets.")
                 .with_provider_name("Protocol")
@@ -149,7 +153,7 @@ pub fn elasticloadbalancingv2_target_group_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_tags_attribute());
     #[inline(never)]
     fn build_target_control_port_attribute() -> AttributeSchema {
-        AttributeSchema::optional("target_control_port", AttributeType::int())
+        AttributeSchema::optional("target_control_port", AttributeType::refined_int(None, Some((Some(1), Some(65535)))))
                 .with_description("The port that the target control agent uses to communicate the available capacity of targets to the load balancer.")
                 .with_provider_name("TargetControlPort")
             .build()
@@ -165,7 +169,7 @@ pub fn elasticloadbalancingv2_target_group_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_target_group_arn_attribute());
     #[inline(never)]
     fn build_target_group_attributes_attribute() -> AttributeSchema {
-        AttributeSchema::optional("target_group_attributes", AttributeType::refined_list(AttributeType::struct_("TargetGroupAttribute".to_string(), vec![StructField::optional("key", AttributeType::string()).with_description("The value of the attribute.").with_provider_name("Key").build(),
+        AttributeSchema::optional("target_group_attributes", AttributeType::refined_list(AttributeType::struct_("TargetGroupAttribute".to_string(), vec![StructField::optional("key", AttributeType::refined_string(None, Some("^[a-zA-Z0-9._]+\\z".to_string()), Some((None, Some(256))), None)).with_description("The value of the attribute.").with_provider_name("Key").build(),
                     StructField::optional("value", AttributeType::string()).with_description("The name of the attribute.").with_provider_name("Value").build()]), false, None, carina_core::schema::ListElements::Unique))
                 .with_description("The attributes.")
                 .with_provider_name("TargetGroupAttributes")
@@ -183,7 +187,7 @@ pub fn elasticloadbalancingv2_target_group_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_target_group_full_name_attribute());
     #[inline(never)]
     fn build_target_group_name_attribute() -> AttributeSchema {
-        AttributeSchema::provider_populated("target_group_name", AttributeType::string())
+        AttributeSchema::provider_populated("target_group_name", AttributeType::refined_string(None, Some("^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\\z".to_string()), Some((Some(1), Some(32))), None))
                 .with_description("The name of the target group. (read-only)")
                 .with_provider_name("TargetGroupName")
             .build()
@@ -200,10 +204,10 @@ pub fn elasticloadbalancingv2_target_group_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_target_type_attribute());
     #[inline(never)]
     fn build_targets_attribute() -> AttributeSchema {
-        AttributeSchema::optional("targets", AttributeType::refined_list(AttributeType::struct_("TargetDescription".to_string(), vec![StructField::optional("availability_zone", carina_aws_types::availability_zone()).with_description("An Availability Zone or all. This determines whether the target receives traffic from the load balancer nodes in the specified Availability Zone or from all enabled Availability Zones for the load balancer.").with_provider_name("AvailabilityZone").build(),
+        AttributeSchema::optional("targets", AttributeType::refined_list(AttributeType::struct_("TargetDescription".to_string(), vec![StructField::optional("availability_zone", AttributeType::union(vec![carina_aws_types::availability_zone(), AttributeType::refined_string(None, Some("^all\\z".to_string()), None, None)])).with_description("An Availability Zone or all. This determines whether the target receives traffic from the load balancer nodes in the specified Availability Zone or from all enabled Availability Zones for the load balancer.").with_provider_name("AvailabilityZone").build(),
                     StructField::required("id", AttributeType::string()).with_description("The ID of the target. If the target type of the target group is instance, specify an instance ID. If the target type is ip, specify an IP address. If the target type is lambda, specify the ARN of the Lambda function. If the target type is alb, specify the ARN of the Application Load Balancer target. ").with_provider_name("Id").build(),
-                    StructField::optional("port", AttributeType::int()).with_description("The port on which the target is listening. If the target group protocol is GENEVE, the supported port is 6081. If the target type is alb, the targeted Application Load Balancer must have at least one listener whose port matches the target group port. Not used if the target is a Lambda function.").with_provider_name("Port").build(),
-                    StructField::optional("quic_server_id", AttributeType::string()).with_description("The Server ID used by targets when using QUIC or TCP_QUIC protocols.").with_provider_name("QuicServerId").build()]), false, None, carina_core::schema::ListElements::Unique))
+                    StructField::optional("port", AttributeType::refined_int(None, Some((Some(1), Some(65535))))).with_description("The port on which the target is listening. If the target group protocol is GENEVE, the supported port is 6081. If the target type is alb, the targeted Application Load Balancer must have at least one listener whose port matches the target group port. Not used if the target is a Lambda function.").with_provider_name("Port").build(),
+                    StructField::optional("quic_server_id", AttributeType::refined_string(None, Some("^0x[0-9a-f]{16}\\z".to_string()), None, None)).with_description("The Server ID used by targets when using QUIC or TCP_QUIC protocols.").with_provider_name("QuicServerId").build()]), false, None, carina_core::schema::ListElements::Unique))
                 .with_description("The targets.")
                 .with_provider_name("Targets")
                 .with_block_name("target")
@@ -212,7 +216,7 @@ pub fn elasticloadbalancingv2_target_group_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_targets_attribute());
     #[inline(never)]
     fn build_unhealthy_threshold_count_attribute() -> AttributeSchema {
-        AttributeSchema::optional("unhealthy_threshold_count", AttributeType::int())
+        AttributeSchema::optional("unhealthy_threshold_count", AttributeType::refined_int(None, Some((Some(2), Some(10)))))
                 .with_description("The number of consecutive health check failures required before considering a target unhealthy.")
                 .with_provider_name("UnhealthyThresholdCount")
             .build()
@@ -231,8 +235,8 @@ pub fn elasticloadbalancingv2_target_group_config() -> AwsccSchemaConfig {
         .with_unique_name_attribute("name");
     schema = schema.with_declared_validators(vec![carina_provider_protocol::types::ValidatorType::TagsKeyValueCheck]);
     #[inline(never)]
-    fn build_schema_def_0() -> AttributeType { AttributeType::struct_("Matcher".to_string(), vec![StructField::optional("grpc_code", AttributeType::string()).with_description("You can specify values between 0 and 99. You can specify multiple values, or a range of values. The default value is 12.").with_provider_name("GrpcCode").build(),
-                    StructField::optional("http_code", AttributeType::string()).with_description("For Application Load Balancers, you can specify values between 200 and 499, and the default value is 200. You can specify multiple values or a range of values. ").with_provider_name("HttpCode").build()]) }
+    fn build_schema_def_0() -> AttributeType { AttributeType::struct_("Matcher".to_string(), vec![StructField::optional("grpc_code", carina_aws_types::elbv2_target_group_grpc_code()).with_description("You can specify values between 0 and 99. You can specify multiple values, or a range of values. The default value is 12.").with_provider_name("GrpcCode").build(),
+                    StructField::optional("http_code", carina_aws_types::elbv2_target_group_http_code()).with_description("For Application Load Balancers, you can specify values between 200 and 499, and the default value is 200. You can specify multiple values or a range of values. ").with_provider_name("HttpCode").build()]) }
     schema = schema.with_def("Matcher", build_schema_def_0());
     AwsccSchemaConfig {
         aws_type_name: "AWS::ElasticLoadBalancingV2::TargetGroup",
@@ -253,6 +257,7 @@ pub fn enum_valid_values() -> (
     (
         "elasticloadbalancingv2.TargetGroup",
         &[
+            ("health_check_protocol", VALID_HEALTH_CHECK_PROTOCOL),
             ("ip_address_type", VALID_IP_ADDRESS_TYPE),
             ("protocol", VALID_PROTOCOL),
             ("protocol_version", VALID_PROTOCOL_VERSION),

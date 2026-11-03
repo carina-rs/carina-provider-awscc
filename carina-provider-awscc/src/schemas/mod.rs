@@ -21,6 +21,9 @@ mod dynamodb_tests;
 mod ecs_tests;
 
 #[cfg(test)]
+mod elasticloadbalancingv2_tests;
+
+#[cfg(test)]
 mod iam_tests;
 
 #[cfg(test)]

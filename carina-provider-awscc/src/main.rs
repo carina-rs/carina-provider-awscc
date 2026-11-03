@@ -1570,6 +1570,7 @@ mod tests {
             "validated identity {identity} is neither a catalog row nor a core built-in"
         );
         match identity.kind.as_str() {
+            "DomainName" => "example.com",
             "Email" => "user@example.com",
             "HttpResponseStatusCode" => "200",
             "HttpsUrl" => "https://example.com/issuer",
