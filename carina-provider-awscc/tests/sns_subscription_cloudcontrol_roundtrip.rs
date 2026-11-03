@@ -81,7 +81,7 @@ fn delivery_policy(guaranteed: Option<bool>) -> Value {
 fn subscription_resource(guaranteed: Option<bool>) -> Resource {
     Resource::with_provider("awscc", "sns.Subscription", "alerts", None)
         .with_attribute("topic_arn", string(TOPIC_ARN))
-        .with_attribute("protocol", string("sqs"))
+        .with_attribute("protocol", enum_identifier("sqs"))
         .with_attribute("endpoint", string(ENDPOINT_ARN))
         .with_attribute("raw_message_delivery", bool_value(true))
         .with_attribute(

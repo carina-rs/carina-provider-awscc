@@ -7,8 +7,14 @@
 use crate::schemas::config::{AwsccSchemaConfig, TagsProperty, TagsWire};
 use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema, StructField};
 
+const VALID_FIFO_THROUGHPUT_SCOPE: &[&str] = &["Topic", "MessageGroup"];
+
 const VALID_LOGGING_CONFIG_PROTOCOL: &[&str] =
     &["http/s", "sqs", "lambda", "firehose", "application"];
+
+const VALID_SIGNATURE_VERSION: &[&str] = &["1", "2"];
+
+const VALID_TRACING_CONFIG: &[&str] = &["PassThrough", "Active"];
 
 /// Returns the schema config for sns_topic (AWS::SNS::Topic)
 #[rustfmt::skip]
@@ -53,7 +59,7 @@ pub fn sns_topic_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_display_name_attribute());
     #[inline(never)]
     fn build_fifo_throughput_scope_attribute() -> AttributeSchema {
-        AttributeSchema::optional("fifo_throughput_scope", AttributeType::string())
+        AttributeSchema::optional("fifo_throughput_scope", AttributeType::enum_(carina_core::schema::enum_identity("FifoThroughputScope", Some("aws.sns.Topic")), Some(vec!["Topic".to_string(), "MessageGroup".to_string()]), vec![("Topic".to_string(), "topic".to_string()), ("MessageGroup".to_string(), "message_group".to_string())], None, None))
                 .with_description("Specifies the throughput quota and deduplication behavior to apply for the FIFO topic. Valid values are ``Topic`` or ``MessageGroup``.")
                 .with_provider_name("FifoThroughputScope")
             .build()
@@ -86,7 +92,7 @@ pub fn sns_topic_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_maximum_message_size_attribute());
     #[inline(never)]
     fn build_signature_version_attribute() -> AttributeSchema {
-        AttributeSchema::optional("signature_version", AttributeType::string())
+        AttributeSchema::optional("signature_version", AttributeType::enum_(carina_core::schema::enum_identity("SignatureVersion", Some("aws.sns.Topic")), Some(vec!["1".to_string(), "2".to_string()]), vec![("1".to_string(), "1".to_string()), ("2".to_string(), "2".to_string())], None, None))
                 .with_description("The signature version corresponds to the hashing algorithm used while creating the signature of the notifications, subscription confirmations, or unsubscribe confirmation messages sent by Amazon SNS. By default, ``SignatureVersion`` is set to ``1``.")
                 .with_provider_name("SignatureVersion")
             .build()
@@ -120,7 +126,7 @@ pub fn sns_topic_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_topic_name_attribute());
     #[inline(never)]
     fn build_tracing_config_attribute() -> AttributeSchema {
-        AttributeSchema::optional("tracing_config", AttributeType::string())
+        AttributeSchema::optional("tracing_config", AttributeType::enum_(carina_core::schema::enum_identity("TracingConfig", Some("aws.sns.Topic")), Some(vec!["PassThrough".to_string(), "Active".to_string()]), vec![("PassThrough".to_string(), "pass_through".to_string()), ("Active".to_string(), "active".to_string())], None, None))
                 .with_description("Tracing mode of an SNS topic. By default ``TracingConfig`` is set to ``PassThrough``, and the topic passes through the tracing header it receives from an SNS publisher to its subscriptions. If set to ``Active``, SNS will vend X-Ray segment data to topic owner account if the sampled flag in the tracing header is true.")
                 .with_provider_name("TracingConfig")
             .build()
@@ -145,7 +151,15 @@ pub fn enum_valid_values() -> (
     &'static str,
     &'static [(&'static str, &'static [&'static str])],
 ) {
-    ("sns.Topic", &[("protocol", VALID_LOGGING_CONFIG_PROTOCOL)])
+    (
+        "sns.Topic",
+        &[
+            ("fifo_throughput_scope", VALID_FIFO_THROUGHPUT_SCOPE),
+            ("protocol", VALID_LOGGING_CONFIG_PROTOCOL),
+            ("signature_version", VALID_SIGNATURE_VERSION),
+            ("tracing_config", VALID_TRACING_CONFIG),
+        ],
+    )
 }
 
 /// Returns the IAM permissions declared by the CloudFormation handler for this operation.

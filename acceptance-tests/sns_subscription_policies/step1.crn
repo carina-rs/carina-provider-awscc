@@ -19,6 +19,7 @@ let fifo_topic = awscc.sns.Topic {
   topic_name                  = 'carina-acc-test-sns-policies-fifo.fifo'
   fifo_topic                  = true
   content_based_deduplication = true
+  signature_version           = aws.sns.Topic.SignatureVersion.2
 
   archive_policy = {
     message_retention_period = 1
@@ -32,7 +33,7 @@ let fifo_topic = awscc.sns.Topic {
 
 awscc.sns.Subscription {
   topic_arn            = standard_topic.topic_arn
-  protocol             = 'sqs'
+  protocol             = sqs
   endpoint             = '__STANDARD_QUEUE_ARN__'
   raw_message_delivery = true
 
