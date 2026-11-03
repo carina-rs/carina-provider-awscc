@@ -7,7 +7,8 @@ use serde_json::json;
 
 use crate::provider::conversion::{aws_value_to_dsl_with_defs, dsl_value_to_aws_with_defs};
 use crate::test_support::{
-    enum_identifier, field, float, int, list, string, validate_fixtures, with_preparation,
+    AssignmentContext, enum_identifier, field, float, int, list, string, validate_fixtures,
+    with_preparation,
 };
 
 const BEHAVIORS: [&str; 2] = [
@@ -650,6 +651,7 @@ fn string_caps_apply_at_every_header_certificate_parameter_and_oac_site() {
 
 #[test]
 fn distribution_domain_name_reuses_core_and_reference_sinks_remain_strings() {
+    let assignment = AssignmentContext::new();
     // Aggregate admission catches accidental redefinitions of core built-ins.
     let registry = super::schema_registry();
     let distribution = registry
@@ -711,7 +713,7 @@ fn distribution_domain_name_reuses_core_and_reference_sinks_remain_strings() {
             schema
                 .as_schema()
                 .type_in_schema(domain.as_type())
-                .is_assignable_to(schema.as_schema().type_in_schema(sink.as_type())),
+                .is_assignable_to(assignment.sink(schema, sink.as_type())),
             "{path}"
         );
     }

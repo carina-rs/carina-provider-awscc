@@ -1531,17 +1531,78 @@ fn cfn_override_property<'a>(
     let Some(parent) = path.parent else {
         return schema.properties.get(path.property);
     };
-    let property = schema
+    if let Some(definition) = schema
         .definitions
         .as_ref()
         .and_then(|defs| defs.get(parent))
-        .or_else(|| schema.properties.get(parent))?;
-    let property = if let Some(reference) = &property.ref_path {
-        resolve_ref(schema, reference)?.property
-    } else {
-        property
-    };
-    property.properties.as_ref()?.get(path.property)
+    {
+        return resolved_object_property_sources(definition, schema, &mut HashSet::new())
+            .get(path.property)
+            .copied();
+    }
+
+    // Inline structs use their raw property name as the parent, even when
+    // nested inside another inline object, a definition, or a collection.
+    // Share this lookup between generation and exact cached-source checks.
+    schema
+        .properties
+        .iter()
+        .chain(schema.definitions.iter().flat_map(|defs| defs.iter()))
+        .find_map(|(name, property)| {
+            inline_override_property(schema, name, property, None, path, &mut HashSet::new())
+        })
+}
+
+fn inline_override_property<'a>(
+    schema: &'a CfnSchema,
+    name: &'a str,
+    property: &'a CfnProperty,
+    definition_name: Option<&'a str>,
+    path: CfnPropertyPath<'_>,
+    visiting_defs: &mut HashSet<&'a str>,
+) -> Option<&'a CfnProperty> {
+    match property_shape(property, schema) {
+        PropertyShape::Reference { resolved, .. } => {
+            let resolved = resolved?;
+            if !visiting_defs.insert(resolved.name) {
+                return None;
+            }
+            let source = inline_override_property(
+                schema,
+                name,
+                resolved.property,
+                Some(resolved.name),
+                path,
+                visiting_defs,
+            );
+            visiting_defs.remove(resolved.name);
+            source
+        }
+        PropertyShape::Direct(_) | PropertyShape::Merged(_) => {
+            let properties =
+                resolved_object_property_sources(property, schema, &mut HashSet::new());
+            if path.parent == Some(definition_name.unwrap_or(name))
+                && let Some(source) = properties.get(path.property)
+            {
+                return Some(*source);
+            }
+            properties.into_iter().find_map(|(field_name, field)| {
+                inline_override_property(schema, field_name, field, None, path, visiting_defs)
+            })
+        }
+        PropertyShape::Array { variant, .. } => {
+            inline_override_property(schema, name, variant, definition_name, path, visiting_defs)
+        }
+        PropertyShape::Inline => {
+            let child = match inline_property_type(property) {
+                Some("array") => property.items.as_deref(),
+                Some("object") => direct_object_map_value(property),
+                _ => None,
+            }?;
+            inline_override_property(schema, name, child, None, path, visiting_defs)
+        }
+        PropertyShape::Unresolved => None,
+    }
 }
 
 fn checked_resource_type_override(
@@ -5984,6 +6045,18 @@ fn resolved_object_properties<'a>(
     schema: &'a CfnSchema,
     visiting_defs: &mut HashSet<&'a str>,
 ) -> BTreeMap<String, CfnProperty> {
+    resolved_object_property_sources(property, schema, visiting_defs)
+        .into_iter()
+        .map(|(name, property)| (name.to_string(), property.clone()))
+        .collect()
+}
+
+/// Preserve the original members while sharing generation's shape precedence.
+fn resolved_object_property_sources<'a>(
+    property: &'a CfnProperty,
+    schema: &'a CfnSchema,
+    visiting_defs: &mut HashSet<&'a str>,
+) -> BTreeMap<&'a str, &'a CfnProperty> {
     match property_shape_with_visited(property, schema, visiting_defs) {
         PropertyShape::Reference {
             resolved: Some(resolved),
@@ -5992,12 +6065,26 @@ fn resolved_object_properties<'a>(
             if !visiting_defs.insert(resolved.name) {
                 return BTreeMap::new();
             }
-            let properties = resolved_object_properties(resolved.property, schema, visiting_defs);
+            let properties =
+                resolved_object_property_sources(resolved.property, schema, visiting_defs);
             visiting_defs.remove(resolved.name);
             properties
         }
-        PropertyShape::Direct(properties) => properties.clone(),
-        PropertyShape::Merged(properties) => properties,
+        PropertyShape::Direct(properties) => properties
+            .iter()
+            .map(|(name, property)| (name.as_str(), property))
+            .collect(),
+        PropertyShape::Merged(_) => {
+            let mut properties = BTreeMap::new();
+            for variant in &property.one_of {
+                properties.extend(resolved_object_property_sources(
+                    variant,
+                    schema,
+                    visiting_defs,
+                ));
+            }
+            properties
+        }
         PropertyShape::Reference { resolved: None, .. }
         | PropertyShape::Inline
         | PropertyShape::Array { .. }
@@ -22016,15 +22103,17 @@ mod tests {
 
     #[test]
     fn test_ref_force_unordered_enum_list_retains_resolved_bounds() {
-        // Isolate this partial source-shape test from unrelated CloudFront
-        // arrays, whose overrides deliberately require a matching CFN source.
+        // Exercise EnumUnordered with the bounds resolved from this union
+        // fixture, independently of the production Array override.
         static OVERRIDES: LazyLock<ResourceTypeOverrides> = LazyLock::new(|| {
             let mut overrides = ResourceTypeOverrides::default();
-            let key = (
-                "AWS::CloudFront::Distribution",
-                "DefaultCacheBehavior.AllowedMethods",
+            overrides.insert(
+                (
+                    "AWS::CloudFront::Distribution",
+                    "DefaultCacheBehavior.AllowedMethods",
+                ),
+                TypeOverride::EnumUnordered(vec!["GET", "HEAD"]),
             );
-            overrides.insert(key, resource_type_overrides().get(&key).unwrap().clone());
             overrides
         });
         with_resource_type_overrides(&OVERRIDES, || {
@@ -22059,14 +22148,14 @@ mod tests {
                 field.contains("AttributeType::refined_list(AttributeType::enum_("),
                 "{field}"
             );
-            assert!(field.contains("false, Some((Some(2), Some(7)))"), "{field}");
+            assert!(field.contains("false, Some((Some(1), None))"), "{field}");
             let md = generate_test_markdown(&schema, &schema.type_name).unwrap();
             let field = md
                 .lines()
                 .find(|line| line.starts_with("| `allowed_methods` |"))
                 .unwrap();
             assert!(field.contains("List\\<[Enum ("), "{field}");
-            assert!(field.contains(" (items: 2..=7)"), "{field}");
+            assert!(field.contains(" (items: 1..)"), "{field}");
             carina_docgen::check_page(&md).unwrap();
         });
     }
@@ -25549,6 +25638,20 @@ mod tests {
         );
     }
 
+    fn validate_exact_override_source(
+        schema: &CfnSchema,
+        path: CfnPropertyPath<'_>,
+        override_type: &TypeOverride,
+    ) -> Result<()> {
+        let source = cfn_override_property(schema, path).with_context(|| {
+            format!(
+                "{}.{path}: typed override must have an exact cached CFN source",
+                schema.type_name
+            )
+        })?;
+        override_type.validate_source_shape(schema, path, source)
+    }
+
     #[test]
     fn test_cached_type_override_sources_match_all_declared_keys() {
         for (&(cfn_type, property), override_type) in resource_type_overrides().iter() {
@@ -25560,13 +25663,151 @@ mod tests {
                 || CfnPropertyPath::new(None, property),
                 |(parent, field)| CfnPropertyPath::new(Some(parent), field),
             );
-            let source = cfn_override_property(&schema, path).unwrap_or_else(|| {
-                panic!("{cfn_type}.{path}: typed override must have an exact cached CFN source")
-            });
-            override_type
-                .validate_source_shape(&schema, path, source)
+            validate_exact_override_source(&schema, path, override_type)
                 .unwrap_or_else(|error| panic!("{error}"));
         }
+    }
+
+    fn inline_parent_override_schema() -> ParsedCfnSchema {
+        ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Test::InlineParentOverride",
+            "properties": {
+                "Config": {"$ref": "#/definitions/Container"},
+                "MissingValues": {"type": "array", "items": {"type": "string"}}
+            },
+            "definitions": {
+                "Container": {
+                    "type": "object",
+                    "properties": {
+                        "Wrapper": {
+                            "type": "object",
+                            "properties": {
+                                "InlineSettings": {
+                                    "type": "object",
+                                    "properties": {
+                                        "DefaultValue": {"type": "string"},
+                                        "Values": {
+                                            "type": "array", "items": {"type": "string"},
+                                            "minItems": 1, "insertionOrder": false
+                                        }
+                                    }
+                                },
+                                "OtherSettings": {
+                                    "type": "object",
+                                    "properties": {
+                                        "MissingValues": {"type": "array", "items": {"type": "string"}}
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn test_inline_parent_overrides_apply_and_pass_exact_source_check() {
+        static OVERRIDES: LazyLock<ResourceTypeOverrides> = LazyLock::new(|| {
+            let mut overrides = ResourceTypeOverrides::default();
+            overrides.insert(
+                ("AWS::Test::InlineParentOverride", "InlineSettings.DefaultValue"),
+                TypeOverride::AttributeType {
+                    expression: "AttributeType::refined_string(None, None, Some((Some(1), None)), None)",
+                    display: OverrideTypeDisplay::new("String(len: 1..)"),
+                    block_name: None,
+                    default: None,
+                },
+            );
+            overrides.insert(
+                ("AWS::Test::InlineParentOverride", "InlineSettings.Values"),
+                TypeOverride::ArrayItemType {
+                    expression: "AttributeType::int()",
+                    display: OverrideTypeDisplay::new("List<Int>"),
+                    block_name: None,
+                    default: None,
+                },
+            );
+            overrides
+        });
+        let schema = inline_parent_override_schema();
+        with_resource_type_overrides(&OVERRIDES, || {
+            let generated = generate_synthetic_schema_code(&schema).unwrap();
+            for (path, override_type) in OVERRIDES.for_resource(&schema.type_name) {
+                validate_exact_override_source(&schema, path, override_type).unwrap();
+                let exact_source = &schema.definitions.as_ref().unwrap()["Container"]
+                    .properties
+                    .as_ref()
+                    .unwrap()["Wrapper"]
+                    .properties
+                    .as_ref()
+                    .unwrap()["InlineSettings"]
+                    .properties
+                    .as_ref()
+                    .unwrap()[path.property];
+                assert!(std::ptr::eq(
+                    cfn_override_property(&schema, path).unwrap(),
+                    exact_source
+                ));
+            }
+            for expected in [
+                "StructField::optional(\"default_value\", AttributeType::refined_string(None, None, Some((Some(1), None)), None))",
+                "StructField::optional(\"values\", AttributeType::refined_list(AttributeType::int(), false, Some((Some(1), None)), carina_core::schema::ListElements::AllowDuplicates))",
+            ] {
+                assert!(generated.contains(expected), "{generated}");
+            }
+            let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+            assert!(
+                markdown.contains("| `default_value` | `String(len: 1..)` |"),
+                "{markdown}"
+            );
+            assert!(
+                markdown.contains("| `values` | `List<Int> (items: 1..)` |"),
+                "{markdown}"
+            );
+        });
+    }
+
+    #[test]
+    fn test_inline_parent_overrides_reject_nonexistent_members() {
+        static OVERRIDES: LazyLock<ResourceTypeOverrides> = LazyLock::new(|| {
+            let mut overrides = ResourceTypeOverrides::default();
+            overrides.insert(
+                (
+                    "AWS::Test::InlineParentOverride",
+                    "InlineSettings.MissingValues",
+                ),
+                TypeOverride::ArrayItemType {
+                    expression: "AttributeType::int()",
+                    display: OverrideTypeDisplay::new("List<Int>"),
+                    block_name: None,
+                    default: None,
+                },
+            );
+            overrides
+        });
+        let schema = inline_parent_override_schema();
+        with_resource_type_overrides(&OVERRIDES, || {
+            let path = CfnPropertyPath::new(Some("InlineSettings"), "MissingValues");
+            assert!(cfn_override_property(&schema, path).is_none());
+            let error = validate_exact_override_source(
+                &schema,
+                path,
+                OVERRIDES.get_path(&schema.type_name, path).unwrap(),
+            )
+            .unwrap_err()
+            .to_string();
+            assert!(error.contains("InlineSettings.MissingValues"), "{error}");
+            assert!(error.contains("exact cached CFN source"), "{error}");
+            // Matching leaves at the top level and in OtherSettings cannot
+            // consume an override for this nonexistent inline member.
+            assert_override_generation_rejected(
+                &schema,
+                "ArrayItemType",
+                "InlineSettings.MissingValues",
+            );
+        });
     }
 
     #[test]
@@ -29112,6 +29353,8 @@ mod tests {
 
     #[test]
     fn test_alternation_pattern_emits_string_enum_not_custom() {
+        static OVERRIDES: LazyLock<ResourceTypeOverrides> =
+            LazyLock::new(ResourceTypeOverrides::default);
         // Mirrors the awscc#245 reproducer: a CFN string property whose only
         // constraint is `pattern: "^(a|b|c)$"` must become a real
         // StringEnum, not Custom { pattern, base: String }.
@@ -29146,28 +29389,30 @@ mod tests {
             "properties": properties
         }))
         .unwrap();
-        let generated =
-            generate_schema_code(&schema, "AWS::CloudFront::OriginAccessControl").unwrap();
-        assert!(
-            generated.contains("AttributeType::enum_("),
-            "alternation pattern should produce Enum: {generated}"
-        );
-        // Must not fall back to a Custom { pattern, ... } emission.
-        assert!(
-            !generated.contains("Some(\"^(s3|mediastore|lambda|mediapackagev2)$\""),
-            "alternation pattern should not flow through Custom: {generated}"
-        );
-        assert!(
-            !generated.contains("validate_string_pattern_"),
-            "alternation pattern should not emit a per-pattern validator: {generated}"
-        );
-        // All four literals must appear in the StringEnum values list.
-        for v in ["s3", "mediastore", "lambda", "mediapackagev2"] {
+        with_resource_type_overrides(&OVERRIDES, || {
+            let generated =
+                generate_schema_code(&schema, "AWS::CloudFront::OriginAccessControl").unwrap();
             assert!(
-                generated.contains(&format!("\"{}\".to_string()", v)), // rust-lit-guard: allow
-                "missing enum value {v} in: {generated}"
+                generated.contains("AttributeType::enum_("),
+                "alternation pattern should produce Enum: {generated}"
             );
-        }
+            // Must not fall back to a Custom { pattern, ... } emission.
+            assert!(
+                !generated.contains("Some(\"^(s3|mediastore|lambda|mediapackagev2)$\""),
+                "alternation pattern should not flow through Custom: {generated}"
+            );
+            assert!(
+                !generated.contains("validate_string_pattern_"),
+                "alternation pattern should not emit a per-pattern validator: {generated}"
+            );
+            // All four literals must appear in the StringEnum values list.
+            for v in ["s3", "mediastore", "lambda", "mediapackagev2"] {
+                assert!(
+                    generated.contains(&format!("\"{}\".to_string()", v)), // rust-lit-guard: allow
+                    "missing enum value {v} in: {generated}"
+                );
+            }
+        });
     }
 
     // === awscc#246: nested-field enum overlay ===
@@ -29220,11 +29465,18 @@ mod tests {
     fn test_nested_field_enum_overlay_promotes_string_to_string_enum() {
         static OVERRIDES: LazyLock<ResourceTypeOverrides> = LazyLock::new(|| {
             let mut overrides = ResourceTypeOverrides::default();
-            let key = (
-                "AWS::CloudFront::Distribution",
-                "DistributionConfig.PriceClass",
+            overrides.insert(
+                (
+                    "AWS::CloudFront::Distribution",
+                    "DistributionConfig.PriceClass",
+                ),
+                TypeOverride::Enum(vec![
+                    "PriceClass_100",
+                    "PriceClass_200",
+                    "PriceClass_All",
+                    "None",
+                ]),
             );
-            overrides.insert(key, resource_type_overrides().get(&key).unwrap().clone());
             overrides
         });
         with_resource_type_overrides(&OVERRIDES, || {
@@ -29328,11 +29580,15 @@ mod tests {
     fn test_nested_field_enum_overlay_promotes_list_string_to_list_string_enum() {
         static OVERRIDES: LazyLock<ResourceTypeOverrides> = LazyLock::new(|| {
             let mut overrides = ResourceTypeOverrides::default();
-            let key = (
-                "AWS::CloudFront::Distribution",
-                "DefaultCacheBehavior.AllowedMethods",
+            overrides.insert(
+                (
+                    "AWS::CloudFront::Distribution",
+                    "DefaultCacheBehavior.AllowedMethods",
+                ),
+                TypeOverride::EnumUnordered(vec![
+                    "GET", "HEAD", "OPTIONS", "PUT", "PATCH", "POST", "DELETE",
+                ]),
             );
-            overrides.insert(key, resource_type_overrides().get(&key).unwrap().clone());
             overrides
         });
         with_resource_type_overrides(&OVERRIDES, || {
@@ -29429,15 +29685,11 @@ mod tests {
             let generated = generate_schema_code(&schema, "AWS::CloudFront::Distribution").unwrap();
             // The list wrapping is kept and the element promoted to
             // Enum. `AllowedMethods` is an order-insensitive set, so
-            // post-carina#3093 it is unordered; #525 also retains the count bounds.
+            // post-carina#3093 the list is `unordered_list`.
             assert!(
-                generated.contains("AttributeType::refined_list(AttributeType::enum_("),
-                "nested list-of-string overlay should produce a bounded enum list \
+                generated.contains("AttributeType::unordered_list(AttributeType::enum_("),
+                "nested list-of-string overlay should produce unordered_list(Enum) \
              for AllowedMethods (carina#3093): {generated}"
-            );
-            assert!(
-                generated.contains("false, Some((Some(2), Some(7)))"),
-                "{generated}"
             );
             // No plain `String`-element list for this field, ordered or not.
             assert!(

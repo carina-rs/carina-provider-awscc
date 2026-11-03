@@ -189,9 +189,9 @@ Shorthand formats: `no_referrer` or `ReferrerPolicy.no_referrer`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `header` | String | Yes | The HTTP response header name. |
+| `header` | `String (length: ..=256)` | Yes | The HTTP response header name. |
 | `override` | Bool | Yes | A Boolean that determines whether CloudFront overrides a response header with the same name received from the origin with the header specified here. |
-| `value` | String | Yes | The value for the HTTP response header. |
+| `value` | `String (length: ..=1783)` | Yes | The value for the HTTP response header. |
 
 ### response_headers_policy_config.remove_headers_config
 
