@@ -3,8 +3,8 @@
 //! Handles S3 bucket operations that go beyond the Cloud Control API,
 //! such as emptying a bucket before deletion (force_delete).
 
-use aws_sdk_s3::error::SdkError;
 use aws_smithy_types::error::metadata::ProvideErrorMetadata;
+use carina_aws_types::sdk::s3::{S3Client, error::SdkError, types};
 
 use carina_core::provider::{ProviderError, ProviderResult};
 
@@ -21,13 +21,13 @@ impl std::fmt::Display for S3Bucket {
 
 impl AwsccProvider {
     /// Return the stored S3 client.
-    pub(crate) fn s3_client(&self) -> &aws_sdk_s3::Client {
+    pub(crate) fn s3_client(&self) -> &S3Client {
         &self.s3_client
     }
 
     /// Empty an S3 bucket by deleting all objects and versions
     pub(crate) async fn empty_s3_bucket(&self, bucket_name: &str) -> ProviderResult<()> {
-        let s3 = self.s3_client();
+        let s3 = self.s3_client().inner();
 
         // Delete all object versions (handles versioned and non-versioned buckets)
         let mut key_marker: Option<String> = None;
@@ -63,7 +63,7 @@ impl AwsccProvider {
             // Collect versions
             for version in response.versions() {
                 if let Some(key) = version.key() {
-                    let mut id = aws_sdk_s3::types::ObjectIdentifier::builder().key(key);
+                    let mut id = types::ObjectIdentifier::builder().key(key);
                     if let Some(vid) = version.version_id() {
                         id = id.version_id(vid);
                     }
@@ -76,7 +76,7 @@ impl AwsccProvider {
             // Collect delete markers
             for marker in response.delete_markers() {
                 if let Some(key) = marker.key() {
-                    let mut id = aws_sdk_s3::types::ObjectIdentifier::builder().key(key);
+                    let mut id = types::ObjectIdentifier::builder().key(key);
                     if let Some(vid) = marker.version_id() {
                         id = id.version_id(vid);
                     }
@@ -88,7 +88,7 @@ impl AwsccProvider {
 
             // Batch delete (max 1000 per request)
             if !objects_to_delete.is_empty() {
-                let delete = aws_sdk_s3::types::Delete::builder()
+                let delete = types::Delete::builder()
                     .set_objects(Some(objects_to_delete))
                     .quiet(true)
                     .build()

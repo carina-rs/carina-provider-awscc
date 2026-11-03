@@ -1,4 +1,4 @@
-//! Resend safety for AWS Cloud Control operations.
+//! Resend safety for the provider's AWS SDK operations.
 
 use carina_aws_types::Idempotency;
 
@@ -17,6 +17,36 @@ pub(crate) fn cloudcontrol_idempotency(operation: &str) -> Idempotency {
         "GetResource" | "GetResourceRequestStatus" | "ListResourceRequests" | "ListResources" => {
             Idempotency::ReadOnly
         }
+        _ => Idempotency::NotIdempotent,
+    }
+}
+
+/// Match the aws provider's validated policy at 156a76a, from
+/// `carina-provider-aws/src/resend_safety_generated.rs` and the decisions in
+/// `carina-codegen-aws/src/resend_safety.rs`. Cleanup lists object versions and
+/// deletes the named versions; a repeated delete leaves an absent version absent.
+pub(crate) fn s3_idempotency(operation: &str) -> Idempotency {
+    match operation {
+        "ListObjectVersions" => Idempotency::ReadOnly,
+        "DeleteObjects" => Idempotency::Idempotent,
+        _ => Idempotency::NotIdempotent,
+    }
+}
+
+/// Match the aws provider's `sts_idempotency` at 156a76a. AssumeRole and unknown
+/// operations remain non-idempotent; the guarded credentials provider uses its
+/// own conservative STS lookup.
+pub(crate) fn sts_idempotency(operation: &str) -> Idempotency {
+    match operation {
+        "GetCallerIdentity" => Idempotency::ReadOnly,
+        _ => Idempotency::NotIdempotent,
+    }
+}
+
+pub(crate) fn kms_idempotency(operation: &str) -> Idempotency {
+    match operation {
+        // DescribeKey may initialize a managed key; repeating it is safe.
+        "DescribeKey" => Idempotency::ReadOnly,
         _ => Idempotency::NotIdempotent,
     }
 }

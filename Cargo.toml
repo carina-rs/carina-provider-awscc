@@ -15,5 +15,6 @@ carina-plugin-host = { git = "https://github.com/carina-rs/carina", rev = "ae8d2
 carina-plugin-sdk = { git = "https://github.com/carina-rs/carina", rev = "ae8d2515d79ff27346f50ce7730863cdf436c1f7" }
 carina-provider-protocol = { git = "https://github.com/carina-rs/carina", rev = "ae8d2515d79ff27346f50ce7730863cdf436c1f7" }
 carina-provider-resolver = { git = "https://github.com/carina-rs/carina", rev = "ae8d2515d79ff27346f50ce7730863cdf436c1f7" }
-carina-aws-types = { git = "https://github.com/carina-rs/carina-provider-aws", rev = "42e67b0d6c1937bb5258a1c07fda45bbea5c0f24" }
-carina-docgen = { git = "https://github.com/carina-rs/carina-provider-aws", rev = "42e67b0d6c1937bb5258a1c07fda45bbea5c0f24" }
+# Disable defaults here so every inherited dependency uses explicit service features.
+carina-aws-types = { git = "https://github.com/carina-rs/carina-provider-aws", rev = "156a76a66f2c148b87c0fc2f4acd20c0811018a2", default-features = false }
+carina-docgen = { git = "https://github.com/carina-rs/carina-provider-aws", rev = "156a76a66f2c148b87c0fc2f4acd20c0811018a2" }

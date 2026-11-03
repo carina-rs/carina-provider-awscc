@@ -1,11 +1,12 @@
 //! Resolve comparison-only KMS inputs in the initialized AWSCC instance's scope.
 
 use crate::provider::{AwsccProviderConfig, account_guard};
+use crate::resend_safety::kms_idempotency;
 use crate::{AwsccProvider, BoundedSdkConfig};
 use carina_aws_types::kms_reference::{
     DescribeKeyClient, DescribeKeyFailure, describe_key_failure, resolve_reference_batch,
 };
-use carina_aws_types::{Idempotency, ResendGuard};
+use carina_aws_types::sdk::{kms, sts::StsClient};
 use carina_core::provider::BoxFuture;
 use carina_provider_protocol::types::{ReferenceError, ReferenceOutcome, ReferenceRequest};
 use std::sync::OnceLock;
@@ -46,16 +47,18 @@ impl InitializedState {
     ///
     /// Returns `Ok(())` if the account is allowed; otherwise an error
     /// message naming both the offending list and the actual account ID.
-    async fn check_account_guard(
-        sts: &aws_sdk_sts::Client,
-        cfg: &AwsccProviderConfig,
-    ) -> Result<(), String> {
-        let identity = sts.get_caller_identity().send().await.map_err(|e| {
-            format!(
-                "Failed to call sts:GetCallerIdentity to check \
+    async fn check_account_guard(sts: &StsClient, cfg: &AwsccProviderConfig) -> Result<(), String> {
+        let identity = sts
+            .inner()
+            .get_caller_identity()
+            .send()
+            .await
+            .map_err(|e| {
+                format!(
+                    "Failed to call sts:GetCallerIdentity to check \
                  allowed_account_ids / forbidden_account_ids: {e}"
-            )
-        })?;
+                )
+            })?;
         let account_id = identity.account().ok_or_else(|| {
             "sts:GetCallerIdentity returned no account ID; \
              cannot evaluate allowed_account_ids / forbidden_account_ids"
@@ -73,54 +76,43 @@ impl InitializedState {
 /// Regional clients retain the effective credentials provider, including assumed roles
 /// and refresh, as well as the provider's timeout, retry and HTTP configuration.
 pub(crate) struct KmsClient {
-    client: aws_sdk_kms::Client,
+    config: BoundedSdkConfig,
+    client: kms::KmsClient,
 }
 
 impl KmsClient {
-    #[allow(clippy::disallowed_methods)]
     fn new(initialized: &InitializedState) -> Self {
-        let client = aws_sdk_kms::Client::from_conf(
-            aws_sdk_kms::config::Builder::from(initialized.config.sdk_config())
-                .interceptor(ResendGuard::new(|operation| match operation {
-                    // DescribeKey may initialize a managed key; repeating it is safe.
-                    "DescribeKey" => Idempotency::ReadOnly,
-                    _ => Idempotency::NotIdempotent,
-                }))
-                .build(),
-        );
-        Self { client }
+        let config = initialized.config.clone();
+        let client = kms::KmsClient::new(config.sdk_config(), kms_idempotency);
+        Self { config, client }
     }
 
     pub(crate) fn instance_region(&self) -> Result<&str, &str> {
         self.client
+            .inner()
             .config()
             .region()
             .map(|region| region.as_ref())
             .ok_or("AWS region is not configured")
     }
 
-    #[allow(clippy::disallowed_methods)]
-    fn client_in_region(&self, region: &str) -> aws_sdk_kms::Client {
+    fn client_in_region(&self, region: &str) -> kms::KmsClient {
         if self
             .client
+            .inner()
             .config()
             .region()
             .is_some_and(|instance| instance.as_ref() == region)
         {
             return self.client.clone();
         }
-        aws_sdk_kms::Client::from_conf(
-            self.client
-                .config()
-                .to_builder()
-                .region(aws_config::Region::new(region.to_owned()))
-                .build(),
-        )
+        let config = self.config.in_region(region);
+        kms::KmsClient::new(config.sdk_config(), kms_idempotency)
     }
 
     #[cfg(test)]
-    pub(crate) fn config(&self, region: &str) -> aws_sdk_kms::Config {
-        self.client_in_region(region).config().clone()
+    pub(crate) fn guarded_client(&self, region: &str) -> kms::KmsClient {
+        self.client_in_region(region)
     }
 }
 
@@ -133,6 +125,7 @@ impl DescribeKeyClient for KmsClient {
         Box::pin(async move {
             let output = self
                 .client_in_region(region)
+                .inner()
                 .describe_key()
                 .key_id(raw)
                 .send()
@@ -235,8 +228,8 @@ mod tests {
         let mock = MockAws::builder()
             .with_service(IdentityAndKms(calls.clone()))
             .build();
-        let config = aws_config::SdkConfig::builder()
-            .region(aws_config::Region::new("us-east-1"))
+        let config = aws_types::SdkConfig::builder()
+            .region(aws_types::region::Region::new("us-east-1"))
             .credentials_provider(mock.credentials_provider())
             .http_client(mock.http_client())
             .build();
@@ -283,8 +276,8 @@ mod tests {
     #[tokio::test]
     async fn guarded_initialization_is_the_only_path_to_the_lazy_client() {
         let mock = MockAws::builder().build();
-        let config = aws_config::SdkConfig::builder()
-            .region(aws_config::Region::new("us-east-1"))
+        let config = aws_types::SdkConfig::builder()
+            .region(aws_types::region::Region::new("us-east-1"))
             .credentials_provider(mock.credentials_provider())
             .http_client(mock.http_client())
             .build();
@@ -303,8 +296,8 @@ mod tests {
     #[tokio::test]
     async fn instance_region_reuses_the_initialized_kms_client() {
         let mock = MockAws::builder().build();
-        let config = aws_config::SdkConfig::builder()
-            .region(aws_config::Region::new("us-east-1"))
+        let config = aws_types::SdkConfig::builder()
+            .region(aws_types::region::Region::new("us-east-1"))
             .credentials_provider(mock.credentials_provider())
             .http_client(mock.http_client())
             .build();
@@ -313,9 +306,15 @@ mod tests {
                 .await;
         let client = provider.kms_client().unwrap();
         let local = client.client_in_region("us-east-1");
-        assert!(std::ptr::eq(client.client.config(), local.config()));
+        assert!(std::ptr::eq(
+            client.client.inner().config(),
+            local.inner().config()
+        ));
         let remote = client.client_in_region("eu-west-1");
-        assert_eq!(remote.config().region().unwrap().as_ref(), "eu-west-1");
+        assert_eq!(
+            remote.inner().config().region().unwrap().as_ref(),
+            "eu-west-1"
+        );
         assert_eq!(client.instance_region().unwrap(), "us-east-1");
     }
 
@@ -341,8 +340,8 @@ mod tests {
             let mock = MockAws::builder()
                 .with_service(IdentityAndKms(calls.clone()))
                 .build();
-            let config = aws_config::SdkConfig::builder()
-                .region(aws_config::Region::new("us-east-1"))
+            let config = aws_types::SdkConfig::builder()
+                .region(aws_types::region::Region::new("us-east-1"))
                 .credentials_provider(mock.credentials_provider())
                 .http_client(mock.http_client())
                 .build();
@@ -385,7 +384,7 @@ mod tests {
         let mock = MockAws::builder()
             .with_service(IdentityAndKms(calls.clone()))
             .build();
-        let config = aws_config::SdkConfig::builder()
+        let config = aws_types::SdkConfig::builder()
             .credentials_provider(mock.credentials_provider())
             .http_client(mock.http_client())
             .build();

@@ -134,6 +134,7 @@ impl AwsccProvider {
         let account_id = self.account_id().await?;
         let partition = partition_for_region(
             self.cloudcontrol_client
+                .inner()
                 .config()
                 .region()
                 .map(|region| region.as_ref()),
