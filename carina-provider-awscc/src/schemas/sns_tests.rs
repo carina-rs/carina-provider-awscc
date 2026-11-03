@@ -295,6 +295,10 @@ fn sns_examples_acceptance_fixtures_and_enum_dsl_forms_validate() {
             include_str!("../../../examples/sns_subscription/main.crn"),
         ),
         (
+            "acceptance-tests/sns/basic.crn",
+            include_str!("../../../acceptance-tests/sns/basic.crn"),
+        ),
+        (
             "acceptance-tests/sns_subscription_policies/step1.crn",
             include_str!("../../../acceptance-tests/sns_subscription_policies/step1.crn"),
         ),

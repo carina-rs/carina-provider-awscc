@@ -26,6 +26,6 @@ let topic = awscc.sns.Topic {
 
 awscc.sns.Subscription {
   topic_arn = topic.topic_arn
-  protocol  = 'email'
+  protocol  = email
   endpoint  = 'carina-acc-test@example.com'
 }
