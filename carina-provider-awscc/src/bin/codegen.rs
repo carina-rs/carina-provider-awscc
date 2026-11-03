@@ -401,9 +401,7 @@ impl TypeOverride {
         let source = if bounds_only {
             // Bounds alone refine the array shape already chosen by normal
             // generation; they do not replace or discard any source children.
-            // Merge wrapper metadata before checking whether overrides loosen it.
-            resolved_array_shape(property, schema, &mut HashSet::new())
-                .map(|array| array_with_ref_siblings(array, property).into_property())
+            resolved_array_property(property, schema, &mut HashSet::new())
         } else {
             array_item_override_source(property, schema)
         };
@@ -9547,13 +9545,13 @@ fn resolved_array_shape<'a>(
         PropertyShape::Inline => {
             (inline_property_type(prop) == Some("array")).then_some(ResolvedArray::new(prop))
         }
-        PropertyShape::Array { resolved, .. } => Some(resolved),
+        PropertyShape::Array { resolved, .. } => Some(array_with_ref_siblings(resolved, prop)),
         PropertyShape::Direct(_) | PropertyShape::Merged(_) | PropertyShape::Unresolved => None,
     }
 }
 
-/// Preserve list metadata through aliases for both ordinary emission and item
-/// overrides. The referenced array owns explicit ordering; siblings fill gaps.
+/// Preserve list metadata through aliases and oneOf wrappers for ordinary emission
+/// and overrides. The referenced array owns explicit ordering; siblings fill gaps.
 /// Bounds and uniqueness are conjunctive across every source layer.
 fn array_with_ref_siblings<'a>(
     mut array: ResolvedArray<'a>,
@@ -14198,6 +14196,80 @@ mod tests {
             ),
             "{field}"
         );
+    }
+
+    #[test]
+    fn test_dynamodb_bounds_only_override_rejects_stricter_referenced_one_of_wrapper_bounds() {
+        for target in ["KeySchemaListForTest", "KeySchemaAliasForTest"] {
+            for (keyword, bound, diagnostic) in [
+                (
+                    "minItems",
+                    2,
+                    "Array minItems override 1 would loosen CFN bound Some(2)",
+                ),
+                (
+                    "maxItems",
+                    1,
+                    "Array maxItems override 2 would loosen CFN bound Some(1)",
+                ),
+            ] {
+                let mut schema = dynamodb_schema_for_codegen_tests(false);
+                schema.edit_json(|source| {
+                    let mut wrapper = source["properties"]["KeySchema"].clone();
+                    wrapper["oneOf"][0]["minItems"] = serde_json::json!(0);
+                    wrapper["oneOf"][0]["maxItems"] = serde_json::json!(3);
+                    wrapper[keyword] = serde_json::json!(bound);
+                    source["definitions"]["KeySchemaListForTest"] = wrapper;
+                    source["definitions"]["KeySchemaAliasForTest"] =
+                        serde_json::json!({"$ref": "#/definitions/KeySchemaListForTest"});
+                    source["properties"]["KeySchema"] =
+                        serde_json::json!({"$ref": format!("#/definitions/{target}")});
+                });
+                assert_override_generation_rejected(&schema, diagnostic, "KeySchema");
+            }
+        }
+    }
+
+    #[test]
+    fn test_dynamodb_referenced_one_of_wrapper_metadata_survives_aliases_and_emission() {
+        for target in ["KeySchemaListForTest", "KeySchemaAliasForTest"] {
+            let mut schema = dynamodb_schema_for_codegen_tests(false);
+            schema.edit_json(|source| {
+                source["definitions"]["KeySchemaListForTest"] = serde_json::json!({
+                    "minItems": 1,
+                    "maxItems": 3,
+                    "uniqueItems": true,
+                    "insertionOrder": false,
+                    "oneOf": [{
+                        "type": "array",
+                        "uniqueItems": false,
+                        "items": {"$ref": "#/definitions/KeySchema"}
+                    }, {"type": "object"}]
+                });
+                source["definitions"]["KeySchemaAliasForTest"] =
+                    serde_json::json!({"$ref": "#/definitions/KeySchemaListForTest"});
+                let property = serde_json::json!({"$ref": format!("#/definitions/{target}")});
+                source["properties"]["KeySchema"] = property.clone();
+                // Exercise ordinary emission alongside the bounds-only override.
+                source["properties"]["KeySchemaForTest"] = property;
+            });
+            let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+            for (path, max) in [("KeySchema", 2), ("KeySchemaForTest", 3)] {
+                let field = generated_dynamodb_field(&generated, path);
+                assert!(
+                    field.starts_with(
+                        "AttributeType::refined_list(AttributeType::struct_(\"KeySchema\""
+                    ),
+                    "{path}: {field}"
+                );
+                assert!(
+                    field.contains(&format!(
+                        ", false, Some((Some(1), Some({max}))), carina_core::schema::ListElements::Unique)"
+                    )),
+                    "{path}: {field}"
+                );
+            }
+        }
     }
 
     #[test]
