@@ -401,7 +401,9 @@ impl TypeOverride {
         let source = if bounds_only {
             // Bounds alone refine the array shape already chosen by normal
             // generation; they do not replace or discard any source children.
-            resolved_array_property(property, schema, &mut HashSet::new())
+            // Merge wrapper metadata before checking whether overrides loosen it.
+            resolved_array_shape(property, schema, &mut HashSet::new())
+                .map(|array| array_with_ref_siblings(array, property).into_property())
         } else {
             array_item_override_source(property, schema)
         };
@@ -14143,6 +14145,59 @@ mod tests {
             .next()
             .unwrap();
         assert!(section.contains("items: 1..=2"), "{section}");
+    }
+
+    #[test]
+    fn test_dynamodb_bounds_only_override_rejects_stricter_one_of_wrapper_bounds() {
+        for (keyword, bound, diagnostic) in [
+            (
+                "minItems",
+                2,
+                "Array minItems override 1 would loosen CFN bound Some(2)",
+            ),
+            (
+                "maxItems",
+                1,
+                "Array maxItems override 2 would loosen CFN bound Some(1)",
+            ),
+        ] {
+            let mut schema = dynamodb_schema_for_codegen_tests(false);
+            schema.edit_json(|source| {
+                let wrapper = &mut source["properties"]["KeySchema"];
+                wrapper["oneOf"][0]["minItems"] = serde_json::json!(0);
+                wrapper["oneOf"][0]["maxItems"] = serde_json::json!(3);
+                wrapper[keyword] = serde_json::json!(bound);
+            });
+            assert_override_generation_rejected(&schema, diagnostic, "KeySchema");
+        }
+    }
+
+    #[test]
+    fn test_dynamodb_bounds_only_override_preserves_one_of_wrapper_metadata() {
+        let mut schema = dynamodb_schema_for_codegen_tests(false);
+        schema.edit_json(|source| {
+            source["properties"]["KeySchema"] = serde_json::json!({
+                "uniqueItems": true,
+                "insertionOrder": false,
+                "oneOf": [{
+                    "type": "array",
+                    "uniqueItems": false,
+                    "items": {"$ref": "#/definitions/KeySchema"}
+                }, {"type": "object"}]
+            });
+        });
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        let field = generated_dynamodb_field(&generated, "KeySchema");
+        assert!(
+            field.starts_with("AttributeType::refined_list(AttributeType::struct_(\"KeySchema\""),
+            "{field}"
+        );
+        assert!(
+            field.contains(
+                ", false, Some((Some(1), Some(2))), carina_core::schema::ListElements::Unique)"
+            ),
+            "{field}"
+        );
     }
 
     #[test]
