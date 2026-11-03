@@ -259,11 +259,12 @@ enum TypeOverride {
         block_name: Option<&'static str>,
         default: Option<AttributeTypeOverrideDefault>,
     },
-    /// Add API-documented item-count bounds to an ArrayItemType, Enum, or
-    /// EnumUnordered override. The exact CFN source must be a single array;
-    /// omitted bounds retain CFN's limits and explicit bounds may only tighten.
+    /// Add API-documented item-count bounds. With no item override, retain the
+    /// existing generated item type and selected CFN array shape (including
+    /// oneOf). Item replacements still require a single, unambiguous array.
+    /// Omitted bounds retain CFN's limits; explicit bounds may only tighten.
     Array {
-        items: Box<TypeOverride>,
+        items: Option<Box<TypeOverride>>,
         min_items: Option<i64>,
         max_items: Option<i64>,
     },
@@ -290,7 +291,7 @@ enum TypeOverride {
 impl TypeOverride {
     fn with_array_bounds(self, min_items: Option<i64>, max_items: Option<i64>) -> Self {
         Self::Array {
-            items: Box::new(self),
+            items: Some(Box::new(self)),
             min_items,
             max_items,
         }
@@ -298,7 +299,9 @@ impl TypeOverride {
 
     fn item_override(&self) -> &Self {
         match self {
-            Self::Array { items, .. } => items,
+            Self::Array {
+                items: Some(items), ..
+            } => items,
             _ => self,
         }
     }
@@ -394,7 +397,21 @@ impl TypeOverride {
         path: CfnPropertyPath<'_>,
         property: &'a CfnProperty,
     ) -> Result<Cow<'a, CfnProperty>> {
-        let mut array = array_item_override_source(property, schema).with_context(|| {
+        let bounds_only = matches!(self, Self::Array { items: None, .. });
+        let source = if bounds_only {
+            // Bounds alone refine the array shape already chosen by normal
+            // generation; they do not replace or discard any source children.
+            resolved_array_property(property, schema, &mut HashSet::new())
+        } else {
+            array_item_override_source(property, schema)
+        };
+        let mut array = source.with_context(|| {
+            if bounds_only {
+                return format!(
+                    "{}.{}: Array bounds require a CFN array selected by normal generation at this exact path",
+                    schema.type_name, path
+                );
+            }
             format!(
                 "{}.{}: ArrayItemType/Array requires a single CFN array at this exact path (directly or through $ref), not a non-array or union",
                 schema.type_name, path
@@ -408,10 +425,12 @@ impl TypeOverride {
         {
             anyhow::ensure!(
                 matches!(
-                    items.as_ref(),
-                    Self::ArrayItemType { .. } | Self::Enum(_) | Self::EnumUnordered(_)
+                    items.as_deref(),
+                    None | Some(
+                        Self::ArrayItemType { .. } | Self::Enum(_) | Self::EnumUnordered(_)
+                    )
                 ),
-                "{}.{}: Array requires an ArrayItemType, Enum, or EnumUnordered item override",
+                "{}.{}: Array requires no item override, or an ArrayItemType, Enum, or EnumUnordered item override",
                 schema.type_name,
                 path
             );
@@ -3531,6 +3550,20 @@ fn markdown_type(
             );
             return MarkdownType::Linked(markdown_list_type(item, &array));
         }
+        if matches!(override_type, TypeOverride::Array { items: None, .. }) {
+            // Preserve links to the generated struct items while displaying
+            // the refined list bounds, including for selected oneOf arrays.
+            return markdown_link_type(prop_name, &array, schema, None, property_path, cfn_parent)
+                .map(MarkdownType::Linked)
+                .unwrap_or_else(|| {
+                    MarkdownType::Plain(type_display_string_at(
+                        &array,
+                        schema,
+                        property_path,
+                        cfn_property_path,
+                    ))
+                });
+        }
     }
     markdown_link_type(
         prop_name,
@@ -6131,6 +6164,8 @@ fn generate_struct_type(
                     )
                 };
                 emit_enum_property_type(schema, cfn_property_path, field_prop, &enum_type, field_force_unordered)
+            } else if matches!(nested_override, Some(TypeOverride::Array { items: None, .. })) {
+                field_type
             // Other nested override variants are caught by the trailing guard
             // so new variants cannot silently do nothing for struct fields.
             } else if let Some(other) = nested_override {
@@ -7956,6 +7991,238 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             },
         );
 
+        // DynamoDB API constraints missing from the cached CFN schema. Reused
+        // definitions apply to every table/index occurrence of these fields.
+        // TableName: "Minimum length of 3. Maximum length of 255."
+        // "Pattern: [a-zA-Z0-9_.-]+" describes a name, rather than an ARN.
+        // https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_TableCreationParameters.html
+        m.insert(
+            ("AWS::DynamoDB::Table", "TableName"),
+            TypeOverride::AttributeType {
+                expression: r#"AttributeType::refined_string(None, Some("^[a-zA-Z0-9_.-]+\\z".to_string()), Some((Some(3), Some(255))), None)"#,
+                display: const { OverrideTypeDisplay::new("String(pattern, len: 3..=255)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // AttributeName: "Minimum length of 1. Maximum length of 255."
+        // No character rule is documented; names such as namespace#name are valid.
+        // https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_AttributeDefinition.html
+        m.insert(
+            ("AWS::DynamoDB::Table", "AttributeDefinition.AttributeName"),
+            TypeOverride::AttributeType {
+                expression: "AttributeType::refined_string(None, None, Some((Some(1), Some(255))), None)",
+                display: const { OverrideTypeDisplay::new("String (length: 1..=255)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // AttributeName: "Minimum length of 1. Maximum length of 255."
+        // KeySchema is reused by the table, global indexes, and local indexes.
+        // https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_KeySchemaElement.html
+        m.insert(
+            ("AWS::DynamoDB::Table", "KeySchema.AttributeName"),
+            TypeOverride::AttributeType {
+                expression: "AttributeType::refined_string(None, None, Some((Some(1), Some(255))), None)",
+                display: const { OverrideTypeDisplay::new("String (length: 1..=255)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // AttributeName: "Minimum length of 1. Maximum length of 255."
+        // https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_TimeToLiveSpecification.html
+        m.insert(
+            ("AWS::DynamoDB::Table", "TimeToLiveSpecification.AttributeName"),
+            TypeOverride::AttributeType {
+                expression: "AttributeType::refined_string(None, None, Some((Some(1), Some(255))), None)",
+                display: const { OverrideTypeDisplay::new("String (length: 1..=255)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // IndexName: "Minimum length of 3. Maximum length of 255."
+        // "Pattern: [a-zA-Z0-9_.-]+"
+        // https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_GlobalSecondaryIndex.html
+        m.insert(
+            ("AWS::DynamoDB::Table", "GlobalSecondaryIndex.IndexName"),
+            TypeOverride::AttributeType {
+                expression: r#"AttributeType::refined_string(None, Some("^[a-zA-Z0-9_.-]+\\z".to_string()), Some((Some(3), Some(255))), None)"#,
+                display: const { OverrideTypeDisplay::new("String(pattern, len: 3..=255)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // IndexName: "Minimum length of 3. Maximum length of 255."
+        // "Pattern: [a-zA-Z0-9_.-]+"
+        // https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_LocalSecondaryIndex.html
+        m.insert(
+            ("AWS::DynamoDB::Table", "LocalSecondaryIndex.IndexName"),
+            TypeOverride::AttributeType {
+                expression: r#"AttributeType::refined_string(None, Some("^[a-zA-Z0-9_.-]+\\z".to_string()), Some((Some(3), Some(255))), None)"#,
+                display: const { OverrideTypeDisplay::new("String(pattern, len: 3..=255)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // InputCompressionType: "Valid Values: GZIP | ZSTD | NONE"
+        // https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_ImportTable.html
+        m.insert(
+            (
+                "AWS::DynamoDB::Table",
+                "ImportSourceSpecification.InputCompressionType",
+            ),
+            TypeOverride::Enum(vec!["GZIP", "ZSTD", "NONE"]),
+        );
+        // SSEType: "Valid Values: AES256 | KMS". The prose says "The only
+        // supported value is:" KMS; retain both explicitly listed valid values.
+        // https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_SSESpecification.html
+        m.insert(
+            ("AWS::DynamoDB::Table", "SSESpecification.SSEType"),
+            TypeOverride::Enum(vec!["AES256", "KMS"]),
+        );
+        // Delimiter: "Fixed length of 1." "Pattern: [,;:|\t ]"
+        // https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_CsvOptions.html
+        m.insert(
+            ("AWS::DynamoDB::Table", "Csv.Delimiter"),
+            TypeOverride::AttributeType {
+                expression: r#"AttributeType::refined_string(None, Some("^[,;:|\\t ]\\z".to_string()), Some((Some(1), Some(1))), None)"#,
+                display: const { OverrideTypeDisplay::new("String(pattern, len: 1)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // HeaderList: "Minimum number of 1 item. Maximum number of 255 items."
+        // Each header: "Minimum length of 1. Maximum length of 65536."
+        // "Pattern: [\x20-\x21\x23-\x2B\x2D-\x7E]*"
+        // https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_CsvOptions.html
+        m.insert(
+            ("AWS::DynamoDB::Table", "Csv.HeaderList"),
+            TypeOverride::ArrayItemType {
+                expression: r#"AttributeType::refined_string(None, Some("^[\\x20-\\x21\\x23-\\x2B\\x2D-\\x7E]*\\z".to_string()), Some((Some(1), Some(65536))), None)"#,
+                display: const { OverrideTypeDisplay::new("List<String(pattern, len: 1..=65536)>") },
+                block_name: None,
+                default: None,
+            }
+            .with_array_bounds(Some(1), Some(255)),
+        );
+        // S3Bucket: "Maximum length of 255."
+        // "Pattern: ^[a-z0-9A-Z]+[\.\-\w]*[a-z0-9A-Z]+$"
+        // Preserve the import API's legacy-compatible bucket grammar.
+        // https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_S3BucketSource.html
+        m.insert(
+            ("AWS::DynamoDB::Table", "S3BucketSource.S3Bucket"),
+            TypeOverride::AttributeType {
+                expression: r#"AttributeType::refined_string(None, Some("^[a-z0-9A-Z]+[\\.\\-\\w]*[a-z0-9A-Z]+\\z".to_string()), Some((None, Some(255))), None)"#,
+                display: const { OverrideTypeDisplay::new("String(pattern, len: ..=255)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // S3BucketOwner: "Pattern: [0-9]{12}"; reuse the shared AWS account ID.
+        // https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_S3BucketSource.html
+        m.insert(
+            ("AWS::DynamoDB::Table", "S3BucketSource.S3BucketOwner"),
+            TypeOverride::StringType("carina_aws_types::aws_account_id()"),
+        );
+        // S3KeyPrefix: "Maximum length of 1024." Empty prefixes are allowed.
+        // https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_S3BucketSource.html
+        m.insert(
+            ("AWS::DynamoDB::Table", "S3BucketSource.S3KeyPrefix"),
+            TypeOverride::AttributeType {
+                expression: "AttributeType::refined_string(None, None, Some((Some(0), Some(1024))), None)",
+                display: const { OverrideTypeDisplay::new("String (length: 0..=1024)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // NonKeyAttributes: "Minimum number of 1 item. Maximum number of 20 items."
+        // Each name: "Minimum length of 1. Maximum length of 255."
+        // The aggregate 100-attribute limit across indexes is a separate rule.
+        // https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Projection.html
+        m.insert(
+            ("AWS::DynamoDB::Table", "Projection.NonKeyAttributes"),
+            TypeOverride::ArrayItemType {
+                expression: "AttributeType::refined_string(None, None, Some((Some(1), Some(255))), None)",
+                display: const { OverrideTypeDisplay::new("List<String (length: 1..=255)>") },
+                block_name: None,
+                default: None,
+            }
+            .with_array_bounds(Some(1), Some(20)),
+        );
+        // ReadCapacityUnits: "Minimum value of 1."
+        // Cloud Control omits ProvisionedThroughput on on-demand table reads
+        // (carina-test-001, 2026-11-03), rather than returning zero capacities.
+        // https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_ProvisionedThroughput.html
+        m.insert(
+            (
+                "AWS::DynamoDB::Table",
+                "ProvisionedThroughput.ReadCapacityUnits",
+            ),
+            TypeOverride::AttributeType {
+                expression: "AttributeType::refined_int(None, Some((Some(1), None)))",
+                display: const { OverrideTypeDisplay::new("Int(1..)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // WriteCapacityUnits: "Minimum value of 1."
+        // https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_ProvisionedThroughput.html
+        m.insert(
+            (
+                "AWS::DynamoDB::Table",
+                "ProvisionedThroughput.WriteCapacityUnits",
+            ),
+            TypeOverride::AttributeType {
+                expression: "AttributeType::refined_int(None, Some((Some(1), None)))",
+                display: const { OverrideTypeDisplay::new("Int(1..)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // Table KeySchema: "exactly one element" for a simple primary key;
+        // "exactly two elements" for a composite primary key.
+        // https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_CreateTable.html
+        m.insert(
+            ("AWS::DynamoDB::Table", "KeySchema"),
+            TypeOverride::Array {
+                items: None,
+                min_items: Some(1),
+                max_items: Some(2),
+            },
+        );
+        // Global index KeySchema: "Minimum number of 1 item."
+        // Do not infer an upper bound from the per-key-kind prose.
+        // https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_GlobalSecondaryIndex.html
+        m.insert(
+            ("AWS::DynamoDB::Table", "GlobalSecondaryIndex.KeySchema"),
+            TypeOverride::Array {
+                items: None,
+                min_items: Some(1),
+                max_items: None,
+            },
+        );
+        // Local index KeySchema: "Minimum number of 1 item."
+        // https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_LocalSecondaryIndex.html
+        m.insert(
+            ("AWS::DynamoDB::Table", "LocalSecondaryIndex.KeySchema"),
+            TypeOverride::Array {
+                items: None,
+                min_items: Some(1),
+                max_items: None,
+            },
+        );
+        // LocalSecondaryIndexes: "One or more local secondary indexes (the maximum is 5)".
+        // This is a hard limit; the global-index maximum is a raisable quota.
+        // https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_CreateTable.html
+        m.insert(
+            ("AWS::DynamoDB::Table", "LocalSecondaryIndexes"),
+            TypeOverride::Array {
+                items: None,
+                min_items: Some(1),
+                max_items: Some(5),
+            },
+        );
+
         // Valid Values: containerInsights. Enum emission derives container_insights.
         // https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_ClusterSetting.html
         m.insert(
@@ -9357,13 +9624,13 @@ fn resolved_array_shape<'a>(
         PropertyShape::Inline => {
             (inline_property_type(prop) == Some("array")).then_some(ResolvedArray::new(prop))
         }
-        PropertyShape::Array { resolved, .. } => Some(resolved),
+        PropertyShape::Array { resolved, .. } => Some(array_with_ref_siblings(resolved, prop)),
         PropertyShape::Direct(_) | PropertyShape::Merged(_) | PropertyShape::Unresolved => None,
     }
 }
 
-/// Preserve list metadata through aliases for both ordinary emission and item
-/// overrides. The referenced array owns explicit ordering; siblings fill gaps.
+/// Preserve list metadata through aliases and oneOf wrappers for ordinary emission
+/// and overrides. The referenced array owns explicit ordering; siblings fill gaps.
 /// Bounds and uniqueness are conjunctive across every source layer.
 fn array_with_ref_siblings<'a>(
     mut array: ResolvedArray<'a>,
@@ -9830,14 +10097,23 @@ fn cfn_type_to_carina_type_with_enum_resolved(
                     |reference| reference.emit(&schema.type_name, prop_name),
                 )
             };
-            (
-                array_attribute_type(
+            let force_unordered = override_forces_unordered(&schema.type_name, cfn_property_path);
+            let array_type = if ref_context == RefContext::Normal
+                && let Some(override_type @ TypeOverride::Array { items: None, .. }) =
+                    resource_type_override(&schema.type_name, cfn_property_path)
+            {
+                emit_array_override(
+                    schema,
+                    cfn_property_path,
+                    cfn_override_property(schema, cfn_property_path).unwrap_or(prop),
+                    override_type,
                     &element_type,
-                    prop,
-                    override_forces_unordered(&schema.type_name, cfn_property_path),
-                ),
-                item_enum,
-            )
+                    force_unordered,
+                )
+            } else {
+                array_attribute_type(&element_type, prop, force_unordered)
+            };
+            (array_type, item_enum)
         }
         Some("object") => {
             // Check known string type overrides first, mirroring the string branch
@@ -13615,6 +13891,537 @@ mod tests {
         assert!(markdown.contains("## Not yet supported"));
         assert!(markdown.contains("`subscription`"));
         assert!(markdown.contains("use awscc.sns.Subscription instead"));
+    }
+
+    const DYNAMODB_OVERRIDE_KEYS: &[&str] = &[
+        "TableName",
+        "AttributeDefinition.AttributeName",
+        "KeySchema.AttributeName",
+        "TimeToLiveSpecification.AttributeName",
+        "GlobalSecondaryIndex.IndexName",
+        "LocalSecondaryIndex.IndexName",
+        "ImportSourceSpecification.InputCompressionType",
+        "SSESpecification.SSEType",
+        "Csv.Delimiter",
+        "Csv.HeaderList",
+        "S3BucketSource.S3Bucket",
+        "S3BucketSource.S3BucketOwner",
+        "S3BucketSource.S3KeyPrefix",
+        "Projection.NonKeyAttributes",
+        "ProvisionedThroughput.ReadCapacityUnits",
+        "ProvisionedThroughput.WriteCapacityUnits",
+        "KeySchema",
+        "GlobalSecondaryIndex.KeySchema",
+        "LocalSecondaryIndex.KeySchema",
+        "LocalSecondaryIndexes",
+    ];
+
+    fn dynamodb_schema_for_codegen_tests(with_list_only_defs: bool) -> ParsedCfnSchema {
+        let mut schema = cfn_schema_for_codegen_tests("AWS::DynamoDB::Table");
+        if with_list_only_defs {
+            // These definitions are normally emitted only as inline list items.
+            // Add direct references so every override is also tested in a def.
+            schema.edit_json(|source| {
+                for definition in [
+                    "AttributeDefinition",
+                    "KeySchema",
+                    "GlobalSecondaryIndex",
+                    "LocalSecondaryIndex",
+                ] {
+                    source["properties"][format!("{definition}ForTest")] =
+                        serde_json::json!({"$ref": format!("#/definitions/{definition}")});
+                }
+            });
+        }
+        schema
+    }
+
+    fn generated_dynamodb_field<'a>(generated: &'a str, path: &str) -> &'a str {
+        if path.contains('.') {
+            return generated_budgets_field(generated, path);
+        }
+        for constructor in ["required", "optional", "provider_populated"] {
+            if let Some((_, field)) = generated.split_once(&format!(
+                "AttributeSchema::{constructor}({}, ",
+                rust_lit(&path.to_snake_case())
+            )) {
+                return field.split_once(")\n").unwrap().0;
+            }
+        }
+        panic!("missing DynamoDB attribute {path}");
+    }
+
+    #[test]
+    fn test_dynamodb_overrides_match_exact_planned_raw_cfn_keys() {
+        let schema = dynamodb_schema_for_codegen_tests(false);
+        let actual = resource_type_overrides()
+            .for_resource(&schema.type_name)
+            .map(|(path, _)| path.to_string())
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            actual,
+            DYNAMODB_OVERRIDE_KEYS
+                .iter()
+                .map(|key| key.to_string())
+                .collect::<BTreeSet<_>>(),
+            "each planned override must target its raw CFN definition name"
+        );
+        for key in DYNAMODB_OVERRIDE_KEYS {
+            let path = key.split_once('.').map_or_else(
+                || CfnPropertyPath::new(None, key),
+                |(parent, property)| CfnPropertyPath::new(Some(parent), property),
+            );
+            let source = cfn_override_property(&schema, path)
+                .unwrap_or_else(|| panic!("missing cached CFN path {key}"));
+            resource_type_overrides()
+                .get_path(&schema.type_name, path)
+                .unwrap()
+                .validate_source_shape(&schema, path, source)
+                .unwrap();
+        }
+    }
+
+    #[test]
+    fn test_dynamodb_scalar_refinements_emit_at_every_inline_and_definition_site() {
+        for with_list_only_defs in [false, true] {
+            let schema = dynamodb_schema_for_codegen_tests(with_list_only_defs);
+            let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+            let (inline, definitions) = generated.split_once("fn build_schema_def_0()").unwrap();
+            for (path, pattern, min, max) in [
+                ("TableName", Some(r"^[a-zA-Z0-9_.-]+\z"), Some(3), 255),
+                ("AttributeDefinition.AttributeName", None, Some(1), 255),
+                ("KeySchema.AttributeName", None, Some(1), 255),
+                ("TimeToLiveSpecification.AttributeName", None, Some(1), 255),
+                (
+                    "GlobalSecondaryIndex.IndexName",
+                    Some(r"^[a-zA-Z0-9_.-]+\z"),
+                    Some(3),
+                    255,
+                ),
+                (
+                    "LocalSecondaryIndex.IndexName",
+                    Some(r"^[a-zA-Z0-9_.-]+\z"),
+                    Some(3),
+                    255,
+                ),
+                ("Csv.Delimiter", Some(r"^[,;:|\t ]\z"), Some(1), 1),
+                (
+                    "S3BucketSource.S3Bucket",
+                    Some(r"^[a-z0-9A-Z]+[\.\-\w]*[a-z0-9A-Z]+\z"),
+                    None,
+                    255,
+                ),
+                ("S3BucketSource.S3KeyPrefix", None, Some(0), 1024),
+            ] {
+                let expected = refined_string_type(
+                    "None",
+                    &emit_pattern_option(pattern),
+                    &format!("Some(({min:?}, Some({max})))"),
+                    "None",
+                );
+                if let Some((parent, _)) = path.split_once('.') {
+                    assert_all_generated_struct_fields(inline, path, &expected);
+                    if with_list_only_defs
+                        || !matches!(
+                            parent,
+                            "AttributeDefinition"
+                                | "KeySchema"
+                                | "GlobalSecondaryIndex"
+                                | "LocalSecondaryIndex"
+                        )
+                    {
+                        assert_all_generated_struct_fields(definitions, path, &expected);
+                    }
+                } else {
+                    assert!(
+                        generated_dynamodb_field(inline, path).starts_with(&expected),
+                        "{path}"
+                    );
+                }
+            }
+            for path in [
+                "ProvisionedThroughput.ReadCapacityUnits",
+                "ProvisionedThroughput.WriteCapacityUnits",
+            ] {
+                for code in [inline, definitions] {
+                    assert_all_generated_struct_fields(
+                        code,
+                        path,
+                        "AttributeType::refined_int(None, Some((Some(1), None)))",
+                    );
+                }
+            }
+            for code in [inline, definitions] {
+                assert_all_generated_struct_fields(
+                    code,
+                    "S3BucketSource.S3BucketOwner",
+                    "carina_aws_types::aws_account_id()",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_dynamodb_enums_emit_exact_wire_values_and_dsl_spellings_at_every_site() {
+        let schema = dynamodb_schema_for_codegen_tests(true);
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        let (inline, definitions) = generated.split_once("fn build_schema_def_0()").unwrap();
+        for (path, values) in [
+            (
+                "SSESpecification.SSEType",
+                &[("AES256", "aes256"), ("KMS", "kms")][..],
+            ),
+            (
+                "ImportSourceSpecification.InputCompressionType",
+                &[("GZIP", "gzip"), ("ZSTD", "zstd"), ("NONE", "none")][..],
+            ),
+        ] {
+            let (definition, _) = path.split_once('.').unwrap();
+            let marker = format!("AttributeType::struct_(\"{definition}\".to_string(), vec![");
+            for code in [inline, definitions] {
+                assert_all_generated_struct_fields(code, path, "AttributeType::enum_(");
+                for (index, _) in code.match_indices(&marker) {
+                    assert_budgets_enum_values(
+                        generated_dynamodb_field(&code[index..], path),
+                        path,
+                        values,
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_dynamodb_array_bounds_preserve_struct_items_order_uniqueness_and_doc_links() {
+        let schema = dynamodb_schema_for_codegen_tests(true);
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        let (inline, definitions) = generated.split_once("fn build_schema_def_0()").unwrap();
+        let compact = generated.split_whitespace().collect::<String>();
+        for (path, item, max, elements) in [
+            (
+                "Csv.HeaderList",
+                refined_string_type(
+                    "None",
+                    &emit_pattern_option(Some(r"^[\x20-\x21\x23-\x2B\x2D-\x7E]*\z")),
+                    &emit_length_option(Some(1), Some(65536)),
+                    "None",
+                ),
+                255,
+                "Unique",
+            ),
+            (
+                "Projection.NonKeyAttributes",
+                "AttributeType::refined_string(None, None, Some((Some(1), Some(255))), None)"
+                    .to_string(),
+                20,
+                "AllowDuplicates",
+            ),
+        ] {
+            let expected = format!(
+                "AttributeType::refined_list({item}, true, Some((Some(1), Some({max}))), carina_core::schema::ListElements::{elements})"
+            );
+            for code in [inline, definitions] {
+                assert_all_generated_struct_fields(code, path, &expected);
+            }
+        }
+        for (path, item, max, block) in [
+            ("KeySchema", "KeySchema", Some(2), "key_schema"),
+            (
+                "GlobalSecondaryIndex.KeySchema",
+                "KeySchema",
+                None,
+                "key_schema",
+            ),
+            (
+                "LocalSecondaryIndex.KeySchema",
+                "KeySchema",
+                None,
+                "key_schema",
+            ),
+            (
+                "LocalSecondaryIndexes",
+                "LocalSecondaryIndex",
+                Some(5),
+                "local_secondary_index",
+            ),
+        ] {
+            let prefix = format!(
+                "AttributeType::refined_list(AttributeType::struct_(\"{item}\".to_string(), vec!["
+            );
+            let max_code = max.map_or_else(|| "None".to_string(), |max| format!("Some({max})"));
+            let elements = if path == "LocalSecondaryIndexes" {
+                "AllowDuplicates"
+            } else {
+                "Unique"
+            };
+            let suffix = format!(
+                ", true, Some((Some(1), {max_code})), carina_core::schema::ListElements::{elements})"
+            );
+            let code_sections = if path.contains('.') {
+                vec![inline, definitions]
+            } else {
+                vec![inline]
+            };
+            for code in code_sections {
+                let fields = if let Some((definition, _)) = path.split_once('.') {
+                    let marker =
+                        format!("AttributeType::struct_(\"{definition}\".to_string(), vec![");
+                    assert_all_generated_struct_fields(code, path, &prefix);
+                    code.match_indices(&marker)
+                        .map(|(index, _)| generated_dynamodb_field(&code[index..], path))
+                        .collect::<Vec<_>>()
+                } else {
+                    vec![generated_dynamodb_field(code, path)]
+                };
+                for field in fields {
+                    assert!(
+                        field.starts_with(&prefix) && field.contains(&suffix),
+                        "{path}: {field}"
+                    );
+                }
+            }
+            let property = path.split_once('.').map_or(path, |(_, property)| property);
+            assert!(
+                compact.contains(&format!(
+                    ".with_provider_name(\"{property}\").with_block_name(\"{block}\")"
+                )),
+                "{path}: block syntax must survive"
+            );
+        }
+        for (path, item, bound) in [
+            ("key_schema", "KeySchema", "1..=2"),
+            ("local_secondary_indexes", "LocalSecondaryIndex", "1..=5"),
+        ] {
+            let heading = format!("### `{path}`");
+            let section = markdown
+                .split_once(&heading)
+                .unwrap()
+                .1
+                .split("\n### ")
+                .next()
+                .unwrap();
+            assert!(
+                section.contains(&format!("[Struct({item})]"))
+                    && section.contains(&format!("items: {bound}")),
+                "{section}"
+            );
+        }
+        for (path, bound) in [
+            ("header_list", "1..=255"),
+            ("non_key_attributes", "1..=20"),
+            ("key_schema", "1.."),
+        ] {
+            let marker = format!("| `{path}` |");
+            let rows = markdown
+                .lines()
+                .filter(|line| line.starts_with(&marker))
+                .collect::<Vec<_>>();
+            assert!(!rows.is_empty(), "missing docs for {path}");
+            assert!(
+                rows.iter()
+                    .all(|row| row.contains(&format!("items: {bound}"))),
+                "{rows:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_dynamodb_bounds_only_override_preserves_selected_one_of_and_alias_metadata() {
+        let mut schema = dynamodb_schema_for_codegen_tests(false);
+        schema.edit_json(|source| {
+            source["definitions"]["KeySchemaArrayForTest"] =
+                source["properties"]["KeySchema"].clone();
+            source["properties"]["KeySchema"] = serde_json::json!({
+                "$ref": "#/definitions/KeySchemaArrayForTest",
+                "minItems": 1,
+                "maxItems": 3,
+                "insertionOrder": false
+            });
+        });
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        let field = generated_dynamodb_field(&generated, "KeySchema");
+        assert!(
+            field.starts_with("AttributeType::refined_list(AttributeType::struct_(\"KeySchema\""),
+            "{field}"
+        );
+        assert!(
+            field.contains(
+                ", false, Some((Some(1), Some(2))), carina_core::schema::ListElements::Unique)"
+            ),
+            "{field}"
+        );
+        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        let section = markdown
+            .split_once("### `key_schema`")
+            .unwrap()
+            .1
+            .split("\n### ")
+            .next()
+            .unwrap();
+        assert!(section.contains("items: 1..=2"), "{section}");
+    }
+
+    #[test]
+    fn test_dynamodb_bounds_only_override_rejects_stricter_one_of_wrapper_bounds() {
+        for (keyword, bound, diagnostic) in [
+            (
+                "minItems",
+                2,
+                "Array minItems override 1 would loosen CFN bound Some(2)",
+            ),
+            (
+                "maxItems",
+                1,
+                "Array maxItems override 2 would loosen CFN bound Some(1)",
+            ),
+        ] {
+            let mut schema = dynamodb_schema_for_codegen_tests(false);
+            schema.edit_json(|source| {
+                let wrapper = &mut source["properties"]["KeySchema"];
+                wrapper["oneOf"][0]["minItems"] = serde_json::json!(0);
+                wrapper["oneOf"][0]["maxItems"] = serde_json::json!(3);
+                wrapper[keyword] = serde_json::json!(bound);
+            });
+            assert_override_generation_rejected(&schema, diagnostic, "KeySchema");
+        }
+    }
+
+    #[test]
+    fn test_dynamodb_bounds_only_override_preserves_one_of_wrapper_metadata() {
+        let mut schema = dynamodb_schema_for_codegen_tests(false);
+        schema.edit_json(|source| {
+            source["properties"]["KeySchema"] = serde_json::json!({
+                "uniqueItems": true,
+                "insertionOrder": false,
+                "oneOf": [{
+                    "type": "array",
+                    "uniqueItems": false,
+                    "items": {"$ref": "#/definitions/KeySchema"}
+                }, {"type": "object"}]
+            });
+        });
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        let field = generated_dynamodb_field(&generated, "KeySchema");
+        assert!(
+            field.starts_with("AttributeType::refined_list(AttributeType::struct_(\"KeySchema\""),
+            "{field}"
+        );
+        assert!(
+            field.contains(
+                ", false, Some((Some(1), Some(2))), carina_core::schema::ListElements::Unique)"
+            ),
+            "{field}"
+        );
+    }
+
+    #[test]
+    fn test_dynamodb_bounds_only_override_rejects_stricter_referenced_one_of_wrapper_bounds() {
+        for target in ["KeySchemaListForTest", "KeySchemaAliasForTest"] {
+            for (keyword, bound, diagnostic) in [
+                (
+                    "minItems",
+                    2,
+                    "Array minItems override 1 would loosen CFN bound Some(2)",
+                ),
+                (
+                    "maxItems",
+                    1,
+                    "Array maxItems override 2 would loosen CFN bound Some(1)",
+                ),
+            ] {
+                let mut schema = dynamodb_schema_for_codegen_tests(false);
+                schema.edit_json(|source| {
+                    let mut wrapper = source["properties"]["KeySchema"].clone();
+                    wrapper["oneOf"][0]["minItems"] = serde_json::json!(0);
+                    wrapper["oneOf"][0]["maxItems"] = serde_json::json!(3);
+                    wrapper[keyword] = serde_json::json!(bound);
+                    source["definitions"]["KeySchemaListForTest"] = wrapper;
+                    source["definitions"]["KeySchemaAliasForTest"] =
+                        serde_json::json!({"$ref": "#/definitions/KeySchemaListForTest"});
+                    source["properties"]["KeySchema"] =
+                        serde_json::json!({"$ref": format!("#/definitions/{target}")});
+                });
+                assert_override_generation_rejected(&schema, diagnostic, "KeySchema");
+            }
+        }
+    }
+
+    #[test]
+    fn test_dynamodb_referenced_one_of_wrapper_metadata_survives_aliases_and_emission() {
+        for target in ["KeySchemaListForTest", "KeySchemaAliasForTest"] {
+            let mut schema = dynamodb_schema_for_codegen_tests(false);
+            schema.edit_json(|source| {
+                source["definitions"]["KeySchemaListForTest"] = serde_json::json!({
+                    "minItems": 1,
+                    "maxItems": 3,
+                    "uniqueItems": true,
+                    "insertionOrder": false,
+                    "oneOf": [{
+                        "type": "array",
+                        "uniqueItems": false,
+                        "items": {"$ref": "#/definitions/KeySchema"}
+                    }, {"type": "object"}]
+                });
+                source["definitions"]["KeySchemaAliasForTest"] =
+                    serde_json::json!({"$ref": "#/definitions/KeySchemaListForTest"});
+                let property = serde_json::json!({"$ref": format!("#/definitions/{target}")});
+                source["properties"]["KeySchema"] = property.clone();
+                // Exercise ordinary emission alongside the bounds-only override.
+                source["properties"]["KeySchemaForTest"] = property;
+            });
+            let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+            for (path, max) in [("KeySchema", 2), ("KeySchemaForTest", 3)] {
+                let field = generated_dynamodb_field(&generated, path);
+                assert!(
+                    field.starts_with(
+                        "AttributeType::refined_list(AttributeType::struct_(\"KeySchema\""
+                    ),
+                    "{path}: {field}"
+                );
+                assert!(
+                    field.contains(&format!(
+                        ", false, Some((Some(1), Some({max}))), carina_core::schema::ListElements::Unique)"
+                    )),
+                    "{path}: {field}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_dynamodb_bounds_only_overrides_reject_invalid_and_unconsumed_sources() {
+        for invalid in ["non_array", "missing", "deprecated", "unreachable"] {
+            let mut schema = dynamodb_schema_for_codegen_tests(false);
+            schema.edit_json(|source| match invalid {
+                "non_array" => {
+                    source["properties"]["KeySchema"] = serde_json::json!({"type": "string"});
+                }
+                "missing" => {
+                    source["properties"]
+                        .as_object_mut()
+                        .unwrap()
+                        .remove("KeySchema");
+                }
+                "deprecated" => {
+                    source["properties"]["KeySchema"]["description"] =
+                        serde_json::json!("(Deprecated.) Not emitted.");
+                }
+                "unreachable" => {
+                    source["properties"]
+                        .as_object_mut()
+                        .unwrap()
+                        .remove("GlobalSecondaryIndexes");
+                }
+                _ => unreachable!(),
+            });
+            let path = if invalid == "unreachable" {
+                "GlobalSecondaryIndex.KeySchema"
+            } else {
+                "KeySchema"
+            };
+            assert_override_generation_rejected(&schema, "Array", path);
+        }
     }
 
     const SNS_SUBSCRIPTION_PROTOCOLS: &[(&str, &str)] = &[
@@ -19798,7 +20605,8 @@ mod tests {
             cfn_type_to_carina_type_with_enum(&prop, "KeySchema", &schema, "", &BTreeMap::new());
 
         assert!(enum_info.is_none());
-        assert!(carina_type.contains("AttributeType::list("));
+        assert!(carina_type.starts_with("AttributeType::refined_list("));
+        assert!(carina_type.contains("Some((Some(1), Some(2)))"));
         assert!(carina_type.contains(r#"AttributeType::struct_("KeySchema""#));
         assert!(carina_type.contains("attribute_name"));
         assert!(carina_type.contains("key_type"));
@@ -23180,9 +23988,10 @@ mod tests {
         )
         .unwrap();
         for items in [
-            expression_override.clone(),
-            TypeOverride::Enum(vec!["A", "B"]),
-            TypeOverride::EnumUnordered(vec!["A", "B"]),
+            Some(expression_override.clone()),
+            Some(TypeOverride::Enum(vec!["A", "B"])),
+            Some(TypeOverride::EnumUnordered(vec!["A", "B"])),
+            None,
         ] {
             for (min, max, diagnostic) in [
                 (Some(1), None, "loosen CFN bound"),
@@ -23193,7 +24002,11 @@ mod tests {
                 (Some(-1), None, "nonnegative"),
                 (None, Some(-1), "nonnegative"),
             ] {
-                let override_type = items.clone().with_array_bounds(min, max);
+                let override_type = TypeOverride::Array {
+                    items: items.clone().map(Box::new),
+                    min_items: min,
+                    max_items: max,
+                };
                 let error = override_type
                     .validate_source_shape(&schema, path, property)
                     .unwrap_err()
@@ -23210,7 +24023,11 @@ mod tests {
                 (None, Some(4), 2, 4),
                 (Some(3), Some(3), 3, 3),
             ] {
-                let override_type = items.clone().with_array_bounds(min, max);
+                let override_type = TypeOverride::Array {
+                    items: items.clone().map(Box::new),
+                    min_items: min,
+                    max_items: max,
+                };
                 override_type
                     .validate_source_shape(&schema, path, property)
                     .unwrap();
