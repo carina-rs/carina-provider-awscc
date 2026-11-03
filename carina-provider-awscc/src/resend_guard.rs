@@ -176,7 +176,7 @@ async fn permanent_create_rejection_is_rejected_and_fails_not_issued_create() {
         panic!("a permanent rejection must fail instead of becoming unconfirmed");
     };
     assert_eq!(
-        error.into_error().detail().code.as_deref(),
+        error.into_error().detail().code(),
         Some("ValidationException")
     );
     assert_eq!(provider_connector.requests(), 1);

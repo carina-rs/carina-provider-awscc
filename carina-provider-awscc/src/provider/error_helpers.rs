@@ -261,10 +261,7 @@ mod tests {
             Some("cloudcontrol.CreateResource")
         );
         assert_eq!(error.detail().status, Some(500));
-        assert_eq!(
-            error.detail().code.as_deref(),
-            Some("GeneralServiceException")
-        );
+        assert_eq!(error.detail().code(), Some("GeneralServiceException"));
         assert_eq!(
             error.detail().request_id.as_deref(),
             Some("test-request-id")

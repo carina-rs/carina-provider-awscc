@@ -443,18 +443,18 @@ enum TestCreateStep {
 
 #[derive(Debug)]
 enum TestCreateVerdict {
-    Untracked(Box<ProviderError>),
+    NotCreated(Box<ProviderError>),
     InFlight {
         token: CcCreateToken,
         identifier: Option<AppliedIdentifier>,
         error: Box<ProviderError>,
     },
-    Created {
+    IdentifierReported {
         identifier: AppliedIdentifier,
         observation: Box<Observation>,
         error: Box<ProviderError>,
     },
-    Discarded(Box<ProviderError>),
+    NoResource(Box<ProviderError>),
 }
 
 struct TestCreateAttempt;
@@ -468,8 +468,8 @@ impl CcCreateAttempt for TestCreateAttempt {
     type Verdict = TestCreateVerdict;
     type Issued = TestIssuedCreate;
 
-    fn untracked(self, failure: NotAppliedCreate) -> Self::Verdict {
-        TestCreateVerdict::Untracked(Box::new(failure.into_error()))
+    fn not_created(self, failure: NotAppliedCreate) -> Self::Verdict {
+        TestCreateVerdict::NotCreated(Box::new(failure.into_error()))
     }
 
     fn preserve(self, token: CcCreateOperation, error: ProviderError) -> Self::Verdict {
@@ -504,8 +504,8 @@ impl CcPollAttempt for TestCreateAttempt {
     type Verdict = TestCreateVerdict;
     type Issued = TestIssuedCreate;
 
-    fn untracked(self, failure: NotAppliedCreate) -> Self::Verdict {
-        TestCreateVerdict::Untracked(Box::new(failure.into_error()))
+    fn not_created(self, failure: NotAppliedCreate) -> Self::Verdict {
+        TestCreateVerdict::NotCreated(Box::new(failure.into_error()))
     }
 
     fn preserve(self, token: CcCreateOperation, failure: InFlightCreate) -> Self::Verdict {
@@ -569,21 +569,21 @@ impl CcIssuedCreate for TestIssuedCreate {
         })
     }
 
-    fn failed(
+    fn identifier_reported(
         self,
         identifier: AppliedIdentifier,
         observation: Observation,
         error: ProviderError,
     ) -> Self::Verdict {
-        TestCreateVerdict::Created {
+        TestCreateVerdict::IdentifierReported {
             identifier,
             observation: Box::new(observation),
             error: Box::new(error),
         }
     }
 
-    fn discarded(self, error: ProviderError) -> Self::Verdict {
-        TestCreateVerdict::Discarded(Box::new(error))
+    fn no_resource(self, error: ProviderError) -> Self::Verdict {
+        TestCreateVerdict::NoResource(Box::new(error))
     }
 
     fn preserve(self, token: CcCreateToken, error: ProviderError) -> Self::Verdict {
@@ -614,8 +614,8 @@ impl CcResumeAttempt for TestCreateAttempt {
     type Resumed = TestIssuedCreate;
     type Resent = TestCreateAttempt;
 
-    fn untracked(self, failure: NotAppliedCreate) -> Self::Verdict {
-        TestCreateVerdict::Untracked(Box::new(failure.into_error()))
+    fn not_created(self, failure: NotAppliedCreate) -> Self::Verdict {
+        TestCreateVerdict::NotCreated(Box::new(failure.into_error()))
     }
 
     fn preserve(self, token: CcCreateOperation, error: ProviderError) -> Self::Verdict {
@@ -679,21 +679,21 @@ impl CcResumedCreate for TestIssuedCreate {
         })
     }
 
-    fn failed(
+    fn identifier_reported(
         self,
         identifier: AppliedIdentifier,
         observation: Observation,
         error: ProviderError,
     ) -> Self::Verdict {
-        TestCreateVerdict::Created {
+        TestCreateVerdict::IdentifierReported {
             identifier,
             observation: Box::new(observation),
             error: Box::new(error),
         }
     }
 
-    fn discarded(self, error: ProviderError) -> Self::Verdict {
-        TestCreateVerdict::Discarded(Box::new(error))
+    fn no_resource(self, error: ProviderError) -> Self::Verdict {
+        TestCreateVerdict::NoResource(Box::new(error))
     }
 
     fn preserve(self, token: CcCreateToken, error: ProviderError) -> Self::Verdict {
@@ -854,7 +854,7 @@ fn assert_cloudcontrol_api_error(
     assert_eq!(error.detail().context(), message);
     assert_eq!(error.detail().operation.as_deref(), Some(operation));
     assert_eq!(error.detail().status, Some(400));
-    assert_eq!(error.detail().code.as_deref(), Some(code));
+    assert_eq!(error.detail().code(), Some(code));
     assert_eq!(error.to_wire().cause.as_deref(), Some(cause));
 }
 
@@ -1378,7 +1378,11 @@ async fn read_back_final_attempt_returns_partial_with_exact_missing_attributes()
                         panic!("expected partial update")
                     };
                     assert_eq!(state.identifier(), &identifier);
-                    diagnostic.missing_attributes().to_vec()
+                    diagnostic
+                        .missing_attributes()
+                        .iter()
+                        .map(|name| name.as_str().to_string())
+                        .collect::<Vec<_>>()
                 }
             };
             assert_eq!(missing, expected_missing, "{boundary}");
@@ -1675,7 +1679,7 @@ fn expect_delete_pending(
 }
 
 #[tokio::test]
-async fn create_invalid_request_rejection_is_terminal_and_untracked() {
+async fn create_invalid_request_rejection_is_terminal_and_not_created() {
     let (provider, service) = provider_with_script([(
         "CreateResource",
         vec![Reply::Error {
@@ -1692,8 +1696,8 @@ async fn create_invalid_request_rejection_is_terminal_and_untracked() {
         .await
         .expect_err("a rejected CreateResource call has no accepted create to track");
 
-    let TestCreateVerdict::Untracked(error) = failure else {
-        panic!("CreateResource rejection must be untracked");
+    let TestCreateVerdict::NotCreated(error) = failure else {
+        panic!("CreateResource rejection must be not-created");
     };
     assert_cloudcontrol_api_error(
         &error,
@@ -2239,7 +2243,14 @@ async fn resume_initialization_error_preserves_unissued_and_issued_continuations
         assert_eq!(error.variant_name(), "invalid_input");
         assert_eq!(error.detail().context(), initialization_error.as_str());
         assert_eq!(error.detail().provider_name.as_deref(), Some("awscc"));
-        assert_eq!(error.detail().resource_id.as_deref(), Some(pending.id()));
+        assert_eq!(
+            error
+                .detail()
+                .resource_id
+                .as_deref()
+                .map(|id| id.as_resource_id()),
+            Some(pending.id())
+        );
     }
 }
 
@@ -2313,7 +2324,14 @@ async fn resume_unknown_resource_type_preserves_unissued_and_issued_witnesses() 
             error.detail().context(),
             "Unknown resource type: unknown.Resource"
         );
-        assert_eq!(error.detail().resource_id.as_deref(), Some(&resource.id));
+        assert_eq!(
+            error
+                .detail()
+                .resource_id
+                .as_deref()
+                .map(|id| id.as_resource_id()),
+            Some(&resource.id)
+        );
     }
     assert_eq!(service.actions(), Vec::<String>::new());
 }
@@ -2581,7 +2599,7 @@ async fn resume_success_then_not_found_enters_read_back() {
 }
 
 #[tokio::test]
-async fn resume_failed_with_identifier_returns_created_failure_with_observation() {
+async fn resume_failed_with_identifier_returns_identifier_reported_failure_with_observation() {
     let (provider, service) = provider_with_script([
         (
             "GetResourceRequestStatus",
@@ -2615,13 +2633,13 @@ async fn resume_failed_with_identifier_returns_created_failure_with_observation(
         .await
         .expect_err("FAILED with an identifier must never become success");
 
-    let TestCreateVerdict::Created {
+    let TestCreateVerdict::IdentifierReported {
         identifier,
         observation,
         error,
     } = failure
     else {
-        panic!("FAILED with an identifier must preserve a created verdict");
+        panic!("FAILED with an identifier must preserve an identifier-reported verdict");
     };
     assert_eq!(identifier.as_str(), VPC_ID);
     let Observation::Read(ReadOutcome::Found { state }) = observation.as_ref() else {
@@ -2636,7 +2654,7 @@ async fn resume_failed_with_identifier_returns_created_failure_with_observation(
 }
 
 #[tokio::test]
-async fn resume_expired_token_with_identifier_and_not_found_is_discarded() {
+async fn resume_expired_token_with_identifier_and_not_found_leaves_no_resource() {
     let (provider, service) = provider_with_script([
         (
             "GetResourceRequestStatus",
@@ -2668,7 +2686,7 @@ async fn resume_expired_token_with_identifier_and_not_found_is_discarded() {
         .await
         .expect_err("an expired token plus NotFound proves there is no create to keep");
 
-    let TestCreateVerdict::Discarded(error) = failure else {
+    let TestCreateVerdict::NoResource(error) = failure else {
         panic!("expired token plus NotFound must discard the in-flight create");
     };
     assert!(error.to_string().contains("no longer known"));
@@ -2679,7 +2697,7 @@ async fn resume_expired_token_with_identifier_and_not_found_is_discarded() {
 }
 
 #[tokio::test]
-async fn poll_expired_token_with_identifier_and_not_found_is_discarded() {
+async fn poll_expired_token_with_identifier_and_not_found_leaves_no_resource() {
     let (provider, service) = provider_with_script([
         (
             "GetResourceRequestStatus",
@@ -2702,7 +2720,7 @@ async fn poll_expired_token_with_identifier_and_not_found_is_discarded() {
     .await
     .expect_err("an expired token plus NotFound must not be polled forever");
 
-    let TestCreateVerdict::Discarded(error) = failure else {
+    let TestCreateVerdict::NoResource(error) = failure else {
         panic!("expired token plus NotFound must discard the pending create");
     };
     assert!(error.to_string().contains("no longer known"));
@@ -2834,7 +2852,7 @@ async fn resume_not_issued_uses_resend_attempt() {
 }
 
 #[tokio::test]
-async fn resume_cancel_complete_with_identifier_reads_back_created_failure() {
+async fn resume_cancel_complete_with_identifier_reads_back_identifier_reported_failure() {
     let (provider, service) = provider_with_script([
         (
             "GetResourceRequestStatus",
@@ -2868,13 +2886,13 @@ async fn resume_cancel_complete_with_identifier_reads_back_created_failure() {
         .await
         .expect_err("a canceled create with an identifier may have created a resource");
 
-    let TestCreateVerdict::Created {
+    let TestCreateVerdict::IdentifierReported {
         identifier,
         observation,
         error,
     } = failure
     else {
-        panic!("CANCEL_COMPLETE with an identifier must preserve a created verdict");
+        panic!("CANCEL_COMPLETE with an identifier must preserve an identifier-reported verdict");
     };
     assert_eq!(identifier.as_str(), VPC_ID);
     let Observation::Read(ReadOutcome::Found { state }) = observation.as_ref() else {
@@ -3421,7 +3439,7 @@ async fn failed_status_retry_follows_message_not_handler_error_code() {
 }
 
 #[tokio::test]
-async fn retryable_failed_create_with_identifier_is_created_without_reissue() {
+async fn retryable_failed_create_with_identifier_is_identifier_reported_without_reissue() {
     let (provider, service) = provider_with_script([
         ("CreateResource", vec![mutation_reply("create-0", VPC_ID)]),
         (
@@ -3443,7 +3461,7 @@ async fn retryable_failed_create_with_identifier_is_created_without_reissue() {
         .await
         .expect_err("identifier-bearing failure must remain a failure")
     {
-        TestCreateVerdict::Created {
+        TestCreateVerdict::IdentifierReported {
             identifier,
             observation,
             error,
@@ -3455,7 +3473,7 @@ async fn retryable_failed_create_with_identifier_is_created_without_reissue() {
             ));
             assert!(error.to_string().contains("Throttling"));
         }
-        other => panic!("expected created failure, got {other:?}"),
+        other => panic!("expected identifier-reported failure, got {other:?}"),
     }
     assert_eq!(service.calls("CreateResource"), 1);
     assert_eq!(service.calls("GetResourceRequestStatus"), 1);
@@ -3952,7 +3970,7 @@ async fn retryable_failed_delete_with_identifier_errors_without_reissue() {
 }
 
 #[tokio::test]
-async fn non_retryable_failed_status_preserves_in_flight_and_created_outcomes() {
+async fn non_retryable_failed_status_preserves_in_flight_and_identifier_reported_outcomes() {
     let (provider, _) = provider_with_script([
         (
             "CreateResource",
@@ -4015,10 +4033,10 @@ async fn non_retryable_failed_status_preserves_in_flight_and_created_outcomes() 
         .await
         .expect_err("terminal failure must not become partial success")
     {
-        TestCreateVerdict::Created { error, .. } => {
+        TestCreateVerdict::IdentifierReported { error, .. } => {
             assert!(error.to_string().contains("post-create read denied"));
         }
-        other => panic!("expected created failure, got {other:?}"),
+        other => panic!("expected identifier-reported failure, got {other:?}"),
     }
 }
 
@@ -4052,8 +4070,8 @@ async fn retry_attempts_exhausted_preserves_the_last_sdk_error_source() {
     let error = poll_test_create(&provider, resource.as_resource(), token)
         .await
         .expect_err("the final configured retry must be exhausted");
-    let TestCreateVerdict::Untracked(error) = error else {
-        panic!("exhausted unissued retry must be untracked");
+    let TestCreateVerdict::NotCreated(error) = error else {
+        panic!("exhausted unissued retry must be not-created");
     };
     let cause = error
         .detail()
@@ -5360,7 +5378,8 @@ async fn final_partial_retains_post_update_attributes_after_poll() {
             .contains(&"enable_dns_support".into())
     );
     assert!(diagnostic.missing_attributes().iter().all(|name| {
-        name.bytes()
+        name.as_str()
+            .bytes()
             .all(|ch| ch.is_ascii_lowercase() || ch == b'_' || ch.is_ascii_digit())
     }));
 }

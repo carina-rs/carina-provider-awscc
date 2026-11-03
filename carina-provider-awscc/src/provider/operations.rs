@@ -132,13 +132,13 @@ pub trait CcIssuedCreate {
         reason: ProviderError,
         missing_attributes: NonEmptyAttributeNames,
     ) -> Result<Self::Step, Self::Verdict>;
-    fn failed(
+    fn identifier_reported(
         self,
         identifier: AppliedIdentifier,
         observation: Observation,
         error: ProviderError,
     ) -> Self::Verdict;
-    fn discarded(self, error: ProviderError) -> Self::Verdict;
+    fn no_resource(self, error: ProviderError) -> Self::Verdict;
     fn preserve(self, token: CcCreateToken, error: ProviderError) -> Self::Verdict;
     fn pending(
         self,
@@ -153,7 +153,7 @@ pub trait CcCreateAttempt {
     type Verdict;
     type Issued: CcIssuedCreate<Step = Self::Step, Verdict = Self::Verdict>;
 
-    fn untracked(self, failure: NotAppliedCreate) -> Self::Verdict;
+    fn not_created(self, failure: NotAppliedCreate) -> Self::Verdict;
     fn preserve(self, token: CcCreateOperation, error: ProviderError) -> Self::Verdict;
     fn issued(self, identifier: AppliedIdentifier, sent: Sent) -> Self::Issued;
     fn pending(
@@ -170,7 +170,7 @@ pub trait CcPollAttempt {
     type Verdict;
     type Issued: CcIssuedCreate<Step = Self::Step, Verdict = Self::Verdict>;
 
-    fn untracked(self, failure: NotAppliedCreate) -> Self::Verdict;
+    fn not_created(self, failure: NotAppliedCreate) -> Self::Verdict;
     fn preserve(self, token: CcCreateOperation, failure: InFlightCreate) -> Self::Verdict;
     fn issued(self, identifier: AppliedIdentifier) -> Self::Issued;
     fn pending(
@@ -222,13 +222,13 @@ pub trait CcResumedCreate {
         reason: ProviderError,
         missing_attributes: NonEmptyAttributeNames,
     ) -> Result<Self::Step, Self::Verdict>;
-    fn failed(
+    fn identifier_reported(
         self,
         identifier: AppliedIdentifier,
         observation: Observation,
         error: ProviderError,
     ) -> Self::Verdict;
-    fn discarded(self, error: ProviderError) -> Self::Verdict;
+    fn no_resource(self, error: ProviderError) -> Self::Verdict;
     fn preserve(self, token: CcCreateToken, error: ProviderError) -> Self::Verdict;
     fn pending(
         self,
@@ -244,7 +244,7 @@ pub trait CcResumeAttempt {
     type Resumed: CcResumedCreate<Step = Self::Step, Verdict = Self::Verdict>;
     type Resent: CcCreateAttempt<Step = Self::Step, Verdict = Self::Verdict>;
 
-    fn untracked(self, failure: NotAppliedCreate) -> Self::Verdict;
+    fn not_created(self, failure: NotAppliedCreate) -> Self::Verdict;
     fn preserve(self, token: CcCreateOperation, error: ProviderError) -> Self::Verdict;
     fn issued(self, identifier: AppliedIdentifier) -> Self::Resumed;
     fn pending(
@@ -341,8 +341,8 @@ impl CcCreateAttempt for CreateAttempt {
     type Verdict = CreateFailure;
     type Issued = IssuedCreate;
 
-    fn untracked(self, failure: NotAppliedCreate) -> Self::Verdict {
-        self.untracked(failure.into_error())
+    fn not_created(self, failure: NotAppliedCreate) -> Self::Verdict {
+        self.not_created(failure.into_error())
     }
 
     fn preserve(self, token: CcCreateOperation, error: ProviderError) -> Self::Verdict {
@@ -378,8 +378,8 @@ impl CcPollAttempt for PollAttempt {
     type Verdict = CreateFailure;
     type Issued = IssuedCreate;
 
-    fn untracked(self, failure: NotAppliedCreate) -> Self::Verdict {
-        self.untracked(failure.into_error())
+    fn not_created(self, failure: NotAppliedCreate) -> Self::Verdict {
+        self.not_created(failure.into_error())
     }
 
     fn preserve(self, token: CcCreateOperation, failure: InFlightCreate) -> Self::Verdict {
@@ -437,22 +437,23 @@ impl CcIssuedCreate for IssuedCreate {
             )),
             Err(error) => {
                 let (observation, error) = failed_read(error);
-                Err(finishing.failed(observation, error))
+                Err(finishing.identifier_reported(observation, error))
             }
         }
     }
 
-    fn failed(
+    fn identifier_reported(
         self,
         identifier: AppliedIdentifier,
         observation: Observation,
         error: ProviderError,
     ) -> Self::Verdict {
-        self.canonicalize(identifier).failed(observation, error)
+        self.canonicalize(identifier)
+            .identifier_reported(observation, error)
     }
 
-    fn discarded(self, error: ProviderError) -> Self::Verdict {
-        self.discarded(error)
+    fn no_resource(self, error: ProviderError) -> Self::Verdict {
+        self.no_resource(error)
     }
 
     fn preserve(self, token: CcCreateToken, error: ProviderError) -> Self::Verdict {
@@ -487,8 +488,8 @@ impl CcResumeAttempt for ResumeAttempt {
     type Resumed = ResumedCreate;
     type Resent = ResentCreateAttempt;
 
-    fn untracked(self, failure: NotAppliedCreate) -> Self::Verdict {
-        self.untracked(failure.into_error())
+    fn not_created(self, failure: NotAppliedCreate) -> Self::Verdict {
+        self.not_created(failure.into_error())
     }
 
     fn preserve(self, token: CcCreateOperation, error: ProviderError) -> Self::Verdict {
@@ -543,7 +544,9 @@ impl CcResumedCreate for ResumedCreate {
             Ok(diagnostic) => diagnostic,
             Err(error) => {
                 let (observation, error) = failed_read(error);
-                return Err(self.canonicalize(identifier).failed(observation, error));
+                return Err(self
+                    .canonicalize(identifier)
+                    .identifier_reported(observation, error));
             }
         };
         Ok(CoreResumeStep::Done(
@@ -552,17 +555,18 @@ impl CcResumedCreate for ResumedCreate {
         ))
     }
 
-    fn failed(
+    fn identifier_reported(
         self,
         identifier: AppliedIdentifier,
         observation: Observation,
         error: ProviderError,
     ) -> Self::Verdict {
-        self.canonicalize(identifier).failed(observation, error)
+        self.canonicalize(identifier)
+            .identifier_reported(observation, error)
     }
 
-    fn discarded(self, error: ProviderError) -> Self::Verdict {
-        self.discarded(error)
+    fn no_resource(self, error: ProviderError) -> Self::Verdict {
+        self.no_resource(error)
     }
 
     fn preserve(self, token: CcCreateToken, error: ProviderError) -> Self::Verdict {
@@ -585,8 +589,8 @@ impl CcCreateAttempt for ResentCreateAttempt {
     type Verdict = ResumeFailure;
     type Issued = ResentIssuedCreate;
 
-    fn untracked(self, failure: NotAppliedCreate) -> Self::Verdict {
-        self.untracked(failure.into_error())
+    fn not_created(self, failure: NotAppliedCreate) -> Self::Verdict {
+        self.not_created(failure.into_error())
     }
 
     fn preserve(self, token: CcCreateOperation, error: ProviderError) -> Self::Verdict {
@@ -622,8 +626,8 @@ impl CcPollAttempt for ResentPollAttempt {
     type Verdict = ResumeFailure;
     type Issued = ResentIssuedCreate;
 
-    fn untracked(self, failure: NotAppliedCreate) -> Self::Verdict {
-        self.untracked(failure.into_error())
+    fn not_created(self, failure: NotAppliedCreate) -> Self::Verdict {
+        self.not_created(failure.into_error())
     }
 
     fn preserve(self, token: CcCreateOperation, failure: InFlightCreate) -> Self::Verdict {
@@ -681,22 +685,23 @@ impl CcIssuedCreate for ResentIssuedCreate {
             )),
             Err(error) => {
                 let (observation, error) = failed_read(error);
-                Err(finishing.failed(observation, error))
+                Err(finishing.identifier_reported(observation, error))
             }
         }
     }
 
-    fn failed(
+    fn identifier_reported(
         self,
         identifier: AppliedIdentifier,
         observation: Observation,
         error: ProviderError,
     ) -> Self::Verdict {
-        self.canonicalize(identifier).failed(observation, error)
+        self.canonicalize(identifier)
+            .identifier_reported(observation, error)
     }
 
-    fn discarded(self, error: ProviderError) -> Self::Verdict {
-        self.discarded(error)
+    fn no_resource(self, error: ProviderError) -> Self::Verdict {
+        self.no_resource(error)
     }
 
     fn preserve(self, token: CcCreateToken, error: ProviderError) -> Self::Verdict {
@@ -967,10 +972,10 @@ impl AwsccProvider {
     ) -> Result<A::Step, A::Verdict> {
         let token = NotIssuedCreate::start();
         if let Err(error) = self.ensure_initialized(&resource.id) {
-            return Err(attempt.untracked(token.into_not_applied(error)));
+            return Err(attempt.not_created(token.into_not_applied(error)));
         }
         let Some(config) = get_schema_config(&resource.id.resource_type) else {
-            return Err(attempt.untracked(
+            return Err(attempt.not_created(
                 token.into_not_applied(
                     ProviderError::internal(format!(
                         "Unknown resource type: {}",
@@ -982,7 +987,7 @@ impl AwsccProvider {
         };
         let desired_state = match self.create_desired_state(resource, config) {
             Ok(desired_state) => desired_state,
-            Err(error) => return Err(attempt.untracked(token.into_not_applied(error))),
+            Err(error) => return Err(attempt.not_created(token.into_not_applied(error))),
         };
         let pending = match self
             .send_not_issued_create(
@@ -1001,7 +1006,7 @@ impl AwsccProvider {
                 ));
             }
             Err(failure) => {
-                return Err(attempt.untracked(
+                return Err(attempt.not_created(
                     failure.map_error(|error| error.for_resource(resource.id.clone())),
                 ));
             }
@@ -1041,7 +1046,7 @@ impl AwsccProvider {
     ) -> Result<U::Step, U::Verdict> {
         let desired_state = match self.create_desired_state(resource, config) {
             Ok(desired_state) => desired_state,
-            Err(error) => return Err(attempt.untracked(token.into_not_applied(error))),
+            Err(error) => return Err(attempt.not_created(token.into_not_applied(error))),
         };
         let pending = match self
             .send_not_issued_create(
@@ -1060,7 +1065,7 @@ impl AwsccProvider {
                 ));
             }
             Err(failure) => {
-                return Err(attempt.untracked(
+                return Err(attempt.not_created(
                     failure.map_error(|error| error.for_resource(resource.id.clone())),
                 ));
             }
@@ -1231,7 +1236,7 @@ impl AwsccProvider {
         failure: NotAppliedCreate,
     ) -> Result<U::Step, U::Verdict> {
         match poll {
-            CcOperationPoll::Unissued(attempt) => Err(attempt.untracked(failure)),
+            CcOperationPoll::Unissued(attempt) => Err(attempt.not_created(failure)),
             CcOperationPoll::Issued(issued) => {
                 Err(self.failed_issued(id, issued, failure.into_error()).await)
             }
@@ -1387,7 +1392,7 @@ impl AwsccProvider {
             // Cloud Control only forgets request tokens after the operation has
             // finished. A successful absence read is therefore terminal; the
             // forgotten token can never make progress if it is re-pended.
-            Ok(ReadOutcome::NotFound { .. }) => Err(issued.discarded(token_error)),
+            Ok(ReadOutcome::NotFound { .. }) => Err(issued.no_resource(token_error)),
             // A read failure does not prove absence, so keep the accepted
             // create in flight and let a later observation resolve it.
             Err(_) => issued.pending(token.into(), POLL_AFTER_SECS),
@@ -1545,7 +1550,7 @@ impl AwsccProvider {
             } => issued.partial(identifier, attributes, reason, missing_attributes),
             ReadBackCompletion::Failed { identifier, error } => {
                 let (observation, error) = failed_read(error);
-                Err(issued.failed(identifier, observation, error))
+                Err(issued.identifier_reported(identifier, observation, error))
             }
         }
     }
@@ -1571,7 +1576,7 @@ impl AwsccProvider {
             Ok(outcome) => Observation::Read(outcome),
             Err(read_error) => Observation::ReadFailed(read_error.into_error()),
         };
-        issued.failed(identifier, observation, error)
+        issued.identifier_reported(identifier, observation, error)
     }
 
     async fn create_completion_from_read(
@@ -1693,7 +1698,7 @@ impl AwsccProvider {
                         Ok(operation) => CcCreatePoll::Unissued(attempt, operation),
                         Err(_) => {
                             return OperationStep::Verdict(
-                                attempt.untracked(
+                                attempt.not_created(
                                     ProviderError::invalid_input(
                                         "read-back requires an issued identifier",
                                     )
@@ -1943,7 +1948,7 @@ impl AwsccProvider {
             // Cloud Control only forgets request tokens after the operation has
             // finished. A successful absence read is therefore terminal; the
             // forgotten token can never make progress if it is re-pended.
-            Ok(ReadOutcome::NotFound { .. }) => Err(resumed.discarded(token_error)),
+            Ok(ReadOutcome::NotFound { .. }) => Err(resumed.no_resource(token_error)),
             // A read failure does not prove absence, so preserve the accepted
             // create for a later observation.
             Err(_) => resumed.pending(token.into(), POLL_AFTER_SECS),
@@ -2101,7 +2106,7 @@ impl AwsccProvider {
             } => resumed.partial(identifier, attributes, reason, missing_attributes),
             ReadBackCompletion::Failed { identifier, error } => {
                 let (observation, error) = failed_read(error);
-                Err(resumed.failed(identifier, observation, error))
+                Err(resumed.identifier_reported(identifier, observation, error))
             }
         }
     }
@@ -2117,7 +2122,7 @@ impl AwsccProvider {
             Ok(outcome) => Observation::Read(outcome),
             Err(read_error) => Observation::ReadFailed(read_error.into_error()),
         };
-        resumed.failed(identifier, observation, error)
+        resumed.identifier_reported(identifier, observation, error)
     }
 
     pub(crate) async fn drive_native_resume(
@@ -2142,7 +2147,7 @@ impl AwsccProvider {
                         Ok(operation) => CcCreateResume::Unissued(attempt, operation),
                         Err(_) => {
                             return OperationStep::Verdict(
-                                attempt.untracked(
+                                attempt.not_created(
                                     ProviderError::invalid_input(
                                         "read-back requires an issued identifier",
                                     )
@@ -2173,7 +2178,7 @@ impl AwsccProvider {
                                 Ok(operation) => CcCreateResume::Unissued(attempt, operation),
                                 Err(_) => {
                                     return OperationStep::Verdict(
-                                        attempt.untracked(
+                                        attempt.not_created(
                                             ProviderError::invalid_input(
                                                 "read-back requires an issued identifier",
                                             )
@@ -2194,7 +2199,7 @@ impl AwsccProvider {
                                 Ok(operation) => CcCreatePoll::Unissued(attempt, operation),
                                 Err(_) => {
                                     return OperationStep::Verdict(
-                                        attempt.untracked(
+                                        attempt.not_created(
                                             ProviderError::invalid_input(
                                                 "read-back requires an issued identifier",
                                             )
@@ -3791,7 +3796,7 @@ mod tests {
         type Verdict = ProviderError;
         type Issued = ErrorTestIssuedCreate;
 
-        fn untracked(self, failure: NotAppliedCreate) -> Self::Verdict {
+        fn not_created(self, failure: NotAppliedCreate) -> Self::Verdict {
             failure.into_error()
         }
 
@@ -3839,7 +3844,7 @@ mod tests {
             Ok(())
         }
 
-        fn failed(
+        fn identifier_reported(
             self,
             _identifier: AppliedIdentifier,
             _observation: Observation,
@@ -3848,7 +3853,7 @@ mod tests {
             error
         }
 
-        fn discarded(self, error: ProviderError) -> Self::Verdict {
+        fn no_resource(self, error: ProviderError) -> Self::Verdict {
             error
         }
 
@@ -5294,7 +5299,10 @@ mod tests {
         assert_eq!(state.identifier().as_str(), "partial-bucket");
         assert_eq!(state.attributes(), &post_update_attributes(&from, &patch));
 
-        assert_structured_partial_read_error(diagnostic.reason(), "post-update read denied");
+        assert_structured_partial_read_error(
+            diagnostic.reason().as_str(),
+            "post-update read denied",
+        );
         assert_eq!(
             diagnostic.missing_attributes(),
             schema_attribute_names("s3.Bucket")
@@ -5461,7 +5469,10 @@ mod tests {
             diagnostic.missing_attributes(),
             schema_attribute_names("s3.Bucket")
         );
-        assert_structured_partial_read_error(diagnostic.reason(), "post-update read denied");
+        assert_structured_partial_read_error(
+            diagnostic.reason().as_str(),
+            "post-update read denied",
+        );
     }
 
     #[tokio::test]
@@ -5489,7 +5500,10 @@ mod tests {
             diagnostic.missing_attributes(),
             schema_attribute_names("s3.Bucket")
         );
-        assert_structured_partial_read_error(diagnostic.reason(), "post-update read denied");
+        assert_structured_partial_read_error(
+            diagnostic.reason().as_str(),
+            "post-update read denied",
+        );
         assert!(
             diagnostic.reason().contains("not sent to Cloud Control"),
             "the diagnostic must distinguish provider-dropped updates from read-back omissions"
@@ -5607,7 +5621,7 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn create_resource_reports_created_when_failed_identifier_read_fails() {
+    async fn create_resource_reports_identifier_when_failed_identifier_read_fails() {
         let service = PartialCreateCloudControlService::new(false);
         let provider = provider_with_partial_create_service(service.clone()).await;
 
@@ -5615,16 +5629,17 @@ mod tests {
             .await
             .expect_err("a terminal CloudControl failure must remain a failure");
 
-        let CreateFailureKind::Created { created, error } = failure.into_kind() else {
-            panic!("an identifier from a failed create must be classified as created");
+        let CreateFailureKind::IdentifierReported { identified, error } = failure.into_kind()
+        else {
+            panic!("an identifier from a failed create must be classified as identifier-reported");
         };
         assert!(
             service.saw_get_resource.load(Ordering::SeqCst),
             "provider must retry read with the identifier from failed progress"
         );
-        assert_eq!(created.identifier().as_str(), "partial-bucket");
+        assert_eq!(identified.identifier().as_str(), "partial-bucket");
         assert!(matches!(
-            created.observation(),
+            identified.observation(),
             CreateObservation::Unobserved(UnobservedReason::ReadFailed(_))
         ));
         assert!(error.to_string().contains("post-create read denied"));
@@ -5652,7 +5667,7 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn create_resource_reports_created_when_failed_identifier_read_succeeds() {
+    async fn create_resource_reports_identifier_when_failed_identifier_read_succeeds() {
         let service = PartialCreateCloudControlService::new(true);
         let provider = provider_with_partial_create_service(service.clone()).await;
 
@@ -5660,15 +5675,15 @@ mod tests {
             .await
             .expect_err("read-back must not turn a terminal CloudControl failure into success");
 
-        let CreateFailureKind::Created { created, .. } = failure.into_kind() else {
-            panic!("an identifier from a failed create must be classified as created");
+        let CreateFailureKind::IdentifierReported { identified, .. } = failure.into_kind() else {
+            panic!("an identifier from a failed create must be classified as identifier-reported");
         };
         assert!(
             service.saw_get_resource.load(Ordering::SeqCst),
             "provider must retry read with the identifier from failed progress"
         );
-        assert_eq!(created.identifier().as_str(), "partial-bucket");
-        let CreateObservation::Observed(state) = created.observation() else {
+        assert_eq!(identified.identifier().as_str(), "partial-bucket");
+        let CreateObservation::Observed(state) = identified.observation() else {
             panic!("successful read-back must be retained as the failure observation");
         };
         assert_eq!(state.identifier().as_str(), "partial-bucket");
@@ -5952,7 +5967,7 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn create_iam_role_reports_created_when_failed_create_read_back_is_not_found() {
+    async fn create_iam_role_reports_identifier_when_failed_create_read_back_is_not_found() {
         let cloudcontrol =
             IamRoleCreateCloudControlService::with_read_mode(IamRoleReadMode::NotFound, false);
         let sts = CallerIdentityService::new();
@@ -5963,14 +5978,14 @@ mod tests {
             .await
             .expect_err("a terminal CloudControl failure must remain a failure");
 
-        let CreateFailureKind::Created { created, .. } = failure.into_kind() else {
-            panic!("an identifier from a failed create must be classified as created");
+        let CreateFailureKind::IdentifierReported { identified, .. } = failure.into_kind() else {
+            panic!("an identifier from a failed create must be classified as identifier-reported");
         };
         assert!(cloudcontrol.saw_create_resource.load(Ordering::SeqCst));
         assert!(cloudcontrol.saw_get_resource.load(Ordering::SeqCst));
-        assert_eq!(created.identifier().as_str(), "flow-log-role");
+        assert_eq!(identified.identifier().as_str(), "flow-log-role");
         assert!(matches!(
-            created.observation(),
+            identified.observation(),
             CreateObservation::Unobserved(UnobservedReason::NotFound)
         ));
         assert!(
