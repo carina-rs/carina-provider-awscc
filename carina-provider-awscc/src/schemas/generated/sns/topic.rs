@@ -12,6 +12,8 @@ const VALID_FIFO_THROUGHPUT_SCOPE: &[&str] = &["Topic", "MessageGroup"];
 const VALID_LOGGING_CONFIG_PROTOCOL: &[&str] =
     &["http/s", "sqs", "lambda", "firehose", "application"];
 
+const VALID_SIGNATURE_VERSION: &[&str] = &["1", "2"];
+
 const VALID_TRACING_CONFIG: &[&str] = &["PassThrough", "Active"];
 
 /// Returns the schema config for sns_topic (AWS::SNS::Topic)
@@ -90,7 +92,7 @@ pub fn sns_topic_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_maximum_message_size_attribute());
     #[inline(never)]
     fn build_signature_version_attribute() -> AttributeSchema {
-        AttributeSchema::optional("signature_version", AttributeType::string())
+        AttributeSchema::optional("signature_version", AttributeType::enum_(carina_core::schema::enum_identity("SignatureVersion", Some("aws.sns.Topic")), Some(vec!["1".to_string(), "2".to_string()]), vec![("1".to_string(), "1".to_string()), ("2".to_string(), "2".to_string())], None, None))
                 .with_description("The signature version corresponds to the hashing algorithm used while creating the signature of the notifications, subscription confirmations, or unsubscribe confirmation messages sent by Amazon SNS. By default, ``SignatureVersion`` is set to ``1``.")
                 .with_provider_name("SignatureVersion")
             .build()
@@ -154,6 +156,7 @@ pub fn enum_valid_values() -> (
         &[
             ("fifo_throughput_scope", VALID_FIFO_THROUGHPUT_SCOPE),
             ("protocol", VALID_LOGGING_CONFIG_PROTOCOL),
+            ("signature_version", VALID_SIGNATURE_VERSION),
             ("tracing_config", VALID_TRACING_CONFIG),
         ],
     )

@@ -126,7 +126,7 @@ fn documented_enums_validate_and_round_trip_exact_aws_wire_strings() {
 }
 
 #[tokio::test]
-async fn authored_email_json_and_string_signature_version_serialize_as_wire_strings() {
+async fn authored_email_json_and_qualified_signature_versions_serialize_as_wire_strings() {
     for (resource_type, path, value, wire) in [
         (
             "sns.Subscription",
@@ -134,7 +134,18 @@ async fn authored_email_json_and_string_signature_version_serialize_as_wire_stri
             enum_identifier("email_json"),
             "email-json",
         ),
-        ("sns.Topic", "signature_version", string("2"), "2"),
+        (
+            "sns.Topic",
+            "signature_version",
+            enum_identifier("aws.sns.Topic.SignatureVersion.1"),
+            "1",
+        ),
+        (
+            "sns.Topic",
+            "signature_version",
+            enum_identifier("aws.sns.Topic.SignatureVersion.2"),
+            "2",
+        ),
     ] {
         let mut resource = Resource::with_provider("awscc", resource_type, "wire_test", None)
             .with_attribute(path, value);
@@ -170,13 +181,45 @@ async fn authored_email_json_and_string_signature_version_serialize_as_wire_stri
 }
 
 #[test]
+fn signature_version_requires_documented_enum_values() {
+    let topic = super::generated::sns::topic::sns_topic_config().schema;
+    let signature_version = field(&topic, "signature_version");
+    assert_eq!(
+        super::generated::get_enum_valid_values("sns.Topic", "signature_version"),
+        Some(&["1", "2"][..])
+    );
+    for value in ["1", "2"] {
+        signature_version
+            .validate(&enum_identifier(&format!(
+                "aws.sns.Topic.SignatureVersion.{value}"
+            )))
+            .unwrap();
+        assert!(signature_version.validate(&string(value)).is_err());
+    }
+    for value in [1, 2] {
+        assert!(signature_version.validate(&int(value)).is_err());
+    }
+    let error = signature_version
+        .validate(&enum_identifier("aws.sns.Topic.SignatureVersion.3"))
+        .unwrap_err()
+        .to_string();
+    assert!(
+        error.contains("aws.sns.Topic.SignatureVersion.1"),
+        "{error}"
+    );
+    assert!(
+        error.contains("aws.sns.Topic.SignatureVersion.2"),
+        "{error}"
+    );
+}
+
+#[test]
 fn plain_strings_accept_arn_and_identity_typed_references() {
     let topic = super::generated::sns::topic::sns_topic_config().schema;
     let subscription = super::generated::sns::subscription::sns_subscription_config().schema;
     let vpc = super::generated::ec2::vpc::ec2_vpc_config().schema;
     for (schema, path) in [
         (&topic, "topic_name"),
-        (&topic, "signature_version"),
         (
             &topic,
             "delivery_status_logging.success_feedback_sample_rate",
@@ -271,14 +314,14 @@ provider awscc {
 }
 let standard = awscc.sns.Topic {
   topic_name = 'signature-one'
-  signature_version = '1'
+  signature_version = aws.sns.Topic.SignatureVersion.1
   tracing_config = pass_through
 }
 let fifo = awscc.sns.Topic {
   topic_name = 'signature-two.fifo'
   fifo_topic = true
   fifo_throughput_scope = message_group
-  signature_version = '2'
+  signature_version = aws.sns.Topic.SignatureVersion.2
 }
 let first = awscc.sns.Subscription {
   topic_arn = standard.topic_arn

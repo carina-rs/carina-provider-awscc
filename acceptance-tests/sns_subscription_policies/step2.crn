@@ -10,6 +10,7 @@ let fifo_topic = awscc.sns.Topic {
   topic_name                  = 'carina-acc-test-sns-policies-fifo.fifo'
   fifo_topic                  = true
   content_based_deduplication = true
+  signature_version           = aws.sns.Topic.SignatureVersion.2
 
   archive_policy = {
     message_retention_period = 1

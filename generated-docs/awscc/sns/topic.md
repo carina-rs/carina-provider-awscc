@@ -13,8 +13,9 @@ The ``AWS::SNS::Topic`` resource creates a topic to which notifications can be p
 
 ```crn
 awscc.sns.Topic {
-  topic_name   = 'carina-example-application-alerts'
-  display_name = 'Carina application alerts'
+  topic_name        = 'carina-example-application-alerts'
+  display_name      = 'Carina application alerts'
+  signature_version = aws.sns.Topic.SignatureVersion.2
 
   tags = {
     Environment = 'example'
@@ -83,7 +84,7 @@ The maximum payload size, in bytes, for messages published to the topic. Valid v
 
 ### `signature_version`
 
-- **Type:** String
+- **Type:** [Enum (SignatureVersion)](#signature_version-signatureversion)
 - **Required:** No
 
 The signature version corresponds to the hashing algorithm used while creating the signature of the notifications, subscription confirmations, or unsubscribe confirmation messages sent by Amazon SNS. By default, ``SignatureVersion`` is set to ``1``.
@@ -139,6 +140,15 @@ Shorthand formats: `http_s` or `Protocol.http_s`
 | `MessageGroup` | `aws.sns.Topic.FifoThroughputScope.message_group` |
 
 Shorthand formats: `topic` or `FifoThroughputScope.topic`
+
+### signature_version (SignatureVersion)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `1` | `aws.sns.Topic.SignatureVersion.1` |
+| `2` | `aws.sns.Topic.SignatureVersion.2` |
+
+Use the fully qualified DSL identifiers above; bare numeric values parse as integers.
 
 ### tracing_config (TracingConfig)
 

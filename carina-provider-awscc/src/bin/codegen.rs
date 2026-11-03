@@ -4131,10 +4131,16 @@ fn render_markdown(
             let empty = String::new();
             let first_value = enum_info.values.first().unwrap_or(&empty);
             let first_dsl = dsl_for(first_value);
-            page.push_str(&format!(
-                "Shorthand formats: `{}` or `{}.{}`\n\n",
-                first_dsl, enum_info.type_name, first_dsl,
-            ));
+            if first_dsl.starts_with(|c: char| c.is_ascii_digit()) {
+                page.push_str(
+                    "Use the fully qualified DSL identifiers above; bare numeric values parse as integers.\n\n",
+                );
+            } else {
+                page.push_str(&format!(
+                    "Shorthand formats: `{}` or `{}.{}`\n\n",
+                    first_dsl, enum_info.type_name, first_dsl,
+                ));
+            }
         }
     }
 
@@ -7881,14 +7887,15 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             ("AWS::SNS::Topic", "TracingConfig"),
             TypeOverride::Enum(vec!["PassThrough", "Active"]),
         );
-        // SignatureVersion documents "1" (SHA1) and "2" (SHA256).
-        // Keep plain String: "1"/"2" are not valid DSL identifiers, and there
-        // is no per-path enum alias mechanism yet, so no enum is added.
+        // SignatureVersion defaults to "1" (SHA1); "2" selects SHA256.
+        // Like IAM PolicyDocument.Version, numeric DSL values require the
+        // fully qualified form, e.g. aws.sns.Topic.SignatureVersion.2.
+        // Bare 1/2 parse as integers; no enum aliases are needed (carina#3051).
         // https://docs.aws.amazon.com/sns/latest/api/API_SetTopicAttributes.html
         // https://docs.aws.amazon.com/sns/latest/dg/sns-verify-signature-of-message-configure-message-signature.html
         m.insert(
             ("AWS::SNS::Topic", "SignatureVersion"),
-            TypeOverride::StringType("AttributeType::string()"),
+            TypeOverride::Enum(vec!["1", "2"]),
         );
         // TopicName: 1..=256 ASCII letters, digits, '_' or '-'; FIFO names
         // must end with .fifo. Defer pattern/length enforcement until
@@ -13403,6 +13410,7 @@ mod tests {
                 "TracingConfig",
                 vec!["PassThrough", "Active"],
             ),
+            ("AWS::SNS::Topic", "SignatureVersion", vec!["1", "2"]),
         ] {
             let schema = cfn_schema_for_codegen_tests(cfn_type);
             let cfn_path = path.split_once('.').map_or_else(
@@ -13461,7 +13469,7 @@ mod tests {
     }
 
     #[test]
-    fn test_sns_topic_api_enums_and_plain_string_signature_version() {
+    fn test_sns_topic_api_enums_and_numeric_signature_version() {
         let schema = cfn_schema_for_codegen_tests("AWS::SNS::Topic");
         let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
         for (path, values) in [
@@ -13473,6 +13481,7 @@ mod tests {
                 "TracingConfig",
                 &[("PassThrough", "pass_through"), ("Active", "active")][..],
             ),
+            ("SignatureVersion", &[("1", "1"), ("2", "2")][..]),
         ] {
             let field = generated_sns_field(&generated, path);
             assert!(
@@ -13487,9 +13496,19 @@ mod tests {
         }
         assert!(
             generated_sns_field(&generated, "SignatureVersion")
-                .starts_with("AttributeType::string()")
+                .contains("enum_identity(\"SignatureVersion\", Some(\"aws.sns.Topic\"))")
         );
-        assert!(markdown.contains("### `signature_version`\n\n- **Type:** String\n"));
+        for value in ["1", "2"] {
+            assert_eq!(dsl_enum_value(value), value);
+            assert!(markdown.contains(&format!(
+                "| `{value}` | `aws.sns.Topic.SignatureVersion.{value}` |"
+            )));
+        }
+        assert!(!markdown.contains("Shorthand formats: `1`"));
+        assert!(markdown.contains(
+            "Use the fully qualified DSL identifiers above; bare numeric values parse as integers."
+        ));
+        assert!(!known_enum_aliases().contains_key("SignatureVersion"));
     }
 
     #[test]

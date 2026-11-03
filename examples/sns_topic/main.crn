@@ -7,8 +7,9 @@ provider awscc {
 }
 
 awscc.sns.Topic {
-  topic_name   = 'carina-example-application-alerts'
-  display_name = 'Carina application alerts'
+  topic_name        = 'carina-example-application-alerts'
+  display_name      = 'Carina application alerts'
+  signature_version = aws.sns.Topic.SignatureVersion.2
 
   tags = {
     Environment = 'example'
