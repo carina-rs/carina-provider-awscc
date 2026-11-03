@@ -1572,6 +1572,7 @@ mod tests {
         match identity.kind.as_str() {
             "Email" => "user@example.com",
             "HttpResponseStatusCode" => "200",
+            "HttpsUrl" => "https://example.com/issuer",
             "Ipv4Address" => "192.0.2.1",
             "Ipv4Cidr" => "10.0.0.0/16",
             "Ipv6Address" => "2001:db8::1",

@@ -3001,6 +3001,7 @@ fn override_type_to_display_name(override_type: &str) -> &str {
         "carina_aws_types::tgw_route_table_id()" => "TgwRouteTableId",
         "types::cidr()" => "Cidr",
         "types::email()" => "Email",
+        "carina_core::schema::types::https_url()" => "HttpsUrl",
         "crate::schemas::catalog::scheduler_schedule_group_name()" => "SchedulerScheduleGroupName",
         "AttributeType::string()" => "String",
         _ => "String",
@@ -4768,12 +4769,9 @@ fn render_schema_code(schema: &EmissionContext<'_>, type_name: &str) -> Result<S
 
     let required: HashSet<String> = schema.required.iter().cloned().collect();
 
-    // Pre-scan properties to determine which imports are needed and collect enum info.
+    // Pre-scan properties to collect emitted struct definitions and enum info.
     // Numeric, length, and pattern constraints are represented declaratively in
     // `AttributeType`; they do not need generated callback functions.
-    let mut needs_types = false;
-    let mut needs_attribute_type = false;
-    let mut needs_struct_field = false;
     let mut enums: BTreeMap<String, EnumInfo> = BTreeMap::new();
     let mut emitted_struct_defs = BTreeMap::new();
 
@@ -4804,17 +4802,8 @@ fn render_schema_code(schema: &EmissionContext<'_>, type_name: &str) -> Result<S
                 &mut emitted_struct_defs,
             );
         }
-        let (attr_type, enum_info) =
+        let (_, enum_info) =
             cfn_type_to_carina_type_with_enum(prop, prop_name, schema, &namespace, &enums);
-        if uses_core_schema_types_path(&attr_type) {
-            needs_types = true;
-        }
-        if attr_type.contains("AttributeType::") {
-            needs_attribute_type = true;
-        }
-        if attr_type.contains("StructField::") {
-            needs_struct_field = true;
-        }
         if let Some(info) = enum_info {
             enums.insert(prop_name.clone(), info);
         }
@@ -4913,12 +4902,6 @@ fn render_schema_code(schema: &EmissionContext<'_>, type_name: &str) -> Result<S
     BACK_REFERENCED_DEFS.with(|s| s.borrow_mut().clear());
     reset_property_mode_emission_state();
 
-    let has_enums = !enums.is_empty();
-    // Enums use AttributeType::Custom with AttributeType::String base
-    if has_enums {
-        needs_attribute_type = true;
-    }
-
     // Derive both the tag property name and CloudControl wire representation
     // from the schema. Unsupported shapes are codegen errors rather than an
     // implicit Key/Value-list default.
@@ -4940,11 +4923,8 @@ fn render_schema_code(schema: &EmissionContext<'_>, type_name: &str) -> Result<S
     let exclusive_groups = derive_mutually_exclusive_property_groups(schema)?;
     let exclusive_groups_expr = emit_exclusive_groups_slice(&exclusive_groups);
 
-    // Build the body into a separate buffer so import selection can scan it
-    // for `legacy_validator(` mentions instead of
-    // approximating from `has_*` flags (which over-included for files whose
-    // enums lower to `types::*` rather than to `Custom`). The header — including
-    // all `use` lines — is constructed at the end.
+    // Build the body first so imports reflect the final emitted types, including
+    // shared constructors and helper return types. Construct the header last.
     let mut body = String::new();
     if let Some(helper) = &arn_helper {
         body.push_str(helper);
@@ -5343,34 +5323,31 @@ pub fn {}() -> AwsccSchemaConfig {{
         emit_permissions_slice(&delete_permissions)
     ));
 
-    // Header is built last so import selection can scan the body for
-    // `legacy_validator(` actually-emitted mentions.
-    if body.contains("AttributeType::") {
-        needs_attribute_type = true;
+    // Select imports from the emitted body rather than the provisional types
+    // seen during enum discovery, which may be replaced by shared constructors.
+    let mut schema_imports = Vec::new();
+    if body.contains("AttributeSchema::") {
+        schema_imports.push("AttributeSchema");
     }
-    if body.contains("StructField::") {
-        needs_struct_field = true;
+    if body.contains("AttributeType::") || body.contains("-> AttributeType") {
+        schema_imports.push("AttributeType");
     }
-    if uses_core_schema_types_path(&body) {
-        needs_types = true;
+    if body.contains("ResourceSchema::") {
+        schema_imports.push("ResourceSchema");
     }
-    let mut schema_imports = vec!["AttributeSchema", "ResourceSchema"];
     if body.contains("FieldGroup::") {
         schema_imports.push("FieldGroup");
     }
-    if needs_attribute_type {
-        schema_imports.insert(1, "AttributeType");
-    }
-    if needs_struct_field {
+    if body.contains("StructField::") {
         schema_imports.push("StructField");
     }
-    if needs_types {
+    if uses_core_schema_types_path(&body) {
         schema_imports.push("types");
     }
     if body.contains("legacy_validator(") {
         schema_imports.push("legacy_validator");
     }
-    if operation_config_for_type(type_name).is_some() {
+    if body.contains("OperationConfig {") {
         schema_imports.push("OperationConfig");
     }
     let schema_imports_str = schema_imports.join(", ");
@@ -6899,23 +6876,33 @@ fn refined_int_type(identity: &str, range: &str) -> String {
     format!("AttributeType::refined_int({identity}, {range})")
 }
 
-fn catalog_type_for_property(resource_type: &str, prop_name: &str) -> Option<AwsccType> {
+fn catalog_int_enum_for_property(
+    resource_type: &str,
+    prop_name: &str,
+) -> Option<(&'static str, &'static [i64])> {
     let dsl_resource = dsl_resource_name_from_type(resource_type).ok()?;
     let (service, resource) = resource_identity_parts(&dsl_resource)?;
-    AwsccType::ALL.iter().copied().find(|awscc_type| {
-        is_resource_identity(&awscc_type.identity(), service, resource, prop_name)
-    })
+    AwsccType::ALL
+        .iter()
+        .filter_map(|row| {
+            row.allowed_int_values()
+                .map(|values| (row.identity(), row.constructor_path(), values))
+        })
+        .chain(carina_aws_types::AwsType::ALL.iter().filter_map(|row| {
+            row.allowed_int_values()
+                .map(|values| (row.identity(), row.constructor_path(), values))
+        }))
+        .find(|(identity, _, _)| is_resource_identity(identity, service, resource, prop_name))
+        .map(|(_, constructor, values)| (constructor, values))
 }
 
 fn int_enum_type(resource_type: &str, prop_name: &str, values: &[i64]) -> String {
-    if let Some(awscc_type) = catalog_type_for_property(resource_type, prop_name)
-        && let Some(expected) = awscc_type.allowed_int_values()
-    {
+    if let Some((constructor, expected)) = catalog_int_enum_for_property(resource_type, prop_name) {
         assert_eq!(
             values, expected,
-            "CloudFormation integer-enum values for {resource_type}.{prop_name} drifted from the AwsccType catalog"
+            "CloudFormation integer-enum values for {resource_type}.{prop_name} drifted from the AWS type catalog"
         );
-        return awscc_type.constructor_path().to_string();
+        return constructor.to_string();
     }
 
     let members = values
@@ -7250,6 +7237,96 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::IAM::Role", "RoleId"),
             TypeOverride::StringType("carina_aws_types::iam_role_id()"),
+        );
+        // RoleName: 1..=64 ASCII alphanumeric characters or _+=,.@-.
+        // The producer and consumer share aws.iam.Role.Name, including read-back.
+        // https://docs.aws.amazon.com/IAM/latest/APIReference/API_CreateRole.html#API_CreateRole_RequestParameters
+        // https://docs.aws.amazon.com/IAM/latest/APIReference/API_PutRolePolicy.html#API_PutRolePolicy_RequestParameters
+        for cfn_type in ["AWS::IAM::Role", "AWS::IAM::RolePolicy"] {
+            m.insert(
+                (cfn_type, "RoleName"),
+                TypeOverride::AttributeType {
+                    expression: "carina_aws_types::iam_role_name()",
+                    display: const { OverrideTypeDisplay::new("aws.iam.Role.Name") },
+                    block_name: None,
+                    default: None,
+                },
+            );
+        }
+        // PolicyName: 1..=128 ASCII alphanumeric characters or _+=,.@-.
+        // Both standalone and inline policies use shared aws.iam.Policy.Name.
+        // https://docs.aws.amazon.com/IAM/latest/APIReference/API_PutRolePolicy.html#API_PutRolePolicy_RequestParameters
+        for key in [
+            ("AWS::IAM::RolePolicy", "PolicyName"),
+            ("AWS::IAM::Role", "Policy.PolicyName"),
+        ] {
+            m.insert(
+                key,
+                TypeOverride::AttributeType {
+                    expression: "carina_aws_types::iam_policy_name()",
+                    display: const { OverrideTypeDisplay::new("aws.iam.Policy.Name") },
+                    block_name: None,
+                    default: None,
+                },
+            );
+        }
+        // Path: 1..=512 characters; '/' or slash-delimited ASCII ! through ~.
+        // Reuse shared anonymous pathType, including the default root path.
+        // https://docs.aws.amazon.com/IAM/latest/APIReference/API_CreateRole.html#API_CreateRole_RequestParameters
+        m.insert(
+            ("AWS::IAM::Role", "Path"),
+            TypeOverride::AttributeType {
+                expression: "carina_aws_types::iam_path()",
+                display: const {
+                    OverrideTypeDisplay::new(
+                        r"String (length: 1..=512, pattern: ^(?:/|/[\x21-\x7E]+/)\z)",
+                    )
+                },
+                block_name: None,
+                default: None,
+            },
+        );
+        // Description: at most 1000 characters. The API pattern is
+        // [\u0009\u000A\u000D\u0020-\u007E\u00A1-\u00FF]* (empty is valid).
+        // This per-attribute refinement is AWSCC-local; it has no shared identity.
+        // https://docs.aws.amazon.com/IAM/latest/APIReference/API_CreateRole.html#API_CreateRole_RequestParameters
+        m.insert(
+            ("AWS::IAM::Role", "Description"),
+            TypeOverride::AttributeType {
+                expression: r#"AttributeType::refined_string(None, Some(r"^[\x09\x0A\x0D -~¡-ÿ]*\z".to_string()), Some((Some(0), Some(1000))), None)"#,
+                display: const {
+                    OverrideTypeDisplay::new(r"String (length: 0..=1000, pattern: ^[\x09\x0A\x0D -~¡-ÿ]*\z)")
+                },
+                block_name: None,
+                default: None,
+            },
+        );
+        // Url uses core's HttpsUrl constructor unchanged. IAM also requires
+        // 1..=255 characters and forbids query parameters, but core 207e751 has
+        // no separate attribute-level string constraints: pattern/length are
+        // part of the type declaration, and callbacks require an identity.
+        // Adding constraints under HttpsUrl redefines the built-in and fails
+        // aggregate admission. Portable resource validators only support tags,
+        // so leave these extra IAM checks to AWS until core can express them.
+        // https://docs.aws.amazon.com/IAM/latest/APIReference/API_CreateOpenIDConnectProvider.html#API_CreateOpenIDConnectProvider_RequestParameters
+        m.insert(
+            ("AWS::IAM::OIDCProvider", "Url"),
+            TypeOverride::StringType("carina_core::schema::types::https_url()"),
+        );
+        // ClientIDList: "You cannot register more than 100 client IDs";
+        // individual client IDs retain their documented 1..=255 character bounds.
+        // https://docs.aws.amazon.com/IAM/latest/APIReference/API_CreateOpenIDConnectProvider.html#API_CreateOpenIDConnectProvider_RequestParameters
+        m.insert(
+            ("AWS::IAM::OIDCProvider", "ClientIdList"),
+            TypeOverride::ArrayItemType {
+                expression: "AttributeType::refined_string(None, None, Some((Some(1), Some(255))), None)",
+                display: const {
+                    OverrideTypeDisplay::new("List<String (length: 1..=255)>")
+                },
+                block_name: None,
+                default: None,
+            }
+            .with_array_bounds(None, Some(100)),
         );
         // EC2 Route's GatewayId accepts both igw-* and vgw-*
         m.insert(
@@ -8697,10 +8774,12 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         // CloudWatch Logs retention: specific allowed day counts
         m.insert(
             ("AWS::Logs::LogGroup", "RetentionInDays"),
-            TypeOverride::IntEnum(vec![
-                1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096, 1827, 2192,
-                2557, 2922, 3288, 3653,
-            ]),
+            TypeOverride::IntEnum(
+                carina_aws_types::AwsType::LogsLogGroupRetentionInDays
+                    .allowed_int_values()
+                    .unwrap()
+                    .to_vec(),
+            ),
         );
 
         // === ToDsl overrides ===
@@ -11197,6 +11276,44 @@ mod tests {
         );
         assert!(generated.contains("schema = schema.attribute(build_name_attribute());"));
         assert!(!generated.contains("schema: ResourceSchema::new("));
+    }
+
+    #[test]
+    fn test_generate_schema_code_imports_attribute_type_only_when_emitted() {
+        for (type_name, needs_attribute_type) in
+            [("AWS::IAM::RolePolicy", false), ("AWS::EC2::VPC", true)]
+        {
+            let schema = cfn_schema_for_codegen_tests(type_name);
+            let generated = generate_schema_code(&schema, type_name).unwrap();
+            let schema_import = generated
+                .lines()
+                .find(|line| line.starts_with("use carina_core::schema::"))
+                .expect("generated schema import");
+            assert_eq!(
+                schema_import.contains("AttributeType"),
+                needs_attribute_type,
+                "{type_name}: {schema_import}"
+            );
+            assert_eq!(
+                generated.contains("AttributeType::"),
+                needs_attribute_type,
+                "{type_name}: {generated}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_generate_schema_code_omits_attribute_imports_for_empty_schema() {
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Test::Empty",
+            "properties": {}
+        }))
+        .unwrap();
+        let generated = generate_synthetic_schema_code(&schema).unwrap();
+        assert!(
+            generated.contains("use carina_core::schema::{ResourceSchema};"),
+            "{generated}"
+        );
     }
 
     fn has_resource_enum_override(type_name: &str, property_path: &str) -> bool {
@@ -18742,7 +18859,7 @@ mod tests {
 
     #[test]
     fn test_selected_integer_enum_uses_identified_validator() {
-        let retention_values = AwsccType::LogsLogGroupRetentionInDays
+        let retention_values = carina_aws_types::AwsType::LogsLogGroupRetentionInDays
             .allowed_int_values()
             .unwrap();
         let prop = CfnProperty {
@@ -18787,7 +18904,7 @@ mod tests {
         );
         assert_eq!(
             type_str,
-            "crate::schemas::catalog::logs_log_group_retention_in_days()"
+            "carina_aws_types::logs_log_group_retention_in_days()"
         );
 
         assert_eq!(
@@ -18882,7 +18999,7 @@ mod tests {
     #[test]
     fn test_type_display_string_int_enum_resource_override() {
         // RetentionInDays on AWS::Logs::LogGroup has a resource-scoped IntEnum override
-        let retention_values = AwsccType::LogsLogGroupRetentionInDays
+        let retention_values = carina_aws_types::AwsType::LogsLogGroupRetentionInDays
             .allowed_int_values()
             .unwrap();
         let prop = CfnProperty {
@@ -19071,13 +19188,16 @@ mod tests {
 
     #[test]
     fn catalog_int_enum_rejects_mismatched_values() {
-        let mismatch = std::panic::catch_unwind(|| {
-            int_enum_type("AWS::EC2::FlowLog", "MaxAggregationInterval", &[60, 61])
-        });
-        assert!(
-            mismatch.is_err(),
-            "catalog-selected integer enums must fail codegen when CFN values drift"
-        );
+        for (cfn_type, property, values) in [
+            ("AWS::EC2::FlowLog", "MaxAggregationInterval", &[60, 61][..]),
+            ("AWS::Logs::LogGroup", "RetentionInDays", &[1, 2][..]),
+        ] {
+            let mismatch = std::panic::catch_unwind(|| int_enum_type(cfn_type, property, values));
+            assert!(
+                mismatch.is_err(),
+                "{cfn_type}.{property}: catalog-selected integer enums must fail codegen when CFN values drift"
+            );
+        }
     }
 
     #[test]
@@ -20537,6 +20657,24 @@ mod tests {
     }
 
     #[test]
+    fn test_iam_oidc_url_emits_the_unchanged_core_builtin() {
+        let schema = cfn_schema_for_codegen_tests("AWS::IAM::OIDCProvider");
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        assert!(
+            generated.contains(
+                "AttributeSchema::optional(\"url\", carina_core::schema::types::https_url())"
+            ),
+            "{generated}"
+        );
+        assert_eq!(
+            type_display_string("Url", &schema.properties["Url"], &schema),
+            "HttpsUrl"
+        );
+        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        assert!(markdown.contains("- **Type:** HttpsUrl\n"), "{markdown}");
+    }
+
+    #[test]
     fn test_resource_type_overrides_string_type_display() {
         // IAM Role's Arn should display as IamRoleArn
         assert_eq!(
@@ -20566,6 +20704,78 @@ mod tests {
             infer_string_type_display("Id", "AWS::Route53::HostedZone"),
             "Route53HostedZoneId"
         );
+    }
+
+    #[test]
+    fn test_iam_shared_names_emit_at_every_top_level_and_policy_definition_site() {
+        for (cfn_type, property, constructor) in [
+            (
+                "AWS::IAM::Role",
+                "RoleName",
+                "carina_aws_types::iam_role_name()",
+            ),
+            (
+                "AWS::IAM::RolePolicy",
+                "RoleName",
+                "carina_aws_types::iam_role_name()",
+            ),
+            (
+                "AWS::IAM::RolePolicy",
+                "PolicyName",
+                "carina_aws_types::iam_policy_name()",
+            ),
+        ] {
+            let schema = cfn_schema_for_codegen_tests(cfn_type);
+            let generated = generate_schema_code(&schema, cfn_type).unwrap();
+            let attribute = format!("({}, {constructor})", rust_lit(&property.to_snake_case()));
+            assert!(
+                generated.contains(&attribute),
+                "{cfn_type}.{property}: {generated}"
+            );
+            assert!(!generated.contains(&format!(
+                "({}, AttributeType::string())",
+                rust_lit(&property.to_snake_case())
+            )));
+        }
+        for expose_definition in [false, true] {
+            let mut schema = cfn_schema_for_codegen_tests("AWS::IAM::Role");
+            if expose_definition {
+                // Policy is normally list-only; force standalone definition emission too.
+                schema.edit_json(|source| {
+                    source["properties"]["PolicyForTest"] =
+                        serde_json::json!({"$ref": "#/definitions/Policy"});
+                });
+            }
+            let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+            assert_all_generated_struct_fields(
+                &generated,
+                "Policy.PolicyName",
+                "carina_aws_types::iam_policy_name()",
+            );
+            if expose_definition {
+                let (inline, definitions) =
+                    generated.split_once("fn build_schema_def_0()").unwrap();
+                for section in [inline, definitions] {
+                    assert_all_generated_struct_fields(
+                        section,
+                        "Policy.PolicyName",
+                        "carina_aws_types::iam_policy_name()",
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_iam_oidc_client_ids_keep_cfn_items_and_ordering_with_api_count_limit() {
+        let schema = cfn_schema_for_codegen_tests("AWS::IAM::OIDCProvider");
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        assert!(generated.contains(concat!(
+            "AttributeSchema::optional(\"client_id_list\", ",
+            "AttributeType::refined_list(",
+            "AttributeType::refined_string(None, None, Some((Some(1), Some(255))), None), ",
+            "false, Some((None, Some(100))), carina_core::schema::ListElements::AllowDuplicates))",
+        )), "{generated}");
     }
 
     #[test]
@@ -20605,7 +20815,7 @@ mod tests {
         assert_eq!(
             overrides.get(&("AWS::Logs::LogGroup", "RetentionInDays")),
             Some(&TypeOverride::IntEnum(
-                AwsccType::LogsLogGroupRetentionInDays
+                carina_aws_types::AwsType::LogsLogGroupRetentionInDays
                     .allowed_int_values()
                     .unwrap()
                     .to_vec()

@@ -21,6 +21,9 @@ mod dynamodb_tests;
 mod ecs_tests;
 
 #[cfg(test)]
+mod iam_tests;
+
+#[cfg(test)]
 mod sns_tests;
 
 use carina_core::provider::ProviderFactory;
@@ -697,21 +700,26 @@ mod tests {
     }
 
     #[test]
-    fn generated_integer_enum_validators_preserve_diagnostics() {
+    fn generated_integer_enum_validators_use_their_owning_catalog_diagnostics() {
         let cases = [
             (
                 super::generated::ec2::flow_log::ec2_flow_log_config().schema,
                 "max_aggregation_interval",
                 61,
                 "aws.ec2.FlowLog.MaxAggregationInterval",
-                "Validation failed: Value 61 is not a valid value",
+                "Validation failed: Value 61 is not a valid value".to_string(),
             ),
             (
                 super::generated::logs::log_group::logs_log_group_config().schema,
                 "retention_in_days",
                 2,
                 "aws.logs.LogGroup.RetentionInDays",
-                "Validation failed: Value 2 is not a valid value",
+                format!(
+                    "Validation failed: Value 2 is not valid; allowed values are: {:?}",
+                    carina_aws_types::AwsType::LogsLogGroupRetentionInDays
+                        .allowed_int_values()
+                        .unwrap()
+                ),
             ),
         ];
 
@@ -738,6 +746,25 @@ mod tests {
 
             println!("{attribute_name}: {error}");
         }
+    }
+
+    #[test]
+    fn generated_logs_retention_preserves_shared_membership_validation() {
+        use crate::test_support::{field, float, int, string};
+
+        let schema = super::generated::logs::log_group::logs_log_group_config().schema;
+        let retention = field(&schema, "retention_in_days");
+        for &days in carina_aws_types::AwsType::LogsLogGroupRetentionInDays
+            .allowed_int_values()
+            .unwrap()
+        {
+            retention.validate(&int(days)).unwrap();
+        }
+        for days in [0, 2, 366, 3654] {
+            assert!(retention.validate(&int(days)).is_err(), "{days}");
+        }
+        assert!(retention.validate(&float(30.0)).is_err());
+        assert!(retention.validate(&string("30")).is_err());
     }
 
     #[test]

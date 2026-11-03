@@ -50,7 +50,7 @@ The trust policy that is associated with this role. Trust policies define which 
 
 ### `description`
 
-- **Type:** String
+- **Type:** `String (length: 0..=1000, pattern: ^[\x09\x0A\x0D -~¡-ÿ]*\z)`
 - **Required:** No
 
 A description of the role that you provide.
@@ -71,7 +71,7 @@ The maximum session duration (in seconds) that you want to set for the specified
 
 ### `path`
 
-- **Type:** String
+- **Type:** `String (length: 1..=512, pattern: ^(?:/|/[\x21-\x7E]+/)\z)`
 - **Required:** No
 - **Create-only:** Yes
 - **Default:** `"/"`
@@ -94,7 +94,7 @@ Adds or updates an inline policy document that is embedded in the specified IAM 
 
 ### `role_name`
 
-- **Type:** String
+- **Type:** `aws.iam.Role.Name`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -114,7 +114,7 @@ A list of tags that are attached to the role. For more information about tagging
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `policy_document` | PolicyDocument | Yes | The entire contents of the policy that defines permissions. For more information, see [Overview of JSON policies](https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies.html#access_policies-json). |
-| `policy_name` | String | Yes | The friendly name (not ARN) identifying the policy. |
+| `policy_name` | `aws.iam.Policy.Name` | Yes | The friendly name (not ARN) identifying the policy. |
 
 ## Attribute Reference
 

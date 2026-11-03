@@ -1025,7 +1025,7 @@ dependencies = [
 [[package]]
 name = "carina-aws-types"
 version = "0.4.0"
-source = "git+https://github.com/carina-rs/carina-provider-aws?rev=484e90981d031bb33d1c19be1b7042dd9b6b39b8#484e90981d031bb33d1c19be1b7042dd9b6b39b8"
+source = "git+https://github.com/carina-rs/carina-provider-aws?rev=a9f8517969e00fbdaab93abf7ea10f111a94adfe#a9f8517969e00fbdaab93abf7ea10f111a94adfe"
 dependencies = [
  "aws-config",
  "aws-credential-types",
@@ -1082,7 +1082,7 @@ dependencies = [
 [[package]]
 name = "carina-docgen"
 version = "0.8.0"
-source = "git+https://github.com/carina-rs/carina-provider-aws?rev=484e90981d031bb33d1c19be1b7042dd9b6b39b8#484e90981d031bb33d1c19be1b7042dd9b6b39b8"
+source = "git+https://github.com/carina-rs/carina-provider-aws?rev=a9f8517969e00fbdaab93abf7ea10f111a94adfe#a9f8517969e00fbdaab93abf7ea10f111a94adfe"
 dependencies = [
  "anyhow",
  "carina-core",

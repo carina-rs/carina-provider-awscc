@@ -4,15 +4,18 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
 
-use carina_core::binding_index::ResolvedBindings;
+use carina_core::binding_index::{BindingIndex, ResolvedBindings};
 use carina_core::executor::{ModuleConstraintGate, ProviderPreparationContext};
-use carina_core::parser::{ProviderContext, parse_file};
+use carina_core::parser::{LoadedProviderContext, ProviderContext, parse_file};
 use carina_core::provider::{ProviderFactory, provider_custom_types_from_factories};
 use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{
     EffectiveType, SchemaRegistry, ShapeWalkBudget, ValidatedResourceSchema,
+    resolve_file_block_names_with_schemas,
 };
-use carina_core::validation::validate_resources;
+use carina_core::validation::{
+    ValidationTypeContext, check_bare_binding_uses, validate_resource_ref_types, validate_resources,
+};
 
 pub(crate) fn field<'a>(schema: &'a ValidatedResourceSchema, path: &str) -> EffectiveType<'a> {
     let mut segments = path.split('.');
@@ -53,25 +56,55 @@ pub(crate) fn list(items: Vec<Value>) -> Value {
 }
 
 pub(crate) fn validate_fixtures(cases: &[(&str, &str)]) {
+    try_validate_fixtures(cases).unwrap_or_else(|error| panic!("{error}"));
+}
+
+pub(crate) fn try_validate_fixtures(cases: &[(&str, &str)]) -> Result<(), String> {
     let factories: Arc<Vec<Box<dyn ProviderFactory>>> =
         Arc::new(vec![Box::new(crate::AwsccProviderFactory)]);
     let schemas = crate::schemas::schema_registry();
-    let context = ProviderContext {
+    let loaded_context = LoadedProviderContext::for_test(ProviderContext {
         custom_types: provider_custom_types_from_factories(factories),
         resource_types: ProviderContext::resource_types_from_schema_registry(&schemas),
         ..ProviderContext::new(carina_core::EnvironmentSnapshot::empty())
-    };
+    });
+    let context = loaded_context.as_provider_context();
+    let signatures = Default::default();
     for (path, source) in cases {
-        let parsed = parse_file(source, Path::new(path), &context)
-            .unwrap_or_else(|error| panic!("{path}: {error}"));
+        let mut parsed = parse_file(source, Path::new(path), context)
+            .map_err(|error| format!("{path}: {error}"))?;
+        let binding_uses = check_bare_binding_uses(
+            &parsed,
+            &ValidationTypeContext::new(&parsed, &schemas, &loaded_context, &signatures),
+        );
+        if !binding_uses.is_ready() {
+            return Err(format!("{path}: {binding_uses}"));
+        }
+        // Match CLI order: carina-cli/src/wiring/mod.rs:3172 and commands/mod.rs:805/881.
+        resolve_file_block_names_with_schemas(&mut parsed, &schemas).map_err(|errors| {
+            format!(
+                "{path}: {}",
+                errors
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            )
+        })?;
+        carina_core::identifier::resolve_attr_prefixes(&mut parsed.resources, &schemas)
+            .map_err(|error| format!("{path}: {error}"))?;
         validate_resources(
             &parsed,
             &schemas,
             &HashSet::from(["awscc".to_string()]),
-            &context,
+            context,
         )
-        .unwrap_or_else(|error| panic!("{path}: {error}"));
+        .map_err(|error| format!("{path}: {error}"))?;
+        let bindings = BindingIndex::from_parsed(&parsed, &schemas, context);
+        validate_resource_ref_types(&parsed, &schemas, &HashSet::new(), &bindings)
+            .map_err(|error| format!("{path}: {error}"))?;
     }
+    Ok(())
 }
 
 pub(crate) async fn with_preparation<T>(

@@ -26,7 +26,7 @@ pub fn iam_oidc_provider_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_arn_attribute());
     #[inline(never)]
     fn build_client_id_list_attribute() -> AttributeSchema {
-        AttributeSchema::optional("client_id_list", AttributeType::unordered_list(AttributeType::refined_string(None, None, Some((Some(1), Some(255))), None)))
+        AttributeSchema::optional("client_id_list", AttributeType::refined_list(AttributeType::refined_string(None, None, Some((Some(1), Some(255))), None), false, Some((None, Some(100))), carina_core::schema::ListElements::AllowDuplicates))
                 .with_provider_name("ClientIdList")
             .build()
     }
@@ -48,7 +48,7 @@ pub fn iam_oidc_provider_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_thumbprint_list_attribute());
     #[inline(never)]
     fn build_url_attribute() -> AttributeSchema {
-        AttributeSchema::optional("url", AttributeType::refined_string(None, None, Some((Some(1), Some(255))), None))
+        AttributeSchema::optional("url", carina_core::schema::types::https_url())
                 .create_only()
                 .with_provider_name("Url")
             .build()

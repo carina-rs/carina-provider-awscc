@@ -5,7 +5,7 @@
 //! DO NOT EDIT MANUALLY - regenerate with carina-codegen
 
 use crate::schemas::config::AwsccSchemaConfig;
-use carina_core::schema::{AttributeSchema, AttributeType, ResourceSchema};
+use carina_core::schema::{AttributeSchema, ResourceSchema};
 
 /// Returns the schema config for iam_role_policy (AWS::IAM::RolePolicy)
 #[rustfmt::skip]
@@ -22,7 +22,7 @@ pub fn iam_role_policy_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_policy_document_attribute());
     #[inline(never)]
     fn build_policy_name_attribute() -> AttributeSchema {
-        AttributeSchema::required("policy_name", AttributeType::string())
+        AttributeSchema::required("policy_name", carina_aws_types::iam_policy_name())
                 .create_only()
                 .with_description("The name of the policy document. This parameter allows (through its [regex pattern](https://docs.aws.amazon.com/http://wikipedia.org/wiki/regex)) a string of characters consisting of upper and lowercase alphanumeric characters with no spaces. You can also include any of the following characters: _+=,.@-")
                 .with_provider_name("PolicyName")
@@ -31,7 +31,7 @@ pub fn iam_role_policy_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_policy_name_attribute());
     #[inline(never)]
     fn build_role_name_attribute() -> AttributeSchema {
-        AttributeSchema::required("role_name", AttributeType::string())
+        AttributeSchema::required("role_name", carina_aws_types::iam_role_name())
                 .create_only()
                 .with_description("The name of the role to associate the policy with. This parameter allows (through its [regex pattern](https://docs.aws.amazon.com/http://wikipedia.org/wiki/regex)) a string of characters consisting of upper and lowercase alphanumeric characters with no spaces. You can also include any of the following characters: _+=,.@-")
                 .with_provider_name("RoleName")

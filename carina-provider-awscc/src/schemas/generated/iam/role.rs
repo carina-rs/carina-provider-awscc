@@ -35,7 +35,7 @@ pub fn iam_role_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_assume_role_policy_document_attribute());
     #[inline(never)]
     fn build_description_attribute() -> AttributeSchema {
-        AttributeSchema::optional("description", AttributeType::string())
+        AttributeSchema::optional("description", AttributeType::refined_string(None, Some(r"^[\x09\x0A\x0D -~¡-ÿ]*\z".to_string()), Some((Some(0), Some(1000))), None))
                 .with_description("A description of the role that you provide.")
                 .with_provider_name("Description")
             .build()
@@ -59,7 +59,7 @@ pub fn iam_role_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_max_session_duration_attribute());
     #[inline(never)]
     fn build_path_attribute() -> AttributeSchema {
-        AttributeSchema::optional("path", AttributeType::string())
+        AttributeSchema::optional("path", carina_aws_types::iam_path())
                 .create_only()
                 .with_description("The path to the role. For more information about paths, see [IAM Identifiers](https://docs.aws.amazon.com/IAM/latest/UserGuide/Using_Identifiers.html) in the *IAM User Guide*. This parameter is optional. If it is not included, it defaults to a slash (/). This parameter allows (through its [regex pattern](https://docs.aws.amazon.com/http://wikipedia.org/wiki/regex)) a string of characters consisting of either a forward slash (/) by itself or a string that must begin and end with forward slashes. In addition, it can contain any ASCII character from the ! (``\\u0021``) through the DEL character (``\\u007F``), including most punctuation characters, digits, and upper and lowercased letters.")
                 .with_provider_name("Path")
@@ -78,7 +78,7 @@ pub fn iam_role_config() -> AwsccSchemaConfig {
     #[inline(never)]
     fn build_policies_attribute() -> AttributeSchema {
         AttributeSchema::optional("policies", AttributeType::unordered_list(AttributeType::struct_("Policy".to_string(), vec![StructField::required("policy_document", carina_aws_types::iam_policy_document()).with_description("The entire contents of the policy that defines permissions. For more information, see [Overview of JSON policies](https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies.html#access_policies-json).").with_provider_name("PolicyDocument").build(),
-                    StructField::required("policy_name", AttributeType::string()).with_description("The friendly name (not ARN) identifying the policy.").with_provider_name("PolicyName").build()])))
+                    StructField::required("policy_name", carina_aws_types::iam_policy_name()).with_description("The friendly name (not ARN) identifying the policy.").with_provider_name("PolicyName").build()])))
                 .with_description("Adds or updates an inline policy document that is embedded in the specified IAM role. When you embed an inline policy in a role, the inline policy is used as part of the role's access (permissions) policy. The role's trust policy is created at the same time as the role. You can update a role's trust policy later. For more information about IAM roles, go to [Using Roles to Delegate Permissions and Federate Identities](https://docs.aws.amazon.com/IAM/latest/UserGuide/roles-toplevel.html). A role can also have an attached managed policy. For information about policies, see [Managed Policies and Inline Policies](https://docs.aws.amazon.com/IAM/latest/UserGuide/policies-managed-vs-inline.html) in the *User Guide*. For information about limits on the number of inline policies that you can embed with a role, see [Limitations on Entities](https://docs.aws.amazon.com/IAM/latest/UserGuide/LimitationsOnEntities.html) in the *User Guide*. If an external policy (such as ``AWS::IAM::Policy`` or ``AWS::IAM::ManagedPolicy``) has a ``Ref`` to a role and if a resource (such as ``AWS::ECS::Service``) also has a ``Ref`` to the same role, add a ``DependsOn`` attribute to the resource to make the resource depend on the external policy. This dependency ensures that the role's policy is available throughout the resource's lifecycle. For example, when you delete a stack with an ``AWS::ECS::Service`` resource, the ``DependsOn`` attribute ensures that CFN deletes the ``AWS::ECS::Service`` resource before deleting its role's policy.")
                 .with_provider_name("Policies")
                 .with_block_name("policy")
@@ -95,7 +95,7 @@ pub fn iam_role_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_role_id_attribute());
     #[inline(never)]
     fn build_role_name_attribute() -> AttributeSchema {
-        AttributeSchema::optional("role_name", AttributeType::string())
+        AttributeSchema::optional("role_name", carina_aws_types::iam_role_name())
                 .create_only()
                 .with_description("A name for the IAM role, up to 64 characters in length. For valid values, see the ``RoleName`` parameter for the [CreateRole](https://docs.aws.amazon.com/IAM/latest/APIReference/API_CreateRole.html) action in the *User Guide*. This parameter allows (per its [regex pattern](https://docs.aws.amazon.com/http://wikipedia.org/wiki/regex)) a string of characters consisting of upper and lowercase alphanumeric characters with no spaces. You can also include any of the following characters: _+=,.@-. The role name must be unique within the account. Role names are not distinguished by case. For example, you cannot create roles named both \"Role1\" and \"role1\". If you don't specify a name, CFN generates a unique physical ID and uses that ID for the role name. If you specify a name, you must specify the ``CAPABILITY_NAMED_IAM`` value to acknowledge your template's capabilities. For more information, see [Acknowledging Resources in Templates](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/using-iam-template.html#using-iam-capabilities). Naming an IAM resource can cause an unrecoverable error if you reuse the same template in multiple Regions. To prevent this, we recommend using ``Fn::Join`` and ``AWS::Region`` to create a Region-specific name, as in the following example: ``{\"Fn::Join\": [\"\", [{\"Ref\": \"AWS::Region\"}, {\"Ref\": \"MyResourceName\"}]]}``.")
                 .with_provider_name("RoleName")
