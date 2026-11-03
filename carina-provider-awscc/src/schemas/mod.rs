@@ -12,6 +12,9 @@ mod kms_reference_tests;
 mod budgets_tests;
 
 #[cfg(test)]
+mod cloudfront_tests;
+
+#[cfg(test)]
 mod cloudwatch_tests;
 
 #[cfg(test)]
