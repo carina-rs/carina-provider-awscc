@@ -98,7 +98,7 @@ The list of tags to add to a new topic. To be able to tag a topic on creation, y
 
 ### `topic_name`
 
-- **Type:** String
+- **Type:** `String (length: 1..=256, pattern: ^[A-Za-z0-9_-]+(?:\.fifo)?$)`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -168,7 +168,7 @@ Shorthand formats: `pass_through` or `TracingConfig.pass_through`
 | `failure_feedback_role_arn` | Arn | No | The IAM role ARN to be used when logging failed message deliveries in Amazon CloudWatch. |
 | `protocol` | [Enum (Protocol)](#delivery_status_loggingprotocol-protocol) | Yes | Indicates one of the supported protocols for the Amazon SNS topic. At least one of the other three ``LoggingConfig`` properties is recommend along with ``Protocol``. |
 | `success_feedback_role_arn` | Arn | No | The IAM role ARN to be used when logging successful message deliveries in Amazon CloudWatch. |
-| `success_feedback_sample_rate` | String | No | The percentage of successful message deliveries to be logged in Amazon CloudWatch. Valid percentage values range from 0 to 100. |
+| `success_feedback_sample_rate` | `String (pattern: ^0*(?:100\|[0-9]{1,2})$)` | No | The percentage of successful message deliveries to be logged in Amazon CloudWatch. Valid percentage values range from 0 to 100. |
 
 ## Attribute Reference
 

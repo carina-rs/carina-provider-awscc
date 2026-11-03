@@ -71,14 +71,14 @@ The list of actions to execute when this alarm transitions into an ALARM state f
 
 ### `alarm_description`
 
-- **Type:** `String`
+- **Type:** `String (length: 0..=1024)`
 - **Required:** No
 
 The description of the alarm.
 
 ### `alarm_name`
 
-- **Type:** `String`
+- **Type:** `String (length: 1..=255, pattern: ^[^\x00-\x1F\x7F]+$)`
 - **Required:** No
 - **Create-only:** Yes
 
@@ -142,7 +142,7 @@ The evaluation window that the alarm uses to select the range of metric data tha
 
 ### `extended_statistic`
 
-- **Type:** `String`
+- **Type:** `String (length: 1..)`
 - **Required:** No
 
 The percentile statistic for the metric associated with the alarm. Specify a value between p0.0 and p100. For an alarm based on a metric, you must specify either ``Statistic`` or ``ExtendedStatistic`` but not both. For an alarm based on a math expression, you can't specify ``ExtendedStatistic``. Instead, you use ``Metrics``.
@@ -156,7 +156,7 @@ The actions to execute when this alarm transitions to the ``INSUFFICIENT_DATA`` 
 
 ### `metric_name`
 
-- **Type:** `String`
+- **Type:** `String (length: 1..=255)`
 - **Required:** No
 
 The name of the metric associated with the alarm. This is required for an alarm based on a metric. For an alarm based on a math expression, you use ``Metrics`` instead and you can't specify ``MetricName``.
@@ -170,7 +170,7 @@ An array that enables you to create an alarm based on the result of a metric mat
 
 ### `namespace`
 
-- **Type:** `String`
+- **Type:** `String (length: 1..=255, pattern: ^[^:].*$)`
 - **Required:** No
 
 The namespace of the metric associated with the alarm. This is required for an alarm based on a metric. For an alarm based on a math expression, you can't specify ``Namespace`` and you use ``Metrics`` instead. For a list of namespaces for metrics from AWS services, see [Services That Publish Metrics.](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/aws-services-cloudwatch-metrics.html)
@@ -212,7 +212,7 @@ The value to compare with the specified statistic.
 
 ### `threshold_metric_id`
 
-- **Type:** `String`
+- **Type:** `String (length: 1..=255)`
 - **Required:** No
 
 In an alarm based on an anomaly detection model, this is the ID of the ``ANOMALY_DETECTION_BAND`` function used as the threshold for the alarm.
@@ -376,8 +376,8 @@ Used by: `dimensions`, `metrics.metric_stat.metric.dimensions`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `name` | `String` | Yes | The name of the dimension, from 1–255 characters in length. This dimension name must have been included when the metric was published. |
-| `value` | `String` | Yes | The value for the dimension, from 1–255 characters in length. |
+| `name` | `String (length: 1..=255, pattern: ^(?:[!-9;-~][ -~]*\| [ -~]*[!-~][ -~]*)$)` | Yes | The name of the dimension, from 1–255 characters in length. This dimension name must have been included when the metric was published. |
+| `value` | `String (length: 1..=1024, pattern: ^[ -~]*[!-~][ -~]*$)` | Yes | The value for the dimension, from 1–255 characters in length. |
 
 ### evaluation_criteria
 
@@ -390,7 +390,7 @@ Used by: `dimensions`, `metrics.metric_stat.metric.dimensions`
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `pending_period` | `Int(0..=86400)` | No | The duration, in seconds, that a contributor must be continuously breaching before it transitions to the ``ALARM`` state. |
-| `query` | `String` | No | The PromQL query that the alarm evaluates. The query must return a result of vector type. Each entry in the vector result represents an alarm contributor. |
+| `query` | `String (length: 1..=10000)` | No | The PromQL query that the alarm evaluates. The query must return a result of vector type. Each entry in the vector result represents an alarm contributor. |
 | `recovery_period` | `Int(0..=86400)` | No | The duration, in seconds, that a contributor must continuously not be breaching before it transitions back to the ``OK`` state. |
 
 ### evaluation_window
@@ -404,15 +404,15 @@ Used by: `dimensions`, `metrics.metric_stat.metric.dimensions`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `timezone` | `String` | No | The time zone to use when the alarm aligns the evaluation window to clock boundaries. You can specify an IANA time zone name (for example, ``America/New_York``), a fixed UTC offset (for example, ``+05:30``), or an offset-prefixed identifier (for example, ``UTC+05:30``). The offset must be aligned to a multiple of 5 minutes. If you don't specify a time zone, CloudWatch uses ``UTC``. The time zone affects window alignment for all periods, including periods of one hour or shorter. |
+| `timezone` | `String (length: 1..=50)` | No | The time zone to use when the alarm aligns the evaluation window to clock boundaries. You can specify an IANA time zone name (for example, ``America/New_York``), a fixed UTC offset (for example, ``+05:30``), or an offset-prefixed identifier (for example, ``UTC+05:30``). The offset must be aligned to a multiple of 5 minutes. If you don't specify a time zone, CloudWatch uses ``UTC``. The time zone affects window alignment for all periods, including periods of one hour or shorter. |
 
 ### metrics
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `account_id` | AwsAccountId | No | The ID of the account where the metrics are located, if this is a cross-account alarm. |
-| `expression` | `String` | No | The math expression to be performed on the returned data, if this object is performing a math expression. This expression can use the ``Id`` of the other metrics to refer to those metrics, and can also use the ``Id`` of other expressions to use the result of those expressions. For more information about metric math expressions, see [Metric Math Syntax and Functions](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/using-metric-math.html#metric-math-syntax) in the *User Guide*. Within each MetricDataQuery object, you must specify either ``Expression`` or ``MetricStat`` but not both. |
-| `id` | `String` | Yes | A short name used to tie this object to the results in the response. This name must be unique within a single call to ``GetMetricData``. If you are performing math expressions on this set of data, this name represents that data and can serve as a variable in the mathematical expression. The valid characters are letters, numbers, and underscore. The first character must be a lowercase letter. |
+| `expression` | `String (length: 1..=2048)` | No | The math expression to be performed on the returned data, if this object is performing a math expression. This expression can use the ``Id`` of the other metrics to refer to those metrics, and can also use the ``Id`` of other expressions to use the result of those expressions. For more information about metric math expressions, see [Metric Math Syntax and Functions](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/using-metric-math.html#metric-math-syntax) in the *User Guide*. Within each MetricDataQuery object, you must specify either ``Expression`` or ``MetricStat`` but not both. |
+| `id` | `String (length: 1..=255, pattern: ^[a-z][a-zA-Z0-9_]*$)` | Yes | A short name used to tie this object to the results in the response. This name must be unique within a single call to ``GetMetricData``. If you are performing math expressions on this set of data, this name represents that data and can serve as a variable in the mathematical expression. The valid characters are letters, numbers, and underscore. The first character must be a lowercase letter. |
 | `label` | String | No | A human-readable label for this metric or expression. This is especially useful if this is an expression, so that you know what the value represents. If the metric or expression is shown in a CW dashboard widget, the label is shown. If ``Label`` is omitted, CW generates a default. |
 | `metric_stat` | [Struct(MetricStat)](#metricsmetric_stat) | No | The metric to be returned, along with statistics, period, and units. Use this parameter only if this object is retrieving a metric and not performing a math expression on returned data. Within one MetricDataQuery object, you must specify either ``Expression`` or ``MetricStat`` but not both. |
 | `period` | `Int(1..)` | No | The granularity, in seconds, of the returned data points. For metrics with regular resolution, a period can be as short as one minute (60 seconds) and must be a multiple of 60. For high-resolution metrics that are collected at intervals of less than one minute, the period can be 1, 5, 10, 20, 30, 60, or any multiple of 60. High-resolution metrics are those metrics stored by a ``PutMetricData`` operation that includes a ``StorageResolution of 1 second``. |
@@ -424,7 +424,7 @@ Used by: `dimensions`, `metrics.metric_stat.metric.dimensions`
 |-------|------|----------|-------------|
 | `metric` | [Struct(Metric)](#metricsmetric_statmetric) | Yes | The metric to return, including the metric name, namespace, and dimensions. |
 | `period` | `Int(1..)` | Yes | The granularity, in seconds, of the returned data points. For metrics with regular resolution, a period can be as short as one minute (60 seconds) and must be a multiple of 60. For high-resolution metrics that are collected at intervals of less than one minute, the period can be 1, 5, 10, 20, 30, 60, or any multiple of 60. High-resolution metrics are those metrics stored by a ``PutMetricData`` call that includes a ``StorageResolution`` of 1 second. If the ``StartTime`` parameter specifies a time stamp that is greater than 3 hours ago, you must specify the period as follows or no data points in that time range is returned: + Start time between 3 hours and 15 days ago - Use a multiple of 60 seconds (1 minute). + Start time between 15 and 63 days ago - Use a multiple of 300 seconds (5 minutes). + Start time greater than 63 days ago - Use a multiple of 3600 seconds (1 hour). |
-| `stat` | `String` | Yes | The statistic to return. It can include any CW statistic or extended statistic. For a list of valid values, see the table in [Statistics](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/cloudwatch_concepts.html#Statistic) in the *User Guide*. |
+| `stat` | `String (length: 1..)` | Yes | The statistic to return. It can include any CW statistic or extended statistic. For a list of valid values, see the table in [Statistics](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/cloudwatch_concepts.html#Statistic) in the *User Guide*. |
 | `unit` | [Enum (Unit)](#metricsmetric_statunit-unit) | No | The unit to use for the returned data points. Valid values are: Seconds, Microseconds, Milliseconds, Bytes, Kilobytes, Megabytes, Gigabytes, Terabytes, Bits, Kilobits, Megabits, Gigabits, Terabits, Percent, Count, Bytes/Second, Kilobytes/Second, Megabytes/Second, Gigabytes/Second, Terabytes/Second, Bits/Second, Kilobits/Second, Megabits/Second, Gigabits/Second, Terabits/Second, Count/Second, or None. |
 
 ### metrics.metric_stat.metric
@@ -432,8 +432,8 @@ Used by: `dimensions`, `metrics.metric_stat.metric.dimensions`
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `dimensions` | List\<[Struct(Dimension)](#dimension)\> | No | The metric dimensions that you want to be used for the metric that the alarm will watch. |
-| `metric_name` | `String` | No | The name of the metric that you want the alarm to watch. This is a required field. |
-| `namespace` | `String` | No | The namespace of the metric that the alarm will watch. |
+| `metric_name` | `String (length: 1..=255)` | No | The name of the metric that you want the alarm to watch. This is a required field. |
+| `namespace` | `String (length: 1..=255, pattern: ^[^:].*$)` | No | The namespace of the metric that the alarm will watch. |
 
 ### warm_up_configuration
 
