@@ -98,7 +98,7 @@ fn subscription_with(attribute: &'static str, value: Value) -> Resource {
             "topic_arn",
             string("arn:aws:sns:ap-northeast-1:123456789012:alerts"),
         )
-        .with_attribute("protocol", string("email"))
+        .with_attribute("protocol", enum_identifier("email"))
         .with_attribute("endpoint", string("alerts@example.com"))
         .with_attribute(attribute, value)
 }

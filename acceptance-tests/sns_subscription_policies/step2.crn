@@ -23,7 +23,7 @@ let fifo_topic = awscc.sns.Topic {
 
 awscc.sns.Subscription {
   topic_arn            = fifo_topic.topic_arn
-  protocol             = 'sqs'
+  protocol             = sqs
   endpoint             = '__FIFO_QUEUE_ARN__'
   raw_message_delivery = true
 

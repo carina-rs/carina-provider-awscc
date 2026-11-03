@@ -21,7 +21,7 @@ let alerts = awscc.sns.Topic {
 
 awscc.sns.Subscription {
   topic_arn = alerts.topic_arn
-  protocol  = 'email'
+  protocol  = email
   # Replace this placeholder with an email address you control. SNS sends a
   # confirmation email; the subscription delivers nothing until the recipient
   # confirms it.
@@ -48,14 +48,14 @@ The subscription's endpoint. The endpoint value depends on the protocol that you
 
 ### `filter_policy_scope`
 
-- **Type:** String
+- **Type:** [Enum (FilterPolicyScope)](#filter_policy_scope-filterpolicyscope)
 - **Required:** No
 
 This attribute lets you choose the filtering scope by using one of the following string value types: MessageAttributes (default) and MessageBody.
 
 ### `protocol`
 
-- **Type:** String
+- **Type:** [Enum (Protocol)](#protocol-protocol)
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -110,6 +110,33 @@ The ARN of the topic to subscribe to.
 These CloudFormation properties require the free-form JSON document type tracked by [carina-rs/carina#4144](https://github.com/carina-rs/carina/issues/4144):
 
 - `filter_policy` — Filter keys are user-defined message attribute or body-property names, and the operator grammar nests recursively; this remains blocked on carina-rs/carina#4144.
+
+## Enum Values
+
+### filter_policy_scope (FilterPolicyScope)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `MessageAttributes` | `aws.sns.Subscription.FilterPolicyScope.message_attributes` |
+| `MessageBody` | `aws.sns.Subscription.FilterPolicyScope.message_body` |
+
+Shorthand formats: `message_attributes` or `FilterPolicyScope.message_attributes`
+
+### protocol (Protocol)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `http` | `aws.sns.Subscription.Protocol.http` |
+| `https` | `aws.sns.Subscription.Protocol.https` |
+| `email` | `aws.sns.Subscription.Protocol.email` |
+| `email-json` | `aws.sns.Subscription.Protocol.email_json` |
+| `sms` | `aws.sns.Subscription.Protocol.sms` |
+| `sqs` | `aws.sns.Subscription.Protocol.sqs` |
+| `application` | `aws.sns.Subscription.Protocol.application` |
+| `lambda` | `aws.sns.Subscription.Protocol.lambda` |
+| `firehose` | `aws.sns.Subscription.Protocol.firehose` |
+
+Shorthand formats: `http` or `Protocol.http`
 
 ## Attribute Reference
 

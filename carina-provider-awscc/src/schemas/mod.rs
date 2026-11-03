@@ -14,6 +14,9 @@ mod budgets_tests;
 #[cfg(test)]
 mod cloudwatch_tests;
 
+#[cfg(test)]
+mod sns_tests;
+
 use carina_core::provider::ProviderFactory;
 use carina_core::schema::{
     SchemaRegistry, ValidatedProviderSchemaWitness, ValidatedResourceSchema,

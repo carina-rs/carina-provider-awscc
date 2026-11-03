@@ -4714,12 +4714,34 @@ fn render_schema_code(schema: &EmissionContext<'_>, type_name: &str) -> Result<S
     let mut needs_attribute_type = false;
     let mut needs_struct_field = false;
     let mut enums: BTreeMap<String, EnumInfo> = BTreeMap::new();
+    let mut emitted_struct_defs = BTreeMap::new();
 
     for (prop_name, prop) in &schema.properties {
         if is_deprecated_property(prop)
             || should_omit_top_level_property(&schema.type_name, prop_name)
         {
             continue;
+        }
+        let resource_override =
+            resource_type_override(type_name, CfnPropertyPath::new(None, prop_name));
+        // Whole-attribute and item-expression overrides discard the source
+        // children; only discover definitions from the emitted source shape.
+        if resource_override
+            .and_then(TypeOverride::attribute_type_expression)
+            .is_none()
+            && resource_override
+                .and_then(TypeOverride::array_item_type_expression)
+                .is_none()
+        {
+            collect_struct_defs(
+                prop,
+                prop_name,
+                schema,
+                &[],
+                std::slice::from_ref(prop_name),
+                None,
+                &mut emitted_struct_defs,
+            );
         }
         let (attr_type, enum_info) =
             cfn_type_to_carina_type_with_enum(prop, prop_name, schema, &namespace, &enums);
@@ -4736,8 +4758,6 @@ fn render_schema_code(schema: &EmissionContext<'_>, type_name: &str) -> Result<S
             enums.insert(prop_name.clone(), info);
         }
         // Check resource-scoped enum overrides.
-        let resource_override =
-            resource_type_override(type_name, CfnPropertyPath::new(None, prop_name));
         if let Some(values) = resource_override.and_then(TypeOverride::enum_values) {
             enums.insert(
                 prop_name.clone(),
@@ -4776,6 +4796,15 @@ fn render_schema_code(schema: &EmissionContext<'_>, type_name: &str) -> Result<S
                         resource_type_override(&schema.type_name, cfn_property_path)
                     {
                         if let Some(values) = nested_override.enum_values() {
+                            // Overrides may cover omitted definitions. Do not
+                            // publish their leaf-keyed legacy lookup entries:
+                            // SNS Subscription.Protocol would overwrite the
+                            // emitted LoggingConfig.Protocol values.
+                            if !emitted_struct_defs
+                                .contains_key(&MarkdownStructKey::Definition(def_name.clone()))
+                            {
+                                continue;
+                            }
                             enums.insert(
                                 composite_key.clone(),
                                 enum_info_for_override(field_name, values),
@@ -7812,6 +7841,70 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 block_name: None,
                 default: None,
             },
+        );
+
+        // Subscribe documents these protocols for both standalone subscriptions
+        // and Topic's Subscription definition (the latter stays omitted from
+        // the public schema). Keep each override at its full CFN path.
+        // https://docs.aws.amazon.com/sns/latest/api/API_Subscribe.html
+        for (cfn_type, path) in [
+            ("AWS::SNS::Subscription", "Protocol"),
+            ("AWS::SNS::Topic", "Subscription.Protocol"),
+        ] {
+            m.insert(
+                (cfn_type, path),
+                TypeOverride::Enum(vec![
+                    "http",
+                    "https",
+                    "email",
+                    "email-json",
+                    "sms",
+                    "sqs",
+                    "application",
+                    "lambda",
+                    "firehose",
+                ]),
+            );
+        }
+        // https://docs.aws.amazon.com/sns/latest/api/API_Subscribe.html
+        m.insert(
+            ("AWS::SNS::Subscription", "FilterPolicyScope"),
+            TypeOverride::Enum(vec!["MessageAttributes", "MessageBody"]),
+        );
+        // https://docs.aws.amazon.com/sns/latest/api/API_SetTopicAttributes.html
+        m.insert(
+            ("AWS::SNS::Topic", "FifoThroughputScope"),
+            TypeOverride::Enum(vec!["Topic", "MessageGroup"]),
+        );
+        // https://docs.aws.amazon.com/sns/latest/api/API_SetTopicAttributes.html
+        m.insert(
+            ("AWS::SNS::Topic", "TracingConfig"),
+            TypeOverride::Enum(vec!["PassThrough", "Active"]),
+        );
+        // SignatureVersion documents "1" (SHA1) and "2" (SHA256).
+        // Keep plain String: "1"/"2" are not valid DSL identifiers, and there
+        // is no per-path enum alias mechanism yet, so no enum is added.
+        // https://docs.aws.amazon.com/sns/latest/api/API_SetTopicAttributes.html
+        // https://docs.aws.amazon.com/sns/latest/dg/sns-verify-signature-of-message-configure-message-signature.html
+        m.insert(
+            ("AWS::SNS::Topic", "SignatureVersion"),
+            TypeOverride::StringType("AttributeType::string()"),
+        );
+        // TopicName: 1..=256 ASCII letters, digits, '_' or '-'; FIFO names
+        // must end with .fifo. Defer pattern/length enforcement until
+        // carina-rs/carina#4230 allows identity-typed string references.
+        // https://docs.aws.amazon.com/sns/latest/api/API_CreateTopic.html
+        m.insert(
+            ("AWS::SNS::Topic", "TopicName"),
+            TypeOverride::StringType("AttributeType::string()"),
+        );
+        // SuccessFeedbackSampleRate is a numeric string in 0..=100 for every
+        // delivery-logging protocol, all sharing the LoggingConfig definition.
+        // Defer string refinement until carina-rs/carina#4230.
+        // https://docs.aws.amazon.com/sns/latest/api/API_SetTopicAttributes.html
+        m.insert(
+            ("AWS::SNS::Topic", "LoggingConfig.SuccessFeedbackSampleRate"),
+            TypeOverride::StringType("AttributeType::string()"),
         );
 
         // Cloud Control create/get in both directions with carina-test-008 in
@@ -13257,6 +13350,197 @@ mod tests {
         assert!(markdown.contains("## Not yet supported"));
         assert!(markdown.contains("`subscription`"));
         assert!(markdown.contains("use awscc.sns.Subscription instead"));
+    }
+
+    const SNS_SUBSCRIPTION_PROTOCOLS: &[(&str, &str)] = &[
+        ("http", "http"),
+        ("https", "https"),
+        ("email", "email"),
+        ("email-json", "email_json"),
+        ("sms", "sms"),
+        ("sqs", "sqs"),
+        ("application", "application"),
+        ("lambda", "lambda"),
+        ("firehose", "firehose"),
+    ];
+
+    fn generated_sns_field<'a>(generated: &'a str, path: &str) -> &'a str {
+        if path.contains('.') {
+            return generated_budgets_field(generated, path);
+        }
+        for constructor in ["required", "optional", "provider_populated"] {
+            if let Some((_, field)) = generated.split_once(&format!(
+                "AttributeSchema::{constructor}({}, ",
+                rust_lit(&path.to_snake_case())
+            )) {
+                return field.split_once(")\n").unwrap().0;
+            }
+        }
+        panic!("missing SNS attribute {path}");
+    }
+
+    #[test]
+    fn test_sns_api_enums_have_exact_cached_cfn_path_overrides() {
+        let protocols = SNS_SUBSCRIPTION_PROTOCOLS
+            .iter()
+            .map(|(wire, _)| *wire)
+            .collect::<Vec<_>>();
+        for (cfn_type, path, values) in [
+            ("AWS::SNS::Subscription", "Protocol", protocols.clone()),
+            ("AWS::SNS::Topic", "Subscription.Protocol", protocols),
+            (
+                "AWS::SNS::Subscription",
+                "FilterPolicyScope",
+                vec!["MessageAttributes", "MessageBody"],
+            ),
+            (
+                "AWS::SNS::Topic",
+                "FifoThroughputScope",
+                vec!["Topic", "MessageGroup"],
+            ),
+            (
+                "AWS::SNS::Topic",
+                "TracingConfig",
+                vec!["PassThrough", "Active"],
+            ),
+        ] {
+            let schema = cfn_schema_for_codegen_tests(cfn_type);
+            let cfn_path = path.split_once('.').map_or_else(
+                || CfnPropertyPath::new(None, path),
+                |(parent, property)| CfnPropertyPath::new(Some(parent), property),
+            );
+            let source = cfn_override_property(&schema, cfn_path)
+                .unwrap_or_else(|| panic!("missing cached CFN path {cfn_type}.{path}"));
+            assert_eq!(
+                source.prop_type.as_ref().unwrap().effective_type(),
+                Some("string")
+            );
+            assert_eq!(
+                resource_type_overrides().get(&(cfn_type, path)),
+                Some(&TypeOverride::Enum(values)),
+                "{cfn_type}.{path} must have its own full CFN path override"
+            );
+        }
+        let topic = cfn_schema_for_codegen_tests("AWS::SNS::Topic");
+        assert!(!topic.properties.contains_key("Subscriptions"));
+        assert!(
+            !topic
+                .definitions
+                .as_ref()
+                .unwrap()
+                .contains_key("Subscriptions")
+        );
+    }
+
+    #[test]
+    fn test_sns_subscription_api_enums_and_email_json_dsl_spelling() {
+        let schema = cfn_schema_for_codegen_tests("AWS::SNS::Subscription");
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        for (path, values) in [
+            ("Protocol", SNS_SUBSCRIPTION_PROTOCOLS),
+            (
+                "FilterPolicyScope",
+                &[
+                    ("MessageAttributes", "message_attributes"),
+                    ("MessageBody", "message_body"),
+                ][..],
+            ),
+        ] {
+            let field = generated_sns_field(&generated, path);
+            assert!(
+                field.starts_with("AttributeType::enum_("),
+                "{path}: {field}"
+            );
+            assert_budgets_enum_values(field, path, values);
+        }
+        assert_eq!(dsl_enum_value("email-json"), "email_json");
+        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        for value in ["email_json", "message_attributes", "message_body"] {
+            assert!(markdown.contains(&format!(".{value}`")), "{value}");
+        }
+    }
+
+    #[test]
+    fn test_sns_topic_api_enums_and_plain_string_signature_version() {
+        let schema = cfn_schema_for_codegen_tests("AWS::SNS::Topic");
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        for (path, values) in [
+            (
+                "FifoThroughputScope",
+                &[("Topic", "topic"), ("MessageGroup", "message_group")][..],
+            ),
+            (
+                "TracingConfig",
+                &[("PassThrough", "pass_through"), ("Active", "active")][..],
+            ),
+        ] {
+            let field = generated_sns_field(&generated, path);
+            assert!(
+                field.starts_with("AttributeType::enum_("),
+                "{path}: {field}"
+            );
+            assert_budgets_enum_values(field, path, values);
+        }
+        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        for value in ["topic", "message_group", "pass_through", "active"] {
+            assert!(markdown.contains(&format!(".{value}`")), "{value}");
+        }
+        assert!(
+            generated_sns_field(&generated, "SignatureVersion")
+                .starts_with("AttributeType::string()")
+        );
+        assert!(markdown.contains("### `signature_version`\n\n- **Type:** String\n"));
+    }
+
+    #[test]
+    fn test_sns_topic_embedded_subscription_definition_uses_protocol_enum() {
+        let schema = cfn_schema_for_codegen_tests("AWS::SNS::Topic");
+        let public_schema = generate_schema_code(&schema, &schema.type_name).unwrap();
+        assert!(
+            !public_schema.contains("VALID_SUBSCRIPTION_PROTOCOL"),
+            "an omitted definition must not overwrite the delivery-logging protocol lookup"
+        );
+        // Topic.Subscription stays omitted from the public schema. Exercise the
+        // cached definition directly so its full-path override cannot go stale.
+        let (generated, _) = cfn_type_to_carina_type_with_enum(
+            &schema.properties["Subscription"],
+            "Subscription",
+            &schema,
+            "aws.sns.Topic",
+            &BTreeMap::new(),
+        );
+        let field = generated_sns_field(&generated, "Subscription.Protocol");
+        assert!(field.starts_with("AttributeType::enum_("), "{field}");
+        assert_budgets_enum_values(field, "Subscription.Protocol", SNS_SUBSCRIPTION_PROTOCOLS);
+        assert!(
+            generated_sns_field(&generated, "Subscription.Endpoint")
+                .starts_with("AttributeType::string()")
+        );
+    }
+
+    #[test]
+    fn test_sns_deferred_string_constraints_use_plain_string_overrides() {
+        let schema = cfn_schema_for_codegen_tests("AWS::SNS::Topic");
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        for path in ["TopicName", "LoggingConfig.SuccessFeedbackSampleRate"] {
+            let cfn_path = path.split_once('.').map_or_else(
+                || CfnPropertyPath::new(None, path),
+                |(parent, property)| CfnPropertyPath::new(Some(parent), property),
+            );
+            assert!(cfn_override_property(&schema, cfn_path).is_some(), "{path}");
+            assert_eq!(
+                resource_type_overrides().get(&("AWS::SNS::Topic", path)),
+                Some(&TypeOverride::StringType("AttributeType::string()")),
+                "{path}: preserve identity-typed references until carina#4230"
+            );
+            assert!(generated_sns_field(&generated, path).starts_with("AttributeType::string()"));
+        }
+        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        assert!(markdown.contains("### `topic_name`\n\n- **Type:** String\n"));
+        assert!(markdown.contains("| `success_feedback_sample_rate` | String |"));
+        assert!(
+            generated_sns_field(&generated, "DisplayName").starts_with("AttributeType::string()")
+        );
     }
 
     #[test]

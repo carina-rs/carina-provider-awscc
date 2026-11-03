@@ -54,7 +54,7 @@ The display name to use for an SNS topic with SMS subscriptions. The display nam
 
 ### `fifo_throughput_scope`
 
-- **Type:** String
+- **Type:** [Enum (FifoThroughputScope)](#fifo_throughput_scope-fifothroughputscope)
 - **Required:** No
 
 Specifies the throughput quota and deduplication behavior to apply for the FIFO topic. Valid values are ``Topic`` or ``MessageGroup``.
@@ -105,7 +105,7 @@ The name of the topic you want to create. Topic names must include only uppercas
 
 ### `tracing_config`
 
-- **Type:** String
+- **Type:** [Enum (TracingConfig)](#tracing_config-tracingconfig)
 - **Required:** No
 
 Tracing mode of an SNS topic. By default ``TracingConfig`` is set to ``PassThrough``, and the topic passes through the tracing header it receives from an SNS publisher to its subscriptions. If set to ``Active``, SNS will vend X-Ray segment data to topic owner account if the sampled flag in the tracing header is true.
@@ -130,6 +130,24 @@ These CloudFormation properties are deliberately omitted for the provider-specif
 | `application` | `aws.sns.Topic.LoggingConfig.Protocol.application` |
 
 Shorthand formats: `http_s` or `Protocol.http_s`
+
+### fifo_throughput_scope (FifoThroughputScope)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `Topic` | `aws.sns.Topic.FifoThroughputScope.topic` |
+| `MessageGroup` | `aws.sns.Topic.FifoThroughputScope.message_group` |
+
+Shorthand formats: `topic` or `FifoThroughputScope.topic`
+
+### tracing_config (TracingConfig)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `PassThrough` | `aws.sns.Topic.TracingConfig.pass_through` |
+| `Active` | `aws.sns.Topic.TracingConfig.active` |
+
+Shorthand formats: `pass_through` or `TracingConfig.pass_through`
 
 ## Struct Definitions
 

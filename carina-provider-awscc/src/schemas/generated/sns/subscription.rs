@@ -11,6 +11,20 @@ pub fn arn() -> AttributeType {
     carina_aws_types::arn()
 }
 
+const VALID_FILTER_POLICY_SCOPE: &[&str] = &["MessageAttributes", "MessageBody"];
+
+const VALID_PROTOCOL: &[&str] = &[
+    "http",
+    "https",
+    "email",
+    "email-json",
+    "sms",
+    "sqs",
+    "application",
+    "lambda",
+    "firehose",
+];
+
 /// Returns the schema config for sns_subscription (AWS::SNS::Subscription)
 #[rustfmt::skip]
 pub fn sns_subscription_config() -> AwsccSchemaConfig {
@@ -43,7 +57,7 @@ pub fn sns_subscription_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_endpoint_attribute());
     #[inline(never)]
     fn build_filter_policy_scope_attribute() -> AttributeSchema {
-        AttributeSchema::optional("filter_policy_scope", AttributeType::string())
+        AttributeSchema::optional("filter_policy_scope", AttributeType::enum_(carina_core::schema::enum_identity("FilterPolicyScope", Some("aws.sns.Subscription")), Some(vec!["MessageAttributes".to_string(), "MessageBody".to_string()]), vec![("MessageAttributes".to_string(), "message_attributes".to_string()), ("MessageBody".to_string(), "message_body".to_string())], None, None))
                 .with_description("This attribute lets you choose the filtering scope by using one of the following string value types: MessageAttributes (default) and MessageBody.")
                 .with_provider_name("FilterPolicyScope")
             .build()
@@ -51,7 +65,7 @@ pub fn sns_subscription_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_filter_policy_scope_attribute());
     #[inline(never)]
     fn build_protocol_attribute() -> AttributeSchema {
-        AttributeSchema::required("protocol", AttributeType::string())
+        AttributeSchema::required("protocol", AttributeType::enum_(carina_core::schema::enum_identity("Protocol", Some("aws.sns.Subscription")), Some(vec!["http".to_string(), "https".to_string(), "email".to_string(), "email-json".to_string(), "sms".to_string(), "sqs".to_string(), "application".to_string(), "lambda".to_string(), "firehose".to_string()]), vec![("http".to_string(), "http".to_string()), ("https".to_string(), "https".to_string()), ("email".to_string(), "email".to_string()), ("email-json".to_string(), "email_json".to_string()), ("sms".to_string(), "sms".to_string()), ("sqs".to_string(), "sqs".to_string()), ("application".to_string(), "application".to_string()), ("lambda".to_string(), "lambda".to_string()), ("firehose".to_string(), "firehose".to_string())], None, None))
                 .create_only()
                 .with_description("The subscription's protocol.")
                 .with_provider_name("Protocol")
@@ -126,7 +140,13 @@ pub fn enum_valid_values() -> (
     &'static str,
     &'static [(&'static str, &'static [&'static str])],
 ) {
-    ("sns.Subscription", &[])
+    (
+        "sns.Subscription",
+        &[
+            ("filter_policy_scope", VALID_FILTER_POLICY_SCOPE),
+            ("protocol", VALID_PROTOCOL),
+        ],
+    )
 }
 
 /// Returns the IAM permissions declared by the CloudFormation handler for this operation.
