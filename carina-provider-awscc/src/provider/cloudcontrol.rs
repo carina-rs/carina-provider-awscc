@@ -4,7 +4,10 @@
 //! API: creating, reading, updating, and deleting resources, as well as polling for
 //! operation completion and retry/error handling logic.
 
-use aws_sdk_cloudcontrol::{
+use aws_smithy_runtime_api::client::{orchestrator::HttpResponse, result::SdkError};
+use aws_smithy_types::error::metadata::ProvideErrorMetadata;
+use aws_smithy_types::retry::ProvideErrorKind;
+use carina_aws_types::sdk::cloudcontrol::{
     operation::{
         create_resource::{CreateResourceError, CreateResourceOutput},
         delete_resource::DeleteResourceError,
@@ -12,10 +15,6 @@ use aws_sdk_cloudcontrol::{
     },
     types::{HandlerErrorCode, OperationStatus, ProgressEvent},
 };
-
-use aws_smithy_runtime_api::client::{orchestrator::HttpResponse, result::SdkError};
-use aws_smithy_types::error::metadata::ProvideErrorMetadata;
-use aws_smithy_types::retry::ProvideErrorKind;
 use carina_aws_types::{FinalAttempt, SendClassification, Transience};
 use carina_core::provider::{ProviderError, ProviderResult};
 use carina_plugin_sdk::PhasedToken;
@@ -1081,6 +1080,7 @@ impl AwsccProvider {
     ) -> Result<Option<serde_json::Value>, ReadFailure> {
         let result = self
             .cloudcontrol_client
+            .inner()
             .get_resource()
             .type_name(type_name)
             .identifier(identifier)
@@ -1239,6 +1239,7 @@ impl AwsccProvider {
         client_token: &ClientToken,
     ) -> Result<CreateResourceOutput, Box<SdkError<CreateResourceError, HttpResponse>>> {
         self.cloudcontrol_client
+            .inner()
             .create_resource()
             .type_name(type_name)
             .desired_state(desired_state.to_string())
@@ -1404,6 +1405,7 @@ impl AwsccProvider {
 
         let result = self
             .cloudcontrol_client
+            .inner()
             .get_resource_request_status()
             .request_token(request.as_str())
             .send()
@@ -1564,6 +1566,7 @@ impl AwsccProvider {
 
         Ok(self
             .cloudcontrol_client
+            .inner()
             .update_resource()
             .type_name(type_name)
             .identifier(identifier)
@@ -1682,6 +1685,7 @@ impl AwsccProvider {
         client_token: &ClientToken,
     ) -> Result<Option<RequestToken>, Box<SdkError<DeleteResourceError, HttpResponse>>> {
         self.cloudcontrol_client
+            .inner()
             .delete_resource()
             .type_name(type_name)
             .identifier(identifier)
@@ -2176,6 +2180,7 @@ impl AwsccProvider {
         let request = token.request().clone();
         let status = self
             .cloudcontrol_client
+            .inner()
             .get_resource_request_status()
             .request_token(request.as_str())
             .send()
@@ -2280,8 +2285,8 @@ mod tests {
 
     #[test]
     fn read_error_classifier_distinguishes_transient_from_permanent_transport() {
-        use aws_sdk_cloudcontrol::operation::get_resource::GetResourceError;
         use aws_smithy_runtime_api::client::result::ConnectorError;
+        use carina_aws_types::sdk::cloudcontrol::operation::get_resource::GetResourceError;
         let error =
             |connector| SdkError::<GetResourceError, HttpResponse>::dispatch_failure(connector);
         for (connector, expected) in [
@@ -2717,9 +2722,9 @@ mod tests {
 
     #[test]
     fn test_is_not_found_error_resource_not_found() {
-        use aws_sdk_cloudcontrol::operation::get_resource::GetResourceError;
-        use aws_sdk_cloudcontrol::types::error::ResourceNotFoundException;
         use aws_smithy_runtime_api::client::result::SdkError;
+        use carina_aws_types::sdk::cloudcontrol::operation::get_resource::GetResourceError;
+        use carina_aws_types::sdk::cloudcontrol::types::error::ResourceNotFoundException;
 
         let err = GetResourceError::ResourceNotFoundException(
             ResourceNotFoundException::builder()
@@ -2733,8 +2738,8 @@ mod tests {
 
     #[test]
     fn test_is_not_found_error_handler_not_found_code() {
-        use aws_sdk_cloudcontrol::operation::get_resource::GetResourceError;
         use aws_smithy_runtime_api::client::result::SdkError;
+        use carina_aws_types::sdk::cloudcontrol::operation::get_resource::GetResourceError;
 
         let err = GetResourceError::generic(
             aws_smithy_types::error::ErrorMetadata::builder()
@@ -2748,9 +2753,9 @@ mod tests {
 
     #[test]
     fn test_is_not_found_error_false_for_throttling() {
-        use aws_sdk_cloudcontrol::operation::get_resource::GetResourceError;
-        use aws_sdk_cloudcontrol::types::error::ThrottlingException;
         use aws_smithy_runtime_api::client::result::SdkError;
+        use carina_aws_types::sdk::cloudcontrol::operation::get_resource::GetResourceError;
+        use carina_aws_types::sdk::cloudcontrol::types::error::ThrottlingException;
 
         let err = GetResourceError::ThrottlingException(
             ThrottlingException::builder()
@@ -2764,8 +2769,8 @@ mod tests {
 
     #[test]
     fn test_is_not_found_error_false_for_timeout() {
-        use aws_sdk_cloudcontrol::operation::get_resource::GetResourceError;
         use aws_smithy_runtime_api::client::result::SdkError;
+        use carina_aws_types::sdk::cloudcontrol::operation::get_resource::GetResourceError;
 
         let sdk_err: SdkError<GetResourceError, http::Response<&str>> =
             SdkError::timeout_error("connection timed out");

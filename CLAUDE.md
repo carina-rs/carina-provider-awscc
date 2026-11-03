@@ -69,6 +69,12 @@ carina-provider-protocol = { path = "../carina/carina-provider-protocol" }
 `carina-provider-aws` and consumed here as a rev-pinned git dependency. Its
 upstream revision must use the same `carina-core` revision as this workspace.
 
+SDK service types and guarded handles come from `carina_aws_types::sdk`; use the
+same re-exports in tests. Construct clients through the guarded handles using
+`BoundedSdkConfig`, and use `GuardedAssumeRoleProvider` for role credentials.
+Do not add direct `aws-sdk-*` or `aws-config` dependencies. See
+[`CODEGEN.md`](CODEGEN.md#sdk-access) for feature selection and SDK access rules.
+
 ## Code Generation
 
 Resource definitions are generated from CloudFormation resource type schemas:

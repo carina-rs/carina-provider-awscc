@@ -12,6 +12,23 @@ The codegen pipeline:
 2. Generates Rust schema code (`schemas/generated/`) via the `codegen` binary
 3. Optionally generates Markdown documentation (`generated-docs/`)
 
+## SDK Access
+
+The codegen binary and generated schemas do not construct SDK clients. The
+provider uses guarded handles from `carina_aws_types::sdk` for CloudControl,
+S3, STS, and KMS, and `GuardedAssumeRoleProvider` for role credentials. Service
+handles accept the bounded shared configuration and the idempotency lookup in
+[`resend_safety.rs`](carina-provider-awscc/src/resend_safety.rs); borrow the SDK
+client through `.inner()` for operations. CloudControl retains its existing
+Smithy-model-based idempotency table.
+
+Enable service features on the normal `carina-aws-types` dependency. Its workspace
+dependency disables default features; the dev-dependency adds only `test-utils`.
+Use its `sdk::<service>::{error, operation, primitives, types}` re-exports in both
+provider code and tests. Direct `aws-sdk-*` and `aws-config` dependencies are not
+needed; shared configuration comes from `aws-types`. The upstream facade has
+compile-fail doctests for inaccessible raw client and configuration types.
+
 ## Prerequisites
 
 - AWS credentials accessible via `aws-vault` (needed to call `aws cloudformation describe-type`)

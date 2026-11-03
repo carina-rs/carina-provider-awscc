@@ -28,8 +28,7 @@ mod special_cases;
 mod tags;
 pub(crate) mod update;
 
-use aws_sdk_cloudcontrol::Client as CloudControlClient;
-use aws_sdk_sts::Client as StsClient;
+use carina_aws_types::sdk::{cloudcontrol::CloudControlClient, s3::S3Client, sts::StsClient};
 use carina_core::provider::ProviderError;
 use tokio::sync::OnceCell;
 
@@ -76,7 +75,7 @@ const DELETE_RETRY_MAX_DELAY_SECS: u64 = 120;
 ///
 /// Carries the `allowed_account_ids` / `forbidden_account_ids` guard
 /// lists (both empty = "no check") and, when present, a parsed
-/// `assume_role` block that layers an STS `AssumeRoleProvider` on top
+/// `assume_role` block that layers a guarded STS credentials provider on top
 /// of base credentials (host-supplied on wasm32, the default chain natively).
 #[derive(Debug, Default, Clone)]
 pub struct AwsccProviderConfig {
@@ -88,7 +87,7 @@ pub struct AwsccProviderConfig {
 /// AWS Cloud Control Provider
 pub struct AwsccProvider {
     cloudcontrol_client: CloudControlClient,
-    s3_client: aws_sdk_s3::Client,
+    s3_client: S3Client,
     sts_client: StsClient,
     /// KMS is reachable only after the shared account guard has succeeded.
     initialized: Result<InitializedState, String>,
@@ -167,6 +166,7 @@ impl AwsccProvider {
             .get_or_try_init(|| async {
                 let identity = self
                     .sts_client
+                    .inner()
                     .get_caller_identity()
                     .send()
                     .await
@@ -221,9 +221,37 @@ mod tests {
     use crate::sdk_config::assert_bounded_policy;
 
     #[tokio::test]
+    async fn every_provider_client_has_the_resend_guard() {
+        use aws_smithy_runtime_api::client::interceptors::Intercept;
+
+        let mock = MockAws::builder().build();
+        let provider = AwsccProvider::from_sdk_config(
+            BoundedSdkConfig::for_test(mock.sdk_config("us-east-1").await),
+            &AwsccProviderConfig::default(),
+        )
+        .await;
+
+        macro_rules! assert_guard {
+            ($config:expr) => {
+                assert!(
+                    $config
+                        .interceptors()
+                        .any(|interceptor| interceptor.name() == "carina.ResendGuard")
+                );
+            };
+        }
+        assert_guard!(provider.cloudcontrol_client.inner().config());
+        assert_guard!(provider.s3_client.inner().config());
+        assert_guard!(provider.sts_client.inner().config());
+        let kms = provider.kms_client().unwrap();
+        assert_guard!(kms.guarded_client("us-east-1").inner().config());
+        assert_guard!(kms.guarded_client("eu-west-1").inner().config());
+    }
+
+    #[tokio::test]
     async fn from_sdk_config_applies_policy_to_all_client_config_sources() {
         let mock = MockAws::builder().build();
-        let input = aws_config::SdkConfig::builder()
+        let input = aws_types::SdkConfig::builder()
             .http_client(mock.http_client())
             .credentials_provider(mock.credentials_provider())
             .timeout_config(TimeoutConfig::disabled())
@@ -236,17 +264,21 @@ mod tests {
         .await;
 
         assert_bounded_policy(
-            provider.cloudcontrol_client.config().timeout_config(),
-            provider.cloudcontrol_client.config().retry_config(),
+            provider
+                .cloudcontrol_client
+                .inner()
+                .config()
+                .timeout_config(),
+            provider.cloudcontrol_client.inner().config().retry_config(),
         );
 
         assert_bounded_policy(
-            provider.s3_client.config().timeout_config(),
-            provider.s3_client.config().retry_config(),
+            provider.s3_client.inner().config().timeout_config(),
+            provider.s3_client.inner().config().retry_config(),
         );
         assert_bounded_policy(
-            provider.sts_client.config().timeout_config(),
-            provider.sts_client.config().retry_config(),
+            provider.sts_client.inner().config().timeout_config(),
+            provider.sts_client.inner().config().retry_config(),
         );
     }
 }

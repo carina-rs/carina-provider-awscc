@@ -218,12 +218,12 @@ impl CloudControlOperationFailure {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aws_sdk_cloudcontrol::error::SdkError;
-    use aws_sdk_cloudcontrol::operation::create_resource::CreateResourceError;
-    use aws_sdk_cloudcontrol::types::error::GeneralServiceException;
     use aws_smithy_runtime_api::http::{Response, StatusCode};
     use aws_smithy_types::body::SdkBody;
     use aws_smithy_types::error::metadata::ErrorMetadata;
+    use carina_aws_types::sdk::cloudcontrol::error::SdkError;
+    use carina_aws_types::sdk::cloudcontrol::operation::create_resource::CreateResourceError;
+    use carina_aws_types::sdk::cloudcontrol::types::error::GeneralServiceException;
     use carina_provider_protocol::types::ProviderErrorKind;
 
     #[test]
