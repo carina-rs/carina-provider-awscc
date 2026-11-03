@@ -2879,10 +2879,13 @@ fn is_list_of_struct_property(prop: &CfnProperty, schema: &CfnSchema) -> bool {
 }
 
 fn uses_core_schema_types_path(s: &str) -> bool {
-    s.contains("types::ipv4_")
-        || s.contains("types::ipv6_")
-        || s.contains("types::cidr()")
-        || s.contains("types::email()")
+    // Qualified paths and identifiers such as `carina_aws_types` need no import.
+    s.match_indices("types::").any(|(index, _)| {
+        s[..index]
+            .chars()
+            .next_back()
+            .is_none_or(|ch| ch != ':' && ch != '_' && !ch.is_alphanumeric())
+    })
 }
 
 /// Infer a display type name for a string property based on its name.
@@ -2994,7 +2997,9 @@ fn override_type_to_display_name(override_type: &str) -> &str {
         "carina_aws_types::ipam_id()" => "IpamId",
         "carina_aws_types::iam_role_id()" => "IamRoleId",
         "carina_aws_types::aws_region()" => "Region",
-        "types::ipv4_address()" => "Ipv4Address",
+        "types::ipv4_address()" | "carina_core::schema::types::ipv4_address()" => "Ipv4Address",
+        "carina_core::schema::types::ipv6_address()" => "Ipv6Address",
+        "carina_core::schema::types::domain_name()" => "DomainName",
         "carina_aws_types::arn()" => "Arn",
         "carina_aws_types::ipam_pool_id()" => "IpamPoolId",
         "carina_aws_types::vpc_cidr_block_association_id()" => "VpcCidrBlockAssociationId",
@@ -4639,17 +4644,48 @@ fn generate_top_level_attribute_type(
     enums: &BTreeMap<String, EnumInfo>,
     has_arn_helper: bool,
 ) -> String {
-    let prop = classified.property();
-    let prop_name = classified.name();
-    let schema = classified.schema();
-    let property_path = CfnPropertyPath::new(None, prop_name);
-    let override_type = checked_resource_type_override(schema, property_path, prop);
-    if prop_name == "Arn" && has_arn_helper {
+    if classified.name() == "Arn" && has_arn_helper {
         return "self::arn()".to_string();
     }
 
-    if let Some(TypeOverride::AttributeType { expression, .. }) = override_type {
-        return (*expression).to_string();
+    let property_path = classified.path();
+    generate_attribute_type(
+        classified,
+        namespace,
+        enums,
+        CfnTypeGenerationPaths {
+            structural: &[],
+            provider: property_path,
+            cfn_parent: None,
+        },
+    )
+}
+
+/// Emit overrides and inferred types through the same path for attributes and
+/// struct fields. Scalar overrides handled by the CFN emitter (including
+/// IntRange, IntEnum, and ToDsl) must not face a second variant allowlist here.
+fn generate_attribute_type(
+    classified: EmissionProperty<'_>,
+    namespace: &str,
+    enums: &BTreeMap<String, EnumInfo>,
+    paths: CfnTypeGenerationPaths<'_>,
+) -> String {
+    let prop = classified.property();
+    let prop_name = classified.name();
+    let schema = classified.schema();
+    let property_path = CfnPropertyPath::new(paths.cfn_parent, prop_name);
+    let override_type = checked_resource_type_override(schema, property_path, prop);
+
+    if let Some(expression) = override_type.and_then(TypeOverride::attribute_type_expression) {
+        return if matches!(override_type, Some(TypeOverride::StringType(_))) {
+            // StringType replaces a leaf; existing top-level uses include
+            // arrays such as VPC.CidrBlockAssociations. Retain their wrappers.
+            enum_property_type(prop, schema, expression, false)
+        } else {
+            // Whole-attribute overrides discard source children. Do not walk
+            // them or record read-only fields that will never be emitted.
+            expression.to_string()
+        };
     }
 
     if let Some(item_type) = override_type.and_then(|override_type| {
@@ -4658,10 +4694,15 @@ fn generate_top_level_attribute_type(
         return item_type;
     }
 
-    if let Some(enum_info) = enums.get(prop_name) {
+    if matches!(override_type, Some(TypeOverride::IntegerFromNumber)) {
+        return integer_from_number_type(prop, &schema.type_name, &property_path.to_string());
+    }
+
+    let emit_enum = |enum_info: &EnumInfo| {
         let aliases = known_enum_aliases();
         let prop_aliases = aliases.get(prop_name);
         let dsl_aliases_code = dsl_aliases_code(&enum_info.values, prop_aliases);
+        let enum_namespace = namespace_with_struct_path(namespace, paths.structural);
         let values_str = enum_info
             .values
             .iter()
@@ -4671,20 +4712,46 @@ fn generate_top_level_attribute_type(
         let enum_type = format!(
             r#"AttributeType::enum_(carina_core::schema::enum_identity({}, Some({})), Some(vec![{}]), {}, None, None)"#,
             rust_lit(&enum_info.type_name),
-            rust_lit(namespace),
+            rust_lit(&enum_namespace),
             values_str,
             dsl_aliases_code
         );
-        return emit_enum_property_type(
+        emit_enum_property_type(
             schema,
             property_path,
             prop,
             &enum_type,
-            override_forces_unordered(&schema.type_name, CfnPropertyPath::new(None, prop_name)),
-        );
+            override_forces_unordered(&schema.type_name, property_path),
+        )
+    };
+
+    // Top-level enum overlays are already known before walking source shapes.
+    if paths.cfn_parent.is_none()
+        && let Some(enum_info) = enums.get(prop_name)
+    {
+        return emit_enum(enum_info);
     }
 
-    cfn_type_to_carina_type_with_enum(prop, prop_name, schema, namespace, enums).0
+    let (attribute_type, local_enum_info) =
+        cfn_type_to_carina_type_with_enum_with_paths(prop, schema, namespace, enums, paths);
+    let local_enum_info = override_type
+        .and_then(TypeOverride::enum_values)
+        .map(|values| enum_info_for_override(prop_name, values))
+        .or(local_enum_info);
+    if let Some(parent) = paths.cfn_parent
+        && let Some(local_enum_info) = local_enum_info
+    {
+        // Preserve definition-qualified enum lookup and enclosing namespaces;
+        // locally detected enums still emit when the pre-scan missed a field.
+        let composite_key = format!("{parent}.{prop_name}");
+        let enum_info = enums
+            .get(&composite_key)
+            .or_else(|| enums.get(prop_name))
+            .unwrap_or(&local_enum_info);
+        return emit_enum(enum_info);
+    }
+
+    attribute_type
 }
 
 /// Admit declarations against the exact top-level DSL names emitted for this resource.
@@ -6040,9 +6107,7 @@ fn generate_struct_type(
     let emission_mark = read_only_emission_mark();
     let write_only_emission_mark = write_only_emission_mark();
     let current_struct_path = extend_struct_path(paths.structural, def_name);
-    let enum_namespace = namespace_with_struct_path(namespace, &current_struct_path);
     let required_set: HashSet<&str> = required.iter().map(|s| s.as_str()).collect();
-    let aliases = known_enum_aliases();
 
     let fields: Vec<String> = properties
         .iter()
@@ -6063,121 +6128,18 @@ fn generate_struct_type(
         .map(|(field_name, field_prop)| {
             let snake_name = field_name.to_snake_case();
             let field_path = extend_property_path(paths.provider, field_name);
-            // Apply nested-field enum overlay (awscc#246). When the resource
-            // schema does not annotate a struct field as an enum but we have
-            // a curated value list in `resource_type_overrides()` keyed by
-            // ("AWS::Service::Type", "DefName.FieldName"), promote it to a
-            // synthetic StringEnum here. List fields (`array<string>`) keep
-            // the list wrapping below; only the item type changes.
             let cfn_property_path = CfnPropertyPath::new(Some(def_name), field_name);
-            let nested_key = cfn_property_path.to_string();
-            let nested_override = checked_resource_type_override(schema, cfn_property_path, field_prop);
-            // A composite StringType override replaces the entire source
-            // property, including any object children. Do not walk those
-            // discarded children: read-only bookkeeping must describe the
-            // AttributeType that is actually emitted.
-            let (field_type, mut enum_info) = if let Some(override_type) =
-                nested_override.and_then(TypeOverride::attribute_type_expression)
-            {
-                (override_type.to_string(), None)
-            } else {
-                    cfn_type_to_carina_type_with_enum_with_paths(
-                        field_prop,
-                        schema,
-                        namespace,
-                        enums,
-                        CfnTypeGenerationPaths {
-                            structural: &current_struct_path,
-                            provider: &field_path,
-                            cfn_parent: Some(def_name),
-                        },
-                    )
-            };
-            // `EnumUnordered` is element-handled identically to `Enum`;
-            // it differs only in forcing `unordered_list` below
-            // (carina#3093).
-            if let Some(values) = nested_override.and_then(TypeOverride::enum_values)
-            {
-                enum_info = Some(enum_info_for_override(field_name, values));
-            } else if nested_override
-                .and_then(TypeOverride::attribute_type_expression)
-                .is_some()
-                || nested_override.and_then(TypeOverride::array_item_type_expression).is_some()
-            {
-                enum_info = None;
-            }
-            let field_force_unordered =
-                override_forces_unordered(&schema.type_name, cfn_property_path);
-            // If enum detected in struct field and it's in the enums map, use shared string enum type.
-            // Try composite key "DefName.FieldName" first (for definition-scoped enums),
-            // then fall back to plain "FieldName" (for top-level property enums).
-            let field_type = if let Some(expression) =
-                nested_override.and_then(TypeOverride::attribute_type_expression)
-            {
-                expression.to_string()
-            } else if matches!(nested_override, Some(TypeOverride::IntegerFromNumber)) {
-                integer_from_number_type(field_prop, &schema.type_name, &nested_key)
-            } else if nested_override.and_then(TypeOverride::array_item_type_expression).is_some() {
-                field_type
-            } else if let Some(local_enum_info) = enum_info {
-                let composite_key = format!("{}.{}", def_name, field_name);
-                let enum_type = if let Some(enum_info) =
-                    enums.get(&composite_key).or_else(|| enums.get(field_name))
-                {
-                    let prop_aliases = aliases.get(field_name.as_str());
-                    let dsl_aliases_code = dsl_aliases_code(&enum_info.values, prop_aliases);
-                    let values_str = enum_info
-                        .values
-                        .iter()
-                        .map(|v| format!("{}.to_string()", rust_lit(v)))
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    format!(
-                        r#"AttributeType::enum_(carina_core::schema::enum_identity({}, Some({})), Some(vec![{}]), {}, None, None)"#,
-                        rust_lit(&enum_info.type_name),
-                        rust_lit(&enum_namespace),
-                        values_str,
-                        dsl_aliases_code
-                    )
-                } else {
-                    // Fallback: emit StringEnum with identity even when the
-                    // pre-scanned enums map missed this field. The pre-scan
-                    // no longer skips struct fields whose name snake-cases
-                    // to a top-level prop, so reaching this branch is rare
-                    // — but we still apply the same parent-qualification
-                    // emitted `TypeIdentity` is still scoped to its
-                    // enclosing struct path.
-                    let prop_aliases = aliases.get(field_name.as_str());
-                    let dsl_aliases_code = dsl_aliases_code(&local_enum_info.values, prop_aliases);
-                    let values_str = local_enum_info
-                        .values
-                        .iter()
-                        .map(|v| format!("{}.to_string()", rust_lit(v)))
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    format!(
-                        r#"AttributeType::enum_(carina_core::schema::enum_identity({}, Some({})), Some(vec![{}]), {}, None, None)"#,
-                        rust_lit(&local_enum_info.type_name),
-                        rust_lit(&enum_namespace),
-                        values_str,
-                        dsl_aliases_code
-                    )
-                };
-                emit_enum_property_type(schema, cfn_property_path, field_prop, &enum_type, field_force_unordered)
-            } else if matches!(nested_override, Some(TypeOverride::Array { items: None, .. })) {
-                field_type
-            // Other nested override variants are caught by the trailing guard
-            // so new variants cannot silently do nothing for struct fields.
-            } else if let Some(other) = nested_override {
-                panic!(
-                    "nested override {:?} at {} uses TypeOverride variant {:?} that is not wired through generate_struct_type — add a branch here or move the entry to a top-level key",
-                    nested_key,
-                    schema.type_name,
-                    other,
-                );
-            } else {
-                field_type
-            };
+            let nested_override = resource_type_override(&schema.type_name, cfn_property_path);
+            let field_type = generate_attribute_type(
+                schema.property_at(&field_path, field_prop),
+                namespace,
+                enums,
+                CfnTypeGenerationPaths {
+                    structural: &current_struct_path,
+                    provider: &field_path,
+                    cfn_parent: Some(def_name),
+                },
+            );
             let is_read_only = is_property_read_only(schema, field_prop, &field_path);
             let is_write_only = is_write_only_property_path(schema, &field_path);
             let is_required = required_set.contains(field_name.as_str()) && !is_read_only;
@@ -6221,7 +6183,13 @@ fn generate_struct_type(
             // resolve_block_names distinguishes block syntax (Value::List) from
             // attribute assignment (Value::Map) so the block_name is safe to add.
             if !is_read_only
-                && let Some(singular) = property_block_name(&snake_name, &field_type, field_prop, schema, nested_override)
+                && let Some(singular) = property_block_name(
+                    &snake_name,
+                    &field_type,
+                    field_prop,
+                    schema,
+                    nested_override,
+                )
             {
                 field_code.push_str(&format!(".with_block_name({})", rust_lit(&singular)));
             }
@@ -8440,6 +8408,448 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             TypeOverride::StringType("carina_aws_types::sso_principal_id()"),
         );
 
+        // ELBv2 Listener ports: 1..=65535. Keep integer ports anonymous;
+        // sentinel-bearing String ports use different domains.
+        // https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_CreateListener.html
+        m.insert(
+            ("AWS::ElasticLoadBalancingV2::Listener", "Port"),
+            TypeOverride::IntRange(1, 65535),
+        );
+        // One ALPN policy name, with case-sensitive AWS wire spellings.
+        // https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_CreateListener.html
+        m.insert(
+            ("AWS::ElasticLoadBalancingV2::Listener", "AlpnPolicy"),
+            TypeOverride::Enum(vec![
+                "HTTP1Only",
+                "HTTP2Only",
+                "HTTP2Optional",
+                "HTTP2Preferred",
+                "None",
+            ])
+            .with_array_bounds(None, Some(1)),
+        );
+        // Exactly one certificate for HTTPS/TLS; the conditional minimum is
+        // cross-field. Retain CFN's struct item type and uniqueness policy.
+        // https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_CreateListener.html
+        m.insert(
+            ("AWS::ElasticLoadBalancingV2::Listener", "Certificates"),
+            TypeOverride::Array {
+                items: None,
+                min_items: None,
+                max_items: Some(1),
+            },
+        );
+        // Action order: 1..=50000; DefaultActions composition remains cross-field.
+        // https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_Action.html
+        m.insert(
+            ("AWS::ElasticLoadBalancingV2::Listener", "Action.Order"),
+            TypeOverride::IntRange(1, 50000),
+        );
+        // Both authentication configurations use the same three wire values.
+        // https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_AuthenticateCognitoActionConfig.html
+        // https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_AuthenticateOidcActionConfig.html
+        for path in [
+            "AuthenticateCognitoConfig.OnUnauthenticatedRequest",
+            "AuthenticateOidcConfig.OnUnauthenticatedRequest",
+        ] {
+            m.insert(
+                ("AWS::ElasticLoadBalancingV2::Listener", path),
+                TypeOverride::Enum(vec!["deny", "allow", "authenticate"]),
+            );
+        }
+        // CFN represents SessionTimeout as String. Sessions can be as short
+        // as one second; 604800 is the default, with no documented maximum.
+        // Require canonical decimals to avoid diffs after AWS normalization:
+        // a live ELBv2 HealthCheckPort probe read "08080" back as "8080".
+        // https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_AuthenticateCognitoActionConfig.html
+        // https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_AuthenticateOidcActionConfig.html
+        // https://docs.aws.amazon.com/elasticloadbalancing/latest/application/listener-authenticate-users.html#authentication-flow
+        for path in [
+            "AuthenticateCognitoConfig.SessionTimeout",
+            "AuthenticateOidcConfig.SessionTimeout",
+        ] {
+            m.insert(
+                ("AWS::ElasticLoadBalancingV2::Listener", path),
+                TypeOverride::AttributeType {
+                    expression: r#"AttributeType::refined_string(None, Some("^[1-9][0-9]*\\z".to_string()), None, None)"#,
+                    display: const {
+                        OverrideTypeDisplay::new(r"String (pattern: ^[1-9][0-9]*\z)")
+                    },
+                    block_name: None,
+                    default: None,
+                },
+            );
+        }
+        // AuthenticationRequestExtraParams permits at most 10 entries in both
+        // configurations. Map types cannot carry an entry-count bound
+        // (carina-rs/carina#4256), so this limit remains AWS-side. Leave the
+        // string keys/values unconstrained as documented.
+        // https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_AuthenticateCognitoActionConfig.html
+        // https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_AuthenticateOidcActionConfig.html
+
+        // OIDC URLs include HTTPS; reuse the built-in without redeclaring it.
+        // Cognito UserPoolDomain also accepts a prefix, so it is not DomainName.
+        // https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_AuthenticateOidcActionConfig.html
+        for path in [
+            "AuthenticateOidcConfig.AuthorizationEndpoint",
+            "AuthenticateOidcConfig.Issuer",
+            "AuthenticateOidcConfig.TokenEndpoint",
+            "AuthenticateOidcConfig.UserInfoEndpoint",
+        ] {
+            m.insert(
+                ("AWS::ElasticLoadBalancingV2::Listener", path),
+                TypeOverride::StringType("carina_core::schema::types::https_url()"),
+            );
+        }
+        // Stickiness duration: 1..=604800. Required-when-enabled is cross-field.
+        // https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_TargetGroupStickinessConfig.html
+        m.insert(
+            (
+                "AWS::ElasticLoadBalancingV2::Listener",
+                "TargetGroupStickinessConfig.DurationSeconds",
+            ),
+            TypeOverride::IntRange(1, 604800),
+        );
+        // At most five target groups per forward action (non-adjustable quota).
+        // Preserve the generated TargetGroupTuple structs and CFN uniqueness.
+        // https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_ForwardActionConfig.html
+        // https://docs.aws.amazon.com/elasticloadbalancing/latest/application/load-balancer-limits.html
+        // https://docs.aws.amazon.com/elasticloadbalancing/latest/network/load-balancer-limits.html
+        m.insert(
+            (
+                "AWS::ElasticLoadBalancingV2::Listener",
+                "ForwardConfig.TargetGroups",
+            ),
+            TypeOverride::Array {
+                items: None,
+                min_items: None,
+                max_items: Some(5),
+            },
+        );
+        // Forward weights include zero: 0..=999.
+        // https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_TargetGroupTuple.html
+        m.insert(
+            (
+                "AWS::ElasticLoadBalancingV2::Listener",
+                "TargetGroupTuple.Weight",
+            ),
+            TypeOverride::IntRange(0, 999),
+        );
+        // Additional JWT claims: at most ten structs, retaining CFN uniqueness.
+        // https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_JwtValidationActionConfig.html
+        m.insert(
+            (
+                "AWS::ElasticLoadBalancingV2::Listener",
+                "JwtValidationConfig.AdditionalClaims",
+            ),
+            TypeOverride::Array {
+                items: None,
+                min_items: None,
+                max_items: Some(10),
+            },
+        );
+        // JWT Issuer has a 256-character cap, without OIDC's HTTPS requirement.
+        // https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_JwtValidationActionConfig.html
+        m.insert(
+            (
+                "AWS::ElasticLoadBalancingV2::Listener",
+                "JwtValidationConfig.Issuer",
+            ),
+            TypeOverride::AttributeType {
+                expression: "AttributeType::refined_string(None, None, Some((None, Some(256))), None)",
+                display: const { OverrideTypeDisplay::new("String (length: ..=256)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // JwksEndpoint is HTTPS. Its additional 256-character cap stays AWS-side:
+        // adding a length to HttpsUrl redeclares the built-in and core rejects
+        // aggregate admission with BuiltinTypeCollision.
+        // https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_JwtValidationActionConfig.html
+        m.insert(
+            (
+                "AWS::ElasticLoadBalancingV2::Listener",
+                "JwtValidationConfig.JwksEndpoint",
+            ),
+            TypeOverride::StringType("carina_core::schema::types::https_url()"),
+        );
+        // Claim formats use hyphenated wire strings, not their DSL aliases.
+        // https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_JwtValidationActionAdditionalClaim.html
+        m.insert(
+            (
+                "AWS::ElasticLoadBalancingV2::Listener",
+                "JwtValidationActionAdditionalClaim.Format",
+            ),
+            TypeOverride::Enum(vec![
+                "single-string",
+                "string-array",
+                "space-separated-values",
+            ]),
+        );
+        // Up to ten claim values, each at most 256 characters (no minimum).
+        // The ban on spaces depends on Format and remains cross-field.
+        // https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_JwtValidationActionAdditionalClaim.html
+        m.insert(
+            (
+                "AWS::ElasticLoadBalancingV2::Listener",
+                "JwtValidationActionAdditionalClaim.Values",
+            ),
+            TypeOverride::ArrayItemType {
+                expression: "AttributeType::refined_string(None, None, Some((None, Some(256))), None)",
+                display: const { OverrideTypeDisplay::new("List<String (length: ..=256)>") },
+                block_name: None,
+                default: None,
+            }
+            .with_array_bounds(None, Some(10)),
+        );
+        // AdditionalClaim.Name excludes exp/iss/nbf/iat. Exact complementation
+        // without lookaround requires a verbose length/prefix alternation;
+        // leave the reserved-name check AWS-side rather than obscure the rule.
+        // https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_JwtValidationActionAdditionalClaim.html
+
+        // AdvertiseTrustStoreCaNames remains the String enum on/off, not Bool.
+        // https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_MutualAuthenticationAttributes.html
+        m.insert(
+            (
+                "AWS::ElasticLoadBalancingV2::Listener",
+                "MutualAuthentication.AdvertiseTrustStoreCaNames",
+            ),
+            TypeOverride::Enum(vec!["on", "off"]),
+        );
+        // Listener and target-group attribute keys have an open namespace:
+        // at most 256 ASCII letters/digits/dots/underscores, and nonempty.
+        // Attribute values depend on Key and retain their existing String type.
+        // https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_ListenerAttribute.html
+        // https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_TargetGroupAttribute.html
+        for key in [
+            (
+                "AWS::ElasticLoadBalancingV2::Listener",
+                "ListenerAttribute.Key",
+            ),
+            (
+                "AWS::ElasticLoadBalancingV2::TargetGroup",
+                "TargetGroupAttribute.Key",
+            ),
+        ] {
+            m.insert(
+                key,
+                TypeOverride::AttributeType {
+                    expression: r#"AttributeType::refined_string(None, Some("^[a-zA-Z0-9._]+\\z".to_string()), Some((None, Some(256))), None)"#,
+                    display: const {
+                        OverrideTypeDisplay::new(r"String (length: ..=256, pattern: ^[a-zA-Z0-9._]+\z)")
+                    },
+                    block_name: None,
+                    default: None,
+                },
+            );
+        }
+
+        // Load-balancer and target-group names, including their read-only name
+        // attributes: 1..=32 ASCII alphanumeric/hyphen characters, without an
+        // initial or final hyphen. The LB-only internal- prefix ban stays
+        // AWS-side: an exact lookaround-free complement is not readable.
+        // https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_CreateLoadBalancer.html
+        // https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_CreateTargetGroup.html
+        for key in [
+            ("AWS::ElasticLoadBalancingV2::LoadBalancer", "Name"),
+            (
+                "AWS::ElasticLoadBalancingV2::LoadBalancer",
+                "LoadBalancerName",
+            ),
+            ("AWS::ElasticLoadBalancingV2::TargetGroup", "Name"),
+            (
+                "AWS::ElasticLoadBalancingV2::TargetGroup",
+                "TargetGroupName",
+            ),
+        ] {
+            m.insert(
+                key,
+                TypeOverride::AttributeType {
+                    expression: r#"AttributeType::refined_string(None, Some("^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\\z".to_string()), Some((Some(1), Some(32))), None)"#,
+                    display: const {
+                        OverrideTypeDisplay::new(r"String (length: 1..=32, pattern: ^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\z)")
+                    },
+                    block_name: None,
+                    default: None,
+                },
+            );
+        }
+        // The public DNS name is a core DomainName, used unchanged.
+        // https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_LoadBalancer.html
+        m.insert(
+            ("AWS::ElasticLoadBalancingV2::LoadBalancer", "DNSName"),
+            TypeOverride::StringType("carina_core::schema::types::domain_name()"),
+        );
+        // Subnet-mapping addresses use core IP built-ins unchanged. Do not
+        // restrict PrivateIPv4Address to RFC1918 ranges from its name alone.
+        // https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_SubnetMapping.html
+        for (path, constructor) in [
+            (
+                "SubnetMapping.PrivateIPv4Address",
+                "carina_core::schema::types::ipv4_address()",
+            ),
+            (
+                "SubnetMapping.IPv6Address",
+                "carina_core::schema::types::ipv6_address()",
+            ),
+        ] {
+            m.insert(
+                ("AWS::ElasticLoadBalancingV2::LoadBalancer", path),
+                TypeOverride::StringType(constructor),
+            );
+        }
+        // SourceNatIpv6Prefix accepts auto_assigned or IPv6 CIDR with /80.
+        // Core has union but no intersection/per-attribute refinement of its
+        // Ipv6Cidr built-in; redeclaring it would cause BuiltinTypeCollision.
+        // Leave this String unchanged rather than duplicate IPv6 grammar.
+        // https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_SubnetMapping.html
+
+        // Load-balancer attribute values: at most 1024 characters, empty allowed.
+        // No count cap: a live Cloud Control get-resource returned 22 attributes
+        // on 2026-11-04, exceeding the API's documented 20-item limit.
+        // https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_LoadBalancerAttribute.html
+        // https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_DescribeLoadBalancerAttributes.html
+        m.insert(
+            (
+                "AWS::ElasticLoadBalancingV2::LoadBalancer",
+                "LoadBalancerAttribute.Value",
+            ),
+            TypeOverride::AttributeType {
+                expression: "AttributeType::refined_string(None, None, Some((None, Some(1024))), None)",
+                display: const { OverrideTypeDisplay::new("String (length: ..=1024)") },
+                block_name: None,
+                default: None,
+            },
+        );
+
+        // Target-group health-check intervals, timeouts and thresholds.
+        // https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_ModifyTargetGroup.html
+        for (path, min, max) in [
+            ("HealthCheckIntervalSeconds", 5, 300),
+            ("HealthCheckTimeoutSeconds", 2, 120),
+            ("HealthyThresholdCount", 2, 10),
+            ("UnhealthyThresholdCount", 2, 10),
+        ] {
+            m.insert(
+                ("AWS::ElasticLoadBalancingV2::TargetGroup", path),
+                TypeOverride::IntRange(min, max),
+            );
+        }
+        // Health-check path: 1..=1024 characters; HTTP/gRPC semantics vary.
+        // https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_ModifyTargetGroup.html
+        m.insert(
+            ("AWS::ElasticLoadBalancingV2::TargetGroup", "HealthCheckPath"),
+            TypeOverride::AttributeType {
+                expression: "AttributeType::refined_string(None, None, Some((Some(1), Some(1024))), None)",
+                display: const { OverrideTypeDisplay::new("String (length: 1..=1024)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // The API's prose excludes TLS/UDP/TCP_UDP/GENEVE/QUIC/TCP_QUIC from
+        // health checks, despite listing them in the generic protocol enum.
+        // https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_CreateTargetGroup.html
+        m.insert(
+            (
+                "AWS::ElasticLoadBalancingV2::TargetGroup",
+                "HealthCheckProtocol",
+            ),
+            TypeOverride::Enum(vec!["HTTP", "HTTPS", "TCP"]),
+        );
+        // Integer target and control ports: 1..=65535 at every CFN occurrence.
+        // https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_CreateTargetGroup.html
+        // https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_TargetDescription.html
+        for path in ["Port", "TargetControlPort", "TargetDescription.Port"] {
+            m.insert(
+                ("AWS::ElasticLoadBalancingV2::TargetGroup", path),
+                TypeOverride::IntRange(1, 65535),
+            );
+        }
+        // At most one load balancer; newly created target groups can have none.
+        // https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_TargetGroup.html
+        m.insert(
+            (
+                "AWS::ElasticLoadBalancingV2::TargetGroup",
+                "LoadBalancerArns",
+            ),
+            TypeOverride::Array {
+                items: None,
+                min_items: None,
+                max_items: Some(1),
+            },
+        );
+        // QUIC server IDs: literal 0x followed by exactly 16 lowercase hex digits.
+        // https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_TargetDescription.html
+        m.insert(
+            (
+                "AWS::ElasticLoadBalancingV2::TargetGroup",
+                "TargetDescription.QuicServerId",
+            ),
+            TypeOverride::AttributeType {
+                expression: r#"AttributeType::refined_string(None, Some("^0x[0-9a-f]{16}\\z".to_string()), None, None)"#,
+                display: const {
+                    OverrideTypeDisplay::new(r"String (pattern: ^0x[0-9a-f]{16}\z)")
+                },
+                block_name: None,
+                default: None,
+            },
+        );
+        // Reuse the existing enum/String union construction, narrowing the
+        // String arm to the literal all. Keep the shared AZ constructor and
+        // its identity intact; Cloud Control also reads back the String all.
+        // https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_TargetDescription.html
+        m.insert(
+            (
+                "AWS::ElasticLoadBalancingV2::TargetGroup",
+                "TargetDescription.AvailabilityZone",
+            ),
+            TypeOverride::AttributeType {
+                expression: r#"AttributeType::union(vec![carina_aws_types::availability_zone(), AttributeType::refined_string(None, Some("^all\\z".to_string()), None, None)])"#,
+                display: const {
+                    OverrideTypeDisplay::new(r"aws.AvailabilityZone.ZoneName | String (pattern: ^all\z)")
+                },
+                block_name: None,
+                default: None,
+            },
+        );
+        // Reuse shared ELBv2 String domains. HealthCheckPort stays anonymous;
+        // matcher identities are aws.elasticloadbalancingv2.TargetGroup.{HttpCode,GrpcCode}.
+        // HTTP spans 200..=599 and gRPC 0..=99; protocol-specific restrictions
+        // remain cross-field. Matcher items allow N, comma lists and N-N ranges.
+        // https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_CreateTargetGroup.html
+        // https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_Matcher.html
+        // Live probe (carina-test-001, 2026-11-04): AWS rejected HTTP "0200",
+        // "200-0299" and gRPC "0,05", "00-05". HealthCheckPort "08080" was
+        // accepted but read back as "8080"; require canonical decimal input.
+        // "200-299,302", "0-5", "12" and "traffic-port" round-tripped unchanged.
+        for (path, expression, display) in [
+            (
+                "HealthCheckPort",
+                "carina_aws_types::elbv2_health_check_port()",
+                const { OverrideTypeDisplay::new("String (traffic-port | canonical decimal 1..=65535)") },
+            ),
+            (
+                "Matcher.HttpCode",
+                "carina_aws_types::elbv2_target_group_http_code()",
+                const { OverrideTypeDisplay::new("aws.elasticloadbalancingv2.TargetGroup.HttpCode") },
+            ),
+            (
+                "Matcher.GrpcCode",
+                "carina_aws_types::elbv2_target_group_grpc_code()",
+                const { OverrideTypeDisplay::new("aws.elasticloadbalancingv2.TargetGroup.GrpcCode") },
+            ),
+        ] {
+            m.insert(
+                ("AWS::ElasticLoadBalancingV2::TargetGroup", path),
+                TypeOverride::AttributeType {
+                    expression,
+                    display,
+                    block_name: None,
+                    default: None,
+                },
+            );
+        }
+
         // ELBv2 fixed-response status codes are constrained to ^(2|4|5)\d{2}$.
         // The CFN schema leaves them as plain strings; CloudControl only catches
         // bad values at apply-time. http_response_status_code is a carina-core
@@ -8474,11 +8884,10 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         // heuristic in `extract_enum_from_description` returns nothing
         // and the type would otherwise stay a free-form string.
         //
-        // Scope these by resource type — `Protocol` is a field name
-        // shared with `Listener.Protocol` and the listener uses a
-        // different value union (it adds `QUIC`/`TCP_QUIC`), so we must
-        // NOT let a field-name-only override (`known_enum_overrides`)
-        // leak this list across resources.
+        // Scope these by resource type: Listener.Protocol excludes GENEVE.
+        // TargetGroup.Protocol includes QUIC/TCP_QUIC as documented by AWS;
+        // a field-name-only override would leak across unrelated resources.
+        // https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_CreateTargetGroup.html
         m.insert(
             ("AWS::ElasticLoadBalancingV2::TargetGroup", "TargetType"),
             TypeOverride::Enum(vec!["instance", "ip", "lambda", "alb"]),
@@ -8486,7 +8895,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         m.insert(
             ("AWS::ElasticLoadBalancingV2::TargetGroup", "Protocol"),
             TypeOverride::Enum(vec![
-                "HTTP", "HTTPS", "TCP", "TLS", "UDP", "TCP_UDP", "GENEVE",
+                "HTTP", "HTTPS", "TCP", "TLS", "UDP", "TCP_UDP", "GENEVE", "QUIC", "TCP_QUIC",
             ]),
         );
 
@@ -8524,13 +8933,22 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         // are bullet leaders containing dots and were filtered out by
         // `looks_like_enum_value`. Later value-list sentences in the
         // bullet bodies describe per-key values, not legal Key names, so
-        // force this field back to plain String.
+        // keep this field an open String with the documented grammar and
+        // maximum length of 256, rather than an enum of attribute values.
+        // https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_LoadBalancerAttribute.html
         m.insert(
             (
                 "AWS::ElasticLoadBalancingV2::LoadBalancer",
                 "LoadBalancerAttribute.Key",
             ),
-            TypeOverride::StringType("AttributeType::string()"),
+            TypeOverride::AttributeType {
+                expression: r#"AttributeType::refined_string(None, Some("^[a-zA-Z0-9._]+\\z".to_string()), Some((None, Some(256))), None)"#,
+                display: const {
+                    OverrideTypeDisplay::new(r"String (length: ..=256, pattern: ^[a-zA-Z0-9._]+\z)")
+                },
+                block_name: None,
+                default: None,
+            },
         );
 
         // ELBv2 Listener Action.Type (awscc#359). The CFN description
@@ -11635,6 +12053,64 @@ mod tests {
                 needs_attribute_type,
                 "{type_name}: {generated}"
             );
+        }
+    }
+
+    #[test]
+    fn test_uses_core_schema_types_path_requires_unqualified_module() {
+        for constructor in [
+            "ipv4_address",
+            "ipv4_cidr",
+            "ipv6_address",
+            "ipv6_cidr",
+            "cidr",
+            "email",
+            "domain_name",
+            "https_url",
+        ] {
+            let path = format!("types::{constructor}()");
+            assert!(uses_core_schema_types_path(&path), "{path}");
+            let nested = format!("AttributeType::list({path})");
+            assert!(uses_core_schema_types_path(&nested), "{nested}");
+
+            for prefix in ["carina_core::schema::", "::", "other_", "other", "_"] {
+                let qualified = format!("{prefix}{path}");
+                assert!(!uses_core_schema_types_path(&qualified), "{qualified}");
+            }
+
+            let mixed = format!("carina_core::schema::{path}, {path}");
+            assert!(uses_core_schema_types_path(&mixed), "{mixed}");
+        }
+        assert!(!uses_core_schema_types_path("carina_aws_types::arn()"));
+        assert!(!uses_core_schema_types_path(""));
+    }
+
+    #[test]
+    fn test_generate_schema_code_imports_types_only_when_unqualified() {
+        for (type_name, needs_types) in [
+            ("AWS::ElasticLoadBalancingV2::LoadBalancer", false),
+            ("AWS::IAM::OIDCProvider", false),
+            ("AWS::EC2::VPC", true),
+        ] {
+            let schema = cfn_schema_for_codegen_tests(type_name);
+            let generated = generate_schema_code(&schema, type_name).unwrap();
+            let schema_import = generated
+                .lines()
+                .find(|line| line.starts_with("use carina_core::schema::"))
+                .expect("generated schema import");
+            assert_eq!(
+                schema_import.contains("types"),
+                needs_types,
+                "{type_name}: {schema_import}"
+            );
+            if needs_types {
+                assert!(generated.contains("types::ipv4_cidr()"), "{generated}");
+            } else {
+                assert!(
+                    generated.contains("carina_core::schema::types::"),
+                    "{generated}"
+                );
+            }
         }
     }
 
@@ -17579,7 +18055,17 @@ mod tests {
 
     #[test]
     fn test_nested_read_only_pointer_discarded_by_composite_string_override_is_rejected() {
-        let mut schema = empty_schema("AWS::ElasticLoadBalancingV2::Listener");
+        const CFN_TYPE: &str = "AWS::ElasticLoadBalancingV2::Listener";
+        // This partial fixture needs only the composite string override.
+        static OVERRIDES: LazyLock<ResourceTypeOverrides> = LazyLock::new(|| {
+            let mut overrides = ResourceTypeOverrides::default();
+            overrides.insert(
+                (CFN_TYPE, "RedirectConfig.Protocol"),
+                TypeOverride::StringType("carina_core::schema::types::redirect_protocol()"),
+            );
+            overrides
+        });
+        let mut schema = empty_schema(CFN_TYPE);
         schema.edit_json(|source| {
             source["properties"].as_object_mut().unwrap().insert(
                 "Config".to_string(),
@@ -17617,23 +18103,22 @@ mod tests {
             source["readOnlyProperties"] = serde_json::json!(vec![pointer.to_string()]);
         });
 
-        for (generator, result) in [
-            ("Rust", generate_synthetic_schema_code(&schema)),
-            (
-                "Markdown",
-                generate_test_markdown(&schema, "AWS::ElasticLoadBalancingV2::Listener"),
-            ),
-        ] {
-            let error = result.expect_err(
-                "a composite StringType override must not claim its discarded child was emitted",
-            );
-            let message = error.to_string();
-            assert!(message.contains(pointer), "{generator}: {message}");
-            assert!(
-                message.contains("did not resolve"),
-                "{generator}: {message}"
-            );
-        }
+        with_resource_type_overrides(&OVERRIDES, || {
+            for (generator, result) in [
+                ("Rust", generate_synthetic_schema_code(&schema)),
+                ("Markdown", generate_test_markdown(&schema, CFN_TYPE)),
+            ] {
+                let error = result.expect_err(
+                    "a composite StringType override must not claim its discarded child was emitted",
+                );
+                let message = error.to_string();
+                assert!(message.contains(pointer), "{generator}: {message}");
+                assert!(
+                    message.contains("did not resolve"),
+                    "{generator}: {message}"
+                );
+            }
+        });
     }
 
     #[test]
@@ -18189,14 +18674,13 @@ mod tests {
         // description. Use the union of all TargetType-dependent values.
         //
         // This MUST be resource-scoped, not field-name-scoped:
-        // `Listener.Protocol` shares the name but allows a different value
-        // union (adds `QUIC`/`TCP_QUIC`), so a field-name-only override
-        // would silently reject those at validate.
+        // `Listener.Protocol` shares the name but excludes GENEVE, so a
+        // field-name-only override would silently widen that sibling.
         let overrides = resource_type_overrides();
         assert_eq!(
             overrides.get(&("AWS::ElasticLoadBalancingV2::TargetGroup", "Protocol")),
             Some(&TypeOverride::Enum(vec![
-                "HTTP", "HTTPS", "TCP", "TLS", "UDP", "TCP_UDP", "GENEVE"
+                "HTTP", "HTTPS", "TCP", "TLS", "UDP", "TCP_UDP", "GENEVE", "QUIC", "TCP_QUIC"
             ]))
         );
     }
@@ -18455,19 +18939,333 @@ mod tests {
     }
 
     #[test]
-    fn test_resource_type_overrides_load_balancer_attribute_key_is_plain_string() {
+    fn test_resource_type_overrides_load_balancer_attribute_key_is_an_open_refined_string() {
         // awscc#365: LoadBalancerAttribute.Key's description contains legal
         // keys as dotted bullet leaders, plus many backticked value examples in
-        // bullet bodies. The key namespace must remain a plain String rather
-        // than an enum of those example values.
+        // bullet bodies. The key namespace stays open, with the API's
+        // documented length and character constraints.
         let overrides = resource_type_overrides();
+        let Some(TypeOverride::AttributeType { expression, .. }) = overrides.get(&(
+            "AWS::ElasticLoadBalancingV2::LoadBalancer",
+            "LoadBalancerAttribute.Key",
+        )) else {
+            panic!("LoadBalancerAttribute.Key must remain an open String");
+        };
         assert_eq!(
-            overrides.get(&(
-                "AWS::ElasticLoadBalancingV2::LoadBalancer",
-                "LoadBalancerAttribute.Key",
-            )),
-            Some(&TypeOverride::StringType("AttributeType::string()"))
+            *expression,
+            r#"AttributeType::refined_string(None, Some("^[a-zA-Z0-9._]+\\z".to_string()), Some((None, Some(256))), None)"#
         );
+    }
+
+    #[test]
+    fn test_nested_scalar_overrides_emit_the_same_types_as_top_level_overrides() {
+        const CFN_TYPE: &str = "AWS::Test::NestedScalarOverrides";
+        static OVERRIDES: LazyLock<ResourceTypeOverrides> = LazyLock::new(|| {
+            let mut overrides = ResourceTypeOverrides::default();
+            for (top_level, nested, override_type) in [
+                (
+                    "DurationSeconds",
+                    "Settings.DurationSeconds",
+                    TypeOverride::IntRange(1, 604800),
+                ),
+                ("Mode", "Settings.Mode", TypeOverride::IntEnum(vec![2, 7])),
+                (
+                    "Names",
+                    "Settings.Names",
+                    TypeOverride::StringType("carina_core::schema::types::domain_name()"),
+                ),
+            ] {
+                overrides.insert((CFN_TYPE, top_level), override_type.clone());
+                overrides.insert((CFN_TYPE, nested), override_type);
+            }
+            overrides
+        });
+        let names = serde_json::json!({
+            "type": "array", "items": {"type": "string"},
+            "minItems": 1, "maxItems": 3, "uniqueItems": true, "insertionOrder": false
+        });
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": CFN_TYPE,
+            "properties": {
+                "DurationSeconds": {"type": "integer"},
+                "Mode": {"type": "integer"},
+                "Names": names,
+                "Config": {"$ref": "#/definitions/Settings"}
+            },
+            "definitions": {
+                "Settings": {
+                    "type": "object",
+                    "properties": {
+                        "DurationSeconds": {"type": "integer"},
+                        "Mode": {"type": "integer"},
+                        "Names": names
+                    }
+                }
+            }
+        }))
+        .unwrap();
+
+        with_resource_type_overrides(&OVERRIDES, || {
+            let generated = generate_synthetic_schema_code(&schema).unwrap();
+            for (name, expected) in [
+                (
+                    "duration_seconds",
+                    "AttributeType::refined_int(None, Some((Some(1), Some(604800))))",
+                ),
+                (
+                    "mode",
+                    concat!(
+                        "AttributeType::union(vec![",
+                        "AttributeType::refined_int(None, Some((Some(2), Some(2)))), ",
+                        "AttributeType::refined_int(None, Some((Some(7), Some(7))))])"
+                    ),
+                ),
+                (
+                    "names",
+                    concat!(
+                        "AttributeType::refined_list(carina_core::schema::types::domain_name(), ",
+                        "false, Some((Some(1), Some(3))), carina_core::schema::ListElements::Unique)"
+                    ),
+                ),
+            ] {
+                for constructor in ["AttributeSchema::optional", "StructField::optional"] {
+                    assert!(
+                        generated.contains(&format!("{constructor}(\"{name}\", {expected})")),
+                        "{constructor} {name} must use its scalar override: {generated}"
+                    );
+                }
+            }
+        });
+    }
+
+    #[test]
+    fn test_cached_listener_generates_with_nested_numeric_overrides() {
+        let schema = cfn_schema_for_codegen_tests("AWS::ElasticLoadBalancingV2::Listener");
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        for (path, expected) in [
+            (
+                "Action.Order",
+                "AttributeType::refined_int(None, Some((Some(1), Some(50000))))",
+            ),
+            (
+                "TargetGroupStickinessConfig.DurationSeconds",
+                "AttributeType::refined_int(None, Some((Some(1), Some(604800))))",
+            ),
+            (
+                "TargetGroupTuple.Weight",
+                "AttributeType::refined_int(None, Some((Some(0), Some(999))))",
+            ),
+        ] {
+            assert_all_generated_struct_fields(&generated, path, expected);
+        }
+    }
+
+    #[test]
+    fn test_elbv2_nested_overrides_emit_at_every_inline_and_registered_definition_site() {
+        for (cfn_type, list_only_definitions) in [
+            (
+                "AWS::ElasticLoadBalancingV2::Listener",
+                &[
+                    "Action",
+                    "Certificate",
+                    "ListenerAttribute",
+                    "TargetGroupTuple",
+                    "JwtValidationActionAdditionalClaim",
+                ][..],
+            ),
+            (
+                "AWS::ElasticLoadBalancingV2::LoadBalancer",
+                &["LoadBalancerAttribute", "SubnetMapping"][..],
+            ),
+            (
+                "AWS::ElasticLoadBalancingV2::TargetGroup",
+                &["TargetDescription", "TargetGroupAttribute"][..],
+            ),
+        ] {
+            for expose_list_only_definitions in [false, true] {
+                let mut schema = cfn_schema_for_codegen_tests(cfn_type);
+                if expose_list_only_definitions {
+                    schema.edit_json(|source| {
+                        for definition in list_only_definitions {
+                            source["properties"][format!("{definition}ForTest")] =
+                                serde_json::json!({"$ref": format!("#/definitions/{definition}")});
+                            if *definition == "Action" {
+                                // Mirror the original DefaultActions/* marker
+                                // on this synthetic direct reference so both
+                                // OIDC copies retain the same write-only field.
+                                source["writeOnlyProperties"].as_array_mut().unwrap().push(
+                                    serde_json::json!("/properties/ActionForTest/AuthenticateOidcConfig/ClientSecret"),
+                                );
+                            }
+                        }
+                    });
+                }
+                let generated = generate_schema_code(&schema, cfn_type).unwrap();
+                let (inline, definitions) =
+                    generated.split_once("fn build_schema_def_0()").unwrap();
+                for (path, override_type) in resource_type_overrides().for_resource(cfn_type) {
+                    let path = path.to_string();
+                    let Some((parent, property)) = path.split_once('.') else {
+                        continue;
+                    };
+                    let source_path = CfnPropertyPath::new(Some(parent), property);
+                    let source = cfn_override_property(&schema, source_path).unwrap();
+                    override_type
+                        .validate_source_shape(&schema, source_path, source)
+                        .unwrap();
+                    let expected = match override_type {
+                        TypeOverride::IntRange(min, max) => format!(
+                            "AttributeType::refined_int(None, Some((Some({min}), Some({max}))))"
+                        ),
+                        TypeOverride::Enum(_) => "AttributeType::enum_(".to_string(),
+                        TypeOverride::Array { .. } => "AttributeType::refined_list(".to_string(),
+                        _ => override_type
+                            .attribute_type_expression()
+                            .unwrap()
+                            .to_string(),
+                    };
+                    let sections = if expose_list_only_definitions
+                        || !list_only_definitions.contains(&parent)
+                    {
+                        vec![inline, definitions]
+                    } else {
+                        vec![inline]
+                    };
+                    for section in sections {
+                        assert_all_generated_struct_fields(section, &path, &expected);
+                        if let Some(values) = override_type.enum_values() {
+                            let spellings = values
+                                .iter()
+                                .map(|wire| (*wire, dsl_enum_value(wire)))
+                                .collect::<Vec<_>>();
+                            let spellings = spellings
+                                .iter()
+                                .map(|(wire, dsl)| (*wire, dsl.as_str()))
+                                .collect::<Vec<_>>();
+                            let marker =
+                                format!("AttributeType::struct_(\"{parent}\".to_string(), vec![");
+                            for (index, _) in section.match_indices(&marker) {
+                                assert_budgets_enum_values(
+                                    generated_budgets_field(&section[index..], &path),
+                                    &path,
+                                    &spellings,
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_elbv2_target_group_health_checks_use_shared_constructors_and_displays() {
+        let cfn_type = "AWS::ElasticLoadBalancingV2::TargetGroup";
+        let schema = cfn_schema_for_codegen_tests(cfn_type);
+        let generated = generate_schema_code(&schema, cfn_type).unwrap();
+        assert!(generated.contains(concat!(
+            "AttributeSchema::optional(\"health_check_port\", ",
+            "carina_aws_types::elbv2_health_check_port())"
+        )));
+        let (inline, definitions) = generated.split_once("fn build_schema_def_0()").unwrap();
+        for (path, constructor) in [
+            (
+                "Matcher.HttpCode",
+                "carina_aws_types::elbv2_target_group_http_code()",
+            ),
+            (
+                "Matcher.GrpcCode",
+                "carina_aws_types::elbv2_target_group_grpc_code()",
+            ),
+        ] {
+            for section in [inline, definitions] {
+                assert_all_generated_struct_fields(section, path, constructor);
+            }
+        }
+        let markdown = generate_test_markdown(&schema, cfn_type).unwrap();
+        for expected in [
+            "- **Type:** `String (traffic-port | canonical decimal 1..=65535)`",
+            "| `http_code` | `aws.elasticloadbalancingv2.TargetGroup.HttpCode` |",
+            "| `grpc_code` | `aws.elasticloadbalancingv2.TargetGroup.GrpcCode` |",
+            "- **Type:** [Struct(Matcher)](#matcher-1)",
+        ] {
+            assert!(
+                markdown.contains(expected),
+                "missing {expected}:\n{markdown}"
+            );
+        }
+        carina_docgen::check_page(&markdown).unwrap();
+    }
+
+    #[test]
+    fn test_elbv2_count_only_overrides_preserve_cfn_items_and_deliberate_omissions() {
+        let overrides = resource_type_overrides();
+        for (cfn_type, path, max) in [
+            ("AWS::ElasticLoadBalancingV2::Listener", "Certificates", 1),
+            (
+                "AWS::ElasticLoadBalancingV2::Listener",
+                "ForwardConfig.TargetGroups",
+                5,
+            ),
+            (
+                "AWS::ElasticLoadBalancingV2::Listener",
+                "JwtValidationConfig.AdditionalClaims",
+                10,
+            ),
+            (
+                "AWS::ElasticLoadBalancingV2::TargetGroup",
+                "LoadBalancerArns",
+                1,
+            ),
+        ] {
+            assert_eq!(
+                overrides.get(&(cfn_type, path)),
+                Some(&TypeOverride::Array {
+                    items: None,
+                    min_items: None,
+                    max_items: Some(max),
+                }),
+                "{cfn_type}.{path}"
+            );
+        }
+        for (cfn_type, paths) in [
+            (
+                "AWS::ElasticLoadBalancingV2::Listener",
+                &[
+                    "DefaultActions",
+                    // Map types cannot carry an entry-count bound, so the
+                    // 10-entry cap stays AWS-side (carina-rs/carina#4256).
+                    "AuthenticateCognitoConfig.AuthenticationRequestExtraParams",
+                    "AuthenticateOidcConfig.AuthenticationRequestExtraParams",
+                    "JwtValidationActionAdditionalClaim.Name",
+                ][..],
+            ),
+            (
+                "AWS::ElasticLoadBalancingV2::LoadBalancer",
+                &[
+                    "LoadBalancerAttributes",
+                    "SubnetMapping.SourceNatIpv6Prefix",
+                    "SubnetMappings",
+                    "Subnets",
+                ][..],
+            ),
+            ("AWS::ElasticLoadBalancingV2::TargetGroup", &["Targets"][..]),
+        ] {
+            for path in paths {
+                assert!(
+                    overrides.get(&(cfn_type, *path)).is_none(),
+                    "{cfn_type}.{path}"
+                );
+            }
+        }
+        for (constructor, display) in [
+            ("carina_core::schema::types::https_url()", "HttpsUrl"),
+            ("carina_core::schema::types::domain_name()", "DomainName"),
+            ("carina_core::schema::types::ipv4_address()", "Ipv4Address"),
+            ("carina_core::schema::types::ipv6_address()", "Ipv6Address"),
+        ] {
+            assert_eq!(override_type_to_display_name(constructor), display);
+        }
     }
 
     #[test]
@@ -24151,6 +24949,8 @@ mod tests {
 
     #[test]
     fn test_type_display_string_pattern_map_shows_map_string() {
+        static OVERRIDES: LazyLock<ResourceTypeOverrides> =
+            LazyLock::new(ResourceTypeOverrides::default);
         let prop = CfnProperty {
             prop_type: Some(TypeValue::Single("object".to_string())),
             pattern_properties: Some(BTreeMap::from([(
@@ -24168,10 +24968,12 @@ mod tests {
         }))
         .unwrap();
         // A schema-declared homogeneous map remains Map<String, String>.
-        assert_eq!(
-            type_display_string("AuthenticationRequestExtraParams", &prop, &schema),
-            "`Map<String, String>`"
-        );
+        with_resource_type_overrides(&OVERRIDES, || {
+            assert_eq!(
+                type_display_string("AuthenticationRequestExtraParams", &prop, &schema),
+                "`Map<String, String>`"
+            );
+        });
     }
 
     #[test]

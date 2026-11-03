@@ -24,6 +24,9 @@ mod dynamodb_tests;
 mod ecs_tests;
 
 #[cfg(test)]
+mod elasticloadbalancingv2_tests;
+
+#[cfg(test)]
 mod iam_tests;
 
 #[cfg(test)]
@@ -31,7 +34,7 @@ mod sns_tests;
 
 use carina_core::provider::ProviderFactory;
 use carina_core::schema::{
-    SchemaRegistry, ValidatedProviderSchemaWitness, ValidatedResourceSchema,
+    AssignabilityEdge, SchemaRegistry, ValidatedProviderSchemaWitness, ValidatedResourceSchema,
 };
 
 /// Returns all AWS Cloud Control schemas.
@@ -43,6 +46,11 @@ pub fn all_schemas() -> Vec<ValidatedResourceSchema> {
         .collect()
 }
 
+/// Return the explicit assignability edges shared by native and WASM schemas.
+pub fn assignability_edges() -> Vec<AssignabilityEdge> {
+    Vec::new()
+}
+
 /// Return the provider's aggregate schema witness. Reference forms are empty
 /// until AWSCC reference forms are designed as separate feature work.
 pub fn provider_schema_witness() -> ValidatedProviderSchemaWitness {
@@ -50,6 +58,7 @@ pub fn provider_schema_witness() -> ValidatedProviderSchemaWitness {
         all_schemas(),
         crate::AwsccProviderFactory.provider_config_attribute_types(),
         Default::default(),
+        assignability_edges(),
     )
     .expect("AWSCC provider schemas must form one valid aggregate witness")
 }

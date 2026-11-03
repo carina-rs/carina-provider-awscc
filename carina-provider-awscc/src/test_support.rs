@@ -6,16 +6,45 @@ use std::sync::Arc;
 
 use carina_core::binding_index::{BindingIndex, ResolvedBindings};
 use carina_core::executor::{ModuleConstraintGate, ProviderPreparationContext};
-use carina_core::parser::{LoadedProviderContext, ProviderContext, parse_file};
+use carina_core::parser::{
+    LoadedProviderContext, ProviderContext, ProviderCustomTypes, parse_file,
+};
 use carina_core::provider::{ProviderFactory, provider_custom_types_from_factories};
 use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::{
-    EffectiveType, SchemaRegistry, ShapeWalkBudget, ValidatedResourceSchema,
-    resolve_file_block_names_with_schemas,
+    AssignmentSink, Compiled, CompiledAttributeType, EffectiveType, SchemaKind, SchemaRegistry,
+    ShapeWalkBudget, ValidatedResourceSchema, resolve_file_block_names_with_schemas,
 };
 use carina_core::validation::{
     ValidationTypeContext, check_bare_binding_uses, validate_resource_ref_types, validate_resources,
 };
+
+pub(crate) struct AssignmentContext {
+    schemas: SchemaRegistry,
+    catalog: ProviderCustomTypes,
+}
+
+impl AssignmentContext {
+    pub(crate) fn new() -> Self {
+        let factories: Arc<Vec<Box<dyn ProviderFactory>>> =
+            Arc::new(vec![Box::new(crate::AwsccProviderFactory)]);
+        Self {
+            schemas: crate::schemas::schema_registry(),
+            catalog: provider_custom_types_from_factories(factories),
+        }
+    }
+
+    pub(crate) fn sink<'a>(
+        &'a self,
+        schema: &ValidatedResourceSchema,
+        attr: &'a CompiledAttributeType,
+    ) -> AssignmentSink<'a, Compiled> {
+        self.schemas
+            .get("awscc", schema.parts().resource_type, SchemaKind::Resource)
+            .expect("assignment sink schema must be registered")
+            .assignment_sink(attr, &self.catalog)
+    }
+}
 
 pub(crate) fn field<'a>(schema: &'a ValidatedResourceSchema, path: &str) -> EffectiveType<'a> {
     let mut segments = path.split('.');

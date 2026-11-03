@@ -8,6 +8,8 @@ use carina_core::provider::{
 use carina_core::resource::{ConcreteValue, Value};
 use carina_core::schema::SchemaKind;
 use carina_plugin_host::WasmProviderFactory;
+use carina_plugin_sdk::provider_schema_to_json;
+use carina_provider_awscc::AwsccProviderFactory;
 use carina_provider_resolver::{ProviderLoadIdentity, ProviderTrustClass, VerifiedLoad};
 
 fn release_wasm_path() -> Option<PathBuf> {
@@ -42,6 +44,13 @@ async fn flow_log_integer_validator_dispatches_through_the_wasm_guest() {
     let factory = WasmProviderFactory::from_bytes_with_cache_dir(load, cache.path())
         .await
         .expect("load AWSCC WASM component through the production host");
+    let native = AwsccProviderFactory.schema_witness();
+    let wasm = factory.schema_witness();
+    assert!(native.assignability_edges().is_empty());
+    assert_eq!(native.assignability_edges(), wasm.assignability_edges());
+    let serialized = provider_schema_to_json(&wasm).expect("serialize loaded WASM witness");
+    assert!(serialized.contains("\"assignability_edges\":[]"));
+
     let factories: Arc<Vec<Box<dyn ProviderFactory>>> = Arc::new(vec![Box::new(factory)]);
     let schemas = collect_schemas(&factories);
     let flow_log = schemas

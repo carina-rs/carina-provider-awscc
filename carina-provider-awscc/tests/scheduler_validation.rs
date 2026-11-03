@@ -1,19 +1,18 @@
 use std::collections::HashSet;
+use std::path::Path;
 use std::sync::Arc;
 
 use carina_core::binding_index::BindingIndex;
-use carina_core::parser::{ParsedFile, ProviderContext};
+use carina_core::parser::{ProviderContext, parse_file};
 use carina_core::provider::{
     ProviderFactory, collect_schemas, provider_custom_types_from_factories,
 };
-use carina_core::resource::{AuthoredResource as Resource, AuthoredValue as Value, ConcreteValue};
 use carina_core::schema::{
     ReferenceForms, SchemaRegistry, ValidatedConfigSchema, ValidatedProviderSchemaWitness,
 };
 use carina_core::validation::{validate_resource_ref_types, validate_resources};
 use carina_provider_awscc::schemas::generated::scheduler::schedule::scheduler_schedule_config;
 use carina_provider_awscc::schemas::generated::scheduler::schedule_group::scheduler_schedule_group_config;
-use indexmap::IndexMap;
 
 struct SchedulerSchemaFactory;
 
@@ -65,26 +64,10 @@ impl ProviderFactory for SchedulerSchemaFactory {
             self.schemas(),
             ValidatedConfigSchema::default(),
             ReferenceForms::new(),
+            carina_provider_awscc::schemas::assignability_edges(),
         )
         .expect("Scheduler schema-only witness must be valid")
     }
-}
-
-fn string(value: &str) -> Value {
-    Value::Concrete(ConcreteValue::String(value.to_string().into()))
-}
-
-fn enum_identifier(value: &str) -> Value {
-    Value::Concrete(ConcreteValue::enum_identifier(value))
-}
-
-fn map(entries: impl IntoIterator<Item = (&'static str, Value)>) -> Value {
-    Value::Concrete(ConcreteValue::Map(
-        entries
-            .into_iter()
-            .map(|(key, value)| (key.to_string(), value))
-            .collect::<IndexMap<_, _>>(),
-    ))
 }
 
 fn scheduler_validation_context() -> (SchemaRegistry, ProviderContext) {
@@ -99,62 +82,56 @@ fn scheduler_validation_context() -> (SchemaRegistry, ProviderContext) {
     (schemas, context)
 }
 
-fn schedule(group_name: Option<Value>) -> Resource {
-    let schedule =
-        Resource::with_provider("awscc", "scheduler.Schedule", "validation_schedule", None)
-            .with_attribute("name", string("carina-test-schedule"))
-            .with_attribute(
-                "flexible_time_window",
-                map([("mode", enum_identifier("off"))]),
-            )
-            .with_attribute("schedule_expression", string("rate(6 hours)"))
-            .with_attribute(
-                "target",
-                map([
-                    (
-                        "arn",
-                        string("arn:aws:lambda:ap-northeast-1:123456789012:function:example:live"),
-                    ),
-                    (
-                        "role_arn",
-                        string("arn:aws:iam::123456789012:role/example-scheduler"),
-                    ),
-                ]),
-            );
-
-    match group_name {
-        Some(group_name) => schedule.with_attribute("group_name", group_name),
-        None => schedule,
-    }
+fn schedule_fixture(group_name: Option<&str>) -> String {
+    let group_name = group_name
+        .map(|value| format!("group_name = {value}"))
+        .unwrap_or_default();
+    format!(
+        r#"
+awscc.scheduler.Schedule {{
+  name = 'carina-test-schedule'
+  {group_name}
+  schedule_expression = 'rate(6 hours)'
+  flexible_time_window = {{
+    mode = aws.scheduler.Schedule.FlexibleTimeWindow.FlexibleTimeWindowMode.off
+  }}
+  target = {{
+    arn = 'arn:aws:lambda:ap-northeast-1:123456789012:function:example:live'
+    role_arn = 'arn:aws:iam::123456789012:role/example-scheduler'
+  }}
+}}
+"#
+    )
 }
 
-fn validate_scheduler(resources: Vec<Resource>) -> Result<(), String> {
-    let mut parsed = ParsedFile::default();
-    parsed.resources = resources;
+fn validate_scheduler(source: &str) -> Result<(), String> {
     let (schemas, context) = scheduler_validation_context();
+    let parsed = parse_file(source, Path::new("scheduler_validation.crn"), &context)
+        .map_err(|error| error.to_string())?;
     let known_providers = HashSet::from(["awscc".to_string()]);
 
     validate_resources(&parsed, &schemas, &known_providers, &context)?;
 
     let bindings = BindingIndex::from_parsed(&parsed, &schemas, &context);
     validate_resource_ref_types(&parsed, &schemas, &HashSet::new(), &bindings)
+        .map_err(|error| error.to_string())
 }
 
 #[test]
 fn scheduler_schedule_omitted_group_name_is_valid() {
-    validate_scheduler(vec![schedule(None)])
+    validate_scheduler(&schedule_fixture(None))
         .expect("an omitted group_name must use the trackable default group");
 }
 
 #[test]
 fn scheduler_schedule_default_group_name_literal_is_valid() {
-    validate_scheduler(vec![schedule(Some(string("default")))])
+    validate_scheduler(&schedule_fixture(Some("'default'")))
         .expect("the literal default group must be trackable");
 }
 
 #[test]
 fn scheduler_schedule_non_default_group_name_literal_is_rejected() {
-    let error = validate_scheduler(vec![schedule(Some(string("carina-registry-publish-api")))])
+    let error = validate_scheduler(&schedule_fixture(Some("'carina-registry-publish-api'")))
         .expect_err("a non-default schedule group must be rejected before create");
     assert!(
         error.contains("Cloud Control identifies schedules by Name only")
@@ -167,14 +144,16 @@ fn scheduler_schedule_non_default_group_name_literal_is_rejected() {
 
 #[test]
 fn scheduler_schedule_group_name_reference_is_rejected() {
-    let group =
-        Resource::with_provider("awscc", "scheduler.ScheduleGroup", "validation_group", None)
-            .with_binding("validation_group")
-            .with_attribute("name", string("carina-registry-publish-api"));
-    let group_name =
-        Value::resource_ref("validation_group".to_string(), "name".to_string(), vec![]);
-
-    let error = validate_scheduler(vec![group, schedule(Some(group_name))])
+    let source = format!(
+        r#"
+let validation_group = awscc.scheduler.ScheduleGroup {{
+  name = 'carina-registry-publish-api'
+}}
+{}
+"#,
+        schedule_fixture(Some("validation_group.name"))
+    );
+    let error = validate_scheduler(&source)
         .expect_err("an unresolved group_name cannot prove that the group is default");
     assert!(
         error.contains("group_name") && error.contains("aws.scheduler.Schedule.GroupName"),
