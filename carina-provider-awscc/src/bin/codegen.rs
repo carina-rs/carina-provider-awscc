@@ -7849,6 +7849,47 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             },
         );
 
+        // Valid Values: containerInsights. Enum emission derives container_insights.
+        // https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_ClusterSetting.html
+        m.insert(
+            ("AWS::ECS::Cluster", "ClusterSettings.Name"),
+            TypeOverride::Enum(vec!["containerInsights"]),
+        );
+        // Weight: minimum 0, maximum 1000.
+        // https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_CapacityProviderStrategyItem.html
+        m.insert(
+            ("AWS::ECS::Cluster", "CapacityProviderStrategyItem.Weight"),
+            TypeOverride::AttributeType {
+                expression: "AttributeType::refined_int(None, Some((Some(0), Some(1000))))",
+                display: const { OverrideTypeDisplay::new("Int(0..=1000)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // Base: minimum 0, maximum 100000.
+        // https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_CapacityProviderStrategyItem.html
+        m.insert(
+            ("AWS::ECS::Cluster", "CapacityProviderStrategyItem.Base"),
+            TypeOverride::AttributeType {
+                expression: "AttributeType::refined_int(None, Some((Some(0), Some(100000))))",
+                display: const { OverrideTypeDisplay::new("Int(0..=100000)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // ClusterName: 1..=255 ASCII letters, digits, underscores, or hyphens.
+        // Match generated refined strings with a strict end-of-input anchor.
+        // https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_CreateCluster.html
+        m.insert(
+            ("AWS::ECS::Cluster", "ClusterName"),
+            TypeOverride::AttributeType {
+                expression: r#"AttributeType::refined_string(None, Some("^[a-zA-Z0-9_-]+\\z".to_string()), Some((Some(1), Some(255))), None)"#,
+                display: const { OverrideTypeDisplay::new("String(pattern, len: 1..=255)") },
+                block_name: None,
+                default: None,
+            },
+        );
+
         // Subscribe documents these protocols for both standalone subscriptions
         // and Topic's Subscription definition (the latter stays omitted from
         // the public schema). Keep each override at its full CFN path.

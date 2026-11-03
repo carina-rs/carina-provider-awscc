@@ -15,6 +15,9 @@ mod budgets_tests;
 mod cloudwatch_tests;
 
 #[cfg(test)]
+mod ecs_tests;
+
+#[cfg(test)]
 mod sns_tests;
 
 use carina_core::provider::ProviderFactory;

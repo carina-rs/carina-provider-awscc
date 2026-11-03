@@ -11,7 +11,7 @@ awscc.ecs.Cluster {
   capacity_providers = ['FARGATE', 'FARGATE_SPOT']
 
   cluster_setting {
-    name  = 'containerInsights'
+    name  = container_insights
     value = enabled
   }
 
