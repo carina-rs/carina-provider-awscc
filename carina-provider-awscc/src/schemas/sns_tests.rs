@@ -1,5 +1,7 @@
 use carina_core::executor::prepare_provider_ready_resource;
-use carina_core::resource::Resource;
+use carina_core::formatter::{FormatConfig, format};
+use carina_core::parser::{ProviderContext, parse_file};
+use carina_core::resource::{ConcreteValue, Resource, Value};
 use carina_core::schema::RawShape;
 use serde_json::json;
 
@@ -137,6 +139,18 @@ async fn authored_email_json_and_qualified_signature_versions_serialize_as_wire_
         (
             "sns.Topic",
             "signature_version",
+            enum_identifier("SignatureVersion.1"),
+            "1",
+        ),
+        (
+            "sns.Topic",
+            "signature_version",
+            enum_identifier("SignatureVersion.2"),
+            "2",
+        ),
+        (
+            "sns.Topic",
+            "signature_version",
             enum_identifier("aws.sns.Topic.SignatureVersion.1"),
             "1",
         ),
@@ -178,6 +192,37 @@ async fn authored_email_json_and_qualified_signature_versions_serialize_as_wire_
         })
         .await;
     }
+}
+
+#[test]
+fn signature_version_enum_dsl_forms_are_preserved_by_formatter() {
+    for value in ["SignatureVersion.2", "aws.sns.Topic.SignatureVersion.2"] {
+        let expected_line = format!("  signature_version = {value}");
+        let source = format!("let topic = awscc.sns.Topic {{\n{expected_line}\n}}\n");
+        let formatted = format(&source, &FormatConfig::default()).unwrap();
+        assert!(
+            formatted.lines().any(|line| line == expected_line),
+            "{value}: formatter must preserve {expected_line:?}, got:\n{formatted}"
+        );
+    }
+}
+
+#[test]
+fn bare_integer_signature_version_dsl_fails_validation() {
+    let parsed = parse_file(
+        "let topic = awscc.sns.Topic {\n  signature_version = 2\n}\n",
+        std::path::Path::new("bare_signature_version.crn"),
+        &ProviderContext::new(carina_core::EnvironmentSnapshot::empty()),
+    )
+    .unwrap();
+    let value = parsed.resources[0].get_attr("signature_version").unwrap();
+    assert!(matches!(value, Value::Concrete(ConcreteValue::Int(2))));
+    let topic = super::generated::sns::topic::sns_topic_config().schema;
+    assert!(
+        field(&topic, "signature_version")
+            .validate(&int(2))
+            .is_err()
+    );
 }
 
 #[test]
@@ -326,6 +371,10 @@ let fifo = awscc.sns.Topic {
   fifo_topic = true
   fifo_throughput_scope = message_group
   signature_version = aws.sns.Topic.SignatureVersion.2
+}
+let short = awscc.sns.Topic {
+  topic_name = 'signature-two-short'
+  signature_version = SignatureVersion.2
 }
 let first = awscc.sns.Subscription {
   topic_arn = standard.topic_arn
