@@ -145,8 +145,8 @@ async fn credentials_not_loaded_fails_promptly_without_resends_or_http_calls() {
     .await
     .expect("missing credentials must not enter the provider resend loop")
     .expect_err("create without credentials must fail");
-    let CreateFailureKind::Untracked(error) = failure.into_kind() else {
-        panic!("a create that never reached transmit must fail as untracked");
+    let CreateFailureKind::NoResource(error) = failure.into_kind() else {
+        panic!("a create that never reached transmit must fail with no resource");
     };
     assert!(error.to_string().contains("test credentials unavailable"));
     assert_eq!(calls.load(Ordering::SeqCst), 1);

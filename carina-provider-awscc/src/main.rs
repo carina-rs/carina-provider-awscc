@@ -185,8 +185,8 @@ impl CcCreateAttempt for GuestCreateAttempt {
     type Verdict = SdkCreateVerdict<CcCreateToken>;
     type Issued = GuestIssuedCreate;
 
-    fn untracked(self, failure: NotAppliedCreate) -> Self::Verdict {
-        self.0.untracked(failure.into_error().to_wire())
+    fn not_created(self, failure: NotAppliedCreate) -> Self::Verdict {
+        self.0.not_created(failure.into_error().to_wire())
     }
 
     fn preserve(self, token: CcCreateOperation, error: CoreProviderError) -> Self::Verdict {
@@ -219,8 +219,8 @@ impl CcPollAttempt for GuestPollAttempt {
     type Verdict = SdkPollVerdict<CcCreateToken>;
     type Issued = GuestPolledIssuedCreate;
 
-    fn untracked(self, failure: NotAppliedCreate) -> Self::Verdict {
-        self.0.untracked(failure.into_error().to_wire())
+    fn not_created(self, failure: NotAppliedCreate) -> Self::Verdict {
+        self.0.not_created(failure.into_error().to_wire())
     }
 
     fn preserve(self, token: CcCreateOperation, failure: InFlightCreate) -> Self::Verdict {
@@ -261,7 +261,7 @@ impl CcIssuedCreate for GuestIssuedCreate {
             finishing,
             issued_create_attributes_to_proto(&attributes),
             |finishing, attributes| finishing.succeeded(attributes),
-            |finishing, observation, error| finishing.failed(observation, error),
+            |finishing, observation, error| finishing.identifier_reported(observation, error),
         )
     }
 
@@ -285,11 +285,11 @@ impl CcIssuedCreate for GuestIssuedCreate {
                     },
                 )
             },
-            |finishing, observation, error| finishing.failed(observation, error),
+            |finishing, observation, error| finishing.identifier_reported(observation, error),
         )
     }
 
-    fn failed(
+    fn identifier_reported(
         self,
         identifier: CoreAppliedIdentifier,
         observation: CoreObservation,
@@ -297,11 +297,11 @@ impl CcIssuedCreate for GuestIssuedCreate {
     ) -> Self::Verdict {
         self.0
             .canonicalize(identifier)
-            .failed(observation_to_proto(observation), error.to_wire())
+            .identifier_reported(observation_to_proto(observation), error.to_wire())
     }
 
-    fn discarded(self, error: CoreProviderError) -> Self::Verdict {
-        self.0.discarded(error.to_wire())
+    fn no_resource(self, error: CoreProviderError) -> Self::Verdict {
+        self.0.no_resource(error.to_wire())
     }
 
     fn preserve(self, token: CcCreateToken, error: CoreProviderError) -> Self::Verdict {
@@ -337,7 +337,9 @@ impl CcIssuedCreate for GuestPolledIssuedCreate {
             finishing,
             issued_create_attributes_to_proto(&attributes),
             |finishing, attributes| finishing.succeeded(attributes),
-            |finishing, observation, error| finishing.failed(observation, error).into(),
+            |finishing, observation, error| {
+                finishing.identifier_reported(observation, error).into()
+            },
         )
     }
 
@@ -361,11 +363,13 @@ impl CcIssuedCreate for GuestPolledIssuedCreate {
                     },
                 )
             },
-            |finishing, observation, error| finishing.failed(observation, error).into(),
+            |finishing, observation, error| {
+                finishing.identifier_reported(observation, error).into()
+            },
         )
     }
 
-    fn failed(
+    fn identifier_reported(
         self,
         identifier: CoreAppliedIdentifier,
         observation: CoreObservation,
@@ -373,12 +377,12 @@ impl CcIssuedCreate for GuestPolledIssuedCreate {
     ) -> Self::Verdict {
         self.0
             .canonicalize(identifier)
-            .failed(observation_to_proto(observation), error.to_wire())
+            .identifier_reported(observation_to_proto(observation), error.to_wire())
             .into()
     }
 
-    fn discarded(self, error: CoreProviderError) -> Self::Verdict {
-        self.0.discarded(error.to_wire()).into()
+    fn no_resource(self, error: CoreProviderError) -> Self::Verdict {
+        self.0.no_resource(error.to_wire()).into()
     }
 
     fn preserve(self, token: CcCreateToken, error: CoreProviderError) -> Self::Verdict {
@@ -404,8 +408,8 @@ impl CcResumeAttempt for GuestResumeAttempt {
     type Resumed = GuestResumedCreate;
     type Resent = GuestResentCreateAttempt;
 
-    fn untracked(self, failure: NotAppliedCreate) -> Self::Verdict {
-        self.0.untracked(failure.into_error().to_wire())
+    fn not_created(self, failure: NotAppliedCreate) -> Self::Verdict {
+        self.0.not_created(failure.into_error().to_wire())
     }
 
     fn preserve(self, token: CcCreateOperation, error: CoreProviderError) -> Self::Verdict {
@@ -449,7 +453,7 @@ impl CcResumedCreate for GuestResumedCreate {
             finishing,
             resumed_state_to_proto(&state),
             |finishing, state| finishing.completed(FoundRead::from_applied_state(state)),
-            |finishing, observation, error| finishing.failed(observation, error),
+            |finishing, observation, error| finishing.identifier_reported(observation, error),
         )
     }
 
@@ -473,11 +477,11 @@ impl CcResumedCreate for GuestResumedCreate {
                     },
                 )
             },
-            |finishing, observation, error| finishing.failed(observation, error),
+            |finishing, observation, error| finishing.identifier_reported(observation, error),
         )
     }
 
-    fn failed(
+    fn identifier_reported(
         self,
         identifier: CoreAppliedIdentifier,
         observation: CoreObservation,
@@ -485,11 +489,11 @@ impl CcResumedCreate for GuestResumedCreate {
     ) -> Self::Verdict {
         self.0
             .canonicalize(identifier)
-            .failed(observation_to_proto(observation), error.to_wire())
+            .identifier_reported(observation_to_proto(observation), error.to_wire())
     }
 
-    fn discarded(self, error: CoreProviderError) -> Self::Verdict {
-        self.0.discarded(error.to_wire())
+    fn no_resource(self, error: CoreProviderError) -> Self::Verdict {
+        self.0.no_resource(error.to_wire())
     }
 
     fn preserve(self, token: CcCreateToken, error: CoreProviderError) -> Self::Verdict {
@@ -512,8 +516,8 @@ impl CcCreateAttempt for GuestResentCreateAttempt {
     type Verdict = SdkResumeVerdict<CcCreateToken>;
     type Issued = GuestResentIssuedCreate;
 
-    fn untracked(self, failure: NotAppliedCreate) -> Self::Verdict {
-        self.0.untracked(failure.into_error().to_wire()).into()
+    fn not_created(self, failure: NotAppliedCreate) -> Self::Verdict {
+        self.0.not_created(failure.into_error().to_wire()).into()
     }
 
     fn preserve(self, token: CcCreateOperation, error: CoreProviderError) -> Self::Verdict {
@@ -561,7 +565,9 @@ impl CcIssuedCreate for GuestResentIssuedCreate {
             finishing,
             issued_create_attributes_to_proto(&attributes),
             |finishing, attributes| finishing.succeeded(attributes).into(),
-            |finishing, observation, error| finishing.failed(observation, error).into(),
+            |finishing, observation, error| {
+                finishing.identifier_reported(observation, error).into()
+            },
         )
     }
 
@@ -587,11 +593,13 @@ impl CcIssuedCreate for GuestResentIssuedCreate {
                     )
                     .into()
             },
-            |finishing, observation, error| finishing.failed(observation, error).into(),
+            |finishing, observation, error| {
+                finishing.identifier_reported(observation, error).into()
+            },
         )
     }
 
-    fn failed(
+    fn identifier_reported(
         self,
         identifier: CoreAppliedIdentifier,
         observation: CoreObservation,
@@ -599,12 +607,12 @@ impl CcIssuedCreate for GuestResentIssuedCreate {
     ) -> Self::Verdict {
         self.0
             .canonicalize(identifier)
-            .failed(observation_to_proto(observation), error.to_wire())
+            .identifier_reported(observation_to_proto(observation), error.to_wire())
             .into()
     }
 
-    fn discarded(self, error: CoreProviderError) -> Self::Verdict {
-        self.0.discarded(error.to_wire()).into()
+    fn no_resource(self, error: CoreProviderError) -> Self::Verdict {
+        self.0.no_resource(error.to_wire()).into()
     }
 
     fn preserve(self, token: CcCreateToken, error: CoreProviderError) -> Self::Verdict {
@@ -816,7 +824,7 @@ impl CarinaProvider for AwsccProcessProvider {
                 .into_iter()
                 .map(|c| proto::CompletionValue {
                     value: c.value,
-                    description: c.description,
+                    description: c.description.to_string(),
                 })
                 .collect(),
         )])
@@ -878,7 +886,7 @@ impl CarinaProvider for AwsccProcessProvider {
     ) -> Result<SdkCreateStep<Self::CreateToken>, SdkCreateVerdict<Self::CreateToken>> {
         let normalized_resource = match self.normalize_create_resource(&request.resource) {
             Ok(resource) => resource,
-            Err(error) => return Err(attempt.untracked(Self::convert_error(error))),
+            Err(error) => return Err(attempt.not_created(Self::convert_error(error))),
         };
         self.runtime.block_on(self.provider().create_step(
             normalized_resource.as_resource(),
@@ -1376,7 +1384,14 @@ mod tests {
                 Some(protocol_convert::ProtocolConvertError::NonFiniteFloat),
             ));
             let error: CoreProviderError = error.into();
-            assert_eq!(error.detail().resource_id.as_deref(), Some(&resource.id));
+            assert_eq!(
+                error
+                    .detail()
+                    .resource_id
+                    .as_deref()
+                    .map(|id| id.as_resource_id()),
+                Some(&resource.id)
+            );
             assert!(error.detail().cause().unwrap().is::<NormalizationError>());
         }
     }
