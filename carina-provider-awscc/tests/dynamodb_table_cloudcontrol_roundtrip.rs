@@ -77,6 +77,13 @@ fn dynamodb_table_resource() -> Resource {
             "point_in_time_recovery_specification",
             map([("point_in_time_recovery_enabled", bool_(true))]),
         )
+        .with_attribute(
+            "sse_specification",
+            map([
+                ("sse_enabled", bool_(true)),
+                ("sse_type", enum_identifier("kms")),
+            ]),
+        )
         .with_attribute("tags", map([("Environment", string("test"))]))
 }
 
@@ -155,7 +162,10 @@ async fn dynamodb_table_create_then_read_round_trips_list_of_struct_fields() {
             map([("point_in_time_recovery_enabled", bool_(true))]),
         ),
         ("tags", map([("Environment", string("test"))])),
-        ("sse_specification", map([("sse_enabled", bool_(false))])),
+        (
+            "sse_specification",
+            map([("sse_enabled", bool_(true)), ("sse_type", string("KMS"))]),
+        ),
         (
             "contributor_insights_specification",
             map([("enabled", bool_(false))]),
