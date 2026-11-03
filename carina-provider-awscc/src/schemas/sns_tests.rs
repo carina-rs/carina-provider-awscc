@@ -259,18 +259,72 @@ fn signature_version_requires_documented_enum_values() {
 }
 
 #[test]
-fn plain_strings_accept_arn_and_identity_typed_references() {
+fn topic_names_enforce_standard_and_fifo_syntax_and_total_length() {
+    let topic = super::generated::sns::topic::sns_topic_config().schema;
+    let name = field(&topic, "topic_name");
+    for value in [
+        "a".to_string(),
+        "AZaz09_-".to_string(),
+        "x".repeat(256),
+        "a.fifo".to_string(),
+        format!("{}.fifo", "x".repeat(251)),
+    ] {
+        name.validate(&string(&value)).unwrap();
+    }
+    for value in [
+        "".to_string(),
+        "x".repeat(257),
+        format!("{}.fifo", "x".repeat(252)),
+        ".fifo".to_string(),
+        "a.b".to_string(),
+        "a.fifo.fifo".to_string(),
+        "a.FIFO".to_string(),
+        "a/b".to_string(),
+        "a b".to_string(),
+        "é".to_string(),
+        "a\n".to_string(),
+    ] {
+        assert!(name.validate(&string(&value)).is_err(), "{value:?}");
+    }
+}
+
+#[test]
+fn feedback_sample_rates_are_integer_percentage_strings() {
+    let topic = super::generated::sns::topic::sns_topic_config().schema;
+    let rate = field(
+        &topic,
+        "delivery_status_logging.success_feedback_sample_rate",
+    );
+    for value in 0..=100 {
+        rate.validate(&string(&value.to_string())).unwrap();
+    }
+    // The API does not specify a canonical spelling or prohibit leading zeros.
+    for value in ["00", "001", "000100"] {
+        rate.validate(&string(value)).unwrap();
+    }
+    for value in [
+        "", "-1", "+1", "101", "1000", "00101", "100.0", "1.5", " 1", "1 ", "1e2", "١", "100\n",
+    ] {
+        assert!(rate.validate(&string(value)).is_err(), "{value:?}");
+    }
+    assert!(rate.validate(&int(100)).is_err());
+}
+
+#[test]
+fn refined_topic_strings_accept_arn_and_identity_typed_references() {
     let topic = super::generated::sns::topic::sns_topic_config().schema;
     let subscription = super::generated::sns::subscription::sns_subscription_config().schema;
     let vpc = super::generated::ec2::vpc::ec2_vpc_config().schema;
-    for (schema, path) in [
-        (&topic, "topic_name"),
+    for (schema, path, refined, expected_length) in [
+        (&topic, "topic_name", true, Some((Some(1), Some(256)))),
         (
             &topic,
             "delivery_status_logging.success_feedback_sample_rate",
+            true,
+            None,
         ),
-        (&topic, "display_name"),
-        (&subscription, "endpoint"),
+        (&topic, "display_name", false, None),
+        (&subscription, "endpoint", false, None),
     ] {
         let sink = field(schema, path);
         assert!(
@@ -278,16 +332,15 @@ fn plain_strings_accept_arn_and_identity_typed_references() {
                 sink.as_type().raw_shape(),
                 RawShape::String {
                     identity: None,
-                    pattern: None,
-                    length: None,
+                    pattern,
+                    length,
                     validate: None,
                     to_dsl: None,
-                }
+                } if pattern.is_some() == refined && length == expected_length
             ),
-            "{path} must remain plain String"
+            "{path} must retain its declared string constraints"
         );
-        // Anonymous pattern/length refinements reject identity-typed resource
-        // outputs until carina-rs/carina#4230; check assignability across schemas.
+        // carina#4230 defers anonymous pattern/length checks until references resolve.
         for (source_schema, source_path) in [(&topic, "topic_arn"), (&vpc, "vpc_id")] {
             let source = field(source_schema, source_path);
             assert!(matches!(
@@ -306,14 +359,6 @@ fn plain_strings_accept_arn_and_identity_typed_references() {
             );
         }
     }
-    let sample_rate = field(
-        &topic,
-        "delivery_status_logging.success_feedback_sample_rate",
-    );
-    for value in ["0", "100"] {
-        sample_rate.validate(&string(value)).unwrap();
-    }
-    assert!(sample_rate.validate(&int(100)).is_err());
 }
 
 #[test]

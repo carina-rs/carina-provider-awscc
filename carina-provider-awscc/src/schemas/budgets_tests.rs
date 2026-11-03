@@ -156,7 +156,7 @@ fn metrics_validate_item_enum_and_count() {
 }
 
 #[test]
-fn budget_filter_values_accept_unrefined_strings_and_validate_count() {
+fn budget_filter_values_enforce_item_lengths_and_validate_count() {
     let schema = budget_schema();
     for prefix in [
         "budget.filter_expression",
@@ -166,7 +166,7 @@ fn budget_filter_values_accept_unrefined_strings_and_validate_count() {
         for filter in ["tags", "cost_categories", "dimensions"] {
             let path = format!("{prefix}.{filter}.values");
             let values = field(&schema, &path);
-            for length in [0, 1024, 1025] {
+            for length in [0, 1, 1024] {
                 assert!(
                     values
                         .validate(&list(vec![string(&"x".repeat(length))]))
@@ -174,6 +174,15 @@ fn budget_filter_values_accept_unrefined_strings_and_validate_count() {
                     "{path}: item length {length} must be accepted"
                 );
             }
+            assert!(
+                values
+                    .validate(&list(vec![string("ok"), string(&"x".repeat(1025))]))
+                    .is_err(),
+                "{path}: every item must be at most 1024 characters"
+            );
+            values
+                .validate(&list(vec![string(&"é".repeat(1024)), string("\n")]))
+                .unwrap();
             assert!(
                 values.validate(&list(vec![])).is_err(),
                 "{path}: at least one item is required"
@@ -215,24 +224,33 @@ fn budget_dimension_match_options_validate_count_in_nested_and_expression() {
 }
 
 #[test]
-fn budget_names_accept_unrefined_strings() {
+fn budget_names_enforce_length_and_supported_character_exclusions() {
     let schema = budget_schema();
     let name = field(&schema, "budget.budget_name");
     for value in [
         "a".to_string(),
         "x".repeat(100),
         "monthly-cost".to_string(),
+        "é".repeat(100),
+    ] {
+        name.validate(&string(&value)).unwrap();
+    }
+    for value in [
         "".to_string(),
         "x".repeat(101),
         "monthly:cost".to_string(),
         r"monthly\cost".to_string(),
     ] {
-        name.validate(&string(&value)).unwrap();
+        assert!(name.validate(&string(&value)).is_err(), "{value:?}");
+    }
+    // The API's lookahead exclusions cannot be compiled by core's regex engine.
+    for value in ["monthly/action/cost", "<script>alert(1)</script>"] {
+        name.validate(&string(value)).unwrap();
     }
 }
 
 #[test]
-fn budget_tag_keys_accept_unrefined_strings() {
+fn budget_tag_keys_enforce_documented_character_lengths() {
     let schema = budget_schema();
     for path in [
         "budget.filter_expression.tags.key",
@@ -240,39 +258,58 @@ fn budget_tag_keys_accept_unrefined_strings() {
         "budget.filter_expression.or.tags.key",
     ] {
         let key = field(&schema, path);
-        for length in [0, 1024, 1025] {
+        for length in [0, 1, 1024] {
             assert!(
                 key.validate(&string(&"x".repeat(length))).is_ok(),
                 "{path}: length {length} must be accepted"
             );
         }
+        assert!(key.validate(&string(&"x".repeat(1025))).is_err(), "{path}");
+        key.validate(&string(&"é".repeat(1024))).unwrap();
+        key.validate(&string("\n")).unwrap();
     }
 }
 
 #[test]
-fn identity_typed_outputs_are_assignable_to_budget_strings() {
+fn identity_typed_outputs_are_assignable_to_every_refined_budget_string() {
     let schema = budget_schema();
     let topic = super::generated::sns::topic::sns_topic_config().schema;
-    let arn = topic.as_schema().attributes()["topic_arn"].attr_type();
-    assert!(matches!(
-        arn.raw_shape(),
-        RawShape::String {
-            identity: Some(_),
-            ..
-        }
-    ));
+    let vpc = super::generated::ec2::vpc::ec2_vpc_config().schema;
 
-    // Follow the same schema-aware reference check as the CloudFront ARN tests.
+    // carina#4230 defers anonymous length/pattern checks until references resolve.
     let assert_assignable = |path: &str| {
         let sink = field(&schema, path);
         let sink = sink.list_element().unwrap_or(sink);
         assert!(
-            topic
-                .as_schema()
-                .type_in_schema(arn)
-                .is_assignable_to(schema.as_schema().type_in_schema(sink.as_type())),
-            "SNS Topic.topic_arn must be reference-compatible with Budget.{path}"
+            matches!(
+                sink.as_type().raw_shape(),
+                RawShape::String {
+                    identity: None,
+                    length: Some(_),
+                    validate: None,
+                    to_dsl: None,
+                    ..
+                }
+            ),
+            "{path} must have an anonymous refinement"
         );
+        for (source_schema, source_path) in [(&topic, "topic_arn"), (&vpc, "vpc_id")] {
+            let source = field(source_schema, source_path);
+            assert!(matches!(
+                source.as_type().raw_shape(),
+                RawShape::String {
+                    identity: Some(_),
+                    ..
+                }
+            ));
+            assert!(
+                source_schema
+                    .as_schema()
+                    .type_in_schema(source.as_type())
+                    .is_assignable_to(schema.as_schema().type_in_schema(sink.as_type())),
+                "{source_path} must be reference-compatible with Budget.{path}"
+            );
+        }
     };
     assert_assignable("budget.budget_name");
     for prefix in [

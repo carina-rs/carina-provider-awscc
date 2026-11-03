@@ -7437,13 +7437,20 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 default: None,
             },
         );
-        // The API documents 1..=100 characters and a pattern excluding ':' and '\\',
-        // /action/, and <script>...</script>. Defer enforcement until
-        // carina-rs/carina#4230 lets typed references into refined strings.
+        // BudgetName: 1..=100 characters, excluding ':' and '\\'. The API's
+        // /action/ and <script>...</script> exclusions use negative lookahead,
+        // which core's regex crate cannot compile; retain only the supported part.
         // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_Budget.html
         m.insert(
             ("AWS::Budgets::Budget", "BudgetData.BudgetName"),
-            TypeOverride::StringType("AttributeType::string()"),
+            TypeOverride::AttributeType {
+                expression: r#"AttributeType::refined_string(None, Some("^[^:\\\\]+$".to_string()), Some((Some(1), Some(100))), None)"#,
+                display: const {
+                    OverrideTypeDisplay::new(r"String (length: 1..=100, pattern: ^[^:\\]+$)")
+                },
+                block_name: None,
+                default: None,
+            },
         );
         // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_AutoAdjustData.html
         m.insert(
@@ -7488,42 +7495,44 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             ("AWS::Budgets::Budget", "TagValues.MatchOptions"),
             TypeOverride::Enum(budgets_match_options.clone()),
         );
-        // The API documents 0..=1024 characters; defer enforcement until
-        // carina-rs/carina#4230 lets typed references into refined strings.
+        // TagValues.Key: 0..=1024 characters; CFN omits the length bounds.
         // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_TagValues.html
         m.insert(
             ("AWS::Budgets::Budget", "TagValues.Key"),
-            TypeOverride::StringType("AttributeType::string()"),
+            TypeOverride::AttributeType {
+                expression: "AttributeType::refined_string(None, None, Some((Some(0), Some(1024))), None)",
+                display: const { OverrideTypeDisplay::new("String (length: 0..=1024)") },
+                block_name: None,
+                default: None,
+            },
         );
         // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_CostCategoryValues.html
         m.insert(
             ("AWS::Budgets::Budget", "CostCategoryValues.MatchOptions"),
             TypeOverride::Enum(budgets_match_options),
         );
-        // The API requires at least one value; CFN omits the item-count bound.
+        // The API requires at least one value and bounds each string to
+        // 0..=1024 characters. CFN omits both constraints.
         let budgets_filter_values = TypeOverride::ArrayItemType {
-            expression: "AttributeType::string()",
-            display: const { OverrideTypeDisplay::new("List<String>") },
+            expression: "AttributeType::refined_string(None, None, Some((Some(0), Some(1024))), None)",
+            display: const { OverrideTypeDisplay::new("List<String (length: 0..=1024)>") },
             block_name: None,
             default: None,
         }
         .with_array_bounds(Some(1), None);
-        // The API documents 0..=1024 characters per item; defer enforcement until
-        // carina-rs/carina#4230 lets typed references into refined strings.
+        // TagValues.Values: 0..=1024 characters per item.
         // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_TagValues.html
         m.insert(
             ("AWS::Budgets::Budget", "TagValues.Values"),
             budgets_filter_values.clone(),
         );
-        // The API documents 0..=1024 characters per item; defer enforcement until
-        // carina-rs/carina#4230 lets typed references into refined strings.
+        // CostCategoryValues.Values: 0..=1024 characters per item.
         // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_CostCategoryValues.html
         m.insert(
             ("AWS::Budgets::Budget", "CostCategoryValues.Values"),
             budgets_filter_values.clone(),
         );
-        // The API documents 0..=1024 characters per item; defer enforcement until
-        // carina-rs/carina#4230 lets typed references into refined strings.
+        // ExpressionDimensionValues.Values: 0..=1024 characters per item.
         // https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_budgets_ExpressionDimensionValues.html
         m.insert(
             ("AWS::Budgets::Budget", "ExpressionDimensionValues.Values"),
@@ -7571,8 +7580,6 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
 
         // CloudWatch API constraints missing from the cached CFN schema.
         // Keep every override at its raw top-level or definition-qualified CFN path.
-        // Pinned core rejects identity-typed strings assigned to anonymous string
-        // refinements. Keep these strings plain until carina-rs/carina#4230.
         // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_PutMetricAlarm.html
         m.insert(
             ("AWS::CloudWatch::Alarm", "ComparisonOperator"),
@@ -7636,30 +7643,34 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 TypeOverride::Enum(cloudwatch_units.clone()),
             );
         }
-        // Percentiles p0..p100; tm/tc/ts/wm, IQM, PR, and TC/TM/TS/WM ranges.
-        // Ranges need at least one bound; percentages are 0..100 and trimmed/
-        // winsorized boundaries allow at most ten decimal places.
+        // ExtendedStatistic must name a statistic, so enforce nonempty only.
+        // Docs describe p0..p100, tm/tc/ts/wm, IQM, PR and TC/TM/TS/WM ranges,
+        // with up to ten decimal places for trimmed/winsorized boundaries.
+        // They do not give a closed numeric grammar for every range form:
+        // PutMetricAlarm even says 10..90 percent while the User Guide uses
+        // TM(2%:98%). The previous regex guessed numeric spellings and range
+        // combinations. Leave grammar/bound checks to AWS rather than restore it.
         // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_PutMetricAlarm.html
         // https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/Statistics-definitions.html
-        // Not enforced until carina-rs/carina#4230.
         m.insert(
             ("AWS::CloudWatch::Alarm", "ExtendedStatistic"),
             TypeOverride::AttributeType {
-                expression: "AttributeType::string()",
-                display: const { OverrideTypeDisplay::new("String") },
+                expression: "AttributeType::refined_string(None, None, Some((Some(1), None)), None)",
+                display: const { OverrideTypeDisplay::new("String (length: 1..)") },
                 block_name: None,
                 default: None,
             },
         );
-        // Basic CloudWatch statistic or an extended form with the bounds above.
+        // MetricStat.Stat: a nonempty basic statistic (SampleCount/Average/Sum/
+        // Minimum/Maximum) or an extended statistic. As above, the docs do not
+        // define an exact grammar for all extended forms; enforce nonempty only.
         // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_MetricStat.html
         // https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/Statistics-definitions.html
-        // Not enforced until carina-rs/carina#4230.
         m.insert(
             ("AWS::CloudWatch::Alarm", "MetricStat.Stat"),
             TypeOverride::AttributeType {
-                expression: "AttributeType::string()",
-                display: const { OverrideTypeDisplay::new("String") },
+                expression: "AttributeType::refined_string(None, None, Some((Some(1), None)), None)",
+                display: const { OverrideTypeDisplay::new("String (length: 1..)") },
                 block_name: None,
                 default: None,
             },
@@ -7727,24 +7738,22 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         }
         // Query length: 1..=10000 characters.
         // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_AlarmPromQLCriteria.html
-        // Not enforced until carina-rs/carina#4230.
         m.insert(
             ("AWS::CloudWatch::Alarm", "AlarmPromQLCriteria.Query"),
             TypeOverride::AttributeType {
-                expression: "AttributeType::string()",
-                display: const { OverrideTypeDisplay::new("String") },
+                expression: r#"AttributeType::refined_string(None, None, Some((Some(1), Some(10000))), None)"#,
+                display: const { OverrideTypeDisplay::new(r"String (length: 1..=10000)") },
                 block_name: None,
                 default: None,
             },
         );
         // AlarmName length: 1..=255 characters; no ASCII control characters.
         // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_PutMetricAlarm.html
-        // Not enforced until carina-rs/carina#4230.
         m.insert(
             ("AWS::CloudWatch::Alarm", "AlarmName"),
             TypeOverride::AttributeType {
-                expression: "AttributeType::string()",
-                display: const { OverrideTypeDisplay::new("String") },
+                expression: r#"AttributeType::refined_string(None, Some("^[^\\x00-\\x1F\\x7F]+$".to_string()), Some((Some(1), Some(255))), None)"#,
+                display: const { OverrideTypeDisplay::new(r"String (length: 1..=255, pattern: ^[^\x00-\x1F\x7F]+$)") },
                 block_name: None,
                 default: None,
             },
@@ -7752,13 +7761,12 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         // MetricName (top-level and nested) and ThresholdMetricId length: 1..=255.
         // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_PutMetricAlarm.html
         // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_Metric.html
-        // Not enforced until carina-rs/carina#4230.
         for path in ["MetricName", "Metric.MetricName", "ThresholdMetricId"] {
             m.insert(
                 ("AWS::CloudWatch::Alarm", path),
                 TypeOverride::AttributeType {
-                    expression: "AttributeType::string()",
-                    display: const { OverrideTypeDisplay::new("String") },
+                    expression: r#"AttributeType::refined_string(None, None, Some((Some(1), Some(255))), None)"#,
+                    display: const { OverrideTypeDisplay::new(r"String (length: 1..=255)") },
                     block_name: None,
                     default: None,
                 },
@@ -7767,13 +7775,12 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         // Namespace (top-level and nested) length: 1..=255; cannot start with ':'.
         // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_PutMetricAlarm.html
         // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_Metric.html
-        // Not enforced until carina-rs/carina#4230.
         for path in ["Namespace", "Metric.Namespace"] {
             m.insert(
                 ("AWS::CloudWatch::Alarm", path),
                 TypeOverride::AttributeType {
-                    expression: "AttributeType::string()",
-                    display: const { OverrideTypeDisplay::new("String") },
+                    expression: r#"AttributeType::refined_string(None, Some("^[^:].*$".to_string()), Some((Some(1), Some(255))), None)"#,
+                    display: const { OverrideTypeDisplay::new(r"String (length: 1..=255, pattern: ^[^:].*$)") },
                     block_name: None,
                     default: None,
                 },
@@ -7782,12 +7789,11 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         // Shared by Dimensions and Metric.Dimensions: Name length 1..=255,
         // printable ASCII with a non-space character; cannot start with ':'.
         // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_Dimension.html
-        // Not enforced until carina-rs/carina#4230.
         m.insert(
             ("AWS::CloudWatch::Alarm", "Dimension.Name"),
             TypeOverride::AttributeType {
-                expression: "AttributeType::string()",
-                display: const { OverrideTypeDisplay::new("String") },
+                expression: r#"AttributeType::refined_string(None, Some("^(?:[!-9;-~][ -~]*| [ -~]*[!-~][ -~]*)$".to_string()), Some((Some(1), Some(255))), None)"#,
+                display: const { OverrideTypeDisplay::new(r"String (length: 1..=255, pattern: ^(?:[!-9;-~][ -~]*| [ -~]*[!-~][ -~]*)$)") },
                 block_name: None,
                 default: None,
             },
@@ -7795,48 +7801,44 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         // Shared by Dimensions and Metric.Dimensions: Value length 1..=1024,
         // printable ASCII with at least one non-space character.
         // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_Dimension.html
-        // Not enforced until carina-rs/carina#4230.
         m.insert(
             ("AWS::CloudWatch::Alarm", "Dimension.Value"),
             TypeOverride::AttributeType {
-                expression: "AttributeType::string()",
-                display: const { OverrideTypeDisplay::new("String") },
+                expression: r#"AttributeType::refined_string(None, Some("^[ -~]*[!-~][ -~]*$".to_string()), Some((Some(1), Some(1024))), None)"#,
+                display: const { OverrideTypeDisplay::new(r"String (length: 1..=1024, pattern: ^[ -~]*[!-~][ -~]*$)") },
                 block_name: None,
                 default: None,
             },
         );
         // AlarmDescription length: 0..=1024 characters.
         // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_PutMetricAlarm.html
-        // Not enforced until carina-rs/carina#4230.
         m.insert(
             ("AWS::CloudWatch::Alarm", "AlarmDescription"),
             TypeOverride::AttributeType {
-                expression: "AttributeType::string()",
-                display: const { OverrideTypeDisplay::new("String") },
+                expression: r#"AttributeType::refined_string(None, None, Some((Some(0), Some(1024))), None)"#,
+                display: const { OverrideTypeDisplay::new(r"String (length: 0..=1024)") },
                 block_name: None,
                 default: None,
             },
         );
         // Id length: 1..=255 characters; pattern: ^[a-z][a-zA-Z0-9_]*$.
         // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_MetricDataQuery.html
-        // Not enforced until carina-rs/carina#4230.
         m.insert(
             ("AWS::CloudWatch::Alarm", "MetricDataQuery.Id"),
             TypeOverride::AttributeType {
-                expression: "AttributeType::string()",
-                display: const { OverrideTypeDisplay::new("String") },
+                expression: r#"AttributeType::refined_string(None, Some("^[a-z][a-zA-Z0-9_]*$".to_string()), Some((Some(1), Some(255))), None)"#,
+                display: const { OverrideTypeDisplay::new(r"String (length: 1..=255, pattern: ^[a-z][a-zA-Z0-9_]*$)") },
                 block_name: None,
                 default: None,
             },
         );
         // Expression length: 1..=2048 characters.
         // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_MetricDataQuery.html
-        // Not enforced until carina-rs/carina#4230.
         m.insert(
             ("AWS::CloudWatch::Alarm", "MetricDataQuery.Expression"),
             TypeOverride::AttributeType {
-                expression: "AttributeType::string()",
-                display: const { OverrideTypeDisplay::new("String") },
+                expression: r#"AttributeType::refined_string(None, None, Some((Some(1), Some(2048))), None)"#,
+                display: const { OverrideTypeDisplay::new(r"String (length: 1..=2048)") },
                 block_name: None,
                 default: None,
             },
@@ -7856,16 +7858,16 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 .with_array_bounds(None, Some(5)),
             );
         }
-        // Timezone length: 1..=50; IANA name or bare/prefixed UTC offset in
-        // five-minute steps (also UTC, GMT, and Z).
+        // Timezone: 1..=50 characters. IANA names are an open list, and the API
+        // also accepts bare/prefixed UTC offsets in five-minute steps (UTC/GMT/Z).
+        // Enforce length only; a syntax approximation cannot validate IANA names.
         // https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_WallClockWindow.html
         // https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/alarm-evaluation-window.html#alarm-evaluation-window-timezones
-        // Not enforced until carina-rs/carina#4230.
         m.insert(
             ("AWS::CloudWatch::Alarm", "WallClockWindow.Timezone"),
             TypeOverride::AttributeType {
-                expression: "AttributeType::string()",
-                display: const { OverrideTypeDisplay::new("String") },
+                expression: "AttributeType::refined_string(None, None, Some((Some(1), Some(50))), None)",
+                display: const { OverrideTypeDisplay::new("String (length: 1..=50)") },
                 block_name: None,
                 default: None,
             },
@@ -7960,21 +7962,31 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             ("AWS::SNS::Topic", "SignatureVersion"),
             TypeOverride::Enum(vec!["1", "2"]),
         );
-        // TopicName: 1..=256 ASCII letters, digits, '_' or '-'; FIFO names
-        // must end with .fifo. Defer pattern/length enforcement until
-        // carina-rs/carina#4230 allows identity-typed string references.
+        // TopicName: 1..=256 ASCII letters, digits, '_' or '-', optionally ending
+        // in .fifo (included in the total length). The cross-field dependency on
+        // FifoTopic cannot be expressed here, so allow both forms.
         // https://docs.aws.amazon.com/sns/latest/api/API_CreateTopic.html
         m.insert(
             ("AWS::SNS::Topic", "TopicName"),
-            TypeOverride::StringType("AttributeType::string()"),
+            TypeOverride::AttributeType {
+                expression: r#"AttributeType::refined_string(None, Some("^[A-Za-z0-9_-]+(?:\\.fifo)?$".to_string()), Some((Some(1), Some(256))), None)"#,
+                display: const { OverrideTypeDisplay::new(r"String (length: 1..=256, pattern: ^[A-Za-z0-9_-]+(?:\.fifo)?$)") },
+                block_name: None,
+                default: None,
+            },
         );
-        // SuccessFeedbackSampleRate is a numeric string in 0..=100 for every
-        // delivery-logging protocol, all sharing the LoggingConfig definition.
-        // Defer string refinement until carina-rs/carina#4230.
+        // SuccessFeedbackSampleRate: integer numeric string 0..=100 for every
+        // protocol. SetTopicAttributes calls this "sample rate percentage (0-100)".
+        // No canonical spelling is documented, so permit leading zeros.
         // https://docs.aws.amazon.com/sns/latest/api/API_SetTopicAttributes.html
         m.insert(
             ("AWS::SNS::Topic", "LoggingConfig.SuccessFeedbackSampleRate"),
-            TypeOverride::StringType("AttributeType::string()"),
+            TypeOverride::AttributeType {
+                expression: r#"AttributeType::refined_string(None, Some("^0*(?:100|[0-9]{1,2})$".to_string()), None, None)"#,
+                display: const { OverrideTypeDisplay::new(r"String (pattern: ^0*(?:100|[0-9]{1,2})$)") },
+                block_name: None,
+                default: None,
+            },
         );
 
         // Cloud Control create/get in both directions with carina-test-008 in
@@ -13661,28 +13673,68 @@ mod tests {
     }
 
     #[test]
-    fn test_sns_deferred_string_constraints_use_plain_string_overrides() {
-        let schema = cfn_schema_for_codegen_tests("AWS::SNS::Topic");
-        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
-        for path in ["TopicName", "LoggingConfig.SuccessFeedbackSampleRate"] {
-            let cfn_path = path.split_once('.').map_or_else(
-                || CfnPropertyPath::new(None, path),
-                |(parent, property)| CfnPropertyPath::new(Some(parent), property),
+    fn test_sns_documented_string_refinements_emit_inline_and_in_definitions() {
+        for with_logging_def in [false, true] {
+            let mut schema = cfn_schema_for_codegen_tests("AWS::SNS::Topic");
+            if with_logging_def {
+                // LoggingConfig is normally list-only. Also exercise its standalone def.
+                schema.edit_json(|source| {
+                    source["properties"]["LoggingConfigForTest"] =
+                        serde_json::json!({"$ref": "#/definitions/LoggingConfig"});
+                });
+            }
+            let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+            for (path, pattern, min, max) in [
+                (
+                    "TopicName",
+                    r"^[A-Za-z0-9_-]+(?:\.fifo)?$",
+                    Some(1),
+                    Some(256),
+                ),
+                (
+                    "LoggingConfig.SuccessFeedbackSampleRate",
+                    r"^0*(?:100|[0-9]{1,2})$",
+                    None,
+                    None,
+                ),
+            ] {
+                let cfn_path = path.split_once('.').map_or_else(
+                    || CfnPropertyPath::new(None, path),
+                    |(parent, property)| CfnPropertyPath::new(Some(parent), property),
+                );
+                assert!(cfn_override_property(&schema, cfn_path).is_some(), "{path}");
+                let expected = refined_string_type(
+                    "None",
+                    &emit_pattern_option(Some(pattern)),
+                    &emit_length_option(min, max),
+                    "None",
+                );
+                assert!(
+                    generated_sns_field(&generated, path).starts_with(&expected),
+                    "{path}"
+                );
+                if path.contains('.') {
+                    assert_all_generated_struct_fields(&generated, path, &expected);
+                    if with_logging_def {
+                        let (_, definitions) =
+                            generated.split_once("fn build_schema_def_0()").unwrap();
+                        assert_all_generated_struct_fields(definitions, path, &expected);
+                    }
+                }
+            }
+            let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+            assert!(
+                markdown
+                    .contains("String (length: 1..=256, pattern: ^[A-Za-z0-9_-]+(?:\\.fifo)?$)")
             );
-            assert!(cfn_override_property(&schema, cfn_path).is_some(), "{path}");
-            assert_eq!(
-                resource_type_overrides().get(&("AWS::SNS::Topic", path)),
-                Some(&TypeOverride::StringType("AttributeType::string()")),
-                "{path}: preserve identity-typed references until carina#4230"
+            assert!(markdown.contains(
+                r"| `success_feedback_sample_rate` | `String (pattern: ^0*(?:100\|[0-9]{1,2})$)` |"
+            ));
+            assert!(
+                generated_sns_field(&generated, "DisplayName")
+                    .starts_with("AttributeType::string()")
             );
-            assert!(generated_sns_field(&generated, path).starts_with("AttributeType::string()"));
         }
-        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
-        assert!(markdown.contains("### `topic_name`\n\n- **Type:** String\n"));
-        assert!(markdown.contains("| `success_feedback_sample_rate` | String |"));
-        assert!(
-            generated_sns_field(&generated, "DisplayName").starts_with("AttributeType::string()")
-        );
     }
 
     #[test]
@@ -13942,54 +13994,80 @@ mod tests {
     }
 
     #[test]
-    fn test_cloudwatch_alarm_strings_stay_plain_inline_and_in_definitions() {
-        let schema = cfn_schema_for_codegen_tests("AWS::CloudWatch::Alarm");
-        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
-        let (inline, definitions) = generated.split_once("fn build_schema_def_0()").unwrap();
-        // Anonymous length/pattern refinements reject identity-typed references
-        // in the pinned core; keep every affected site plain (carina#4230).
-        for path in [
-            "AlarmName",
-            "AlarmDescription",
-            "MetricName",
-            "Namespace",
-            "ThresholdMetricId",
-            "Metric.MetricName",
-            "Metric.Namespace",
-            "Dimension.Name",
-            "Dimension.Value",
-            "MetricDataQuery.Id",
-            "MetricDataQuery.Expression",
-            "AlarmPromQLCriteria.Query",
-            "ExtendedStatistic",
-            "MetricStat.Stat",
-            "WallClockWindow.Timezone",
-        ] {
-            // List-only MetricDataQuery is emitted inline, without a standalone def.
-            for code in if path.contains('.') && !path.starts_with("MetricDataQuery.") {
-                vec![inline, definitions]
-            } else {
-                vec![inline]
-            } {
-                let field = generated_cloudwatch_field(code, path);
-                assert!(
-                    field.starts_with("AttributeType::string()"),
-                    "{path}: {field}"
-                );
+    fn test_cloudwatch_alarm_string_refinements_emit_inline_and_in_definitions() {
+        for with_query_def in [false, true] {
+            let mut schema = cfn_schema_for_codegen_tests("AWS::CloudWatch::Alarm");
+            if with_query_def {
+                // MetricDataQuery is normally list-only. Exercise its standalone def too.
+                schema.edit_json(|source| {
+                    source["properties"]["MetricDataQueryForTest"] =
+                        serde_json::json!({"$ref": "#/definitions/MetricDataQuery"});
+                });
             }
+            let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+            let (inline, definitions) = generated.split_once("fn build_schema_def_0()").unwrap();
+            for (path, pattern, min, max) in [
+                ("AlarmName", Some(r"^[^\x00-\x1F\x7F]+$"), 1, Some(255)),
+                ("AlarmDescription", None, 0, Some(1024)),
+                ("MetricName", None, 1, Some(255)),
+                ("Namespace", Some(r"^[^:].*$"), 1, Some(255)),
+                ("ThresholdMetricId", None, 1, Some(255)),
+                ("Metric.MetricName", None, 1, Some(255)),
+                ("Metric.Namespace", Some(r"^[^:].*$"), 1, Some(255)),
+                (
+                    "Dimension.Name",
+                    Some(r"^(?:[!-9;-~][ -~]*| [ -~]*[!-~][ -~]*)$"),
+                    1,
+                    Some(255),
+                ),
+                (
+                    "Dimension.Value",
+                    Some(r"^[ -~]*[!-~][ -~]*$"),
+                    1,
+                    Some(1024),
+                ),
+                (
+                    "MetricDataQuery.Id",
+                    Some(r"^[a-z][a-zA-Z0-9_]*$"),
+                    1,
+                    Some(255),
+                ),
+                ("MetricDataQuery.Expression", None, 1, Some(2048)),
+                ("AlarmPromQLCriteria.Query", None, 1, Some(10000)),
+                ("ExtendedStatistic", None, 1, None),
+                ("MetricStat.Stat", None, 1, None),
+                ("WallClockWindow.Timezone", None, 1, Some(50)),
+            ] {
+                // Preserve the historical explicit zero lower bound on AlarmDescription.
+                let length = format!(
+                    "Some((Some({min}), {}))",
+                    max.map_or_else(|| "None".to_string(), |max| format!("Some({max})"))
+                );
+                let expected =
+                    refined_string_type("None", &emit_pattern_option(pattern), &length, "None");
+                if path.contains('.') {
+                    assert_all_generated_struct_fields(inline, path, &expected);
+                    if with_query_def || !path.starts_with("MetricDataQuery.") {
+                        assert_all_generated_struct_fields(definitions, path, &expected);
+                    }
+                } else {
+                    let field = generated_cloudwatch_field(inline, path);
+                    assert!(field.starts_with(&expected), "{path}: {field}");
+                }
+            }
+            assert!(
+                generated_cloudwatch_field(&generated, "MetricDataQuery.AccountId")
+                    .starts_with("carina_aws_types::aws_account_id()")
+            );
+            assert!(
+                generated_cloudwatch_field(&generated, "MetricDataQuery.Label")
+                    .starts_with("AttributeType::string()")
+            );
+            assert!(
+                generated_cloudwatch_field(&generated, "MetricDataQuery.ReturnData")
+                    .starts_with("AttributeType::bool()")
+            );
         }
-        assert!(
-            generated_cloudwatch_field(&generated, "MetricDataQuery.AccountId")
-                .starts_with("carina_aws_types::aws_account_id()")
-        );
-        assert!(
-            generated_cloudwatch_field(&generated, "MetricDataQuery.Label")
-                .starts_with("AttributeType::string()")
-        );
-        assert!(
-            generated_cloudwatch_field(&generated, "MetricDataQuery.ReturnData")
-                .starts_with("AttributeType::bool()")
-        );
     }
 
     #[test]
@@ -14034,7 +14112,7 @@ mod tests {
     fn test_budgets_budget_nested_identity_is_emitted_inline_and_with_def() {
         let schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
         let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
-        let identity_field = r#"StructField::optional("budget_name", AttributeType::string()).create_only().identity()"#;
+        let identity_field = r#"StructField::optional("budget_name", AttributeType::refined_string(None, Some("^[^:\\\\]+$".to_string()), Some((Some(1), Some(100))), None)).create_only().identity()"#;
         let (inline, definitions) = generated.split_once("fn build_schema_def_0()").unwrap();
         assert_eq!(inline.matches(identity_field).count(), 1);
         assert_eq!(definitions.matches(identity_field).count(), 1);
@@ -14250,6 +14328,18 @@ mod tests {
             .0
     }
 
+    fn assert_all_generated_struct_fields(generated: &str, path: &str, expected: &str) {
+        let (definition, _) = path.split_once('.').unwrap();
+        let marker = format!("AttributeType::struct_(\"{definition}\".to_string(), vec![");
+        let mut count = 0;
+        for (index, _) in generated.match_indices(&marker) {
+            let field = generated_budgets_field(&generated[index..], path);
+            assert!(field.starts_with(expected), "{path}: {field}");
+            count += 1;
+        }
+        assert!(count > 0, "missing generated definition {definition}");
+    }
+
     fn assert_budgets_enum_values(field: &str, path: &str, values: &[(&str, &str)]) {
         let wire_values = values
             .iter()
@@ -14380,7 +14470,7 @@ mod tests {
         let schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
         let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
         let (inline, definitions) = generated.split_once("fn build_schema_def_0()").unwrap();
-        let item = "AttributeType::string()";
+        let item = "AttributeType::refined_string(None, None, Some((Some(0), Some(1024))), None)";
         let expected = format!(
             "AttributeType::refined_list({item}, true, Some((Some(1), None)), carina_core::schema::ListElements::AllowDuplicates))"
         );
@@ -14391,6 +14481,7 @@ mod tests {
                 "ExpressionDimensionValues.Values",
             ] {
                 assert_eq!(generated_budgets_field(code, path), expected, "{path}");
+                assert_all_generated_struct_fields(code, path, &expected);
             }
         }
         let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
@@ -14400,7 +14491,10 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(rows.len(), 3);
         for row in rows {
-            assert!(row.contains("`List<String> (items: 1..)`"), "{row}");
+            assert!(
+                row.contains("List<String (length: 0..=1024)>") && row.contains("items: 1.."),
+                "{row}"
+            );
         }
     }
 
@@ -14439,7 +14533,8 @@ mod tests {
         });
         let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
         let expected = concat!(
-            "AttributeType::refined_list(AttributeType::string(), false, Some((Some(1), Some(3))), ",
+            "AttributeType::refined_list(AttributeType::refined_string(None, None, ",
+            "Some((Some(0), Some(1024))), None), false, Some((Some(1), Some(3))), ",
             "carina_core::schema::ListElements::Unique))"
         );
         let (inline, definitions) = generated.split_once("fn build_schema_def_0()").unwrap();
@@ -14592,10 +14687,10 @@ mod tests {
     }
 
     #[test]
-    fn test_budgets_budget_tag_key_uses_plain_string() {
+    fn test_budgets_budget_tag_key_has_documented_string_length() {
         let schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
         let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
-        let key = "AttributeType::string()";
+        let key = "AttributeType::refined_string(None, None, Some((Some(0), Some(1024))), None)";
         assert_eq!(
             generated_budgets_field(&generated, "TagValues.Key"),
             format!("{key})")
@@ -14605,8 +14700,12 @@ mod tests {
                 .matches(&format!("StructField::optional(\"key\", {key})"))
                 .count()
                 >= 2,
-            "inline TagValues and the shared definition for recursive expressions must use plain String"
+            "inline TagValues and the shared definition for recursive expressions must be refined"
         );
+        let (inline, definitions) = generated.split_once("fn build_schema_def_0()").unwrap();
+        for code in [inline, definitions] {
+            assert_all_generated_struct_fields(code, "TagValues.Key", key);
+        }
         assert_eq!(
             generated_budgets_field(&generated, "CostCategoryValues.Key"),
             "AttributeType::string())"
@@ -14614,7 +14713,7 @@ mod tests {
     }
 
     #[test]
-    fn test_budgets_budget_tag_key_docs_show_plain_string() {
+    fn test_budgets_budget_tag_key_docs_show_documented_string_length() {
         let schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
         let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
         let tags = markdown
@@ -14625,8 +14724,8 @@ mod tests {
             .unwrap()
             .0;
         assert!(
-            tags.contains("| `key` | String | No |"),
-            "TagValues.Key docs must show plain String: {tags}"
+            tags.contains("| `key` | `String (length: 0..=1024)` | No |"),
+            "TagValues.Key docs must show the API length bounds: {tags}"
         );
     }
 
@@ -14707,11 +14806,17 @@ mod tests {
     }
 
     #[test]
-    fn test_budgets_budget_name_uses_plain_string_and_preserves_identity() {
+    fn test_budgets_budget_name_has_length_and_supported_pattern_and_preserves_identity() {
         let schema = cfn_schema_for_codegen_tests("AWS::Budgets::Budget");
         let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
         let name = generated_budgets_field(&generated, "BudgetData.BudgetName");
-        assert_eq!(name, "AttributeType::string()).create_only().identity()");
+        assert_eq!(
+            name,
+            r#"AttributeType::refined_string(None, Some("^[^:\\\\]+$".to_string()), Some((Some(1), Some(100))), None)).create_only().identity()"#
+        );
+        assert!(emitted_string_accepts(name, "monthly-cost"));
+        assert!(!emitted_string_accepts(name, "monthly:cost"));
+        assert!(!emitted_string_accepts(name, r"monthly\cost"));
     }
 
     #[test]
