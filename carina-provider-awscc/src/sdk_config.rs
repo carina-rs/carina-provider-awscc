@@ -2,31 +2,42 @@
 
 use std::time::Duration;
 
-use aws_config::Region;
 use aws_credential_types::provider::SharedCredentialsProvider;
 use aws_smithy_types::retry::RetryConfig;
 use aws_smithy_types::timeout::TimeoutConfig;
+use aws_types::region::Region;
+use carina_aws_types::sdk::{cloudcontrol::CloudControlClient, s3::S3Client, sts::StsClient};
 
 use crate::provider::assume_role::AssumeRoleConfig;
-use crate::resend_safety::cloudcontrol_idempotency;
+use crate::resend_safety::{cloudcontrol_idempotency, s3_idempotency, sts_idempotency};
 
 /// An AWS SDK configuration with the provider's timeout and retry policy applied.
 #[derive(Clone)]
-pub struct BoundedSdkConfig(aws_config::SdkConfig);
+pub struct BoundedSdkConfig(aws_types::SdkConfig);
 
 pub(crate) struct SdkClients {
-    pub(crate) cloudcontrol: aws_sdk_cloudcontrol::Client,
-    pub(crate) s3: aws_sdk_s3::Client,
-    pub(crate) sts: aws_sdk_sts::Client,
+    pub(crate) cloudcontrol: CloudControlClient,
+    pub(crate) s3: S3Client,
+    pub(crate) sts: StsClient,
 }
 
 impl BoundedSdkConfig {
-    pub(crate) fn sdk_config(&self) -> &aws_config::SdkConfig {
+    pub(crate) fn sdk_config(&self) -> &aws_types::SdkConfig {
         &self.0
     }
 
+    /// Retain effective credentials and bounds when routing a qualified reference.
+    pub(crate) fn in_region(&self, region: &str) -> Self {
+        Self(
+            self.0
+                .to_builder()
+                .region(Region::new(region.to_owned()))
+                .build(),
+        )
+    }
+
     /// Apply the provider's timeout and retry policy to an SDK configuration.
-    fn new(config: aws_config::SdkConfig) -> Self {
+    fn new(config: aws_types::SdkConfig) -> Self {
         Self(
             config
                 .into_builder()
@@ -39,7 +50,7 @@ impl BoundedSdkConfig {
     /// Build a bounded configuration for native tests with explicit credentials.
     #[cfg(any(test, feature = "test-utils"))]
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn for_test(config: aws_config::SdkConfig) -> Self {
+    pub fn for_test(config: aws_types::SdkConfig) -> Self {
         Self::new(config)
     }
 
@@ -54,82 +65,44 @@ impl BoundedSdkConfig {
         http_client: Option<aws_smithy_runtime_api::client::http::SharedHttpClient>,
         credentials_provider: Option<SharedCredentialsProvider>,
     ) -> Self {
-        // Give the loader the policy too so invalid AWS retry settings cannot panic first.
-        // This is the sole SDK loader; wasm32 always installs host credentials below.
-        #[allow(clippy::disallowed_methods)]
-        let loader = aws_config::defaults(aws_config::BehaviorVersion::latest())
-            .region(Region::new(region.to_string()))
-            .timeout_config(timeout_config())
-            .retry_config(retry_config());
-        let loader = match http_client {
-            Some(http_client) => loader.http_client(http_client),
-            None => loader,
-        };
-        #[cfg(not(target_arch = "wasm32"))]
-        let loader = match base_credentials_provider(credentials_provider) {
-            Some(credentials_provider) => loader.credentials_provider(credentials_provider),
-            None => loader,
-        };
-        #[cfg(target_arch = "wasm32")]
-        let loader = loader.credentials_provider(base_credentials_provider(credentials_provider));
-        #[cfg(target_arch = "wasm32")]
-        let loader = loader.http_client(carina_plugin_sdk::wasi_http::WasiHttpClient::new());
-        let base = Self::new(loader.load().await);
+        let base = Self::new(
+            carina_aws_types::load_sdk_config(
+                Region::new(region.to_string()),
+                timeout_config(),
+                retry_config(),
+                http_client,
+                credentials_provider,
+            )
+            .await,
+        );
 
         match assume_role {
             None => base,
-            Some(assume_role) => base.with_assume_role(assume_role).await,
+            Some(assume_role) => base.with_assume_role(assume_role),
         }
     }
 
-    async fn with_assume_role(self, assume_role: &AssumeRoleConfig) -> Self {
-        let mut builder =
-            aws_config::sts::AssumeRoleProvider::builder(assume_role.role_arn.clone())
-                .configure(&self.0);
-        if let Some(name) = assume_role.session_name.as_deref() {
-            builder = builder.session_name(name);
-        }
-        if let Some(external_id) = assume_role.external_id.as_deref() {
-            builder = builder.external_id(external_id);
-        }
-        if let Some(duration) = assume_role.duration {
-            builder = builder.session_length(duration);
-        }
-
-        let provider = builder.build().await;
-        let shared = aws_credential_types::provider::SharedCredentialsProvider::new(provider);
+    fn with_assume_role(self, assume_role: &AssumeRoleConfig) -> Self {
+        let provider = carina_aws_types::GuardedAssumeRoleProvider::new(
+            &self.0,
+            assume_role.role_arn.clone(),
+            assume_role.session_name.clone(),
+            assume_role.external_id.clone(),
+            assume_role.duration,
+        );
+        let shared = SharedCredentialsProvider::new(provider);
         Self::new(self.0.into_builder().credentials_provider(shared).build())
     }
 
     // Service clients share the bounded config, including host credentials on wasm32.
-    // CloudControl gets its resend guard here. KMS requires InitializedState.
-    #[allow(clippy::disallowed_methods)]
+    // KMS requires InitializedState. Every service handle installs the resend guard.
     pub(crate) fn clients(&self) -> SdkClients {
-        let cloudcontrol = aws_sdk_cloudcontrol::Client::from_conf(
-            aws_sdk_cloudcontrol::config::Builder::from(&self.0)
-                .interceptor(carina_aws_types::ResendGuard::new(cloudcontrol_idempotency))
-                .build(),
-        );
         SdkClients {
-            cloudcontrol,
-            s3: aws_sdk_s3::Client::new(&self.0),
-            sts: aws_sdk_sts::Client::new(&self.0),
+            cloudcontrol: CloudControlClient::new(&self.0, cloudcontrol_idempotency),
+            s3: S3Client::new(&self.0, s3_idempotency),
+            sts: StsClient::new(&self.0, sts_idempotency),
         }
     }
-}
-
-#[cfg(target_arch = "wasm32")]
-fn base_credentials_provider(
-    _override_provider: Option<SharedCredentialsProvider>,
-) -> SharedCredentialsProvider {
-    SharedCredentialsProvider::new(carina_aws_types::HostCredentialsProvider::default())
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn base_credentials_provider(
-    override_provider: Option<SharedCredentialsProvider>,
-) -> Option<SharedCredentialsProvider> {
-    override_provider
 }
 
 /// Sets read and per-attempt timeouts to the host's 30-second `wasi:http` per-request
@@ -182,38 +155,9 @@ mod tests {
 
     use super::{BoundedSdkConfig, assert_bounded_policy};
 
-    #[cfg(not(target_arch = "wasm32"))]
-    #[test]
-    fn native_base_keeps_default_credentials_chain() {
-        assert!(super::base_credentials_provider(None).is_none());
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    #[tokio::test]
-    async fn native_base_keeps_credentials_override() {
-        use aws_credential_types::{Credentials, provider::ProvideCredentials};
-
-        let credentials = Credentials::new(
-            "override-access-key",
-            "override-secret",
-            Some("override-token".into()),
-            None,
-            "sdk-config-test",
-        );
-        let provider = super::base_credentials_provider(Some(
-            super::SharedCredentialsProvider::new(credentials),
-        ))
-        .expect("the explicit credentials override must be retained");
-        let credentials = provider.provide_credentials().await.unwrap();
-
-        assert_eq!(credentials.access_key_id(), "override-access-key");
-        assert_eq!(credentials.secret_access_key(), "override-secret");
-        assert_eq!(credentials.session_token(), Some("override-token"));
-    }
-
     #[test]
     fn new_overrides_input_timeout_and_retry_config() {
-        let input = aws_config::SdkConfig::builder()
+        let input = aws_types::SdkConfig::builder()
             .timeout_config(TimeoutConfig::disabled())
             .retry_config(RetryConfig::standard().with_max_attempts(10))
             .build();
@@ -225,6 +169,8 @@ mod tests {
     #[cfg(not(target_arch = "wasm32"))]
     #[tokio::test]
     async fn load_applies_bounded_policy() {
+        use aws_credential_types::provider::ProvideCredentials;
+
         let mock = winterbaume_core::MockAws::builder().build();
         let bounded = BoundedSdkConfig::load_with_overrides(
             "us-east-1",
@@ -234,6 +180,94 @@ mod tests {
         )
         .await;
         assert_bounded_policy(bounded.0.timeout_config(), bounded.0.retry_config());
+        assert_eq!(bounded.0.region().unwrap().as_ref(), "us-east-1");
+        let expected = mock
+            .credentials_provider()
+            .provide_credentials()
+            .await
+            .unwrap();
+        let actual = bounded
+            .0
+            .credentials_provider()
+            .unwrap()
+            .provide_credentials()
+            .await
+            .unwrap();
+        assert_eq!(actual.access_key_id(), expected.access_key_id());
+        assert_eq!(actual.secret_access_key(), expected.secret_access_key());
+        assert_eq!(actual.session_token(), expected.session_token());
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[tokio::test(start_paused = true)]
+    async fn assumed_credentials_do_not_resend_after_a_possibly_sent_timeout() {
+        use std::error::Error;
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        use aws_credential_types::Credentials;
+        use aws_credential_types::provider::ProvideCredentials;
+        use aws_smithy_runtime_api::client::http::{
+            HttpConnector, HttpConnectorFuture, SharedHttpConnector, http_client_fn,
+        };
+        use aws_smithy_runtime_api::client::orchestrator::HttpRequest;
+        use aws_smithy_runtime_api::client::result::ConnectorError;
+
+        #[derive(Clone, Debug)]
+        struct PostSendTimeout(Arc<AtomicUsize>);
+
+        impl HttpConnector for PostSendTimeout {
+            fn call(&self, _request: HttpRequest) -> HttpConnectorFuture {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                HttpConnectorFuture::new(async {
+                    Err(ConnectorError::timeout(
+                        std::io::Error::other("AssumeRole response timed out").into(),
+                    ))
+                })
+            }
+        }
+
+        let requests = Arc::new(AtomicUsize::new(0));
+        let connector = PostSendTimeout(requests.clone());
+        let http_client = http_client_fn(move |_, _| SharedHttpConnector::new(connector.clone()));
+        let role = crate::provider::assume_role::AssumeRoleConfig {
+            role_arn: "arn:aws:iam::123456789012:role/test".into(),
+            session_name: Some("guard-test".into()),
+            external_id: Some("test-external-id".into()),
+            duration: Some(std::time::Duration::from_secs(900)),
+        };
+        let config = BoundedSdkConfig::load_with_overrides(
+            "us-east-1",
+            Some(&role),
+            Some(http_client),
+            Some(super::SharedCredentialsProvider::new(Credentials::new(
+                "test-access-key",
+                "test-secret-key",
+                None,
+                None,
+                "assume-role-guard-test",
+            ))),
+        )
+        .await;
+
+        let error = config
+            .0
+            .credentials_provider()
+            .unwrap()
+            .provide_credentials()
+            .await
+            .expect_err("a possibly-sent AssumeRole must fail without issuing another request");
+
+        assert_eq!(requests.load(Ordering::SeqCst), 1);
+        let failure = error
+            .source()
+            .unwrap()
+            .downcast_ref::<carina_aws_types::AssumeRoleFailure>()
+            .expect("the guarded provider should retain the send classification");
+        assert!(matches!(
+            failure.classification(),
+            carina_aws_types::SendClassification::MaybeSent { .. }
+        ));
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -341,7 +375,8 @@ mod tests {
         )
         .await;
         let provider = crate::AwsccProvider::from_sdk_config(config, &Default::default()).await;
-        let client_config = provider.kms_client().unwrap().config("eu-west-1");
+        let client = provider.kms_client().unwrap().guarded_client("eu-west-1");
+        let client_config = client.inner().config();
         assert_bounded_policy(client_config.timeout_config(), client_config.retry_config());
         use aws_smithy_runtime_api::client::interceptors::Intercept;
         assert!(

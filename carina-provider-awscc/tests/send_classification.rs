@@ -9,7 +9,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use aws_config::Region;
 use aws_credential_types::Credentials;
 use aws_credential_types::provider::error::CredentialsError;
 use aws_credential_types::provider::{ProvideCredentials, SharedCredentialsProvider};
@@ -18,6 +17,7 @@ use aws_smithy_runtime_api::client::http::{
 };
 use aws_smithy_runtime_api::client::orchestrator::HttpRequest;
 use aws_smithy_runtime_api::client::result::ConnectorError;
+use aws_types::region::Region;
 use carina_core::provider::{CreateFailureKind, PatchOp, UpdatePatch};
 use carina_core::resource::{ConcreteValue, Resource, State, Value};
 use carina_plugin_sdk::wasi_http::{SendPhase, transport_connector_error_for_test};
@@ -102,13 +102,13 @@ async fn provider(
         ..Script::default()
     }));
     let connector = Connector(Arc::clone(&script));
-    let config = aws_config::SdkConfig::builder()
+    let config = aws_types::SdkConfig::builder()
         .region(Region::new("us-east-1"))
         .credentials_provider(SharedCredentialsProvider::new(ExpiringCredentials {
             successful_loads,
             calls: Arc::clone(&calls),
         }))
-        .identity_cache(aws_sdk_cloudcontrol::config::IdentityCache::no_cache())
+        .identity_cache(aws_smithy_runtime::client::identity::IdentityCache::no_cache())
         .http_client(http_client_fn(move |_, _| {
             SharedHttpConnector::new(connector.clone())
         }))

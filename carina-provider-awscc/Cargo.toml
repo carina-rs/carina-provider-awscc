@@ -25,21 +25,17 @@ test-utils = []
 
 [dependencies]
 carina-core = { workspace = true }
-carina-aws-types = { workspace = true }
+carina-aws-types = { workspace = true, features = ["cloudcontrol", "kms", "s3", "sts"] }
 carina-docgen = { workspace = true }
 carina-plugin-sdk = { workspace = true }
 carina-provider-protocol = { workspace = true }
 indexmap = "2"
-aws-config = { version = "1", default-features = false, features = ["behavior-version-latest", "rt-tokio"] }
 aws-credential-types = { version = "1" }
 aws-smithy-async = { version = "1", features = ["rt-tokio"] }
-aws-sdk-cloudcontrol = { version = "1", default-features = false, features = ["behavior-version-latest"] }
-aws-sdk-kms = { version = "1.127.0", default-features = false, features = ["behavior-version-latest"] }
-aws-sdk-s3 = { version = "1", default-features = false, features = ["behavior-version-latest"] }
-aws-sdk-sts = { version = "1", default-features = false, features = ["behavior-version-latest"] }
 aws-smithy-runtime-api = "1"
 aws-smithy-types = "1"
 aws-runtime = "1"
+aws-types = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
@@ -57,6 +53,7 @@ tokio = { version = "1", features = ["full"] }
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 # Enable the native test constructor for integration tests only.
 carina-provider-awscc = { path = ".", features = ["test-utils"] }
+aws-smithy-runtime = { version = "1", features = ["client"] }
 aws-smithy-runtime-api = { version = "1", features = ["test-util"] }
 fancy-regex = "=0.16.2"
 carina-aws-types = { workspace = true, features = ["test-utils"] }

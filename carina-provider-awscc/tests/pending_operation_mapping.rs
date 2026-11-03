@@ -10,13 +10,15 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-use aws_sdk_cloudcontrol::operation::create_resource::CreateResourceError;
 use aws_smithy_runtime_api::client::{
     http::{
         HttpClient, HttpConnector, HttpConnectorFuture, SharedHttpClient, SharedHttpConnector,
         http_client_fn,
     },
     result::ConnectorError,
+};
+use carina_aws_types::sdk::cloudcontrol::{
+    error::SdkError, operation::create_resource::CreateResourceError,
 };
 use carina_core::provider::{
     AppliedIdentifier, AppliedState, CreateAttempt, CreateFailureKind, DeleteRequest, Observation,
@@ -2046,7 +2048,7 @@ async fn unconfirmed_create_pre_send_failure_from_resume_preserves_pending_token
         .credentials_provider(
             aws_credential_types::provider::SharedCredentialsProvider::new(UnavailableCredentials),
         )
-        .identity_cache(aws_sdk_cloudcontrol::config::IdentityCache::no_cache())
+        .identity_cache(aws_smithy_runtime::client::identity::IdentityCache::no_cache())
         .build();
     let provider = AwsccProvider::from_sdk_config(
         BoundedSdkConfig::for_test(config),
@@ -4077,9 +4079,9 @@ async fn retry_attempts_exhausted_preserves_the_last_sdk_error_source() {
         .detail()
         .cause()
         .expect("final retryable SDK error should remain attached");
-    let sdk_error = cause.source().and_then(|source| {
-        source.downcast_ref::<aws_sdk_cloudcontrol::error::SdkError<CreateResourceError>>()
-    });
+    let sdk_error = cause
+        .source()
+        .and_then(|source| source.downcast_ref::<SdkError<CreateResourceError>>());
     assert!(
         sdk_error.is_some(),
         "cause chain should retain CreateResource SdkError"

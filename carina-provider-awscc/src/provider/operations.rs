@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::future::Future;
 use std::time::Duration;
 
-use aws_sdk_cloudcontrol::types::{HandlerErrorCode, OperationStatus};
+use carina_aws_types::sdk::cloudcontrol::types::{HandlerErrorCode, OperationStatus};
 use carina_core::provider::{
     AppliedIdentifier, AppliedState, CreateAttempt, CreateFailure, CreateOutcome, DeleteRequest,
     IssuedCreate, Observation, PartialReadDiagnostic, PendingCreate, PendingToken, Poll,

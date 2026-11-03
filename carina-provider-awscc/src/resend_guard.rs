@@ -1,9 +1,8 @@
-//! Integration tests for the CloudControl resend guard using the real SDK loop.
+//! Integration tests for service resend guards using the real SDK loop.
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
-use aws_config::Region;
 use aws_credential_types::Credentials;
 use aws_credential_types::provider::SharedCredentialsProvider;
 use aws_smithy_runtime_api::client::http::{
@@ -16,6 +15,12 @@ use aws_smithy_types::body::SdkBody;
 use aws_smithy_types::error::display::DisplayErrorContext;
 use aws_smithy_types::retry::RetryConfig;
 use aws_smithy_types::timeout::TimeoutConfig;
+use aws_types::region::Region;
+use carina_aws_types::sdk::cloudcontrol::{
+    CloudControlClient,
+    error::SdkError,
+    operation::create_resource::{CreateResourceError, CreateResourceOutput},
+};
 use carina_aws_types::{FinalAttempt, SendClassification};
 use carina_plugin_sdk::wasi_http::{SendPhase, transport_connector_error_for_test};
 
@@ -104,7 +109,7 @@ impl HttpConnector for ScriptedConnector {
 fn bounded_config(connector: ScriptedConnector) -> BoundedSdkConfig {
     let selected = connector.clone();
     let http_client = http_client_fn(move |_, _| SharedHttpConnector::new(selected.clone()));
-    let config = aws_config::SdkConfig::builder()
+    let config = aws_types::SdkConfig::builder()
         .http_client(http_client)
         .credentials_provider(SharedCredentialsProvider::new(Credentials::new(
             "test-access-key",
@@ -120,13 +125,14 @@ fn bounded_config(connector: ScriptedConnector) -> BoundedSdkConfig {
     BoundedSdkConfig::for_test(config)
 }
 
-fn cloudcontrol_client(connector: ScriptedConnector) -> aws_sdk_cloudcontrol::Client {
+fn cloudcontrol_client(connector: ScriptedConnector) -> CloudControlClient {
     bounded_config(connector).clients().cloudcontrol
 }
 
-fn assert_resend_guard(client: &aws_sdk_cloudcontrol::Client) {
+fn assert_resend_guard(client: &CloudControlClient) {
     assert!(
         client
+            .inner()
             .config()
             .interceptors()
             .any(|interceptor| interceptor.name() == "carina.ResendGuard"),
@@ -136,20 +142,137 @@ fn assert_resend_guard(client: &aws_sdk_cloudcontrol::Client) {
 
 #[allow(clippy::result_large_err)]
 async fn send_create(
-    client: &aws_sdk_cloudcontrol::Client,
-) -> Result<
-    aws_sdk_cloudcontrol::operation::create_resource::CreateResourceOutput,
-    aws_sdk_cloudcontrol::error::SdkError<
-        aws_sdk_cloudcontrol::operation::create_resource::CreateResourceError,
-    >,
-> {
+    client: &CloudControlClient,
+) -> Result<CreateResourceOutput, SdkError<CreateResourceError>> {
     client
+        .inner()
         .create_resource()
         .type_name("AWS::Test::Resource")
         .desired_state("{}")
         .client_token("test-client-token")
         .send()
         .await
+}
+
+#[tokio::test(start_paused = true)]
+async fn readonly_s3_list_object_versions_retries_after_maybe_sent_transport_error() {
+    let connector = ScriptedConnector::new([
+        Action::Transport(SendPhase::MaybeSent),
+        Action::Response {
+            status: 200,
+            body: "<ListVersionsResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Name>test-bucket</Name><IsTruncated>false</IsTruncated></ListVersionsResult>",
+        },
+    ]);
+    let client = bounded_config(connector.clone()).clients().s3;
+
+    let output = client
+        .inner()
+        .list_object_versions()
+        .bucket("test-bucket")
+        .send()
+        .await
+        .expect("the read-only guard should promote the transport failure to retryable");
+
+    assert_eq!(output.name(), Some("test-bucket"));
+    assert_eq!(connector.requests(), 2);
+}
+
+#[tokio::test(start_paused = true)]
+async fn s3_cleanup_rejects_entries_without_version_id_before_deleting() {
+    for body in [
+        r#"<ListVersionsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+            <Name>test-bucket</Name>
+            <IsTruncated>false</IsTruncated>
+            <Version><Key>valid-key</Key><VersionId>test-version</VersionId></Version>
+            <Version><Key>missing-version-id-key</Key></Version>
+        </ListVersionsResult>"#,
+        r#"<ListVersionsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+            <Name>test-bucket</Name>
+            <IsTruncated>false</IsTruncated>
+            <Version><Key>valid-key</Key><VersionId>test-version</VersionId></Version>
+            <DeleteMarker><Key>missing-version-id-key</Key></DeleteMarker>
+        </ListVersionsResult>"#,
+    ] {
+        let connector = ScriptedConnector::new([
+            Action::Response { status: 200, body },
+            Action::Response {
+                status: 200,
+                body: "<DeleteResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"/>",
+            },
+        ]);
+        let provider = AwsccProvider::from_sdk_config(
+            bounded_config(connector.clone()),
+            &AwsccProviderConfig::default(),
+        )
+        .await;
+
+        let result = provider.empty_s3_bucket("test-bucket").await;
+
+        assert_eq!(
+            connector.requests(),
+            1,
+            "cleanup must send only ListObjectVersions and no DeleteObjects"
+        );
+        let error = result.expect_err("cleanup must reject an entry without VersionId");
+        assert_eq!(
+            error.detail().context(),
+            "ListObjectVersions returned no VersionId for key \"missing-version-id-key\""
+        );
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn idempotent_s3_delete_objects_retries_after_maybe_sent_timeout() {
+    let connector = ScriptedConnector::new([
+        Action::Timeout,
+        Action::Response {
+            status: 200,
+            body: "<DeleteResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"/>",
+        },
+    ]);
+    let client = bounded_config(connector.clone()).clients().s3;
+    let object = carina_aws_types::sdk::s3::types::ObjectIdentifier::builder()
+        .key("test-key")
+        .version_id("test-version")
+        .build()
+        .unwrap();
+    let delete = carina_aws_types::sdk::s3::types::Delete::builder()
+        .objects(object)
+        .build()
+        .unwrap();
+
+    client
+        .inner()
+        .delete_objects()
+        .bucket("test-bucket")
+        .delete(delete)
+        .send()
+        .await
+        .expect("deleting explicit versions should remain retryable after a timeout");
+
+    assert_eq!(connector.requests(), 2);
+}
+
+#[tokio::test(start_paused = true)]
+async fn readonly_sts_get_caller_identity_retries_after_maybe_sent_transport_error() {
+    let connector = ScriptedConnector::new([
+        Action::Transport(SendPhase::MaybeSent),
+        Action::Response {
+            status: 200,
+            body: "<GetCallerIdentityResponse xmlns=\"https://sts.amazonaws.com/doc/2011-06-15/\"><GetCallerIdentityResult><Account>123456789012</Account></GetCallerIdentityResult><ResponseMetadata><RequestId>test</RequestId></ResponseMetadata></GetCallerIdentityResponse>",
+        },
+    ]);
+    let client = bounded_config(connector.clone()).clients().sts;
+
+    let output = client
+        .inner()
+        .get_caller_identity()
+        .send()
+        .await
+        .expect("the read-only guard should promote the transport failure to retryable");
+
+    assert_eq!(output.account(), Some("123456789012"));
+    assert_eq!(connector.requests(), 2);
 }
 
 #[tokio::test]
@@ -260,6 +383,7 @@ async fn readonly_get_resource_retries_after_maybe_sent_timeout() {
     let client = cloudcontrol_client(connector.clone());
 
     let output = client
+        .inner()
         .get_resource()
         .type_name("AWS::S3::Bucket")
         .identifier("partial-bucket")
@@ -290,6 +414,7 @@ async fn readonly_get_resource_retries_after_not_sent_transport_error() {
     let client = cloudcontrol_client(connector.clone());
 
     let output = client
+        .inner()
         .get_resource()
         .type_name("AWS::S3::Bucket")
         .identifier("partial-bucket")
@@ -314,6 +439,7 @@ async fn readonly_get_resource_retries_after_maybe_sent_transport_error() {
     let client = cloudcontrol_client(connector.clone());
 
     let output = client
+        .inner()
         .get_resource()
         .type_name("AWS::S3::Bucket")
         .identifier("partial-bucket")
@@ -336,6 +462,7 @@ async fn readonly_get_resource_exhausts_maybe_sent_transport_retries_as_maybe_se
     let client = cloudcontrol_client(connector.clone());
 
     let error = client
+        .inner()
         .get_resource()
         .type_name("AWS::S3::Bucket")
         .identifier("partial-bucket")
@@ -446,6 +573,7 @@ async fn readonly_get_resource_retries_legacy_other_transport_error() {
     let client = cloudcontrol_client(connector.clone());
 
     let output = client
+        .inner()
         .get_resource()
         .type_name("AWS::S3::Bucket")
         .identifier("partial-bucket")
@@ -464,8 +592,8 @@ fn production_cloudcontrol_client_keeps_bounded_policy_and_installs_guard() {
     let client = cloudcontrol_client(connector);
 
     assert_bounded_policy(
-        client.config().timeout_config(),
-        client.config().retry_config(),
+        client.inner().config().timeout_config(),
+        client.inner().config().retry_config(),
     );
     assert_resend_guard(&client);
 }
