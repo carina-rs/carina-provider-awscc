@@ -90,7 +90,7 @@ pub fn logs_log_group_config() -> AwsccSchemaConfig {
     schema = schema.attribute(build_resource_policy_document_attribute());
     #[inline(never)]
     fn build_retention_in_days_attribute() -> AttributeSchema {
-        AttributeSchema::optional("retention_in_days", crate::schemas::catalog::logs_log_group_retention_in_days())
+        AttributeSchema::optional("retention_in_days", carina_aws_types::logs_log_group_retention_in_days())
                 .with_description("The number of days to retain the log events in the specified log group. Possible values are: 1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096, 1827, 2192, 2557, 2922, 3288, and 3653. To set a log group so that its log events do not expire, do not specify this property.")
                 .with_provider_name("RetentionInDays")
             .build()

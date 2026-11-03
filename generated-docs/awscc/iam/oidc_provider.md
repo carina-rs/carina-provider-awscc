@@ -24,7 +24,7 @@ awscc.iam.OidcProvider {
 
 ### `client_id_list`
 
-- **Type:** `List<String(len: 1..=255)>`
+- **Type:** `List<String (length: 1..=255)> (items: ..=100)`
 - **Required:** No
 
 ### `tags`
@@ -39,7 +39,7 @@ awscc.iam.OidcProvider {
 
 ### `url`
 
-- **Type:** String(len: 1..=255)
+- **Type:** HttpsUrl
 - **Required:** No
 - **Create-only:** Yes
 

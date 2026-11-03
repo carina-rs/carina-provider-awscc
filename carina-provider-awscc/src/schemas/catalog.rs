@@ -283,17 +283,6 @@ carina_aws_types::define_aws_type_catalog! {
             values: [60, 600],
             constructor: validated_int_enum,
         },
-        /// Cloud Control LogGroup retention-day enum.
-        LogsLogGroupRetentionInDays => logs_log_group_retention_in_days {
-            segments: ["logs", "LogGroup"],
-            kind: "RetentionInDays",
-            valid_sample: "30",
-            values: [
-                1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096,
-                1827, 2192, 2557, 2922, 3288, 3653,
-            ],
-            constructor: validated_int_enum,
-        },
         /// Scheduler Schedule group name.
         ///
         /// Cloud Control identifies schedules by `Name` only and reads them in
@@ -447,7 +436,6 @@ OrganizationsAccountArn|aws|organizations/Account|Arn|Some(OrganizationsAccountA
 OrganizationsOrganizationArn|aws|organizations/Organization|Arn|Some(OrganizationsOrganizationArn)|arn:aws:organizations::123456789012:organization/o-example|None|crate::schemas::catalog::organizations_organization_arn()
 S3BucketArn|aws|s3/Bucket|Arn|Some(S3BucketArn)|arn:aws:s3:::example-bucket|None|crate::schemas::catalog::s3_bucket_arn()
 Ec2FlowLogMaxAggregationInterval|aws|ec2/FlowLog|MaxAggregationInterval|None|60|Some([60, 600])|crate::schemas::catalog::ec2_flow_log_max_aggregation_interval()
-LogsLogGroupRetentionInDays|aws|logs/LogGroup|RetentionInDays|None|30|Some([1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096, 1827, 2192, 2557, 2922, 3288, 3653])|crate::schemas::catalog::logs_log_group_retention_in_days()
 SchedulerScheduleGroupName|aws|scheduler/Schedule|GroupName|None|default|None|crate::schemas::catalog::scheduler_schedule_group_name()"#;
 
         let snapshot = AwsccType::ALL
