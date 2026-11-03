@@ -2,7 +2,9 @@ use carina_core::schema::{RawShape, ValidatedResourceSchema};
 use serde_json::json;
 
 use crate::provider::conversion::{aws_value_to_dsl_with_defs, dsl_value_to_aws_with_defs};
-use crate::test_support::{enum_identifier, field, float, int, list, string, validate_fixtures};
+use crate::test_support::{
+    AssignmentContext, enum_identifier, field, float, int, list, string, validate_fixtures,
+};
 
 fn alarm_schema() -> ValidatedResourceSchema {
     super::generated::cloudwatch::alarm::cloudwatch_alarm_config().schema
@@ -364,6 +366,7 @@ fn timezone_is_length_only_because_iana_names_are_an_open_list() {
 
 #[test]
 fn refined_strings_accept_identity_typed_references_at_every_tightened_sink() {
+    let assignment = AssignmentContext::new();
     let schema = alarm_schema();
     let topic = super::generated::sns::topic::sns_topic_config().schema;
     let vpc = super::generated::ec2::vpc::ec2_vpc_config().schema;
@@ -396,7 +399,7 @@ fn refined_strings_accept_identity_typed_references_at_every_tightened_sink() {
                 source_schema
                     .as_schema()
                     .type_in_schema(source.as_type())
-                    .is_assignable_to(schema.as_schema().type_in_schema(sink.as_type())),
+                    .is_assignable_to(assignment.sink(&schema, sink.as_type())),
                 "{source_path} must be assignable to {path}"
             );
         }
@@ -405,6 +408,7 @@ fn refined_strings_accept_identity_typed_references_at_every_tightened_sink() {
 
 #[test]
 fn action_arrays_validate_arns_count_and_allow_duplicates() {
+    let assignment = AssignmentContext::new();
     let schema = alarm_schema();
     let topic = super::generated::sns::topic::sns_topic_config().schema;
     let source = field(&topic, "topic_arn");
@@ -413,7 +417,7 @@ fn action_arrays_validate_arns_count_and_allow_duplicates() {
         let actions = field(&schema, path);
         let item = actions.list_element().unwrap();
         assert!(
-            source.is_assignable_to(schema.as_schema().type_in_schema(item.as_type())),
+            source.is_assignable_to(assignment.sink(&schema, item.as_type())),
             "{path} must accept aws.Arn-typed topic_arn references"
         );
         let arn = string("arn:aws:sns:ap-northeast-1:123456789012:alarm-topic");

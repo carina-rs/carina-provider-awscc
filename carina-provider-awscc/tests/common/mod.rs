@@ -62,6 +62,7 @@ impl ProviderFactory for OwnerOnlyAwsccFactory {
             Vec::new(),
             ValidatedConfigSchema::default(),
             Default::default(),
+            carina_provider_awscc::schemas::assignability_edges(),
         )
         .expect("empty schema-only provider witness must be valid")
     }

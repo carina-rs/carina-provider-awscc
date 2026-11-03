@@ -220,6 +220,7 @@ impl ProviderFactory for OwnerOnlyAwsccFactory {
             Vec::new(),
             ValidatedConfigSchema::default(),
             Default::default(),
+            schemas::assignability_edges(),
         )
         .expect("empty schema-only provider witness must be valid")
     }

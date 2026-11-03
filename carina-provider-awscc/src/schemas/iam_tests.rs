@@ -3,10 +3,13 @@ use std::sync::Arc;
 
 use carina_aws_types::AwsType;
 use carina_core::schema::{
-    RawShape, SchemaKind, TypeIdentity, ValidatedResourceSchema, builtin_type_registry,
+    RawShape, SchemaKind, TypeAssignability, TypeIdentity, ValidatedResourceSchema,
+    builtin_type_registry,
 };
 
-use crate::test_support::{field, int, list, string, try_validate_fixtures, validate_fixtures};
+use crate::test_support::{
+    AssignmentContext, field, int, list, string, try_validate_fixtures, validate_fixtures,
+};
 
 fn role_schema() -> ValidatedResourceSchema {
     super::generated::iam::role::iam_role_config().schema
@@ -334,20 +337,31 @@ let x = source.value
 
 #[test]
 fn role_name_output_is_assignable_to_role_policy_and_the_full_fixture_validates() {
+    let assignment = AssignmentContext::new();
     let role = role_schema();
     let policy = role_policy_schema();
     assert!(
         role.as_schema()
             .type_in_schema(field(&role, "role_name").as_type())
-            .is_assignable_to(
-                policy
-                    .as_schema()
-                    .type_in_schema(field(&policy, "role_name").as_type())
-            )
+            .is_assignable_to(assignment.sink(&policy, field(&policy, "role_name").as_type()))
     );
     let mut names = LITERAL_NAMES;
     names[1] = "role.role_name";
     validate_fixtures(&[("iam_role_name_reference.crn", &name_fixture("", names))]);
+}
+
+#[test]
+fn loaded_catalog_rejects_role_name_as_policy_name() {
+    let assignment = AssignmentContext::new();
+    let role = role_schema();
+    let policy = role_policy_schema();
+    let result = role
+        .as_schema()
+        .type_in_schema(field(&role, "role_name").as_type())
+        .assignment_to(assignment.sink(&policy, field(&policy, "policy_name").as_type()));
+
+    assert_eq!(result, TypeAssignability::Mismatch);
+    assert!(matches!(result.require_loaded(), Ok(false)));
 }
 
 #[test]

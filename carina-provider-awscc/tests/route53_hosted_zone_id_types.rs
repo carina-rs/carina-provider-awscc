@@ -1,8 +1,14 @@
 //! Verifies that AWSCC hosted-zone ID producers carry the shared Route 53
 //! identity used by the AWS provider's Route53 alias-target sink.
 
+use std::sync::Arc;
+
+use carina_core::provider::provider_custom_types_from_factories;
 use carina_core::resource::{ConcreteValue, Value};
-use carina_core::schema::{AttributeType, TypeInSchema, ValidatedConfigSchema};
+use carina_core::schema::{
+    AttributeSchema, AttributeType, ResourceSchema, SchemaKind, SchemaRegistry,
+};
+use carina_provider_awscc::AwsccProviderFactory;
 use carina_provider_awscc::schemas::generated::elasticloadbalancingv2::load_balancer::elasticloadbalancingv2_load_balancer_config;
 use carina_provider_awscc::schemas::generated::route53::hosted_zone::route53_hosted_zone_config;
 
@@ -12,13 +18,20 @@ fn hosted_zone_id_producers_are_assignable_to_alias_target_union_and_string() {
         carina_aws_types::cloudfront_hosted_zone_id(),
         carina_aws_types::route53_hosted_zone_id(),
     ]);
-    let sinks = ValidatedConfigSchema::validate(std::collections::BTreeMap::from([
-        ("alias_target".to_string(), alias_target_hosted_zone_id),
-        ("plain_string".to_string(), AttributeType::string()),
-    ]))
-    .expect("test sinks must pass admission");
-    let alias_target_hosted_zone_id = &sinks.parts()["alias_target"];
-    let plain_string = &sinks.parts()["plain_string"];
+    let sinks = ResourceSchema::new("test.Route53Sinks")
+        .attribute(AttributeSchema::optional("alias_target", alias_target_hosted_zone_id).build())
+        .attribute(AttributeSchema::optional("plain_string", AttributeType::string()).build())
+        .validate()
+        .expect("test sinks must pass admission");
+    let mut registry = SchemaRegistry::new();
+    registry.insert("awscc", sinks);
+    let owner = registry
+        .get("awscc", "test.Route53Sinks", SchemaKind::Resource)
+        .expect("test sink schema must be registered");
+    let catalog =
+        provider_custom_types_from_factories(Arc::new(vec![Box::new(AwsccProviderFactory)]));
+    let alias_target_hosted_zone_id = owner.schema().parts().attributes["alias_target"].attr_type();
+    let plain_string = owner.schema().parts().attributes["plain_string"].attr_type();
 
     for (label, config, attribute_name) in [
         (
@@ -41,7 +54,7 @@ fn hosted_zone_id_producers_are_assignable_to_alias_target_union_and_string() {
                 .schema
                 .as_schema()
                 .type_in_schema(source)
-                .is_assignable_to(TypeInSchema::schemaless(alias_target_hosted_zone_id)),
+                .is_assignable_to(owner.assignment_sink(alias_target_hosted_zone_id, &catalog)),
             "{label} must be assignable to the AWS Route53 alias-target union"
         );
         assert!(
@@ -49,7 +62,7 @@ fn hosted_zone_id_producers_are_assignable_to_alias_target_union_and_string() {
                 .schema
                 .as_schema()
                 .type_in_schema(source)
-                .is_assignable_to(TypeInSchema::schemaless(plain_string)),
+                .is_assignable_to(owner.assignment_sink(plain_string, &catalog)),
             "{label} must remain assignable to plain String sinks"
         );
     }
