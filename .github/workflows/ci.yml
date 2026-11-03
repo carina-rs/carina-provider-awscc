@@ -179,7 +179,10 @@ jobs:
           cargo install --locked --git https://github.com/carina-rs/carina-provider-aws --rev "$rev" --features check-bin --bin carina-docgen-check carina-docgen
           carina-docgen-check "$RUNNER_TEMP/carina-provider-awscc-docs.tar.gz"
       - name: Validate docs bundle
-        run: python3 scripts/docs-bundle.py check "$RUNNER_TEMP/carina-provider-awscc-docs.tar.gz"
+        run: |
+          # Keep this rev equal to the one in provider-release's build.yml, which matches the deployed registry.
+          cargo install --locked --git https://github.com/carina-rs/registry --rev cf66707c28f6feb31111a72f22e951d02a19dd61 carina-docs-bundle
+          carina-docs-bundle check "$RUNNER_TEMP/carina-provider-awscc-docs.tar.gz" --namespace carina-rs --name awscc
 
   wasm-build:
     name: WASM Build
