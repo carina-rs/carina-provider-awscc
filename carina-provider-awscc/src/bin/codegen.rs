@@ -7633,6 +7633,65 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             TypeOverride::StringType("carina_aws_types::aws_account_id()"),
         );
 
+        // Organizations Account email: core validation plus 6..=64 characters,
+        // under an AWSCC-local identity. Creation-only character rules are not
+        // applied to historical read values.
+        // https://docs.aws.amazon.com/organizations/latest/APIReference/API_CreateAccount.html#organizations-CreateAccount-request-Email
+        m.insert(
+            ("AWS::Organizations::Account", "Email"),
+            TypeOverride::AttributeType {
+                expression: "crate::schemas::catalog::organizations_account_email()",
+                display: const { OverrideTypeDisplay::new("aws.organizations.Account.Email") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // AccountName: 1..=50 printable ASCII characters, matched as a whole
+        // value because core's pattern matcher otherwise accepts substrings.
+        // https://docs.aws.amazon.com/organizations/latest/APIReference/API_CreateAccount.html#organizations-CreateAccount-request-AccountName
+        m.insert(
+            ("AWS::Organizations::Account", "AccountName"),
+            TypeOverride::AttributeType {
+                expression: r#"AttributeType::refined_string(None, Some(r"^[ -~]+\z".to_string()), Some((Some(1), Some(50))), None)"#,
+                display: const {
+                    OverrideTypeDisplay::new(r"String (length: 1..=50, pattern: ^[ -~]+\z)")
+                },
+                block_name: None,
+                default: None,
+            },
+        );
+        // RoleName: anchored ASCII grammar, 1..=64, and a validator rejecting
+        // the reserved prefix AWSServiceRoleFor. Retain CFN's write-only/default.
+        // https://docs.aws.amazon.com/organizations/latest/APIReference/API_CreateAccount.html#organizations-CreateAccount-request-RoleName
+        // https://docs.aws.amazon.com/organizations/latest/APIReference/API_CreateAccount.html#API_CreateAccount_Errors
+        m.insert(
+            ("AWS::Organizations::Account", "RoleName"),
+            TypeOverride::AttributeType {
+                expression: "crate::schemas::catalog::organizations_account_role_name()",
+                display: const { OverrideTypeDisplay::new("aws.organizations.Account.RoleName") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // ParentIds: at most one parent, with no documented minimum count.
+        // Each item is a whole root or OU ID, at most 100 characters. Keep
+        // CFN's unique, unordered list semantics and optional attribute.
+        // https://docs.aws.amazon.com/organizations/latest/APIReference/API_ListParents.html
+        // https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-organizations-account.html#cfn-organizations-account-parentids
+        // https://docs.aws.amazon.com/organizations/latest/APIReference/API_Parent.html#organizations-Type-Parent-Id
+        m.insert(
+            ("AWS::Organizations::Account", "ParentIds"),
+            TypeOverride::ArrayItemType {
+                expression: "crate::schemas::awscc_types::organizations_account_parent_id()",
+                display: const {
+                    OverrideTypeDisplay::new(r"List<String (length: ..=100, pattern: ^(?:r-[0-9a-z]{4,32}|ou-[0-9a-z]{4,32}-[a-z0-9]{8,32})\z)>")
+                },
+                block_name: None,
+                default: None,
+            }
+            .with_array_bounds(None, Some(1)),
+        );
+
         // S3 #525: keep DomainName, RegionalDomainName, DualStackDomainName and
         // WebsiteURL as String, following carina-rs/carina-provider-aws#512.
         // Pre-March-2018 us-east-1 bucket names can contain underscores and be
@@ -27856,46 +27915,58 @@ mod tests {
     }
 
     #[test]
-    fn test_generate_schema_code_email_uses_types_email() {
-        // Mirrors the AWS::Organizations::Account "Email" property: a CFN
-        // string with a pattern + length range. The generated code must use
-        // `types::email()` instead of an ad-hoc Custom validator.
-        let mut properties = BTreeMap::new();
-        properties.insert(
-            "Email".to_string(),
-            CfnProperty {
-                prop_type: Some(TypeValue::Single("string".to_string())),
-                description: Some(
-                    "The email address of the owner to assign to the new member account."
-                        .to_string(),
-                ),
-                pattern: Some("[^\\s@]+@[^\\s@]+\\.[^\\s@]+".to_string()),
-                min_length: Some(6),
-                max_length: Some(64),
-                ..Default::default()
-            },
-        );
-
-        let schema = ParsedCfnSchema::from_json(serde_json::json!({
-            "typeName": "AWS::Organizations::Account".to_string(),
-            "properties": properties,
-            "required": vec!["Email".to_string()]
-        }))
-        .unwrap();
-
-        let generated = generate_schema_code(&schema, "AWS::Organizations::Account").unwrap();
+    fn test_generate_organizations_account_email_uses_local_bounded_refinement() {
+        let schema = cfn_schema_for_codegen_tests("AWS::Organizations::Account");
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
 
         assert!(
-            generated.contains("types::email()"),
-            "Expected types::email() in generated code: {generated}"
+            generated.contains(
+                "AttributeSchema::required(\"email\", crate::schemas::catalog::organizations_account_email())"
+            ),
+            "Expected the AWSCC-local bounded email in generated code: {generated}"
         );
         assert!(
-            !generated.contains("validate_string_pattern_ec4d9bee0dcd262b_len_6_64"),
-            "Should not emit ad-hoc pattern validator for email: {generated}"
+            !generated.contains("types::email()"),
+            "Account.Email must not use the unbounded core type: {generated}"
         );
         assert!(
-            !generated.contains("[^\\s@]+@[^\\s@]+"),
-            "Should not embed the email regex pattern in generated code: {generated}"
+            !generated.contains(r"[^\\s@]+@[^\\s@]+"),
+            "Account.Email must preserve core email validation rather than CFN's regex: {generated}"
+        );
+        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        assert!(
+            markdown.contains("### `email`\n\n- **Type:** `aws.organizations.Account.Email`\n"),
+            "Account.Email docs must name the local refinement: {markdown}"
+        );
+    }
+
+    #[test]
+    fn test_organizations_overrides_use_only_the_approved_raw_cfn_paths() {
+        let schema = cfn_schema_for_codegen_tests("AWS::Organizations::Account");
+        let expected = ["AccountName", "Email", "ParentIds", "RoleName"]
+            .map(str::to_string)
+            .into_iter()
+            .collect::<BTreeSet<_>>();
+        let actual = resource_type_overrides()
+            .for_resource(&schema.type_name)
+            .map(|(path, _)| path.to_string())
+            .collect::<BTreeSet<_>>();
+        assert_eq!(actual, expected);
+        for key in &expected {
+            let path = CfnPropertyPath::new(None, key);
+            let source = cfn_override_property(&schema, path)
+                .unwrap_or_else(|| panic!("missing cached Organizations path {key}"));
+            resource_type_overrides()
+                .get_path(&schema.type_name, path)
+                .unwrap()
+                .validate_source_shape(&schema, path, source)
+                .unwrap();
+        }
+        assert!(
+            resource_type_overrides()
+                .for_resource("AWS::Organizations::Organization")
+                .next()
+                .is_none()
         );
     }
 

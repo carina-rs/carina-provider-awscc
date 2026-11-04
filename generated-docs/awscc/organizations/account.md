@@ -29,28 +29,28 @@ awscc.organizations.Account {
 
 ### `account_name`
 
-- **Type:** String(pattern, len: 1..=50)
+- **Type:** `String (length: 1..=50, pattern: ^[ -~]+\z)`
 - **Required:** Yes
 
 The friendly name of the member account.
 
 ### `email`
 
-- **Type:** String(pattern, len: 6..=64)
+- **Type:** `aws.organizations.Account.Email`
 - **Required:** Yes
 
 The email address of the owner to assign to the new member account.
 
 ### `parent_ids`
 
-- **Type:** `List<String>`
+- **Type:** `List<String (length: ..=100, pattern: ^(?:r-[0-9a-z]{4,32}|ou-[0-9a-z]{4,32}-[a-z0-9]{8,32})\z)> (items: ..=1)`
 - **Required:** No
 
 List of parent nodes for the member account. Currently only one parent at a time is supported. Default is root.
 
 ### `role_name`
 
-- **Type:** String(pattern, len: 1..=64)
+- **Type:** `aws.organizations.Account.RoleName`
 - **Required:** No
 - **Write-only:** Yes
 - **Default:** `"OrganizationAccountAccessRole"`
