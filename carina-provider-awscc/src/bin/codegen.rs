@@ -259,12 +259,15 @@ enum TypeOverride {
         display: OverrideTypeDisplay,
     },
     /// Override an array's item type while retaining the CFN array constraints.
+    /// Omitted item-count bounds retain CFN's limits; explicit bounds may only tighten.
     /// Display, block name, and default describe the complete attribute.
     ArrayItemType {
         expression: &'static str,
         display: OverrideTypeDisplay,
         block_name: Option<&'static str>,
         default: Option<AttributeTypeOverrideDefault>,
+        min_items: Option<i64>,
+        max_items: Option<i64>,
     },
     /// Add API-documented item-count bounds. With no item override, retain the
     /// existing generated item type and selected CFN array shape (including
@@ -425,12 +428,7 @@ impl TypeOverride {
                 schema.type_name, path
             )
         })?;
-        if let Self::Array {
-            items,
-            min_items,
-            max_items,
-        } = self
-        {
+        if let Self::Array { items, .. } = self {
             anyhow::ensure!(
                 matches!(
                     items.as_deref(),
@@ -442,6 +440,18 @@ impl TypeOverride {
                 schema.type_name,
                 path
             );
+        }
+        if let Self::Array {
+            min_items,
+            max_items,
+            ..
+        }
+        | Self::ArrayItemType {
+            min_items,
+            max_items,
+            ..
+        } = self
+        {
             for (name, bound, cfn_bound, tightens) in [
                 ("minItems", *min_items, array.min_items, true),
                 ("maxItems", *max_items, array.max_items, false),
@@ -3762,20 +3772,18 @@ fn markdown_type(
             );
             return MarkdownType::Linked(markdown_list_type(item, &array));
         }
-        if matches!(override_type, TypeOverride::Array { items: None, .. }) {
-            // Preserve links to the generated struct items while displaying
-            // the refined list bounds, including for selected oneOf arrays.
-            return markdown_link_type(prop_name, &array, schema, None, property_path, cfn_parent)
-                .map(MarkdownType::Linked)
-                .unwrap_or_else(|| {
-                    MarkdownType::Plain(type_display_string_at(
-                        &array,
-                        schema,
-                        property_path,
-                        cfn_property_path,
-                    ))
-                });
-        }
+        // Preserve source struct links while displaying the refined bounds
+        // for both item-type overrides and bounds-only overrides.
+        return markdown_link_type(prop_name, &array, schema, None, property_path, cfn_parent)
+            .map(MarkdownType::Linked)
+            .unwrap_or_else(|| {
+                MarkdownType::Plain(type_display_string_at(
+                    &array,
+                    schema,
+                    property_path,
+                    cfn_property_path,
+                ))
+            });
     }
     markdown_link_type(
         prop_name,
@@ -7538,6 +7546,8 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 },
                 block_name: None,
                 default: None,
+                min_items: None,
+                max_items: None,
             }
             .with_array_bounds(None, Some(100)),
         );
@@ -7633,6 +7643,19 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             TypeOverride::StringType("carina_aws_types::aws_account_id()"),
         );
 
+        // LogGroupName: retain CFN's anchored pattern and 1..=512 bounds,
+        // adding a callback for the reserved aws/ prefix. /aws/... stays valid.
+        // https://docs.aws.amazon.com/AmazonCloudWatchLogs/latest/APIReference/API_CreateLogGroup.html
+        m.insert(
+            ("AWS::Logs::LogGroup", "LogGroupName"),
+            TypeOverride::AttributeType {
+                expression: "crate::schemas::catalog::logs_log_group_name()",
+                display: const { OverrideTypeDisplay::new("aws.logs.LogGroup.LogGroupName") },
+                block_name: None,
+                default: None,
+            },
+        );
+
         // Organizations Account email: core validation plus 6..=64 characters,
         // under an AWSCC-local identity. Creation-only character rules are not
         // applied to historical read values.
@@ -7688,6 +7711,8 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 },
                 block_name: None,
                 default: None,
+                min_items: None,
+                max_items: None,
             }
             .with_array_bounds(None, Some(1)),
         );
@@ -8177,6 +8202,8 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             display: const { OverrideTypeDisplay::new("List<String (length: 0..=1024)>") },
             block_name: None,
             default: None,
+            min_items: None,
+            max_items: None,
         }
         .with_array_bounds(Some(1), None);
         // TagValues.Values: 0..=1024 characters per item.
@@ -8519,6 +8546,8 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                     display: const { OverrideTypeDisplay::new("List<Arn>") },
                     block_name: None,
                     default: None,
+                    min_items: None,
+                    max_items: None,
                 }
                 .with_array_bounds(None, Some(5)),
             );
@@ -8649,6 +8678,8 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 display: const { OverrideTypeDisplay::new("List<String(pattern, len: 1..=65536)>") },
                 block_name: None,
                 default: None,
+                min_items: None,
+                max_items: None,
             }
             .with_array_bounds(Some(1), Some(255)),
         );
@@ -8693,6 +8724,8 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 display: const { OverrideTypeDisplay::new("List<String (length: 1..=255)>") },
                 block_name: None,
                 default: None,
+                min_items: None,
+                max_items: None,
             }
             .with_array_bounds(Some(1), Some(20)),
         );
@@ -8926,6 +8959,10 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 default: None,
             },
         );
+        // FieldIndexPolicies supports "only one field index policy object".
+        // PutIndexPolicy creates or updates one policy document for a log group.
+        // https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-logs-loggroup.html#cfn-logs-loggroup-fieldindexpolicies
+        // https://docs.aws.amazon.com/AmazonCloudWatchLogs/latest/APIReference/API_PutIndexPolicy.html
         m.insert(
             ("AWS::Logs::LogGroup", "FieldIndexPolicies"),
             TypeOverride::ArrayItemType {
@@ -8936,6 +8973,8 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                     value_expression: "Value::Concrete(ConcreteValue::List(vec![]))",
                     markdown: "[]",
                 }),
+                min_items: None,
+                max_items: Some(1),
             },
         );
         m.insert(
@@ -9196,6 +9235,8 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 display: const { OverrideTypeDisplay::new("List<String (length: ..=256)>") },
                 block_name: None,
                 default: None,
+                min_items: None,
+                max_items: None,
             }
             .with_array_bounds(None, Some(10)),
         );
@@ -9791,6 +9832,8 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 display: const { OverrideTypeDisplay::new(r"List<String (pattern: ^[A-Z]{2}\z)>") },
                 block_name: None,
                 default: None,
+                min_items: None,
+                max_items: None,
             },
         );
         // ErrorCode is in the 4xx/5xx domain; no exact supported-code enum.
@@ -26202,14 +26245,15 @@ mod tests {
 
     #[test]
     fn test_string_with_pattern_produces_custom_type() {
+        // Exercise generic inference without LogGroupName's catalog override.
         let prop = CfnProperty {
             prop_type: Some(TypeValue::Single("string".to_string())),
             description: Some("The name of the log group.".to_string()),
-            pattern: Some(r"^[.\-_/#A-Za-z0-9]{1,512}\Z".to_string()),
+            pattern: Some(r"^[.\-_/#A-Za-z0-9]{1,512}\z".to_string()),
             ..Default::default()
         };
         let schema = ParsedCfnSchema::from_json(serde_json::json!({
-            "typeName": "AWS::Logs::LogGroup".to_string(),
+            "typeName": "AWS::Test::StringPattern".to_string(),
             "properties": {}
         }))
         .unwrap();
@@ -26217,7 +26261,7 @@ mod tests {
             &prop,
             "LogGroupName",
             &schema,
-            "aws.logs.LogGroup",
+            "aws.test.StringPattern",
             &BTreeMap::new(),
         );
         assert!(
@@ -26260,51 +26304,54 @@ mod tests {
     }
 
     #[test]
-    fn test_pattern_constraint_is_declarative_in_schema_code() {
-        let mut properties = BTreeMap::new();
-        properties.insert(
-            "FieldIndexPolicies".to_string(),
-            cfn_schema_for_codegen_tests("AWS::Logs::LogGroup")
-                .properties
-                .get("FieldIndexPolicies")
+    fn test_logs_overrides_use_only_existing_and_approved_raw_cfn_paths() {
+        let schema = cfn_schema_for_codegen_tests("AWS::Logs::LogGroup");
+        // Policy document projections and retention membership predate #525.
+        let expected = [
+            "DataProtectionPolicy",
+            "FieldIndexPolicies",
+            "LogGroupName",
+            "RetentionInDays",
+        ]
+        .map(str::to_string)
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+        let actual = resource_type_overrides()
+            .for_resource(&schema.type_name)
+            .map(|(path, _)| path.to_string())
+            .collect::<BTreeSet<_>>();
+        assert_eq!(actual, expected);
+        for key in &expected {
+            let path = CfnPropertyPath::new(None, key);
+            let source = cfn_override_property(&schema, path)
+                .unwrap_or_else(|| panic!("missing cached Logs path {key}"));
+            resource_type_overrides()
+                .get_path(&schema.type_name, path)
                 .unwrap()
-                .clone(),
-        );
-        properties.insert(
-            "LogGroupName".to_string(),
-            CfnProperty {
-                prop_type: Some(TypeValue::Single("string".to_string())),
-                description: Some("The name of the log group.".to_string()),
-                pattern: Some(r"^[.\-_/#A-Za-z0-9]{1,512}\Z".to_string()),
-                ..Default::default()
-            },
-        );
+                .validate_source_shape(&schema, path, source)
+                .unwrap();
+        }
+    }
 
-        properties.insert(
-            "KmsKeyId".to_string(),
-            cfn_schema_for_codegen_tests("AWS::Logs::LogGroup")
-                .properties
-                .get("KmsKeyId")
-                .unwrap()
-                .clone(),
-        );
-        let schema = ParsedCfnSchema::from_json(serde_json::json!({
-            "typeName": "AWS::Logs::LogGroup".to_string(),
-            "properties": properties
-        }))
-        .unwrap();
-
-        let code = generate_schema_code(&schema, "AWS::Logs::LogGroup").unwrap();
+    #[test]
+    fn test_log_group_name_uses_local_refinement_in_schema_and_docs() {
+        let schema = cfn_schema_for_codegen_tests("AWS::Logs::LogGroup");
+        let code = generate_schema_code(&schema, &schema.type_name).unwrap();
         assert!(
-            code.contains("AttributeType::refined_string(None, Some(")
-                && code.contains(r"{1,512}\\z"),
-            "Generated code should retain the pattern as type metadata:\n{}",
-            code
+            code.contains(
+                "AttributeSchema::optional(\"log_group_name\", crate::schemas::catalog::logs_log_group_name())"
+            ),
+            "LogGroupName must use the AWSCC-local refinement: {code}"
         );
         assert!(
             !code.contains("fn validate_string_pattern_") && !code.contains("Regex::new"),
-            "Pattern metadata should not emit an unreferenced callback:\n{}",
-            code
+            "The catalog supplies the validator callback: {code}"
+        );
+        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        assert!(
+            markdown
+                .contains("### `log_group_name`\n\n- **Type:** `aws.logs.LogGroup.LogGroupName`\n"),
+            "LogGroupName docs must name the local refinement: {markdown}"
         );
     }
 
@@ -26733,6 +26780,8 @@ mod tests {
                     display: OverrideTypeDisplay::new("List<Int>"),
                     block_name: None,
                     default: None,
+                    min_items: None,
+                    max_items: None,
                 },
             );
             overrides
@@ -26789,6 +26838,8 @@ mod tests {
                     display: OverrideTypeDisplay::new("List<Int>"),
                     block_name: None,
                     default: None,
+                    min_items: None,
+                    max_items: None,
                 },
             );
             overrides
@@ -26837,6 +26888,127 @@ mod tests {
         override_type
             .validate_source_shape(&schema, path, cfn_override_property(&schema, path).unwrap())
             .unwrap();
+    }
+
+    #[test]
+    fn test_array_item_type_bounds_reach_schema_and_docs_at_all_paths() {
+        const CFN_TYPE: &str = "AWS::Test::BoundedArrayItems";
+        static OVERRIDES: LazyLock<ResourceTypeOverrides> = LazyLock::new(|| {
+            let mut overrides = ResourceTypeOverrides::default();
+            for path in [
+                "Values",
+                "AliasedValues",
+                "InlineContainer.Values",
+                "Container.Values",
+            ] {
+                overrides.insert(
+                    (CFN_TYPE, path),
+                    TypeOverride::ArrayItemType {
+                        expression: "AttributeType::int()",
+                        display: OverrideTypeDisplay::new("List<Int>"),
+                        block_name: None,
+                        default: None,
+                        min_items: Some(2),
+                        max_items: Some(3),
+                    },
+                );
+            }
+            overrides
+        });
+        let array = serde_json::json!({
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 5,
+            "uniqueItems": true,
+            "insertionOrder": false,
+            "items": {"type": "object", "properties": {"Entry": {"type": "string"}}}
+        });
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": CFN_TYPE,
+            "properties": {
+                "Values": array,
+                "AliasedValues": {"$ref": "#/definitions/ValuesAlias"},
+                "InlineContainer": {"type": "object", "properties": {"Values": array}},
+                "Config": {"$ref": "#/definitions/Container"}
+            },
+            "definitions": {
+                "ValuesAlias": {"$ref": "#/definitions/ValuesArray"},
+                "ValuesArray": array,
+                "Container": {
+                    "type": "object",
+                    "properties": {"Values": {"$ref": "#/definitions/ValuesAlias"}}
+                }
+            }
+        }))
+        .unwrap();
+        with_resource_type_overrides(&OVERRIDES, || {
+            let generated = generate_synthetic_schema_code(&schema).unwrap();
+            let expected = "AttributeType::refined_list(AttributeType::int(), false, Some((Some(2), Some(3))), carina_core::schema::ListElements::Unique)";
+            for name in ["values", "aliased_values"] {
+                assert!(
+                    generated.contains(&format!(
+                        "AttributeSchema::optional(\"{name}\", {expected})"
+                    )),
+                    "{generated}"
+                );
+            }
+            // Container is emitted inline in Config and again in schema.defs;
+            // InlineContainer has only an inline body. Check each site by its
+            // actual CFN parent rather than counting identical field strings.
+            let (attributes, definitions) = generated
+                .split_once("fn build_schema_def_0()")
+                .expect("Container must also be registered in schema.defs");
+            let expected_field = format!("{expected})");
+            for path in ["InlineContainer.Values", "Container.Values"] {
+                assert_all_generated_struct_fields(attributes, path, &expected_field);
+            }
+            assert_all_generated_struct_fields(definitions, "Container.Values", &expected_field);
+            let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+            for name in ["values", "aliased_values"] {
+                let heading = format!("### `{name}`\n");
+                let type_line = markdown
+                    .split_once(&heading)
+                    .unwrap()
+                    .1
+                    .lines()
+                    .find(|line| line.starts_with("- **Type:**"))
+                    .unwrap();
+                assert!(
+                    type_line.contains("[Struct(") && type_line.ends_with(" (items: 2..=3)"),
+                    "linked struct items must display the refined bounds: {markdown}"
+                );
+            }
+            assert_eq!(
+                markdown
+                    .matches("| `values` | `List<Int> (items: 2..=3)` |")
+                    .count(),
+                2,
+                "inline and definition docs must both retain bounds: {markdown}"
+            );
+        });
+    }
+
+    #[test]
+    fn test_field_index_policies_limit_reaches_schema_and_docs() {
+        let schema = cfn_schema_for_codegen_tests("AWS::Logs::LogGroup");
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        for expected in [
+            "AttributeSchema::optional(\"field_index_policies\", AttributeType::refined_list(crate::schemas::awscc_types::logs_field_index_policy(), false, Some((None, Some(1))), carina_core::schema::ListElements::Unique))",
+            ".with_default(Value::Concrete(ConcreteValue::List(vec![])))",
+            ".with_block_name(\"field_index_policy\")",
+        ] {
+            assert!(generated.contains(expected), "{generated}");
+        }
+        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        assert!(
+            markdown.contains(concat!(
+                "### `field_index_policies`\n\n",
+                "- **Type:** `List<Struct(FieldIndexPolicy)> (items: ..=1)`\n",
+                "- **Required:** No\n",
+                "- **Default:** `[]`\n",
+            )),
+            "{markdown}"
+        );
     }
 
     #[test]
@@ -27112,6 +27284,8 @@ mod tests {
                         display: OverrideTypeDisplay::new("List<String>"),
                         block_name: None,
                         default: None,
+                        min_items: None,
+                        max_items: None,
                     },
                 );
             }
@@ -27545,9 +27719,9 @@ mod tests {
             let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
             assert!(
                 generated.contains(&format!(
-                    "AttributeType::refined_list(crate::schemas::awscc_types::logs_field_index_policy(), false, Some((Some(1), Some(3))), carina_core::schema::ListElements::{elements})"
+                    "AttributeType::refined_list(crate::schemas::awscc_types::logs_field_index_policy(), false, Some((Some(1), Some(1))), carina_core::schema::ListElements::{elements})"
                 )),
-                "the array override must retain CFN constraints: {generated}"
+                "the array override must retain CFN's minimum and element semantics while tightening the maximum: {generated}"
             );
         }
     }
