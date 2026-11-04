@@ -640,7 +640,7 @@ Shorthand formats: `http` or `Protocol.http`
 | `allowed_headers` | `List<String>` | No | Headers that are specified in the ``Access-Control-Request-Headers`` header. These headers are allowed in a preflight OPTIONS request. In response to any preflight OPTIONS request, Amazon S3 returns any requested headers that are allowed. |
 | `allowed_methods` | List\<[Enum (AllowedMethods)](#cors_configurationcors_rulesallowed_methods-allowedmethods)\> | Yes | An HTTP method that you allow the origin to run. *Allowed values*: ``GET`` \| ``PUT`` \| ``HEAD`` \| ``POST`` \| ``DELETE`` |
 | `allowed_origins` | `List<String>` (items: 1..) | Yes | One or more origins you want customers to be able to access the bucket from. |
-| `exposed_headers` | `List<String>` (items: 1..) | No | One or more headers in the response that you want customers to be able to access from their applications (for example, from a JavaScript ``XMLHttpRequest`` object). |
+| `exposed_headers` | `List<String>` | No | One or more headers in the response that you want customers to be able to access from their applications (for example, from a JavaScript ``XMLHttpRequest`` object). |
 | `id` | String(len: ..=255) | No | A unique identifier for this rule. The value must be no more than 255 characters. |
 | `max_age` | Int(0..) | No | The time in seconds that your browser is to cache the preflight response for the specified resource. |
 

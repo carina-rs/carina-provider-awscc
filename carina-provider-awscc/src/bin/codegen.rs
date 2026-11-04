@@ -7608,8 +7608,8 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             ("AWS::S3::Bucket", "ReplicationTimeValue.Minutes"),
             TypeOverride::IntRange(15, 15),
         );
-        // CORS: at most 100 rules; origins/exposed headers each have one or more
-        // elements when supplied. Keep their unconstrained String items.
+        // CORS: at most 100 rules; allowed origins require one or more elements.
+        // Keep unconstrained String items and the CFN shape for exposed headers.
         // https://docs.aws.amazon.com/AmazonS3/latest/API/API_CORSConfiguration.html
         // https://docs.aws.amazon.com/AmazonS3/latest/API/API_CORSRule.html
         m.insert(
@@ -7620,16 +7620,14 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 max_items: Some(100),
             },
         );
-        for key in ["CorsRule.AllowedOrigins", "CorsRule.ExposedHeaders"] {
-            m.insert(
-                ("AWS::S3::Bucket", key),
-                TypeOverride::Array {
-                    items: None,
-                    min_items: Some(1),
-                    max_items: None,
-                },
-            );
-        }
+        m.insert(
+            ("AWS::S3::Bucket", "CorsRule.AllowedOrigins"),
+            TypeOverride::Array {
+                items: None,
+                min_items: Some(1),
+                max_items: None,
+            },
+        );
         // Fixed per-bucket limits, not List API page sizes. The live read kept
         // MetricsConfigurations and IntelligentTieringConfigurations as lists;
         // notification destinations read as empty lists. Add no minimum.
@@ -15114,7 +15112,6 @@ mod tests {
         "ReplicationTimeValue.Minutes",
         "CorsConfiguration.CorsRules",
         "CorsRule.AllowedOrigins",
-        "CorsRule.ExposedHeaders",
         "AnalyticsConfigurations",
         "InventoryConfigurations",
         "MetricsConfigurations",
@@ -15360,7 +15357,6 @@ mod tests {
                 "Unique",
             ),
             ("CorsRule.AllowedOrigins", "String", Some(1), None, "Unique"),
-            ("CorsRule.ExposedHeaders", "String", Some(1), None, "Unique"),
             (
                 "AnalyticsConfigurations",
                 "AnalyticsConfiguration",
@@ -15445,6 +15441,27 @@ mod tests {
         assert!(markdown.contains("AnalyticsDestination"));
         assert!(markdown.contains("LifecycleDate"));
         carina_docgen::check_page(&markdown).unwrap();
+    }
+
+    #[test]
+    fn test_s3_cors_exposed_headers_keep_the_unbounded_cfn_shape() {
+        let schema = cfn_schema_for_codegen_tests("AWS::S3::Bucket");
+        assert!(
+            resource_type_overrides()
+                .get(&("AWS::S3::Bucket", "CorsRule.ExposedHeaders"))
+                .is_none()
+        );
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        let (inline, definitions) = generated.split_once("fn build_schema_def_0()").unwrap();
+        for code in [inline, definitions] {
+            assert_all_generated_struct_fields(
+                code,
+                "CorsRule.ExposedHeaders",
+                "AttributeType::refined_list(AttributeType::string(), true, None, carina_core::schema::ListElements::Unique)",
+            );
+        }
+        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        assert!(markdown.contains("| `exposed_headers` | `List<String>` | No |"));
     }
 
     #[test]

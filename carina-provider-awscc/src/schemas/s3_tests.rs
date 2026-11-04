@@ -380,7 +380,7 @@ fn configuration_counts_preserve_item_shapes_order_and_uniqueness() {
         ),
         (
             "cors_configuration.cors_rules.exposed_headers",
-            1,
+            0,
             None,
             true,
         ),
@@ -429,11 +429,31 @@ fn configuration_counts_preserve_item_shapes_order_and_uniqueness() {
         "cors_configuration.cors_rules.allowed_origins",
         "cors_configuration.cors_rules.exposed_headers",
     ] {
-        // Only count is documented; no origin/header token grammar was added.
+        // Preserve unconstrained origin/header strings.
         field(&schema, path)
             .validate(&list(vec![string("")]))
             .unwrap();
     }
+}
+
+#[test]
+fn cors_rules_accept_empty_exposed_headers_but_reject_empty_allowed_origins() {
+    let schema = schema();
+    let cors_rules = field(&schema, "cors_configuration.cors_rules");
+    let rules = |allowed_origins| {
+        list(vec![map([
+            ("allowed_methods", list(vec![enum_identifier("get")])),
+            ("allowed_origins", list(allowed_origins)),
+            ("exposed_headers", list(vec![])),
+        ])])
+    };
+    cors_rules
+        .validate(&rules(vec![string("*")]))
+        .expect("a CORS rule must accept exposed_headers = []");
+    assert!(
+        cors_rules.validate(&rules(vec![])).is_err(),
+        "a CORS rule must reject allowed_origins = []"
+    );
 }
 
 #[test]
