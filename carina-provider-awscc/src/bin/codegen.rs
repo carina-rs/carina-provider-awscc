@@ -1531,17 +1531,78 @@ fn cfn_override_property<'a>(
     let Some(parent) = path.parent else {
         return schema.properties.get(path.property);
     };
-    let property = schema
+    if let Some(definition) = schema
         .definitions
         .as_ref()
         .and_then(|defs| defs.get(parent))
-        .or_else(|| schema.properties.get(parent))?;
-    let property = if let Some(reference) = &property.ref_path {
-        resolve_ref(schema, reference)?.property
-    } else {
-        property
-    };
-    property.properties.as_ref()?.get(path.property)
+    {
+        return resolved_object_property_sources(definition, schema, &mut HashSet::new())
+            .get(path.property)
+            .copied();
+    }
+
+    // Inline structs use their raw property name as the parent, even when
+    // nested inside another inline object, a definition, or a collection.
+    // Share this lookup between generation and exact cached-source checks.
+    schema
+        .properties
+        .iter()
+        .chain(schema.definitions.iter().flat_map(|defs| defs.iter()))
+        .find_map(|(name, property)| {
+            inline_override_property(schema, name, property, None, path, &mut HashSet::new())
+        })
+}
+
+fn inline_override_property<'a>(
+    schema: &'a CfnSchema,
+    name: &'a str,
+    property: &'a CfnProperty,
+    definition_name: Option<&'a str>,
+    path: CfnPropertyPath<'_>,
+    visiting_defs: &mut HashSet<&'a str>,
+) -> Option<&'a CfnProperty> {
+    match property_shape(property, schema) {
+        PropertyShape::Reference { resolved, .. } => {
+            let resolved = resolved?;
+            if !visiting_defs.insert(resolved.name) {
+                return None;
+            }
+            let source = inline_override_property(
+                schema,
+                name,
+                resolved.property,
+                Some(resolved.name),
+                path,
+                visiting_defs,
+            );
+            visiting_defs.remove(resolved.name);
+            source
+        }
+        PropertyShape::Direct(_) | PropertyShape::Merged(_) => {
+            let properties =
+                resolved_object_property_sources(property, schema, &mut HashSet::new());
+            if path.parent == Some(definition_name.unwrap_or(name))
+                && let Some(source) = properties.get(path.property)
+            {
+                return Some(*source);
+            }
+            properties.into_iter().find_map(|(field_name, field)| {
+                inline_override_property(schema, field_name, field, None, path, visiting_defs)
+            })
+        }
+        PropertyShape::Array { variant, .. } => {
+            inline_override_property(schema, name, variant, definition_name, path, visiting_defs)
+        }
+        PropertyShape::Inline => {
+            let child = match inline_property_type(property) {
+                Some("array") => property.items.as_deref(),
+                Some("object") => direct_object_map_value(property),
+                _ => None,
+            }?;
+            inline_override_property(schema, name, child, None, path, visiting_defs)
+        }
+        PropertyShape::Unresolved => None,
+    }
 }
 
 fn checked_resource_type_override(
@@ -5984,6 +6045,18 @@ fn resolved_object_properties<'a>(
     schema: &'a CfnSchema,
     visiting_defs: &mut HashSet<&'a str>,
 ) -> BTreeMap<String, CfnProperty> {
+    resolved_object_property_sources(property, schema, visiting_defs)
+        .into_iter()
+        .map(|(name, property)| (name.to_string(), property.clone()))
+        .collect()
+}
+
+/// Preserve the original members while sharing generation's shape precedence.
+fn resolved_object_property_sources<'a>(
+    property: &'a CfnProperty,
+    schema: &'a CfnSchema,
+    visiting_defs: &mut HashSet<&'a str>,
+) -> BTreeMap<&'a str, &'a CfnProperty> {
     match property_shape_with_visited(property, schema, visiting_defs) {
         PropertyShape::Reference {
             resolved: Some(resolved),
@@ -5992,12 +6065,26 @@ fn resolved_object_properties<'a>(
             if !visiting_defs.insert(resolved.name) {
                 return BTreeMap::new();
             }
-            let properties = resolved_object_properties(resolved.property, schema, visiting_defs);
+            let properties =
+                resolved_object_property_sources(resolved.property, schema, visiting_defs);
             visiting_defs.remove(resolved.name);
             properties
         }
-        PropertyShape::Direct(properties) => properties.clone(),
-        PropertyShape::Merged(properties) => properties,
+        PropertyShape::Direct(properties) => properties
+            .iter()
+            .map(|(name, property)| (name.as_str(), property))
+            .collect(),
+        PropertyShape::Merged(_) => {
+            let mut properties = BTreeMap::new();
+            for variant in &property.one_of {
+                properties.extend(resolved_object_property_sources(
+                    variant,
+                    schema,
+                    visiting_defs,
+                ));
+            }
+            properties
+        }
         PropertyShape::Reference { resolved: None, .. }
         | PropertyShape::Inline
         | PropertyShape::Array { .. }
@@ -6233,26 +6320,6 @@ fn known_enum_overrides() -> &'static HashMap<&'static str, Vec<&'static str>> {
         m.insert("SecurityGroupReferencingSupport", vec!["enable", "disable"]);
         m.insert("VpnEcmpSupport", vec!["enable", "disable"]);
         m.insert("EncryptionSupportState", vec!["disable", "enable"]);
-        // CloudFront ViewerCertificate.MinimumProtocolVersion: CFN schema declares
-        // it as a free-form string, so the description-scraping heuristic in
-        // extract_enum_from_description() picked up unrelated backticked tokens
-        // from sibling fields (`sni-only` from SslSupportMethod, `true` from
-        // CloudFrontDefaultCertificate) while filtering out the real value
-        // `TLSv1` as a "property name". Pin the canonical security-policy values
-        // here so the heuristic is short-circuited (overrides are consulted
-        // before description extraction). awscc#242.
-        m.insert(
-            "MinimumProtocolVersion",
-            vec![
-                "SSLv3",
-                "TLSv1",
-                "TLSv1_2016",
-                "TLSv1.1_2016",
-                "TLSv1.2_2018",
-                "TLSv1.2_2019",
-                "TLSv1.2_2021",
-            ],
-        );
         m
     });
     &OVERRIDES
@@ -6281,6 +6348,8 @@ fn known_enum_aliases() -> &'static HashMap<&'static str, Vec<(&'static str, &'s
                     ("TLSv1.2_2018", "tlsv1_2_2018"),
                     ("TLSv1.2_2019", "tlsv1_2_2019"),
                     ("TLSv1.2_2021", "tlsv1_2_2021"),
+                    ("TLSv1.3_2025", "tlsv1_3_2025"),
+                    ("TLSv1.2_2025", "tlsv1_2_2025"),
                 ],
             );
             // CloudFront CustomOriginConfig.OriginSSLProtocols /
@@ -9047,18 +9116,360 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             TypeOverride::Enum(vec!["HTTP_301", "HTTP_302"]),
         );
 
-        // CloudFront Distribution: fields the CFN schema leaves as plain
-        // strings but are documented as a closed value set (awscc#246).
-        // Keys use "DefName.FieldName" composite form so the lookup hits
-        // each nested struct field at codegen time. Source for the value
-        // lists: AWS docs + Terraform AWS provider validators.
+        // CloudFront #525: use raw CFN definition/inline-parent keys so the
+        // same constraint reaches every inline copy and emitted definition.
+        // Origin.DomainName, LegacyCustomOrigin.DNSName, LegacyS3Origin.DNSName,
+        // Logging.Bucket and Aliases[]/CNAMEs[] remain String sinks pending
+        // carina-rs/carina-provider-awscc#569 (typed producers/module arguments).
+        // The read-only Distribution output can already use core DomainName.
+        // https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_Distribution.html
+        m.insert(
+            ("AWS::CloudFront::Distribution", "DomainName"),
+            TypeOverride::AttributeType {
+                expression: "carina_core::schema::types::domain_name()",
+                display: const { OverrideTypeDisplay::new("DomainName") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // DefaultRootObject may be empty, otherwise it cannot begin with '/'.
+        // Match all remaining characters, including newlines; no extra grammar.
+        // https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_DistributionConfig.html
+        m.insert(
+            ("AWS::CloudFront::Distribution", "DistributionConfig.DefaultRootObject"),
+            TypeOverride::AttributeType {
+                expression: r#"AttributeType::refined_string(None, Some(r"^(?:[^/][\s\S]*)?\z".to_string()), None, None)"#,
+                display: const { OverrideTypeDisplay::new(r"String (pattern: ^(?:[^/][\s\S]*)?\z)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // Origins: at least one item when supplied; the maximum is adjustable.
+        // https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_Origins.html
+        m.insert(
+            (
+                "AWS::CloudFront::Distribution",
+                "DistributionConfig.Origins",
+            ),
+            TypeOverride::Array {
+                items: None,
+                min_items: Some(1),
+                max_items: None,
+            },
+        );
+        // API Long, rather than floating point. CFN declares unbounded `number`,
+        // so reuse AttributeType for plain Int (IntegerFromNumber needs bounds).
+        // Cloud Control GetResource, carina-test-001, 2026-11-04: default-behavior
+        // MinTTL/DefaultTTL/MaxTTL were JSON integers 0/300/86400, and the custom
+        // error's ErrorCachingMinTTL was integer 10. Int serializes as a JSON
+        // integer and json_to_value preserves integer reads without coercion.
+        // https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_CacheBehavior.html
+        // https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_DefaultCacheBehavior.html
+        // https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_CustomErrorResponse.html
+        for key in [
+            "CacheBehavior.MinTTL",
+            "CacheBehavior.DefaultTTL",
+            "CacheBehavior.MaxTTL",
+            "DefaultCacheBehavior.MinTTL",
+            "DefaultCacheBehavior.DefaultTTL",
+            "DefaultCacheBehavior.MaxTTL",
+            "CustomErrorResponse.ErrorCachingMinTTL",
+        ] {
+            m.insert(
+                ("AWS::CloudFront::Distribution", key),
+                TypeOverride::AttributeType {
+                    expression: "AttributeType::int()",
+                    display: const { OverrideTypeDisplay::new("Int") },
+                    block_name: None,
+                    default: None,
+                },
+            );
+        }
+        // At most four associations. Event uniqueness is a collection rule.
+        // https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_LambdaFunctionAssociations.html
+        for key in [
+            "CacheBehavior.LambdaFunctionAssociations",
+            "DefaultCacheBehavior.LambdaFunctionAssociations",
+        ] {
+            m.insert(
+                ("AWS::CloudFront::Distribution", key),
+                TypeOverride::Array {
+                    items: None,
+                    min_items: None,
+                    max_items: Some(4),
+                },
+            );
+        }
+        // ConnectionAttempts: 1..=3; ConnectionTimeout: 1..=10 seconds.
+        // Cloud Control GetResource, carina-test-001, 2026-11-04, returned
+        // integer defaults 3 and 10 respectively for the global distribution.
+        // https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_Origin.html
+        m.insert(
+            ("AWS::CloudFront::Distribution", "Origin.ConnectionAttempts"),
+            TypeOverride::IntRange(1, 3),
+        );
+        m.insert(
+            ("AWS::CloudFront::Distribution", "Origin.ConnectionTimeout"),
+            TypeOverride::IntRange(1, 10),
+        );
+        // Read/keepalive timeouts have a documented minimum of one second.
+        // Reuse core PositiveInt unchanged; the upper quotas are adjustable.
+        // LegacyCustomOrigin has neither timeout field in the cached CFN shape.
+        // https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_CustomOriginConfig.html
+        // https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_S3OriginConfig.html
+        // https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_VpcOriginConfig.html
+        for key in [
+            "CustomOriginConfig.OriginReadTimeout",
+            "CustomOriginConfig.OriginKeepaliveTimeout",
+            "S3OriginConfig.OriginReadTimeout",
+            "VpcOriginConfig.OriginReadTimeout",
+            "VpcOriginConfig.OriginKeepaliveTimeout",
+        ] {
+            m.insert(
+                ("AWS::CloudFront::Distribution", key),
+                TypeOverride::AttributeType {
+                    expression: "carina_core::schema::types::positive_int()",
+                    display: const { OverrideTypeDisplay::new("PositiveInt") },
+                    block_name: None,
+                    default: None,
+                },
+            );
+        }
+        // Empty, or the documented prefix followed by a nonempty identity.
+        // The legacy S3Origin API does not document this prefix: leave its
+        // OriginAccessIdentity unchanged instead of guessing a legacy mapping.
+        // https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_S3OriginConfig.html
+        // https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_S3Origin.html
+        m.insert(
+            ("AWS::CloudFront::Distribution", "S3OriginConfig.OriginAccessIdentity"),
+            TypeOverride::AttributeType {
+                expression: r#"AttributeType::refined_string(None, Some(r"^(?:origin-access-identity/cloudfront/[\s\S]+)?\z".to_string()), None, None)"#,
+                display: const { OverrideTypeDisplay::new(r"String (pattern: ^(?:origin-access-identity/cloudfront/[\s\S]+)?\z)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // Fixed two-origin membership; Quantity agreement is cross-field.
+        // Cloud Control GetResource, carina-test-001, 2026-11-04: two members.
+        // https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_OriginGroupMembers.html
+        m.insert(
+            ("AWS::CloudFront::Distribution", "OriginGroupMembers.Items"),
+            TypeOverride::Array {
+                items: None,
+                min_items: Some(2),
+                max_items: Some(2),
+            },
+        );
+        // At least one status code. Do not infer an element enum or maximum.
+        // Cloud Control GetResource, carina-test-001, 2026-11-04: integer items.
+        // https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_StatusCodes.html
+        m.insert(
+            ("AWS::CloudFront::Distribution", "StatusCodes.Items"),
+            TypeOverride::Array {
+                items: None,
+                min_items: Some(1),
+                max_items: None,
+            },
+        );
+        // Two-letter uppercase country codes, without freezing ISO membership.
+        // Cloud Control GetResource, carina-test-001, 2026-11-04: ["US", "JP"].
+        // https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_GeoRestriction.html
+        m.insert(
+            ("AWS::CloudFront::Distribution", "GeoRestriction.Locations"),
+            TypeOverride::ArrayItemType {
+                expression: r#"AttributeType::refined_string(None, Some(r"^[A-Z]{2}\z".to_string()), None, None)"#,
+                display: const { OverrideTypeDisplay::new(r"List<String (pattern: ^[A-Z]{2}\z)>") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // ErrorCode is in the 4xx/5xx domain; no exact supported-code enum.
+        // ResponseCode stays CFN Int despite the API's different String shape.
+        // https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_CustomErrorResponse.html
+        m.insert(
+            (
+                "AWS::CloudFront::Distribution",
+                "CustomErrorResponse.ErrorCode",
+            ),
+            TypeOverride::IntRange(400, 599),
+        );
+        // IAM certificate IDs: maximum 32 characters, with no added minimum.
+        // https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_ViewerCertificate.html
+        m.insert(
+            ("AWS::CloudFront::Distribution", "ViewerCertificate.IamCertificateId"),
+            TypeOverride::AttributeType {
+                expression: "AttributeType::refined_string(None, None, Some((None, Some(32))), None)",
+                display: const { OverrideTypeDisplay::new("String (length: ..=32)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // Association ID: 1..=64 characters, without an invented ID alphabet.
+        // https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_ConnectionFunctionAssociation.html
+        m.insert(
+            ("AWS::CloudFront::Distribution", "ConnectionFunctionAssociation.Id"),
+            TypeOverride::AttributeType {
+                expression: "AttributeType::refined_string(None, None, Some((Some(1), Some(64))), None)",
+                display: const { OverrideTypeDisplay::new("String (length: 1..=64)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // Name: 1..=128, pattern [a-zA-Z0-9-_]+ (hyphen placed last below).
+        // https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_ParameterDefinition.html
+        m.insert(
+            ("AWS::CloudFront::Distribution", "ParameterDefinition.Name"),
+            TypeOverride::AttributeType {
+                expression: r#"AttributeType::refined_string(None, Some(r"^[a-zA-Z0-9_-]+\z".to_string()), Some((Some(1), Some(128))), None)"#,
+                display: const { OverrideTypeDisplay::new(r"String (length: 1..=128, pattern: ^[a-zA-Z0-9_-]+\z)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // DefaultValue: 1..=256; StringSchema is an inline CFN parent name.
+        // https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_StringSchemaConfig.html
+        m.insert(
+            ("AWS::CloudFront::Distribution", "StringSchema.DefaultValue"),
+            TypeOverride::AttributeType {
+                expression: "AttributeType::refined_string(None, None, Some((Some(1), Some(256))), None)",
+                display: const { OverrideTypeDisplay::new("String (length: 1..=256)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // Custom request/response header names: at most 256 characters.
+        // No token grammar, count cap, or aggregate budget is added here.
+        // https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/cloudfront-limits.html#limits-custom-headers
+        for key in [
+            (
+                "AWS::CloudFront::Distribution",
+                "OriginCustomHeader.HeaderName",
+            ),
+            (
+                "AWS::CloudFront::ResponseHeadersPolicy",
+                "CustomHeader.Header",
+            ),
+        ] {
+            m.insert(key, TypeOverride::AttributeType {
+                expression: "AttributeType::refined_string(None, None, Some((None, Some(256))), None)",
+                display: const { OverrideTypeDisplay::new("String (length: ..=256)") },
+                block_name: None,
+                default: None,
+            });
+        }
+        // Custom header values: at most 1783 characters, with arbitrary contents.
+        // This fixed cap does not apply to the adjustable CSP-length quota.
+        // https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/cloudfront-limits.html#limits-custom-headers
+        for key in [
+            (
+                "AWS::CloudFront::Distribution",
+                "OriginCustomHeader.HeaderValue",
+            ),
+            (
+                "AWS::CloudFront::ResponseHeadersPolicy",
+                "CustomHeader.Value",
+            ),
+        ] {
+            m.insert(key, TypeOverride::AttributeType {
+                expression: "AttributeType::refined_string(None, None, Some((None, Some(1783))), None)",
+                display: const { OverrideTypeDisplay::new("String (length: ..=1783)") },
+                block_name: None,
+                default: None,
+            });
+        }
+        // Function names: 1..=64 ASCII letters/digits, hyphens or underscores.
+        // https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_CreateFunction.html
+        m.insert(
+            ("AWS::CloudFront::Function", "Name"),
+            TypeOverride::AttributeType {
+                expression: r#"AttributeType::refined_string(None, Some(r"^[a-zA-Z0-9_-]{1,64}\z".to_string()), Some((Some(1), Some(64))), None)"#,
+                display: const { OverrideTypeDisplay::new(r"String (length: 1..=64, pattern: ^[a-zA-Z0-9_-]{1,64}\z)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // Function metadata: uppercase API stage values. Cloud Control
+        // GetResource, carina-test-001, 2026-11-04, returned Stage="LIVE".
+        // https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_FunctionMetadata.html
+        m.insert(
+            ("AWS::CloudFront::Function", "Stage"),
+            TypeOverride::Enum(vec!["DEVELOPMENT", "LIVE"]),
+        );
+        // The non-adjustable number of key value stores per function is one.
+        // https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/cloudfront-limits.html#limits-key-value-stores
+        m.insert(
+            (
+                "AWS::CloudFront::Function",
+                "FunctionConfig.KeyValueStoreAssociations",
+            ),
+            TypeOverride::Array {
+                items: None,
+                min_items: None,
+                max_items: Some(1),
+            },
+        );
+        // FunctionCode stays String: CFN takes source text, whereas the API
+        // documents a base64 blob (1..=40960) and quotas say 10 KB of code.
+        // CFN does not specify byte accounting, and string length metadata is
+        // character-based; do not substitute either cap as a character limit.
+        // https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-cloudfront-function.html#cfn-cloudfront-function-functioncode
+        // https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_CreateFunction.html
+        // https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/cloudfront-limits.html#limits-functions
+        // SamplingRate retains its CFN 0..=100 Float range. Its multipleOf
+        // 0.0001 cannot be carried by the existing range-only Float metadata;
+        // do not approximate four decimal places with binary-float rounding.
+        // https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_ResponseHeadersPolicyServerTimingHeadersConfig.html
+
+        // OAC names: up to 64 characters; no documented minimum or grammar.
+        // https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_OriginAccessControlConfig.html
+        m.insert(
+            ("AWS::CloudFront::OriginAccessControl", "OriginAccessControlConfig.Name"),
+            TypeOverride::AttributeType {
+                expression: "AttributeType::refined_string(None, None, Some((None, Some(64))), None)",
+                display: const { OverrideTypeDisplay::new("String (length: ..=64)") },
+                block_name: None,
+                default: None,
+            },
+        );
+        // Include the API's None wire value (Cloud Control also returned
+        // PriceClass_200 in carina-test-001's 2026-11-04 GetResource read).
+        // https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_DistributionConfig.html
         m.insert(
             (
                 "AWS::CloudFront::Distribution",
                 "DistributionConfig.PriceClass",
             ),
-            TypeOverride::Enum(vec!["PriceClass_100", "PriceClass_200", "PriceClass_All"]),
+            TypeOverride::Enum(vec![
+                "PriceClass_100",
+                "PriceClass_200",
+                "PriceClass_All",
+                "None",
+            ]),
         );
+        // Widen the stale security-policy set. Explicit aliases above avoid
+        // heck deriving tl_sv1_3_2025 / tl_sv1_2_2025 for the new values.
+        // The raw ViewerCertificate key also preserves awscc#242's protection
+        // against description scraping of sibling sni-only/true values.
+        // https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_ViewerCertificate.html
+        m.insert(
+            (
+                "AWS::CloudFront::Distribution",
+                "ViewerCertificate.MinimumProtocolVersion",
+            ),
+            TypeOverride::Enum(vec![
+                "SSLv3",
+                "TLSv1",
+                "TLSv1_2016",
+                "TLSv1.1_2016",
+                "TLSv1.2_2018",
+                "TLSv1.2_2019",
+                "TLSv1.2_2021",
+                "TLSv1.3_2025",
+                "TLSv1.2_2025",
+            ]),
+        );
+        // HTTP versions are a closed API set, including HTTP/2 plus HTTP/3.
+        // https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_DistributionConfig.html
         m.insert(
             (
                 "AWS::CloudFront::Distribution",
@@ -9066,12 +9477,19 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
             ),
             TypeOverride::Enum(vec!["http1.1", "http2", "http2and3", "http3"]),
         );
+        // Legacy forwarding mode: all, none, or an explicit cookie whitelist.
+        // https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_CookiePreference.html
         m.insert(
             ("AWS::CloudFront::Distribution", "Cookies.Forward"),
             TypeOverride::Enum(vec!["all", "none", "whitelist"]),
         );
-        // AllowedMethods / CachedMethods appear in both DefaultCacheBehavior
-        // and CacheBehavior with identical semantics; register both.
+        // AllowedMethods / CachedMethods appear in both behaviors. Add count
+        // bounds while retaining EnumUnordered and the existing item sets.
+        // Exact 2/3/7 allowed-method combinations remain a collection rule.
+        // Cloud Control GetResource, carina-test-001, 2026-11-04: both read as
+        // three strings; their order may differ from the authored order.
+        // https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_AllowedMethods.html
+        // https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_CachedMethods.html
         let allowed_methods = vec!["GET", "HEAD", "OPTIONS", "PUT", "PATCH", "POST", "DELETE"];
         let cached_methods = vec!["GET", "HEAD", "OPTIONS"];
         m.insert(
@@ -9079,31 +9497,33 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
                 "AWS::CloudFront::Distribution",
                 "DefaultCacheBehavior.AllowedMethods",
             ),
-            TypeOverride::EnumUnordered(allowed_methods.clone()),
+            TypeOverride::EnumUnordered(allowed_methods.clone())
+                .with_array_bounds(Some(2), Some(7)),
         );
         m.insert(
             (
                 "AWS::CloudFront::Distribution",
                 "CacheBehavior.AllowedMethods",
             ),
-            TypeOverride::EnumUnordered(allowed_methods),
+            TypeOverride::EnumUnordered(allowed_methods).with_array_bounds(Some(2), Some(7)),
         );
         m.insert(
             (
                 "AWS::CloudFront::Distribution",
                 "DefaultCacheBehavior.CachedMethods",
             ),
-            TypeOverride::EnumUnordered(cached_methods.clone()),
+            TypeOverride::EnumUnordered(cached_methods.clone()).with_array_bounds(Some(2), Some(3)),
         );
         m.insert(
             (
                 "AWS::CloudFront::Distribution",
                 "CacheBehavior.CachedMethods",
             ),
-            TypeOverride::EnumUnordered(cached_methods),
+            TypeOverride::EnumUnordered(cached_methods).with_array_bounds(Some(2), Some(3)),
         );
         // ResponseHeadersPolicy CORS methods are also an order-insensitive
         // set whose valid values appear only in the CFN description.
+        // https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_ResponseHeadersPolicyAccessControlAllowMethods.html
         m.insert(
             (
                 "AWS::CloudFront::ResponseHeadersPolicy",
@@ -9115,6 +9535,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         );
         // The CFN schema describes Runtime as a plain string, while the
         // CloudFront Functions API exposes this closed runtime set.
+        // https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_FunctionConfig.html
         m.insert(
             ("AWS::CloudFront::Function", "FunctionConfig.Runtime"),
             TypeOverride::Enum(vec!["cloudfront-js-1.0", "cloudfront-js-2.0"]),
@@ -9122,6 +9543,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         // OriginProtocolPolicy: the modern CustomOriginConfig path is
         // already CFN-enum, but the LegacyCustomOrigin definition is
         // plain string. Override there.
+        // https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_CustomOriginConfig.html
         m.insert(
             (
                 "AWS::CloudFront::Distribution",
@@ -9131,6 +9553,7 @@ fn resource_type_overrides() -> &'static ResourceTypeOverrides {
         );
         // OriginSSLProtocols: list-of-string in both LegacyCustomOrigin
         // and CustomOriginConfig; AWS-documented closed set.
+        // https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_OriginSslProtocols.html
         let ssl_protocols = vec!["SSLv3", "TLSv1", "TLSv1.1", "TLSv1.2"];
         m.insert(
             (
@@ -16828,7 +17251,475 @@ mod tests {
         assert_eq!(list_constructor(Some(true), false), "AttributeType::list");
     }
 
-    /// CloudFront method-list overrides must be `EnumUnordered` so the
+    const CLOUDFRONT_OVERRIDE_KEYS: &[(&str, &[&str])] = &[
+        (
+            "AWS::CloudFront::Distribution",
+            &[
+                "DomainName",
+                "DistributionConfig.PriceClass",
+                "DistributionConfig.HttpVersion",
+                "DistributionConfig.DefaultRootObject",
+                "DistributionConfig.Origins",
+                "Cookies.Forward",
+                "DefaultCacheBehavior.AllowedMethods",
+                "CacheBehavior.AllowedMethods",
+                "DefaultCacheBehavior.CachedMethods",
+                "CacheBehavior.CachedMethods",
+                "DefaultCacheBehavior.MinTTL",
+                "DefaultCacheBehavior.DefaultTTL",
+                "DefaultCacheBehavior.MaxTTL",
+                "CacheBehavior.MinTTL",
+                "CacheBehavior.DefaultTTL",
+                "CacheBehavior.MaxTTL",
+                "DefaultCacheBehavior.LambdaFunctionAssociations",
+                "CacheBehavior.LambdaFunctionAssociations",
+                "Origin.ConnectionAttempts",
+                "Origin.ConnectionTimeout",
+                "CustomOriginConfig.OriginReadTimeout",
+                "CustomOriginConfig.OriginKeepaliveTimeout",
+                "S3OriginConfig.OriginReadTimeout",
+                "VpcOriginConfig.OriginReadTimeout",
+                "VpcOriginConfig.OriginKeepaliveTimeout",
+                "S3OriginConfig.OriginAccessIdentity",
+                "OriginGroupMembers.Items",
+                "StatusCodes.Items",
+                "GeoRestriction.Locations",
+                "CustomErrorResponse.ErrorCode",
+                "CustomErrorResponse.ErrorCachingMinTTL",
+                "ViewerCertificate.IamCertificateId",
+                "ViewerCertificate.MinimumProtocolVersion",
+                "ConnectionFunctionAssociation.Id",
+                "ParameterDefinition.Name",
+                "StringSchema.DefaultValue",
+                "OriginCustomHeader.HeaderName",
+                "OriginCustomHeader.HeaderValue",
+                "LegacyCustomOrigin.OriginProtocolPolicy",
+                "LegacyCustomOrigin.OriginSSLProtocols",
+                "CustomOriginConfig.OriginSSLProtocols",
+            ],
+        ),
+        (
+            "AWS::CloudFront::Function",
+            &[
+                "Name",
+                "Stage",
+                "FunctionConfig.Runtime",
+                "FunctionConfig.KeyValueStoreAssociations",
+            ],
+        ),
+        (
+            "AWS::CloudFront::OriginAccessControl",
+            &["OriginAccessControlConfig.Name"],
+        ),
+        (
+            "AWS::CloudFront::ResponseHeadersPolicy",
+            &[
+                "AccessControlAllowMethods.Items",
+                "CustomHeader.Header",
+                "CustomHeader.Value",
+            ],
+        ),
+    ];
+
+    fn cloudfront_schema_for_codegen_tests(
+        type_name: &str,
+        with_list_only_defs: bool,
+    ) -> ParsedCfnSchema {
+        let mut schema = cfn_schema_for_codegen_tests(type_name);
+        if with_list_only_defs {
+            // Force normally inline-only list items into emitted definitions too.
+            // ParameterDefinition also contains the inline StringSchema object.
+            let definitions: &[&str] = match type_name {
+                "AWS::CloudFront::Distribution" => &[
+                    "Origin",
+                    "OriginCustomHeader",
+                    "CacheBehavior",
+                    "CustomErrorResponse",
+                    "ParameterDefinition",
+                ],
+                "AWS::CloudFront::ResponseHeadersPolicy" => &["CustomHeader"],
+                _ => &[],
+            };
+            schema.edit_json(|source| {
+                for definition in definitions {
+                    source["properties"][format!("{definition}ForTest")] =
+                        serde_json::json!({"$ref": format!("#/definitions/{definition}")});
+                }
+            });
+        }
+        schema
+    }
+
+    fn generated_cloudfront_field<'a>(generated: &'a str, path: &str) -> &'a str {
+        if path.contains('.') {
+            return generated_budgets_field(generated, path);
+        }
+        for constructor in ["required", "optional", "provider_populated"] {
+            if let Some((_, field)) = generated.split_once(&format!(
+                "AttributeSchema::{constructor}({}, ",
+                rust_lit(&path.to_snake_case())
+            )) {
+                return field.split_once(")\n").unwrap().0;
+            }
+        }
+        panic!("missing CloudFront attribute {path}");
+    }
+
+    #[test]
+    fn test_cloudfront_overrides_match_exact_planned_raw_cfn_keys() {
+        for (type_name, keys) in CLOUDFRONT_OVERRIDE_KEYS {
+            let schema = cfn_schema_for_codegen_tests(type_name);
+            assert_eq!(
+                resource_type_overrides()
+                    .for_resource(type_name)
+                    .map(|(path, _)| path.to_string())
+                    .collect::<BTreeSet<_>>(),
+                keys.iter()
+                    .map(|key| key.to_string())
+                    .collect::<BTreeSet<_>>(),
+                "{type_name}: include every planned key and no deferred constraints"
+            );
+            for key in *keys {
+                let path = key.split_once('.').map_or_else(
+                    || CfnPropertyPath::new(None, key),
+                    |(parent, property)| CfnPropertyPath::new(Some(parent), property),
+                );
+                let source = cfn_override_property(&schema, path)
+                    .unwrap_or_else(|| panic!("missing {type_name}.{key}"));
+                resource_type_overrides()
+                    .get_path(type_name, path)
+                    .unwrap()
+                    .validate_source_shape(&schema, path, source)
+                    .unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn test_cloudfront_scalar_overrides_reach_every_inline_and_definition_site() {
+        for with_list_only_defs in [false, true] {
+            for (type_name, _) in CLOUDFRONT_OVERRIDE_KEYS {
+                let schema = cloudfront_schema_for_codegen_tests(type_name, with_list_only_defs);
+                let generated = generate_schema_code(&schema, type_name).unwrap();
+                let markdown = generate_test_markdown(&schema, type_name).unwrap();
+                let (inline, definitions) =
+                    generated.split_once("fn build_schema_def_0()").unwrap();
+                for (path, override_type) in resource_type_overrides().for_resource(type_name) {
+                    let Some(expression) = override_type.attribute_type_expression() else {
+                        continue;
+                    };
+                    let key = path.to_string();
+                    if let Some(parent) = path.parent {
+                        assert_all_generated_struct_fields(inline, &key, expression);
+                        let list_only = matches!(
+                            parent,
+                            "Origin"
+                                | "OriginCustomHeader"
+                                | "CustomErrorResponse"
+                                | "ParameterDefinition"
+                                | "StringSchema"
+                                | "CustomHeader"
+                                | "CacheBehavior"
+                        );
+                        if with_list_only_defs || !list_only {
+                            assert_all_generated_struct_fields(definitions, &key, expression);
+                        }
+                    } else {
+                        assert!(
+                            generated_cloudfront_field(inline, &key).starts_with(expression),
+                            "{key}"
+                        );
+                    }
+                    if let Some(display) = override_type.display() {
+                        let property = path.property.to_snake_case();
+                        if path.parent.is_some() {
+                            let marker = format!("| `{property}` |");
+                            let rows = markdown
+                                .lines()
+                                .filter(|line| line.starts_with(&marker))
+                                .collect::<Vec<_>>();
+                            assert!(!rows.is_empty(), "{type_name}.{key}: missing docs");
+                            assert!(
+                                rows.iter().any(|row| row.contains(display.as_str())),
+                                "{key}: {rows:?}"
+                            );
+                        } else {
+                            let heading = format!("### `{property}`\n");
+                            let section = markdown
+                                .split_once(&heading)
+                                .unwrap()
+                                .1
+                                .split("\n### ")
+                                .next()
+                                .unwrap();
+                            assert!(section.contains(display.as_str()), "{key}: {section}");
+                        }
+                    }
+                }
+                if *type_name == "AWS::CloudFront::Distribution" {
+                    for (key, minimum, maximum) in [
+                        ("Origin.ConnectionAttempts", 1, 3),
+                        ("Origin.ConnectionTimeout", 1, 10),
+                        ("CustomErrorResponse.ErrorCode", 400, 599),
+                    ] {
+                        let expected = format!(
+                            "AttributeType::refined_int(None, Some((Some({minimum}), Some({maximum}))))"
+                        );
+                        assert_all_generated_struct_fields(inline, key, &expected);
+                        if with_list_only_defs {
+                            assert_all_generated_struct_fields(definitions, key, &expected);
+                        }
+                    }
+                    assert!(markdown.contains("DomainName"));
+                }
+                carina_docgen::check_page(&markdown).unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn test_cloudfront_ttls_replace_unbounded_cfn_number_with_int() {
+        let schema = cloudfront_schema_for_codegen_tests("AWS::CloudFront::Distribution", true);
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        let (inline, definitions) = generated.split_once("fn build_schema_def_0()").unwrap();
+        for key in [
+            "DefaultCacheBehavior.MinTTL",
+            "DefaultCacheBehavior.DefaultTTL",
+            "DefaultCacheBehavior.MaxTTL",
+            "CacheBehavior.MinTTL",
+            "CacheBehavior.DefaultTTL",
+            "CacheBehavior.MaxTTL",
+            "CustomErrorResponse.ErrorCachingMinTTL",
+        ] {
+            let (parent, property) = key.split_once('.').unwrap();
+            let source =
+                cfn_override_property(&schema, CfnPropertyPath::new(Some(parent), property))
+                    .unwrap();
+            assert_eq!(
+                source
+                    .prop_type
+                    .as_ref()
+                    .and_then(TypeValue::effective_type),
+                Some("number")
+            );
+            assert_eq!((source.minimum, source.maximum), (None, None));
+            for code in [inline, definitions] {
+                assert_all_generated_struct_fields(code, key, "AttributeType::int()");
+            }
+            let marker = format!("| `{}` |", property.to_snake_case());
+            let rows = markdown
+                .lines()
+                .filter(|row| row.starts_with(&marker))
+                .collect::<Vec<_>>();
+            assert!(!rows.is_empty(), "{key}");
+            assert!(
+                rows.iter().all(|row| row.contains("| `Int` |")),
+                "{key}: {rows:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_cloudfront_array_bounds_preserve_items_order_uniqueness_and_docs() {
+        for (type_name, cases) in [
+            (
+                "AWS::CloudFront::Distribution",
+                &[
+                    (
+                        "DefaultCacheBehavior.AllowedMethods",
+                        "AttributeType::enum_(",
+                        false,
+                        Some(2),
+                        Some(7),
+                        "AllowDuplicates",
+                    ),
+                    (
+                        "CacheBehavior.AllowedMethods",
+                        "AttributeType::enum_(",
+                        false,
+                        Some(2),
+                        Some(7),
+                        "AllowDuplicates",
+                    ),
+                    (
+                        "DefaultCacheBehavior.CachedMethods",
+                        "AttributeType::enum_(",
+                        false,
+                        Some(2),
+                        Some(3),
+                        "AllowDuplicates",
+                    ),
+                    (
+                        "CacheBehavior.CachedMethods",
+                        "AttributeType::enum_(",
+                        false,
+                        Some(2),
+                        Some(3),
+                        "AllowDuplicates",
+                    ),
+                    (
+                        "DefaultCacheBehavior.LambdaFunctionAssociations",
+                        "AttributeType::struct_(\"LambdaFunctionAssociation\"",
+                        true,
+                        None,
+                        Some(4),
+                        "AllowDuplicates",
+                    ),
+                    (
+                        "CacheBehavior.LambdaFunctionAssociations",
+                        "AttributeType::struct_(\"LambdaFunctionAssociation\"",
+                        true,
+                        None,
+                        Some(4),
+                        "AllowDuplicates",
+                    ),
+                    (
+                        "OriginGroupMembers.Items",
+                        "AttributeType::struct_(\"OriginGroupMember\"",
+                        true,
+                        Some(2),
+                        Some(2),
+                        "AllowDuplicates",
+                    ),
+                    (
+                        "StatusCodes.Items",
+                        "AttributeType::int()",
+                        true,
+                        Some(1),
+                        None,
+                        "AllowDuplicates",
+                    ),
+                    (
+                        "DistributionConfig.Origins",
+                        "AttributeType::struct_(\"Origin\"",
+                        false,
+                        Some(1),
+                        None,
+                        "AllowDuplicates",
+                    ),
+                ][..],
+            ),
+            (
+                "AWS::CloudFront::Function",
+                &[(
+                    "FunctionConfig.KeyValueStoreAssociations",
+                    "AttributeType::struct_(\"KeyValueStoreAssociation\"",
+                    true,
+                    None,
+                    Some(1),
+                    "Unique",
+                )][..],
+            ),
+        ] {
+            let schema = cloudfront_schema_for_codegen_tests(type_name, true);
+            let generated = generate_schema_code(&schema, type_name).unwrap();
+            let markdown = generate_test_markdown(&schema, type_name).unwrap();
+            let (inline, definitions) = generated.split_once("fn build_schema_def_0()").unwrap();
+            for (key, item, ordered, minimum, maximum, elements) in cases {
+                let (parent, property) = key.split_once('.').unwrap();
+                let prefix = format!("AttributeType::refined_list({item}");
+                let suffix = format!(
+                    ", {ordered}, Some(({minimum:?}, {maximum:?})), carina_core::schema::ListElements::{elements})"
+                );
+                let marker = format!("AttributeType::struct_(\"{parent}\".to_string(), vec![");
+                for code in [inline, definitions] {
+                    assert_all_generated_struct_fields(code, key, &prefix);
+                    for (index, _) in code.match_indices(&marker) {
+                        let field = generated_cloudfront_field(&code[index..], key);
+                        assert!(field.contains(&suffix), "{key}: {field}");
+                    }
+                }
+                let bound = range_display_string(*minimum, *maximum);
+                let marker = format!("| `{}` |", property.to_snake_case());
+                // Several structs use Items, so match the documented bound as
+                // well as the field name; link integrity is checked below.
+                assert!(
+                    markdown
+                        .lines()
+                        .any(|row| row.starts_with(&marker)
+                            && row.contains(&format!("items: {bound}"))),
+                    "{key}: missing count docs"
+                );
+            }
+            carina_docgen::check_page(&markdown).unwrap();
+        }
+        let schema = cloudfront_schema_for_codegen_tests("AWS::CloudFront::Distribution", true);
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        let expression = resource_type_overrides()
+            .get(&("AWS::CloudFront::Distribution", "GeoRestriction.Locations"))
+            .unwrap()
+            .array_item_type_expression()
+            .unwrap();
+        for code in generated
+            .split_once("fn build_schema_def_0()")
+            .map(|(inline, defs)| [inline, defs])
+            .unwrap()
+        {
+            assert_all_generated_struct_fields(
+                code,
+                "GeoRestriction.Locations",
+                &format!("AttributeType::list({expression})"),
+            );
+        }
+    }
+
+    #[test]
+    fn test_cloudfront_widened_enum_wire_values_aliases_and_docs() {
+        let schema = cloudfront_schema_for_codegen_tests("AWS::CloudFront::Distribution", true);
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        let (inline, definitions) = generated.split_once("fn build_schema_def_0()").unwrap();
+        for (key, values, namespace) in [
+            (
+                "DistributionConfig.PriceClass",
+                &[
+                    ("PriceClass_100", "price_class_100"),
+                    ("PriceClass_200", "price_class_200"),
+                    ("PriceClass_All", "price_class_all"),
+                    ("None", "none"),
+                ][..],
+                "aws.cloudfront.Distribution.DistributionConfig.PriceClass",
+            ),
+            (
+                "ViewerCertificate.MinimumProtocolVersion",
+                &[
+                    ("SSLv3", "sslv3"),
+                    ("TLSv1", "tlsv1"),
+                    ("TLSv1_2016", "tlsv1_2016"),
+                    ("TLSv1.1_2016", "tlsv1_1_2016"),
+                    ("TLSv1.2_2018", "tlsv1_2_2018"),
+                    ("TLSv1.2_2019", "tlsv1_2_2019"),
+                    ("TLSv1.2_2021", "tlsv1_2_2021"),
+                    ("TLSv1.3_2025", "tlsv1_3_2025"),
+                    ("TLSv1.2_2025", "tlsv1_2_2025"),
+                ][..],
+                "aws.cloudfront.Distribution.DistributionConfig.ViewerCertificate.MinimumProtocolVersion",
+            ),
+        ] {
+            let (parent, _) = key.split_once('.').unwrap();
+            let marker = format!("AttributeType::struct_(\"{parent}\".to_string(), vec![");
+            for code in [inline, definitions] {
+                assert_all_generated_struct_fields(code, key, "AttributeType::enum_(");
+                for (index, _) in code.match_indices(&marker) {
+                    assert_budgets_enum_values(
+                        generated_cloudfront_field(&code[index..], key),
+                        key,
+                        values,
+                    );
+                }
+            }
+            for (wire, dsl) in values {
+                assert!(
+                    markdown.contains(&format!("| `{wire}` | `{namespace}.{dsl}` |")),
+                    "{key}: {wire}"
+                );
+            }
+        }
+        carina_docgen::check_page(&markdown).unwrap();
+    }
+
+    /// CloudFront method-list overrides must retain `EnumUnordered` so the
     /// generated schema uses `unordered_list` (carina#3093, awscc#469).
     #[test]
     fn test_cloudfront_methods_overrides_are_enum_unordered() {
@@ -16855,7 +17746,7 @@ mod tests {
                 "AccessControlAllowMethods.Items",
             ),
         ] {
-            match ov.get(&key) {
+            match ov.get(&key).map(TypeOverride::item_override) {
                 Some(TypeOverride::EnumUnordered(_)) => {}
                 other => panic!(
                     "{key:?} must be TypeOverride::EnumUnordered (carina#3093), got {other:?}"
@@ -18668,21 +19559,22 @@ mod tests {
             format: None,
             ..Default::default()
         };
-        let schema = ParsedCfnSchema::from_json(serde_json::json!({
-            "typeName": "AWS::CloudFront::Distribution".to_string(),
-            "properties": {}
-        }))
-        .unwrap();
-        let (_, enum_info) = cfn_type_to_carina_type_with_enum(
+        let schema = cfn_schema_for_codegen_tests("AWS::CloudFront::Distribution");
+        let (_, enum_info) = cfn_type_to_carina_type_with_enum_with_paths(
             &prop,
             "MinimumProtocolVersion",
             &schema,
             "",
             &BTreeMap::new(),
+            CfnTypeGenerationPaths {
+                structural: &[],
+                provider: &[],
+                cfn_parent: Some("ViewerCertificate"),
+            },
         );
         let info = enum_info.expect("MinimumProtocolVersion should produce EnumInfo via overrides");
         assert_eq!(info.type_name, "MinimumProtocolVersion");
-        // The canonical AWS values must be present (the headline fix for awscc#242).
+        // The canonical values include #525's widening while retaining #242.
         for canonical in [
             "SSLv3",
             "TLSv1",
@@ -18691,6 +19583,8 @@ mod tests {
             "TLSv1.2_2018",
             "TLSv1.2_2019",
             "TLSv1.2_2021",
+            "TLSv1.3_2025",
+            "TLSv1.2_2025",
         ] {
             assert!(
                 info.values.iter().any(|v| v == canonical),
@@ -18709,6 +19603,8 @@ mod tests {
         // The DSL aliases registered in known_enum_aliases for this property
         // stay out of `values`; they are accepted through dsl_aliases.
         for alias in [
+            "tlsv1_3_2025",
+            "tlsv1_2_2025",
             "tlsv1_2_2021",
             "tlsv1_2_2019",
             "tlsv1_2_2018",
@@ -21207,46 +22103,61 @@ mod tests {
 
     #[test]
     fn test_ref_force_unordered_enum_list_retains_resolved_bounds() {
-        let mut schema = empty_schema("AWS::CloudFront::Distribution");
-        schema.edit_json(|source| {
-            source["definitions"] = serde_json::json!({
-                "Methods": { "oneOf": [{
-                    "type": ["null", "array"],
-                    "enum": ["GET", "HEAD"],
-                    "items": { "type": "string" },
-                    "minItems": 1
-                }] },
-                "DefaultCacheBehavior": { "properties": {
-                    "AllowedMethods": { "$ref": "#/definitions/Methods" }
-                } }
-            });
-        });
-        schema.edit_json(|source| {
-            source["properties"].as_object_mut().unwrap().insert(
-                "Choice".to_string(),
-                serde_json::json!({
-                    "$ref": "#/definitions/DefaultCacheBehavior"
-                }),
+        // Exercise EnumUnordered with the bounds resolved from this union
+        // fixture, independently of the production Array override.
+        static OVERRIDES: LazyLock<ResourceTypeOverrides> = LazyLock::new(|| {
+            let mut overrides = ResourceTypeOverrides::default();
+            overrides.insert(
+                (
+                    "AWS::CloudFront::Distribution",
+                    "DefaultCacheBehavior.AllowedMethods",
+                ),
+                TypeOverride::EnumUnordered(vec!["GET", "HEAD"]),
             );
+            overrides
         });
-        let generated = generate_synthetic_schema_code(&schema).unwrap();
-        let field = generated
-            .lines()
-            .find(|line| line.contains(r#""allowed_methods", "#))
-            .unwrap();
-        assert!(
-            field.contains("AttributeType::refined_list(AttributeType::enum_("),
-            "{field}"
-        );
-        assert!(field.contains("false, Some((Some(1), None))"), "{field}");
-        let md = generate_test_markdown(&schema, &schema.type_name).unwrap();
-        let field = md
-            .lines()
-            .find(|line| line.starts_with("| `allowed_methods` |"))
-            .unwrap();
-        assert!(field.contains("List\\<[Enum ("), "{field}");
-        assert!(field.contains(" (items: 1..)"), "{field}");
-        carina_docgen::check_page(&md).unwrap();
+        with_resource_type_overrides(&OVERRIDES, || {
+            let mut schema = empty_schema("AWS::CloudFront::Distribution");
+            schema.edit_json(|source| {
+                source["definitions"] = serde_json::json!({
+                    "Methods": { "oneOf": [{
+                        "type": ["null", "array"],
+                        "enum": ["GET", "HEAD"],
+                        "items": { "type": "string" },
+                        "minItems": 1
+                    }] },
+                    "DefaultCacheBehavior": { "properties": {
+                        "AllowedMethods": { "$ref": "#/definitions/Methods" }
+                    } }
+                });
+            });
+            schema.edit_json(|source| {
+                source["properties"].as_object_mut().unwrap().insert(
+                    "Choice".to_string(),
+                    serde_json::json!({
+                        "$ref": "#/definitions/DefaultCacheBehavior"
+                    }),
+                );
+            });
+            let generated = generate_synthetic_schema_code(&schema).unwrap();
+            let field = generated
+                .lines()
+                .find(|line| line.contains(r#""allowed_methods", "#))
+                .unwrap();
+            assert!(
+                field.contains("AttributeType::refined_list(AttributeType::enum_("),
+                "{field}"
+            );
+            assert!(field.contains("false, Some((Some(1), None))"), "{field}");
+            let md = generate_test_markdown(&schema, &schema.type_name).unwrap();
+            let field = md
+                .lines()
+                .find(|line| line.starts_with("| `allowed_methods` |"))
+                .unwrap();
+            assert!(field.contains("List\\<[Enum ("), "{field}");
+            assert!(field.contains(" (items: 1..)"), "{field}");
+            carina_docgen::check_page(&md).unwrap();
+        });
     }
 
     #[test]
@@ -24727,6 +25638,20 @@ mod tests {
         );
     }
 
+    fn validate_exact_override_source(
+        schema: &CfnSchema,
+        path: CfnPropertyPath<'_>,
+        override_type: &TypeOverride,
+    ) -> Result<()> {
+        let source = cfn_override_property(schema, path).with_context(|| {
+            format!(
+                "{}.{path}: typed override must have an exact cached CFN source",
+                schema.type_name
+            )
+        })?;
+        override_type.validate_source_shape(schema, path, source)
+    }
+
     #[test]
     fn test_cached_type_override_sources_match_all_declared_keys() {
         for (&(cfn_type, property), override_type) in resource_type_overrides().iter() {
@@ -24738,13 +25663,151 @@ mod tests {
                 || CfnPropertyPath::new(None, property),
                 |(parent, field)| CfnPropertyPath::new(Some(parent), field),
             );
-            let source = cfn_override_property(&schema, path).unwrap_or_else(|| {
-                panic!("{cfn_type}.{path}: typed override must have an exact cached CFN source")
-            });
-            override_type
-                .validate_source_shape(&schema, path, source)
+            validate_exact_override_source(&schema, path, override_type)
                 .unwrap_or_else(|error| panic!("{error}"));
         }
+    }
+
+    fn inline_parent_override_schema() -> ParsedCfnSchema {
+        ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Test::InlineParentOverride",
+            "properties": {
+                "Config": {"$ref": "#/definitions/Container"},
+                "MissingValues": {"type": "array", "items": {"type": "string"}}
+            },
+            "definitions": {
+                "Container": {
+                    "type": "object",
+                    "properties": {
+                        "Wrapper": {
+                            "type": "object",
+                            "properties": {
+                                "InlineSettings": {
+                                    "type": "object",
+                                    "properties": {
+                                        "DefaultValue": {"type": "string"},
+                                        "Values": {
+                                            "type": "array", "items": {"type": "string"},
+                                            "minItems": 1, "insertionOrder": false
+                                        }
+                                    }
+                                },
+                                "OtherSettings": {
+                                    "type": "object",
+                                    "properties": {
+                                        "MissingValues": {"type": "array", "items": {"type": "string"}}
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn test_inline_parent_overrides_apply_and_pass_exact_source_check() {
+        static OVERRIDES: LazyLock<ResourceTypeOverrides> = LazyLock::new(|| {
+            let mut overrides = ResourceTypeOverrides::default();
+            overrides.insert(
+                ("AWS::Test::InlineParentOverride", "InlineSettings.DefaultValue"),
+                TypeOverride::AttributeType {
+                    expression: "AttributeType::refined_string(None, None, Some((Some(1), None)), None)",
+                    display: OverrideTypeDisplay::new("String(len: 1..)"),
+                    block_name: None,
+                    default: None,
+                },
+            );
+            overrides.insert(
+                ("AWS::Test::InlineParentOverride", "InlineSettings.Values"),
+                TypeOverride::ArrayItemType {
+                    expression: "AttributeType::int()",
+                    display: OverrideTypeDisplay::new("List<Int>"),
+                    block_name: None,
+                    default: None,
+                },
+            );
+            overrides
+        });
+        let schema = inline_parent_override_schema();
+        with_resource_type_overrides(&OVERRIDES, || {
+            let generated = generate_synthetic_schema_code(&schema).unwrap();
+            for (path, override_type) in OVERRIDES.for_resource(&schema.type_name) {
+                validate_exact_override_source(&schema, path, override_type).unwrap();
+                let exact_source = &schema.definitions.as_ref().unwrap()["Container"]
+                    .properties
+                    .as_ref()
+                    .unwrap()["Wrapper"]
+                    .properties
+                    .as_ref()
+                    .unwrap()["InlineSettings"]
+                    .properties
+                    .as_ref()
+                    .unwrap()[path.property];
+                assert!(std::ptr::eq(
+                    cfn_override_property(&schema, path).unwrap(),
+                    exact_source
+                ));
+            }
+            for expected in [
+                "StructField::optional(\"default_value\", AttributeType::refined_string(None, None, Some((Some(1), None)), None))",
+                "StructField::optional(\"values\", AttributeType::refined_list(AttributeType::int(), false, Some((Some(1), None)), carina_core::schema::ListElements::AllowDuplicates))",
+            ] {
+                assert!(generated.contains(expected), "{generated}");
+            }
+            let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+            assert!(
+                markdown.contains("| `default_value` | `String(len: 1..)` |"),
+                "{markdown}"
+            );
+            assert!(
+                markdown.contains("| `values` | `List<Int> (items: 1..)` |"),
+                "{markdown}"
+            );
+        });
+    }
+
+    #[test]
+    fn test_inline_parent_overrides_reject_nonexistent_members() {
+        static OVERRIDES: LazyLock<ResourceTypeOverrides> = LazyLock::new(|| {
+            let mut overrides = ResourceTypeOverrides::default();
+            overrides.insert(
+                (
+                    "AWS::Test::InlineParentOverride",
+                    "InlineSettings.MissingValues",
+                ),
+                TypeOverride::ArrayItemType {
+                    expression: "AttributeType::int()",
+                    display: OverrideTypeDisplay::new("List<Int>"),
+                    block_name: None,
+                    default: None,
+                },
+            );
+            overrides
+        });
+        let schema = inline_parent_override_schema();
+        with_resource_type_overrides(&OVERRIDES, || {
+            let path = CfnPropertyPath::new(Some("InlineSettings"), "MissingValues");
+            assert!(cfn_override_property(&schema, path).is_none());
+            let error = validate_exact_override_source(
+                &schema,
+                path,
+                OVERRIDES.get_path(&schema.type_name, path).unwrap(),
+            )
+            .unwrap_err()
+            .to_string();
+            assert!(error.contains("InlineSettings.MissingValues"), "{error}");
+            assert!(error.contains("exact cached CFN source"), "{error}");
+            // Matching leaves at the top level and in OtherSettings cannot
+            // consume an override for this nonexistent inline member.
+            assert_override_generation_rejected(
+                &schema,
+                "ArrayItemType",
+                "InlineSettings.MissingValues",
+            );
+        });
     }
 
     #[test]
@@ -28290,6 +29353,8 @@ mod tests {
 
     #[test]
     fn test_alternation_pattern_emits_string_enum_not_custom() {
+        static OVERRIDES: LazyLock<ResourceTypeOverrides> =
+            LazyLock::new(ResourceTypeOverrides::default);
         // Mirrors the awscc#245 reproducer: a CFN string property whose only
         // constraint is `pattern: "^(a|b|c)$"` must become a real
         // StringEnum, not Custom { pattern, base: String }.
@@ -28324,28 +29389,30 @@ mod tests {
             "properties": properties
         }))
         .unwrap();
-        let generated =
-            generate_schema_code(&schema, "AWS::CloudFront::OriginAccessControl").unwrap();
-        assert!(
-            generated.contains("AttributeType::enum_("),
-            "alternation pattern should produce Enum: {generated}"
-        );
-        // Must not fall back to a Custom { pattern, ... } emission.
-        assert!(
-            !generated.contains("Some(\"^(s3|mediastore|lambda|mediapackagev2)$\""),
-            "alternation pattern should not flow through Custom: {generated}"
-        );
-        assert!(
-            !generated.contains("validate_string_pattern_"),
-            "alternation pattern should not emit a per-pattern validator: {generated}"
-        );
-        // All four literals must appear in the StringEnum values list.
-        for v in ["s3", "mediastore", "lambda", "mediapackagev2"] {
+        with_resource_type_overrides(&OVERRIDES, || {
+            let generated =
+                generate_schema_code(&schema, "AWS::CloudFront::OriginAccessControl").unwrap();
             assert!(
-                generated.contains(&format!("\"{}\".to_string()", v)), // rust-lit-guard: allow
-                "missing enum value {v} in: {generated}"
+                generated.contains("AttributeType::enum_("),
+                "alternation pattern should produce Enum: {generated}"
             );
-        }
+            // Must not fall back to a Custom { pattern, ... } emission.
+            assert!(
+                !generated.contains("Some(\"^(s3|mediastore|lambda|mediapackagev2)$\""),
+                "alternation pattern should not flow through Custom: {generated}"
+            );
+            assert!(
+                !generated.contains("validate_string_pattern_"),
+                "alternation pattern should not emit a per-pattern validator: {generated}"
+            );
+            // All four literals must appear in the StringEnum values list.
+            for v in ["s3", "mediastore", "lambda", "mediapackagev2"] {
+                assert!(
+                    generated.contains(&format!("\"{}\".to_string()", v)), // rust-lit-guard: allow
+                    "missing enum value {v} in: {generated}"
+                );
+            }
+        });
     }
 
     // === awscc#246: nested-field enum overlay ===
@@ -28384,7 +29451,9 @@ mod tests {
         ] {
             assert!(
                 matches!(
-                    table.get(&("AWS::CloudFront::Distribution", key)),
+                    table
+                        .get(&("AWS::CloudFront::Distribution", key))
+                        .map(TypeOverride::item_override),
                     Some(TypeOverride::EnumUnordered(_))
                 ),
                 "carina#3093: {key} must be EnumUnordered"
@@ -28394,113 +29463,30 @@ mod tests {
 
     #[test]
     fn test_nested_field_enum_overlay_promotes_string_to_string_enum() {
-        // A struct field whose CFN type is plain `string` (no enum, no
-        // pattern) but appears in `resource_type_overrides()` keyed by
-        // "DefName.FieldName" must emit as StringEnum, not String.
-        let mut config_props = BTreeMap::new();
-        config_props.insert(
-            "PriceClass".to_string(),
-            CfnProperty {
-                prop_type: Some(TypeValue::Single("string".to_string())),
-                description: None,
-                enum_values: None,
-                items: None,
-                ref_path: None,
-                insertion_order: None,
-                properties: None,
-                required: vec![],
-                minimum: None,
-                maximum: None,
-                additional_properties: None,
-                const_value: None,
-                default_value: None,
-                pattern: None,
-                min_items: None,
-                max_items: None,
-                min_length: None,
-                max_length: None,
-                format: None,
-                ..Default::default()
-            },
-        );
-        let mut definitions = BTreeMap::new();
-        definitions.insert(
-            "DistributionConfig".to_string(),
-            CfnProperty {
-                prop_type: Some(TypeValue::Single("object".to_string())),
-                properties: Some(config_props),
-                ..Default::default()
-            },
-        );
-        let mut top = BTreeMap::new();
-        top.insert(
-            "DistributionConfig".to_string(),
-            CfnProperty {
-                prop_type: None,
-                description: None,
-                enum_values: None,
-                items: None,
-                ref_path: Some("#/definitions/DistributionConfig".to_string()),
-                insertion_order: None,
-                properties: None,
-                required: vec![],
-                minimum: None,
-                maximum: None,
-                additional_properties: None,
-                const_value: None,
-                default_value: None,
-                pattern: None,
-                min_items: None,
-                max_items: None,
-                min_length: None,
-                max_length: None,
-                format: None,
-                ..Default::default()
-            },
-        );
-        let schema = ParsedCfnSchema::from_json(serde_json::json!({
-            "typeName": "AWS::CloudFront::Distribution".to_string(),
-            "properties": top,
-            "definitions": definitions
-        }))
-        .unwrap();
-        let generated = generate_schema_code(&schema, "AWS::CloudFront::Distribution").unwrap();
-        // The struct field must emit as Enum, not String.
-        assert!(
-            generated.contains("StructField::optional(\"price_class\", AttributeType::enum_("),
-            "nested-field overlay should promote price_class to Enum: {generated}"
-        );
-        // All three documented values must be present.
-        for v in ["PriceClass_100", "PriceClass_200", "PriceClass_All"] {
-            assert!(
-                generated.contains(&format!("\"{}\"", v)), // rust-lit-guard: allow
-                "missing override value {v}: {generated}"
+        static OVERRIDES: LazyLock<ResourceTypeOverrides> = LazyLock::new(|| {
+            let mut overrides = ResourceTypeOverrides::default();
+            overrides.insert(
+                (
+                    "AWS::CloudFront::Distribution",
+                    "DistributionConfig.PriceClass",
+                ),
+                TypeOverride::Enum(vec![
+                    "PriceClass_100",
+                    "PriceClass_200",
+                    "PriceClass_All",
+                    "None",
+                ]),
             );
-        }
-        // The override must register in enum_valid_values() so DSL value
-        // lookup and did-you-mean diagnostics fire on it.
-        assert!(
-            generated.contains("VALID_DISTRIBUTION_CONFIG_PRICE_CLASS"),
-            "VALID_* constant for the nested override should be emitted: {generated}"
-        );
-        assert!(
-            generated.contains("(\"price_class\", VALID_DISTRIBUTION_CONFIG_PRICE_CLASS)"),
-            "enum_valid_values() should include the nested override: {generated}"
-        );
-    }
-
-    #[test]
-    fn test_nested_field_enum_overlay_promotes_list_string_to_list_string_enum() {
-        // List fields (CFN `array<string>`) overridden via the nested-field
-        // overlay must produce `list(StringEnum)`, not `list(String)`.
-        let mut behavior_props = BTreeMap::new();
-        behavior_props.insert(
-            "AllowedMethods".to_string(),
-            CfnProperty {
-                prop_type: Some(TypeValue::Single("array".to_string())),
-                description: None,
-                enum_values: None,
-                items: Some(Box::new(CfnProperty {
+            overrides
+        });
+        with_resource_type_overrides(&OVERRIDES, || {
+            // A struct field whose CFN type is plain `string` (no enum, no
+            // pattern) but appears in `resource_type_overrides()` keyed by
+            // "DefName.FieldName" must emit as StringEnum, not String.
+            let mut config_props = BTreeMap::new();
+            config_props.insert(
+                "PriceClass".to_string(),
+                CfnProperty {
                     prop_type: Some(TypeValue::Single("string".to_string())),
                     description: None,
                     enum_values: None,
@@ -28521,78 +29507,192 @@ mod tests {
                     max_length: None,
                     format: None,
                     ..Default::default()
-                })),
-                ref_path: None,
-                insertion_order: None,
-                properties: None,
-                required: vec![],
-                minimum: None,
-                maximum: None,
-                additional_properties: None,
-                const_value: None,
-                default_value: None,
-                pattern: None,
-                min_items: None,
-                max_items: None,
-                min_length: None,
-                max_length: None,
-                format: None,
-                ..Default::default()
-            },
-        );
-        let mut definitions = BTreeMap::new();
-        definitions.insert(
-            "DefaultCacheBehavior".to_string(),
-            CfnProperty {
-                prop_type: Some(TypeValue::Single("object".to_string())),
-                properties: Some(behavior_props),
-                ..Default::default()
-            },
-        );
-        let mut top = BTreeMap::new();
-        top.insert(
-            "DefaultCacheBehavior".to_string(),
-            CfnProperty {
-                prop_type: None,
-                description: None,
-                enum_values: None,
-                items: None,
-                ref_path: Some("#/definitions/DefaultCacheBehavior".to_string()),
-                insertion_order: None,
-                properties: None,
-                required: vec![],
-                minimum: None,
-                maximum: None,
-                additional_properties: None,
-                const_value: None,
-                default_value: None,
-                pattern: None,
-                min_items: None,
-                max_items: None,
-                min_length: None,
-                max_length: None,
-                format: None,
-                ..Default::default()
-            },
-        );
-        let schema = ParsedCfnSchema::from_json(serde_json::json!({
-            "typeName": "AWS::CloudFront::Distribution".to_string(),
-            "properties": top,
-            "definitions": definitions
-        }))
-        .unwrap();
-        let generated = generate_schema_code(&schema, "AWS::CloudFront::Distribution").unwrap();
-        // The list wrapping is kept and the element promoted to
-        // Enum. `AllowedMethods` is an order-insensitive set, so
-        // post-carina#3093 the list is `unordered_list` (the overlay
-        // still wraps a list — only the ordering flag changed).
-        assert!(
-            generated.contains("AttributeType::unordered_list(AttributeType::enum_("),
-            "nested list-of-string overlay should produce unordered_list(Enum) \
+                },
+            );
+            let mut definitions = BTreeMap::new();
+            definitions.insert(
+                "DistributionConfig".to_string(),
+                CfnProperty {
+                    prop_type: Some(TypeValue::Single("object".to_string())),
+                    properties: Some(config_props),
+                    ..Default::default()
+                },
+            );
+            let mut top = BTreeMap::new();
+            top.insert(
+                "DistributionConfig".to_string(),
+                CfnProperty {
+                    prop_type: None,
+                    description: None,
+                    enum_values: None,
+                    items: None,
+                    ref_path: Some("#/definitions/DistributionConfig".to_string()),
+                    insertion_order: None,
+                    properties: None,
+                    required: vec![],
+                    minimum: None,
+                    maximum: None,
+                    additional_properties: None,
+                    const_value: None,
+                    default_value: None,
+                    pattern: None,
+                    min_items: None,
+                    max_items: None,
+                    min_length: None,
+                    max_length: None,
+                    format: None,
+                    ..Default::default()
+                },
+            );
+            let schema = ParsedCfnSchema::from_json(serde_json::json!({
+                "typeName": "AWS::CloudFront::Distribution".to_string(),
+                "properties": top,
+                "definitions": definitions
+            }))
+            .unwrap();
+            let generated = generate_schema_code(&schema, "AWS::CloudFront::Distribution").unwrap();
+            // The struct field must emit as Enum, not String.
+            assert!(
+                generated.contains("StructField::optional(\"price_class\", AttributeType::enum_("),
+                "nested-field overlay should promote price_class to Enum: {generated}"
+            );
+            // All four documented values must be present.
+            for v in ["PriceClass_100", "PriceClass_200", "PriceClass_All", "None"] {
+                assert!(
+                    generated.contains(&format!("\"{}\"", v)), // rust-lit-guard: allow
+                    "missing override value {v}: {generated}"
+                );
+            }
+            // The override must register in enum_valid_values() so DSL value
+            // lookup and did-you-mean diagnostics fire on it.
+            assert!(
+                generated.contains("VALID_DISTRIBUTION_CONFIG_PRICE_CLASS"),
+                "VALID_* constant for the nested override should be emitted: {generated}"
+            );
+            assert!(
+                generated.contains("(\"price_class\", VALID_DISTRIBUTION_CONFIG_PRICE_CLASS)"),
+                "enum_valid_values() should include the nested override: {generated}"
+            );
+        });
+    }
+
+    #[test]
+    fn test_nested_field_enum_overlay_promotes_list_string_to_list_string_enum() {
+        static OVERRIDES: LazyLock<ResourceTypeOverrides> = LazyLock::new(|| {
+            let mut overrides = ResourceTypeOverrides::default();
+            overrides.insert(
+                (
+                    "AWS::CloudFront::Distribution",
+                    "DefaultCacheBehavior.AllowedMethods",
+                ),
+                TypeOverride::EnumUnordered(vec![
+                    "GET", "HEAD", "OPTIONS", "PUT", "PATCH", "POST", "DELETE",
+                ]),
+            );
+            overrides
+        });
+        with_resource_type_overrides(&OVERRIDES, || {
+            // List fields (CFN `array<string>`) overridden via the nested-field
+            // overlay must produce `list(StringEnum)`, not `list(String)`.
+            let mut behavior_props = BTreeMap::new();
+            behavior_props.insert(
+                "AllowedMethods".to_string(),
+                CfnProperty {
+                    prop_type: Some(TypeValue::Single("array".to_string())),
+                    description: None,
+                    enum_values: None,
+                    items: Some(Box::new(CfnProperty {
+                        prop_type: Some(TypeValue::Single("string".to_string())),
+                        description: None,
+                        enum_values: None,
+                        items: None,
+                        ref_path: None,
+                        insertion_order: None,
+                        properties: None,
+                        required: vec![],
+                        minimum: None,
+                        maximum: None,
+                        additional_properties: None,
+                        const_value: None,
+                        default_value: None,
+                        pattern: None,
+                        min_items: None,
+                        max_items: None,
+                        min_length: None,
+                        max_length: None,
+                        format: None,
+                        ..Default::default()
+                    })),
+                    ref_path: None,
+                    insertion_order: None,
+                    properties: None,
+                    required: vec![],
+                    minimum: None,
+                    maximum: None,
+                    additional_properties: None,
+                    const_value: None,
+                    default_value: None,
+                    pattern: None,
+                    min_items: None,
+                    max_items: None,
+                    min_length: None,
+                    max_length: None,
+                    format: None,
+                    ..Default::default()
+                },
+            );
+            let mut definitions = BTreeMap::new();
+            definitions.insert(
+                "DefaultCacheBehavior".to_string(),
+                CfnProperty {
+                    prop_type: Some(TypeValue::Single("object".to_string())),
+                    properties: Some(behavior_props),
+                    ..Default::default()
+                },
+            );
+            let mut top = BTreeMap::new();
+            top.insert(
+                "DefaultCacheBehavior".to_string(),
+                CfnProperty {
+                    prop_type: None,
+                    description: None,
+                    enum_values: None,
+                    items: None,
+                    ref_path: Some("#/definitions/DefaultCacheBehavior".to_string()),
+                    insertion_order: None,
+                    properties: None,
+                    required: vec![],
+                    minimum: None,
+                    maximum: None,
+                    additional_properties: None,
+                    const_value: None,
+                    default_value: None,
+                    pattern: None,
+                    min_items: None,
+                    max_items: None,
+                    min_length: None,
+                    max_length: None,
+                    format: None,
+                    ..Default::default()
+                },
+            );
+            let schema = ParsedCfnSchema::from_json(serde_json::json!({
+                "typeName": "AWS::CloudFront::Distribution".to_string(),
+                "properties": top,
+                "definitions": definitions
+            }))
+            .unwrap();
+            let generated = generate_schema_code(&schema, "AWS::CloudFront::Distribution").unwrap();
+            // The list wrapping is kept and the element promoted to
+            // Enum. `AllowedMethods` is an order-insensitive set, so
+            // post-carina#3093 the list is `unordered_list`.
+            assert!(
+                generated.contains("AttributeType::unordered_list(AttributeType::enum_("),
+                "nested list-of-string overlay should produce unordered_list(Enum) \
              for AllowedMethods (carina#3093): {generated}"
-        );
-        // No plain `String`-element list for this field, ordered or not.
-        assert!(
+            );
+            // No plain `String`-element list for this field, ordered or not.
+            assert!(
             !generated
                 .contains("\"allowed_methods\", AttributeType::list(AttributeType::string())")
                 && !generated.contains(
@@ -28600,11 +29700,12 @@ mod tests {
                 ),
             "list(String) must be replaced for overridden list field: {generated}"
         );
-        for v in ["GET", "HEAD", "OPTIONS", "PUT", "PATCH", "POST", "DELETE"] {
-            assert!(
-                generated.contains(&format!("\"{}\".to_string()", v)), // rust-lit-guard: allow
-                "missing override value {v}: {generated}"
-            );
-        }
+            for v in ["GET", "HEAD", "OPTIONS", "PUT", "PATCH", "POST", "DELETE"] {
+                assert!(
+                    generated.contains(&format!("\"{}\".to_string()", v)), // rust-lit-guard: allow
+                    "missing override value {v}: {generated}"
+                );
+            }
+        });
     }
 }

@@ -113,7 +113,7 @@ Contains configuration information about a CloudFront function.
 
 ### `name`
 
-- **Type:** String
+- **Type:** `String (length: 1..=64, pattern: ^[a-zA-Z0-9_-]{1,64}\z)`
 - **Required:** Yes
 - **Create-only:** Yes
 
@@ -137,6 +137,15 @@ A complex type that contains zero or more ``Tag`` elements.
 
 Shorthand formats: `cloudfront_js_1_0` or `Runtime.cloudfront_js_1_0`
 
+### stage (Stage)
+
+| Value | DSL Identifier |
+|-------|----------------|
+| `DEVELOPMENT` | `aws.cloudfront.Function.Stage.development` |
+| `LIVE` | `aws.cloudfront.Function.Stage.live` |
+
+Shorthand formats: `development` or `Stage.development`
+
 ## Struct Definitions
 
 ### function_config
@@ -144,7 +153,7 @@ Shorthand formats: `cloudfront_js_1_0` or `Runtime.cloudfront_js_1_0`
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `comment` | String | Yes | A comment to describe the function. The comment cannot be longer than 128 characters. |
-| `key_value_store_associations` | List\<[Struct(KeyValueStoreAssociation)](#function_configkey_value_store_associations)\> | No | The configuration for the key value store associations. |
+| `key_value_store_associations` | List\<[Struct(KeyValueStoreAssociation)](#function_configkey_value_store_associations)\> (items: ..=1) | No | The configuration for the key value store associations. |
 | `runtime` | [Enum (Runtime)](#function_configruntime-runtime) | Yes | The function's runtime environment version. |
 
 ### function_config.key_value_store_associations
@@ -175,7 +184,7 @@ Contains metadata about a CloudFront function.
 
 ### `stage`
 
-- **Type:** String
+- **Type:** [Enum (Stage)](#stage-stage)
 
 
 
