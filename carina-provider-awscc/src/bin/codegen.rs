@@ -15133,50 +15133,6 @@ mod tests {
         "S3TablesDestination.TableNamespace",
     ];
 
-    fn s3_list_only_refinement_definitions_for_codegen_tests() -> String {
-        const CFN_TYPE: &str = "AWS::Test::S3ListOnlyRefinements";
-        static OVERRIDES: LazyLock<ResourceTypeOverrides> = LazyLock::new(|| {
-            let mut overrides = ResourceTypeOverrides::default();
-            for key in ["MetricsConfiguration.Id", "Tiering.Days"] {
-                overrides.insert(
-                    (CFN_TYPE, key),
-                    resource_type_overrides()
-                        .get(&("AWS::S3::Bucket", key))
-                        .unwrap()
-                        .clone(),
-                );
-            }
-            overrides
-        });
-        let s3_schema = cfn_schema_for_codegen_tests("AWS::S3::Bucket");
-        let mut schema = empty_schema(CFN_TYPE);
-        schema.edit_json(|source| {
-            // These refinements have no emitted definition in the real S3
-            // schema. Exercise that emission with only the relevant fields,
-            // under a test identity without any KMS-classified members.
-            for (definition, property) in [("MetricsConfiguration", "Id"), ("Tiering", "Days")] {
-                source["properties"][definition] =
-                    serde_json::json!({"$ref": format!("#/definitions/{definition}")});
-                source["definitions"][definition] = serde_json::json!({
-                    "type": "object",
-                    "properties": {}
-                });
-                source["definitions"][definition]["properties"][property] =
-                    s3_schema.source()["definitions"][definition]["properties"][property].clone();
-            }
-        });
-        let mut definitions = String::new();
-        with_resource_type_overrides(&OVERRIDES, || {
-            let generated = generate_synthetic_schema_code(&schema).unwrap();
-            definitions = generated
-                .split_once("fn build_schema_def_0()")
-                .unwrap()
-                .1
-                .to_string();
-        });
-        definitions
-    }
-
     #[test]
     fn test_s3_overrides_match_exact_raw_cfn_paths_and_preserve_deferred_fields() {
         let schema = cfn_schema_for_codegen_tests("AWS::S3::Bucket");
@@ -15243,13 +15199,22 @@ mod tests {
         let schema = cfn_schema_for_codegen_tests("AWS::S3::Bucket");
         let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
         let (inline, definitions) = generated.split_once("fn build_schema_def_0()").unwrap();
-        // Keep emitted-definition coverage for the two list-only refinements
-        // while checking every real inline and emitted S3 occurrence below.
-        let definitions = format!(
-            "{definitions}\n{}",
-            s3_list_only_refinement_definitions_for_codegen_tests()
+        // These list item structs are emitted only inline at their real S3 paths.
+        assert_all_generated_struct_fields(
+            generated_dynamodb_field(inline, "MetricsConfigurations"),
+            "MetricsConfiguration.Id",
+            r#"AttributeType::refined_string(None, Some(r"^[A-Za-z0-9._-]+\z".to_string()), Some((None, Some(64))), None)"#,
         );
-        for code in [inline, definitions.as_str()] {
+        let tierings = generated_budgets_field(
+            generated_dynamodb_field(inline, "IntelligentTieringConfigurations"),
+            "IntelligentTieringConfiguration.Tierings",
+        );
+        assert_all_generated_struct_fields(
+            tierings,
+            "Tiering.Days",
+            "AttributeType::refined_int(None, Some((Some(90), Some(730))))",
+        );
+        for code in [inline, definitions] {
             for (path, expected) in [
                 (
                     "Rule.ExpirationInDays",
@@ -15290,14 +15255,6 @@ mod tests {
                 (
                     "ReplicationTimeValue.Minutes",
                     "AttributeType::refined_int(None, Some((Some(15), Some(15))))",
-                ),
-                (
-                    "MetricsConfiguration.Id",
-                    r#"AttributeType::refined_string(None, Some(r"^[A-Za-z0-9._-]+\z".to_string()), Some((None, Some(64))), None)"#,
-                ),
-                (
-                    "Tiering.Days",
-                    "AttributeType::refined_int(None, Some((Some(90), Some(730))))",
                 ),
                 (
                     "DataExport.Destination",
