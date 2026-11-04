@@ -93,6 +93,68 @@ fn validated_int_enum(identity: TypeIdentity, valid_values: &'static [i64]) -> A
     )
 }
 
+fn validated_organizations_account_email(identity: TypeIdentity) -> AttributeType {
+    // Use a separate AWSCC identity so core Email stays unbounded. Preserve
+    // core's grammar for historical reads, without CreateAccount-only rules.
+    // https://docs.aws.amazon.com/organizations/latest/APIReference/API_CreateAccount.html#organizations-CreateAccount-request-Email
+    AttributeType::refined_string_with_validator(
+        identity,
+        None,
+        Some((Some(6), Some(64))),
+        legacy_validator(|value| {
+            let Value::Concrete(ConcreteValue::String(value)) = value else {
+                return Err("Expected string".to_string());
+            };
+            let value = value.expose_plaintext();
+            carina_core::schema::validate_email(value)?;
+            // SDK custom-type dispatch invokes the callback directly.
+            if !(6..=64).contains(&value.chars().count()) {
+                return Err(
+                    "Organizations account email must be between 6 and 64 characters".to_string(),
+                );
+            }
+            Ok(())
+        }),
+        None,
+    )
+}
+
+fn validated_organizations_account_role_name(identity: TypeIdentity) -> AttributeType {
+    // The reserved prefix is a callback check; the pattern needs no lookaround.
+    // https://docs.aws.amazon.com/organizations/latest/APIReference/API_CreateAccount.html#organizations-CreateAccount-request-RoleName
+    // https://docs.aws.amazon.com/organizations/latest/APIReference/API_CreateAccount.html#API_CreateAccount_Errors
+    AttributeType::refined_string_with_validator(
+        identity,
+        Some(r"^[\w+=,.@-]+\z".to_string()),
+        Some((Some(1), Some(64))),
+        legacy_validator(|value| {
+            let Value::Concrete(ConcreteValue::String(value)) = value else {
+                return Err("Expected string".to_string());
+            };
+            let value = value.expose_plaintext();
+            // Keep the bounds and ASCII grammar in direct callback dispatch too.
+            if !(1..=64).contains(&value.len())
+                || !value
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || b"_+=,.@-".contains(&byte))
+            {
+                return Err(
+                    "Organizations account role name must contain 1 to 64 ASCII letters, digits, or _+=,.@-"
+                        .to_string(),
+                );
+            }
+            if value.starts_with("AWSServiceRoleFor") {
+                return Err(
+                    "Organizations account role name must not start with the reserved prefix AWSServiceRoleFor"
+                        .to_string(),
+                );
+            }
+            Ok(())
+        }),
+        None,
+    )
+}
+
 fn validated_s3_lifecycle_date(identity: TypeIdentity) -> AttributeType {
     // Both actions require a calendar date at midnight UTC.
     // https://docs.aws.amazon.com/AmazonS3/latest/API/API_LifecycleExpiration.html
@@ -313,6 +375,20 @@ carina_aws_types::define_aws_type_catalog! {
                 "organizations",
             ),
         },
+        /// Organizations Account email, with core email validation and API bounds.
+        OrganizationsAccountEmail => organizations_account_email {
+            segments: ["organizations", "Account"],
+            kind: "Email",
+            valid_sample: "admin+registry-dev@example.com",
+            constructor: validated_organizations_account_email,
+        },
+        /// Organizations-created role name, excluding the service-linked role prefix.
+        OrganizationsAccountRoleName => organizations_account_role_name {
+            segments: ["organizations", "Account"],
+            kind: "RoleName",
+            valid_sample: "OrganizationAccountAccessRole",
+            constructor: validated_organizations_account_role_name,
+        },
         /// AWSCC keeps service validation around the shared Organizations identity.
         OrganizationsOrganizationArn => organizations_organization_arn {
             refines: AwsType::OrganizationsOrganizationArn,
@@ -502,6 +578,8 @@ LogsLogGroupArn|aws|logs/LogGroup|Arn|None|arn:aws:logs:ap-northeast-1:123456789
 Wafv2WebAclArn|aws|wafv2/WebAcl|Arn|None|arn:aws:wafv2:ap-northeast-1:123456789012:regional/webacl/example/12345678-1234-1234-1234-123456789abc|None|crate::schemas::catalog::wafv2_web_acl_arn()
 IamOidcProviderArn|aws|iam/OidcProvider|Arn|Some(IamOidcProviderArn)|arn:aws:iam::123456789012:oidc-provider/example.com|None|crate::schemas::catalog::iam_oidc_provider_arn()
 OrganizationsAccountArn|aws|organizations/Account|Arn|Some(OrganizationsAccountArn)|arn:aws:organizations::123456789012:account/o-example/123456789012|None|crate::schemas::catalog::organizations_account_arn()
+OrganizationsAccountEmail|aws|organizations/Account|Email|None|admin+registry-dev@example.com|None|crate::schemas::catalog::organizations_account_email()
+OrganizationsAccountRoleName|aws|organizations/Account|RoleName|None|OrganizationAccountAccessRole|None|crate::schemas::catalog::organizations_account_role_name()
 OrganizationsOrganizationArn|aws|organizations/Organization|Arn|Some(OrganizationsOrganizationArn)|arn:aws:organizations::123456789012:organization/o-example|None|crate::schemas::catalog::organizations_organization_arn()
 S3BucketArn|aws|s3/Bucket|Arn|Some(S3BucketArn)|arn:aws:s3:::example-bucket|None|crate::schemas::catalog::s3_bucket_arn()
 Ec2FlowLogMaxAggregationInterval|aws|ec2/FlowLog|MaxAggregationInterval|None|60|Some([60, 600])|crate::schemas::catalog::ec2_flow_log_max_aggregation_interval()

@@ -23,6 +23,19 @@ fn string_enum(name: &str, namespace: &str, values_and_aliases: &[(&str, &str)])
     )
 }
 
+/// Organizations parent IDs remain anonymous until identity work in #422.
+pub fn organizations_account_parent_id() -> AttributeType {
+    // Group the alternatives so both anchors apply to root and OU IDs alike.
+    // The 100-character cap is an item limit, not a list count.
+    // https://docs.aws.amazon.com/organizations/latest/APIReference/API_Parent.html#organizations-Type-Parent-Id
+    AttributeType::refined_string(
+        None,
+        Some(r"^(?:r-[0-9a-z]{4,32}|ou-[0-9a-z]{4,32}-[a-z0-9]{8,32})\z".to_string()),
+        Some((None, Some(100))),
+        None,
+    )
+}
+
 /// S3 lifecycle size thresholds retain CloudFormation's decimal-string wire type.
 pub fn s3_object_size() -> AttributeType {
     // The API Long is represented as a string by CFN, with a 20-character cap.
