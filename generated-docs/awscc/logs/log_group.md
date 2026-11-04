@@ -43,7 +43,7 @@ Indicates whether deletion protection is enabled for this log group. When enable
 
 ### `field_index_policies`
 
-- **Type:** `List<Struct(FieldIndexPolicy)>`
+- **Type:** `List<Struct(FieldIndexPolicy)> (items: ..=1)`
 - **Required:** No
 - **Default:** `[]`
 
@@ -66,7 +66,7 @@ Specifies the log group class for this log group. There are two classes: + The `
 
 ### `log_group_name`
 
-- **Type:** String(pattern, len: 1..=512)
+- **Type:** `aws.logs.LogGroup.LogGroupName`
 - **Required:** No
 - **Create-only:** Yes
 

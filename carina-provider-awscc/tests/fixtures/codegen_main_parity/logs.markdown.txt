@@ -1,6 +1,6 @@
 ### `field_index_policies`
 
-- **Type:** List\<[Struct(FieldIndexPolicies)](#field_index_policies-1)\> (items: 1..=3)
+- **Type:** List\<[Struct(FieldIndexPolicies)](#field_index_policies-1)\> (items: 1..=1)
 - **Required:** No
 - **Default:** `[]`
 

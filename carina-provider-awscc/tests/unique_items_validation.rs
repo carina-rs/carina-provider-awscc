@@ -160,13 +160,23 @@ fn nested_unique_enum_list_rejects_duplicates_and_accepts_distinct_values() {
 }
 
 #[test]
-fn unique_list_with_overridden_struct_items_rejects_duplicates() {
-    let log_group =
-        |policies| resource_with("logs.LogGroup", "field_index_policies", list(policies));
+fn field_index_policies_accept_zero_or_one_policy_and_reject_two() {
+    let log_group = |policies: Vec<Value>| {
+        resource_with("logs.LogGroup", "field_index_policies", list(policies))
+    };
     let first = map([("fields", list([string("requestId")]))]);
     let second = map([("fields", list([string("accountId")]))]);
-    validate(log_group([first.clone(), second])).expect("distinct field index policies validate");
-    assert_duplicate(log_group([first.clone(), first]), "field_index_policies");
+    validate(log_group(vec![])).expect("no field index policies must validate");
+    validate(log_group(vec![first.clone()])).expect("one field index policy must validate");
+    for policies in [vec![first.clone(), second], vec![first.clone(), first]] {
+        let error = validate(log_group(policies))
+            .expect_err("two field index policies must exceed the maximum");
+        assert!(
+            error.contains("field_index_policies")
+                && error.contains("length 2 is outside allowed range [, 1]"),
+            "expected a field index policy count error, got: {error}"
+        );
+    }
 }
 
 #[test]

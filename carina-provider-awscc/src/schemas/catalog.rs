@@ -93,6 +93,47 @@ fn validated_int_enum(identity: TypeIdentity, valid_values: &'static [i64]) -> A
     )
 }
 
+fn validated_logs_log_group_name(identity: TypeIdentity) -> AttributeType {
+    // Preserve CFN's pattern and bounds; check the reserved prefix case-insensitively.
+    // https://docs.aws.amazon.com/AmazonCloudWatchLogs/latest/APIReference/API_CreateLogGroup.html
+    // Live CreateLogGroup, carina-test-001, 2026-11-05: InvalidParameterException:
+    // "Log groups starting with AWS/ are reserved for AWS."
+    AttributeType::refined_string_with_validator(
+        identity,
+        Some(r"^[.\-_/#A-Za-z0-9]{1,512}\z".to_string()),
+        Some((Some(1), Some(512))),
+        legacy_validator(|value| {
+            let Value::Concrete(ConcreteValue::String(value)) = value else {
+                return Err("Expected string".to_string());
+            };
+            let value = value.expose_plaintext();
+            // SDK custom-type dispatch invokes the callback directly.
+            if !(1..=512).contains(&value.len())
+                || !value
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || b".-_/#".contains(&byte))
+            {
+                return Err(
+                    "CloudWatch Logs log group name must contain 1 to 512 ASCII letters, digits, or .-_/#"
+                        .to_string(),
+                );
+            }
+            if value
+                .as_bytes()
+                .get(..4)
+                .is_some_and(|prefix| prefix.eq_ignore_ascii_case(b"aws/"))
+            {
+                return Err(
+                    "CloudWatch Logs log group name must not start with the reserved prefix aws/"
+                        .to_string(),
+                );
+            }
+            Ok(())
+        }),
+        None,
+    )
+}
+
 fn validated_organizations_account_email(identity: TypeIdentity) -> AttributeType {
     // Use a separate AWSCC identity so core Email stays unbounded. Preserve
     // core's grammar for historical reads, without CreateAccount-only rules.
@@ -341,6 +382,13 @@ carina_aws_types::define_aws_type_catalog! {
                 "logs",
             ),
         },
+        /// CloudWatch Logs log-group name, excluding the reserved aws/ prefix.
+        LogsLogGroupName => logs_log_group_name {
+            segments: ["logs", "LogGroup"],
+            kind: "LogGroupName",
+            valid_sample: "/aws/lambda/example",
+            constructor: validated_logs_log_group_name,
+        },
         /// WAFv2 web ACL ARN.
         Wafv2WebAclArn => wafv2_web_acl_arn {
             segments: ["wafv2", "WebAcl"],
@@ -575,6 +623,7 @@ Ec2IpamPoolArn|aws|ec2/IpamPool|Arn|None|arn:aws:ec2:ap-northeast-1:123456789012
 Ec2IpamArn|aws|ec2/Ipam|Arn|None|arn:aws:ec2:ap-northeast-1:123456789012:ipam/ipam-12345678|None|crate::schemas::catalog::ec2_ipam_arn()
 EcsClusterArn|aws|ecs/Cluster|Arn|None|arn:aws:ecs:ap-northeast-1:123456789012:cluster/example|None|crate::schemas::catalog::ecs_cluster_arn()
 LogsLogGroupArn|aws|logs/LogGroup|Arn|None|arn:aws:logs:ap-northeast-1:123456789012:log-group:example|None|crate::schemas::catalog::logs_log_group_arn()
+LogsLogGroupName|aws|logs/LogGroup|LogGroupName|None|/aws/lambda/example|None|crate::schemas::catalog::logs_log_group_name()
 Wafv2WebAclArn|aws|wafv2/WebAcl|Arn|None|arn:aws:wafv2:ap-northeast-1:123456789012:regional/webacl/example/12345678-1234-1234-1234-123456789abc|None|crate::schemas::catalog::wafv2_web_acl_arn()
 IamOidcProviderArn|aws|iam/OidcProvider|Arn|Some(IamOidcProviderArn)|arn:aws:iam::123456789012:oidc-provider/example.com|None|crate::schemas::catalog::iam_oidc_provider_arn()
 OrganizationsAccountArn|aws|organizations/Account|Arn|Some(OrganizationsAccountArn)|arn:aws:organizations::123456789012:account/o-example/123456789012|None|crate::schemas::catalog::organizations_account_arn()
