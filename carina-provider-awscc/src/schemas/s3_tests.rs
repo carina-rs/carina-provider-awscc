@@ -570,6 +570,36 @@ fn analytics_is_csv_only_while_inventory_retains_all_three_formats() {
 }
 
 #[test]
+fn inventory_format_preserves_main_identifiers_without_colliding_with_analytics() {
+    let schema = schema();
+    let inventory = field(&schema, "inventory_configurations.destination.format");
+    let analytics = field(
+        &schema,
+        "analytics_configurations.storage_class_analysis.data_export.destination.format",
+    );
+    let main_identity =
+        "aws.s3.Bucket.AnalyticsConfiguration.StorageClassAnalysis.DataExport.Destination.Format";
+    assert_eq!(
+        inventory.as_type().enum_parts().unwrap().0.to_string(),
+        main_identity
+    );
+    assert_ne!(
+        inventory.as_type().enum_parts().unwrap().0,
+        analytics.as_type().enum_parts().unwrap().0
+    );
+    for alias in ["csv", "orc", "parquet"] {
+        let qualified = enum_identifier(&format!("{main_identity}.{alias}"));
+        inventory.validate(&qualified).unwrap();
+        assert!(analytics.validate(&qualified).is_err());
+    }
+    analytics
+        .validate(&enum_identifier(
+            "aws.s3.Bucket.AnalyticsDestination.Format.csv",
+        ))
+        .unwrap();
+}
+
+#[test]
 fn notification_events_and_filter_names_have_exact_wire_strings_and_legal_aliases() {
     let schema = schema();
     let event_def = schema
@@ -880,6 +910,11 @@ awscc.s3.Bucket {
 }
 "#;
     validate_fixtures(&[("s3_live_forms.crn", source)]);
+    let qualified_inventory = source.replace(
+        "format = parquet",
+        "format = aws.s3.Bucket.AnalyticsConfiguration.StorageClassAnalysis.DataExport.Destination.Format.orc",
+    );
+    validate_fixtures(&[("s3_qualified_inventory_format.crn", &qualified_inventory)]);
     for (from, to) in [
         ("format = csv", "format = orc"),
         ("2030-01-01T00:00:00Z", "2030-02-30T00:00:00Z"),

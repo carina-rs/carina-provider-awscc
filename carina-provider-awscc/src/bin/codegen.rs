@@ -2898,6 +2898,144 @@ fn namespace_with_struct_path(namespace: &str, struct_path: &[String]) -> String
     }
 }
 
+/// Reserve the first source path of each cached `$ref` struct before overrides
+/// replace subtrees. List-item structs remain inline and keep their enclosing
+/// context; only their cached descendants share a definition identity.
+fn collect_definition_identity_paths(schema: &CfnSchema) -> BTreeMap<String, Vec<String>> {
+    fn visit(
+        schema: &CfnSchema,
+        prop_name: &str,
+        prop: &CfnProperty,
+        structural: &[String],
+        state: RefGenerationState<'_>,
+        visiting: &mut HashSet<String>,
+        identities: &mut BTreeMap<String, Vec<String>>,
+    ) {
+        match property_shape(prop, schema) {
+            PropertyShape::Reference {
+                path,
+                resolved: Some(resolved),
+            } => {
+                if is_tag_map_ref(schema, path) || !visiting.insert(resolved.name.to_string()) {
+                    return;
+                }
+                if state.context == RefContext::Normal
+                    && property_generates_struct(resolved.property, schema)
+                {
+                    if identities.contains_key(resolved.name) {
+                        visiting.remove(resolved.name);
+                        return;
+                    }
+                    identities.insert(
+                        resolved.name.to_string(),
+                        extend_struct_path(structural, resolved.name),
+                    );
+                }
+                visit(
+                    schema,
+                    prop_name,
+                    resolved.property,
+                    structural,
+                    RefGenerationState {
+                        definition_name: Some(resolved.name),
+                        ..state
+                    },
+                    visiting,
+                    identities,
+                );
+                visiting.remove(resolved.name);
+            }
+            PropertyShape::Array { variant, .. } => {
+                visit(
+                    schema, prop_name, variant, structural, state, visiting, identities,
+                );
+            }
+            shape @ (PropertyShape::Direct(_) | PropertyShape::Merged(_)) => {
+                let properties = match &shape {
+                    PropertyShape::Direct(properties) => *properties,
+                    PropertyShape::Merged(properties) => properties,
+                    _ => unreachable!(),
+                };
+                let name = state.definition_name.unwrap_or(prop_name);
+                let structural = extend_struct_path(structural, name);
+                for (field_name, field) in properties {
+                    if is_deprecated_property(field)
+                        || should_omit_property(
+                            &schema.type_name,
+                            CfnPropertyPath::new(Some(name), field_name),
+                        )
+                    {
+                        continue;
+                    }
+                    visit(
+                        schema,
+                        field_name,
+                        field,
+                        &structural,
+                        RefGenerationState {
+                            definition_name: None,
+                            context: RefContext::Normal,
+                        },
+                        visiting,
+                        identities,
+                    );
+                }
+            }
+            PropertyShape::Inline => {
+                if let Some(items) = prop
+                    .items
+                    .as_deref()
+                    .filter(|_| inline_property_type(prop) == Some("array"))
+                {
+                    visit(
+                        schema,
+                        prop_name,
+                        items,
+                        structural,
+                        RefGenerationState {
+                            definition_name: None,
+                            context: RefContext::ListItem,
+                        },
+                        visiting,
+                        identities,
+                    );
+                } else if let Some(value) = direct_object_map_value(prop) {
+                    visit(
+                        schema,
+                        prop_name,
+                        value,
+                        structural,
+                        RefGenerationState {
+                            definition_name: None,
+                            context: RefContext::Normal,
+                        },
+                        visiting,
+                        identities,
+                    );
+                }
+            }
+            PropertyShape::Reference { resolved: None, .. } | PropertyShape::Unresolved => {}
+        }
+    }
+
+    let mut identities = BTreeMap::new();
+    for (name, prop) in documented_top_level_properties(schema) {
+        visit(
+            schema,
+            name,
+            prop,
+            &[],
+            RefGenerationState {
+                definition_name: None,
+                context: RefContext::Normal,
+            },
+            &mut HashSet::new(),
+            &mut identities,
+        );
+    }
+    identities
+}
+
 fn is_deprecated_property(prop: &CfnProperty) -> bool {
     prop.description
         .as_deref()
@@ -3788,6 +3926,7 @@ fn register_markdown_enum(
 }
 
 fn collect_markdown_enums(
+    schema: &EmissionContext<'_>,
     namespace: &str,
     property_enums: &BTreeMap<String, EnumInfo>,
     struct_field_enums: &BTreeMap<MarkdownStructFieldKey, EnumInfo>,
@@ -3818,9 +3957,14 @@ fn collect_markdown_enums(
         let field_path =
             extend_property_path(&def_info.first_property_path, &source_key.field_name);
         let heading_path = markdown_section_heading_path(&field_path, struct_defs, None);
+        let identity_path = match &source_key.struct_key {
+            MarkdownStructKey::Definition(name) => schema.definition_identity_path(name),
+            MarkdownStructKey::Inline(_) => None,
+        }
+        .unwrap_or(&def_info.struct_path);
         let key = register_markdown_enum(
             &mut markdown_enums,
-            namespace_with_struct_path(namespace, &def_info.struct_path),
+            namespace_with_struct_path(namespace, identity_path),
             heading_path,
             source_key.field_name.clone(),
             info,
@@ -4071,6 +4215,7 @@ fn render_markdown(
     reset_recursion_guard();
 
     let (markdown_enums, enum_targets) = collect_markdown_enums(
+        schema,
         &namespace,
         &property_enums,
         &struct_field_enums,
@@ -11065,6 +11210,17 @@ fn cfn_type_to_carina_type_with_enum_resolved(
                 definitions.borrow_mut().insert(def_name.to_string());
             });
             let array = resolved_array_property(prop, schema, &mut HashSet::new());
+            let paths = if ref_context == RefContext::Normal
+                && property_generates_struct(resolved.property, schema)
+                && let Some(identity_path) = schema.definition_identity_path(def_name)
+            {
+                CfnTypeGenerationPaths {
+                    structural: &identity_path[..identity_path.len() - 1],
+                    ..paths
+                }
+            } else {
+                paths
+            };
             let (body, enum_info) = cfn_type_to_carina_type_with_enum_resolved(
                 schema.property_at(property_path, array.as_deref().unwrap_or(resolved.property)),
                 namespace,
@@ -15328,6 +15484,58 @@ mod tests {
         for deprecated in ["Transition", "NoncurrentVersionTransition"] {
             assert!(!generated.contains(&format!(".with_provider_name(\"{deprecated}\")")));
         }
+    }
+
+    #[test]
+    fn test_s3_inventory_format_preserves_source_identity_in_rust_and_docs() {
+        let schema = cfn_schema_for_codegen_tests("AWS::S3::Bucket");
+        let generated = generate_schema_code(&schema, &schema.type_name).unwrap();
+        let markdown = generate_test_markdown(&schema, &schema.type_name).unwrap();
+        let namespace =
+            "aws.s3.Bucket.AnalyticsConfiguration.StorageClassAnalysis.DataExport.Destination";
+        let expected = format!("enum_identity(\"Format\", Some(\"{namespace}\"))");
+        let identities = Regex::new(r#"enum_identity\("Format", Some\("[^"]+"\)\)"#).unwrap();
+        let emitted: Vec<_> = identities.find_iter(&generated).collect();
+        assert!(!emitted.is_empty());
+        for identity in emitted {
+            assert_eq!(identity.as_str(), expected);
+        }
+        for (wire, dsl) in [("CSV", "csv"), ("ORC", "orc"), ("Parquet", "parquet")] {
+            assert!(
+                markdown.contains(&format!("| `{wire}` | `{namespace}.Format.{dsl}` |")),
+                "inventory documentation must use the schema's source identity"
+            );
+        }
+        assert!(generated.contains("crate::schemas::awscc_types::s3_analytics_destination()"));
+        assert!(markdown.contains("| `destination` | `Struct(AnalyticsDestination)` |"));
+    }
+
+    #[test]
+    fn test_list_item_enum_identities_keep_their_enclosing_context() {
+        let schema = ParsedCfnSchema::from_json(serde_json::json!({
+            "typeName": "AWS::Test::ListContexts",
+            "properties": {
+                "Left": {"type": "object", "properties": {
+                    "Entries": {"type": "array", "items": {"$ref": "#/definitions/Entry"}}
+                }},
+                "Right": {"type": "object", "properties": {
+                    "Entries": {"type": "array", "items": {"$ref": "#/definitions/Entry"}}
+                }}
+            },
+            "definitions": {
+                "Entry": {"type": "object", "properties": {
+                    "Mode": {"type": "string", "enum": ["a", "b"]}
+                }}
+            }
+        }))
+        .unwrap();
+        let generated = generate_synthetic_schema_code(&schema).unwrap();
+        for parent in ["Left", "Right"] {
+            assert!(generated.contains(&format!(
+                "enum_identity(\"Mode\", Some(\"aws.ec2.Route.{parent}.Entry\"))"
+            )));
+        }
+        assert!(!collect_definition_identity_paths(&schema).contains_key("Entry"));
     }
 
     #[test]
